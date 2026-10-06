@@ -2363,10 +2363,62 @@ import { runRiskyAllowGuardPinTests } from "./risky-allow-guard-pin.test.ts";
 import { runMemoryGuardPinTests } from "./memory-guard-pin.test.ts";
 import { runDevServerReaperPinTests } from "./dev-server-reaper-pin.test.ts";
 import { runWeeklyReviewReadonlyPinTests } from "./weekly-review-readonly-pin.test.ts";
+import { runSecretDrift404MatcherTests } from "./secret-drift-404-matcher.test.ts";
+import { runTypecheckNativeCompilerTests } from "./typecheck-native-compiler.test.ts";
+import { runCiSuitePlacementTests } from "./ci-suite-placement.test.ts";
 import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
+/**
+ * SHARDING — `PHX_TEST_SHARD=<i>/<n>` runs only every nth `runTest` call, starting at the ith.
+ *
+ * Unset — which is every local run, every `node tests/run-tests.ts` by hand, and
+ * `scripts/remote-check.mjs test` on the box — changes NOTHING: the condition below is skipped
+ * entirely and the file runs exactly as it did before. The only caller that sets it is
+ * `scripts/run-tests-sharded.mjs`, which CI uses.
+ *
+ * WHY AT THE `runTest` CALL AND NOT THE IMPORT. Every one of the 2,246 test files is imported
+ * statically at the top of this file, so every shard loads every module and runs its top-level code
+ * whatever it is told to execute — three test files set `PHOENIX_AUTH_SECRET` at import time with
+ * `??=`, and a shard that skipped their import would sign tokens with a different secret from the
+ * one the suite has always used. Filtering here keeps every shard's module graph IDENTICAL to the
+ * serial run's; what differs is only which `execute()` bodies are awaited. It costs ~8s of import
+ * per shard, which is why the shard count is the CPU count and not something larger.
+ *
+ * ROUND-ROBIN, NOT CONTIGUOUS BLOCKS: adjacent tests in this file are adjacent by subject, so a
+ * contiguous split puts every slow hook-pin test (each spawns one node process per case — the
+ * slowest is 15s) in one shard and leaves the others idle. Interleaving spreads them.
+ *
+ * 🔴 THE COUNTS BELOW ARE WHAT MAKES A SHARD SAFE. `seen` is every call this file makes and is
+ * therefore identical in every shard; `ran` is this shard's share. A dropped test — a bad divisor, a
+ * shard that died before its last call, two shards given the same index — shows up as the sum of
+ * `ran` not reaching `seen`, and run-tests-sharded.mjs REFUSES on that. Without it a shard runner
+ * reports success for a suite that silently ran half of itself, which is worse than no sharding.
+ */
+const shardSpec = /^(\d+)\s*\/\s*(\d+)$/.exec(process.env.PHX_TEST_SHARD ?? "");
+if (process.env.PHX_TEST_SHARD && !shardSpec) {
+  console.error(`PHX_TEST_SHARD must read <index>/<total>, e.g. 1/4 — got ${JSON.stringify(process.env.PHX_TEST_SHARD)}`);
+  process.exit(2);
+}
+const shardIndex = shardSpec ? Number(shardSpec[1]) : 1;
+const shardTotal = shardSpec ? Number(shardSpec[2]) : 1;
+if (shardSpec && (shardTotal < 1 || shardIndex < 1 || shardIndex > shardTotal)) {
+  console.error(`PHX_TEST_SHARD is out of range: ${process.env.PHX_TEST_SHARD}`);
+  process.exit(2);
+}
+let seenCount = 0;
+let ranCount = 0;
+
+process.on("exit", () => {
+  // One machine-readable line, always, so the parent can prove coverage. Printed from `exit` rather
+  // than after the last call because a FAILING test rethrows out of this file.
+  console.log(`PHX_SHARD_RESULT shard=${shardIndex}/${shardTotal} seen=${seenCount} ran=${ranCount}`);
+});
+
 async function runTest(name: string, execute: () => void | Promise<void>) {
+  const mine = seenCount++ % shardTotal === shardIndex - 1;
+  if (!mine) return;
+  ranCount += 1;
   const startedAt = performance.now();
   try {
     await execute();
@@ -9110,6 +9162,18 @@ await runTest(
   "the guard that holds the UNATTENDED weekly config review to read-only cannot quietly stop holding it: the pinned copy of ~/.claude/hooks/weekly-review-readonly.mjs runs its own 45-case table to `0 failed`, the count never falls and must equal the ok lines it printed, all three predicates survive (`isWeeklyReviewFirstLine`, `isReadOnlyCommand` and the `isReadOnlyMcpTool` that covers the route around the shell), the mode is still `--selftest`, the summary still says `cases, … failed` because the hourly runner accepts a hook only on that wording, and the twelve load-bearing cases still RUN by name — the three writes the 2026-09-21 unattended run actually performed (Register-ScheduledTask, a node -e file rewrite, cp over a script), the bypasses of a verb allow-list (a redirect, a bad second segment of a chain, command substitution, git fetch, an MCP update_scheduled_task), the detection boundary that keeps it off human sessions, and a legitimate read that must keep passing",
   runWeeklyReviewReadonlyPinTests,
 );
+await runTest("secret-drift-check.yml raises \"BRANCH PROTECTION MAY BE GONE — MERGE NOTHING\" on a real 404 and never on a commit id: its escalation grep is anchored to the `[required-checks] SKIPPED — protection returned 404` line that check-required-checks.mjs actually prints, never the bare substring `404` it used until 2026-10-06, which matched the checkout short SHA carried in every run of that script and so raised the loudest alarm in the repo on a healthy gate about one run in 500-1000; the sample it is exercised against is COMPOSED from required-check-names.mjs's own skip reason and check-required-checks.mjs's own SKIPPED template, so rewording either script fails this test rather than silently disarming the alarm, a healthy run and an ordinary drift report whose SHA contains 404 both stay unmatched, and the branch still emits its ::error:: annotation, sets gate_missing=true and exits 1 so the finding reaches the report step", runSecretDrift404MatcherTests);
+
+await runTest(
+  "the type gate is the NATIVE compiler and stays there: `typescript-native` is an `npm:typescript@7` alias (what pnpm links `.bin/tsc` to, and therefore what `pnpm run typecheck`, ci.yml's `checks` job and the box all run), `typescript` stays on 5.x for typescript-eslint, Next, the editor and the twelve tests that import the compiler API, both callers still pass `--checkers` — the one flag TypeScript 5 refuses, so a lost alias FAILS instead of silently restoring the ~180s compiler — and the binary actually linked answers 7",
+  runTypecheckNativeCompilerTests,
+);
+
+await runTest(
+  "the unit suite runs on EVERY event, in exactly one of the two REQUIRED jobs — `validate` on a pull request, `checks` on a push, a dispatch and a schedule, conditions that are exact complements: one home too many only wastes a runner, one too few leaves an event whose merge gate (or, on main, whose production deploy gate) goes green with the tests never run, which is the 2026-09-17 shape (#3950) that let a red suite merge for a day; and both homes must run the SHARDED runner, which is what proves every test ran exactly once",
+  runCiSuitePlacementTests,
+);
+
 await runTest(
   "a CV never stays in a manager's account more than 45 days (owner, 2026-10-06): the window is one number and one `>=` comparison that fails CLOSED on an unreadable date, every route a CV reaches a manager by applies it (the pushed list and its gate, the single-manager stamp, the team picker's count and gate, the district folders and the gate behind them) while the whole-company report path and the engagement report deliberately do not, and the daily return takes a CV back as `shortlisted` under an `ops:` actor only when EVERY manager holding it is past 45 days, before the stale-send check reads the status",
   runRecruitmentManagerHoldWindowTests,

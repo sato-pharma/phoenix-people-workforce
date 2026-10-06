@@ -46,11 +46,29 @@ on:
 permissions:
   contents: write
 
-# Never cancel a queued sync. A cancelled one is indistinguishable in its effects from a sync that
-# never ran — staging silently stops advancing — which is the failure this workflow exists to
-# prevent. Same reasoning as ci.yml's main-push concurrency, for the same reason.
+# 🔴 ONE GROUP PER TRIGGERING CI RUN, AND `cancel-in-progress: false` IS NOT WHAT PROTECTS A QUEUED
+# SYNC. This block used to be a single shared group with a comment claiming a queued sync is never
+# cancelled. That was wrong about how GitHub concurrency works: a group holds AT MOST ONE RUNNING AND
+# ONE PENDING run, and when a THIRD run arrives the PENDING one is cancelled. `cancel-in-progress`
+# governs only the running one, so the setting that reads as "never cancel" cancels the queued run
+# every time a third event lands.
+#
+# MEASURED, on this repository's own history: on `main` commit b69849349 three sync suites arrived
+# within 23 seconds and suite 100410656538 is `cancelled`. The same shape appears on 99f39c818,
+# 3da19d616 and 6b3d10942. Both halves of that are harmful:
+#   * a lost sync means staging silently stops advancing — the exact 2026-08-13 failure in the
+#     header above, which is why this workflow exists at all;
+#   * a CANCELLED suite on `main` HEAD withholds that commit's production deploy exactly as a red
+#     one does (AGENTS.md §2.3 — "red, cancelled, or still queued = no deploy"), permanently.
+#
+# So the group now carries the triggering CI run's head SHA and its run id, which makes it unique per
+# CI run: nothing is ever queued behind anything, and nothing can be cancelled by a later sync. The
+# serialization that is lost was never load-bearing — the push below is race-safe by construction
+# (the ancestry guard refuses to move staging backwards, and a lost push race exits 0 as a success
+# condition). `cancel-in-progress: false` is kept so a duplicate delivery of the SAME event cannot
+# cancel a sync that is already pushing.
 concurrency:
-  group: staging-branch-sync
+  group: staging-branch-sync-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}
   cancel-in-progress: false
 
 jobs:
@@ -130,8 +148,35 @@ jobs:
 
           # `<sha>:refs/heads/staging` creates the branch on the first run and fast-forwards it after,
           # so nothing has to pre-create it. NEVER --force: a rejected push here means an assumption
-          # above broke, and that is worth a red check rather than a silent overwrite.
-          git push origin "$NEW_SHA:refs/heads/staging"
+          # above broke, and a silent overwrite is never the answer.
+          #
+          # 🔴 BUT A REJECTED PUSH IS NOT AUTOMATICALLY AN ERROR, AND SINCE THE CONCURRENCY GROUP
+          # BECAME UNIQUE PER CI RUN (see the header) TWO SYNCS CAN REACH THIS LINE AT ONCE. Commits
+          # A and B both pass the ancestry guard against the staging they each READ; whichever pushes
+          # second is rejected as a non-fast-forward. If that loser is the OLDER commit, staging is
+          # already further forward than this run wanted — which is the correct end state, and the
+          # whole point of the guard above. Failing on it would trade the cancelled suite this change
+          # removed for a RED one, which withholds a production deploy in exactly the same way.
+          #
+          # So: re-read the remote, and exit 0 when staging now holds a DESCENDANT of our commit.
+          # Anything else — a push rejected while staging is NOT ahead of us — is a real fault and
+          # still fails, because that is the hostile-writer case the verify step also guards.
+          set +e
+          PUSH_OUT="$(git push origin "$NEW_SHA:refs/heads/staging" 2>&1)"
+          PUSH_RC=$?
+          set -e
+          printf '%s\n' "$PUSH_OUT"
+
+          if [ "$PUSH_RC" -ne 0 ]; then
+            git fetch --quiet --no-tags origin "+refs/heads/staging:refs/remotes/origin/staging" 2>/dev/null || true
+            NOW_SHA="$(git ls-remote origin refs/heads/staging 2>/dev/null | cut -f1 || true)"
+            if [ -n "$NOW_SHA" ] && git cat-file -e "${NOW_SHA}^{commit}" 2>/dev/null && git merge-base --is-ancestor "$NEW_SHA" "$NOW_SHA"; then
+              echo "::notice::the push was rejected because staging is already at $NOW_SHA, a descendant of $NEW_SHA — a concurrent sync won the race and carried staging FURTHER FORWARD. Nothing was lost and nothing is stale, so this run is not failed."
+              exit 0
+            fi
+            echo "::error::pushing $NEW_SHA to refs/heads/staging failed, and staging (${NOW_SHA:-<absent>}) is NOT a descendant of it — so this is not a lost race. Read the push output above before touching the branch."
+            exit 1
+          fi
           echo "staging -> $NEW_SHA"
 
       # A push that silently does nothing is the failure mode this whole area keeps being bitten by,

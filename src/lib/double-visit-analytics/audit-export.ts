@@ -360,7 +360,6 @@ export async function loadDoubleVisitAuditData(input: {
 
   // Per-coach KPI strip + role code, from the SAME builder the board uses (so figures match).
   const { summaries } = buildManagerSummariesDetailed(scopedRows, employees, generatedAt);
-  const summaryByKey = new Map(summaries.map((summary) => [summary.managerHrId, summary]));
 
   // Group the scoped rows by coach (the double-visitor).
   const rowsByCoach = new Map<string, DoubleVisitDbRow[]>();

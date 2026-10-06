@@ -374,3 +374,24 @@ minimumReleaseAgeExclude:
   - '@next/swc-win32-arm64-msvc@16.3.8'
   - '@next/swc-win32-x64-msvc@16.3.8'
   - next@16.3.8
+
+# ── TWO ADVISORIES vuln-scan.mjs REPORTS THAT ARE DELIBERATELY NOT OVERRIDDEN (2026-10-06) ────────
+#
+# `scripts/vuln-scan.mjs` prints "add an override for X in pnpm-workspace.yaml" beside every
+# transitive finding, unconditionally. For these two that advice cannot be followed, and the next
+# session to read a red-looking scan should not spend the evening rediscovering why.
+#
+#   braces@3.0.3 — GHSA-vfj7-8cjw-p6xm, HIGH. 3.0.3 IS the latest published version; there is no
+#   fixed release to float to, so an override has nowhere to point. Reached only through the DEV
+#   graph (eslint-config-next > @next/eslint-plugin-next > fast-glob > micromatch, and shadcn >
+#   ts-morph), never `--prod`, which is why `pnpm audit --audit-level=high --prod` stays green on it
+#   and the gate is not lying. Revisit when braces publishes a fix, not before.
+#
+#   sprintf-js@1.0.3 — GHSA-hp3w-g68c-fv3c, MODERATE (unbounded precision specifiers). 1.1.3 fixes
+#   it, and the single path is PRODUCTION: mammoth > argparse@1.0.10, which pins `~1.0.2`. Left
+#   alone on exposure rather than on difficulty — argparse formats its OWN usage and error strings,
+#   so no input mammoth reads from a .docx ever reaches a format string, while mammoth is the DOCX
+#   reader behind CV extraction and a forced minor across argparse's pin is a real change to a live
+#   recruitment path for a DoS that cannot be triggered. `--audit-level=high` does not see a
+#   moderate either way. Fix it by moving mammoth to a release that drops argparse 1.x, not by
+#   forcing the floor under it.

@@ -1473,40 +1473,76 @@ the next Ubuntu release**: NodeSource lags a new codename by months, and the fai
   generated type file can make a run pass that should have failed. If a result ever looks
   suspicious, clear `~/actions-runner/_work` and re-run before believing it.
 
-## The typecheck is 75% of `checks`, and the 7.7× fix is not safe yet — 2026-09-30
+## The typecheck moved to TypeScript 7 — 2026-10-06
 
-`checks` is **209s hosted, and ~157s of it is `tsc`**. Lint is 5s behind a restored ESLint cache,
-`next typegen` under 2s, install 11–14s. So anything that does not touch the typecheck cannot move
-this job, and the wall clock of a PR is this job.
+`checks` was **209s hosted, ~157-185s of it the typecheck**. Lint is 5s behind a restored ESLint
+cache, `next typegen` under 2s, install 11-14s. So nothing that left the typecheck alone could move
+this job, and the wall clock of a PR was this job.
 
-Measured on the Hetzner host, same checkout, same `tsconfig.json`, both cold:
+**The gate is now the native compiler**, installed as `typescript-native`, an `npm:typescript@7.0.2`
+alias in `package.json`. `typescript@5` stays installed and must: typescript-eslint loads it through
+`eslint-config-next/typescript`, Next loads it because a `tsconfig.json` exists, twelve tests import
+the compiler API from it, and the editor's language service is it.
+
+Measured on this tree, same `tsconfig.json`, both cold, on the 4-vCPU cloud container:
 
 | | time | peak RSS | diagnostics |
 | --- | --- | --- | --- |
-| `tsc` (TypeScript 5) | 114s | 5.55 GB | 0 |
-| `tsgo` (`@typescript/native-preview` 7.0.0-dev.20260707.2) | **14.9s** | 6.24 GB | **3** |
+| `tsc` (TypeScript 5.9.3) | **276s** | 5.8 GB | 0 |
+| TypeScript 7.0.2, default checkers | **28.5s** | 6.45 GB | 3 (false) |
+| TypeScript 7.0.2, `--checkers 2` | 37.6s (2 vCPU) | 6.12 GB | 3 (false) |
+| TypeScript 7.0.2, `--checkers 1` | 52s (2 vCPU) | **5.06 GB** | 3 (false) |
 
-🔴 **DO NOT MAKE `tsgo` THE TYPE GATE YET, HOWEVER TEMPTING 7.7× IS.** Its three diagnostics are all
-`TS2871 "This expression is always nullish"` on one idiom —
-`(lineId == null ? null : names.lines.get(lineId) ?? null) ?? area?.line ?? null` in
-`src/lib/customer-360/service.ts` (×2) and `src/lib/verified-captures/distributor-codes.ts`. **They
-are false positives**: `names.lines` is `Map<number, string>` and `lineId` narrows to `number`, so
-the flagged expression is not always nullish. A preview compiler that rejects correct code will
-reject more of it as the codebase grows, and each one is a red PR with a bogus reason on the check
-that guards types for live payroll. Re-run this benchmark when TypeScript 7 ships stable; the
-command is `./node_modules/.bin/tsgo --noEmit --pretty false` after
-`npm i --no-save @typescript/native-preview`.
+### Why it was safe this time and was not on 2026-09-30
 
-🔴 **A GLOBAL `tsgo` DOES NOT TYPECHECK THIS PROJECT — IT FAILS RESOLUTION AND LOOKS 15× FASTER.**
+The 09-30 trial measured `@typescript/native-preview` 7.0.0-dev.20260707.2 — a dated development
+build — at 7.7x, and refused it on three `TS2871 "This expression is always nullish"` diagnostics
+that are false. **That refusal was right.** What changed is not the speed: TypeScript 7.0.2 shipped
+**stable on 2026-07-08**, and the adoption rests on a replay rather than on a benchmark.
+
+**The replay.** Every pull request whose CI typecheck failed in the fortnight to 2026-10-03 — 14
+branches, 19 errors — was fetched at the exact head CI graded, and TypeScript 7 run over it.
+**It reports every error TypeScript 5.9 reports.** Three looked missing at first and none was: two
+exist only in the PR's MERGE commit (TS 5.9 does not report them on the head tree either — checked),
+and the third was a `--checkers` flag mis-set on the first pass. A compiler that is faster but blind
+to a class of error would be worse than the one it replaces; this is the evidence that it is not.
+
+**The three false positives were fixed, not suppressed.** All three were one idiom — a redundant
+`?? null` nested inside the left operand of another `??`, in `src/lib/customer-360/service.ts` (x2)
+and `src/lib/verified-captures/distributor-codes.ts`. Reproduced in a 30-line isolated file, where
+dropping the inner `?? null` is quiet in **both** compilers and provably equivalent (it only turns a
+Map miss's `undefined` into `null` one operand before the next `??`). TypeScript 7.1's nightly
+reports zero on the untouched tree, so this is an upstream bug already fixed — the rewrite is how
+the gate moves today without waiting for it.
+
+### `--checkers 1`, and why the flag is not a tuning knob
+
+Both callers pass `--checkers 1`: `package.json`'s `typecheck` script, which `ci.yml`'s `checks` job
+runs, and `scripts/remote-check.mjs`'s box command.
+
+* **It bounds the memory.** One checker peaks at **5.06 GB**, below the 5.8 GB TypeScript 5 already
+  needed — so the self-hosted box's profile strictly improves, which is what makes it safe beside a
+  preview server on 7.7 GB. The default checker-per-core peaks at 6.45 GB.
+* **It is the only mechanical tell that the alias is still there.** Nothing in the script, the
+  workflow or the box command names a version: all three run `tsc`, and WHICH `tsc` that is comes
+  from pnpm linking `node_modules/.bin/tsc` to the higher of the two installed versions. Drop the
+  alias and the gate silently reverts to the 276s compiler with every command and every doc still
+  reading correctly. **TypeScript 5 refuses `--checkers` outright**, so that reversion fails loudly
+  instead. `tests/typecheck-native-compiler.test.ts` asserts both callers still pass it, that the
+  alias is 7 or above, that `typescript` is still 5.x, and that the linked binary answers 7.
+
+### Two things that have NOT changed
+
+🔴 **A GLOBAL INSTALL DOES NOT TYPECHECK THIS PROJECT — IT FAILS RESOLUTION AND LOOKS 15x FASTER.**
 Installed with `npm i -g`, it resolved neither `next/link` nor `react/jsx-runtime` nor
 `JSX.IntrinsicElements` and "finished" in 7.6s with thousands of `TS2307`/`TS7026`. That is the time
-to fail, not a measurement. Install it into the project so module resolution has the right root.
+to fail, not a measurement. It must be installed into the project, which the alias does.
 
-🔴 **AND THE CACHE THAT WOULD MAKE `tsc` FAST IS ALREADY FORBIDDEN HERE.** `tsconfig.json` sets
+🔴 **AND THE CACHE THAT WOULD MAKE A TYPECHECK FAST IS STILL FORBIDDEN HERE.** `tsconfig.json` sets
 `incremental: true` **and** `assumeChangesOnlyAffectDirectDependencies: true`, and on 2026-07-30 a
-warm `tsc` in this repo returned **exit 0 with three live `TS2741` errors**. So restoring
-`tsconfig.tsbuildinfo` from `actions/cache` would buy most of that 157s by trading away the
-correctness of the one check that guards types. Do not propose it.
+warm run in this repo returned **exit 0 with three live `TS2741` errors**. Restoring
+`tsconfig.tsbuildinfo` from `actions/cache` would trade away the correctness of the one check that
+guards types. Do not propose it — and note the speed-up above makes it pointless as well as unsafe.
 `typecheck-incremental-false-green`
 
 ## Do not re-attempt these
@@ -1519,3 +1555,77 @@ Recorded in `ci.yml`'s own comments with the measurements:
   97% of the 16.47 GB repository cache budget.
 - Extending the docs-only fast path to `main` pushes — measured **4 of the last 200 commits (2%)**
   are docs-only. Worth roughly $2/month.
+
+## 🔴 Only 0 and 1 are verdicts — the four non-code failures that used to print FAIL — 2026-10-06
+
+`scripts/remote-check.mjs` is the standing pre-push step (AGENTS.md §7) and the engine behind
+`.claude/hooks/push-typecheck-guard.mjs`, which refuses a `git push` on a FAILED typecheck. That
+makes its final line a load-bearing claim: **`remote-check: FAIL — <sha>` says the owner's code is
+broken, and a push is blocked on it.** Four failures that never read the code at all were arriving
+wearing exactly that line.
+
+| What happened on the box | Before | Now |
+| --- | --- | --- |
+| `pnpm install --frozen-lockfile` failed, or `git worktree add` could not make the private tree | exit **1** → `FAIL — <sha>` | exit **7** → NO VERDICT |
+| the run took HUP/INT/TERM (the box's memory watchdog, a reboot, a hand `kill` of a stranded run) | exit **130** → `FAIL — <sha>` | exit **8** → NO VERDICT |
+| a stage gave up waiting for `/tmp/phx-typecheck.lock` (`flock -w 1200`) | exit **1** → `FAIL — <sha>` | exit **9** → NO VERDICT |
+| the dispatched `ci.yml` run went red in `mobile`, the Build or the login smoke | run conclusion `failure` → `FAIL — <sha>` | the requested stage's own job is graded |
+
+Measured before and after, with real `bash` and real `flock` (the generated script run against a
+throwaway bare repo, which is what `tests/remote-check.test.ts` section 9 does):
+
+```
+install:  BEFORE exit 1 "install failed"                 AFTER exit 7, no verdict line
+signal:   BEFORE exit 130 (fell through to the FAIL line) AFTER exit 8  "INTERRUPTED by a signal"
+lock:     BEFORE exit 1  "--- typecheck FAIL in 1s ---"   AFTER exit 9  "--- typecheck LOCK-TIMEOUT in 0s ---"
+```
+
+**The lock timeout is detected BEFORE the stage, not by its exit code.** `flock -w` gives up with
+exit **1**, which is also `tsc`'s code for "there are type errors", so the two cannot be told apart
+afterwards. The generated script therefore runs `flock -w <seconds> -E 75 <file> true` in front of
+any stage whose command starts with `flock -w <seconds> <file>`: the probe releases the lock
+immediately, cannot misread a real failure (it runs before any of the code does), and a conflict code
+of 75 makes the stage report `LOCK-TIMEOUT`. 🔴 **Do not "simplify" this by adding `-E` to the stage
+command itself** — `tests/ci-typecheck-lock.test.ts` pins its `flock -w <seconds> /tmp/phx-typecheck.lock`
+prefix, because this caller and `ci.yml`'s own Typecheck step must never drift onto different lock
+files, and that pin is what catches the drift.
+
+**The Actions escalation now grades the stage, not the run.** A `workflow_dispatch` runs the whole of
+`ci.yml` — including `mobile`, which REPORTS and never gates (AGENTS.md §7), the Build, and the
+Playwright login smoke. Grading the run's own conclusion therefore charged this branch for somebody
+else's breakage: a mobile lockfile bump or a smoke flake came back as `FAIL — <sha>` for a typecheck
+that had passed. `gradeActionsStages` reads the run's JOBS and grades only the job and step that run
+the requested stage (`lint`/`typecheck` → `checks`; `test`/`build` → `validate`), reports any other
+red job beside the verdict, and treats a stage whose job is missing, unfinished, cancelled or skipped
+as NO VERDICT — never FAIL. A real failure in the requested stage still outranks an unknown
+elsewhere, exactly as the box script's own `FAILED` outranks `KILLED`.
+
+🔴 **AND THE ESCALATION NEVER DISPATCHES ON `main`.** `ci.yml`'s concurrency group is `CI-<ref>` for a
+pull request and **`CI-<sha>`** otherwise, with `cancel-in-progress` true only for a PR — so a
+dispatch from `main` lands in the SAME group as the push run of that commit, which is the run
+Railway's "Wait for CI" holds the production deploy on. A cancelled or failed suite there makes
+Railway mark that deploy SKIPPED within minutes, and re-running it green does not resurrect it
+(AGENTS.md §2.3). There is nothing to gain either: `main` already runs the whole gate on every
+commit. It refuses with exit 6 and points at that run, the same shape as the open-PR refusal.
+
+### The push guard leaked an `ssh`, which disarmed it for the rest of the session
+
+`spawnSync`'s own timeout signals the `node` it started and nothing else. When the guard's 7-minute
+cap fired, the `ssh` underneath survived: the box kept the run, kept `/tmp/phx-typecheck.lock` held,
+and the **next** push met the busy probe, got NO VERDICT and went out unchecked. One orphan was
+enough to turn the guard off silently.
+
+The child now runs in a process group of its own (`detached` on POSIX) and the timeout reaps the
+GROUP — `process.kill(-pid)`, SIGTERM then SIGKILL, with `taskkill /T /F` on Windows, where negative
+pids do not exist. Measured with a stand-in child that spawns a grandchild which would outlive a
+plain kill of its parent:
+
+```
+BEFORE  hook returned in 2310ms | grandchild pid 1746 | ALIVE AFTER: true
+AFTER   hook returned in 2321ms | grandchild pid 1839 | ALIVE AFTER: false
+```
+
+That grandchild is pinned by `tests/push-typecheck-guard.test.ts`, which fails against the old guard
+with the headline *"the grandchild outlived the guard's timeout"*. The guard still DENIES only on a
+real typecheck FAIL; every NO VERDICT code above is now named in the note it leaves instead of
+reading as "it exited 7".

@@ -14,8 +14,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint --cache --cache-strategy content",
-    "typecheck": "tsc --noEmit --pretty false",
+    "typecheck": "tsc --noEmit --pretty false --checkers 1",
     "test": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts",
+    "test:sharded": "node scripts/run-tests-sharded.mjs",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test tests/e2e/auth.setup.ts --project=setup",
     "synthetic:test": "playwright test --config=playwright.synthetic.config.ts",
@@ -186,7 +187,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^3.0.0",
@@ -205,6 +206,7 @@
     "shadcn": "^4.16.0",
     "supabase": "^2.116.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-native": "npm:typescript@7.0.2"
   }
 }

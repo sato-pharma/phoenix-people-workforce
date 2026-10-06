@@ -225,10 +225,16 @@ export async function loadMarketingDistributorCodes(
     }>) {
       const chosen = row.distributor_id !== null ? marketingById.get(Number(row.distributor_id)) : undefined;
       const distributorCode = row.mapped_distributor_code ?? chosen?.distributorCode ?? null;
+      // No `?? null` inside the arms: it only turns a Map miss's `undefined` into `null` one
+      // operand before the next `??`, which reads the same either way — and the native compiler
+      // (TypeScript 7, the type gate since 2026-10-06) reports that shape as TS2871 "This
+      // expression is always nullish", wrongly. Dropping it is behaviour-identical and quiet in
+      // both compilers; the trailing `?? null` is what keeps the type `string | null`.
       const distributorName =
         chosen?.displayName ??
-        (distributorCode ? sosNames.get(distributorCode) ?? null : null) ??
-        (row.mapped_distributor_code ? sosNames.get(row.mapped_distributor_code) ?? null : null);
+        (distributorCode ? sosNames.get(distributorCode) : null) ??
+        (row.mapped_distributor_code ? sosNames.get(row.mapped_distributor_code) : null) ??
+        null;
       buffered.push({
         pharmacyId: row.pharmacy_id,
         distributorName,

@@ -98,6 +98,29 @@ export function parseBusyProbe(output) {
   return { known: true, runs: [...runs].sort() };
 }
 
+// ---------------------------------------------------------------------------------------------
+// WHAT THE BOX SCRIPT'S EXIT CODE MEANS
+// ---------------------------------------------------------------------------------------------
+// 🔴 ONLY 0 AND 1 ARE VERDICTS. Everything else is "could not tell", and the difference is not
+// cosmetic: a FAIL blocks a push (`.claude/hooks/push-typecheck-guard.mjs`) and is reported to the
+// owner as "your code is broken". Three non-code failures used to arrive as exit 1 and print the
+// `FAIL — <sha>` line — an install that could not run, a run killed by a signal, and a stage that
+// gave up waiting for the box's typecheck lock. None of them looked at the branch at all. They now
+// have codes of their own, which remote-check.mjs turns into NO VERDICT lines that carry no
+// `PASS|FAIL — <sha>` for anything to parse (`a-verdict-line-without-its-sha-matches-an-older-run`).
+export const EXIT_TREE_MOVED = 3; // same_tree fired — the tree stopped being the announced sha
+export const EXIT_OOM_KILLED = 4; // a stage took SIGKILL from the kernel OOM killer (137)
+export const EXIT_SETUP = 7; // the private tree or the install could not be made — nothing ran
+export const EXIT_INTERRUPTED = 8; // the run took HUP/INT/TERM — a reap, a reboot, a hand kill
+export const EXIT_LOCK_TIMEOUT = 9; // a stage waited out the box's typecheck lock and never started
+
+// 🔴 `flock`'s OWN TIMEOUT MUST NOT LOOK LIKE A FAILING CHECK. A `flock -w` that expires exits 1 —
+// the same code `tsc` uses for type errors — so a box so contended that the typecheck never started
+// reported the branch as broken. This is the conflict code (EX_TEMPFAIL) the lock PROBE in
+// buildRunScript carries via `-E`, and the one the step wrapper reads as LOCK-TIMEOUT. 75 is not a
+// code `tsc`, `eslint`, `next build` or the test runner produces.
+export const LOCK_CONFLICT_EXIT = 75;
+
 function assertInputs(sha, runId) {
   if (!SHA_RE.test(sha)) throw new Error("remote-check: not a full 40-character sha: " + sha);
   if (!RUN_ID_RE.test(runId)) throw new Error("remote-check: unsafe run id: " + runId);
@@ -122,16 +145,24 @@ function privateTree({ remoteRoot, runId, sha, prelude }) {
     'cleanup() { cd / || true; git -C "$BARE" worktree remove --force "$RUN" >/dev/null 2>&1 || rm -rf "$RUN"; ' +
       'git -C "$BARE" worktree prune 2>/dev/null; git -C "$BARE" update-ref -d "$REF" 2>/dev/null; return 0; }',
     "trap cleanup EXIT",
-    "trap 'exit 130' HUP INT TERM",
-    'git -C "$BARE" worktree add -q --detach "$RUN" "$WANT" || { echo "remote-check: could not make a private tree at $WANT" >&2; exit 1; }',
-    'cd "$RUN" || exit 1',
+    // 🔴 A SIGNAL IS NOT A VERDICT ABOUT THE CODE. This used to `exit 130`, which fell through
+    // remote-check.mjs's NO-VERDICT arms and printed the `FAIL — <sha>` line: a run reaped by the
+    // box's own memory watchdog, a reboot, or a `kill` aimed at a stranded run then blocked a push
+    // and told the session its branch was broken. Same cry-wolf shape as the OOM kill (exit 137).
+    "trap 'echo \"remote-check: the run on the box was INTERRUPTED by a signal — NO VERDICT\" >&2; exit " +
+      EXIT_INTERRUPTED + "' HUP INT TERM",
+    // 🔴 SETUP IS NOT THE BRANCH EITHER. A `worktree add` that cannot run, or a `cd` that fails,
+    // says something about the box's disk or git, never about $WANT — so it exits SETUP, not 1.
+    'git -C "$BARE" worktree add -q --detach "$RUN" "$WANT" || { echo "remote-check: could not make a private tree at $WANT" >&2; exit ' +
+      EXIT_SETUP + "; }",
+    'cd "$RUN" || exit ' + EXIT_SETUP,
     "same_tree() {",
     '  local at; at=$(git -C "$RUN" rev-parse HEAD 2>/dev/null || echo unreadable)',
     '  if [ "$at" != "$WANT" ]; then',
     '    echo "" >&2',
     '    echo "remote-check: TREE CHANGED UNDER THE RUN after $1 — HEAD is $at, the run announced $WANT." >&2',
     '    echo "remote-check: NO VERDICT. Nothing above is about $WANT." >&2',
-    "    exit 3",
+    "    exit " + EXIT_TREE_MOVED,
     "  fi",
     "}",
     'echo "box head: $(git rev-parse --short HEAD)  (private tree runs/' + runId + ')"',
@@ -182,24 +213,57 @@ export function buildRunScript({ remoteRoot, runId, sha, steps, install, prelude
 
   lines.push("FAILED=0");
   lines.push("KILLED=0");
-  lines.push(install + " || { echo 'install failed'; exit 1; }");
+  lines.push("LOCKED=0");
+  // 🔴 AN INSTALL THAT FAILED CHECKED NOTHING, SO IT IS NOT A FAIL. It exited 1 until 2026-10-06,
+  // which printed `FAIL — <sha>` for a box that ran out of disk, lost its pnpm store or could not
+  // reach the registry — a push blocked, and a session sent looking for a type error in a branch
+  // nothing had read. (A lockfile that genuinely does not match the manifests fails the PR's own
+  // `validate` install too, so nothing is lost by refusing to call this a verdict.)
+  lines.push(install + " || { echo 'install failed — the box never checked this sha'; exit " + EXIT_SETUP + "; }");
   lines.push("same_tree install");
   for (const { name, command } of steps) {
     if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error("remote-check: unsafe check name: " + name);
+
+    // 🔴 A STAGE THAT GIVES UP WAITING FOR A LOCK LOOKS EXACTLY LIKE A FAILING CHECK. `typecheck`
+    // and `build` both start by waiting for /tmp/phx-typecheck.lock, which ci.yml's own Typecheck
+    // step takes too — and `flock -w` that expires exits **1**, the same code `tsc` uses for type
+    // errors. So on a box held for twenty minutes the stage NEVER RAN and the run printed
+    // `FAIL — <sha>`, blocking a push over somebody else's typecheck.
+    //
+    // The conflict is therefore established BEFORE the stage, with a probe that has a conflict code
+    // of its own (`-E`). It cannot misread a real failure, because it runs before any of the code
+    // does. The lock is not left held: the probe is `true`, so it releases at once and the stage's
+    // own `flock` takes it microseconds later. The command is NOT rewritten to carry `-E` itself —
+    // tests/ci-typecheck-lock.test.ts pins its `flock -w <seconds> <file>` prefix so this caller and
+    // ci.yml cannot drift onto different lock files.
+    const waits = /^flock -w (\d+) (\/[^\s;|&$'"]+) /.exec(command);
+    if (waits) {
+      lines.push(
+        "STAGE_LOCK=0; flock -w " + waits[1] + " -E " + LOCK_CONFLICT_EXIT + " " + waits[2] + " true || STAGE_LOCK=$?",
+      );
+    }
     // 🔴 EXIT 137 IS THE KERNEL OOM KILLER AND SAYS NOTHING ABOUT THE CODE — it must not read as
     // FAIL. A build prints `✓ Compiled successfully` and is killed after, so reporting that as a
     // failure sends a session hunting an error that does not exist, and makes the standing
     // pre-push step cry wolf — which is how a gate stops being read at all.
+    //
+    // 🔴 AND NEITHER IS `flock`'s CONFLICT CODE (LOCK_CONFLICT_EXIT). A stage that waited out
+    // /tmp/phx-typecheck.lock never ran its command, so there is nothing to grade: that is the box
+    // being busy, which is the one thing this script already refuses to call a branch failure.
     lines.push(
       'echo ""; echo "=== ' + name + ' ==="; S=$(date +%s); ' +
-        "if " + command + "; then R=PASS; else RC=$?; " +
-        'if [ "$RC" = 137 ]; then R=OOM-KILLED; KILLED=1; else R=FAIL; FAILED=1; fi; fi; ' +
+        (waits ? 'if [ "$STAGE_LOCK" = ' + LOCK_CONFLICT_EXIT + " ]; then R=LOCK-TIMEOUT; LOCKED=1; elif " : "if ") +
+        command + "; then R=PASS; else RC=$?; " +
+        'if [ "$RC" = 137 ]; then R=OOM-KILLED; KILLED=1; ' +
+        'elif [ "$RC" = ' + LOCK_CONFLICT_EXIT + ' ]; then R=LOCK-TIMEOUT; LOCKED=1; ' +
+        "else R=FAIL; FAILED=1; fi; fi; " +
         'E=$(date +%s); same_tree ' + name + '; echo "--- ' + name + ' $R in $((E-S))s ---"',
     );
   }
-  // A real failure outranks a kill. Otherwise a kill is NO VERDICT (4), never PASS: nothing was
-  // learned about this sha, and the caller must not read silence as a green light.
-  lines.push('if [ "$FAILED" = 0 ] && [ "$KILLED" = 1 ]; then exit 4; fi');
+  // A real failure outranks both. Otherwise a kill or a lock timeout is NO VERDICT, never PASS:
+  // nothing was learned about this sha, and the caller must not read silence as a green light.
+  lines.push('if [ "$FAILED" = 0 ] && [ "$KILLED" = 1 ]; then exit ' + EXIT_OOM_KILLED + "; fi");
+  lines.push('if [ "$FAILED" = 0 ] && [ "$LOCKED" = 1 ]; then exit ' + EXIT_LOCK_TIMEOUT + "; fi");
   lines.push("exit $FAILED");
   return lines.join("\n") + "\n";
 }
@@ -365,6 +429,113 @@ export function decideBusyAction({ busyRuns, waitedSeconds, waitMinutes, actions
   const left = budget - (waitedSeconds || 0);
   if (left > 0) return { action: "poll", waitLeftSeconds: left };
   return { action: actions ? "actions" : "refuse", waitLeftSeconds: 0 };
+}
+
+/**
+ * 🔴 THE ESCALATION MUST NEVER DISPATCH ON `main` — THAT RUN IS THE PRODUCTION DEPLOY GATE.
+ *
+ * `ci.yml`'s concurrency group is `CI-<ref>` for a pull request and **`CI-<sha>`** for everything
+ * else, with `cancel-in-progress` true only for a PR. So a `workflow_dispatch` on `main` lands in
+ * the SAME group as the push run of that exact commit — the run Railway's "Wait for CI" is holding
+ * the production deploy on (AGENTS.md §2.3). Two runs in one non-cancelling group is at best a
+ * second billed copy of a run that already exists, and at worst it is a session's convenience check
+ * tangled up with the only suite that decides whether a merge ships: a cancelled or failed run on
+ * that commit makes Railway mark the deploy SKIPPED within minutes, and re-running it green does
+ * not resurrect it.
+ *
+ * There is also nothing to gain. `main` already runs the whole gate on every commit, for free to
+ * this caller — so the answer on `main` is to read that run, never to start another beside it.
+ *
+ * @param {string} branch the ref `gh workflow run --ref` would be given.
+ */
+export function isProtectedDispatchRef(branch) {
+  const name = String(branch ?? "").trim().replace(/^refs\/heads\//, "");
+  return name === "main" || name === "master";
+}
+
+/**
+ * Which CI job actually runs each stage this script can be asked for, and the step inside it.
+ *
+ * 🔴 A DISPATCH RUNS THE WHOLE WORKFLOW, SO THE RUN'S OWN CONCLUSION IS NOT AN ANSWER ABOUT THE
+ * STAGE YOU ASKED FOR. On `workflow_dispatch`, `ci.yml` also runs `mobile` (the Expo typecheck,
+ * which REPORTS and never gates — AGENTS.md §7), the Build and the Playwright login smoke. Grading
+ * the run as a whole therefore turned `remote-check typecheck` FAIL on a mobile lockfile break or a
+ * smoke flake — a verdict about somebody else's code, printed under this sha, blocking this push.
+ */
+export const STAGE_JOBS = {
+  lint: { job: "checks", step: "Lint" },
+  typecheck: { job: "checks", step: "Typecheck" },
+  test: { job: "validate", step: "Test" },
+  build: { job: "validate", step: "Build" },
+};
+
+/** A job or step conclusion read the same way everywhere: allow-list the two verdicts, nothing else. */
+function gradeConclusion(conclusion) {
+  if (conclusion === "success") return "pass";
+  if (conclusion === "failure") return "fail";
+  return "no-verdict";
+}
+
+/**
+ * Grade ONLY the stages that were asked for, from a completed run's job list.
+ *
+ * 🔴 A STAGE THAT DID NOT RUN IS NO VERDICT, NEVER FAIL. A job missing from the run, one still
+ * going, one cancelled, and a step skipped because an earlier step in the same job died are all
+ * "nobody looked at your stage" — the same call the box script makes for an OOM kill. Only an
+ * explicit `failure` on the stage itself is a FAIL.
+ *
+ * 🔴 A REAL FAILURE OUTRANKS AN UNKNOWN, exactly as it does in the box script: asking for
+ * `lint test` and getting a red `lint` beside a cancelled `validate` is a FAIL, not a shrug.
+ *
+ * @param {string[]} names the stages the caller asked for (`lint`, `typecheck`, `test`, `build`).
+ * @param {Array<{ name?: string, status?: string, conclusion?: string | null, steps?: Array<{ name?: string, conclusion?: string | null }> }> | null | undefined} jobs
+ * @returns {{ verdict: "pass"|"fail"|"no-verdict", why: string, otherRed: string[] }}
+ */
+export function gradeActionsStages(names, jobs) {
+  if (!Array.isArray(jobs) || jobs.length === 0) {
+    return { verdict: "no-verdict", why: "the run's job list could not be read", otherRed: [] };
+  }
+  const wanted = Array.isArray(names) && names.length > 0 ? names : Object.keys(STAGE_JOBS);
+  const graded = [];
+  for (const name of wanted) {
+    const spec = STAGE_JOBS[name];
+    if (!spec) {
+      graded.push({ name, verdict: "no-verdict", why: name + " is not a stage any CI job runs" });
+      continue;
+    }
+    const job = jobs.find((j) => j && j.name === spec.job);
+    if (!job) {
+      graded.push({ name, verdict: "no-verdict", why: "the `" + spec.job + "` job, which runs " + name + ", is not in this run" });
+      continue;
+    }
+    if (job.status && job.status !== "completed") {
+      graded.push({ name, verdict: "no-verdict", why: "`" + spec.job + "` is still " + job.status });
+      continue;
+    }
+    const step = Array.isArray(job.steps) ? job.steps.find((s) => s && s.name === spec.step) : undefined;
+    const conclusion = step ? step.conclusion : job.conclusion;
+    const verdict = gradeConclusion(conclusion);
+    const where = step ? "`" + spec.job + "` / " + spec.step : "`" + spec.job + "`";
+    graded.push({
+      name,
+      verdict,
+      why: verdict === "no-verdict"
+        ? where + " ended " + String(conclusion ?? "unknown") + ", so " + name + " never produced a verdict"
+        : where + " " + String(conclusion),
+    });
+  }
+  const otherRed = jobs
+    .filter((j) => j && j.conclusion === "failure" && !graded.some((g) => STAGE_JOBS[g.name]?.job === j.name))
+    .map((j) => String(j.name));
+  const failed = graded.filter((g) => g.verdict === "fail");
+  if (failed.length > 0) {
+    return { verdict: "fail", why: failed.map((g) => g.why).join("; "), otherRed };
+  }
+  const unknown = graded.filter((g) => g.verdict === "no-verdict");
+  if (unknown.length > 0) {
+    return { verdict: "no-verdict", why: unknown.map((g) => g.why).join("; "), otherRed };
+  }
+  return { verdict: "pass", why: graded.map((g) => g.why).join("; "), otherRed };
 }
 
 /**

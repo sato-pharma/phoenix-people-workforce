@@ -30,14 +30,25 @@ type Decision = { decision: "allow" | "deny"; reason: string; context: string };
 
 /** What the real remote-check prints for each outcome, minus the SSH. The hook reads these banner lines. */
 const FAKE_REMOTE_CHECK = `
-import { appendFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { appendFileSync, writeFileSync } from "node:fs";
 if (process.env.FAKE_CALLS_FILE) appendFileSync(process.env.FAKE_CALLS_FILE, "ran\\n");
 const verdict = process.env.FAKE_VERDICT || "pass";
 const sha = "0123456789abcdef";
 console.log("remote-check: typecheck  on phx@box");
-if (verdict === "hang") await new Promise((done) => setTimeout(done, 60000));
+if (verdict === "hang") {
+  // The stand-in for \`ssh\`: a grandchild that OUTLIVES a kill of this process, exactly as the real
+  // ssh does — it keeps the box's run and its typecheck lock alive. It is not detached, so it shares
+  // this process's group and a group kill reaps it.
+  if (process.env.FAKE_GRANDCHILD_PID_FILE) {
+    const grandchild = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    writeFileSync(process.env.FAKE_GRANDCHILD_PID_FILE, String(grandchild.pid));
+  }
+  await new Promise((done) => setTimeout(done, 60000));
+}
 if (verdict === "unreachable") { console.error("remote-check: could not push to the box. Check SSH."); process.exit(2); }
-if (verdict === "install-failed") { console.log("install failed"); console.log("remote-check: FAIL — " + sha); process.exit(1); }
+// A failed install never read the code, so remote-check reports it as NO VERDICT (exit 7), not FAIL.
+if (verdict === "install-failed") { console.log("install failed — the box never checked this sha"); process.exit(7); }
 console.log("");
 console.log("=== typecheck ===");
 if (verdict === "fail") {
@@ -334,7 +345,9 @@ export function runPushTypecheckGuardTests() {
     const noVerdicts: Array<{ verdict: string; env?: Record<string, string>; says: RegExp }> = [
       { verdict: "unreachable", says: /could not be reached|NO VERDICT/ },
       { verdict: "no-verdict", says: /tree changed/ },
-      { verdict: "install-failed", says: /without a typecheck verdict/ },
+      // remote-check's own NO VERDICT codes must be NAMED, not reported as "it exited 7": an unnamed
+      // code reads like a crash a session should chase, when it is the box saying it never looked.
+      { verdict: "install-failed", says: /could not be set up on the box/ },
       { verdict: "hang", env: { PHX_PUSH_CHECK_TIMEOUT_MS: "700" }, says: /did not finish/ },
     ];
     for (const { verdict, env, says } of noVerdicts) {
@@ -344,6 +357,43 @@ export function runPushTypecheckGuardTests() {
       assert.match(result.context, says, `${verdict}: it must say why.\n${result.context}`);
       assert.match(result.context, /`checks` job/, `${verdict}: it must say CI is still the gate.\n${result.context}`);
       expectRun(fx, "git push origin feat/x", "allow", { verdict, env }); // not remembered: asked again
+    }
+
+    // ── A timeout reaps the WHOLE process group, ssh included ───────────────────────────────────────────
+    //
+    // 🔴 THIS IS THE ONE THAT SILENTLY DISARMS THE GUARD. `spawnSync`'s timeout signals the `node` it
+    // started and nothing else, so the `ssh` under it survived: the remote run kept going, kept
+    // /tmp/phx-typecheck.lock held, and the NEXT push met the busy probe, got NO VERDICT and went out
+    // unchecked. The fake's "hang" mode spawns a grandchild that would outlive a kill of its parent —
+    // the stand-in for that ssh — and this asserts the guard reaps it with the group.
+    {
+      const pidFile = join(fx.root, "grandchild.pid");
+      rmSync(pidFile, { force: true });
+      fx.commit("src/lib/example/rules.ts");
+      const result = expectRun(fx, "git push origin feat/x", "allow", {
+        verdict: "hang",
+        env: { PHX_PUSH_CHECK_TIMEOUT_MS: "700", FAKE_GRANDCHILD_PID_FILE: pidFile },
+      });
+      assert.match(result.context, /NO VERDICT/, "a timeout must still allow the push and say it was not checked");
+      assert.ok(existsSync(pidFile), "the fake never started its grandchild, so this proves nothing");
+      const pid = Number(readFileSync(pidFile, "utf8").trim());
+      assert.ok(Number.isInteger(pid) && pid > 0, `the grandchild pid file holds ${JSON.stringify(readFileSync(pidFile, "utf8"))}`);
+      const alive = () => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (error) {
+          return (error as NodeJS.ErrnoException).code === "EPERM"; // alive, owned by someone else
+        }
+      };
+      const deadline = Date.now() + 8000;
+      while (alive() && Date.now() < deadline) execFileSync(process.execPath, ["-e", "setTimeout(() => {}, 150)"]);
+      assert.equal(
+        alive(),
+        false,
+        `the grandchild (pid ${pid}) outlived the guard's timeout — on a real push that is the \`ssh\` still ` +
+          "holding the box's run and its typecheck lock, which makes every following push skip the check",
+      );
     }
 
     // ── A checkout without the script is not this repository ────────────────────────────────────────────

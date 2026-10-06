@@ -14,9 +14,12 @@ import {
   buildRunScript,
   decideBusyAction,
   gradeActionsRun,
+  gradeActionsStages,
+  isProtectedDispatchRef,
   newRunId,
   parseBusyProbe,
   parseEscalation,
+  STAGE_JOBS,
   runPaths,
 } from "../scripts/remote-check-plan.mjs";
 
@@ -55,11 +58,31 @@ export async function runRemoteCheckTests(): Promise<void> {
   ) ?? [];
   assert.deepEqual(heavyRunners, [], "a heavy runner is spawned locally: " + heavyRunners.join(", "));
 
-  // 2 — the typecheck must carry the same heap CI gives it, or a PASS here does not predict CI.
+  // 2 — the typecheck must carry the same COMPILER FLAGS CI gives it, or a PASS here does not predict
+  // CI. Until 2026-10-06 the flag that mattered was `--max-old-space-size=6144`, because tsc 5 is a
+  // node program that could OOM below node's default ceiling and report nothing. The gate is the
+  // NATIVE compiler now (a Go binary, which does not read a node heap flag), and the flag that
+  // matters is `--checkers`: TypeScript 5 refuses it, so it is also what makes a tree whose
+  // `typescript-native` alias went missing fail here loudly instead of answering with the old
+  // compiler. tests/typecheck-native-compiler.test.ts holds the other half — that both callers pass
+  // it; this one holds that the box's command is the same SHAPE as the one `checks` runs.
   assert.ok(
-    /max-old-space-size=6144[\s\S]*tsc --noEmit/.test(SRC),
-    "the remote typecheck no longer matches ci.yml's `--max-old-space-size=6144`. A green result " +
-      "here is only useful because it runs the same command the required `checks` job runs.",
+    /tsc --noEmit[^"']*--checkers \d+/.test(SRC),
+    "the remote typecheck no longer passes `--checkers`. A green result here is only useful because " +
+      "it runs the same command the required `checks` job runs — and without that flag it can run a " +
+      "DIFFERENT compiler from the one gating the merge and still report PASS.",
+  );
+  // Scoped to the typecheck COMMAND, not the file: the build's own note still explains why a node
+  // heap flag never bounded Turbopack either, and a guard that fired on that sentence would force
+  // the next reader to delete the account in order to keep the rule.
+  const typecheckCmd = /^\s*typecheck:\s*\n?\s*"([^"]+)"/m.exec(SRC)?.[1] ?? "";
+  assert.notEqual(typecheckCmd, "", "tests/remote-check.test.ts can no longer find the `typecheck` entry in the CHECKS table.");
+  assert.ok(
+    !/max-old-space-size/.test(typecheckCmd),
+    "the remote typecheck carries `--max-old-space-size` again. The type gate is the native compiler, " +
+      "which does not read a node heap flag — leaving one here reads as a memory guarantee that " +
+      "nothing honours. Memory is bounded by `--checkers` instead (5.06 GB peak at 1, measured). " +
+      "Command read: " + JSON.stringify(typecheckCmd),
   );
 
   // 2b — and it must run COLD, or the PASS is a cache read rather than a check. `tsconfig.json` sets
@@ -91,12 +114,38 @@ export async function runRemoteCheckTests(): Promise<void> {
   const buildCmd = SRC.match(/^\s*build:\s*"([^"]+)"/m)?.[1] ?? "";
   assert.ok(buildCmd !== "", "tests/remote-check.test.ts can no longer find the `build` entry in the CHECKS table.");
   assert.ok(
-    /flock -w \d+ \/tmp\/phx-typecheck\.lock/.test(buildCmd),
+    /flock -w \d+ (?:-E \d+ )?\/tmp\/phx-typecheck\.lock/.test(buildCmd),
     "the remote build no longer takes /tmp/phx-typecheck.lock. ci.yml's typecheck step and the " +
       "typecheck above both take it; without it a build races a typecheck on a 7.7 GB box, which " +
       "is the OOM kill (exit 137) this lock exists to prevent. Command read: " +
       JSON.stringify(buildCmd),
   );
+
+  // 2d — AND A STAGE THAT GIVES UP WAITING FOR THAT LOCK IS NOT A FAILING CHECK. `flock -w` expiring
+  // exits 1 — the same code `tsc` uses for type errors — so a box held for twenty minutes made a
+  // stage that NEVER RAN print `FAIL — <sha>` and block a push. The conflict is settled by a probe in
+  // front of the stage (buildRunScript), not by rewriting the command: tests/ci-typecheck-lock.test.ts
+  // pins this `flock -w <seconds> <file>` prefix so this caller and ci.yml cannot drift apart.
+  for (const [name, command] of [["typecheck", SRC.match(/^\s*typecheck:\s*\n?\s*"([^"]+)"/m)?.[1] ?? ""], ["build", buildCmd]]) {
+    const probed = buildRunScript({
+      remoteRoot: "/r",
+      runId: "aaaaaaaaaaaa-rs-aaaa",
+      sha: "a".repeat(40),
+      install: "true",
+      steps: [{ name, command }],
+    });
+    assert.match(
+      probed,
+      /STAGE_LOCK=0; flock -w \d+ -E 75 \/tmp\/phx-typecheck\.lock true \|\| STAGE_LOCK=\$\?/,
+      "the box script no longer probes the lock in front of the " + name + ", so a 20-minute wait that " +
+        "expires exits 1 and is graded as a failing check. Command read: " + JSON.stringify(command),
+    );
+    assert.match(
+      probed,
+      new RegExp('if \\[ "\\$STAGE_LOCK" = 75 \\]; then R=LOCK-TIMEOUT; LOCKED=1; elif ', "m"),
+      "the " + name + " step does not consult the lock probe, so the probe proves nothing",
+    );
+  }
 
   // 2e — and `all` must INCLUDE the build. This is the one stage nothing else runs before `main`:
   // ci.yml's Build step is gated off pull requests, so without it here the build first executes on
@@ -297,7 +346,7 @@ export async function runRemoteCheckTests(): Promise<void> {
   // and a real failure must still outrank it.
   assert.match(
     script,
-    /if \[ "\$RC" = 137 \]; then R=OOM-KILLED; KILLED=1; else R=FAIL; FAILED=1; fi/,
+    /if \[ "\$RC" = 137 \]; then R=OOM-KILLED; KILLED=1; /,
     "an OOM-killed stage is being reported as FAIL, which blocks a push for a reason that is not true",
   );
   assert.match(
@@ -310,6 +359,55 @@ export async function runRemoteCheckTests(): Promise<void> {
     /status === 4[\s\S]{0,900}?NO VERDICT[\s\S]{0,400}?process\.exit\(4\)/,
     "remote-check.mjs does not turn the box script's exit 4 into a NO VERDICT, so a kill still reads as FAIL",
   );
+
+  // 8c-2 — AND NEITHER A LOCK TIMEOUT, A FAILED SETUP NOR A SIGNAL IS A VERDICT ABOUT THE CODE.
+  // All three arrived as the `FAIL — <sha>` line until 2026-10-06: a `flock -w 1200` that expired
+  // (exit 1, the same code tsc uses for type errors), an install or `git worktree add` that could
+  // not run on the box, and `exit 130` from the HUP/INT/TERM trap. Each blocks a push and tells the
+  // owner his code is broken for something that never read his code. Same cry-wolf shape as the OOM
+  // kill above, which is why they are pinned beside it.
+  assert.match(
+    script,
+    /elif \[ "\$RC" = 75 \]; then R=LOCK-TIMEOUT; LOCKED=1;/,
+    "a stage that waited out the box's typecheck lock is graded as a FAIL — it never ran its command at all",
+  );
+  assert.match(
+    script,
+    /if \[ "\$FAILED" = 0 \] && \[ "\$LOCKED" = 1 \]; then exit 9; fi/,
+    "a lock timeout must exit 9 (NO VERDICT), and must never outrank a genuine failure",
+  );
+  assert.match(
+    script,
+    /install failed[^\n]*exit 7/,
+    "a failed install on the box still exits 1, which prints FAIL for a commit nothing ever checked",
+  );
+  assert.match(
+    script,
+    /could not make a private tree[\s\S]{0,40}exit 7/,
+    "a run whose private tree could not be made still exits 1 — that is the box's disk or git, not the branch",
+  );
+  assert.ok(
+    /trap '[^']*exit 8' HUP INT TERM/.test(script) && !/exit 130/.test(script),
+    "the signal trap still exits 130, which falls through to the FAIL line — a run reaped by the box's " +
+      "memory watchdog or a hand `kill` then reads as a broken branch",
+  );
+  for (const name of ["EXIT_SETUP", "EXIT_INTERRUPTED", "EXIT_LOCK_TIMEOUT"]) {
+    assert.match(
+      SRC,
+      new RegExp("status === " + name + "[\\s\\S]{0,1200}?NO VERDICT[\\s\\S]{0,900}?process\\.exit\\(" + name + "\\)"),
+      "remote-check.mjs no longer routes " + name + " to a NO VERDICT arm of its own, so that run falls " +
+        "through to the `FAIL — <sha>` line at the bottom of the file",
+    );
+  }
+  // 🔴 AND A NO-VERDICT RUN MUST PRINT NOTHING THAT PARSES AS A VERDICT FOR THIS SHA. Other tools
+  // grep `^remote-check: (PASS|FAIL) — <sha>` out of an append-only log
+  // (`a-verdict-line-without-its-sha-matches-an-older-run`), so the arms must not print that line.
+  for (const arm of SRC.split(/\nif \(status === /).slice(1, -1)) {
+    assert.ok(
+      !/remote-check: (?:PASS|FAIL) — /.test(arm.split("\n}")[0]),
+      "a NO VERDICT arm prints a line that parses as a verdict for this sha:\n" + arm.split("\n}")[0],
+    );
+  }
 
   // 8b-2 — THE LOCK PATH IS AN ARGUMENT, AND ITS DEFAULT IS THE REAL ONE. A run can contain
   // another run: section 9 below launches two generated scripts while the suite itself is executing
@@ -462,7 +560,7 @@ export async function runRemoteCheckTests(): Promise<void> {
     );
     assert.match(
       GUARD,
-      /spawnSync\([\s\S]{0,80}?'typecheck',\s*'--no-wait',\s*'--no-actions'/,
+      /spawn(?:Sync)?\([\s\S]{0,120}?'typecheck',\s*'--no-wait',\s*'--no-actions'/,
       "push-typecheck-guard must pass --no-wait --no-actions: the default now waits 10 min and then bills, on EVERY push",
     );
 
@@ -528,6 +626,102 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.ok(dispatch > 0, "the dispatch call is gone");
     assert.ok(prGate < dispatch, "the open-PR check must come BEFORE the dispatch, or it bills before it looks");
     assert.match(fallback, /gh pr checks/, "it must name the command that reads the PR's own checks");
+
+    // 10f — AND IT NEVER DISPATCHES ON `main`. ci.yml groups a non-PR run by SHA and never cancels
+    // one (`CI-<sha>`, concurrency block in .github/workflows/ci.yml), so a dispatch from `main`
+    // lands in the SAME group as the push run Railway's "Wait for CI" holds the production deploy
+    // on — and a cancelled or failed suite there makes Railway mark that deploy SKIPPED for good
+    // (AGENTS.md §2.3). It also buys nothing: main already runs the whole gate on every commit.
+    for (const ref of ["main", "master", "refs/heads/main", " main "]) {
+      assert.equal(isProtectedDispatchRef(ref), true, ref + " must never be dispatched onto");
+    }
+    for (const ref of ["codex/fix-x", "main-fix", "feat/main", "", null, undefined, "remote-check"]) {
+      assert.equal(isProtectedDispatchRef(ref as string), false, String(ref) + " is an ordinary branch and must still dispatch");
+    }
+    const refusal = fallback.indexOf("isProtectedDispatchRef(branch)");
+    assert.ok(refusal > 0, "the Actions fallback no longer refuses to dispatch on main — it would collide with the deploy gate");
+    assert.ok(refusal < dispatch, "the main refusal must come BEFORE the dispatch, or it refuses after billing");
+    assert.match(
+      fallback.slice(refusal, dispatch),
+      /NO VERDICT[\s\S]{0,200}?process\.exit\(6\)/,
+      "the main refusal must end in a NO VERDICT exit (6, like the open-PR refusal), never a FAIL",
+    );
+
+    // 10g — AND IT GRADES ONLY THE STAGE THAT WAS ASKED FOR. A workflow_dispatch runs the WHOLE
+    // workflow — `mobile` (which reports and never gates, AGENTS.md §7), the Build and the Playwright
+    // login smoke — so grading the run's own conclusion turned `remote-check typecheck` FAIL on a
+    // mobile lockfile break or a smoke flake: a verdict about somebody else's code, printed under
+    // this sha, blocking this push.
+    const job = (name: string, conclusion: string | null, steps: Array<[string, string | null]> = []) => ({
+      name,
+      status: "completed",
+      conclusion,
+      steps: steps.map(([n, c]) => ({ name: n, conclusion: c })),
+    });
+    const checksGreen = job("checks", "success", [["Lint", "success"], ["Typecheck", "success"]]);
+    const validateGreen = job("validate", "success", [["Test", "success"], ["Build", "success"]]);
+
+    // The whole point: the requested stage passed, something else in the run did not.
+    const smokeFlake = job("validate", "failure", [["Test", "success"], ["Run Playwright login smoke test", "failure"]]);
+    const typecheckOnMobileBreak = gradeActionsStages(["typecheck"], [checksGreen, job("mobile", "failure"), smokeFlake]);
+    assert.equal(typecheckOnMobileBreak.verdict, "pass", "a red `mobile` or smoke job must not fail the typecheck that passed");
+    assert.deepEqual(typecheckOnMobileBreak.otherRed, ["mobile", "validate"], "the other red jobs must still be REPORTED");
+    assert.equal(gradeActionsStages(["test"], [checksGreen, smokeFlake]).verdict, "pass", "a failed smoke step must not fail the unit suite");
+
+    // A genuine red in the requested stage is still a FAIL, and the step is what decides it.
+    const typeError = job("checks", "failure", [["Lint", "success"], ["Typecheck", "failure"]]);
+    assert.equal(gradeActionsStages(["typecheck"], [typeError, validateGreen]).verdict, "fail");
+    assert.equal(gradeActionsStages(["lint"], [typeError, validateGreen]).verdict, "pass", "lint passed in that same job");
+    assert.match(gradeActionsStages(["typecheck"], [typeError]).why, /Typecheck/);
+
+    // A stage that never ran is NO VERDICT, never FAIL — a missing job, an unfinished one, and a
+    // step skipped because an earlier step in its job died are all "nobody looked at your stage".
+    assert.equal(gradeActionsStages(["typecheck"], [validateGreen]).verdict, "no-verdict", "a missing `checks` job is not a failure");
+    assert.equal(
+      gradeActionsStages(["typecheck"], [{ ...checksGreen, status: "in_progress", conclusion: null }]).verdict,
+      "no-verdict",
+    );
+    assert.equal(
+      gradeActionsStages(["typecheck"], [job("checks", "failure", [["Install dependencies", "failure"], ["Typecheck", "skipped"]])]).verdict,
+      "no-verdict",
+      "a typecheck step skipped because the install died says nothing about the code",
+    );
+    assert.equal(gradeActionsStages(["typecheck"], [job("checks", "cancelled", [])]).verdict, "no-verdict");
+    assert.equal(gradeActionsStages(["typecheck"], null).verdict, "no-verdict", "an unreadable job list is not a verdict");
+    assert.equal(gradeActionsStages(["typecheck"], []).verdict, "no-verdict");
+
+    // A real failure still outranks an unknown, exactly as it does in the box script.
+    assert.equal(
+      gradeActionsStages(["lint", "typecheck", "test"], [typeError]).verdict,
+      "fail",
+      "a red typecheck beside a `validate` that is not in the run must stay a FAIL",
+    );
+
+    // 🔴 AND THE NAMES IT GRADES BY MUST BE ci.yml's OWN. STAGE_JOBS is a map into another file: a
+    // renamed job or step would make every stage read NO VERDICT for ever, which fails open and is
+    // therefore silent. Read the workflow and check both halves still exist.
+    const CI = readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+    for (const [stage, spec] of Object.entries(STAGE_JOBS) as Array<[string, { job: string; step: string }]>) {
+      assert.match(
+        CI,
+        new RegExp("^  " + spec.job + ":$", "m"),
+        "STAGE_JOBS says " + stage + " runs in the `" + spec.job + "` job, and ci.yml has no such job any more",
+      );
+      assert.match(
+        CI,
+        new RegExp("^      - name: " + spec.step + "$", "m"),
+        "STAGE_JOBS grades " + stage + " by ci.yml's `" + spec.step + "` step, which no longer exists — every " +
+          stage + " dispatch would silently read NO VERDICT",
+      );
+    }
+
+    // And the script must actually USE it: the run's conclusion alone may not decide a FAIL.
+    assert.match(CODE, /gradeActionsStages\(names, jobs\)/, "the Actions fallback no longer grades per stage");
+    assert.match(CODE, /"run", "view", String\(runId\), "--json", "jobs"/, "it must read the run's jobs to grade a stage");
+    assert.ok(
+      !/graded\.verdict === "fail"/.test(CODE),
+      "the fallback still fails on the RUN's conclusion — that is the mobile/smoke misreport this replaced",
+    );
   }
 
   // 9 — BEHAVIOUR: run the generated bash for real against a throwaway bare repo. It needs bash, git
@@ -612,6 +806,83 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.equal(swapped.status, 3, "a tree that changed mid-run did not exit 3 (NO VERDICT):\n" + swapped.out);
     assert.match(swapped.out, /TREE CHANGED UNDER THE RUN after probe/);
     assert.doesNotMatch(swapped.out, /--- probe PASS/, "a swapped run printed a PASS line");
+
+    // 9d — A LOCK TIMEOUT IS NOT A FAILING CHECK, AND THIS RUNS THE REAL `flock` TO PROVE IT. The
+    // stage is shaped exactly like the typecheck — `flock -w <seconds> <file> <command>` — and another
+    // process holds that file for longer than the wait. Before the probe, the expiry arrived as exit 1
+    // (tsc's own code for type errors) and the run printed `FAIL — <sha>` for a stage that never read
+    // a line of the code; it must be LOCK-TIMEOUT and exit 9 (NO VERDICT).
+    const stageLock = path.join(tmp, "stage.lock");
+    writeFileSync(stageLock, "");
+    const holder = spawn("flock", [stageLock, "sleep", "6"], { stdio: "ignore" });
+    await new Promise((done) => setTimeout(done, 400));
+    const locked = await runBox(newRunId(withFile), withFile, "flock -w 1 " + stageLock + " true");
+    holder.kill();
+    assert.equal(locked.status, 9, "a stage that waited out its lock did not exit 9 (NO VERDICT):\n" + locked.out);
+    assert.match(locked.out, /--- probe LOCK-TIMEOUT in/, "the stage must be reported as a lock timeout, not as a failure");
+    assert.doesNotMatch(locked.out, /--- probe FAIL/, "a stage that never ran must not be reported as a failing check");
+
+    // 9e — AND NEITHER IS AN INSTALL THAT COULD NOT RUN. Nothing is checked out-of-order here: the
+    // install fails, no stage starts, and the run must say so rather than exit 1.
+    const noInstall = await new Promise<{ status: number | null; out: string }>((resolve) => {
+      const child = spawn("bash", ["-s"], { stdio: ["pipe", "pipe", "pipe"] });
+      let out = "";
+      child.stdout.on("data", (d) => (out += d));
+      child.stderr.on("data", (d) => (out += d));
+      child.on("close", (status) => resolve({ status, out }));
+      child.stdin.end(
+        buildRunScript({
+          remoteRoot,
+          runId: newRunId(withFile),
+          sha: withFile,
+          install: "false",
+          steps: [{ name: "probe", command: "true" }],
+          lockFile: path.join(remoteRoot, "lock-install"),
+        }),
+      );
+    });
+    assert.equal(noInstall.status, 7, "a failed install did not exit 7 (NO VERDICT):\n" + noInstall.out);
+    assert.doesNotMatch(noInstall.out, /=== probe ===/, "no stage may run after the install failed");
+
+    // 9f — AND A SIGNAL IS NOT THE BRANCH EITHER. The box's memory watchdog, a reboot and a `kill`
+    // aimed at a stranded run all arrive this way; the trap exited 130 until 2026-10-06, which fell
+    // through remote-check.mjs's NO-VERDICT arms and printed the FAIL line.
+    const signalled = await new Promise<{ status: number | null; out: string }>((resolve) => {
+      const child = spawn("bash", ["-s"], { stdio: ["pipe", "pipe", "pipe"], detached: true });
+      let out = "";
+      let killed = false;
+      const onData = (chunk: unknown) => {
+        out += String(chunk);
+        if (!killed && out.includes("=== probe ===")) {
+          killed = true;
+          // The whole group: bash defers a trap until the foreground command returns, so `sleep`
+          // has to go with it — which is exactly how a reap on the box arrives.
+          setTimeout(() => {
+            try {
+              process.kill(-(child.pid as number), "SIGTERM");
+            } catch {
+              /* already gone */
+            }
+          }, 200);
+        }
+      };
+      child.stdout.on("data", onData);
+      child.stderr.on("data", onData);
+      child.on("close", (status) => resolve({ status, out }));
+      child.stdin.end(
+        buildRunScript({
+          remoteRoot,
+          runId: newRunId(withFile),
+          sha: withFile,
+          install: "true",
+          steps: [{ name: "probe", command: "sleep 30" }],
+          lockFile: path.join(remoteRoot, "lock-signal"),
+        }),
+      );
+    });
+    assert.equal(signalled.status, 8, "an interrupted run did not exit 8 (NO VERDICT):\n" + signalled.out);
+    assert.match(signalled.out, /INTERRUPTED by a signal/, "an interrupted run must say so");
+    assert.doesNotMatch(signalled.out, /--- probe FAIL/, "a reaped stage must not be reported as a failing check");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
