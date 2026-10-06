@@ -20,9 +20,12 @@ import {
   HOUSE_XLSX_COLORS,
   writeHouseMasthead,
 } from "@/lib/export/house-xlsx-identity";
-import { setCell, type CellValue, type TableColumn } from "@/lib/sales/sales-workbook-kit";
+import { setCell, F, type CellValue, type TableColumn } from "@/lib/sales/sales-workbook-kit";
 
 export type { CellValue, TableColumn };
+// Re-exported so an export building SUM() totals pulls the formula helper from
+// the same place it gets the table writer, rather than reaching into the sales kit.
+export { F };
 
 /**
  * A data bar in Brand Blue.
