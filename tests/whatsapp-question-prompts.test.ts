@@ -174,8 +174,8 @@ export async function runWhatsAppQuestionPromptsTests() {
   );
   assert.deepEqual(
     jobTitleOptions.filter((o) => !o.offeredByDefault).map((o) => o.value),
-    ["sales", "pharmacist", "finance"],
-    "sales, pharmacist and finance exist but are not offered — finance gave up its row to HR Section Head on 2026-10-06 (the list is full at Meta's 10) and stays addable",
+    ["sales", "pharmacist", "human_resources", "finance"],
+    "sales, pharmacist, human_resources and finance exist but are not offered — finance gave up its row to HR Section Head on 2026-10-06, and the owner had the Human Resources row removed the same day; both stay addable",
   );
   for (const value of ["sales", "pharmacist", "finance"]) {
     assert.equal(
