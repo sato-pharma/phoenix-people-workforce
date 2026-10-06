@@ -46,6 +46,16 @@ function lastDefinerOf(name: string): string {
   return files[files.length - 1];
 }
 
+/** The migration that adds a constraint LAST — the same sort-order rule, for a table rule instead of a function. */
+function lastDefinerOfConstraint(name: string): string {
+  const files = readdirSync(new URL("supabase/migrations/", ROOT))
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .filter((file) => stripSqlComments(readFileSync(new URL(`supabase/migrations/${file}`, ROOT), "utf8")).includes(`add constraint ${name}`));
+  assert.ok(files.length > 0, `${name} is added by some migration`);
+  return files[files.length - 1];
+}
+
 // ── The organogram the resolver is tried against ────────────────────────────────────────────────
 
 const CEO: OrgSeat = {
@@ -168,20 +178,41 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
       "a manager entering it would record a visit nobody present entered",
     );
 
-    // Every other kind answers null, so a stale pick on the form can never ride along.
-    for (const kind of ["single", "double", "chain"] as const) {
+    // Single and double answer null, so a stale pick on the form can never ride along.
+    for (const kind of ["single", "double"] as const) {
       const result = resolveVisitParticipants({
         ...onRep,
         actorHrId: "B-7",
         enteredAs: "rep",
         kind,
         managerHrId: kind === "single" ? null : "B-12",
-        seniorHrId: kind === "chain" ? "A-12" : null,
+        seniorHrId: null,
         productManagerHrId: "PM-1",
         productManagers: LINE_PMS,
       });
       assert.equal(valueOf(result)?.productManagerHrId, null, `a ${kind} visit never carries a product manager`);
     }
+
+    // A chain with a senior manager carries none either — but since 2026-10-06 a chain's second person
+    // may be a product manager INSTEAD of the senior manager (owner: "in the chain visit … he can choose
+    // two"), and sending both is refused, never trimmed to one.
+    const chain = { ...onRep, actorHrId: "B-7", enteredAs: "rep", kind: "chain", managerHrId: "B-12", productManagers: LINE_PMS } as const;
+    assert.equal(valueOf(resolveVisitParticipants({ ...chain, seniorHrId: "A-12", productManagerHrId: null }))?.productManagerHrId, null, "a chain of two managers has none");
+    assert.deepEqual(
+      valueOf(resolveVisitParticipants({ ...chain, seniorHrId: null, productManagerHrId: "pm-2" })),
+      { repHrId: "B-7", managerHrId: "B-12", seniorHrId: null, productManagerHrId: "PM-2" },
+      "a chain with a product manager keeps him in his own slot and leaves the senior slot empty",
+    );
+    assert.equal(
+      refusalOf(resolveVisitParticipants({ ...chain, seniorHrId: "A-12", productManagerHrId: "PM-2" })),
+      "A chain visit has two people: a manager and one more. Choose a senior manager or a product manager, not both.",
+    );
+    assert.equal(refusalOf(resolveVisitParticipants({ ...chain, seniorHrId: null, productManagerHrId: "B-12" })), CHOOSE_PM, "a chain's product manager is checked against the line's list too");
+    assert.equal(
+      refusalOf(resolveVisitParticipants({ ...chain, actorHrId: "B-12", enteredAs: "manager", seniorHrId: null, productManagerHrId: "PM-2" })),
+      "A visit with a product manager is entered by the territory's rep.",
+      "a manager entering a chain cannot name a product manager either",
+    );
   }
 
   // ── 3. The draft parser: required for its kind, cleared for every other ──────────────────────
@@ -241,9 +272,15 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
     const migration = readFileSync(new URL("supabase/migrations/20261002205436_phoenix_crm_visit_product_manager.sql", ROOT), "utf8");
     assert.match(migration, /add column if not exists product_manager_hr_id text;/);
     assert.match(migration, /check \(kind in \('single', 'double', 'product_manager', 'chain'\)\)/);
-    // The column exists only for its own kind — the half that stops a quiet passenger on a double.
-    assert.match(migration, /and \(kind = 'product_manager'\) = \(product_manager_hr_id is not null\)/);
     assert.match(migration, /product_manager_hr_id is null or product_manager_hr_id <> coalesce\(rep_hr_id, ''\)/);
+
+    // 🔴 The shape check is read from the migration that defines it LAST, found by sort order, for the
+    // reason `lastDefinerOf` gives: 20261006234611 widened it, so the 2026-10-02 text above is history.
+    const shape = readFileSync(new URL(`supabase/migrations/${lastDefinerOfConstraint("phoenix_crm_visits_participants")}`, ROOT), "utf8");
+    // The column exists only for its two kinds — the half that stops a quiet passenger on a double.
+    assert.match(shape, /and \(kind in \('product_manager', 'chain'\) or product_manager_hr_id is null\)/);
+    // A chain's second person is a senior manager XOR a product manager, never both and never neither.
+    assert.match(shape, /kind = 'chain' and rep_hr_id is not null and manager_hr_id is not null and \(\(senior_hr_id is not null\) <> \(product_manager_hr_id is not null\)\)/);
 
     // And the writer stores it — read from the migration that defines `phoenix_crm_save_visit` LAST,
     // found by SORT ORDER rather than written here. 🔴 Asserting it against the file above would be
@@ -254,6 +291,10 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
     assert.match(writer, /v_product_manager text := upper\(nullif\(trim\(coalesce\(p ->> 'product_manager_hr_id', ''\)\), ''\)\);/);
     assert.match(writer, /v_senior, v_product_manager, v_actor, v_products,/);
     assert.match(writer, /\(v_kind = 'product_manager' and v_rep is not null and v_manager is null and v_senior is null and v_product_manager is not null\)/);
+    // The writer says the same two things the table does (they are duplicated on purpose: a refusal
+    // here is a sentence, in the table it is a constraint violation).
+    assert.match(writer, /\(v_kind = 'chain' and v_rep is not null and v_manager is not null and \(\(v_senior is not null\) <> \(v_product_manager is not null\)\)\)/);
+    assert.match(writer, /\(v_kind not in \('product_manager', 'chain'\) and v_product_manager is not null\)/);
 
     // 🔴 `double_visits` must still count ONE kind. If this ever becomes `kind <> 'single'`, a product
     // manager's call lands in the district managers' double-visit figures.

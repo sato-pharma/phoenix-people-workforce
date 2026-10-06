@@ -561,8 +561,9 @@ export type VisitDraft = CapturedFix & {
   managerHrId: string | null;
   seniorHrId: string | null;
   /**
-   * The line's product manager who came along. Whether he IS one of the line's is not decided here —
-   * he holds no seat, so only the server's own list can say (scope.ts `resolveVisitParticipants`).
+   * The line's product manager who came along — on a `product_manager` visit, or as the second person
+   * of a chain. Whether he IS one of the line's is not decided here — he holds no seat, so only the
+   * server's own list can say (scope.ts `resolveVisitParticipants`).
    */
   productManagerHrId: string | null;
   products: string[];
@@ -706,7 +707,9 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   if ((kind === "double" || kind === "chain") && !managerHrId) {
     return { ok: false, error: "Choose the district manager who was on the visit." };
   }
-  if (kind === "chain" && !seniorHrId) return { ok: false, error: "Choose the senior manager who was on the visit." };
+  // The second person of a chain is a senior manager OR a product manager (owner, 2026-10-06) — one of
+  // the two; whether both were sent, and whether the person is one of the line's, is the server's check.
+  if (kind === "chain" && !seniorHrId && !productManagerHrId) return { ok: false, error: "Choose the senior manager who was on the visit." };
   if (kind === "product_manager" && !productManagerHrId) {
     return { ok: false, error: "Choose the product manager who was on the visit." };
   }
@@ -752,10 +755,11 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       customerId: String(body.customerId).toLowerCase(),
       kind,
       // Each slot is cleared by the kind, so a stale pick on the form can never ride along: a product
-      // manager is on a `product_manager` visit and on no other, and a manager on no PM visit.
+      // manager is on a `product_manager` visit or as the second person of a chain and on no other, and
+      // a manager on no PM visit.
       managerHrId: kind === "single" || kind === "product_manager" ? null : managerHrId,
       seniorHrId: kind === "chain" ? seniorHrId : null,
-      productManagerHrId: kind === "product_manager" ? productManagerHrId : null,
+      productManagerHrId: kind === "product_manager" || kind === "chain" ? productManagerHrId : null,
       products,
       pharmacyName,
       productAvailability,

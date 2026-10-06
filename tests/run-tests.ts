@@ -1794,6 +1794,7 @@ import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
+import { runPhoenixCrmVisitCompanyTests } from "./phoenix-crm-visit-company.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
@@ -6376,6 +6377,11 @@ await runTest(
 await runTest(
   "Phoenix CRM a product manager on a visit (owner's pick, 2026-10-02 — the recording half of the ask he already has, in the same four words. What this exists to stop is him being filed as a DOUBLE visit: he holds no seat in the organogram at all, so he is in no territory's manager chain and nothing in the database can check him, and double_visits is counted as kind = 'double' on every board, a figure district managers are judged on. So the rep names one of HIS OWN LINE's product managers from the same cached list his ask offers — an empty list, a missing list, the territory's own DM or himself are each refused — the visit is the rep's and a manager entering it is refused, every other kind answers null so a stale pick cannot ride along, the draft parser clears each slot by the kind, the label IS the ask's wording, his title is his APP ROLE because the tree has no seat to take one from, and the table's own CHECK allows the column on its own kind and nowhere else)",
   runPhoenixCrmVisitProductManagerTests,
+);
+
+await runTest(
+  "Phoenix CRM Double visit takes ONE person and Chain visit takes TWO, and the Super Admin corrects a visit a rep submitted (owner, 2026-10-06 — the rep faces one list of his managers and his line's product managers; a manager under Double files as a double, a product manager under Double is STILL the product_manager kind because double_visits counts kind = 'double' and district managers are judged on it, a chain is the visit's manager plus a senior manager OR one product manager, never two and never both, and the table and the writer both say so; the correction touches who/products/comment only and never the evidence, the Super Admin's alone, keeps a copy before it overwrites, leaves a manager's own visit's people alone, and tells the rep nothing)",
+  runPhoenixCrmVisitCompanyTests,
 );
 
 await runTest(

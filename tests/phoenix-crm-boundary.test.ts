@@ -209,6 +209,11 @@ const ROUTE_GATES: RouteGate[] = [
   // again in the service to the Super Admin alone (`territoryForMissedRecord`).
   get("missed-records", "update"),
   post("missed-records", "update"),
+  // A visit a rep SUBMITTED, corrected by the Super Admin (owner, 2026-10-06): who was on it, its
+  // products and its comment. `update`, and narrowed again in the service to the Super Admin alone
+  // (`territoryForVisitEdit`).
+  get("visit-edit", "update"),
+  post("visit-edit", "update"),
   get("team"),
   // The district manager's double-visit plan (owner, 2026-10-02): which of his reps he joins on which
   // day, AM or PM. The rep never sees it. `read`, narrowed in the service to that district manager, the
@@ -707,6 +712,13 @@ const LATER_MIGRATIONS = [
   // and the last one wins. It touches no save_visit and alters nothing that exists, so it cannot
   // disturb the replacement ordering above.
   "supabase/migrations/20261006121846_phoenix_crm_move_customer.sql",
+  // A chain visit may take a product manager as its second person, and the Super Admin corrects a
+  // visit a rep submitted (owner, 2026-10-06). It REPLACES phoenix_crm_save_visit (20261004005543's
+  // body plus the chain-with-a-product-manager shape), so it is now the LAST entry that does and must
+  // stay last among them — liveMigrationSql applies each replacement in order and the last one wins.
+  // It also widens one CHECK of its own, adds ONE table (the copy of what each correction replaced)
+  // and ONE brand-new function.
+  "supabase/migrations/20261006234611_phoenix_crm_visit_company_and_admin_edit.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

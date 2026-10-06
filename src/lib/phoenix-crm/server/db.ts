@@ -118,6 +118,12 @@ const REFUSALS: Record<string, Refusal> = {
   // ...and taken back by him when entered by mistake: his own entry only.
   visit_not_found: { status: 404, message: "This visit is no longer there. Reload the page." },
   not_entered_by_you: { status: 403, message: "Only a visit you entered for a rep can be removed. A rep's own visit stays their record." },
+  // ...and CORRECTED by him when a rep chose wrongly (owner, 2026-10-06): who was on it, its products and
+  // its comment. The database refuses a visit a manager entered, whose people stay as the manager recorded.
+  visit_people_fixed: {
+    status: 409,
+    message: "A manager entered this visit, so who was on it stays as they recorded. The products and the comment can still be corrected.",
+  },
   // The district manager's double-visit plan (owner, 2026-10-02): one half-day at a time.
   double_visit_not_field_time: {
     status: 400,

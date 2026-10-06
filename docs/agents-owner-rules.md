@@ -6683,6 +6683,70 @@ mentions neither `objection` nor `nextStep`, and the break that adds one goes re
 taps nothing either way and pays only the scroll. Nothing was asked twice and no step was added —
 which is the 2026-10-02 ruling's own standard, met with the step open.
 
+## The Super Admin corrects a visit, and Double takes one person while Chain takes two — owner, 2026-10-06
+
+*"Make the admin able to edit a visit submitted by an employee. Example, if he chooses a wrong double
+visit, make me able to enter and edit it."* And, of the rep's own form: *"When he chooses double visit,
+his district manager appear, the product manager appear, the national sales manager appear, and he can
+choose only one … and if applicable, the regional manager. In the chain visit, all those appear, but he
+can choose two, not one."*
+
+**What the rep sees now.** Single, Double and Chain — three choices, where there were four. Under
+Double and Chain one list shows the managers above his territory (district, the regional manager where
+his line has one, national) and the product managers of his own line, and he ticks **one** for a
+double and **two** for a chain. The "A product manager" chip is gone: a product manager is a person on
+the list, not a fourth kind the rep has to know. The rule is `src/lib/phoenix-crm/visit-company.ts`;
+the list is `visit-company-picker.tsx`, shared with the Super Admin's correction so the two can never
+offer different people.
+
+**What each pick is filed as — and the part that must not be "tidied".**
+
+- A manager under Double → `kind = 'double'`, the manager in `manager_hr_id`.
+- 🔴 **A product manager under Double → `kind = 'product_manager'`, in his OWN column — never a
+  double.** `double_visits` is counted from `kind = 'double'` on every board, a figure district
+  managers are judged on (`20261002205436`); the rep never sees the word, the kind is derived from
+  who he ticked.
+- Two managers under Chain → `kind = 'chain'`: the nearer one in `manager_hr_id`, the one above him in
+  `senior_hr_id`, whichever order they were ticked in.
+- A manager and a product manager under Chain → `kind = 'chain'` with the product manager in his own
+  column and `senior_hr_id` empty. **At most one product manager on a chain** — the table has one
+  column for him, and a chain is the management line; two of them is refused (`ONE_PRODUCT_MANAGER_ON_A_CHAIN`).
+
+That last shape did not fit the table. `20261006234611` widens `phoenix_crm_visits_participants` so a
+chain's second person is a senior manager **or** a product manager (never both, never neither), allows
+the product-manager column on exactly its two kinds, and patches `phoenix_crm_save_visit` in place
+(three edits, the rest byte for byte; `tests/phoenix-crm-visit-product-manager.test.ts` finds the live
+body by sort order). `resolveVisitParticipants` (`scope.ts`) is the server's check for all of it.
+
+**The correction.** A **Correct this visit** button on each visit card of the day page, drawn only for
+the Super Admin (`editsVisits`, from `canEnterMissedRecords`; the route and the service assert the same
+gate again — `territoryForVisitEdit`). It changes three things and nothing else:
+
+- **who was on the visit** — through the same picker, re-checked server-side exactly as the rep's own
+  save checks it, as the rep;
+- **the products**, from the line's own list (plus any the visit already carries, so a family the line
+  has since dropped never makes a typo unfixable);
+- **the comment**, which stays required.
+
+🔴 **It never touches the evidence** — the customer, the day, the time, the location, the photo or the
+voice note. Those are what every figure and every integrity check read, and a correction must not be
+able to move a visit onto another day or another customer. That is a remove-and-enter, and a rep's own
+visit is not removable. The pharmacy visits a visit filed (`linked_from_visit_id`) always carried its
+products, so they follow a products correction.
+
+🔴 **Who was on a visit changes only where the rep entered it, or the Super Admin entered it for him.**
+A visit a MANAGER entered carries that manager as the visit's manager; re-picking would make his own
+record read as entered by somebody who was not on it (`isEnteredForRep`), so on those the products and
+the comment can be corrected and the people stay as recorded, with the sentence that says why on the
+screen. A comment-only correction sends no people at all, so a manager who has since left the
+territory's chain cannot make a typo unfixable.
+
+🔴 **Nothing is lost, and the rep is told nothing.** `phoenix_crm_admin_edit_visit` keeps what the
+three things said before and after, who changed them and when, in `phoenix_crm_visit_edits` (production
+has no point-in-time recovery; the table has no foreign key, so removing a visit never takes its history
+with it). It sends no notice to the rep or to anybody: this is a correction to a record, not a check on
+him (Golden Rule #1). Pinned by `tests/phoenix-crm-visit-company.test.ts`.
+
 ## The reset code goes to the work email — owner, 2026-10-07
 
 The self-service password reset was being built on `codex/email-login` (sign in with a Sato email,

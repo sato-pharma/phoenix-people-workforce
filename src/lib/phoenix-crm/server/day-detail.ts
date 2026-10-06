@@ -52,6 +52,12 @@ export type PhoenixCrmDayDetail = VisitDayView &
      * the line has closed again, where nothing new may be entered (`territoryForMissedRecordRemoval`).
      */
     removesEnteredVisits: boolean;
+    /**
+     * The Super Admin may CORRECT a rep's visit on this page — who was on it, its products, its comment
+     * (owner, 2026-10-06). Drawn per visit; the route (`/visit-edit`) asserts the same gate again
+     * (`territoryForVisitEdit`), so nothing on the screen decides who may.
+     */
+    editsVisits: boolean;
   };
 
 export async function loadPhoenixCrmDayDetail(
@@ -120,6 +126,7 @@ export async function loadPhoenixCrmDayDetail(
     onLeave,
     pharmacies,
     removesEnteredVisits: canEnterMissedRecords(viewer),
+    editsVisits: canEnterMissedRecords(viewer),
   };
 }
 

@@ -51,7 +51,10 @@ const SAVE_MIGRATION = "supabase/migrations/20261003175653_phoenix_crm_pharmacy_
 const LINK_MIGRATION = "supabase/migrations/20261003202903_phoenix_crm_visit_names_two_pharmacies.sql";
 /** Add a pharmacy by its name — no photo, no request, no approval (section 9). */
 const ADD_MIGRATION = "supabase/migrations/20261003211501_phoenix_crm_add_pharmacy.sql";
-/** The LIVE save_visit and add_pharmacy: a new pharmacy is checked again under ONE lock, and its add is a list event (section 10). */
+/**
+ * The save_visit and add_pharmacy that check a new pharmacy again under ONE lock, and whose add is a list event (section 10).
+ * 20261006234611 patches save_visit in place afterwards (a chain with a product manager) and keeps every line of this.
+ */
 const LOCK_MIGRATION = "supabase/migrations/20261004005543_phoenix_crm_one_lock_for_a_new_pharmacy.sql";
 
 export function runPhoenixCrmPharmacyVisitLoggedTests(): void {

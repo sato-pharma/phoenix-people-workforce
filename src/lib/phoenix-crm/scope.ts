@@ -185,7 +185,7 @@ export type VisitParticipants = {
   repHrId: string | null;
   managerHrId: string | null;
   seniorHrId: string | null;
-  /** The line's product manager who came along, on a `product_manager` visit and on no other kind. */
+  /** The line's product manager who came along: on a `product_manager` visit, or as the second person of a `chain`. On no other kind. */
   productManagerHrId: string | null;
 };
 
@@ -260,6 +260,21 @@ export function resolveVisitParticipants(input: {
   }
 
   if (input.kind === "double") return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: null, productManagerHrId: null } };
+
+  // A chain is TWO people (owner, 2026-10-06): the manager above and either a senior manager above HIM
+  // or one of the line's product managers — never both, and never a product manager entered by a
+  // manager (that visit is the rep's). A product manager holds no seat, so, exactly as on a
+  // `product_manager` visit, only the caller's own list of the line's can say he is one of them.
+  const pickedProductManager = personKey(input.productManagerHrId ?? null);
+  if (pickedProductManager !== null) {
+    if (input.enteredAs !== "rep") return { ok: false, error: "A visit with a product manager is entered by the territory's rep." };
+    if (personKey(input.seniorHrId) !== null) return { ok: false, error: "A chain visit has two people: a manager and one more. Choose a senior manager or a product manager, not both." };
+    const offered = (input.productManagers ?? []).some((entry) => personKey(entry.hrId) === pickedProductManager);
+    if (!offered || pickedProductManager === rep) {
+      return { ok: false, error: "Choose the product manager who was on the visit from your line's product managers." };
+    }
+    return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: null, productManagerHrId: pickedProductManager } };
+  }
 
   const senior = member(input.seniorHrId);
   if (!senior || senior.position <= manager.position || senior.hrId === rep) {
