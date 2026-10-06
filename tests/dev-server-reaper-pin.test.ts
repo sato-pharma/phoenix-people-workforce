@@ -155,13 +155,22 @@ export function runDevServerReaperPinTests() {
       "incremented per case, which would let cases be deleted without the ratchet above noticing.",
   );
 
+  // 🔴 ANCHORED, not a free-floating `output.includes(fragment)`, which is what this loop used when it
+  // was written on 2026-10-06 — and which had a hole: a fragment is a SUBSTRING of a renamed case, so
+  // a rename that merely APPENDS to the name still matched. Breaking the sibling weekly-review
+  // guard's pin exposed it there (`git fetch` -> `git fetching` passed), and the same hole was here.
+  // A pass line is `PASS` + 2 spaces + the case name + 2 spaces + `expected=…`, and some case names
+  // themselves end in ` | <command>`, so the name's own end is pinned by requiring one of those two
+  // separators immediately after it. That makes a rename of any shape fail, in both name styles.
+  const escapeForLine = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const fragment of LOAD_BEARING) {
     assert.ok(
-      output.includes(fragment),
-      `the dev-server reaper selftest no longer runs the case "${fragment}". It is matched against the pass ` +
-        "lines, so this fails whether the case was deleted or quietly rewritten into something weaker. Each one " +
-        "is a distinct way the hook could come to stop a process that is not the ending session's to stop — " +
-        "the owner's server, or another session's, mid-work and silently.",
+      new RegExp(`^PASS {2}${escapeForLine(fragment)}(?: {2}expected=| \\| )`, "m").test(output),
+      `the dev-server reaper selftest no longer runs the case "${fragment}" — matched at the START of a pass ` +
+        "line and up to the case name's own end, so this fails whether the case was deleted, renamed, or " +
+        "quietly rewritten into something weaker. Each one is a distinct way the hook could come to stop a " +
+        "process that is not the ending session's to stop — the owner's server, or another session's, mid-work " +
+        "and silently. If a case was deliberately renamed, update this list in the same commit.",
     );
   }
 }

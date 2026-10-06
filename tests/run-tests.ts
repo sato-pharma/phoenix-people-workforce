@@ -2358,6 +2358,7 @@ import { runNextStepGuardDecisionsTests } from "./next-step-guard-decisions.test
 import { runRiskyAllowGuardPinTests } from "./risky-allow-guard-pin.test.ts";
 import { runMemoryGuardPinTests } from "./memory-guard-pin.test.ts";
 import { runDevServerReaperPinTests } from "./dev-server-reaper-pin.test.ts";
+import { runWeeklyReviewReadonlyPinTests } from "./weekly-review-readonly-pin.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -9082,6 +9083,10 @@ await runTest(
 await runTest(
   "the only hook on this machine that STOPS a running process cannot quietly start stopping the wrong one: the pinned copy of ~/.claude/hooks/dev-server-reaper.mjs runs its own 68-case table to `0 failed`, the count never falls and must equal the pass lines it printed, ownership is still proven by `chainTo` plus `verifyRoot` rather than guessed, the mode is still the exact flag `--selftest` the hourly runner passes (the bare word prints nothing and exits 0, which is how this suite went unrun), and the twelve load-bearing cases still RUN by name — every one a way of answering `that process is NOT this session's to stop`: another session's engine, a recycled PID breaking the chain walking up and walking down, a nested engine, a creation time or command line that changed between record and stop, never the engine itself, never a shell, never a build mistaken for a dev server, listeners only rather than client connections, another open session's borrow of the port, and the hint not waking on an ordinary command",
   runDevServerReaperPinTests,
+);
+await runTest(
+  "the guard that holds the UNATTENDED weekly config review to read-only cannot quietly stop holding it: the pinned copy of ~/.claude/hooks/weekly-review-readonly.mjs runs its own 45-case table to `0 failed`, the count never falls and must equal the ok lines it printed, all three predicates survive (`isWeeklyReviewFirstLine`, `isReadOnlyCommand` and the `isReadOnlyMcpTool` that covers the route around the shell), the mode is still `--selftest`, the summary still says `cases, … failed` because the hourly runner accepts a hook only on that wording, and the twelve load-bearing cases still RUN by name — the three writes the 2026-09-21 unattended run actually performed (Register-ScheduledTask, a node -e file rewrite, cp over a script), the bypasses of a verb allow-list (a redirect, a bad second segment of a chain, command substitution, git fetch, an MCP update_scheduled_task), the detection boundary that keeps it off human sessions, and a legitimate read that must keep passing",
+  runWeeklyReviewReadonlyPinTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
