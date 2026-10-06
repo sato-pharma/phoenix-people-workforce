@@ -359,6 +359,18 @@ export type AuditEntityType =
   // Visual Aids (2026-09-18): a flyer uploaded, retired, or replaced by a newer version. REQUIRED —
   // what a rep holds up in front of a doctor is promotional material for a prescription medicine,
   // so who put it there and who took it down must never be a blank.
+  // The Production Planner (2026-10-05): the raw-material plan for the products EGPI
+  // toll-manufactures for us. A PRICE is REQUIRED — an unrecorded price change is how an order
+  // cost moves with nobody able to say who moved it — and so are a committed plan, a recorded run
+  // and a change to who holds the module. The formula, the stock reports and the settings are
+  // ordinary rows: they are reversible and the table keeps its own history.
+  | "production_material"
+  | "production_material_price"
+  | "production_plan"
+  | "production_planning_access_grant"
+  | "production_planning_settings"
+  | "production_run"
+  | "production_stock_entry"
   | "visual_aid"
   | "weekly_plan"
   // A weekly sales upload deleted or re-tagged: the only record of who did it and which upload it was.

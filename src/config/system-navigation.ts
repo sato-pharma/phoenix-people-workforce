@@ -28,6 +28,7 @@ import {
   FileSpreadsheet,
   FileUp,
   Fingerprint,
+  FlaskConical,
   Gauge,
   HeartPulse,
   Hourglass,
@@ -1501,6 +1502,29 @@ export const adminNavigationSectionSeeds = [
       { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "SFE Manager"] },
     ],
     label: "Master Data",
+  },
+
+  // ── Tier 7b2: Production planning ────────────────────────────────────────────
+  // Ivyronc is toll-manufactured by EGPI and Sato supplies most of its raw materials, so this is
+  // where a production order turns into a buy list. 🔴 THE SIDEBAR IS NOT THE GATE here in an
+  // unusual way: the module's MAIN USER cannot be listed. Dr. Sahar Khalil, the R&D Manager, holds
+  // `Manager` — a portal-shell role whose other holder is the QPPV — and Reham Elwiy holds
+  // `Employee`, which is the whole company. Both reach the module through its PORTAL twin, whose
+  // link is drawn by `showProductionPlanningTab` from the named HR-ID list
+  // (src/lib/production-planning/access.ts), not from these seeds. The CEO is listed because the
+  // owner named him a main controller in his own words; the Finance Manager is read-only.
+  {
+    id: "production-planning",
+    items: [
+      {
+        href: "/admin/production-planning",
+        icon: FlaskConical,
+        label: "Production Planner",
+        permissions: [{ resource: "production_planning", action: "read" }],
+        roles: ["Super Admin", "CEO", "Finance Manager"],
+      },
+    ],
+    label: "Production Planner",
   },
 
   // ── Tier 7c: Verified field captures ──────────────────────────────────────────

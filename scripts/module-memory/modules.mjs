@@ -143,6 +143,21 @@ export const MODULES = [
     tables: ["incentive"],
   },
   {
+    id: "production-planning",
+    title: "Production Planner (toll manufacturing — Ivyronc)",
+    scope: "Run geometry and the buy list for a toll-manufactured product, stock in two locations, the cost layer and its dollar rate, the consumption learner, and the reorder alarm.",
+    globs: [
+      "src/lib/production-planning/**",
+      "src/components/production-planning/**",
+      "app/**/production-planning/**",
+      "app/api/cron/production-planning-*/**",
+      "tests/production-planning-*",
+      "supabase/migrations/*production_planning*",
+    ],
+    keywords: ["ivyronc", "production planner", "production planning", "toll manufacturing", "egpi", "raw material", "raw materials", "reorder alarm", "overage", "تشغيلة", "خامات"],
+    tables: ["prodplan_"],
+  },
+  {
     id: "phoenix-crm",
     title: "Phoenix CRM (the reps' own CRM)",
     scope: "The rep's visit app on the web, plans and weeks, places and customers, list admission, approvals, location integrity, the CRM admin.",

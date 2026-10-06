@@ -45,6 +45,7 @@ const CATEGORY_DISPLAY_ORDER = [
   "Coaching",
   "Payroll",
   "Birthdays",
+  "Production",
   "General",
 ];
 

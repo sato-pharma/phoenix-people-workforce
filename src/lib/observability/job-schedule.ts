@@ -78,6 +78,12 @@ const HOUR = 60 * MINUTE;
 
 export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-notify-daily", kind: "cron", schedule: "36 6 * * *", graceSeconds: 1 * HOUR },
+  // The production planner's two sweeps, on minutes nothing else in the account uses (06:07 and
+  // 06:11), so a missed heartbeat names one job. Both are gated by their own pair of settings
+  // switches and do nothing until the owner arms them — but the SWEEP still has to run, which is
+  // what these watch: silence here means the job stopped, not that it was switched off.
+  { slug: "phoenix-production-planning-fx", kind: "cron", schedule: "7 6 * * *", graceSeconds: 2 * HOUR },
+  { slug: "phoenix-production-planning-reorder", kind: "cron", schedule: "11 6 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-marketing-field-capture-nudge", kind: "cron", schedule: "50 6 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-marketing-invoice-overdue-nudge", kind: "cron", schedule: "5 7 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-distributor-upload-overdue-nudge", kind: "cron", schedule: "20 7 * * *", graceSeconds: 1 * HOUR },

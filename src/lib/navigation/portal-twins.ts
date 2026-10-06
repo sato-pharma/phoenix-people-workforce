@@ -147,6 +147,9 @@ const TWIN_RULES: readonly TwinRule[] = [
   // ── One-to-one pages ───────────────────────────────────────────────────────
   { from: "/admin/report-it", to: "/employee-portals/report-it" },
   { from: "/admin/visual-aids", to: "/employee-portals/visual-aids" },
+  // The Production Planner is dual-surface because two of the five people the owner named for it
+  // are portal-shell viewers — including its main user, the R&D Manager.
+  { from: "/admin/production-planning", to: "/employee-portals/production-planning" },
   // Guarded by capability rather than by navigation mode, so unlike the rest this one is
   // still live today for an admin-mode viewer who lacks the capability. For a PORTAL-mode
   // viewer the layout gets there first either way, and the portal's own private calendar

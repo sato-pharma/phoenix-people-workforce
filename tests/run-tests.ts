@@ -2328,6 +2328,12 @@ import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts"
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
 import { runVacationSickAttachmentsTests } from "./vacation-sick-attachments.test.ts";
+import { runProductionPlanningEngineTests } from "./production-planning-engine.test.ts";
+import { runProductionPlanningAccessTests } from "./production-planning-access.test.ts";
+import { runProductionPlanningStringsTests } from "./production-planning-strings.test.ts";
+import { runProductionPlanningFitsTheScreenTests } from "./production-planning-fits-the-screen.test.ts";
+import { runProductionPlanningWorkbookTests } from "./production-planning-workbook.test.ts";
+import { runProductionPlanningSilentUntilArmedTests } from "./production-planning-silent-until-armed.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8942,6 +8948,30 @@ await runTest(
 await runTest(
   "the two device upload routes stay OUT of the proxy matcher, because the proxy copies a matched request's body and stops at 10 MB — so an APK reached the route truncated, formData() threw and the person read 'Choose a file to send.' (measured on staging 2026-10-04: 'Request body exceeded 10MB for /api/devices/headwind/upload'); nothing else is excluded, each route still checks same-origin and company_devices:approve BEFORE it reads the body, and next.config.ts never raises the global limit",
   runProxyUploadBodyLimitTests,
+);
+await runTest(
+  "the Production Planner's arithmetic, as the owner checked it by hand: the run volume is FIXED so 10,000 samples of 40 ml turn one run's 12,500 bottles into 8,500 while RAISING packaging to 18,500 sets; his headline number is the TOTAL, so 100,000 with 10,000 samples is 7.52 runs rounded UP to 8, yielding 106,000 boxes and 6,000 of surplus he is told about; the buy list for those 8 runs is ivy 72.1 kg / sorbitol 4,120 kg / packaging 109,180 and NOT the 74.984 / 4,284.8 / 113,300 computed on the superseded samples-on-top reading at a fractional 8.32 runs; the 9-run order he already has a sheet for is untouched (81.1125 needed, 38.1125 to send against 43 held, and 11.8875 kg LEFT when he sends 50); a material nobody has settled with the factory and a material the factory brings are both shown and never bought; a short run reports a NEGATIVE balance rather than a reassuring zero; potassium sorbate reads 15.52725 kg and not 15.527250000000002 because nothing passes through a float; a failed FX fetch leaves the derived currency MISSING rather than zero; one recorded run recommends nothing and an excluded one changes nothing; and all four arming flags read fail-safe, so a string 'true' does not arm the email",
+  runProductionPlanningEngineTests,
+);
+await runTest(
+  "the Production Planner's access gate, which is the one edit in the module that can leak: `production_planning` is in BOTH the union and the RUNTIME resource array (a name in one but not the other is treated as permitted for every role); exactly three admin-shell roles hold it and `Manager`/`Employee` hold NOTHING, because `Manager` has THREE holders including Samaa Mosaad the QPPV and `Employee` is the whole company; each of the five people the owner named resolves to his level and every other role and HR id resolves to none; ids match in any case and through the login id, since === on a mixed-case id matches nobody with no error; a stored grant can ADD a sixth person and can never demote one he named; a write by a read-only viewer THROWS rather than rendering a 200 page saying Forbidden; and `Manager` really is a portal-shell role, which is why the module has to be dual-surface",
+  runProductionPlanningAccessTests,
+);
+await runTest(
+  "the Production Planner's Arabic stays GENDERLESS and its digits stay Latin: both primary users are women (Dr. Sahar Khalil and Reham Elwiy), and Arabic marks gender on the imperative and the second person, so every one of the module's 140-odd strings is scanned against a curated deny-list - verbal nouns not imperatives, impersonal passive outcomes, the actor named as a person - with the near misses pinned so a tidy-up cannot break them (the NOUN سجل is allowed where the imperative سجّل is not, and لكل is not caught by a rule aimed at لك); the ar-EG locale appears nowhere outside a comment because it emits ٠١٢٣ and ج.م.; nothing is truncated with an ellipsis; and the sentence under the tiles SAYS the surplus over the ask rather than hiding it",
+  runProductionPlanningStringsTests,
+);
+await runTest(
+  "the Production Planner fits the screen in BOTH its shells, pinned at birth rather than after a defect: the width that binds is 669px and not 1280, because the admin sidebar is `hidden lg:flex` at 292px, so all four tables are table-fixed with a colgroup of exactly four columns totalling 100% and each is paired with a `lg:hidden` card list; no overflow-x in any of the four spellings and no min-width floor, because a scrolling wrapper absorbs the overflow and the page-level check then certifies itself while content hangs off the side; the five-tab strip WRAPS, since on a right-to-left page a horizontal scroller opens at the LEFT and hides the FIRST tab; nothing truncates and nothing is nowrap, because where wrapping collides with the no-scroll rule wrapping wins; no hand-rolled radius; and the root carries dir=rtl with the Arabic face stack while every figure goes through the Num primitive, which is the only defence against bidi reordering a digit group that the string itself gets perfectly right",
+  runProductionPlanningFitsTheScreenTests,
+);
+await runTest(
+  "the Production Planner's Excel export carries LIVE FORMULAS and they compute the engine's own answer: the workbook is built from the same fixtures the engine test runs on, re-read from the emitted bytes, and every derived cell is EVALUATED through its references rather than read from its cache - which is the only way to catch a wrong row reference, and necessary because ExcelJS drops a cached result of exactly 0; the run count is a ROUNDUP formula and evaluates to 8 runs, the yield to 96,000, the boxes to 106,000 and the surplus to 6,000, and ivy extract, sorbitol and packaging come out at the 72.1 / 4,120 / 109,180 the owner verified by hand; a material the factory supplies or that nobody has settled reads a dash in the purchase column rather than a zero, which says something different; the cost total is a SUM over its own rows so editing a price moves it; and the sheet is right-to-left on ONE Arabic-capable face with nothing aligned to an explicit side, because Excel has no fallback list and an explicit side pins a heading to the far end of a mirrored line",
+  runProductionPlanningWorkbookTests,
+);
+await runTest(
+  "the Production Planner's reorder email is built and SILENT: the template ships isActive false, its recipients are the four addresses the owner named rather than any role (routing by role would reach every Manager, the QPPV included), the sweep returns skipped \"disabled\" instead of a zero when it is not armed - because \"0 sent\" and \"switched off\" were indistinguishable through a 13-day outbox freeze - the dry-run gate sits BEFORE sendTemplatedEmail and every alarm row records which mode wrote it, while the table's own CHECK refuses a dry-run row marked as sent, which is the one gate a code change cannot talk past; both crons authorise with their own job name and report a heartbeat slug that JOB_SCHEDULES declares; and the FX sweep's failure path writes fetch_ok false WITHOUT touching fetched_usd_to_egp, because overwriting a good rate with null is the only thing a failed fetch must never do - a zero, a negative, a word and a null are each refused as a rate",
+  runProductionPlanningSilentUntilArmedTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

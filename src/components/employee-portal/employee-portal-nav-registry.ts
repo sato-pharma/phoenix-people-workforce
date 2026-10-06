@@ -16,6 +16,7 @@ import {
   FileSpreadsheet,
   FileText,
   Fingerprint,
+  FlaskConical,
   Gauge,
   Gift,
   Headphones,
@@ -114,6 +115,12 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // My Milestones — the rep's own keepsake cards, self-scoped (owner, 2026-09-30). No `permission`:
   // the page gates by role predicate (canUseEmployeePortalMilestones), not a matrix permission.
   { label: "Milestones", fullLabel: "My Milestones", href: "/employee-portals/milestones", icon: Award, flags: ["showMilestonesTab"] },
+  // Production Planner — the toll-manufacturing buy list for Ivyronc (owner, 2026-10-05). No
+  // `permission`: `production_planning` is granted to no portal role at all, by design — the two
+  // people in this shell who hold the module are admitted BY NAME, so the gate is
+  // `showProductionPlanningTab` carrying `isNamedProductionPlanningPerson` in, and the page itself
+  // re-asks the database. A matrix permission here would answer "yes" for the whole company.
+  { label: "Production", fullLabel: "Production Planner", href: "/employee-portals/production-planning", icon: FlaskConical, flags: ["showProductionPlanningTab"] },
   { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"], permission: { resource: "attendance", action: "read" } },
   // Sales Intelligence (Product / Group Product Managers)
   // Sales vs Target leads the sales group: it is the field force's daily dashboard and the only

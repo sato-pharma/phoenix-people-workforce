@@ -83,6 +83,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/business-review": { icon: "analytics-outline", section: "My Workspace" },
   "/employee-portals/plans": { icon: "calendar-outline", section: "My Workspace" },
   "/employee-portals/plans/calendar": { icon: "calendar-number-outline", section: "My Workspace" },
+  "/employee-portals/production-planning": { icon: "flask-outline", section: "My Workspace" },
   // ── Approvals Hub ─────────────────────────────────────────────────────────────────────────────
   "/employee-portals/approvals/vacation": { icon: "sunny-outline", section: "Approvals Hub" },
   "/employee-portals/approvals/excuse": { icon: "time-outline", section: "Approvals Hub" },

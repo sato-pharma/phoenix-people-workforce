@@ -5,6 +5,7 @@ import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
 import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
+import { isNamedProductionPlanningPerson } from "@/lib/production-planning/access";
 import { VISUAL_AIDS_PORTAL_ROLES } from "@/lib/visual-aids/rules";
 
 export type EmployeePortalNavVisibility = {
@@ -227,6 +228,16 @@ export type EmployeePortalNavVisibility = {
   // page lists only his occasions and the /api/milestones/my-card route builds only his card. This is
   // NOT the Super-Admin Milestones workspace (/milestones), which prints anyone's card company-wide.
   showMilestonesTab?: boolean;
+  // Production Planner — the toll-manufacturing buy list for Ivyronc, made by EGPI out of raw
+  // materials Sato supplies. 🔴 THIS FLAG IS KEYED TO A NAMED LIST OF PEOPLE, NOT TO A ROLE, and it
+  // is the only one here that is. The owner named five: the R&D Manager (its main user), the CEO,
+  // himself, the Finance Manager and the R&D Supervisor. Two of them sit in this shell, and their
+  // roles cannot be used as the key — `Manager` would also open it to the QPPV, and `Employee` is
+  // the whole company. So it reads `isNamedProductionPlanningPerson(viewerHrId)`, and a sixth
+  // person admitted later from the module's own Settings tab reaches the module by its URL rather
+  // than by this row. That under-reports, which is the right direction for a door: the page itself
+  // asks the database (resolveProductionPlanningLevel), so this row is UX only.
+  showProductionPlanningTab?: boolean;
   showVacationApprovalsTab?: boolean;
   // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
   // without touching the other — e.g. National Sales Manager sees Vacation but not Excuse.
@@ -702,6 +713,8 @@ export function resolveEmployeePortalNavVisibility(
   const showAreaDirectOrdersTab = canUseEmployeePortalAreaDirectOrders(resolvedRole);
   // My Milestones — the rep's own keepsake cards, self-scoped (owner, 2026-09-30).
   const showMilestonesTab = canUseEmployeePortalMilestones(resolvedRole);
+  // Production Planner — by NAME, never by role (see the field's comment above).
+  const showProductionPlanningTab = isNamedProductionPlanningPerson(viewerHrId);
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -1096,6 +1109,7 @@ export function resolveEmployeePortalNavVisibility(
     showDirectOrdersTab,
     showAreaDirectOrdersTab,
     showMilestonesTab,
+    showProductionPlanningTab,
     // Vacation Approvals — confirmed portal-shell approver roles.
     showVacationApprovalsTab:
       resolvedRole === "District Manager" ||

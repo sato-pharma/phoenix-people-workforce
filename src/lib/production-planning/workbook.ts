@@ -1,0 +1,527 @@
+import ExcelJS from "exceljs";
+
+import { systemIdentity } from "@/config/system-settings";
+import {
+  applyRightToLeftSheet,
+  bandHeader,
+  BLACK,
+  F,
+  gridBorder,
+  MUTED,
+  PCT_FMT,
+  SLATE,
+  UNITS_FMT,
+  VALUE_FMT,
+  type CellValue,
+  writeTable,
+} from "@/lib/sales/sales-workbook-kit";
+
+import {
+  BASIS_LABELS,
+  formatNumberLatin,
+  PP,
+  PRODUCTION_PLANNING_WORKBOOK_FONT,
+  SUPPLIER_LABELS,
+} from "./strings";
+import type { WirePlan, WirePlanRow, WireWorkspace } from "./wire";
+
+/**
+ * The Production Planner's Excel export — a working model, not a printout of today's answer.
+ *
+ * The owner asked for the formulas themselves: "فيها برضو الفورمولاز". So every figure he types on
+ * the screen is a YELLOW cell here, and every figure the module derives is a real Excel formula over
+ * those cells. Changing the box count, the samples, the run volume, the recipe, the overage, the
+ * stock at either location or a price recalculates the whole sheet inside Excel, with no round trip
+ * to Phoenix. That is the difference between an export and a report, and it is the whole point of
+ * this file.
+ *
+ * ── Why the cached result is written too, and why it is not the authority ─────────────────────────
+ *
+ * Excel recalculates on open, so every formula cell also carries the result the ENGINE computed.
+ * Two reasons: the file is correct the instant it opens (before any recalculation), and a cached
+ * result that disagrees with the formula is a defect the readback test can catch. ExcelJS drops a
+ * cached result of exactly 0, which is why `tests/production-planning-workbook.test.ts` EVALUATES
+ * the formulas rather than reading the cache.
+ *
+ * 🔴 EVERY NUMBER IN THIS FILE BECOMES A DOUBLE, because a spreadsheet has no other numeric type.
+ * The module's own arithmetic is BigInt over micro units precisely to avoid that, so the SCREEN is
+ * the authority on a quantity and this sheet is the model: potassium sorbate for nine runs reads
+ * `15.52725` on the screen and in `formatNumberLatin`, and Excel will print the same digits at this
+ * number format, but a chain of edits inside Excel is Excel's arithmetic from then on.
+ *
+ * ── One sheet, three blocks, and NO cross-sheet references ────────────────────────────────────────
+ *
+ * Inputs, the materials table and the purchase cost all sit on one sheet. A second sheet would need
+ * every formula to quote an ARABIC sheet name (`'الخطة'!$H$25`), and a single reference Excel will
+ * not parse takes the whole workbook to the repair dialog — for no gain, since the three blocks are
+ * read together anyway.
+ */
+
+/** The yellow of a cell he is meant to type in. Distinct from the kit's AMBER total band. */
+const INPUT_FILL = "FFFFF2B2";
+/** How many columns the material table spans, and therefore how wide the brand band is. */
+const COLUMN_COUNT = 14;
+
+/** A decimal string from the wire as a spreadsheet number. Never used for the module's arithmetic. */
+function num(text: string | null | undefined, fallback = 0): number {
+  if (text === null || text === undefined || text === "") return fallback;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+/** A percentage on the wire is a percent ("3" = 3%); Excel wants the fraction behind `0.0%`. */
+function pctFraction(text: string | null | undefined): number {
+  return num(text) / 100;
+}
+
+function labelCell(sheet: ExcelJS.Worksheet, row: number, text: string) {
+  const cell = sheet.getCell(row, 1);
+  cell.value = text;
+  cell.font = { bold: true, color: { argb: SLATE }, size: 10.5 };
+  cell.alignment = { vertical: "middle" };
+  return cell;
+}
+
+function inputCell(sheet: ExcelJS.Worksheet, row: number, value: number, numFmt: string) {
+  const cell = sheet.getCell(row, 2);
+  cell.value = value;
+  cell.numFmt = numFmt;
+  cell.font = { bold: true, color: { argb: BLACK }, size: 10.5 };
+  cell.fill = { fgColor: { argb: INPUT_FILL }, pattern: "solid", type: "pattern" };
+  cell.border = gridBorder();
+  cell.alignment = { vertical: "middle" };
+  return cell;
+}
+
+function formulaCell(sheet: ExcelJS.Worksheet, row: number, formula: string, result: number, numFmt: string) {
+  const cell = sheet.getCell(row, 2);
+  cell.value = { formula, result };
+  cell.numFmt = numFmt;
+  cell.font = { color: { argb: BLACK }, size: 10.5 };
+  cell.border = gridBorder();
+  cell.alignment = { vertical: "middle" };
+  return cell;
+}
+
+function sectionTitle(sheet: ExcelJS.Worksheet, row: number, text: string) {
+  sheet.mergeCells(row, 1, row, COLUMN_COUNT);
+  const cell = sheet.getCell(row, 1);
+  cell.value = text;
+  cell.font = { bold: true, color: { argb: "FFF97316" }, size: 12 };
+  cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  cell.alignment = { vertical: "middle" };
+  sheet.getRow(row).height = 22;
+}
+
+function noteRow(sheet: ExcelJS.Worksheet, row: number, text: string) {
+  sheet.mergeCells(row, 1, row, COLUMN_COUNT);
+  const cell = sheet.getCell(row, 1);
+  cell.value = text;
+  cell.font = { color: { argb: MUTED }, italic: true, size: 9.5 };
+  cell.alignment = { vertical: "middle", wrapText: true };
+}
+
+/**
+ * Paint a cell he is meant to type in.
+ *
+ * `writeTable` styles a whole table uniformly — zebra rows, one border, one face — so the columns
+ * that are INPUTS have to be marked afterwards. Without this the sheet's own note ("تعديل أي خانة
+ * صفراء يُعيد الحساب") points at nothing inside the table, and the recipe, the overage, the stock at
+ * each location and what he decides to deliver all read as results rather than as his to change.
+ * Deliberately overrides the zebra fill: the yellow is the instruction.
+ */
+function paintInput(sheet: ExcelJS.Worksheet, row: number, column: number) {
+  const cell = sheet.getCell(row, column);
+  cell.fill = { fgColor: { argb: INPUT_FILL }, pattern: "solid", type: "pattern" };
+  cell.font = { ...(cell.font ?? {}), bold: true };
+}
+
+/**
+ * What he has to buy, as Excel — including the purchasable rounding when the material carries one.
+ *
+ * The plain shortfall is `MAX(0, needed - (factory + own store))`. A material with a minimum order
+ * or a purchase increment is not bought in that quantity, though: the engine rounds it UP to what a
+ * supplier will actually sell (`roundQtyUpToPurchasable`), so the sheet has to do the same or the
+ * formula and the cached figure beside it disagree the day one of those is typed in. Nothing seeded
+ * today has either, which is exactly why this is written now rather than discovered later.
+ *
+ * `<=0` rather than `=0` so the whole expression stays inside the arithmetic the readback test's
+ * evaluator can follow.
+ */
+function purchaseFormula(excelRow: number, minOrder: number | null, increment: number | null): string {
+  const shortfall = `MAX(0,H${excelRow}-(I${excelRow}+J${excelRow}))`;
+  if (!minOrder && !increment) return shortfall;
+  let rounded = minOrder ? `MAX(${shortfall},${minOrder})` : shortfall;
+  if (increment) rounded = `CEILING(${rounded},${increment})`;
+  return `IF(${shortfall}<=0,0,${rounded})`;
+}
+
+/** The derived cell a material's basis count reads, chosen by what the recipe is written per. */
+function basisCountRef(row: WirePlanRow, refs: { boxes: string; doses: string; goodUnits: string; samples: string }) {
+  switch (row.basis) {
+    case "per_dose":
+      return refs.doses;
+    case "per_packaging_set":
+      // A packaging set and a sellable box are the same count here — a sample consumes a full set —
+      // so this is deliberately the same cell as the total box count, not a second figure.
+      return refs.boxes;
+    case "per_good_unit":
+      return refs.goodUnits;
+    case "per_sample_unit":
+      return refs.samples;
+    default:
+      return null;
+  }
+}
+
+export type ProductionPlanningWorkbookStats = {
+  readonly builtAt: string;
+  readonly materials: number;
+  readonly pricedMaterials: number;
+  readonly runs: string;
+};
+
+export async function buildProductionPlanningWorkbook(workspace: WireWorkspace, options: { actorName?: string | null } = {}): Promise<{
+  buffer: Buffer;
+  stats: ProductionPlanningWorkbookStats;
+}> {
+  const plan: WirePlan | null = workspace.plan;
+  if (!plan) throw new Error("No plan to export.");
+  const product = workspace.products.find((candidate) => candidate.id === plan.productId) ?? workspace.products[0];
+  const materialById = new Map(workspace.materials.map((material) => [material.id, material]));
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = systemIdentity.appName;
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet(PP.sheetName);
+
+  bandHeader(sheet, COLUMN_COUNT, `${PP.moduleTitle} — ${product?.nameAr ?? ""}`.trim(), plan.sentence);
+
+  // ── The typed inputs ───────────────────────────────────────────────────────────────────────────
+  let row = 5;
+  sectionTitle(sheet, row, PP.sheetInputsTitle);
+  row += 1;
+  labelCell(sheet, row, PP.productLabel);
+  const productCell = sheet.getCell(row, 2);
+  productCell.value = product?.nameAr ?? "";
+  productCell.font = { bold: true, color: { argb: BLACK }, size: 10.5 };
+  productCell.border = gridBorder();
+  row += 1;
+
+  const requestedRow = row;
+  labelCell(sheet, requestedRow, PP.sheetRequestedBoxes);
+  inputCell(sheet, requestedRow, num(plan.requestedBoxes), UNITS_FMT);
+  row += 1;
+
+  const samplesRow = row;
+  labelCell(sheet, samplesRow, PP.sampleUnitsLabel);
+  inputCell(sheet, samplesRow, num(plan.sampleUnits), UNITS_FMT);
+  row += 1;
+
+  const runVolumeRow = row;
+  labelCell(sheet, runVolumeRow, PP.sheetRunVolumeMl);
+  inputCell(sheet, runVolumeRow, num(product?.runVolumeMl), UNITS_FMT);
+  row += 1;
+
+  const goodMlRow = row;
+  labelCell(sheet, goodMlRow, PP.sheetGoodUnitMl);
+  inputCell(sheet, goodMlRow, num(product?.goodUnitMl), UNITS_FMT);
+  row += 1;
+
+  const sampleMlRow = row;
+  labelCell(sheet, sampleMlRow, PP.sheetSampleUnitMl);
+  inputCell(sheet, sampleMlRow, num(product?.sampleUnitMl), UNITS_FMT);
+  row += 1;
+
+  const doseMlRow = row;
+  labelCell(sheet, doseMlRow, PP.sheetDoseMl);
+  inputCell(sheet, doseMlRow, num(product?.doseMl), VALUE_FMT);
+  row += 1;
+
+  // One of these is 1 today and may not always be. The engine divides by `units_per_box` and so does
+  // this sheet, because a model that assumed a box is one bottle would silently disagree with the
+  // screen the day that changes.
+  const unitsPerBoxRow = row;
+  labelCell(sheet, unitsPerBoxRow, PP.sheetUnitsPerBox);
+  inputCell(sheet, unitsPerBoxRow, Math.max(1, num(product?.unitsPerBox, 1)), UNITS_FMT);
+  row += 1;
+
+  const fxRow = row;
+  labelCell(sheet, fxRow, PP.fxRate);
+  inputCell(sheet, fxRow, num(plan.totals.fxRate), VALUE_FMT);
+  row += 2;
+
+  const REQUESTED = `$B$${requestedRow}`;
+  const SAMPLES = `$B$${samplesRow}`;
+  const RUN_VOLUME = `$B$${runVolumeRow}`;
+  const GOOD_ML = `$B$${goodMlRow}`;
+  const SAMPLE_ML = `$B$${sampleMlRow}`;
+  const DOSE_ML = `$B$${doseMlRow}`;
+  const UNITS_PER_BOX = `$B$${unitsPerBoxRow}`;
+  const FX = `$B$${fxRow}`;
+
+  // ── What the module derives from them ──────────────────────────────────────────────────────────
+  sectionTitle(sheet, row, PP.sheetOutputsTitle);
+  row += 1;
+
+  const goodRequestedRow = row;
+  labelCell(sheet, goodRequestedRow, PP.sheetGoodUnitsRequested);
+  formulaCell(
+    sheet,
+    goodRequestedRow,
+    `${REQUESTED}*${UNITS_PER_BOX}-${SAMPLES}`,
+    num(plan.requestedBoxes) * Math.max(1, num(product?.unitsPerBox, 1)) - num(plan.sampleUnits),
+    UNITS_FMT,
+  );
+  row += 1;
+
+  const neededVolumeRow = row;
+  labelCell(sheet, neededVolumeRow, PP.sheetNeededVolumeMl);
+  formulaCell(
+    sheet,
+    neededVolumeRow,
+    `$B$${goodRequestedRow}*${GOOD_ML}+${SAMPLES}*${SAMPLE_ML}`,
+    (num(plan.requestedBoxes) * Math.max(1, num(product?.unitsPerBox, 1)) - num(plan.sampleUnits)) *
+      num(product?.goodUnitMl) +
+      num(plan.sampleUnits) * num(product?.sampleUnitMl),
+    UNITS_FMT,
+  );
+  row += 1;
+
+  // The rounding leads, because it is the one thing he will not take on trust. ROUNDUP, not ROUND:
+  // a run is whole, and 7.52 runs is eight runs — which is where the surplus two rows down comes
+  // from and why the planner reports it rather than quietly answering for a different order.
+  const runsRow = row;
+  labelCell(sheet, runsRow, PP.tileRuns);
+  formulaCell(sheet, runsRow, `ROUNDUP($B$${neededVolumeRow}/${RUN_VOLUME},0)`, num(plan.runs), UNITS_FMT);
+  row += 1;
+
+  const yieldRow = row;
+  labelCell(sheet, yieldRow, PP.tileYield);
+  formulaCell(
+    sheet,
+    yieldRow,
+    `FLOOR(($B$${runsRow}*${RUN_VOLUME}-${SAMPLES}*${SAMPLE_ML})/${GOOD_ML},1)`,
+    num(plan.goodUnits),
+    UNITS_FMT,
+  );
+  row += 1;
+
+  const boxesRow = row;
+  labelCell(sheet, boxesRow, PP.sheetTotalBoxes);
+  formulaCell(
+    sheet,
+    boxesRow,
+    `($B$${yieldRow}+${SAMPLES})/${UNITS_PER_BOX}`,
+    num(plan.totalBoxes),
+    UNITS_FMT,
+  );
+  row += 1;
+
+  const surplusRow = row;
+  labelCell(sheet, surplusRow, PP.tileSurplus);
+  formulaCell(
+    sheet,
+    surplusRow,
+    `$B$${boxesRow}-${REQUESTED}`,
+    num(plan.totalBoxes) - num(plan.requestedBoxes),
+    UNITS_FMT,
+  );
+  row += 1;
+
+  const litresRow = row;
+  labelCell(sheet, litresRow, PP.sheetTotalVolumeLitres);
+  formulaCell(sheet, litresRow, `$B$${runsRow}*${RUN_VOLUME}/1000`, num(plan.totalVolumeLitres), VALUE_FMT);
+  row += 1;
+
+  const dosesRow = row;
+  labelCell(sheet, dosesRow, PP.sheetTotalDoses);
+  formulaCell(sheet, dosesRow, `$B$${runsRow}*${RUN_VOLUME}/${DOSE_ML}`, num(plan.totalDoses), UNITS_FMT);
+  row += 2;
+
+  const refs = {
+    boxes: `$B$${boxesRow}`,
+    doses: `$B$${dosesRow}`,
+    goodUnits: `$B$${yieldRow}`,
+    samples: SAMPLES,
+  };
+
+  // ── The materials ──────────────────────────────────────────────────────────────────────────────
+  //
+  // `writeTable` puts the title on `startRow`, the headers on the next row and the first data row
+  // after that, so every formula below is written against `materialsFirstRow + index`. The columns
+  // are named without a unit: the rows are a mix of kilograms and pieces, so each material's own
+  // unit travels in its name cell exactly as it does on the screen.
+  const materialsFirstRow = row + 2;
+  const tableRows: CellValue[][] = plan.rows.map((planRow, index) => {
+    const material = materialById.get(planRow.materialId);
+    const excelRow = materialsFirstRow + index;
+    const basePerDisplay = Math.max(1, num(material?.basePerDisplay, 1));
+    const countRef = basisCountRef(planRow, refs);
+    const basisCount = num(planRow.basisCount);
+    const qtyPerBasis = num(material?.composition?.qtyPerBasis);
+    const rawNeeded = num(planRow.rawNeeded);
+    const needed = num(planRow.needed);
+    const heldFactory = num(planRow.heldAtFactory);
+    const heldElsewhere = num(planRow.heldElsewhere);
+    const willSend = num(planRow.willSend);
+
+    const basisText = planRow.basis
+      ? `${BASIS_LABELS[planRow.basis]} (${material?.baseUnit ?? ""})`.trim()
+      : PP.chipNoComposition;
+
+    return [
+      `${planRow.nameAr} (${planRow.displayUnit})`,
+      planRow.supplier ? SUPPLIER_LABELS[planRow.supplier] : PP.chipNoComposition,
+      basisText,
+      qtyPerBasis,
+      countRef ? F(countRef, basisCount) : 0,
+      F(`D${excelRow}*E${excelRow}/${basePerDisplay}`, rawNeeded),
+      pctFraction(planRow.overagePct),
+      F(`F${excelRow}*(1+G${excelRow})`, needed),
+      heldFactory,
+      heldElsewhere,
+      // Only a material SATO supplies becomes a purchase. A factory-supplied or unsettled one is not
+      // a zero — a zero reads as "nothing to buy", and the owner has to settle it before it is true.
+      planRow.contributesToBuyList
+        ? F(
+            purchaseFormula(excelRow, num(material?.minOrderQty, 0) || null, num(material?.purchaseIncrement, 0) || null),
+            num(planRow.toBuy),
+          )
+        : "—",
+      willSend,
+      // What is left AT THE FACTORY when the run is over: what it holds, plus what he sends, minus
+      // what the run eats. His own store is not in it — he sends FROM there, the run does not reach
+      // it — and a material he does not supply is not reduced by the run at all. Both are the
+      // engine's own rule (`balanceAfterQty` in requirements.ts), and a sheet that subtracted the
+      // requirement from everything would show the unsettled preservative as a shortage he owes.
+      planRow.contributesToBuyList
+        ? F(`I${excelRow}+L${excelRow}-H${excelRow}`, num(planRow.balanceAfter))
+        : F(`I${excelRow}+L${excelRow}`, num(planRow.balanceAfter)),
+      // Cover is what he HOLDS divided by one run's worth, not what is left afterwards.
+      F(`IFERROR((I${excelRow}+J${excelRow})/(H${excelRow}/$B$${runsRow}),0)`, num(planRow.coverRuns)),
+    ];
+  });
+
+  const afterMaterials = writeTable(sheet, row, {
+    columns: [
+      { label: PP.colMaterial, width: 30 },
+      { label: PP.sheetColSupplier, width: 16 },
+      { label: PP.sheetColBasisLabel, width: 22 },
+      { label: PP.sheetColQtyPerBasis, numFmt: "#,##0.000000", width: 15 },
+      { label: PP.sheetColBasisCount, numFmt: UNITS_FMT, width: 14 },
+      { label: PP.beforeOverage, numFmt: VALUE_FMT, width: 14 },
+      { label: PP.overageLabel, numFmt: PCT_FMT, width: 11 },
+      { label: PP.colNeeded, numFmt: VALUE_FMT, width: 14 },
+      { label: `${PP.colAvailable} — ${PP.atFactory}`, numFmt: VALUE_FMT, width: 14 },
+      { label: `${PP.colAvailable} — ${PP.atOwnStore}`, numFmt: VALUE_FMT, width: 14 },
+      { label: PP.toBuy, numFmt: VALUE_FMT, width: 14 },
+      { label: PP.willSend, numFmt: VALUE_FMT, width: 14 },
+      { label: PP.balanceAfter, numFmt: VALUE_FMT, width: 16 },
+      { label: PP.coverRuns, numFmt: VALUE_FMT, width: 12 },
+    ],
+    note: PP.exportHint,
+    rows: tableRows,
+    title: PP.sheetMaterialsTitle,
+  });
+
+  // D the recipe · G the overage · I and J the stock at each location · L what he decides to deliver.
+  for (let index = 0; index < tableRows.length; index += 1) {
+    for (const column of [4, 7, 9, 10, 12]) paintInput(sheet, materialsFirstRow + index, column);
+  }
+
+  // ── What it costs to buy ───────────────────────────────────────────────────────────────────────
+  //
+  // Only the rows that actually become a purchase, and the quantity is the TO-BUY cell above rather
+  // than the requirement: he already owns the rest. Each row's two cost cells are the same product
+  // read in both currencies, so the one he typed is the multiply and the other goes through the rate
+  // — never two stored prices for one number.
+  const purchaseRows = plan.rows
+    .map((planRow, index) => ({ excelRow: materialsFirstRow + index, planRow }))
+    .filter((entry) => entry.planRow.contributesToBuyList);
+
+  const costFirstRow = afterMaterials + 2;
+  const costRows: CellValue[][] = purchaseRows.map((entry, index) => {
+    const material = materialById.get(entry.planRow.materialId);
+    const excelRow = costFirstRow + index;
+    const price = num(entry.planRow.pricePerDisplayUnit ?? material?.price?.pricePerDisplayUnit);
+    const currency = entry.planRow.priceCurrency ?? material?.price?.currency ?? null;
+    const usdFormula =
+      currency === "EGP" ? `IFERROR(B${excelRow}*C${excelRow}/${FX},0)` : `B${excelRow}*C${excelRow}`;
+    const egpFormula =
+      currency === "EGP" ? `B${excelRow}*C${excelRow}` : `B${excelRow}*C${excelRow}*${FX}`;
+    return [
+      `${entry.planRow.nameAr} (${entry.planRow.displayUnit})`,
+      F(`K${entry.excelRow}`, num(entry.planRow.toBuy)),
+      price,
+      currency === "EGP" ? PP.currencyEgp : currency === "USD" ? PP.currencyUsd : "—",
+      F(usdFormula, num(entry.planRow.costUsd)),
+      F(egpFormula, num(entry.planRow.costEgp)),
+    ];
+  });
+
+  const costLastRow = costFirstRow + Math.max(0, costRows.length - 1);
+  const afterCost = writeTable(sheet, afterMaterials, {
+    columns: [
+      { label: PP.colMaterial, width: 30 },
+      { label: PP.toBuy, numFmt: VALUE_FMT, width: 14 },
+      { label: PP.sheetColPrice, numFmt: VALUE_FMT, width: 14 },
+      { label: PP.priceCurrency, width: 12 },
+      { label: PP.sheetColCostUsd, numFmt: VALUE_FMT, width: 16 },
+      { label: PP.sheetColCostEgp, numFmt: VALUE_FMT, width: 16 },
+    ],
+    note: PP.sheetUnpricedNote,
+    rows: costRows,
+    title: PP.sheetCostTitle,
+    totals:
+      costRows.length > 0
+        ? [
+            PP.costTotal,
+            null,
+            null,
+            null,
+            F(`SUM(E${costFirstRow}:E${costLastRow})`, num(plan.totals.costUsd)),
+            F(`SUM(F${costFirstRow}:F${costLastRow})`, num(plan.totals.costEgp)),
+          ]
+        : undefined,
+  });
+
+  // C the price. The quantity beside it is a reference to the purchase column above, not a second
+  // typed figure: two places to type the same number is how a workbook starts disagreeing with itself.
+  for (let index = 0; index < costRows.length; index += 1) paintInput(sheet, costFirstRow + index, 3);
+
+  const stampRow = afterCost;
+  noteRow(
+    sheet,
+    stampRow,
+    `${PP.sheetGeneratedOn}: ${new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date())}` +
+      ` — ${PP.sheetGeneratedBy}: ${options.actorName ?? systemIdentity.appName}`,
+  );
+
+  // The direction and the face LAST, so every cell written above is covered by the one pass.
+  applyRightToLeftSheet(sheet, { fontFace: PRODUCTION_PLANNING_WORKBOOK_FONT });
+  sheet.getColumn(1).width = 34;
+  sheet.getColumn(2).width = 18;
+
+  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  return {
+    buffer,
+    stats: {
+      builtAt: new Date().toISOString(),
+      materials: plan.rows.length,
+      pricedMaterials: costRows.length,
+      runs: formatNumberLatin(plan.runs),
+    },
+  };
+}
+
+/** The download's filename: the product, the run count and the Cairo date, so a mailed copy is dateable. */
+export function productionPlanningWorkbookFilename(plan: WirePlan): string {
+  const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+  const code = plan.productNameAr.replace(/[\\/:*?"<>|]/g, "").trim();
+  return `production-plan-${code || "plan"}-${plan.runs}-runs-${stamp}.xlsx`;
+}
+
+/** Re-exported so the route can name the media type without reaching into the client helper. */
+export const PRODUCTION_PLANNING_WORKBOOK_MEDIA_TYPE =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
