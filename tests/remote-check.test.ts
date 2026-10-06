@@ -4,11 +4,18 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
+  BUSY_POLL_SECONDS,
+  URGENT_WAIT_MINUTES,
   buildBusyProbeScript,
   buildRunScript,
+  decideBusyAction,
+  gradeActionsRun,
   newRunId,
   parseBusyProbe,
+  parseEscalation,
   runPaths,
 } from "../scripts/remote-check-plan.mjs";
 
@@ -28,14 +35,24 @@ export async function runRemoteCheckTests(): Promise<void> {
   // a 16 GB laptop where mem-watchdog.ps1 reaps it silently (AGENTS.md §5, bash-guard C8). Every
   // check command must be inside the CHECKS table, which is only ever interpolated into the remote
   // bash script — never handed to a local spawn.
-  const localRunners = SRC.match(/(?:execFileSync|spawnSync)\(\s*["'](?!ssh|git)(\w+)["']/g) ?? [];
+  //
+  // 🔴 `gh` JOINED `ssh` AND `git` ON 2026-10-06, AND THE INVARIANT GOT STRONGER RATHER THAN WEAKER.
+  // The Actions fallback (section 10) has to talk to GitHub — dispatch ci.yml, ask whether a PR is
+  // already open, read a run's conclusion — and all three are API calls that cost this laptop nothing.
+  // What must never appear is a HEAVY RUNNER, so that is now asserted by name as well: the allow-list
+  // says what may run, and the ban below says what may not, whatever spelling it arrives in.
+  const localRunners = SRC.match(/(?:execFileSync|spawnSync)\(\s*["'](?!ssh|git|gh)(\w+)["']/g) ?? [];
   assert.deepEqual(
     localRunners,
     [],
-    "remote-check.mjs spawns something locally other than `ssh` and `git`: " + localRunners.join(", ") +
+    "remote-check.mjs spawns something locally other than `ssh`, `git` and `gh`: " + localRunners.join(", ") +
       ". The entire purpose of this script is that heavy work runs on the box — a local spawn of " +
       "node/pnpm/tsc defeats it and reintroduces the silent OOM kill that C8 exists to prevent.",
   );
+  const heavyRunners = SRC.match(
+    new RegExp("(?:execFileSync|spawnSync)\\(\\s*[\"']?(pnpm|npm|yarn|npx|tsc|node|eslint|next|playwright)[\"']", "g"),
+  ) ?? [];
+  assert.deepEqual(heavyRunners, [], "a heavy runner is spawned locally: " + heavyRunners.join(", "));
 
   // 2 — the typecheck must carry the same heap CI gives it, or a PASS here does not predict CI.
   assert.ok(
@@ -205,9 +222,24 @@ export async function runRemoteCheckTests(): Promise<void> {
     /parseBusyProbe\(state\)[\s\S]{0,600}?!busy\.known[\s\S]{0,400}?die\(/,
     "remote-check.mjs does not refuse on an unreadable probe, so a failed ssh would read as a free box",
   );
+  // 🔴 THE REFUSAL MOVED BEHIND `decideBusyAction` ON 2026-10-06 AND MUST STILL END IN `die(`. The
+  // escalation (section 10) added two other routes out of a busy box, and the risk it introduces is
+  // precisely that the no-flag path quietly becomes "carry on anyway" — which is what OOM-kills a
+  // build. So this pins the whole chain: the plan is computed from the probe, the override is read
+  // once into FORCED, and the plan that is neither a wait nor an escalation reaches `die(`.
   assert.match(
     SRC,
-    /busy\.runs\.length > 0 && process\.env\.PHX_CHECK_FORCE !== "1"[\s\S]{0,2500}?die\(/,
+    /const FORCED = process\.env\.PHX_CHECK_FORCE === "1"/,
+    "the PHX_CHECK_FORCE override is gone — a busy box would have no escape hatch",
+  );
+  assert.match(
+    SRC,
+    /decideBusyAction\(\{[\s\S]{0,400}?busyRuns: busy\.runs/,
+    "the busy decision is no longer computed from the probe's own run list",
+  );
+  assert.match(
+    SRC,
+    /busy\.runs\.length > 0 && plan\.action !== "run" && !FORCED[\s\S]{0,3000}?die\(/,
     "remote-check.mjs does not refuse when the box already has a run, or has lost its override",
   );
   assert.ok(
@@ -353,6 +385,112 @@ export async function runRemoteCheckTests(): Promise<void> {
     /unsafe run id/,
     "the run id is spliced into bash and must be refused unless it is plain",
   );
+
+  // 10 — THE BUSY-BOX ESCALATION (owner's policy, 2026-10-06: the box by default because it is free,
+  // GitHub Actions when the work cannot wait). Several sessions share one 7,740 MB box, so a second
+  // run is refused — and until that day the refusal was the whole answer, which parked finished work
+  // behind another session's build while a session retried by hand. These pin the three properties
+  // that make the escalation trustworthy rather than merely convenient.
+  {
+    // 🔴 THESE READ THE CODE, NOT THE PROSE. The comment in remote-check.mjs explaining what was
+    // removed necessarily QUOTES the removed line, so a "must not appear" guard against raw source
+    // fails on its own documentation — it did, on the first run of this section. `stripComments` is
+    // the repo's one stripper for exactly this (tests/support/comment-strip.ts); the length check
+    // beside it is the guard against the opposite failure, a strip that ate the code and left every
+    // assertion passing vacuously.
+    const CODE = stripComments(SRC);
+    assert.ok(
+      CODE.includes("parseEscalation(process.argv.slice(2))") && CODE.length > SRC.length / 3,
+      "stripComments ate the code it was meant to expose — these assertions would pass on nothing",
+    );
+
+    // 10a — a flag is PARSED, never filtered away: a misspelled one used to run the plain behaviour
+    // and report success, the same defect scripts/rollup-prs.mjs refuses by name.
+    assert.deepEqual(parseEscalation(["--urgnet"]).unknown, ["--urgnet"], "a misspelled flag was swallowed");
+    assert.deepEqual(parseEscalation(["--wait", "999"]).unknown, ["--wait 999 (minutes, 0-60)"]);
+    assert.doesNotMatch(
+      CODE,
+      /filter\(\(a\) => !a\.startsWith\("-"\)\)/,
+      "remote-check.mjs is filtering flags away again — an unknown flag must die, not be ignored",
+    );
+
+    // A flag's VALUE is positional: `--wait 3` must not leave a bare `3` to be read as a check name.
+    assert.deepEqual(parseEscalation(["test", "--wait", "3"]).positional, ["test"]);
+    assert.equal(parseEscalation(["test", "--wait", "3"]).waitMinutes, 3);
+    assert.equal(parseEscalation(["all", "--wait=6"]).waitMinutes, 6);
+
+    // --urgent is the owner's critical-situation switch: the wait AND the Actions fallback.
+    const urgent = parseEscalation(["all", "--urgent"]);
+    assert.equal(urgent.waitMinutes, URGENT_WAIT_MINUTES);
+    assert.equal(urgent.actions, true, "--urgent must arm the Actions fallback, not only the wait");
+    assert.deepEqual(urgent.positional, ["all"]);
+
+    // 10b — the default is UNCHANGED: a busy box with no flag refuses at once, and nothing waits
+    // silently. Waiting is opt-in because a silent queue reads as a hang (the reason the refusal
+    // exists at all), and the Actions escalation is opt-in because it bills ~14 minutes.
+    const busy = { busyRuns: ["run-a"] };
+    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 0, actions: false }).action, "refuse");
+    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 0, actions: true }).action, "actions");
+    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 4, actions: true }).action, "poll");
+    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 240, waitMinutes: 4, actions: true }).action, "actions");
+    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 240, waitMinutes: 4, actions: false }).action, "refuse");
+    assert.equal(
+      decideBusyAction({ busyRuns: [], waitedSeconds: 0, waitMinutes: 0, actions: false }).action,
+      "run",
+      "an idle box must still just run — the escalation may never change the free path",
+    );
+    assert.ok(BUSY_POLL_SECONDS >= 10, "polling faster than 10s would hammer the box over ssh");
+
+    // 10c — THE VERDICT IS ALLOW-LISTED. A watcher that skips a DENY-list of unfinished states calls
+    // an unknown state green: measured in this repo when a loop skipping queued|in_progress|"" met a
+    // 422 body, matched none of them and printed its success line
+    // (`a-padded-short-sha-422s-and-a-fallthrough-watcher-calls-it-green`).
+    const sha = "a".repeat(40);
+    const ok = { headSha: sha, status: "completed", conclusion: "success", url: "u" };
+    assert.equal(gradeActionsRun(ok, sha).verdict, "pass");
+    assert.equal(gradeActionsRun({ ...ok, conclusion: "failure" }, sha).verdict, "fail");
+    for (const conclusion of ["cancelled", "timed_out", "skipped", "neutral", "action_required", "startup_failure", null]) {
+      const graded = gradeActionsRun({ ...ok, conclusion }, sha);
+      assert.equal(graded.verdict, "no-verdict", "completed/" + String(conclusion) + " must not read as a verdict");
+      assert.equal(graded.settled, true);
+    }
+    for (const status of ["queued", "in_progress", "waiting", "requested", undefined]) {
+      const graded = gradeActionsRun({ ...ok, status }, sha);
+      assert.equal(graded.settled, false, String(status) + " must stay unsettled, never fall through to a pass");
+      assert.equal(graded.verdict, "pending");
+    }
+    assert.equal(gradeActionsRun(null, sha).verdict, "pending", "no run yet is not a pass");
+    assert.equal(gradeActionsRun(undefined, sha).settled, false);
+
+    // 10d — AND A RUN IS ONLY EVIDENCE ABOUT THE SHA IT RAN. `gh workflow run` takes a REF, so a
+    // missing push would make the run about somebody else's commit. Both guards are pinned: the
+    // grader refuses a foreign headSha, and the script compares origin's ref before dispatching.
+    const other = gradeActionsRun({ ...ok, headSha: "b".repeat(40) }, sha);
+    assert.equal(other.verdict, "no-verdict", "a run on another sha was graded as a verdict about this one");
+    assert.match(other.why, /b{9}/);
+    assert.match(CODE, /ls-remote", "origin", "refs\/heads\/" \+ branch/, "the dispatch no longer checks origin's sha");
+    assert.match(CODE, /remoteSha !== sha/, "the pre-dispatch sha comparison is gone");
+    // The escalation must never run a check locally — the whole premise of this script (section 1).
+    assert.doesNotMatch(
+      CODE.slice(CODE.indexOf("function runOnActions")),
+      /execFileSync\(\s*"(pnpm|npx|tsc|node)"/,
+      "the Actions fallback is spawning a local check",
+    );
+    // It dispatches ci.yml, the workflow that produces the two REQUIRED checks, never a side workflow.
+    assert.match(CODE, /"workflow", "run", "ci\.yml"/, "the fallback must dispatch ci.yml itself");
+
+    // 10e — AND IT REFUSES TO PAY TWICE. A branch that already has an open PR is already running the
+    // same two required jobs on the same commit, so a dispatch beside them bills a second round for
+    // one answer (owner, 2026-09-27: every merge already costs ~28 billable CI minutes). The fallback
+    // sends the reader to `gh pr checks` instead, and that short circuit sits BEFORE the dispatch.
+    const fallback = CODE.slice(CODE.indexOf("function runOnActions"));
+    const prGate = fallback.indexOf('"pr", "list", "--head", branch');
+    const dispatch = fallback.indexOf('"workflow", "run", "ci.yml"');
+    assert.ok(prGate > 0, "the fallback no longer asks whether a PR is already open");
+    assert.ok(dispatch > 0, "the dispatch call is gone");
+    assert.ok(prGate < dispatch, "the open-PR check must come BEFORE the dispatch, or it bills before it looks");
+    assert.match(fallback, /gh pr checks/, "it must name the command that reads the PR's own checks");
+  }
 
   // 9 — BEHAVIOUR: run the generated bash for real against a throwaway bare repo. It needs bash, git
   // and a POSIX `find`, so it runs on the Linux CI runners and is skipped on the Windows laptop, where

@@ -23,6 +23,16 @@
 //   node scripts/remote-check.mjs all          # lint, typecheck, unit suite, build (~7 min)
 //   node scripts/remote-check.mjs lockfile     # regenerate pnpm-lock.yaml and bring it back
 //
+//   node scripts/remote-check.mjs test --wait 6    # box busy? ask again every 30s for 6 minutes
+//   node scripts/remote-check.mjs all --urgent     # that wait, then run ci.yml on GitHub Actions
+//
+// 🔴 THE BOX BY DEFAULT BECAUSE IT IS FREE; GITHUB ACTIONS WHEN THE WORK CANNOT WAIT (owner, 2026-10-06).
+// Several sessions share one 7,740 MB box, so a second run is refused rather than queued — and until
+// that day the refusal was the END of the road, which left a finished branch retrying by hand while
+// another session built. `--wait` waits VISIBLY (a line per poll, never a silent lock) and `--urgent`
+// escalates to a ci.yml workflow_dispatch afterwards, at ~14 billable Actions minutes against the
+// box's zero. Default behaviour with no flag is exactly what it was: refuse at once.
+//
 // 🔴 WHY `lockfile` IS HERE, AND WHY IT IS NOT A CHECK. Until 2026-09-30 there was no sanctioned place
 // in this setup to regenerate a lockfile at all. `.claude/hooks/bash-guard.mjs` clause C6 denies pnpm
 // inside every linked worktree (node_modules there is a junction to the primary checkout's) and,
@@ -70,11 +80,16 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  BUSY_POLL_SECONDS,
+  URGENT_WAIT_MINUTES,
   buildBusyProbeScript,
   buildLockfileScript,
   buildRunScript,
+  decideBusyAction,
+  gradeActionsRun,
   newRunId,
   parseBusyProbe,
+  parseEscalation,
   runPaths,
 } from "./remote-check-plan.mjs";
 
@@ -190,6 +205,146 @@ function die(message) {
   process.exit(2);
 }
 
+/** A synchronous sleep, so the busy wait stays in this script's single straight line of control. */
+function sleepSeconds(seconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, seconds) * 1000);
+}
+
+// ---------------------------------------------------------------------------------------------
+// THE GITHUB ACTIONS FALLBACK (--actions / --urgent)
+// ---------------------------------------------------------------------------------------------
+// 🔴 THE OWNER'S POLICY, 2026-10-06, IN HIS OWN TERMS: "in critical situations, depend on GitHub
+// Actions; in normal situations we are on the box to decrease the cost." The box is free and the
+// default; this path exists for the case that kept costing real time — a finished branch parked
+// behind another session's 7-minute run, with nothing to do but retry.
+//
+// WHAT IT COSTS, SAID OUT LOUD: a dispatch of ci.yml runs `validate` and `checks` exactly as a PR
+// does, which is ~14 billable Actions minutes (GitHub rounds every job up to the whole minute), and
+// on a workflow_dispatch `validate` also builds and smoke-tests the login — so it proves MORE than
+// the box's `all`, not less. The box costs nothing, which is why it stays the default.
+//
+// 🔴 IT DISPATCHES ON A REF AND THEREFORE VERIFIES THE SHA TWICE. `gh workflow run` takes a branch,
+// not a commit, so it checks whatever origin holds for that branch: once BEFORE (refusing when the
+// local commit is not what origin has) and once AFTER (`gradeActionsRun` refuses a run whose
+// headSha is not this sha). Without both, a missing push turns "my code is green" into a statement
+// about somebody else's commit.
+//
+// 🔴 PUSHING THE BRANCH IS FREE. ci.yml triggers on `pull_request` and on a push to `main` only, so
+// pushing a feature branch runs nothing at all. That is why this refuses rather than pushing for
+// you: the push is the session's act, and it bills nothing either way.
+function runOnActions({ branch, sha, names, waitedSeconds }) {
+  console.log("");
+  console.log(
+    "remote-check: the box did not free in " + Math.round(waitedSeconds / 60) + " min — escalating to GitHub Actions " +
+      "(~14 billable minutes; the box is free, which is why it is the default).",
+  );
+  // A dispatch runs the whole workflow. Saying so keeps the output honest about what was proved: you
+  // asked for a subset and you are getting lint + typecheck + the suite + a build + the login smoke.
+  console.log(
+    "remote-check: ci.yml runs its whole gate, so this proves MORE than the " +
+      (names.length ? names.join(" + ") : "requested") + " you asked for, never less.",
+  );
+  if (!branch || branch === "HEAD") {
+    die("a detached HEAD cannot be dispatched — `gh workflow run` takes a branch. Put this commit on a branch first.");
+  }
+
+  let remoteSha = "";
+  try {
+    const line = execFileSync("git", ["ls-remote", "origin", "refs/heads/" + branch], { encoding: "utf8" }).trim();
+    remoteSha = line.split(/\s+/)[0] || "";
+  } catch {
+    die("could not read origin's copy of " + branch + " — nothing was dispatched.");
+  }
+  if (remoteSha !== sha) {
+    console.error("remote-check: origin does not hold this commit, so a dispatch would check other code.");
+    console.error("    local  " + sha.slice(0, 9) + "   (" + branch + ")");
+    console.error("    origin " + (remoteSha ? remoteSha.slice(0, 9) : "absent"));
+    console.error("");
+    console.error("    Pushing the branch costs NO Actions minutes (ci.yml runs on a PR and on main only):");
+    console.error("      git push -u origin " + branch);
+    die("push the branch, then re-run this with --urgent.");
+  }
+
+  // 🔴 AND IF THE BRANCH ALREADY HAS A PR, DISPATCHING IS PAYING TWICE FOR ONE ANSWER. A PR runs the
+  // same two required jobs on the same head commit, and that run is already paid for — so the cheap
+  // fallback for work that is ready to open a PR is the PR itself, never a dispatch beside it. This
+  // refuses with the PR number rather than billing a second round (owner, 2026-09-27: one wide PR,
+  // every merge costs ~28 billable CI minutes).
+  try {
+    const open = execFileSync(
+      "gh",
+      ["pr", "list", "--head", branch, "--state", "open", "--json", "number", "--jq", ".[].number"],
+      { encoding: "utf8" },
+    ).trim();
+    if (open) {
+      console.error("remote-check: #" + open.split("\n")[0] + " is already open on " + branch + ".");
+      console.error("    Its `validate` and `checks` runs are the SAME two required jobs, on this same commit,");
+      console.error("    and they are already billed. A dispatch beside them would pay twice for one answer.");
+      console.error("      gh pr checks " + open.split("\n")[0] + " --watch");
+      console.error("remote-check: NO VERDICT — read the PR's own checks.");
+      process.exit(6);
+    }
+  } catch {
+    // No `gh`, no network, no permission: fall through to the dispatch rather than inventing a reason
+    // to stop. A failed read is not evidence that no PR exists.
+  }
+
+  const dispatchedAfter = new Date(Date.now() - 60_000).toISOString();
+  try {
+    execFileSync("gh", ["workflow", "run", "ci.yml", "--ref", branch], { encoding: "utf8", stdio: "pipe" });
+  } catch (error) {
+    const detail = String(error?.stderr || error?.message || "").trim().split("\n").slice(-1)[0] || "";
+    die("the dispatch itself failed: " + detail + " — nothing is running, so there is no verdict to wait for.");
+  }
+  console.log("remote-check: dispatched ci.yml on " + branch + " @ " + sha.slice(0, 9) + " — watching for its verdict");
+
+  // 🔴 ALLOW-LIST THE TERMINAL STATE, AND NEVER FALL OUT OF THIS LOOP INTO A SUCCESS LINE. The
+  // deadline exists so a stuck queue ends as NO VERDICT rather than as silence; ci.yml's own PR path
+  // is ~163s, and a queued runner can add minutes to that.
+  const deadline = Date.now() + 25 * 60 * 1000;
+  let last = "waiting for the run to appear";
+  while (Date.now() < deadline) {
+    sleepSeconds(20);
+    let runs = [];
+    try {
+      const json = execFileSync(
+        "gh",
+        ["run", "list", "--workflow", "ci.yml", "--branch", branch, "--event", "workflow_dispatch",
+          "--limit", "10", "--json", "databaseId,headSha,status,conclusion,url,createdAt"],
+        { encoding: "utf8" },
+      );
+      runs = JSON.parse(json);
+    } catch {
+      // A read that failed is not a verdict either way — say so and ask again.
+      console.log("remote-check: could not read the run list this time — asking again");
+      continue;
+    }
+    const run = runs.filter((r) => r.createdAt >= dispatchedAfter).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    const graded = gradeActionsRun(run, sha);
+    if (!graded.settled) {
+      if (graded.why !== last) {
+        console.log("remote-check: Actions " + graded.why + (run?.url ? "  " + run.url : ""));
+        last = graded.why;
+      }
+      continue;
+    }
+    if (graded.verdict === "pass") {
+      console.log("remote-check: Actions run " + run.url + " — completed/success");
+      console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (GitHub Actions, not the box)");
+      process.exit(0);
+    }
+    if (graded.verdict === "fail") {
+      console.error("remote-check: Actions run " + run.url + " — completed/failure");
+      console.error("remote-check: FAIL — " + sha.slice(0, 9) + "  (GitHub Actions, not the box)");
+      process.exit(1);
+    }
+    console.error("remote-check: NO VERDICT — " + graded.why + (run?.url ? "  " + run.url : ""));
+    process.exit(6);
+  }
+  console.error("remote-check: NO VERDICT — the dispatched run had not settled after 25 minutes.");
+  process.exit(6);
+}
+
 // 🔴 THE FIRST FAILURE ANYONE HITS IS A CHANGED HOST KEY, AND ITS RAW OUTPUT IS A WALL OF SHOUTING
 // ABOUT A MAN-IN-THE-MIDDLE. On this box it has a dull cause: Hetzner rescue runs a DIFFERENT
 // system with its own host key, so a `known_hosts` entry recorded while the box was in rescue does
@@ -226,7 +381,18 @@ function git(...args) {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 
-const requested = process.argv.slice(2).filter((a) => !a.startsWith("-"));
+// 🔴 FLAGS ARE PARSED, NOT FILTERED AWAY. This line was `argv.filter((a) => !a.startsWith("-"))`,
+// so `--urgnet` ran the plain behaviour and reported success — the same silent-ignore defect
+// `scripts/rollup-prs.mjs` refuses by name. `parseEscalation` returns the positional arguments and
+// every flag it did not recognise, and an unrecognised one dies here.
+const escalation = parseEscalation(process.argv.slice(2));
+if (escalation.unknown.length > 0) {
+  die(
+    "unknown flag(s): " + escalation.unknown.join(", ") + ". Known: --wait <minutes>, --actions, " +
+      "--urgent (= --wait " + URGENT_WAIT_MINUTES + " --actions).",
+  );
+}
+const requested = escalation.positional;
 
 // `lockfile` is not a CHECKS entry and cannot be one: every CHECKS value is a bash fragment dropped
 // into a `if <cmd>; then R=PASS; else R=FAIL` wrapper, so a check can only ever pass or fail. This
@@ -311,7 +477,41 @@ if (!busy.known) {
   // that answered oddly, never proof that the box is idle.
   die("could not tell whether the box is busy — the probe did not finish. Nothing was pushed.");
 }
-if (busy.runs.length > 0 && process.env.PHX_CHECK_FORCE !== "1") {
+// 🔴 AND SINCE 2026-10-06 THE REFUSAL IS NO LONGER THE ONLY WAY OUT (owner's policy: the box by
+// default because it is free, GitHub Actions when the work cannot wait). `--wait <minutes>` polls
+// VISIBLY — the objection above is to a SILENT wait, not to waiting — and `--urgent` adds the Actions
+// fallback at the end of it. Default behaviour with no flags is unchanged: refuse immediately.
+const FORCED = process.env.PHX_CHECK_FORCE === "1";
+let waitedSeconds = 0;
+let plan = FORCED
+  ? { action: "run", waitLeftSeconds: 0 }
+  : decideBusyAction({
+      busyRuns: busy.runs,
+      waitedSeconds,
+      waitMinutes: escalation.waitMinutes,
+      actions: escalation.actions,
+    });
+while (plan.action === "poll") {
+  console.log(
+    "remote-check: box busy (" + busy.runs.length + " run(s): " + busy.runs.join(", ") + ") — asking again in " +
+      BUSY_POLL_SECONDS + "s, " + Math.ceil(plan.waitLeftSeconds / 60) + " min of the wait left",
+  );
+  sleepSeconds(BUSY_POLL_SECONDS);
+  waitedSeconds += BUSY_POLL_SECONDS;
+  const again = parseBusyProbe(ssh(buildBusyProbeScript(REMOTE_ROOT), { capture: true }));
+  if (!again.known) die("could not tell whether the box is busy — the probe did not finish. Nothing was pushed.");
+  busy.runs = again.runs;
+  plan = decideBusyAction({
+    busyRuns: again.runs,
+    waitedSeconds,
+    waitMinutes: escalation.waitMinutes,
+    actions: escalation.actions,
+  });
+}
+if (plan.action === "actions" && !FORCED) {
+  runOnActions({ branch, sha, names, waitedSeconds });
+}
+if (busy.runs.length > 0 && plan.action !== "run" && !FORCED) {
   console.error("remote-check: the box is ALREADY running " + busy.runs.length + " remote-check run(s):");
   for (const run of busy.runs) console.error("    runs/" + run);
   console.error("");
@@ -324,10 +524,17 @@ if (busy.runs.length > 0 && process.env.PHX_CHECK_FORCE !== "1") {
   console.error("        'for p in /proc/[0-9]*; do d=$(readlink \"$p/cwd\" 2>/dev/null) || continue;" +
     " case \"$d\" in */runs/<RUN_ID>*) kill -KILL ${p#/proc/};; esac; done'");
   console.error("");
+  console.error("    Three ways forward, cheapest first:");
+  console.error("      --wait <minutes>   ask the box again every " + BUSY_POLL_SECONDS +
+    "s until it frees. Free, and it prints a line each time.");
+  console.error("      --urgent           that wait (" + URGENT_WAIT_MINUTES +
+    " min), then run ci.yml on GitHub Actions instead — ~14 billable minutes.");
+  console.error("      PHX_CHECK_FORCE=1  start beside the other run anyway (this is what OOM-kills a build).");
+  console.error("");
   die(
     "not starting a second one. This box is 7,740 MB and a build alone wants ~7.4 GB of it, so a " +
       "concurrent run is how a check gets OOM-killed or reports a time that is really contention. " +
-      "Wait for the run above to finish, or set PHX_CHECK_FORCE=1 if you know it is harmless.",
+      "Re-run with --wait <minutes> or --urgent rather than hand-rolling a retry loop.",
   );
 }
 

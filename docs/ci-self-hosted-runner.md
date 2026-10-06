@@ -580,6 +580,62 @@ number.
 **While `CI_RUNNER` reads `ubuntu-latest`, the replicas still bill** — roughly $8/month in idle memory
 for three. That is spend producing nothing, and parking them at 0 is a dashboard decision.
 
+## 🔴 When the box is busy: wait, or pay for Actions — owner's policy, 2026-10-06
+
+**His words:** *"in critical situations, let's depend on GitHub Actions; in normal situations we are on
+the box to decrease the cost."* This is that policy, implemented in `scripts/remote-check.mjs` rather
+than left to each session's judgement.
+
+**The problem it solves, measured the day it was written.** Several sessions share one 7,740 MB box, so
+`remote-check` refuses to start a second run — correctly: a `next build` wants ~7.4 GB and dies beside
+company. But until that day the refusal was the END of the road, so a session invented a retry loop.
+One did, around a finished branch waiting to open its PR: **14 consecutive refusals between 15:26 and
+15:43 Cairo — 17 minutes, every one `exit 2`, not one of them reaching the box**, while another
+session's `all` held it. Nothing was wrong with the branch, the box or the refusal. The work was simply
+parked, and the session had no sanctioned way out.
+
+**The three routes out of a busy box, cheapest first.**
+
+| Invocation | What happens | Cost |
+| --- | --- | --- |
+| *(no flag)* — the default | refuses at once, and now PRINTS the two routes below | nothing |
+| `--wait <minutes>` | asks the box again every 30 s, **printing a line each time**, then runs | nothing |
+| `--urgent` (= `--wait 4 --actions`) | that wait, then dispatches `ci.yml` on GitHub Actions | ~14 billable minutes |
+
+**Why the wait is allowed now when the refusal's own comment argued against queueing.** The objection
+was never to waiting — it was to waiting *silently*: a 30-minute `flock` on the box reads as a hang.
+Every poll here prints the runs it is waiting for and how much budget is left, so a quiet terminal
+still means something is wrong. And the wait is opt-in, so no existing caller changed behaviour.
+
+**Why the Actions fallback verifies the sha twice.** `gh workflow run` takes a **ref**, not a commit, so
+it checks whatever origin holds for that branch. The script compares `git ls-remote origin
+refs/heads/<branch>` to the local commit **before** dispatching, and `gradeActionsRun` refuses any run
+whose `headSha` is not that commit **after**. Without both, a forgotten push turns "my code is green"
+into a statement about somebody else's commit. Pushing the branch to make them agree costs nothing:
+`ci.yml` triggers on `pull_request` and on a push to `main` only, so a feature-branch push runs
+nothing.
+
+**It refuses to pay twice.** If the branch already has an open PR, that PR is already running the same
+two required jobs on the same commit, and a dispatch beside them bills a second round for one answer.
+The fallback then exits **6 — NO VERDICT** and names `gh pr checks <n> --watch` instead. So the honest
+rule of thumb is: **ready to open the PR → open it, the PR's checks ARE the Actions fallback; not ready
+→ `--urgent`.**
+
+**The verdict is allow-listed, never deny-listed.** Only `completed/success` passes and only
+`completed/failure` fails; `cancelled`, `timed_out`, `skipped`, `neutral`, `action_required`,
+`startup_failure` and every unfinished status are **NO VERDICT** (exit 6), which is a retry and never a
+green. This repo has already lost a day to the other shape — a watcher that `continue`d on a deny-list
+of unfinished states met a 422 body, matched none of them, fell out of its loop and printed its success
+line.
+
+**Exit codes.** `0` pass · `1` fail · `2` refusal (nothing ran) · `3` the tree moved · `4` OOM, no
+verdict · `5` transport, no verdict · **`6` the Actions route gave no verdict**. Only `0` and `1` are
+verdicts; an automated chain retries the rest.
+
+Pinned by `tests/remote-check.test.ts` section 10, in the required `validate` job: the default still
+refuses, the escalation never spawns a heavy runner locally, the open-PR short circuit sits BEFORE the
+dispatch, and both sha guards are asserted.
+
 ## 🔴 The safety rules
 
 1. **PRIVATE REPOSITORIES ONLY.** A self-hosted runner executes whatever a workflow tells it to.
