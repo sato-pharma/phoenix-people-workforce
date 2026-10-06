@@ -37,7 +37,8 @@ setup("authenticate data-bearing user", async ({ page }) => {
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded" });
 
   // Wait for hydration
-  const hrIdInput = page.getByRole("textbox", { name: /HR_ID or Login ID/i });
+  // Located by the input id, not the label — see the note in tests/e2e/auth.setup.ts.
+  const hrIdInput = page.locator("#login-id");
   await expect(hrIdInput).toBeVisible({ timeout: 15_000 });
 
   // Fill in HR ID and password

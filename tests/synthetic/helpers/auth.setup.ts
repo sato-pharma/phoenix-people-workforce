@@ -15,7 +15,8 @@ setup("authenticate as synthetic admin", async ({ page }) => {
 
   await page.goto("/login", { waitUntil: "domcontentloaded" });
 
-  const hrIdInput = page.getByRole("textbox", { name: /HR_ID or Login ID/i });
+  // Located by the input id, not the label — see the note in tests/e2e/auth.setup.ts.
+  const hrIdInput = page.locator("#login-id");
   await expect(hrIdInput).toBeVisible({ timeout: 15_000 });
 
   await hrIdInput.fill(hrId);
