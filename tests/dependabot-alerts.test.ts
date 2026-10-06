@@ -540,6 +540,53 @@ export function runDependabotAlertsTests() {
     "and it must keep the ORIGINAL wording, not a softened one",
   );
 
+  // 🔴 A PATCHED VERSION AND A RECORDED DECISION TOGETHER — the combination #113 arrived with, and the
+  // one the two cases above cannot see. Every decision written in open-dependency-alerts.md before
+  // 2026-10-06 was for an alert with NO patched version, so the acceptance note only ever had to
+  // replace the "needs a decision" demand. #113 (source-map-js, patched at 1.2.2, in another
+  // application's lockfile) has both, and printed as a bare `bump to 1.2.2`: the decision was recorded
+  // and invisible, so the next session reads an instruction the owner has already answered — and in
+  // this repo the path that bump lives in is one the mobile freeze guard refuses, so acting on it fails
+  // twice over. Both halves are now printed, because both are true.
+  const DECIDED_113 = [
+    "### `source-map-js` — GHSA-68fv-2mgg-jv7q · HIGH",
+    "",
+    "| | |",
+    "| --- | --- |",
+    "| **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-06 at the owner's instruction. |",
+    "| Alert | #113, opened 2026-10-06, `other-app/package-lock.json` |",
+    "",
+  ].join("\n");
+  const decided113 = readRecordedDecisions(DECIDED_113);
+  const patchedAlert = (manifest: string) => ({
+    number: 113,
+    security_advisory: { severity: "high", ghsa_id: "GHSA-68fv-2mgg-jv7q" },
+    dependency: { package: { name: "source-map-js" }, scope: "runtime", manifest_path: manifest },
+    security_vulnerability: { vulnerable_version_range: ">= 1.0.0, < 1.2.2", first_patched_version: { identifier: "1.2.2" } },
+  });
+
+  const patchedUnreachable = classifyAlerts([patchedAlert("other-app/package-lock.json")]).unreachable[0];
+  assert.ok(patchedUnreachable, "a patched HIGH in an unread manifest must still classify as unreachable");
+  assert.match(
+    describeAlert(patchedUnreachable, decided113),
+    /bump to 1\.2\.2 — but risk ACCEPTED, recorded 2026-10-06/,
+    "an unreachable alert that HAS a patched version and a recorded decision must print BOTH — the "
+      + "version that exists and the decision not to take it here. Printing the bump alone hands the "
+      + "next session an instruction the owner has already answered.",
+  );
+
+  // 🔴 AND THE REACHABLE ONE KEEPS ITS BARE BUMP. A recorded acceptance must never read as a reason to
+  // leave something that will turn `validate` red — which by AGENTS.md §2.3 withholds a production
+  // deploy. This is the fail-closed direction of the case above, and the only reason it is safe.
+  const patchedReachable = classifyAlerts([patchedAlert("pnpm-lock.yaml")]).failing[0];
+  assert.ok(patchedReachable, "a patched runtime HIGH in the audited lockfile must classify as failing");
+  assert.doesNotMatch(
+    describeAlert(patchedReachable, decided113),
+    /ACCEPTED/,
+    "a GATE-FAILING alert must keep its bare bump instruction even with a decision recorded against its "
+      + "number — an acceptance is about a gate that cannot go red, never about one that will.",
+  );
+
   // FAIL CLOSED in every direction: the worst a misreading can do is leave a demand up, never retire
   // one nobody wrote. Each clause is its own case so a failure names which direction broke.
   for (const [why, doc] of [
