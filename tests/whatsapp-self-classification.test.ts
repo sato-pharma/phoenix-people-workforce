@@ -25,6 +25,7 @@ import {
   isOfferedBackground,
   isOfferedExperience,
   jobTitleMenu,
+  jobTitleMenuAllFamilies,
   jobTitleOtherPromptText,
   jobTitleOtherTooLongText,
   JOB_TITLE_OTHER_MAX,
@@ -407,12 +408,20 @@ export function runWhatsAppSelfClassificationTests() {
       "product_manager",
       "national_sales_manager",
       "human_resources",
+      "hr_section_head",
       "talent_acquisition",
-      "finance",
       "office_coordinator",
       "other",
     ].map((family) => classifyRowId("job_title", family)),
-    "the role menu must offer exactly the owner's ten roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02, Talent Acquisition added 2026-09-22 — now full at Meta's 10-row cap)",
+    "the role menu must offer exactly the owner's ten roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02, Talent Acquisition added 2026-09-22, HR Section Head added 2026-10-06 in the slot Finance held — full at Meta's 10-row cap)",
+  );
+  assert.ok(
+    !roleMenu.rows.some((row) => row.id === classifyRowId("job_title", "finance")),
+    "finance was displaced from the menu by hr_section_head on 2026-10-06 — an applicant types it under Other",
+  );
+  assert.ok(
+    jobTitleMenuAllFamilies().rows.some((row) => row.id === classifyRowId("job_title", "finance")),
+    "finance stays in the pool, so the Screening Questions screen can switch the Finance answer back on",
   );
   for (const family of offeredRoleMenuFamilies) {
     assert.ok(
@@ -440,7 +449,12 @@ export function runWhatsAppSelfClassificationTests() {
     "Regional Manager",
     "the applicant is asked for Regional Manager, not the pool's longer label",
   );
-  assert.equal(roleTitleById.get(classifyRowId("job_title", "finance")), "Finance");
+  assert.equal(roleTitleById.get(classifyRowId("job_title", "hr_section_head")), "HR Section Head");
+  assert.equal(
+    jobTitleMenuAllFamilies().rows.find((row) => row.id === classifyRowId("job_title", "finance"))?.title,
+    "Finance",
+    "the applicant-facing word for Finance is kept for the day it is switched back on",
+  );
   assert.equal(roleTitleById.get(classifyRowId("job_title", "national_sales_manager")), "National Sales Manager");
 
   // ── Question 2 — graduation background (owner's instruction 2026-08-30) ────────────────────────

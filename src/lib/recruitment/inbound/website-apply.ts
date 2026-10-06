@@ -76,6 +76,7 @@ export type WebsiteApplyRoleKey =
   | "national_sales_manager"
   | "medical_representative"
   | "district_manager"
+  | "hr_section_head"
   | "regulatory_affairs_specialist"
   | "quality_control_analyst";
 
@@ -115,6 +116,15 @@ const WEBSITE_APPLY_ROLES: Readonly<Record<WebsiteApplyRoleKey, WebsiteApplyRole
     key: "district_manager",
     roleFamily: "district_manager",
     title: "District Manager",
+  },
+  // The HR Section Head seat (Sheraton, Cairo). Its form is whatever the WhatsApp bot asks this family:
+  // background, then the eight `hrsh_*` questions — Cairo (a "No" ends the application with a thank-you
+  // message), residence, age, pharma experience with its two follow-ups, current salary and start date.
+  hr_section_head: {
+    jobTitle: "HR Section Head",
+    key: "hr_section_head",
+    roleFamily: "hr_section_head",
+    title: "HR Section Head",
   },
   // Regulatory Affairs and Quality Control are not field-force families, so the bot asks them neither
   // region nor area — their tailored form is background + experience + salary. They ride the "other"
@@ -178,6 +188,14 @@ export type WebsiteApplyField = {
    *  pick. Every list already ends with the OTHER_ROW_VALUE escape, and a region with no areas drawn
    *  yet (Delta (3) on 2026-08-28) is just the escape on its own. */
   optionsByRegion?: Record<string, WebsiteApplyFieldOption[]>;
+  /** Present on a conditional question: show it only when the field `fieldKey` holds one of `values`
+   *  (option codes). The server enforces this too — an answer to a field that is not shown is ignored —
+   *  so a renderer that draws every field still posts a form the server reads correctly. */
+  showIf?: { fieldKey: string; values: string[] };
+  /** Present on a question where some answers end the application: when the field holds one of
+   *  `values`, nothing further is asked and `message` is shown to the applicant. The server ends the
+   *  application at that field either way, whatever a later field was posted holding. */
+  endOn?: { values: string[]; message: string };
 };
 
 export type WebsiteApplyForm = {
@@ -316,6 +334,17 @@ export function websiteExtraFieldKey(questionKey: string): string {
   return `extra:${questionKey}`;
 }
 
+/** The conditional rules of an extra question, in the form's own vocabulary (field keys, not question
+ *  keys). Empty for the usual question that has neither. */
+function conditionalHints(question: ScreeningQuestion): Pick<WebsiteApplyField, "showIf" | "endOn"> {
+  return {
+    ...(question.showIf
+      ? { showIf: { fieldKey: websiteExtraFieldKey(question.showIf.questionKey), values: question.showIf.values } }
+      : {}),
+    ...(question.endOn ? { endOn: { message: question.endOn.message, values: question.endOn.values } } : {}),
+  };
+}
+
 function extraField(question: ScreeningQuestion): WebsiteApplyField {
   if (question.kind === "free_text") {
     return {
@@ -327,6 +356,7 @@ function extraField(question: ScreeningQuestion): WebsiteApplyField {
       // a missing answer must never block an application.
       maxLength: 200,
       required: false,
+      ...conditionalHints(question),
     };
   }
   return {
@@ -339,7 +369,11 @@ function extraField(question: ScreeningQuestion): WebsiteApplyField {
       title: option.title,
       value: option.value,
     })),
-    required: false,
+    // A question whose answer can END the application is the gate for everything after it, so it is
+    // required: left optional, an applicant outside the seat's requirement could skip it and slip
+    // through. Every other extra stays optional.
+    required: Boolean(question.endOn),
+    ...conditionalHints(question),
   };
 }
 
@@ -454,9 +488,14 @@ export type WebsiteApplyRawAnswers = {
  *  unanswered optional extra writes nothing, never a blank. */
 export type WebsiteApplyClassification = {
   jobTitle: string;
-  experienceLabel: string;
-  expectedSalary: string;
+  /** Null when the role is not asked the experience band (the HR Section Head). */
+  experienceLabel: string | null;
+  /** Null when the role is not asked the salary question this form carries. */
+  expectedSalary: string | null;
   expectedSalaryFigure: number | null;
+  /** The owner's message when an answer ended the application early (the Cairo question); null for a
+   *  complete one. The application is recorded either way — see submitWebsiteApplication. */
+  endedMessage: string | null;
   /** The graduation background as a single read-back label — a code's label for a tapped answer, the
    *  applicant's own words for "Other". Null when the role is not asked background. Same column and
    *  shape as the WhatsApp path's `declared_background`. */
@@ -505,22 +544,28 @@ export function validateWebsiteApplication(
   const phone = cleanTypedAnswer(raw.phone, WEBSITE_APPLY_PHONE_MAX);
   if (!phone) errors.push("Please enter your mobile number.");
 
-  // Experience — a required tappable band. Its field is present for every role (universal built-in),
-  // so a missing or unrecognised value is a real error, not a skipped optional.
-  const experienceRaw = String(raw.answers.experience ?? "").trim();
-  let experienceLabel = "";
-  if (!experienceRaw) {
-    errors.push("Please choose how many years of experience you have.");
-  } else if (!isOfferedExperience(experienceRaw)) {
-    errors.push("Please choose a valid experience option.");
-  } else {
-    experienceLabel = candidateExperienceLabels[experienceRaw];
+  // Experience — a required tappable band, for every role the bot asks it of. That is every role but
+  // the HR Section Head, whose pharma-experience questions replace it, so it is read from the form's
+  // own fields rather than assumed: a missing or unrecognised value is a real error only where asked.
+  let experienceLabel: string | null = null;
+  if (form.fields.some((field) => field.key === "experience")) {
+    const experienceRaw = String(raw.answers.experience ?? "").trim();
+    if (!experienceRaw) {
+      errors.push("Please choose how many years of experience you have.");
+    } else if (!isOfferedExperience(experienceRaw)) {
+      errors.push("Please choose a valid experience option.");
+    } else {
+      experienceLabel = candidateExperienceLabels[experienceRaw];
+    }
   }
 
-  // Salary — required free text, stored verbatim (never coerced). Same rule as the bot: a number, a
-  // range and "negotiable" are all truthful answers a recruiter reads.
-  const expectedSalary = cleanTypedAnswer(raw.answers.salary, EXPECTED_SALARY_MAX);
-  if (!expectedSalary) errors.push("Please enter your expected monthly net salary.");
+  // Salary — required free text, stored verbatim (never coerced), where the role is asked it. Same rule
+  // as the bot: a number, a range and "negotiable" are all truthful answers a recruiter reads.
+  let expectedSalary: string | null = null;
+  if (form.fields.some((field) => field.key === "salary")) {
+    expectedSalary = cleanTypedAnswer(raw.answers.salary, EXPECTED_SALARY_MAX);
+    if (!expectedSalary) errors.push("Please enter your expected monthly net salary.");
+  }
 
   // Background — present only when the role's family is in the background audience. A tapped answer
   // must be an offered code; "Other" requires its typed text. Stored as one read-back label.
@@ -580,12 +625,24 @@ export function validateWebsiteApplication(
     }
   }
 
-  // Extras — optional, but any answer given must match an option the question defines.
+  // Extras — optional, but any answer given must match an option the question defines. Read in the
+  // form's own order, because that order is what makes the conditional rules mean anything:
+  //   - a question with `showIf` is read only when the field it depends on was itself shown AND holds
+  //     one of the listed answers, so a forged answer to a hidden follow-up is dropped, never stored;
+  //   - a question with `endOn` whose answer is one of the listed ones ENDS the application there: the
+  //     rest is not read, and the owner's message goes back to the applicant — exactly the WhatsApp
+  //     rule. The ending question itself is required, since it gates everything after it.
   const extraAnswers: Record<string, string> = {};
+  const shownValues: Record<string, string> = {};
+  let endedMessage: string | null = null;
   for (const field of form.fields) {
     if (!field.key.startsWith("extra:")) continue;
+    if (field.showIf && !field.showIf.values.includes(shownValues[field.showIf.fieldKey] ?? "")) continue;
     const value = String(raw.answers[field.key] ?? "").trim();
-    if (!value) continue; // optional — no answer, no column, exactly like an abandoned WhatsApp extra.
+    if (!value) {
+      if (field.required) errors.push(`Please answer: ${field.label}`);
+      continue; // optional — no answer, no column, exactly like an abandoned WhatsApp extra.
+    }
     const questionKey = field.key.slice("extra:".length);
     if (field.kind === "select") {
       const option = (field.options ?? []).find((candidate) => candidate.value === value);
@@ -594,6 +651,11 @@ export function validateWebsiteApplication(
         continue;
       }
       extraAnswers[questionKey] = option.title; // the TITLE is what screening_extra_answers holds.
+      shownValues[field.key] = option.value;
+      if (field.endOn?.values.includes(option.value)) {
+        endedMessage = field.endOn.message;
+        break;
+      }
     } else {
       const cleaned = cleanExtraAnswerText(value);
       if (cleaned) extraAnswers[questionKey] = cleaned;
@@ -606,8 +668,9 @@ export function validateWebsiteApplication(
     classification: {
       areaName,
       declaredBackground,
-      expectedSalary: expectedSalary as string,
-      expectedSalaryFigure: parseDeclaredSalaryFigure(expectedSalary),
+      endedMessage,
+      expectedSalary,
+      expectedSalaryFigure: expectedSalary ? parseDeclaredSalaryFigure(expectedSalary) : null,
       experienceLabel,
       extraAnswers,
       jobTitle: role.jobTitle,
@@ -630,7 +693,9 @@ export type WebsiteApplySubmission = {
 };
 
 export type WebsiteApplyOutcome =
-  | { ok: true; candidateId: string }
+  /** `endedMessage` is set when an answer ended the application early: the CV and answers are
+   *  recorded, no confirmation letter is sent, and the message is what the applicant is shown. */
+  | { ok: true; candidateId: string; endedMessage: string | null }
   | { ok: false; reason: "unreadable_cv" | "duplicate" | "error"; message: string };
 
 /**
@@ -648,10 +713,12 @@ async function applyWebsiteClassification(
 
   const payload: Record<string, unknown> = {
     applied_for_job_title: classification.jobTitle,
-    declared_experience: classification.experienceLabel,
-    declared_expected_salary: classification.expectedSalary,
     preferences_declared_at: nowIso,
   };
+  // Only where the role was asked them — the HR Section Head is asked neither, and writing a blank
+  // would erase an answer a matched candidate already holds.
+  if (classification.experienceLabel) payload.declared_experience = classification.experienceLabel;
+  if (classification.expectedSalary) payload.declared_expected_salary = classification.expectedSalary;
   // The numeric column is filled ONLY when the answer really is a figure — everything that reads it
   // (the workspace salary cell, the merge borrow list) expects a real number, so "negotiable" or a
   // range leaves it untouched and keeps its words in declared_expected_salary. See
@@ -722,6 +789,13 @@ export async function submitWebsiteApplication(input: WebsiteApplySubmission): P
         labels: { candidate_id: candidateId, event: "website_apply_classification_failed", role: input.role.key },
       });
     }
+    // An application an answer ended gets the owner's message on screen and NO letter: a confirmation
+    // saying "we received your application" would contradict the message the applicant was just shown.
+    // The e-mail is not the vehicle for that message — only the WhatsApp Cairo thank-you was approved
+    // to go out on its own.
+    if (input.classification.endedMessage) {
+      return { candidateId, endedMessage: input.classification.endedMessage, ok: true };
+    }
     // The applicant's confirmation letter — the SATO house template, sent to their own address. Best
     // effort on top of an already-captured application: an e-mail that cannot be sent (provider down,
     // notifications off, held by the confidence gate) must NEVER fail the submission or lose the CV.
@@ -737,7 +811,7 @@ export async function submitWebsiteApplication(input: WebsiteApplySubmission): P
         labels: { candidate_id: candidateId, event: "website_apply_confirmation_failed", role: input.role.key },
       });
     }
-    return { candidateId, ok: true };
+    return { candidateId, endedMessage: null, ok: true };
   }
 
   if (result.outcome === "ignored_duplicate") {

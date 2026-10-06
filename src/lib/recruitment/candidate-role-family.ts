@@ -26,6 +26,7 @@ export const candidateRoleFamilies = [
   "sales",
   "pharmacist",
   "human_resources",
+  "hr_section_head",
   "talent_acquisition",
   "finance",
   "office_coordinator",
@@ -38,6 +39,7 @@ export const candidateRoleFamilyLabels: Record<CandidateRoleFamily, string> = {
   area_regional_manager: "Area / Regional Manager",
   district_manager: "District Manager",
   finance: "Finance & Accounting",
+  hr_section_head: "HR Section Head",
   human_resources: "Human Resources",
   medical_rep: "Medical Representative",
   national_sales_manager: "National Sales Manager",
@@ -132,6 +134,17 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
   if (/\bsupervisor\s+for\s+\w+\s+line\b/.test(t)) return "area_regional_manager";
 
   if (/\b(product|brand|marketing)\s+manager\b/.test(t)) return "product_manager";
+
+  // HR Section Head, added 2026-10-06 for the HR Section Head opening (the seat under the HR Manager
+  // that leads Talent Acquisition, Personnel and the Office Coordinator). It runs BEFORE Talent
+  // Acquisition and Human Resources because a title naming the section-head seat is the applied-for
+  // job even when it also says HR or recruitment. Deliberately NARROW: it needs "section" next to
+  // head/manager/lead/chief and an HR word, so "HR Manager", "Head of HR" and "Sales Section Head"
+  // keep the family they already had — nobody moves out of a bucket except the exact seat.
+  if (/\b(hr|human\s+resources?)\s+section\s+(head|manager|lead|chief)\b/.test(t)) return "hr_section_head";
+  if (/\bsection\s+(head|manager|lead|chief)\s+(of\s+|for\s+)?(hr|human\s+resources?)\b/.test(t)) {
+    return "hr_section_head";
+  }
 
   // Talent Acquisition before the HR families, added 2026-09-22 for the TA Specialist opening. A
   // recruiter IS an HR seat, but the owner wants these CVs in their own bucket rather than folded

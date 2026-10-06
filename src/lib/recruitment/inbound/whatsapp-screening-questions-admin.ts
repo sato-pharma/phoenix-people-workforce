@@ -14,8 +14,10 @@ import { invalidateScreeningQuestionCache } from "@/lib/recruitment/inbound/what
 import {
   screeningQuestionViolations,
   type ScreeningQuestion,
+  type ScreeningQuestionEndOn,
   type ScreeningQuestionKind,
   type ScreeningQuestionOption,
+  type ScreeningQuestionShowIf,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 
 /**
@@ -65,6 +67,10 @@ export type ScreeningQuestionDraft = {
    *  outright on a free_text question, which has no list — see screeningQuestionViolations. */
   buttonLabel?: string | null;
   sectionTitle?: string | null;
+  /** The words sent when an answer to this question ends the conversation. Only meaningful on a
+   *  question that already ends it (the rule itself is set in the database, not on this screen):
+   *  absent leaves the saved message alone, and it is ignored on a question with no such rule. */
+  endMessage?: string | null;
 };
 
 type QuestionDbRow = {
@@ -80,6 +86,8 @@ type QuestionDbRow = {
    *  "use the generic default", so the list still works during the deploy-before-migration window. */
   button_label?: string | null;
   section_title?: string | null;
+  show_if?: ScreeningQuestionShowIf | null;
+  end_on?: ScreeningQuestionEndOn | null;
 };
 
 /** A list button or heading as the column wants it: the typed words, or NULL for "use the default". */
@@ -93,12 +101,14 @@ function mapQuestionRow(row: QuestionDbRow): ScreeningQuestion {
     appliesToRoleFamilies: row.applies_to_role_families,
     bodyText: row.body_text,
     buttonLabel: row.button_label ?? null,
+    endOn: row.end_on ?? null,
     id: row.id,
     isActive: row.is_active,
     kind: row.kind,
     options: row.options,
     questionKey: row.question_key,
     sectionTitle: row.section_title ?? null,
+    showIf: row.show_if ?? null,
     sortOrder: row.sort_order,
   };
 }
@@ -126,7 +136,7 @@ export async function listScreeningQuestions(): Promise<ScreeningQuestionAdminRo
   const { data, error } = await supabase
     .from(QUESTIONS_TABLE)
     .select(
-      "id,question_key,body_text,kind,options,sort_order,is_active,applies_to_role_families,button_label,section_title",
+      "id,question_key,body_text,kind,options,sort_order,is_active,applies_to_role_families,button_label,section_title,show_if,end_on",
     )
     .order("sort_order", { ascending: true });
   if (error) throw error;
@@ -182,12 +192,25 @@ export async function saveScreeningQuestionSet(input: {
 
   const { data: existingRows, error: existingError } = await supabase
     .from(QUESTIONS_TABLE)
-    .select("id,question_key");
+    .select("id,question_key,show_if,end_on");
   if (existingError) throw existingError;
 
+  // The conditional rules are not editable on this screen, so they are carried over from what is saved
+  // - except the ending message, which is the owner's wording and is. Validation sees the same rules
+  // the bot will run.
+  const existingRulesById = new Map<
+    string,
+    { showIf: ScreeningQuestionShowIf | null; endOn: ScreeningQuestionEndOn | null }
+  >();
   const existingKeyById = new Map<string, string>();
   const takenKeys = new Set<string>();
-  for (const row of (existingRows ?? []) as { id: string; question_key: string }[]) {
+  for (const row of (existingRows ?? []) as {
+    id: string;
+    question_key: string;
+    show_if: ScreeningQuestionShowIf | null;
+    end_on: ScreeningQuestionEndOn | null;
+  }[]) {
+    existingRulesById.set(row.id, { endOn: row.end_on ?? null, showIf: row.show_if ?? null });
     existingKeyById.set(row.id, row.question_key);
     takenKeys.add(row.question_key);
   }
@@ -206,11 +229,15 @@ export async function saveScreeningQuestionSet(input: {
     if (draft.id) {
       const questionKey = existingKeyById.get(draft.id);
       if (!questionKey) throw new Error("One of these questions no longer exists — reload and try again.");
-      return { ...draft, appliesToRoleFamilies, questionKey };
+      const saved = existingRulesById.get(draft.id);
+      const endMessage = typeof draft.endMessage === "string" ? draft.endMessage.trim() : null;
+      const endOn =
+        saved?.endOn && endMessage !== null ? { ...saved.endOn, message: endMessage } : (saved?.endOn ?? null);
+      return { ...draft, appliesToRoleFamilies, endOn, questionKey, showIf: saved?.showIf ?? null };
     }
     const questionKey = disambiguateQuestionKey(slugifyQuestionKey(draft.bodyText), takenKeys);
     takenKeys.add(questionKey);
-    return { ...draft, appliesToRoleFamilies, questionKey };
+    return { ...draft, appliesToRoleFamilies, endOn: null, questionKey, showIf: null };
   });
 
   // screeningQuestionViolations checks question-key format for every row, new or existing — no
@@ -226,6 +253,8 @@ export async function saveScreeningQuestionSet(input: {
       // Written as NULL rather than "" so the column's own CHECK holds and a blank box means exactly
       // one thing: use the generic default. Always NULL for free_text, which has no list.
       button_label: question.kind === "tappable" ? chromeOrNull(question.buttonLabel) : null,
+      // Written back as read, apart from the ending message above - never invented here.
+      end_on: question.endOn,
       is_active: question.isActive,
       kind: question.kind,
       options: question.kind === "tappable" ? question.options : null,

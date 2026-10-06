@@ -147,6 +147,18 @@ export function runCandidateRoleRegionTests() {
   assert.equal(candidateRoleFamily("Recruitment Coordinator"), "talent_acquisition");
   assert.equal(candidateRoleFamily("Talent Acquisition & HR Manager"), "talent_acquisition",
     "the recruiting word wins over a bare HR mention — it is the applied-for job");
+  // HR Section Head splits out of Human Resources (2026-10-06): only the exact seat moves, and it
+  // beats the recruiting and bare-HR words in the same title.
+  assert.equal(candidateRoleFamily("HR Section Head"), "hr_section_head");
+  assert.equal(candidateRoleFamily("Human Resources Section Head"), "hr_section_head");
+  assert.equal(candidateRoleFamily("HR Section Manager"), "hr_section_head");
+  assert.equal(candidateRoleFamily("Section Head - HR & Recruitment"), "hr_section_head",
+    "the section-head seat wins over the recruiting word — it is the applied-for job");
+  assert.equal(candidateRoleFamily("Section Head of Human Resources"), "hr_section_head");
+  assert.equal(candidateRoleFamily("HR Manager"), "human_resources", "an HR Manager is not the section-head seat");
+  assert.equal(candidateRoleFamily("Head of HR"), "human_resources", "Head of HR keeps the family it had");
+  assert.equal(candidateRoleFamily("Personnel Section Head"), "human_resources", "a personnel section is HR operations");
+  assert.equal(candidateRoleFamily("Sales Section Head"), "sales", "a section head outside HR is untouched");
   assert.equal(candidateRoleFamily("Senior Tax & Accounts Payable"), "finance");
   assert.equal(candidateRoleFamily("\u0645\u062d\u0627\u0633\u0628 \u0639\u0627\u0645"), "finance", "Arabic accountant");
   assert.equal(candidateRoleFamily("Community Pharmacist"), "pharmacist");

@@ -69,6 +69,9 @@ const bandByFamily: Record<CandidateRoleFamily, ScreeningBand> = {
   area_regional_manager: "field_force",
   district_manager: "field_force",
   finance: "unrelated",
+  // HR Section Head (added 2026-10-06): `unrelated` beside human_resources — an HR leader's CV speaks
+  // to no field-force or pharma read, and a title WAS read, so it is not `unknown`.
+  hr_section_head: "unrelated",
   human_resources: "unrelated",
   medical_rep: "field_force",
   // Field force, not `sales`: an NSM runs the field organisation. Before this family existed all 7

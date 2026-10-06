@@ -244,6 +244,7 @@ import { runWhatsAppScreeningQuestionsSessionTests } from "./whatsapp-screening-
 import { runWhatsAppScreeningQuestionsAdminTests } from "./whatsapp-screening-questions-admin.test.ts";
 import { runWhatsAppBuiltInQuestionAudienceTests } from "./whatsapp-built-in-question-audience.test.ts";
 import { runWhatsAppScreeningQuestionRoleScopeTests } from "./whatsapp-screening-question-role-scope.test.ts";
+import { runWhatsAppScreeningConditionalFlowTests } from "./whatsapp-screening-conditional-flow.test.ts";
 import { runWhatsAppQuestionPromptsTests } from "./whatsapp-question-prompts.test.ts";
 import { runWhatsAppAutoRepliesTests } from "./whatsapp-auto-replies.test.ts";
 import { runRecruitmentPipelineMetricsTests } from "./recruitment-pipeline-metrics.test.ts";
@@ -2827,6 +2828,10 @@ await runTest(
 await runTest(
   "WhatsApp screening question role scope (a question scoped to the Office Coordinator never reaches a medical rep; an unscoped one still reaches everyone, and a scoped one never reaches an applicant whose role we do not know)",
   runWhatsAppScreeningQuestionRoleScopeTests,
+);
+await runTest(
+  "WhatsApp screening conditional flow (a follow-up is only asked after the answer it depends on, a non-Cairo HR Section Head applicant is thanked and the conversation ends on that answer, pharma Yes asks two follow-ups and No skips both, and the ending message reaches the finish flow)",
+  runWhatsAppScreeningConditionalFlowTests,
 );
 await runTest(
   "WhatsApp built-in question wording (defaults are read from the menu builders so they cannot drift; rewording never touches the answer options; a reworded menu still passes the send-time check; the built-in wording is never written into the extra-question table, which would ask all six a second time)",

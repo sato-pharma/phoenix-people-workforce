@@ -24,12 +24,15 @@ import {
   buildExtraQuestionMenu,
   decideNextExtraStep,
   extraAnswerTooLongText,
+  nextActiveQuestion,
   parseExtraQuestionRowId,
   questionsForRole,
   type ExtraAnswerOutcome,
   type ScreeningQuestion,
+  type ScreeningQuestionEndOn,
   type ScreeningQuestionKind,
   type ScreeningQuestionOption,
+  type ScreeningQuestionShowIf,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 
 const QUESTIONS_TABLE = "ats_whatsapp_screening_questions";
@@ -64,17 +67,21 @@ type QuestionRow = {
   sort_order: number;
   is_active: boolean;
   applies_to_role_families: string[] | null;
+  show_if: ScreeningQuestionShowIf | null;
+  end_on: ScreeningQuestionEndOn | null;
 };
 
 function mapQuestionRow(row: QuestionRow): ScreeningQuestion {
   return {
     appliesToRoleFamilies: row.applies_to_role_families,
     bodyText: row.body_text,
+    endOn: row.end_on ?? null,
     id: row.id,
     isActive: row.is_active,
     kind: row.kind,
     options: row.options,
     questionKey: row.question_key,
+    showIf: row.show_if ?? null,
     sortOrder: row.sort_order,
   };
 }
@@ -87,7 +94,7 @@ export async function loadAllQuestions(): Promise<ScreeningQuestion[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from(QUESTIONS_TABLE)
-    .select("id,question_key,body_text,kind,options,sort_order,is_active,applies_to_role_families")
+    .select("id,question_key,body_text,kind,options,sort_order,is_active,applies_to_role_families,show_if,end_on")
     .order("sort_order", { ascending: true });
   if (error) throw error;
 
@@ -189,10 +196,14 @@ export async function startExtraQuestionLoop(
   fallbackPhoneNumberId: string | null,
   activeQuestions: readonly ScreeningQuestion[],
 ): Promise<void> {
-  const first = activeQuestions[0];
-  if (!first) return; // caller already checked non-empty; defensive only.
-
+  // The first question this applicant is actually asked: a conditional one cannot be first, since it
+  // depends on an answer nobody has given yet.
+  const first = nextActiveQuestion(activeQuestions, new Set());
   const withPhone = { ...session, phone_number_id: session.phone_number_id ?? fallbackPhoneNumberId };
+  if (!first) {
+    await finishSession(withPhone, fallbackPhoneNumberId);
+    return;
+  }
   const supabase = recruitmentDb();
   await supabase
     .from(SESSIONS_TABLE)
@@ -250,12 +261,17 @@ async function applyExtraDecision(input: {
     return "advanced";
   }
 
-  // outcome === "finished"
+  // outcome === "finished" or "ended". An ended conversation is recorded and mirrored exactly like a
+  // finished one — the owner still learns who applied — but sends its own message, not the summary.
   await supabase
     .from(SESSIONS_TABLE)
     .update({ extra_answers: answers, extra_current_question_key: null, updated_at: nowIso })
     .eq("id", session.id);
-  await finishExtraQuestionLoop({ ...session, extra_answers: answers }, phoneNumberId);
+  await finishExtraQuestionLoop(
+    { ...session, extra_answers: answers },
+    phoneNumberId,
+    decision.outcome === "ended" ? decision.message : undefined,
+  );
   return "completed";
 }
 
@@ -300,6 +316,7 @@ export async function handleExtraQuestionReply(input: {
       activeQuestions,
       answer: { kind: "tapped", value: parsed.value },
       answeredKeysBeforeThis: new Set(Object.keys(session.extra_answers ?? {})),
+      answersBeforeThis: session.extra_answers ?? {},
       currentQuestion,
     });
 
@@ -351,6 +368,7 @@ export async function handleExtraQuestionText(input: {
       activeQuestions,
       answer: { kind: "typed", text: input.text },
       answeredKeysBeforeThis: new Set(Object.keys(session.extra_answers ?? {})),
+      answersBeforeThis: session.extra_answers ?? {},
       currentQuestion,
     });
 
@@ -381,7 +399,11 @@ export async function handleExtraQuestionText(input: {
 
 // ── Finishing: write the answers, then hand off to the unmodified finish flow ──────────────────
 
-async function finishExtraQuestionLoop(session: ExtraSessionRow, fallbackPhoneNumberId: string | null): Promise<void> {
+async function finishExtraQuestionLoop(
+  session: ExtraSessionRow,
+  fallbackPhoneNumberId: string | null,
+  closingText?: string,
+): Promise<void> {
   const answers = session.extra_answers ?? {};
   if (Object.keys(answers).length > 0) {
     const candidateId = session.applied_candidate_id ?? (await findCandidateForSender(session.wa_id).catch(() => null));
@@ -390,7 +412,7 @@ async function finishExtraQuestionLoop(session: ExtraSessionRow, fallbackPhoneNu
       await supabase.from("ats_candidates").update({ screening_extra_answers: answers }).eq("id", candidateId);
     }
   }
-  await finishSession(session, fallbackPhoneNumberId);
+  await finishSession(session, fallbackPhoneNumberId, closingText ? { closingText } : undefined);
 }
 
 /**

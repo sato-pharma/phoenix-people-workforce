@@ -83,6 +83,7 @@ export function runWebsiteApplyFormTests() {
     "national_sales_manager",
     "medical_representative",
     "district_manager",
+    "hr_section_head",
     "regulatory_affairs_specialist",
     "quality_control_analyst",
   ]);
@@ -286,4 +287,120 @@ export function runWebsiteApplyFormTests() {
     answers: { ...nsmBase.answers, background: "" },
   });
   assert.equal(noBackground.ok, false);
+
+  // ── HR Section Head: conditional questions and an answer that ends the application ──────────────
+  const hrshRole = resolveWebsiteApplyRole("hr_section_head");
+  assert.ok(hrshRole, "the HR Section Head position must resolve on the careers form");
+  assert.equal(hrshRole.roleFamily, "hr_section_head");
+  assert.equal(hrshRole.jobTitle, "HR Section Head");
+
+  const everyoneButHrsh = [
+    "district_manager", "area_regional_manager", "national_sales_manager", "medical_rep", "product_manager",
+    "sales", "pharmacist", "human_resources", "talent_acquisition", "finance", "office_coordinator", "other",
+  ];
+  const hrshAudiences: SavedAudiences = new Map<string, readonly string[]>([
+    ["area", ["medical_rep", "district_manager", "area_regional_manager", "national_sales_manager", "sales"]],
+    ["background", ["medical_rep", "other", "hr_section_head"]],
+    ["experience", everyoneButHrsh],
+    ["region", ["medical_rep", "district_manager", "area_regional_manager", "national_sales_manager", "sales"]],
+    ["salary", everyoneButHrsh],
+  ]);
+  const yesNo = [
+    { description: null, title: "Yes", value: "yes" },
+    { description: null, title: "No", value: "no" },
+  ];
+  const hq = (questionKey: string, overrides: Partial<ScreeningQuestion> = {}): ScreeningQuestion => ({
+    appliesToRoleFamilies: ["hr_section_head"],
+    bodyText: `${questionKey}?`,
+    endOn: null,
+    id: questionKey,
+    isActive: true,
+    kind: "tappable",
+    options: yesNo,
+    questionKey,
+    showIf: null,
+    sortOrder: 1,
+    ...overrides,
+  });
+  const STOP = "Thank you for your interest in Sato Pharma. This role is based at our Cairo office.";
+  const hrshExtras: ScreeningQuestion[] = [
+    hq("hrsh_cairo", { endOn: { message: STOP, values: ["no"] } }),
+    hq("hrsh_residence", { showIf: { questionKey: "hrsh_cairo", values: ["yes"] } }),
+    hq("hrsh_pharma"),
+    hq("hrsh_medrep", { showIf: { questionKey: "hrsh_pharma", values: ["yes"] } }),
+    hq("hrsh_salary", { kind: "free_text", options: null }),
+  ];
+  const hrshForm = assembleWebsiteApplyForm(hrshRole, hrshAudiences, hrshExtras, AREAS_BY_REGION);
+  assert.deepEqual(
+    hrshForm.fields.map((field) => field.key),
+    [
+      "full_name", "email", "phone", "cv", "background",
+      "extra:hrsh_cairo", "extra:hrsh_residence", "extra:hrsh_pharma", "extra:hrsh_medrep", "extra:hrsh_salary",
+    ],
+    "the HR Section Head is asked background, then its own questions — NOT experience, salary, region or area",
+  );
+  const cairoField = hrshForm.fields.find((field) => field.key === "extra:hrsh_cairo");
+  assert.equal(cairoField?.required, true, "the question that can end the application is required — it gates the rest");
+  assert.deepEqual(cairoField?.endOn, { message: STOP, values: ["no"] }, "the schema tells the page what ends it, and what to say");
+  assert.deepEqual(
+    hrshForm.fields.find((field) => field.key === "extra:hrsh_residence")?.showIf,
+    { fieldKey: "extra:hrsh_cairo", values: ["yes"] },
+    "a follow-up names the FIELD it waits on, in the form's own vocabulary",
+  );
+
+  const hrshBase: WebsiteApplyRawAnswers = {
+    answers: {
+      background: "pharmacy",
+      "extra:hrsh_cairo": "yes",
+      "extra:hrsh_medrep": "yes",
+      "extra:hrsh_pharma": "yes",
+      "extra:hrsh_residence": "yes",
+      "extra:hrsh_salary": "  30000  ",
+    },
+    email: "hala@example.com",
+    fullName: "Hala Samy",
+    phone: "01222222222",
+  };
+  const hrshOk = validateWebsiteApplication(hrshRole, hrshForm, hrshBase);
+  assert.ok(hrshOk.ok, "a complete HR Section Head application is accepted without experience or salary fields");
+  assert.equal(hrshOk.classification.endedMessage, null);
+  assert.equal(hrshOk.classification.experienceLabel, null, "experience is not asked of this seat");
+  assert.equal(hrshOk.classification.expectedSalary, null, "the built-in expected-salary is not asked of this seat");
+  assert.deepEqual(hrshOk.classification.extraAnswers, {
+    hrsh_cairo: "Yes",
+    hrsh_medrep: "Yes",
+    hrsh_pharma: "Yes",
+    hrsh_residence: "Yes",
+    hrsh_salary: "30000",
+  });
+
+  // THE HEADLINE: a non-Cairo applicant's application ENDS at that answer, with the owner's message,
+  // and nothing after it is read — a forged answer to a later question is never stored.
+  const notCairo = validateWebsiteApplication(hrshRole, hrshForm, {
+    ...hrshBase,
+    answers: { ...hrshBase.answers, "extra:hrsh_cairo": "no" },
+  });
+  assert.ok(notCairo.ok, "a non-Cairo applicant is still recorded — their CV stays on file");
+  assert.equal(notCairo.classification.endedMessage, STOP, "and gets the owner's message");
+  assert.deepEqual(notCairo.classification.extraAnswers, { hrsh_cairo: "No" }, "nothing after the ending answer is stored");
+
+  // The pharma follow-up is read only when pharma was answered Yes — a forged follow-up is dropped.
+  const noPharma = validateWebsiteApplication(hrshRole, hrshForm, {
+    ...hrshBase,
+    answers: { ...hrshBase.answers, "extra:hrsh_pharma": "no" },
+  });
+  assert.ok(noPharma.ok);
+  assert.equal(noPharma.classification.extraAnswers.hrsh_medrep, undefined, "a follow-up to a No is never stored");
+
+  // The ending question cannot be skipped, or an applicant outside the requirement slips through.
+  const skippedCairo = validateWebsiteApplication(hrshRole, hrshForm, {
+    ...hrshBase,
+    answers: { ...hrshBase.answers, "extra:hrsh_cairo": "" },
+  });
+  assert.equal(skippedCairo.ok, false, "leaving the Cairo question blank is refused");
+
+  // Every other role still requires experience and salary — the new rule is read from the form, so it
+  // can only relax a role whose form genuinely does not carry them.
+  const stillRequired = validateWebsiteApplication(role, form, { ...good, answers: { ...good.answers, salary: "" } });
+  assert.equal(stillRequired.ok, false, "a role asked salary still has to answer it");
 }

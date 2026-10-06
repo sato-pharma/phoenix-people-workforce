@@ -52,6 +52,7 @@ export function runRecruitmentScreeningOrderTests() {
   assert.equal(screeningBandForFamily("product_manager"), "pharma_adjacent");
   assert.equal(screeningBandForFamily("sales"), "sales");
   assert.equal(screeningBandForFamily("human_resources"), "unrelated");
+  assert.equal(screeningBandForFamily("hr_section_head"), "unrelated");
   assert.equal(screeningBandForFamily("finance"), "unrelated");
 
   // --- THE DISTINCTION THAT MATTERS. `null` is "nobody could work out a family" and `other` is "a

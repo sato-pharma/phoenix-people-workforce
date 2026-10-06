@@ -51,7 +51,24 @@ export type ScreeningQuestionContent = {
    */
   buttonLabel?: string | null;
   sectionTitle?: string | null;
+  /**
+   * CONDITIONAL QUESTIONS. Absent or null means asked whenever the role matches, which is how every
+   * question behaved before this existed. When set, the question is asked ONLY if the applicant's
+   * answer to `questionKey` was one of `values` (option codes, never titles — a retitled answer must
+   * not break the rule). An applicant who never reached the controlling question is not asked it.
+   */
+  showIf?: ScreeningQuestionShowIf | null;
+  /**
+   * END THE CONVERSATION ON AN ANSWER. Absent or null means no answer ends it. When set, tapping one
+   * of `values` stops the questions there and sends `message` in place of the usual closing summary.
+   * The answers given so far are still recorded and the owner is still told, exactly as for a finished
+   * conversation. The message is the owner's wording — editable on the Screening Questions screen.
+   */
+  endOn?: ScreeningQuestionEndOn | null;
 };
+
+export type ScreeningQuestionShowIf = { questionKey: string; values: string[] };
+export type ScreeningQuestionEndOn = { values: string[]; message: string };
 
 /**
  * What a tappable extra question's list says when the admin has not worded it. Named rather than
@@ -150,6 +167,30 @@ export function questionsForRole<T extends Pick<ScreeningQuestionContent, "appli
   roleFamily: string | null | undefined,
 ): T[] {
   return questions.filter((question) => questionAppliesToRole(question, roleFamily));
+}
+
+/**
+ * Whether a conditional question is shown given what this applicant has answered so far.
+ *
+ * `answers` holds the option TITLE the applicant tapped, keyed by question key (that is what is stored
+ * for history), so the controlling answer is mapped back to its option code through the controlling
+ * question's own options before it is compared — the rule is written in codes and survives a retitle.
+ * A controlling question that is not in `questions`, was never answered, or was answered with a title
+ * that matches no option all read as "not shown": the safe direction, because a follow-up asked of
+ * someone who never gave the answer it depends on is the exact failure this exists to prevent.
+ */
+export function questionIsVisible(
+  question: Pick<ScreeningQuestionContent, "showIf">,
+  answers: Readonly<Record<string, string>>,
+  questions: readonly Pick<ScreeningQuestionContent, "questionKey" | "options">[],
+): boolean {
+  const rule = question.showIf;
+  if (!rule) return true;
+  const givenTitle = answers[rule.questionKey];
+  if (givenTitle === undefined) return false;
+  const controlling = questions.find((candidate) => candidate.questionKey === rule.questionKey);
+  const option = (controlling?.options ?? []).find((candidate) => candidate.title === givenTitle);
+  return option ? rule.values.includes(option.value) : false;
 }
 
 /** One answer as the admin screen holds it. `value` is null for an option nobody has saved yet. */
@@ -263,6 +304,33 @@ export function screeningQuestionViolations(question: ScreeningQuestionContent):
     problems.push(`${label}: the question text is ${question.bodyText.length} characters, over the ${WHATSAPP_BODY_MAX} limit`);
   }
 
+  const showIf = question.showIf;
+  if (showIf) {
+    if (!isValidQuestionKey(showIf.questionKey)) {
+      problems.push(`${label}: the question it depends on has no valid key`);
+    } else if (showIf.questionKey === question.questionKey) {
+      problems.push(`${label}: a question cannot depend on its own answer`);
+    }
+    if (showIf.values.length === 0) problems.push(`${label}: say which answers show this question`);
+  }
+
+  const endOn = question.endOn;
+  if (endOn) {
+    if (question.kind !== "tappable") {
+      problems.push(`${label}: only a tappable question can end the conversation on an answer`);
+    } else {
+      const optionValues = new Set((question.options ?? []).map((option) => option.value));
+      if (endOn.values.length === 0) problems.push(`${label}: say which answers end the conversation`);
+      for (const value of endOn.values) {
+        if (!optionValues.has(value)) problems.push(`${label}: "${value}" is not one of this question's answers`);
+      }
+    }
+    if (!endOn.message.trim()) problems.push(`${label}: the message sent when the conversation ends is empty`);
+    if (endOn.message.length > WHATSAPP_BODY_MAX) {
+      problems.push(`${label}: the ending message is ${endOn.message.length} characters, over the ${WHATSAPP_BODY_MAX} limit`);
+    }
+  }
+
   if (question.kind === "free_text") {
     if (question.options && question.options.length > 0) {
       problems.push(`${label}: a free-text question must not carry tappable options`);
@@ -306,7 +374,9 @@ export type ExtraAnswerOutcome =
   | { outcome: "unknown_value" }
   | { outcome: "unusable_text" }
   | { outcome: "advance"; answerValue: string; nextQuestion: ScreeningQuestion }
-  | { outcome: "finished"; answerValue: string };
+  | { outcome: "finished"; answerValue: string }
+  /** The answer ends the conversation: record it, send `message`, ask nothing more. */
+  | { outcome: "ended"; answerValue: string; message: string };
 
 /**
  * The next active question the applicant has not already answered, in the live list's own order.
@@ -315,12 +385,21 @@ export type ExtraAnswerOutcome =
  * index — a question inserted, reordered or deactivated between two of this applicant's replies is
  * therefore picked up (or skipped) correctly on the very next step, with nothing to migrate and
  * nothing that can strand a conversation on a question that no longer exists.
+ *
+ * A conditional question (`showIf`) is skipped unless the answers so far call for it. Callers that
+ * hold no answers yet pass none, which correctly hides every conditional question.
  */
 export function nextActiveQuestion(
   activeQuestions: readonly ScreeningQuestion[],
   answeredKeys: ReadonlySet<string>,
+  answers: Readonly<Record<string, string>> = {},
 ): ScreeningQuestion | null {
-  return activeQuestions.find((question) => !answeredKeys.has(question.questionKey)) ?? null;
+  return (
+    activeQuestions.find(
+      (question) =>
+        !answeredKeys.has(question.questionKey) && questionIsVisible(question, answers, activeQuestions),
+    ) ?? null
+  );
 }
 
 /**
@@ -332,6 +411,8 @@ export function decideNextExtraStep(input: {
   currentQuestion: ScreeningQuestion;
   activeQuestions: readonly ScreeningQuestion[];
   answeredKeysBeforeThis: ReadonlySet<string>;
+  /** The answers collected before this one, by question key — what conditional questions read. */
+  answersBeforeThis?: Readonly<Record<string, string>>;
   answer: { kind: "tapped"; value: string } | { kind: "typed"; text: string };
 }): ExtraAnswerOutcome {
   const { currentQuestion, activeQuestions, answeredKeysBeforeThis, answer } = input;
@@ -342,6 +423,10 @@ export function decideNextExtraStep(input: {
     const option = (currentQuestion.options ?? []).find((candidate) => candidate.value === answer.value);
     if (!option) return { outcome: "unknown_value" };
     answerValue = option.title;
+    const endOn = currentQuestion.endOn;
+    if (endOn && endOn.values.includes(option.value) && endOn.message.trim()) {
+      return { answerValue, message: endOn.message, outcome: "ended" };
+    }
   } else {
     if (answer.kind !== "typed") return { outcome: "unknown_value" };
     const cleaned = cleanExtraAnswerText(answer.text);
@@ -351,7 +436,10 @@ export function decideNextExtraStep(input: {
 
   const answeredKeys = new Set(answeredKeysBeforeThis);
   answeredKeys.add(currentQuestion.questionKey);
-  const next = nextActiveQuestion(activeQuestions, answeredKeys);
+  const next = nextActiveQuestion(activeQuestions, answeredKeys, {
+    ...(input.answersBeforeThis ?? {}),
+    [currentQuestion.questionKey]: answerValue,
+  });
   if (next) return { answerValue, nextQuestion: next, outcome: "advance" };
   return { answerValue, outcome: "finished" };
 }

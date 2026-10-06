@@ -166,7 +166,9 @@ export async function POST(request: Request): Promise<NextResponse> {
     logInfo("Website application received", {
       labels: { candidate_id: outcome.candidateId, event: "website_apply_received", role: role.key },
     });
-    return json(request, { ok: true });
+    // `message` is present only when an answer ended the application (the Cairo question): the page
+    // shows it in place of the usual "thank you for applying" screen.
+    return json(request, outcome.endedMessage ? { message: outcome.endedMessage, ok: true } : { ok: true });
   }
 
   if (outcome.reason === "duplicate") return json(request, { ok: true });
