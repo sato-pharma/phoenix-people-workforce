@@ -6373,6 +6373,23 @@ they are page chrome, and the title a reader sees INSIDE the module is the heade
 follow. And the sidebar entry, which has always read "Production Planner" in English like the rest
 of the app's navigation.
 
+**A THIRD thing it cannot reach, settled by him rather than by me: the stored plan TITLE.** When a
+plan is committed, `savePlan` names it `<product> — <n> تشغيلة` from the Arabic catalogue, whoever saved it.
+It is the one reader-visible string in the module that does not follow the toggle, and leaving it
+there was a judgement I made and then put to him; asked directly on 2026-10-06 he answered **"pin
+the stored plan title as Arabic"**.
+
+The reason is that a stored title is not a screen — it is a row, and both readers meet the same rows
+later in the same Plans list. A title following whoever saved it would give that list a mix of
+Arabic and English entries with nothing to explain the pattern, which is worse for both readers than
+one language used consistently. The two refusals that name a material went the other way, and the
+distinction is exactly this: a refusal is read ONCE, by the person who caused it, so it belongs in
+their language; a title is read repeatedly, by everybody, so it belongs in one.
+
+Pinned by `tests/production-planning-strings.test.ts`, which asserts the title line still reads from
+`PP` rather than the bundle — so a later session sweeping the module for "strings that should follow
+the toggle" meets the pin instead of quietly undoing the ruling. Rule: `.claude/rules/production-planning.md`.
+
 ## The planner's fit is measured in a browser, in both shells and both languages
 
 🔴 **The portal shell is unreachable from an admin account, so "look at it on production" cannot
