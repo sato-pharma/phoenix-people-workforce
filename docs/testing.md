@@ -14,10 +14,20 @@ Located in `tests/*.test.ts`. Each file exports a named run function (e.g., `run
 ### Running
 
 ```bash
-pnpm run test
+pnpm run test           # one process, every test, in order — what the box and every local run use
+pnpm run test:sharded   # the same suite as one process per CPU; what CI runs
 ```
 
 This executes `tests/run-tests.ts`, which imports and runs all registered test functions. Tests run with Node.js `--experimental-strip-types` (requires Node 24+ — the repo's `engines.node` floor).
+
+`test:sharded` (`scripts/run-tests-sharded.mjs`) runs that same runner once per CPU with
+`PHX_TEST_SHARD=<i>/<n>`, which makes `runTest` execute every nth call. Measured 2026-10-06 on 2
+vCPU: serial 213s, two shards 129s. 🔴 **Its point is the REFUSAL, not the speed** — each shard
+prints `PHX_SHARD_RESULT shard=i/n seen=S ran=R` from an exit handler, and the parent fails unless
+every shard reported, all saw the same S, and the R's sum to it. Without that, a bad divisor or a
+shard that died quietly turns into a smaller suite reporting success, which is worse than no
+sharding. Every shard still IMPORTS every test file (three set `PHOENIX_AUTH_SECRET` at import
+time), so more shards than CPUs costs more than it buys.
 
 ### Adding a Test
 
@@ -36,7 +46,9 @@ writes or edits the file — using the guard's own two regexes (pinned equal by
 
 ### Filtering Tests
 
-There is no per-test filter flag. To isolate a test temporarily, comment out other `runTest()` lines in `tests/run-tests.ts`. Remember to restore them before committing.
+There is no per-test filter flag, and `PHX_TEST_SHARD` is not one — it splits the suite by position,
+not by name. To isolate a test temporarily, comment out other `runTest()` lines in
+`tests/run-tests.ts`. Remember to restore them before committing.
 
 ### Path Alias
 
@@ -102,8 +114,8 @@ rather than gates.
 
 | Check | Workflow | What it runs |
 |---|---|---|
-| `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), **the unit/integration suite** (`pnpm run test`, i.e. `tests/run-tests.ts`), `pnpm audit`, and on non-PR events the production **build** and the Playwright **login smoke test** — all in one job. 🔴 **The unit suite lives HERE.** It left for its own `test` job on 2026-09-17 (#3950), moved into `checks` on 2026-09-27, and came back here on 2026-09-30 for wall clock: `checks` was running typecheck then the suite in SERIES on one runner, ~80% of a PR's wait, while `validate` sat on ~37s of work. Beside the typecheck instead of behind it, a PR is ~163s. 🔴 **It is NOT a job called `test` and must not become one** — that is a retired check name, and a job protection does not require reads exactly like one that gates (#3950). **So anything saying a pinned test "runs in the required `validate` job" means this one, and a NEW pinned test belongs here.** |
-| `checks` | ci.yml | `pnpm run lint`, `pnpm exec next typegen` and `pnpm run typecheck` — **steps** of one job. 🔴 **They were separate jobs named `lint`, `typecheck` and `test` until 2026-09-27 (#4527)**, which merged them so GitHub's per-job minute rounding is paid once instead of three times (~14% fewer billable minutes). Those three names **no longer exist as check names**, so a gate waiting for them waits forever. |
+| `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the **unit/integration suite on a pull request**, and on every OTHER event the production **build** and the Playwright **login smoke test** — all in one job. 🔴 **The suite runs in whichever required job is idle, and `checks` has it on a push.** Since 2026-10-06 the two `Test` steps are exact complements: `validate` on `pull_request`, `checks` on everything else — because on a PR this job does ~40s of work while `checks` carries the typecheck, and on `main` it is the other way round and `main`'s wall clock IS the production deploy gate. `tests/ci-suite-placement.test.ts` asserts an event can never fall through both. 🔴 **It is NOT a job called `test` and must not become one** — that is a retired check name, and a job protection does not require reads exactly like one that gates (#3950). **So a NEW pinned test belongs in this suite; which job runs it on a given event is ci.yml's business, not yours.** |
+| `checks` | ci.yml | `pnpm run lint`, `pnpm exec next typegen`, `pnpm run typecheck` — and the unit suite on every event that is not a pull request (see `validate`). 🔴 **They were separate jobs named `lint`, `typecheck` and `test` until 2026-09-27 (#4527)**, which merged them so GitHub's per-job minute rounding is paid once instead of three times (~14% fewer billable minutes). Those three names **no longer exist as check names**, so a gate waiting for them waits forever. 🔴 **The typecheck is TypeScript 7 since 2026-10-06** — the `typescript-native` alias in package.json, which pnpm links `.bin/tsc` to; ~180s became ~50s. Nothing names the version, so `--checkers 1` is passed as the tell that the alias survives: TypeScript 5 refuses the flag. `docs/ci-self-hosted-runner.md`, "The typecheck moved to TypeScript 7". |
 **Not required, and not on a pull request either — corrected 2026-09-30.** The two rows below used to
 sit in the table above as required checks. Both were demoted on 2026-09-29 and taken off
 `pull_request` in the same change, so neither reports on a PR at all:

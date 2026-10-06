@@ -69,6 +69,18 @@
 // own `git worktree`, removes both on exit, and re-reads HEAD after every check — a run whose tree
 // moved exits 3 with NO VERDICT. The account and the bash: scripts/remote-check-plan.mjs.
 //
+// 🔴 ONLY 0 AND 1 ARE VERDICTS, AND AN AUTOMATED CALLER MUST TREAT EVERYTHING ELSE AS "COULD NOT
+// TELL" RATHER THAN AS A FAILURE. A FAIL blocks a push and is reported to the owner as "your code is
+// broken", so a failure that is not the code's must never wear it:
+//   0 PASS   1 FAIL (a check really failed)
+//   2 the laptop could not start the run (no key, unreadable probe, busy box, failed dispatch)
+//   3 the box's tree moved under the run      4 a stage was OOM-killed (137)
+//   5 the ssh connection dropped (255)        6 nothing was dispatched / the Actions run told us nothing
+//   7 the private tree or the install failed  8 the run was killed by a signal
+//   9 a stage waited out the box's typecheck lock and never ran
+// A NO-VERDICT run prints no `remote-check: PASS|FAIL — <sha>` line at all, because that line is what
+// other tools parse (`a-verdict-line-without-its-sha-matches-an-older-run`).
+//
 // Host, user and key are overridable for when the box is replaced:
 //   PHX_CHECK_HOST   default 46.225.184.142
 //   PHX_CHECK_USER   default phx
@@ -81,12 +93,17 @@ import path from "node:path";
 
 import {
   BUSY_POLL_SECONDS,
+  EXIT_INTERRUPTED,
+  EXIT_LOCK_TIMEOUT,
+  EXIT_SETUP,
   URGENT_WAIT_MINUTES,
   buildBusyProbeScript,
   buildLockfileScript,
   buildRunScript,
   decideBusyAction,
   gradeActionsRun,
+  gradeActionsStages,
+  isProtectedDispatchRef,
   newRunId,
   parseBusyProbe,
   DEFAULT_WAIT_MINUTES,
@@ -101,10 +118,10 @@ const REMOTE_ROOT = "/home/" + USER + "/remote-check";
 const BARE = REMOTE_ROOT + "/repo.git";
 const PRELUDE = ["export PATH=/usr/local/lib/nodejs/node/bin:$PATH", "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0"];
 
-// Each entry is the exact command the box runs. `typecheck` carries the same heap ci.yml gives it,
-// so a result here means the same thing a CI result means. It also takes ci.yml's typecheck lock
-// (/tmp/phx-typecheck.lock), so it waits for a CI typecheck on the box instead of running beside it —
-// two `tsc` runs on this 7.7 GB box is what the lock exists to stop (owner, 2026-09-30).
+// Each entry is the exact command the box runs, so a result here means the same thing a CI result
+// means. It also takes ci.yml's typecheck lock (/tmp/phx-typecheck.lock), so it waits for a CI
+// typecheck on the box instead of running beside it — two typechecks on this 7.7 GB box is what the
+// lock exists to stop (owner, 2026-09-30).
 //
 // 🔴 THE TYPECHECK RUNS COLD, AND WITHOUT `--incremental false` THIS SCRIPT RETURNED A FALSE GREEN.
 // `tsconfig.json` sets `"incremental": true`, and this box KEEPS its working directory between runs,
@@ -122,8 +139,28 @@ const PRELUDE = ["export PATH=/usr/local/lib/nodejs/node/bin:$PATH", "export COR
 // it carried whatever `.next/types` an earlier run of SOME commit had left behind.
 const CHECKS = {
   lint: "corepack pnpm run lint",
+  // 🔴 A LOCK TIMEOUT HERE CANNOT BE TOLD FROM A TYPE ERROR BY ITS EXIT CODE — `flock -w` gives up
+  // with exit 1, which is also `tsc`'s code for "there are type errors". The conflict is therefore
+  // detected BEFORE the stage runs, by the lock probe buildRunScript puts in front of any stage whose
+  // command starts with `flock -w <seconds> <file>` (remote-check-plan.mjs, LOCK_CONFLICT_EXIT).
+  // Do not add `-E` here: tests/ci-typecheck-lock.test.ts pins this command's `flock -w <n> <lock>`
+  // prefix, because the lock is shared with ci.yml's own Typecheck step and the two must not drift.
+  //
+  // 🔴 `--checkers 1` IS LOAD-BEARING TWICE, AND IS NOT A TUNING KNOB. `./node_modules/.bin/tsc` is
+  // whichever TypeScript pnpm linked — 7 (the `typescript-native` alias, the gate since 2026-10-06)
+  // or 5, which is still installed for typescript-eslint, Next and the editor. TypeScript 5 REFUSES
+  // `--checkers`, so a tree where the alias went missing fails here loudly instead of quietly
+  // answering with the old compiler and a PASS that does not predict `checks`. And the flag bounds
+  // the memory: measured on this tree, the native compiler peaks at 6.45 GB with its default
+  // checker-per-core and 5.06 GB with one — the latter is BELOW what tsc 5 already needed (5.8 GB),
+  // which is what makes it safe to run beside a preview server on 7.7 GB. It costs ~20s and the run
+  // is still ~5x faster than the compiler it replaced.
+  //
+  // NO `NODE_OPTIONS` ANY MORE: the heap flag was there because tsc 5 is a node program that could
+  // OOM below node's default ceiling. The native compiler is a Go binary and does not read it;
+  // leaving one would read as a memory guarantee nothing honours.
   typecheck:
-    "flock -w 1200 /tmp/phx-typecheck.lock sh -c './node_modules/.bin/next typegen >/dev/null && env NODE_OPTIONS=--max-old-space-size=6144 ./node_modules/.bin/tsc --noEmit --incremental false --pretty false'",
+    "flock -w 1200 /tmp/phx-typecheck.lock sh -c './node_modules/.bin/next typegen >/dev/null && ./node_modules/.bin/tsc --noEmit --incremental false --pretty false --checkers 1'",
   test: "corepack pnpm run test",
   // 🔴 THE BUILD TAKES THE TYPECHECK LOCK, BECAUSE CONTENTION IS WHAT KILLED IT — NOT ITS SIZE.
   //
@@ -249,6 +286,23 @@ function runOnActions({ branch, sha, names, waitedSeconds }) {
     die("a detached HEAD cannot be dispatched — `gh workflow run` takes a branch. Put this commit on a branch first.");
   }
 
+  // 🔴 AND IT IS NEVER DISPATCHED ON `main` — THAT COMMIT'S RUN IS THE PRODUCTION DEPLOY GATE.
+  // ci.yml groups a non-PR run by SHA and never cancels one (`CI-<sha>`), so a dispatch from `main`
+  // lands in the SAME concurrency group as the push run Railway's "Wait for CI" is holding the
+  // production deploy on. There is nothing to gain either: `main` already runs the whole gate on
+  // every commit. Same shape as the open-PR refusal below — point at the run that exists.
+  if (isProtectedDispatchRef(branch)) {
+    console.error("remote-check: this is " + branch + ", and `main`'s own CI run is the production deploy gate.");
+    console.error("    ci.yml groups a push to main by SHA and never cancels it, so a dispatch here joins that");
+    console.error("    very run's concurrency group — the one Railway's \"Wait for CI\" holds the deploy on.");
+    console.error("    main already runs the whole gate on this commit, so read THAT run:");
+    console.error("      gh run list --workflow ci.yml --branch " + branch + " --limit 3");
+    console.error("      gh run watch <id>");
+    console.error("    For a check of your own, put the commit on a branch and run this from there.");
+    console.error("remote-check: NO VERDICT — nothing was dispatched.");
+    process.exit(6);
+  }
+
   let remoteSha = "";
   try {
     const line = execFileSync("git", ["ls-remote", "origin", "refs/heads/" + branch], { encoding: "utf8" }).trim();
@@ -334,16 +388,53 @@ function runOnActions({ branch, sha, names, waitedSeconds }) {
       console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (GitHub Actions, not the box)");
       process.exit(0);
     }
-    if (graded.verdict === "fail") {
-      console.error("remote-check: Actions run " + run.url + " — completed/failure");
+    // A run about another commit is about another commit — there is nothing of ours in it to grade.
+    if (run?.headSha && run.headSha !== sha) {
+      console.error("remote-check: NO VERDICT — " + graded.why + (run?.url ? "  " + run.url : ""));
+      process.exit(6);
+    }
+
+    // 🔴 THE RUN'S CONCLUSION IS NOT A VERDICT ABOUT THE STAGE THAT WAS ASKED FOR. A dispatch runs
+    // the WHOLE workflow — `mobile` (which reports and never gates), the Build, the Playwright login
+    // smoke — so grading the run as one thing made `remote-check typecheck` FAIL on a mobile
+    // lockfile break or a smoke flake, under this sha, blocking this push. Grade the job (and the
+    // step) that actually runs the requested stage; a red job elsewhere is REPORTED, not charged to
+    // this branch. A stage whose job did not run, or cannot be found, is NO VERDICT — never FAIL.
+    const jobs = readRunJobs(run?.databaseId);
+    const stages = gradeActionsStages(names, jobs);
+    const elsewhere = stages.otherRed.length > 0 ? "  (red elsewhere in the run: " + stages.otherRed.join(", ") + ")" : "";
+    console.log("remote-check: Actions run " + run.url + " — completed/" + String(run.conclusion ?? "unknown"));
+    if (stages.verdict === "pass") {
+      console.log("remote-check: " + (names.length ? names.join(" + ") : "the requested stage") + " — " + stages.why + elsewhere);
+      console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (GitHub Actions, not the box)");
+      process.exit(0);
+    }
+    if (stages.verdict === "fail") {
+      console.error("remote-check: " + stages.why + elsewhere);
       console.error("remote-check: FAIL — " + sha.slice(0, 9) + "  (GitHub Actions, not the box)");
       process.exit(1);
     }
-    console.error("remote-check: NO VERDICT — " + graded.why + (run?.url ? "  " + run.url : ""));
+    console.error("remote-check: NO VERDICT — " + stages.why + elsewhere + (run?.url ? "  " + run.url : ""));
     process.exit(6);
   }
   console.error("remote-check: NO VERDICT — the dispatched run had not settled after 25 minutes.");
   process.exit(6);
+}
+
+/**
+ * The jobs of one dispatched run, or null when they cannot be read.
+ *
+ * A failed read is NOT evidence about the code — `gradeActionsStages` turns a null into NO VERDICT
+ * rather than inventing a pass or a fail from a run list that never arrived.
+ */
+function readRunJobs(runId) {
+  if (!runId) return null;
+  try {
+    const parsed = JSON.parse(execFileSync("gh", ["run", "view", String(runId), "--json", "jobs"], { encoding: "utf8" }));
+    return Array.isArray(parsed?.jobs) ? parsed.jobs : null;
+  } catch {
+    return null;
+  }
 }
 
 // 🔴 THE FIRST FAILURE ANYONE HITS IS A CHANGED HOST KEY, AND ITS RAW OUTPUT IS A WALL OF SHOUTING
@@ -632,9 +723,35 @@ if (status === 4) {
   console.log("             The box is shared. Run it again; this run already held the box lock, so something outside remote-check was using it.");
   process.exit(4);
 }
+if (status === EXIT_SETUP) {
+  // 🔴 THE RUN NEVER STARTED, SO THERE IS NOTHING TO FAIL. A `git worktree add` that could not run,
+  // or `pnpm install --frozen-lockfile` dying on the box, says something about the box's disk, its
+  // pnpm store or its network — not about this commit. Both exited 1 until 2026-10-06 and printed
+  // the `FAIL — <sha>` line, which blocked a push and sent a session looking for a type error in
+  // code nothing had read. Same cry-wolf shape as the OOM kill.
+  console.log("remote-check: NO VERDICT — the run could not be set up on the box (private tree or install), so nothing above is a verdict on " + sha.slice(0, 9));
+  console.log("             Read the install output above: a full disk, a cold pnpm store or a registry blip are the usual causes.");
+  process.exit(EXIT_SETUP);
+}
+if (status === EXIT_INTERRUPTED) {
+  // 🔴 A SIGNAL IS NOT THE BRANCH. The box's memory watchdog, a reboot, or a `kill` aimed at a
+  // stranded run all arrive as HUP/INT/TERM; the old `exit 130` fell through to the FAIL line.
+  console.log("remote-check: NO VERDICT — the run on the box was interrupted by a signal, so nothing above is a verdict on " + sha.slice(0, 9));
+  console.log("             Any stage that printed PASS above really did pass. Run it again when the box is quiet.");
+  process.exit(EXIT_INTERRUPTED);
+}
+if (status === EXIT_LOCK_TIMEOUT) {
+  // 🔴 A STAGE THAT WAITED OUT THE TYPECHECK LOCK NEVER RAN ITS COMMAND. `flock -w 1200` expiring
+  // used to exit 1 — the same code `tsc` uses for type errors — so a box too contended to start the
+  // typecheck reported the branch as broken. That is the busy box, which this script already
+  // refuses to call a failure anywhere else.
+  console.log("remote-check: NO VERDICT — a stage waited out the box's typecheck lock (20 min) and never ran, so nothing above is a verdict on " + sha.slice(0, 9));
+  console.log("             Something else on the box holds /tmp/phx-typecheck.lock — a CI typecheck step, or another session's run.");
+  process.exit(EXIT_LOCK_TIMEOUT);
+}
 if (status === 255) {
   // 🔴 255 IS SSH'S OWN "THE CONNECTION DIED" CODE, NOT A VERDICT ABOUT THE BRANCH. The generated
-  // box script only ever exits 0, 1, 3 or 4, so 255 can only have come from the transport — measured
+  // box script only ever exits 0, 1, 3, 4, 7, 8 or 9, so 255 can only have come from the transport — measured
   // 2026-10-05: `client_loop: send disconnect: Connection reset by peer` arrived after `lint PASS`
   // and `typecheck PASS`, and the run was reported as FAIL, which halted a push for a dropped TCP
   // connection. Same cry-wolf failure as the OOM kill, from the other end of the pipe.

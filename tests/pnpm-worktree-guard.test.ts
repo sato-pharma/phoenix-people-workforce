@@ -276,6 +276,33 @@ export function runPnpmWorktreeGuardTests() {
         `a binary must resolve to its real installed entry.\n${typecheck}`,
       );
 
+      // ── And `tsc` means the compiler that IS the gate, not whichever package is named after it ──
+      // Since 2026-10-06 this repo installs TWO: `typescript` (5.x — the editor, Next and
+      // typescript-eslint still load it) and `typescript-native`, the `npm:typescript@7` alias that
+      // pnpm links `.bin/tsc` to and that CI's `checks` job runs. Advice naming `typescript/bin/tsc`
+      // would hand a worktree session the OLD compiler: a different answer from the one that blocks
+      // the merge, printed as the sanctioned way to get it. Resolution is by what is ON DISK and in
+      // order, so the assertion above still holds in a checkout from before the alias landed — which
+      // is why this case installs the second package rather than the fixture doing it for everyone.
+      {
+        const nativeBin = join(worktree, "node_modules", "typescript-native", "bin");
+        mkdirSync(nativeBin, { recursive: true });
+        writeFileSync(join(nativeBin, "tsc"), "// stand-in for the native compiler entry\n");
+        writeFileSync(
+          join(worktree, "node_modules", "typescript-native", "package.json"),
+          JSON.stringify({ name: "typescript-native", bin: { tsc: "./bin/tsc" } }),
+        );
+        try {
+          const native = runGuard(worktree, "pnpm run typecheck").reason;
+          assert.ok(
+            native.includes("node node_modules/typescript-native/bin/tsc --noEmit --pretty false"),
+            `with the native alias installed, \`tsc\` must resolve to IT and not to typescript@5.\n${native}`,
+          );
+        } finally {
+          rmSync(join(worktree, "node_modules", "typescript-native"), { recursive: true, force: true });
+        }
+      }
+
       const install = runGuard(worktree, "pnpm install").reason;
       assert.ok(
         install.includes("node scripts/new-session.mjs --repair"),

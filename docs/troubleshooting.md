@@ -47,6 +47,11 @@ GET /api/dev-auth?role=Super%20Admin
 
 The build may catch errors that typecheck alone misses (e.g., route type generation). Run `pnpm exec next typegen` before `pnpm run build`.
 
+`pnpm run typecheck` runs TypeScript 7 (the `typescript-native` alias) since 2026-10-06, while the
+editor's language service and typescript-eslint still load `typescript` 5.x — so on rare syntax the
+two can disagree. The gate is the command, not the editor: `docs/ci-self-hosted-runner.md`, "The
+typecheck moved to TypeScript 7".
+
 ### Permission denied errors in API routes
 
 Server-side permission checks use `assertPermission()`. If you get 403 errors, check that your dev-auth role has the required permission in the `defaultPermissionMatrix` (`src/lib/auth/permissions.ts`).

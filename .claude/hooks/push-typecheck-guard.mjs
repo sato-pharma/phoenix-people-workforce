@@ -25,6 +25,9 @@
 //   - It remembers a PASS per commit in `<git-common-dir>/phx-remote-typecheck/<sha>`, so pushing the same
 //     commit twice (an update-branch, a retry, a second remote) costs nothing. The directory is shared by
 //     every worktree and is never tracked.
+//   - It runs the check in a PROCESS GROUP of its own and reaps the GROUP when its own wait expires. Killing
+//     the `node` child alone left the `ssh` under it running: the box kept the run and its typecheck lock,
+//     and the NEXT push met a busy box, got NO VERDICT and went out unchecked.
 //   - It DENIES only on a verdict: the box ran the typecheck and it FAILED. Anything else — no SSH key, the
 //     box unreachable, a run whose tree moved (exit 3), an install failure, a timeout — ALLOWS and says so,
 //     because the PR's `checks` job is still the real gate and a guard that blocks every push when the box
@@ -44,7 +47,7 @@
 // it); the default 7 minutes sits inside the hook's own 8-minute timeout in .claude/settings.json.
 //
 // FAILS OPEN: any parse or logic error exits 0 with no decision. A hook bug must never block a real push.
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 
@@ -303,6 +306,105 @@ function typecheckErrors(output) {
   return body.filter((line) => line.trim()).slice(-60).join('\n');
 }
 
+/**
+ * 🔴 KILLING THE CHILD IS NOT KILLING THE RUN — THE `ssh` UNDER IT IS WHAT HOLDS THE BOX.
+ *
+ * `spawnSync`'s own timeout signals the `node` it started and nothing else, so when the wait expired
+ * the `ssh` grandchild survived: it kept the remote run going, kept /tmp/phx-typecheck.lock held,
+ * and the NEXT push then met the busy probe, got NO VERDICT and went out unchecked. One orphan is
+ * enough to silently disarm this guard for the rest of the session.
+ *
+ * So the child is started in a process GROUP of its own and the group is signalled — `kill(-pid)` on
+ * POSIX, `taskkill /T` on Windows, where negative pids do not exist. SIGTERM first so ssh can close
+ * the channel, SIGKILL after a grace period for the case where it cannot.
+ */
+function killProcessTree(child) {
+  const pid = child?.pid;
+  if (!pid) return;
+  if (process.platform === 'win32') {
+    try {
+      spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 10000, windowsHide: true });
+    } catch {
+      // nothing left to try; the hook must still answer
+    }
+    return;
+  }
+  const signal = (sig) => {
+    try {
+      process.kill(-pid, sig); // the whole group: node, its ssh, and anything ssh started locally
+    } catch {
+      try {
+        process.kill(pid, sig);
+      } catch {
+        // already gone
+      }
+    }
+  };
+  signal('SIGTERM');
+  setTimeout(() => signal('SIGKILL'), 2000).unref();
+}
+
+/** How much of each stream is kept: the hook reads banner lines and the last 60 error lines only. */
+const OUTPUT_KEEP = 1024 * 1024;
+
+/**
+ * Run `remote-check typecheck` and answer `{ status, stdout, stderr, timedOut }`.
+ *
+ * It is `spawn`, not `spawnSync`, for one reason: a timeout must be able to reap the whole process
+ * GROUP (see killProcessTree). Everything else about it is the old call — same arguments, same cwd,
+ * same wait.
+ */
+function runRemoteCheck(script, root) {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(process.execPath, [script, 'typecheck', '--no-wait', '--no-actions'], {
+        cwd: root,
+        windowsHide: true,
+        // A group of its own, so the timeout can take the ssh with it. Windows has no process
+        // groups to join this way; `taskkill /T` walks the tree there instead.
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch {
+      resolve({ status: null, stdout: '', stderr: '', timedOut: false });
+      return;
+    }
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+    const keep = (text, chunk) => {
+      const next = text + chunk;
+      return next.length > OUTPUT_KEEP ? next.slice(-OUTPUT_KEEP) : next;
+    };
+    // utf8 at the stream, not at the join: a chunk boundary inside a multi-byte character would
+    // otherwise mangle the em dash in `remote-check: PASS — <sha>` and in tsc's own output.
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (d) => { stdout = keep(stdout, d); });
+    child.stderr.on('data', (d) => { stderr = keep(stderr, d); });
+    let grace = null;
+    const settle = (status) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (grace) clearTimeout(grace);
+      resolve({ status, stdout, stderr, timedOut });
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killProcessTree(child);
+      // If the group refuses to die, the hook must still answer: a guard that hangs is a guard that
+      // gets switched off. The reap has been fired either way.
+      grace = setTimeout(() => settle(null), 10000);
+      grace.unref();
+    }, RUN_TIMEOUT_MS);
+    child.on('error', () => settle(null));
+    child.on('close', (code) => settle(code));
+  });
+}
+
 function remember(cacheDir, sha) {
   try {
     mkdirSync(cacheDir, { recursive: true });
@@ -316,7 +418,7 @@ function remember(cacheDir, sha) {
   }
 }
 
-function main() {
+async function main() {
   let input;
   try {
     input = JSON.parse(readFileSync(0, 'utf8'));
@@ -423,13 +525,7 @@ function main() {
   // ruling, `DEFAULT_WAIT_MINUTES`). This hook runs on EVERY push, so the default here would delay each
   // one by ten minutes and bill ~14 Actions minutes for a verdict the PR's own `checks` job produces
   // for free. A push must stay instant: a busy box gives NO VERDICT and the push is allowed.
-  const run = spawnSync(process.execPath, [script, 'typecheck', '--no-wait', '--no-actions'], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: RUN_TIMEOUT_MS,
-    maxBuffer: 16 * 1024 * 1024,
-    windowsHide: true,
-  });
+  const run = await runRemoteCheck(script, root);
   const seconds = Math.round((Date.now() - started) / 1000);
   const output = `${run.stdout ?? ''}\n${run.stderr ?? ''}`;
   const short = sha.slice(0, 9);
@@ -452,14 +548,23 @@ function main() {
   }
 
   // No verdict: say why, and let the push through — the PR's `checks` job is still the gate.
-  const why =
-    run.error?.code === 'ETIMEDOUT'
-      ? `it did not finish within ${Math.round(RUN_TIMEOUT_MS / 60000)} minutes`
-      : run.status === 3
-        ? "the box's tree changed under the run (NO VERDICT)"
-        : run.status === 2
-          ? 'the box could not be reached (see the SSH note below)'
-          : `it exited ${run.status ?? 'abnormally'} without a typecheck verdict`;
+  //
+  // 🔴 EVERY ONE OF THESE CODES IS "COULD NOT TELL", NEVER "YOUR CODE IS BROKEN". remote-check.mjs
+  // reserves 0 and 1 for verdicts; 3/4/5/7/8/9 are the box saying it never produced one (a moved
+  // tree, an OOM kill, a dropped ssh, a failed install, a signal, a lock it waited out). Naming each
+  // one matters because an unnamed "exited 7" reads like a crash a session should chase.
+  const NO_VERDICT_REASONS = {
+    2: 'the box could not be reached, or it was already busy (see the output below)',
+    3: "the box's tree changed under the run",
+    4: 'a stage was OOM-killed on the shared box',
+    5: 'the ssh connection to the box dropped',
+    7: 'the run could not be set up on the box (private tree or install)',
+    8: 'the run on the box was killed by a signal',
+    9: 'a stage waited out the box’s typecheck lock and never ran',
+  };
+  const why = run.timedOut
+    ? `it did not finish within ${Math.round(RUN_TIMEOUT_MS / 60000)} minutes (the run was reaped here, ssh included — it may still be finishing on the box)`
+    : NO_VERDICT_REASONS[run.status] ?? `it exited ${run.status ?? 'abnormally'} without a typecheck verdict`;
   return note(
     `The remote typecheck gave NO VERDICT for ${short} — ${why} — so this push was NOT checked before it left. The PR's ` +
       `\`checks\` job will still run the typecheck. Last output:\n${stripAnsi(output).trim().split(/\r?\n/).slice(-8).join('\n')}`,
@@ -467,7 +572,7 @@ function main() {
 }
 
 try {
-  main();
+  main().catch(() => process.exit(0));
 } catch {
   process.exit(0);
 }

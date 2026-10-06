@@ -252,7 +252,11 @@ export async function listCustomerSubjects(): Promise<CustomerSubjectSummary[]> 
       codeCount: marketingCodeCounts.get(id) ?? 0,
       displayName: text(row.display_name) ?? "Unnamed pharmacy",
       id: encodeCustomerSubjectId({ recordId: id, register: "marketing" }),
-      lineName: (lineId == null ? null : names.lines.get(lineId) ?? null) ?? area?.line ?? null,
+      // No `?? null` inside the parenthesis: a Map miss's `undefined` reads the same as `null` one
+      // operand before the next `??`, and TypeScript 7 — the type gate since 2026-10-06 — reports that
+      // shape as TS2871 "This expression is always nullish", wrongly. Dropping it is behaviour-identical
+      // and quiet in both compilers; the trailing `?? null` is what keeps the type `string | null`.
+      lineName: (lineId == null ? null : names.lines.get(lineId)) ?? area?.line ?? null,
       ownerName: names.employees.get((text(row.owner_hr_id) ?? "").toLowerCase()) ?? null,
       register: "marketing",
       regionName: text(row.region_name),
@@ -555,7 +559,9 @@ export async function getCustomer360Profile(
     directOrders,
     displayName: resolvedDisplayName,
     id: encodeCustomerSubjectId(ref),
-    lineName: (lineId == null ? null : names.lines.get(lineId) ?? null) ?? area?.line ?? null,
+    // The inner `?? null` is dropped for TypeScript 7's TS2871 — see the note on the same line in
+    // listCustomerSubjects() above.
+    lineName: (lineId == null ? null : names.lines.get(lineId)) ?? area?.line ?? null,
     managerName: names.employees.get((text(head.manager_hr_id) ?? "").toLowerCase()) ?? null,
     marketingRequests,
     ownerName:

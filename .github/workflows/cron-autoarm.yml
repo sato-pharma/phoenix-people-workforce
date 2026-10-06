@@ -39,14 +39,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      # 🔴 SHA-PINNED, AND OFF NODE 20. This was the last workflow in the repository still on the tag
+      # pins `actions/checkout@v4` and `actions/setup-node@v4`: both of those majors run on the
+      # DEPRECATED Node 20 Actions runtime, which GitHub annotates on every run and will stop
+      # executing. The pins below are copied verbatim from ci.yml — same SHAs, same `# v7` / `# v6`
+      # comments — so there is one answer in this repo to "which checkout do we use", not two. A tag
+      # is also a moving target: `@v4` is whatever that tag points at today, which is the supply-chain
+      # reason every other workflow here is pinned to a commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # HEAD^ must be reachable to diff what this push introduced.
           fetch-depth: 2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: 20
+          # Node 20 is END OF LIFE. 24 is what CI_NODE_VERSION carries everywhere else here; this
+          # workflow has no `env:` block of its own, so it is written out rather than referenced.
+          node-version: "24"
+          # 🔴 OFF, for secret-drift-check.yml's measured reason. `setup-node` defaults
+          # `package-manager-cache` to true, goes looking for the repo's package manager and dies with
+          # "Unable to locate executable file: pnpm" unless Corepack was enabled first. This job never
+          # installs dependencies — scripts/cron-autoarm.mjs imports only `node:child_process` and
+          # `node:url`, and shells out to scripts/cronjob-sync.mjs — so the cache is what goes, not a
+          # Corepack step the job has no use for. Leaving the default on would fail the SETUP, which
+          # on a push to `main` means a red suite on a commit Railway is waiting to deploy.
+          package-manager-cache: false
 
       - name: Arm newly-declared cron jobs
         env:

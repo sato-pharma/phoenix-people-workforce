@@ -51,8 +51,8 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     const condition = yml.slice(at, yml.indexOf("\n", yml.indexOf("if:", at)));
     assert.match(
       condition,
-      /steps\.detect\.outputs\.heavy == 'true'/,
-      `"${name}" is no longer gated on \`heavy\`, so it runs on PULL REQUESTS again. That restores ` +
+      /github\.event_name != 'pull_request'/,
+      `"${name}" is no longer gated on the EVENT, so it runs on PULL REQUESTS again. That restores ` +
         `~3 billable minutes to each of ~185 PR runs a day (~555 minutes, about a fifth of the ` +
         `Actions bill) and adds ~3.5 minutes to every PR. The owner chose this on 2026-09-29 ` +
         `precisely because it cuts cost WITHOUT slowing the work. Production is not at risk either ` +
@@ -60,20 +60,22 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     );
   }
 
-  // 2. `heavy` is computed once, from the event — not repeated as a compound `if:` that can drift.
-  const answer = yml.slice(yml.indexOf("          answer() {"));
-  assert.match(
-    answer.slice(0, 600),
-    /EVENT_NAME" != "pull_request"/,
-    "the `heavy` output no longer excludes pull_request — the gate exists, but it now lets the " +
-      "build run on PRs anyway, which is the same regression with none of the visible signs",
-  );
-  assert.match(
-    answer.slice(0, 600),
-    /heavy=\$heavy" >> "\$GITHUB_OUTPUT"/,
-    "`heavy` is no longer emitted as a step output, so every step gated on it evaluates to the " +
-      "empty string and the build silently stops running ANYWHERE — including on main, where it " +
-      "is the only thing standing between a broken login and a deploy",
+  // 2. The condition is the EVENT ITSELF, not a step output computed in shell.
+  //
+  // It used to be `steps.detect.outputs.heavy == 'true'`, emitted by the per-job docs-only
+  // classifier. That classifier was removed on 2026-10-06 (see ci.yml's header: it skipped the
+  // tests policing `.claude/**` and `docs/**` and cost three production deploys), and with it went
+  // `heavy`. The condition it computed was only ever "this is not a pull request", so the steps now
+  // say that directly — which also closes the failure mode this assertion was written for: a
+  // mis-emitted step output evaluates to the empty string and silently gates the build OFF
+  // EVERYWHERE, including on main where it is the only thing between a broken login and a deploy.
+  // `github.event_name` cannot be empty.
+  assert.doesNotMatch(
+    yml,
+    /steps\.detect\.outputs\.heavy/,
+    "a step is gated on `steps.detect.outputs.heavy` again, but nothing emits that output any more — " +
+      "the expression evaluates to the empty string, the condition is never true, and the build and " +
+      "the login smoke stop running ANYWHERE, main included, with every job still green.",
   );
 
   // 3. The main path is untouched: push to main must still trigger the workflow at all.

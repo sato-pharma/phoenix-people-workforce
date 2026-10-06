@@ -47,7 +47,8 @@ All commands run from the repo root.
 
 🔴 **`scripts/remote-check.mjs` IS THE ANSWER TO "I NEED A TYPECHECK NOW AND I AM NOT READY FOR A
 PR".** It pushes the committed sha to the self-hosted box over SSH and runs the check there —
-measured 2026-09-30: typecheck **112s**, lint 4s warm, unit suite 133s, a full `next build` 112s.
+measured: typecheck **~20s** since it moved to TypeScript 7 on 2026-10-06 (it was 112s), lint 4s
+warm, unit suite 133s, a full `next build` 112s.
 Nothing heavy touches the 16 GB laptop, no Actions minutes are billed, and no PR is opened. It sends
 the **commit**, so it prints any uncommitted files it is ignoring. Pinned by
 `tests/remote-check.test.ts`.
@@ -69,7 +70,11 @@ Migrations and production deploys are the two things CI never sees.
 refuses every spelling, because the rule alone could not hold: a reaped run prints nothing and exits
 non-zero, which a session cannot tell from a typo, so it tries the next spelling.
 `PHX_TYPECHECK_OK=1 <cmd>` (`$env:PHX_TYPECHECK_OK=1; <cmd>` in PowerShell) stands it down for one
-command you will sit and watch. **Push the branch — the PR's typecheck is cold, clean and ~3 min.**
+command you will sit and watch. **Push the branch — the PR's typecheck is cold, clean and under a
+minute** since the gate moved to TypeScript 7 (`typescript-native`, an `npm:typescript@7` alias;
+`typescript` 5 stays for the editor, Next and typescript-eslint). It is `--checkers 1` in both
+callers deliberately: nothing else names a version, and TypeScript 5 refuses that flag, so a lost
+alias fails loudly instead of quietly restoring the 3-minute compiler.
 
 Both in full — the required-check rotation, the retired `check:harden` and `check:edit`, the
 per-change validation matrix, and the measured reason a cold `tsc` no longer fits this machine:

@@ -350,24 +350,35 @@ function localTypecheckLaunch(command, root) {
   );
 }
 
-/** A binary whose package is not named after it. */
-const BIN_PACKAGE = { tsc: 'typescript', tsserver: 'typescript' };
+/**
+ * A binary whose package is not named after it.
+ *
+ * `tsc` has TWO packages here since 2026-10-06: `typescript` (5.x, which the editor, Next and
+ * typescript-eslint still load) and `typescript-native` (the `npm:typescript@7` alias that IS the
+ * type gate). pnpm links `node_modules/.bin/tsc` to the higher version, so `pnpm run typecheck`
+ * already runs 7 — and advice that spelled out `node node_modules/typescript/bin/tsc` would quietly
+ * hand a worktree session the OLD compiler and a result CI does not share. Resolved in order, by
+ * what is on disk, so this keeps working in a checkout from before the alias landed.
+ */
+const BIN_PACKAGE = { tsc: ['typescript-native', 'typescript'], tsserver: ['typescript'] };
 
 /**
  * `node node_modules/<pkg>/<entry>` for an installed binary — read out of that package's own
  * manifest and checked on disk, never guessed. A suggestion that does not run is worse than none.
  */
 function nodeEntryFor(bin, root) {
-  try {
-    const pkg = BIN_PACKAGE[bin] || bin;
-    const manifest = JSON.parse(readFileSync(join(root, 'node_modules', pkg, 'package.json'), 'utf8'));
-    const entry = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.[bin];
-    if (!entry) return null;
-    const relative = `node_modules/${pkg}/${String(entry).replace(/^\.\//, '')}`;
-    return existsSync(join(root, relative)) ? `node ${relative}` : null;
-  } catch {
-    return null;
+  for (const pkg of BIN_PACKAGE[bin] ?? [bin]) {
+    try {
+      const manifest = JSON.parse(readFileSync(join(root, 'node_modules', pkg, 'package.json'), 'utf8'));
+      const entry = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.[bin];
+      if (!entry) continue;
+      const relative = `node_modules/${pkg}/${String(entry).replace(/^\.\//, '')}`;
+      if (existsSync(join(root, relative))) return `node ${relative}`;
+    } catch {
+      // Try the next candidate: a missing or unreadable package is not an answer.
+    }
   }
+  return null;
 }
 
 function packageScripts(root) {

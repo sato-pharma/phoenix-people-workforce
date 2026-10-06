@@ -67,7 +67,28 @@ jobs:
   synthetic:
     name: synthetic
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+
+    # 🔴 45, NOT 20, AND THE ARITHMETIC IS THE WHOLE REASON. A JOB timeout ignores step-level
+    # `continue-on-error` entirely: the runner cancels the job, the suite concludes `cancelled`, and
+    # AGENTS.md §2.3 is explicit that "red, cancelled, or still queued = no deploy". So a job timeout
+    # is a hole straight through the finish-green guarantee the step comments below spend fifty lines
+    # establishing — the one failure mode those comments do not cover.
+    #
+    # The suite's worst case, from playwright.synthetic.config.ts and tests/synthetic/journeys/:
+    #   14 journeys (11 spec files; employee-360-outstation-expenses.spec.ts holds 4)
+    #     x 60s per-test `timeout`
+    #     x 2 attempts (`retries: 1`)
+    #   = 28 minutes, plus the `setup` project's login (one more test, so ~2 min)
+    #   plus checkout + pnpm install + Chromium ~3-4 min on a cold cache
+    #   ~= 34 minutes before anything is wrong.
+    # 20 minutes was BELOW that, so a merely slow production — not a broken one — cancelled the suite.
+    #
+    # The alternative was a Playwright `globalTimeout` comfortably below the job timeout. Not taken
+    # here: the config is shared with local and preview runs, where a hard global cap would truncate a
+    # deliberate investigation. The job timeout is the leg that is specific to CI, so it is the leg
+    # that moves. 45 leaves ~11 minutes of headroom over the 34-minute worst case, which is enough for
+    # a slow runner without letting a genuinely hung run burn an hour of billable minutes.
+    timeout-minutes: 45
 
     # `secrets` is NOT a valid context in a step-level `if:` — GitHub rejects it with
     # "Unrecognized named-value: 'secrets'" and the ENTIRE workflow fails to parse, so every run
@@ -115,8 +136,34 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # CACHE THE BROWSER. Copied from ci.yml's "Cache Playwright browsers" step, same action SHA pin,
+      # so the two stay one pattern. Until 2026-10-06 this workflow ran a bare
+      # `playwright install --with-deps chromium` on EVERY run — and its header records the real rate
+      # as ~27 runs/day (~24 cron-job.org dispatches + ~3 scheduled), not the ~6 the cadence comment
+      # alone implies. That is ~27 Chromium downloads and ~27 apt dependency installs a day on a job
+      # whose actual work is a handful of page loads.
+      #
+      # 🔴 `env.ImageOS` IS IN THE KEY ON PURPOSE AND MUST STAY. An exact cache hit SKIPS the
+      # `install-deps` step below, so the cached browser is only usable against the system libraries
+      # of the image it was installed on. `ubuntu-latest` migrates to Ubuntu 26 on 2026-10-19; without
+      # the image in the key, the first run after that migration would restore a browser built for the
+      # old image, skip install-deps because the hit was exact, and fail to launch Chromium — which on
+      # this workflow reads as "production is down", because that is what a failed journey means here.
+      # A partial hit through `restore-keys` leaves `cache-hit` != 'true', so install-deps still runs.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ env.ImageOS }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ env.ImageOS }}-
+
       - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
+
+      - name: Install Chromium system dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install-deps chromium
 
       # 🔴 THIS STEP MUST NEVER FAIL THE JOB, AND THAT IS NOT LAZINESS ABOUT RED TICKS.
       #
@@ -181,7 +228,22 @@ jobs:
       # SYNTHETIC_INGEST_TOKEN) — declined because that variable is set in NEITHER GitHub nor
       # Railway, so wiring it would mean minting a new production credential to fix a reporting
       # gap. Same secret and same pattern as migration-drift-check.yml's production legs.
+      #
+      # 🔴 continue-on-error PLUS AN id, FOR THE SAME REASON THE JOURNEY STEP HAS THEM. This step
+      # writes to PRODUCTION Supabase, and scripts/synthetic-save-report.ts exits 1 on a missing or
+      # empty report — so a Supabase hiccup, a network blip or a run whose reporter wrote nothing
+      # turned this job RED, and a red suite on `main` HEAD withholds that commit's production deploy
+      # permanently. That is the precise failure the step above is written to avoid, arriving one step
+      # later through the DASHBOARD WRITE rather than through the journeys themselves. A failed save
+      # is a REPORTING gap, never evidence about production, so it must not be able to gate a deploy.
+      #
+      # The loudness is not given up: the step below turns a failed save into a ::warning:: and a job
+      # summary line, which is the same treatment the missing-secret case already had. What must never
+      # happen is this step losing its guard AND its reporter together — a silent save failure rebuilds
+      # the two-month stale dashboard described above from a third direction.
       - name: Save the run to the dashboard
+        id: save
+        continue-on-error: true
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run synthetic:save-report
         env:
@@ -197,7 +259,35 @@ jobs:
         run: |
           echo "::warning::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set — the journeys ran but the result was NOT saved, so the admin Synthetic Journeys page still shows the previous run. Add the secret (production project ref ozucdzovmcqvepbozvqf) to enable the dashboard."
 
+      # The other half of the save step's guard, and the reason that guard is safe to add. The secret
+      # being ABSENT already had a warning; the save RUNNING AND FAILING had none, because until
+      # 2026-10-06 it simply failed the job. Making the step unable to fail without this step would
+      # convert a withheld deploy into a silently stale dashboard — which is the very hole the save
+      # step was added to close, so it would be a straight trade rather than a fix.
+      #
+      # A ::warning:: rather than an ::error:: deliberately: a failed save says nothing about whether
+      # production is healthy, and an ::error:: here would read like one of the journeys going red.
+      # The journeys keep the ::error:: to themselves.
+      - name: Warn when the save itself failed
+        if: ${{ always() && steps.save.outcome == 'failure' }}
+        run: |
+          {
+            printf '## Synthetic run was NOT saved to the dashboard\n\n'
+            printf 'The journeys ran, but `pnpm run synthetic:save-report` failed, so **public.synthetic_journey_runs has no row for this run** and the admin Synthetic Journeys page still shows the previous one.\n\n'
+            printf 'This step does NOT fail the job on purpose: the save writes to production Supabase, and a red suite here would withhold the production deploy of whatever commit was `main` HEAD when the schedule fired (AGENTS.md §2.3). Read the failed step above for the reason — usually a Supabase hiccup, or a report the Playwright reporter never wrote.\n\n'
+            printf 'The journey verdict itself is NOT lost: it is in this run log, and a failed journey still prints its own `::error::` annotation.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::warning::The synthetic run was NOT saved to the dashboard — synthetic:save-report failed, so the admin Synthetic Journeys page is now showing a stale run. The job stays green on purpose so it cannot withhold a production deploy; read the failed step above."
+
+      # `continue-on-error` for the same reason as the save step, and it is not a formality: this step
+      # runs under `always()`, so it runs after a FAILED journey — exactly when production is broken
+      # and the deploy carrying the fix must not be withheld. An artifact upload fails for reasons that
+      # have nothing to do with this repository (a storage blip, a quota, a 503 from the artifact
+      # service), and none of them are worth a cancelled production deploy. Losing the HTML report is
+      # an inconvenience; the verdict is already in the log, the annotation and the dashboard row.
       - name: Upload Playwright report
+        continue-on-error: true
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

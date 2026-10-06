@@ -18,7 +18,7 @@ All scripts are defined in `package.json`. This document classifies them by purp
 | `pnpm run build` | Production build | Safe |
 | `pnpm run start` | Start production server locally | Safe |
 | `pnpm run lint` | Run ESLint | Safe |
-| `pnpm run typecheck` | TypeScript type checking | Safe |
+| `pnpm run typecheck` | TypeScript type checking — the NATIVE compiler (`typescript-native`, an `npm:typescript@7` alias) since 2026-10-06; `--checkers 1` is the tell that the alias survives, because TypeScript 5 refuses it | Safe |
 | `pnpm run test` | Run unit/integration tests | Safe |
 | `pnpm run test:e2e` | Full Playwright E2E suite | Safe |
 | `pnpm run test:e2e:smoke` | Playwright login smoke test | Safe |
