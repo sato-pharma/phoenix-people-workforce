@@ -531,8 +531,9 @@ if (busy.runs.length > 0 && plan.action !== "run" && !FORCED) {
   console.error("    You asked NOT to escalate, so this is the end of the road for this invocation:");
   console.error("      (default)          wait " + DEFAULT_WAIT_MINUTES +
     " min, then run ci.yml on GitHub Actions — ~14 billable minutes. You passed --no-actions/--free.");
-  console.error("      --urgent           escalate after " + URGENT_WAIT_MINUTES + " min instead of " +
-    DEFAULT_WAIT_MINUTES + ".");
+  console.error("      --urgent           " + (URGENT_WAIT_MINUTES === 0
+    ? "escalate IMMEDIATELY, without waiting for the box at all."
+    : "escalate after " + URGENT_WAIT_MINUTES + " min instead of " + DEFAULT_WAIT_MINUTES + "."));
   console.error("      --wait <minutes>   keep asking the box, a line every " + BUSY_POLL_SECONDS + "s.");
   console.error("      PHX_CHECK_FORCE=1  start beside the other run anyway (this is what OOM-kills a build).");
   console.error("");

@@ -420,11 +420,24 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.equal(parseEscalation(["test", "--wait", "3"]).waitMinutes, 3);
     assert.equal(parseEscalation(["all", "--wait=6"]).waitMinutes, 6);
 
-    // --urgent is the owner's critical-situation switch: the wait AND the Actions fallback.
+    // --urgent is the owner's critical-situation switch, and since 2026-10-06 it escalates AT ONCE
+    // ("make --urgent escalate immediately instead of after 4 minutes") — once the default waited ten
+    // minutes, a 4-minute tier differed from it only by six minutes, which is not what urgent means.
     const urgent = parseEscalation(["all", "--urgent"]);
     assert.equal(urgent.waitMinutes, URGENT_WAIT_MINUTES);
+    assert.equal(URGENT_WAIT_MINUTES, 0, "--urgent must not queue at all: it escalates immediately");
     assert.equal(urgent.actions, true, "--urgent must arm the Actions fallback, not only the wait");
     assert.deepEqual(urgent.positional, ["all"]);
+    assert.equal(
+      decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: urgent.waitMinutes, actions: true }).action,
+      "actions",
+      "--urgent on a busy box must dispatch at once, never poll first",
+    );
+
+    // 🔴 AN EXPLICIT BUDGET STILL WINS, IN EITHER ORDER. `--urgent`'s zero must never SHORTEN a wait
+    // the caller asked for, or `--wait 6 --urgent` would silently bill instead of waiting six minutes.
+    assert.equal(parseEscalation(["all", "--wait", "6", "--urgent"]).waitMinutes, 6);
+    assert.equal(parseEscalation(["all", "--urgent", "--wait", "6"]).waitMinutes, 6);
 
     // 10b — THE DEFAULT IS WAIT-THEN-ESCALATE since the owner's ruling of 2026-10-06 ("make --urgent
     // the default when the box queue is over 10 minutes"). A bare invocation must never leave the
