@@ -1,6 +1,6 @@
 ---
 name: the-one-form-design-every-form-wears-the-adr-wizards-skin
-description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO — and the eight codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
+description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls kept by his own 2026-10-06 ruling — and the eight codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
 metadata:
   node_type: memory
   type: project
@@ -27,8 +27,10 @@ multi-step shell). Never hand-write a field's border, background, radius, height
 identity: square corners, `h-10`, slate-300 hairline on white, `px-3`, orange focus border + ring,
 micro-caps `text-phx-xs font-black uppercase text-slate-500` labels, rose required star, near-black
 Next, orange Submit; slate + orange + rose and nothing else. `form-tokens.ts` is plain strings with
-no `"use client"`, so a server component may import it. `h-8`/`h-9` on a dense table or filter
-control is KEPT on purpose, like icon padding; `h-10` and taller became the design's 40px.
+no `"use client"`, so a server component may import it. 🔴 **`h-8`/`h-9` on a dense table or
+filter control is KEPT — HIS OWN RULING, 2026-10-06**: asked whether the ~200 dense controls should
+be forced to the design's 40px he answered *"keep h-8 and h-9 on the dense table filters"*, so never
+bring them into line later and never ask him again. `h-10` and taller became the design's 40px.
 
 **Reach, measured 2026-10-06:** 1,485 real form controls — counting `<Input>`, `<Textarea>` and
 `<SearchableSelect>` as the controls they render — of which **1,171 reach a shared token** and

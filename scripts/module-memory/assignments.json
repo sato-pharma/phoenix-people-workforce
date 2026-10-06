@@ -64,6 +64,7 @@
   "a-reused-branch-name-finds-the-old-merged-pr": "git-worktrees",
   "a-role-count-of-zero-can-mean-mis-roled-not-missing": "platform",
   "a-role-probe-cannot-trust-the-http-status-code": "engineering",
+  "a-role-sweep-needs-no-dev-server-when-the-gate-is-a-domain-helper": "production-planning",
   "a-rollup-ships-a-members-stale-head-not-its-latest": "engineering",
   "a-router-refresh-after-a-one-shot-action-erases-its-only-account": "notifications",
   "a-saved-plan-file-is-a-snapshot-not-a-backlog": "sessions",
