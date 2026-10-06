@@ -494,7 +494,7 @@ export const MODULES = [
       "app/**/{access,admin-tools,cron-control,error-monitor,logs,monitoring,module-locks,system-cleanup,system-issues,synthetic-journeys,data-backup,data-health,dev-preview,login,password-setup,share}/**",
       "proxy.ts",
       "instrumentation.ts",
-      "tests/*{auth,access,role,permission,cron,security,login,session,share-link,error,square-edge,fits-the-screen}*",
+      "tests/*{auth,access,role,permission,cron,security,login,session,share-link,error,square-edge,fits-the-screen,form-design}*",
       "supabase/migrations/*{auth,role,permission,cron}*",
     ],
     keywords: ["login", "access control", "permission", "permissions", "role sweep", "cron", "cron job", "error monitor", "share link", "dev-auth"],
