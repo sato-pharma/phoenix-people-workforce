@@ -31,6 +31,7 @@
 ## Inbox — new notes land here
 
 
-- [restoring `process.env` cannot undo a MEMOIZED client](restoring-env-cannot-undo-a-memoized-client.md) — one test's stand-in Supabase URL made the whole suite 3x slower (145s→419s, 2026-10-04); queue time was 3s, so CI slowness was never GitHub. Bisect a step change with per-day `Test`-step timings, then rank the log's own `PASS … (Nms)` lines.
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
+- [a stale mirror report is measured in YOUR checkout](a-stale-mirror-report-is-measured-in-your-own-checkout.md) — a behind primary names drift that `origin/main` or an open PR already carries, and `diff -rq` against live memory is pure CRLF noise; only `sync-cloud-context.mjs` is the authority. And `fold.mjs` RETURNS before the sync when nothing is new or gone, so an EDITED note never reaches the mirror on the cadence.
+- [his merge approval can name a container that is already GONE](his-merge-approval-can-name-a-container-that-is-already-gone.md) - a roll-up can be CLOSED between the ask and his reply (5409 was closed 1 min after being built, because its member 5407 had merged 7 min before it existed); re-read the PR state after his approval, then merge the live PR still carrying the work and say so in one line - never re-ask for a decision he just made.
