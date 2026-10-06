@@ -312,9 +312,11 @@ export function ContactListWorkspace() {
 
       {!view.inForce ? (
         <p className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {view.cutoverDate
-            ? `Doctor lists still come from iReports360. Changes open here on ${dayLabel(view.cutoverDate)}.`
-            : "Doctor lists still come from iReports360. Changes open here on the CRM cutover date."}
+          {view.rep
+            ? `${view.rep.name}'s doctor list still comes from iReports360, so it cannot be changed here yet — their team has not started in Phoenix CRM.`
+            : view.cutoverDate
+              ? `Doctor lists still come from iReports360. Changes open here on ${dayLabel(view.cutoverDate)}.`
+              : "Doctor lists still come from iReports360 for every team. A team's list opens here the day it starts in Phoenix CRM."}
         </p>
       ) : null}
 
@@ -336,7 +338,12 @@ export function ContactListWorkspace() {
               <option value="">Choose a rep</option>
               {view.repOptions.map((option) => (
                 <option key={option.hrId} value={option.hrId}>
-                  {option.detail ? `${option.name} (${option.detail})` : option.name}
+                  {[
+                    option.detail ? `${option.name} (${option.detail})` : option.name,
+                    option.listOpen ? null : "— list not open yet",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                 </option>
               ))}
             </select>

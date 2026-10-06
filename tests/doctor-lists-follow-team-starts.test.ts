@@ -25,12 +25,22 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 // not (1 open row). A guard that merely disabled the pass would have left B-15's removed too.
 
 const MIGRATION = "supabase/migrations/20261004120000_doctor_lists_follow_each_team_start.sql";
+/** The LAST definer of crm_contact_list_change_apply, so the body the database actually runs. */
+const NEUTRAL_MIGRATION = "supabase/migrations/20261006185533_crm_contact_list_refusal_neutral.sql";
 
 /** The started-rep anti-join, as every assignment pass must spell it. */
 const STARTED_GUARD = /not exists \(\s*select 1\s*from pg_temp\.crm_refresh_started_reps/;
 
 function read(path: string): string {
   return readFileSync(path, "utf8");
+}
+
+/** One exported TypeScript function, from its signature to the next top-level export. */
+function tsBody(source: string, name: string): string {
+  const start = source.indexOf(`export async function ${name}(`);
+  assert.ok(start >= 0, `${name} must exist`);
+  const next = source.indexOf("\nexport ", start + 1);
+  return source.slice(start, next < 0 ? source.length : next);
 }
 
 /** One `create or replace function` statement, from its header to its `$function$;` terminator. */
@@ -98,9 +108,12 @@ export function runDoctorListsFollowTeamStartsTests() {
     /or \(v_cutover is not null and v_today >= v_cutover\)/,
     "a global cutover date, if it is ever set, is still a second path and not dropped",
   );
+  // The refusal itself, as this migration shipped it. Its WORDING was replaced on 2026-10-06 by
+  // NEUTRAL_MIGRATION ("their team", not "his team") and is checked there — what matters here is that a
+  // rep whose team has not started is refused at all, and told why.
   assert.match(
     apply,
-    /his team has not started in Phoenix CRM yet/,
+    /team has not started in Phoenix CRM yet/,
     "a rep whose team has not started is still refused, and the message says why",
   );
   // The window test must match the TypeScript rule: inclusive of the start, exclusive of the stop.
@@ -210,5 +223,108 @@ export function runDoctorListsFollowTeamStartsTests() {
     raw,
     /comment on function public\.crm_contact_list_change_apply\(uuid, text, text\) is/,
     "the apply function carries a comment too",
+  );
+
+  // ── 8. The TYPESCRIPT half asks the SAME rule, per rep (owner, 2026-10-06) ────────────────────
+  // The migration above taught the DATABASE. The service kept asking the GLOBAL cutover date on its
+  // own, in `assertInForce`, so with that date NULL on production every change was refused BEFORE the
+  // database was ever reached: the SFE Manager's direct edit — his rule since 2026-09-14, and carried
+  // by the apply function since 2026-10-04 — could not be made at all. Measured 2026-10-06, two days
+  // after this migration shipped: crm_contact_list_changes still held 0 rows, while 18 people on
+  // started teams held 1,997 open assignment rows the vendor refresh was already freezing for them.
+  const rules = read("src/lib/crm/contact-lists/rules.ts");
+  const service = read("src/lib/crm/contact-lists/service.ts");
+
+  // The two paths, in the same order as v_phoenix_owns: his team's start first, the global date second.
+  assert.match(
+    rules,
+    /startedWindowCovers\(ownership\.windows, ownership\.rep, ownership\.cairoToday\) \|\|[\s\S]{0,20}contactListChangesInForce\(ownership\.cutover, ownership\.cairoToday\)/,
+    "the TypeScript rule is the team's start OR a global cutover date — the same two paths as the SQL",
+  );
+  assert.doesNotMatch(
+    service,
+    /assertInForce/,
+    "the global-date-only gate is gone from the service; every caller asks the per-rep rule instead",
+  );
+
+  // The refusal is the DATABASE'S OWN SENTENCE, byte for byte, so a screen can never explain a refusal
+  // differently from the raise that produced it.
+  // Read from the LAST DEFINER — the body the database runs — never from the older migration whose text
+  // it replaced. The whole function is re-emitted there and differs by one word, which is checked below.
+  const liveApply = functionBody(stripSqlComments(read(NEUTRAL_MIGRATION)), "crm_contact_list_change_apply");
+  const sentence = /"(Doctor lists for this rep still come from iReports360[^"]*)"/.exec(rules);
+  assert.ok(sentence, "rules.ts must carry the team-not-started message");
+  assert.ok(
+    liveApply.includes(sentence[1]),
+    "the message the screen shows is the one crm_contact_list_change_apply raises, verbatim",
+  );
+  // Nothing this app shows anybody assumes its subject is a man (owner, 2026-10-05). The guard that
+  // pins that reads TypeScript, so it cannot see a sentence raised by a database function — and this one
+  // reaches the editor as a conflict message the moment a drop is refused.
+  // Built with `new RegExp` over a string on purpose: as a regex literal this assertion was DEAD. The
+  // patch that wrote it passed a word-boundary escape through a tool that RESOLVED it, so the file held
+  // a literal backspace byte and the pattern matched nothing — a check that can never fail, wearing
+  // the shape of one that guards a sentence a person reads. A control character does not show in a diff.
+  assert.doesNotMatch(
+    liveApply,
+    new RegExp("\\bhis\\b"),
+    "the refusal the editor reads is neutral, like every other sentence this app shows",
+  );
+  // And it changed ONE WORD: the rest of the body is 20261004120000's, so re-emitting it to fix the
+  // wording cannot have quietly reverted the team-start rule itself.
+  assert.equal(
+    liveApply.replace("their team has not started", "his team has not started"),
+    apply,
+    "the re-emitted body is the previous definer's, byte for byte, apart from the one word",
+  );
+
+  // The gate reads both halves of the ownership and asks about the rep it was handed.
+  assert.match(
+    service,
+    /doctorListRefusal\(\{ \.\.\.\(await listOwnership\(\)\), rep: ownershipRep\(rep\) \}\)/,
+    "the service's gate applies the shared rule rather than re-deriving one",
+  );
+
+  // Every WRITE path asks, and asks about the rep whose list is changing — never about the viewer.
+  // The ordering matters as much as the presence: the check needs his row, so a version that ran before
+  // the row was resolved could only have asked a global question.
+  assert.match(
+    tsBody(service, "requestContactListChange"),
+    /requireActiveSelf\(access, directory\)[\s\S]*assertPhoenixOwnsList\(rep\)/,
+    "a rep's own request is judged on HIS team, after his row is resolved",
+  );
+  assert.match(
+    tsBody(service, "applyContactListChangeDirectly"),
+    /isAgentInScope\(scope, rep\.hrId\)[\s\S]*assertPhoenixOwnsList\(rep\)/,
+    "the SFE Manager's direct edit is judged on the rep he picked, after the scope check",
+  );
+  assert.match(
+    tsBody(service, "decideContactListChange"),
+    /assertPhoenixOwnsList\(\{ crmId: repRow\?\.crmId \?\? null, hrId: record\.repHrId \}\)/,
+    "a manager's approval is judged on the REP on the change, not on the manager",
+  );
+
+  // Both READ paths follow, or the screen offers a change the write path then refuses.
+  assert.match(
+    tsBody(service, "getContactListView"),
+    /if \(shownRep\) view\.inForce = doctorListOwnedByPhoenix\(/,
+    "the page narrows inForce to the shown rep once his row is known",
+  );
+  assert.match(
+    tsBody(service, "getContactListAvailability"),
+    /viewer\.canRequest && !doctorListOwnedByPhoenix\(/,
+    "a rep is not linked to a page that would refuse every change he could make there",
+  );
+  // The picker still lists every rep in scope — reading a not-yet-started list is allowed — but it says
+  // which ones cannot be changed, so the editor never meets the refusal by surprise.
+  assert.match(
+    service,
+    /listOpen: doctorListOwnedByPhoenix\(\{ \.\.\.ownership, rep: ownershipRep\(row\) \}\)/,
+    "each rep option carries whether his list is open",
+  );
+  assert.match(
+    read("src/components/employee-portal/contact-list-workspace.tsx"),
+    /option\.listOpen \? null :/,
+    "the picker marks a rep whose list is not open yet",
   );
 }

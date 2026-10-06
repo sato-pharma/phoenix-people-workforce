@@ -43,10 +43,20 @@ export type ContactListChangeRow = {
 };
 
 /** A rep the SFE Manager or the administrator can open. The id is the picker's value, never shown. */
-export type ContactListRepOption = { hrId: string; name: string; detail: string };
+export type ContactListRepOption = {
+  hrId: string;
+  name: string;
+  detail: string;
+  /** His list is Phoenix's today, so it can be changed. Every rep is still listed, and shown. */
+  listOpen: boolean;
+};
 
 export type ContactListView = {
-  /** On or after the CRM cutover date. Before it, lists are shown but cannot be changed. */
+  /**
+   * The SHOWN rep's list is Phoenix's — his team has started in Phoenix CRM, or a global cutover date
+   * has passed. Before that his list is still iReports360's: it is shown and cannot be changed. With no
+   * rep shown yet this answers the company question instead — is any list live for anybody.
+   */
   inForce: boolean;
   cutoverDate: string | null;
   canRequest: boolean;
@@ -73,7 +83,7 @@ export type ContactListSearchResult = {
 };
 
 export type ContactListAvailability = {
-  /** Link the page. False until the CRM cutover date is set. */
+  /** Link the page. False until a team is counted from Phoenix CRM — and, for a rep, until his own is. */
   show: boolean;
   canRequest: boolean;
   /** Requests waiting for this viewer's answer as manager. */
