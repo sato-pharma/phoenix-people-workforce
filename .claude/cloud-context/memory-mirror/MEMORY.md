@@ -30,7 +30,7 @@
 
 ## Inbox — new notes land here
 
-- [HR Section Head is a leadership seat in every hiring post](hiring-post-hr-section-head-is-a-leadership-seat.md) — never personnel tasks, never "strong Excel", never the apply block twice.
+
+- [restoring `process.env` cannot undo a MEMOIZED client](restoring-env-cannot-undo-a-memoized-client.md) — one test's stand-in Supabase URL made the whole suite 3x slower (145s→419s, 2026-10-04); queue time was 3s, so CI slowness was never GitHub. Bisect a step change with per-day `Test`-step timings, then rank the log's own `PASS … (Nms)` lines.
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
-- [a documented cadence is not an installed job](a-documented-cadence-is-not-an-installed-job.md) - AGENTS.md, the standing rules and this index all said the memory fold ran 3x/day from 2026-10-03, and `docs/module-memory.md` even named the task (`module-memory-fold`) and its worktree (`_wt-memory-fold-runner`) - NEITHER EXISTED, nothing was scheduled anywhere, and for three days every new note sat in this inbox until a session ran the fold by hand. A job that was never installed produces no error, so nothing reported it. Ask the scheduler by NAME and read `LastTaskResult` (267011 = never ran, 0 = the only success) before relying on any recurring job - a task's Arguments are what it runs, its name can say anything; check Windows tasks, Claude's own scheduled tasks AND workflow crons. Installed 2026-10-06 as `Phoenix memory fold`.
