@@ -1,11 +1,11 @@
 ---
 name: filming-a-phoenix-screen-money-and-role-gates-cut-it-first
-description: "before filming or demoing any Phoenix screen, read the source for TWO gates: a form that carries salary (the Employee Master's person form holds base/basic/gross/net) and a report that is role-scoped to the field force (Employee 360 excludes HR, Finance, CEO, admin and office ENTIRELY, so a plain employee is absent even from their own copy). Both cut a screen that looks obviously right"
+description: "before filming or demoing any Phoenix screen, read the source for THREE gates: a form that carries salary (the Employee Master's person form holds base/basic/gross/net); a report role-scoped to the field force (Employee 360 excludes HR, Finance, CEO, admin and office ENTIRELY, so a plain employee is absent even from their own copy); and 🔴 MONEY HIDING IN PROSE — a payroll alert reads 'Net salary differs from employee compensation (43,000)', so a sweep for EGP or a decimal pair returns 0 of 22 and calls the screen clean. Count a bare number in a sentence as money and read the actual rows. Conversely the portal payslip page masks every figure to ****** by default, which makes it the one payroll screen that IS filmable"
 metadata:
   node_type: memory
   type: project
   originSessionId: d633e730-6670-4001-a5e4-27b0a4fd99f4
-  modified: 2026-10-06T05:39:44.370Z
+  modified: 2026-10-06T07:55:10.267Z
 ---
 
 Found 6 Oct 2026 while building video 03 of the *Inside Phoenix* series, which was specified as
@@ -29,6 +29,29 @@ admin, office, etc. — is deliberately excluded from the report entirely"*
 (`src/lib/employee-360/roles.ts:1-13`). A-1 Nour Hassan is an Admin Assistant, so she is absent
 from the admin index AND from her own portal copy — "not even to themselves". Swapping in a
 Medical Rep does not rescue it: a rep's 360 is built on their own **sales**, which is gate 1 again.
+
+🔴 **Gate 3 — MONEY HIDES IN PROSE, AND A CURRENCY REGEX CERTIFIES THE SCREEN AS CLEAN** (added
+6 Oct 2026, building video 05 — payroll). `PayrollGovernanceAlerts` on `/payroll` renders
+`flag.message` verbatim for the first 14 flags, and on staging those 22 messages read *"Row 12 /
+Net Salary: Net salary differs from employee compensation (**43,000**); the uploaded payroll value
+was preserved for payslip accuracy"* — also Gross `(50,770)`, income tax `(7,770)`,
+`(16,692.5)`. A sweep for `EGP`, for `جنيه` or for a decimal-pair amount returns **0 of 22**,
+because the figures are bare and unlabelled mid-sentence, so the panel was one step from being
+cast on the strength of that zero. **Count a bare number in a sentence as money, and read the
+actual rows rather than a pattern over them.** The same panel prints a raw HR ID, against the
+names-never-codes rule. (`/payroll` is also why video 05 carries the series' only CLIPPED capture:
+the page top is clean down to the workflow panel and the money starts immediately below it.)
+
+**And the inverse gate, which is the useful half: the system masks its own money, so look for that
+before concluding a module has no filmable portal screen.** On `/employee-portals/payslips`,
+`PayrollStat` holds `isValueVisible = useState(false)` and the breakdown holds
+`isBreakdownVisible = useState(false)`, so Gross, Net, Basic, Base and every breakdown row render
+`******` until the viewer clicks an eye — one toggle per card
+(`src/components/employee-portal/dashboard/payroll-payslips-section.tsx:81, 175, 339`). The
+untouched default state is filmable with nothing staged. 🔴 **But `PayrollSummaryPanel`, in THE SAME
+FILE, prints net salary at `text-3xl` with no mask and no toggle (`:137`)** — so "that file renders
+money" answers nothing about either component, and a per-file money count is the wrong unit. Check
+the component that the route actually renders.
 
 **How to apply:** before promising a screen, open the page file and the service behind it. Ask
 (a) does this view, or anything it opens, render money? and (b) is the person I am filming inside

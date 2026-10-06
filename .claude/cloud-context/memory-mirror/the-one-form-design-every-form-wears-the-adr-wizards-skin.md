@@ -1,6 +1,6 @@
 ---
 name: the-one-form-design-every-form-wears-the-adr-wizards-skin
-description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls kept by his own 2026-10-06 ruling — and the eight codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
+description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls kept by his own 2026-10-06 ruling — and the nine codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
 metadata:
   node_type: memory
   type: project
@@ -39,7 +39,7 @@ their box from a parent, plus the printed-document editors under `hiring-pack/` 
 exempt under the house document identity. The ADR form itself now CONSUMES the kit, which is what
 makes "change the token and the system follows" true.
 
-🔴 **Eight codemod traps, every one of which cost a re-run:**
+🔴 **Nine codemod traps, every one of which cost a re-run:**
 1. **Dropping a field's `pl-9` puts the magnifier on top of the text.** Side padding *larger* than
    the token's own `px-3` is icon clearance, not skin; the first pass broke ~45 search boxes.
 2. **A regex that ends a JSX tag at the first `>` ends it inside `(e) => …`** — the attribute list
@@ -77,6 +77,16 @@ makes "change the token and the system follows" true.
    1,171 to 668 with nothing changed on screen — a number that, left unread, would have shipped in
    the PR as the truth. Re-measure after every change to the resolver, never only after a change to
    the code.
+
+9. 🔴 **THE TOKEN IS `text-sm` = 14px, AND iOS SAFARI ZOOMS THE WHOLE VIEWPORT ON A FIELD
+   UNDER 16px.** `approvals-hub/decision-actions.tsx` — the screen where money moves — had
+   already been fixed with `text-base … md:text-sm`, and the sweep flattened it to the bare token.
+   Caught ONLY by the full unit suite on the box, by its own named assertion in
+   `tests/direct-orders-approval-window-mobile.test.ts`; lint, typecheck and the build all passed
+   the same commit. Now `cn(phxTextareaClassName, "text-base md:text-sm")`, with the assertion
+   pinning the composition in BOTH halves rather than the old contiguous literal. Measured across
+   the branch: exactly ONE call site carried that pair, so it is a one-screen exception — **never
+   change the token to fix it**, which would redesign his own screen.
 
 🔴 **And a quoted bash heredoc on this machine HALVED the backslashes in a JS regex literal** —
 `/[^"\\]/` landed as `/[^"\]/`, which matched nothing and reported "0 controls" with no error at all.

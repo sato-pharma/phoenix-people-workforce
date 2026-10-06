@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 233ae337-84f9-4af9-a56d-0a851765addf
-  modified: 2026-10-06T07:27:49.421Z
+  modified: 2026-10-06T07:47:50.460Z
 ---
 
 `~/.claude.json` holds both `F:/Phoenix Workforce/phoenix-workforce` and
@@ -19,6 +19,11 @@ tool schemas resident in the session's tool list, ~1.2k est. tokens a request, m
 disabled. Mirrored onto both entries the same day, minus `b345e47e…`, which AGENTS.md §8 requires
 stay allowed (owner decision 2026-10-05) and which was therefore also **removed** from the
 forward-slash entry's disable list so it cannot come back if that key becomes the live one.
+
+**It is not one folder's quirk.** The same day, `D:\Sato Pharma new\satopharma-website` had `ask-gpt`
+disabled under both its forward-slash keys and **not** under its backslash key, so the server kept
+loading in the repo it was believed off in. Swept across all 50 `projects` entries: 25 of them had
+never had it. So treat a half-applied disable as the DEFAULT state, not the exception.
 
 **How to apply:** never read a single `projects` entry as this folder's state — resolve by normalising
 the separators and check both keys, then write both. `/mcp disable` is per-project either way, so it
