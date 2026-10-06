@@ -2369,6 +2369,7 @@ import { runTypecheckNativeCompilerTests } from "./typecheck-native-compiler.tes
 import { runCiSuitePlacementTests } from "./ci-suite-placement.test.ts";
 import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
 import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
+import { runLoginFormLocatorContractTests } from "./login-form-locator-contract.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9189,6 +9190,11 @@ await runTest(
 await runTest(
   "the sharded CI runner REFUSES a run the shards did not cover between them — a shard that printed no `PHX_SHARD_RESULT` marker, a ran-sum short of the declared count, shards disagreeing about that count, and two shards handed the same index are each a named failure rather than a smaller suite reporting success; a shard that merely FAILED reports once, without a coverage complaint on top of it (run-tests.ts rethrows at the first red test, so its counts are legitimately short); and the shard count is bounded by free memory as well as by CPUs, because each shard holds the whole module graph and this repo's runners are 7 GB, not the public tier's 16",
   runRunTestsShardedTests,
+);
+
+await runTest(
+  "the Playwright login setups find the login form by something that is NOT product copy: all three — tests/e2e/auth.setup.ts, tests/e2e/auth.data-user.setup.ts and the easily-missed tests/synthetic/helpers/auth.setup.ts — drive `#login-id` AND `#login-password` by id, every id they locate still exists in premium-login-page.tsx, none may go back to `getByRole(\"textbox\", …)` for either field, and the submit pattern stays ANCHORED so it cannot also match the \"Sign in with biometrics\" button rendered beside it, which is two hits and a strict-mode error rather than a pick. It asserts over comment-STRIPPED source, because the notes in those files quote the old locator to explain what was removed. This runs on a pull request; the smoke test it protects runs only on a push to main, where a failure is not a red test but a WITHHELD production deploy — on 2026-10-07 one copy edit in #5418 stopped ac76bb73e, 965bc7e53 and a982544de from ever shipping, all three PRs green",
+  runLoginFormLocatorContractTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

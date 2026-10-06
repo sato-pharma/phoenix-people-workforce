@@ -35,7 +35,7 @@ setup("authenticate", async ({ page }) => {
 
   // Fill in HR ID and password
   await hrIdInput.fill("a-12");
-  await page.getByRole("textbox", { name: /Password/i }).fill("12345678");
+  await page.locator("#login-password").fill("12345678");
 
   // Submit the form and wait for the authenticated route to commit.
   await Promise.all([
@@ -43,7 +43,10 @@ setup("authenticate", async ({ page }) => {
       timeout: 60_000,
       waitUntil: "domcontentloaded",
     }),
-    page.getByRole("button", { name: /Sign in/i }).click(),
+    // Anchored. The login page renders "Sign in with biometrics" beside "Sign in", so an
+    // unanchored /Sign in/i resolves to TWO visible buttons — a Playwright strict-mode error,
+    // not a pick. Measured on the staging login form, where both buttons render.
+    page.getByRole("button", { name: /^Sign in$/i }).click(),
   ]);
 
   // Verify we landed on an authenticated page
