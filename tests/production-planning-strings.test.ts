@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   ALARM_SEVERITY_LABELS,
@@ -379,6 +379,39 @@ export function runProductionPlanningStringsTests() {
   assert.ok(
     !/body\.title/.test(serviceCode),
     "savePlan must not read a title off the request body — the stored plan title is always the Arabic one, whoever saves it (owner, 2026-10-06)",
+  );
+
+  // 🔴 And the same hole, one layer up: no ROUTE in this module may take a title either.
+  //
+  // `savePlan` ignoring `body.title` closes the writer. It does not stop a future route from
+  // accepting a title and finding some other way to put it on the row — and that is exactly the
+  // shape the assertion above just retired: a rule that holds only because nothing happens to
+  // exercise it. All eleven routes were clean when this was written (the single mention of
+  // "title" in the whole folder is a comment in `workbook/route.ts` about an Arabic-titled FILE),
+  // so this is a ratchet at zero, not a cleanup: it costs nothing today and refuses the first
+  // route that reopens the hole.
+  //
+  // If a route one day genuinely needs a plan's title in a RESPONSE, it gets it from the service's
+  // own shape, which builds it — it never names the field itself. What this refuses is a route
+  // that learns the word `title` at all, because at the route layer the only way to learn it is
+  // from the request.
+  const routeDir = "app/api/production-planning";
+  const routeFiles = readdirSync(routeDir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name === "route.ts")
+    .map((entry) => `${entry.parentPath}/${entry.name}`.replaceAll("\\", "/"));
+  // Guard the guard. A renamed folder would otherwise leave this passing over an empty list for
+  // ever — the same vacuous-pass trap the nav-href sweep floors against.
+  assert.ok(
+    routeFiles.length >= 8,
+    `the production-planning route sweep looks broken: found only ${routeFiles.length} route.ts files under ${routeDir}`,
+  );
+  const routesNamingTitle = routeFiles.filter((file) =>
+    /\btitle\b/i.test(stripComments(readFileSync(file, "utf8"))),
+  );
+  assert.deepEqual(
+    routesNamingTitle,
+    [],
+    `no production-planning route may accept a title field — the stored plan title is always the Arabic one, whoever saves it (owner, 2026-10-06), and a route that names \`title\` is reading one off the request:\n  ${routesNamingTitle.join("\n  ")}`,
   );
 
   // The refusals that name a material: present in both languages, different in both, and each owning
