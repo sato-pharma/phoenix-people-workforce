@@ -12,9 +12,16 @@ repo so a cloud session can read them, giving it the same two-tier recall a loca
 
 **Local sessions ignore this mirror** — they have the live originals under `~/.claude/`.
 
-## What is here (generated 6 Oct 2026, 10:20 Cairo)
-- Memory files: **1155** (4.93 MB)
-- Global standing rules: 24.0 KB
+## What is here (generated 6 Oct 2026, 10:35 Cairo)
+- Memory files: **1156** (4.93 MB)
+- Global standing rules: 24.4 KB
+- Pinned laptop hooks: **1** in `laptop-hooks/` (23.3 KB) — scratchpad-guard.mjs
+
+`laptop-hooks/` is **not for a cloud session to read or run.** Those hooks guard every folder on the
+laptop, so they cannot live in one repository — which also meant nothing could go red when one
+weakened. `tests/delete-guard-stand-down.test.ts` imports the pinned copy and pins its decision
+table in the required `validate` job. The copy is only worth its freshness, so the live hook also
+runs its own `selftest` hourly on the laptop, where the real file is.
 
 ## Refreshing
 Run from a **local** checkout (it needs `~/.claude/`):

@@ -163,9 +163,13 @@ and do not hand back manual steps or theory.
   (`PHX_DEV_RUNAWAY_STOP=0` disarms both). A server you started in your own terminal is no session's child,
   so that one is still yours to stop by port. `node ~/.claude/hooks/dev-server-reaper.mjs status` lists
   what it holds; `PHX_DEV_REAPER_OFF=1` turns it off for a session.
-- **Never stop a dev server yourself until he says so** (owner rule, 2026-09-21 — "NEVER CLOSE THE DEV
-  UNTIL I TELL U"). Not after your own verification, not to free RAM: he may be using it in the pane —
-  a session stopped one mid-test and he had to ask for it back. Leave a stop to the reaper and watchdog.
+- **Never stop a dev server HE or another session started, until he says so** (owner rule, 2026-09-21 —
+  "NEVER CLOSE THE DEV UNTIL I TELL U"). Not after your own verification, not to free RAM: he may be
+  using it in the pane — a session stopped one mid-test and he had to ask for it back. Leave that stop
+  to the reaper and watchdog. 🔴 **SCOPED, not repealed, on 2026-09-28** (owner — *"allow me to stop dev
+  servers I start myself"*): **one YOUR OWN session started is yours to stop**, by PORT, once the look
+  is done — check the PID's start time matches when you started it. Both halves hold in every folder;
+  the repo-side account is `phoenix-workforce` AGENTS.md §5.
 - **Claude desktop app slow? Read `~/.claude/scripts/ram-meter/claude-app-watch.txt` first** (found
   2026-09-21). App 2.2553.1 keeps watching a session's worktree after archiving it while still warm; once
   the app deletes that worktree, the watch spins its main thread at a full core (8 of them: 99%). The RAM
