@@ -1,6 +1,6 @@
 ---
 name: the-one-form-design-every-form-wears-the-adr-wizards-skin
-description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls kept by his own 2026-10-06 ruling — and the ten codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
+description: "Every form in the system wears the Adverse Drug Reaction wizard's skin — strings in src/components/ui/form-tokens.ts, components in form-kit.tsx, ratchet at ZERO, h-8/h-9 dense controls kept by his own 2026-10-06 ruling — and the twelve codemod traps, including a build failure that lint and typecheck both passed and 177 overrides a template literal silently threw away"
 metadata:
   node_type: memory
   type: project
@@ -17,7 +17,7 @@ box, in 621 class strings**, and no two agreed: **five field heights** (`h-8`…
 corner radii** (including hand-written `rounded-[5px]`, `[6px]`, `[8px]`, `[14px]`), **twenty
 different focus border colours** and **thirty-one different focus rings**. Every new form copied
 whichever neighbour the session happened to open, so restyling one screen would have changed one
-screen. **287 files import the tokens now.**
+screen. **282 files import the tokens now.**
 
 **How to apply:** import the class strings from `src/components/ui/form-tokens.ts`
 (`phxFieldClassName`, `phxSelectClassName`, `phxTextareaClassName`, `phxLabelClassName`, the four
@@ -39,7 +39,7 @@ their box from a parent, plus the printed-document editors under `hiring-pack/` 
 exempt under the house document identity. The ADR form itself now CONSUMES the kit, which is what
 makes "change the token and the system follows" true.
 
-🔴 **Ten codemod traps, every one of which cost a re-run:**
+🔴 **Twelve codemod traps, every one of which cost a re-run:**
 1. **Dropping a field's `pl-9` puts the magnifier on top of the text.** Side padding *larger* than
    the token's own `px-3` is icon clearance, not skin; the first pass broke ~45 search boxes.
 2. **A regex that ends a JSX tag at the first `>` ends it inside `(e) => …`** — the attribute list
@@ -96,6 +96,23 @@ makes "change the token and the system follows" true.
     `<FormWizard`, or the kit can drift from the screen he pointed at. **`run-tests.ts` stops at the
     first throw, so each box round buys ONE of these** — find the rest cheaply by listing every
     test that reads a file the branch changed and names a literal the branch removed.
+
+11. 🔴 **THE DARK AUTH SCREENS ARE NOT THIS DESIGN.** `auth/premium-login-page.tsx` and
+    `auth/password-setup-form.tsx` are a deliberate dark glass identity (`border-white/14`,
+    `bg-white/[0.045]`, white text, `#ff7900` focus, `h-12`/`h-14`, `text-base`). The light token
+    turned the login fields into white boxes on a dark panel — the screen every employee meets
+    first — and only half of them, because one of the two kept its overrides. Restored byte for
+    byte; `src/components/auth/` is in the guard's `EXEMPT` list. He pointed at a form in the admin
+    shell, not at the login door.
+
+12. 🔴 **FILTERING A SCAN'S GENERIC MATCHES KILLS THE TRUE POSITIVE WITH THE NOISE.** The scan
+    that looked for pinned literals the branch had removed returned 21 hits, nearly all noise
+    (`border-slate-200`), so the generic ones were filtered — and `text-base` IS generic. It then
+    reported **0 remaining** while `tests/portal-rep-kpi-month.test.ts` was already red. The thing
+    that finds this is a DIFF, not a scan: count each functional class in `origin/main`'s copy of
+    every swept file and in the branch's, and read every file whose count went DOWN. Four had
+    dropped a deliberate `text-base`. The three that mattered are pinned together now by
+    `SIXTEEN_PX_KEEPS` in `tests/form-design-system.test.ts`.
 
 🔴 **And a quoted bash heredoc on this machine HALVED the backslashes in a JS regex literal** —
 `/[^"\\]/` landed as `/[^"\]/`, which matched nothing and reported "0 controls" with no error at all.
