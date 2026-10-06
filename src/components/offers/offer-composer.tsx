@@ -13,6 +13,7 @@
 // would start lying about a document somebody signs.
 
 import {
+  CalendarX2,
   Eye,
   FileDown,
   Loader2,
@@ -578,6 +579,58 @@ export function OfferComposer({
       onReport(`Offer ${offer.reference} to ${offer.candidateName} was withdrawn.`, "success");
     } catch (error) {
       onReport(error instanceof Error ? error.message : "Could not withdraw this offer.", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Tell the candidate the offer has expired, and withdraw it (owner, 2026-10-07).
+   *
+   * The candidate-facing half of Withdraw. Withdraw takes the offer back silently; this does the
+   * same but first sends the person a short Sato note that their offer has lapsed, to the same
+   * address the letter went to. One confirmed press, one offer — never a batch — so it stays inside
+   * the standing rule that a rejection-style notice is never sent automatically.
+   *
+   * Confirmed first, because it both writes to a stranger's inbox and retires the offer: the same
+   * one-way door as Withdraw, with a message attached. The server sends the notice and only then
+   * marks the row withdrawn, so a suppressed send leaves the offer exactly as it was.
+   */
+  async function expireOffer(offer: OfferRecord) {
+    if (
+      !window.confirm(
+        `Tell ${offer.candidateName} at ${offer.candidateEmail} that offer ${offer.reference} has expired, and withdraw it?\n\n` +
+          "A short notice goes to the candidate, and the offer is taken back — it can no longer be " +
+          "accepted, declined or resent, and this cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    setBusy(offer.id);
+    try {
+      const payload = (await call(`/api/offers/${offer.id}/expire`, "POST", {})) as {
+        from?: string;
+        offer?: OfferRecord;
+        recipient?: string;
+        skipped?: boolean;
+        skippedReason?: string | null;
+      };
+      if (payload.skipped) {
+        onReport(
+          `No expiry notice was sent: ${payload.skippedReason ?? "the send was suppressed"}. The offer was left unchanged.`,
+          "error",
+        );
+        return;
+      }
+      if (payload.offer) {
+        onOffers([payload.offer, ...offers.filter((existing) => existing.id !== payload.offer!.id)]);
+      }
+      onReport(
+        `Offer ${offer.reference} marked expired — ${payload.recipient} was notified from ${payload.from}, and the offer was withdrawn.`,
+        "success",
+      );
+    } catch (error) {
+      onReport(error instanceof Error ? error.message : "Could not mark this offer expired.", "error");
     } finally {
       setBusy(null);
     }
@@ -1233,6 +1286,15 @@ export function OfferComposer({
                           >
                             <Undo2 className="h-3.5 w-3.5" /> Withdraw
                           </Button>
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() => void expireOffer(offer)}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
+                          </Button>
                         </>
                       ) : null}
                       {canManage && offer.status === "draft" ? (
@@ -1355,6 +1417,15 @@ export function OfferComposer({
                       variant="outline"
                     >
                       <Undo2 className="h-3.5 w-3.5" /> Withdraw
+                    </Button>
+                    <Button
+                      disabled={busy !== null}
+                      onClick={() => void expireOffer(offer)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
                     </Button>
                   </>
                 ) : null}
