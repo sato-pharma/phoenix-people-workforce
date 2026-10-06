@@ -2345,6 +2345,7 @@ import { runDeleteGuardStandDownTests } from "./delete-guard-stand-down.test.ts"
 import { runSquareEdgeUnshelledRoutesTests } from "./square-edge-unshelled-routes.test.ts";
 import { runNextStepGuardDecisionsTests } from "./next-step-guard-decisions.test.ts";
 import { runRiskyAllowGuardPinTests } from "./risky-allow-guard-pin.test.ts";
+import { runMemoryGuardPinTests } from "./memory-guard-pin.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -9021,6 +9022,10 @@ await runTest(
 await runTest(
   "the guard that refuses a session widening its own permissions is finally pinned: the 12-case selftest inside ~/.claude/hooks/risky-allow-guard.mjs — which had never run, because it was named in no HOOK_SELFTESTS entry and no test file — reports `0 failed`, still answers to `--selftest` rather than the bare word the other two take, keeps a count that never falls, and still carries the cases for a whole settings object written at once, a single appended wildcard line, managed-settings.json, and the negative set that stops it denying exact commands",
   runRiskyAllowGuardPinTests,
+);
+await runTest(
+  "the SessionStart hook that warns a session off a saturated 16 GB box cannot go quiet unnoticed: the pinned copy of ~/.claude/hooks/memory-guard.mjs runs its own 18-case table to `0 failed`, the count never falls and must equal the pass lines it printed, the mode is still the bare word `selftest` the hourly runner passes, the decision is still the pure `decideMessage` rather than reading os.freemem() inline, and the seven load-bearing cases still RUN by name — the >= 85 commit boundary, commit winning over low RAM, the < 1800 MB floor that must match mem-watchdog.ps1, the message printing the same figure that chose its branch, a resume keeping the original session clock, garbage on stdin failing OPEN, and the commit-unreadable fallback being unreachable",
+  runMemoryGuardPinTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
