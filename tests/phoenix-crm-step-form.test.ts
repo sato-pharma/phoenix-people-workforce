@@ -44,8 +44,16 @@ export function runPhoenixCrmStepFormTests(): void {
 
   // ── (a) Report It's look ──────────────────────────────────────────────────────────────────────
   {
+    // 🔴 THE REFERENCE MOVED ON 2026-10-06, AND THIS ASSERTION IS WHAT CAUGHT IT. The owner's
+    // form-design sweep ("make any form follow this form design") lifted the whole multi-step
+    // shell out of `report-it-form.tsx` into `src/components/ui/form-kit.tsx` — byte-identical,
+    // all five pieces — and made Report It CONSUME it, which is what makes "change it once and the
+    // system follows" true. So the kit is the reference now; Report It is a reader of it, like this
+    // CRM form. The second assertion below is what stops the kit drifting away from the screen the
+    // owner actually pointed at: Report It must still render it.
+    const reference = raw("src/components/ui/form-kit.tsx");
     const reportIt = raw("src/components/report-it/report-it-form.tsx");
-    // The pieces the owner's screenshot shows, with Report It's own classes.
+    // The pieces the owner's screenshot shows, with their exact classes.
     for (const [what, piece] of [
       ["the strip's progress bar", '<div className="mt-3 h-1.5 w-full bg-slate-100">'],
       ["the active step's orange bar", 'className="absolute inset-y-0 left-0 w-[3px] bg-orange-500"'],
@@ -53,9 +61,15 @@ export function runPhoenixCrmStepFormTests(): void {
       ["the step's large number", 'className="select-none text-4xl font-black tabular-nums text-slate-200"'],
       ["the heading's eyebrow", "text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-600"],
     ] as const) {
-      assert.ok(reportIt.includes(piece), `Report It still carries ${what} — the reference moved`);
-      assert.ok(shell.includes(piece), `the CRM step form carries ${what}, as Report It does`);
+      assert.ok(reference.includes(piece), `the shared form kit still carries ${what} — the reference moved`);
+      assert.ok(shell.includes(piece), `the CRM step form carries ${what}, as the form kit does`);
     }
+    assert.match(
+      reportIt,
+      /<FormWizard\b/,
+      "Report It must still RENDER the shared form kit, or the kit this test measures against is " +
+        "no longer the screen the owner pointed at",
+    );
     assert.ok(shell.includes('{String(step).padStart(2, "0")}'), "the step's number reads 01, 02 …");
     assert.match(shell, /Step \{step\} of \{steps\.length\}/, "and the strip says Step N of 4");
     assert.ok(shell.includes("const pct = Math.round((step / steps.length) * 100);"), "with the percent Report It shows");

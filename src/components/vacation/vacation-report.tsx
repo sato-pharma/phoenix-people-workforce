@@ -54,6 +54,11 @@ import type {
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxLabelTextClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -471,10 +476,9 @@ function SortableHeader<K extends string>({
 /* ─── Select with focus trap ──────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-const selectClass =
-  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
+const selectClass  = phxSelectClassName;
 
-const labelClass = "text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500";
+const labelClass = phxLabelTextClassName;
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Skeleton Loaders ─────────────────────────────────────────────── */
@@ -1761,7 +1765,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <label className="mt-3 block space-y-1.5">
                   <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Rejection reason</span>
                   <textarea
-                    className="min-h-24 w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-md font-medium text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                    className={cn(phxTextareaClassName, "min-h-24")}
                     value={decisionComment}
                     onChange={(event) => setDecisionComment(event.target.value)}
                   />
@@ -1841,7 +1845,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <Input
-                  className="rounded-sm pl-9"
+                  className="pl-9"
                   placeholder="Name, HR ID, department..."
                   value={filters.search}
                   onChange={(event) => updateFilter("search", event.target.value)}
@@ -1855,7 +1859,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               {isSelfView ? null : (
                 <label className="space-y-1.5">
                   <span className={labelClass}>Request ID</span>
-                  <Input className="rounded-sm" placeholder="VAC-XXXX" value={filters.requestId} onChange={(event) => updateFilter("requestId", event.target.value)} />
+                  <Input placeholder="VAC-XXXX" value={filters.requestId} onChange={(event) => updateFilter("requestId", event.target.value)} />
                 </label>
               )}
               <label className="space-y-1.5">
@@ -1921,11 +1925,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             <>
               <label className="space-y-1.5">
                 <span className={labelClass}>From</span>
-                <Input className="rounded-sm" type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} />
+                <Input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} />
               </label>
               <label className="space-y-1.5">
                 <span className={labelClass}>To</span>
-                <Input className="rounded-sm" type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} />
+                <Input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} />
               </label>
               {/* Date presets */}
               <div className="space-y-1.5 xs:col-span-2 md:col-span-3 xl:col-span-4">
@@ -2308,15 +2312,15 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     </label>
                     <label className="space-y-1.5">
                       <span className={labelClass}>From</span>
-                      <Input className="rounded-sm" type="date" value={adminForm.startDate} onChange={(event) => updateAdminForm("startDate", event.target.value)} />
+                      <Input type="date" value={adminForm.startDate} onChange={(event) => updateAdminForm("startDate", event.target.value)} />
                     </label>
                     <label className="space-y-1.5">
                       <span className={labelClass}>To</span>
-                      <Input className="rounded-sm" type="date" value={adminForm.endDate} onChange={(event) => updateAdminForm("endDate", event.target.value)} />
+                      <Input type="date" value={adminForm.endDate} onChange={(event) => updateAdminForm("endDate", event.target.value)} />
                     </label>
                     <label className="space-y-1.5 xs:col-span-2">
                       <span className={labelClass}>Admin note</span>
-                      <Input className="rounded-sm" value={adminForm.notes} onChange={(event) => updateAdminForm("notes", event.target.value)} />
+                      <Input value={adminForm.notes} onChange={(event) => updateAdminForm("notes", event.target.value)} />
                     </label>
                     <div className="flex items-end gap-2 xs:col-span-2">
                       <Button
@@ -2648,7 +2652,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                         the chip here only duplicated the first one. */}
                   </div>
                   <textarea
-                    className="mt-3 min-h-20 w-full rounded-sm border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-300"
+                    className={cn(phxTextareaClassName, "mt-3 min-h-20")}
                     onChange={(event) => setEvidenceReviewNote(event.target.value)}
                     placeholder="HR review note"
                     value={evidenceReviewNote}

@@ -10,6 +10,8 @@ import type {
   WeeklyBranchRegionRow,
 } from "@/lib/sales/weekly/branch-region-map";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 type DraftRow = { branchName: string; branchCode: string; columnIndex: string; regionCode: string; areaCode: string; excluded: boolean };
@@ -175,8 +177,7 @@ export function WeeklyBranchMappingManager({
   // One definition per control, used by BOTH the desktop row and the mobile card, so the phone
   // can never drift into a read-only copy of an editable table.
   const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
-  const controlClass =
-    "h-8 w-full border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-50";
+  const controlClass = "h-8 w-full px-2";
   const regionSelect = (row: WeeklyBranchRegionRow) => (
     <SearchableSelect
       className={controlClass}
@@ -273,7 +274,7 @@ export function WeeklyBranchMappingManager({
           <>
             <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
-              className="h-9 min-w-[14rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+              className="h-9 min-w-[14rem] px-2"
               disabled={busy}
               value={distributor}
               onChange={(event) => {
@@ -334,7 +335,7 @@ export function WeeklyBranchMappingManager({
       <div className="flex flex-wrap items-end gap-2 rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
         <Field label={isStock ? "Location name" : "Branch name"}>
           <input
-            className="h-9 w-56 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
+            className={cn(phxFieldClassName, "w-56")}
             disabled={busy}
             onChange={(event) => setDraft((prev) => ({ ...prev, branchName: event.target.value }))}
             value={draft.branchName}
@@ -343,7 +344,7 @@ export function WeeklyBranchMappingManager({
         {isStock ? (
           <Field label="Column #">
             <input
-              className="h-9 w-24 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
+              className={cn(phxFieldClassName, "w-24")}
               disabled={busy}
               inputMode="numeric"
               onChange={(event) => setDraft((prev) => ({ ...prev, columnIndex: event.target.value }))}
@@ -353,7 +354,7 @@ export function WeeklyBranchMappingManager({
         ) : (
           <Field label="Branch code (key)">
             <input
-              className="h-9 w-40 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
+              className={cn(phxFieldClassName, "w-40")}
               disabled={busy}
               onChange={(event) => setDraft((prev) => ({ ...prev, branchCode: event.target.value }))}
               value={draft.branchCode}
@@ -362,7 +363,7 @@ export function WeeklyBranchMappingManager({
         )}
         <Field label="Region">
           <SearchableSelect
-            className="h-9 w-44 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-60"
+            className="h-9 w-44 px-2"
             disabled={busy || draft.excluded}
             onChange={(event) => setDraft((prev) => ({ ...prev, regionCode: event.target.value }))}
             value={draft.regionCode}
@@ -377,7 +378,7 @@ export function WeeklyBranchMappingManager({
         </Field>
         <Field label="Area (optional)">
           <SearchableSelect
-            className="h-9 w-48 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-60"
+            className="h-9 w-48 px-2"
             disabled={busy || draft.excluded || !draft.regionCode}
             onChange={(event) => setDraft((prev) => ({ ...prev, areaCode: event.target.value }))}
             value={draft.areaCode}

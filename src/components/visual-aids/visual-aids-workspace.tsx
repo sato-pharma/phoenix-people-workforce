@@ -16,6 +16,8 @@ import {
 
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { VISUAL_AID_MAX_BYTES, VISUAL_AID_MIME_TYPES, type VisualAidMimeType } from "@/lib/visual-aids/rules";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * Visual Aids — the library a rep opens in front of a doctor, and the shelf Marketing keeps it on.
@@ -67,8 +69,7 @@ type PdfDocument = {
 
 /* ─────────────────────────── shared look (siblings) ─────────────────────────── */
 
-const INPUT =
-  "h-10 w-full border border-phx-line bg-phx-paper px-3 text-phx-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent-soft disabled:cursor-not-allowed disabled:bg-phx-paper-2 disabled:text-phx-ink-faint";
+const INPUT = cn(phxFieldClassName, "w-full px-3 text-phx-sm disabled:text-phx-ink-faint");
 const BTN_PRIMARY =
   "inline-flex items-center justify-center gap-2 border border-phx-accent bg-phx-accent px-4 py-2.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-accent-ink transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-60";
 const BTN_QUIET =

@@ -13,6 +13,11 @@ import {
 import { filterCrmMappingEmployeeOptions, type CrmMappingEmployeeOption } from "@/lib/crm/mapping-picker";
 import type { UnmappedCrmIdentityRow, UnmappedCrmResolutionAction } from "@/lib/visits-report/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const RESOLUTION_OPTIONS: Array<{ label: string; value: UnmappedCrmResolutionAction }> = [
   { label: "Keep Pending", value: "pending" },
@@ -76,7 +81,7 @@ function EmployeePicker({
         onBlur={() => window.setTimeout(() => setOpen(false), 150)}
         placeholder="Type a name or HR ID"
         aria-label="Employee name or HR ID"
-        className="h-8 w-full border border-phx-line bg-white px-2 text-xs text-slate-800"
+        className={phxFieldClassName}
       />
       {open && query.trim() && (
         <ul className="absolute left-0 right-0 top-full z-20 mt-0.5 max-h-72 overflow-y-auto border border-phx-line bg-white shadow-lg">
@@ -178,7 +183,7 @@ function ResolutionCell({
             setAction(event.target.value as UnmappedCrmResolutionAction);
             setError(null);
           }}
-          className="h-8 border border-phx-line bg-white px-2 text-xs text-slate-700"
+          className={phxSelectClassName}
         >
           {RESOLUTION_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -263,7 +268,7 @@ export function CrmUnmappedIdentitiesPanel({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search by CRM name or ID…"
-            className="h-9 w-full border border-phx-line bg-white pl-8 pr-2 text-sm text-slate-800"
+            className={cn(phxFieldClassName, "pl-8")}
           />
         </div>
       </div>

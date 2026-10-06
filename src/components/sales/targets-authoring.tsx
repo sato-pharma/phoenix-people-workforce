@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LABEL_CLASS, SURFACE_CLASS, SectionCard, formatEgpFull, formatPeriod } from "@/components/sales/target-visuals";
 import { cn } from "@/lib/utils";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Targets — AUTHORING.
@@ -197,7 +198,7 @@ function Picker({
     <label className="flex min-w-0 items-center gap-1.5">
       <span className={LABEL_CLASS}>{label}</span>
       <select
-        className="h-8 max-w-full border border-slate-200 bg-white px-2 text-phx-xs font-bold text-slate-900 transition-colors hover:border-orange-300 focus-visible:border-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500"
+        className={`${phxSelectClassName} max-w-full`}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -888,7 +889,7 @@ export function TargetsAuthoring(props: {
         {/* Filters + sort. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
           <Input
-            className="h-8 w-full max-w-[14rem] border-slate-200 bg-white text-phx-xs text-slate-900"
+            className="h-8 w-full max-w-[14rem] text-phx-xs"
             placeholder="Search area or product"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -1050,7 +1051,7 @@ export function TargetsAuthoring(props: {
                                           type="number"
                                           inputMode="decimal"
                                           className={cn(
-                                            "h-8 w-32 text-right font-semibold tabular-nums transition-colors",
+                                            "h-8 w-32 text-right tabular-nums",
                                             editValue === "" && "bg-amber-50/70",
                                           )}
                                           value={editValue}

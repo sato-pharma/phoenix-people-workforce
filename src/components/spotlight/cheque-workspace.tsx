@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChequePayee } from "@/lib/spotlight/cheque-people";
 import { CHEQUE_MAX_PER_REQUEST, blankChequeInput, type ChequeInput } from "@/lib/spotlight/cheque-request";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * Award cheques - the generator's form and its live preview.
@@ -26,9 +28,7 @@ import { CHEQUE_MAX_PER_REQUEST, blankChequeInput, type ChequeInput } from "@/li
 type Props = { payees: ChequePayee[] };
 type Row = { id: string; data: ChequeInput };
 
-const FIELD =
-  "w-full rounded-none border border-slate-300 bg-white px-3 py-2 text-[13px] text-slate-900"
-  + " placeholder:text-slate-400 focus:border-sky-700 focus:outline-none";
+const FIELD = cn(phxFieldClassName, "w-full px-3 py-2 text-[13px]");
 const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500";
 const CARD = "rounded-none border border-slate-200 bg-white p-4";
 const BUTTON =

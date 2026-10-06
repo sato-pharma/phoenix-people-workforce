@@ -4,6 +4,7 @@ import { useState } from "react";
 import { KeyRound, Loader2, ShieldAlert } from "lucide-react";
 
 import type { NewHireMailboxTask } from "@/lib/new-hire-mailbox/service";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 /**
  * Adopt a mailbox that already exists — the System Administrator's card, and the only trigger.
@@ -127,7 +128,7 @@ export function AdoptMailboxCard({ pending }: { pending: NewHireMailboxTask[] })
       <label className="mt-3 flex min-w-0 flex-col gap-1">
         <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Whose mailbox</span>
         <select
-          className="h-9 w-full border border-slate-300 bg-white px-2 text-sm text-slate-900"
+          className={phxSelectClassName}
           onChange={(event) => {
             setAddress(event.target.value);
             setResult(null);

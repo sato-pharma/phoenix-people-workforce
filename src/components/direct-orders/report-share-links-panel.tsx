@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 
 import type { DirectOrderShareLink } from "@/lib/direct-orders/report-share-links";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxLabelClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = {
   /** The reader's current filter slice, captured into the link so it matches their screen. */
@@ -128,8 +132,8 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
     }
   }
 
-  const inputClass = "mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
-  const labelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
+  const inputClass = `${phxFieldClassName} mt-1`;
+  const labelClass = phxLabelClassName;
 
   if (!open) {
     return (

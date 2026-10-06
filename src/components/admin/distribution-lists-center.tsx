@@ -7,6 +7,7 @@ import { AdminSectionHeader } from "@/components/admin/admin-design-system";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { Switch } from "@/components/ui/switch";
 import { phoenixRoles, type PhoenixRole } from "@/lib/auth/permissions";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 export type DistributionListView = {
   listKey: string;
@@ -423,7 +424,7 @@ function AliasCard({
             : `Last recorded ${alias.recordedAgeDays} day(s) ago${alias.recordedBy ? ` by ${alias.recordedBy}` : ""}. Nothing can verify this from here — it is what somebody said they saw.`}
         </p>
         <textarea
-          className="mt-2 w-full rounded-lg border border-phx-line bg-phx-paper p-2.5 text-sm text-phx-ink"
+          className={`${phxTextareaClassName} mt-2`}
           id={`record-${alias.aliasAddress}`}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="one address per line"

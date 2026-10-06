@@ -7,14 +7,17 @@ import { cairoDate } from "@/lib/format/cairo-datetime";
 import type { ReportItKpis } from "@/lib/report-it/service";
 import type { ReportItReportRow } from "@/lib/report-it/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxLabelClassName,
+} from "@/components/ui/form-tokens";
 
 
 // ─── Premium primitives (square corners, slate + orange) ─────────────────────
 
-const fieldClass =
-  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+const fieldClass  = phxFieldClassName;
 const selectClass = `${fieldClass} cursor-pointer`;
-const microLabel = "mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500";
+const microLabel = phxLabelClassName;
 
 const btnGhost =
   "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40";

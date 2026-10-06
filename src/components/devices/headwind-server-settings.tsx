@@ -37,6 +37,11 @@ import {
   postJson,
   useRead,
 } from "@/components/devices/headwind-panel-kit";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const PRIMARY_BUTTON =
   "inline-flex items-center gap-2 border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60";
@@ -180,7 +185,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Title across the top</span>
               <input
-                className={`mt-1 ${PANEL_INPUT}`}
+                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                 onChange={(event) => set("desktopHeaderTemplate", event.target.value)}
                 placeholder="Sato Pharma · rep tablet"
                 type="text"
@@ -190,7 +195,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Where the title sits</span>
               <input
-                className={`mt-1 ${PANEL_INPUT}`}
+                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                 onChange={(event) => set("desktopHeader", event.target.value)}
                 placeholder="TOP"
                 type="text"
@@ -200,7 +205,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Background colour</span>
               <input
-                className={`mt-1 ${PANEL_INPUT}`}
+                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                 onChange={(event) => set("backgroundColor", event.target.value)}
                 placeholder="#0A527D"
                 type="text"
@@ -210,7 +215,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Text colour</span>
               <input
-                className={`mt-1 ${PANEL_INPUT}`}
+                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                 onChange={(event) => set("textColor", event.target.value)}
                 placeholder="#FFFFFF"
                 type="text"
@@ -220,7 +225,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Background picture</span>
               <input
-                className={`mt-1 ${PANEL_INPUT}`}
+                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                 onChange={(event) => set("backgroundImageUrl", event.target.value)}
                 placeholder="https://…/wallpaper.png"
                 type="text"
@@ -230,7 +235,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Icon size</span>
               <select
-                className={`mt-1 ${PANEL_INPUT}`}
+                className={cn(phxSelectClassName, `mt-1 ${PANEL_INPUT}`)}
                 onChange={(event) => set("iconSize", event.target.value)}
                 value={form.iconSize}
               >
@@ -319,7 +324,7 @@ function UploadPanel({ configurationId }: { configurationId: number }) {
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="block min-w-0">
             <span className={`block ${MICRO_LABEL}`}>What it is</span>
-            <select className={`mt-1 ${PANEL_INPUT}`} defaultValue="app" name="kind">
+            <select className={cn(phxSelectClassName, `mt-1 ${PANEL_INPUT}`)} defaultValue="app" name="kind">
               <option value="app">An Android app (.apk)</option>
               <option value="file">A file for the tablets to hold</option>
             </select>
@@ -538,7 +543,7 @@ function UsersPanel() {
               <label className="block min-w-0">
                 <span className={`block ${MICRO_LABEL}`}>Sign-in name</span>
                 <input
-                  className={`mt-1 ${PANEL_INPUT}`}
+                  className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                   onChange={(event) => setState({ ...state, login: event.target.value })}
                   placeholder="omar.gawish"
                   type="text"
@@ -548,7 +553,7 @@ function UsersPanel() {
               <label className="block min-w-0">
                 <span className={`block ${MICRO_LABEL}`}>Full name</span>
                 <input
-                  className={`mt-1 ${PANEL_INPUT}`}
+                  className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                   onChange={(event) => setState({ ...state, name: event.target.value })}
                   placeholder="Omar Gawish"
                   type="text"
@@ -558,7 +563,7 @@ function UsersPanel() {
               <label className="block min-w-0">
                 <span className={`block ${MICRO_LABEL}`}>Email</span>
                 <input
-                  className={`mt-1 ${PANEL_INPUT}`}
+                  className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                   onChange={(event) => setState({ ...state, email: event.target.value })}
                   type="email"
                   value={state.email}
@@ -567,7 +572,7 @@ function UsersPanel() {
               <label className="block min-w-0">
                 <span className={`block ${MICRO_LABEL}`}>What they can do</span>
                 <select
-                  className={`mt-1 ${PANEL_INPUT}`}
+                  className={cn(phxSelectClassName, `mt-1 ${PANEL_INPUT}`)}
                   onChange={(event) => setState({ ...state, roleId: event.target.value })}
                   value={state.roleId}
                 >
@@ -583,7 +588,7 @@ function UsersPanel() {
                 <span className={`block ${MICRO_LABEL}`}>Password</span>
                 <input
                   autoComplete="new-password"
-                  className={`mt-1 ${PANEL_INPUT}`}
+                  className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
                   onChange={(event) => setState({ ...state, password: event.target.value })}
                   type="password"
                   value={state.password}

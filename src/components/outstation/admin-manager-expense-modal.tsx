@@ -22,6 +22,11 @@ import type {
   PlacesPrediction,
 } from "@/lib/outstation/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 
 type Mode = "create" | "edit";
@@ -111,7 +116,7 @@ function InputField({
 }: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) {
   return (
     <input
-      className={`h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm placeholder:font-normal placeholder:text-phx-ink-faint focus:border-phx-accent focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60 ${className ?? ""}`}
+      className={`${phxFieldClassName} ${className ?? ""}`}
       {...props}
     />
   );
@@ -123,7 +128,7 @@ function SelectField({
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
   return (
     <SearchableSelect
-      className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:border-phx-accent focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
+      className={phxSelectClassName}
       {...props}
     >
       {children}
@@ -1217,7 +1222,7 @@ export function AdminManagerExpenseModal({
           <div>
             <FieldLabel>Notes</FieldLabel>
             <textarea
-              className="w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 py-2.5 text-sm font-semibold text-phx-ink shadow-sm placeholder:font-normal placeholder:text-phx-ink-faint focus:border-phx-accent focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+              className={phxTextareaClassName}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional notes for this expense"
               rows={3}

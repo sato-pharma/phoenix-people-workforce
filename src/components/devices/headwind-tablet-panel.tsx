@@ -41,6 +41,12 @@ import {
 } from "@/components/devices/headwind-panel-kit";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type DeviceFact = { label: string; value: string };
 type DeviceDetail = { deviceNumber: string; headline: DeviceFact[]; sections: Array<{ title: string; facts: DeviceFact[] }> };
@@ -174,7 +180,7 @@ function ActionsPanel({ deviceNumber }: { deviceNumber: string }) {
                 <label className="mt-1 block min-w-0">
                   <span className={`block ${MICRO_LABEL}`}>The words to show, in your own wording</span>
                   <textarea
-                    className={`mt-1 h-16 ${PANEL_INPUT}`}
+                    className={cn(phxTextareaClassName, `mt-1 h-16 ${PANEL_INPUT}`)}
                     maxLength={MESSAGE_LIMIT}
                     onChange={(event) =>
                       setState({ ...own, words: { ...own.words, [action.id]: event.target.value } })
@@ -580,7 +586,7 @@ function RemoteScreenIdPanel({
         <label className="min-w-0 max-w-xs flex-1 basis-40">
           <span className={`block ${MICRO_LABEL}`}>What RustDesk shows on the tablet</span>
           <input
-            className={`mt-1 ${PANEL_INPUT}`}
+            className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
             inputMode="numeric"
             onChange={(event) => setState({ ...own, failure: null, notice: null, value: event.target.value })}
             placeholder="123 456 789"
@@ -683,7 +689,7 @@ function CustodyPanel(props: CustodyProps) {
     <label className="min-w-0 max-w-xs flex-1 basis-48">
       <span className={`block ${MICRO_LABEL}`}>Employee</span>
       <select
-        className={`mt-1 ${PANEL_INPUT}`}
+        className={cn(phxSelectClassName, `mt-1 ${PANEL_INPUT}`)}
         onChange={(event) => setState({ ...own, failure: null, hrId: event.target.value })}
         value={own.hrId}
       >
@@ -718,7 +724,7 @@ function CustodyPanel(props: CustodyProps) {
     <label className="min-w-0 max-w-xs flex-1 basis-48">
       <span className={`block ${MICRO_LABEL}`}>Held for (name)</span>
       <input
-        className={`mt-1 ${PANEL_INPUT}`}
+        className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
         onChange={(event) => setState({ ...own, failure: null, name: event.target.value })}
         placeholder="The person it is being kept for"
         type="text"

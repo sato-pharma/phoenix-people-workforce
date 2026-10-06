@@ -290,7 +290,7 @@ export function InAppNotificationsBell({
             {moduleOptions.length > 1 ? (
               <SearchableSelect
                 className={cn(
-                  "mt-2 block w-full rounded border px-2 py-1.5 text-xs font-semibold",
+                  "mt-2 block w-full px-2 py-1.5 text-xs font-semibold",
                   panelText.border,
                   isAdminMode ? "bg-[#050505] text-white" : "bg-white text-slate-700",
                 )}

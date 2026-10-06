@@ -8,6 +8,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { onesignalAppId, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
 // The one connect path — Phoenix CRM's "Get Phoenix CRM messages on Telegram" card goes through it too.
 import { requestTelegramConnectLink, telegramActionErrorMessage } from "@/components/notifications/telegram-connect";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type NotificationSettings = {
   preferences: {
@@ -278,7 +279,7 @@ export function NotificationSettingsPanel() {
         <label className="min-w-0 text-sm font-semibold text-slate-700">
           Preferred channel
           <SearchableSelect
-            className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+            className="mt-1 w-full px-3 py-2"
             disabled={controlsDisabled}
             onChange={(event) => savePreferences({ ...preferences, preferredChannel: event.target.value as NotificationSettings["preferences"]["preferredChannel"] })}
             value={preferences.preferredChannel}
@@ -291,7 +292,7 @@ export function NotificationSettingsPanel() {
         <label className="min-w-0 text-sm font-semibold text-slate-700">
           Quiet hours start
           <input
-            className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+            className={`${phxFieldClassName} mt-1`}
             disabled={controlsDisabled}
             onChange={(event) => savePreferences({ ...preferences, quietHoursStart: event.target.value || null })}
             type="time"
@@ -301,7 +302,7 @@ export function NotificationSettingsPanel() {
         <label className="min-w-0 text-sm font-semibold text-slate-700">
           Quiet hours end
           <input
-            className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+            className={`${phxFieldClassName} mt-1`}
             disabled={controlsDisabled}
             onChange={(event) => savePreferences({ ...preferences, quietHoursEnd: event.target.value || null })}
             type="time"

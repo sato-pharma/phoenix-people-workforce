@@ -32,6 +32,7 @@ import type {
   DirectOrderOrdersFilterKey,
   DirectOrderWorkspaceTabKey,
 } from "@/lib/direct-orders/workspace-data";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ONE Direct Orders workspace, rendered by BOTH shells.
@@ -577,7 +578,7 @@ function OrdersList({
             setShown(PAGE_SIZE);
           }}
           placeholder={searchPlaceholder(rows, Boolean(server))}
-          className={`h-11 w-full border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:outline-none ${control(variant)}`}
+          className={`${phxFieldClassName} pl-9 ${control(variant)}`}
         />
       </label>
 

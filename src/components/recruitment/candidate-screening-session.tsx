@@ -86,6 +86,7 @@ import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import type { Candidate } from "@/lib/recruitment/types";
 import type { ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type LoadedCandidate = {
   profile: CandidateProfile;
@@ -1201,7 +1202,7 @@ export function CandidateScreeningSession({
             {/* Optional, and deliberately one line: a reason is worth having, but a required field
                 would turn a two-second decision back into a form. */}
             <input
-              className="w-full border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-slate-400"
+              className={phxFieldClassName}
               maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
               onChange={(event) => setNote(event.target.value)}
               placeholder="Reason (optional) — press N"
@@ -1284,7 +1285,7 @@ export function CandidateScreeningSession({
                             reads almost exactly like the first one. */}
                         <input
                           aria-label="Area"
-                          className="h-8 min-w-0 border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+                          className={`${phxFieldClassName} min-w-0`}
                           list="screening-position-areas"
                           onChange={(event) => setFreeAreaName(event.target.value)}
                           placeholder="Area"
@@ -1292,7 +1293,7 @@ export function CandidateScreeningSession({
                         />
                         <input
                           aria-label="Job title"
-                          className="h-8 min-w-0 border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+                          className={`${phxFieldClassName} min-w-0`}
                           list="screening-position-titles"
                           onChange={(event) => setFreeJobTitle(event.target.value)}
                           placeholder="Job title"

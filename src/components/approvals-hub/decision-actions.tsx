@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 export type DecisionActionsProps = {
   // API endpoint that accepts { decision, [commentField] }.
@@ -248,7 +250,13 @@ export function DecisionActions({
                 rows={3}
                 autoFocus
                 placeholder="Type the reason the employee will see…"
-                className="w-full border border-slate-300 px-3 py-2 text-base focus:border-orange-500 focus:outline-none md:text-sm"
+                // The shared textarea token plus the ONE override this screen keeps: 16px on
+                // mobile, because iOS Safari zooms the whole viewport when it focuses a field
+                // under 16px, and this is the screen where money moves. The token's own
+                // `text-sm` is 14px, so `md:text-sm` hands the design back from the md breakpoint
+                // up. It goes through `cn()`, never a template literal — a template would ship
+                // both sizes and let the stylesheet decide.
+                className={cn(phxTextareaClassName, "text-base md:text-sm")}
               />
             ) : null}
             {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}

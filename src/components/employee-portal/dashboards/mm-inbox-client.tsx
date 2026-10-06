@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowRight, CheckCircle, Clock, RefreshCw, X } from "luc
 
 import type { MarketingApproverInboxRow } from "@/lib/marketing-requests/service";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 function egp(n: number) {
   return stableCurrencyFormatter("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
@@ -162,7 +163,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       autoFocus
-                      className="w-full resize-none border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-orange-400 focus:outline-none"
+                      className={phxTextareaClassName}
                     />
                     <div className="flex items-center gap-2">
                       <button

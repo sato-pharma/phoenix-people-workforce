@@ -45,6 +45,7 @@ import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialo
 import type { ProbationRow, ProbationWorkflowAction, TrafficStatus } from "@/lib/probation/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 
 type Props = {
@@ -89,8 +90,7 @@ type SortKey =
 
 const allValue = "__all__";
 
-const selectClassName =
-  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition focus:border-phx-ink-faint focus:ring-2 focus:ring-phx-line-strong/40";
+const selectClassName  = phxSelectClassName;
 
 const adminTableHeaderClassName =
   "px-2.5 py-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
@@ -710,7 +710,7 @@ export function ProbationTracker({
             </span>
             <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-text-secondary" />
             <Input
-              className="h-10 rounded-xl border-phx-line bg-white/95 pl-9 shadow-[0_8px_20px_rgba(15,23,42,0.08)]"
+              className="pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, CRM ID"
               value={query}
@@ -1044,7 +1044,7 @@ export function ProbationTracker({
                       <td className={cn("min-w-[125px]", probationTableCellClassName)}>
                         {progressCell(traffic, progress)}
                       </td>
-                      <td className={cn(probationTableValueClassName)}>
+                      <td className={probationTableValueClassName}>
                         <Badge variant={traffic === "safe" ? "success" : traffic === "warning" ? "warning" : "danger"}>
                           {statusLabel(traffic)}
                         </Badge>

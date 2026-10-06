@@ -10,6 +10,7 @@ import {
   hoursHeldSince,
   summarizeHeldQueue,
 } from "@/lib/notifications/held-ageing";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export type AdminConfidenceCheck = {
   detail: string;
@@ -163,7 +164,7 @@ function ReviewRow({ review, onDecided }: { review: AdminNotificationSendReview;
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
-          className="min-w-[220px] flex-1 border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-orange-400 focus:outline-none"
+          className={`${phxFieldClassName} min-w-[220px] flex-1`}
           onChange={(event) => setNote(event.target.value)}
           placeholder="Optional note"
           value={note}

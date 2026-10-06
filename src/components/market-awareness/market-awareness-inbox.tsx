@@ -23,6 +23,11 @@ import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 // Pure, and client-safe: workflow.ts imports permissions only as a TYPE, so nothing server-side
 // follows it into this bundle.
 import { describeInboxStep } from "@/lib/market-awareness/workflow";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * Market Awareness — the approvals inbox.
@@ -158,10 +163,8 @@ const BTN_REJECT =
   "inline-flex items-center justify-center gap-2 border border-phx-danger-line bg-phx-danger-bg px-4 py-2.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-danger transition disabled:cursor-not-allowed disabled:opacity-60";
 const BTN_QUIET =
   "inline-flex items-center justify-center gap-2 border border-phx-line bg-phx-paper px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-soft transition hover:border-phx-line-strong hover:text-phx-ink";
-const INPUT =
-  "h-10 w-full border border-phx-line bg-phx-paper px-3 text-phx-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent-soft";
-const TEXTAREA =
-  "min-h-20 w-full border border-phx-line bg-phx-paper px-3 py-2 text-phx-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent-soft";
+const INPUT = cn(phxFieldClassName, "w-full px-3 text-phx-sm");
+const TEXTAREA = cn(phxTextareaClassName, "min-h-20 w-full px-3 py-2 text-phx-sm");
 
 type InboxScope = "open" | "history";
 

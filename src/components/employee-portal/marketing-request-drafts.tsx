@@ -71,6 +71,11 @@ import type {
 } from "@/lib/marketing-requests/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -487,7 +492,7 @@ function SelectField({
 }) {
   return (
     <SearchableSelect
-      className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      className="w-full px-3 text-phx-md"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
@@ -1751,7 +1756,7 @@ function MarketingRequestDraftWorkspaceInner() {
                                 {unverified && checked ? (
                                   <div className="mt-1 mb-2 ml-5 flex flex-col gap-1">
                                     <textarea
-                                      className="min-h-16 w-full rounded-sm border border-amber-200 bg-amber-50/40 px-3 py-2 text-phx-md text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                      className={cn(phxTextareaClassName, "min-h-16")}
                                       onChange={(event) => {
                                         const value = event.target.value;
                                         setUnverifiedCodeReasons((current) => ({
@@ -1808,7 +1813,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   <div className="sm:col-span-6">
                     <Field label="Other Type Description">
                       <Input
-                        className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                        className="text-phx-md"
                         onChange={(event) =>
                           setOtherRequestType(event.target.value)
                         }
@@ -1822,7 +1827,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-2">
                   <Field label="Request Date">
                     <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                      className="text-phx-md"
                       onChange={(event) =>
                         setRequestDate(event.target.value)
                       }
@@ -1835,7 +1840,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-2">
                   <Field label="Pay Date">
                     <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                      className="text-phx-md"
                       onChange={(event) =>
                         setPayDate(event.target.value)
                       }
@@ -1848,7 +1853,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-2">
                   <Field label="ROI Duration (months)">
                     <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                      className="text-phx-md"
                       min="1"
                       onChange={(event) =>
                         setRoiDurationMonths(event.target.value)
@@ -1874,7 +1879,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-3">
                   <Field label="Estimated Cost (EGP)">
                     <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                      className="text-phx-md"
                       min="0"
                       onChange={(event) =>
                         setEstimatedCost(event.target.value)
@@ -1956,7 +1961,7 @@ function MarketingRequestDraftWorkspaceInner() {
                               ))}
                             </SelectField>
                             <Input
-                              className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                              className="text-phx-md"
                               min="0"
                               onChange={(event) =>
                                 updateProductLine(line.key, {
@@ -2040,7 +2045,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             </SelectField>
                             <div className="grid grid-cols-[1fr_auto] gap-2">
                               <Input
-                                className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                                className="text-phx-md"
                                 min="0"
                                 onChange={(event) =>
                                   updateProductLine(line.key, {
@@ -2101,7 +2106,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-6">
                   <Field label="Note">
                     <textarea
-                      className="min-h-20 w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-md text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                      className={cn(phxTextareaClassName, "min-h-20")}
                       onChange={(event) => setNotes(event.target.value)}
                       placeholder="Optional request note"
                       value={notes}
@@ -2469,7 +2474,7 @@ function MarketingRequestDraftWorkspaceInner() {
               <div className="relative mt-2">
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
-                  className="h-9 w-full rounded-sm border border-slate-200 bg-white pl-8 pr-3 text-phx-md font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                  className={cn(phxFieldClassName, "pl-8")}
                   onChange={(e) => setApprovedSearch(e.target.value)}
                   placeholder="Search customer, contact, code, date..."
                   type="text"

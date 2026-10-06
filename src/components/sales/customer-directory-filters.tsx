@@ -6,6 +6,10 @@ import { useMemo } from "react";
 import type { CustomerDirectoryFilterOptions } from "@/lib/sales/customer-directory";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 
 export type CustomerDirectoryFilterState = {
@@ -146,7 +150,7 @@ export function CustomerDirectoryFilters({
   }
 
   const periodSelect =
-    "h-10 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line";
+    phxSelectClassName;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -207,7 +211,7 @@ export function CustomerDirectoryFilters({
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
-          className="h-10 w-56 border border-phx-line bg-white pl-9 pr-3 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+          className={cn(phxFieldClassName, "w-56 pl-9")}
           onChange={(event) => onChange({ ...value, search: event.target.value })}
           placeholder="Search name / code…"
           type="text"

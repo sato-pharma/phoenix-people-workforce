@@ -14,6 +14,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type Template = {
   id: string;
@@ -364,7 +368,7 @@ export function WhatsAppSendDialog({
                   WhatsApp number
                 </label>
                 <input
-                  className="w-full border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  className={phxFieldClassName}
                   id="wa-number"
                   inputMode="tel"
                   onChange={(event) => setToNumber(event.target.value)}
@@ -396,7 +400,7 @@ export function WhatsAppSendDialog({
                       </label>
                       {MULTILINE_KEYS.has(key) ? (
                         <textarea
-                          className="w-full border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                          className={phxTextareaClassName}
                           dir="auto"
                           id={`wa-field-${key}`}
                           onChange={(event) => setValue(key, event.target.value)}
@@ -405,7 +409,7 @@ export function WhatsAppSendDialog({
                         />
                       ) : (
                         <input
-                          className="w-full border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                          className={phxFieldClassName}
                           dir="auto"
                           id={`wa-field-${key}`}
                           onChange={(event) => setValue(key, event.target.value)}

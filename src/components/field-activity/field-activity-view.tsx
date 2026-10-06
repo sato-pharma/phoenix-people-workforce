@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { FieldWorkforceRouteMap, type RouteCheckin } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { Card } from "@/components/ui/card";
 import { formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Subject = {
   areaName: string | null;
@@ -530,7 +531,7 @@ export function FieldActivityView({
             <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Person</span>
             <input
               autoComplete="off"
-              className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm"
+              className={`${phxFieldClassName} mt-1`}
               list="field-activity-people"
               onChange={(event) => pick(event.target.value)}
               placeholder={`Type a name, job title, line or area — ${subjects.length} in your scope`}
@@ -553,7 +554,7 @@ export function FieldActivityView({
           <label className="block">
             <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">From</span>
             <input
-              className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm"
+              className={`${phxFieldClassName} mt-1`}
               onChange={(event) => setFromIso(event.target.value)}
               type="date"
               value={fromIso}
@@ -562,7 +563,7 @@ export function FieldActivityView({
           <label className="block">
             <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">To</span>
             <input
-              className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm"
+              className={`${phxFieldClassName} mt-1`}
               onChange={(event) => setToIso(event.target.value)}
               type="date"
               value={toIso}

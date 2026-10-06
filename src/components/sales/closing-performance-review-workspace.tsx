@@ -28,6 +28,7 @@ import {
   performanceReviewRegionStyle,
   PERFORMANCE_REVIEW_FIRST_PERIOD,
 } from "@/lib/sales/closing-performance-review-regions";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 // The screen half of the Performance Review. Its sections are the workbook's tabs, in the same
 // order, from the same object — the owner's rule is that an export matches the screen, and the
@@ -424,8 +425,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
     );
   }
 
-  const selectClassName =
-    "h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
+  const selectClassName  = phxSelectClassName;
 
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">

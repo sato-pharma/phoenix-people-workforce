@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 import { type CalendarApi } from "./calendar-api";
 import { NoteLine, Segmented, Switch } from "./calendar-dialog";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export type CandidateMatch = { id: string; name: string; jobTitle: string | null };
 
@@ -65,7 +66,7 @@ export async function submitBooking(api: CalendarApi, choice: PersonChoice, fiel
   return api.post("/bookings", body);
 }
 
-const inputClass = "block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none";
+const inputClass = `${phxFieldClassName} block`;
 
 export function PersonPicker({
   api,

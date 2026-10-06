@@ -20,6 +20,7 @@
 
 import { Loader2, PackagePlus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 
@@ -163,7 +164,7 @@ export function ManageEngineAppRepository() {
             <label className="flex-1">
               <span className="block text-[11px] font-bold text-slate-700">Name it (optional)</span>
               <input
-                className="mt-1 block w-full border border-slate-300 px-2 py-1.5 text-[12px] font-semibold text-slate-700"
+                className={`${phxFieldClassName} mt-1 block`}
                 disabled={busy}
                 onChange={(event) => setAppName(event.target.value)}
                 placeholder={file ? file.name.replace(/\.apk$/i, "") : "Taken from the file name"}

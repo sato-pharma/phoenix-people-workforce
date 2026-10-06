@@ -2,6 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Structured DV-Day feedback capture form (module completion C1). This is the WRITE surface for the
 // new intelligence model — the config-driven 1..N scorecard, narrative, recommendation, and optional
@@ -134,8 +139,8 @@ export function StructuredFeedbackForm({
     );
   }
 
-  const cell = "h-9 w-16 rounded border border-slate-200 px-2 text-sm text-center";
-  const area = "w-full rounded border border-slate-200 px-3 py-2 text-sm";
+  const cell = cn(phxFieldClassName, "h-9 w-16 px-2 text-center");
+  const area = cn(phxTextareaClassName, "w-full px-3 py-2");
   // A hand-opened scorecard (manual-dv-day.ts) carries no CRM visits. Say so rather than
   // printing "0 visits", which reads like a captured field day that found nothing.
   const isManualScorecard = visitCount === 0;

@@ -7,6 +7,7 @@ import { AdminCallout, AdminSectionHeader } from "@/components/admin/admin-desig
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AUTO_REPLY_BODY_MAX, autoReplyViolations } from "@/lib/recruitment/inbound/whatsapp-auto-replies";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /**
  * The messages the WhatsApp bot sends BY ITSELF — the ones around the questions rather than the
@@ -138,7 +139,7 @@ export function WhatsAppAutoRepliesEditor({ initialReplies }: Props) {
                 What the applicant reads
               </label>
               <textarea
-                className="mt-1 w-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                className={`${phxTextareaClassName} mt-1`}
                 dir="auto"
                 disabled={busy}
                 id={`auto-reply-${reply.key}`}

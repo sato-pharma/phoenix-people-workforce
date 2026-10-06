@@ -182,6 +182,11 @@ import {
 import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxLabelTextClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 
 type ManagerOption = { hrId: string; fullName: string };
@@ -225,8 +230,7 @@ type TabKey = "pipeline" | "requisitions" | "candidates" | "folders" | "advertis
  */
 type PoolRowPanel = "send" | "start" | "folder";
 
-const fieldClass =
-  "w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none";
+const fieldClass  = phxFieldClassName;
 
 // ── Source-of-hire: the advert picker ─────────────────────────────────────────────────────────────
 //
@@ -346,7 +350,7 @@ function HiredSourceCard({
 // Same look as the candidate pool's filter labels (poolFilterLabelClass), but rendered as a plain
 // div/span rather than a <label>. SearchableSelect is a portalled combobox, not a native <select>,
 // so an implicit label would re-target the click and reopen the panel the user just dismissed.
-const requisitionFieldLabelClass = "text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
+const requisitionFieldLabelClass = phxLabelTextClassName;
 
 /**
  * A labelled cell in the "Open a requisition" grid.
@@ -2710,7 +2714,7 @@ function FileToFolderPicker({
   return (
     <div className="space-y-1.5 border border-sky-200 bg-sky-50/60 p-1.5">
       <select
-        className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
+        className={`${phxSelectClassName} min-w-0`}
         onChange={(e) => {
           const next = e.target.value as CandidateFolderKind;
           setKind(next);
@@ -2753,7 +2757,7 @@ function FileToFolderPicker({
         </>
       ) : (
         <select
-          className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
+          className={`${phxSelectClassName} min-w-0`}
           onChange={(e) => setKey(e.target.value)}
           value={key}
         >
@@ -2974,7 +2978,7 @@ function CandidateActionsControl({
       {canManage && openPanel === "start" ? (
         <div className="flex items-center gap-1.5 border border-slate-200 bg-slate-50 p-1.5">
           <SearchableSelect
-            className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
+            className="h-8 w-full min-w-0 px-2 text-xs"
             value={startReq[candidate.id] ?? ""}
             onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
           >
@@ -3159,14 +3163,14 @@ function PositionPicker({
         <div className="grid grid-cols-2 gap-1.5">
           <input
             aria-label="Area"
-            className="h-8 min-w-0 rounded-md border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+            className={`${phxFieldClassName} min-w-0`}
             onChange={(event) => onFreeAreaChange(event.target.value)}
             placeholder="Area"
             value={freeArea}
           />
           <input
             aria-label="Job title"
-            className="h-8 min-w-0 rounded-md border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+            className={`${phxFieldClassName} min-w-0`}
             onChange={(event) => onFreeTitleChange(event.target.value)}
             placeholder="Job title"
             value={freeTitle}
@@ -3492,9 +3496,9 @@ const poolExperienceFilterLabels: Record<PoolExperienceFilter, string> = {
 
 // Matches the filter panel on the CRM master table — same label case, same control border, same
 // focus ring. Sibling pages set the design identity here; this screen does not get its own look.
-const poolFilterLabelClass = "flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
+const poolFilterLabelClass = phxLabelTextClassName;
 const poolFilterSelectClass =
-  "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
+  phxSelectClassName;
 
 function CandidatesTab({
   areaOptions,
@@ -4530,7 +4534,7 @@ function CandidatesTab({
                 <label className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-700">
                   Move to folder
                   <select
-                    className="w-full border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 sm:w-auto"
+                    className={cn(phxSelectClassName, "sm:w-auto")}
                     disabled={pending}
                     onChange={(event) => setBulkFolderId(event.target.value)}
                     value={bulkFolderId}
@@ -5272,7 +5276,7 @@ function CandidatesTab({
                       one-option dropdown would just be a control that does nothing. */}
                   {listCvPositionSchemas().length > 1 ? (
                     <select
-                      className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+                      className={phxSelectClassName}
                       disabled={retryBusy}
                       onChange={(event) => setRetryPositionKey(event.target.value)}
                       value={retryPositionKey}
@@ -5629,7 +5633,7 @@ function InterviewsSection({
                         <label key={criterion.key} className="flex items-center justify-between gap-2">
                           <span>{criterion.label}</span>
                           <input
-                            className="w-16 border border-slate-300 px-2 py-1"
+                            className={cn(phxFieldClassName, "w-16")}
                             max={5}
                             min={1}
                             type="number"

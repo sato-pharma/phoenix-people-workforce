@@ -6,6 +6,8 @@ import { MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { EmployeePlanComment } from "@/lib/weekly-planning/service";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type Props = {
   // Callers key this component by planId (key={planId}) so switching to a
@@ -115,7 +117,7 @@ export function PlanConversationThread({ planId }: Props) {
       </div>
       <div className="space-y-2 border-t border-slate-200 p-3">
         <textarea
-          className="min-h-16 w-full border border-slate-200 p-2 text-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+          className={cn(phxTextareaClassName, "min-h-16")}
           disabled={sending}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Reply in this conversation…"

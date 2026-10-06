@@ -5,6 +5,11 @@ import Link from "next/link";
 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { ResponderHistoryItem } from "@/lib/approvals-hub/service";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Optionally carries who decided it (used only by the company-wide "All Decisions" tab).
 export type HistoryListItem = ResponderHistoryItem & { decidedByName?: string | null };
@@ -75,7 +80,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
             value={employee}
             onChange={(e) => setEmployee(e.target.value)}
             placeholder="Search name…"
-            className="h-8 w-40 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+            className={cn(phxFieldClassName, "w-40")}
           />
         </label>
         <label className="flex flex-col gap-0.5">
@@ -84,7 +89,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="h-8 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+            className={phxFieldClassName}
           />
         </label>
         <label className="flex flex-col gap-0.5">
@@ -93,7 +98,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="h-8 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+            className={phxFieldClassName}
           />
         </label>
         <label className="flex flex-col gap-0.5">
@@ -101,7 +106,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
           <select
             value={decision}
             onChange={(e) => setDecision(e.target.value as typeof decision)}
-            className="h-8 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+            className={phxSelectClassName}
           >
             <option value="all">All</option>
             <option value="approved">Approved</option>
@@ -115,7 +120,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
             <select
               value={type}
               onChange={(e) => setType(e.target.value)}
-              className="h-8 border border-slate-300 px-2 text-xs focus:border-orange-500 focus:outline-none"
+              className={phxSelectClassName}
             >
               <option value="all">All</option>
               {types.map((t) => (

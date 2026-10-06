@@ -27,6 +27,10 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 
 type FilterOption = {
@@ -376,7 +380,7 @@ function SelectField({
     <label className="block">
       <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       <SearchableSelect
-        className="mt-1.5 h-9 w-full border border-phx-line-strong bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20"
+        className="mt-1.5 h-9 w-full px-3"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -406,7 +410,7 @@ function FilterInput({
   return (
     <input
       aria-label={ariaLabel}
-      className="h-8 w-full min-w-0 border border-phx-line-strong bg-white px-2.5 text-xs font-bold text-phx-ink outline-none transition placeholder:text-phx-ink-faint focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20"
+      className={`${phxFieldClassName} min-w-0`}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       type="search"
@@ -429,7 +433,7 @@ function FilterSelect({
   return (
     <select
       aria-label={ariaLabel}
-      className="h-8 w-full min-w-0 border border-phx-line-strong bg-white px-2 text-xs font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20"
+      className={`${phxSelectClassName} min-w-0`}
       onChange={(event) => onChange(event.target.value)}
       value={value}
     >

@@ -5,6 +5,8 @@ import { useState, useTransition } from "react";
 
 import { buildKpisQuery, KPI_CUSTOM_PERIOD_VALUE, type KpiFilterState } from "@/lib/crm/kpis-filters";
 import { type KpiTab } from "@/lib/crm/kpis-tabs";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * The KPIs board's month and period pickers.
@@ -41,8 +43,7 @@ import { type KpiTab } from "@/lib/crm/kpis-tabs";
  */
 
 const LABEL_CLASS = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
-const CONTROL_CLASS =
-  "w-full border border-slate-300 bg-white px-3 py-2 text-base font-semibold text-slate-900 disabled:opacity-60";
+const CONTROL_CLASS = cn(phxSelectClassName, "w-full px-3 py-2 text-base");
 
 export type KpiPickerOption = { label: string; value: string };
 

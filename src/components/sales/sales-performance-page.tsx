@@ -51,6 +51,8 @@ import type {
 } from "@/lib/sales/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 /* ─── Error Boundary ──────────────────────────────────────────────────── */
@@ -626,7 +628,7 @@ function FilterBar({
             <SearchableSelect
               value={comparisonPeriod}
               onChange={(e) => onComparisonChange(e.target.value as ComparisonPeriod)}
-              className="h-10 w-full appearance-none rounded border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400/20"
+              className="w-full appearance-none px-3 pr-8"
             >
               <option value="none">No comparison</option>
               <option value="previous_month">Previous Month</option>
@@ -643,7 +645,7 @@ function FilterBar({
             <SearchableSelect
               value={selectedFamily}
               onChange={(e) => onFamilyChange(e.target.value)}
-              className="h-10 w-full appearance-none rounded border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400/20"
+              className="w-full appearance-none px-3 pr-8"
             >
               <option value="">All Families</option>
               {availableFamilies.map((family) => (
@@ -1157,7 +1159,7 @@ const ProductTable = memo(function ProductTable({
               placeholder="Search products..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="h-9 w-full rounded border border-slate-200 bg-white py-1.5 pl-9 pr-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-1 focus:ring-orange-400/20 rtl:pl-3 rtl:pr-9"
+              className={cn(phxFieldClassName, "pl-9 rtl:pl-3 rtl:pr-9")}
             />
           </div>
         </div>
@@ -1173,7 +1175,7 @@ const ProductTable = memo(function ProductTable({
               <SearchableSelect
                 value={sortConfig.key}
                 onChange={(e) => onSort(e.target.value)}
-                className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:border-orange-300 focus:outline-none"
+                className="px-2 py-1 text-xs"
               >
                 {productTableColumns.map((col) => (
                   <option key={col.key} value={col.key}>{col.label}</option>

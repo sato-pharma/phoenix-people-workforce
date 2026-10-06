@@ -1098,7 +1098,7 @@ export function OutstationRequestsAdmin({
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                 <Input
-                  className="h-11 rounded-md border-[#DDE6F1] bg-white/95 pl-9 shadow-sm"
+                  className="pl-9"
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Employee, HR ID, area, city"
                   value={search}
@@ -1109,7 +1109,7 @@ export function OutstationRequestsAdmin({
             <label className="block">
               <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Eligibility</span>
               <SearchableSelect
-                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="w-full px-3"
                 onChange={(event) => setEligibility(event.target.value)}
                 value={eligibility}
               >
@@ -1123,7 +1123,7 @@ export function OutstationRequestsAdmin({
             <label className="block">
               <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Role</span>
               <SearchableSelect
-                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="w-full px-3"
                 onChange={(event) => setRole(event.target.value)}
                 value={role}
               >
@@ -1139,7 +1139,7 @@ export function OutstationRequestsAdmin({
             <label className="block">
               <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Month</span>
               <SearchableSelect
-                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="w-full px-3"
                 onChange={(event) => setMonth(event.target.value)}
                 value={month}
               >

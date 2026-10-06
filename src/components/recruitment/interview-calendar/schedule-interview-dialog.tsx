@@ -58,6 +58,10 @@ import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker"
 import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
+import {
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 /** The person: a Recruitment candidate, or (id null) someone from outside kept on the calendar only. */
 export type ScheduleCandidate = { id: string | null; name: string; jobTitle?: string | null };
@@ -360,7 +364,7 @@ export function ScheduleInterviewDialog({
                     </div>
                     <select
                       aria-label="Longer"
-                      className="h-[26px] border border-slate-200 bg-white px-1.5 text-[12px] font-bold text-slate-700 focus:border-orange-500 focus:outline-none"
+                      className={phxSelectClassName}
                       onChange={(event) => {
                         const minutes = Number(event.target.value);
                         if (minutes > 0) chooseDuration(minutes);
@@ -469,7 +473,7 @@ export function ScheduleInterviewDialog({
                   <label className="mt-4 block">
                     <span className="text-[12px] font-bold text-slate-700">Note (optional)</span>
                     <textarea
-                      className="mt-1 block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+                      className={`${phxTextareaClassName} mt-1 block`}
                       maxLength={2000}
                       onChange={(event) => setNotes(event.target.value)}
                       placeholder="Who interviews, what to bring, anything the panel should know"

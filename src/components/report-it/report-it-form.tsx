@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Check, CheckCircle2, ChevronLeft, ChevronRight, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { CheckCircle2, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import {
   MONTHS,
   REACTION_OUTCOMES,
@@ -22,6 +22,27 @@ import {
 } from "@/lib/report-it/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
+// 🔒 THIS FORM IS THE REFERENCE FOR EVERY FORM IN THE SYSTEM (owner, 2026-10-06:
+// "sweep the system wide everywhere admin or emp any form or any thing
+// applicable make it follow this form design"). Its look no longer lives in this
+// file — it lives in `@/components/ui/form-kit`, which every other admin and
+// portal form now imports. Restyling a field here changes nothing on its own:
+// change the token, and the whole system follows.
+import {
+  CheckTile,
+  FieldLabel,
+  FormBlockHeader,
+  FormWizard,
+  type FormWizardStep,
+  phxButtonAccentClassName,
+  phxButtonAddBlockClassName,
+  phxButtonGhostClassName,
+  phxButtonPrimaryClassName,
+  phxFieldClassName,
+  phxFieldGridClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-kit";
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -80,60 +101,20 @@ function initialPayload(): ReportItPayload {
   };
 }
 
-// ─── Premium field primitives (square corners, slate + orange) ───────────────
+// ─── Field primitives ─────────────────────────────────────────────────────────
+//
+// These names are kept as local aliases of the shared tokens so this file reads
+// the way it always has, while the STRINGS now come from one place. See the
+// import block above for why.
 
-const fieldClass =
-  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50";
-const selectClass = `${fieldClass} cursor-pointer`;
-const textareaClass =
-  "w-full resize-y border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+const fieldClass = phxFieldClassName;
+const selectClass = phxSelectClassName;
+const textareaClass = phxTextareaClassName;
 
-const btnGhost =
-  "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40";
-const btnDark =
-  "inline-flex items-center gap-1.5 border border-slate-900 bg-slate-900 px-5 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50";
-const btnOrange =
-  "inline-flex items-center gap-1.5 border border-orange-600 bg-orange-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-orange-700 disabled:pointer-events-none disabled:opacity-50";
-const btnAddBlock =
-  "flex w-full items-center justify-center gap-1.5 border border-dashed border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:border-orange-500 hover:text-orange-600";
-
-function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
-  return (
-    <label className="mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500">
-      {children}
-      {required && <span className="ml-0.5 text-rose-600">*</span>}
-    </label>
-  );
-}
-
-function CheckTile({
-  checked,
-  onChange,
-  children,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <label
-      className={[
-        "flex cursor-pointer select-none items-center gap-2.5 border px-3 py-2.5 text-sm font-semibold transition",
-        checked
-          ? "border-orange-500 bg-orange-50 text-slate-900"
-          : "border-slate-200 bg-white text-slate-600 hover:border-slate-400",
-      ].join(" ")}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 shrink-0 accent-orange-600"
-      />
-      {children}
-    </label>
-  );
-}
+const btnGhost = phxButtonGhostClassName;
+const btnDark = phxButtonPrimaryClassName;
+const btnOrange = phxButtonAccentClassName;
+const btnAddBlock = phxButtonAddBlockClassName;
 
 function DateFields({
   label,
@@ -210,7 +191,8 @@ function DurationFields({
   );
 }
 
-// Dark block header used by repeating reaction/medicine cards.
+// Block header used by repeating reaction/medicine cards — the shared one, with
+// this form's remove button in its action slot.
 function BlockHeader({
   label,
   onRemove,
@@ -221,22 +203,21 @@ function BlockHeader({
   canRemove: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-      <span className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-wide text-slate-700">
-        <span aria-hidden className="h-3.5 w-1 bg-orange-500" />
-        {label}
-      </span>
-      {canRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          className="p-1 text-slate-400 transition hover:text-rose-600"
-          aria-label={`Remove ${label}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      )}
-    </div>
+    <FormBlockHeader
+      label={label}
+      action={
+        canRemove ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="p-1 text-slate-400 transition hover:text-rose-600"
+            aria-label={`Remove ${label}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -253,7 +234,7 @@ function Step1PatientInfo({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3">
+      <div className={phxFieldGridClassName}>
         <div>
           <FieldLabel required>Patient Initials</FieldLabel>
           <input
@@ -374,7 +355,7 @@ function ReactionBlockCard({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3">
+        <div className={phxFieldGridClassName}>
           <DateFields
             label="Start date"
             value={reaction.startDate}
@@ -577,7 +558,7 @@ function MedicineBlockCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3">
+        <div className={phxFieldGridClassName}>
           <DateFields
             label="Start date"
             value={medicine.startDate}
@@ -788,105 +769,18 @@ function validateStep(step: number, payload: ReportItPayload): string | null {
 }
 
 // ─── Main form ─────────────────────────────────────────────────────────────────
+//
+// The shell — the titled header, the progress bar, the numbered rail, the mobile
+// stepper, the step heading and the Back/Next/Submit footer — is `FormWizard`
+// from the shared kit. It used to be ~150 lines of markup here; it is now the
+// one shell every multi-step form in the system renders.
 
-const STEPS = ["Patient Info", "Reactions", "Medicines", "Additional Info"];
-const STEP_TITLES = ["Patient Information", "Reactions / Symptoms", "Medicines", "Additional Information"];
-const STEP_DESCRIPTIONS = [
-  "Who the report is about",
-  "Symptoms and seriousness",
-  "Suspected products",
-  "Context and comments",
+const STEPS: FormWizardStep[] = [
+  { label: "Patient Info", description: "Who the report is about", title: "Patient Information" },
+  { label: "Reactions", description: "Symptoms and seriousness", title: "Reactions / Symptoms" },
+  { label: "Medicines", description: "Suspected products", title: "Medicines" },
+  { label: "Additional Info", description: "Context and comments", title: "Additional Information" },
 ];
-
-// ─── Vertical stepper rail (desktop) ───────────────────────────────────────────
-
-function VerticalStepper({ step, onJump }: { step: number; onJump: (n: number) => void }) {
-  return (
-    <ol className="relative">
-      {STEPS.map((label, i) => {
-        const num = i + 1;
-        const active = num === step;
-        const done = num < step;
-        const clickable = num < step;
-        const last = i === STEPS.length - 1;
-        return (
-          <li key={label} className="relative">
-            {!last && (
-              <span
-                aria-hidden
-                className={["absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px", done ? "bg-orange-400" : "bg-slate-200"].join(" ")}
-              />
-            )}
-            <button
-              type="button"
-              onClick={() => clickable && onJump(num)}
-              disabled={!clickable}
-              className={[
-                "group relative flex w-full items-start gap-3 px-3 py-3 text-left transition",
-                active ? "bg-orange-50" : "bg-transparent",
-                clickable ? "cursor-pointer hover:bg-slate-50" : "cursor-default",
-              ].join(" ")}
-            >
-              {active && <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-orange-500" />}
-              <span
-                className={[
-                  "z-10 flex h-8 w-8 shrink-0 items-center justify-center text-xs font-black",
-                  active
-                    ? "bg-orange-600 text-white"
-                    : done
-                      ? "bg-orange-100 text-orange-700"
-                      : "border border-slate-300 bg-white text-slate-400",
-                ].join(" ")}
-              >
-                {done ? <Check className="h-4 w-4" /> : num}
-              </span>
-              <span className="min-w-0">
-                <span
-                  className={[
-                    "block text-phx-xs font-black uppercase tracking-wide",
-                    active ? "text-slate-900" : done ? "text-slate-700" : "text-slate-400",
-                  ].join(" ")}
-                >
-                  {label}
-                </span>
-                <span className="mt-0.5 block text-xs text-slate-400">{STEP_DESCRIPTIONS[i]}</span>
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-// ─── Compact horizontal stepper (mobile) ───────────────────────────────────────
-
-function MobileStepper({ step }: { step: number }) {
-  return (
-    <div className="flex items-center lg:hidden">
-      {STEPS.map((label, i) => {
-        const num = i + 1;
-        const active = num === step;
-        const done = num < step;
-        return (
-          <div key={label} className={["flex items-center", i < STEPS.length - 1 ? "flex-1" : ""].join(" ")}>
-            <span
-              className={[
-                "flex h-7 w-7 shrink-0 items-center justify-center text-phx-xs font-black",
-                active ? "bg-orange-600 text-white" : done ? "bg-orange-100 text-orange-700" : "border border-slate-300 bg-white text-slate-400",
-              ].join(" ")}
-            >
-              {done ? <Check className="h-3.5 w-3.5" /> : num}
-            </span>
-            {i < STEPS.length - 1 && (
-              <span className={["mx-1.5 h-px flex-1", done ? "bg-orange-400" : "bg-slate-200"].join(" ")} />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportItFormProps = {}) {
   const [step, setStep] = useState(1);
@@ -896,28 +790,21 @@ export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportIt
   const [reportNumber, setReportNumber] = useState<string | null>(null);
   const isAdmin = variant === "admin";
 
+  // Returning false keeps the wizard on this step; the rail only ever jumps
+  // BACK, so forward movement always passes through this gate.
   const handleNext = useCallback(() => {
     const err = validateStep(step, payload);
-    if (err) { setError(err); return; }
+    if (err) {
+      setError(err);
+      return false;
+    }
     setError(null);
-    setStep((s) => s + 1);
+    return true;
   }, [step, payload]);
 
-  const handleBack = useCallback(() => {
+  const handleStepChange = useCallback((next: number) => {
     setError(null);
-    setStep((s) => s - 1);
-  }, []);
-
-  // Rail navigation: jump back only to an already-completed step (never skip
-  // forward past validation).
-  const handleJump = useCallback((target: number) => {
-    setStep((s) => {
-      if (target < s) {
-        setError(null);
-        return target;
-      }
-      return s;
-    });
+    setStep(next);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -955,133 +842,56 @@ export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportIt
     );
   }
 
-  const pct = Math.round((step / STEPS.length) * 100);
+  const confidentialBadge = isAdmin ? (
+    <span className="inline-flex w-fit items-center gap-1.5 border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-orange-700">
+      <ShieldCheck className="h-3.5 w-3.5" />
+      Confidential
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+      <ShieldCheck className="h-3.5 w-3.5 text-orange-500" />
+      Confidential
+    </span>
+  );
+
+  const requiredNote = (
+    <>
+      Fields marked with <span className="font-bold text-orange-600">*</span> are required.
+    </>
+  );
 
   return (
-    <div className={isAdmin ? `overflow-hidden p-0 ${adminPanelClassName}` : "border border-slate-200 bg-white shadow-sm"}>
-      {isAdmin ? (
-        <div className="border-b border-phx-line bg-[#FCFDFE] px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-orange-600">Admin submission</p>
-              <h2 className="mt-1 text-lg font-black text-slate-900">Adverse Drug Reaction Report</h2>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-                File a pharmacovigilance report from the admin shell. Fields marked with <span className="font-bold text-orange-600">*</span> are required.
-              </p>
-            </div>
-            <span className="inline-flex w-fit items-center gap-1.5 border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-orange-700">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Confidential
-            </span>
-          </div>
-          <div className="mt-4">
-            <div className="flex items-center justify-between text-phx-2xs font-black uppercase tracking-wide text-slate-500">
-              <span>Step {step} of {STEPS.length}</span>
-              <span className="text-orange-600">{pct}%</span>
-            </div>
-            <div className="mt-1.5 h-1.5 w-full bg-slate-200">
-              <div className="h-full bg-orange-600 transition-all duration-300" style={{ width: `${pct}%` }} />
-            </div>
-          </div>
-        </div>
-      ) : (
-        // ── Portal progress strip ──────────────────────────────────────────────────────────────
-        // 🔴 A SECOND DARK HERO USED TO STAND HERE, AND IT MUST NOT COME BACK.
-        // `EmployeePortalPageShell` already paints the navy command header on this page — the
-        // `Pharmacovigilance` badge, the title `Report It`, and the description — so this block
-        // repeated all three and the page shipped with TWO stacked dark headers (owner, 2026-09-30,
-        // after the same defect was removed from Spotlight: "fix the duplicated header on report it
-        // too"). Only what the shell does NOT say survives: which step you are on, that the report
-        // is confidential, and that starred fields are required. Light, so it reads as the top edge
-        // of this card rather than as a header of its own. The `isAdmin` branch above is untouched —
-        // it sits in the admin shell, which prints no title for it, and it carries an <h2>.
-        <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
-              <span>Step {step} of {STEPS.length}</span>
-              <span className="text-orange-600">{pct}%</span>
-            </div>
-            <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
-              <ShieldCheck className="h-3.5 w-3.5 text-orange-500" />
-              Confidential
-            </span>
-          </div>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Fields marked with <span className="font-bold text-orange-600">*</span> are required.
-          </p>
-          <div className="mt-3 h-1.5 w-full bg-slate-100">
-            <div className="h-1.5 bg-orange-500 transition-all duration-300" style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-[244px_minmax(0,1fr)]">
-        {/* Left rail — vertical stepper (desktop) */}
-        <aside className="hidden border-r border-slate-200 bg-slate-50/60 lg:flex lg:flex-col">
-          <nav className="p-3">
-            <VerticalStepper step={step} onJump={handleJump} />
-          </nav>
-          <div className="mt-auto border-t border-slate-200 p-4">
-            <div className="flex items-start gap-2.5">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
-              <p className="text-xs leading-relaxed text-slate-500">
-                Reports are routed only to the pharmacovigilance team for safety review.
-              </p>
-            </div>
-          </div>
-        </aside>
-
-        {/* Right — step content */}
-        <div className="p-4 sm:p-6">
-          {/* mobile stepper */}
-          <div className="mb-5 lg:hidden">
-            <MobileStepper step={step} />
-          </div>
-
-          {/* step heading */}
-          <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
-            <div>
-              <p className="text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-600">
-                Step {step} of {STEPS.length}
-              </p>
-              <h2 className="mt-0.5 text-lg font-black text-slate-900">{STEP_TITLES[step - 1]}</h2>
-            </div>
-            <span className="select-none text-4xl font-black tabular-nums text-slate-200" aria-hidden>
-              {String(step).padStart(2, "0")}
-            </span>
-          </div>
-
-          {step === 1 && <Step1PatientInfo payload={payload} onChange={setPayload} />}
-          {step === 2 && <Step2Reactions payload={payload} onChange={setPayload} />}
-          {step === 3 && <Step3Medicines payload={payload} onChange={setPayload} />}
-          {step === 4 && <Step4Additional payload={payload} onChange={setPayload} />}
-
-          {/* Error */}
-          {error && (
-            <p className="mt-5 border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
-              {error}
-            </p>
-          )}
-
-          {/* Navigation */}
-          <div className="mt-6 flex items-center justify-between border-t border-slate-200 pt-5">
-            <button type="button" className={btnGhost} onClick={handleBack} disabled={step === 1}>
-              <ChevronLeft className="h-4 w-4" />
-              Back
-            </button>
-            {step < STEPS.length ? (
-              <button type="button" className={btnDark} onClick={handleNext}>
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            ) : (
-              <button type="button" className={btnOrange} onClick={handleSubmit} disabled={submitting}>
-                {submitting ? "Submitting…" : "Submit Report"}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <FormWizard
+      steps={STEPS}
+      step={step}
+      onStepChange={handleStepChange}
+      // 🔴 A SECOND DARK HERO MUST NOT COME BACK ON THE PORTAL PAGE.
+      // `EmployeePortalPageShell` already paints the navy command header there —
+      // the `Pharmacovigilance` badge, the title `Report It` and the description
+      // — so a titled header here repeated all three and the page shipped with
+      // TWO stacked dark headers (owner, 2026-09-30, after the same defect was
+      // removed from Spotlight). `strip` prints only what the shell does NOT
+      // say: the step, the confidentiality, the required-field note. The admin
+      // shell prints no title for this form, so it takes the full `panel`.
+      header={isAdmin ? "panel" : "strip"}
+      className={isAdmin ? adminPanelClassName : undefined}
+      eyebrow={isAdmin ? "Admin submission" : undefined}
+      title={isAdmin ? "Adverse Drug Reaction Report" : undefined}
+      description={
+        isAdmin ? <>File a pharmacovigilance report from the admin shell. {requiredNote}</> : requiredNote
+      }
+      badge={confidentialBadge}
+      footnote="Reports are routed only to the pharmacovigilance team for safety review."
+      error={error}
+      submitting={submitting}
+      submitLabel="Submit Report"
+      onNext={handleNext}
+      onSubmit={handleSubmit}
+    >
+      {step === 1 && <Step1PatientInfo payload={payload} onChange={setPayload} />}
+      {step === 2 && <Step2Reactions payload={payload} onChange={setPayload} />}
+      {step === 3 && <Step3Medicines payload={payload} onChange={setPayload} />}
+      {step === 4 && <Step4Additional payload={payload} onChange={setPayload} />}
+    </FormWizard>
   );
 }

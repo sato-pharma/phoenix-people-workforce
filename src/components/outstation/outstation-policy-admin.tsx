@@ -223,7 +223,6 @@ export function OutstationPolicyAdmin({
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <Field label="Minimum Distance (KM)">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { minimumDistanceKm: Number(event.target.value) })}
                   type="number"
                   value={rule.minimumDistanceKm}
@@ -232,7 +231,6 @@ export function OutstationPolicyAdmin({
 
               <Field label="Fuel Rate Per KM">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { fuelRatePerKm: Number(event.target.value) })}
                   step="0.1"
                   type="number"
@@ -242,7 +240,6 @@ export function OutstationPolicyAdmin({
 
               <Field label="Same Day Allowance">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { sameDayAllowance: Number(event.target.value) })}
                   type="number"
                   value={rule.sameDayAllowance}
@@ -251,7 +248,6 @@ export function OutstationPolicyAdmin({
 
               <Field label="Overnight Allowance">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { overnightAllowance: Number(event.target.value) })}
                   type="number"
                   value={rule.overnightAllowance}
@@ -260,7 +256,6 @@ export function OutstationPolicyAdmin({
 
               <Field label="Return Day Allowance">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { returnDayAllowance: Number(event.target.value) })}
                   type="number"
                   value={rule.returnDayAllowance}
@@ -269,7 +264,6 @@ export function OutstationPolicyAdmin({
 
               <Field label="GPS Accuracy Threshold (m)">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) =>
                     updateRule(index, { gpsAccuracyThresholdMeters: Number(event.target.value) })
                   }
@@ -280,7 +274,6 @@ export function OutstationPolicyAdmin({
 
               <Field label="Max Offline Delay (hours)">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { maxOfflineSyncDelayHours: Number(event.target.value) })}
                   type="number"
                   value={rule.maxOfflineSyncDelayHours}

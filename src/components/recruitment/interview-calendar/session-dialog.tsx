@@ -28,6 +28,11 @@ import { CalendarDialog, ErrorLine, NoteLine, PanelHeading, Segmented } from "./
 import { PlatformChoice, endChoices, startChoices } from "./cell-dialog";
 import { PersonPicker, initialPersonChoice, personProblem, submitBooking, type PersonChoice } from "./person-picker";
 import { ZoomMeetingPanels } from "./zoom-panels";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 export function SessionDialog({
   api,
@@ -393,7 +398,7 @@ function BookSlotDialog({
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">Note (optional)</span>
             <textarea
-              className="block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+              className={`${phxTextareaClassName} block`}
               maxLength={2000}
               onChange={(event) => setNotes(event.target.value)}
               rows={2}
@@ -489,7 +494,7 @@ function EditSessionDialog({
         <label className="block">
           <span className="mb-1 block text-[12px] font-bold text-slate-700">Name (optional)</span>
           <input
-            className="block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+            className={`${phxFieldClassName} block`}
             maxLength={120}
             onChange={(event) => setTitle(event.target.value)}
             value={title}
@@ -499,7 +504,7 @@ function EditSessionDialog({
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">Starts at</span>
             <select
-              className="h-9 w-full border border-slate-200 bg-white px-2 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+              className={phxSelectClassName}
               onChange={(event) => chooseStart(Number(event.target.value))}
               value={start}
             >
@@ -513,7 +518,7 @@ function EditSessionDialog({
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">Ends at</span>
             <select
-              className="h-9 w-full border border-slate-200 bg-white px-2 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+              className={phxSelectClassName}
               onChange={(event) => setEnd(Number(event.target.value))}
               value={end}
             >
@@ -546,7 +551,7 @@ function EditSessionDialog({
         <label className="block">
           <span className="mb-1 block text-[12px] font-bold text-slate-700">Note (optional)</span>
           <textarea
-            className="block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+            className={`${phxTextareaClassName} block`}
             maxLength={2000}
             onChange={(event) => setNotes(event.target.value)}
             rows={2}

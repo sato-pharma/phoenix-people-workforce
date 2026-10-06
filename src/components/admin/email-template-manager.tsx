@@ -25,6 +25,10 @@ import { Switch } from "@/components/ui/switch";
 import type { EmailTemplateRecipientRole, EmailTemplateRow } from "@/lib/email-templates/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
+import {
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 // Mirrors the server-side `emailTemplateCategories` order in
 // src/lib/email-templates/service.ts (a plain string list, kept separate rather than
@@ -707,7 +711,7 @@ export function EmailTemplateManager({
               </Field>
               <Field label="Employee field">
                 <select
-                  className="h-10 w-full rounded-xl border border-phx-line-strong bg-white px-3 text-sm font-bold text-phx-ink"
+                  className={phxSelectClassName}
                   onChange={(event) => setNewVariableSourceColumn(event.target.value)}
                   value={newVariableSourceColumn}
                 >
@@ -981,7 +985,7 @@ export function EmailTemplateManager({
                 </div>
                 <div className="mt-3">
                   <Field label="Plain text copy (generated automatically from the email body)">
-                    <textarea className="min-h-[96px] w-full border border-phx-line bg-phx-paper px-3 py-2 text-sm leading-6 text-phx-ink-soft" readOnly value={htmlToPlainText(draft.bodyHtml)} />
+                    <textarea className={cn(phxTextareaClassName, "min-h-[96px] leading-6")} readOnly value={htmlToPlainText(draft.bodyHtml)} />
                   </Field>
                 </div>
               </details>
@@ -1023,13 +1027,13 @@ export function EmailTemplateManager({
               <details className={cn(adminSoftPanelClassName, "p-4")}>
                 <summary className="cursor-pointer text-sm font-black text-phx-ink">Advanced settings for Super Admins</summary>
                 <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                  <Field label="Static TO emails"><textarea className="min-h-[88px] w-full rounded-xl border border-phx-line-strong px-3 py-2 text-sm" value={emailText(draft.rules.toStaticEmails)} onChange={(event) => updateRules("toStaticEmails", parseLines(event.target.value))} /></Field>
-                  <Field label="Static CC emails"><textarea className="min-h-[88px] w-full rounded-xl border border-phx-line-strong px-3 py-2 text-sm" value={emailText(draft.rules.ccStaticEmails)} onChange={(event) => updateRules("ccStaticEmails", parseLines(event.target.value))} /></Field>
-                  <Field label="Static BCC emails"><textarea className="min-h-[88px] w-full rounded-xl border border-phx-line-strong px-3 py-2 text-sm" value={emailText(draft.rules.bccStaticEmails)} onChange={(event) => updateRules("bccStaticEmails", parseLines(event.target.value))} /></Field>
+                  <Field label="Static TO emails"><textarea className={cn(phxTextareaClassName, "min-h-[88px]")} value={emailText(draft.rules.toStaticEmails)} onChange={(event) => updateRules("toStaticEmails", parseLines(event.target.value))} /></Field>
+                  <Field label="Static CC emails"><textarea className={cn(phxTextareaClassName, "min-h-[88px]")} value={emailText(draft.rules.ccStaticEmails)} onChange={(event) => updateRules("ccStaticEmails", parseLines(event.target.value))} /></Field>
+                  <Field label="Static BCC emails"><textarea className={cn(phxTextareaClassName, "min-h-[88px]")} value={emailText(draft.rules.bccStaticEmails)} onChange={(event) => updateRules("bccStaticEmails", parseLines(event.target.value))} /></Field>
                 </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <Field label="Target lines"><select className="min-h-[112px] w-full rounded-xl border border-phx-line-strong bg-white px-3 py-2 text-sm" multiple value={draft.rules.targetLines} onChange={(event) => updateRules("targetLines", Array.from(event.currentTarget.selectedOptions).map((option) => option.value))}>{initialRoutingOptions.lines.map((line) => <option key={line} value={line}>{line}</option>)}</select></Field>
-                  <Field label="Target titles"><select className="min-h-[112px] w-full rounded-xl border border-phx-line-strong bg-white px-3 py-2 text-sm" multiple value={draft.rules.targetTitles} onChange={(event) => updateRules("targetTitles", Array.from(event.currentTarget.selectedOptions).map((option) => option.value))}>{initialRoutingOptions.titles.map((title) => <option key={title} value={title}>{title}</option>)}</select></Field>
+                  <Field label="Target lines"><select className={cn(phxSelectClassName, "min-h-[112px]")} multiple value={draft.rules.targetLines} onChange={(event) => updateRules("targetLines", Array.from(event.currentTarget.selectedOptions).map((option) => option.value))}>{initialRoutingOptions.lines.map((line) => <option key={line} value={line}>{line}</option>)}</select></Field>
+                  <Field label="Target titles"><select className={cn(phxSelectClassName, "min-h-[112px]")} multiple value={draft.rules.targetTitles} onChange={(event) => updateRules("targetTitles", Array.from(event.currentTarget.selectedOptions).map((option) => option.value))}>{initialRoutingOptions.titles.map((title) => <option key={title} value={title}>{title}</option>)}</select></Field>
                 </div>
               </details>
             </Card>
@@ -1070,7 +1074,7 @@ export function EmailTemplateManager({
             </Card>
             <aside className="space-y-5">
               <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
-                <Field label="Publish reason"><textarea className="min-h-[96px] w-full rounded-xl border border-phx-line-strong px-3 py-3 text-sm" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Example: Simplified leave approval wording for HR audit clarity." /></Field>
+                <Field label="Publish reason"><textarea className={cn(phxTextareaClassName, "min-h-[96px]")} value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Example: Simplified leave approval wording for HR audit clarity." /></Field>
                 <div className={cn(adminSoftPanelClassName, "space-y-2 p-3 text-sm font-semibold text-phx-ink-2")}>
                   <p className="font-black text-phx-ink">Draft / Published</p>
                   <p>{publicationLabel(draft.publicationState)}</p>

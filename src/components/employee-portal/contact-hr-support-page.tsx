@@ -21,6 +21,11 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import {
+  phxFieldClassName,
+  phxFieldInvalidClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type SupportRequestRow = {
   attachments: { name: string; size: number; type: string }[];
@@ -291,8 +296,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   const descriptionCount = description.length;
   const descriptionOverSoftLimit = descriptionCount > DESCRIPTION_SOFT_LIMIT;
 
-  const inputClass =
-    "h-11 w-full rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] sm:h-10";
+  const inputClass  = phxFieldClassName;
   const labelClass = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
 
   return (
@@ -438,9 +442,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               </div>
               <textarea
                 aria-label="Support description"
-                className={`w-full resize-y rounded border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] ${
-                  descriptionOverSoftLimit ? "border-rose-300" : "border-slate-200"
-                }`}
+                className={`${phxTextareaClassName} ${descriptionOverSoftLimit ? phxFieldInvalidClassName : ""}`}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe your issue or request in detail..."
                 required

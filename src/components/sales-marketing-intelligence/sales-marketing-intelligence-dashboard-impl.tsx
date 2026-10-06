@@ -57,6 +57,10 @@ import type {
   SalesMarketingRoiStatus,
 } from "@/lib/sales-marketing-intelligence/types";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
@@ -115,7 +119,7 @@ function FilterSelect({
     <label className="min-w-0 space-y-1">
       <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</span>
       <select
-        className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+        className={`${phxSelectClassName} min-w-0`}
         defaultValue={value}
         name={name}
       >
@@ -160,7 +164,7 @@ function DashboardFilters({
       <label className="min-w-0 space-y-1">
         <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">From</span>
         <input
-          className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+          className={phxFieldClassName}
           defaultValue={filters.fromMonth}
           name="fromMonth"
           type="month"
@@ -169,7 +173,7 @@ function DashboardFilters({
       <label className="min-w-0 space-y-1">
         <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">To</span>
         <input
-          className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+          className={phxFieldClassName}
           defaultValue={filters.toMonth}
           name="toMonth"
           type="month"
@@ -178,7 +182,7 @@ function DashboardFilters({
       <label className="min-w-0 space-y-1">
         <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Rows</span>
         <select
-          className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+          className={phxSelectClassName}
           defaultValue={String(filters.limit)}
           name="limit"
         >
@@ -192,7 +196,7 @@ function DashboardFilters({
         <span className="relative block">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+            className={cn(phxFieldClassName, "pl-9")}
             defaultValue={filters.customerSearch}
             name="customer"
             placeholder="Search customer or request"

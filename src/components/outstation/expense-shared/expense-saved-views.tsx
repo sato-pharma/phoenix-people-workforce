@@ -5,6 +5,7 @@ import { BookmarkPlus, X } from "lucide-react";
 
 import { useExpenseSavedViews } from "@/components/outstation/expense-shared/use-expense-saved-views";
 import type { ExpenseCommandFilters } from "@/components/outstation/expense-shared/types";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export function ExpenseSavedViews({
   currentFilters,
@@ -64,7 +65,7 @@ export function ExpenseSavedViews({
         <span className="inline-flex items-center gap-1">
           <input
             autoFocus
-            className="rounded-full border border-phx-line bg-white px-3 py-1 text-xs font-semibold text-phx-ink-soft outline-none focus:border-phx-warn-line focus:ring-2 focus:ring-phx-warn-line"
+            className={phxFieldClassName}
             maxLength={40}
             onBlur={() => {
               if (!draftName.trim()) setNaming(false);

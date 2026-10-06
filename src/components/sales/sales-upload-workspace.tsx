@@ -20,6 +20,7 @@ import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-i
 import { periodToAutoFill } from "@/lib/sales/upload-period-autofill";
 import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
 import { cn } from "@/lib/utils";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 export type MapOption = { code: string; name: string };
 type Props = {
@@ -363,7 +364,7 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <select
-                        className="rounded border border-phx-line bg-white px-2 py-1 text-xs text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
+                        className={phxSelectClassName}
                         onChange={(e) => {
                           const v = e.target.value as "ignore" | "include" | "";
                           setDecisions((p) => ({ ...p, [item.raw]: v as "ignore" | "include" }));
@@ -825,11 +826,11 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
             {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-bold text-phx-ok ring-1 ring-phx-ok-line"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
           </div>
           <div className="flex gap-1">
-            <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-phx-line")} disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
+            <select className={cn(phxSelectClassName, periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "")} disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
               <option value="">Month</option>
               {MONTHS.map((m, i) => <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>)}
             </select>
-            <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-phx-line")} disabled={busy !== null} onChange={(e) => onYearChange(e.target.value)} value={periodYear}>
+            <select className={cn(phxSelectClassName, periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "")} disabled={busy !== null} onChange={(e) => onYearChange(e.target.value)} value={periodYear}>
               <option value="">Year</option>
               {UPLOAD_YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
             </select>

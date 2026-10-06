@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * Finance's collection control — what has actually been PAID against the order.
@@ -137,7 +139,7 @@ export function DirectOrderCollectionControl({
                 inputMode="decimal"
                 aria-label="Total collected to date, in EGP — replaces any amount already recorded"
                 placeholder="Total collected (EGP)"
-                className="w-40 border border-slate-300 px-2 py-1 text-sm tabular-nums"
+                className={cn(phxFieldClassName, "w-40 tabular-nums")}
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
                 disabled={busy}
@@ -145,7 +147,7 @@ export function DirectOrderCollectionControl({
               <input
                 type="date"
                 aria-label="Date the money was collected"
-                className="border border-slate-300 px-2 py-1 text-sm"
+                className={phxFieldClassName}
                 value={date}
                 onChange={(event) => setDate(event.target.value)}
                 disabled={busy}

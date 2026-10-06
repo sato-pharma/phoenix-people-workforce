@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import type { DirectOrderApprovalExceptionRow } from "@/lib/direct-orders/service";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Props = { rows: DirectOrderApprovalExceptionRow[] };
 
@@ -132,7 +133,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
                     setApprovers((prev) => ({ ...prev, [row.stepId]: event.target.value }))
                   }
                   placeholder="e.g. B-185"
-                  className="mt-1 h-11 w-full border border-slate-300 px-3 text-sm focus:border-orange-500 focus:outline-none"
+                  className={`${phxFieldClassName} mt-1`}
                 />
                 {row.suggestedApproverName ? (
                   <span className="mt-1 block text-phx-xs text-slate-500">
@@ -156,7 +157,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
                   value={reasons[row.stepId] ?? ""}
                   onChange={(event) => setReasons((prev) => ({ ...prev, [row.stepId]: event.target.value }))}
                   placeholder="e.g. previous manager left in June; line now reports to…"
-                  className="mt-1 h-11 w-full border border-slate-300 px-3 text-sm focus:border-orange-500 focus:outline-none"
+                  className={`${phxFieldClassName} mt-1`}
                 />
               </label>
             </div>

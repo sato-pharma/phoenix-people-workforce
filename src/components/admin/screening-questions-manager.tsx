@@ -25,6 +25,7 @@ import {
   type ScreeningQuestionKind,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 import type { ScreeningQuestionAdminRow } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   initialError: string | null;
@@ -424,7 +425,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                     </span>
                   </div>
                   <textarea
-                    className="mt-1 w-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
+                    className={`${phxTextareaClassName} mt-1`}
                     id={`body-${row.clientKey}`}
                     onChange={(event) => updateRow(row.clientKey, { bodyText: event.target.value })}
                     placeholder="e.g. Do you already have a valid driving license?"
@@ -487,7 +488,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                       </span>
                     </div>
                     <textarea
-                      className="mt-1 w-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-300"
+                      className={`mt-1 ${phxTextareaClassName}`}
                       id={`end-${row.clientKey}`}
                       onChange={(event) => updateRow(row.clientKey, { endMessage: event.target.value })}
                       rows={4}

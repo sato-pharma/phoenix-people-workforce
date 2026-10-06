@@ -4,6 +4,7 @@ import { ChevronDown, RotateCcw, Search } from "lucide-react";
 import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export type MonthlyClosingFilter = {
   areaCodes: string[];
@@ -152,7 +153,7 @@ export function MonthlyClosingFilters({
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
-          className="h-10 w-52 border border-phx-line bg-white pl-9 pr-3 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+          className={cn(phxFieldClassName, "w-52 pl-9")}
           onChange={(event) => onChange({ ...value, search: event.target.value })}
           placeholder="Search area…"
           type="text"

@@ -26,6 +26,7 @@ import type {
   HiringDocumentFile,
 } from "@/lib/hiring-documents/types";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   canManage: boolean;
@@ -60,8 +61,7 @@ const scanModeOptions = [
 ] as const;
 
 const panelLabelClassName = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft";
-const selectClassName =
-  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
+const selectClassName  = phxSelectClassName;
 
 function formatSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

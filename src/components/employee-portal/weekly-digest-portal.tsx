@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import type { DeductionMethod, MyDigest, MyDigestLine } from "@/lib/attendance/digest-service.ts";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 // House rules this component is built to, not decorated with:
 //   • Square edges everywhere — owner rule 2026-09-04. No rounded-* classes.
@@ -276,7 +277,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                           What actually happened?
                         </label>
                         <textarea
-                          className="mt-2 w-full border border-slate-300 bg-white p-2 text-sm text-slate-800"
+                          className={`${phxTextareaClassName} mt-2`}
                           dir="auto"
                           id={`reason-${line.id}`}
                           onChange={(event) => setDraft({ ...lineDraft, reason: event.target.value })}

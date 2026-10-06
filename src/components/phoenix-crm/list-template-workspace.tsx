@@ -33,8 +33,7 @@ type ImportResult = {
   refused: Array<{ row: number; reason: string }>;
 };
 
-const CONTROL =
-  "h-10 w-full rounded-none border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-500";
+const CONTROL = "w-full px-3";
 const BUTTON =
   "inline-flex h-10 items-center justify-center gap-2 rounded-none border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50";
 

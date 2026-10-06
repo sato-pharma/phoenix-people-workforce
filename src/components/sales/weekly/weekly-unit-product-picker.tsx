@@ -43,11 +43,7 @@ export function WeeklyUnitProductPicker({
         <div className="w-72 max-w-full">
           <SearchableSelect
             aria-label="Product whose units are shown"
-            className={`h-8 rounded-none border bg-white px-2 text-sm font-bold outline-none ${
-              admin
-                ? "border-phx-line text-phx-ink focus:border-phx-accent-line"
-                : "border-slate-200 text-slate-900 focus:border-orange-400"
-            }`}
+            className="h-8 px-2"
             onChange={(event) => onChange(event.target.value)}
             value={value}
             wrapValue

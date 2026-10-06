@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { MonthlyAttendanceSummaryData } from "@/lib/attendance/monthly-summary";
 import { attendanceMonthlyCycleNote } from "@/lib/attendance/monthly-summary-note";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   initialData: MonthlyAttendanceSummaryData | null;
@@ -104,7 +105,7 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Month</span>
             <input
-              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               type="month"
               value={selectedMonth}
               onChange={(event) => setSelectedMonth(event.target.value)}

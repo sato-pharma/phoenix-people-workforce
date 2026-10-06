@@ -30,6 +30,8 @@
 import type { AppliedReviewFilter, ReviewFilterChoices } from "@/lib/business-review/scope-filter";
 
 import { hiddenEntries, type HiddenFields } from "./hidden-fields";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type Props = {
   /** Where the form submits — the page's own path. */
@@ -55,9 +57,7 @@ type Props = {
   hideLine?: boolean;
 };
 
-const FIELD =
-  "h-9 rounded-lg border border-border bg-card px-2 text-sm font-semibold text-foreground " +
-  "outline-none focus:border-primary";
+const FIELD = cn(phxSelectClassName, "h-9 px-2");
 
 const LABEL = "flex items-center gap-1.5 text-sm font-medium text-muted-foreground";
 
@@ -65,9 +65,7 @@ const LABEL = "flex items-center gap-1.5 text-sm font-medium text-muted-foregrou
 // submits one `region=`/`area=` param per chosen option, which the server reads with `getAll`. It is
 // top-aligned (the list has height) and keeps square edges like every other control here.
 const MULTI_LABEL = "flex min-w-0 items-start gap-1.5 text-sm font-medium text-muted-foreground";
-const MULTI_FIELD =
-  "min-w-[9rem] max-w-full rounded-lg border border-border bg-card px-2 py-1 text-sm font-semibold " +
-  "text-foreground outline-none focus:border-primary";
+const MULTI_FIELD = cn(phxSelectClassName, "min-w-[9rem] max-w-full px-2 py-1");
 const multiSize = (n: number) => Math.min(Math.max(n, 2), 6);
 
 export function ReviewScopeFilter({ action, applied, choices, dropped = [], hidden, hideLine = false, metrics }: Props) {

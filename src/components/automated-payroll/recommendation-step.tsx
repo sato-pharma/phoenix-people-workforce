@@ -34,6 +34,7 @@ import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
 import { CardSection, SectionHeading } from "./section-shell";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   runId: string;
@@ -134,8 +135,7 @@ function SettlementSummaryBlock({ definition, row }: { definition: StepDefinitio
 }
 
 /** Shared premium field recipe (see [[premium-design-language]]) — orange focus ring, dense height. */
-const fieldClassName =
-  "h-9 border-slate-300 bg-white text-sm transition focus-visible:border-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/20";
+const fieldClassName = cn(phxSelectClassName, "h-9");
 
 /**
  * "Add employee" for a step that `allowsManualRows` — outstation expenses today

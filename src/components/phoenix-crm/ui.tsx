@@ -19,16 +19,20 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { countText, type Tone } from "@/components/phoenix-crm/format";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 import { useCrmComboBoxes } from "@/components/phoenix-crm/surface";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 export const crmPanelClassName = "rounded-none border border-slate-200/90 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.07)]";
 
 export const crmInputClassName =
-  "h-11 w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition placeholder:font-medium placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:bg-slate-50 disabled:text-slate-400";
+  `${phxFieldClassName} min-w-0`;
 
 export const crmSelectClassName = crmInputClassName;
 
 export const crmTextareaClassName =
-  "min-h-24 w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:bg-slate-50";
+  cn(phxTextareaClassName, "min-h-24 min-w-0 leading-6");
 
 export function CrmPanel({
   actions,

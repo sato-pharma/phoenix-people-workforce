@@ -39,6 +39,10 @@ import type {
 } from "@/lib/coaching/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 
 type CoachingEmployeeOption = {
@@ -393,7 +397,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               <label className="block">
                 <FieldLabel required>Medical Rep</FieldLabel>
                 <SearchableSelect
-                  className="h-12 w-full rounded-md border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                  className="w-full px-3"
                   onChange={(event) => setSelectedHrId(event.target.value)}
                   value={selectedHrId}
                 >
@@ -421,7 +425,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               <div className="relative">
                 <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                 <input
-                  className="h-12 w-full rounded-md border border-phx-line bg-white pl-10 pr-3 text-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                  className={cn(phxFieldClassName, "pl-10")}
                   max={todayIsoDate()}
                   onChange={(event) => setCoachingDate(event.target.value)}
                   type="date"
@@ -498,7 +502,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                             Area to be Improved
                           </span>
                           <textarea
-                            className="min-h-20 w-full rounded-md border border-phx-line bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-phx-ink outline-none transition placeholder:text-phx-ink-faint focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                            className={cn(phxTextareaClassName, "min-h-20 leading-5")}
                             onChange={(event) => updateScoreNote(item.key, "areaToBeImproved", event.target.value)}
                             placeholder="What should be improved for this point?"
                             value={scoreNotes[item.key]?.areaToBeImproved ?? ""}
@@ -509,7 +513,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                             Strength Point
                           </span>
                           <textarea
-                            className="min-h-20 w-full rounded-md border border-phx-line bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-phx-ink outline-none transition placeholder:text-phx-ink-faint focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                            className={cn(phxTextareaClassName, "min-h-20 leading-5")}
                             onChange={(event) => updateScoreNote(item.key, "strengthPoint", event.target.value)}
                             placeholder="What was strong in this point?"
                             value={scoreNotes[item.key]?.strengthPoint ?? ""}
@@ -538,7 +542,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               <label className="block" key={label as string}>
                 <FieldLabel required>{label as string}</FieldLabel>
                 <textarea
-                  className="min-h-28 w-full rounded-md border border-phx-line bg-white px-4 py-3 text-sm font-semibold leading-6 text-phx-ink outline-none transition placeholder:text-phx-ink-faint focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                  className={cn(phxTextareaClassName, "min-h-28 leading-6")}
                   onChange={(event) => (setValue as React.Dispatch<React.SetStateAction<string>>)(event.target.value)}
                   placeholder={`Write ${String(label).toLowerCase()}...`}
                   value={value as string}

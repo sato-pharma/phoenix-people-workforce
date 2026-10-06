@@ -48,6 +48,7 @@ import type {
   RepWeeklyWeek,
 } from "@/lib/sales/weekly/portal-weekly-rep";
 import { WEEKLY_UNITS_UNDER_ONE, weeklyUnitsUnderOne } from "@/lib/sales/weekly/unit-totals";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type RepTab = "month" | "detail";
 
@@ -152,7 +153,7 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
               value={data.month?.code ?? ""}
               onChange={(event) => goToMonth(event.target.value)}
               disabled={isPending || data.months.length === 0}
-              className="min-h-10 border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-800 outline-none transition focus:border-orange-300 disabled:opacity-60 md:min-h-0"
+              className={phxFieldClassName}
             >
               {data.months.map((month) => (
                 <option key={month.code} value={month.code}>

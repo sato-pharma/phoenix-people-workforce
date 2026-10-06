@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { StuckApprovalManagerOption } from "@/lib/approvals-hub/service";
 import type { WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import type { ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type StuckApprovalsPanelProps = {
   weeklyPlans: WeeklyPlanManagerGapRecord[];
@@ -72,7 +73,7 @@ function ReassignRow(props: {
               value={newManagerHrId}
               onChange={(e) => setNewManagerHrId(e.target.value)}
               disabled={busy}
-              className="max-w-[220px] border border-slate-300 px-2 py-1.5 text-sm focus:border-orange-500 focus:outline-none"
+              className={`${phxSelectClassName} max-w-[220px]`}
             >
               <option value="">Select new manager…</option>
               {props.managerOptions.map((option) => (

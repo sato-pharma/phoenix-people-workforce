@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import { Card } from "@/components/ui/card";
 import type { AccountActivationRow } from "@/lib/recruitment/account-activation";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type AccountActivationWorkspaceProps = {
   initialUsers: AccountActivationRow[];
@@ -57,7 +58,7 @@ export function AccountActivationWorkspace({ initialUsers }: AccountActivationWo
           Search
         </label>
         <input
-          className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+          className={phxFieldClassName}
           id="account-activation-search"
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search by login, name, or role..."

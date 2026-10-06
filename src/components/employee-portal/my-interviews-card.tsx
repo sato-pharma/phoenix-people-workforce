@@ -13,6 +13,7 @@ import { useState } from "react";
 import type { PortalMyInterview } from "@/lib/employee-portal/home-snapshot";
 import { PLATFORM_LABEL } from "@/lib/recruitment/interview-calendar-types";
 import { formatDayLong, formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 export function MyInterviewsCard({ interviews }: { interviews: PortalMyInterview[] }) {
   const [feedUrl, setFeedUrl] = useState<string | null>(null);
@@ -88,7 +89,7 @@ export function MyInterviewsCard({ interviews }: { interviews: PortalMyInterview
             <div className="flex flex-wrap items-center gap-2">
               <input
                 aria-label="Your calendar subscription link"
-                className="min-w-0 flex-1 border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700 focus:border-orange-500 focus:outline-none"
+                className={`${phxFieldClassName} min-w-0 flex-1`}
                 readOnly
                 value={feedUrl}
                 onFocus={(event) => event.currentTarget.select()}

@@ -879,7 +879,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
       <div className="flex flex-wrap items-center gap-1 border-b border-phx-line bg-phx-paper px-3 py-2">
         <SearchableSelect
           aria-label="Font"
-          className="h-8 max-w-[110px] border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
+          className="h-8 max-w-[110px] px-1 text-xs"
           defaultValue="Arial"
           onChange={(event) => runCommand("fontName", event.target.value)}
           title="Font (Tahoma and Segoe UI render Arabic best)"
@@ -894,7 +894,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </SearchableSelect>
         <SearchableSelect
           aria-label="Font size"
-          className="h-8 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
+          className="h-8 px-1 text-xs"
           defaultValue="3"
           onChange={(event) => {
             runCommand("fontSize", event.target.value);
@@ -909,7 +909,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </SearchableSelect>
         <SearchableSelect
           aria-label="Heading"
-          className="h-8 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
+          className="h-8 px-1 text-xs"
           defaultValue=""
           onChange={(event) => {
             const value = event.target.value;
@@ -926,7 +926,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </SearchableSelect>
         <SearchableSelect
           aria-label="Line spacing"
-          className="h-8 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
+          className="h-8 px-1 text-xs"
           defaultValue=""
           onChange={(event) => {
             const value = event.target.value;
@@ -945,7 +945,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </SearchableSelect>
         <SearchableSelect
           aria-label="Letter spacing"
-          className="h-8 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
+          className="h-8 px-1 text-xs"
           defaultValue=""
           onChange={(event) => {
             const value = event.target.value;

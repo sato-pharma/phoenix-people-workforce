@@ -22,6 +22,8 @@ import {
   type PlanKind,
 } from "@/lib/crm/plan-verification";
 import type { PlanEntryRow, PlanMissingRep, PlanSummary } from "@/lib/crm/plan-board";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Client half of Plan Verification. Styling copies reps-list-tables.tsx verbatim — flat borders,
 // slate-900 header rows, orange accent — because that board sits beside this one in the same shell
@@ -35,8 +37,7 @@ import type { PlanEntryRow, PlanMissingRep, PlanSummary } from "@/lib/crm/plan-b
 // customer's CRM, so what a viewer may act on has to be a server decision every time.
 
 const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
-const SELECT_CLASS =
-  "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
+const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2");
 const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
 
 function gradeClass(grade: string | null): string {

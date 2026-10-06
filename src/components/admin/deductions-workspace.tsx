@@ -18,6 +18,11 @@ import {
 } from "@/lib/deductions/types.ts";
 import { cairoDate, stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type CandidateApiRow = {
   id: string;
@@ -401,7 +406,7 @@ function DeductionDaysEditor({
             {row.unit === "days" ? "Deduction quantity (days)" : "Deduction amount (EGP)"}
           </span>
           <input
-            className="w-32 border border-slate-300 bg-white px-2 py-1 text-sm font-black tabular-nums text-slate-900 focus:border-orange-400 focus:outline-none"
+            className={cn(phxFieldClassName, "w-32 tabular-nums")}
             inputMode="decimal"
             min={0}
             onChange={(event) => {
@@ -624,7 +629,7 @@ function CandidateDecideRow({
       {open ? (
         <div className="space-y-1.5 rounded-sm border border-slate-200 bg-slate-50 p-2">
           <input
-            className="w-full rounded-sm border border-slate-200 px-2 py-1 text-xs text-slate-900 focus:border-orange-400 focus:outline-none"
+            className={phxFieldClassName}
             onChange={(event) => setReason(event.target.value)}
             placeholder="Decision reason"
             value={reason}
@@ -978,7 +983,7 @@ function AddManualDeduction({
             Employee
           </span>
           <input
-            className="w-72 border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+            className={cn(phxFieldClassName, "w-72")}
             onChange={(event) => {
               setQuery(event.target.value);
               setPicked(null);
@@ -1017,7 +1022,7 @@ function AddManualDeduction({
             Deduct by
           </span>
           <select
-            className="border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+            className={phxSelectClassName}
             onChange={(event) => setUnit(event.target.value === "amount" ? "amount" : "days")}
             value={unit}
           >
@@ -1031,7 +1036,7 @@ function AddManualDeduction({
             {unit === "days" ? "Days" : "Amount"}
           </span>
           <input
-            className="w-28 border border-slate-300 bg-white px-2 py-1 text-sm font-black tabular-nums text-slate-900 focus:border-orange-400 focus:outline-none"
+            className={cn(phxFieldClassName, "w-28 tabular-nums")}
             inputMode="decimal"
             min={0}
             onChange={(event) => setValue(event.target.value)}
@@ -1057,7 +1062,7 @@ function AddManualDeduction({
             Reason
           </span>
           <input
-            className="w-full border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-orange-400 focus:outline-none"
+            className={phxFieldClassName}
             onChange={(event) => setReason(event.target.value)}
             placeholder="Why is this being deducted?"
             value={reason}
@@ -1564,7 +1569,7 @@ function ByEmployeeTab({ monthKey }: { monthKey: string }) {
       <label className="flex max-w-sm items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
         Employee HR_ID
         <input
-          className="w-full rounded-sm border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+          className={phxFieldClassName}
           onChange={(event) => setEmployeeHrId(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") setQuery(employeeHrId);
@@ -1771,7 +1776,7 @@ function LeaverSettlementPanel({ monthKey }: { monthKey: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
           <input
-            className="w-72 border border-amber-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-amber-500"
+            className={cn(phxFieldClassName, "w-72")}
             onChange={(event) => {
               setPicked(null);
               setQuery(event.target.value);
@@ -1930,7 +1935,7 @@ function MasterExportBar({ monthKey }: { monthKey: string }) {
       <label className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
         Line
         <select
-          className="border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+          className={phxSelectClassName}
           disabled={loading || Boolean(error)}
           onChange={(event) => setLine(event.target.value)}
           value={line}
@@ -1947,7 +1952,7 @@ function MasterExportBar({ monthKey }: { monthKey: string }) {
       <label className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
         Region
         <select
-          className="border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+          className={phxSelectClassName}
           disabled={loading || Boolean(error)}
           onChange={(event) => setRegion(event.target.value)}
           value={region}
@@ -2223,7 +2228,7 @@ function DisputesTab({ canReply, highlightCandidateId }: { canReply: boolean; hi
               <>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                   <input
-                    className="h-10 flex-1 rounded-sm border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                    className={cn(phxFieldClassName, "w-auto flex-1 font-semibold")}
                     maxLength={2000}
                     placeholder="Reply to the employee"
                     value={replyDrafts[thread.candidateId] ?? ""}
@@ -2375,7 +2380,7 @@ export function DeductionsWorkspace({
         <label className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
           Month
           <input
-            className="rounded-sm border border-slate-200 px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+            className={phxFieldClassName}
             onChange={(event) => setMonthKey(event.target.value)}
             type="month"
             value={monthKey}

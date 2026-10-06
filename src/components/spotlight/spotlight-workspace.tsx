@@ -13,6 +13,8 @@ import type {
   SpotlightWindow,
   SpotlightWindowKind,
 } from "@/lib/spotlight/types";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * Spotlight — the picker.
@@ -73,9 +75,7 @@ type Props = {
   windows: Record<SpotlightWindowKind, SpotlightWindow[]>;
 };
 
-const FIELD =
-  "w-full rounded-none border border-slate-300 bg-white px-3 py-2 text-[13px] text-slate-900"
-  + " focus:border-sky-700 focus:outline-none";
+const FIELD = cn(phxSelectClassName, "w-full px-3 py-2 text-[13px]");
 const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500";
 const CARD = "rounded-none border border-slate-200 bg-white p-4";
 

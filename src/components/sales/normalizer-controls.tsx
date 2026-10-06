@@ -4,6 +4,7 @@ import { Check, ClipboardPaste, Copy } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // The three controls the mapping tables are built from, shared by the MONTHLY (Source Normalizer)
 // and WEEKLY workspaces. They live here rather than inside one workspace so the two surfaces cannot
@@ -38,7 +39,7 @@ export function ComboBox({ className, disabled, onChange, options, placeholder, 
   return (
     <div className={cn("relative min-w-[240px]", className)}>
       <input
-        className="h-9 w-full border border-slate-300 bg-white px-2 pr-8 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50 disabled:text-slate-400"
+        className={cn(phxFieldClassName, "pr-8")}
         disabled={disabled}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}

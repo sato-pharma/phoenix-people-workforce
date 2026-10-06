@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 
 import type { InvoiceExtractionResult } from "@/lib/direct-orders/invoice-extraction";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 export type InvoiceApplyPayload = {
   productCode: string;
@@ -307,7 +309,7 @@ export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props)
                           value={qty}
                           placeholder={line.read.qty == null ? "not read — type it" : undefined}
                           onChange={(event) => setField(index, "qty", event.target.value, line.read)}
-                          className="mt-0.5 w-28 border border-phx-line px-2 py-1 text-sm font-semibold text-slate-900"
+                          className={cn(phxFieldClassName, "mt-0.5 w-28")}
                         />
                       </label>
                       <label className="block">
@@ -320,7 +322,7 @@ export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props)
                           min={0}
                           value={bonus}
                           onChange={(event) => setField(index, "bonus", event.target.value, line.read)}
-                          className="mt-0.5 w-24 border border-phx-line px-2 py-1 text-sm font-semibold text-slate-900"
+                          className={cn(phxFieldClassName, "mt-0.5 w-24")}
                         />
                       </label>
                       {line.product ? (

@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import { MODULE_META } from "@/lib/admin/data-backup";
 import { RESET_GROUPS, type ResetScope, type ResetTableResult } from "@/lib/admin/data-reset";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const REQUIRED_CONFIRMATION = "CONFIRM DELETE";
 
@@ -113,7 +115,7 @@ export function DataBackupResetSection() {
                     </p>
                     <input
                       autoFocus
-                      className="w-full border border-slate-300 px-2 py-1.5 font-mono text-xs focus:border-red-400 focus:outline-none"
+                      className={cn(phxFieldClassName, "font-mono")}
                       onChange={(e) => setConfirmText(e.target.value)}
                       placeholder={REQUIRED_CONFIRMATION}
                       type="text"
@@ -167,7 +169,7 @@ export function DataBackupResetSection() {
             </p>
             <input
               autoFocus
-              className="w-full border border-slate-300 px-2 py-1.5 font-mono text-xs focus:border-red-400 focus:outline-none"
+              className={cn(phxFieldClassName, "font-mono")}
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={REQUIRED_CONFIRMATION}
               type="text"

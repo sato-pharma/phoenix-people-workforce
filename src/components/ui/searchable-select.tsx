@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { Check, Search } from "lucide-react";
 
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
 const emptySubscribe = () => () => {};
@@ -353,7 +354,13 @@ export function SearchableSelect({
   // A caller passing its own `px-*` still wins here, because `cn` is tailwind-merge and `px`
   // conflicts with `pr`. That is the correct precedence — a caller asking for specific horizontal
   // padding gets it — and it only means that screen keeps the old behaviour, never that it breaks.
-  const baseInputClassName = "h-9 w-full rounded-[6px] border border-phx-line bg-white px-3 pr-9 text-sm font-medium text-phx-ink outline-none transition disabled:opacity-50";
+  //
+  // The skin itself is the SHARED select token (`@/components/ui/form-tokens`) plus this
+  // component's own `pr-9`. Before the 2026-10-06 sweep this line was a sixth look of its
+  // own — h-9, `border-phx-line`, and a `rounded-[6px]` the employee portal does not reset
+  // — which made every one of this component's call sites a square-edge breach outside the
+  // admin shell.
+  const baseInputClassName = cn(phxSelectClassName, "pr-9");
 
   // wrapValue: an <input> can only ever paint one line, so a value wider than its field was clipped
   // — measured on the Weekly Plan table, 2026-09-14, where "Marketing Double Visit" read as
@@ -444,7 +451,7 @@ export function SearchableSelect({
               // (useDismissOnOutsideInteraction) would read a press on an option as "outside" and
               // close the menu. The marker tells it this list belongs to the menu.
               data-floating-layer=""
-              className="fixed z-[1000] max-h-64 w-max overflow-x-hidden overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
+              className="fixed z-[1000] max-h-64 w-max overflow-x-hidden overflow-y-auto border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
               id={`${id ?? "searchable-select"}-options`}
               style={{
                 top: menuRect.top,

@@ -247,6 +247,9 @@ export function NavRowAddButton({
                   aria-label="Filter pages"
                   autoFocus
                   className={cn(
+                    // Deliberately chromeless: this filter sits INSIDE the nav menu,
+                    // which renders dark, so the shared field token's white ground
+                    // would punch a light box through it.
                     "w-full rounded-lg border bg-transparent py-1.5 pl-7 pr-2 text-[13px] font-semibold outline-none",
                     dark
                       ? "border-[#1a1a1a] placeholder:text-[#5A6B80] focus:border-[#F8B56B]"

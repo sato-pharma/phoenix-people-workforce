@@ -35,6 +35,10 @@ import {
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -1416,7 +1420,7 @@ export function PrivateCalendar({
                 If something here doesn&apos;t look right, let us know what actually happened and where a Super Admin can check.
               </p>
               <textarea
-                className="mt-3 w-full rounded-sm border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none"
+                className={`${phxTextareaClassName} mt-3`}
                 onChange={(event) => setDisputeClaimText(event.target.value)}
                 placeholder="What actually happened this day..."
                 rows={3}
@@ -1430,7 +1434,7 @@ export function PrivateCalendar({
               />
               {disputeSourceOptions.length > 0 ? (
                 <input
-                  className="mt-2 w-full rounded-sm border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none"
+                  className={`${phxFieldClassName} mt-2`}
                   onChange={(event) => setDisputeSourceDetail(event.target.value)}
                   placeholder={disputeSourceOptions.includes("Other") ? "Describe the source" : "Additional details (optional)"}
                   type="text"

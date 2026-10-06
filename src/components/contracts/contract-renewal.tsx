@@ -35,6 +35,7 @@ import { daysUntilLifecycleDate, summarizeContractRenewalRows } from "@/lib/life
 import type { ContractRenewalDashboardData, ContractRow } from "@/lib/contracts/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 
 type Props = {
@@ -53,8 +54,7 @@ const DUE_WINDOW_70_DAYS = 70;
 const ALL = "__all__";
 const today = new Date();
 
-const selectClassName =
-  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition focus:border-phx-ink-faint focus:ring-2 focus:ring-phx-line-strong/40";
+const selectClassName  = phxSelectClassName;
 
 const panelClassName =
   "rounded-[20px] border border-slate-200/80 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)]";
@@ -363,7 +363,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             <span className="sr-only">Search renewals</span>
             <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-phx-ink-soft" />
             <Input
-              className="h-10 rounded-xl border-phx-line bg-white/95 pl-9 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+              className="pl-9"
               placeholder="Search name or HR ID"
               value={search}
               onChange={(event) => setSearch(event.target.value)}

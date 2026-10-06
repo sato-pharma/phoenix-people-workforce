@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { DirectOrderCapRow } from "@/lib/direct-orders/caps";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type ProductOption = {
   productCode: string;
@@ -86,7 +91,7 @@ export function DirectOrderCapsManager({
     }
   }
 
-  const inputClass = "w-24 border border-slate-300 px-2 py-1 text-sm";
+  const inputClass = cn(phxFieldClassName, "w-24");
   const productName = (code: string) => products.find((p) => p.productCode === code)?.productName ?? code;
   const filter = productFilter.trim().toLowerCase();
   const visibleProducts = filter
@@ -164,7 +169,7 @@ export function DirectOrderCapsManager({
           <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
             <label className="text-sm">
               <span className="block text-phx-xs font-bold text-slate-500">Product</span>
-              <select className="border border-slate-300 px-2 py-1 text-sm" value={ovProduct} onChange={(e) => setOvProduct(e.target.value)}>
+              <select className={phxSelectClassName} value={ovProduct} onChange={(e) => setOvProduct(e.target.value)}>
                 <option value="">Select…</option>
                 {products.map((p) => <option key={p.productCode} value={p.productCode}>{p.productName}</option>)}
               </select>
@@ -195,7 +200,7 @@ export function DirectOrderCapsManager({
           <label className="text-sm">
             <span className="block text-phx-xs font-bold text-slate-500">Find a product</span>
             <input
-              className="w-56 border border-slate-300 px-2 py-1 text-sm"
+              className={cn(phxFieldClassName, "w-56")}
               value={productFilter}
               onChange={(e) => setProductFilter(e.target.value)}
               placeholder="Name or code…"

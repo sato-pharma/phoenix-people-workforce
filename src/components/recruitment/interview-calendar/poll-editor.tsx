@@ -19,6 +19,10 @@ import {
 
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, PanelHeading } from "./calendar-dialog";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 type DraftQuestion = { name: string; type: InterviewPollQuestionType; answers: string[] };
 
@@ -26,7 +30,7 @@ function blankQuestion(): DraftQuestion {
   return { answers: ["", ""], name: "", type: "single" };
 }
 
-const inputClass = "block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none";
+const inputClass = `${phxFieldClassName} block`;
 
 export function PollEditor({
   busy,
@@ -106,7 +110,7 @@ export function PollEditor({
             />
             <select
               aria-label={`Kind of answer for question ${index + 1}`}
-              className="mt-2 h-9 w-full border border-slate-200 bg-white px-2 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none"
+              className={`${phxSelectClassName} mt-2`}
               onChange={(event) => {
                 const type = event.target.value as InterviewPollQuestionType;
                 change(index, { answers: type === "short_answer" ? [] : question.answers.length >= 2 ? question.answers : ["", ""], type });

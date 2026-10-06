@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 
 import { formatByteSize, formatWindowLeft, isWindowClosingSoon } from "./inbox-format";
 import { InboxTemplateForm, type TemplateSendInput } from "./inbox-template-form";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /** Meta's ceilings, repeated here only so the box refuses before the upload rather than after. */
 const TEXT_MAX_LENGTH = 4096;
@@ -167,7 +168,7 @@ export function InboxComposer({
           ) : null}
           {fileProblem ? <p className="text-[12px] leading-snug text-phx-danger">{fileProblem}</p> : null}
           <textarea
-            className="w-full resize-y border border-slate-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] outline-none placeholder:text-slate-400 focus:border-orange-300 focus:shadow-[inset_0_1px_2px_rgba(15,23,42,0.06),0_0_0_3px_rgba(249,115,22,0.12)]"
+            className={`${phxTextareaClassName} leading-relaxed`}
             dir="auto"
             disabled={busy}
             maxLength={file ? CAPTION_MAX_LENGTH : TEXT_MAX_LENGTH}

@@ -12,6 +12,8 @@ import {
   type PhoenixTeamStartsPanelData,
 } from "@/lib/crm/phoenix-team-starts";
 import { vendorLeftoverNote, VENDOR_LEFTOVER_TITLE } from "@/lib/phoenix-crm/vendor-leftovers";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * Which teams every screen outside Phoenix CRM counts from Phoenix CRM — and the ONE place a team is
@@ -31,8 +33,7 @@ const BUTTON =
   "inline-flex h-9 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-50";
 const CONFIRM_BUTTON =
   "inline-flex h-9 items-center gap-2 border border-orange-600 bg-orange-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-orange-700 disabled:opacity-50";
-const SELECT =
-  "h-9 min-w-0 max-w-full border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800 focus:border-orange-400 focus:outline-none";
+const SELECT = cn(phxSelectClassName, "h-9 min-w-0 max-w-full px-2 text-xs");
 
 const FAILED = "The team could not be changed. Reload the page and try again.";
 

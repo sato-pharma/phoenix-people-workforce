@@ -13,6 +13,10 @@ import {
   type PharmacyMatchMember,
 } from "@/lib/pharmacy-master/pharmacy-matching";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 type CandidatesResponse = {
   candidates: PharmacyMatchCandidateGroup[];
@@ -176,7 +180,7 @@ export function PharmacyMasterWorkspace() {
                 <select
                   value={confidenceFilter}
                   onChange={(event) => setConfidenceFilter(event.target.value as "all" | PharmacyMatchConfidence)}
-                  className="h-8 rounded-[5px] border border-phx-line px-2 text-phx-sm font-bold text-phx-ink"
+                  className={phxSelectClassName}
                 >
                   <option value="all">All</option>
                   <option value="high">High</option>
@@ -189,7 +193,7 @@ export function PharmacyMasterWorkspace() {
                 <select
                   value={distributorFilter}
                   onChange={(event) => setDistributorFilter(event.target.value)}
-                  className="h-8 rounded-[5px] border border-phx-line px-2 text-phx-sm font-bold text-phx-ink"
+                  className={phxSelectClassName}
                 >
                   <option value="">All distributors</option>
                   {data.distributors.map((distributor) => (
@@ -206,7 +210,7 @@ export function PharmacyMasterWorkspace() {
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Pharmacy name or code…"
-                    className="h-8 rounded-[5px] border border-phx-line pl-7 pr-2 text-phx-sm font-semibold text-phx-ink"
+                    className={cn(phxFieldClassName, "pl-7")}
                   />
                 </span>
               </label>

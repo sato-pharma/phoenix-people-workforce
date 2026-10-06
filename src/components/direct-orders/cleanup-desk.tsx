@@ -10,6 +10,7 @@ import type {
   DirectOrderCleanupRequestSummary,
 } from "@/lib/direct-orders/service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type Props = { plan: DirectOrderCleanupPlan };
 
@@ -508,7 +509,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
             onChange={(event) => setReason(event.target.value)}
             rows={2}
             placeholder="Reviewed the pairs against the distributor master — same venue, same order."
-            className="mt-1 w-full border border-phx-line px-2 py-1.5 text-sm"
+            className={`${phxTextareaClassName} mt-1`}
           />
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <button

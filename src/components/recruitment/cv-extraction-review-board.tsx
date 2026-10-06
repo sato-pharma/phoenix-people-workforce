@@ -50,6 +50,10 @@ import {
   type CvPositionSchema,
   type CvSubFieldDefinition,
 } from "@/lib/recruitment/cv-field-schemas";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 const POOL_ID = "__pool__";
 
@@ -103,7 +107,7 @@ function Chip({ chip, isEditing, onEdit, onCommitEdit }: {
     return (
       <input
         autoFocus
-        className="w-full rounded-md border border-orange-300 bg-white px-2 py-1 text-sm outline-none"
+        className={phxFieldClassName}
         defaultValue={chip.value}
         onBlur={(event) => onCommitEdit(chip.key, event.target.value)}
         onKeyDown={(event) => {
@@ -453,7 +457,7 @@ export function CvExtractionReviewBoard({
                 <div key={field.key}>
                   <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
                   <select
-                    className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+                    className={phxSelectClassName}
                     onChange={(event) =>
                       setBooleanValues((prev) => ({ ...prev, [field.key]: event.target.value as "" | "true" | "false" }))
                     }

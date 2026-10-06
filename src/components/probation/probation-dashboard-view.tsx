@@ -10,6 +10,10 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import type { DashboardRow, ProbationDashboard } from "@/lib/probation/intelligence/dashboard";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // CEO exception dashboard: exception-first table of active probation cases with filters, search,
 // and sorting. Risk is shown as colour + TEXT LABEL (accessibility). Each row links to the live
@@ -131,9 +135,9 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search employee, line, manager…"
-          className="h-9 min-w-[220px] flex-1 rounded border border-slate-200 px-3 text-sm"
+          className={`${phxFieldClassName} min-w-[220px] flex-1`}
         />
-        <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-9 rounded border border-slate-200 px-2 text-sm">
+        <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={phxSelectClassName}>
           <option value="risk">Sort: Risk</option>
           <option value="daysRemaining">Sort: Days remaining</option>
           <option value="score">Sort: Score</option>

@@ -54,8 +54,9 @@ import type { MasterImportResult } from "@/lib/sales/master-data/import-service"
 import { buildCustomerMapNameIndex } from "@/lib/sales/master-data/customer-map-names";
 import { masterRowLayout } from "@/lib/sales/master-data/row-layout";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
-const fieldInputClass = "h-9 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line";
+const fieldInputClass = phxFieldClassName;
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

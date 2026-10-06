@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import type { SalesDistributorOption } from "@/lib/sales/monthly-distributor-import";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 
 type Props = {
@@ -815,7 +816,7 @@ function MappingCombobox({
       <input
         ref={inputRef}
         disabled={disabled}
-        className="h-9 w-full rounded-lg border border-phx-line px-2 text-sm focus:border-phx-accent-line focus:outline-none"
+        className={phxFieldClassName}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { setSearchQuery(e.target.value); onChange(e.target.value); openDropdown(); }}
         onFocus={() => { setSearchQuery(""); openDropdown(); }}
@@ -934,7 +935,7 @@ function UnknownTable({
   );
 }
 
-const fieldInputClass = "h-9 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line";
+const fieldInputClass = phxFieldClassName;
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -1303,7 +1304,7 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
       <Card className={cn(panelClassName, "flex flex-wrap items-center gap-3 p-4")}>
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-phx-ink-soft">Distributor</span>
         <SearchableSelect
-          className="h-10 rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+          className="px-3.5"
           onChange={(event) => onDistributorChange(event.target.value)}
           value={distributorCode}
         >

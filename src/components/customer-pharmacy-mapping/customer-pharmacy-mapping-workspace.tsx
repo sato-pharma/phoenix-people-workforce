@@ -17,6 +17,10 @@ import type {
   CustomerPharmacyValidationStatus,
 } from "@/lib/customer-pharmacy-mapping/readiness";
 import { cn } from "@/lib/utils";
+import {
+  phxSelectClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 // This component is intentionally standalone. It shares no state, props, or rendering with the
 // Customer Validation workspace (`marketing-validation-workspace.tsx`) and talks only to the
@@ -252,7 +256,7 @@ export function CustomerPharmacyMappingWorkspace() {
             value={bucketFilter}
             onChange={(event) => setBucketFilter(event.target.value as BucketFilter)}
             aria-label="Filter by readiness bucket"
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text"
+            className={phxSelectClassName}
           >
             <option value="all">All readiness</option>
             <option value="ready">Ready</option>
@@ -263,7 +267,7 @@ export function CustomerPharmacyMappingWorkspace() {
             value={typeFilter}
             onChange={(event) => setTypeFilter(event.target.value as TypeFilter)}
             aria-label="Filter by customer type"
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text"
+            className={phxSelectClassName}
           >
             <option value="all">All types</option>
             {CUSTOMER_TYPES.map((type) => (
@@ -276,7 +280,7 @@ export function CustomerPharmacyMappingWorkspace() {
             value={linkFlagFilter}
             onChange={(event) => setLinkFlagFilter(event.target.value as LinkFlagFilter)}
             aria-label="Filter by link flags"
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text"
+            className={phxSelectClassName}
           >
             <option value="all">All links</option>
             <option value="inferred">Inferred historical links</option>
@@ -549,7 +553,7 @@ function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogPr
               value={note}
               onChange={(event) => setNote(event.target.value)}
               rows={3}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-text"
+              className={phxTextareaClassName}
               placeholder={
                 isApprove ? "Optional context for the audit trail…" : "Explain why this link is being rejected…"
               }

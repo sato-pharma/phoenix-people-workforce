@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { getJson } from "@/components/recruitment/recruitment-fetch";
 import type { InboxPersonOption } from "@/lib/whatsapp-inbox/store";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; people: InboxPersonOption[] };
 
@@ -63,7 +64,7 @@ export function InboxPeoplePicker({
         }}
       >
         <input
-          className="min-w-0 flex-1 border border-phx-line bg-white px-2 py-1.5 text-[13px] text-phx-ink outline-none focus:border-phx-accent"
+          className={`${phxFieldClassName} min-w-0 flex-1`}
           dir="auto"
           onChange={(event) => setDraft(event.target.value)}
           placeholder={candidatesOnly ? "Search candidates by name or phone" : "Search by name or phone"}

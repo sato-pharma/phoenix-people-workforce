@@ -12,6 +12,10 @@ import type {
   DoubleVisitIntegrityReport,
 } from "@/lib/double-visit-analytics/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 const ALL = "ALL";
 
@@ -225,13 +229,13 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search name or HR ID…"
-                className="h-9 w-full border border-phx-line bg-white pl-8 pr-2 text-sm text-slate-800"
+                className={cn(phxFieldClassName, "pl-8")}
               />
             </div>
             <select
               value={issueTypeFilter}
               onChange={(event) => setIssueTypeFilter(event.target.value as DoubleVisitIntegrityIssueType | typeof ALL)}
-              className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700"
+              className={phxSelectClassName}
             >
               <option value={ALL}>All issue types</option>
               {(Object.keys(ISSUE_TYPE_LABELS) as DoubleVisitIntegrityIssueType[]).map((type) => (

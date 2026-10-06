@@ -144,6 +144,8 @@ import { shownDefaultBottomNavHrefs } from "@/components/employee-portal/employe
 import { PORTAL_QUICK_ACTION_ICONS } from "@/components/employee-portal/portal-bottom-nav-widgets";
 import { portalQuickActions } from "@/lib/employee-portal/portal-quick-actions";
 import { useBottomNavPreference } from "@/components/employee-portal/use-bottom-nav-preference";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /** The default fold set: EMPTY — every section opens expanded (owner, 2026-10-03). Module-level so
  *  its identity is stable across renders, exactly as the useMemo it replaced was. */
@@ -1520,7 +1522,7 @@ export function EmployeePortalTopNav({
               aria-controls="employee-portal-search-results"
               aria-expanded={searchListOpen}
               aria-label="Search"
-              className="h-10 w-full rounded-sm border border-slate-200 bg-slate-50/90 pl-9 pr-3 text-sm font-semibold text-slate-700 shadow-inner placeholder:text-slate-400 outline-none transition focus:border-orange-300 focus:bg-white focus:ring-2 focus:ring-orange-400/15 md:pr-[76px]"
+              className={cn(phxFieldClassName, "pl-9 md:pr-[76px]")}
               onBlur={() => window.setTimeout(() => setSearchOpen(false), 120)}
               onChange={(event) => {
                 setSearchQuery(event.target.value);
@@ -1780,7 +1782,7 @@ export function EmployeePortalTopNav({
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 aria-label="Filter the menu"
-                className="h-10 w-full border border-slate-200 bg-slate-50 pl-9 pr-9 text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400 focus:border-orange-300 focus:bg-white"
+                className={cn(phxFieldClassName, "pl-9 pr-9")}
                 onChange={(event) => setDrawerFilter(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Escape" && drawerFilter) {
@@ -2112,7 +2114,7 @@ export function EmployeePortalSidebar({
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
               aria-label="Filter the sidebar"
-              className="h-9 w-full border border-slate-200 bg-slate-50 pl-8 pr-8 text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400 focus:border-orange-300 focus:bg-white"
+              className={cn(phxFieldClassName, "pl-8 pr-8")}
               onChange={(event) => setFilter(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Escape" && filter) {

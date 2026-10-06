@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AlertTriangle, Check, X } from "lucide-react";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 export type AdminPrivateCalendarDispute = {
   adminDecisionNote: string | null;
@@ -124,7 +125,7 @@ export function PrivateCalendarDisputesWorkspace({
               {decidingId === dispute.id ? (
                 <div className="mt-3 rounded-sm border border-slate-200 bg-slate-50 p-3">
                   <textarea
-                    className="w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none"
+                    className={phxTextareaClassName}
                     onChange={(event) => setNoteById((current) => ({ ...current, [dispute.id]: event.target.value }))}
                     placeholder="Decision note (required — what you found when you checked)"
                     rows={2}

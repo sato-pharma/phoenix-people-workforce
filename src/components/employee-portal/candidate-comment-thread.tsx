@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { personLabel, UNNAMED_AUTHOR_LABEL } from "@/lib/recruitment/person-labels";
 import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recruitment/types";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /**
  * What the managers above a CV have said about it.
@@ -165,7 +166,7 @@ export function CandidateCommentThread({
 
       <div className="space-y-2">
         <textarea
-          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+          className={phxTextareaClassName}
           dir="auto"
           maxLength={CANDIDATE_COMMENT_MAX_LENGTH}
           onChange={(event) => setDraft(event.target.value)}

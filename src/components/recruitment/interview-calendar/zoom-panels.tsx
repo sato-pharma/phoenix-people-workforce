@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, PanelHeading } from "./calendar-dialog";
 import { PollEditor, PollSetsDialog } from "./poll-editor";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 export type MeetingTarget = { kind: "booking" | "session"; id: string };
 
@@ -309,7 +310,7 @@ function PollsPanel({
           <div className="flex flex-wrap items-center gap-2">
             <select
               aria-label="Add a saved poll"
-              className="h-8 min-w-0 flex-1 border border-slate-200 bg-white px-2 text-[12px] text-slate-800 focus:border-orange-500 focus:outline-none"
+              className={`${phxSelectClassName} min-w-0 flex-1`}
               disabled={!sets || sets.length === 0}
               onChange={(event) => setChosenSet(event.target.value)}
               value={chosenSet}

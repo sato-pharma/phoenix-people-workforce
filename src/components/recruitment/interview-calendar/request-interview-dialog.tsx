@@ -22,6 +22,7 @@ import { CalendarDialog, ErrorLine, NoteLine, PanelHeading } from "./calendar-di
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import { CV_LIMIT_BYTES, PersonPicker, initialPersonChoice, personLabel, personProblem, type PersonChoice } from "./person-picker";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 const MAX_ITEMS = 25;
 
@@ -192,7 +193,7 @@ export function RequestInterviewDialog({
           <textarea
             aria-label="A note for HR"
             className={cn(
-              "block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none",
+              phxTextareaClassName, "block w-full",
             )}
             maxLength={1000}
             onChange={(event) => setNote(event.target.value)}

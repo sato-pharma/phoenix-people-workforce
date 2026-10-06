@@ -6,11 +6,14 @@ import { AlertTriangle, Play } from "lucide-react";
 import type { WorkflowSubflow } from "@/lib/workflow-control/definitions";
 import { simulateWorkflow, type WorkflowSimulationResult } from "@/lib/workflow-control/simulator";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxLabelTextClassName,
+} from "@/components/ui/form-tokens";
 
 
-const inputClass =
-  "w-full rounded-lg border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink outline-none focus:border-phx-accent";
-const labelClass = "text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-soft";
+const inputClass  = phxFieldClassName;
+const labelClass = phxLabelTextClassName;
 
 /**
  * Read-only workflow simulator with domain + subflow selection. Runs entirely

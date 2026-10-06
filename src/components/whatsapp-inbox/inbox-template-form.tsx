@@ -12,6 +12,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { getJson } from "@/components/recruitment/recruitment-fetch";
 import { missingTemplateFields, renderInboxTemplate, type InboxTemplate } from "@/lib/whatsapp-inbox/graph";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 type LoadState =
   | { kind: "loading" }
@@ -84,7 +88,7 @@ export function InboxTemplateForm({
         <label className="flex flex-col gap-1">
           <span className="font-bold text-phx-ink-2">Template</span>
           <select
-            className="w-full border border-phx-line bg-white px-2 py-1.5 text-[13px] text-phx-ink outline-none focus:border-phx-accent"
+            className={phxSelectClassName}
             disabled={busy}
             onChange={(event) => {
               setSelectedKey(event.target.value);
@@ -111,7 +115,7 @@ export function InboxTemplateForm({
             <label className="flex flex-col gap-1" key={field.key}>
               <span className="font-bold text-phx-ink-2">{field.label}</span>
               <input
-                className="w-full border border-phx-line bg-white px-2 py-1.5 text-[13px] text-phx-ink outline-none focus:border-phx-accent"
+                className={phxFieldClassName}
                 dir="auto"
                 disabled={busy}
                 maxLength={1024}

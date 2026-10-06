@@ -15,6 +15,7 @@ import {
   MAX_EMPLOYEE_CV_BYTES,
   employeeCvHref,
 } from "@/lib/employees/employee-cv-limits";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 /**
  * File a whole folder of CVs in one sitting.
@@ -240,7 +241,7 @@ export function EmployeeCvBulkUpload({
               ) : (
                 <select
                   aria-label={`Who is ${row.fileName}?`}
-                  className="h-8 min-w-0 max-w-full border border-phx-line bg-white px-2 text-phx-xs text-phx-ink-2"
+                  className={`${phxSelectClassName} min-w-0 max-w-full`}
                   disabled={busy || row.status === "uploading"}
                   onChange={(event) => assign(index, event.target.value)}
                   value={row.hrId ?? ""}

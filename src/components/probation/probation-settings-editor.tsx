@@ -3,6 +3,11 @@
 import { useState } from "react";
 
 import type { ProbationConfig } from "@/lib/probation/intelligence/config";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Admin editor for probation_config (Enhancement E5). Super-Admin only (page-gated). Edits the
 // requirements, role weights, scoring scale, SLA hours, scorecard dimensions, and HR toggle, then
@@ -45,7 +50,7 @@ export function ProbationSettingsEditor({ initial }: { initial: ProbationConfig 
     }
   }
 
-  const cell = "h-9 w-24 rounded border border-slate-200 px-2 text-sm";
+  const cell = cn(phxFieldClassName, "h-9 w-24 px-2");
 
   return (
     <div className="flex flex-col gap-5">
@@ -86,7 +91,7 @@ export function ProbationSettingsEditor({ initial }: { initial: ProbationConfig 
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="mb-2 text-sm font-semibold text-slate-700">Scorecard dimensions (one per line)</h2>
-        <textarea rows={8} className="w-full rounded border border-slate-200 px-3 py-2 text-sm" value={dimsText} onChange={(e) => setDimsText(e.target.value)} />
+        <textarea rows={8} className={phxTextareaClassName} value={dimsText} onChange={(e) => setDimsText(e.target.value)} />
       </section>
 
       <label className="flex items-center gap-2 text-sm text-slate-700">

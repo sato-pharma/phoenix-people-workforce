@@ -30,6 +30,8 @@ import {
   portalStackingTableClassName,
 } from "@/components/employee-portal/portal-primitives";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 type DecisionState = "pending" | "deduct" | "exempt";
@@ -214,7 +216,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">From</span>
             <input
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               type="date"
               value={dateFrom}
               onChange={(event) => setDateFrom(event.target.value)}
@@ -223,7 +225,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">To</span>
             <input
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               type="date"
               value={dateTo}
               onChange={(event) => setDateTo(event.target.value)}
@@ -234,7 +236,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                className={cn(phxFieldClassName, "pl-9")}
                 placeholder="HR_ID, name, device user, department"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -244,7 +246,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">AC-No.</span>
             <input
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               value={deviceUserId}
               onChange={(event) => setDeviceUserId(event.target.value)}
             />
@@ -252,7 +254,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Employee ID</span>
             <input
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               value={employeeHrId}
               onChange={(event) => setEmployeeHrId(event.target.value)}
             />
@@ -260,7 +262,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Name</span>
             <input
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               value={employeeName}
               onChange={(event) => setEmployeeName(event.target.value)}
             />
@@ -268,7 +270,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Job Title</span>
             <input
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               value={jobTitle}
               onChange={(event) => setJobTitle(event.target.value)}
             />
@@ -276,7 +278,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Department</span>
             <input
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               value={department}
               onChange={(event) => setDepartment(event.target.value)}
             />
@@ -284,7 +286,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Status</span>
             <SearchableSelect
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="w-full px-3"
               value={status}
               onChange={(event) => setStatus(event.target.value)}
             >
@@ -299,7 +301,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Deduction</span>
             <input
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               placeholder="days, value, action"
               value={deduction}
               onChange={(event) => setDeduction(event.target.value)}

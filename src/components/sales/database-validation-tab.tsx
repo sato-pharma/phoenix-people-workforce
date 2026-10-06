@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { customerMapNames, type CustomerMapNameIndex, type CustomerMapNames, type ResolvedName } from "@/lib/sales/master-data/customer-map-names";
 import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 
 type CustomerRow = {
@@ -23,7 +24,7 @@ type CustomerRow = {
 type ImportBlockedRow = { key: string; reason: string; row: number };
 type ImportResult = { blockedRows: ImportBlockedRow[]; inserted: number; skipped: number; totalRead: number; updated: number };
 
-const filterSelect = "h-9 rounded-lg border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
+const filterSelect = phxSelectClassName;
 const PAGE = 100;
 
 // The header grid fits by MERGING columns (fits-the-screen rule): thirteen nowrap columns ran far

@@ -21,6 +21,8 @@ import { summarizeRosterCoverage, type DvCoverageSummary } from "@/lib/double-vi
 import { entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
 import type { DoubleVisitReportRow, DoubleVisitRosterEntry } from "@/lib/double-visit-analytics/types";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Per-rep "planned date" tracker: pick the date you chose to visit a rep, see whether CRM
 // confirmed a DV on that exact day using the roster already loaded — no separate fetch. Client-only
@@ -131,7 +133,7 @@ function PeriodFilterBar({ dateFrom, dateTo }: { dateFrom: string; dateTo: strin
       <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
         From
         <input
-          className="h-9 border border-slate-200 bg-white px-2 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+          className={phxFieldClassName}
           max={to}
           onChange={(event) => setFrom(event.target.value)}
           type="date"
@@ -141,7 +143,7 @@ function PeriodFilterBar({ dateFrom, dateTo }: { dateFrom: string; dateTo: strin
       <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
         To
         <input
-          className="h-9 border border-slate-200 bg-white px-2 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+          className={phxFieldClassName}
           min={from}
           onChange={(event) => setTo(event.target.value)}
           type="date"
@@ -392,7 +394,7 @@ function RosterRow({
           <label className="flex items-center gap-2 text-phx-xs font-bold uppercase tracking-wider text-slate-500">
             Planned date
             <input
-              className="h-8 border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+              className={phxFieldClassName}
               max={dateTo}
               min={dateFrom}
               onChange={(event) => onSetPlannedDate(entry.hrId, event.target.value)}
@@ -611,7 +613,7 @@ export function DvPlannerWorkspace({
             <span className="sr-only">Search Medical Reps</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
-              className="h-11 w-full border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              className={cn(phxFieldClassName, "pl-10")}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search rep, HR ID, area, line or manager"
               type="search"

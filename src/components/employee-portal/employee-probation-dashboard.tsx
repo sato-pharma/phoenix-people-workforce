@@ -18,6 +18,10 @@ import type {
   TrafficStatus,
 } from "@/lib/probation/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxLabelTextClassName,
+} from "@/components/ui/form-tokens";
 
 
 /* ------------------------------------------------------------------ */
@@ -65,11 +69,10 @@ type ActionFormState = {
 const ALL_VALUE = "__all__";
 const PROBATION_PAGE_SIZE = 25;
 
-const inputClassName =
-  "w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
+const inputClassName  = phxFieldClassName;
 
 const labelClassName =
-  "text-phx-xs font-semibold uppercase tracking-wider text-slate-400";
+  phxLabelTextClassName;
 
 const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.08)]";
 

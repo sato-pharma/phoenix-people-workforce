@@ -13,6 +13,7 @@ import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
 import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidence";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type Props = { rows: DirectOrderValidationRow[] };
 
@@ -391,7 +392,7 @@ export function ValidationDesk({ rows }: Props) {
                       </div>
                     ) : null}
                     <textarea
-                      className="w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+                      className={phxTextareaClassName}
                       rows={2}
                       placeholder="Notes (optional)"
                       value={notes[row.id] ?? ""}

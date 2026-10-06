@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   hrId: string;
@@ -33,8 +34,7 @@ function statusBadge(status: string) {
   return <Badge variant="danger">{status}</Badge>;
 }
 
-const disputeTextareaClass =
-  "w-full border border-orange-300 bg-white px-3 py-2 text-phx-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30";
+const disputeTextareaClass  = phxTextareaClassName;
 
 export function AttendanceOverview({ hrId, initialData }: Props) {
   const [data, setData] = useState<EmployeeAttendanceData>(initialData);

@@ -178,7 +178,7 @@ function SelectField({
     <label className="block">
       <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</span>
       <SearchableSelect
-        className="mt-2 h-10 w-full rounded-xl border border-phx-line-strong bg-white px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20 disabled:cursor-not-allowed disabled:bg-phx-paper disabled:text-phx-ink-faint"
+        className="mt-2 w-full px-3 disabled:text-phx-ink-faint"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -431,7 +431,7 @@ export function CoachingReportsCenter({
             <label className="block">
               <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Date From</span>
               <Input
-                className="mt-2 rounded-xl border-phx-line-strong bg-white font-semibold"
+                className="mt-2"
                 onChange={(event) => updateFilter("dateFrom", event.target.value)}
                 type="date"
                 value={filters.dateFrom}
@@ -440,7 +440,7 @@ export function CoachingReportsCenter({
             <label className="block">
               <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Date To</span>
               <Input
-                className="mt-2 rounded-xl border-phx-line-strong bg-white font-semibold"
+                className="mt-2"
                 onChange={(event) => updateFilter("dateTo", event.target.value)}
                 type="date"
                 value={filters.dateTo}

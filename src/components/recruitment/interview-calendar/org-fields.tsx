@@ -1,5 +1,7 @@
 "use client";
 
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+
 // The interview's Area and Line — optional, and both shown in the calendar and the share link so an
 // outside viewer can read the interviewer, the area and the line at a glance (owner, 2026-09-26).
 // Choosing the interviewer auto-fills these from their org seat (handled by the dialog); they stay
@@ -7,7 +9,7 @@
 
 const LINES = ["CNS", "Anti Infective", "Pedia", "Head Office", "Other"] as const;
 
-const inputClass = "mt-1 block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none";
+const inputClass = `${phxFieldClassName} mt-1 block`;
 
 export function OrgFields({
   area,

@@ -10,6 +10,7 @@ import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
 import { buildSeatHireHref } from "@/lib/employees/vacancy-hire-link";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -256,7 +257,7 @@ export default async function EmployeePortalVacanciesPage({
                 Area
               </label>
               <select
-                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+                className={phxSelectClassName}
                 defaultValue={areaFilter}
                 id="vacancies-area"
                 name="area"
@@ -278,7 +279,7 @@ export default async function EmployeePortalVacanciesPage({
                 Manager
               </label>
               <select
-                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
+                className={phxSelectClassName}
                 defaultValue={managerFilter}
                 id="vacancies-manager"
                 name="manager"

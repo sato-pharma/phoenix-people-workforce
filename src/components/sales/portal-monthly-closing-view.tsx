@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-closing-matrix-cells";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 // Employee-portal render of the SAME Closing Matrix + Details view an admin sees at
 // /sales/monthly-closing — but scoped to the viewer (District/Regional/National Sales Manager,
@@ -58,9 +59,9 @@ type Props = {
 };
 
 const monthSelectClassName =
-  "h-11 w-44 rounded border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
+  cn(phxSelectClassName, "w-44");
 const lineSelectClassName =
-  "h-11 w-52 rounded border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
+  cn(phxSelectClassName, "w-52");
 
 export function PortalMonthlyClosingView({ matrix, office = null, line, availableLines, availablePeriods, selectedPeriod, isMedicalRep = false }: Props) {
   const router = useRouter();

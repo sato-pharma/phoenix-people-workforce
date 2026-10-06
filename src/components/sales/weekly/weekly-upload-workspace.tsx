@@ -31,6 +31,10 @@ import {
   uploadTrackerColumns,
   verifyColumns,
 } from "./weekly-table-widths";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4), for the whole page: every table is
 // `w-full table-fixed` with its column widths from weekly-table-widths.ts, it fits by merging columns and
@@ -435,7 +439,7 @@ export function WeeklyUploadWorkspace({
     retagId === batch.id ? (
       <input
         aria-label="Cycle month"
-        className="h-8 w-full min-w-0 border border-phx-line bg-white px-2 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+        className={`${phxFieldClassName} min-w-0`}
         onChange={(e) => setRetagMonth(e.target.value)}
         type="month"
         value={retagMonth}
@@ -448,7 +452,7 @@ export function WeeklyUploadWorkspace({
     retagId === batch.id ? (
       <select
         aria-label="Week of month"
-        className="h-8 w-full min-w-0 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+        className={`${phxSelectClassName} min-w-0`}
         onChange={(e) => setRetagWeek(Number(e.target.value))}
         value={retagWeek}
       >
@@ -603,7 +607,7 @@ export function WeeklyUploadWorkspace({
           <label className="block">
             <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
-              className="h-10 w-full border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+              className="w-full px-3"
               disabled={busy}
               onChange={(event) => {
                 setDistributorCode(event.target.value);
@@ -645,7 +649,7 @@ export function WeeklyUploadWorkspace({
             <label className="block">
               <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Period date</span>
               <input
-                className="h-10 border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                className={phxFieldClassName}
                 disabled={busy}
                 onChange={(e) => { setPeriodDate(e.target.value); clearValidation(); }}
                 type="date"
@@ -759,7 +763,7 @@ export function WeeklyUploadWorkspace({
           <div className="flex flex-wrap items-center gap-2">
             <SearchableSelect
               aria-label="Filter by distributor"
-              className="h-8 border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
+              className="h-8 px-2 text-xs"
               onChange={(e) => setFilterDistributor(e.target.value)}
               value={filterDistributor}
             >
@@ -770,7 +774,7 @@ export function WeeklyUploadWorkspace({
             </SearchableSelect>
             <SearchableSelect
               aria-label="Filter by period"
-              className="h-8 border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
+              className="h-8 px-2 text-xs"
               onChange={(e) => setFilterPeriod(e.target.value)}
               value={filterPeriod}
             >
@@ -1666,7 +1670,7 @@ function ValidationResultPanel({
             <div className="w-72 max-w-full">
               <SearchableSelect
                 aria-label="Product whose units are shown"
-                className="h-8 border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                className="h-8 px-2"
                 onChange={(event) => setPickedProduct(event.target.value)}
                 value={unitScope.productKey}
                 wrapValue

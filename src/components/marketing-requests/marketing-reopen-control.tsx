@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 /**
  * Put a refused marketing request back on the desk of the approver who refused it.
@@ -72,7 +73,7 @@ export function MarketingReopenControl({
         Reason
       </label>
       <textarea
-        className="mt-1 w-full border border-slate-300 px-3 py-2 text-phx-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+        className={`${phxTextareaClassName} mt-1`}
         disabled={busy}
         id="marketing-reopen-reason"
         onChange={(event) => setReason(event.target.value)}

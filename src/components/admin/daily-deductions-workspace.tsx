@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Clock3, PlayCircle, XCircle } from "lucide
 
 import { dailyDeductionConnectorLabels, dailyDeductionConnectors, type DailyDeductionConnector } from "@/lib/daily-deductions/types.ts";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 // The tally line the compute route returns (DailyDeductionTallyLine). Sent back
 // verbatim to the publish route as the reviewed lines — no reshaping in between.
@@ -297,7 +298,7 @@ export function DailyDeductionsWorkspace({
           <label className="flex flex-col gap-1">
             <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">From</span>
             <input
-              className="rounded-sm border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none"
+              className={phxFieldClassName}
               onChange={(event) => setFrom(event.target.value)}
               type="date"
               value={from}
@@ -306,7 +307,7 @@ export function DailyDeductionsWorkspace({
           <label className="flex flex-col gap-1">
             <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">To</span>
             <input
-              className="rounded-sm border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none"
+              className={phxFieldClassName}
               onChange={(event) => setTo(event.target.value)}
               type="date"
               value={to}

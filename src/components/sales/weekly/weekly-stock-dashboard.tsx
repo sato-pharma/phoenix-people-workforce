@@ -414,7 +414,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
             <select
               value={asOf}
               onChange={(event) => setAsOf(event.target.value)}
-              className="w-full rounded-sm border-0 bg-transparent p-0 text-sm font-black text-slate-900 focus:outline-none focus:ring-0"
+              className="w-full border-0 bg-transparent p-0 text-sm font-black text-slate-900 focus:outline-none focus:ring-0"
             >
               <option value="">Latest file per distributor</option>
               {view.availableAsOfWeeks.map((week) => (

@@ -73,6 +73,8 @@ import type {
   ReturnCondition,
 } from "@/lib/devices/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type StatusFilter = "leavers" | "assigned" | "in_stock" | "missing" | "all";
 
@@ -223,8 +225,7 @@ function Field({
   );
 }
 
-const INPUT_CLASS =
-  "mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900";
+const INPUT_CLASS = cn(phxFieldClassName, "mt-1 w-full min-w-0 px-2 py-1.5 text-[12px]");
 
 type DraftKind = "issue" | "return" | "mark" | null;
 

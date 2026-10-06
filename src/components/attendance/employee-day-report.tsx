@@ -16,6 +16,7 @@ import type {
   EmployeeDeductionSummaryRow,
   FlexEligibleEmployeeOption,
 } from "@/lib/attendance/employee-day-report";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   employees: FlexEligibleEmployeeOption[];
@@ -248,7 +249,7 @@ export function EmployeeDayReport({
           <label className="block space-y-1 sm:col-span-2">
             <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
             <SearchableSelect
-              className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+              className="h-9 w-full px-2"
               placeholder="Search employees..."
               value={employeeHrId}
               onValueChange={setEmployeeHrId}
@@ -264,7 +265,7 @@ export function EmployeeDayReport({
           <label className="block space-y-1">
             <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">From</span>
             <input
-              className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               type="date"
               value={dateFrom}
               onChange={(event) => setDateFrom(event.target.value)}
@@ -273,7 +274,7 @@ export function EmployeeDayReport({
           <label className="block space-y-1">
             <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">To</span>
             <input
-              className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+              className={phxFieldClassName}
               type="date"
               value={dateTo}
               onChange={(event) => setDateTo(event.target.value)}

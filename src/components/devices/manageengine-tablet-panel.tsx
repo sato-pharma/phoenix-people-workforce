@@ -23,6 +23,7 @@ import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 const ACTION_BUTTON =
@@ -276,7 +277,7 @@ function AppsSection({ deviceId }: { deviceId: string }) {
         <label className="min-w-0 flex-1">
           <span className={MICRO_LABEL}>Send an app to this tablet</span>
           <select
-            className="mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900"
+            className={`${phxSelectClassName} mt-1 min-w-0`}
             disabled={available.length === 0 || busy !== null}
             onChange={(event) => setChosen(event.target.value)}
             value={chosen}
@@ -456,7 +457,7 @@ function RulesSection({ deviceId }: { deviceId: string }) {
         <label className="min-w-0 flex-1">
           <span className={MICRO_LABEL}>Put a rule set on this tablet</span>
           <select
-            className="mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900"
+            className={`${phxSelectClassName} mt-1 min-w-0`}
             disabled={available.length === 0 || busy !== null}
             onChange={(event) => setChosen(event.target.value)}
             value={chosen}

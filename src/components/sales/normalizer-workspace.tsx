@@ -25,6 +25,7 @@ import { pickConfidence } from "@/lib/sales/normalizer/pick-confidence";
 import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 
 type DistributorOption = { code: string; name: string };
@@ -839,7 +840,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const codesLeft = preview ? mappingLeft(preview).codes : 0;
   const productOptions = [{ label: "🚫 Ignore — we don't sell this", value: "IGNORE" }, ...references.products.map((p) => ({ label: `${p.name} (${p.code})`, value: p.code }))];
   const brickOptions = references.bricks.map((b) => ({ label: b.name, value: b.id }));
-  const selectClass = "h-11 w-full border border-slate-300 bg-white px-3.5 text-sm font-semibold text-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:opacity-60";
+  const selectClass  = phxSelectClassName;
 
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">

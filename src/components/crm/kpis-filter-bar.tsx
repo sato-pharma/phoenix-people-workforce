@@ -14,6 +14,8 @@ import {
   type KpiFacets,
   type KpiFilterState,
 } from "@/lib/crm/kpis-filters";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * The KPIs board's advanced filters.
@@ -222,7 +224,7 @@ export function KpisFilterBar({
                   fits-the-screen rule forbids. */}
               <span className="mt-1 flex flex-wrap gap-2">
                 <input
-                  className="min-w-0 flex-1 border border-slate-300 bg-white px-3 py-2 text-base text-slate-900"
+                  className={cn(phxFieldClassName, "min-w-0 flex-1 text-base")}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Rep, line, region, area or manager"
                   type="search"

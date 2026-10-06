@@ -20,6 +20,10 @@ import type {
   TerritoryFilters,
   TerritoryMap,
 } from "@/lib/territory-management/service";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // One colour per selected area. Chosen to stay distinguishable against Google's roadmap tiles.
 const AREA_COLOURS = [
@@ -490,7 +494,7 @@ export function TerritoryMapWorkspace({
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Line</span>
             <select
-              className="border-input bg-background h-9 min-w-44 rounded-md border px-2"
+              className={`${phxSelectClassName} min-w-44`}
               onChange={(event) => {
                 setLineCode(event.target.value);
                 setRegionCode("");
@@ -510,7 +514,7 @@ export function TerritoryMapWorkspace({
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Region</span>
             <select
-              className="border-input bg-background h-9 min-w-44 rounded-md border px-2"
+              className={`${phxSelectClassName} min-w-44`}
               onChange={(event) => {
                 setRegionCode(event.target.value);
                 setSelectedAreas([]);
@@ -601,7 +605,7 @@ export function TerritoryMapWorkspace({
             <div className="absolute top-3 left-1/2 z-30 w-[min(92%,30rem)] -translate-x-1/2 space-y-2">
               <input
                 aria-label="Search bricks"
-                className="border-input bg-background w-full rounded-full border px-4 py-2.5 text-sm shadow-lg outline-none"
+                className={phxFieldClassName}
                 onChange={(event) => {
                   setSearchTerm(event.target.value);
                   setSaveState("idle");

@@ -9,6 +9,10 @@ import { ComboBox, ConfidenceBadge, CopyBtn } from "@/components/sales/normalize
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 type IconType = typeof Sparkles;
 
@@ -331,8 +335,8 @@ export function WeeklyNormalizerWorkspace({
       .filter((a) => a.regionCode === regionCode)
       .map((a) => ({ label: `${a.areaName} (${a.areaCode})`, value: a.areaCode }));
 
-  const selectClass = "h-11 w-full border border-slate-300 bg-white px-3.5 text-sm font-semibold text-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:opacity-60";
-  const fileClass = "h-11 border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20";
+  const selectClass  = phxSelectClassName;
+  const fileClass = cn(phxFieldClassName, "px-3 py-2 text-xs");
 
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">

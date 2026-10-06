@@ -87,6 +87,10 @@ import {
   type PlannerFilters,
 } from "@/lib/sales/make-it-happen/scenarios";
 import { cn } from "@/lib/utils";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Make It Happen — the planner screen.
@@ -108,12 +112,10 @@ type TeamSort = "name" | "low" | "high";
 type TeamBucket = "all" | "ahead" | "close" | "behind" | "none";
 
 /** Keyboard focus: a square orange outline, the same one the shared chips draw. */
-const FOCUS_RING =
-  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500";
+const FOCUS_RING = phxSelectClassName;
 
 /** A white text box or select: slate hairline, orange focus ring, square. */
-const FIELD =
-  "border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 transition-colors hover:border-slate-300 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+const FIELD = phxFieldClassName;
 
 /** The one primary action shape: solid orange, no gradient. */
 const PRIMARY_BUTTON =
@@ -644,7 +646,7 @@ export function MakeItHappenPlanner({
                           aria-label="Achievement goal, percent of target"
                           className={cn(
                             FIELD,
-                            "h-10 w-full pl-2 pr-6 text-right text-sm font-black tabular-nums lg:h-8",
+                            "w-full pl-2 pr-6 text-right tabular-nums lg:h-8",
                             goalPct == null && "border-red-500 text-red-700 hover:border-red-500",
                           )}
                           inputMode="numeric"
@@ -849,7 +851,7 @@ export function MakeItHappenPlanner({
                     <span className={LABEL_CLASS}>Plan name</span>
                     <input
                       ref={planNameRef}
-                      className={cn(FIELD, "mt-1 h-10 w-full px-3 text-sm")}
+                      className={cn(FIELD, "mt-1 w-full px-3")}
                       enterKeyHint="done"
                       maxLength={80}
                       onChange={(event) => setPlanName(event.target.value)}
@@ -1296,7 +1298,7 @@ function FilterBar({
             <span className="sr-only">Find a product or family</span>
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
-              className={cn(FIELD, "h-10 w-full pl-8 pr-2 text-sm lg:h-8")}
+              className={cn(FIELD, "w-full pl-8 pr-2 lg:h-8")}
               maxLength={80}
               onChange={(event) => set({ search: event.target.value })}
               placeholder="Find a product or family"
@@ -1441,7 +1443,7 @@ function LineSection({
       aria-label={label}
       className={cn(
         FIELD,
-        "h-9 w-full px-2 text-right text-sm font-bold tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400",
+        "w-full text-right tabular-nums",
         invalid(row.productCode) && "border-red-500 text-red-700 hover:border-red-500",
       )}
       disabled={!open}
@@ -1780,7 +1782,7 @@ function TeamSection({
             <span className="sr-only">Find a person</span>
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
-              className={cn(FIELD, "h-10 w-full pl-8 pr-2 text-sm lg:h-8")}
+              className={cn(FIELD, "w-full pl-8 pr-2 lg:h-8")}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Find a person"
               type="search"

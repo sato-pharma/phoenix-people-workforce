@@ -23,6 +23,10 @@ import { Input } from "@/components/ui/input";
 import type { PhoenixHrEmailTone } from "@/lib/email/phoenix-hr-reply-template";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 
 type RecipientChannel = "bccSelections" | "ccSelections" | "toSelections";
@@ -507,7 +511,7 @@ export function EmailReplyComposer() {
                 value={form.subject}
               />
               <SearchableSelect
-                className="h-9 shrink-0 rounded-lg border border-phx-line bg-white px-2 text-xs font-black text-phx-ink-2"
+                className="h-9 shrink-0 px-2 text-xs"
                 onChange={(event) => void applyTemplate(event.target.value)}
                 value={form.templateKey}
               >
@@ -522,7 +526,7 @@ export function EmailReplyComposer() {
               <span className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Greeting</span>
               <span className="font-semibold text-phx-ink-2">Dear</span>
               <input
-                className="h-8 w-48 rounded-lg border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none placeholder:text-phx-ink-faint focus:border-phx-accent-line"
+                className={cn(phxFieldClassName, "w-48")}
                 onChange={(event) => updateField("recipientName", event.target.value)}
                 placeholder="auto from recipient"
                 value={form.recipientName}
@@ -577,7 +581,7 @@ export function EmailReplyComposer() {
               <div className="border-t border-[#E8EDF3] px-5 py-3">
                 <Field label="External recipient justification">
                   <textarea
-                    className="min-h-[80px] w-full rounded-xl border border-phx-line px-3 py-2.5 text-sm"
+                    className={cn(phxTextareaClassName, "min-h-[80px]")}
                     onChange={(event) => updateField("externalJustification", event.target.value)}
                     placeholder="Example: Candidate offer communication approved by HR."
                     value={form.externalJustification}
@@ -628,7 +632,7 @@ export function EmailReplyComposer() {
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <Field label="Sender name">
                   <input
-                    className="h-10 w-full rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink"
+                    className={phxFieldClassName}
                     onChange={(event) => updateField("senderName", event.target.value)}
                     value={form.senderName}
                   />
@@ -889,7 +893,7 @@ function RawEmailField({ label, onChange, value }: { label: string; onChange: (v
   return (
     <Field label={label}>
       <textarea
-        className="min-h-[72px] w-full rounded-xl border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink"
+        className={cn(phxTextareaClassName, "min-h-[72px]")}
         onChange={(event) => onChange(event.target.value)}
         placeholder="email@satopharma.com"
         value={value}

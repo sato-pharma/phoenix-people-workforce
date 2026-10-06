@@ -12,6 +12,7 @@ import type { LockableAccount } from "@/lib/auth/module-lock-accounts";
 import type { ModuleLock } from "@/lib/auth/module-locks";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { moduleLabel } from "@/lib/navigation/module-catalog";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   initialAccounts: LockableAccount[];
@@ -254,7 +255,7 @@ export function ModuleLocksManager({
               How long
             </label>
             <select
-              className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-300"
+              className={phxSelectClassName}
               id="module-lock-duration"
               onChange={(event) => setDurationHours(Number(event.target.value))}
               value={durationHours}
@@ -290,7 +291,7 @@ export function ModuleLocksManager({
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   aria-label="Search modules"
-                  className="h-8 pl-9 text-sm"
+                  className="h-8 pl-9"
                   onChange={(event) => setModuleSearch(event.target.value)}
                   placeholder="Search modules…"
                   value={moduleSearch}

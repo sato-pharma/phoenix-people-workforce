@@ -10,6 +10,8 @@ import {
   type CoverageFilterSelection,
   type CoverageFilterTree,
 } from "@/lib/crm/coverage-filters";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // Region → Line → Area → Rep, the four controls both CRM coverage boards share.
 //
@@ -25,8 +27,7 @@ import {
 // parameter, so applying re-enters the server-side access gate instead of filtering rows the
 // browser was already handed.
 
-const SELECT_CLASS =
-  "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
+const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2");
 const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
 
 export const COVERAGE_SELECT_CLASS = SELECT_CLASS;

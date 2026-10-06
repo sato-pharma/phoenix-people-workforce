@@ -324,7 +324,7 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Mapped</span>
                     ) : (
                       <SearchableSelect
-                        className="h-9 w-full rounded-lg border border-phx-line bg-phx-paper px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
+                        className="h-9 w-full px-2"
                         disabled={saving || bricks.length === 0}
                         onChange={(e) => setPicked((prev) => ({ ...prev, [key]: e.target.value }))}
                         value={picked[key] ?? ""}

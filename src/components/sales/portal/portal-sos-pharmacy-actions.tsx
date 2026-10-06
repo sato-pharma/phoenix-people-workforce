@@ -17,6 +17,8 @@ import {
 import type { MonthPaceResult, MonthPaceRow } from "@/lib/sales/sos-month-pace";
 import type { PortalPharmacyActionsPayload } from "@/lib/sales/sos-pharmacy-actions-loader";
 import type { BrickUniverseEntry, CrossSellItem, PharmacyActionItem, PharmacyAreaSummary } from "@/lib/sales/sos-pharmacy-actions";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // "Where my sales come from" — the pharmacy action lists and the weekly month pace, above the
 // distributor dashboard. Every rule is computed server-side (sos-pharmacy-actions.ts); this file
@@ -96,8 +98,7 @@ function formatPct(value: number): string {
 }
 
 // A phone tap target is at least 40px; the compact 32px control returns from `md` up.
-const SELECT_CLASS =
-  "h-10 min-w-0 max-w-full border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 transition-colors hover:border-orange-300 focus:border-orange-500 focus:outline-none md:h-8";
+const SELECT_CLASS = cn(phxSelectClassName, "min-w-0 max-w-full px-2 text-xs hover:border-orange-300 md:h-8");
 /** The shared chip, grown to a 40px tap target on a phone. Appended as a plain string, never cn(). */
 const TAP_CHIP = "min-h-10 md:min-h-0";
 

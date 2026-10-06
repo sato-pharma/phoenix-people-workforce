@@ -8,6 +8,10 @@ import {
 } from "@/lib/recruitment/cv-lifecycle-link-expiry";
 import type { CvLifecycleShareLink } from "@/lib/recruitment/cv-lifecycle-share-links";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import {
+  phxFieldClassName,
+  phxLabelClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = { productionUrl: string };
 
@@ -164,8 +168,8 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
   const expiringIds = new Set(verdict.expiringSoon.map((link) => link.id));
 
   const inputClass =
-    "mt-1 w-full border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-orange-500 focus:outline-none";
-  const fieldLabelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
+    `${phxFieldClassName} mt-1`;
+  const fieldLabelClass = phxLabelClassName;
 
   return (
     <div className="space-y-4">

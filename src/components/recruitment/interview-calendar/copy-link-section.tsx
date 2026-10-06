@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 
 import { calendarApi, reasonText } from "./calendar-api";
 import { ErrorLine, NoteLine, PanelHeading, Segmented, Switch } from "./calendar-dialog";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 const LEVEL_WITH_LINK: Record<InterviewCalendarAccessLevel, string> = {
   commenter: "Anyone with the link sees the calendar and opens its CVs; after signing in to Phoenix they can also leave notes.",
@@ -53,8 +54,7 @@ function shareMessage(link: InterviewCalendarLink): string {
   return `Here is ${scope} (Sato Pharma recruitment):\n${linkUrl(link.token)}`;
 }
 
-const selectClass =
-  "h-9 w-full border border-slate-200 bg-white px-2 text-[13px] font-semibold text-slate-800 focus:border-orange-500 focus:outline-none disabled:opacity-50";
+const selectClass  = phxSelectClassName;
 
 export function CopyLinkSection({ weekStart }: { weekStart: string }) {
   const [api] = useState(() => calendarApi(null));

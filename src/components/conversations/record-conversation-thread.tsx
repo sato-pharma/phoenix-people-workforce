@@ -6,6 +6,8 @@ import { MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { RecordConversationComment } from "@/lib/conversations/comments";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * The record-level conversation thread — mounted on direct-order and marketing-request detail
@@ -123,7 +125,7 @@ export function RecordConversationThread({
       </div>
       <div className="space-y-2 border-t border-slate-200 p-3">
         <textarea
-          className="min-h-16 w-full border border-slate-200 p-2 text-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+          className={cn(phxTextareaClassName, "min-h-16")}
           dir="auto"
           disabled={sending}
           onChange={(event) => setDraft(event.target.value)}

@@ -512,7 +512,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
                   </a>
                 </span>
                 <SearchableSelect
-                  className="h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                  className="w-full px-3.5"
                   onChange={(event) => setLine(event.target.value)}
                   value={line}
                 >

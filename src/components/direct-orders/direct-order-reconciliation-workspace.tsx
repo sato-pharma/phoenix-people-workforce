@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import type { DirectSalesReconciliationResult } from "@/lib/direct-orders/types";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 const money = (n: number | null | undefined) =>
   n == null || !Number.isFinite(n) ? "—" : Math.round(n).toLocaleString("en-US");
@@ -78,7 +79,7 @@ export function DirectOrderReconciliationWorkspace({ result }: { result: DirectS
         <select
           value={period}
           onChange={(e) => setPeriod(e.target.value)}
-          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm"
+          className={phxSelectClassName}
         >
           <option value="all">All periods</option>
           {periods.map((p) => (

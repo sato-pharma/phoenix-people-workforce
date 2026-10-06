@@ -13,6 +13,7 @@ import { listSalaryBatches } from "@/lib/payroll/service";
 import type { SalaryBatch } from "@/lib/payroll/types";
 import { payrollMonths, payrollPeriodLabel, statusBadge } from "@/components/payroll/dashboard/shared";
 import { formatDateTimeValue } from "@/lib/i18n/format";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -137,7 +138,7 @@ export default async function MPayrollPage({
               Month
             </span>
             <select
-              className="h-11 w-full rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/12"
+              className={phxSelectClassName}
               defaultValue={String(month)}
               name="month"
             >
@@ -154,7 +155,7 @@ export default async function MPayrollPage({
               Year
             </span>
             <select
-              className="h-11 w-full rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/12"
+              className={phxSelectClassName}
               defaultValue={String(year)}
               name="year"
             >

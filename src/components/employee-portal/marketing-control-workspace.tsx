@@ -60,7 +60,7 @@ function SelectField({
 }) {
   return (
     <SearchableSelect
-      className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+      className="w-full px-3"
       onChange={(event) => onChange(event.target.value)}
       value={value}
     >
@@ -302,7 +302,6 @@ export function MarketingControlWorkspace() {
                 <div className="grid gap-3">
                   <Field label="Name">
                     <Input
-                      className="h-10 border-slate-200 bg-white font-bold"
                       onChange={(event) => setRequestTypeDrafts((current) => ({
                         ...current,
                         [type.id]: { ...draft, name: event.target.value },
@@ -312,7 +311,6 @@ export function MarketingControlWorkspace() {
                   </Field>
                   <Field label="Description">
                     <Input
-                      className="h-10 border-slate-200 bg-white"
                       onChange={(event) => setRequestTypeDrafts((current) => ({
                         ...current,
                         [type.id]: { ...draft, description: event.target.value },
@@ -322,7 +320,6 @@ export function MarketingControlWorkspace() {
                   </Field>
                   <Field label="Sort order">
                     <Input
-                      className="h-10 border-slate-200 bg-white font-bold"
                       min={0}
                       onChange={(event) => setRequestTypeDrafts((current) => ({
                         ...current,
@@ -411,7 +408,6 @@ export function MarketingControlWorkspace() {
                     <td className="px-4 py-3 font-mono text-xs font-black text-slate-600">{type.code}</td>
                     <td className="px-4 py-3">
                       <Input
-                        className="h-10 border-slate-200 bg-white font-bold"
                         onChange={(event) => setRequestTypeDrafts((current) => ({
                           ...current,
                           [type.id]: { ...draft, name: event.target.value },
@@ -421,7 +417,6 @@ export function MarketingControlWorkspace() {
                     </td>
                     <td className="px-4 py-3">
                       <Input
-                        className="h-10 border-slate-200 bg-white"
                         onChange={(event) => setRequestTypeDrafts((current) => ({
                           ...current,
                           [type.id]: { ...draft, description: event.target.value },
@@ -431,7 +426,7 @@ export function MarketingControlWorkspace() {
                     </td>
                     <td className="px-4 py-3">
                       <Input
-                        className="h-10 w-20 border-slate-200 bg-white font-bold"
+                        className="w-20"
                         min={0}
                         onChange={(event) => setRequestTypeDrafts((current) => ({
                           ...current,
@@ -514,7 +509,6 @@ export function MarketingControlWorkspace() {
                 <div className="grid gap-3">
                   <Field label="Step">
                     <Input
-                      className="h-10 border-slate-200 bg-white font-bold"
                       onChange={(event) => setWorkflowDrafts((current) => ({
                         ...current,
                         [step.id]: { ...draft, stepName: event.target.value },
@@ -525,7 +519,6 @@ export function MarketingControlWorkspace() {
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Sequence">
                       <Input
-                        className="h-10 border-slate-200 bg-white font-bold"
                         min={1}
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -537,7 +530,6 @@ export function MarketingControlWorkspace() {
                     </Field>
                     <Field label="SLA Days">
                       <Input
-                        className="h-10 border-slate-200 bg-white font-bold"
                         min={0}
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -567,7 +559,6 @@ export function MarketingControlWorkspace() {
                   </Field>
                   <Field label="Assigned Role">
                     <Input
-                      className="h-10 border-slate-200 bg-white font-bold"
                       onChange={(event) => setWorkflowDrafts((current) => ({
                         ...current,
                         [step.id]: { ...draft, assignedRole: event.target.value },
@@ -657,7 +648,7 @@ export function MarketingControlWorkspace() {
                   <tr key={step.id}>
                     <td className="px-4 py-3">
                       <Input
-                        className="h-10 w-20 border-slate-200 bg-white font-bold"
+                        className="w-20"
                         min={1}
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -669,7 +660,6 @@ export function MarketingControlWorkspace() {
                     </td>
                     <td className="px-4 py-3">
                       <Input
-                        className="h-10 border-slate-200 bg-white font-bold"
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
                           [step.id]: { ...draft, stepName: event.target.value },
@@ -693,7 +683,6 @@ export function MarketingControlWorkspace() {
                     </td>
                     <td className="px-4 py-3">
                       <Input
-                        className="h-10 border-slate-200 bg-white font-bold"
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
                           [step.id]: { ...draft, assignedRole: event.target.value },
@@ -703,7 +692,7 @@ export function MarketingControlWorkspace() {
                     </td>
                     <td className="px-4 py-3">
                       <Input
-                        className="h-10 w-24 border-slate-200 bg-white font-bold"
+                        className="w-24"
                         min={0}
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -774,7 +763,7 @@ export function MarketingControlWorkspace() {
           <div className="rounded border border-slate-200 bg-slate-50 p-4">
             <Field label="ROI multiplier">
               <Input
-                className="h-11 border-slate-200 bg-white text-base font-black"
+                className="text-base"
                 min={1}
                 onChange={(event) => setRoiMultiplier(event.target.value)}
                 type="number"
@@ -801,7 +790,7 @@ export function MarketingControlWorkspace() {
           <div className="rounded border border-slate-200 bg-slate-50 p-4">
             <Field label="Invoice deadline days">
               <Input
-                className="h-11 border-slate-200 bg-white text-base font-black"
+                className="text-base"
                 min={1}
                 onChange={(event) => setFinanceInvoiceDays(event.target.value)}
                 type="number"

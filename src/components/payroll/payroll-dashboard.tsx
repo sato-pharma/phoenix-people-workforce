@@ -1978,7 +1978,7 @@ function ComparePayrollChart({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SearchableSelect
-            className="h-9 rounded-xl border border-phx-line bg-white px-3 text-xs text-phx-ink shadow-sm"
+            className="h-9 px-3 text-xs"
             onChange={(event) => {
               setCompareMode(event.target.value as GroupMode | "employee");
               setSelectedKeys([]);
@@ -1992,7 +1992,7 @@ function ComparePayrollChart({
             <option value="employee">Employees</option>
           </SearchableSelect>
           <SearchableSelect
-            className="h-9 rounded-xl border border-phx-line bg-white px-3 text-xs text-phx-ink shadow-sm"
+            className="h-9 px-3 text-xs"
             onChange={(event) => setMetric(event.target.value as typeof metric)}
             value={metric}
           >
@@ -2002,7 +2002,7 @@ function ComparePayrollChart({
             <option value="deductions">Deductions</option>
           </SearchableSelect>
           <SearchableSelect
-            className="h-9 max-w-[190px] rounded-xl border border-phx-line bg-white px-3 text-xs text-phx-ink shadow-sm"
+            className="h-9 max-w-[190px] px-3 text-xs"
             onChange={(event) => {
               const value = event.target.value;
               if (value && !activeKeys.includes(value)) {
@@ -2799,7 +2799,7 @@ function GenerateReadyPayrollSheet({
                 Month
               </span>
               <SearchableSelect
-                className="h-11 w-full rounded-xl border border-border bg-white px-3 text-sm text-text shadow-sm focus:outline-none"
+                className="w-full px-3 text-text"
                 onChange={(event) => onMonthChange(event.target.value)}
                 value={month}
               >
@@ -2816,7 +2816,7 @@ function GenerateReadyPayrollSheet({
                 Year
               </span>
               <SearchableSelect
-                className="h-11 w-full rounded-xl border border-border bg-white px-3 text-sm text-text shadow-sm focus:outline-none"
+                className="w-full px-3 text-text"
                 onChange={(event) => onYearChange(event.target.value)}
                 value={year}
               >
@@ -3996,13 +3996,12 @@ export function PayrollDashboard({
 
             <div className="grid gap-3 rounded-2xl border border-phx-line bg-phx-paper/80 p-3 xl:grid-cols-[1fr_auto_auto_auto]">
               <Input
-                className="bg-white"
                 onChange={(event) => setSalaryReportSearch(event.target.value)}
                 placeholder="Search HR ID, employee, line, area, job title..."
                 value={salaryReportSearch}
               />
               <SearchableSelect
-                className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+                className="px-3 text-text"
                 onChange={(event) => {
                   setSalaryReportYear(Number(event.target.value));
                   setSalaryReportMonth(null);
@@ -4014,7 +4013,7 @@ export function PayrollDashboard({
                 ))}
               </SearchableSelect>
               <SearchableSelect
-                className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+                className="px-3 text-text"
                 onChange={(event) => setSalaryReportMonth(Number(event.target.value))}
                 value={salaryReportMonth ?? salaryReportBatch?.month ?? ""}
               >

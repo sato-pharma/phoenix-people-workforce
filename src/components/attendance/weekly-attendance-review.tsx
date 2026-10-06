@@ -4,6 +4,11 @@ import { Fragment, useState } from "react";
 
 import { MAX_MARKED_DAYS, type ReviewWeekStage } from "@/lib/attendance/digest-rules.ts";
 import type { DigestLineRow, ReviewEmployee, ReviewWeek, ReviewWeekOption } from "@/lib/attendance/digest-service.ts";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 // The owner's gate, 2026-09-15: every week lands here first, and nothing reaches an employee until it
 // is released from this page. The same day: "I want to be able to select the week I want … I can mark
@@ -460,7 +465,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                 Days to deduct
               </label>
               <input
-                className="w-20 border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800"
+                className={cn(phxFieldClassName, "w-20")}
                 id={`days-${id}`}
                 inputMode="decimal"
                 max={MAX_MARKED_DAYS}
@@ -626,7 +631,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
             Week
           </label>
           <select
-            className="w-full max-w-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+            className={`${phxSelectClassName} max-w-xl`}
             disabled={busy !== null}
             id="weekly-review-week"
             onChange={(event) => void choose(event.target.value)}

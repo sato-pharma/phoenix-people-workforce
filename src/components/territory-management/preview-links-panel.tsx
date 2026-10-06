@@ -10,6 +10,7 @@ import {
 import { Card } from "@/components/ui/card";
 import type { TerritoryPreviewLink } from "@/lib/territory-management/preview-links";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Props = { productionUrl: string };
 
@@ -175,7 +176,7 @@ export function TerritoryPreviewLinksPanel({ productionUrl }: Props) {
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Label</span>
           <input
-            className="border-input bg-background h-9 min-w-56 rounded-md border px-2"
+            className={`${phxFieldClassName} min-w-56`}
             onChange={(event) => setLabel(event.target.value)}
             placeholder="Who is this for?"
             value={label}
@@ -184,7 +185,7 @@ export function TerritoryPreviewLinksPanel({ productionUrl }: Props) {
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Stops working after (days)</span>
           <input
-            className="border-input bg-background h-9 min-w-32 rounded-md border px-2"
+            className={`${phxFieldClassName} min-w-32`}
             inputMode="numeric"
             onChange={(event) => setDays(event.target.value)}
             value={days}

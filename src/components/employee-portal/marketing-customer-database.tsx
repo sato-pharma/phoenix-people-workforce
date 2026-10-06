@@ -313,7 +313,7 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
               Venue that survives
             </label>
             <SearchableSelect
-              className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              className="w-full px-3"
               disabled={isLoadingVenues || isMerging}
               id="venue-merge-survivor"
               onChange={(event) => setSurvivorId(event.target.value)}
@@ -334,7 +334,7 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
               Duplicate to retire
             </label>
             <SearchableSelect
-              className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              className="w-full px-3"
               disabled={isLoadingVenues || isMerging}
               id="venue-merge-loser"
               onChange={(event) => setLoserId(event.target.value)}
@@ -358,7 +358,6 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
             Why these two are one shop
           </label>
           <Input
-            className="h-10 border-slate-200 bg-white font-bold"
             disabled={isMerging}
             id="venue-merge-reason"
             onChange={(event) => setReason(event.target.value)}

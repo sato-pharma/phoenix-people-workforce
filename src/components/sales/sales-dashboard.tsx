@@ -692,7 +692,7 @@ function FilterSelect({
       <span className="mb-1 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
       <div className="relative">
         <SearchableSelect
-          className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-9 text-sm font-medium text-slate-700 outline-none transition-all duration-160 ease-out focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+          className="h-9 w-full appearance-none px-3 pr-9"
           onChange={(event) => onChange(event.target.value)}
           value={value}
         >

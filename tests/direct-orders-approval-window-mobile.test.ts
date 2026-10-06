@@ -258,9 +258,27 @@ export function runDirectOrdersApprovalWindowMobileTests() {
     "the portal twin's 56px offset clears the EMPLOYEE bottom nav; the admin shell has none, so " +
       "copying that number would float this bar above nothing",
   );
+  // 🔴 THE ONE OVERRIDE THE FORM-DESIGN SWEEP OF 2026-10-06 HAD TO KEEP, AND THE REASON THE
+  // ASSERTION MOVED. Every form control in the system now wears the shared token, which carries
+  // `text-sm` — 14px. On this screen that is a real defect, not a style: iOS Safari zooms the
+  // entire viewport when it focuses a field under 16px, and this is the screen where money moves.
+  // So the border, the padding and the orange focus pair come from the token, and the 16px step
+  // stays here as a `cn()` override. The old assertion read one contiguous literal
+  // (`text-base focus:border-orange-500 focus:outline-none md:text-sm`) which the sweep dissolved
+  // — it caught the sweep, correctly, and is replaced by the two halves it was really pinning.
   assert.match(
     actions,
-    /text-base focus:border-orange-500 focus:outline-none md:text-sm/,
-    "the reason box must be 16px on mobile, or iOS Safari zooms the viewport when it is focused",
+    // Whitespace-tolerant on purpose: the old assertion was a contiguous literal, and a formatter
+    // wrapping this call would have broken it for a reason that is not the rule.
+    /className=\{\s*cn\(\s*phxTextareaClassName,\s*"text-base md:text-sm",?\s*\)\s*\}/,
+    "the reason box must be 16px on mobile, or iOS Safari zooms the viewport when it is focused — " +
+      "the shared textarea token is text-sm (14px), so this screen must override it through cn(), " +
+      "never a template literal (a template ships both sizes and lets the stylesheet pick)",
+  );
+  assert.match(
+    readFileSync(new URL("../src/components/ui/form-tokens.ts", import.meta.url), "utf8"),
+    /focus:border-orange-500[\s\S]{0,160}focus:ring-orange-500\/20/,
+    "the orange focus pair this screen used to spell out must still exist in the shared token it " +
+      "now inherits from, or the override above restores the size and loses the focus ring",
   );
 }

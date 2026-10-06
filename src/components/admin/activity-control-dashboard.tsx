@@ -45,6 +45,7 @@ import type {
 } from "@/lib/activity/types";
 import { ENGAGEMENT_BAND_THRESHOLDS, type EngagementBand } from "@/lib/activity/engagement";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 const RANGE_OPTIONS = [
   { days: 1, label: "Today" },
@@ -780,7 +781,7 @@ function ForceLogoutDialog({
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="mt-1 w-full rounded-[8px] border border-phx-line px-3 py-2 text-sm text-phx-ink outline-none focus:border-phx-accent focus:ring-1 focus:ring-phx-accent"
+              className={`${phxFieldClassName} mt-1`}
             />
           </label>
           <div className="flex gap-2">
@@ -1245,7 +1246,7 @@ export function ActivityControlDashboard({
                   value={peopleQuery}
                   onChange={(event) => setPeopleQuery(event.target.value)}
                   placeholder="Search by name"
-                  className="w-full border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink outline-none placeholder:text-phx-ink-faint focus:border-phx-accent focus:ring-1 focus:ring-phx-accent"
+                  className={phxFieldClassName}
                 />
               </label>
             </div>

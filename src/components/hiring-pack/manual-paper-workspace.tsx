@@ -272,7 +272,7 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
           <label className="flex min-w-0 flex-col gap-1.5" key={input.key}>
             <span className={labelClassName}>{input.labelEn}</span>
             <Input
-              className="h-10 rounded-none"
+              className="h-10"
               dir={input.kind === "text" ? "auto" : "ltr"}
               inputMode={input.kind === "money" || input.kind === "number" ? "decimal" : undefined}
               onChange={(event) => {
@@ -287,7 +287,7 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
         <label className="flex min-w-0 flex-col gap-1.5">
           <span className={labelClassName}>Copies</span>
           <Input
-            className="h-10 rounded-none"
+            className="h-10"
             dir="ltr"
             max={20}
             min={1}

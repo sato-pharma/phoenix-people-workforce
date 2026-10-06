@@ -15,6 +15,7 @@ import type {
   NamedClosingDetailsResult,
 } from "@/lib/sales/closing-details-distributor-names";
 import type { ClosingDetailsTotals } from "@/lib/sales/monthly-closing-details";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 // The Details tab: every distributor invoice line behind the closing, with the Phoenix
 // brick -> area roll-up applied and an explicit flag for whether the row is inside the
@@ -66,8 +67,7 @@ function fmtValue(value: number) {
   return valueFmt.format(value);
 }
 
-const selectClassName =
-  "h-10 w-full rounded-2xl border border-phx-line bg-phx-paper px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
+const selectClassName  = phxSelectClassName;
 
 export function ClosingDetailsPanel({ line, period, showConfidentialToggle = false, surface = "admin" }: Props) {
   const [data, setData] = useState<NamedClosingDetailsResult | null>(null);

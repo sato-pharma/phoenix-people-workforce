@@ -101,6 +101,8 @@ import {
 } from "@/lib/venues/pharmacy-license";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 /* --------------------------------------------------------------------- Focus Trap Hook --------------------------------------------------------------------- */
@@ -723,7 +725,7 @@ function ReadOnlyCaptureValue({
   placeholder: string;
   value: string;
 }) {
-  const captureClassName = "w-full rounded-none border border-slate-200 bg-slate-50 px-3.5 text-phx-md font-semibold text-slate-700 outline-none";
+  const captureClassName = cn(phxTextareaClassName, "w-full px-3.5 text-phx-md");
 
   if (multiline) {
     return (
@@ -740,7 +742,7 @@ function ReadOnlyCaptureValue({
   return (
     <Input
       aria-readonly="true"
-      className="h-10 cursor-default rounded-none border-slate-200 bg-slate-50 text-phx-md font-semibold text-slate-700"
+      className="cursor-default text-phx-md"
       placeholder={placeholder}
       readOnly
       value={value}
@@ -763,7 +765,7 @@ function SelectField({
   // — a long distributor or employee name in a phone-width field was showing ~54px of itself.
   return (
     <SearchableSelect
-      className="h-10 w-full rounded-none border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      className="w-full px-3 text-phx-md"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
@@ -897,7 +899,7 @@ function ReusablePharmacyPicker({
     <div className="space-y-3">
       <Field label="Venue Already Validated">
         <SearchableSelect
-          className="h-10 w-full rounded-none border-slate-200 bg-white text-phx-md"
+          className="w-full text-phx-md"
           onValueChange={onSelect}
           placeholder="Search by venue name, code, or area"
           value={selectedId}
@@ -1426,7 +1428,7 @@ function PlaceSearchPanel({
 
       <div className="relative mt-2.5">
         <Input
-          className="h-10 rounded-none border-slate-200 bg-white text-phx-md"
+          className="text-phx-md"
           onChange={(event) => runSearch(event.target.value)}
           placeholder="Search address or place"
           value={query}
@@ -3108,7 +3110,7 @@ export function MarketingValidationWorkspace() {
                     <div className="md:col-span-4">
                       <Field label="Customer Name">
                         <Input
-                          className="h-10 rounded-none border-slate-200 bg-white text-phx-md disabled:cursor-not-allowed disabled:opacity-60"
+                          className="text-phx-md"
                           disabled={Boolean(customer.existingCustomerId)}
                           onChange={(event) => updateCustomer(customer.key, { name: event.target.value })}
                           placeholder="Customer name"
@@ -3138,7 +3140,7 @@ export function MarketingValidationWorkspace() {
                       <div className="md:col-span-2">
                         <Field label="Other Type">
                           <Input
-                            className="h-10 rounded-none border-slate-200 bg-white text-phx-md"
+                            className="text-phx-md"
                             onChange={(event) => updateCustomer(customer.key, { otherType: event.target.value })}
                             placeholder="Describe customer type"
                             value={customer.otherType}
@@ -3149,7 +3151,7 @@ export function MarketingValidationWorkspace() {
                     <div className={customer.type === "other" ? "md:col-span-2" : "md:col-span-3"}>
                       <Field label="Phone">
                         <Input
-                          className="h-10 rounded-none border-slate-200 bg-white text-phx-md"
+                          className="text-phx-md"
                           onChange={(event) => updateCustomer(customer.key, { mobile: event.target.value })}
                           placeholder="Mobile number"
                           type="tel"
@@ -3348,7 +3350,7 @@ export function MarketingValidationWorkspace() {
                             <div className="md:col-span-2">
                               <Field label="Pharmacy Name">
                                 <Input
-                                  className="h-10 rounded-none border-slate-200 bg-white text-phx-md"
+                                  className="text-phx-md"
                                   onChange={(event) => updatePharmacy(customer.key, pharmacy.key, { name: event.target.value })}
                                   placeholder="Name"
                                   value={pharmacy.name}
@@ -3488,7 +3490,7 @@ export function MarketingValidationWorkspace() {
                                         ))}
                                       </SelectField>
                                       <Input
-                                        className="order-last col-span-2 h-10 rounded-none border-slate-200 bg-white text-phx-md sm:order-none sm:col-span-1"
+                                        className="order-last col-span-2 text-phx-md sm:order-none sm:col-span-1"
                                         onChange={(event) => {
                                           const nextCode = event.target.value;
                                           updateVendorCode(customer.key, pharmacy.key, line.key, { distributorCode: nextCode });

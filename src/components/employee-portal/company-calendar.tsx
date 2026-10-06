@@ -14,6 +14,11 @@ import {
 import type { CompanyCalendarWorkspace } from "@/lib/calendar/service";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  phxFieldClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 const emptySubscribe = () => () => {};
@@ -515,7 +520,7 @@ export function CompanyCalendar({
                   </Field>
                   <Field label="Description (optional)">
                     <textarea
-                      className="min-h-20 w-full rounded border border-slate-200 p-2.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+                      className={cn(phxTextareaClassName, "min-h-20")}
                       onChange={(e) => setEditor({ ...editor, description: e.target.value })}
                       value={editor.description}
                     />
@@ -545,8 +550,7 @@ export function CompanyCalendar({
   );
 }
 
-const inputCls =
-  "h-11 w-full rounded border border-slate-200 bg-white px-3 text-sm text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20";
+const inputCls  = phxFieldClassName;
 
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (

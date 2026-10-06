@@ -11,6 +11,7 @@ import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 
 import { SectionHeading } from "./section-shell";
 import { SelectField } from "./select-field";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -169,7 +170,7 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
                   type="date"
                   value={fabValueDate}
                   onChange={(event) => setFabValueDate(event.target.value)}
-                  className="h-10 w-full border border-slate-300 px-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-400 focus-visible:border-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                  className={phxFieldClassName}
                 />
               </label>
               <Button

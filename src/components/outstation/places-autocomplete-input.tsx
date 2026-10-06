@@ -4,6 +4,8 @@ import { Loader2, MapPin, Search, X } from "lucide-react";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 
 import type { PlacesPrediction } from "@/lib/outstation/types";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const SESSION_TOKEN = Math.random().toString(36).slice(2);
 
@@ -124,7 +126,7 @@ export function PlacesAutocompleteInput({
       <div className="relative flex items-center">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
         <input
-          className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 pl-9 pr-9 text-sm font-semibold text-phx-ink shadow-sm placeholder:font-normal placeholder:text-phx-ink-faint focus:border-phx-accent focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
+          className={cn(phxFieldClassName, "pl-9 pr-9")}
           disabled={disabled}
           onChange={handleChange}
           onFocus={() => predictions.length > 0 && setOpen(true)}

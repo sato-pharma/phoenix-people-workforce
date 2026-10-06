@@ -8,6 +8,8 @@ import { AUDIT_ENTITY_TYPES } from "@/lib/admin/audit-entity-types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 
 // Every audit entity type there is, and the reason it is not a list typed out here.
@@ -147,7 +149,7 @@ export function AuditLogViewer({
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-soft" />
             <input
-              className="h-10 w-full rounded-xl border border-phx-line bg-phx-paper pl-8 pr-3 text-xs font-semibold text-phx-ink placeholder:text-phx-ink-soft focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+              className={cn(phxFieldClassName, "pl-8")}
               onChange={(e) => setDraftFilters((f) => ({ ...f, actor: e.target.value || null }))}
               placeholder="Actor login ID..."
               value={draftFilters.actor ?? ""}
@@ -156,14 +158,14 @@ export function AuditLogViewer({
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-soft" />
             <input
-              className="h-10 w-full rounded-xl border border-phx-line bg-phx-paper pl-8 pr-3 text-xs font-semibold text-phx-ink placeholder:text-phx-ink-soft focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+              className={cn(phxFieldClassName, "pl-8")}
               onChange={(e) => setDraftFilters((f) => ({ ...f, action: e.target.value || null }))}
               placeholder="Summary keyword..."
               value={draftFilters.action ?? ""}
             />
           </div>
           <SearchableSelect
-            className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-xs font-semibold text-phx-ink focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+            className="px-3 text-xs"
             /*
              * 🔴 THE CAP HAS TO RISE WITH THE LIST, OR THIS "IMPROVEMENT" HIDES MORE THAN IT SHOWS.
              * SearchableSelect shows `maxResults` rows and defaults to 100. The catalogue is 128
@@ -182,13 +184,13 @@ export function AuditLogViewer({
             ))}
           </SearchableSelect>
           <input
-            className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-xs font-semibold text-phx-ink focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+            className={phxFieldClassName}
             onChange={(e) => setDraftFilters((f) => ({ ...f, dateFrom: e.target.value || null }))}
             type="date"
             value={draftFilters.dateFrom ?? ""}
           />
           <input
-            className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-xs font-semibold text-phx-ink focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+            className={phxFieldClassName}
             onChange={(e) => setDraftFilters((f) => ({ ...f, dateTo: e.target.value || null }))}
             type="date"
             value={draftFilters.dateTo ?? ""}

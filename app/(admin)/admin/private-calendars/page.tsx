@@ -7,6 +7,10 @@ import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/forma
 import { canUsePrivateCalendarAdminSurface, getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -108,7 +112,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               Name
             </label>
             <input
-              className="w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
+              className={phxFieldClassName}
               defaultValue={nameFilter}
               name="name"
               placeholder="Search by name..."
@@ -120,7 +124,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               Line
             </label>
             <select
-              className="w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
+              className={phxSelectClassName}
               defaultValue={lineFilter}
               name="line"
             >
@@ -135,7 +139,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               Region / Area
             </label>
             <select
-              className="w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
+              className={phxSelectClassName}
               defaultValue={regionFilter}
               name="region"
             >
@@ -150,7 +154,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               Title
             </label>
             <input
-              className="w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
+              className={phxFieldClassName}
               defaultValue={titleFilter}
               name="title"
               placeholder="Filter by title..."
@@ -164,7 +168,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               Month
             </label>
             <select
-              className="border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
+              className={phxSelectClassName}
               defaultValue={month}
               name="month"
             >
@@ -178,7 +182,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               Year
             </label>
             <input
-              className="border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
+              className={phxFieldClassName}
               defaultValue={year}
               max={currentYear + 1}
               min={2024}

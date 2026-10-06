@@ -23,6 +23,7 @@ import type { DistributorSalesValidationIssue, DistributorSalesValidationResult 
 import type { MonthlySalesRun, MonthlySalesStep } from "@/lib/sales/monthly-sales-run";
 import { officeCommitMessage, type StepConfirmation } from "@/lib/sales/step-confirmation";
 import { cn } from "@/lib/utils";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type RunResponse = { success: boolean; data?: MonthlySalesRun; error?: string; code?: string };
 type ValidateResponse = {
@@ -333,7 +334,7 @@ export function MonthlySalesWizard({
               type="month"
               value={period}
               onChange={(event) => setPeriod(event.target.value)}
-              className="h-10 rounded-xl border border-phx-line bg-white px-3 text-sm font-bold text-slate-800"
+              className={phxFieldClassName}
             />
           </div>
           <Button className="gap-2 rounded-xl font-black" disabled={busy} onClick={() => void startRun()}>

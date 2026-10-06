@@ -12,6 +12,8 @@ import type { IssueStatus } from "@/lib/error-monitor/derived-status";
 import type { ClusterSummary, ErrorExplanation } from "@/lib/error-monitor/ai-triage";
 import type { DeployTimeline, LoginSecuritySignals, ReproTrailEntry } from "@/lib/error-monitor/service";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 type ExplainState = { loading: boolean; error: string | null; data: ErrorExplanation | null };
 type SummaryState = { loading: boolean; error: string | null; data: ClusterSummary | null };
@@ -1239,20 +1241,20 @@ export function SystemIssuesDashboard({
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-soft" />
                 <input
-                  className="h-10 w-full rounded-xl border border-phx-line bg-phx-paper pl-8 pr-3 text-xs font-semibold text-phx-ink placeholder:text-phx-ink-soft focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+                  className={cn(phxFieldClassName, "pl-8")}
                   onChange={(e) => setHrIdDraft(e.target.value)}
                   placeholder="HR ID..."
                   value={hrIdDraft}
                 />
               </div>
               <input
-                className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-xs font-semibold text-phx-ink focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+                className={phxFieldClassName}
                 onChange={(e) => setDateFromDraft(e.target.value)}
                 type="date"
                 value={dateFromDraft}
               />
               <input
-                className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-xs font-semibold text-phx-ink focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+                className={phxFieldClassName}
                 onChange={(e) => setDateToDraft(e.target.value)}
                 type="date"
                 value={dateToDraft}

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { CalendarDays, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 /**
  * HR / Super Admin control to re-date a whole plan onto a different period.
@@ -77,7 +78,7 @@ export function MovePlanPeriod({
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
           aria-label={`Destination ${planKind === "monthly" ? "month" : "week"}`}
-          className="border border-slate-300 bg-white px-2.5 py-2 text-sm font-semibold text-slate-800"
+          className={phxFieldClassName}
           onChange={(event) => setTargetDate(event.target.value)}
           type="date"
           value={targetDate}

@@ -18,6 +18,8 @@ import {
   TURBIFY_CONTROL_PANEL_URL,
 } from "@/lib/new-hire-mailbox/messages";
 import type { NewHireMailboxTask } from "@/lib/new-hire-mailbox/service";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 /**
  * New Hire Mailboxes — the page the "new employee, company email needed" notice lands on.
@@ -153,7 +155,7 @@ function PendingCard({
                 Why this person needs no company email
               </span>
               <input
-                className="h-9 w-full border border-slate-300 bg-white px-2.5 text-sm text-slate-900"
+                className={phxFieldClassName}
                 onChange={(event) => setNote(event.target.value)}
                 placeholder="e.g. Driver — never uses email"
                 type="text"
@@ -166,7 +168,7 @@ function PendingCard({
                 <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Email address</span>
                 <input
                   autoComplete="off"
-                  className="h-9 w-full border border-slate-300 bg-white px-2.5 text-sm text-slate-900"
+                  className={phxFieldClassName}
                   onChange={(event) => setEmailAddress(event.target.value)}
                   placeholder="first.second@satopharma.com"
                   spellCheck={false}
@@ -178,7 +180,7 @@ function PendingCard({
                 <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">App password</span>
                 <input
                   autoComplete="off"
-                  className="h-9 w-full border border-slate-300 bg-white px-2.5 text-sm text-slate-900"
+                  className={phxFieldClassName}
                   onChange={(event) => setAppPassword(event.target.value)}
                   placeholder="The letters Turbify showed, spaces or not"
                   spellCheck={false}
@@ -355,7 +357,7 @@ export function NewHireMailboxPanel({
           <div className="relative w-full sm:w-64">
             <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
-              className="h-9 w-full border border-slate-300 bg-white pl-8 pr-2 text-sm text-slate-800"
+              className={cn(phxFieldClassName, "pl-8")}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search by name, email or line"
               type="text"

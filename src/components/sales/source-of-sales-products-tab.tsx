@@ -153,7 +153,6 @@ function ProductField({
         {label}{required ? " *" : ""}
       </span>
       <Input
-        className="h-11 rounded-2xl border-phx-line bg-phx-paper font-semibold text-phx-ink focus-visible:outline-phx-accent"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         required={required}
@@ -491,7 +490,7 @@ export function SourceOfSalesProductsTab({
           <label className="relative block max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-soft" />
             <Input
-              className="h-11 rounded-2xl border-phx-line bg-phx-paper pl-10 font-semibold text-phx-ink"
+              className="pl-10"
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search products..."
               value={search}

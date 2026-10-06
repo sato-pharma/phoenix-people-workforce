@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Props = { token: string };
 
@@ -87,7 +88,7 @@ export function SharedDirectOrderReport({ token }: Props) {
           <p className="text-phx-md text-slate-600">Enter the passcode you were given to open this report.</p>
           <input
             type="password"
-            className="w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+            className={phxFieldClassName}
             value={passcode}
             onChange={(e) => setPasscode(e.target.value)}
             onKeyDown={(e) => {

@@ -9,6 +9,10 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { EditableProfile, ProfileFieldKey } from "@/lib/sales/normalizer/distributor-profile-store";
 import { FREE_GOODS_FLAG_HINT, FREE_GOODS_FLAG_LABEL } from "@/lib/sales/normalizer/free-goods-flag";
+import {
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 // Field labels mirror PROFILE_FIELDS in the (server-only) store — duplicated here so this client
 // component never imports the server module. Order matches the editor form + the DB columns.
@@ -166,7 +170,7 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
-            <select className="h-9 min-w-64 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => pick(e.target.value)} value={selected}>
+            <select className={`${phxSelectClassName} min-w-64`} onChange={(e) => pick(e.target.value)} value={selected}>
               {profiles.map((p) => (
                 <option key={p.distributorCode} value={p.distributorCode}>{p.distributorName} ({p.distributorCode}){p.isCustom ? " · edited" : ""}</option>
               ))}
@@ -179,15 +183,15 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="flex flex-col gap-1">
             <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Code</span>
-            <input className="h-9 rounded-[6px] border border-phx-line px-2 text-sm font-mono disabled:bg-phx-paper-2" disabled={!isNew} onChange={(e) => setDraft((d) => ({ ...d, distributorCode: e.target.value.toUpperCase() }))} placeholder="e.g. NEW-DIST" value={draft.distributorCode} />
+            <input className={cn(phxFieldClassName, "font-mono")} disabled={!isNew} onChange={(e) => setDraft((d) => ({ ...d, distributorCode: e.target.value.toUpperCase() }))} placeholder="e.g. NEW-DIST" value={draft.distributorCode} />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Name</span>
-            <input className="h-9 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => setDraft((d) => ({ ...d, distributorName: e.target.value }))} value={draft.distributorName} />
+            <input className={phxFieldClassName} onChange={(e) => setDraft((d) => ({ ...d, distributorName: e.target.value }))} value={draft.distributorName} />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Value source</span>
-            <select className="h-9 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => setDraft((d) => ({ ...d, valueSource: e.target.value === "sheet" ? "sheet" : "recompute" }))} value={draft.valueSource}>
+            <select className={phxSelectClassName} onChange={(e) => setDraft((d) => ({ ...d, valueSource: e.target.value === "sheet" ? "sheet" : "recompute" }))} value={draft.valueSource}>
               <option value="recompute">recompute (qty × master price)</option>
               <option value="sheet">sheet (value column)</option>
             </select>
@@ -223,7 +227,7 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
               <label className="flex flex-col gap-1 bg-white px-3 py-2" key={f.key}>
                 <span className="text-phx-xs font-bold text-phx-ink-2">{f.label}</span>
                 {f.hint ? <span className="text-phx-2xs font-semibold leading-snug text-phx-warn">{f.hint}</span> : null}
-                <input className="h-8 rounded-[6px] border border-phx-line px-2 text-xs font-mono" onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
+                <input className={cn(phxFieldClassName, "font-mono")} onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
                 {obs && obs.status !== "empty" ? (
                   obs.status === "found"
                     ? <span className="truncate text-phx-2xs font-semibold text-emerald-700" title={obs.foundAlias ?? ""}>✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>

@@ -49,6 +49,7 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 
 function formatEGP(value: number) {
@@ -1331,7 +1332,7 @@ export function ExpenseReport({
               <p className="text-xs text-phx-ink-soft">Saved HR/admin approved rows with HR ID only.</p>
             </div>
             <SearchableSelect
-              className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-phx-ink focus:outline-none"
+              className="px-3"
               onChange={(event) => setImportMonth(event.target.value)}
               value={importMonth}
             >
@@ -1342,7 +1343,7 @@ export function ExpenseReport({
               ))}
             </SearchableSelect>
             <SearchableSelect
-              className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-phx-ink focus:outline-none"
+              className="px-3"
               onChange={(event) => setImportYear(event.target.value)}
               value={importYear}
             >
@@ -1367,19 +1368,18 @@ export function ExpenseReport({
 
           <div className="grid gap-3 rounded-[28px] border border-phx-line bg-phx-paper/80 p-3 md:grid-cols-[1fr_180px_180px_auto]">
             <Input
-              className="bg-white"
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search specialist, HR ID, route, trip, status..."
               value={search}
             />
             <input
-              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+              className={phxFieldClassName}
               onChange={(event) => setTripDateFrom(event.target.value)}
               type="date"
               value={tripDateFrom}
             />
             <input
-              className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
+              className={phxFieldClassName}
               onChange={(event) => setTripDateTo(event.target.value)}
               type="date"
               value={tripDateTo}

@@ -160,7 +160,7 @@ export function BusinessCardRequestsQueue({
                     <span className="hidden sm:inline">Status</span>
                     <SearchableSelect
                       aria-label={`Status for ${item.cardName}`}
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                      className="px-2 py-1 text-xs"
                       disabled={savingId === item.id}
                       onChange={(event) => changeStatus(item.id, event.target.value as BusinessCardRequestStatus)}
                       value={item.status}

@@ -14,14 +14,17 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  phxFieldClassName,
+  phxLabelClassName,
+} from "@/components/ui/form-tokens";
 
 
 // ─── Premium design language (square corners, slate-900/orange) ──────────────
 
-const fieldClass =
-  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+const fieldClass  = phxFieldClassName;
 const selectClass = `${fieldClass} cursor-pointer`;
-const microLabel = "mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500";
+const microLabel = phxLabelClassName;
 const btnDark =
   "inline-flex items-center gap-1.5 border border-slate-900 bg-slate-900 px-5 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50";
 const btnGhost =
