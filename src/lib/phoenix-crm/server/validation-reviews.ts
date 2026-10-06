@@ -26,7 +26,7 @@ import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
@@ -249,17 +249,19 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
 
   const customerIds = [...new Set(reviews.map((row) => String(row.customer_id)))];
   const placeIds = [...new Set(reviews.map((row) => String(row.place_id)))];
+  // selectByIds, never a bare `.in()`: at the page's 500-review cap these id lists can cross the ~395
+  // that overflows the request headers (see selectByIds / the postgrest-in memory note).
   const [customers, places] = await Promise.all([
-    getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, list_type, speciality").in("id", customerIds),
-    getSupabaseAdmin()
-      .from("phoenix_crm_places")
-      .select("id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status")
-      .in("id", placeIds),
+    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
+    selectByIds<Row>(
+      "phoenix_crm_places",
+      "id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status",
+      "id",
+      placeIds,
+    ),
   ]);
-  throwIfError(customers.error);
-  throwIfError(places.error);
-  const customerById = new Map(((customers.data ?? []) as Row[]).map((row) => [String(row.id), row]));
-  const placeById = new Map(((places.data ?? []) as Row[]).map((row) => [String(row.id), row]));
+  const customerById = new Map(customers.map((row) => [String(row.id), row]));
+  const placeById = new Map(places.map((row) => [String(row.id), row]));
   const names = await loadPeopleNames(reviews.flatMap((row) => [text(row.created_by_hr_id), text(row.decided_by_hr_id)]));
 
   return reviews.map((row) => {
@@ -451,25 +453,30 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
   if (places.length === 0) return [];
 
   const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
+  // selectByIds, never a bare `.in()`: with the field grown past ~395 active places (482 on
+  // production, 2026-10-07), a 400-id `.in()` overflowed the response headers and threw
+  // UND_ERR_HEADERS_OVERFLOW ("fetch failed"), which the admin error boundary showed as "Admin
+  // workspace unavailable". It also pages each chunk, so the visit count cannot be cut at 1,000 rows.
   const [customers, pending, visits, activePlaces] = await Promise.all([
-    getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, list_type, speciality").in("id", customerIds),
-    getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("place_id").eq("status", "pending").in("customer_id", customerIds),
-    getSupabaseAdmin().from("phoenix_crm_visits").select("place_id").in("place_id", places.map((row) => String(row.id))),
-    getSupabaseAdmin().from("phoenix_crm_places").select("id, customer_id").eq("status", "active").in("customer_id", customerIds),
+    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
+    selectByIds<Row>("phoenix_crm_validation_reviews", "id, place_id", "customer_id", customerIds, (query) => query.eq("status", "pending")),
+    selectByIds<Row>(
+      "phoenix_crm_visits",
+      "id, place_id",
+      "place_id",
+      places.map((row) => String(row.id)),
+    ),
+    selectByIds<Row>("phoenix_crm_places", "id, customer_id", "customer_id", customerIds, (query) => query.eq("status", "active")),
   ]);
-  throwIfError(customers.error);
-  throwIfError(pending.error);
-  throwIfError(visits.error);
-  throwIfError(activePlaces.error);
-  const customerById = new Map(((customers.data ?? []) as Row[]).map((row) => [String(row.id), row]));
-  const held = new Set(((pending.data ?? []) as Row[]).map((row) => String(row.place_id)));
+  const customerById = new Map(customers.map((row) => [String(row.id), row]));
+  const held = new Set(pending.map((row) => String(row.place_id)));
   const visitsByPlace = new Map<string, number>();
-  for (const row of (visits.data ?? []) as Row[]) {
+  for (const row of visits) {
     const placeId = String(row.place_id ?? "");
     if (placeId) visitsByPlace.set(placeId, (visitsByPlace.get(placeId) ?? 0) + 1);
   }
   const placesByCustomer = new Map<string, number>();
-  for (const row of (activePlaces.data ?? []) as Row[]) {
+  for (const row of activePlaces) {
     const customerId = String(row.customer_id);
     placesByCustomer.set(customerId, (placesByCustomer.get(customerId) ?? 0) + 1);
   }
