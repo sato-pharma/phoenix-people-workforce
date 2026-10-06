@@ -1,6 +1,6 @@
 ---
 name: b-10-is-the-owner-himself
-description: "HR id B-10 (Omar Anwar Ibrahim Ahmed Gawish, HR Section Head) is the OWNER — the person in the chat — and the system's only Super Admin, so never treat a B-10 audit row as a third party to notify or advise him to talk to."
+description: "HR id B-10 (Omar Anwar Ibrahim Ahmed Gawish, HR Manager since October 2026, previously HR Section Head) is the OWNER — the person in the chat — and the system's only Super Admin, so never treat a B-10 audit row as a third party to notify or advise him to talk to."
 metadata: 
   node_type: memory
   type: user
@@ -8,7 +8,7 @@ metadata:
   modified: 2026-09-08T10:41:01.286Z
 ---
 
-**`B-10` is the owner himself** — Omar Anwar Ibrahim Ahmed Gawish, HR Section Head,
+**`B-10` is the owner himself** — Omar Anwar Ibrahim Ahmed Gawish, HR Manager since October 2026 (HR Section Head before that; the Phoenix record and account title still read HR Section Head until he changes them),
 `omar.anwar@satopharma.com`, and the **only** `super_admin` in `user_access_profiles`.
 
 **Why this matters:** his hr_id appears as the actor on approvals all over production —

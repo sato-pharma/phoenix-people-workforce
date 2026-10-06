@@ -30,16 +30,36 @@ import { execFileSync } from 'node:child_process';
 const REPO = 'Gawish-1997/phoenix-people-workforce';
 
 /**
- * Severities that fail `--audit-level=high`. `moderate` and `low` do NOT fail the audit, so they are
- * reported but never treated as urgent — calling them urgent would train a reader to ignore the report.
+ * Severities that fail `--audit-level=high`. `moderate`/`medium` and `low` do NOT fail the audit, so
+ * they are reported but never treated as urgent — calling them urgent would train a reader to ignore
+ * the report. (The REST alerts endpoint spells it `medium`, GraphQL and `npm audit` `moderate`; see
+ * KNOWN_SEVERITIES below, where listing only one of the two spellings cost a false alarm.)
  */
 export const AUDIT_FAILING_SEVERITIES = new Set(['high', 'critical']);
 
 /**
  * Every severity GitHub actually issues. Anything outside this set is not a quieter alert — it is an
  * alert whose severity could not be read, and those are treated as URGENT below.
+ *
+ * 🔴 `medium` AND `moderate` ARE BOTH LISTED BECAUSE THE TWO GITHUB APIS SPELL THE SAME SEVERITY
+ * DIFFERENTLY. The REST endpoint this file reads — `repos/<repo>/dependabot/alerts` — answers
+ * `medium`; GraphQL and `npm audit` answer `moderate`. Only `moderate` was listed, so every MEDIUM
+ * alert fell out of this set and was graded URGENT by the unreadable-severity rule below, printing
+ * `UNREADABLE-SEVERITY(medium) — graded urgent because it could not be graded` under a headline
+ * `N open HIGH+ alert(s)` — for alerts that are not HIGH and cannot fail `--audit-level=high` at
+ * all. Measured 2026-10-06 against the live endpoint: `postcss-selector-parser`
+ * (GHSA-rj75-hqrm-r3gf, CVSS 5.9) and `sprintf-js` (GHSA-hp3w-g68c-fv3c, CVSS 5.3) both answered
+ * `severity: "medium"`, and both were reported as gate-blocking while the gate command itself
+ * passed. That is precisely the 4am failure `docs/security/open-dependency-alerts.md` exists to
+ * prevent, arriving from inside the checker: it sends a session hunting a bump that blocks nothing,
+ * and `sprintf-js` has no patched version to hunt.
+ *
+ * The parenthesised severity in that message is what gave it away — a value it could PRINT cannot
+ * be a value it could not READ. Adding a spelling here adds a value GitHub is known to issue; it is
+ * never a way to quieten an alert, because `AUDIT_FAILING_SEVERITIES` above is the only thing that
+ * decides urgency for a severity that IS readable.
  */
-export const KNOWN_SEVERITIES = new Set(['low', 'moderate', 'high', 'critical']);
+export const KNOWN_SEVERITIES = new Set(['low', 'moderate', 'medium', 'high', 'critical']);
 
 /**
  * Open alerts, or `{ skipped: <why> }`. Never throws and never guesses.
@@ -209,7 +229,9 @@ export function classifyAlerts(alerts) {
   }
   // Critical before high, then by package, so the same set always prints in the same order — a report
   // whose order moves between runs cannot be diffed by a reader.
-  const rank = (s) => (s === 'critical' ? 0 : s === 'high' ? 1 : s === 'moderate' ? 2 : s === 'low' ? 3 : 4);
+  // `medium` ranks with `moderate` — the same severity in the other API's spelling.
+  const rank = (s) =>
+    s === 'critical' ? 0 : s === 'high' ? 1 : s === 'moderate' || s === 'medium' ? 2 : s === 'low' ? 3 : 4;
   const order = (a, b) => rank(a.severity) - rank(b.severity) || a.package.localeCompare(b.package);
   return { failing: failing.sort(order), other: other.sort(order), unreachable: unreachable.sort(order) };
 }

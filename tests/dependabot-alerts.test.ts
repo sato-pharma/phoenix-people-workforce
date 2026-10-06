@@ -139,7 +139,35 @@ export function runDependabotAlertsTests() {
       "the line must say the severity could not be read, not imply a HIGH the payload never stated",
     );
   }
-  assert.deepEqual([...KNOWN_SEVERITIES].sort(), ["critical", "high", "low", "moderate"]);
+  assert.deepEqual([...KNOWN_SEVERITIES].sort(), ["critical", "high", "low", "medium", "moderate"]);
+
+  // 3b. A LIVE `medium` IS BELOW THE GATE, NOT UNREADABLE
+  // The REST endpoint the script reads answers `medium`; GraphQL and `npm audit` answer `moderate`.
+  // Only `moderate` was listed, so every MEDIUM alert fell out of KNOWN_SEVERITIES and was graded
+  // urgent by the rule above — reported as `N open HIGH+ alert(s)` and `WILL FAIL CI` for something
+  // that cannot fail `--audit-level=high` at all. Measured 2026-10-06: postcss-selector-parser
+  // (GHSA-rj75-hqrm-r3gf) and sprintf-js (GHSA-hp3w-g68c-fv3c) both answered `medium` and both were
+  // reported as gate-blocking while the gate command passed, and sprintf-js has no patch to bump to.
+  assert.ok(!AUDIT_FAILING_SEVERITIES.has("medium"), "medium does not fail --audit-level=high either");
+  for (const severity of ["medium", "moderate"]) {
+    const { failing, other, unreachable } = classifyAlerts([
+      alert({ severity, pkg: "sprintf-js", manifest: "pnpm-lock.yaml", scope: "runtime", patched: null }),
+    ]);
+    assert.equal(
+      failing.length,
+      0,
+      `a ${severity} alert must NOT be graded urgent — both spellings are the same severity, and ` +
+        "neither fails the gate",
+    );
+    assert.equal(unreachable.length, 0, `a ${severity} alert is below the gate, not out of its reach`);
+    assert.equal(other.length, 1, `a ${severity} alert belongs in the below-the-audit-level list`);
+    assert.doesNotMatch(
+      describeAlert(other[0]),
+      /UNREADABLE-SEVERITY/,
+      `a ${severity} the payload stated plainly must never be reported as one nobody could read — a ` +
+        "value the message can PRINT is not a value it could not READ",
+    );
+  }
 
   // 4. THE TWO REAL OUTCOMES
   const high = judgeAlerts(
