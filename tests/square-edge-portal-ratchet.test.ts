@@ -65,8 +65,15 @@ import { stripComments } from "./support/comment-strip.ts";
  * If a file leaves this set (it stops portalling to the body, so a shell sweep now
  * covers it) the count drops and this test asks for the baseline to be lowered —
  * which is correct: the ground was genuinely won.
+ *
+ * LOWERED TWICE, each time because the `count < BASELINE` branch at the foot of this
+ * file asked for it: 177 -> 174 in #4692, and 174 -> 173 on 2026-10-06, measured on
+ * origin/main at 04ac23842. Taking the number down is the entire point of a ratchet —
+ * while it read 174 a site could be re-added for free and nothing would have gone red,
+ * so the ground won was still giveable. The warn branch is not a nag; it is the only
+ * moment the count is known to have dropped, and ignoring it silently re-opens the gap.
  */
-const BASELINE = 174;
+const BASELINE = 173;
 
 const ROOTS = ["app", "src/components"];
 
