@@ -24,6 +24,7 @@ import ExcelJS from "exceljs";
 import {
   buildHouseCoverSheet,
   writeHouseTable,
+  F,
   type CellValue,
   type TableColumn,
 } from "@/lib/export/house-table-workbook";
@@ -75,6 +76,44 @@ function money(value: number | null): CellValue {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+// ── Live totals ──────────────────────────────────────────────────────────────
+// The owner's rule for this workbook (2026-10-06): every total is a live Excel
+// SUM, not a number baked in at export time, so the sheet foots in front of him
+// and reacts if a cell is edited. We can do this safely because candidate amounts
+// are already rounded to 2dp at source (calculations.ts), so SUM-of-cells equals
+// the resolved per-employee/overall totals publish uses — the sheet and payroll
+// still never disagree (see the header note).
+//
+// writeHouseTable is called with startRow = 1 on every sheet below: row 1 is the
+// title, row 2 the header, so data begins on Excel row 3 and the totals row sits
+// at FIRST_DATA_ROW + rowCount. Every SUM() range here is built from those two
+// facts; buildMasterWorkbookFormulaLayout() in the test pins them.
+const FIRST_DATA_ROW = 3;
+
+/** 0-based column index → Excel column letter (0 → "A", 26 → "AA"). */
+function columnLetter(index0: number): string {
+  let n = index0;
+  let letter = "";
+  do {
+    letter = String.fromCharCode(65 + (n % 26)) + letter;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return letter;
+}
+
+/**
+ * A column total as a live SUM over that column's data cells. The value we already
+ * computed rides along as the formula's cached result, so a reader (or a non-Excel
+ * consumer that does not recalc) still sees the number before any recalculation.
+ * With no data rows there is no range to sum, so it falls back to the plain value.
+ */
+function sumColumnTotal(index0: number, rowCount: number, result: number): CellValue {
+  if (rowCount <= 0) return round2(result);
+  const letter = columnLetter(index0);
+  const last = FIRST_DATA_ROW + rowCount - 1;
+  return F(`SUM(${letter}${FIRST_DATA_ROW}:${letter}${last})`, round2(result));
 }
 
 function joinDates(dates: readonly string[]): string {
@@ -146,12 +185,22 @@ function buildEmployeeSummaries(
   return rows.sort((left, right) => left.employeeName.localeCompare(right.employeeName));
 }
 
+/** Where the Summary total cells landed, so the Cover can reference them with a
+ *  live cross-sheet SUM rather than printing the same number twice. */
+type SummaryFormulaGeometry = {
+  sheetName: string;
+  firstDataRow: number;
+  lastDataRow: number;
+  finalDeductionLetter: string;
+  pendingLetter: string;
+};
+
 function buildSummarySheet(
   workbook: ExcelJS.Workbook,
   monthKey: string,
   employees: EmployeeSummaryRow[],
   filter: DeductionsOrgFilter,
-): void {
+): SummaryFormulaGeometry | null {
   // Only render a category column if at least one employee has a real (eligible)
   // deduction in it — an all-zero column is noise on a summary.
   const activeCategories = CATEGORIES_IN_ORDER.filter((category) =>
@@ -182,29 +231,61 @@ function buildSummarySheet(
     { label: "Pending (awaiting approval)", numFmt: "#,##0.00", right: true, width: 20 },
   ];
 
-  const rows: CellValue[][] = employees.map((employee) => [
-    employee.employeeHrId,
-    employee.employeeName,
-    employee.lineName,
-    employee.regionName,
-    employee.managerName,
-    ...activeCategories.map((category) => money(employee.summary.willPublish[category]?.amount ?? 0)),
-    money(employee.summary.willPublishTotal),
-    money(employee.summary.pendingTotal),
-  ]);
+  const firstCatIndex0 = leadColumns.length;
+  const lastCatIndex0 = leadColumns.length + activeCategories.length - 1;
+  const finalDeductionIndex0 = columns.length - 2;
+  const pendingIndex0 = columns.length - 1;
 
+  const rows: CellValue[][] = employees.map((employee, employeeIndex) => {
+    // Each employee's Final Deduction foots to their OWN category cells on this
+    // row — a live SUM, not the resolved number printed flat. It equals the
+    // willPublishTotal payroll takes because the category amounts are already 2dp
+    // (see the "Live totals" note above). With no category columns there is
+    // nothing to sum, so it falls back to the plain value.
+    const excelRow = FIRST_DATA_ROW + employeeIndex;
+    const finalDeduction: CellValue =
+      activeCategories.length > 0
+        ? F(
+            `SUM(${columnLetter(firstCatIndex0)}${excelRow}:${columnLetter(lastCatIndex0)}${excelRow})`,
+            round2(employee.summary.willPublishTotal),
+          )
+        : money(employee.summary.willPublishTotal);
+    return [
+      employee.employeeHrId,
+      employee.employeeName,
+      employee.lineName,
+      employee.regionName,
+      employee.managerName,
+      ...activeCategories.map((category) => money(employee.summary.willPublish[category]?.amount ?? 0)),
+      finalDeduction,
+      money(employee.summary.pendingTotal),
+    ];
+  });
+
+  // Every total on the row is a live SUM down its own column (owner rule, 2026-10-06).
   const totals: CellValue[] = new Array(columns.length).fill(null);
   totals[0] = "TOTAL";
   activeCategories.forEach((category, index) => {
-    totals[leadColumns.length + index] = round2(
+    totals[firstCatIndex0 + index] = sumColumnTotal(
+      firstCatIndex0 + index,
+      employees.length,
       employees.reduce((sum, employee) => sum + (employee.summary.willPublish[category]?.amount ?? 0), 0),
     );
   });
-  totals[columns.length - 2] = round2(employees.reduce((sum, employee) => sum + employee.summary.willPublishTotal, 0));
-  totals[columns.length - 1] = round2(employees.reduce((sum, employee) => sum + employee.summary.pendingTotal, 0));
+  totals[finalDeductionIndex0] = sumColumnTotal(
+    finalDeductionIndex0,
+    employees.length,
+    employees.reduce((sum, employee) => sum + employee.summary.willPublishTotal, 0),
+  );
+  totals[pendingIndex0] = sumColumnTotal(
+    pendingIndex0,
+    employees.length,
+    employees.reduce((sum, employee) => sum + employee.summary.pendingTotal, 0),
+  );
 
   const description = describeDeductionsOrgFilter(filter);
-  const sheet = workbook.addWorksheet(sanitizeSheetName("Summary"), { properties: { defaultColWidth: 14 } });
+  const sheetName = sanitizeSheetName("Summary");
+  const sheet = workbook.addWorksheet(sheetName, { properties: { defaultColWidth: 14 } });
   writeHouseTable(sheet, 1, {
     columns,
     rows,
@@ -216,6 +297,17 @@ function buildSummarySheet(
       ". Final Deduction is what publishing takes; Pending is detected but not yet approved. Amounts in EGP." +
       (description ? " This is a FILTERED extract — these totals are not the company's totals for the month." : ""),
   });
+
+  // No employees → writeHouseTable wrote no totals row, so there is nothing for
+  // the Cover to point at.
+  if (employees.length === 0) return null;
+  return {
+    sheetName,
+    firstDataRow: FIRST_DATA_ROW,
+    lastDataRow: FIRST_DATA_ROW + employees.length - 1,
+    finalDeductionLetter: columnLetter(finalDeductionIndex0),
+    pendingLetter: columnLetter(pendingIndex0),
+  };
 }
 
 const DETAIL_COLUMNS: TableColumn[] = [
@@ -314,7 +406,9 @@ function buildDetailedSheet(
   const totals: CellValue[] = new Array(DETAIL_COLUMNS.length).fill(null);
   totals[0] = "TOTAL";
   const appliedAmountColumnIndex = DETAIL_COLUMNS.findIndex((column) => column.label === "Applied Amount");
-  totals[appliedAmountColumnIndex] = totalAmount;
+  // A live SUM down the Applied Amount column (owner rule, 2026-10-06), carrying
+  // the resolved total as its cached result.
+  totals[appliedAmountColumnIndex] = sumColumnTotal(appliedAmountColumnIndex, ordered.length, totalAmount);
 
   const employeeCount = new Set(ordered.map((candidate) => candidate.employeeHrIdCompact)).size;
   const description = describeDeductionsOrgFilter(filter);
@@ -327,6 +421,25 @@ function buildDetailedSheet(
     note:
       `${ordered.length} candidate(s), ${employeeCount} employee(s), every category. Amounts in EGP.` +
       (description ? ` Filtered to ${description} — not the whole company.` : ""),
+  });
+}
+
+/** Repoints a Cover provenance value — written as text by buildHouseCoverSheet,
+ *  key in column 2, value in column 3 — at a live formula, keeping the house
+ *  styling the cover already put on the cell. Matching by the key label rather
+ *  than a row number keeps it stable if the cover's layout shifts. */
+function setCoverFormulaValue(
+  sheet: ExcelJS.Worksheet,
+  key: string,
+  formula: string,
+  result: number,
+): void {
+  sheet.eachRow((row) => {
+    if (row.getCell(2).value === key) {
+      const valueCell = row.getCell(3);
+      valueCell.value = { formula, result };
+      valueCell.numFmt = '#,##0.00" EGP"';
+    }
   });
 }
 
@@ -359,7 +472,7 @@ export function buildDeductionsMasterWorkbook(input: {
   const workbook = new ExcelJS.Workbook();
   workbook.created = new Date(meta.generatedAtIso);
 
-  buildHouseCoverSheet(workbook, {
+  const coverSheet = buildHouseCoverSheet(workbook, {
     title: `Deductions — Master (All Categories)${filterDescription ? " — Filtered" : ""}`,
     subtitle: filterDescription
       ? `Every deduction category for ${meta.monthKey}, narrowed to ${filterDescription}. A FILTERED extract — the totals below are for this selection only, not for the company.`
@@ -384,8 +497,20 @@ export function buildDeductionsMasterWorkbook(input: {
     ],
   });
 
-  buildSummarySheet(workbook, meta.monthKey, employees, filter);
+  const summaryGeometry = buildSummarySheet(workbook, meta.monthKey, employees, filter);
   buildDetailedSheet(workbook, meta.monthKey, candidates, orgByCompactHrId, filter);
+
+  // The Cover's two headline figures are the SAME totals the Summary foots to, so
+  // they are live cross-sheet SUMs rather than a second static copy that could
+  // drift from the sheet they summarise (owner rule, 2026-10-06) — only when the
+  // Summary actually wrote a totals row to point at.
+  if (summaryGeometry) {
+    const { sheetName, finalDeductionLetter, pendingLetter, firstDataRow, lastDataRow } = summaryGeometry;
+    const columnSum = (letter: string) =>
+      `SUM('${sheetName}'!${letter}${firstDataRow}:${letter}${lastDataRow})`;
+    setCoverFormulaValue(coverSheet, "Total to be deducted (applied)", columnSum(finalDeductionLetter), grandTotal);
+    setCoverFormulaValue(coverSheet, "Total pending (awaiting approval)", columnSum(pendingLetter), pendingTotal);
+  }
 
   return workbook;
 }

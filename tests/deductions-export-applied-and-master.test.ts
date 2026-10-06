@@ -251,9 +251,12 @@ export async function runDeductionsExportAppliedAndMasterTests(): Promise<void> 
 
   const summary = masterWb.getWorksheet("Summary")!;
   assert.ok(summary, "the master workbook must have a Summary sheet");
-  // Final = eligible only. Pending shown apart.
+  // Final = eligible only. Pending shown apart. Final Deduction is now a live
+  // SUM formula (owner rule, 2026-10-06), so read its result; it still equals
+  // what publish takes. The formula wiring itself is pinned by
+  // deductions-master-formula-totals.test.ts.
   assert.equal(
-    cellFor(summary, "B-207", "Final Deduction (EGP)"),
+    num(cellFor(summary, "B-207", "Final Deduction (EGP)")),
     4183.86,
     "the summary's final value is what will actually be deducted — the approved fingerprint row only",
   );
@@ -263,7 +266,7 @@ export async function runDeductionsExportAppliedAndMasterTests(): Promise<void> 
     "the unapproved fingerprint row is pending, never folded into the final figure",
   );
   assert.equal(
-    cellFor(summary, "B-500", "Final Deduction (EGP)"),
+    num(cellFor(summary, "B-500", "Final Deduction (EGP)")),
     725.81,
     "a mandatory CRM day is deducted by default, so it is the final figure for that employee",
   );
@@ -290,9 +293,10 @@ export async function runDeductionsExportAppliedAndMasterTests(): Promise<void> 
     "the detailed sheet's applied amount matches what publish takes",
   );
 
-  // Grand total across all categories = only what publish commits.
+  // Grand total across all categories = only what publish commits. Now a live
+  // SUM formula — read its result.
   assert.equal(
-    totalFor(detailed, "Applied Amount"),
+    num(totalFor(detailed, "Applied Amount")),
     round2(4183.86 + 725.81),
     "the master detail TOTAL is the approved fingerprint plus the mandatory CRM day, nothing cleared or pending",
   );
@@ -308,4 +312,14 @@ export async function runDeductionsExportAppliedAndMasterTests(): Promise<void> 
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** A cell's number, unwrapping a formula cell ({ formula, result }) to its result.
+ *  The master export's totals are live SUM formulas now, not static numbers. */
+function num(value: unknown): number {
+  if (typeof value === "object" && value !== null && "result" in value) {
+    const result = (value as { result: unknown }).result;
+    return typeof result === "number" ? result : Number(result);
+  }
+  return typeof value === "number" ? value : Number(value);
 }

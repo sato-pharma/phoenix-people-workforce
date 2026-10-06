@@ -280,8 +280,13 @@ export async function runDeductionsMasterExportLineRegionFilterTests(): Promise<
     "Manager One",
     "Direct Manager did not shift a column when Region was inserted before it",
   );
+  // Final Deduction is a live SUM formula now (owner rule, 2026-10-06); read its
+  // cached result. The point here is still column alignment, not the formula.
+  const finalCell = cellFor(summary, "B-207", "Final Deduction (EGP)");
   assert.equal(
-    cellFor(summary, "B-207", "Final Deduction (EGP)"),
+    typeof finalCell === "object" && finalCell !== null && "result" in finalCell
+      ? (finalCell as { result: unknown }).result
+      : finalCell,
     4000,
     "the money columns still line up after the new column — a shifted total is the failure this catches",
   );
