@@ -1,11 +1,11 @@
 ---
 name: outstation-nothing-ever-reaches-accepted-status
-description: "No outstation request in production ever reaches an accepted_* status, so any filter keyed on it is dead code — this is what made the held-requests repair panel permanently empty."
+description: "Outstation statuses DO reach accepted now — prod 2026-10-07: 59 accepted_by_admin AND 21 accepted_by_system (the automatic accept path HAS fired). The old 'nothing ever reaches accepted' absolute is dead; re-run the count before quoting any status total. The accepted-only guard in releaseOutstationRequestToPayrollIfReady is correct money logic and stays."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 55af0704-e4b4-4fdf-bfae-439d4a2433f0
-  modified: 2026-08-19T18:07:09.590Z
+  modified: 2026-10-07T20:15:48.519Z
 ---
 
 **`outstation_expense_requests.status` in production is only ever `submitted`, `approved` (3 legacy
@@ -53,3 +53,33 @@ which is the part that was always the real finding. But a Super Admin accepted o
 fires; `accepted_by_admin` is a manual override that has happened once." And re-run the count before
 quoting it: this file pinned an absolute and the absolute broke within four days.
 Note `src/lib/outstation/expense-gate.ts:203` still states the old absolute in a comment.
+
+## 2026-10-07 — FALSIFIED AGAIN, and now by a wide margin. The accept path fires routinely.
+
+Re-counted live against production (`ozucdzovmcqvepbozvqf`), as the line above demands:
+
+| status | rows | with both photos |
+| --- | --- | --- |
+| `submitted` | 91 | 46 |
+| **`accepted_by_admin`** | **59** | 26 |
+| **`accepted_by_system`** | **21** | 1 |
+| `rejected_by_admin` | 19 | 4 |
+| `approved` (legacy) | 3 | 0 |
+
+**Both of this note's original findings are now dead.** `accepted_by_system` is no longer 0 — the
+AUTOMATIC accept path has fired **21 times**, not "never once". `accepted_by_admin` is no longer a
+one-off manual override — it is **59 rows** and the single most common accepted state. A filter keyed
+on `status.startsWith("accepted")` now matches **80 of 193 rows**, not one. Any claim that an
+accepted-keyed LIST shows nothing is simply false today.
+
+**What is still true and must not be touched:** the accepted-only guard in
+`releaseOutstationRequestToPayrollIfReady` is correct MONEY logic — only an accepted request may be
+paid — and it stays. It is NOT dead code; it now admits the 80 accepted requests and still refuses
+the 91 `submitted` ones that are awaiting a human decision.
+
+**Observability consequence (fix shipping separately):** those 91 `submitted` requests include 46
+with both photos already captured. Each photo capture triggers `runAutomaticOutstationRelease`, which
+correctly declines (`"The request is submitted, so it is not waiting on evidence."`) but logged that
+expected waiting state at ERROR severity under `event=outstation_auto_release_held` — ~14/week of
+false-positive rows in `app_error_events` / the System Issues dashboard, burying the genuine stranded
+case the log exists to catch. The decline is correct; only its log level was wrong.
