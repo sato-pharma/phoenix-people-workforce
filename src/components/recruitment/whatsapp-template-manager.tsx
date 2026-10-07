@@ -17,6 +17,7 @@ import { deleteRequest, getJson, patchJson, postJson } from "@/components/recrui
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
 import { cn } from "@/lib/utils";
+import { phxWhatsAppSendButtonClassName } from "@/components/ui/brand-tokens";
 import {
   phxFieldClassName,
   phxTextareaClassName,
@@ -239,7 +240,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <button
-          className="border border-[#25D366] bg-[#25D366] px-4 py-2 text-sm font-semibold text-white"
+          className={phxWhatsAppSendButtonClassName}
           onClick={() => setSendOpen(true)}
           type="button"
         >

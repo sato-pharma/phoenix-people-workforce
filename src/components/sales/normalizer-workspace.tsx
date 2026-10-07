@@ -25,7 +25,10 @@ import { pickConfidence } from "@/lib/sales/normalizer/pick-confidence";
 import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { phxSelectClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonApproveDenseClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 
 
 type DistributorOption = { code: string; name: string };
@@ -1093,7 +1096,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                         </button>
                       ) : null}
                       {aiEnabled && preview.unknownCustomers.length > 0 ? (
-                        <button className="inline-flex h-9 items-center gap-2 border border-emerald-600 bg-emerald-600 px-3 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50" disabled={busy !== null} onClick={() => void autoMapCustomers()} title="Apply only the suggestions that pass the multi-signal geographic gate — everything applied is listed and undoable" type="button">
+                        <button className={cn(phxButtonApproveDenseClassName, "inline-flex h-9 items-center gap-2 border px-3 text-xs font-bold transition disabled:opacity-50")} disabled={busy !== null} onClick={() => void autoMapCustomers()} title="Apply only the suggestions that pass the multi-signal geographic gate — everything applied is listed and undoable" type="button">
                           {busy === "automap" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Auto-map high-confidence
                         </button>
                       ) : null}

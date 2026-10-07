@@ -72,6 +72,7 @@ import type {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import {
+  phxButtonAccentClassName,
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
@@ -298,9 +299,9 @@ function emptyPayload(): DraftWorkspacePayload {
 
 function MetricSkeleton() {
   return (
-    <div className="animate-pulse rounded-sm border border-slate-100 bg-slate-50 px-4 py-3">
-      <div className="h-2.5 w-16 rounded-sm bg-slate-200" />
-      <div className="mt-2.5 h-5 w-12 rounded-sm bg-slate-200" />
+    <div className="animate-pulse border border-slate-100 bg-slate-50 px-4 py-3">
+      <div className="h-2.5 w-16 bg-slate-200" />
+      <div className="mt-2.5 h-5 w-12 bg-slate-200" />
     </div>
   );
 }
@@ -308,18 +309,18 @@ function MetricSkeleton() {
 function FormSkeleton() {
   return (
     <div className="animate-pulse space-y-4 p-5">
-      <div className="h-4 w-28 rounded-sm bg-slate-200" />
+      <div className="h-4 w-28 bg-slate-200" />
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="h-10 rounded-sm bg-slate-100" />
-        <div className="h-10 rounded-sm bg-slate-100" />
+        <div className="h-10 bg-slate-100" />
+        <div className="h-10 bg-slate-100" />
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="h-10 rounded-sm bg-slate-100" />
-        <div className="h-10 rounded-sm bg-slate-100" />
-        <div className="h-10 rounded-sm bg-slate-100" />
+        <div className="h-10 bg-slate-100" />
+        <div className="h-10 bg-slate-100" />
+        <div className="h-10 bg-slate-100" />
       </div>
-      <div className="h-10 rounded-sm bg-slate-100" />
-      <div className="h-20 rounded-sm bg-slate-100" />
+      <div className="h-10 bg-slate-100" />
+      <div className="h-20 bg-slate-100" />
     </div>
   );
 }
@@ -329,7 +330,7 @@ function TableSkeleton({ cols, rows }: { cols: number; rows: number }) {
     <div className="animate-pulse">
       <div className="flex gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
         {Array.from({ length: cols }).map((_, i) => (
-          <div key={i} className="h-2.5 flex-1 rounded-sm bg-slate-200" />
+          <div key={i} className="h-2.5 flex-1 bg-slate-200" />
         ))}
       </div>
       {Array.from({ length: rows }).map((_, r) => (
@@ -338,7 +339,7 @@ function TableSkeleton({ cols, rows }: { cols: number; rows: number }) {
           className="flex gap-2 border-b border-slate-50 px-4 py-3"
         >
           {Array.from({ length: cols }).map((_, c) => (
-            <div key={c} className="h-3.5 flex-1 rounded-sm bg-slate-100" />
+            <div key={c} className="h-3.5 flex-1 bg-slate-100" />
           ))}
         </div>
       ))}
@@ -390,7 +391,7 @@ function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
   if (!points) return null;
 
   return (
-    <div className="mt-2 rounded-sm border border-slate-100 bg-slate-50 p-2">
+    <div className="mt-2 border border-slate-100 bg-slate-50 p-2">
       <p className="mb-1 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
         Cost Trend (last {Math.min(drafts.length, 12)} drafts)
       </p>
@@ -455,7 +456,7 @@ function MetricCard({
   };
   return (
     <div
-      className={`rounded-sm border border-slate-200 border-l-[3px] bg-white px-3 py-2.5 ${borderColors[accent]}`}
+      className={`border border-slate-200 border-l-[3px] bg-white px-3 py-2.5 ${borderColors[accent]}`}
     >
       <div className="flex items-center gap-1.5">
         <Icon className={`h-3 w-3 ${iconColors[accent]}`} />
@@ -504,7 +505,7 @@ function SelectField({
 
 function RoiMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-sm border border-slate-100 bg-slate-50 px-3 py-2">
+    <div className="flex items-center justify-between gap-2 border border-slate-100 bg-slate-50 px-3 py-2">
       <span className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
         {label}
       </span>
@@ -515,7 +516,7 @@ function RoiMetric({ label, value }: { label: string; value: string }) {
 
 function ReadOnlyValue({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex h-10 min-w-0 flex-col justify-center rounded-sm border border-slate-200 bg-white px-3">
+    <div className="flex h-10 min-w-0 flex-col justify-center border border-slate-200 bg-white px-3">
       <span className="text-phx-3xs font-bold uppercase tracking-[0.10em] text-slate-400">
         {label}
       </span>
@@ -538,7 +539,7 @@ function EvidenceUpload({
   onUpload: (file: File | null | undefined) => void;
 }) {
   return (
-    <label className="flex min-w-0 cursor-pointer flex-col gap-1 rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-2 transition hover:border-orange-200 hover:bg-orange-50">
+    <label className="flex min-w-0 cursor-pointer flex-col gap-1 border border-slate-200 bg-slate-50 px-2.5 py-2 transition hover:border-orange-200 hover:bg-orange-50">
       <span className="flex items-center gap-1.5 text-phx-xs font-bold text-slate-700">
         {isUploading ? (
           <LoadingSpinner />
@@ -568,7 +569,7 @@ function EvidenceUpload({
 function ShareBar({ pct }: { pct: number }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="hidden sm:flex h-1.5 flex-1 overflow-hidden rounded-sm bg-slate-100">
+      <div className="hidden sm:flex h-1.5 flex-1 overflow-hidden bg-slate-100">
         <div
           className="h-full bg-gradient-to-r from-orange-500 to-orange-200 transition-all duration-300"
           style={{ width: `${Math.min(pct, 100)}%` }}
@@ -600,7 +601,7 @@ function DraftStatusBar({ drafts }: { drafts: MarketingRequest[] }) {
 
   return (
     <div className="space-y-1.5">
-      <div className="flex h-2 w-full overflow-hidden rounded-sm bg-slate-100">
+      <div className="flex h-2 w-full overflow-hidden bg-slate-100">
         {pctCovers > 0 && (
           <div
             className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
@@ -622,16 +623,16 @@ function DraftStatusBar({ drafts }: { drafts: MarketingRequest[] }) {
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-phx-2xs font-medium text-slate-500">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-sm bg-emerald-500" />
+          <span className="inline-block h-1.5 w-1.5 bg-emerald-500" />
           Covers ROI {covers}
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-sm bg-amber-500" />
+          <span className="inline-block h-1.5 w-1.5 bg-amber-500" />
           Under Target {under}
         </span>
         {other > 0 && (
           <span className="flex items-center gap-1">
-            <span className="inline-block h-1.5 w-1.5 rounded-sm bg-slate-300" />
+            <span className="inline-block h-1.5 w-1.5 bg-slate-300" />
             Not Calculated {other}
           </span>
         )}
@@ -1386,7 +1387,7 @@ function MarketingRequestDraftWorkspaceInner() {
     <div className="space-y-3" dir="auto">
       {/* ------ Offline Banner (#3) ------------------------------------------------------------------------------------------------------------------ */}
       {!isOnline && (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-semibold text-amber-900">
+        <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-semibold text-amber-900">
           <WifiOff className="h-3.5 w-3.5 shrink-0" />
           <span>
             You are offline.
@@ -1438,7 +1439,7 @@ function MarketingRequestDraftWorkspaceInner() {
         </div>
         <button
           aria-label="Refresh data"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
+          className="flex h-10 w-10 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
           onClick={() => {
             setIsLoading(true);
             setMessage(null);
@@ -1457,7 +1458,7 @@ function MarketingRequestDraftWorkspaceInner() {
 
       {/* ------ Draft ROI Health + Sparkline ------------------------------------------------------------------------------------------ */}
       {!isLoading && workspace.drafts.length > 0 && (
-        <div className="rounded-sm border border-slate-200 bg-white px-4 py-3">
+        <div className="border border-slate-200 bg-white px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
               Draft ROI Health
@@ -1477,7 +1478,7 @@ function MarketingRequestDraftWorkspaceInner() {
       {/* ------ Alert Messages --------------------------------------------------------------------------------------------------------------------------------- */}
       {message ? (
         <div
-          className={`flex items-center gap-2 rounded-sm border px-3 py-2 text-phx-md font-semibold transition-all ${
+          className={`flex items-center gap-2 border px-3 py-2 text-phx-md font-semibold transition-all ${
             message.type === "success"
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
               : "border-amber-200 bg-amber-50 text-amber-900"
@@ -1491,9 +1492,9 @@ function MarketingRequestDraftWorkspaceInner() {
       ) : null}
 
       {/* ------ Tab Switcher --------------------------------------------------------------------------------------------------------------------------------------- */}
-      <div className="flex gap-1 rounded-sm border border-slate-200 bg-slate-50 p-1">
+      <div className="flex gap-1 border border-slate-200 bg-slate-50 p-1">
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-phx-md font-bold transition ${
+          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-phx-md font-bold transition ${
             activeView === "create"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1505,7 +1506,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Create</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black ${
+              className={`ml-0.5 px-1.5 py-0.5 text-phx-2xs font-black ${
                 activeView === "create"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1516,7 +1517,7 @@ function MarketingRequestDraftWorkspaceInner() {
           )}
         </button>
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-phx-md font-bold transition ${
+          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-phx-md font-bold transition ${
             activeView === "approved"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1528,7 +1529,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Approved</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black ${
+              className={`ml-0.5 px-1.5 py-0.5 text-phx-2xs font-black ${
                 activeView === "approved"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1539,7 +1540,7 @@ function MarketingRequestDraftWorkspaceInner() {
           )}
         </button>
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-phx-md font-bold transition ${
+          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-phx-md font-bold transition ${
             activeView === "tracking"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1551,7 +1552,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Tracking</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black ${
+              className={`ml-0.5 px-1.5 py-0.5 text-phx-2xs font-black ${
                 activeView === "tracking"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1572,7 +1573,7 @@ function MarketingRequestDraftWorkspaceInner() {
       >
         {/* ------ Resubmit banner --------------------------------------------------------------------------------------------------------------------------- */}
         {resubmitRequestId ? (
-          <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <div className="border border-amber-200 bg-amber-50 px-3 py-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2 text-phx-md font-semibold text-amber-900">
               <span className="flex min-w-0 items-center gap-2">
                 <Pencil className="h-3.5 w-3.5 shrink-0" />
@@ -1585,7 +1586,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 </span>
               </span>
               <button
-                className="flex shrink-0 items-center gap-1 rounded-sm border border-amber-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-amber-800 transition hover:bg-amber-100"
+                className="flex shrink-0 items-center gap-1 border border-amber-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-amber-800 transition hover:bg-amber-100"
                 onClick={cancelResubmit}
                 type="button"
               >
@@ -1605,7 +1606,7 @@ function MarketingRequestDraftWorkspaceInner() {
         ) : null}
 
         {/* ------ Draft Form Card ------------------------------------------------------------------------------------------------------------------------ */}
-        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <Card className="overflow-hidden border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           {isLoading ? (
             <FormSkeleton />
           ) : (
@@ -1918,7 +1919,7 @@ function MarketingRequestDraftWorkspaceInner() {
                         )}
                       </div>
                       <button
-                        className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                        className="flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
                         onClick={addProductLine}
                         type="button"
                       >
@@ -1931,7 +1932,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       const product = productMap.get(line.productId);
                       return (
                         <div
-                          className="rounded-sm border border-slate-200 bg-slate-50/50 p-2.5"
+                          className="border border-slate-200 bg-slate-50/50 p-2.5"
                           key={line.key}
                         >
                           {/* Desktop layout */}
@@ -2007,7 +2008,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             />
                             <button
                               aria-label="Remove product"
-                              className="flex h-10 w-full items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                              className="flex h-10 w-full items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                               onClick={() =>
                                 removeProductLine(line.key)
                               }
@@ -2058,7 +2059,7 @@ function MarketingRequestDraftWorkspaceInner() {
                               />
                               <button
                                 aria-label="Remove product"
-                                className="flex h-10 w-10 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                className="flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                                 onClick={() =>
                                   removeProductLine(line.key)
                                 }
@@ -2155,7 +2156,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     aria-describedby={
                       saveBlockers.length > 0 ? SAVE_BLOCKED_HINT_ID : undefined
                     }
-                    className="min-h-10 gap-1.5 rounded-sm bg-orange-500 px-5 text-phx-md font-bold text-white shadow-sm hover:bg-orange-600"
+                    className="min-h-10 gap-1.5 bg-orange-500 px-5 text-phx-md font-bold text-white shadow-sm hover:bg-orange-600"
                     disabled={!canSave}
                     type="submit"
                   >
@@ -2175,9 +2176,9 @@ function MarketingRequestDraftWorkspaceInner() {
         </Card>
 
         {/* ------ ROI Preview Card --------------------------------------------------------------------------------------------------------------------- */}
-        <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <Card className="border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+            <div className="flex h-8 w-8 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-orange-100">
               <BarChart3 className="h-3.5 w-3.5" />
             </div>
             <div>
@@ -2208,7 +2209,7 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
 
           {/* Smart coverage bar --- green/amber/red */}
-          <div className="mt-2 overflow-hidden rounded-sm bg-slate-100">
+          <div className="mt-2 overflow-hidden bg-slate-100">
             <div className="flex h-2 w-full overflow-hidden">
               <div
                 className={`h-full bg-gradient-to-r ${coverageGradient(coveragePct)} transition-all duration-500`}
@@ -2218,7 +2219,7 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
 
           {/* Capture quality — trust in the FUTURE ROI, scored from what the requester can still fix. */}
-          <div className={`mt-3 rounded-sm border px-3 py-2 ${CAPTURE_BAND_STYLE[captureConfidence.band]}`}>
+          <div className={`mt-3 border px-3 py-2 ${CAPTURE_BAND_STYLE[captureConfidence.band]}`}>
             <div className="flex items-center justify-between gap-2">
               <span className="text-phx-2xs font-bold uppercase tracking-[0.10em]">
                 Capture Quality
@@ -2236,7 +2237,7 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
 
           {/* Product ROI table --- Desktop */}
-          <div className="mt-3 hidden md:block overflow-hidden rounded-sm border border-slate-200">
+          <div className="mt-3 hidden md:block overflow-hidden border border-slate-200">
             {isLoading ? (
               <TableSkeleton cols={5} rows={3} />
             ) : (
@@ -2300,14 +2301,14 @@ function MarketingRequestDraftWorkspaceInner() {
           {/* Product ROI --- Mobile cards */}
           <div className="mt-3 block md:hidden space-y-2">
             {productLineMetrics.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-xs font-medium text-slate-400">
+              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-xs font-medium text-slate-400">
                 Add product quantities to preview ROI.
               </p>
             ) : (
               productLineMetrics.map((product) => (
                 <div
                   key={product.key}
-                  className="rounded-sm border border-slate-200 bg-slate-50 p-3 space-y-1.5"
+                  className="border border-slate-200 bg-slate-50 p-3 space-y-1.5"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-phx-md font-bold text-slate-950">
@@ -2317,7 +2318,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       {Math.round(product.valueShare * 100)}%
                     </span>
                   </div>
-                  <div className="h-1 overflow-hidden rounded-sm bg-slate-200">
+                  <div className="h-1 overflow-hidden bg-slate-200">
                     <div
                       className="h-full bg-gradient-to-r from-orange-500 to-orange-200"
                       style={{
@@ -2358,9 +2359,9 @@ function MarketingRequestDraftWorkspaceInner() {
         </Card>
 
         {/* ------ Draft Rows Card ------------------------------------------------------------------------------------------------------------------------ */}
-        <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <Card className="border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-slate-100 text-slate-600 ring-1 ring-slate-200">
+            <div className="flex h-8 w-8 items-center justify-center bg-slate-100 text-slate-600 ring-1 ring-slate-200">
               <ListChecks className="h-3.5 w-3.5" />
             </div>
             <div>
@@ -2379,23 +2380,23 @@ function MarketingRequestDraftWorkspaceInner() {
               Array.from({ length: 3 }).map((_, i) => (
                 <div
                   key={i}
-                  className="animate-pulse rounded-sm border border-slate-100 bg-slate-50 p-3"
+                  className="animate-pulse border border-slate-100 bg-slate-50 p-3"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-2">
-                      <div className="h-2.5 w-20 rounded-sm bg-slate-200" />
-                      <div className="h-4 w-16 rounded-sm bg-slate-200" />
+                      <div className="h-2.5 w-20 bg-slate-200" />
+                      <div className="h-4 w-16 bg-slate-200" />
                     </div>
-                    <div className="h-5 w-20 rounded-sm bg-slate-200" />
+                    <div className="h-5 w-20 bg-slate-200" />
                   </div>
-                  <div className="mt-2 h-2.5 w-24 rounded-sm bg-slate-200" />
+                  <div className="mt-2 h-2.5 w-24 bg-slate-200" />
                 </div>
               ))
             ) : (
               <>
                 {workspace.drafts.slice(0, 6).map((draft) => (
                   <div
-                    className={`rounded-sm border p-2.5 transition-colors duration-700 ${
+                    className={`border p-2.5 transition-colors duration-700 ${
                       highlightDraftId === draft.id
                         ? "border-orange-300 bg-orange-50/60"
                         : "border-slate-100 bg-slate-50/60"
@@ -2430,7 +2431,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   </div>
                 ))}
                 {workspace.drafts.length === 0 ? (
-                  <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
+                  <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                     No draft rows yet.
                   </p>
                 ) : (
@@ -2451,7 +2452,7 @@ function MarketingRequestDraftWorkspaceInner() {
         ref={approvedPanelRef}
         className={activeView === "approved" ? "space-y-3" : "hidden"}
       >
-        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -2555,7 +2556,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             src/lib/marketing-requests/invoice-obligation.ts. */}
                         <td className="border-r border-slate-100 px-3 py-2">
                           {row.invoiceDaysOverdue > 0 ? (
-                            <span className="inline-block whitespace-nowrap rounded-sm border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold text-rose-700">
+                            <span className="inline-block whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold text-rose-700">
                               {row.invoiceDueLabel}
                             </span>
                           ) : (
@@ -2641,7 +2642,7 @@ function MarketingRequestDraftWorkspaceInner() {
                               : ""}
                           </p>
                         </div>
-                        <span className="shrink-0 rounded-sm bg-slate-100 px-2 py-0.5 text-phx-sm font-black text-slate-900">
+                        <span className="shrink-0 bg-slate-100 px-2 py-0.5 text-phx-sm font-black text-slate-900">
                           {egp(row.sumOfAmount)}
                         </span>
                       </div>
@@ -2730,7 +2731,7 @@ function MarketingRequestDraftWorkspaceInner() {
         className={activeView === "tracking" ? "space-y-3" : "hidden"}
       >
         {/* ------ Returned to me ----------------------------------------------------------------------------------------------------------------------------- */}
-        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -2750,7 +2751,7 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={3} rows={2} />
             ) : workspace.returnedToMe.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
+              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                 Nothing returned to you right now.
               </p>
             ) : (
@@ -2759,7 +2760,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   workspace.stepProgressByRequestId[request.id] ?? null;
                 return (
                   <div
-                    className="rounded-sm border border-amber-200 bg-amber-50/40 p-3"
+                    className="border border-amber-200 bg-amber-50/40 p-3"
                     key={request.id}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2778,7 +2779,7 @@ function MarketingRequestDraftWorkspaceInner() {
                         </p>
                       </div>
                       <button
-                        className="flex shrink-0 items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-2 text-phx-sm font-bold text-white shadow-sm transition hover:bg-orange-600"
+                        className={cn(phxButtonAccentClassName, "shrink-0")}
                         onClick={() => void startResubmit(request)}
                         type="button"
                       >
@@ -2787,7 +2788,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </button>
                     </div>
                     {progress?.returnReason ? (
-                      <p className="mt-2 rounded-sm border border-amber-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-amber-800">
+                      <p className="mt-2 border border-amber-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-amber-800">
                         <span className="font-bold">Return reason: </span>
                         {progress.returnReason}
                       </p>
@@ -2800,7 +2801,7 @@ function MarketingRequestDraftWorkspaceInner() {
         </Card>
 
         {/* ------ In approval -------------------------------------------------------------------------------------------------------------------------------- */}
-        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -2820,7 +2821,7 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={3} rows={3} />
             ) : workspace.inApproval.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
+              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                 No requests are currently in approval.
               </p>
             ) : (
@@ -2831,7 +2832,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 const detail = detailCache[request.id];
                 return (
                   <div
-                    className="rounded-sm border border-slate-200 bg-slate-50/50 p-3"
+                    className="border border-slate-200 bg-slate-50/50 p-3"
                     key={request.id}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2851,7 +2852,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </div>
                       <button
                         aria-expanded={expanded}
-                        className="flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                        className="flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
                         onClick={() =>
                           void toggleTrackingExpand(request.id)
                         }
@@ -2885,7 +2886,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           <>
                             <MarketingApprovalTimeline requestCode={request.requestCode} steps={detail.steps} />
                             {detail.viewerCanComment ? (
-                              <div className="mt-3 rounded-sm border border-sky-200 bg-sky-50/40 px-3 py-3">
+                              <div className="mt-3 border border-sky-200 bg-sky-50/40 px-3 py-3">
                                 <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-[0.12em] text-sky-700">
                                   Add your comment
                                 </p>
@@ -2927,7 +2928,7 @@ function MarketingRequestDraftWorkspaceInner() {
           cards use. A requester opening this card has exactly one question, and making them click
           to reach the answer is the failure this card exists to end.
         */}
-        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="border-b border-slate-100 bg-rose-50/60 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -2947,7 +2948,7 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={3} rows={2} />
             ) : workspace.rejected.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
+              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                 No requests have been rejected.
               </p>
             ) : (
@@ -2956,7 +2957,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   workspace.rejectionByRequestId[request.id] ?? null;
                 return (
                   <div
-                    className="rounded-sm border border-rose-200 bg-rose-50/30 p-3"
+                    className="border border-rose-200 bg-rose-50/30 p-3"
                     key={request.id}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2974,7 +2975,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           · {egp(request.estimatedCost)}
                         </p>
                       </div>
-                      <span className="shrink-0 rounded-sm border border-rose-200 bg-white px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-rose-700">
+                      <span className="shrink-0 border border-rose-200 bg-white px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-rose-700">
                         Rejected
                       </span>
                     </div>
@@ -3008,7 +3009,7 @@ function MarketingRequestDraftWorkspaceInner() {
                               ))}
                           </dl>
                           {rejection.reason ? (
-                            <p className="mt-1.5 rounded-sm border border-rose-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-rose-900">
+                            <p className="mt-1.5 border border-rose-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-rose-900">
                               <span className="font-bold">Reason: </span>
                               {rejection.reason}
                             </p>
@@ -3035,7 +3036,7 @@ function MarketingRequestDraftWorkspaceInner() {
                         aria-expanded={
                           openRejectedConversationId === request.id
                         }
-                        className="flex w-full items-center justify-center gap-1.5 rounded-sm border border-rose-200 bg-white px-2.5 py-2 text-phx-xs font-bold text-rose-700 transition hover:bg-rose-50"
+                        className="flex w-full items-center justify-center gap-1.5 border border-rose-200 bg-white px-2.5 py-2 text-phx-xs font-bold text-rose-700 transition hover:bg-rose-50"
                         onClick={() =>
                           setOpenRejectedConversationId((current) =>
                             current === request.id ? null : request.id,
@@ -3065,7 +3066,7 @@ function MarketingRequestDraftWorkspaceInner() {
         </Card>
 
         {/* ------ Drafts ------------------------------------------------------------------------------------------------------------------------------------- */}
-        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -3083,13 +3084,13 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={3} rows={2} />
             ) : workspace.drafts.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
+              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                 No drafts yet.
               </p>
             ) : (
               workspace.drafts.map((draft) => (
                 <div
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-slate-100 bg-slate-50/60 p-3"
+                  className="flex flex-wrap items-center justify-between gap-2 border border-slate-100 bg-slate-50/60 p-3"
                   key={draft.id}
                 >
                   <div className="min-w-0">
@@ -3106,7 +3107,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     </p>
                   </div>
                   <button
-                    className="flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                    className="flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
                     onClick={() => setActiveView("create")}
                     type="button"
                   >
@@ -3122,13 +3123,13 @@ function MarketingRequestDraftWorkspaceInner() {
 
       {/* ------ Empty-data hint ------------------------------------------------------------------------------------------------------------------------------ */}
       {!isLoading && !workspace.canCreateDraft ? (
-        <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500">
+        <div className="border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500">
           You have review access to marketing requests. Draft creation is limited to assigned requesters in the employee directory.
         </div>
       ) : !isLoading &&
         (workspace.customers.length === 0 ||
           workspace.products.length === 0) ? (
-        <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500">
+        <div className="border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500">
           {workspace.customers.length === 0
             ? "No active marketing customers available. Customer creation is coming next."
             : "No active marketing products available. Run the reference-data seed."}

@@ -13,7 +13,11 @@ import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
 import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidence";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
+import {
+  phxButtonApproveDenseClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = { rows: DirectOrderValidationRow[] };
 
@@ -401,7 +405,7 @@ export function ValidationDesk({ rows }: Props) {
                     />
                     <div className="flex flex-wrap gap-2">
                       {isDistributorVenue ? (
-                        <button type="button" disabled={busy === row.id} onClick={() => decide(row, "match")} className="bg-emerald-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-emerald-700 disabled:bg-slate-300">
+                        <button type="button" disabled={busy === row.id} onClick={() => decide(row, "match")} className={cn(phxButtonApproveDenseClassName, "px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider disabled:bg-slate-300")}>
                           Match to this customer
                         </button>
                       ) : null}

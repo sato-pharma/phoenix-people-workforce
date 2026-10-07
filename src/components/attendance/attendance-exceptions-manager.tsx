@@ -189,7 +189,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
       {error && <AdminCallout tone="danger">{error}</AdminCallout>}
 
       {showForm && canReview && (
-        <div className="rounded border border-border bg-card p-5 space-y-4">
+        <div className="border border-border bg-card p-5 space-y-4">
           <p className="text-sm font-semibold">New Exception</p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1">
@@ -262,7 +262,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+            className={`border px-3 py-1 text-xs font-medium transition-colors ${
               statusFilter === s
                 ? "border-orange-500 bg-orange-50 text-orange-700"
                 : "border-border bg-background text-muted-foreground hover:border-orange-300"
@@ -270,7 +270,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
           >
             {filterLabels[s]}
             {s === "pending" && pendingCount > 0 && (
-              <span className="ml-1.5 rounded-full bg-phx-warn px-1.5 py-0.5 text-phx-2xs text-white">
+              <span className="ml-1.5 bg-phx-warn px-1.5 py-0.5 text-phx-2xs text-white">
                 {pendingCount}
               </span>
             )}

@@ -4,7 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { VacationEvidenceReview, VacationEvidenceReviewStatus, VacationEvidenceType } from "@/lib/vacation/types";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonApproveClassName,
+  phxButtonDangerClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = {
   evidenceType: VacationEvidenceType;
@@ -71,7 +75,7 @@ export function VacationEvidenceReviewActions({ evidenceType, existingReview, re
       {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
       <div className="flex flex-wrap gap-2">
         <button
-          className="bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+          className={phxButtonApproveClassName}
           disabled={busy}
           onClick={() => submit("accepted")}
           type="button"
@@ -87,7 +91,7 @@ export function VacationEvidenceReviewActions({ evidenceType, existingReview, re
           Needs follow-up
         </button>
         <button
-          className="bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-60"
+          className={phxButtonDangerClassName}
           disabled={busy}
           onClick={() => submit("rejected")}
           type="button"

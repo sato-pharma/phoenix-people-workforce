@@ -55,6 +55,8 @@ import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACAT
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  phxButtonApproveDenseClassName,
+  phxButtonDangerDenseClassName,
   phxLabelTextClassName,
   phxSelectClassName,
   phxTextareaClassName,
@@ -1224,7 +1226,7 @@ function RequestCard({
           <VacationApprovalImpactPreview row={row} />
           <div className="mt-2.5 flex gap-2">
             <Button
-              className="h-8 flex-1 gap-1.5 rounded-sm bg-emerald-600 text-phx-xs font-bold hover:bg-emerald-700"
+              className={cn(phxButtonApproveDenseClassName, "h-8 flex-1 gap-1.5 text-phx-xs font-bold")}
               disabled={actingId === row.id}
               onClick={() => onDecide(row, "approve")}
               type="button"
@@ -1233,7 +1235,7 @@ function RequestCard({
               {row.status === "pending_hr" ? "Final Approve" : "Approve"}
             </Button>
             <Button
-              className="h-8 flex-1 gap-1.5 rounded-sm bg-rose-600 text-phx-xs font-bold text-white hover:bg-rose-700"
+              className={cn(phxButtonDangerDenseClassName, "h-8 flex-1 gap-1.5 text-phx-xs font-bold")}
               disabled={actingId === row.id}
               onClick={() => onDecide(row, "reject")}
               type="button"
@@ -2501,7 +2503,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                                 <Pencil className="h-3 w-3" /> Edit
                               </button>
                               <button
-                                className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-phx-2xs font-bold text-white transition hover:bg-rose-700"
+                                className={cn(phxButtonDangerDenseClassName, "flex items-center gap-1 px-2 py-1 text-phx-2xs font-bold transition")}
                                 disabled={actingId === row.id}
                                 onClick={() => deleteAdminRequest(row)}
                                 type="button"
@@ -2515,7 +2517,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                               <VacationApprovalImpactPreview compact row={row} />
                               <div className="flex flex-wrap gap-1.5">
                                 <button
-                                  className="flex items-center gap-1 rounded-sm bg-emerald-600 px-2 py-1 text-phx-2xs font-bold text-white transition hover:bg-emerald-700"
+                                  className={cn(phxButtonApproveDenseClassName, "flex items-center gap-1 px-2 py-1 text-phx-2xs font-bold transition")}
                                   disabled={actingId === row.id}
                                   onClick={() => decide(row, "approve")}
                                   type="button"
@@ -2524,7 +2526,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                                   {row.status === "pending_hr" ? "Final Approve" : "Approve"}
                                 </button>
                                 <button
-                                  className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-phx-2xs font-bold text-white transition hover:bg-rose-700"
+                                  className={cn(phxButtonDangerDenseClassName, "flex items-center gap-1 px-2 py-1 text-phx-2xs font-bold transition")}
                                   disabled={actingId === row.id}
                                   onClick={() => decide(row, "reject")}
                                   type="button"
@@ -2658,9 +2660,9 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     value={evidenceReviewNote}
                   />
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <Button className="h-8 rounded-sm bg-emerald-600 text-phx-xs font-bold text-white hover:bg-emerald-700" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("accepted")} type="button">Accept</Button>
+                    <Button className={cn(phxButtonApproveDenseClassName, "h-8 text-phx-xs font-bold")} disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("accepted")} type="button">Accept</Button>
                     <Button className="h-8 rounded-sm bg-amber-500 text-phx-xs font-bold text-white hover:bg-amber-600" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("needs_follow_up")} type="button">Needs follow-up</Button>
-                    <Button className="h-8 rounded-sm bg-rose-600 text-phx-xs font-bold text-white hover:bg-rose-700" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("rejected")} type="button">Reject</Button>
+                    <Button className={cn(phxButtonDangerDenseClassName, "h-8 text-phx-xs font-bold")} disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("rejected")} type="button">Reject</Button>
                   </div>
                 </div>
               ) : null}

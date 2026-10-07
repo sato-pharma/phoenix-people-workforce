@@ -11,6 +11,7 @@
 import { Check, ClipboardCopy, ListChecks, Loader2, MessageCircle, Plus, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
+import { phxWhatsAppShareButtonClassName } from "@/components/ui/brand-tokens";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import {
   whatsAppShareUrl,
@@ -133,7 +134,7 @@ function InvitationPanel({ api, hasMeeting, target }: { api: CalendarApi; hasMee
               {copied ? "Copied" : "Copy"}
             </Action>
             <a
-              className="inline-flex shrink-0 items-center gap-1.5 border border-emerald-700 bg-emerald-600 px-2 py-1.5 text-[12px] font-bold leading-none text-white hover:bg-emerald-700"
+              className={cn(phxWhatsAppShareButtonClassName, "shrink-0")}
               href={whatsAppShareUrl(invitation.text, invitation.phone)}
               rel="noreferrer"
               target="_blank"

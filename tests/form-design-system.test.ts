@@ -74,6 +74,10 @@ function identityTests(): void {
     ["phxButtonGhostClassName", token("phxButtonGhostClassName")],
     ["phxButtonPrimaryClassName", token("phxButtonPrimaryClassName")],
     ["phxButtonAccentClassName", token("phxButtonAccentClassName")],
+    ["phxButtonApproveClassName", token("phxButtonApproveClassName")],
+    ["phxButtonDangerClassName", token("phxButtonDangerClassName")],
+    ["phxButtonApproveDenseClassName", token("phxButtonApproveDenseClassName")],
+    ["phxButtonDangerDenseClassName", token("phxButtonDangerDenseClassName")],
   ] as const) {
     assert.ok(
       !/\brounded/.test(value),
@@ -109,8 +113,14 @@ function identityTests(): void {
     "phxLabelClassName must be built FROM phxLabelTextClassName, or the two labels drift apart",
   );
 
-  // One accent. Orange marks focus and progress; rose marks a problem. A third
-  // colour in a token means two forms will stop looking like one system.
+  // One accent. Orange marks focus and progress; rose marks a problem.
+  //
+  // 🔴 EMERALD WAS ADDED ON 2026-10-07 AND IS NOT A SECOND ACCENT — the owner asked for "an
+  // approve-green button token to the form kit" so a decision pair stops being hand-written on
+  // every screen that has one. It is allowed for exactly that: `phxButtonApproveClassName`,
+  // rendered beside `phxButtonDangerClassName`. A form's own terminal commit is still orange, and
+  // the assertion below is what stops green leaking into Save, Next or Submit — adding a FIFTH
+  // family needs the owner's word the way this one had it.
   const accentFamilies = new Set<string>();
   for (const m of TOKENS_SOURCE.matchAll(
     /\b(?:bg|border|text|ring|accent)-(orange|rose|slate|emerald|sky|violet|amber|indigo|teal|blue|red|green)-/g,
@@ -119,10 +129,64 @@ function identityTests(): void {
   }
   assert.deepEqual(
     [...accentFamilies].sort(),
-    ["orange", "rose", "slate"],
-    "the form palette is slate + orange, with rose reserved for errors — a new colour family here " +
-      "splits the system's look in two",
+    ["emerald", "orange", "rose", "slate"],
+    "the form palette is slate + orange, rose reserved for errors, and emerald reserved for the " +
+      "approve half of a decision pair — a new colour family here splits the system's look in two",
   );
+
+  // Emerald earns its place only as that pair, so the pair is pinned: same geometry, and green
+  // confined to the approve token. A green Submit is the failure this guards.
+  const approve = token("phxButtonApproveClassName");
+  const danger = token("phxButtonDangerClassName");
+  assert.match(approve, /bg-emerald-600/, "Approve is emerald-600");
+  assert.match(danger, /bg-rose-600/, "Reject is the danger token, rose-600");
+  for (const dimension of ["px-4", "py-2", "text-sm", "font-bold", "inline-flex", "items-center"]) {
+    assert.ok(
+      approve.includes(dimension) && danger.includes(dimension),
+      `the decision pair must share ${dimension} — they only ever render side by side, and a pair ` +
+        "of different sizes is exactly what every hand-written pair produced",
+    );
+  }
+  // 🔴 EMERALD LIVES IN EXACTLY TWO TOKENS, and this asks the FILE rather than a hand-written
+  // list — a list is what let the first version of the ratchet pass with 376 painted controls in
+  // the tree, because a token added later is never in it. A green Save, Next or Submit fails here.
+  const GREEN_IS_THEIRS = new Set(["phxButtonApproveClassName", "phxButtonApproveDenseClassName"]);
+  const everyToken = [...TOKENS_SOURCE.matchAll(/export const (phx\w+)\s*(?::[^=]*)?=/g)].map(
+    (m) => m[1],
+  );
+  assert.ok(everyToken.length > 10, "the export scan found almost nothing — the regex has rotted");
+  for (const name of everyToken) {
+    if (GREEN_IS_THEIRS.has(name)) continue;
+    assert.ok(
+      !/emerald|\bgreen-/.test(token(name)),
+      `${name} has gone green — emerald is the approve half of a decision pair and nothing else. ` +
+        "A form's own terminal commit is phxButtonAccentClassName, which is orange.",
+    );
+  }
+
+  // The dense pair exists ONLY because the <Button> primitive and a table row bring their own
+  // geometry (the owner's 2026-10-06 h-8/h-9 exemption). The moment one of them carries a
+  // dimension it stops being droppable onto a dense control, and the two halves can diverge in
+  // size again — which is the defect the whole token set exists to end.
+  const DIMENSION =
+    /\b(?:p[xytrbl]?-\d|h-\d|w-\d|min-h-|max-w-|gap-\d|text-(?:xs|sm|base|lg|xl|phx-)|inline-flex|flex\b|grid\b|border(?![-\w])|border-\d)/;
+  for (const name of ["phxButtonApproveDenseClassName", "phxButtonDangerDenseClassName"] as const) {
+    const value = token(name);
+    const hit = DIMENSION.exec(value);
+    assert.ok(
+      hit === null,
+      `${name} has grown geometry (${hit?.[0]}) — the dense pair is COLOUR ONLY, so it can sit on ` +
+        "an h-8 <Button> or a table-row chip without resizing it, and so whatever supplies the " +
+        "geometry supplies it to BOTH halves",
+    );
+    assert.match(
+      value,
+      /^border-(?:emerald|rose)-600 bg-(?:emerald|rose)-600 text-white hover:bg-(?:emerald|rose)-700$/,
+      `${name} is the colour contract and nothing more — the border COLOUR belongs to it (a swept ` +
+        "button with a hairline must not name emerald itself) and the border WIDTH does not, which " +
+        "is what keeps it inert on an element that has no border",
+    );
+  }
 
   // The primary action is near-black and the submit is orange, in that order.
   assert.match(token("phxButtonPrimaryClassName"), /bg-slate-900/, "Next/Save is near-black");
@@ -859,6 +923,255 @@ function oneWizardShellTests(): void {
   );
 }
 
+// ── 5. The forms that are square stay square ─────────────────────────────────
+//
+// 🔒 THE SQUARE-EDGE GOLDEN RULE is the other half of the one form design: the Adverse Drug
+// Reaction form has no corner radius anywhere, and neither do `form-kit.tsx` or
+// `form-tokens.ts`. 132 radius classes came out of the five forms below on 2026-10-07, and this
+// is what stops them coming back one `rounded-sm` at a time — which is how they got there.
+//
+// 🔴 THIS CHECK MEASURES CORNER RADII AND IS NOT THE AUTHORITY ON `rounded-full`. The platform
+// module already owns that one, measured: `rounded-full` is the single radius class no
+// `--phx-radius-*` token reaches, so it is square ONLY because `.admin-shell`/
+// `.employee-portal-shell` zero `[class*="rounded"]`, and the same markup mounted outside a shell
+// renders `calc(infinity * 1px)`. A NEW one is therefore a defect wherever it is written — see
+// `.claude/rules/platform.md`, Design tokens — and the two pills on the attendance-exceptions
+// form were removed on 2026-10-07 for exactly that reason. It is not failed HERE only because the
+// one left in the system is the reference form's own decorative blur circle
+// (`h-48 w-48 rounded-full ... blur-2xl`), and that form's design is the owner's, not ours to
+// edit. `rounded-none` passes because it is a file saying square on purpose.
+//
+// This is a LIST, not a sweep of every file: a page the owner put on another design (the self
+// spotlight on the portal's own rounded card, section 4) must not be dragged in by a rule that
+// grew past what he asked for. A form converted to square is ADDED here in the PR that converts
+// it, and nothing is ever removed.
+
+const SQUARE_FORMS = [
+  "src/components/ui/form-kit.tsx",
+  "src/components/ui/form-tokens.ts",
+  "src/components/report-it/report-it-form.tsx",
+  "src/components/phoenix-crm/step-form.tsx",
+  "src/components/probation/structured-feedback-form.tsx",
+  "src/components/direct-orders/direct-order-correct-resubmit.tsx",
+  "src/components/coaching/coaching-report-form.tsx",
+  "src/components/vacation/vacation-request-form.tsx",
+  "src/components/employee-portal/medical-rep-expenses.tsx",
+  "src/components/employee-portal/marketing-request-drafts.tsx",
+  "src/components/employee-portal/employee-excuses-workspace.tsx",
+  "src/components/employee-portal/contact-hr-support-page.tsx",
+  "src/components/admin/private-calendar-disputes-workspace.tsx",
+  "src/components/attendance/attendance-exceptions-manager.tsx",
+];
+
+/** Every corner radius except `full` and `none`. */
+const CORNER_RADIUS = /\brounded(?:-(?:sm|md|lg|xl|2xl|3xl|\[[^\]]*\]))?(?![\w-])/g;
+
+function squareFormsTests(): void {
+  const offenders: string[] = [];
+  for (const file of SQUARE_FORMS) {
+    const src = readFileSync(file, "utf8");
+    // Anti-vacuity: an empty or renamed file must not pass by having no classes at all.
+    assert.match(
+      src,
+      /[cC]lassName/,
+      `${file} is pinned square but names no class at all — the pin is measuring nothing`,
+    );
+    const mask = commentMask(src);
+    for (const match of src.matchAll(CORNER_RADIUS)) {
+      // A radius NAMED in a comment (this file's own prose, a note on why it went) is not one.
+      if (mask[match.index]) continue;
+      const line = src.slice(0, match.index).split("\n").length;
+      offenders.push(`${file}:${line}  ${match[0]}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "these forms are pinned to square edges and have grown a corner radius again:\n  " +
+      `${offenders.join("\n  ")}\n` +
+      "The square-edge golden rule has no exceptions on a form: drop the class — no class at all " +
+      "is square in every context, which rounded-md is only by token and rounded-full is not at " +
+      "all (.claude/rules/platform.md, Design tokens). A file that means square writes " +
+      "rounded-none. If the owner has put one of these screens on another design, take it OUT of " +
+      "SQUARE_FORMS with his words and the test that holds it there, the way section 4 does.",
+  );
+}
+
+// ── 6. No hand-written decision green ────────────────────────────────────────
+//
+// 🔒 OWNER, 2026-10-07: "put the approve token on the five decision-pair screens", then "sweep the
+// ten lone green buttons too". Twenty-three hand-written green buttons went onto the token; this is
+// what stops the twenty-fourth. A green fill WITH a green hover is the button signature — a status
+// chip, a legend dot and a progress bar have no hover, so none of them is caught here.
+//
+// 🔴 THE LIST IS EMPTY, AND THAT IS THE POINT. The two WhatsApp share buttons were its only
+// entries; on 2026-10-07 the owner asked for them to get their own brand constant
+// (`phxWhatsAppShareButtonClassName` in `src/components/ui/brand-tokens.ts`), so the green left
+// the `.tsx` files altogether. **It may grow again only for a green that is genuinely not a
+// decision** — a brand, a chip — and each entry carries its reason. A new decision green belongs on
+// `phxButtonApproveDenseClassName` (colour only, so the control keeps whatever geometry it has) or
+// on `phxButtonApproveClassName` at full size.
+//
+// 🔴 AN EMPTY LIST CANNOT PROVE THE PATTERN STILL WORKS, so the pattern is self-tested against two
+// probes below instead of against whatever happens to be in the tree. That was the hole: the first
+// draft of this check asserted "an exception matched something", which went vacuous the moment the
+// exceptions were swept — the check would then have passed for the rest of time, whatever anyone
+// added.
+const GREEN_THAT_IS_NOT_A_DECISION: ReadonlyArray<readonly [string, string]> = [];
+
+function decisionGreenTests(): void {
+  const allowed = new Map(GREEN_THAT_IS_NOT_A_DECISION);
+
+  // The brand constant is a button too, so the square-edge rule reaches it — and it must NOT be in
+  // form-tokens.ts, where the palette assertion would read it as a fifth accent.
+  const brand = readFileSync(
+    fileURLToPath(new URL("../src/components/ui/brand-tokens.ts", import.meta.url)),
+    "utf8",
+  );
+  assert.match(
+    brand,
+    /export const phxWhatsAppShareButtonClassName/,
+    "brand-tokens.ts must keep the WhatsApp share button's one definition",
+  );
+  assert.match(
+    brand,
+    /export const phxWhatsAppSendButtonClassName/,
+    "brand-tokens.ts must keep the full-size WhatsApp button too — the send pair is not dense",
+  );
+  for (const name of ["phxWhatsAppShareButtonClassName", "phxWhatsAppSendButtonClassName"] as const) {
+    const value = brand.match(new RegExp(`export const ${name}\\s*=\\s*\n?\\s*"([^"]*)"`))?.[1];
+    assert.ok(value, `brand-tokens.ts no longer exports a string constant named ${name}`);
+    // 🔴 A FIXED FILL NEEDS A FIXED INK, and this is asserted on the CLASS STRING rather than on
+    // the file, whose own prose names the trap and would fail the check it documents. `--phx-ink`
+    // is near-black in light mode and near-WHITE in dark (`src/styles/tokens.css`), so a
+    // theme-following ink on this green would flip to white when the theme did and put back the
+    // 1.98:1 contrast the owner ruled against on 2026-10-08 ("use near-black ink on the WhatsApp
+    // buttons") — with nothing to catch it, because the brand fill cannot follow the theme.
+    assert.ok(
+      !/text-phx-ink|text-\[var\(/.test(value),
+      `${name} must not take a theme-following ink — --phx-ink flips to near-white in dark mode ` +
+        "while the brand fill cannot, which silently restores the 1.98:1 contrast. A fixed " +
+        "near-black (text-slate-900) measures 9.00:1 on the fill and 5.76:1 on the hover.",
+    );
+    assert.ok(
+      !/text-white/.test(value),
+      `${name} has gone back to white ink — 1.98:1 on #25D366, which the owner ruled against on ` +
+        "2026-10-08 after being shown the measurement",
+    );
+
+    for (const shared of ["bg-[#25D366]", "border-[#1DA851]", "hover:bg-[#1DA851]", "text-slate-900"]) {
+      assert.ok(
+        value.includes(shared),
+        `${name} must carry ${shared} — the two sizes are ONE look, so a change to the brand ` +
+          "reaches every WhatsApp button rather than whichever one somebody remembered",
+      );
+    }
+
+  }
+  assert.match(
+    brand,
+    /bg-\[#25D366\]/,
+    "the share button must carry WhatsApp's real #25D366 (owner, 2026-10-07: \"repaint the " +
+      "WhatsApp share buttons to the real #25D366\") — it wore emerald-600 before that, which is " +
+      "what made the app disagree with itself about what WhatsApp looks like",
+  );
+
+  // 🔴 AND THE BRAND GREEN STAYS IN ONE PLACE. A fill written straight into a .tsx is how there
+  // came to be two WhatsApp greens in the first place, and this check found two more buttons the
+  // green-button ratchet could never see: that one looks for `bg-emerald-*`/`bg-green-*`, so a
+  // button painted with the raw hex was invisible to it.
+  //
+  // It matches a RESTING fill only. The organogram's WhatsApp button needs no exception for that
+  // reason — it paints the hex on text and on a hover, never as a fill — and the one named
+  // exception is a 6px dot, which is not a button at all.
+  const BRAND_FILL = /className="[^"]*(?<!hover:)bg-\[#25D366\][^"]*"/g;
+  const BRAND_FILL_IS_NOT_A_BUTTON: ReadonlyArray<readonly [string, string]> = [
+    ["app/(admin)/recruitment/whatsapp-templates/page.tsx", "a 6px status dot, not a button"],
+  ];
+  const brandAllowed = new Set(BRAND_FILL_IS_NOT_A_BUTTON.map(([f]) => f));
+  for (const [file, why] of BRAND_FILL_IS_NOT_A_BUTTON) {
+    assert.ok(
+      existsSync(fileURLToPath(new URL("../" + file, import.meta.url))),
+      `${file} is named as a brand-fill exception (${why}) but no longer exists — drop the entry`,
+    );
+  }
+  const brandOffenders: string[] = [];
+  for (const file of appTsxFiles()) {
+    if (brandAllowed.has(file)) continue;
+    const src = readFileSync(fileURLToPath(new URL("../" + file, import.meta.url)), "utf8");
+    const mask = commentMask(src);
+    for (const m of src.matchAll(BRAND_FILL)) {
+      if (mask[m.index ?? 0] === 1) continue;
+      brandOffenders.push(`${file} — ${m[0].slice(0, 110)}`);
+    }
+  }
+  assert.deepEqual(
+    brandOffenders,
+    [],
+    "WhatsApp's brand green is painted straight into a component:\n  " +
+      brandOffenders.join("\n  ") +
+      "\n\nUse phxWhatsAppShareButtonClassName from src/components/ui/brand-tokens.ts. If the fill " +
+      "genuinely is not a share button, name the file in BRAND_FILL_IS_NOT_A_BUTTON with its reason.",
+  );
+  assert.ok(
+    !/\brounded/.test(brand),
+    "a brand button carries no corner radius either — the square-edge golden rule has no exception",
+  );
+  assert.ok(
+    !/whatsApp|WhatsApp/i.test(TOKENS_SOURCE),
+    "a brand colour has moved into form-tokens.ts — it belongs in brand-tokens.ts, or a future " +
+      "change to the approve green will silently restyle a WhatsApp button",
+  );
+  for (const [file, why] of GREEN_THAT_IS_NOT_A_DECISION) {
+    assert.ok(
+      existsSync(fileURLToPath(new URL("../" + file, import.meta.url))),
+      `${file} is named as a ${why} exception but no longer exists — drop the entry`,
+    );
+  }
+
+  // A className literal that fills green AND hovers green: that is a button, not a chip.
+  const GREEN_BUTTON = /className="[^"]*\bbg-(?:emerald|green)-[56]00\b[^"]*hover:bg-(?:emerald|green)-[0-9]{3}[^"]*"/g;
+  const offenders: string[] = [];
+  let allowedSeen = 0;
+  for (const file of appTsxFiles()) {
+    const src = readFileSync(fileURLToPath(new URL("../" + file, import.meta.url)), "utf8");
+    const mask = commentMask(src);
+    for (const m of src.matchAll(GREEN_BUTTON)) {
+      if (mask[m.index ?? 0] === 1) continue; // the repo's prose quotes JSX
+      if (allowed.has(file)) {
+        allowedSeen += 1;
+        continue;
+      }
+      offenders.push(`${file} — ${m[0].slice(0, 110)}`);
+    }
+  }
+
+  void allowedSeen;
+
+  // The pattern's own self-test: it must catch a green button and ignore a green chip.
+  assert.match(
+    'className="bg-emerald-600 text-white hover:bg-emerald-700"',
+    new RegExp(GREEN_BUTTON.source),
+    "the GREEN_BUTTON pattern no longer matches a plain green button — this check has gone vacuous",
+  );
+  assert.doesNotMatch(
+    'className="inline-block h-2 w-2 bg-emerald-500"',
+    new RegExp(GREEN_BUTTON.source),
+    "the GREEN_BUTTON pattern now catches a status chip — a legend swatch has no hover and must " +
+      "stay out of this check, or the next session will repaint a status as a decision",
+  );
+  assert.deepEqual(
+    offenders,
+    [],
+    "a decision button is painting its own green:\n  " +
+      offenders.join("\n  ") +
+      "\n\nUse phxButtonApproveDenseClassName — it is COLOUR ONLY, so the control keeps the exact " +
+      "padding, height and font size it has now — or phxButtonApproveClassName where the button is " +
+      "full size and renders beside phxButtonDangerClassName. If the green is NOT a decision (a " +
+      "brand colour, a chip), name the file in GREEN_THAT_IS_NOT_A_DECISION with its reason.",
+  );
+}
+
 export async function runFormDesignSystemTests(): Promise<void> {
   identityTests();
   singleSourceTests();
@@ -867,4 +1180,6 @@ export async function runFormDesignSystemTests(): Promise<void> {
   sixteenPixelKeepTests();
   darkGroundKeepTests();
   oneWizardShellTests();
+  squareFormsTests();
+  decisionGreenTests();
 }

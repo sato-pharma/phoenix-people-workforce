@@ -19,6 +19,7 @@ import {
 import { cairoDate, stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import {
+  phxButtonApproveDenseClassName,
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
@@ -821,7 +822,10 @@ function PushControl({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <button
-        className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-600 bg-emerald-600 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-emerald-700 disabled:opacity-50"
+        className={cn(
+          phxButtonApproveDenseClassName,
+          "inline-flex items-center gap-1 whitespace-nowrap border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] transition disabled:opacity-50",
+        )}
         disabled={busy}
         onClick={push}
         type="button"

@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 
 import type { HeldDirectOrderRow } from "@/lib/direct-orders/service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
+import {
+  phxButtonApproveDenseClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = { rows: HeldDirectOrderRow[] };
 
@@ -357,7 +361,10 @@ export function HeldDesk({ rows }: Props) {
                           `Code linked. ${Number(result.released ?? 0)} order(s) moved into the approval chain.`,
                       )
                     }
-                    className="mt-2 bg-emerald-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-emerald-700 disabled:bg-slate-300"
+                    className={cn(
+                      phxButtonApproveDenseClassName,
+                      "mt-2 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider disabled:bg-slate-300",
+                    )}
                   >
                     Link this code
                   </button>

@@ -17,6 +17,8 @@ import { DistributorCustomerPicker } from "@/components/direct-orders/distributo
 import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
 import { prepareDirectOrderInvoiceFile, type PreparedDirectOrderInvoice } from "@/components/direct-orders/invoice-file";
 import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
+import { cn } from "@/lib/utils";
+import { phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
 
 import {
   computeDirectOrderSalesValue,
@@ -1337,7 +1339,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           </div>
                           <button
                             type="button"
-                            className="mt-1.5 w-full whitespace-nowrap bg-emerald-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-emerald-700"
+                            className={cn(
+                              phxButtonApproveDenseClassName,
+                              "mt-1.5 w-full whitespace-nowrap px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider",
+                            )}
                             onClick={() =>
                               applySuggestedPharmacy({
                                 source: "phoenix",

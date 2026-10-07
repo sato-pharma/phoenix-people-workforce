@@ -78,7 +78,48 @@ export const phxButtonPrimaryClassName =
 export const phxButtonAccentClassName =
   "inline-flex items-center gap-1.5 border border-orange-600 bg-orange-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-orange-700 disabled:pointer-events-none disabled:opacity-50";
 
-/** The destructive action. */
+/**
+ * The APPROVE half of a decision pair (owner, 2026-10-07: "add an approve-green button token to
+ * the form kit"). It exists because a decision screen cannot borrow the form palette for this: on
+ * a form orange is the one terminal commit and rose is a problem, so an Accept painted orange
+ * reads as "submit" and one painted rose reads as "error". Green against the danger token is the
+ * only pair a manager reads correctly at a glance, and before this every decision screen wrote its
+ * own — one emerald, the next a different green, each at a different height. (Those examples
+ * are written without their Tailwind prefixes on purpose: the palette assertion scans this whole
+ * file, comments included, so naming a colour here would register it as a fifth family.)
+ *
+ * 🔴 ITS GEOMETRY IS THE DANGER TOKEN'S, deliberately — the two are only ever rendered side by
+ * side, and a pair of different sizes is what a hand-written pair always produced.
+ *
+ * 🔴 USE IT ONLY AS THAT HALF. A form's own terminal commit stays `phxButtonAccentClassName`;
+ * green is not a second accent and must not spread to Save, Next or Submit. `identityTests()` in
+ * `tests/form-design-system.test.ts` holds the palette to slate + orange + rose + this one.
+ */
+export const phxButtonApproveClassName =
+  "inline-flex items-center gap-1.5 border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:pointer-events-none disabled:opacity-50";
+
+/**
+ * The SAME decision, where the geometry is not the token's to give: the dense `<Button>` primitive
+ * (`h-8 px-2.5`) or a table row that already sets its own padding and font size. Those are the
+ * owner's own 2026-10-06 exemption from the one form design — `h-8`/`h-9` dense table and filter
+ * controls keep their density — so forcing `px-4 py-2 text-sm` on them would make an Approve
+ * taller than the `variant="secondary"` button beside it.
+ *
+ * 🔴 COLOUR ONLY, AND IT MUST STAY THAT WAY. The border COLOUR is here so a button with a
+ * hairline does not name emerald itself; the border WIDTH stays the caller's, which is why this is
+ * inert on an element that has no border. No padding, no height, no font size, no border width:
+ * that is the whole reason it can sit on a dense control without resizing it, and it is why the two
+ * halves still match — whatever supplies the geometry supplies it to BOTH. `identityTests()` fails
+ * if either dense token grows a dimension.
+ */
+export const phxButtonApproveDenseClassName =
+  "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700";
+
+/** The reject/destructive half at dense geometry. Colour only — see the approve twin above. */
+export const phxButtonDangerDenseClassName =
+  "border-rose-600 bg-rose-600 text-white hover:bg-rose-700";
+
+/** The destructive action, and the REJECT half of a decision pair. */
 export const phxButtonDangerClassName =
   "inline-flex items-center gap-1.5 border border-rose-600 bg-rose-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-rose-700 disabled:pointer-events-none disabled:opacity-50";
 
