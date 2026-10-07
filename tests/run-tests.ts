@@ -1432,6 +1432,7 @@ import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.te
 import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runDeductionsApprovedNotPushedFeedbackTests } from "./deductions-approved-not-pushed-feedback.test.ts";
+import { runDeductionsVacationSelfRetireTests } from "./deductions-vacation-self-retire.test.ts";
 import { runAuthPasswordResetCodeTests } from "./auth-password-reset-code.test.ts";
 import { runLoginFormLocatorContractTests } from "./login-form-locator-contract.test.ts";
 import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
@@ -5131,6 +5132,10 @@ await runTest("self-service reset-by-code (6-digit format, login-bound HMAC, att
 await runTest(
   "an approved deduction is never told it is awaiting approval (the payroll breakdown names the PUSH, and the workspace's Needs-your-review pill clears once he decides — both told him to redo the step he had finished)",
   runDeductionsApprovedNotPushedFeedbackTests,
+);
+await runTest(
+  "a vacation re-collect never deletes its own candidates (the already-claimed read excludes this run's own replaceable rows but keeps a LOCKED one claimed — counting them retired 13 of his decisions in September, three of them approvals)",
+  runDeductionsVacationSelfRetireTests,
 );
 await runTest("login form locator contract (the Playwright setups drive #login-id and #login-password, never label copy — a rename breaks a smoke no PR runs)", runLoginFormLocatorContractTests);
 await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the skeleton-schema restore)", runSchemaShapeCheckTests);
