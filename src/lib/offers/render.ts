@@ -19,6 +19,7 @@
 import { HOUSE_COLORS, houseBandBackground, houseEngineTurnedBand } from "@/lib/hiring-pack/house-identity";
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { deriveOfferPay, formatOfferAmount } from "@/lib/offers/pay";
+import { offerRoleSummary } from "@/lib/offers/role-summary";
 import { systemLegalEntity } from "@/config/system-settings";
 import type { OfferBlock, OfferFields, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
 
@@ -76,7 +77,7 @@ export function buildOfferTokens(fields: OfferFields): Record<string, string> {
     totalMonthly: fields.totalMonthly,
   });
 
-  return {
+  const tokens: Record<string, string> = {
     basicAnnual: formatOfferAmount(pay.basic.annual),
     basicMonthly: formatOfferAmount(pay.basic.monthly),
     candidateEmail: fields.candidateEmail,
@@ -104,6 +105,25 @@ export function buildOfferTokens(fields: OfferFields): Record<string, string> {
     transportMonthly: formatOfferAmount(pay.transport.monthly),
     validUntil: fields.validUntil,
   };
+
+  // The role paragraph is the one token whose VALUE may itself contain tokens, because the sentence
+  // belongs to the position while the territory in it belongs to the letter — "…bring both to
+  // {{territory}}" is stored once against District Sales Manager and has to say Delta 3 for one
+  // candidate and Alex East for the next. Substituted RAW here on purpose: `fillOfferTokens` escapes
+  // whatever it inserts, so the outer pass escapes this whole paragraph exactly once. Pre-escaping it
+  // would print `Alex &amp; Delta` on a letter somebody signs.
+  return { ...tokens, roleSummary: fillOfferTokensRaw(offerRoleSummary(fields.roleSummary), tokens) };
+}
+
+/**
+ * `fillOfferTokens` without the escaping, for a value that is about to be escaped by it.
+ *
+ * Deliberately NOT exported. The only correct caller is the line above, where the result is fed
+ * straight back into an escaping pass; anything that put this into a document directly would be
+ * injecting unescaped stored text into HTML.
+ */
+function fillOfferTokensRaw(source: string, tokens: Record<string, string>): string {
+  return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key: string) => tokens[key] ?? match);
 }
 
 /**

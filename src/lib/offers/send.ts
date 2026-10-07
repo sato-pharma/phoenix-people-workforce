@@ -61,6 +61,7 @@ function offerFields(offer: OfferRecord): OfferFields {
     dateOfIssue: offer.dateOfIssue,
     reference: offer.reference,
     reportsTo: offer.reportsTo,
+    roleSummary: offer.roleSummary,
     salutationName: offer.salutationName,
     startDate: offer.startDate,
     territory: offer.territory,

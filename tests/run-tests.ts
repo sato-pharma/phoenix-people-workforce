@@ -1152,6 +1152,7 @@ import { runOfferDatesTests } from "./offer-dates.test.ts";
 import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
 import { runOfferCopyRecipientsTests } from "./offer-copy-recipients.test.ts";
 import { runOfferOutstationClauseTests } from "./offer-outstation-clause.test.ts";
+import { runOfferRoleSummaryTests } from "./offer-role-summary.test.ts";
 import { runOfferPlaceholderTests } from "./offer-placeholders.test.ts";
 import { runOfferRichTextTests } from "./offer-rich-text.test.ts";
 import { runOfferReferenceTests } from "./offer-reference.test.ts";
@@ -4798,6 +4799,15 @@ await runTest(
     + "silently omitted, and the clause names NO governorate the outstation engine has no rule "
     + "for — which is how \"excluding Sharkia Governorate\" reached every role in every territory)",
   runOfferOutstationClauseTests,
+);
+await runTest(
+  "offer role paragraph belongs to the job title (no design hard-codes a sales job — the sentence "
+    + "about districts, field teams and a territory's sales number used to print on EVERY position's "
+    + "letter; a worded position prints its own words, an unworded one a role-neutral sentence rather "
+    + "than a gap or a visible token, {{territory}} inside a stored paragraph resolves to this "
+    + "candidate's own area, the paragraph is escaped exactly once, and the three sales titles keep "
+    + "the exact paragraph their letters print today)",
+  runOfferRoleSummaryTests,
 );
 await runTest(
   "offer letter prose round trip (the greeting survives canvas editing byte for byte, class and "

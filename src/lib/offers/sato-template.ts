@@ -115,9 +115,10 @@ export function satoOfferBlocks(): OfferBlock[] {
           "<p class='lead'>Dear <strong>{{salutationName}}</strong>,</p>" +
           "<p>On behalf of Sato Pharmaceuticals, it is our pleasure to offer you the position of " +
           "<strong>{{title}}</strong>, reporting to the {{reportsTo}}.</p>" +
-          "<p>Throughout our selection process you demonstrated the judgement and the commitment this " +
-          "role calls for, and we would like you to bring both to {{territory}}. We are confident you " +
-          "will make a strong contribution to the company and to the people you work alongside.</p>",
+          // Per JOB TITLE, not per design. This design's own role-neutral sentence is what the module
+          // now uses as the standard paragraph for a position nobody has worded yet, so a letter on
+          // this design reads the same as before for any such title. `src/lib/offers/role-summary.ts`.
+          "<p>{{roleSummary}}</p>",
       },
       type: "text",
     },

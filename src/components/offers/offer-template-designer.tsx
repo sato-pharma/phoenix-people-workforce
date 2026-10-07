@@ -101,6 +101,10 @@ const SAMPLE: OfferFields = {
   dateOfIssue: "26 August 2026",
   reference: "SP-HR-DSM-2026-019",
   reportsTo: "National Sales Manager",
+  // Blank on purpose, so the preview shows what a position with no wording of its own prints — the
+  // role-neutral standard sentence. A sample paragraph typed here would hide the one case somebody
+  // designing a letter most needs to see, because it is the case every brand-new job title is in.
+  roleSummary: "",
   salutationName: "Dr SAMAA SHALABY",
   startDate: "1 September 2026",
   territory: "Delta 3",
@@ -542,7 +546,7 @@ export function OfferTemplateDesigner({
             </Button>
           </div>
         }
-        description="Four SATO designs ship with Phoenix. All are fully editable and each can always be restored to how it shipped. Build a new one from scratch, or duplicate one and edit the copy."
+        description="Four SATO designs ship with Phoenix. All are fully editable and each can always be restored to how it shipped. Build a new one from scratch, or duplicate one and edit the copy. There is no filter by position here, and there does not need to be one: a design is a LOOK, and what the letter SAYS about a particular job — the paragraph after the greeting — is written per job title on the Job titles tab and reaches every design as {{roleSummary}}. So one design serves every position, and a position's own words never travel into anybody else's letter."
         title="Templates"
       >
         <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-4">

@@ -37,6 +37,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (body.contractTerm !== undefined) {
       patch.contractTerm = body.contractTerm === null ? null : String(body.contractTerm);
     }
+    // Same discipline for the role paragraph: ABSENT leaves this position's words alone, an explicit
+    // null or blank resets it to the standard sentence. Coercing an absent key would make saving a
+    // cost-of-living figure wipe a paragraph somebody wrote for the letter.
+    if (body.roleSummary !== undefined) {
+      patch.roleSummary = body.roleSummary === null ? null : String(body.roleSummary);
+    }
     // Optional-field discipline: an ABSENT key leaves the binding alone; an explicit null or blank
     // clears it back to "use the default". Coercing an absent key to null here is exactly how
     // saving a cost-of-living figure would silently unbind that title's letter design.

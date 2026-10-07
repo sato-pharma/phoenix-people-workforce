@@ -48,6 +48,7 @@ import {
   offerInputClassName,
   offerLabelClassName,
   offerMoney,
+  offerTextareaClassName,
   offerWhen,
   type OfferSenderInfo,
 } from "@/components/offers/offer-ui";
@@ -114,6 +115,9 @@ function blankDraft(templates: OfferTemplate[]): Draft {
     dateOfIssue: today,
     reference: "",
     reportsTo: "",
+    // Blank is a real, meaningful value: it prints the standard paragraph. Prefilled from the job
+    // title the moment one is chosen (see `applyTitle`), and editable for this one letter.
+    roleSummary: "",
     salutationName: "",
     // Blank rather than a guess. A start date is a real negotiated fact, and a plausible default
     // is the kind of value that gets sent without being read.
@@ -148,6 +152,7 @@ function draftFromOffer(offer: OfferRecord, templates: OfferTemplate[]): Draft {
     dateOfIssue: parseLetterDate(offer.dateOfIssue) ?? "",
     reference: offer.reference,
     reportsTo: offer.reportsTo,
+    roleSummary: offer.roleSummary,
     salutationName: offer.salutationName,
     startDate: parseLetterDate(offer.startDate) ?? "",
     templateId: offer.templateId ?? defaultOfferTemplateId(templates),
@@ -299,6 +304,7 @@ export function OfferComposer({
       dateOfIssue: toLetterDate(draft.dateOfIssue),
       reference: draft.reference.trim(),
       reportsTo: draft.reportsTo.trim(),
+      roleSummary: draft.roleSummary.trim(),
       salutationName: draft.salutationName.trim() || draft.candidateName.trim(),
       startDate: toLetterDate(draft.startDate),
       territory: draft.territory.trim(),
@@ -441,8 +447,8 @@ export function OfferComposer({
   }, [draft.dateOfIssue, draft.title, proposeReference]);
 
   /**
-   * Choosing a title fills its cost of living, its reporting line, its contract term and — where
-   * the title has one — the letter design its offers are written on.
+   * Choosing a title fills its cost of living, its reporting line, its contract term, what the
+   * letter says the job IS, and — where the title has one — the letter design it is written on.
    *
    * Each of these is a STARTING POINT, never a lock: every field stays editable afterwards, and a
    * title with no answer for a field leaves what is already there alone. That last part is why an
@@ -459,6 +465,10 @@ export function OfferComposer({
       // valid answer and would silently inflate basic and transport on a signed letter.
       costOfLiving: match ? String(match.costOfLiving) : current.costOfLiving,
       reportsTo: match?.reportsTo ?? current.reportsTo,
+      // The paragraph this position's letters open with. `?? current` for the same reason as the
+      // fields above — a title nobody has worded yet must not wipe a paragraph typed here for this
+      // one letter. Blank then stands, and blank prints the standard sentence.
+      roleSummary: match?.roleSummary ?? current.roleSummary,
       templateId: bound ?? current.templateId,
       title,
     }));
@@ -997,8 +1007,8 @@ export function OfferComposer({
             <p className={offerHintClassName}>
               {findOfferJobTitle(draft.title, jobTitles)
                 ? offerTemplateIdForTitle(draft.title, jobTitles, templates)
-                  ? "Cost of living, reporting line, contract term and letter design filled from the catalogue."
-                  : "Cost of living, reporting line and contract term filled from the catalogue."
+                  ? "Cost of living, reporting line, contract term, wording and letter design filled from the catalogue."
+                  : "Cost of living, reporting line, contract term and wording filled from the catalogue."
                 : "Not in the catalogue — type the cost of living yourself, or add the title on the Job titles tab."}
             </p>
           </div>
@@ -1036,6 +1046,32 @@ export function OfferComposer({
           {text("territory", "Territory", "Delta 3")}
           {text("reportsTo", "Reports to", "National Sales Manager")}
           {text("contractTerm", "Contract term", "One year, renewable")}
+
+          {/* The paragraph the letter opens with, prefilled from the job title and overridable for
+              this one letter. Full width across every breakpoint because it is prose: a paragraph in
+              a third of a row wraps into a column nobody can read while writing it, and the
+              fits-the-screen rule's answer to prose is width, never a smaller typeface. */}
+          <div className="md:col-span-2 xl:col-span-3">
+            <label className={offerLabelClassName} htmlFor="offer-role-summary">
+              What the letter says this job is
+            </label>
+            <textarea
+              className={offerTextareaClassName}
+              disabled={!canManage}
+              id="offer-role-summary"
+              onChange={(event) => setDraft((current) => ({ ...current, roleSummary: event.target.value }))}
+              placeholder="Throughout our selection process you demonstrated… and we would like you to bring both to {{territory}}."
+              rows={4}
+              value={draft.roleSummary}
+            />
+            <p className={offerHintClassName}>
+              {draft.roleSummary.trim()
+                ? "This letter's own words. Changing it here changes this one letter; the Job titles tab changes every future offer for the position."
+                : findOfferJobTitle(draft.title, jobTitles)
+                  ? "This position has no wording of its own yet, so the letter prints the standard sentence. Write it once on the Job titles tab and every future offer for the position carries it."
+                  : "Blank prints the standard sentence. Write {{territory}} where the candidate's own area should appear."}
+            </p>
+          </div>
 
           <div>
             <label className={offerLabelClassName} htmlFor="offer-reference">Reference</label>

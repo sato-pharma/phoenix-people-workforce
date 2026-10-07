@@ -3,6 +3,7 @@ import {
   OFFER_OUTSTATION_CLAUSE_HEADING,
   OFFER_OUTSTATION_CLAUSE_TEXT,
 } from "@/lib/offers/outstation-clause";
+import { OFFER_FIELD_FORCE_ROLE_SUMMARY } from "@/lib/offers/role-summary";
 
 /**
  * The SATO offer as the owner designed it — the factory default, transcribed block for block
@@ -39,24 +40,32 @@ export const OFFER_DEFAULT_FONT_SIZE_PT = 9.9;
 export const OFFER_DEFAULT_TEMPLATE_NAME = "SATO Offer of Employment";
 
 /**
- * Seed job titles and their flat cost-of-living allowances.
+ * Seed job titles, their flat cost-of-living allowances, and what the letter says each job IS.
  *
  * The three figures are the owner's own, given directly (2026-08-26). The two marked below are
  * additionally corroborated by signed offers. Titles are fully editable in the admin UI — this
  * list is only what a fresh install starts with.
+ *
+ * `roleSummary` carries the field-force paragraph that used to be typed into three of the four
+ * designs, so a letter to any of these three positions says exactly what it said before the words
+ * moved out of the designs. It is a STARTING POINT per position, reworded on the Job Titles screen;
+ * a position left blank prints the role-neutral sentence instead (`role-summary.ts`).
  */
 export const OFFER_SEED_JOB_TITLES: OfferJobTitleInput[] = [
   {
     contractTerm: "One year, renewable",
     costOfLiving: 5500,
     reportsTo: "Chief Executive Officer",
+    roleSummary: OFFER_FIELD_FORCE_ROLE_SUMMARY,
     title: "National Sales Manager",
   },
   {
     // Corroborated: Dr Samaa Shalaby, SP-HR-DSM-2026-019 (30,000 total → 18,550 / 7,950 / 3,500).
+    // Her signed letter is where this paragraph was transcribed from in the first place.
     contractTerm: "One year, renewable",
     costOfLiving: 3500,
     reportsTo: "National Sales Manager",
+    roleSummary: OFFER_FIELD_FORCE_ROLE_SUMMARY,
     title: "District Sales Manager",
   },
   {
@@ -64,6 +73,7 @@ export const OFFER_SEED_JOB_TITLES: OfferJobTitleInput[] = [
     contractTerm: "One year, renewable",
     costOfLiving: 2500,
     reportsTo: "District Sales Manager",
+    roleSummary: OFFER_FIELD_FORCE_ROLE_SUMMARY,
     title: "Medical Representative",
   },
 ];
@@ -120,11 +130,11 @@ export function defaultOfferBlocks(): OfferBlock[] {
           "<p class='lead'>Dear <strong>{{salutationName}}</strong>,</p>" +
           "<p>On behalf of Sato Pharmaceuticals, it is our pleasure to offer you the position of " +
           "<strong>{{title}}</strong>, reporting to the {{reportsTo}}.</p>" +
-          "<p>Throughout our selection process you demonstrated the commercial judgement and the people " +
-          "leadership this district needs, and we would like you to bring both to {{territory}}. In this role " +
-          "you will be fully accountable for the territory&rsquo;s sales performance &mdash; translating " +
-          "commercial strategy into an executable district plan, leading and developing your field team, and " +
-          "driving sustainable growth and market expansion.</p>",
+          // The paragraph describing the JOB comes from the job title, never from this design. It
+          // used to be the district-sales sentence typed here — which every position in the company
+          // then received, including the ones that lead nobody and carry no territory. What the words
+          // are, where they live and why: `src/lib/offers/role-summary.ts`.
+          "<p>{{roleSummary}}</p>",
       },
       type: "text",
     },

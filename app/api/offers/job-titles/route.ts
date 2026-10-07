@@ -53,6 +53,10 @@ export async function POST(request: Request) {
       contractTerm: typeof body.contractTerm === "string" ? body.contractTerm : null,
       costOfLiving,
       reportsTo: typeof body.reportsTo === "string" ? body.reportsTo : null,
+      // What the letter says this job IS. Blank is a real answer — "use the standard paragraph" — so
+      // it normalises to null rather than being refused: nobody should be stopped from adding a
+      // position because they have not written its words yet.
+      roleSummary: typeof body.roleSummary === "string" ? body.roleSummary : null,
       // Null is a real answer — "no preference, use whichever design is the default" — so an
       // absent or blank value normalises to it rather than being refused.
       templateId: typeof body.templateId === "string" ? body.templateId : null,

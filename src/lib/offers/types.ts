@@ -133,6 +133,17 @@ export type OfferJobTitle = {
   id: string;
   reportsTo: string | null;
   /**
+   * What the letter says this job IS — the paragraph after the salutation, in this position's own
+   * words, reaching the letter as `{{roleSummary}}`.
+   *
+   * Null means "nobody has worded this position yet" and prints the role-neutral standard sentence
+   * rather than a gap (`src/lib/offers/role-summary.ts`). It lives here, beside the figures, because
+   * it is the same kind of fact as the cost of living: true of the POSITION, never of the design the
+   * letter happens to wear. Before it existed, three of the four designs told every candidate in the
+   * company that they would be leading a district's field team.
+   */
+  roleSummary: string | null;
+  /**
    * The letter design new offers for this title open on.
    *
    * Null means "no preference — use whichever template holds `isDefault`", which is a real answer
@@ -148,6 +159,7 @@ export type OfferJobTitleInput = {
   contractTerm?: string | null;
   costOfLiving: number;
   reportsTo?: string | null;
+  roleSummary?: string | null;
   templateId?: string | null;
   title: string;
 };
@@ -163,6 +175,17 @@ export type OfferFields = {
   dateOfIssue: string;
   reference: string;
   reportsTo: string;
+  /**
+   * The paragraph describing the job, prefilled from the job title and overridable for this one
+   * letter — the same shape as `reportsTo` and `contractTerm` above.
+   *
+   * It is COPIED onto the offer when the title is chosen, not looked up again when the letter is
+   * drawn, and that direction is the whole safety of it: a sent offer must say tomorrow what the
+   * candidate signed today, and resolving a live title would let rewording a position silently
+   * restate a letter already in somebody's inbox. Empty prints the role-neutral standard sentence,
+   * which is what every offer written before this field existed carries.
+   */
+  roleSummary: string;
   /** How the letter addresses them — "Dr SAMAA SHALABY", not necessarily the legal name. */
   salutationName: string;
   startDate: string;

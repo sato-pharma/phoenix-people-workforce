@@ -78,6 +78,15 @@ export const OFFER_PLACEHOLDERS: OfferPlaceholder[] = [
   { group: "Role", key: "reportsTo", label: "Reports to", note: "The manager's title, not their name." },
   {
     group: "Role",
+    key: "roleSummary",
+    label: "What this job is",
+    note:
+      "The paragraph after the greeting, written per JOB TITLE on the Job Titles tab and editable "
+      + "for one letter in the composer. It is why ONE design serves every position — a sales "
+      + "paragraph has no place in a Talent Acquisition letter. It may itself use {{territory}}.",
+  },
+  {
+    group: "Role",
     key: "contractTerm",
     label: "Contract term",
     note: "\"One year, renewable\" — free text, so it can say whatever the contract says.",

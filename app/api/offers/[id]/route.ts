@@ -63,7 +63,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const patch: Partial<OfferFields> & { templateId?: string | null; vacancyId?: number | null } = {};
     const textKeys: (keyof OfferFields)[] = [
       "candidateEmail", "candidateName", "contractTerm", "dateOfIssue", "reference",
-      "reportsTo", "salutationName", "startDate", "territory", "title", "validUntil",
+      "reportsTo", "roleSummary", "salutationName", "startDate", "territory", "title", "validUntil",
     ];
     for (const key of textKeys) {
       if (typeof body[key] === "string") (patch as Record<string, unknown>)[key] = String(body[key]).trim();

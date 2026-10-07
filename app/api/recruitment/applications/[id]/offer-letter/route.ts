@@ -116,6 +116,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // rules, so nothing here can reserve one it then fails to use.
         reference: "",
         reportsTo: match?.reportsTo ?? "",
+        // What the letter says this job is, from the position's own catalogue row. "" when the title
+        // is not in the catalogue or has no wording yet, and that prints the role-neutral standard
+        // sentence — the one answer that is right for a position nobody has worded.
+        roleSummary: match?.roleSummary ?? "",
         templateId: match?.templateId ?? null,
         validUntil: addDays(today, DEFAULT_OFFER_VALIDITY_DAYS),
       },

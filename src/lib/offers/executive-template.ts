@@ -103,11 +103,9 @@ export function executiveOfferBlocks(): OfferBlock[] {
           "<p class='lead'>Dear <strong>{{salutationName}}</strong>,</p>" +
           "<p>On behalf of Sato Pharmaceuticals, it is our pleasure to offer you the position of " +
           "<strong>{{title}}</strong>, reporting to the {{reportsTo}}.</p>" +
-          "<p>Throughout our selection process you demonstrated the commercial judgement and the people " +
-          "leadership this district needs, and we would like you to bring both to {{territory}}. In this role " +
-          "you will be fully accountable for the territory&rsquo;s sales performance &mdash; translating " +
-          "commercial strategy into an executable district plan, leading and developing your field team, and " +
-          "driving sustainable growth and market expansion.</p>",
+          // Per JOB TITLE, not per design — the district-sales sentence that used to sit here went to
+          // every position in the company. `src/lib/offers/role-summary.ts`.
+          "<p>{{roleSummary}}</p>",
       },
       type: "text",
     },

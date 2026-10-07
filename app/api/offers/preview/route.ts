@@ -52,6 +52,7 @@ export async function POST(request: Request) {
       dateOfIssue: text("dateOfIssue"),
       reference: text("reference"),
       reportsTo: text("reportsTo"),
+      roleSummary: text("roleSummary"),
       salutationName: text("salutationName"),
       startDate: text("startDate"),
       territory: text("territory"),
