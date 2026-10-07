@@ -329,7 +329,10 @@ function runOnActions({ branch, sha, names, waitedSeconds }) {
     console.error("");
     console.error("    Pushing the branch costs NO Actions minutes (ci.yml runs on a PR and on main only):");
     console.error("      git push -u origin " + branch);
-    die("push the branch, then re-run this with --urgent.");
+    die(
+      "push the branch, then re-run this — a busy box escalates on its own. Or open the PR: its " +
+        "validate + checks ARE this fallback, on the same commit, for the same minutes.",
+    );
   }
 
   // 🔴 AND IF THE BRANCH ALREADY HAS A PR, DISPATCHING IS PAYING TWICE FOR ONE ANSWER. A PR runs the
