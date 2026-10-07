@@ -2,6 +2,7 @@ import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
 import { stepDefinition } from "./step-definitions.ts";
 
+import { MODULE_SOURCED_STEP_KEYS } from "./module-sourced-steps.ts";
 import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
 /**
@@ -31,23 +32,9 @@ import type { DraftRow, StepKey, StepRow } from "./types.ts";
  * rare month something moved.
  */
 
-/**
- * The steps whose figures come from the Deductions module.
- *
- * Exactly the ones that call `loadConfirmedDeductions` in recommend.ts. Every other step proposes
- * from the employee master or from the run itself, and neither can change behind the run's back in
- * the way this check exists to catch.
- */
-export const MODULE_SOURCED_STEP_KEYS: readonly StepKey[] = [
-  "p1_fingerprint",
-  "p1_crm",
-  "p1_resignation_crm",
-  "p1_unpaid_vacation",
-  "p1_other_deductions",
-  "p2_vacation",
-  "p2_crm",
-  "p2_manual_deductions",
-];
+// The step list lives in a browser-safe file (this one reaches the database client through feeders.ts),
+// so the wizard can read it too. Re-exported so every existing import keeps working.
+export { MODULE_SOURCED_STEP_KEYS };
 
 /** The key the snapshot is stored under, inside the step state's existing jsonb summary. */
 export const RECOMMENDED_AT_CONFIRM_KEY = "recommendedAtConfirm";

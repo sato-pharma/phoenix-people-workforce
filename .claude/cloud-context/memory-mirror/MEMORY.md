@@ -33,3 +33,4 @@
 
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
+- [MSYS turns a `git rev-parse "<ref>:<path>"` failure into a verdict](msys-mangles-a-git-ref-colon-path-into-a-false-verdict.md) — it reported a byte-identical file as DIFFERING; mangle both sides and every file reads "same" instead.

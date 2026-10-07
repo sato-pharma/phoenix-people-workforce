@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { isAfterPeriod, isSettledInPart1 } from "../src/lib/automated-payroll/recommend.ts";
+import { stepEditToPatch } from "../src/lib/automated-payroll/run-service.ts";
 import { normalizePayrollPaymentMode } from "../src/lib/payroll/policy.ts";
 import { PART1_STEP_KEYS, PART2_STEP_KEYS, type StepRow } from "../src/lib/automated-payroll/types.ts";
 import { STEP_DEFINITIONS, STEP_ORDER } from "../src/lib/automated-payroll/step-definitions.ts";
@@ -296,13 +297,23 @@ export function runAutomatedPayrollPart1ScopeTests() {
     !stepEditToPatchBody.includes('stepKey === "p1_crm"'),
     "there must be no leaver-specific remap branch left for p1_crm — its leavers moved to p1_resignation_crm entirely",
   );
-  assert.ok(
-    stepEditToPatchBody.includes("patch.unpaidVacations = generic.p1odVacationValue"),
+  // The remap itself is checked by behaviour now that stepEditToPatch is exported (2026-10-07): the
+  // unused column is written as NULL rather than left out, because upsertDraftRows writes one column
+  // set per request and no longer clears it by accident (tests/deduction-open-step-saved-figure.test.ts).
+  const leaverVacation = stepEditToPatch(
+    "p1_unpaid_vacation",
+    { hrId: "E-LEAVER", values: { p1odVacationDays: 0, p1odVacationValue: 750 } },
+    true,
+  );
+  assert.equal(
+    leaverVacation.unpaidVacations,
+    750,
     "a leaver's Vacation edit must remap onto unpaidVacations, not stay on p1odVacationValue",
   );
-  assert.ok(
-    stepEditToPatchBody.includes("delete generic.p1odVacationValue"),
-    "the p1odVacationValue key must be deleted after remapping — leaving it would double-write both columns",
+  assert.equal(
+    leaverVacation.p1odVacationValue,
+    null,
+    "a leaver's p1odVacationValue must never carry the figure after remapping — that would double-write both columns",
   );
   // The Resignations CRM tab's reason field (resigCrmReason) reuses the SAME
   // p1od_crm_reason column the old p1_crm leaver branch wrote — confirmed via

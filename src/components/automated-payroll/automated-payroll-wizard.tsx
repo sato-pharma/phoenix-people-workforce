@@ -31,6 +31,7 @@ import {
 } from "@/lib/automated-payroll/data-quality";
 import type { PayrollDayCollision } from "@/lib/automated-payroll/day-collisions";
 import type { ModuleDriftReport } from "@/lib/automated-payroll/module-drift";
+import { stepOpenDuringPart2 } from "@/lib/automated-payroll/module-sourced-steps";
 import { cairoTimeLabel, describeChargeSource } from "@/lib/automated-payroll/cell-history-labels";
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
@@ -383,6 +384,9 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           return;
         }
         setPart2AckTokens({});
+        // A refusal can name a Part 1 step a deduction decision re-opened after this page loaded
+        // (module-sourced-steps.ts). Reload first, so that step is unlocked here when HR goes to it.
+        await loadRun(month, year);
         throw new Error(data.error ?? "Action failed.");
       }
       setPart2AckTokens({});
@@ -535,6 +539,12 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
 
   const stepLocked = (stepKey: StepKey): boolean => {
     if (!run) return true;
+    // A Part 1 deduction step a decision re-opened during Part 2 stays open, so the block Part 2's
+    // confirm raises about it has a button that clears it (module-sourced-steps.ts). Re-confirming it
+    // here lands the figure in Part 2; "Unconfirm Part 1" would re-freeze the paid first instalment.
+    if (run.phase === "part2" && stepPhase(stepKey) === "part1" && stepOpenDuringPart2(stepKey, stepStates)) {
+      return false;
+    }
     return run.phase !== stepPhase(stepKey);
   };
 

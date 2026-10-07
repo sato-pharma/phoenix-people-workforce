@@ -2,6 +2,7 @@ import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
 import { TRANSITION_CLAIM_LOST } from "./transition-claim.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { groupRowsByColumnSet } from "@/lib/imports/upsert-by-column-set.ts";
 
 import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
 import type {
@@ -442,7 +443,15 @@ function isMissingColumnError(error: unknown): boolean {
  */
 const OPTIONAL_DRAFT_COLUMNS = ["expenses_note"] as const;
 
-/** Upsert a batch of per-employee draft edits (one step's worth). */
+/**
+ * Upsert a batch of per-employee draft edits (one step's worth).
+ *
+ * Sent in groups whose rows carry exactly the same columns (upsert-by-column-set.ts). One bulk upsert
+ * names the UNION of every row's columns, and PostgREST writes NULL into a named column a row left out
+ * — over the stored figure, on a merge. A save leaves an untouched row's figures out on purpose
+ * (saved-figures.ts), and a leaver's vacation lands on other columns than everybody else's, so one
+ * request would erase the figures it was told to keep.
+ */
 export async function upsertDraftRows(runId: string, patches: DraftRowPatch[]): Promise<void> {
   if (patches.length === 0) return;
   const rows = patches
@@ -450,17 +459,19 @@ export async function upsertDraftRows(runId: string, patches: DraftRowPatch[]): 
     .map((patch) => draftPatchToDb(runId, patch));
   if (rows.length === 0) return;
   const client = getSupabaseAdmin();
-  const { error } = await client.from(DRAFT_ROWS).upsert(rows, { onConflict: "run_id,employee_hr_id_compact" });
-  if (!error) return;
-  if (!isMissingColumnError(error)) throw error;
+  for (const group of groupRowsByColumnSet(rows)) {
+    const { error } = await client.from(DRAFT_ROWS).upsert(group, { onConflict: "run_id,employee_hr_id_compact" });
+    if (!error) continue;
+    if (!isMissingColumnError(error)) throw error;
 
-  const stripped = rows.map((row) => {
-    const copy = { ...row };
-    for (const column of OPTIONAL_DRAFT_COLUMNS) delete copy[column];
-    return copy;
-  });
-  const retry = await client.from(DRAFT_ROWS).upsert(stripped, { onConflict: "run_id,employee_hr_id_compact" });
-  if (retry.error) throw retry.error;
+    const stripped = group.map((row) => {
+      const copy = { ...row };
+      for (const column of OPTIONAL_DRAFT_COLUMNS) delete copy[column];
+      return copy;
+    });
+    const retry = await client.from(DRAFT_ROWS).upsert(stripped, { onConflict: "run_id,employee_hr_id_compact" });
+    if (retry.error) throw retry.error;
+  }
 }
 
 /**

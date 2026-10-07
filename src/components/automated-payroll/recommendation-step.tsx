@@ -404,7 +404,7 @@ export function RecommendationStep({
   }, [dirty, onDirtyChange]);
 
   const toEdits = useCallback((): StepEditInput[] => {
-    const edits = rows
+    const edits: StepEditInput[] = rows
       // Informational rows (notice-period employees) are never saved. Their
       // settlement belongs to the month they actually leave; sending them here
       // could stamp this month's figures onto their draft row.
@@ -416,6 +416,9 @@ export function RecommendationStep({
         selects: row.selects,
         reason: row.reason,
         onHold: row.onHold,
+        // What this screen proposed, so the server writes only the figures somebody changed and
+        // leaves the rest following the Deductions module (saved-figures.ts).
+        recommended: row.recommended,
       }));
 
     // Removed manual rows are sent as an explicit zero — see `removedManual`.
