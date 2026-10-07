@@ -68,11 +68,47 @@ export type ModuleDriftRow = {
   /** What the run will actually charge — the figure on its own row. */
   charged: number;
   /**
-   * True when the charged figure is not the one the module proposed at confirm, i.e. a human typed
-   * it. Their decision still stands and still wins; this row is context, not a problem.
+   * True when the charged figure is not the one the module proposed at confirm. It still stands and
+   * never blocks; this row is context, not a problem.
+   *
+   * It does NOT mean a person typed it. Two steps can write one draft column — a leaver's Part 1
+   * Resignations CRM and the Part 2 CRM step both land in `crm` — so a figure another step's confirm
+   * wrote differs from this step's snapshot just the same. Who actually set it is `chargeSource`,
+   * read from the cell history; the wording says "typed" only when that history says a person did.
    */
   overridden: boolean;
+  /** Who last wrote the charged figure, from automated_payroll_draft_cell_history. Absent = not looked up. */
+  chargeSource?: ChargeSource;
 };
+
+/**
+ * The cell history's answer to "who set the figure this run charges".
+ *
+ * `typed` — a person saved it on a step (inline or by uploaded sheet).
+ * `step` — a step's confirm or a Part 1 confirm/reopen wrote it, carrying a recommendation.
+ * `system` — a resync after a Deductions push or an expense change.
+ * `unknown` — no history entry: the figure was written before the history began (2026-10-07).
+ */
+export type ChargeSource = {
+  kind: "typed" | "step" | "system" | "unknown";
+  name: string | null;
+  stepKey: string | null;
+  at: string | null;
+};
+
+/** The draft column a step field is stored in — a step field's key IS its DraftRow key, camelCase. */
+export function draftColumnForField(field: string): string {
+  return field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+/** Classify a history entry's reason into who set the figure. */
+export function chargeSourceKind(writeReason: string | null | undefined): ChargeSource["kind"] {
+  if (writeReason === "step_saved") return "typed";
+  if (writeReason === "deduction_resync" || writeReason === "expense_resync") return "system";
+  if (writeReason) return "step";
+  return "unknown";
+}
+
 
 export type ModuleDriftReport = {
   rows: ModuleDriftRow[];
@@ -261,7 +297,7 @@ export function describeModuleDriftBlock(report: ModuleDriftReport): string {
   const more = stale.length > 5 ? ` …and ${stale.length - 5} more.` : "";
   const overridden =
     report.overriddenButMoved > 0
-      ? ` (${report.overriddenButMoved} more moved too, but carry a figure somebody entered by hand — those still stand and are not blocking.)`
+      ? ` (${report.overriddenButMoved} more moved too, but carry a figure different from the one confirmed — those still stand and are not blocking.)`
       : "";
   return (
     `${stale.length} figure(s) on this run no longer match the Deductions module, so confirming now ` +
@@ -285,7 +321,7 @@ export function describeModuleDrift(report: ModuleDriftReport): string {
   const more = stale.length > 5 ? ` …and ${stale.length - 5} more.` : "";
   const overridden =
     report.overriddenButMoved > 0
-      ? ` ${report.overriddenButMoved} more moved but carry a figure someone entered by hand, which still stands.`
+      ? ` ${report.overriddenButMoved} more moved but carry a figure different from the one confirmed, which still stands.`
       : "";
   if (stale.length === 0) return `No confirmed figure is stale.${overridden}`;
   return `${stale.length} confirmed figure(s) no longer match the Deductions module. ${sample.join(" | ")}${more}${overridden}`;

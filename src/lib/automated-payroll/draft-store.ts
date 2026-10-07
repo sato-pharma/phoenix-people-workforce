@@ -504,6 +504,46 @@ export async function listDraftCellHistory(runId: string, hrId: string): Promise
   }));
 }
 
+/**
+ * The LATEST recorded write to each (employee, column) asked for on a run, keyed
+ * `${compact}|${column}`. A pair with no entry is absent — the figure predates the history.
+ */
+export async function listLatestCellWrites(
+  runId: string,
+  compacts: string[],
+  columns: string[],
+): Promise<Map<string, DraftCellChange>> {
+  const latest = new Map<string, DraftCellChange>();
+  if (compacts.length === 0 || columns.length === 0) return latest;
+  const { data, error } = await getSupabaseAdmin()
+    .from(CELL_HISTORY)
+    .select("employee_hr_id, employee_hr_id_compact, column_name, old_value, new_value, changed_by, write_reason, step_key, input_mode, changed_at")
+    .eq("run_id", runId)
+    .in("employee_hr_id_compact", compacts)
+    .in("column_name", columns)
+    .order("changed_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(2000);
+  if (error) throw error;
+  for (const row of (data ?? []) as RunRow[]) {
+    const key = `${String(row.employee_hr_id_compact ?? "")}|${String(row.column_name ?? "")}`;
+    if (latest.has(key)) continue;
+    latest.set(key, {
+      employeeHrId: String(row.employee_hr_id ?? ""),
+      column: String(row.column_name ?? ""),
+      oldValue: (row.old_value as string | null) ?? null,
+      newValue: (row.new_value as string | null) ?? null,
+      changedBy: (row.changed_by as string | null) ?? null,
+      changedByName: null,
+      writeReason: (row.write_reason as string | null) ?? null,
+      stepKey: (row.step_key as string | null) ?? null,
+      inputMode: (row.input_mode as string | null) ?? null,
+      changedAt: String(row.changed_at ?? ""),
+    });
+  }
+  return latest;
+}
+
 export async function deleteRunDraftRows(runId: string): Promise<void> {
   const { error } = await getSupabaseAdmin().from(DRAFT_ROWS).delete().eq("run_id", runId);
   if (error) throw error;

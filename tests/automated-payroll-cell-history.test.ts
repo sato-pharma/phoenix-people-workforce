@@ -6,10 +6,12 @@ import {
   actorLabel,
   cairoTimeLabel,
   columnLabel,
+  describeChargeSource,
   isTypedByHand,
   reasonLabel,
   valueLabel,
 } from "../src/lib/automated-payroll/cell-history-labels.ts";
+import { chargeSourceKind, draftColumnForField } from "../src/lib/automated-payroll/module-drift.ts";
 
 /**
  * EVERY CHANGE TO A FIGURE ON THE AUTOMATED PAYROLL SHEET IS RECORDED — WHO, WHY, FROM WHAT TO WHAT.
@@ -150,4 +152,45 @@ export function runAutomatedPayrollCellHistoryTests() {
 
   // The September confirm that froze the two figures: 00:09 UTC is 03:09 in Cairo (UTC+3 that day).
   assert.equal(cairoTimeLabel("2026-10-07T00:09:08.962Z"), "7 Oct 2026, 03:09");
+
+  // ---- The drift warning says "typed" ONLY when the history says a person saved it ----------------
+  // The 2026-10-07 case: Aisha's 1,200.00 was written by the Part 2 CRM step's CONFIRM, and the
+  // warning called it "someone entered by hand". From the history it now reads as what it was.
+  const confirmWrote = describeChargeSource({
+    kind: "step",
+    name: null,
+    stepKey: "p2_crm",
+    at: "2026-10-07T00:11:38.083Z",
+  });
+  assert.equal(
+    confirmWrote,
+    "which the CRM (no activity) step wrote when it was confirmed on 7 Oct 2026, 03:11; nobody typed it, and it still stands",
+  );
+  assert.doesNotMatch(confirmWrote, /by hand|(someone|somebody|which \w+) typed/, "a confirm is never described as a person's figure");
+  assert.match(
+    describeChargeSource({ kind: "typed", name: "Test Person", stepKey: "p2_crm", at: "2026-10-07T07:00:00Z" }),
+    /^which Test Person typed on CRM \(no activity\) on 7 Oct 2026, 10:00; it still stands$/,
+  );
+  assert.match(describeChargeSource({ kind: "system", name: null, stepKey: null, at: null }), /Phoenix set automatically/);
+  const unrecorded = describeChargeSource({ kind: "unknown", name: null, stepKey: null, at: null });
+  assert.match(unrecorded, /who set it is not recorded/, "a figure older than the history is never guessed at");
+  assert.doesNotMatch(unrecorded, /typed|by hand/);
+  assert.equal(describeChargeSource(undefined), unrecorded, "no lookup reads as unrecorded, never as typed");
+
+  assert.equal(chargeSourceKind("step_saved"), "typed");
+  assert.equal(chargeSourceKind("step_confirmed"), "step");
+  assert.equal(chargeSourceKind("part1_confirmed"), "step");
+  assert.equal(chargeSourceKind("deduction_resync"), "system");
+  assert.equal(chargeSourceKind(null), "unknown");
+  assert.equal(chargeSourceKind("unspecified"), "step", "a write that named no reason is not claimed as typed");
+
+  // A step field's key IS its draft column in camelCase — the lookup depends on the mapping.
+  assert.equal(draftColumnForField("crm"), "crm");
+  assert.equal(draftColumnForField("unpaidVacations"), "unpaid_vacations");
+  assert.equal(draftColumnForField("p1odCrmValue"), "p1od_crm_value");
+  assert.equal(draftColumnForField("fingerprintValue"), "fingerprint_value");
+
+  const wizard = readFileSync("src/components/automated-payroll/automated-payroll-wizard.tsx", "utf8");
+  assert.doesNotMatch(wizard, /someone entered by hand|somebody entered by hand/, "the banner never asserts a hand edit on its own");
+  assert.match(wizard, /describeChargeSource\(row\.chargeSource, cairoTimeLabel\)/, "the banner's wording comes from the history");
 }
