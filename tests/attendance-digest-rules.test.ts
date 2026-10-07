@@ -1125,7 +1125,7 @@ export async function runAttendanceDigestRulesTests() {
   assert.match(deductions, /return isTerminalEmploymentStatus\(/, "…and who has left is the auth module's own test, never a second list of statuses");
 
   const bridge = readFileSync("src/lib/attendance/digest-bridge.ts", "utf8");
-  assert.match(bridge, /try \{\s*await recordDecision\(/, "one locked candidate must not abort every other day in the month");
+  assert.match(bridge, /try \{\s*(?:const \w+ = )?await recordDecision\(/, "one locked candidate must not abort every other day in the month");
   assert.match(
     bridge,
     /if \(decision\.status === "Do Not Take Action" && currentStatus === "Approved for Payroll"\) \{/,

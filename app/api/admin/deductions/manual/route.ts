@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
+import {
+  describeDeductionResyncNotApplied,
+  resyncPayrollDeductionSteps,
+} from "@/lib/automated-payroll/deduction-resync";
 import { assertPermission } from "@/lib/auth/permissions";
+import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { buildManualDeductionDraft } from "@/lib/deductions/connectors/manual.ts";
@@ -121,7 +126,20 @@ export async function POST(request: Request) {
       autoDecideReason: "Manually entered by HR",
     });
 
-    return NextResponse.json({ success: true, result });
+    // It is born "Approved for Payroll", and approval is what payroll charges (owner, 2026-10-07),
+    // so it must reach a payroll step that was already confirmed — exactly as recordDecision does.
+    const hrIdCompact = compactDeductionsHrId(employee.hr_id);
+    const payrollNotices =
+      result.created > 0 && hrIdCompact
+        ? describeDeductionResyncNotApplied(
+            await resyncPayrollDeductionSteps({
+              monthKey: draft.monthKey,
+              employees: [{ hrIdCompact, categories: [draft.category] }],
+            }),
+          )
+        : [];
+
+    return NextResponse.json({ success: true, result, payrollNotices });
   } catch (error) {
     return jsonError(error, "Failed to record the manual deduction entry.");
   }

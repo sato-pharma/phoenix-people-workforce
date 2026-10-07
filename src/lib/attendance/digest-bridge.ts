@@ -211,7 +211,7 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
       continue;
     }
     try {
-      await recordDecision({
+      const recorded = await recordDecision({
         actor: { role: "Super Admin", hrId: SYSTEM_ACTOR, loginId: SYSTEM_ACTOR },
         candidateId,
         decisionStatus: decision.status,
@@ -222,6 +222,10 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
             : `Applied from the weekly attendance digest settlement recorded on ${settlement.work_date}, at ${setDays} day(s) set by the Super Admin before release.`,
         ...(setDays === undefined ? {} : { appliedValue: setDays, allowAboveDetected: true }),
       });
+      // The decision is saved, but payroll did not follow it — money, so it alerts.
+      for (const notice of recorded.payrollNotices) {
+        result.alerts.push(`${settlement.employee_hr_id} ${settlement.work_date}: ${notice}`);
+      }
     } catch (decisionFailure) {
       // One locked or refused candidate must not stop every other day in the month from being
       // applied. A balance-paid day that cannot be closed is money taken twice, so it alerts.

@@ -195,6 +195,8 @@ export function EmployeeDayReport({
             },
           }));
         }
+        const payrollNotices = Array.isArray(data.payrollNotices) ? (data.payrollNotices as string[]) : [];
+        if (payrollNotices.length > 0) setDecisionError(payrollNotices.join(" "));
       } catch (err) {
         setDecisionError(err instanceof Error ? err.message : "Failed to save the decision.");
       } finally {
