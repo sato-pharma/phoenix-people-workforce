@@ -1,10 +1,12 @@
 import { logError } from "@/lib/observability/log";
 import type { DeductionsCategory } from "@/lib/deductions/types";
 
+import { isTypedByHand } from "./cell-history-labels.ts";
 import {
   clearDraftColumns,
   findActiveRun,
   listDraftRows,
+  listLatestCellWrites,
   listStepStates,
   upsertStepState,
 } from "./draft-store.ts";
@@ -69,6 +71,12 @@ export type DeductionResyncOutcome =
       clearedHrIds: string[];
       /** Confirmed steps put back to pending. Empty when nothing was confirmed yet. */
       reopenedSteps: StepKey[];
+      /**
+       * HR ids left untouched on an UNconfirmed step because a person saved that figure (the cell
+       * history's `step_saved`). Their figure now differs from the approved deductions, so the
+       * caller says so instead of overwriting a person's entry.
+       */
+      keptSavedHrIds?: string[];
     }
   | { action: "skip"; monthKey: string; reason: DeductionResyncSkipReason }
   | { action: "failed"; monthKey: string; message: string };
@@ -223,13 +231,32 @@ export async function resyncPayrollDeductionSteps(
     }
 
     const clearedHrIds = new Set<string>();
+    const keptSavedHrIds = new Set<string>();
     const reopenedSteps: StepKey[] = [];
     for (const [stepKey, entry] of byStep) {
-      // Only a CONFIRMED step has a frozen figure to be wrong. An unconfirmed one is still showing
-      // the live recommendation, so there is nothing to clear and nothing to re-open — and writing
-      // "pending" over it would create a step_state row for a step HR has never opened.
-      if (!confirmed.has(stepKey)) continue;
-      const cleared = await clearDraftColumns(run.id, Array.from(entry.compacts), Array.from(entry.columns));
+      const compacts = Array.from(entry.compacts);
+      const columns = Array.from(entry.columns);
+      if (!confirmed.has(stepKey)) {
+        // An UNconfirmed step is NOT necessarily live: Save without Confirm writes every row's shown
+        // figure onto the draft, and recommend.ts prefers a saved draft value over the module. A save
+        // made before the decision changed (September 2026: two bulk saves of p2_manual_deductions on
+        // 6 Oct held 0.00 over 8,405.17 EGP of approved "other" lines) would keep charging the old
+        // figure. Clear it — unless the cell history shows a PERSON saved it, which is kept and
+        // reported. No step_state is written: the step was never confirmed.
+        const latest = await listLatestCellWrites(run.id, compacts, columns);
+        const personSaved = (compact: string) =>
+          columns.some((column) => {
+            const write = latest.get(`${compact}|${column}`);
+            return write ? isTypedByHand(write) : false;
+          });
+        const clearable = compacts.filter((compact) => !personSaved(compact));
+        for (const compact of compacts) if (personSaved(compact)) keptSavedHrIds.add(compact);
+        if (clearable.length > 0) {
+          for (const hrId of await clearDraftColumns(run.id, clearable, columns)) clearedHrIds.add(hrId);
+        }
+        continue;
+      }
+      const cleared = await clearDraftColumns(run.id, compacts, columns);
       for (const hrId of cleared) clearedHrIds.add(hrId);
       await upsertStepState({
         runId: run.id,
@@ -247,6 +274,7 @@ export async function resyncPayrollDeductionSteps(
       runId: run.id,
       clearedHrIds: Array.from(clearedHrIds),
       reopenedSteps,
+      keptSavedHrIds: Array.from(keptSavedHrIds),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -295,6 +323,12 @@ export function describeDeductionResyncNotApplied(outcome: DeductionResyncOutcom
   }
   if (outcome.action === "failed") {
     return [`Payroll for ${month} could not be updated with this deduction. The decision itself is saved.`];
+  }
+  if (outcome.action === "resync" && (outcome.keptSavedHrIds?.length ?? 0) > 0) {
+    return [
+      `Payroll for ${month} has a figure someone saved by hand for this employee, so it was left as it is ` +
+        "and does not include this decision. Change it in Automated Payroll for it to apply.",
+    ];
   }
   return [];
 }

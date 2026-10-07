@@ -136,6 +136,29 @@ export function runDeductionPayrollResyncTests() {
     1,
     "a failed resync is reported, because the deduction IS pushed and payroll is the half that did not move",
   );
+  assert.equal(
+    describeDeductionResyncNotApplied({
+      action: "resync",
+      monthKey: "2026-09",
+      runId: "r",
+      clearedHrIds: [],
+      reopenedSteps: [],
+      keptSavedHrIds: ["ai0002"],
+    }).length,
+    1,
+    "a figure a person saved is kept, and the decision says payroll does not include it",
+  );
+  // An UNconfirmed step can still hold a SAVED figure that recommend.ts prefers over the module
+  // (September 2026: a 6 Oct bulk save held 0.00 over approved "other" lines), so the resync must
+  // not skip unconfirmed steps — it clears them unless a person saved the cell.
+  const resync = readFileSync("src/lib/automated-payroll/deduction-resync.ts", "utf8");
+  assert.doesNotMatch(
+    resync,
+    /if \(!confirmed\.has\(stepKey\)\) continue;/,
+    "an unconfirmed step must not be skipped — a saved draft figure there is as stale as a confirmed one",
+  );
+  assert.match(resync, /listLatestCellWrites\(/, "a person-saved figure is told apart by the cell history");
+  assert.match(resync, /isTypedByHand\(/, "…using the cell history's own definition of a person's save");
 
   // ---- The push gate is retired (owner, 2026-10-07) -----------------------------------------------
   // Payroll reads the DECISION in every month, so no month is gated on a push any more.
