@@ -60,6 +60,9 @@ function readFields(body: Record<string, unknown>): OfferFields & {
     dateOfIssue: text("dateOfIssue"),
     reference: text("reference"),
     reportsTo: text("reportsTo"),
+    // Prefilled from the job title, overridable for this one letter. Empty is a real value — it
+    // prints the standard paragraph — so an offer posted without it is complete, not broken.
+    roleSummary: text("roleSummary"),
     salutationName: text("salutationName"),
     startDate: text("startDate"),
     templateId: typeof body.templateId === "string" && body.templateId ? body.templateId : null,

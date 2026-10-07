@@ -404,6 +404,7 @@ type JobTitleRow = {
   cost_of_living: number | string | null;
   id: string;
   reports_to: string | null;
+  role_summary?: string | null;
   template_id?: string | null;
   title: string;
 };
@@ -415,6 +416,10 @@ function toJobTitle(row: JobTitleRow): OfferJobTitle {
     costOfLiving: Number(row.cost_of_living) || 0,
     id: row.id,
     reportsTo: row.reports_to,
+    // Optional on the row for the same reason `template_id` is, below: an environment that has not
+    // had the role-summary migration applied returns no such key, and `undefined` must read as "this
+    // position has no wording of its own" — which prints the standard sentence, never a gap.
+    roleSummary: row.role_summary ?? null,
     // Optional on the row, not required: a build that reaches an environment where migration
     // 20260827160000 has not run yet reads `select("*")` without the column, and an `undefined`
     // must land as an unbound title rather than reaching a `<select>` as a dead value.
@@ -435,6 +440,19 @@ function toTemplateId(value: string | null | undefined): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+/**
+ * A cleared role paragraph stores NULL, not an empty string.
+ *
+ * The two would render identically today — `offerRoleSummary` answers both with the standard
+ * sentence — but only one of them reads as "nobody has worded this position" to the next person to
+ * query this table, and a column that holds both for the same meaning is how a later `is null`
+ * check quietly misses half the rows.
+ */
+function toRoleSummary(value: string | null | undefined): string | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed === "" ? null : trimmed;
+}
+
 export async function listOfferJobTitles(): Promise<OfferJobTitle[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.from("offer_job_titles").select("*").order("title", { ascending: true });
@@ -451,6 +469,7 @@ export async function createOfferJobTitle(input: OfferJobTitleInput): Promise<Of
       contract_term: input.contractTerm ?? null,
       cost_of_living: Math.max(0, Number(input.costOfLiving) || 0),
       reports_to: input.reportsTo ?? null,
+      role_summary: toRoleSummary(input.roleSummary),
       template_id: toTemplateId(input.templateId),
       title: input.title.trim(),
     })
@@ -477,6 +496,7 @@ export async function updateOfferJobTitle(
   if (input.costOfLiving !== undefined) patch.cost_of_living = Math.max(0, Number(input.costOfLiving) || 0);
   if (input.reportsTo !== undefined) patch.reports_to = input.reportsTo;
   if (input.contractTerm !== undefined) patch.contract_term = input.contractTerm;
+  if (input.roleSummary !== undefined) patch.role_summary = toRoleSummary(input.roleSummary);
   if (input.templateId !== undefined) patch.template_id = toTemplateId(input.templateId);
   if (input.active !== undefined) patch.active = input.active;
 
@@ -551,6 +571,9 @@ type OfferRow = {
   id: string;
   reference: string | null;
   reports_to: string | null;
+  // Optional for the same reason as the copy lists above: an environment without the role-summary
+  // migration returns no such key, and that must read as "the standard paragraph", not throw.
+  role_summary?: string | null;
   salutation_name: string | null;
   sent_at: string | null;
   sent_by: string | null;
@@ -585,6 +608,7 @@ function toOffer(row: OfferRow): OfferRecord {
     id: row.id,
     reference: row.reference ?? "",
     reportsTo: row.reports_to ?? "",
+    roleSummary: row.role_summary ?? "",
     salutationName: row.salutation_name ?? "",
     sentAt: row.sent_at,
     sentBy: row.sent_by,
@@ -645,6 +669,7 @@ function toRow(fields: Partial<OfferFields>): Record<string, unknown> {
   if (fields.title !== undefined) patch.title = fields.title.trim();
   if (fields.territory !== undefined) patch.territory = fields.territory;
   if (fields.reportsTo !== undefined) patch.reports_to = fields.reportsTo;
+  if (fields.roleSummary !== undefined) patch.role_summary = fields.roleSummary.trim();
   if (fields.startDate !== undefined) patch.start_date = fields.startDate;
   if (fields.contractTerm !== undefined) patch.contract_term = fields.contractTerm;
   if (fields.reference !== undefined) patch.reference = fields.reference;
