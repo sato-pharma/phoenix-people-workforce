@@ -12,11 +12,11 @@ import {
   type PrivateCalendarVisitSummary,
 } from "@/lib/private-calendar/activity-kinds";
 
-export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "field_visit" | "holiday" | "vacation";
+export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "field_visit" | "holiday" | "plan" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
 export type PrivateCalendarViewMode = "employee" | "team";
 
-export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit"] as const satisfies readonly PrivateCalendarSource[];
+export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "plan"] as const satisfies readonly PrivateCalendarSource[];
 
 export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> = {
   attendance: "Attendance",
@@ -24,6 +24,7 @@ export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> 
   excuse: "Excuse",
   field_visit: "Field Visit",
   holiday: "National vacation",
+  plan: "Approved plan",
   vacation: "Vacation",
 };
 
@@ -70,6 +71,13 @@ export type PrivateCalendarItem = {
   exceptionFlags: string[];
   id: string;
   managerName: string | null;
+  // Only on a `plan` item: whether this planned activity is itself the day's proof of work, because
+  // Phoenix records that kind of day nowhere else (Travel, Admin, Meeting, Training, Event, Other).
+  // False on a planned Field, Double Visit, Office, Vacation, Excuse or National Vacation day, where
+  // the CRM, the fingerprint, the leave request or the holiday calendar is the record and the plan
+  // only says the day was expected — see lib/private-calendar/plan-items.ts. The flag is decided at
+  // read time and carried on the item so the exceptions engine below stays free of a database import.
+  plannedActivityCoversTheDay?: boolean;
   reportDetails?: PrivateCalendarReportDetails | null;
   severity: PrivateCalendarSeverity;
   source: PrivateCalendarSource;
@@ -586,6 +594,7 @@ export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): Pri
     excuse: 0,
     field_visit: 0,
     holiday: 0,
+    plan: 0,
     total: items.length,
     vacation: 0,
   };
@@ -602,6 +611,7 @@ function sourceCounts() {
     excuse: 0,
     field_visit: 0,
     holiday: 0,
+    plan: 0,
     vacation: 0,
   } satisfies Record<PrivateCalendarSource, number>;
 }
@@ -733,6 +743,14 @@ export function derivePrivateCalendarExceptions(input: {
       const doubleVisits = dayItems.filter((item) => item.source === "double_visit");
       const fieldVisits = dayItems.filter((item) => item.source === "field_visit");
       const holidays = companyItems.filter((item) => item.source === "holiday");
+      // An approved weekly plan item covers the day ONLY where Phoenix records that kind of day
+      // nowhere else. A planned Field or Double Visit day with no logged visit, a planned Office day
+      // with no punch and a planned Vacation with no approved leave request each keep their exception:
+      // the plan proves the day was expected, which is the opposite of proving it happened. Measured
+      // on production for 1 Aug – 7 Oct 2026, excusing every planned type instead would have erased
+      // 364 real gaps — 318 of them planned double visits with nothing logged — every one of which
+      // feeds the Deductions module's No Records Activity connector.
+      const coveringPlans = dayItems.filter((item) => item.source === "plan" && item.plannedActivityCoversTheDay === true);
       // A CRM visit self-proves attendance for the day — no fingerprint needed.
       // That is true of a rep's OWN solo visits (field_visit) exactly as it is of
       // a manager-accompanied one (double_visit); only the double-visit feed was
@@ -743,15 +761,20 @@ export function derivePrivateCalendarExceptions(input: {
       // punch, no leave and no double visit, and so read as "No Activity
       // Recorded" despite the employee demonstrably working.
       //
-      // Planned/intended activity (the Planning Calendar) is still never
-      // consulted — only actually recorded/verified sources count as covered.
+      // The APPROVED weekly plan joined this list on 2026-10-07, for the one class of day it is the
+      // only possible evidence of: a manager-approved Travel, Admin, Meeting, Training, Event or Other
+      // day, where there is no fingerprint to punch and no customer visit to log, and which therefore
+      // read "No Activity Recorded" although the employee's own manager had approved exactly that day
+      // in Phoenix days earlier. Everything else here is still a captured record, and a plan never
+      // substitutes for one — see coveringPlans above.
       const isCovered =
         attendance.length > 0 ||
         vacations.length > 0 ||
         excuses.length > 0 ||
         holidays.length > 0 ||
         doubleVisits.length > 0 ||
-        fieldVisits.length > 0;
+        fieldVisits.length > 0 ||
+        coveringPlans.length > 0;
 
       for (const item of attendance) {
         for (const flag of item.exceptionFlags) {
@@ -802,7 +825,7 @@ export function derivePrivateCalendarExceptions(input: {
         exceptions.push(createException({
           code: "no_activity_recorded",
           date,
-          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.`,
+          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no approved vacation, no approved excuse, and no approved plan activity that stands on its own recorded for this workday.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [],

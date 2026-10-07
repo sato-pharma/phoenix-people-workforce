@@ -2354,6 +2354,7 @@ import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whats
 import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
 import { runPayrollCopilotSettlementSlotSafetyTests } from "./payroll-copilot-settlement-slot-safety.test.ts";
 import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-double-visit-days.test.ts";
+import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-source.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywhere.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
@@ -9137,6 +9138,10 @@ await runTest(
 await runTest(
   "the Private Calendar reads only the days its people are on, whole, and every double and chain visit is the whole-month one (a chain, an ambiguous chain, a reused CRM account, a duplicate save, a lowercase hr id; small scopes only, anything doubtful reads the whole month)",
   runPrivateCalendarDoubleVisitDaysTests,
+);
+await runTest(
+  "an APPROVED weekly plan covers a private-calendar day only where Phoenix records that activity nowhere else (Travel, Admin, Meeting, Training, Event, Other), while a planned Field, Double Visit, Office, Vacation, Excuse or National Vacation day with nothing recorded keeps its exception, no unapproved plan is read at all, a plan never silences a Late punch, and both the calendar and the company no-activity engine Deductions reads load the same source",
+  runPrivateCalendarPlanSourceTests,
 );
 await runTest(
   "the frozen wholesaler split is compared to the rule by VALUE, because both nets total zero units by construction and a units-only check is blind to the whole drift class (a redistribution, a cell on one side only in either direction, a price change that is not drift, float noise, folded duplicates)",
