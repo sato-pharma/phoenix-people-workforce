@@ -21,7 +21,7 @@
 // would not double-charge, it would block payroll.
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { scanVisitsForRange } from "@/lib/crm/reads";
+import { scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { isFieldWorkforceFridayOnlyTitle } from "@/lib/field-workforce-compliance/weekend-policy";
@@ -149,7 +149,12 @@ async function loadNoRecordOnBridgeDays(input: {
   // rule is guarded by tests/crm-single-source.test.ts, and it exists so CRM
   // feed semantics — the effective view, excluded agents, resigned reps — live
   // in one place instead of eroding one convenient query at a time.
-  const rows = await scanVisitsForRange<{
+  //
+  // Crediting partners, not the plain scan: a manager's bridge day is recorded as the DOUBLE on a
+  // rep's row, so the rep resigning later took the manager's only evidence with it and charged him
+  // for the day (owner report 2026-10-07). A rescued row's `agent_hr_id` is nulled by the read
+  // door, so the loop below gives the day to the partner and to nobody who has left.
+  const rows = await scanVisitsForRangeCreditingPartners<{
     agent_hr_id: string | null;
     double_hr_id: string | null;
     visit_date: string | null;

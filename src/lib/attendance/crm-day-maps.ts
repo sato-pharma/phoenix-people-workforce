@@ -5,7 +5,7 @@
 // awareness of CRM (iReports360) at all, so a day covered only by a
 // CRM-recorded leave, or explained only by a real CRM field visit, was judged
 // purely on device-punch timing. This module reads through the sanctioned CRM
-// door (scanVisitsForRange) once per digest week and classifies each active
+// door (scanVisitsForRangeCreditingPartners) once per digest week and classifies each active
 // employee's days using the SAME three-tier precedence as dayCellValue
 // (field-workforce-compliance/ireports360-source.ts) and the leaver CRM
 // classifier (automated-payroll/recommend.ts): a real regular visit always
@@ -36,7 +36,7 @@
 // (crm/unmapped-alert.ts is a different tripwire — it covers unmapped AGENTS.)
 // If a new code ever appears, classify it in visit-type-meaning.ts, deliberately.
 
-import { queryVisits, scanVisitsForRange } from "@/lib/crm/reads";
+import { queryVisits, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import {
   CRM_CLASSIFIED_NON_REGULAR_VISIT_TYPES,
   CRM_LEAVE_VISIT_TYPE_CODES,
@@ -153,8 +153,10 @@ export function mergeDayMapVisitPages<T extends { id: string }>(pages: ReadonlyA
  * reads run in parallel, are de-duplicated by `id` (a visit whose agent AND double are both wanted
  * is returned by both), and returned in the SAME `id`-ascending order the company-wide keyset scan
  * produced, so the downstream classification and the `describeCrmDay` first-match label stay
- * byte-identical. `queryVisits` applies the identical date range and departed-agent exclusion as
- * {@link scanVisitsForRange}, and matches hr ids case-insensitively (`expandHrIdFilterValues`), so
+ * byte-identical. `queryVisits` applies the identical date range and departed-agent handling as
+ * {@link scanVisitsForRangeCreditingPartners} — a departed agent's row survives for its PARTNER's
+ * sake only, anonymous on the agent side — and matches hr ids case-insensitively
+ * (`expandHrIdFilterValues`), so
  * the fetched set is a superset of the rows the caller's own `normalizeAttendanceHrId` gate keeps —
  * the gate below stays the exact decision. Stored `agent_hr_id`/`double_hr_id` are already canonical
  * (upper, no whitespace — 0 of 123,657 rows differ), so the superset is exact in practice.
@@ -165,7 +167,7 @@ async function fetchDayMapVisits(
   wantedIds: string[],
 ): Promise<CrmDayVisitRow[]> {
   if (wantedIds.length > DAY_MAP_PUSHDOWN_MAX_IDS) {
-    return scanVisitsForRange<CrmDayVisitRow>({
+    return scanVisitsForRangeCreditingPartners<CrmDayVisitRow>({
       dateFrom: dateFromIso,
       dateTo: dateToIso,
       columns: DAY_MAP_VISIT_COLUMNS,
@@ -174,7 +176,18 @@ async function fetchDayMapVisits(
   type KeyedRow = CrmDayVisitRow & { id: string };
   const [asAgent, asDouble] = await Promise.all([
     queryVisits<KeyedRow>({ dateFrom: dateFromIso, dateTo: dateToIso, columns: DAY_MAP_VISIT_COLUMNS, agentHrIds: wantedIds }),
-    queryVisits<KeyedRow>({ dateFrom: dateFromIso, dateTo: dateToIso, columns: DAY_MAP_VISIT_COLUMNS, doubleHrIds: wantedIds }),
+    // The double-role read asks about the people named on the DOUBLE side, so a row whose AGENT has
+    // since resigned must still reach them: otherwise a manager's field day vanishes the day the rep
+    // he spent it with leaves, and the fingerprint report then shows "no CRM activity" for a day he
+    // provably worked (owner report 2026-10-07). The door nulls the departed agent's `agent_hr_id`,
+    // and the gate below only ever credits an hr id in `wanted`, so nothing is credited to a leaver.
+    queryVisits<KeyedRow>({
+      dateFrom: dateFromIso,
+      dateTo: dateToIso,
+      columns: DAY_MAP_VISIT_COLUMNS,
+      doubleHrIds: wantedIds,
+      creditDepartedAgentPartners: true,
+    }),
   ]);
   return mergeDayMapVisitPages<KeyedRow>([asAgent, asDouble]);
 }

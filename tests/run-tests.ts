@@ -2377,6 +2377,7 @@ import { runTypecheckNativeCompilerTests } from "./typecheck-native-compiler.tes
 import { runCiSuitePlacementTests } from "./ci-suite-placement.test.ts";
 import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
 import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
+import { runCrmDoubleVisitWithDepartedPartnerTests } from "./crm-double-visit-with-departed-partner.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9229,6 +9230,10 @@ await runTest(
 await runTest(
   "the sharded CI runner REFUSES a run the shards did not cover between them — a shard that printed no `PHX_SHARD_RESULT` marker, a ran-sum short of the declared count, shards disagreeing about that count, and two shards handed the same index are each a named failure rather than a smaller suite reporting success; a shard that merely FAILED reports once, without a coverage complaint on top of it (run-tests.ts rethrows at the first red test, so its counts are legitimately short); and the shard count is bounded by free memory as well as by CPUs, because each shard holds the whole module graph and this repo's runners are 7 GB, not the public tier's 16",
   runRunTestsShardedTests,
+);
+await runTest(
+  "a manager's double visit with a rep who LATER resigned is still his working day — the exclusion is keyed on who LOGGED the row, so a resignation used to erase its partner's evidence retroactively and charge him a no-activity deduction (100 person-days, 18 active people, 11 of them charged and 2 approved for payroll, June-September 2026); the rescued row credits the partner only, keeps agent_crm_id so the duplicate collapse still works, and every money-deciding read goes through the new door",
+  runCrmDoubleVisitWithDepartedPartnerTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

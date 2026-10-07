@@ -26,6 +26,7 @@ This file is loaded because this session opened a file of this module (or the mo
 
 - 🔴 **Payroll reads `social_insurance_wage`, NEVER `social_insurance_status`, and NEITHER statutory figure reduces take-home pay.** Audit by querying both columns; never warn a wage costs the employee money. `payroll-reads-the-insurance-wage-never-the-status` · `social-insurance-and-tax-never-reduce-take-home-pay`
 - 🔴 **A HELD payroll row is DROPPED at publish with no trace** (`publishToPayslips` filters `!onHold`). **HELD = OWED PART 2 ONLY** — validate part 2 against PUBLISHED rows; `payroll_eligible=false` is normal for executives; read `hold_reason`, never re-raise. `a-held-payroll-row-is-dropped-at-publish-and-leaves-no-trace`
+- 🔴 **A NO-ACTIVITY DEDUCTION READS CRM THROUGH `scanVisitsForRangeCreditingPartners`, NEVER `scanVisitsForRange`** — a manager's fieldwork lives on the REP's row as its double, and the plain door drops the whole row the day that rep resigns, so a day provably worked became a charge months later (owner, 2026-10-07). It governs the `crm`, `dsm_no_record` and `holiday_bridge` connectors and the attendance CRM day maps the fingerprint evidence comes from. The rule and its measurement: `.claude/rules/crm.md`, "THE DEPARTED-AGENT EXCLUSION IS KEYED ON WHO LOGGED THE ROW".
 
 ### Owner rules (moved from AGENTS.md §4)
 

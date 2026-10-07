@@ -37,7 +37,7 @@
 // the DSM rule completely.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getMappedAgentHrIds, scanVisitsForRange } from "@/lib/crm/reads";
+import { getMappedAgentHrIds, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance/weekend-policy.ts";
@@ -238,7 +238,12 @@ export async function collectDsmNoRecordCandidates(input: {
 
   // Activity = either side of a visit. A DSM is normally the DOUBLE on a rep's
   // visit; counting only the agent side reads every manager as absent.
-  const rows = await scanVisitsForRange<{
+  //
+  // Crediting partners, not the plain scan: the day a rep resigns, the plain scan drops HIS rows —
+  // and with them the only record that his manager was in the field that day, which charged the
+  // manager a no-record deduction months after the fact (owner report 2026-10-07). A rescued row
+  // comes back with `agent_hr_id` nulled, so the loop below credits the partner and nobody else.
+  const rows = await scanVisitsForRangeCreditingPartners<{
     agent_hr_id: string | null;
     double_hr_id: string | null;
     visit_date: string | null;

@@ -22,7 +22,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { collapseDuplicateVisitSubmissions, scanVisitsForRange } from "@/lib/crm/reads";
+import { collapseDuplicateVisitSubmissions, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { crmVisitTypeMeaningLenient } from "@/lib/crm/visit-type-meaning";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
@@ -170,6 +170,10 @@ function dayHasExcuseLabeledAv(visits: IReports360Visit[]): boolean {
 export type FieldWorkforceMatrixVisit = IReports360Visit & {
   agentHrId?: string | null;
   doubleHrId?: string | null;
+  /** This row's AGENT has left the company and is excluded from every live CRM read, so ONLY the
+   * double-visit partner may be credited from it — see `scanVisitsForRangeCreditingPartners`. The
+   * row is here at all because the partner's own working day depends on it. */
+  partnerCreditOnly?: boolean;
 };
 
 /**
@@ -420,7 +424,11 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     const doubleSyncKey = canonicalHrIdKey(visit.doubleHrId ?? "");
     if (doubleSyncKey) syncResolvedHrKeys.add(doubleSyncKey);
 
-    const agentKey = resolveHrKey(visit.agentID, visit.agentHrId);
+    // A row rescued for its PARTNER's sake credits the partner and nobody else: its agent has left
+    // and is excluded from every live CRM read. `agentHrId` is already nulled by the read door, but
+    // resolveHrKey would otherwise find the departed rep through `agentID` and put a resigned person
+    // back on the matrix — the one thing the exclusion exists to prevent.
+    const agentKey = visit.partnerCreditOnly === true ? null : resolveHrKey(visit.agentID, visit.agentHrId);
     credit(agentKey, visit);
     if (agentKey && visit.visitType === 0) {
       const ownKey = `${agentKey}|${dayIso}`;
@@ -656,6 +664,8 @@ async function isVisitsReportSchemaReady(): Promise<boolean> {
 export type VisitsMirrorRow = {
   agent_crm_id: number;
   agent_hr_id?: string | null;
+  /** Set by the read door on a row whose agent has left: credit the partner only. */
+  partner_credit_only?: boolean;
   agent_name: string | null;
   ampm?: string | null;
   comment?: string | null;
@@ -698,6 +708,7 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
     id: 0,
+    partnerCreditOnly: row.partner_credit_only === true,
     region: null,
     regionID: null,
     saveDate: row.crm_save_date ?? null,
@@ -733,7 +744,13 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
   // cap WITHOUT an ORDER BY so the covering index ireports360_visits_visit_date_covering_idx can
   // serve each page as an index-only scan — keeping a full month (~90k rows) well within the 8s
   // statement timeout. Resigned/excluded agents are removed inside the read layer (single source).
-  const rows = await scanVisitsForRange<VisitsMirrorRow>({
+  //
+  // CREDITING PARTNERS, not the plain scan: a manager's fieldwork lives on the REP's row as its
+  // double, so dropping a departed rep's rows outright erased the MANAGER's working day too and
+  // charged him a no-activity deduction for it (owner report 2026-10-07). The rescued rows carry
+  // `partner_credit_only`, and the credit loop below skips their agent side — so the departed rep
+  // is still invisible, exactly as the exclusion intends.
+  const rows = await scanVisitsForRangeCreditingPartners<VisitsMirrorRow>({
     dateFrom: startDate,
     dateTo: endDate,
     columns:
