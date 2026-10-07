@@ -274,6 +274,41 @@ export type DraftRowPatch = Partial<
   Omit<DraftRow, "runId" | "employeeHrId" | "employeeHrIdCompact" | "updatedAt">
 > & {
   employeeHrId: string;
+  /**
+   * Why this write happened, recorded beside every cell it changes in
+   * automated_payroll_draft_cell_history (the trigger reads it off the row). Set by every writer; a
+   * write without one is recorded as "unspecified" rather than inheriting the previous write's reason.
+   */
+  writeReason?: DraftWriteReason;
+  /** The wizard step whose save or confirm made this write, when one did. */
+  writeStepKey?: StepKey | null;
+};
+
+/** Every reason a draft row is written. Each one names the click or the job behind it. */
+export type DraftWriteReason =
+  | "step_saved"
+  | "step_confirmed"
+  | "part1_confirmed"
+  | "part1_reopened"
+  | "employee_excluded"
+  | "employee_included"
+  | "deduction_resync"
+  | "expense_resync";
+
+/** One change to one cell of a draft row, as automated_payroll_draft_cell_history recorded it. */
+export type DraftCellChange = {
+  employeeHrId: string;
+  /** The draft column, e.g. "crm". */
+  column: string;
+  oldValue: string | null;
+  newValue: string | null;
+  /** HR id of whoever made the write; "system" for a resync. */
+  changedBy: string | null;
+  changedByName: string | null;
+  writeReason: string | null;
+  stepKey: string | null;
+  inputMode: string | null;
+  changedAt: string;
 };
 
 export type RowLifecycle = "regular" | "joiner" | "leaver";

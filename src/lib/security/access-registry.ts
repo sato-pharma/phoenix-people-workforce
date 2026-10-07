@@ -1260,6 +1260,8 @@ export const accessRegistry = [
   // Which confirmed figures the Deductions module no longer agrees with. Names people and
   // salary figures, so the same domain-helper gate as the wizard itself.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/module-drift", permission: null, guard: "domain-helper" }),
+  // Who changed which figure on a run's sheet, and why. Same gate as the wizard itself.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/cell-history", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/automated-payroll/runs/:runId/publish", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/sheet", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "PUT"], pattern: "/api/automated-payroll/runs/:runId/steps/:stepKey", permission: null, guard: "domain-helper", csrfRequired: true }),

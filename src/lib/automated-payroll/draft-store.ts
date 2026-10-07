@@ -5,8 +5,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
 import type {
+  DraftCellChange,
   DraftRow,
   DraftRowPatch,
+  DraftWriteReason,
   MonthlySalaryRun,
   PayrollPeriod,
   PriorHold,
@@ -412,7 +414,12 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   if (patch.excluded !== undefined) db.excluded = patch.excluded;
   if (patch.excludedReason !== undefined) db.excluded_reason = patch.excludedReason;
   if (patch.source !== undefined) db.source = patch.source;
-  if (patch.editedBy !== undefined) db.edited_by = patch.editedBy;
+  // WHO AND WHY ARE WRITTEN ON EVERY WRITE, never left to carry over. The cell-history trigger reads
+  // them off the row, so a write that omitted them would be recorded under the PREVIOUS write's
+  // name and reason — the exact misattribution the history exists to end.
+  db.edited_by = patch.editedBy ?? null;
+  db.write_reason = patch.writeReason ?? "unspecified";
+  db.write_step_key = patch.writeStepKey ?? null;
   return db;
 }
 
@@ -454,6 +461,47 @@ export async function upsertDraftRows(runId: string, patches: DraftRowPatch[]): 
   });
   const retry = await client.from(DRAFT_ROWS).upsert(stripped, { onConflict: "run_id,employee_hr_id_compact" });
   if (retry.error) throw retry.error;
+}
+
+/**
+ * Who and why for a write no person made: a resync after a Deductions push or an expense change.
+ * Recorded as "system" rather than left to inherit the row's last editor, who did not make it.
+ */
+function SYSTEM_WRITE(reason: DraftWriteReason): Record<string, unknown> {
+  return { edited_by: "system", write_reason: reason, write_step_key: null };
+}
+
+const CELL_HISTORY = "automated_payroll_draft_cell_history";
+
+/**
+ * Every recorded change to one employee's cells on a run, newest first. History starts from the
+ * day the trigger shipped (2026-10-07): a figure written before then has no entry, and that is
+ * shown as "no history", never guessed at.
+ */
+export async function listDraftCellHistory(runId: string, hrId: string): Promise<DraftCellChange[]> {
+  const compact = compactHrKey(hrId);
+  if (!compact) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from(CELL_HISTORY)
+    .select("employee_hr_id, column_name, old_value, new_value, changed_by, write_reason, step_key, input_mode, changed_at")
+    .eq("run_id", runId)
+    .eq("employee_hr_id_compact", compact)
+    .order("changed_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(500);
+  if (error) throw error;
+  return ((data ?? []) as RunRow[]).map((row) => ({
+    employeeHrId: String(row.employee_hr_id ?? ""),
+    column: String(row.column_name ?? ""),
+    oldValue: (row.old_value as string | null) ?? null,
+    newValue: (row.new_value as string | null) ?? null,
+    changedBy: (row.changed_by as string | null) ?? null,
+    changedByName: null,
+    writeReason: (row.write_reason as string | null) ?? null,
+    stepKey: (row.step_key as string | null) ?? null,
+    inputMode: (row.input_mode as string | null) ?? null,
+    changedAt: String(row.changed_at ?? ""),
+  }));
 }
 
 export async function deleteRunDraftRows(runId: string): Promise<void> {
@@ -536,7 +584,7 @@ export async function clearDraftColumns(
   );
   if (carrying.length === 0) return [];
 
-  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), ...SYSTEM_WRITE("deduction_resync") };
   for (const column of columns) patch[column] = null;
 
   const { error } = await client
@@ -565,7 +613,7 @@ export async function clearDraftExpenses(runId: string, hrIds: string[]): Promis
   if (compacts.length === 0) return [];
   const { data, error } = await getSupabaseAdmin()
     .from(DRAFT_ROWS)
-    .update({ expenses: null, updated_at: new Date().toISOString() })
+    .update({ expenses: null, updated_at: new Date().toISOString(), ...SYSTEM_WRITE("expense_resync") })
     .eq("run_id", runId)
     .in("employee_hr_id_compact", compacts)
     .not("expenses", "is", null)
