@@ -1,11 +1,11 @@
 ---
 name: approved-is-not-pushed-and-a-confirmed-step-freezes-the-zero
-description: "Since 2026-10-07 \"Approved for Payroll\" IS the pay gate again, pushed or not (the 2026-09 push gate is RETIRED, owner) - but confirming a step still freezes the module's figure AT THAT MOMENT, so a decision after the confirm needs deduction-resync.ts, which recordDecision now calls itself. SAVING an open step froze it too: the resync now clears a saved figure unless the cell history says a person saved it, and a save writes only changed figures (saved-figures.ts)."
+description: "Since 2026-10-07 \"Approved for Payroll\" IS the pay gate again, pushed or not (the 2026-09 push gate is RETIRED, owner) - but confirming a step still freezes the module's figure AT THAT MOMENT, so a decision after the confirm needs deduction-resync.ts, which recordDecision now calls itself. SAVING an open step froze it too: the resync now clears a saved figure unless the cell history says a person saved it, and a save writes only changed figures (saved-figures.ts). The admin re-collect (reconcileCandidateDrafts — run by hand from the Deductions page, there is NO cron) resyncs too since #5441, so every approval path re-opens a confirmed step EXCEPT once Part 2 is confirmed, where planDeductionResync skips (reason part2_already_confirmed) and the step is re-confirmed in Part 2 instead."
 metadata:
   node_type: memory
   type: project
   originSessionId: 02b15773-349d-45f7-b725-9ffb4deee410
-  modified: 2026-10-07T07:58:08.261Z
+  modified: 2026-10-07T19:12:35.565Z
 ---
 
 🔴 **RETIRED 2026-10-07 (owner: "make the Automated Payroll able to read them and every other
@@ -44,6 +44,20 @@ union of columns and PostgREST writes NULL into a column a row left out, over th
 Same branch: Part 2's confirm refuses while a Part 1 deduction step is re-opened (its figure was
 cleared and reads as 0.00), and the wizard keeps exactly that step editable during Part 2 — re-confirm
 it there; "Unconfirm Part 1" re-freezes the paid first instalment and loses the deduction.
+
+🔴 **EXTENDED 2026-10-07 (#5441): the re-collect resyncs too — it is the admin Deductions collect, run by hand, NOT a nightly cron.** `reconcileCandidateDrafts`
+(the vacation/CRM re-collect) supersedes a decided candidate and carries, drops or retires its
+decision onto a replacement — moving a figure a confirmed step had frozen, which left the sheet
+paying the stale number after a routine re-collect. It was the LAST approval path that did not
+resync. It now collects every employee whose SUPERSEDED decision was "Approved for Payroll" and
+calls `resyncPayrollDeductionSteps` once at the end (a non-approved row charges 0.00 either side and
+is left alone). So every approval path re-opens a confirmed step when an approved deduction
+moves — `recordDecision`, the manual-entry route, the attendance day-report, and the re-collect —
+EXCEPT a run whose Part 2 is already confirmed, which `planDeductionResync` deliberately leaves
+alone (`part2_already_confirmed`, surfaced by `describeDeductionResyncNotApplied`); re-confirm that
+employee's step in Part 2 instead.
+Pinned in `tests/deduction-payroll-resync.test.ts` (verified on production first: September's
+approved deductions, manual included, all reached the sheet — 0 frozen-misses).
 
 **How to apply:** an open step follows the module only where nothing was saved for that employee; Part 1
 (`p1_fingerprint` - which covers EVERY employee regardless of payment mode - `p1_crm`,
