@@ -10,8 +10,10 @@ import {
   listStepStates,
   upsertStepState,
 } from "./draft-store.ts";
+import { isSettledInPart1, loadStepContext } from "./recommend.ts";
+import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
-import type { StepKey } from "./types.ts";
+import type { PayrollPeriod, StepKey } from "./types.ts";
 
 /**
  * Keeps the payroll deduction steps honest when a deduction's DECISION changes underneath them.
@@ -168,14 +170,46 @@ function periodFromMonthKey(monthKey: string): { month: number; year: number } |
 }
 
 /**
+ * The data-access functions the resync needs, bundled so a test can drive the orchestrator with
+ * fakes instead of the live payroll tables. Production passes nothing and gets the real ones; the
+ * behaviour is identical. Nothing here is a business rule — the routing lives in the orchestrator.
+ */
+export type ResyncDeps = {
+  findActiveRun: typeof findActiveRun;
+  listStepStates: typeof listStepStates;
+  listDraftRows: typeof listDraftRows;
+  loadStepContext: typeof loadStepContext;
+  clearDraftColumns: typeof clearDraftColumns;
+  upsertStepState: typeof upsertStepState;
+  listLatestCellWrites: typeof listLatestCellWrites;
+};
+
+const defaultResyncDeps: ResyncDeps = {
+  findActiveRun,
+  listStepStates,
+  listDraftRows,
+  loadStepContext,
+  clearDraftColumns,
+  upsertStepState,
+  listLatestCellWrites,
+};
+
+/**
  * Clear the frozen figures and re-open the steps a pushed/withdrawn deduction feeds.
  *
- * Reads each employee's own `settled_in_part1` off the run's draft row — the run's own answer to
- * which side of the split they are on, which is what `isSettledInPart1` itself prefers. An employee
- * with no draft row has nothing frozen and nothing to clear, so they drop out silently.
+ * Which side of the Part 1 split an employee sits on is decided by `isSettledInPart1` — the SAME
+ * function recommend.ts routes the live freeze through — not by the raw `settled_in_part1` draft
+ * flag. The flag is NULL for the whole Part 1 phase (it is written only at confirmPart1), and
+ * reading it as false there sent a leaver's CRM/vacation clear to the Part 2 steps while the
+ * freeze had gone through the Part 1 ones, leaving the first instalment frozen too low. So the
+ * stored flag is preferred only once it is set (post-confirm); until then the live derivation
+ * (leaver, or one-part payment mode) decides, exactly as the freeze itself did. An employee with
+ * no member/source and no draft row has nothing frozen and falls back to Part 2 (harmless — the
+ * clear finds nothing).
  */
 export async function resyncPayrollDeductionSteps(
   target: DeductionResyncTarget,
+  deps: ResyncDeps = defaultResyncDeps,
 ): Promise<DeductionResyncOutcome> {
   const monthKey = target.monthKey;
   if (target.employees.length === 0) {
@@ -185,7 +219,7 @@ export async function resyncPayrollDeductionSteps(
   if (!period) return { action: "skip", monthKey, reason: "no_active_run" };
 
   try {
-    const run = await findActiveRun(period.month, period.year);
+    const run = await deps.findActiveRun(period.month, period.year);
     const plan = planDeductionResync(run);
     if (!plan.ok || !run) {
       const reason = plan.reason ?? "no_active_run";
@@ -209,14 +243,19 @@ export async function resyncPayrollDeductionSteps(
       return { action: "skip", monthKey, reason };
     }
 
-    const states = await listStepStates(run.id);
+    const states = await deps.listStepStates(run.id);
     const confirmed = new Set(
       states.filter((state) => state.status === "confirmed").map((state) => state.stepKey),
     );
 
     // step -> the compact ids to clear on it, and the columns to clear.
     const byStep = new Map<StepKey, { columns: Set<string>; compacts: Set<string> }>();
-    const settledByCompact = await loadSettledInPart1(run.id, target.employees.map((e) => e.hrIdCompact));
+    const settledByCompact = await loadSettledInPart1(
+      deps,
+      period,
+      run.id,
+      target.employees.map((e) => e.hrIdCompact),
+    );
 
     for (const employee of target.employees) {
       const settled = settledByCompact.get(employee.hrIdCompact) ?? false;
@@ -243,7 +282,7 @@ export async function resyncPayrollDeductionSteps(
         // 6 Oct held 0.00 over 8,405.17 EGP of approved "other" lines) would keep charging the old
         // figure. Clear it — unless the cell history shows a PERSON saved it, which is kept and
         // reported. No step_state is written: the step was never confirmed.
-        const latest = await listLatestCellWrites(run.id, compacts, columns);
+        const latest = await deps.listLatestCellWrites(run.id, compacts, columns);
         const personSaved = (compact: string) =>
           columns.some((column) => {
             const write = latest.get(`${compact}|${column}`);
@@ -252,13 +291,13 @@ export async function resyncPayrollDeductionSteps(
         const clearable = compacts.filter((compact) => !personSaved(compact));
         for (const compact of compacts) if (personSaved(compact)) keptSavedHrIds.add(compact);
         if (clearable.length > 0) {
-          for (const hrId of await clearDraftColumns(run.id, clearable, columns)) clearedHrIds.add(hrId);
+          for (const hrId of await deps.clearDraftColumns(run.id, clearable, columns)) clearedHrIds.add(hrId);
         }
         continue;
       }
-      const cleared = await clearDraftColumns(run.id, compacts, columns);
+      const cleared = await deps.clearDraftColumns(run.id, compacts, columns);
       for (const hrId of cleared) clearedHrIds.add(hrId);
-      await upsertStepState({
+      await deps.upsertStepState({
         runId: run.id,
         stepKey,
         status: "pending",
@@ -287,22 +326,71 @@ export async function resyncPayrollDeductionSteps(
 }
 
 /**
- * Each employee's own `settled_in_part1` on this run, keyed by compact HR id.
+ * Which side of the Part 1 split each employee sits on, keyed by compact HR id.
  *
- * The RUN's answer, not a fresh derivation — `isSettledInPart1` itself prefers the stored flag over
- * recomputing from payment mode and lifecycle, so re-deriving here could route a clear to the other
- * side of the split from the one the step actually wrote. An employee with no row defaults to false
- * (Part 2), which is the harmless direction: a Part 2 step this month is still unconfirmed far more
- * often than a Part 1 one, so the worst case is a clear that finds nothing frozen.
+ * Decided by `isSettledInPart1(member, source, storedFlag)` — the SAME routing recommend.ts uses
+ * for the live freeze — so a clear always lands on the step the freeze actually wrote. The stored
+ * `settled_in_part1` draft flag is preferred only once it is set (post-confirm); for the whole
+ * Part 1 phase it is NULL, and the function then falls back to the live derivation (leaver, or a
+ * one-part payment mode). Reading that NULL as false was the bug: a leaver frozen via a Part 1
+ * step was cleared via the Part 2 one, leaving the Part 1 step confirmed and the first instalment
+ * frozen too low.
+ *
+ * Members and sources come from `loadStepContext` for this period — exactly how run-service.ts's
+ * own `loadRunContext` assembles them — but ONLY when at least one requested employee has no stored
+ * flag yet. When every requested route is already stored, the live feeder graph is never read, so a
+ * transient directory/feeder failure cannot fail a resync whose routing was fully known. An employee
+ * with no stored flag AND no live member/source has nothing frozen and falls back to false (Part 2),
+ * the harmless direction: the clear simply finds nothing frozen there. But a NON-NULL stored flag
+ * always wins, even when the employee has since left the live population — otherwise a Part 1 freeze
+ * would be cleared on the Part 2 side and left standing.
  */
-async function loadSettledInPart1(runId: string, compacts: string[]): Promise<Map<string, boolean>> {
-  const rows = await listDraftRows(runId);
+async function loadSettledInPart1(
+  deps: ResyncDeps,
+  period: PayrollPeriod,
+  runId: string,
+  compacts: string[],
+): Promise<Map<string, boolean>> {
   const wanted = new Set(compacts);
-  const map = new Map<string, boolean>();
+  // Load the DRAFT rows first — the stored flag alone can be sufficient, and when it is, this resync
+  // must not depend on the live feeder graph at all (see the conditional load below).
+  const rows = await deps.listDraftRows(runId);
+
+  // The run's own stored answer, when it has one. NULL through the whole Part 1 phase.
+  const storedByCompact = new Map<string, boolean | null>();
   for (const row of rows) {
     const compact = row.employeeHrIdCompact || (row.employeeHrId ?? "").toLowerCase().replace(/-/g, "");
     if (!wanted.has(compact)) continue;
-    map.set(compact, row.settledInPart1 === true);
+    storedByCompact.set(compact, row.settledInPart1);
+  }
+
+  const map = new Map<string, boolean>();
+
+  // The run's own stored answer is AUTHORITATIVE once it is set (post-confirm): it records which
+  // side of the split actually froze this employee's salary. Seed from it FIRST — before any live
+  // read — so an employee who was confirmed in Part 1 but has since dropped out of the live
+  // population (a leaver whose employment or payroll eligibility changed after Part 1 confirmed) is
+  // still routed to the Part 1 step that froze them. Reading that absence as false (the live loop
+  // below only visits CURRENT members) would default them to Part 2 and leave the frozen Part 1
+  // deduction payable — the same defect as reading a NULL flag as false, one step later.
+  for (const [compact, stored] of storedByCompact) {
+    if (stored != null) map.set(compact, stored);
+  }
+
+  // Only the compacts with NO stored answer yet — NULL through the whole Part 1 phase — need the
+  // live derivation (leaver, or a one-part payment mode), exactly how recommend.ts's freeze decides
+  // it. Load the payroll population ONLY for them: when every requested employee already has a
+  // stored route, the resync must not touch the live feeder graph at all, or an unrelated
+  // directory/salary-feeder read failure would fail the WHOLE resync and leave a newly approved
+  // deduction frozen out of payroll despite its route being known.
+  if ([...wanted].some((compact) => !map.has(compact))) {
+    const { members, sources } = await deps.loadStepContext(period);
+    for (const member of members) {
+      if (!wanted.has(member.compact)) continue;
+      if (map.has(member.compact)) continue;
+      const source = lookupSource(sources, member.employee.hrId);
+      map.set(member.compact, isSettledInPart1(member, source, null));
+    }
   }
   return map;
 }

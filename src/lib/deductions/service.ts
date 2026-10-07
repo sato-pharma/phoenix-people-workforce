@@ -12,6 +12,7 @@ import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
+  carriedAppliedFigures,
   isEligibleForPublish,
   normalizeAppliedDeductionDates,
   resolveAppliedDeductionDates,
@@ -668,11 +669,19 @@ export async function reconcileCandidateDrafts(input: {
     // carry-forward rule needs.
     const freshKeys = new Set<string>();
     const datesByIdentity = new Map<string, string[]>();
+    // The replacement's OWN estimate and detected-day count, by identity — what a narrowed or
+    // zeroed carried decision scales its applied_amount from (see the carry write below).
+    const replacementByIdentity = new Map<string, { estimatedAmount: number | null; rawValue: number }>();
     for (const draft of input.drafts) {
       try {
         const payload = prepareCandidateInsertPayload(draft, { createdBy: input.createdBy });
         freshKeys.add(payload.candidate_key);
-        datesByIdentity.set(deductionsCandidateIdentityKey(payload.candidate_key), payload.dates);
+        const identity = deductionsCandidateIdentityKey(payload.candidate_key);
+        datesByIdentity.set(identity, payload.dates);
+        replacementByIdentity.set(identity, {
+          estimatedAmount: draft.estimatedAmount ?? null,
+          rawValue: Number(draft.rawValue ?? 0),
+        });
       } catch {
         // Invalid drafts are already reported by insertCandidateDrafts.
       }
@@ -771,15 +780,29 @@ export async function reconcileCandidateDrafts(input: {
       });
       if (!carried) continue;
 
+      // The figures are re-expressed against the REPLACEMENT, never carried from the old day set.
+      //   - A never-narrowed selection (appliedDates null) keeps both figures null, so the publish
+      //     resolvers re-derive the replacement's full value/amount — the only figure that matches
+      //     what the reviewer now sees on screen.
+      //   - A NARROWED or EMPTIED selection pins value + amount to that subset. Leaving them null
+      //     here was the bug: the resolvers' `?? rawValue` / `?? estimatedAmount` fallback then
+      //     republished a narrowed approval at FULL and re-armed a zeroed one to a full charge.
+      const replacement = replacementByIdentity.get(identity) ?? { estimatedAmount: null, rawValue: 0 };
+      const { appliedValue, appliedAmount } = carriedAppliedFigures({
+        appliedDates: carried.appliedDates,
+        // The replacement's FULL day set — the denominator for the retained fraction, so a
+        // fractional-day candidate (a fingerprint half-day is rawValue 0.5 on one date) is not
+        // re-charged as a full day by counting dates against its fractional rawValue.
+        replacementDates: datesByIdentity.get(identity) ?? [],
+        replacementEstimatedAmount: replacement.estimatedAmount,
+        replacementRawValue: replacement.rawValue,
+      });
       const { error: carryError } = await supabase
         .from("deductions_decisions")
         .update({
           applied_dates: carried.appliedDates,
-          // The amount is deliberately NOT carried: it was derived from the old day set. Clearing
-          // it makes the replacement re-derive from its own estimate, which is the only figure
-          // that matches what the reviewer will now see on screen.
-          applied_amount: null,
-          applied_value: null,
+          applied_amount: appliedAmount,
+          applied_value: appliedValue,
           decision_reason: carried.decisionReason,
           decision_status: carried.decisionStatus,
           updated_at: new Date().toISOString(),

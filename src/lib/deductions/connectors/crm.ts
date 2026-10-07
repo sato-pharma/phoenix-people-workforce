@@ -207,6 +207,7 @@ export function excludeSuspectDates(
   draft: DeductionsCandidateDraft,
   suspectDates: Set<string>,
   baseSalaryByCompact: Map<string, number>,
+  jobTitle: string | null,
 ): DeductionsCandidateDraft | null {
   const hit = draft.dates.filter((date) => suspectDates.has(date));
   if (hit.length === 0) return draft;
@@ -215,9 +216,18 @@ export function excludeSuspectDates(
 
   const compactKey = compactDeductionsHrId(draft.employeeHrId);
   const baseSalary = compactKey ? (baseSalaryByCompact.get(compactKey) ?? null) : null;
+  // Thursday is a half day (owner rule 2026-08-02). Re-pricing on the raw surviving-date COUNT
+  // charged a surviving Thursday as a full day, so the MONEY is priced off the weighted day count —
+  // exactly as the emit path does (sumFieldWorkforceDeductionDayWeights at crm.ts:371 and ~637),
+  // using the roster job title so a Saturday is weighted correctly for a Friday-only title too.
+  // rawValue stays the RAW surviving-day count, like both emit paths (crm.ts:397, :662): the evidence
+  // (how many flagged days survived) and the charge (what they weigh) stay separately auditable, and
+  // scaleDeductionAmountToDays keeps its exact passthrough when a reviewer's day count equals rawValue
+  // — a fractional rawValue could never equal the integer appliedDays, re-charging a carried full day.
+  const weightedDays = sumFieldWorkforceDeductionDayWeights(reliableDates, jobTitle);
   const estimatedAmount = calculateDeductionAmountFromBaseSalary({
     baseSalary,
-    deductionDays: reliableDates.length,
+    deductionDays: weightedDays,
     month: draft.month,
     year: draft.year,
   });
@@ -849,8 +859,28 @@ export async function collectCrmCandidates(input: {
   if (suspectDates.size === 0) {
     collected.push(...leaverDrafts, ...continuingDrafts);
   } else {
+    // Suspect-date exclusion re-prices the survivors, so it needs the SAME roster job titles the
+    // emit path weights with (NOT recommendation.roleName — see the note at the continuing-employee
+    // weighting). A null title reads as "Saturday off" and would weight a surviving Saturday to
+    // zero, so this read FAILS CLOSED exactly as that one does. Only needed when something is
+    // actually excluded, which is why it is read here rather than up front.
+    const titleByHrIdKey = new Map<string, string | null>();
+    {
+      const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,job_title");
+      if (error) {
+        throw new Error(
+          `Failed to load job titles for the suspect-date re-pricing: ${error.message}. ` +
+            "Without them a surviving Saturday weights to zero and the candidate under-charges.",
+        );
+      }
+      for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null }>) {
+        const key = canonicalHrIdKey(row.hr_id);
+        if (key) titleByHrIdKey.set(key, row.job_title);
+      }
+    }
     for (const draft of [...leaverDrafts, ...continuingDrafts]) {
-      const result = excludeSuspectDates(draft, suspectDates, baseSalaryByCompact);
+      const jobTitle = titleByHrIdKey.get(canonicalHrIdKey(draft.employeeHrId) ?? "") ?? null;
+      const result = excludeSuspectDates(draft, suspectDates, baseSalaryByCompact, jobTitle);
       if (result) collected.push(result);
     }
   }

@@ -44,6 +44,7 @@ import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance
 
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
+import { collectClaimedLedgerDays, type LedgerClaimRow } from "../conflict.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 // The rep pipeline's own company-wide CRM data-gap detector, reused here so both
@@ -268,19 +269,15 @@ export async function collectDsmNoRecordCandidates(input: {
   // Employee-days another category already charges. The owner's rule: never the
   // same day twice. Enforced here rather than at publish, where a collision
   // refuses the whole month instead of preventing the double charge.
-  const claimed = new Set<string>();
   const { data: existing, error: existingError } = await supabase
     .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates")
+    .select("employee_hr_id_compact, dates, source_system")
     .eq("month_key", monthKey)
     .is("superseded_at", null);
   if (existingError) throw new Error(`Failed to load already-deducted days: ${existingError.message}`);
-  for (const row of (existing ?? []) as Array<{ employee_hr_id_compact: string; dates: unknown }>) {
-    if (!Array.isArray(row.dates)) continue;
-    for (const date of row.dates as unknown[]) {
-      if (typeof date === "string") claimed.add(`${String(row.employee_hr_id_compact)}:${date}`);
-    }
-  }
+  // Skips a manual_hr placeholder row — its date is `${monthKey}-01`, not a detected day, so treating
+  // it as claimed would drop a genuine no-record deduction that lands on the real 1st (conflict.ts).
+  const claimed = collectClaimedLedgerDays((existing ?? []) as LedgerClaimRow[]);
 
   const drafts: DeductionsCandidateDraft[] = [];
   for (const [compact, manager] of roster) {

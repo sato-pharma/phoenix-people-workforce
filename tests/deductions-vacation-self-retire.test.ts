@@ -134,18 +134,28 @@ export function runDeductionsVacationSelfRetireTests(): void {
 
   assert.match(
     code,
-    /\.select\(\s*"employee_hr_id_compact,\s*dates,\s*category,\s*locked_at"\s*\)/,
-    'The ledger read must select BOTH "category" and "locked_at". Dropping either is silent and ' +
-      "inverts a decision: with no locked_at the predicate reads undefined, Boolean(undefined) is " +
-      "false, and a PUBLISHED row stops claiming its day — so the connector re-charges money that " +
-      "has already been paid. With no category every row looks foreign and the 2026-10-07 defect " +
-      "returns in full.",
+    /\.select\(\s*"employee_hr_id_compact,\s*dates,\s*category,\s*locked_at,\s*source_system"\s*\)/,
+    'The ledger read must select "category", "locked_at" AND "source_system". Dropping category or ' +
+      "locked_at is silent and inverts a decision: with no locked_at the predicate reads undefined, " +
+      "Boolean(undefined) is false, and a PUBLISHED row stops claiming its day — so the connector " +
+      "re-charges money that has already been paid. With no category every row looks foreign and the " +
+      "2026-10-07 defect returns in full. source_system is what collectClaimedLedgerDays uses to skip " +
+      "a manual_hr placeholder row (anchored to the 1st), so dropping it silently drops a genuine " +
+      "same-category deduction on the real 1st.",
   );
   assert.match(
     code,
-    /if\s*\(\s*!ledgerRowStillClaimsItsDays\(/,
-    "loadAlreadyDeductedDays must filter its rows through ledgerRowStillClaimsItsDays. Without it " +
-      "the claimed set contains this run's own replaceable rows again, which is exactly the defect.",
+    /collectClaimedLedgerDays\(/,
+    "loadAlreadyDeductedDays must route its rows through collectClaimedLedgerDays — the shared helper " +
+      "that skips a manual_hr placeholder row and applies the keepRow predicate below.",
+  );
+  assert.match(
+    code,
+    /ledgerRowStillClaimsItsDays\(\{\s*category:\s*row\.category[\s\S]*?\},\s*input\.reconciledCategory\s*\)/,
+    "collectClaimedLedgerDays must be passed ledgerRowStillClaimsItsDays as its keepRow, keyed on the " +
+      "row's own category and locked_at and the category being reconciled. Without it the claimed set " +
+      "contains this run's own replaceable rows again — a published row stops claiming its day and the " +
+      "connector re-charges money already paid, which is exactly the defect.",
   );
   assert.match(
     code,

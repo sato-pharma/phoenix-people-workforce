@@ -28,6 +28,7 @@ import { isFieldWorkforceFridayOnlyTitle } from "@/lib/field-workforce-complianc
 
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
+import { collectClaimedLedgerDays, type LedgerClaimRow } from "../conflict.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { getHolidayBridgeDaysForMonth } from "../service.ts";
 import type { DeductionsCandidateDraft } from "../types.ts";
@@ -39,22 +40,15 @@ import type { HolidayBridgeDay } from "../holiday-bridge.ts";
  * withdrawn, so the day is free again.
  */
 async function loadAlreadyDeductedDays(monthKey: string): Promise<Set<string>> {
-  const claimed = new Set<string>();
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates")
+    .select("employee_hr_id_compact, dates, source_system")
     .eq("month_key", monthKey)
     .is("superseded_at", null);
   if (error) throw new Error(`Failed to load already-deducted days: ${error.message}`);
-  for (const row of (data ?? []) as Array<{ employee_hr_id_compact: string; dates: unknown }>) {
-    const compact = String(row.employee_hr_id_compact ?? "");
-    if (!compact) continue;
-    if (!Array.isArray(row.dates)) continue;
-    for (const date of row.dates as unknown[]) {
-      if (typeof date === "string" && date.trim()) claimed.add(`${compact}:${date.trim()}`);
-    }
-  }
-  return claimed;
+  // Skips a manual_hr placeholder row — its date is `${monthKey}-01`, not a detected day, so treating
+  // it as claimed would drop a genuine bridge deduction that lands on the real 1st (conflict.ts).
+  return collectClaimedLedgerDays((data ?? []) as LedgerClaimRow[]);
 }
 
 /**

@@ -5,14 +5,18 @@ import {
   describeDeductionResyncNotApplied,
   payrollStepsForCategory,
   planDeductionResync,
+  resyncPayrollDeductionSteps,
+  type ResyncDeps,
 } from "../src/lib/automated-payroll/deduction-resync.ts";
 import {
   CLEARABLE_DEDUCTION_COLUMNS,
   CLEARABLE_DEDUCTION_SELECT,
 } from "../src/lib/automated-payroll/draft-store.ts";
+import type { PopulationMember } from "../src/lib/automated-payroll/recommend.ts";
+import type { DraftRow, MonthlySalaryRun, StepState } from "../src/lib/automated-payroll/types.ts";
 import { monthRequiresPush } from "../src/lib/deductions/push-cutover.ts";
 import { decisionMovesPayroll } from "../src/lib/deductions/service.ts";
-import { visibleDeductionsCategories } from "../src/lib/deductions/types.ts";
+import { visibleDeductionsCategories, type DeductionsCategory } from "../src/lib/deductions/types.ts";
 
 /**
  * A PUSH AFTER THE STEP WAS CONFIRMED MUST STILL REACH THE PAYSLIP.
@@ -31,7 +35,7 @@ import { visibleDeductionsCategories } from "../src/lib/deductions/types.ts";
  * Outstation expenses already had this safeguard (expense-resync.ts, built after the July 2026 run
  * paid 1 Aug figures for decisions made on 2 Aug). This pins the deduction twin of it.
  */
-export function runDeductionPayrollResyncTests() {
+export async function runDeductionPayrollResyncTests() {
   // ---- Every category routes somewhere, on BOTH sides of the Part 1 split -------------------------
   // A category with no destination is a deduction that can be pushed and can never be unfrozen —
   // exactly the silent hole this module closes, so an unrouted category must fail here rather than
@@ -222,4 +226,172 @@ export function runDeductionPayrollResyncTests() {
     windowLabel.includes("Approved for Payroll") && windowLabel.includes("pushed or not"),
     "stepWindowLabel must say an APPROVED deduction is paid, pushed or not",
   );
+
+  // ---- A LEAVER'S CRM CLEAR MUST FOLLOW THE SAME SPLIT THE FREEZE DID ------------------------------
+  // recommend.ts freezes a leaver's CRM through the Part 1 steps, because isSettledInPart1 falls
+  // back to `lifecycle === "leaver"` while the draft's settled_in_part1 flag is still NULL (it is
+  // written only at confirmPart1, so it is NULL for the whole Part 1 phase). The resync used to read
+  // that raw NULL flag as false and route the clear to the Part 2 CRM step instead — leaving the
+  // confirmed Part 1 resignation-CRM step frozen on a stale figure and the first instalment
+  // underpaid. This drives the REAL orchestrator with faked data access and asserts it re-opens
+  // p1_resignation_crm, never p2_crm. Before the fix reopenedSteps is empty and nothing is re-opened.
+  {
+    const clears: { columns: string[] }[] = [];
+    const upserts: string[] = [];
+    const deps: ResyncDeps = {
+      findActiveRun: async () => ({ id: "run-1", part2ConfirmedAt: null } as unknown as MonthlySalaryRun),
+      listStepStates: async () => [
+        { runId: "run-1", stepKey: "p1_resignation_crm", status: "confirmed" } as unknown as StepState,
+      ],
+      // A leaver, draft flag still NULL (Part 1 phase), no salary source — exactly the shape that
+      // made isSettledInPart1 fall back to the live lifecycle derivation.
+      loadStepContext: async () => ({
+        members: [
+          { compact: "ai0001", lifecycle: "leaver", employee: { hrId: "AI-0001" } } as unknown as PopulationMember,
+        ],
+        sources: new Map(),
+      }),
+      listDraftRows: async () => [
+        { employeeHrIdCompact: "ai0001", employeeHrId: "AI-0001", settledInPart1: null } as unknown as DraftRow,
+      ],
+      clearDraftColumns: async (_runId, hrIds, columns) => {
+        clears.push({ columns });
+        return hrIds;
+      },
+      upsertStepState: async (input) => {
+        upserts.push(input.stepKey);
+        return {} as unknown as StepState;
+      },
+      listLatestCellWrites: async () => new Map(),
+    };
+
+    const outcome = await resyncPayrollDeductionSteps(
+      { monthKey: "2026-10", employees: [{ hrIdCompact: "ai0001", categories: ["crm"] as DeductionsCategory[] }] },
+      deps,
+    );
+
+    assert.equal(outcome.action, "resync");
+    if (outcome.action !== "resync") throw new Error("expected a resync outcome");
+    assert.ok(
+      outcome.reopenedSteps.includes("p1_resignation_crm"),
+      "a leaver frozen via p1_resignation_crm must be re-opened there — reading the NULL settled_in_part1 flag as false routed the clear to p2_crm and left the confirmed Part 1 step frozen too low",
+    );
+    assert.ok(
+      !outcome.reopenedSteps.includes("p2_crm"),
+      "a leaver settles in Part 1 — p2_crm is the wrong side of the split and must not be re-opened",
+    );
+    assert.ok(
+      upserts.includes("p1_resignation_crm") && !upserts.includes("p2_crm"),
+      "the confirmed Part 1 resignation-CRM step is the one put back to pending, never the Part 2 step",
+    );
+    assert.ok(
+      clears.some((clear) => clear.columns.includes("crm")),
+      "the shared `crm` column a leaver's resignation-CRM freeze writes must be the one cleared",
+    );
+  }
+
+  // ---- A CONFIRMED PART 1 EMPLOYEE WHO LEFT THE LIVE POPULATION STILL CLEARS IN PART 1 ------------
+  // After Part 1 is confirmed, `settled_in_part1` is written true for a leaver/one-part employee. If
+  // that employee then drops out of the freshly derived members (employment or payroll eligibility
+  // changed before the re-collect), the live loop in loadSettledInPart1 never visits them — so
+  // reading their ABSENCE as false routed the clear to the Part 2 step and left the frozen Part 1
+  // deduction payable. loadSettledInPart1 now seeds from the stored non-null flag FIRST, so the
+  // clear follows the step that actually froze them. Before the fix reopenedSteps is empty (p2_crm
+  // is not confirmed, p1_crm is never targeted) and the stale Part 1 figure stands.
+  {
+    const upserts: string[] = [];
+    const clears: { columns: string[] }[] = [];
+    const deps: ResyncDeps = {
+      findActiveRun: async () => ({ id: "run-2", part2ConfirmedAt: null } as unknown as MonthlySalaryRun),
+      listStepStates: async () => [
+        { runId: "run-2", stepKey: "p1_crm", status: "confirmed" } as unknown as StepState,
+      ],
+      // The employee is GONE from the live population — no member, no source.
+      loadStepContext: async () => ({ members: [], sources: new Map() }),
+      // …but the run's own draft still records that Part 1 froze them.
+      listDraftRows: async () => [
+        { employeeHrIdCompact: "ai0002", employeeHrId: "AI-0002", settledInPart1: true } as unknown as DraftRow,
+      ],
+      clearDraftColumns: async (_runId, hrIds, columns) => {
+        clears.push({ columns });
+        return hrIds;
+      },
+      upsertStepState: async (input) => {
+        upserts.push(input.stepKey);
+        return {} as unknown as StepState;
+      },
+      listLatestCellWrites: async () => new Map(),
+    };
+
+    const outcome = await resyncPayrollDeductionSteps(
+      { monthKey: "2026-10", employees: [{ hrIdCompact: "ai0002", categories: ["crm"] as DeductionsCategory[] }] },
+      deps,
+    );
+
+    assert.equal(outcome.action, "resync");
+    if (outcome.action !== "resync") throw new Error("expected a resync outcome");
+    assert.ok(
+      outcome.reopenedSteps.includes("p1_crm"),
+      "a stored settled_in_part1=true employee missing from the live population must still re-open their Part 1 step — reading the absence as false routed the clear to Part 2 and left the frozen Part 1 deduction payable",
+    );
+    assert.ok(
+      !outcome.reopenedSteps.includes("p2_crm"),
+      "the Part 2 step is the wrong side of the split for a Part-1-frozen employee and must not be re-opened",
+    );
+    assert.ok(
+      upserts.includes("p1_crm") && !upserts.includes("p2_crm"),
+      "the confirmed Part 1 CRM step is the one put back to pending, never the Part 2 step",
+    );
+    assert.ok(
+      clears.some((clear) => clear.columns.includes("crm")),
+      "the `crm` column the Part 1 freeze wrote must be the one cleared",
+    );
+  }
+
+  // ---- A STORED-ROUTE RESYNC MUST NOT DEPEND ON THE LIVE FEEDER GRAPH -----------------------------
+  // Once Part 1 is confirmed the stored settled_in_part1 flag is authoritative and SUFFICIENT, so the
+  // resync must not read the live payroll population when every requested employee already has a
+  // stored route. Otherwise an unrelated directory/salary-feeder read failure fails the WHOLE resync
+  // and leaves a newly approved deduction frozen out of payroll despite its route being known. Before
+  // the fix loadStepContext was always awaited (Promise.all) and its throw returned action:"failed";
+  // now it is skipped entirely, and the clear/reopen proceed from the stored flag.
+  {
+    const upserts: string[] = [];
+    const deps: ResyncDeps = {
+      findActiveRun: async () => ({ id: "run-3", part2ConfirmedAt: null } as unknown as MonthlySalaryRun),
+      listStepStates: async () => [
+        { runId: "run-3", stepKey: "p1_crm", status: "confirmed" } as unknown as StepState,
+      ],
+      // The live feeder graph is DOWN — and must never be consulted, because every requested
+      // employee already has a stored route.
+      loadStepContext: async () => {
+        throw new Error("directory/salary feeder unavailable");
+      },
+      listDraftRows: async () => [
+        { employeeHrIdCompact: "ai0003", employeeHrId: "AI-0003", settledInPart1: true } as unknown as DraftRow,
+      ],
+      clearDraftColumns: async (_runId, hrIds) => hrIds,
+      upsertStepState: async (input) => {
+        upserts.push(input.stepKey);
+        return {} as unknown as StepState;
+      },
+      listLatestCellWrites: async () => new Map(),
+    };
+
+    const outcome = await resyncPayrollDeductionSteps(
+      { monthKey: "2026-10", employees: [{ hrIdCompact: "ai0003", categories: ["crm"] as DeductionsCategory[] }] },
+      deps,
+    );
+
+    assert.equal(
+      outcome.action,
+      "resync",
+      "a resync whose every employee has a stored route must succeed even when the live feeder graph throws — the stored flag is sufficient and the live read must be skipped",
+    );
+    assert.ok(
+      outcome.action === "resync" && outcome.reopenedSteps.includes("p1_crm"),
+      "…and it still re-opens the Part 1 step from the stored route",
+    );
+    assert.ok(upserts.includes("p1_crm"), "the confirmed Part 1 step is put back to pending from the stored route alone");
+  }
 }

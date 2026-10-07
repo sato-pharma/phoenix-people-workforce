@@ -140,7 +140,7 @@ export async function runDeductionsModuleCrmGuardsTests(): Promise<void> {
   // 4. excludeSuspectDates — no-op when none of the candidate's dates are suspect
   {
     const original = draft({ dates: ["2026-06-22", "2026-06-23"] });
-    const result = excludeSuspectDates(original, new Set(["2026-06-11"]), new Map());
+    const result = excludeSuspectDates(original, new Set(["2026-06-11"]), new Map(), null);
     assert.equal(result, original, "must return the same draft unchanged when nothing overlaps the suspect set");
   }
 
@@ -151,6 +151,7 @@ export async function runDeductionsModuleCrmGuardsTests(): Promise<void> {
       draft({ employeeHrId: "B-124", dates: ["2026-06-11", "2026-06-22"], rawValue: 2 }),
       new Set(["2026-06-11"]),
       new Map([["b124", 8000]]),
+      "Medical Representative",
     );
     assert.ok(result, "one reliable date must survive exclusion");
     assert.deepEqual(result!.dates, ["2026-06-22"]);
@@ -168,6 +169,7 @@ export async function runDeductionsModuleCrmGuardsTests(): Promise<void> {
       draft({ dates: ["2026-06-11"], rawValue: 1 }),
       new Set(["2026-06-11"]),
       new Map([["b124", 8000]]),
+      "Medical Representative",
     );
     assert.equal(result, null, "a candidate with no reliable dates left must be dropped, not published at 0 days");
   }
@@ -179,6 +181,7 @@ export async function runDeductionsModuleCrmGuardsTests(): Promise<void> {
       draft({ employeeHrId: "UNKNOWN-1", dates: ["2026-06-11", "2026-06-22"], rawValue: 2 }),
       new Set(["2026-06-11"]),
       new Map(),
+      "Medical Representative",
     );
     assert.ok(result);
     assert.equal(result!.estimatedAmount, null);
