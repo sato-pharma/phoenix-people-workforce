@@ -323,6 +323,12 @@ export type StepEditInput = {
   selects?: Record<string, string>;
   reason?: string | null;
   onHold?: boolean;
+  /**
+   * What the screen proposed for each field when the person saved. Lets the server tell a figure
+   * somebody changed from one the grid merely carried, so a save writes only the first
+   * (saved-figures.ts). Optional: an uploaded sheet sends none, and the server's proposal is used.
+   */
+  recommended?: Record<string, number>;
 };
 
 /**

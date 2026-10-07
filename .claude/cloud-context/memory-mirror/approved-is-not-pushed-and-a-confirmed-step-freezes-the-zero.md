@@ -1,11 +1,11 @@
 ---
 name: approved-is-not-pushed-and-a-confirmed-step-freezes-the-zero
-description: "Since 2026-10-07 \"Approved for Payroll\" IS the pay gate again, pushed or not (the 2026-09 push gate is RETIRED, owner) - but confirming a step still freezes the module's figure AT THAT MOMENT, so a decision after the confirm needs deduction-resync.ts, which recordDecision now calls itself."
+description: "Since 2026-10-07 \"Approved for Payroll\" IS the pay gate again, pushed or not (the 2026-09 push gate is RETIRED, owner) - but confirming a step still freezes the module's figure AT THAT MOMENT, so a decision after the confirm needs deduction-resync.ts, which recordDecision now calls itself. SAVING an open step froze it too: the resync now clears a saved figure unless the cell history says a person saved it, and a save writes only changed figures (saved-figures.ts)."
 metadata:
   node_type: memory
   type: project
   originSessionId: 02b15773-349d-45f7-b725-9ffb4deee410
-  modified: 2026-10-07T07:17:20.717Z
+  modified: 2026-10-07T07:58:08.261Z
 ---
 
 🔴 **RETIRED 2026-10-07 (owner: "make the Automated Payroll able to read them and every other
@@ -31,7 +31,21 @@ its confirm snapshot was EMPTY, and `detectModuleDrift` skipped any employee abs
 snapshot - blinding the one safety net to nothing -> something, the direction the push gate made
 normal.
 
-**How to apply:** Part 2 steps stay live until confirmed, so a push lands there by itself; Part 1
+🔴 **CORRECTED 2026-10-07: an UNCONFIRMED step is NOT live once it has been SAVED.** The grid sends
+every row, and a saved figure beats the module (`pick`), so a whole-grid save of "Any more deductions?"
+on 2026-10-06 froze 0.00 over 8,405.17 EGP approved for two employees (cleared and re-confirmed by the
+owner at 10:56 Cairo the next day). Two halves, and they only work together: the resync clears a saved
+figure on an open step unless the cell history's latest write says a PERSON saved it (`isTypedByHand`,
+write_reason `step_saved`; #5437), and a save writes ONLY the figures somebody changed
+(`saved-figures.ts`, branch `codex/open-step-saved-zero`) — without that second half the history
+trigger records every cell a whole-grid save fills as "person saved it" and the next approval is kept
+out of all of them again. `upsertDraftRows` writes one column set per request: a bulk upsert names the
+union of columns and PostgREST writes NULL into a column a row left out, over the stored figure.
+Same branch: Part 2's confirm refuses while a Part 1 deduction step is re-opened (its figure was
+cleared and reads as 0.00), and the wizard keeps exactly that step editable during Part 2 — re-confirm
+it there; "Unconfirm Part 1" re-freezes the paid first instalment and loses the deduction.
+
+**How to apply:** an open step follows the module only where nothing was saved for that employee; Part 1
 (`p1_fingerprint` - which covers EVERY employee regardless of payment mode - `p1_crm`,
 `p1_resignation_crm`, `p1_unpaid_vacation`, `p1_other_deductions`) is usually confirmed long before
 anybody pushes. Route by the run's own `settled_in_part1`, never a fresh derivation: leavers and

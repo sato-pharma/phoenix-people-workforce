@@ -63,6 +63,8 @@ import {
   takeCurrentModuleFigures,
   type ModuleDriftReport,
 } from "./module-drift.ts";
+import { describeReopenedPart1Block, reopenedPart1DeductionSteps } from "./module-sourced-steps.ts";
+import { figureGroups, untouchedFigureFields, type FigureWrite } from "./saved-figures.ts";
 import {
   carryForwardForRunAssembly,
   markCarryForwardApplied,
@@ -228,7 +230,8 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function stepEditToPatch(stepKey: StepKey, edit: StepEditInput, isLeaverEmployee = false): DraftRowPatch {
+/** Exported for tests/deduction-open-step-saved-figure.test.ts (the vacation columns' remap). */
+export function stepEditToPatch(stepKey: StepKey, edit: StepEditInput, isLeaverEmployee = false): DraftRowPatch {
   const patch: DraftRowPatch = { employeeHrId: edit.hrId };
   const values = edit.values ?? {};
   for (const field of NUMERIC_FIELDS) {
@@ -242,18 +245,27 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput, isLeaverEmployee
   // p1_unpaid_vacation tab, must land on the SAME unpaidVacations draft column the
   // Resignations step used to write — never ALSO on p1odVacationValue, which would
   // double-count via otherPart1DeductionsTotal (the exact double-deduction bug this
-  // module guards against elsewhere). Remap AFTER the generic loop, deleting the
-  // p1od* key so it is never persisted for a leaver.
+  // module guards against elsewhere). Remap AFTER the generic loop.
+  //
+  // The column NOT used is CLEARED on purpose, never just left out. Everyone on this
+  // step is settled in Part 1 (p2_vacation skips them), so for them the two columns are
+  // one figure in two places: a leaver's lives on unpaidVacations, anyone else's on
+  // p1odVacationValue. An employee who becomes a leaver after the step was confirmed
+  // (or stops being one) still carries the old column, and assemble.ts would deduct
+  // both. Leaving it out used to clear it only by accident — one bulk write NULL-filled
+  // every column another row named — and upsertDraftRows now writes one column set per
+  // request, so it must be said (risk review, 2026-10-07).
   //
   // (The leaver CRM deduction needs no such remap: it has its own dedicated
   // p1_resignation_crm tab (owner request 2026-07-26) whose fields are keyed
   // directly to the resignationCrmDays/crm columns, so the generic loop above
   // already writes them.)
-  if (isLeaverEmployee && stepKey === "p1_unpaid_vacation") {
-    const generic = patch as unknown as Record<string, number | undefined>;
-    if (generic.p1odVacationValue !== undefined) {
-      patch.unpaidVacations = generic.p1odVacationValue;
-      delete generic.p1odVacationValue;
+  if (stepKey === "p1_unpaid_vacation" && patch.p1odVacationValue !== undefined) {
+    if (isLeaverEmployee) {
+      patch.unpaidVacations = patch.p1odVacationValue;
+      patch.p1odVacationValue = null;
+    } else {
+      patch.unpaidVacations = null;
     }
     // p1odVacationDays intentionally left as p1od* metadata for a leaver — see
     // step-definitions.ts: their real deduction is a balance-aware composite,
@@ -300,6 +312,74 @@ function stepRowToPatch(stepKey: StepKey, row: StepRow): DraftRowPatch {
     },
     row.lifecycle === "leaver",
   );
+}
+
+/**
+ * The proposal a save is judged against: the one the person's screen showed, where it sent one, else
+ * the server's own. The screen's wins because a grid left open across a decision still shows the old
+ * proposal, and judging its untouched figure against the new one would call it typed.
+ */
+function proposalShown(server: Record<string, number> | undefined, shown: unknown): Record<string, number> {
+  const proposal: Record<string, number> = { ...(server ?? {}) };
+  if (shown && typeof shown === "object" && !Array.isArray(shown)) {
+    for (const [field, value] of Object.entries(shown as Record<string, unknown>)) {
+      if (typeof value === "number" && Number.isFinite(value)) proposal[field] = value;
+    }
+  }
+  return proposal;
+}
+
+/**
+ * One employee's figures on a deduction step, keyed by draft field, beside what was proposed for each
+ * and what the draft held — what saved-figures.ts judges a save by.
+ *
+ * The proposal goes through the SAME mapping as the figures (stepEditToPatch), so a leaver's vacation,
+ * remapped onto `unpaid_vacations`, is compared with its own proposal rather than with nothing.
+ */
+function figureWriteFor(
+  stepKey: StepKey,
+  patch: DraftRowPatch,
+  proposal: Record<string, number>,
+  shownNow: Record<string, number> | undefined,
+  isLeaver: boolean,
+  draft: DraftRow | undefined,
+): FigureWrite {
+  const proposedPatch = stepEditToPatch(stepKey, { hrId: patch.employeeHrId, values: proposal }, isLeaver);
+  const shownPatch = stepEditToPatch(stepKey, { hrId: patch.employeeHrId, values: shownNow ?? {} }, isLeaver);
+  const figures = patch as unknown as Record<string, unknown>;
+  const proposals = proposedPatch as unknown as Record<string, unknown>;
+  const shownFigures = shownPatch as unknown as Record<string, unknown>;
+  const held = (draft ?? {}) as unknown as Record<string, unknown>;
+  const asFigure = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const write: FigureWrite = {
+    compact: compactHrKey(patch.employeeHrId),
+    written: {},
+    proposed: {},
+    before: {},
+    shown: {},
+  };
+  for (const field of NUMERIC_FIELDS as string[]) {
+    if (!(field in figures)) continue;
+    write.written[field] = asFigure(figures[field]);
+    const proposed = asFigure(proposals[field]);
+    if (proposed !== null) write.proposed[field] = proposed;
+    const shown = asFigure(shownFigures[field]);
+    if (shown !== null) write.shown![field] = shown;
+    write.before[field] = asFigure(held[field]);
+  }
+  return write;
+}
+
+/** Leave these figures exactly as the draft holds them — a save carrying nobody's change writes none. */
+function stripFigures(patch: DraftRowPatch, fields: readonly string[]): void {
+  const figures = patch as unknown as Record<string, unknown>;
+  for (const field of fields) delete figures[field];
+}
+
+/** Whether a patch still writes any figure (the save's audit row counts these). */
+function writesAFigure(patch: DraftRowPatch): boolean {
+  return (NUMERIC_FIELDS as string[]).some((field) => field in (patch as unknown as Record<string, unknown>));
 }
 
 async function requireRun(runId: string): Promise<MonthlySalaryRun> {
@@ -574,6 +654,22 @@ export async function getStepRecommendation(
   state: StepState | null;
   candidates: ManualRowCandidate[];
 }> {
+  const { run, rows, state, candidates } = await loadStepView(access, runId, stepKey);
+  return { run, rows, state, candidates };
+}
+
+/** The step as getStepRecommendation shows it, plus the draft rows it was built from (for saveStep). */
+async function loadStepView(
+  access: AccessContext,
+  runId: string,
+  stepKey: StepKey,
+): Promise<{
+  run: MonthlySalaryRun;
+  rows: StepRow[];
+  state: StepState | null;
+  candidates: ManualRowCandidate[];
+  draftRows: DraftRow[];
+}> {
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   const period: PayrollPeriod = { month: run.month, year: run.year };
@@ -603,6 +699,7 @@ export async function getStepRecommendation(
     rows,
     state,
     candidates: manualRowCandidates(stepKey, members, rows),
+    draftRows,
   };
 }
 
@@ -658,7 +755,7 @@ export async function saveStep(
 
   // Notice-period rows are display-only (see confirmStep). Drop any that reach
   // here — including via a re-uploaded xlsx, which bypasses the UI entirely.
-  const { rows: currentRows, candidates } = await getStepRecommendation(access, runId, stepKey);
+  const { rows: currentRows, candidates, draftRows } = await loadStepView(access, runId, stepKey);
   const readOnlyHrIds = new Set(
     currentRows.filter((row) => row.readOnly).map((row) => row.hrId.toLowerCase()),
   );
@@ -716,14 +813,34 @@ export async function saveStep(
     );
   }
 
+  // On a step fed by the Deductions module, a figure nobody changed stays exactly as the draft holds it
+  // (judged per day-and-money group, so typing one pair never stamps the row's other pair). The grid sends every row it shows, and writing them all made every untouched 0.00 a
+  // "person saved it" entry in the cell history — the entry deduction-resync.ts keeps out of every
+  // later approval (saved-figures.ts has the September 2026 account).
+  const moduleSourced = MODULE_SOURCED_STEP_KEYS.includes(stepKey);
+  const currentByHrId = new Map(currentRows.map((row) => [row.hrId.toLowerCase(), row]));
+  const draftByCompact = new Map(draftRows.map((draft) => [draft.employeeHrIdCompact, draft]));
   const patches = applicable.map((edit) => {
-    const isLeaver = leaverHrIds.has(String(edit.hrId ?? "").toLowerCase());
+    const hrIdKey = String(edit.hrId ?? "").toLowerCase();
+    const isLeaver = leaverHrIds.has(hrIdKey);
     const patch = stepEditToPatch(stepKey, edit, isLeaver);
     // Money the settlement rule must re-derive from a corrected day count is CLEARED rather than left
     // at the sheet's stale figure (audit finding 32). Only stored money columns, and only what the
     // server itself asked for.
-    for (const key of options?.recalculateMoney?.get(String(edit.hrId ?? "").toLowerCase()) ?? []) {
+    for (const key of options?.recalculateMoney?.get(hrIdKey) ?? []) {
       if ((NUMERIC_FIELDS as string[]).includes(key)) (patch as unknown as Record<string, number | null>)[key] = null;
+    }
+    if (moduleSourced) {
+      const current = currentByHrId.get(hrIdKey);
+      const write = figureWriteFor(
+        stepKey,
+        patch,
+        proposalShown(current?.recommended, edit.recommended),
+        current?.values,
+        isLeaver,
+        draftByCompact.get(compactHrKey(edit.hrId)),
+      );
+      stripFigures(patch, untouchedFigureFields(write, figureGroups(stepKey, Object.keys(write.written))));
     }
     patch.source = inputMode;
     patch.editedBy = actorId(access);
@@ -738,7 +855,9 @@ export async function saveStep(
     actorHrId: actorId(access),
     action: "step_saved",
     stepKey,
-    detail: { edited: patches.length, inputMode },
+    // `edited` counts the rows the save carried; `figuresWritten` the ones that still wrote a figure
+    // after the untouched groups were left out — the cell history is the full record.
+    detail: { edited: patches.length, figuresWritten: patches.filter(writesAFigure).length, inputMode },
   });
 }
 
@@ -1292,6 +1411,12 @@ export async function confirmPart2(
 
   const states = await listStepStates(runId);
   assertAllStepsConfirmed(states, PART2_STEP_KEYS);
+  // A Part 1 deduction step a decision re-opened since Part 1 was confirmed has had its figure cleared,
+  // and confirming now would pay the month without it (owner decision 2026-10-07, module-sourced-steps.ts).
+  const reopenedPart1 = reopenedPart1DeductionSteps(states);
+  if (reopenedPart1.length > 0) {
+    throw new Error(`Conflict: ${describeReopenedPart1Block(reopenedPart1)}`);
+  }
 
   // Same gate as Part 1, checked again here: the population can change between
   // the two confirms (someone hired, someone's record edited), so an employee

@@ -1392,6 +1392,7 @@ import { runFakeSupabaseTableSqlNullsTests } from "./fake-supabase-table-sql-nul
 import { runAutomatedPayrollCrmLeaveOneMechanismTests } from "./automated-payroll-crm-leave-one-mechanism.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runDeductionPayrollResyncTests } from "./deduction-payroll-resync.test.ts";
+import { runDeductionOpenStepSavedFigureTests } from "./deduction-open-step-saved-figure.test.ts";
 import { runAutomatedPayrollCellHistoryTests } from "./automated-payroll-cell-history.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
@@ -2716,6 +2717,11 @@ await runTest(
 await runTest(
   "deductions: a line pushed after a payroll step was confirmed still reaches the payslip",
   runDeductionPayrollResyncTests,
+);
+await runTest(
+  "deductions: a save writes only the figures somebody changed, the bulk write never blanks a figure a row left out, "
+  + "and Part 2 refuses to confirm while a Part 1 deduction step is open again (which stays editable during Part 2)",
+  runDeductionOpenStepSavedFigureTests,
 );
 await runTest(
   "automated payroll: every change to a sheet figure is recorded with who, why and when",

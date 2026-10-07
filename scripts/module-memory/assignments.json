@@ -638,6 +638,7 @@
   "monthly-source-normalizer-is-super-admin-only": "sales-imports",
   "moving-a-crm-customer-between-am-and-pm-has-no-app-door": "crm",
   "moving-a-sos-brick-between-areas-needs-four-restamps": "sales-attribution",
+  "msys-mangles-a-git-ref-colon-path-into-a-false-verdict": "engineering",
   "n-live-tup-is-stale-use-real-count": "database",
   "nav-active-path-and-lint-noise": "portal",
   "nav-personal-layout-is-per-caller-never-a-targeting-matrix": "portal",
