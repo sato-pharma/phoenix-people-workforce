@@ -5273,19 +5273,56 @@ The row itself: `ZZ Test Doctor No Grade` (PM, no grade, no potential) could not
 is gone and the row is now ordinary test data. Measured after: **0** ungraded doctors anywhere on that
 seat.
 
-### What is still on production
+### Nothing is left on production — cleared 2026-10-08 on the owner's word
 
-**Rows only — the two probe functions are no longer among them** (dropped 2026-10-07, above). All
-`is_test = true` on `SEAT-PED-REP-AB1` — 5 customers named `ZZ …`, 1 place, 8 list events, 1 photo
-slot, 1 storage row. Real rows on that seat: **0 before, 0 after.** They are invisible to every real
-figure, because every KPI reads `is_test = false`. To clear them:
+**The probe left nothing behind.** The two functions went on 2026-10-07 (above); the owner then said
+*"clear the ZZ test rows on SEAT-PED-REP-AB1"* and the rows went on 2026-10-08. Measured before:
+5 customers named `ZZ …`, 1 place, 8 list events, 1 photo-upload row, 1 `storage.objects` row — and
+that was the WHOLE footprint, swept across all 26 `public` tables carrying both `seat_id` and
+`is_test`, not just the ones somebody remembered. Measured after: **0, 0, 0, 0, 0.**
+
+What the clean-up taught, which the statement list below had wrong:
+
+- 🔴 **`delete from storage.objects` CANNOT RUN AT ALL** — `storage.protect_delete()` raises `42501`,
+  *"Direct deletion from storage tables is not allowed. Use the Storage API instead."* The statement
+  sat in this document for five days as the documented way to do it. A storage object goes through
+  `DELETE /storage/v1/object/<bucket>/<path>` with the service-role key; here that was
+  `phoenix-crm-photos` / `zz-probe/SEAT-PED-REP-AB1/listed-place.jpg`, answering `200
+  {"message":"Successfully deleted"}`, which removes the file and its row together.
+- 🔴 **`phoenix_crm_customers` has EIGHT child foreign keys and not one of them cascades** — seven
+  `NO ACTION`, `phoenix_crm_customer_moves` `RESTRICT`. The three-table delete order below therefore
+  only works because every child happened to be empty, which was measured (with a positive control)
+  rather than assumed. On any other seat it would raise instead.
+- 🔴 **`is_test = true` is NOT a synonym for "the probe's rows"** — production carries **1,724** test
+  customers on other seats, and this seat itself carries **105 real `is_test = false` list events**.
+  The seat-plus-flag scoping is load-bearing; an unscoped version of any of these is a real incident.
+  Note that "real rows on that seat: 0 before, 0 after" was only ever true of *customers*.
+
+The pre-image is `crm_backup_20261008` — five tables holding all 16 rows, in a dedicated schema with
+`public`, `anon` and `authenticated` revoked, deliberately **not** a `public.zz_backup_…` table
+(`ad-hoc-backup-tables-are-anon-readable`). The storage object's bytes are not in it, only its row.
+Drop the schema once nobody wants the rows back.
+
+The row deletes, as actually run — one statement, every count asserted, raising and rolling back the
+whole thing on any surprise:
 
 ```sql
-delete from public.phoenix_crm_list_events  where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
-delete from public.phoenix_crm_places       where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
-delete from public.phoenix_crm_customers    where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
-delete from public.phoenix_crm_photo_uploads where path like 'zz-probe/%';
-delete from storage.objects                 where name like 'zz-probe/%';
+do $$
+declare c_ev int; c_pl int; c_cu int; c_ph int;
+begin
+  delete from public.phoenix_crm_list_events   where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
+  get diagnostics c_ev = row_count;
+  delete from public.phoenix_crm_places        where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
+  get diagnostics c_pl = row_count;
+  delete from public.phoenix_crm_customers     where seat_id = 'SEAT-PED-REP-AB1' and is_test = true;
+  get diagnostics c_cu = row_count;
+  delete from public.phoenix_crm_photo_uploads where path like 'zz-probe/%';
+  get diagnostics c_ph = row_count;
+  if c_ev <> 8 or c_pl <> 1 or c_cu <> 5 or c_ph <> 1 then
+    raise exception 'ABORT, nothing committed - unexpected counts: events=%, places=%, customers=%, photos=%',
+      c_ev, c_pl, c_cu, c_ph;
+  end if;
+end $$;
 ```
 
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
