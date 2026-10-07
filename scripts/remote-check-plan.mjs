@@ -309,6 +309,20 @@ export function buildLockfileScript({ remoteRoot, runId, sha, prelude = [] }) {
 //   actions  — the wait is spent (or none was asked for) and `--actions` is armed: dispatch ci.yml.
 //   refuse   — the wait is spent and nothing else is armed: exit 2 exactly as before.
 //
+// 🔴 AN UNREACHABLE BOX IS THE SAME DECISION — owner ruling, 2026-10-08: *"make an unreachable box
+// escalate to Actions too, not only a busy one"*. `probeKnown: false` (ssh failed, or the box answered
+// without `PROBE_OK`) therefore takes the busy routes and never `run`: with the fallback armed it
+// dispatches, with a budget it polls — a dropped connection is often a blip and a poll costs nothing —
+// and with `--no-actions` it still refuses, exactly as before.
+//
+// 🔴 THAT DOES NOT WEAKEN THE FAIL-CLOSED PROBE, AND A FUTURE READER MUST NOT "RESTORE" IT. The probe
+// fails closed so an unreadable answer is never mistaken for an IDLE BOX — the thing it forbids is
+// STARTING A RUN THERE, which is what OOM-kills somebody else's build. `run` stays unreachable from
+// `probeKnown: false`, so that invariant is intact; what changes is only that the caller is handed the
+// route that does not touch the box at all, instead of nothing. Before this, an ssh blip or a box that
+// was down ended the invocation at exit 2 with no verdict, on the one evidence that most argues FOR
+// GitHub Actions: the box cannot answer at all.
+//
 // 🔴 WAITING IS VISIBLE OR IT IS A HANG. The comment on the refusal says a lock "makes the second run
 // sit silently for up to half an hour, which reads as a hang", and that is the real objection to
 // queueing — not the waiting itself. Every poll therefore prints the runs it is waiting for and how
@@ -454,17 +468,25 @@ export function parseEscalation(argv, env = process.env) {
 }
 
 /**
- * What to do about a busy box, as a pure decision.
+ * What to do about a box that cannot take this run, as a pure decision.
  *
- * @param {{ busyRuns: string[], waitedSeconds: number, waitMinutes: number, actions: boolean }} input
- * @returns {{ action: "run"|"poll"|"actions"|"refuse", waitLeftSeconds: number }}
+ * 🔴 `probeKnown: false` MEANS THE BOX DID NOT ANSWER — and it takes the same routes as a busy one
+ * (owner, 2026-10-08), never `run`. It DEFAULTS TO TRUE deliberately: every caller that predates the
+ * ruling keeps its old meaning, and a caller that forgets to pass it gets the busy logic rather than a
+ * silent escalation. The one place that must pass it is the probe's own call site.
+ *
+ * @param {{ busyRuns: string[], waitedSeconds: number, waitMinutes: number, actions: boolean,
+ *           probeKnown?: boolean }} input
+ * @returns {{ action: "run"|"poll"|"actions"|"refuse", waitLeftSeconds: number, reason: "free"|"busy"|"unreachable" }}
  */
-export function decideBusyAction({ busyRuns, waitedSeconds, waitMinutes, actions }) {
-  if (!busyRuns || busyRuns.length === 0) return { action: "run", waitLeftSeconds: 0 };
+export function decideBusyAction({ busyRuns, waitedSeconds, waitMinutes, actions, probeKnown = true }) {
+  const blocked = probeKnown === false || (busyRuns && busyRuns.length > 0);
+  const reason = probeKnown === false ? "unreachable" : blocked ? "busy" : "free";
+  if (!blocked) return { action: "run", waitLeftSeconds: 0, reason };
   const budget = Math.round((waitMinutes || 0) * 60);
   const left = budget - (waitedSeconds || 0);
-  if (left > 0) return { action: "poll", waitLeftSeconds: left };
-  return { action: actions ? "actions" : "refuse", waitLeftSeconds: 0 };
+  if (left > 0) return { action: "poll", waitLeftSeconds: left, reason };
+  return { action: actions ? "actions" : "refuse", waitLeftSeconds: 0, reason };
 }
 
 /**
