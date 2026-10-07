@@ -153,9 +153,11 @@ export function memoryReachabilityLines({ relocated, orphans, broken }) {
     lines.push(
       "  " +
         relocated.length +
-        " memory file(s) are reachable from AGENTS.md rather than the index — relocated on purpose",
-      "  (AGENTS.md 2.2). Do NOT give these an index line: that would undo the relocation and put",
-      "  MEMORY.md back over budget.",
+        " memory file(s) are reachable from AGENTS.md or its module memory rather than the",
+      "  index — filed on purpose (AGENTS.md 2.2; since 2026-10-02 a module's own",
+      "  .claude/rules/<module>.md is where the fold files a note).",
+      "  Do NOT give these an index line: that would undo the filing and put MEMORY.md back",
+      "  over budget.",
     );
   }
 
@@ -303,6 +305,108 @@ export function readModuleMemoryText(root) {
     /* no module memory in this checkout */
   }
   return text;
+}
+
+/**
+ * The same module-memory text, read from a GIT REF instead of from disk.
+ *
+ * WHY THIS EXISTS — THE STALENESS RESCUE WAS ASYMMETRIC. `repo-doctor.mjs`'s MEMORY INDEX section
+ * deliberately unions the working tree's `AGENTS.md` with `git show origin/main:AGENTS.md` before
+ * calling a memory an orphan, because a checkout sitting behind `main` is this repo's normal state
+ * and a slug merged minutes ago is absent from the disk for no reason that concerns the memory
+ * (the 2026-09-05 incident, and section 9 of the test beside this file). Module memory never got
+ * that second chance: `readModuleMemoryText` reads the working tree only, so from 2026-10-02 — when
+ * module memory became the PRESCRIBED home for a note — every freshly folded note read as an ORPHAN
+ * on any lagging checkout, and the printed remedy ("give each orphan a line in MEMORY.md") is the
+ * one thing AGENTS.md section 2.2 forbids: re-adding a module fact to the index.
+ *
+ * MEASURED 2026-10-08, on the primary at `31d89debe` (17 commits behind): five notes the fold had
+ * filed in `#5455` the previous night — `a-failed-push-resurfaces-as-no-commits-between-main-and-branch`,
+ * `a-pdf-page-count-from-the-first-count-is-a-subtree`, `period-card-call-tables-use-the-tight-density`,
+ * `portal-418-hydration-is-external-dom-rewriting`, `the-crm-departed-exclusion-is-119-ids-not-56` —
+ * all reported ORPHAN, all backticked in a `.claude/rules/*.md` on `origin/main`. The fold runs three
+ * times a day, so on a lagging checkout the list grows rather than settling.
+ *
+ * NOT `assignments.json`, deliberately. That file is the filing LEDGER; the rules file is the
+ * emitted ARTEFACT, and a note is listed in the ledger before `build.mjs` has written its line into
+ * a module file. Keying reachability on the ledger would call a note reachable while no file a
+ * session loads actually names it — a fail-OPEN answer, which is the one direction this module
+ * never takes. Reachability keeps asking what a loaded file says, at both refs.
+ *
+ * FAIL-CLOSED, like its neighbour: an unknown ref, a shallow clone with no `origin/main`, no git at
+ * all, or a tree with no `.claude/rules` all yield "" — every memory then falls through to the
+ * local-only answer, a false ORPHAN and never a false "reachable".
+ *
+ * @param {string} root the repository root whose git dir the ref is resolved in
+ * @param {string} ref e.g. `origin/main`
+ * @returns {string} the concatenated module-memory text at that ref, or "" when unreadable
+ */
+export function readModuleMemoryTextAtRef(root, ref) {
+  const show = (pathInRepo) => {
+    try {
+      return execFileSync("git", ["show", ref + ":" + pathInRepo], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 1 << 28,
+      });
+    } catch {
+      return "";
+    }
+  };
+
+  let text = show("docs/module-memory/history.md");
+  let names = "";
+  try {
+    names = execFileSync("git", ["ls-tree", "--name-only", ref + ":.claude/rules"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 1 << 24,
+    });
+  } catch {
+    return text; // no module memory at that ref — "" plus whatever history.md gave, never a throw
+  }
+  for (const name of names.split(/\r?\n/)) {
+    if (name.endsWith(".md")) text += "\n" + show(".claude/rules/" + name);
+  }
+  return text;
+}
+
+/**
+ * EVERYTHING AT `ref` THAT CAN MAKE A MEMORY REACHABLE: `AGENTS.md` plus that ref's module memory.
+ *
+ * This is the whole of `originAgentsText` for `repo-doctor.mjs`'s MEMORY INDEX section, in ONE
+ * place, because the 2026-10-08 defect was precisely that the caller assembled it from one of the
+ * two channels. The working-tree side already reads both (`AGENTS.md` + `readModuleMemoryText`), so
+ * a second-ref read that covers only `AGENTS.md` is not a smaller rescue — it is a rescue that
+ * misses the channel §2.2 now prescribes, and the notes it misses are the NEWEST ones, because the
+ * fold files three times a day.
+ *
+ * Fail-closed throughout: an unresolvable ref gives "", and the caller then falls back to the
+ * local-only answer — a false ORPHAN, never a false "reachable".
+ *
+ * NOT for a trim decision, exactly like `classifyMemoryReachabilityAcrossRefs`: what another ref
+ * holds says nothing about whether the edit in progress is about to remove the only copy that will
+ * exist once it merges.
+ *
+ * @param {string} root repository root whose git dir resolves the ref
+ * @param {string} ref e.g. `origin/main`
+ * @returns {string}
+ */
+export function readReachabilityTextAtRef(root, ref) {
+  let agents = "";
+  try {
+    agents = execFileSync("git", ["show", ref + ":AGENTS.md"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 1 << 28,
+    });
+  } catch {
+    // Unresolvable ref or no AGENTS.md there — under-claim, never throw.
+  }
+  return agents + "\n" + readModuleMemoryTextAtRef(root, ref);
 }
 
 /**

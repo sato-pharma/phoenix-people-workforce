@@ -19,6 +19,7 @@
 // degrade to the old answer, never to silence.
 
 import { strict as assert } from "node:assert";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -29,6 +30,8 @@ import {
   memoryReachabilityLines,
   namedInAgents,
   readModuleMemoryText,
+  readModuleMemoryTextAtRef,
+  readReachabilityTextAtRef,
   splitOverMarkedByAutoLoadedIndex,
   strandedLines,
 } from "../scripts/memory-index-reachability.mjs";
@@ -454,6 +457,104 @@ export function runMemoryIndexReachabilityTests() {
       + "nothing about whether an in-progress local edit is about to remove the only copy that "
       + "will exist once it merges",
   );
+
+  // ── 9b. THE RESCUE MUST COVER MODULE MEMORY, NOT AGENTS.md ALONE ──────────────────────────────
+  // WHY THIS EXISTS. Section 9 above fixed the stale-checkout direction for `AGENTS.md`, and from
+  // 2026-10-02 §2.2 made a module's own `.claude/rules/<module>.md` the PRESCRIBED home for a note
+  // — but the caller kept building `originAgentsText` from `AGENTS.md` alone, so the module channel
+  // had no second ref. Measured 2026-10-08 on the primary at `31d89debe`, 17 commits behind: the
+  // five notes the fold filed in #5455 the night before all read ORPHAN, each one backticked in a
+  // `.claude/rules/*.md` on `origin/main` and in none of them on disk. The fold runs three times a
+  // day, so on a lagging checkout that list grows rather than settling, and the printed remedy
+  // ("give each orphan a line in MEMORY.md") is what §2.2 forbids in as many words.
+  //
+  // THE BUG IS INVISIBLE ON AN UP-TO-DATE CHECKOUT — the same classification was clean minutes
+  // later, with 0 orphans of 1,186 files — which is exactly why it needs a fixture rather than a
+  // live assertion. `repo-doctor.mjs` now folds `readModuleMemoryTextAtRef(primaryRoot,
+  // "origin/main")` into `originAgentsText`, so the discriminating case is a slug named ONLY in
+  // origin/main's module memory, with both AGENTS.md copies silent.
+  const foldedOnMain = classifyMemoryReachabilityAcrossRefs({
+    files: ["filed-by-the-fold.md", "in-no-channel-at-all.md"],
+    indexText: "",
+    agentsText: "", // this checkout: neither AGENTS.md nor its rules files name it yet
+    // origin/main: AGENTS.md says nothing, the module rules file is the only thing naming it
+    originAgentsText: "- " + tick("filed-by-the-fold") + " — the fold filed this under its module",
+  });
+  assert.deepEqual(
+    foldedOnMain.orphans,
+    ["in-no-channel-at-all.md"],
+    "a note the fold filed into a MODULE rules file on origin/main must not read as an orphan on a "
+      + "lagging checkout — this is the 2026-10-08 case, and getting it wrong prints advice that "
+      + "AGENTS.md 2.2 forbids: re-adding a module fact to MEMORY.md",
+  );
+  assert.deepEqual(
+    foldedOnMain.rescuedByOrigin,
+    ["filed-by-the-fold.md"],
+    "it must be named as rescued-by-origin, so the report says the checkout is behind rather than "
+      + "presenting an unexplained 'reachable'",
+  );
+  assert.equal(
+    foldedOnMain.relocated.includes("filed-by-the-fold.md"),
+    true,
+    "the rescued note must still count as reachable, not vanish from every bucket",
+  );
+
+  // THE FAIL-CLOSED DIRECTION, for the ref reader itself. An unknown ref, a shallow clone with no
+  // `origin/main` (CI checks out with fetch-depth 2), or a tree with no `.claude/rules` must all
+  // yield "" — every memory then falls back to the local-only answer, a false ORPHAN and never a
+  // false "reachable". A throw here would take the whole MEMORY INDEX section down with it.
+  assert.equal(
+    readModuleMemoryTextAtRef(process.cwd(), "refs/heads/definitely-not-a-ref-in-this-repo"),
+    "",
+    "an unresolvable ref must read as empty, not throw and not over-claim reachability",
+  );
+  // HEAD always resolves, even in a depth-2 clone, so this is the one live read that is safe in CI.
+  // It proves the reader actually reaches the module files rather than silently returning "" always
+  // — without which the assertion above would pass for the wrong reason.
+  const atHead = readModuleMemoryTextAtRef(process.cwd(), "HEAD");
+  assert.equal(
+    atHead.length > 10_000,
+    true,
+    "reading module memory at HEAD must return the real rules files — a reader that always returns "
+      + `"" would satisfy the fail-closed assertion above while rescuing nothing (got ${atHead.length} bytes)`,
+  );
+  assert.equal(
+    slugsIn(atHead).size > 0,
+    true,
+    "and that text must carry backticked slugs, which is the only form the matcher recognises",
+  );
+
+  // THE ASSERTION THAT PINS THE DEFECT ITSELF. Everything above would pass on the broken code too:
+  // the classifier always handled the union correctly, and the bug lived entirely in how the CALLER
+  // assembled `originAgentsText` — from `AGENTS.md` alone. So the second-ref read is one function,
+  // `readReachabilityTextAtRef`, and this asserts it carries BOTH channels at the same ref. Drop
+  // the module half back out and this is the assertion that fires.
+  const bothChannelsAtHead = readReachabilityTextAtRef(process.cwd(), "HEAD");
+  const headAgentsSlugs = slugsIn(
+    (() => {
+      try {
+        return execFileSync("git", ["show", "HEAD:AGENTS.md"], { encoding: "utf8", maxBuffer: 1 << 28 });
+      } catch {
+        return "";
+      }
+    })(),
+  );
+  const moduleOnlySlugs = [...slugsIn(atHead)].filter((s) => !headAgentsSlugs.has(s));
+  assert.equal(
+    moduleOnlySlugs.length > 0,
+    true,
+    "the live repo must hold at least one slug named ONLY in module memory — otherwise the next "
+      + "assertion cannot discriminate, and the fix it guards would be untestable here",
+  );
+  for (const slug of moduleOnlySlugs.slice(0, 5)) {
+    assert.equal(
+      namedInAgents(slug + ".md", bothChannelsAtHead),
+      true,
+      `the second-ref read must resolve ${slug}, which only a module rules file names — an `
+        + "AGENTS.md-only read misses exactly the notes the fold has just filed, which is the "
+        + "2026-10-08 defect",
+    );
+  }
 
   // ── 9. AN ARCHIVE-ONLY LINK IS NOT A LICENCE TO TRIM THE MARKER ───────────────────────────────
   //
