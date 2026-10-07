@@ -203,6 +203,16 @@ claude-recovery-2026-09-21/
 /*-guide-*.html
 /*-guide-*.pdf
 
+# And the policy sheets the same generator writes beside them, added 2026-10-07 in the same
+# clean-up: `phoenix-incentive-and-salary-policy-2026.pdf` and
+# `phoenix-pedia-incentive-and-salary-policy-2026.pdf`. These two were the only root files the
+# diff pane still listed after the six patterns above landed — binary, so 0 lines, but still two
+# entries of noise on a checkout with no tracked change. The `.html` half is here for the same
+# reason it is on every pair above: these PDFs are rendered FROM an HTML sheet, so the next run
+# drops both. Root-scoped, and verified 2026-10-07 that no tracked file matches either.
+/phoenix-*-policy-*.html
+/phoenix-*-policy-*.pdf
+
 # The session hand-off notes sessions drop at the root (`_handoff-crm-batch-2.md`,
 # `_handoff-turbify-mailbox-ops.md`, …). Added at the owner's instruction on 2026-10-06, in the
 # same breath as the two patterns above. They are one session's notes to the next, never
