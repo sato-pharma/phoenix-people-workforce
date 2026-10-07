@@ -44,12 +44,13 @@
 --   still present, and `function_search_path_mutable` gone ENTIRELY from the advisor — the lint no
 --   longer appears at all, rather than merely dropping from 2 findings to fewer.
 --
---   🔴 THE TEST-WORLD ROWS THE PROBE WROTE ARE STILL THERE — only the two functions were dropped, and
---   nothing in `phoenix_crm_customers` was read or written by this change. They are
---   `is_test = true` on `SEAT-PED-REP-AB1` — 5 customers named `ZZ …`, 1 place, 8 list events, 1 photo
---   slot, 1 storage row — so they are invisible to every real figure in the module (every KPI reads
---   `is_test = false`, and real rows on that seat were 0 before the probe and 0 after). The statements
---   that clear them are in `docs/agents-owner-rules.md`, under the probe's account.
+--   This migration dropped only the two functions and neither read nor wrote any
+--   `phoenix_crm_customers` row. The test-world rows the probe wrote — `is_test = true` on
+--   `SEAT-PED-REP-AB1`: 5 customers named `ZZ …`, 1 place, 8 list events, 1 photo-upload row and 1
+--   `storage.objects` row — were cleared separately on 2026-10-08 on the owner's word, with a
+--   pre-image in `crm_backup_20261008`. The probe now has NOTHING left on production. The account,
+--   including why the documented `delete from storage.objects` could never run, is in
+--   `docs/agents-owner-rules.md` under the probe's section.
 --
 -- ROLLBACK:
 --   None wanted. These were never part of the app; recreating them would recreate the exposure.
