@@ -432,14 +432,29 @@ export function groupCoverageByTerritory(rows: ReadonlyArray<Row>): { groups: Te
 
 // ── Double and chain visits per manager ─────────────────────────────────────────────────────────
 
+/**
+ * Where a person stood on the visit — the three columns a non-rep can occupy, and the reason the
+ * report is grouped by it. A person who was the manager of one visit and the line's product manager
+ * on another gets one entry per role on the same day, and the summary adds each under its own
+ * heading: a product manager's visits are NEVER folded into `doubleVisits`, which is the figure
+ * district managers are measured on (CLAUDE.md, the 2026-10-02 lock).
+ */
+export type ManagerVisitRole = "manager" | "senior" | "product_manager";
+
 export type ManagerVisitEntry = {
   date: string;
   seatId: string;
   repHrId: string | null;
-  /** "manager" on a double or chain visit; "senior" when above the manager on a chain visit. */
-  roleOnVisit: "manager" | "senior";
+  /**
+   * "manager" on a double or chain visit; "senior" when above the manager on a chain visit;
+   * "product_manager" when he is the line's product manager the rep ticked (the `product_manager`
+   * kind, or the second person on a chain).
+   */
+  roleOnVisit: ManagerVisitRole;
   doubleVisits: number;
   chainVisits: number;
+  /** Visits of the `product_manager` kind — the rep ticked ONE product manager under "Double visit". */
+  productManagerVisits: number;
   amVisits: number;
   pmVisits: number;
 };
@@ -451,6 +466,10 @@ export type ManagerVisitSummary = {
   chainVisits: number;
   /** Chain visits as the senior manager. */
   seniorChainVisits: number;
+  /** Visits as the line's product manager — the `product_manager` kind. Never inside `doubleVisits`. */
+  productManagerVisits: number;
+  /** Chain visits where he was the product manager rather than a manager. */
+  productManagerChainVisits: number;
   /** Visits the manager was on, accounts and doctors apart. */
   amVisits: number;
   pmVisits: number;
@@ -461,7 +480,24 @@ export type ManagerVisitSummary = {
 };
 
 export function emptyManagerSummary(): ManagerVisitSummary {
-  return { doubleVisits: 0, chainVisits: 0, seniorChainVisits: 0, amVisits: 0, pmVisits: 0, daysOut: 0, reps: 0 };
+  return {
+    doubleVisits: 0,
+    chainVisits: 0,
+    seniorChainVisits: 0,
+    productManagerVisits: 0,
+    productManagerChainVisits: 0,
+    amVisits: 0,
+    pmVisits: 0,
+    daysOut: 0,
+    reps: 0,
+  };
+}
+
+/** The role the row names, read as the function spells it; anything else is the manager's place. */
+function managerVisitRole(raw: unknown): ManagerVisitRole {
+  if (raw === "senior") return "senior";
+  if (raw === "product_manager") return "product_manager";
+  return "manager";
 }
 
 /** phoenix_crm_report_manager_visits rows → each manager's entries (date order) and summary. */
@@ -477,9 +513,10 @@ export function groupManagerVisits(rows: ReadonlyArray<Row>): Map<string, { entr
       date,
       seatId,
       repHrId: textOf(row.rep_hr_id),
-      roleOnVisit: row.role_on_visit === "senior" ? "senior" : "manager",
+      roleOnVisit: managerVisitRole(row.role_on_visit),
       doubleVisits: count(row.double_visits),
       chainVisits: count(row.chain_visits),
+      productManagerVisits: count(row.product_manager_visits),
       amVisits: count(row.am_visits),
       pmVisits: count(row.pm_visits),
     });
@@ -495,6 +532,9 @@ export function groupManagerVisits(rows: ReadonlyArray<Row>): Map<string, { entr
       if (entry.roleOnVisit === "manager") {
         summary.doubleVisits += entry.doubleVisits;
         summary.chainVisits += entry.chainVisits;
+      } else if (entry.roleOnVisit === "product_manager") {
+        summary.productManagerVisits += entry.productManagerVisits;
+        summary.productManagerChainVisits += entry.chainVisits;
       } else {
         summary.seniorChainVisits += entry.chainVisits;
       }

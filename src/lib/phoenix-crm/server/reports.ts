@@ -70,6 +70,7 @@ import {
   locationReportSeats,
   readsFieldHeardByProduct,
   readsLocationDetail,
+  readsOwnRideAlongs,
   readsPlaceVsActual,
   readsTeamReports,
   readsTeamReportsOn,
@@ -316,7 +317,10 @@ export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportS
         repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
       }))
       .sort((left, right) => left.name.localeCompare(right.name)),
-    hasManagers: managersInScope(viewer.org, viewer.hrId, viewer.basis).length > 0,
+    // A product manager has one "manager" to show on that report and it is HIMSELF — the visits he
+    // rode (`readsOwnRideAlongs`, owner 2026-10-07). Without this the chip is hidden and the tab
+    // falls back to the one report he had before.
+    hasManagers: managersInScope(viewer.org, viewer.hrId, viewer.basis).length > 0 || readsOwnRideAlongs(viewer),
     canSeeLocations: canReadLocationReport(viewer),
     // The team's gate first: a product manager who also read team reports would read them as a manager.
     audience: !readsTeamReports(viewer) && readsFieldHeardByProduct(viewer) ? "products" : "field",
@@ -749,9 +753,62 @@ export type ManagerReportView = {
   includeTest: boolean;
   /** Every manager in scope above the chosen territories, including managers with no visit yet. */
   rows: ManagerReportRow[];
+  /**
+   * True when the one row is the VIEWER'S OWN and the report is about nobody else — a product or
+   * marketing manager reading the visits he himself rode (`readsOwnRideAlongs`). The screen says
+   * "You went out" rather than counting managers, and offers no search across a team that is not
+   * there.
+   */
+  own: boolean;
 };
 
+/**
+ * 🔴 THE VISITS A PRODUCT MANAGER RODE, AND HIS ALONE (owner, 2026-10-07 — the visits Nada Abdullah
+ * filed with Ahmed SharafEldeen "are not appearing in his data").
+ *
+ * He holds no seat in the sales organogram, so `managersInScope` can never name him and
+ * `chooseTerritories` gives him nothing: the manager branch above would return an empty report
+ * forever. So his own hr id is the whole `p_hr_ids`, and the territories are every open line's — the
+ * same reach the field-heard report already gives him, because a product manager rides company-wide
+ * and a line filter would hide a visit he was personally on.
+ *
+ * His title is his APP ROLE, not a seat tier: `seatTierTitle` reads a seat he does not have.
+ */
+async function loadOwnRideAlongReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<ManagerReportView> {
+  const period = periodOf(viewer, raw);
+  const includeTest = reportIncludesTest(viewer, raw.includeTest);
+  const seats = viewer.org.territories.filter((seat) => Boolean(seat.lineCode && viewer.openLines.has(seat.lineCode)));
+  const data = await callPhoenixCrm<unknown>("phoenix_crm_report_manager_visits", {
+    p_hr_ids: [viewer.hrId],
+    p_from: period.from,
+    p_to: period.to,
+    p_include_test: includeTest,
+  });
+  const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
+  const grouped = groupManagerVisits(asRows(data).filter((row) => seatsById.has(String(row.seat_id))));
+  // The function UPPERCASES the ids it was given, so a differently-spelled hr id would key the map
+  // under a name this lookup does not use. Exactly one person was asked for, so the first group IS
+  // his — the fallback is what keeps a casing difference from reading as "you rode nothing".
+  const found = grouped.get(viewer.hrId) ?? [...grouped.values()][0];
+  const repIds = (found?.entries ?? []).map((entry) => entry.repHrId);
+  const names = await loadPeopleNames([viewer.hrId, ...repIds]);
+  const row: ManagerReportRow = {
+    ...(found?.summary ?? emptyManagerSummary()),
+    hrId: viewer.hrId,
+    name: nameOf(names, viewer.hrId),
+    title: viewer.role,
+    lineName: null,
+    entries: (found?.entries ?? []).map((entry) => {
+      const seat = seatsById.get(entry.seatId) as OrgSeat;
+      return { ...entry, territoryName: territoryName(seat), repName: entry.repHrId ? nameOf(names, entry.repHrId) : null };
+    }),
+  };
+  return { period, includeTest, own: true, rows: [row] };
+}
+
 export async function loadManagerReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<ManagerReportView> {
+  // The team's gate first, so a product manager who also held a manager seat reads the full board.
+  if (readsOwnRideAlongs(viewer)) return loadOwnRideAlongReport(viewer, raw);
   const chosen = chooseTerritories(viewer, raw);
   const period = periodOf(viewer, raw);
   // A manager above a chosen territory through any seat they hold (a person on two seats is listed once).
@@ -759,7 +816,7 @@ export async function loadManagerReport(viewer: PhoenixCrmViewer, raw: ReportFil
     const held = new Set(heldManagerSeats(viewer.org, member.hrId).map((seat) => seat.seatId));
     return chosen.seats.some((territory) => territory.path.some((seatId) => seatId !== territory.seatId && held.has(seatId)));
   });
-  if (managers.length === 0) return { period, includeTest: chosen.includeTest, rows: [] };
+  if (managers.length === 0) return { period, includeTest: chosen.includeTest, own: false, rows: [] };
 
   const data = await callPhoenixCrm<unknown>("phoenix_crm_report_manager_visits", {
     p_hr_ids: managers.map((member) => member.hrId),
@@ -789,7 +846,7 @@ export async function loadManagerReport(viewer: PhoenixCrmViewer, raw: ReportFil
       };
     })
     .sort((left, right) => (left.lineName ?? "").localeCompare(right.lineName ?? "") || left.name.localeCompare(right.name));
-  return { period, includeTest: chosen.includeTest, rows };
+  return { period, includeTest: chosen.includeTest, own: false, rows };
 }
 
 // ── Where the visit was saved, against where the place is ────────────────────────────

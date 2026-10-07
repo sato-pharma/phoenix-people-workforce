@@ -868,13 +868,26 @@ function runReportRuleTests() {
     { hr_id: "T-3", role_on_visit: "manager", visit_date: "2026-10-04", seat_id: "R1", rep_hr_id: "T-101", double_visits: 1, chain_visits: 0, am_visits: 0, pm_visits: 1 },
     { hr_id: "T-2", role_on_visit: "senior", visit_date: "2026-10-04", seat_id: "R2", rep_hr_id: "T-102", double_visits: 0, chain_visits: 1, am_visits: 1, pm_visits: 0 },
     { hr_id: null, role_on_visit: "manager", visit_date: "2026-10-04", seat_id: "R1", rep_hr_id: "T-101", double_visits: 5 },
+    // The line's PRODUCT manager, in his own column (owner, 2026-10-07): the rep ticked ONE person
+    // under "Double visit" and it was him, so the row carries `product_manager_visits` and NOT
+    // `double_visits` — the figure district managers are judged on must not move.
+    { hr_id: "T-9", role_on_visit: "product_manager", visit_date: "2026-10-06", seat_id: "R1", rep_hr_id: "T-101", double_visits: 0, chain_visits: 0, product_manager_visits: 3, am_visits: 1, pm_visits: 2 },
+    { hr_id: "T-9", role_on_visit: "product_manager", visit_date: "2026-10-06", seat_id: "R2", rep_hr_id: "T-103", double_visits: 0, chain_visits: 2, product_manager_visits: 0, am_visits: 0, pm_visits: 2 },
   ]);
-  assert.deepEqual([...managers.keys()], ["T-3", "T-2"]);
+  assert.deepEqual([...managers.keys()], ["T-3", "T-2", "T-9"]);
   const district = managers.get("T-3");
   assert.ok(district);
   assert.deepEqual(district.entries.map((entry) => `${entry.date} ${entry.seatId}`), ["2026-10-04 R1", "2026-10-04 R2", "2026-10-05 R1"]);
-  assert.deepEqual(district.summary, { doubleVisits: 2, chainVisits: 1, seniorChainVisits: 0, amVisits: 1, pmVisits: 2, daysOut: 2, reps: 2 });
-  assert.deepEqual(managers.get("T-2")?.summary, { doubleVisits: 0, chainVisits: 0, seniorChainVisits: 1, amVisits: 1, pmVisits: 0, daysOut: 1, reps: 1 }, "a senior manager's chain visits are counted apart from the manager's");
+  assert.deepEqual(district.summary, { doubleVisits: 2, chainVisits: 1, seniorChainVisits: 0, productManagerVisits: 0, productManagerChainVisits: 0, amVisits: 1, pmVisits: 2, daysOut: 2, reps: 2 });
+  assert.deepEqual(managers.get("T-2")?.summary, { doubleVisits: 0, chainVisits: 0, seniorChainVisits: 1, productManagerVisits: 0, productManagerChainVisits: 0, amVisits: 1, pmVisits: 0, daysOut: 1, reps: 1 }, "a senior manager's chain visits are counted apart from the manager's");
+  const productManager = managers.get("T-9");
+  assert.ok(productManager, "a product manager the rep ticked is a row of his own — before 2026-10-07 he was in no row at all");
+  assert.deepEqual(
+    productManager.summary,
+    { doubleVisits: 0, chainVisits: 0, seniorChainVisits: 0, productManagerVisits: 3, productManagerChainVisits: 2, amVisits: 1, pmVisits: 4, daysOut: 1, reps: 2 },
+    "a product manager's visits are counted apart: never in doubleVisits, and never read as a senior manager's chain",
+  );
+  assert.deepEqual(productManager.entries.map((entry) => entry.roleOnVisit), ["product_manager", "product_manager"]);
 }
 
 function seat(seatId: string, tier: string, occupantHrId: string | null, path: string[], areaName: string | null = null): OrgSeat {
