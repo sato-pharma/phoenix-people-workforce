@@ -29,6 +29,15 @@ const REFUSALS: Record<string, Refusal> = {
     message: "A customer with this name is already on the list. If this is a different person, confirm it and save again.",
   },
   customer_not_found: { status: 404, message: "This customer is not on the territory's list. Reload the list." },
+  // The trigger that refuses a LATE reference id (public.phoenix_crm_customers_no_late_reference).
+  // It existed only in production until its migration was written, so this table had never seen the
+  // code and the refusal reached the screen as the generic "could not be saved". The person who
+  // meets it is doing an identity correction, and merging the two records is the way out.
+  customer_already_has_own_contact_id: {
+    status: 409,
+    message:
+      "This customer already has an own id that every report outside Phoenix CRM counts, so a reference id cannot be set now — it would restate months that have already been read. Merge the two records instead.",
+  },
   // The database's own check on the phone (owner, 2026-09-30), in the same words the form uses.
   bad_phone: { status: 400, message: CUSTOMER_PHONE_ERROR },
   customer_dropped: { status: 409, message: "This customer has left the list." },
