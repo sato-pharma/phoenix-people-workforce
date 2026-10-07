@@ -116,7 +116,12 @@ import {
   autoloadFootprintLines,
   memoryIndexBudgetLines,
 } from "./memory-index-budget.mjs";
-import { classifyMemoryReachabilityAcrossRefs, memoryReachabilityLines, readModuleMemoryText } from "./memory-index-reachability.mjs";
+import {
+  classifyMemoryReachabilityAcrossRefs,
+  memoryReachabilityLines,
+  readModuleMemoryText,
+  readReachabilityTextAtRef,
+} from "./memory-index-reachability.mjs";
 import { cloudMirrorDrift, cloudMirrorDriftReport } from "./cloud-mirror-drift.mjs";
 import { readCloudMirror } from "./cloud-mirror-source.mjs";
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
@@ -1346,7 +1351,17 @@ let autoloadedIndexBytes = null;
     // BOTH. This does not touch 2.2's opposite (trimming) rule: that one governs REMOVING a line
     // from the checkout you trim FROM, which must still key on what THAT checkout holds, never on
     // what shipped elsewhere.
-    const originAgentsText = git(["show", "origin/main:AGENTS.md"], { cwd: primaryRoot }) ?? "";
+    //
+    // 🔴 AND THE RESCUE COVERS MODULE MEMORY TOO — added 2026-10-08, because until then it covered
+    // AGENTS.md ALONE while module memory had become the PRESCRIBED home for a note (§2.2, since
+    // 2026-10-02). Measured that morning on the primary at `31d89debe`, 17 commits behind: the five
+    // notes the fold filed in #5455 the night before all read ORPHAN, every one of them backticked
+    // in a `.claude/rules/*.md` on origin/main — and the advice line below then told the next
+    // session to give each an index line, which §2.2 forbids in as many words. The fold runs three
+    // times a day, so on a lagging checkout that list GROWS. Same both-refs rule, same ref, same
+    // fail-closed degradation: an unreadable ref or a shallow clone yields "" and every memory
+    // falls back to the local-only answer.
+    const originAgentsText = readReachabilityTextAtRef(primaryRoot, "origin/main");
 
     const { relocated, orphans, rescuedByOrigin: rescuedByOriginList } = classifyMemoryReachabilityAcrossRefs({
       files: memoryFiles,
@@ -1387,10 +1402,13 @@ let autoloadedIndexBytes = null;
       console.log(
         "  " +
           rescuedByOrigin.size +
-          " file(s) read as ORPHAN against this checkout's AGENTS.md but are named on origin/main's —",
+          " file(s) read as ORPHAN against this checkout but are named on origin/main — in its",
       );
       console.log(
-        "  the checkout is behind, not the memory. Pull before giving any of these an index line:",
+        "  AGENTS.md or in one of its .claude/rules/*.md module files. The checkout is behind, not",
+      );
+      console.log(
+        "  the memory. Pull; do NOT give any of these an index line (AGENTS.md 2.2):",
       );
       console.log("  " + [...rescuedByOrigin].map((f) => f.replace(/\.md$/, "")).sort().join(", "));
     }
@@ -1410,8 +1428,8 @@ let autoloadedIndexBytes = null;
     if (deep) {
       for (const f of relocated) {
         const note = rescuedByOrigin.has(f)
-          ? "  (named on origin/main's AGENTS.md, not yet this checkout's — pull to see it locally)"
-          : "  (named in AGENTS.md — reachable, not an orphan)";
+          ? "  (named on origin/main, not yet this checkout — pull to see it locally)"
+          : "  (named in AGENTS.md or its module memory — reachable, not an orphan)";
         console.log("  AGENTS  " + f + note);
       }
     }
