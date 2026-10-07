@@ -153,6 +153,15 @@ export function runErrorMonitorThirdPartyAttributionTests() {
   // fix applied to a plausible cause and the owner removed it three days later (#3670) because it
   // cost every Arabic-speaking reader the translate offer and silenced nothing measurable. #3629's
   // probe is the precedent: make the next occurrence SAY what did it.
+  //
+  // 🔴 2026-10-07, what the probe then SAID. #412 decodes to React's "Connection closed." — a
+  // client-side RSC stream aborted mid-flight (navigate-away / backgrounded tab / flaky mobile
+  // network), the client-side sibling of the server's "destination stream closed early", not a
+  // hydration mismatch at all. And the `foreignAttrs=` it was reporting was NOT an unnamed
+  // extension: 175 of 175 probe rows in a 30-day production window carried the app's OWN
+  // `data-route-transition-ready` (RouteTransitionProvider's mount effect), because it was missing
+  // from the allow-list. The whole channel was noise. Those two app attributes are now allow-listed,
+  // asserted below, so a genuine extension is no longer buried under them.
   assert.deepEqual(
     describeDomRewriters({ ...clean, htmlAttributeNames: ["lang", "class", "style", "data-darkreader-mode", "data-darkreader-scheme"] }),
     ["dark-reader"],
@@ -202,4 +211,25 @@ export function runErrorMonitorThirdPartyAttributionTests() {
   assert.deepEqual(describeDomRewriters({ ...clean, htmlAttributeNames: [" LANG ", "Class", "STYLE"] }), []);
   // An absent <body> mid-stream reports nothing rather than throwing.
   assert.deepEqual(describeDomRewriters({ ...clean, bodyAttributeNames: [] }), []);
+
+  // 🔴 The app's OWN route-transition attributes on <html>, set by RouteTransitionProvider's effect
+  // on essentially every page. Absent from the server markup, so before they were allow-listed they
+  // stamped `foreignAttrs=data-route-transition-ready` on 175 of 175 probe rows in a 30-day
+  // production window — the whole channel was noise. They must read as app-own.
+  assert.deepEqual(
+    describeDomRewriters({
+      ...clean,
+      htmlAttributeNames: ["lang", "class", "style", "data-route-transition-ready", "data-route-transition-pending"],
+    }),
+    [],
+  );
+  // But a REAL extension sitting alongside them is still named — the allow-list must not swallow the
+  // signal it was built to carry.
+  assert.deepEqual(
+    describeDomRewriters({
+      ...clean,
+      htmlAttributeNames: ["lang", "class", "data-route-transition-ready", "data-darkreader-mode"],
+    }),
+    ["dark-reader"],
+  );
 }

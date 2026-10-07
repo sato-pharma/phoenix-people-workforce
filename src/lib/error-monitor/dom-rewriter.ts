@@ -67,8 +67,22 @@ export type DomRewriterProbe = {
  * `body.style.overflow`. Without it every error row from a page with an open modal would accuse an
  * extension that was never there — and a probe that cries wolf is one the next session stops
  * believing, which is the whole failure mode this file was written to avoid.
+ *
+ * `data-route-transition-ready` and `data-route-transition-pending` are the same story on `<html>`:
+ * RouteTransitionProvider (src/components/layout/route-transition-provider.tsx) sets the first in a
+ * mount effect and toggles the second on every navigation. Neither is in the server markup, and the
+ * effect runs on essentially every page, so before they were allow-listed the false positive
+ * stamped `foreignAttrs=data-route-transition-ready` on 175 of 175 probe rows in a 30-day
+ * production window (measured 2026-10-07) — the whole `foreignAttrs=` channel was noise, burying any
+ * real extension. They are the app's own, so they belong here beside `style`.
  */
-const APP_HTML_ATTRIBUTES = new Set(["lang", "class", "style"]);
+const APP_HTML_ATTRIBUTES = new Set([
+  "lang",
+  "class",
+  "style",
+  "data-route-transition-ready",
+  "data-route-transition-pending",
+]);
 const APP_BODY_ATTRIBUTES = new Set(["class", "style"]);
 
 /** Attribute-name prefixes and exact names whose owner is known, so the marker can NAME it. */
