@@ -259,10 +259,13 @@ function VerticalStepper({
   steps,
   step,
   onJump,
+  canJump,
 }: {
   steps: FormWizardStep[];
   step: number;
   onJump: (target: number) => void;
+  /** Which steps the rail may open. Default: the ones already answered. */
+  canJump?: (target: number) => boolean;
 }) {
   return (
     <ol className="relative">
@@ -270,7 +273,7 @@ function VerticalStepper({
         const num = i + 1;
         const active = num === step;
         const done = num < step;
-        const clickable = num < step;
+        const clickable = canJump ? num !== step && canJump(num) : num < step;
         const last = i === steps.length - 1;
         return (
           <li key={s.label} className="relative">
@@ -326,18 +329,35 @@ function VerticalStepper({
   );
 }
 
-function MobileStepper({ steps, step }: { steps: FormWizardStep[]; step: number }) {
+function MobileStepper({
+  steps,
+  step,
+  onJump,
+  canJump,
+}: {
+  steps: FormWizardStep[];
+  step: number;
+  onJump: (target: number) => void;
+  canJump?: (target: number) => boolean;
+}) {
   return (
     <div className="flex items-center lg:hidden">
       {steps.map((s, i) => {
         const num = i + 1;
         const active = num === step;
         const done = num < step;
+        const clickable = canJump ? num !== step && canJump(num) : num < step;
         return (
           <div key={s.label} className={["flex items-center", i < steps.length - 1 ? "flex-1" : ""].join(" ")}>
-            <span
+            <button
+              type="button"
+              aria-label={`Step ${num}: ${s.label}`}
+              aria-current={active ? "step" : undefined}
+              disabled={!clickable}
+              onClick={() => clickable && onJump(num)}
               className={[
                 "flex h-7 w-7 shrink-0 items-center justify-center text-phx-2xs font-black",
+                clickable ? "cursor-pointer" : "cursor-default",
                 active
                   ? "bg-orange-600 text-white"
                   : done
@@ -346,7 +366,7 @@ function MobileStepper({ steps, step }: { steps: FormWizardStep[]; step: number 
               ].join(" ")}
             >
               {done ? <Check className="h-3.5 w-3.5" /> : num}
-            </span>
+            </button>
             {i < steps.length - 1 && (
               <span className={["mx-1.5 h-px flex-1", done ? "bg-orange-400" : "bg-slate-200"].join(" ")} />
             )}
@@ -407,6 +427,11 @@ export function FormWizard({
   onNext,
   onSubmit,
   header = "panel",
+  panel = true,
+  canJump,
+  footer,
+  bleed = false,
+  footnoteIcon = true,
   className,
   children,
 }: {
@@ -424,24 +449,43 @@ export function FormWizard({
   submitLabel?: string;
   nextLabel?: string;
   backLabel?: string;
-  /** Called on Next — validate there and return false to stay on this step. */
-  onNext: () => boolean | void;
-  onSubmit: () => void;
+  /** Called on Next — validate there and return false to stay on this step. Unused when `footer` is given. */
+  onNext?: () => boolean | void;
+  onSubmit?: () => void;
   /**
    * `panel` paints the titled header (admin shell). `strip` paints only the
    * progress strip, for a page whose shell already prints the title — a second
    * dark header on one page is a defect the owner has had removed twice.
    */
   header?: "panel" | "strip";
+  /**
+   * `strip` draws the kit's own card around the form. False when the page already
+   * draws one — Phoenix CRM's panels do, and two cards on one screen is the defect
+   * the owner has had removed twice.
+   */
+  panel?: boolean;
+  /**
+   * Which steps the rail and the phone's stepper may open. The default is the ones
+   * already answered; a form where a tap IS the answer passes its own rule.
+   */
+  canJump?: (target: number) => boolean;
+  /** Replaces Back / Next / Submit, for a form whose steps finish in their own way. */
+  footer?: ReactNode;
+  /** Let the step's own blocks run to the card's edge, as Phoenix CRM's do. */
+  bleed?: boolean;
+  /** The shield beside the rail's footnote. Off for a note that is not a reassurance. */
+  footnoteIcon?: boolean;
   className?: string;
   children: ReactNode;
 }) {
   const total = steps.length;
   const pct = Math.round((step / total) * 100);
   const current = steps[step - 1];
+  const next = onNext ?? (() => true);
+  const submit = onSubmit ?? (() => {});
 
   return (
-    <div className={cn(header === "panel" ? "overflow-hidden" : phxFormPanelClassName, className)}>
+    <div className={cn(header === "panel" ? "overflow-hidden" : panel ? phxFormPanelClassName : "min-w-0", className)}>
       {header === "panel" ? (
         <div className="border-b border-phx-line bg-[#FCFDFE] px-5 py-4 sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -479,27 +523,21 @@ export function FormWizard({
       <div className="grid grid-cols-1 lg:grid-cols-[244px_minmax(0,1fr)]">
         <aside className="hidden border-r border-slate-200 bg-slate-50/60 lg:flex lg:flex-col">
           <nav className="p-3" aria-label="Form steps">
-            <VerticalStepper
-              steps={steps}
-              step={step}
-              onJump={(target) => {
-                if (target < step) onStepChange(target);
-              }}
-            />
+            <VerticalStepper steps={steps} step={step} canJump={canJump} onJump={onStepChange} />
           </nav>
           {footnote !== undefined && (
             <div className="mt-auto border-t border-slate-200 p-4">
               <div className="flex items-start gap-2.5">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+                {footnoteIcon && <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />}
                 <p className="text-xs leading-relaxed text-slate-500">{footnote}</p>
               </div>
             </div>
           )}
         </aside>
 
-        <div className="p-4 sm:p-6">
+        <div className="min-w-0 p-4 sm:p-6">
           <div className="mb-5 lg:hidden">
-            <MobileStepper steps={steps} step={step} />
+            <MobileStepper steps={steps} step={step} canJump={canJump} onJump={onStepChange} />
           </div>
 
           <FormStepHeading
@@ -508,10 +546,11 @@ export function FormWizard({
             ordinal={step}
           />
 
-          {children}
+          {bleed ? <div className="-mx-4 min-w-0 sm:-mx-5">{children}</div> : children}
 
           {error ? <FormError className="mt-5">{error}</FormError> : null}
 
+          {footer ?? (
           <FormActions
             left={
               <button
@@ -530,7 +569,7 @@ export function FormWizard({
                   type="button"
                   className={phxButtonPrimaryClassName}
                   onClick={() => {
-                    if (onNext() !== false) onStepChange(step + 1);
+                    if (next() !== false) onStepChange(step + 1);
                   }}
                 >
                   {nextLabel}
@@ -540,7 +579,7 @@ export function FormWizard({
                 <button
                   type="button"
                   className={phxButtonAccentClassName}
-                  onClick={onSubmit}
+                  onClick={submit}
                   disabled={submitting}
                 >
                   {submitting ? "Submitting…" : submitLabel}
@@ -548,6 +587,7 @@ export function FormWizard({
               )
             }
           />
+          )}
         </div>
       </div>
     </div>

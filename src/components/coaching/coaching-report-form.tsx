@@ -21,7 +21,6 @@ import {
   adminPanelClassName,
   adminSoftPanelClassName,
 } from "@/components/admin/admin-design-system";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   coachingMaxScore,
@@ -38,8 +37,11 @@ import type {
   CoachingScoreInput,
 } from "@/lib/coaching/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { FormActions, FormField } from "@/components/ui/form-kit";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  phxButtonAccentClassName,
+  phxButtonGhostClassName,
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
@@ -171,20 +173,19 @@ async function parseApiResponse<T>(response: Response): Promise<T> {
   return payload.data;
 }
 
-function FieldLabel({
-  children,
-  required,
-}: {
-  children: React.ReactNode;
-  required?: boolean;
-}) {
-  return (
-    <span className="mb-2 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
-      {children}
-      {required ? <span className="ml-1 text-phx-accent">*</span> : null}
-    </span>
-  );
-}
+/**
+ * 🔒 THE ONE FORM DESIGN (owner, 2026-10-06), and deliberately NOT the step wizard.
+ *
+ * Every label, hint and button below comes from `form-kit.tsx` / `form-tokens.ts`. Until
+ * 2026-10-07 this file declared a `FieldLabel` of its own — same idea as the kit's, a different
+ * weight and tracking — so the Adverse Drug Reaction form and the coaching report read as two
+ * systems on the same screen size.
+ *
+ * It stays ONE scroll rather than becoming a `FormWizard`: the live score panel on the right
+ * recomputes from all 20 ratings at once, and a coach moves back and forth between parameters
+ * while watching it. Stepping the parameters would hide the thing the form is scored against,
+ * which is a redesign of a working flow, not the design rule being applied.
+ */
 
 function DetailPill({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -379,7 +380,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
           <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
             <div className={`${adminSoftPanelClassName} p-4`}>
               <div className="mb-4 flex items-center gap-3">
-                <div className="rounded-md bg-phx-accent-soft p-3 text-phx-accent">
+                <div className="bg-phx-accent-soft p-3 text-phx-accent">
                   <UserRound className="h-5 w-5" />
                 </div>
                 <div>
@@ -394,8 +395,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
             </div>
 
             <div className={`${adminSoftPanelClassName} p-4`}>
-              <label className="block">
-                <FieldLabel required>Medical Rep</FieldLabel>
+              <FormField label="Medical Rep" required>
                 <SearchableSelect
                   className="w-full px-3"
                   onChange={(event) => setSelectedHrId(event.target.value)}
@@ -408,7 +408,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                     </option>
                   ))}
                 </SearchableSelect>
-              </label>
+              </FormField>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <DetailPill label="HR ID" value={selectedEmployee?.hrId} />
                 <DetailPill label="Job Title" value={selectedEmployee?.jobTitle} />
@@ -420,8 +420,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               </div>
             </div>
 
-            <label className="block lg:col-span-2">
-              <FieldLabel required>Coaching Date</FieldLabel>
+            <FormField className="lg:col-span-2" label="Coaching Date" required>
               <div className="relative">
                 <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                 <input
@@ -432,7 +431,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                   value={coachingDate}
                 />
               </div>
-            </label>
+            </FormField>
           </div>
         </Card>
 
@@ -444,7 +443,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
           <div className="border-b border-phx-line bg-phx-paper px-4 py-3 sm:px-5">
             <div className="grid gap-2 md:grid-cols-6">
               {ratingMeanings.map((meaning) => (
-                <div className="rounded-md border border-phx-line bg-white px-3 py-2" key={meaning.value}>
+                <div className="border border-phx-line bg-white px-3 py-2" key={meaning.value}>
                   <p className="text-xs font-black text-phx-ink">{meaning.value}</p>
                   <p className="mt-0.5 text-phx-xs font-semibold leading-4 text-phx-ink-soft">{meaning.label}</p>
                 </div>
@@ -461,7 +460,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                     </p>
                     <h3 className="mt-1 text-base font-black tracking-[-0.02em] text-phx-ink">{group.label}</h3>
                   </div>
-                  <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-1 text-xs font-bold text-phx-ink-soft">
+                  <span className="border border-phx-line bg-phx-paper px-3 py-1 text-xs font-bold text-phx-ink-soft">
                     {group.items.length} scoring items
                   </span>
                 </div>
@@ -481,7 +480,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                             return (
                               <button
                                 className={cn(
-                                  "h-10 w-full rounded-xl border text-sm font-black transition lg:w-10",
+                                  "h-10 w-full border text-sm font-black transition lg:w-10",
                                   selected
                                     ? "border-phx-accent bg-phx-accent text-white shadow-[0_10px_20px_rgba(249,115,22,0.22)]"
                                     : "border-phx-line bg-white text-phx-ink-2 hover:border-phx-accent-line hover:bg-phx-accent-soft",
@@ -497,28 +496,22 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                         </div>
                       </div>
                       <div className="grid gap-3 lg:grid-cols-2">
-                        <label className="block">
-                          <span className="mb-1.5 block text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-                            Area to be Improved
-                          </span>
+                        <FormField label="Area to be Improved">
                           <textarea
                             className={cn(phxTextareaClassName, "min-h-20 leading-5")}
                             onChange={(event) => updateScoreNote(item.key, "areaToBeImproved", event.target.value)}
                             placeholder="What should be improved for this point?"
                             value={scoreNotes[item.key]?.areaToBeImproved ?? ""}
                           />
-                        </label>
-                        <label className="block">
-                          <span className="mb-1.5 block text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-                            Strength Point
-                          </span>
+                        </FormField>
+                        <FormField label="Strength Point">
                           <textarea
                             className={cn(phxTextareaClassName, "min-h-20 leading-5")}
                             onChange={(event) => updateScoreNote(item.key, "strengthPoint", event.target.value)}
                             placeholder="What was strong in this point?"
                             value={scoreNotes[item.key]?.strengthPoint ?? ""}
                           />
-                        </label>
+                        </FormField>
                       </div>
                     </div>
                   ))}
@@ -539,15 +532,14 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               ["Overall Strength Points", strengthPoints, setStrengthPoints],
               ["General Remarks", generalRemarks, setGeneralRemarks],
             ].map(([label, value, setValue]) => (
-              <label className="block" key={label as string}>
-                <FieldLabel required>{label as string}</FieldLabel>
+              <FormField key={label as string} label={label as string} required>
                 <textarea
                   className={cn(phxTextareaClassName, "min-h-28 leading-6")}
                   onChange={(event) => (setValue as React.Dispatch<React.SetStateAction<string>>)(event.target.value)}
                   placeholder={`Write ${String(label).toLowerCase()}...`}
                   value={value as string}
                 />
-              </label>
+              </FormField>
             ))}
           </div>
         </Card>
@@ -557,7 +549,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
         <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
           <div className="border-b border-phx-line bg-phx-ink px-5 py-5 text-white">
             <div className="flex items-center gap-3">
-              <div className="rounded-md bg-white/10 p-3 text-phx-accent">
+              <div className="bg-white/10 p-3 text-phx-accent">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>
@@ -578,9 +570,9 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                 <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Completion</p>
                 <p className="text-xs font-black text-phx-ink">{Math.round((completedScores / coachingScoreItems.length) * 100)}%</p>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-phx-line">
+              <div className="h-2 overflow-hidden bg-phx-line">
                 <div
-                  className="h-full rounded-full bg-phx-accent transition-all"
+                  className="h-full bg-phx-accent transition-all"
                   style={{ width: `${(completedScores / coachingScoreItems.length) * 100}%` }}
                 />
               </div>
@@ -596,7 +588,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                   </div>
                 </div>
 
-                <div className={cn("rounded-md border px-4 py-3 text-sm font-black", zoneClassNames[liveScore.performanceZone])}>
+                <div className={cn("border px-4 py-3 text-sm font-black", zoneClassNames[liveScore.performanceZone])}>
                   {coachingPerformanceZoneDisplayLabels[liveScore.performanceZone]}
                 </div>
 
@@ -622,7 +614,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                 </div>
               </>
             ) : (
-              <div className="rounded-md border border-dashed border-phx-line-strong bg-phx-paper p-4 text-sm font-semibold leading-6 text-phx-ink-soft">
+              <div className="border border-dashed border-phx-line-strong bg-phx-paper p-4 text-sm font-semibold leading-6 text-phx-ink-soft">
                 Complete all 20 ratings to calculate the final score, zone, strongest parameter, and key development area.
               </div>
             )}
@@ -630,7 +622,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
             {message ? (
               <div
                 className={cn(
-                  "flex items-start gap-3 rounded-md border px-4 py-3 text-sm font-semibold leading-6",
+                  "flex items-start gap-3 border px-4 py-3 text-sm font-semibold leading-6",
                   message.tone === "success"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                     : "border-rose-200 bg-rose-50 text-rose-800",
@@ -649,27 +641,23 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               </div>
             ) : null}
 
-            <div className="grid gap-2">
-              <Button
-                className="h-12 gap-2 rounded-md bg-white text-phx-ink ring-1 ring-phx-line hover:bg-phx-paper"
-                disabled={isBusy}
-                onClick={handleSaveDraft}
-                variant="secondary"
-              >
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Save Draft
-              </Button>
-              <Button
-                className="h-12 gap-2 rounded-md bg-phx-accent font-black shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-phx-accent-hover"
-                disabled={isBusy}
-                onClick={handleSubmitReport}
-              >
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Submit Report
-              </Button>
-            </div>
+            <FormActions
+              className="flex-wrap"
+              left={
+                <button className={phxButtonGhostClassName} disabled={isBusy} onClick={handleSaveDraft} type="button">
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save Draft
+                </button>
+              }
+              right={
+                <button className={phxButtonAccentClassName} disabled={isBusy} onClick={handleSubmitReport} type="button">
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Submit Report
+                </button>
+              }
+            />
 
-            <div className="flex items-start gap-3 rounded-md border border-phx-line bg-phx-paper p-4 text-xs font-semibold leading-5 text-phx-ink-soft">
+            <div className="flex items-start gap-3 border border-phx-line bg-phx-paper p-4 text-xs font-semibold leading-5 text-phx-ink-soft">
               <ClipboardCheck className="mt-0.5 h-4 w-4 text-phx-accent" />
               <p>No notification or employee acknowledgment UI is triggered from this screen yet.</p>
             </div>

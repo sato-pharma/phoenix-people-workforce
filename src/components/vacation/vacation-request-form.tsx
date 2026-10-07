@@ -22,7 +22,6 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -47,7 +46,11 @@ import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES } from "@/lib/vacation/types
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonAccentClassName,
+  phxLabelTextClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -357,16 +360,16 @@ function stepMonth(month: number, year: number, delta: number) {
 
 function HolidayTableSkeleton() {
   return (
-    <div className="animate-pulse rounded-sm border border-slate-200 bg-white">
+    <div className="animate-pulse border border-slate-200 bg-white">
       <div className="flex gap-4 border-b border-slate-100 bg-slate-50 px-3 py-2.5">
         {[80, 56, 56, 44].map((w, i) => (
-          <div key={i} className="h-2.5 rounded-sm bg-slate-200" style={{ width: `${w}px` }} />
+          <div key={i} className="h-2.5 bg-slate-200" style={{ width: `${w}px` }} />
         ))}
       </div>
       {[0, 1, 2].map((r) => (
         <div key={r} className="flex gap-4 border-b border-slate-50 px-3 py-3">
           {[120, 64, 64, 44].map((w, c) => (
-            <div key={c} className="h-3 rounded-sm bg-slate-100" style={{ width: `${w}px` }} />
+            <div key={c} className="h-3 bg-slate-100" style={{ width: `${w}px` }} />
           ))}
         </div>
       ))}
@@ -409,7 +412,7 @@ function BalanceUsageBar({
         </span>
         <span>of {formatDays(balance.entitlementDays)}</span>
       </div>
-      <div className="flex h-2 w-full overflow-hidden rounded-sm bg-slate-100">
+      <div className="flex h-2 w-full overflow-hidden bg-slate-100">
         <div
           className={cn("h-full bg-gradient-to-r transition-all duration-500", barColor)}
           style={{ width: `${usedPct}%` }}
@@ -452,7 +455,7 @@ function VacationBalanceCard({
         : "Available based on current approved paid vacations.";
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+    <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
@@ -462,7 +465,7 @@ function VacationBalanceCard({
             {headlineValue}
           </p>
         </div>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-orange-50 text-orange-500">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-orange-50 text-orange-500">
           <CalendarDays className="h-4 w-4" />
         </div>
       </div>
@@ -500,7 +503,7 @@ function VacationSummaryPerson({
   name: string;
 }) {
   return (
-    <div className="rounded-sm border border-slate-100 bg-slate-50/50 px-3 py-3">
+    <div className="border border-slate-100 bg-slate-50/50 px-3 py-3">
       <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
         {label}
       </p>
@@ -678,11 +681,11 @@ function VacationDatePicker({
 
   return (
     <div className="relative space-y-1.5">
-      <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+      <span className={phxLabelTextClassName}>{label}</span>
       <button
         ref={triggerRef}
         className={cn(
-          "flex h-10 w-full items-center justify-between rounded-sm border border-slate-200 bg-white px-3 text-left text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100",
+          "flex h-10 w-full items-center justify-between border border-slate-200 bg-white px-3 text-left text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100",
           disabled ? "cursor-not-allowed opacity-55" : "hover:border-orange-200",
         )}
         disabled={disabled}
@@ -701,7 +704,7 @@ function VacationDatePicker({
         <div
           ref={dropdownRef}
           className={cn(
-            "absolute z-30 mt-1 w-full min-w-[300px] rounded-sm border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+            "absolute z-30 mt-1 w-full min-w-[300px] border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
             picker === "end" ? "right-0" : "left-0",
           )}
         >
@@ -762,7 +765,7 @@ function VacationDatePicker({
               return (
                 <button
                   className={cn(
-                    "h-8 rounded-sm text-phx-md font-bold transition",
+                    "h-8 text-phx-md font-bold transition",
                     selected ? "bg-orange-500 text-white" : "",
                     !selected && focused ? "ring-2 ring-orange-300" : "",
                     !selected && friday ? "bg-rose-50 text-rose-500" : "",
@@ -904,7 +907,7 @@ function VacationPolicyPanel() {
   } as const;
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+    <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -922,22 +925,22 @@ function VacationPolicyPanel() {
         <div className="grid gap-2">
           {applicationPolicyItems.map((item, index) => (
             <div
-              className="rounded-sm border border-slate-200 bg-white px-3 py-3"
+              className="border border-slate-200 bg-white px-3 py-3"
               key={item.title}
             >
               <div className="flex items-start gap-2.5">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-orange-50 text-phx-xs font-bold text-orange-700">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center bg-orange-50 text-phx-xs font-bold text-orange-700">
                   {index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
                   <h4 className="text-phx-md font-bold text-slate-900">{item.title}</h4>
                   <p className="mt-1 text-phx-sm font-medium leading-5 text-slate-700">{item.rule}</p>
                   <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
-                    <div className="rounded-sm border border-slate-100 bg-slate-50 px-2.5 py-2">
+                    <div className="border border-slate-100 bg-slate-50 px-2.5 py-2">
                       <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">Situation</p>
                       <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-600">{item.situation}</p>
                     </div>
-                    <div className={cn("rounded-sm border px-2.5 py-2", toneClasses[item.tone].card)}>
+                    <div className={cn("border px-2.5 py-2", toneClasses[item.tone].card)}>
                       <p className={cn("text-phx-2xs font-bold uppercase tracking-[0.10em]", toneClasses[item.tone].label)}>Example</p>
                       <p className={cn("mt-0.5 text-phx-xs font-medium leading-4", toneClasses[item.tone].text)}>{item.example}</p>
                     </div>
@@ -1014,7 +1017,7 @@ function NationalEgyptianVacationPanel() {
   }
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+    <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Google Calendar Connection</p>
@@ -1029,9 +1032,9 @@ function NationalEgyptianVacationPanel() {
       </div>
 
       {/* ── Smart period filter ─────────────────────────────────────── */}
-      <div className="mt-4 flex flex-wrap items-center gap-1.5 rounded-sm border border-slate-200 bg-slate-50 p-1.5">
+      <div className="mt-4 flex flex-wrap items-center gap-1.5 border border-slate-200 bg-slate-50 p-1.5">
         <button
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-500 transition hover:bg-orange-50 hover:text-orange-600"
+          className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:bg-orange-50 hover:text-orange-600"
           onClick={goPrev}
           title="Previous month"
           type="button"
@@ -1064,7 +1067,7 @@ function NationalEgyptianVacationPanel() {
         </SearchableSelect>
 
         <button
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-500 transition hover:bg-orange-50 hover:text-orange-600"
+          className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:bg-orange-50 hover:text-orange-600"
           onClick={goNext}
           title="Next month"
           type="button"
@@ -1094,7 +1097,7 @@ function NationalEgyptianVacationPanel() {
         ) : data && !data.connected ? null : data?.holidays.length ? (
           <>
             {/* Desktop table (xs+) */}
-            <div className="hidden md:block overflow-hidden rounded-sm border border-slate-200 bg-white">
+            <div className="hidden md:block overflow-hidden border border-slate-200 bg-white">
               <table className="w-full border-collapse text-left text-phx-sm">
                 <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                   <tr>
@@ -1133,7 +1136,7 @@ function NationalEgyptianVacationPanel() {
             {/* Mobile card view (< xs) */}
             <div className="block md:hidden space-y-2">
               {data.holidays.map((holiday) => (
-                <div key={holiday.id} className="rounded-sm border border-slate-200 bg-white p-3">
+                <div key={holiday.id} className="border border-slate-200 bg-white p-3">
                   <p className="text-phx-md font-bold text-slate-900">{holiday.name}</p>
                   {holiday.description ? (
                     <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-500">{holiday.description}</p>
@@ -1159,7 +1162,7 @@ function NationalEgyptianVacationPanel() {
             </div>
           </>
         ) : (
-          <div className="rounded-sm border border-slate-200 bg-white px-3 py-4 text-phx-md font-medium text-slate-600">
+          <div className="border border-slate-200 bg-white px-3 py-4 text-phx-md font-medium text-slate-600">
             No official Egyptian national vacations found for {monthLabel(month, year)} in Google Calendar.
           </div>
         )}
@@ -1557,7 +1560,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
         {/* ── Offline banner (#2) ────────────────────────────────── */}
         {!isOnline ? (
-          <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-md font-bold text-amber-800">
+          <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-md font-bold text-amber-800">
             <WifiOff className="h-4 w-4 shrink-0 text-amber-600" />
             <span>
               You are offline. Annual, emergency, and other requests are saved in this browser and sent automatically when you reconnect. Evidence requests require online upload.
@@ -1568,7 +1571,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
         {/* ── Optimistic success animation (#3) ──────────────────── */}
         {submitSuccess ? (
-          <div className="flex items-center gap-2.5 rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-phx-md font-bold text-emerald-800 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2.5 border border-emerald-200 bg-emerald-50 px-4 py-3 text-phx-md font-bold text-emerald-800 animate-in fade-in duration-300">
             <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
             <span>{isOnline ? "Request submitted successfully. Redirecting..." : "Request queued in this browser. It will retry when you are back online."}</span>
           </div>
@@ -1579,7 +1582,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
             content column is ~351px, so the old `overflow-x-auto` strip scrolled sideways — the
             pattern the fits-the-screen rule names. Each label now wraps inside its own third. */}
         <div
-          className="grid w-full grid-cols-3 gap-0.5 rounded-sm border border-slate-200 bg-slate-50 p-0.5 sm:flex"
+          className="grid w-full grid-cols-3 gap-0.5 border border-slate-200 bg-slate-50 p-0.5 sm:flex"
           role="tablist"
           aria-label="Vacation request page tabs"
         >
@@ -1589,7 +1592,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               <button
                 aria-selected={active}
                 className={cn(
-                  "min-h-9 rounded-sm px-2 py-1 text-center text-phx-md font-bold leading-tight transition sm:shrink-0 sm:whitespace-nowrap sm:px-3",
+                  "min-h-9 px-2 py-1 text-center text-phx-md font-bold leading-tight transition sm:shrink-0 sm:whitespace-nowrap sm:px-3",
                   active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
                 )}
                 key={tab.value}
@@ -1614,7 +1617,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
             <div className="grid gap-2 xl:grid-cols-[280px_1fr]">
               <VacationBalanceCard balance={balance} pendingPaidDays={pendingPaidDays} />
 
-              <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+              <div className="border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
                 <div className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto] md:items-center">
                   <VacationSummaryPerson
                     label="Employee"
@@ -1643,13 +1646,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
             </div>
 
             {/* ── Main form card ──────────────────────────────────── */}
-            <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+            <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
               <div className="grid gap-3 sm:grid-cols-2">
                 {/* Vacation type selector */}
                 <div className="space-y-1.5 sm:col-span-2">
-                  <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Vacation type</span>
+                  <span className={phxLabelTextClassName}>Vacation type</span>
                   <div
-                    className="grid grid-cols-2 gap-1 rounded-sm border border-slate-200 bg-slate-50 p-0.5 sm:grid-cols-4"
+                    className="grid grid-cols-2 gap-1 border border-slate-200 bg-slate-50 p-0.5 sm:grid-cols-4"
                     role="tablist"
                     aria-label="Vacation type"
                   >
@@ -1660,7 +1663,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                           key={option.value}
                           aria-selected={active}
                           className={cn(
-                            "min-h-[36px] rounded-sm px-2 py-1.5 text-phx-sm font-bold transition sm:text-phx-md",
+                            "min-h-[36px] px-2 py-1.5 text-phx-sm font-bold transition sm:text-phx-md",
                             active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
                           )}
                           role="tab"
@@ -1676,7 +1679,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
                 {/* Day part */}
                 <div className="space-y-1.5">
-                  <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Day part</span>
+                  <span className={phxLabelTextClassName}>Day part</span>
                   <ChoiceGroup
                     aria-label="Day part"
                     className="grid-cols-3"
@@ -1713,7 +1716,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 />
 
                 {/* Duration preview */}
-                <div className="rounded-sm border border-orange-100 bg-orange-50/60 px-3 py-3 sm:col-span-2">
+                <div className="border border-orange-100 bg-orange-50/60 px-3 py-3 sm:col-span-2">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-700">Calculated duration</p>
@@ -1732,7 +1735,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                   </div>
                   {durationPreview.error ? <p className="mt-2 text-phx-sm font-semibold text-rose-700">{durationPreview.error}</p> : null}
                   {policyWarnings.length > 0 ? (
-                    <div className="mt-2 rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-amber-800">
+                    <div className="mt-2 border border-amber-200 bg-amber-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-amber-800">
                       {policyWarnings.map((warning) => (
                         <p key={warning}>{warning}</p>
                       ))}
@@ -1744,8 +1747,8 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 {/* Sick document upload — several files, and picking again ADDS to the list */}
                 {isSick ? (
                   <div className="space-y-1.5 sm:col-span-2">
-                    <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Medical documents</span>
-                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed border-sky-200 bg-sky-50/50 px-4 py-4 text-center transition hover:border-sky-300 hover:bg-sky-50">
+                    <span className={phxLabelTextClassName}>Medical documents</span>
+                    <label className="flex cursor-pointer flex-col items-center justify-center border-2 border-dashed border-sky-200 bg-sky-50/50 px-4 py-4 text-center transition hover:border-sky-300 hover:bg-sky-50">
                       <input
                         accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
                         className="sr-only"
@@ -1758,7 +1761,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                           event.target.value = "";
                         }}
                       />
-                      <span className="rounded-sm bg-sky-600 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
+                      <span className="bg-sky-600 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
                         {sickDocuments.length > 0 ? "Add more documents" : "Browse medical documents"}
                       </span>
                       <span className="mt-1.5 text-phx-xs font-medium leading-4 text-slate-600">
@@ -1769,7 +1772,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       <ul className="space-y-1">
                         {sickDocuments.map((file, index) => (
                           <li
-                            className="flex items-start justify-between gap-2 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5"
+                            className="flex items-start justify-between gap-2 border border-slate-200 bg-white px-2.5 py-1.5"
                             key={`${file.name}-${file.size}`}
                           >
                             <span className="flex min-w-0 items-start gap-1.5 text-phx-xs font-semibold leading-4 text-slate-700">
@@ -1780,7 +1783,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                             </span>
                             <button
                               aria-label={`Remove ${file.name}`}
-                              className="shrink-0 rounded-sm border border-slate-200 p-1 text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
+                              className="shrink-0 border border-slate-200 p-1 text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
                               onClick={() => removeSickDocument(index)}
                               type="button"
                             >
@@ -1801,7 +1804,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 {/* Other reason */}
                 {isOther ? (
                   <label className="space-y-1.5 sm:col-span-2">
-                    <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Other vacation explanation</span>
+                    <span className={phxLabelTextClassName}>Other vacation explanation</span>
                     <textarea
                       className={cn(phxTextareaClassName, "min-h-24")}
                       placeholder="Explain what this Other vacation is for. HR will review whether it affects balance, does not affect balance, or will be unpaid."
@@ -1817,7 +1820,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
                 {/* Compensatory evidence */}
                 {isCompensatory ? (
-                  <div className="space-y-3 rounded-sm border border-orange-100 bg-orange-50/40 p-3 sm:col-span-2">
+                  <div className="space-y-3 border border-orange-100 bg-orange-50/40 p-3 sm:col-span-2">
                     <div>
                       <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-700">Compensatory Day evidence</p>
                       <p className="mt-0.5 text-phx-xs font-medium leading-4 text-orange-800">
@@ -1826,7 +1829,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="space-y-1.5">
-                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event name</span>
+                        <span className={phxLabelTextClassName}>Event name</span>
                         <Input
                           placeholder="Conference or event name"
                           required
@@ -1835,7 +1838,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         />
                       </label>
                       <label className="space-y-1.5">
-                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event date</span>
+                        <span className={phxLabelTextClassName}>Event date</span>
                         <Input
                           required
                           type="date"
@@ -1849,7 +1852,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         ) : null}
                       </label>
                       <label className="space-y-1.5 sm:col-span-2">
-                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event location</span>
+                        <span className={phxLabelTextClassName}>Event location</span>
                         <Input
                           placeholder="Venue, city, or territory"
                           required
@@ -1858,7 +1861,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         />
                       </label>
                       <label className="space-y-1.5">
-                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Manager with you 1</span>
+                        <span className={phxLabelTextClassName}>Manager with you 1</span>
                         <Input
                           placeholder="Manager name"
                           required
@@ -1867,7 +1870,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         />
                       </label>
                       <label className="space-y-1.5">
-                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Manager with you 2</span>
+                        <span className={phxLabelTextClassName}>Manager with you 2</span>
                         <Input
                           placeholder="Manager name (optional)"
                           value={compensatoryManager2}
@@ -1875,10 +1878,10 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         />
                       </label>
                       <div className="space-y-1.5 sm:col-span-2">
-                        <label className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500" htmlFor="compensatory-photo">
+                        <label className={phxLabelTextClassName} htmlFor="compensatory-photo">
                           Event photo
                         </label>
-                        <label className="flex cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed border-orange-200 bg-white/60 px-4 py-4 text-center transition hover:border-orange-300 hover:bg-white" htmlFor="compensatory-photo">
+                        <label className="flex cursor-pointer flex-col items-center justify-center border-2 border-dashed border-orange-200 bg-white/60 px-4 py-4 text-center transition hover:border-orange-300 hover:bg-white" htmlFor="compensatory-photo">
                           <input
                             accept="image/jpeg,image/png,image/webp"
                             className="sr-only"
@@ -1887,7 +1890,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                             type="file"
                             onChange={(event) => selectAttachment(event.target.files?.[0] ?? null, "Event photo", setCompensatoryPhoto)}
                           />
-                          <span className="rounded-sm bg-orange-500 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
+                          <span className="bg-orange-500 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
                             Browse event photo
                           </span>
                           <span className="mt-1.5 text-phx-xs font-medium leading-4 text-slate-600">
@@ -1900,7 +1903,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       </div>
                     </div>
                     {compensatoryDateError ? (
-                      <div className="rounded-sm border border-rose-200 bg-rose-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-rose-800">
+                      <div className="border border-rose-200 bg-rose-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-rose-800">
                         {compensatoryDateError}
                       </div>
                     ) : null}
@@ -1908,7 +1911,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 ) : null}
                 {/* Optional employee note */}
                 <label className="space-y-1.5 sm:col-span-2">
-                  <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Note <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></span>
+                  <span className={phxLabelTextClassName}>Note <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></span>
                   <textarea
                     className={cn(phxTextareaClassName, "min-h-16")}
                     maxLength={500}
@@ -1923,13 +1926,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               </div>
 
               {/* Submit area */}
-              <div className="mt-4 flex flex-col gap-2 rounded-sm border border-slate-100 bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-end">
-                <Button
+              <div className="mt-4 flex flex-col gap-2 border border-slate-100 bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-end">
+                <button
                   className={cn(
-                    "gap-2 rounded-sm px-5 py-2.5 font-bold transition-colors",
-                    submitSuccess
-                      ? "bg-emerald-500 hover:bg-emerald-600"
-                      : "bg-orange-500 hover:bg-orange-600",
+                    phxButtonAccentClassName,
+                    // Submitted turns the same button green — the only state the accent token does
+                    // not carry, and the one thing a rep looks for after pressing it.
+                    submitSuccess && "border-emerald-600 bg-emerald-600 hover:bg-emerald-700",
                   )}
                   disabled={submitDisabled || submitSuccess}
                   onClick={submitRequest}
@@ -1947,7 +1950,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       : !isOnline
                         ? "Queue Request"
                         : "Submit Request"}
-                </Button>
+                </button>
               </div>
             </div>
           </div>
