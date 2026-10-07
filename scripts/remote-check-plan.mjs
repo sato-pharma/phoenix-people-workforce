@@ -538,6 +538,65 @@ export const STAGE_JOBS = {
   build: { job: "validate", step: "Build" },
 };
 
+/**
+ * The same map for a run `ci.yml` did on a PULL REQUEST — a DIFFERENT map, which is the whole reason
+ * it exists rather than being reused (owner ruling, 2026-10-08: *"make the open-PR refusal read that
+ * PR's checks instead of exiting 6"*). A branch with an open PR is already running these jobs on this
+ * commit, already billed, so the answer is to READ that run; but reading it with the dispatch map
+ * above would grade `test` from `checks` / Test, which a pull_request SKIPS — turning an already-green
+ * PR into NO VERDICT, which is the defect this closes, not a second copy of it.
+ *
+ * Read off `.github/workflows/ci.yml` and nothing else, as exact complements of the dispatch map:
+ *   validate / Test   `if: github.event_name == 'pull_request'`   → the suite's home ON a pull request
+ *   checks   / Test    `if: github.event_name != 'pull_request'`  → its home on a dispatch
+ *   checks   / Lint, Typecheck — ungated, so the same in both
+ *   validate / Build   `if: github.event_name != 'pull_request'`  → so **a PR never builds at all**
+ *
+ * 🔴 `build: null` IS THE LOAD-BEARING ENTRY, AND IT IS NOT LAZINESS. A PR's green says nothing
+ * whatever about `next build`, so `remote-check all` can never be fully answered by reading one — and
+ * the honest answer for that half is NO VERDICT, never a pass inherited from two green checks. Grading
+ * it against `validate` / Build instead would read `skipped`, which `gradeConclusion` already calls
+ * no-verdict; the `null` exists so the REASON says a pull request does not build, rather than "ended
+ * skipped", which reads like a fault in the run and sends the reader to look for one.
+ */
+export const STAGE_JOBS_PR = {
+  lint: { job: "checks", step: "Lint" },
+  typecheck: { job: "checks", step: "Typecheck" },
+  test: { job: "validate", step: "Test" },
+  build: null,
+};
+
+/**
+ * Which map to grade a run with — chosen from the RUN'S OWN `event`, never from which code path is
+ * asking. A route that passed its own expectation down would keep grading correctly right up until the
+ * run it found was not the kind it assumed, and ci.yml's two homes for the unit suite are exactly that
+ * trap: the same sha can carry a `pull_request` run and a `workflow_dispatch` run at once.
+ *
+ * Anything that is not a pull request takes the dispatch map, which is also what a `push` run on `main`
+ * uses — the complement in ci.yml is `!= 'pull_request'`, not `== 'workflow_dispatch'`.
+ *
+ * @param {string | null | undefined} event a run's `event` field: `pull_request`, `workflow_dispatch`, `push`.
+ */
+export function stageJobsFor(event) {
+  return String(event ?? "") === "pull_request" ? STAGE_JOBS_PR : STAGE_JOBS;
+}
+
+/**
+ * The requested stages that the run's own event does not run at all (`build` on a pull request).
+ *
+ * 🔴 THIS IS WHAT STOPS A WHOLE-RUN `success` BEING READ AS A PASS FOR A STAGE THAT NEVER RAN. The
+ * watcher short-circuits on `completed/success` — correct for a dispatch, where the workflow runs
+ * everything this script can be asked for — but a green PR run never built, so the same short circuit
+ * would print `PASS` for `remote-check build` off a run that did not compile a line.
+ *
+ * @param {string[]} names the stages asked for.
+ * @param {Record<string, { job: string, step: string } | null>} stageJobs the map for that run's event.
+ */
+export function stagesNotRunBy(names, stageJobs) {
+  const wanted = Array.isArray(names) && names.length > 0 ? names : Object.keys(STAGE_JOBS);
+  return wanted.filter((name) => !stageJobs[name]);
+}
+
 /** A job or step conclusion read the same way everywhere: allow-list the two verdicts, nothing else. */
 function gradeConclusion(conclusion) {
   if (conclusion === "success") return "pass";
@@ -556,20 +615,37 @@ function gradeConclusion(conclusion) {
  * 🔴 A REAL FAILURE OUTRANKS AN UNKNOWN, exactly as it does in the box script: asking for
  * `lint test` and getting a red `lint` beside a cancelled `validate` is a FAIL, not a shrug.
  *
+ * 🔴 AND THE MAP IS AN ARGUMENT, BECAUSE THE SAME SHA HAS TWO KINDS OF RUN. A `pull_request` run and a
+ * `workflow_dispatch` run put the unit suite in DIFFERENT jobs and only one of them builds, so a
+ * hard-coded map grades one route correctly and the other silently as NO VERDICT. The default is the
+ * dispatch map, which is what every caller before 2026-10-08 meant.
+ *
  * @param {string[]} names the stages the caller asked for (`lint`, `typecheck`, `test`, `build`).
  * @param {Array<{ name?: string, status?: string, conclusion?: string | null, steps?: Array<{ name?: string, conclusion?: string | null }> }> | null | undefined} jobs
- * @returns {{ verdict: "pass"|"fail"|"no-verdict", why: string, otherRed: string[] }}
+ * @param {Record<string, { job: string, step: string } | null>} stageJobs `STAGE_JOBS` or `STAGE_JOBS_PR`, from `stageJobsFor(run.event)`.
+ * @returns {{ verdict: "pass"|"fail"|"no-verdict", why: string, otherRed: string[], passed: string[] }}
  */
-export function gradeActionsStages(names, jobs) {
+export function gradeActionsStages(names, jobs, stageJobs = STAGE_JOBS) {
   if (!Array.isArray(jobs) || jobs.length === 0) {
-    return { verdict: "no-verdict", why: "the run's job list could not be read", otherRed: [] };
+    return { verdict: "no-verdict", why: "the run's job list could not be read", otherRed: [], passed: [] };
   }
   const wanted = Array.isArray(names) && names.length > 0 ? names : Object.keys(STAGE_JOBS);
   const graded = [];
   for (const name of wanted) {
-    const spec = STAGE_JOBS[name];
+    const spec = stageJobs[name];
     if (!spec) {
-      graded.push({ name, verdict: "no-verdict", why: name + " is not a stage any CI job runs" });
+      // Two different absences, and the reader must be able to tell them apart: a stage this event does
+      // not run (`build` on a pull request — the run is fine, it simply never compiled anything), and a
+      // stage name no CI job has ever run (a typo, or a stage retired from ci.yml).
+      const known = Object.prototype.hasOwnProperty.call(stageJobs, name);
+      const where = stageJobs === STAGE_JOBS_PR ? "a pull_request run" : "this run's event";
+      graded.push({
+        name,
+        verdict: "no-verdict",
+        why: known
+          ? where + " never runs the " + name + ", so its green says nothing about that half"
+          : name + " is not a stage any CI job runs",
+      });
       continue;
     }
     const job = jobs.find((j) => j && j.name === spec.job);
@@ -594,17 +670,20 @@ export function gradeActionsStages(names, jobs) {
     });
   }
   const otherRed = jobs
-    .filter((j) => j && j.conclusion === "failure" && !graded.some((g) => STAGE_JOBS[g.name]?.job === j.name))
+    .filter((j) => j && j.conclusion === "failure" && !graded.some((g) => stageJobs[g.name]?.job === j.name))
     .map((j) => String(j.name));
+  // The stages that really did pass, so a partial answer can SAY which half it has. Reading a PR gives
+  // three of `all`'s four stages, and a bare NO VERDICT about the build throws the other three away.
+  const passed = graded.filter((g) => g.verdict === "pass").map((g) => g.name);
   const failed = graded.filter((g) => g.verdict === "fail");
   if (failed.length > 0) {
-    return { verdict: "fail", why: failed.map((g) => g.why).join("; "), otherRed };
+    return { verdict: "fail", why: failed.map((g) => g.why).join("; "), otherRed, passed };
   }
   const unknown = graded.filter((g) => g.verdict === "no-verdict");
   if (unknown.length > 0) {
-    return { verdict: "no-verdict", why: unknown.map((g) => g.why).join("; "), otherRed };
+    return { verdict: "no-verdict", why: unknown.map((g) => g.why).join("; "), otherRed, passed };
   }
-  return { verdict: "pass", why: graded.map((g) => g.why).join("; "), otherRed };
+  return { verdict: "pass", why: graded.map((g) => g.why).join("; "), otherRed, passed };
 }
 
 /**

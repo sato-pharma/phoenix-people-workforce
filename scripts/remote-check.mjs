@@ -118,6 +118,8 @@ import {
   parseBusyProbe,
   parseEscalation,
   runPaths,
+  stageJobsFor,
+  stagesNotRunBy,
 } from "./remote-check-plan.mjs";
 
 const HOST = process.env.PHX_CHECK_HOST || "46.225.184.142";
@@ -272,6 +274,14 @@ function sleepSeconds(seconds) {
 // on a workflow_dispatch `validate` also builds and smoke-tests the login — so it proves MORE than
 // the box's `all`, not less. The box costs nothing, which is why it stays the default.
 //
+// 🔴 AND IT HAS TWO ROUTES, ONLY ONE OF WHICH BILLS (owner, 2026-10-08: *"make the open-PR refusal
+// read that PR's checks instead of exiting 6"*). A branch with an open PR is ALREADY running these two
+// jobs on this commit, already paid for, so that run is READ — `gh api`, no minutes, and a verdict
+// instead of the exit 6 this arm used to end on. Only a branch with nothing running gets a dispatch.
+// Both routes settle through ONE watcher (`settleActionsRun`), so there is a single allow-list of what
+// counts as a verdict, and the run's own `event` picks the job map — a pull_request run puts the unit
+// suite in `validate` and never builds at all.
+//
 // 🔴 IT DISPATCHES ON A REF AND THEREFORE VERIFIES THE SHA TWICE. `gh workflow run` takes a branch,
 // not a commit, so it checks whatever origin holds for that branch: once BEFORE (refusing when the
 // local commit is not what origin has) and once AFTER (`gradeActionsRun` refuses a run whose
@@ -290,27 +300,26 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
   // 🔴 AND IT MUST NAME WHICH OF THE TWO HAPPENED. "Busy" and "never answered" call for completely
   // different things from the reader — wait for a peer's run, or go and look at the box — and a line
   // that says BUSY about a box that is DOWN sends them to wait for a run that does not exist.
+  //
+  // 🔴 AND THE COST IS NOT CLAIMED HERE ANY MORE, BECAUSE THIS ROUTE DOES NOT ALWAYS BILL. Since
+  // 2026-10-08 a branch with an open PR is ANSWERED BY READING that PR's run, which costs nothing, so
+  // the "~14 billable minutes" line moved down to the dispatch it actually describes. A cost stated
+  // before the decision that incurs it is the same defect as the nought-minute wait: a true-sounding
+  // line about something that did not happen.
   const unreachable = reason === "unreachable";
   const blocked = unreachable ? "did not answer the probe (ssh failed, or no PROBE_OK)" : "is BUSY";
   console.log(
     waitedSeconds > 0
       ? "remote-check: the box " + (unreachable ? "never answered in " : "did not free in ") +
-          Math.round(waitedSeconds / 60) +
-          " min — escalating to GitHub Actions (~14 billable minutes; the box is free, which is why it is tried first)."
-      : "remote-check: the box " + blocked + " — escalating to GitHub Actions at once (~14 billable minutes; " +
-          "the box is free, which is why it is tried first). Pass --wait <minutes> to queue for it instead, or " +
-          "--free to wait " + FREE_WAIT_MINUTES + " min and never bill.",
+          Math.round(waitedSeconds / 60) + " min — going to GitHub Actions for this answer."
+      : "remote-check: the box " + blocked + " — going to GitHub Actions for this answer at once. Pass " +
+          "--wait <minutes> to queue for the box instead, or --free to wait " + FREE_WAIT_MINUTES +
+          " min and never bill.",
   );
   if (unreachable) {
     console.log("remote-check: nothing was pushed to the box, and this is NOT read as an idle box — " +
       "check it with: ssh -i " + KEY + " " + USER + "@" + HOST + " true");
   }
-  // A dispatch runs the whole workflow. Saying so keeps the output honest about what was proved: you
-  // asked for a subset and you are getting lint + typecheck + the suite + a build + the login smoke.
-  console.log(
-    "remote-check: ci.yml runs its whole gate, so this proves MORE than the " +
-      (names.length ? names.join(" + ") : "requested") + " you asked for, never less.",
-  );
   if (!branch || branch === "HEAD") {
     die("a detached HEAD cannot be dispatched — `gh workflow run` takes a branch. Put this commit on a branch first.");
   }
@@ -319,7 +328,9 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
   // ci.yml groups a non-PR run by SHA and never cancels one (`CI-<sha>`), so a dispatch from `main`
   // lands in the SAME concurrency group as the push run Railway's "Wait for CI" is holding the
   // production deploy on. There is nothing to gain either: `main` already runs the whole gate on
-  // every commit. Same shape as the open-PR refusal below — point at the run that exists.
+  // every commit — so, like the open-PR arm below, the answer is the run that exists. It is pointed
+  // at rather than read: `remote-check` is invoked from a feature branch (committing on local `main`
+  // is itself banned, AGENTS.md §2), and a session that lands here has a worktree to go to first.
   if (isProtectedDispatchRef(branch)) {
     console.error("remote-check: this is " + branch + ", and `main`'s own CI run is the production deploy gate.");
     console.error("    ci.yml groups a push to main by SHA and never cancels it, so a dispatch here joins that");
@@ -352,29 +363,60 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
     );
   }
 
-  // 🔴 AND IF THE BRANCH ALREADY HAS A PR, DISPATCHING IS PAYING TWICE FOR ONE ANSWER. A PR runs the
-  // same two required jobs on the same head commit, and that run is already paid for — so the cheap
-  // fallback for work that is ready to open a PR is the PR itself, never a dispatch beside it. This
-  // refuses with the PR number rather than billing a second round (owner, 2026-09-27: one wide PR,
-  // every merge costs ~28 billable CI minutes).
+  // 🔴 AND IF THE BRANCH ALREADY HAS A PR, DISPATCHING WOULD PAY TWICE FOR ONE ANSWER — SO THIS READS
+  // THAT PR'S OWN CHECKS INSTEAD OF STARTING A SECOND RUN. A PR runs the same two required jobs on
+  // the same head commit, and that run is already billed (owner, 2026-09-27: one wide PR, every merge
+  // costs ~28 billable CI minutes). Reading it costs no Actions minutes at all — it is `gh api`.
+  //
+  // 🔴 UNTIL 2026-10-08 THIS ARM PRINTED `gh pr checks <n> --watch` AND EXITED 6: NO VERDICT, with a
+  // free, already-paid-for answer sitting on that very commit. That was survivable while the box was
+  // waited out for ten minutes first, because the arm was rare — the same day's ruling made a busy box
+  // escalate at ONCE, so it is now reached immediately, and by the time anything is pushed most
+  // branches HAVE a PR. Owner's answer: *"make the open-PR refusal read that PR's checks instead of
+  // exiting 6"*.
+  //
+  // 🔴 THE `try` WRAPS THE READ AND NOTHING ELSE. Putting the verdict watcher inside it would make any
+  // bug in the watcher fall through its `catch` into the dispatch — billing ~14 minutes to recover
+  // from an exception, which is the one outcome this whole arm exists to avoid.
+  let openPr = "";
   try {
-    const open = execFileSync(
+    openPr = execFileSync(
       "gh",
       ["pr", "list", "--head", branch, "--state", "open", "--json", "number", "--jq", ".[].number"],
       { encoding: "utf8" },
-    ).trim();
-    if (open) {
-      console.error("remote-check: #" + open.split("\n")[0] + " is already open on " + branch + ".");
-      console.error("    Its `validate` and `checks` runs are the SAME two required jobs, on this same commit,");
-      console.error("    and they are already billed. A dispatch beside them would pay twice for one answer.");
-      console.error("      gh pr checks " + open.split("\n")[0] + " --watch");
-      console.error("remote-check: NO VERDICT — read the PR's own checks.");
-      process.exit(6);
-    }
+    ).trim().split("\n")[0].trim();
   } catch {
     // No `gh`, no network, no permission: fall through to the dispatch rather than inventing a reason
     // to stop. A failed read is not evidence that no PR exists.
   }
+  if (openPr) {
+    console.log("remote-check: #" + openPr + " is already open on " + branch + ", and its `validate` and `checks`");
+    console.log("    runs are the SAME two required jobs on this same commit — already billed. Reading them");
+    console.log("    instead of dispatching beside them, which would pay twice for one answer.");
+    console.log("      gh pr checks " + openPr + " --watch   (the same reading, by hand)");
+    // Never returns: settleActionsRun exits 0, 1 or 6 on every path.
+    settleActionsRun({
+      find: () => findPullRequestRun(sha),
+      sha,
+      names,
+      label: "#" + openPr + "'s own ci.yml run",
+      source: "GitHub Actions — #" + openPr + "'s own run, not the box",
+      hint: "    A pull request does not run the build; for that half, dispatch from a branch with no open PR.",
+    });
+  }
+
+  // Nothing on GitHub holds an answer for this commit, so one has to be started — and THIS is where
+  // the money is spent, which is why the cost is stated here rather than in the banner above. A
+  // dispatch runs the whole workflow, so saying so keeps the output honest about what was proved: you
+  // asked for a subset and you are getting lint + typecheck + the suite + a build + the login smoke.
+  console.log(
+    "remote-check: dispatching ci.yml — ~14 billable Actions minutes (the box is free, which is why it " +
+      "is tried first; a branch with an open PR is read instead, for nothing).",
+  );
+  console.log(
+    "remote-check: ci.yml runs its whole gate, so this proves MORE than the " +
+      (names.length ? names.join(" + ") : "requested") + " you asked for, never less.",
+  );
 
   const dispatchedAfter = new Date(Date.now() - 60_000).toISOString();
   try {
@@ -385,39 +427,99 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
   }
   console.log("remote-check: dispatched ci.yml on " + branch + " @ " + sha.slice(0, 9) + " — watching for its verdict");
 
-  // 🔴 ALLOW-LIST THE TERMINAL STATE, AND NEVER FALL OUT OF THIS LOOP INTO A SUCCESS LINE. The
-  // deadline exists so a stuck queue ends as NO VERDICT rather than as silence; ci.yml's own PR path
-  // is ~163s, and a queued runner can add minutes to that.
-  const deadline = Date.now() + 25 * 60 * 1000;
-  let last = "waiting for the run to appear";
+  settleActionsRun({
+    find: () => findDispatchedRun(branch, dispatchedAfter),
+    sha,
+    names,
+    label: "the dispatched run",
+    source: "GitHub Actions, not the box",
+  });
+}
+
+/** How long either route waits for a run to settle, and how long between asks. */
+const ACTIONS_WATCH_MINUTES = 25;
+const ACTIONS_POLL_SECONDS = 20;
+
+/**
+ * 🔴 AND A RUN THAT NEVER APPEARS IS GIVEN UP ON LONG BEFORE THE SETTLE DEADLINE. A run object exists
+ * the moment it is created, queued or not — a dispatch registers one immediately, and a PR's run is
+ * created by the push that opened it. So "no run at all" does not become a run by waiting: it means
+ * the dispatch produced nothing, or that commit's PR run was never created. Spending the full 25
+ * minutes on that is 25 minutes of a session's wall clock for an answer that was already decided, and
+ * the old open-PR arm's one virtue was that it ended immediately.
+ */
+const ACTIONS_APPEAR_MINUTES = 3;
+
+/**
+ * Watch ONE Actions run until it settles and grade the requested stages — the single allow-list BOTH
+ * routes share, the dispatch and the already-open PR.
+ *
+ * 🔴 ONE ALLOW-LIST, BECAUSE A SECOND COPY OF A WATCHER IS HOW ONE OF THEM ROTS. The rule it encodes
+ * is measured in this repository (`a-padded-short-sha-422s-and-a-fallthrough-watcher-calls-it-green`):
+ * a loop that `continue`s on a LIST of unfinished states met a state that was on no list, fell out of
+ * the loop, and printed its success line. So the only verdicts are an explicit `completed/success`
+ * (pass) and an explicit `completed/failure` on the stage asked for (fail); everything else — queued,
+ * cancelled, timed_out, skipped, a run that is about another sha, a job list that cannot be read, a
+ * deadline reached — is NO VERDICT, which prints no `PASS|FAIL — <sha>` line for anything to parse.
+ *
+ * 🔴 AND A WHOLE-RUN `success` IS ONLY A PASS WHEN THE RUN ACTUALLY RAN EVERY STAGE ASKED FOR. A
+ * dispatch does; a pull_request run never builds, so `stagesNotRunBy` has to be consulted before that
+ * short circuit is taken, or an all-green PR would print PASS for a build that did not happen.
+ *
+ * It never returns: every path ends in `process.exit`.
+ *
+ * @param {{ find: () => { ok: boolean, run?: any }, sha: string, names: string[], label: string,
+ *           source: string, hint?: string }} input
+ *   `find` reads the run afresh each poll — `{ ok: false }` for a read that failed (not evidence either
+ *   way), `{ ok: true, run: undefined }` for a run that has not appeared yet. `source` is the
+ *   parenthetical on the verdict line, so a reader always knows which run answered.
+ */
+function settleActionsRun({ find, sha, names, label, source, hint }) {
+  const started = Date.now();
+  const deadline = started + ACTIONS_WATCH_MINUTES * 60 * 1000;
+  const asked = names.length ? names.join(" + ") : "the requested stage";
+  let last = "";
+  let first = true;
+  let sawRun = false;
   while (Date.now() < deadline) {
-    sleepSeconds(20);
-    let runs = [];
-    try {
-      const json = execFileSync(
-        "gh",
-        ["run", "list", "--workflow", "ci.yml", "--branch", branch, "--event", "workflow_dispatch",
-          "--limit", "10", "--json", "databaseId,headSha,status,conclusion,url,createdAt"],
-        { encoding: "utf8" },
-      );
-      runs = JSON.parse(json);
-    } catch {
+    // Read BEFORE the first sleep: a PR's checks are often already finished, and sleeping first would
+    // spend 20 seconds not reading an answer that is sitting there.
+    if (!first) sleepSeconds(ACTIONS_POLL_SECONDS);
+    first = false;
+
+    const read = find();
+    if (!read.ok) {
       // A read that failed is not a verdict either way — say so and ask again.
-      console.log("remote-check: could not read the run list this time — asking again");
+      console.log("remote-check: could not read " + label + " this time — asking again");
       continue;
     }
-    const run = runs.filter((r) => r.createdAt >= dispatchedAfter).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    const run = read.run;
+    if (run) sawRun = true;
+    if (!sawRun && Date.now() - started > ACTIONS_APPEAR_MINUTES * 60 * 1000) {
+      console.error("remote-check: NO VERDICT — no " + label + " exists for " + sha.slice(0, 9) + " after " +
+        ACTIONS_APPEAR_MINUTES + " minutes, and a run is registered the moment it is created, queued or not.");
+      if (hint) console.error(hint);
+      process.exit(6);
+    }
     const graded = gradeActionsRun(run, sha);
     if (!graded.settled) {
       if (graded.why !== last) {
-        console.log("remote-check: Actions " + graded.why + (run?.url ? "  " + run.url : ""));
+        console.log("remote-check: " + label + " — " + graded.why + (run?.url ? "  " + run.url : ""));
         last = graded.why;
       }
       continue;
     }
-    if (graded.verdict === "pass") {
-      console.log("remote-check: Actions run " + run.url + " — completed/success");
-      console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (GitHub Actions, not the box)");
+
+    // 🔴 WHICH MAP GRADES THIS RUN IS READ OFF THE RUN'S OWN EVENT, never off the route that asked.
+    // ci.yml puts the unit suite in `checks` on a dispatch and in `validate` on a pull request, and a
+    // pull request never builds — so a map chosen by the caller's expectation would grade correctly
+    // until the run it found was not the kind it assumed.
+    const stageJobs = stageJobsFor(run?.event);
+    const notRun = stagesNotRunBy(names, stageJobs);
+
+    if (graded.verdict === "pass" && notRun.length === 0) {
+      console.log("remote-check: " + label + " " + run.url + " — completed/success");
+      console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (" + source + ")");
       process.exit(0);
     }
     // A run about another commit is about another commit — there is nothing of ours in it to grade.
@@ -426,35 +528,97 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
       process.exit(6);
     }
 
-    // 🔴 THE RUN'S CONCLUSION IS NOT A VERDICT ABOUT THE STAGE THAT WAS ASKED FOR. A dispatch runs
-    // the WHOLE workflow — `mobile` (which reports and never gates), the Build, the Playwright login
-    // smoke — so grading the run as one thing made `remote-check typecheck` FAIL on a mobile
-    // lockfile break or a smoke flake, under this sha, blocking this push. Grade the job (and the
-    // step) that actually runs the requested stage; a red job elsewhere is REPORTED, not charged to
-    // this branch. A stage whose job did not run, or cannot be found, is NO VERDICT — never FAIL.
+    // 🔴 THE RUN'S CONCLUSION IS NOT A VERDICT ABOUT THE STAGE THAT WAS ASKED FOR. ci.yml runs more
+    // than this script is ever asked for — `mobile` (which reports and never gates), the Build, the
+    // Playwright login smoke — so grading the run as one thing made `remote-check typecheck` FAIL on
+    // a mobile lockfile break or a smoke flake, under this sha, blocking this push. Grade the job
+    // (and the step) that actually runs the requested stage; a red job elsewhere is REPORTED, not
+    // charged to this branch. A stage whose job did not run, or cannot be found, is NO VERDICT.
     const jobs = readRunJobs(run?.databaseId);
-    const stages = gradeActionsStages(names, jobs);
+    const stages = gradeActionsStages(names, jobs, stageJobs);
     const elsewhere = stages.otherRed.length > 0 ? "  (red elsewhere in the run: " + stages.otherRed.join(", ") + ")" : "";
-    console.log("remote-check: Actions run " + run.url + " — completed/" + String(run.conclusion ?? "unknown"));
+    console.log("remote-check: " + label + " " + run.url + " — completed/" + String(run.conclusion ?? "unknown"));
     if (stages.verdict === "pass") {
-      console.log("remote-check: " + (names.length ? names.join(" + ") : "the requested stage") + " — " + stages.why + elsewhere);
-      console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (GitHub Actions, not the box)");
+      console.log("remote-check: " + asked + " — " + stages.why + elsewhere);
+      console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (" + source + ")");
       process.exit(0);
     }
     if (stages.verdict === "fail") {
       console.error("remote-check: " + stages.why + elsewhere);
-      console.error("remote-check: FAIL — " + sha.slice(0, 9) + "  (GitHub Actions, not the box)");
+      console.error("remote-check: FAIL — " + sha.slice(0, 9) + "  (" + source + ")");
       process.exit(1);
     }
+    // 🔴 A PARTIAL ANSWER SAYS WHICH HALF IT HAS. Reading a PR answers three of `all`'s four stages,
+    // and a bare NO VERDICT about the build throws the other three away — which is what sends a
+    // session off to bill a dispatch for work that is already green.
+    if (stages.passed.length > 0) {
+      console.log("remote-check: " + stages.passed.join(" + ") + " did pass on that run.");
+    }
     console.error("remote-check: NO VERDICT — " + stages.why + elsewhere + (run?.url ? "  " + run.url : ""));
+    if (hint) console.error(hint);
     process.exit(6);
   }
-  console.error("remote-check: NO VERDICT — the dispatched run had not settled after 25 minutes.");
+  console.error("remote-check: NO VERDICT — " + label + " had not settled after " + ACTIONS_WATCH_MINUTES + " minutes.");
+  if (hint) console.error(hint);
   process.exit(6);
 }
 
 /**
- * The jobs of one dispatched run, or null when they cannot be read.
+ * The newest `workflow_dispatch` run of ci.yml on this branch that started after the dispatch.
+ *
+ * `{ ok: false }` is a read that failed; `{ ok: true, run: undefined }` is "no run yet".
+ */
+function findDispatchedRun(branch, dispatchedAfter) {
+  try {
+    const json = execFileSync(
+      "gh",
+      ["run", "list", "--workflow", "ci.yml", "--branch", branch, "--event", "workflow_dispatch",
+        "--limit", "10", "--json", "databaseId,headSha,status,conclusion,url,createdAt,event"],
+      { encoding: "utf8" },
+    );
+    const runs = JSON.parse(json);
+    const run = runs
+      .filter((r) => r.createdAt >= dispatchedAfter)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    return { ok: true, run };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * The newest `pull_request` run of ci.yml ON THIS EXACT COMMIT.
+ *
+ * 🔴 ASKED BY SHA, NEVER SCANNED FROM `gh run list`. That list is eventually consistent and has
+ * dropped a run that existed in the minute another commit landed (AGENTS.md §2.1, and the ship
+ * skill's phase 8 for the same reason) — which here would read as "the PR has no verdict" on a commit
+ * that had already passed, and send the reader to bill a dispatch for an answer they already had. The
+ * sha endpoint cannot return a run about another commit at all, which is the other half of the
+ * guarantee `gradeActionsRun` makes by comparing headSha.
+ *
+ * `path` and `event` are both filtered: the same commit can carry a dispatched run, a push run and a
+ * PR run, and only the PR run is the one that is already billed.
+ */
+function findPullRequestRun(sha) {
+  try {
+    const json = execFileSync(
+      "gh",
+      ["api", "repos/{owner}/{repo}/actions/runs?head_sha=" + sha + "&per_page=30", "--jq",
+        '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .event == "pull_request") ' +
+          '| {databaseId: .id, headSha: .head_sha, status: .status, conclusion: .conclusion, ' +
+          'url: .html_url, event: .event, createdAt: .created_at}]'],
+      { encoding: "utf8" },
+    );
+    const runs = JSON.parse(json || "[]");
+    const run = (Array.isArray(runs) ? runs : []).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    return { ok: true, run };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * The jobs of one run, or null when they cannot be read.
  *
  * A failed read is NOT evidence about the code — `gradeActionsStages` turns a null into NO VERDICT
  * rather than inventing a pass or a fail from a run list that never arrived.
