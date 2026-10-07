@@ -520,11 +520,12 @@ async function main() {
   if (!typecheckRelevant(root, false)) return allow();
 
   const started = Date.now();
-  // 🔴 `--no-wait --no-actions` IS LOAD-BEARING, NOT TIDINESS. Since 2026-10-06 a bare
-  // `remote-check` waits ten minutes on a busy box and then pays for a GitHub Actions run (the owner's
-  // ruling, `DEFAULT_WAIT_MINUTES`). This hook runs on EVERY push, so the default here would delay each
-  // one by ten minutes and bill ~14 Actions minutes for a verdict the PR's own `checks` job produces
-  // for free. A push must stay instant: a busy box gives NO VERDICT and the push is allowed.
+  // 🔴 `--no-wait --no-actions` IS LOAD-BEARING, NOT TIDINESS. A bare `remote-check` pays for a GitHub
+  // Actions run the MOMENT the box is busy — with no wait in front of it since the owner's ruling of
+  // 2026-10-08 (`DEFAULT_WAIT_MINUTES` is 0; 2026-10-06 waited ten minutes first). This hook runs on
+  // EVERY push, so the default here would bill ~14 Actions minutes immediately, every time another
+  // session held the box, for a verdict the PR's own `checks` job produces for free. A push must stay
+  // instant AND free: a busy box gives NO VERDICT and the push is allowed.
   const run = await runRemoteCheck(script, root);
   const seconds = Math.round((Date.now() - started) / 1000);
   const output = `${run.stdout ?? ''}\n${run.stderr ?? ''}`;

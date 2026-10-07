@@ -24,14 +24,16 @@
 //   node scripts/remote-check.mjs lockfile     # regenerate pnpm-lock.yaml and bring it back
 //
 //   node scripts/remote-check.mjs test --wait 6    # box busy? ask again every 30s for 6 minutes
-//   node scripts/remote-check.mjs all --urgent     # busy box? escalate immediately to GitHub Actions
+//   node scripts/remote-check.mjs all --free       # box busy? wait for it, and never bill Actions
 //
-// 🔴 THE BOX BY DEFAULT BECAUSE IT IS FREE; GITHUB ACTIONS WHEN THE WORK CANNOT WAIT (owner, 2026-10-06).
-// Several sessions share one 7,740 MB box, so a second run is refused rather than queued — and until
-// that day the refusal was the END of the road, which left a finished branch retrying by hand while
-// another session built. `--wait` waits VISIBLY (a line per poll, never a silent lock) and `--urgent`
-// escalates to a ci.yml workflow_dispatch afterwards, at ~14 billable Actions minutes against the
-// box's zero. With no flag it waits ten minutes, then escalates; --no-wait --no-actions refuses at once.
+// 🔴 THE BOX WHEN IT IS FREE, GITHUB ACTIONS THE MOMENT IT IS BUSY (owner, 2026-10-08: *"if free use
+// it directly but if busy use github actions"*). Several sessions share one 7,740 MB box, so a second
+// run can never simply join it — and until 2026-10-06 the refusal was the END of the road, which left a
+// finished branch retrying by hand while another session built. A bare invocation now probes the box
+// and, on a busy answer, dispatches ci.yml AT ONCE at ~14 billable Actions minutes against the box's
+// zero. `--wait <minutes>` buys the old queue back for one call (VISIBLY — a line per poll, never a
+// silent lock), `--free` waits ten minutes and never bills, `--no-wait --no-actions` refuses at once,
+// and PHX_CHECK_WAIT_MINUTES=<n> sets the house default without a code change.
 //
 // 🔴 WHY `lockfile` IS HERE, AND WHY IT IS NOT A CHECK. Until 2026-09-30 there was no sanctioned place
 // in this setup to regenerate a lockfile at all. `.claude/hooks/bash-guard.mjs` clause C6 denies pnpm
@@ -96,7 +98,9 @@ import {
   EXIT_INTERRUPTED,
   EXIT_LOCK_TIMEOUT,
   EXIT_SETUP,
+  FREE_WAIT_MINUTES,
   URGENT_WAIT_MINUTES,
+  WAIT_MINUTES_ENV,
   buildBusyProbeScript,
   buildLockfileScript,
   buildRunScript,
@@ -106,7 +110,6 @@ import {
   isProtectedDispatchRef,
   newRunId,
   parseBusyProbe,
-  DEFAULT_WAIT_MINUTES,
   parseEscalation,
   runPaths,
 } from "./remote-check-plan.mjs";
@@ -274,9 +277,16 @@ function sleepSeconds(seconds) {
 // you: the push is the session's act, and it bills nothing either way.
 function runOnActions({ branch, sha, names, waitedSeconds }) {
   console.log("");
+  // 🔴 THE LINE MUST NOT SAY "did not free in 0 min". Since the default wait became zero (owner,
+  // 2026-10-08) the overwhelmingly common escalation has waited for nothing at all, and a report of a
+  // nought-minute wait reads as a bug in the thing that just decided correctly.
   console.log(
-    "remote-check: the box did not free in " + Math.round(waitedSeconds / 60) + " min — escalating to GitHub Actions " +
-      "(~14 billable minutes; the box is free, which is why it is the default).",
+    waitedSeconds > 0
+      ? "remote-check: the box did not free in " + Math.round(waitedSeconds / 60) +
+          " min — escalating to GitHub Actions (~14 billable minutes; the box is free, which is why it is tried first)."
+      : "remote-check: the box is BUSY — escalating to GitHub Actions at once (~14 billable minutes; the box " +
+          "is free, which is why it is tried first). Pass --wait <minutes> to queue for it instead, or --free to " +
+          "wait " + FREE_WAIT_MINUTES + " min and never bill.",
   );
   // A dispatch runs the whole workflow. Saying so keeps the output honest about what was proved: you
   // asked for a subset and you are getting lint + typecheck + the suite + a build + the login smoke.
@@ -483,7 +493,8 @@ const escalation = parseEscalation(process.argv.slice(2));
 if (escalation.unknown.length > 0) {
   die(
     "unknown flag(s): " + escalation.unknown.join(", ") + ". Known: --wait <minutes>, --actions, " +
-      "--urgent (= --wait " + URGENT_WAIT_MINUTES + " --actions).",
+      "--no-actions/--free, --no-wait, --urgent (= --wait " + URGENT_WAIT_MINUTES + " --actions, which " +
+      "is also the default), and " + WAIT_MINUTES_ENV + "=<0-60>.",
   );
 }
 const requested = escalation.positional;
@@ -571,13 +582,14 @@ if (!busy.known) {
   // that answered oddly, never proof that the box is idle.
   die("could not tell whether the box is busy — the probe did not finish. Nothing was pushed.");
 }
-// 🔴 AND SINCE 2026-10-06 THE REFUSAL IS NO LONGER THE DEFAULT AT ALL (owner's policy: the box by
-// default because it is free, GitHub Actions when the work cannot wait — then, the same evening,
-// *"make --urgent the default when the box queue is over 10 minutes"*). A bare invocation polls
-// VISIBLY for `DEFAULT_WAIT_MINUTES` — the objection was always to a SILENT wait, never to waiting —
-// and then runs ci.yml on GitHub Actions rather than handing the caller nothing. `--urgent` escalates
-// sooner (4 min). `--no-actions` (alias `--free`) waits but never bills; `--no-wait` does not wait;
-// the two together are the old instant refusal, which is what the push guard asks for.
+// 🔴 AND SINCE 2026-10-08 A BUSY BOX IS NOT WAITED OUT EITHER — IT IS PAID FOR, IMMEDIATELY (owner:
+// *"if free use it directly but if busy use github actions"*). `DEFAULT_WAIT_MINUTES` is 0, so a bare
+// invocation probes, reads a busy answer and dispatches ci.yml on the spot rather than spending ten
+// minutes of a session's time on the chance the box frees up — which the 2026-10-06 wait did, on an
+// evening the box was three sessions deep for over 25 minutes. The old queue is still one flag away:
+// `--wait <minutes>` polls VISIBLY (the objection was always to a SILENT wait, never to waiting),
+// `--no-actions` (alias `--free`) polls for `FREE_WAIT_MINUTES` and never bills, `--no-wait` does not
+// wait, and the last two together are the instant refusal the push guard asks for on every push.
 const FORCED = process.env.PHX_CHECK_FORCE === "1";
 let waitedSeconds = 0;
 let plan = FORCED
@@ -622,12 +634,10 @@ if (busy.runs.length > 0 && plan.action !== "run" && !FORCED) {
     " case \"$d\" in */runs/<RUN_ID>*) kill -KILL ${p#/proc/};; esac; done'");
   console.error("");
   console.error("    You asked NOT to escalate, so this is the end of the road for this invocation:");
-  console.error("      (default)          wait " + DEFAULT_WAIT_MINUTES +
-    " min, then run ci.yml on GitHub Actions — ~14 billable minutes. You passed --no-actions/--free.");
-  console.error("      --urgent           " + (URGENT_WAIT_MINUTES === 0
-    ? "escalate IMMEDIATELY, without waiting for the box at all."
-    : "escalate after " + URGENT_WAIT_MINUTES + " min instead of " + DEFAULT_WAIT_MINUTES + "."));
+  console.error("      (default)          a busy box runs ci.yml on GitHub Actions AT ONCE — ~14 billable " +
+    "minutes. You passed --no-actions/--free, which waits " + FREE_WAIT_MINUTES + " min and never bills.");
   console.error("      --wait <minutes>   keep asking the box, a line every " + BUSY_POLL_SECONDS + "s.");
+  console.error("      " + WAIT_MINUTES_ENV + "=<n>  the same wait as the house default, for every call in this shell.");
   console.error("      PHX_CHECK_FORCE=1  start beside the other run anyway (this is what OOM-kills a build).");
   console.error("");
   die(

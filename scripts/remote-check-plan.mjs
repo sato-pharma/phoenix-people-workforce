@@ -318,30 +318,48 @@ export function buildLockfileScript({ remoteRoot, runId, sha, prelude = [] }) {
 export const BUSY_POLL_SECONDS = 30;
 
 /**
- * 🔴 `--urgent` NOW ESCALATES AT ONCE — owner ruling, 2026-10-06: *"make --urgent escalate
- * immediately instead of after 4 minutes"*. It was 4 minutes when the default refused instantly and a
- * wait was the new thing on offer. Once the DEFAULT became wait-10-then-escalate, the only difference
- * `--urgent` made was six minutes, which is not what the word means: urgent is "do not queue me at all".
- *
- * So the two tiers are now honestly different — the default waits for the free box and pays only if it
- * stays busy; `--urgent` pays immediately. An explicit `--wait <minutes>` still WINS over this zero, so
- * `--wait 6 --urgent` waits six minutes and then escalates: the caller's own budget is never shortened.
+ * 🔴 `--urgent` ESCALATES AT ONCE — owner ruling, 2026-10-06: *"make --urgent escalate immediately
+ * instead of after 4 minutes"*. Since 2026-10-08 that is also what a BARE invocation does, so the flag
+ * is kept as a documented alias of the default rather than a tier of its own: every caller that already
+ * passes it keeps working, and it is still the way to say "immediately" when the house knob below has
+ * been set to a wait. An explicit `--wait <minutes>` still WINS over this zero, so `--wait 6 --urgent`
+ * waits six minutes and then escalates: the caller's own budget is never shortened.
  */
 export const URGENT_WAIT_MINUTES = 0;
 
 /**
- * 🔴 THE DEFAULT IS NOW WAIT-THEN-ESCALATE — owner ruling, 2026-10-06: *"make --urgent the default
- * when the box queue is over 10 minutes"*. Measured the same evening: the box queued THREE sessions
- * deep for over 25 minutes, a 10-minute wait expired and refused, and the second attempt was still
- * waiting when a PR overtook it. So a bare invocation now waits VISIBLY for this long and then pays
- * for GitHub Actions rather than leaving the caller with nothing.
+ * 🔴 THE BOX WHEN IT IS FREE, GITHUB ACTIONS THE MOMENT IT IS BUSY — owner ruling, 2026-10-08: *"i
+ * want to make the run depend on github actions if the self hosted box is busy .. if free use it
+ * directly but if busy use github actions"*. So the default wait is ZERO: the probe asks the box, and a
+ * busy answer dispatches `ci.yml` immediately instead of polling first.
  *
- * 🔴 AND THAT IS WHY `--no-actions` EXISTS, NOT AS A NICETY. A caller that must never bill — above
- * all `.claude/hooks/push-typecheck-guard.mjs`, which runs on EVERY push — passes `--no-wait
- * --no-actions` and keeps the old instant "no verdict". Without that, a busy box would delay every
- * push by ten minutes and then spend ~14 billable minutes on it.
+ * 🔴 THIS REPLACES THE TEN-MINUTE WAIT OF 2026-10-06, WHICH WAS THE SAME POLICY WITH A QUEUE IN FRONT
+ * OF IT. That wait was the cheap half of the trade — the box bills nothing — and it bought ten minutes
+ * of a session doing nothing on the evidence of the same evening, when the box was three sessions deep
+ * for over 25 minutes and the wait expired into a refusal anyway. What it costs now, said out loud: a
+ * dispatch is ~14 billable Actions minutes, so a busy box is paid for rather than waited out.
+ * `PHX_CHECK_WAIT_MINUTES` below is the knob that buys the waiting back without a code change.
  */
-export const DEFAULT_WAIT_MINUTES = 10;
+export const DEFAULT_WAIT_MINUTES = 0;
+
+/**
+ * 🔴 THE WAIT SURVIVES WHERE IT IS THE ONLY ROUTE TO A VERDICT — `--no-actions` (alias `--free`) says
+ * "never bill", so with the escalation disarmed a zero wait would leave the caller nothing at all. That
+ * flag therefore keeps the ten-minute poll it has always had, and `--no-wait --no-actions` stays the
+ * instant refusal `.claude/hooks/push-typecheck-guard.mjs` asks for on EVERY push.
+ */
+export const FREE_WAIT_MINUTES = 10;
+
+/**
+ * 🔴 THE HOUSE DEFAULT IS AN ENVIRONMENT KNOB, NOT A CODE EDIT — `PHX_CHECK_WAIT_MINUTES=10` restores
+ * the pre-2026-10-08 wait-then-escalate for a session, a shell or this whole machine without touching
+ * `DEFAULT_WAIT_MINUTES`, and `=0` takes the wait off the `--free` path too. An explicit `--wait`,
+ * `--no-wait` or `--urgent` always wins over it, which is what keeps the push guard instant and free.
+ *
+ * An unreadable value is pushed onto `unknown` rather than ignored: an ignored setting runs the OTHER
+ * policy and reports success, which is the same defect this file refuses by name for flags.
+ */
+export const WAIT_MINUTES_ENV = "PHX_CHECK_WAIT_MINUTES";
 
 /**
  * Flags are parsed, never filtered away.
@@ -355,10 +373,12 @@ export const DEFAULT_WAIT_MINUTES = 10;
  * It also returns the POSITIONAL arguments, because a flag's VALUE is positional and the check-name
  * parser must never see it: `--wait 3` would otherwise leave a bare `3` behind, which reads as a
  * check called "3" and dies with a message about check names.
+ * @param {Record<string, string | undefined>} env the environment, so `PHX_CHECK_WAIT_MINUTES` is
+ * testable without mutating `process.env` — this stays a pure function of its two arguments.
  *
  * @returns {{ positional: string[], waitMinutes: number, actions: boolean, unknown: string[], urgent: boolean }}
  */
-export function parseEscalation(argv) {
+export function parseEscalation(argv, env = process.env) {
   // null means "the caller did not say", which is what the defaults below fill in. A plain `0`/`false`
   // could not be told apart from an explicit `--no-wait`/`--no-actions`, and the whole point of those
   // two flags is that they are louder than the default.
@@ -408,10 +428,26 @@ export function parseEscalation(argv) {
     }
     unknown.push(arg);
   }
+  const armed = actions === null ? true : actions;
+  // 🔴 THE DEFAULT DEPENDS ON WHETHER THE ESCALATION IS ARMED, WHICH IS THE WHOLE 2026-10-08 RULING:
+  // with Actions available a busy box is PAID FOR AT ONCE (zero), and with `--no-actions` the poll is
+  // the only route to a verdict, so it keeps the ten minutes. One shared default could only be wrong
+  // for one of the two — a zero would make `--free` an instant refusal, and a ten would reinstate the
+  // queue the owner just removed.
+  let fallback = armed ? DEFAULT_WAIT_MINUTES : FREE_WAIT_MINUTES;
+  const house = env ? env[WAIT_MINUTES_ENV] : undefined;
+  if (house !== undefined && String(house).trim() !== "") {
+    const minutes = Number(house);
+    if (!Number.isFinite(minutes) || minutes < 0 || minutes > 60) {
+      unknown.push(WAIT_MINUTES_ENV + "=" + String(house) + " (minutes, 0-60)");
+    } else {
+      fallback = minutes;
+    }
+  }
   return {
     positional,
-    waitMinutes: waitMinutes === null ? DEFAULT_WAIT_MINUTES : waitMinutes,
-    actions: actions === null ? true : actions,
+    waitMinutes: waitMinutes === null ? fallback : waitMinutes,
+    actions: armed,
     unknown,
     urgent,
   };
