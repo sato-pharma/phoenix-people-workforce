@@ -40,6 +40,7 @@ import {
   summarizeOrphans,
 } from "@/lib/approvals/orphaned-requests";
 import { getPayrollAwaitingPublish } from "@/lib/automated-payroll/awaiting-publish";
+import { getUncollectedLeaverDeductions } from "@/lib/deductions/uncollected-leaver-deductions";
 import {
   getExcuseAwaitingBadge,
   getPlanAwaitingBadge,
@@ -921,6 +922,52 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
   },
 };
 
+// ── Uncollected leaver deductions ─────────────────────────────────────────────────────────────────
+
+/**
+ * A leaver who left with an APPROVED deduction that was never collected on-system, while their final
+ * settlement is plausibly still open — the preventive window where it can still be netted in on the
+ * Deductions screen.
+ *
+ * 🔴 THE OWNER'S SCOPE, 2026-10-07. Once a leaver is gone and paid, the money is unrecoverable —
+ * "nothing to do". So the producer reads forward only (never the closed August-2026 cohort, settled
+ * off-system) and within a rolling window, so this is about the NEXT one, never a growing ledger of
+ * gone money. `getUncollectedLeaverDeductions` owns that rule and asserts `deductions:read`, so a
+ * viewer with no rung is a TRUE zero (`not-applicable`) and a failed read THROWS → amber, never calm.
+ *
+ * 🔴 WORTH-KNOWING, never `yours`, and NO MONEY. The settlement is taken on /admin/deductions, which
+ * every item links to; this row names HOW MANY leavers and WHO, never the EGP — the same rule the
+ * payroll and orphaned-requests adapters keep. An age, because the cost grows as the final pay nears.
+ */
+const uncollectedLeaverDeductions: NeedsYouAdapter = {
+  id: "uncollected-leaver-deductions",
+  load: async (access, now) => {
+    const leavers = await getUncollectedLeaverDeductions(access);
+    if (leavers.length === 0) return EMPTY;
+    const oldestAt = leavers
+      .map((leaver) => leaver.lastWorkingDate)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))[0] ?? null;
+    return ok([
+      {
+        key: "uncollected-leaver-deductions:open",
+        sourceId: "uncollected-leaver-deductions",
+        kind: "flag",
+        lane: "worth-knowing",
+        label: `${leavers.length} ${plural(leavers.length, "leaver has", "leavers have")} left with an approved deduction not yet collected`,
+        count: leavers.length,
+        people: [...new Set(leavers.map((leaver) => leaver.name).filter((name): name is string => Boolean(name)))],
+        href: needsYouDestinations["uncollected-leaver-deductions"].href,
+        externalUrl: null,
+        oldestAt,
+        ageDays: ageDaysSince(oldestAt, now),
+        overdue: false,
+        note: "Settle it on the Deductions screen before their final pay goes out — once a leaver is paid it cannot be recovered. Figures are on that screen, never here.",
+      },
+    ]);
+  },
+};
+
 // ── Private Calendar ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -1002,6 +1049,7 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   salaryFlags,
   phoenixCrmDecisions,
   orphanedRequests,
+  uncollectedLeaverDeductions,
   calendarReviewRequests,
 ];
 

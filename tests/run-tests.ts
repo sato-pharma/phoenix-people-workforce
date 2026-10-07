@@ -2327,6 +2327,7 @@ import { runNeedsYouEmailOwnerOnlyTests } from "./needs-you-email-owner-only.tes
 import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
 import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts";
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
+import { runNeedsYouUncollectedLeaverDeductionsTests } from "./needs-you-uncollected-leaver-deductions.test.ts";
 import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
 import { runNeedsYouPageNeverDecidesTests } from "./needs-you-page-never-decides.test.ts";
 import { runNeedsYouFitsTheScreenTests } from "./needs-you-fits-the-screen.test.ts";
@@ -9029,6 +9030,10 @@ await runTest(
 await runTest(
   "the Needs You board never under-reports: one dead source among fifteen live ones makes the clean board UNPROVABLE and keeps the all-clear sentence off the render (which is gated on allClearProvable and never on yours.length, also zero when every source is dead), a permission refusal stays a TRUE zero that does NOT spend the all-clear so nine refusals cannot become nine permanent amber rows, a failed source reports itemCount null rather than 0, the every-source band carries one row per NeedsYouSourceId for all-ok, all-failed, mixed AND nothing-reported-at-all (classify.ts walks the registry, so a source lost to a dropped await arrives as amber instead of vanishing), the adapter registry and the source union are the same set in both directions, every yours row has an href or an externalUrl, the headline counts only what is his, oldest sorts first with an undated row last, nothing printed carries an ellipsis, and could-not-be-read is band ONE",
   runNeedsYouNeverUnderReportsTests,
+);
+await runTest(
+  "the uncollected-leaver-deduction board source is preventive, not a ledger of gone money (owner 2026-10-07): it surfaces a departed employee with an APPROVED deduction not yet collected on-system ONLY from the closed-cohort floor (2026-09-01) forward — the August cohort settled off-system is never shown — and only inside a rolling window so a leaver already gone and paid drops off, never a standing row; a collected month clears it, an unknown category is treated as uncollected (the safe over-reporting direction), an active employee is never a leaver, and the row carries NO EGP field at all (a structural guarantee) while linking to /admin/deductions where a human can still settle one",
+  runNeedsYouUncollectedLeaverDeductionsTests,
 );
 await runTest(
   "the orphaned-request detector flags a request stranded because its next actor has left: a resigned actor is caught even through a casing difference (assigned_hr_id keeps the master's casing), while an ACTIVE actor, a role rung with no named person, and an actor the master does not hold are each left alone (it detects a KNOWN departure, never guesses one from a missing row); grouping is by (module, reason), dedupes the people and keeps the OLDEST timestamp; and the source is wired into the Needs You board in all four places (id, label, destination, adapter) so it reaches the morning digest rather than only existing",
