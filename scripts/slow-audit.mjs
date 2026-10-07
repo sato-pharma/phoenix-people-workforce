@@ -1,0 +1,598 @@
+#!/usr/bin/env node
+// slow-audit.mjs — answer "why is everything slow?" with numbers, in one command.
+//
+// WHY THIS EXISTS. On 2026-10-08 the owner said working in the Claude desktop app had become
+// unacceptable — "everything takes hilarious time" — and could not tell whether the cause was
+// settings, the repo, CI or the machine. Four separate layers were suspected and only one of
+// them turned out to matter. Guessing between them had already produced two wrong answers in
+// earlier sessions, both of which blamed the repo.
+//
+// THE MEASUREMENT THAT SETTLED IT, and the reason this script leads with it:
+//
+//     Memory\Pages Input/sec   avg 9,447   peak 38,885
+//     Memory\Available MBytes  1,360 of 16,174
+//     PhysicalDisk % Idle Time 95%
+//     Processor % Total        50%
+//
+// 9,447 hard page faults a second is thrashing. Every one of them is a stall on disk for a
+// page that should have been resident. It is why a file read, a keystroke, a hook and a UI
+// repaint were ALL slow at once — the one symptom shape that no repo-side cause can produce.
+//
+// 🔴 AND THE DISK BEING 95% IDLE IS NOT EVIDENCE AGAINST IT. That inference is recorded in this
+// repo's own machine-ceiling notes from 2026-09-17 ("disk sat 99.6-99.9% idle with a 0.00 queue
+// while the box was slow"), and it is wrong. An NVMe serves ~9,400 random 4K faults a second at
+// a queue depth near zero, so it reports idle while every fault still costs the faulting thread
+// its timeslice. The fault RATE is the test; disk utilization and queue length cannot see it.
+// `Pages Input/sec` is therefore the first counter this script reads, and
+// tests/slow-audit.test.ts pins that choice so it is not "fixed" back to a disk reading.
+//
+// WHAT IT WILL NOT DO. It starts no dev server, no build, no typecheck and no test run: it is
+// meant to be safe to run on a box that is already at the freeze line, which is exactly when
+// someone wants to know why. It spawns hook scripts only to time them, with a read-only
+// `git status --porcelain` payload, and it never spawns dev-server-reaper.mjs or
+// scratchpad-guard's `sweep` mode, both of which act rather than report.
+//
+// DATING A CHANGE, which is the whole point of the log. A single reading proves nothing — it
+// attributes itself to whatever happened to be open. Every run appends one record to
+// ~/.claude/logs/slow-audit.jsonl and prints the delta against the previous one, so "it got
+// slower on Tuesday" becomes answerable instead of arguable.
+//
+// Usage:
+//   node scripts/slow-audit.mjs              full audit
+//   node scripts/slow-audit.mjs --quick      skip hook timing and CI (machine layer only)
+//   node scripts/slow-audit.mjs --json       machine-readable, no table
+//   node scripts/slow-audit.mjs --history    print the log and exit
+
+import { spawn } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const ARGS = new Set(process.argv.slice(2));
+const QUICK = ARGS.has('--quick');
+const AS_JSON = ARGS.has('--json');
+const LOG = path.join(homedir(), '.claude', 'logs', 'slow-audit.jsonl');
+
+// Cairo, via Intl. Never `TZ=Africa/Cairo` in a shell here: it silently returns UTC under MSYS.
+const cairo = (d = new Date()) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(d).replace(',', '');
+
+const num = (n, d = 0) => (n === null || n === undefined || Number.isNaN(n) ? null : Number(n.toFixed(d)));
+const MB = (bytes) => num(bytes / 1048576, 0);
+
+function run(cmd, args, { stdin = '', cwd, timeout = 60_000, env } = {}) {
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    let settled = false;
+    const child = spawn(cmd, args, { cwd, env: env ?? process.env, windowsHide: true });
+    let out = '', err = '';
+    const done = (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, out, err, ms: performance.now() - t0 });
+    };
+    const timer = setTimeout(() => { child.kill(); done(null); }, timeout);
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err += d; });
+    child.on('error', () => done(null));
+    child.on('close', done);
+    child.stdin.end(stdin);
+  });
+}
+
+const ps = (script, timeout = 90_000) =>
+  run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layer 1 — the machine. Pages Input/sec FIRST; it is the only counter that
+// distinguishes "out of RAM" from "busy", and the one a disk reading hides.
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔴 `Memory\Pages Input/sec` IS FIRST AND IS THE TEST. It counts hard faults — the ones that
+// go to disk — and it is the only counter here that separates "out of RAM" from "busy".
+// `PhysicalDisk % Idle Time` is read ONLY so the report can say out loud that it proves nothing:
+// an NVMe serves thousands of random 4K faults a second at a queue depth near zero and still
+// reports idle, which is how a 2026-09-17 audit concluded from "99.6-99.9% idle, 0.00 queue"
+// that paging was not involved. Pinned by tests/slow-audit.test.ts.
+export const MACHINE_COUNTERS = [
+  '\\Memory\\Pages Input/sec',
+  '\\Memory\\Available MBytes',
+  '\\Processor(_Total)\\% Processor Time',
+  '\\PhysicalDisk(_Total)\\% Idle Time',
+];
+
+async function machine() {
+  // Single-quoted in PowerShell, so the backslashes are literal and must NOT be escaped.
+  const counters = MACHINE_COUNTERS.map((c) => `'${c}'`).join(',');
+  const script = `
+$ErrorActionPreference='SilentlyContinue'
+$c = Get-Counter -Counter ${counters} -SampleInterval 1 -MaxSamples 5
+$o = @{}
+foreach ($g in ($c.CounterSamples | Group-Object Path)) {
+  $v = $g.Group | ForEach-Object { $_.CookedValue }
+  $key = ($g.Name -split '\\\\')[-1]
+  $o[$key] = @{ avg = [math]::Round((($v | Measure-Object -Average).Average),1); max = [math]::Round((($v | Measure-Object -Maximum).Maximum),1) }
+}
+$os = Get-CimInstance Win32_OperatingSystem
+$o['totalMB'] = [math]::Round($os.TotalVisibleMemorySize/1024)
+$o['commitPct'] = [math]::Round(100*($os.TotalVirtualMemorySize-$os.FreeVirtualMemory)/$os.TotalVirtualMemorySize)
+$o | ConvertTo-Json -Depth 4 -Compress
+`;
+  const r = await ps(script);
+  let j = {};
+  try { j = JSON.parse(r.out.trim()); } catch { /* fails open: reported as nulls */ }
+  const pick = (k) => j[k] ?? {};
+  return {
+    pagesInPerSec: num(pick('pages input/sec').avg, 0),
+    pagesInPeak: num(pick('pages input/sec').max, 0),
+    availableMB: num(pick('available mbytes').avg, 0),
+    totalMB: j.totalMB ?? null,
+    commitPct: j.commitPct ?? null,
+    cpuPct: num(pick('% processor time').avg, 1),
+    diskIdlePct: num(pick('% idle time').avg, 0),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layer 2 — the Claude app. Its renderer grows with open transcript, and on a
+// 16 GB box it is the largest single consumer long before any session's work is.
+// ─────────────────────────────────────────────────────────────────────────────
+async function app() {
+  const script = `
+$ErrorActionPreference='SilentlyContinue'
+$p = Get-Process claude
+if (-not $p) { '{}'; exit }
+$ids = ($p | Sort-Object WorkingSet64 -Descending | Select-Object -First 6).Id
+$s1 = @{}; foreach ($i in $ids) { $q = Get-Process -Id $i; if ($q) { $s1[[string]$i] = $q.CPU } }
+Start-Sleep -Seconds 6
+$top = @()
+foreach ($i in $ids) {
+  $q = Get-Process -Id $i; if (-not $q -or -not $s1.ContainsKey([string]$i)) { continue }
+  $top += @{
+    pid = $i
+    corePct = [math]::Round(100*($q.CPU - $s1[[string]$i])/6,1)
+    wsMB = [math]::Round($q.WorkingSet64/1MB)
+    upH = [math]::Round(((Get-Date)-$q.StartTime).TotalHours,1)
+  }
+}
+$engines = (Get-CimInstance Win32_Process -Filter "Name='claude.exe'" | Where-Object { $_.CommandLine -match 'serverName' }).Count
+@{
+  procCount = $p.Count
+  totalWsMB = [math]::Round((($p | Measure-Object WorkingSet64 -Sum).Sum)/1MB)
+  engines   = $engines
+  top       = $top
+} | ConvertTo-Json -Depth 4 -Compress
+`;
+  const r = await ps(script);
+  try {
+    const j = JSON.parse(r.out.trim());
+    const top = [].concat(j.top ?? []);
+    return {
+      procCount: j.procCount ?? null,
+      totalWsMB: j.totalWsMB ?? null,
+      engines: j.engines ?? null,
+      busiest: top.sort((a, b) => (b.corePct ?? 0) - (a.corePct ?? 0))[0] ?? null,
+      top,
+    };
+  } catch {
+    return { procCount: null, totalWsMB: null, engines: null, busiest: null, top: [] };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layer 3 — transcripts. What the renderer is actually holding. A session's cost
+// to the app scales with its transcript, which is why a long session is not free
+// to leave open even when it is idle.
+// ─────────────────────────────────────────────────────────────────────────────
+function transcripts() {
+  const root = path.join(homedir(), '.claude', 'projects');
+  if (!existsSync(root)) return { projects: [], totalMB: null, hot: [] };
+  const projects = [];
+  let total = 0;
+  const hot = [];
+  const dayAgo = Date.now() - 86_400_000;
+  for (const name of readdirSync(root)) {
+    const dir = path.join(root, name);
+    let bytes = 0, files = 0;
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.jsonl')) continue;
+        const st = statSync(path.join(dir, f));
+        bytes += st.size; files += 1;
+        if (st.mtimeMs > dayAgo) hot.push({ project: name, file: f, mb: MB(st.size), mtime: cairo(st.mtime) });
+      }
+    } catch { continue; }
+    if (files) { projects.push({ project: name, files, mb: MB(bytes) }); total += bytes; }
+  }
+  projects.sort((a, b) => b.mb - a.mb);
+  hot.sort((a, b) => b.mb - a.mb);
+  return { projects: projects.slice(0, 6), totalMB: MB(total), hot: hot.slice(0, 8) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layer 4 — hooks. Every PreToolUse hook is a separate node process, and they
+// block the tool call. The number that matters is not any one hook's time but
+// the SUM per tool call, because that is what is paid on every single call.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * The DECLARED probe list, before any existence filter.
+ *
+ * 🔴 The declaration and the filter are separate on purpose. tests/slow-audit.test.ts asserts
+ * that no acting hook is listed here, and if it inspected the FILTERED list instead, the
+ * assertion would quietly stop being able to fire on any machine where that hook's file happens
+ * to be missing — a test that can only see what exists is a test that fails open. That is not
+ * hypothetical: the first version of this pair passed a deliberate break for exactly that
+ * reason, because the break named a path `existsSync` then removed.
+ *
+ * `fires` lists the tool kinds whose settings.json matcher this hook is registered under.
+ * dev-server-reaper.mjs and scratchpad-guard's `sweep` are deliberately ABSENT: they stop
+ * processes and archive files. An audit must not act.
+ *
+ * @typedef {[label: string, script: string, args: string[], fires: string[]]} HookProbe
+ *
+ * @param {string} projectDir
+ * @returns {HookProbe[]}
+ */
+export const HOOK_PROBES = (projectDir) => {
+  const g = path.join(homedir(), '.claude', 'hooks');
+  const p = path.join(projectDir, '.claude', 'hooks');
+  return [
+    ['weekly-review-readonly', path.join(g, 'weekly-review-readonly.mjs'), [], ['bash', 'edit']],
+    ['scratchpad-guard pre', path.join(g, 'scratchpad-guard.mjs'), ['pre'], ['bash']],
+    ['bash-guard', path.join(p, 'bash-guard.mjs'), [], ['bash']],
+    ['push-typecheck-guard', path.join(p, 'push-typecheck-guard.mjs'), [], ['bash']],
+    ['module-memory-injector', path.join(p, 'module-memory-injector.mjs'), [], ['bash', 'edit', 'grep', 'read']],
+    ['trap-injector', path.join(p, 'trap-injector.mjs'), [], ['bash', 'edit', 'grep']],
+    ['session-lock beat', path.join(p, 'session-lock.mjs'), ['beat'], ['bash', 'edit']],
+    ['mobile-freeze-guard', path.join(p, 'mobile-freeze-guard.mjs'), [], ['bash', 'edit']],
+    ['protected-file-guard', path.join(p, 'protected-file-guard.mjs'), [], ['bash', 'edit']],
+    ['primary-write-guard', path.join(p, 'primary-write-guard.mjs'), [], ['edit']],
+    ['risky-allow-guard', path.join(p, 'risky-allow-guard.mjs'), [], ['edit']],
+  ];
+};
+
+/**
+ * The probes actually timed on this machine: the declaration, minus anything not installed.
+ *
+ * @param {string} projectDir
+ * @returns {HookProbe[]}
+ */
+export const HOOKS = (projectDir) => HOOK_PROBES(projectDir).filter(([, script]) => existsSync(script));
+
+async function hooks(projectDir) {
+  const payload = JSON.stringify({
+    session_id: 'slow-audit-probe',
+    transcript_path: '',
+    cwd: projectDir,
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Bash',
+    tool_input: { command: 'git status --porcelain', description: 'slow-audit read-only probe' },
+  });
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: projectDir };
+
+  // Bare node startup is the floor every hook pays; without it the per-hook figures
+  // read as if the script were slow when the cost is process creation.
+  const base = [];
+  for (let i = 0; i < 3; i++) base.push((await run(process.execPath, ['-e', '0'], { cwd: projectDir, env, timeout: 20_000 })).ms);
+  const baseline = num(Math.min(...base), 0);
+
+  const rows = [];
+  for (const [label, script, args, fires] of HOOKS(projectDir)) {
+    const times = [];
+    for (let i = 0; i < 3; i++) {
+      const r = await run(process.execPath, [script, ...args], { stdin: payload, cwd: projectDir, env, timeout: 30_000 });
+      times.push(r.ms);
+    }
+    rows.push({ label, ms: num(Math.min(...times), 0), fires });
+  }
+  const perCall = (kind) => num(rows.filter((r) => r.fires.includes(kind)).reduce((a, r) => a + r.ms, 0), 0);
+  return {
+    baselineMs: baseline,
+    rows: rows.sort((a, b) => b.ms - a.ms),
+    perBashCallMs: perCall('bash'),
+    perEditCallMs: perCall('edit'),
+    perGrepCallMs: perCall('grep'),
+    perReadCallMs: perCall('read'),
+    spawnsPerBashCall: rows.filter((r) => r.fires.includes('bash')).length,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layer 5 — CI. The critical path is the SLOWEST job, not the sum; the sum is
+// what is billed. Reporting one as the other is how a wait gets blamed on a bill.
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔴 A SKIPPED job or step carries `startedAt: "0001-01-01T00:00:00Z"`, NOT null. Subtracting
+// that sentinel from a real `completedAt` yields about 63 billion seconds, so a plain max-by-
+// duration reports the one step that never ran as the step that dominated the job. It is the
+// fail-open shape this repo already names elsewhere — an ABSENT answer arriving in the shape of
+// a very large one — and it is not hypothetical here: the first version of this script reported
+// main's `validate` as 719s of "Test" when that run had built for 246s and skipped Test
+// entirely, which would have sent someone to optimise a step that does not run on that event.
+//
+// The arithmetic is deliberately in Node rather than in a `gh --jq` expression so it can be
+// exercised against a fixture; tests/slow-audit.test.ts feeds it exactly that sentinel.
+const SENTINEL_YEAR = '0001';
+
+/**
+ * Seconds between two ISO timestamps, or null when the span is not a real duration — which
+ * includes GitHub's skipped-step sentinel, a missing value and a negative span.
+ *
+ * @param {unknown} startedAt
+ * @param {unknown} completedAt
+ * @returns {number | null}
+ */
+export function spanSeconds(startedAt, completedAt) {
+  if (typeof startedAt !== 'string' || typeof completedAt !== 'string') return null;
+  if (startedAt.startsWith(SENTINEL_YEAR) || completedAt.startsWith(SENTINEL_YEAR)) return null;
+  const a = Date.parse(startedAt), b = Date.parse(completedAt);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  const secs = (b - a) / 1000;
+  return secs < 0 ? null : secs;
+}
+
+/**
+ * Reduce one `gh run view --json jobs` payload to the two figures that must never be confused:
+ * the CRITICAL PATH (the slowest job — what the wait actually is, because jobs run in parallel)
+ * and the BILLED minutes (the sum, with every job rounded UP to a whole minute, which is how
+ * Actions charges). Quoting either as the other is how a wait gets blamed on a bill.
+ *
+ * @typedef {{ name: string, secs: number, dominant: string | null, dominantSecs: number | null }} JobSummary
+ * @typedef {{ criticalPathSecs: number, billedSecs: number, billedMinutesRounded: number, jobs: JobSummary[] }} RunSummary
+ *
+ * @param {unknown} payload
+ * @returns {RunSummary | null}
+ */
+export function summarizeRun(payload) {
+  const all = Array.isArray(payload?.jobs) ? payload.jobs : [];
+  const jobs = [];
+  for (const j of all) {
+    if (j?.conclusion !== 'success') continue;          // skipped / cancelled / failed
+    const secs = spanSeconds(j.startedAt, j.completedAt);
+    if (secs === null) continue;
+    const steps = (Array.isArray(j.steps) ? j.steps : [])
+      .map((s) => ({ name: s?.name, secs: s?.conclusion === 'success' ? spanSeconds(s.startedAt, s.completedAt) : null }))
+      .filter((s) => s.secs !== null);
+    const dominant = steps.sort((a, b) => b.secs - a.secs)[0] ?? null;
+    jobs.push({
+      name: j.name,
+      secs: Math.round(secs),
+      dominant: dominant?.name ?? null,
+      dominantSecs: dominant ? Math.round(dominant.secs) : null,
+    });
+  }
+  if (!jobs.length) return null;
+  return {
+    criticalPathSecs: Math.max(...jobs.map((j) => j.secs)),
+    billedSecs: jobs.reduce((a, j) => a + j.secs, 0),
+    billedMinutesRounded: jobs.reduce((a, j) => a + Math.ceil(j.secs / 60), 0),
+    jobs,
+  };
+}
+
+async function ci(projectDir) {
+  const out = {};
+  for (const [key, ev, extra] of [['pr', 'pull_request', []], ['main', 'push', ['--branch', 'main']]]) {
+    const list = await run('gh', [
+      'run', 'list', '--workflow', 'ci.yml', '--event', ev, '--status', 'success',
+      '--limit', '4', ...extra, '--json', 'databaseId,headBranch',
+    ], { cwd: projectDir, timeout: 60_000 });
+    let runs = [];
+    try { runs = JSON.parse(list.out.trim() || '[]'); } catch { runs = []; }
+    const samples = [];
+    for (const r of runs.slice(0, 3)) {
+      const v = await run('gh', ['run', 'view', String(r.databaseId), '--json', 'jobs'], { cwd: projectDir, timeout: 60_000 });
+      let s = null;
+      try { s = summarizeRun(JSON.parse(v.out.trim() || '{}')); } catch { s = null; }
+      if (s) samples.push({ id: r.databaseId, branch: r.headBranch, ...s });
+    }
+    const med = (xs) => (xs.length ? xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null);
+    out[key] = {
+      samples,
+      medianCriticalPathSecs: med(samples.map((s) => s.criticalPathSecs)),
+      medianBilledMinutes: med(samples.map((s) => s.billedMinutesRounded)),
+    };
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The verdict. Ranked, with the threshold that fired, so it says WHY and not just
+// "slow". Thresholds are pinned by tests/slow-audit.test.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+export const THRESHOLDS = {
+  pagesInThrashing: 5000,   // hard faults/sec — sustained above this, everything stalls
+  pagesInPressure: 1000,
+  availableFreezeMB: 1000,  // below this, this box has bluescreened with no dump
+  availableFloorMB: 1800,   // mem-watchdog.ps1's reap floor
+  rendererHotCorePct: 50,   // one Claude process burning half a core or more
+  hookBudgetMs: 400,        // per tool call, summed across blocking PreToolUse hooks
+};
+
+function verdict(m, a, h) {
+  const found = [];
+  if (m.pagesInPerSec !== null && m.pagesInPerSec >= THRESHOLDS.pagesInThrashing) {
+    found.push({
+      rank: 1, layer: 'machine', severity: 'critical',
+      what: `The box is thrashing: ${m.pagesInPerSec} hard page faults/sec (peak ${m.pagesInPeak}), ${m.availableMB} MB free of ${m.totalMB}.`,
+      why: 'Every fault is a stall on disk for a page that should be resident. This slows file reads, hooks, typing and UI repaint simultaneously — a shape no repo-side cause can produce.',
+      lever: 'Fewer open sessions is the only free lever; more physical RAM is the durable one.',
+    });
+  } else if (m.availableMB !== null && m.availableMB < THRESHOLDS.availableFloorMB) {
+    found.push({
+      rank: 1, layer: 'machine', severity: 'warning',
+      what: `${m.availableMB} MB free of ${m.totalMB}, under the ${THRESHOLDS.availableFloorMB} MB watchdog floor, but faulting only ${m.pagesInPerSec}/sec.`,
+      why: 'Low headroom without a high fault rate is not yet costing wall clock. It is one heavy job away from doing so.',
+      lever: 'Do not start a build, typecheck or test run locally.',
+    });
+  }
+  if (a.busiest && a.busiest.corePct >= THRESHOLDS.rendererHotCorePct) {
+    found.push({
+      rank: found.length + 1, layer: 'claude app', severity: 'warning',
+      what: `Claude process ${a.busiest.pid} is at ${a.busiest.corePct}% of one core, holding ${a.busiest.wsMB} MB after ${a.busiest.upH}h up.`,
+      why: 'The app window\'s cost grows with the transcript it is displaying, so a long-running window gets slower by itself even when idle.',
+      lever: 'Archiving finished sessions releases it. Never stop or restart the app from a session.',
+    });
+  }
+  if (h && h.perBashCallMs !== null && h.perBashCallMs > THRESHOLDS.hookBudgetMs) {
+    found.push({
+      rank: found.length + 1, layer: 'settings', severity: 'note',
+      what: `PreToolUse hooks cost ${h.perBashCallMs}ms per Bash call and ${h.perEditCallMs}ms per Edit — ${h.spawnsPerBashCall} separate node processes per Bash call, against a ${h.baselineMs}ms floor for one.`,
+      why: 'Each hook is its own process and each blocks the tool call. The guards themselves are cheap; process creation is the cost, paid once per hook per call.',
+      lever: 'One dispatcher process instead of N would return most of it. Do not simply delete guards — each was built after a real incident.',
+    });
+  }
+  if (a.engines && a.engines > 3) {
+    found.push({
+      rank: found.length + 1, layer: 'sessions', severity: 'note',
+      what: `${a.engines} session engines alive, ${a.procCount} Claude processes, ${a.totalWsMB} MB resident.`,
+      why: 'Session count is the multiplier on every figure above it.',
+      lever: 'Route new work to a cloud session; archive the ones whose PR has merged.',
+    });
+  }
+  if (!found.length) {
+    found.push({
+      rank: 1, layer: 'none', severity: 'ok',
+      what: 'No threshold fired. The machine layer is healthy.',
+      why: 'If work still feels slow, the cause is the session\'s effort level or the model picker, not this box.',
+      lever: 'Compare against the previous record below before changing anything.',
+    });
+  }
+  return found;
+}
+
+function history() {
+  if (!existsSync(LOG)) return [];
+  return readFileSync(LOG, 'utf8').split('\n').filter(Boolean).map((l) => {
+    try { return JSON.parse(l); } catch { return null; }
+  }).filter(Boolean);
+}
+
+function record(snapshot) {
+  try {
+    mkdirSync(path.dirname(LOG), { recursive: true });
+    appendFileSync(LOG, JSON.stringify(snapshot) + '\n', 'utf8');
+  } catch { /* the audit is still useful without its log */ }
+}
+
+function delta(prev, now) {
+  if (!prev) return null;
+  const f = (a, b) => (a === null || b === null || a === undefined || b === undefined ? null : num(b - a, 0));
+  return {
+    since: prev.at,
+    pagesInPerSec: f(prev.machine?.pagesInPerSec, now.machine.pagesInPerSec),
+    availableMB: f(prev.machine?.availableMB, now.machine.availableMB),
+    engines: f(prev.app?.engines, now.app.engines),
+    totalWsMB: f(prev.app?.totalWsMB, now.app.totalWsMB),
+    perBashCallMs: f(prev.hooks?.perBashCallMs, now.hooks?.perBashCallMs),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function table(s) {
+  const L = [];
+  const sign = (n, unit = '') => (n === null ? '' : `${n > 0 ? '+' : ''}${n}${unit}`);
+  L.push('');
+  L.push(`PHOENIX SLOW AUDIT — ${s.at} Cairo`);
+  L.push('='.repeat(78));
+  L.push('');
+  L.push('MACHINE  (read this first — it is the only layer that slows everything at once)');
+  L.push(`  hard page faults/sec   ${String(s.machine.pagesInPerSec).padEnd(10)} peak ${s.machine.pagesInPeak}`);
+  L.push(`  available RAM          ${String(s.machine.availableMB).padEnd(10)} MB of ${s.machine.totalMB}   (watchdog floor ${THRESHOLDS.availableFloorMB}, freeze line ${THRESHOLDS.availableFreezeMB})`);
+  L.push(`  CPU total              ${String(s.machine.cpuPct).padEnd(10)} %`);
+  L.push(`  disk idle              ${String(s.machine.diskIdlePct).padEnd(10)} %   <- NOT evidence about paging, see the header`);
+  L.push(`  commit charge          ${String(s.machine.commitPct).padEnd(10)} %   <- pagefile is fixed at 64 GB, so this stays green while RAM runs out`);
+  L.push('');
+  L.push('CLAUDE APP');
+  L.push(`  processes ${s.app.procCount}, resident ${s.app.totalWsMB} MB, session engines ${s.app.engines}`);
+  for (const t of s.app.top.slice(0, 3)) {
+    L.push(`    pid ${String(t.pid).padEnd(7)} ${String(t.corePct).padStart(5)}% of one core   ${String(t.wsMB).padStart(5)} MB   up ${t.upH}h`);
+  }
+  L.push('');
+  L.push(`TRANSCRIPTS   ${s.transcripts.totalMB} MB total`);
+  for (const p of s.transcripts.projects.slice(0, 3)) {
+    L.push(`    ${String(p.mb).padStart(6)} MB  ${String(p.files).padStart(4)} files  ${p.project}`);
+  }
+  if (s.transcripts.hot.length) {
+    L.push(`  largest touched in the last 24h: ${s.transcripts.hot.slice(0, 3).map((x) => `${x.mb} MB`).join(', ')}`);
+  }
+  L.push('');
+  if (s.hooks) {
+    L.push('HOOKS  (per tool call, summed across blocking PreToolUse hooks)');
+    L.push(`  Bash ${s.hooks.perBashCallMs}ms over ${s.hooks.spawnsPerBashCall} processes   Edit ${s.hooks.perEditCallMs}ms   Grep ${s.hooks.perGrepCallMs}ms   Read ${s.hooks.perReadCallMs}ms`);
+    L.push(`  one bare node spawn on this box: ${s.hooks.baselineMs}ms  <- the floor each hook pays before running a line`);
+    for (const r of s.hooks.rows.slice(0, 4)) L.push(`    ${String(r.ms).padStart(5)}ms  ${r.label}`);
+    L.push('');
+  }
+  if (s.ci) {
+    L.push('CI  (critical path = the wait; billed minutes = the bill; never quote one as the other)');
+    for (const [k, label] of [['pr', 'pull request'], ['main', 'push to main']]) {
+      const c = s.ci[k];
+      if (!c || !c.samples.length) { L.push(`  ${label.padEnd(14)} no readable runs`); continue; }
+      L.push(`  ${label.padEnd(14)} wait ${c.medianCriticalPathSecs}s   billed ~${c.medianBilledMinutes} min/run`);
+      for (const j of c.samples[0].jobs) {
+        L.push(`      ${String(j.secs).padStart(4)}s  ${j.name.padEnd(10)} dominated by ${j.dominant} (${j.dominantSecs}s)`);
+      }
+    }
+    L.push('');
+  }
+  L.push('VERDICT');
+  for (const v of s.verdict) {
+    L.push(`  ${v.rank}. [${v.severity.toUpperCase()}] ${v.layer} — ${v.what}`);
+    L.push(`     why:   ${v.why}`);
+    L.push(`     lever: ${v.lever}`);
+  }
+  L.push('');
+  if (s.delta) {
+    L.push(`SINCE THE LAST AUDIT (${s.delta.since} Cairo)`);
+    L.push(`  faults/sec ${sign(s.delta.pagesInPerSec)}   available RAM ${sign(s.delta.availableMB, ' MB')}   engines ${sign(s.delta.engines)}   app resident ${sign(s.delta.totalWsMB, ' MB')}   hooks/Bash ${sign(s.delta.perBashCallMs, 'ms')}`);
+  } else {
+    L.push('SINCE THE LAST AUDIT   no previous record — this one is the baseline.');
+  }
+  L.push('');
+  L.push(`log: ${LOG}`);
+  L.push('');
+  return L.join('\n');
+}
+
+async function main() {
+  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+
+  if (ARGS.has('--history')) {
+    const h = history();
+    if (!h.length) { console.log('no records yet'); return; }
+    for (const r of h) {
+      console.log(`${r.at}  faults/sec ${String(r.machine?.pagesInPerSec).padStart(6)}  freeMB ${String(r.machine?.availableMB).padStart(6)}  engines ${String(r.app?.engines).padStart(3)}  appMB ${String(r.app?.totalWsMB).padStart(6)}  hooks/Bash ${String(r.hooks?.perBashCallMs ?? '-').padStart(5)}ms`);
+    }
+    return;
+  }
+
+  const [m, a] = await Promise.all([machine(), app()]);
+  const t = transcripts();
+  const h = QUICK ? null : await hooks(projectDir);
+  const c = QUICK ? null : await ci(projectDir);
+
+  const snapshot = {
+    at: cairo(),
+    atISO: new Date().toISOString(),
+    machine: m, app: a, transcripts: t, hooks: h, ci: c,
+  };
+  snapshot.verdict = verdict(m, a, h);
+  snapshot.delta = delta(history().at(-1), snapshot);
+
+  record(snapshot);
+  console.log(AS_JSON ? JSON.stringify(snapshot, null, 2) : table(snapshot));
+}
+
+// Run only when invoked directly, so tests/slow-audit.test.ts can import THRESHOLDS
+// without launching an audit (which would spawn PowerShell and every hook).
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  await main();
+}

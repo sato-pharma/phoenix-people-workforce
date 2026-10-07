@@ -34,3 +34,6 @@
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
 - [`employee_hr_id_compact` is LOWERCASE, so an `upper()` join to `salary_records` matches nothing](employee-hr-id-compact-is-lowercase-so-upper-joins-nothing.md) — every payslip value then reads null, which looks exactly like "not one EGP was paid"; prove a money join on a row you know was paid.
+- [Another session's roll-up can CLOSE your open PR as superseded](another-sessions-rollup-can-close-your-open-pr-as-superseded.md) — `state: CLOSED` with a null merge commit, yet the work shipped inside its roll-up; verify by file CONTENT against `origin/main` and never re-open or re-merge.
+- [A 95%-idle disk does NOT mean the box is not paging](disk-idle-is-not-evidence-against-paging.md) — `Memory\Pages Input/sec` is the only test and read 9,447/sec while the disk reported idle; this corrects the 2026-09-17 inference. `node scripts/slow-audit.mjs`.
+- [A skipped CI step is `0001-01-01`, not null](a-skipped-ci-step-is-0001-01-01-not-null.md) — subtracting it yields ~63 billion seconds, so max-by-duration names the step that never ran as the job's dominant one; guard jobs as well as steps.
