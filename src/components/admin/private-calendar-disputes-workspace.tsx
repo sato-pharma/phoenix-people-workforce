@@ -1,8 +1,11 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AlertTriangle, Check, X } from "lucide-react";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
+import type { PrivateCalendarReviewMessage, PrivateCalendarReviewRequest } from "@/lib/private-calendar/logic";
 
 export type AdminPrivateCalendarDispute = {
   adminDecisionNote: string | null;
@@ -18,8 +21,34 @@ export type AdminPrivateCalendarDispute = {
   id: string;
   itemSource: string | null;
   itemSourceRecordId: string | null;
+  // The replies on this request, oldest first. The opening claim is `claimText` above and is not
+  // repeated here, so the thread renders the claim and then these.
+  messages: PrivateCalendarReviewMessage[];
   status: "pending_review" | "accepted" | "rejected";
 };
+
+/**
+ * The reviewer's row, in the shape the shared thread component takes.
+ *
+ * Mapped rather than renamed at the source: `adminDecisionNote`/`disputeDate` are what the dispute
+ * table and its service have always called these, and the thread is used by the employee's calendar
+ * too, so one of the two has to translate.
+ */
+function asReviewRequest(dispute: AdminPrivateCalendarDispute): PrivateCalendarReviewRequest {
+  return {
+    claimSourceText: dispute.claimSourceText,
+    claimText: dispute.claimText,
+    createdAt: dispute.createdAt,
+    date: dispute.disputeDate,
+    decidedAt: dispute.decidedAt,
+    decisionNote: dispute.adminDecisionNote,
+    employeeHrId: dispute.employeeHrId,
+    employeeName: dispute.employeeName,
+    id: dispute.id,
+    messages: dispute.messages ?? [],
+    status: dispute.status,
+  };
+}
 
 // DATE-ONLY (a calendar-item date, a `date` column), which `new Date` parses as UTC midnight. UTC here
 // is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not an
@@ -33,10 +62,14 @@ function formatDate(iso: string) {
 export function PrivateCalendarDisputesWorkspace({
   initialDisputes,
   initialError,
+  viewerHrId,
 }: {
   initialDisputes: AdminPrivateCalendarDispute[];
   initialError: string | null;
+  /** The reviewer's own HR id, so a reply he wrote reads "You" rather than his own name. */
+  viewerHrId?: string | null;
 }) {
+  const router = useRouter();
   const [disputes, setDisputes] = useState(initialDisputes);
   const [error, setError] = useState(initialError);
   const [decidingId, setDecidingId] = useState<string | null>(null);
@@ -120,6 +153,18 @@ export function PrivateCalendarDisputesWorkspace({
                   <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Where to verify</p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">{dispute.claimSourceText}</p>
                 </div>
+              </div>
+
+              {/* The conversation, above the decision: a reviewer should be able to ask where to look
+                  and read the answer before accepting or rejecting the day. */}
+              <div className="mt-3">
+                <PrivateCalendarReviewRequestThread
+                  canReply
+                  claimAuthorLabel={dispute.employeeName ?? dispute.employeeHrId}
+                  onPosted={() => router.refresh()}
+                  request={asReviewRequest(dispute)}
+                  viewerHrIdKey={viewerHrId ? viewerHrId.trim().toLowerCase() : null}
+                />
               </div>
 
               {decidingId === dispute.id ? (

@@ -34,6 +34,7 @@ import {
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
+import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   phxFieldClassName,
@@ -451,6 +452,7 @@ export function PrivateCalendar({
     exceptions,
     items,
     month,
+    reviewRequests,
     selectedEmployee,
     sourceReadiness,
     summary,
@@ -630,6 +632,17 @@ export function PrivateCalendar({
   // this is can act on it, never a manager/admin paging through someone else's
   // calendar from the admin surface.
   const canActOnOwnDay = viewerHrId != null && privateCalendarHrIdKey(viewerHrId) === privateCalendarHrIdKey(selectedEmployee.hrId);
+
+  // The review requests raised on the day in view, for the person whose calendar this is, each with
+  // its reply thread. `?? []` because a browser still holding the previous bundle mid-deploy would
+  // otherwise crash the whole calendar over a field that simply is not there yet.
+  const selectedDayReviewRequests = useMemo(
+    () => (reviewRequests ?? []).filter(
+      (request) => request.date === selectedDate
+        && privateCalendarHrIdKey(request.employeeHrId) === privateCalendarHrIdKey(selectedEmployee.hrId),
+    ),
+    [reviewRequests, selectedDate, selectedEmployee.hrId],
+  );
 
   const [disputeFormOpen, setDisputeFormOpen] = useState(false);
   const [disputeClaimText, setDisputeClaimText] = useState("");
@@ -1459,6 +1472,24 @@ export function PrivateCalendar({
                   Cancel
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {/* The conversation on this day's review request. Shown to the person whose calendar this
+              is — a reply is the other half of what he asked for, and it belongs beside the day it is
+              about rather than in a separate inbox he would have to go and find. */}
+          {canActOnOwnDay && selectedDayReviewRequests.length > 0 ? (
+            <div className="space-y-3 border-b border-slate-100 bg-slate-50/60 px-4 py-4 sm:px-6">
+              {selectedDayReviewRequests.map((request) => (
+                <PrivateCalendarReviewRequestThread
+                  canReply
+                  claimAuthorLabel="You"
+                  key={request.id}
+                  onPosted={() => loadWorkspace(year, month, selectedEmployee.hrId, selectedDate, viewMode).catch(() => undefined)}
+                  request={request}
+                  viewerHrIdKey={viewerHrId ? privateCalendarHrIdKey(viewerHrId) : null}
+                />
+              ))}
             </div>
           ) : null}
 

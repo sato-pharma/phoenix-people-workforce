@@ -53,6 +53,7 @@ import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { ApiError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/phoenix-crm/server/needs-you";
+import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
 import { VALIDATION_REVIEWS_PATH } from "@/lib/phoenix-crm/server/validation-reviews";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
@@ -920,6 +921,62 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
   },
 };
 
+// ── Private Calendar ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Review requests an employee raised on one of his own calendar days (added 2026-10-07).
+ *
+ * The decision is SUPER ADMIN ONLY end to end — `assertDisputeDecisionActor` in
+ * `private-calendar/disputes.ts` is a narrower gate than the attendance matrix, deliberately, because
+ * these days feed pay. So nobody else can clear this row for him, which is the strongest claim there
+ * is to the `yours` lane, and every other viewer gets the third state rather than a zero about a queue
+ * they cannot see.
+ *
+ * 🔴 WHY IT IS ON THE BOARD AT ALL. The request already notifies him on submission — email, in-app and
+ * push, plus the standing Telegram mirror — but that notice fires once, and the Disputes Inbox is a tab
+ * he has to remember to open. One request sat pending for two days with nothing re-raising it. The
+ * board is the only channel that still shows it tomorrow.
+ *
+ * It counts nothing itself: the one producer is the same function the hub's Disputes Inbox tab reads,
+ * so the board and the tab can never disagree about how many are waiting.
+ */
+const calendarReviewRequests: NeedsYouAdapter = {
+  id: "calendar-review-requests",
+  load: async (access, now) => {
+    if (access.role !== "Super Admin") {
+      return {
+        status: "not-applicable",
+        because: "A calendar review request is decided by the Super Admin alone",
+      };
+    }
+    const pending = await listPendingPrivateCalendarDataDisputes(access);
+    if (pending.length === 0) return EMPTY;
+    const oldestAt = pending
+      .map((request) => request.createdAt)
+      .sort((left, right) => String(left).localeCompare(String(right)))[0] ?? null;
+    return ok([
+      {
+        key: "calendar-review-requests:pending",
+        sourceId: "calendar-review-requests",
+        kind: "approval",
+        lane: "yours",
+        label: `${pending.length} calendar review ${plural(pending.length, "request is", "requests are")} waiting for your decision`,
+        count: pending.length,
+        // Names, never HR ids — the owner's standing rule, and the request row carries the name it was
+        // submitted with. An unnamed row is left out rather than printed as a code.
+        people: Array.from(new Set(pending.map((request) => request.employeeName).filter((name): name is string => Boolean(name)))),
+        href: needsYouDestinations["calendar-review-requests"].href,
+        externalUrl: null,
+        oldestAt,
+        ageDays: ageDaysSince(oldestAt, now),
+        // No SLA on these upstream, so no verdict is invented here.
+        overdue: false,
+        note: "An employee says the calendar is wrong about one day. Read the conversation on the request and reply there before accepting or declining it.",
+      },
+    ]);
+  },
+};
+
 /**
  * THE REGISTRY. `service.ts` fans out over exactly this array, and
  * `tests/needs-you-never-under-reports.test.ts` holds its ids against `needsYouSourceIds` — so an
@@ -945,6 +1002,7 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   salaryFlags,
   phoenixCrmDecisions,
   orphanedRequests,
+  calendarReviewRequests,
 ];
 
 /**

@@ -20,6 +20,7 @@ type Props = {
   historicalItems: HistoricalApprovalItem[];
   initialModule?: ActionHubModule | null;
   initialId?: string | null;
+  callerHrId?: string | null;
   callerRole?: string | null;
   initialTab: ActionsTab;
   // When rendered inside the employee-portal shell (which supplies its own page header),
@@ -47,6 +48,7 @@ export function ActionsWorkspace({
   historicalItems,
   initialModule,
   initialId,
+  callerHrId,
   callerRole,
   initialTab,
   embedded,
@@ -124,7 +126,7 @@ export function ActionsWorkspace({
       ) : tab === "mine" ? (
         <MyRequestsList items={myRequests} initialModule={initialModule} initialId={initialId} />
       ) : tab === "disputes" ? (
-        <PrivateCalendarDisputesWorkspace initialDisputes={disputes ?? []} initialError={null} />
+        <PrivateCalendarDisputesWorkspace initialDisputes={disputes ?? []} initialError={null} viewerHrId={callerHrId} />
       ) : tab === "decided_for_me" ? (
         <DecidedForMeList items={decidedForMeItems} windowDays={decidedForMeWindowDays} failed={decidedForMeFailed} />
       ) : (
