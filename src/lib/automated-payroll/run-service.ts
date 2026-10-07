@@ -50,6 +50,7 @@ import {
   findPartSplitConflicts,
 } from "./part-split-conflict.ts";
 import {
+  chargedFiguresFromDrafts,
   chargeSourceKind,
   detectModuleDrift,
   describeModuleDriftBlock,
@@ -59,6 +60,7 @@ import {
   RECOMMENDED_AT_CONFIRM_KEY,
   snapshotFromSummary,
   snapshotRecommendations,
+  takeCurrentModuleFigures,
   type ModuleDriftReport,
 } from "./module-drift.ts";
 import {
@@ -540,6 +542,28 @@ function manualRowCandidates(
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
 
+/**
+ * A module-sourced step's rows with each STALE figure swapped for the module's current one.
+ *
+ * Used by both the step view and its confirm, so what HR sees is what the confirm stores. A figure
+ * that differs from the last confirm is somebody's decision and is left alone; a step never
+ * confirmed has no snapshot and is returned as it is. See takeCurrentModuleFigures.
+ */
+function withCurrentModuleFigures(
+  stepKey: StepKey,
+  rows: StepRow[],
+  state: StepState | null,
+  draftRows: DraftRow[],
+): StepRow[] {
+  if (!MODULE_SOURCED_STEP_KEYS.includes(stepKey) || !state) return rows;
+  return takeCurrentModuleFigures({
+    stepKey,
+    rows,
+    snapshot: snapshotFromSummary(state.summary),
+    chargedByCompact: chargedFiguresFromDrafts(draftRows),
+  });
+}
+
 export async function getStepRecommendation(
   access: AccessContext,
   runId: string,
@@ -559,20 +583,25 @@ export async function getStepRecommendation(
   // leaving it out would overstate take-home for exactly the people whose pay
   // has already gone wrong once. One indexed lookup, on the read path only.
   const carryForwardByCompact = await outstandingCarryForwardFor(runId);
-  const rows = await recommendStep({
-    access,
-    period,
-    stepKey,
-    members,
-    sources,
-    draftRows,
-    carryForwardByCompact,
-  });
-  const states = await listStepStates(runId);
+  const [recommended, states] = await Promise.all([
+    recommendStep({
+      access,
+      period,
+      stepKey,
+      members,
+      sources,
+      draftRows,
+      carryForwardByCompact,
+    }),
+    listStepStates(runId),
+  ]);
+  const state = states.find((candidate) => candidate.stepKey === stepKey) ?? null;
+  // The step shows the figure its confirm will store — see withCurrentModuleFigures.
+  const rows = withCurrentModuleFigures(stepKey, recommended, state, draftRows);
   return {
     run,
     rows,
-    state: states.find((state) => state.stepKey === stepKey) ?? null,
+    state,
     candidates: manualRowCandidates(stepKey, members, rows),
   };
 }
@@ -725,8 +754,19 @@ export async function confirmStep(
   assertStepPhaseAllowed(run, stepKey);
 
   const period: PayrollPeriod = { month: run.month, year: run.year };
-  const { members, sources, draftRows } = await loadRunContext(period, runId);
-  const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
+  const [{ members, sources, draftRows }, states] = await Promise.all([
+    loadRunContext(period, runId),
+    listStepStates(runId),
+  ]);
+  const recommended = await recommendStep({ access, period, stepKey, members, sources, draftRows });
+  // RE-CONFIRMING TAKES THE MODULE'S CURRENT FIGURE for every line nobody overrode — the remedy the
+  // drift block names. Without this the saved figure won and the re-confirm stored it again.
+  const rows = withCurrentModuleFigures(
+    stepKey,
+    recommended,
+    states.find((state) => state.stepKey === stepKey) ?? null,
+    draftRows,
+  );
 
   // A hold may not be CONFIRMED without a reason either.
   //
@@ -841,14 +881,7 @@ export async function getModuleDrift(access: AccessContext, runId: string): Prom
   // needed. It matters only for an employee the step never persisted: `row.values` would then show
   // the live recommendation, and a 0.00 the sheet is about to pay would be reported as an override
   // somebody chose.
-  const chargedByCompact: Record<string, Record<string, number>> = {};
-  for (const draft of draftRows) {
-    const fields: Record<string, number> = {};
-    for (const [key, value] of Object.entries(draft as unknown as Record<string, unknown>)) {
-      if (typeof value === "number" && Number.isFinite(value)) fields[key] = value;
-    }
-    chargedByCompact[draft.employeeHrIdCompact] = fields;
-  }
+  const chargedByCompact = chargedFiguresFromDrafts(draftRows);
 
   const reports: ModuleDriftReport[] = [];
   for (const stepKey of MODULE_SOURCED_STEP_KEYS) {

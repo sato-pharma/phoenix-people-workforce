@@ -10,6 +10,7 @@ import {
   RECOMMENDED_AT_CONFIRM_KEY,
   snapshotFromSummary,
   snapshotRecommendations,
+  takeCurrentModuleFigures,
 } from "../src/lib/automated-payroll/module-drift.ts";
 import type { StepRow } from "../src/lib/automated-payroll/types.ts";
 
@@ -319,4 +320,62 @@ export function runAutomatedPayrollModuleDriftTests() {
     "every step that reads the Deductions module must be watched for drift, and only those — a " +
       "new module-sourced step added without this list would go unwatched with nothing to show it",
   );
+
+  // ---- RE-CONFIRMING A STEP TAKES THE MODULE'S CURRENT FIGURE (2026-10-07) ---------------------
+  // The live September 2026 run had 13 blocking lines and the block's own remedy — re-confirm the
+  // step — could clear none of them: a step shows and confirms `pick(draft, recommended)`, so the
+  // saved figure won and was stored again. And the re-confirm wrote the NEW proposal as the
+  // snapshot, so the old figure then read as a deliberate override and the block LIFTED while the
+  // run still paid it.
+  const staleSnapshot = { b1: { p1odCrmValue: 0 }, b2: { p1odCrmValue: 900 } };
+  const staleDrafts = { b1: { p1odCrmValue: 0 }, b2: { p1odCrmValue: 700 } };
+  const staleRows = [
+    // Frozen at 0.00 by the confirm; the module now proposes 733.33. Nobody chose the 0.00.
+    row({ hrId: "B-1", fullName: "Frozen", values: { p1odCrmValue: 0 }, recommended: { p1odCrmValue: 733.33 } }),
+    // Somebody set 700 against a proposal of 900, and the module has since moved to 1000.
+    row({ hrId: "B-2", fullName: "Overridden", values: { p1odCrmValue: 700 }, recommended: { p1odCrmValue: 1000 } }),
+  ];
+  const taken = takeCurrentModuleFigures({
+    stepKey: "p1_crm",
+    rows: staleRows,
+    snapshot: staleSnapshot,
+    chargedByCompact: staleDrafts,
+  });
+  assert.equal(taken[0].values.p1odCrmValue, 733.33, "a stale line takes the module's current figure");
+  assert.equal(taken[1].values.p1odCrmValue, 700, "a figure that differs from the confirm is somebody's decision and stays");
+  assert.equal(staleRows[0].values.p1odCrmValue, 0, "the input rows are not mutated");
+  assert.equal(
+    takeCurrentModuleFigures({ stepKey: "p1_crm", rows: staleRows, snapshot: null, chargedByCompact: staleDrafts }),
+    staleRows,
+    "a step never confirmed is returned exactly as it is",
+  );
+
+  // What the re-confirm then stores, read back the way the next load reads it: nothing is stale and
+  // nothing new reads as an override — the block clears because the money moved, not because the
+  // check went blind.
+  const afterReconfirm = detectModuleDrift({
+    stepKey: "p1_crm",
+    rows: taken.map((r) => ({ ...r })),
+    snapshot: snapshotRecommendations(taken),
+    chargedByCompact: { b1: { p1odCrmValue: taken[0].values.p1odCrmValue }, b2: { p1odCrmValue: 700 } },
+  });
+  assert.equal(afterReconfirm.staleCharges, 0);
+  assert.equal(
+    afterReconfirm.rows.find((r) => r.fullName === "Frozen"),
+    undefined,
+    "after the re-confirm the formerly stale line charges what the module proposes",
+  );
+
+  // Both the step view and its confirm go through it — the grid shows what the confirm stores.
+  const runService = runServiceSource;
+  const confirmStepBody = runService.slice(
+    runService.indexOf("export async function confirmStep("),
+    runService.indexOf("export async function getModuleDrift("),
+  );
+  assert.match(confirmStepBody, /withCurrentModuleFigures\(/, "confirmStep must take the module's current figures");
+  const viewBody = runService.slice(
+    runService.indexOf("export async function getStepRecommendation("),
+    runService.indexOf("function assertStepPhaseAllowed("),
+  );
+  assert.match(viewBody, /withCurrentModuleFigures\(/, "the step view must show what the confirm will store");
 }

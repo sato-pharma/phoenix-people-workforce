@@ -1,14 +1,20 @@
 ---
 name: approved-is-not-pushed-and-a-confirmed-step-freezes-the-zero
-description: "Automated Payroll showing fewer deductions than the Deductions module is TWO different things, and the first is not a bug - a row must be PUSHED, not merely approved; the second is that confirming a step freezes the figure the module proposed AT THAT MOMENT, so a push after the confirm reaches nobody's payslip and the drift report used to be blind to it."
+description: "Since 2026-10-07 \"Approved for Payroll\" IS the pay gate again, pushed or not (the 2026-09 push gate is RETIRED, owner) - but confirming a step still freezes the module's figure AT THAT MOMENT, so a decision after the confirm needs deduction-resync.ts, which recordDecision now calls itself."
 metadata:
   node_type: memory
   type: project
   originSessionId: 02b15773-349d-45f7-b725-9ffb4deee410
-  modified: 2026-10-06T06:05:41.341Z
+  modified: 2026-10-07T07:17:20.717Z
 ---
 
-**"Approved for Payroll" releases nothing.** From `2026-09` the single gate for pay is the PUSH
+🔴 **RETIRED 2026-10-07 (owner: "make the Automated Payroll able to read them and every other
+deduction from the Deductions module").** The push gate below left 16 approved September lines,
+11,580.17 EGP across 6 people, off the sheet. Payroll now charges every "Approved for Payroll"
+candidate, pushed or not, in every month; `monthRequiresPush` returns false; `recordDecision` runs
+`deduction-resync.ts` when approval or the approved amount changes. The paragraph below is history.
+
+**(History) "Approved for Payroll" releases nothing.** From `2026-09` the single gate for pay is the PUSH
 (owner rule 2026-09-22, `DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY` in
 `src/lib/deductions/push-cutover.ts`). Measured 2026-10-06: of four approved unpaid-vacation rows
 for September, one was pushed, and Automated Payroll correctly showed that one person. That is the

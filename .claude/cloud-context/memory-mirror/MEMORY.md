@@ -33,4 +33,3 @@
 
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
-- [a backup keyed by basename restores the WRONG file](a-backup-keyed-by-basename-restores-the-wrong-file.md) — `tests/e2e/auth.setup.ts` and `tests/synthetic/helpers/auth.setup.ts` are both `auth.setup.ts`, so a break-and-restore matrix using `$(basename).good` wrote the synthetic body into the e2e path and every assertion still passed; key backups by full path and diff the committed change against your branch point, since the corrupted file was clean, staged and valid.

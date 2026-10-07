@@ -2,7 +2,7 @@ import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
 import { stepDefinition } from "./step-definitions.ts";
 
-import type { StepKey, StepRow } from "./types.ts";
+import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
 /**
  * Has the Deductions module changed its mind since this step was confirmed?
@@ -264,6 +264,57 @@ export function mergeModuleDrift(reports: ModuleDriftReport[]): ModuleDriftRepor
     staleCharges: rows.filter((row) => !row.overridden).length,
     overriddenButMoved: rows.filter((row) => row.overridden).length,
   };
+}
+
+/** compact HR id -> draft field -> the figure frozen on the run's own row (nulls left out). */
+export function chargedFiguresFromDrafts(draftRows: DraftRow[]): Record<string, Record<string, number>> {
+  const chargedByCompact: Record<string, Record<string, number>> = {};
+  for (const draft of draftRows) {
+    const fields: Record<string, number> = {};
+    for (const [key, value] of Object.entries(draft as unknown as Record<string, unknown>)) {
+      if (typeof value === "number" && Number.isFinite(value)) fields[key] = value;
+    }
+    chargedByCompact[draft.employeeHrIdCompact] = fields;
+  }
+  return chargedByCompact;
+}
+
+/**
+ * A step's rows with every STALE figure replaced by what the Deductions module proposes now.
+ *
+ * WHY. A step shows — and its confirm persists — `pick(draft, recommended)`: a saved figure always
+ * wins. So a confirmed figure the module has since moved stays on the row however many times the
+ * step is re-confirmed, and the drift block's own remedy ("re-confirm the step to take the module's
+ * current figures") did nothing. Worse than nothing: the re-confirm stored the NEW proposal as the
+ * snapshot while the row kept the OLD figure, so the row then read as a deliberate override, the
+ * block lifted, and Part 2 would have paid the figure the block existed to stop. Measured on the
+ * live September 2026 run, 2026-10-07: 13 blocking lines, none of which a re-confirm could clear.
+ *
+ * Only `!overridden` rows are touched — the figure is still the one the module proposed at the last
+ * confirm, so nobody chose it. A figure that differs from that confirm is somebody's decision and
+ * stays exactly as it is. A step never confirmed (no snapshot) is returned unchanged.
+ */
+export function takeCurrentModuleFigures(input: {
+  stepKey: StepKey;
+  rows: StepRow[];
+  snapshot: RecommendationSnapshot | null;
+  chargedByCompact: Record<string, Record<string, number>>;
+}): StepRow[] {
+  const stale = detectModuleDrift(input).rows.filter((row) => !row.overridden);
+  if (stale.length === 0) return input.rows;
+  const byHr = new Map<string, Map<string, number>>();
+  for (const row of stale) {
+    const fields = byHr.get(row.hrId) ?? new Map<string, number>();
+    fields.set(row.field, row.proposedNow);
+    byHr.set(row.hrId, fields);
+  }
+  return input.rows.map((row) => {
+    const fields = byHr.get(row.hrId);
+    if (!fields) return row;
+    const values = { ...row.values };
+    for (const [field, proposedNow] of fields) values[field] = proposedNow;
+    return { ...row, values };
+  });
 }
 
 /**
