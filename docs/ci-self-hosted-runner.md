@@ -595,11 +595,11 @@ One did, around a finished branch waiting to open its PR: **14 consecutive refus
 session's `all` held it. Nothing was wrong with the branch, the box or the refusal. The work was simply
 parked, and the session had no sanctioned way out.
 
-**The routes out of a busy box.**
+**The routes out of a busy — or unreachable — box.**
 
 | Invocation | What happens | Cost |
 | --- | --- | --- |
-| *(no flag)* — the default | the probe asks the box; **busy → dispatches `ci.yml` at once**, free → runs on the box | nothing when free, ~14 billable minutes when busy |
+| *(no flag)* — the default | the probe asks the box; **busy OR no answer → dispatches `ci.yml` at once**, free → runs on the box | nothing when free, ~14 billable minutes otherwise |
 | `--urgent` | the same thing, said out loud — kept as an alias, and still immediate when the knob below sets a wait | ~14 billable minutes, at once |
 | `--wait <minutes>` | queues for the box on your own budget, a line each 30 s, then escalates — **wins over `--urgent`'s zero, in either order** | nothing, then ~14 billable minutes |
 | `--no-actions` (alias `--free`) | waits **10 minutes** and **never bills** — refuses at the end of the wait | nothing, ever |
@@ -610,6 +610,25 @@ parked, and the session had no sanctioned way out.
 want to make the run depend on github actions if the self hosted box is busy .. if free use it directly
 but if busy use github actions"*. `DEFAULT_WAIT_MINUTES` is therefore **0**: a bare invocation probes the
 box and, on a busy answer, dispatches immediately instead of polling first.
+
+🔴 **AND A BOX THAT DOES NOT ANSWER AT ALL TAKES THE SAME ROUTES — his second ruling the same day:**
+*"make an unreachable box escalate to Actions too, not only a busy one"*. A failed ssh, or a box that
+answers without `PROBE_OK`, used to end the invocation at **exit 2 with no verdict** — on the single
+piece of evidence that most argues *for* GitHub Actions, namely that the box cannot be used at all.
+`decideBusyAction` now takes `probeKnown` and returns a `reason` of `free`, `busy` or `unreachable`,
+and an unreachable box dispatches, polls a budget if one was given (a dropped ssh is often a blip, and
+a poll costs nothing), or refuses under `--no-actions`.
+
+🔴 **THIS DOES NOT WEAKEN THE FAIL-CLOSED PROBE, AND NOBODY SHOULD "RESTORE" IT.** The probe fails
+closed so an unreadable answer is never mistaken for an **idle box** — what that forbids is *starting a
+run there*, which is what OOM-kills another session's build. `run` remains unreachable from
+`probeKnown: false` (section 10b asserts it across every `actions` × `wait` × `waited` combination), so
+the invariant is intact; what changed is only that the caller is handed the route that never touches the
+box. Two things made it work in practice rather than on paper: **the refusal is now gated on
+`plan.action === "refuse"`, not on the run list** — an unreachable box has *zero* runs, so the old
+condition skipped the refusal and fell through to the push — and **the escalation banner names which of
+the two happened**, because "BUSY" printed about a box that is down sends the reader off to wait for a
+run that does not exist.
 
 **What that replaces, and what it costs.** The 2026-10-06 ruling made the default *wait ten minutes, then
 escalate* — the same policy with a queue in front of it. The queue was the cheap half of the trade, since

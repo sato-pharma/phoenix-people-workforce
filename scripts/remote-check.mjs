@@ -26,14 +26,20 @@
 //   node scripts/remote-check.mjs test --wait 6    # box busy? ask again every 30s for 6 minutes
 //   node scripts/remote-check.mjs all --free       # box busy? wait for it, and never bill Actions
 //
-// 🔴 THE BOX WHEN IT IS FREE, GITHUB ACTIONS THE MOMENT IT IS BUSY (owner, 2026-10-08: *"if free use
-// it directly but if busy use github actions"*). Several sessions share one 7,740 MB box, so a second
-// run can never simply join it — and until 2026-10-06 the refusal was the END of the road, which left a
-// finished branch retrying by hand while another session built. A bare invocation now probes the box
-// and, on a busy answer, dispatches ci.yml AT ONCE at ~14 billable Actions minutes against the box's
-// zero. `--wait <minutes>` buys the old queue back for one call (VISIBLY — a line per poll, never a
-// silent lock), `--free` waits ten minutes and never bills, `--no-wait --no-actions` refuses at once,
-// and PHX_CHECK_WAIT_MINUTES=<n> sets the house default without a code change.
+// 🔴 THE BOX WHEN IT IS FREE, GITHUB ACTIONS WHEN IT IS BUSY **OR UNREACHABLE** (owner, 2026-10-08:
+// *"if free use it directly but if busy use github actions"*, then *"make an unreachable box escalate
+// to Actions too, not only a busy one"*). Several sessions share one 7,740 MB box, so a second run can
+// never simply join it — and until 2026-10-06 the refusal was the END of the road, which left a finished
+// branch retrying by hand while another session built. A bare invocation now probes the box and, on a
+// busy answer OR no answer at all, dispatches ci.yml AT ONCE at ~14 billable Actions minutes against
+// the box's zero. `--wait <minutes>` buys the old queue back for one call (VISIBLY — a line per poll,
+// never a silent lock), `--free` waits ten minutes and never bills, `--no-wait --no-actions` refuses at
+// once, and PHX_CHECK_WAIT_MINUTES=<n> sets the house default without a code change.
+//
+// 🔴 THE PROBE STILL FAILS CLOSED. An unreadable answer is never read as an IDLE BOX: `run` is
+// unreachable from `probeKnown: false`, so nothing is ever started beside another session's build. What
+// the ruling changed is the route out — the caller is handed Actions, which does not touch the box at
+// all, instead of exit 2 and nothing.
 //
 // 🔴 WHY `lockfile` IS HERE, AND WHY IT IS NOT A CHECK. Until 2026-09-30 there was no sanctioned place
 // in this setup to regenerate a lockfile at all. `.claude/hooks/bash-guard.mjs` clause C6 denies pnpm
@@ -275,19 +281,30 @@ function sleepSeconds(seconds) {
 // 🔴 PUSHING THE BRANCH IS FREE. ci.yml triggers on `pull_request` and on a push to `main` only, so
 // pushing a feature branch runs nothing at all. That is why this refuses rather than pushing for
 // you: the push is the session's act, and it bills nothing either way.
-function runOnActions({ branch, sha, names, waitedSeconds }) {
+function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
   console.log("");
   // 🔴 THE LINE MUST NOT SAY "did not free in 0 min". Since the default wait became zero (owner,
   // 2026-10-08) the overwhelmingly common escalation has waited for nothing at all, and a report of a
   // nought-minute wait reads as a bug in the thing that just decided correctly.
+  //
+  // 🔴 AND IT MUST NAME WHICH OF THE TWO HAPPENED. "Busy" and "never answered" call for completely
+  // different things from the reader — wait for a peer's run, or go and look at the box — and a line
+  // that says BUSY about a box that is DOWN sends them to wait for a run that does not exist.
+  const unreachable = reason === "unreachable";
+  const blocked = unreachable ? "did not answer the probe (ssh failed, or no PROBE_OK)" : "is BUSY";
   console.log(
     waitedSeconds > 0
-      ? "remote-check: the box did not free in " + Math.round(waitedSeconds / 60) +
+      ? "remote-check: the box " + (unreachable ? "never answered in " : "did not free in ") +
+          Math.round(waitedSeconds / 60) +
           " min — escalating to GitHub Actions (~14 billable minutes; the box is free, which is why it is tried first)."
-      : "remote-check: the box is BUSY — escalating to GitHub Actions at once (~14 billable minutes; the box " +
-          "is free, which is why it is tried first). Pass --wait <minutes> to queue for it instead, or --free to " +
-          "wait " + FREE_WAIT_MINUTES + " min and never bill.",
+      : "remote-check: the box " + blocked + " — escalating to GitHub Actions at once (~14 billable minutes; " +
+          "the box is free, which is why it is tried first). Pass --wait <minutes> to queue for it instead, or " +
+          "--free to wait " + FREE_WAIT_MINUTES + " min and never bill.",
   );
+  if (unreachable) {
+    console.log("remote-check: nothing was pushed to the box, and this is NOT read as an idle box — " +
+      "check it with: ssh -i " + KEY + " " + USER + "@" + HOST + " true");
+  }
   // A dispatch runs the whole workflow. Saying so keeps the output honest about what was proved: you
   // asked for a subset and you are getting lint + typecheck + the suite + a build + the login smoke.
   console.log(
@@ -579,12 +596,14 @@ if (state.includes("BUSY")) {
 // A refusal, not a wait: a lock makes the second run sit silently for up to half an hour, which
 // reads as a hang, and it cannot reach an older branch at all. Nothing has been pushed yet at this
 // point, so refusing here costs the box nothing.
+// 🔴 THE PROBE STILL FAILS CLOSED — WHAT CHANGED IS THE ROUTE OUT OF IT, NOT THE SAFETY (owner,
+// 2026-10-08: *"make an unreachable box escalate to Actions too, not only a busy one"*). "No output" is
+// an ssh that failed or a box that answered oddly, and it is NEVER read as an idle box: `decideBusyAction`
+// cannot return `run` for `probeKnown: false`, so nothing is ever started beside another session's build.
+// It used to `die` here at exit 2 with no verdict — on the one evidence that most argues FOR Actions,
+// namely that the box cannot answer at all. Now it takes the busy routes: dispatch, or poll a budget
+// (a dropped ssh is often a blip), or refuse under `--no-actions`.
 const busy = parseBusyProbe(state);
-if (!busy.known) {
-  // The probe is the one place this must not fail open: "no output" is an ssh that failed or a box
-  // that answered oddly, never proof that the box is idle.
-  die("could not tell whether the box is busy — the probe did not finish. Nothing was pushed.");
-}
 // 🔴 AND SINCE 2026-10-08 A BUSY BOX IS NOT WAITED OUT EITHER — IT IS PAID FOR, IMMEDIATELY (owner:
 // *"if free use it directly but if busy use github actions"*). `DEFAULT_WAIT_MINUTES` is 0, so a bare
 // invocation probes, reads a busy answer and dispatches ci.yml on the spot rather than spending ten
@@ -596,57 +615,81 @@ if (!busy.known) {
 const FORCED = process.env.PHX_CHECK_FORCE === "1";
 let waitedSeconds = 0;
 let plan = FORCED
-  ? { action: "run", waitLeftSeconds: 0 }
+  ? { action: "run", waitLeftSeconds: 0, reason: "free" }
   : decideBusyAction({
       busyRuns: busy.runs,
       waitedSeconds,
       waitMinutes: escalation.waitMinutes,
       actions: escalation.actions,
+      probeKnown: busy.known,
     });
 while (plan.action === "poll") {
   console.log(
-    "remote-check: box busy (" + busy.runs.length + " run(s): " + busy.runs.join(", ") + ") — asking again in " +
-      BUSY_POLL_SECONDS + "s, " + Math.ceil(plan.waitLeftSeconds / 60) + " min of the wait left",
+    (plan.reason === "unreachable"
+      ? "remote-check: box did not answer the probe (ssh failed, or no PROBE_OK)"
+      : "remote-check: box busy (" + busy.runs.length + " run(s): " + busy.runs.join(", ") + ")") +
+      " — asking again in " + BUSY_POLL_SECONDS + "s, " +
+      Math.ceil(plan.waitLeftSeconds / 60) + " min of the wait left",
   );
   sleepSeconds(BUSY_POLL_SECONDS);
   waitedSeconds += BUSY_POLL_SECONDS;
   const again = parseBusyProbe(ssh(buildBusyProbeScript(REMOTE_ROOT), { capture: true }));
-  if (!again.known) die("could not tell whether the box is busy — the probe did not finish. Nothing was pushed.");
+  busy.known = again.known;
   busy.runs = again.runs;
   plan = decideBusyAction({
     busyRuns: again.runs,
     waitedSeconds,
     waitMinutes: escalation.waitMinutes,
     actions: escalation.actions,
+    probeKnown: again.known,
   });
 }
 if (plan.action === "actions" && !FORCED) {
-  runOnActions({ branch, sha, names, waitedSeconds });
+  runOnActions({ branch, sha, names, waitedSeconds, reason: plan.reason });
 }
-if (busy.runs.length > 0 && plan.action !== "run" && !FORCED) {
-  console.error("remote-check: the box is ALREADY running " + busy.runs.length + " remote-check run(s):");
-  for (const run of busy.runs) console.error("    runs/" + run);
-  console.error("");
-  console.error("    A run whose ssh connection DIED keeps going on the box and keeps the lock — its");
-  console.error("    sshd session stays alive, so nothing on the box can tell it is abandoned. If one of");
-  console.error("    the runs above is yours and you know it was stranded, reap that one by its own");
-  console.error("    directory (never a blanket pkill, which would take another session's live run):");
-  console.error("");
-  console.error("      ssh -i " + KEY + " " + USER + "@" + HOST + " \\");
-  console.error("        'for p in /proc/[0-9]*; do d=$(readlink \"$p/cwd\" 2>/dev/null) || continue;" +
-    " case \"$d\" in */runs/<RUN_ID>*) kill -KILL ${p#/proc/};; esac; done'");
+// 🔴 THIS BLOCK IS GATED ON THE DECISION, NOT ON THE RUN LIST — an unreachable box has ZERO runs, so
+// the old `busy.runs.length > 0` condition would have skipped the refusal entirely and FALLEN THROUGH
+// TO THE PUSH on a box that never answered. The push itself would then fail, but after sending the sha
+// and with a message about ssh rather than about the probe. `plan.action === "refuse"` is the only
+// condition that covers both reasons, and `decideBusyAction` has exactly four actions, so a `refuse`
+// that reaches here can never continue past this `die(`.
+if (plan.action === "refuse" && !FORCED) {
+  if (busy.runs.length > 0) {
+    console.error("remote-check: the box is ALREADY running " + busy.runs.length + " remote-check run(s):");
+    for (const run of busy.runs) console.error("    runs/" + run);
+    console.error("");
+    console.error("    A run whose ssh connection DIED keeps going on the box and keeps the lock — its");
+    console.error("    sshd session stays alive, so nothing on the box can tell it is abandoned. If one of");
+    console.error("    the runs above is yours and you know it was stranded, reap that one by its own");
+    console.error("    directory (never a blanket pkill, which would take another session's live run):");
+    console.error("");
+    console.error("      ssh -i " + KEY + " " + USER + "@" + HOST + " \\");
+    console.error("        'for p in /proc/[0-9]*; do d=$(readlink \"$p/cwd\" 2>/dev/null) || continue;" +
+      " case \"$d\" in */runs/<RUN_ID>*) kill -KILL ${p#/proc/};; esac; done'");
+  } else {
+    console.error("remote-check: the box did not answer the probe — ssh failed, or it returned no PROBE_OK.");
+    console.error("    Nothing was pushed, and this is NOT read as an idle box (the probe fails closed).");
+    console.error("");
+    console.error("    Ask it yourself:");
+    console.error("      ssh -i " + KEY + " " + USER + "@" + HOST + " true");
+  }
   console.error("");
   console.error("    You asked NOT to escalate, so this is the end of the road for this invocation:");
-  console.error("      (default)          a busy box runs ci.yml on GitHub Actions AT ONCE — ~14 billable " +
-    "minutes. You passed --no-actions/--free, which waits " + FREE_WAIT_MINUTES + " min and never bills.");
+  console.error("      (default)          a box that is busy OR unreachable runs ci.yml on GitHub Actions " +
+    "AT ONCE — ~14 billable minutes. You passed --no-actions/--free, which waits " + FREE_WAIT_MINUTES +
+    " min and never bills.");
   console.error("      --wait <minutes>   keep asking the box, a line every " + BUSY_POLL_SECONDS + "s.");
   console.error("      " + WAIT_MINUTES_ENV + "=<n>  the same wait as the house default, for every call in this shell.");
   console.error("      PHX_CHECK_FORCE=1  start beside the other run anyway (this is what OOM-kills a build).");
   console.error("");
   die(
-    "not starting a second one. This box is 7,740 MB and a build alone wants ~7.4 GB of it, so a " +
-      "concurrent run is how a check gets OOM-killed or reports a time that is really contention. " +
-      "Drop --no-actions/--free to let the default escalate, rather than hand-rolling a retry loop.",
+    plan.reason === "unreachable"
+      ? "could not tell whether the box is busy — the probe did not finish. Nothing was pushed, and an " +
+          "unreadable answer is never treated as an idle box. Drop --no-actions/--free to let the default " +
+          "escalate to GitHub Actions, rather than hand-rolling a retry loop."
+      : "not starting a second one. This box is 7,740 MB and a build alone wants ~7.4 GB of it, so a " +
+          "concurrent run is how a check gets OOM-killed or reports a time that is really contention. " +
+          "Drop --no-actions/--free to let the default escalate, rather than hand-rolling a retry loop.",
   );
 }
 

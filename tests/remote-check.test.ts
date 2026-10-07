@@ -269,10 +269,26 @@ export async function runRemoteCheckTests(): Promise<void> {
       );
     }
   }
+  // 🔴 THE PROBE STILL FAILS CLOSED, BUT NOT BY DYING — owner ruling, 2026-10-08: *"make an unreachable
+  // box escalate to Actions too, not only a busy one"*. The invariant worth pinning was never the
+  // `die(`: it is that an unreadable answer can never be read as an IDLE BOX and start a run beside
+  // somebody else's build. So this asserts the probe's own `known` flag reaches the decision, and the
+  // decision table in section 10b proves `probeKnown: false` can never return `run`. Pinning the old
+  // `die(` would now pin the behaviour the owner replaced — which is how a guard starts arguing for a bug.
   assert.match(
     SRC,
-    /parseBusyProbe\(state\)[\s\S]{0,600}?!busy\.known[\s\S]{0,400}?die\(/,
-    "remote-check.mjs does not refuse on an unreadable probe, so a failed ssh would read as a free box",
+    /parseBusyProbe\(state\)[\s\S]{0,2000}?probeKnown: busy\.known/,
+    "the probe's own known flag no longer reaches decideBusyAction — an unreadable answer could read as a free box",
+  );
+  assert.match(
+    SRC,
+    /probeKnown: again\.known/,
+    "the poll loop drops the probe's known flag, so a box that stopped answering mid-wait could read as free",
+  );
+  assert.doesNotMatch(
+    SRC,
+    /!busy\.known[\s\S]{0,120}?die\(/,
+    "remote-check.mjs still dies on an unreadable probe instead of escalating (owner ruling, 2026-10-08)",
   );
   // 🔴 THE REFUSAL MOVED BEHIND `decideBusyAction` ON 2026-10-06 AND MUST STILL END IN `die(`. The
   // escalation (section 10) added two other routes out of a busy box, and the risk it introduces is
@@ -289,10 +305,20 @@ export async function runRemoteCheckTests(): Promise<void> {
     /decideBusyAction\(\{[\s\S]{0,400}?busyRuns: busy\.runs/,
     "the busy decision is no longer computed from the probe's own run list",
   );
+  // 🔴 AND THE REFUSAL IS GATED ON THE DECISION, NOT ON THE RUN LIST. An unreachable box has ZERO runs,
+  // so the old `busy.runs.length > 0` condition skipped the refusal and FELL THROUGH TO THE PUSH once
+  // `!busy.known` stopped dying — the push then failed on ssh, after sending the sha, with a message
+  // about the transport rather than about the probe. `plan.action === "refuse"` is the only condition
+  // that covers a busy box and an unreachable one at once.
   assert.match(
     SRC,
-    /busy\.runs\.length > 0 && plan\.action !== "run" && !FORCED[\s\S]{0,3000}?die\(/,
-    "remote-check.mjs does not refuse when the box already has a run, or has lost its override",
+    /plan\.action === "refuse" && !FORCED[\s\S]{0,3600}?die\(/,
+    "remote-check.mjs does not refuse on the decision itself, so an unreachable box could fall through to the push",
+  );
+  assert.doesNotMatch(
+    SRC,
+    /busy\.runs\.length > 0 && plan\.action !== "run"/,
+    "the refusal is gated on the run list again — an unreachable box has zero runs and would skip it",
   );
   assert.ok(
     SRC.indexOf("parseBusyProbe(state)") < SRC.indexOf("git\",\n    [\"push\""),
@@ -596,6 +622,58 @@ export async function runRemoteCheckTests(): Promise<void> {
       decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: 0, actions: false }).action,
       "refuse",
       "the push guard's own argument list must still refuse at once, billing nothing",
+    );
+
+    // 🔴 10b-ii — AN UNREACHABLE BOX TAKES THE SAME ROUTES AS A BUSY ONE — owner ruling, 2026-10-08:
+    // *"make an unreachable box escalate to Actions too, not only a busy one"*. It used to die at exit 2
+    // with no verdict, on the one piece of evidence that most argues FOR Actions: the box cannot answer.
+    const down = { busyRuns: [] as string[], probeKnown: false };
+    assert.equal(
+      decideBusyAction({ ...down, waitedSeconds: 0, waitMinutes: 0, actions: true }).action,
+      "actions",
+      "an unreachable box must escalate at once, not refuse with no verdict",
+    );
+    assert.equal(
+      decideBusyAction({ ...down, waitedSeconds: 0, waitMinutes: 0, actions: true }).reason,
+      "unreachable",
+      "the reason must say which of the two happened — 'BUSY' about a box that is DOWN sends the reader to wait for a run that does not exist",
+    );
+    assert.equal(
+      decideBusyAction({ ...down, waitedSeconds: 0, waitMinutes: FREE_WAIT_MINUTES, actions: false }).action,
+      "poll",
+      "with a budget it must retry — a dropped ssh is often a blip, and a poll costs nothing",
+    );
+    assert.equal(
+      decideBusyAction({ ...down, waitedSeconds: 600, waitMinutes: FREE_WAIT_MINUTES, actions: false }).action,
+      "refuse",
+      "--free on an unreachable box must still refuse at the end of its wait, never bill",
+    );
+    // 🔴 THE FAIL-CLOSED INVARIANT, WHICH THIS RULING DOES NOT WEAKEN: `run` is unreachable from an
+    // unreadable probe, so nothing is ever STARTED on a box that did not answer — that is what OOM-kills
+    // another session's build. Every combination, not just the ones above.
+    for (const actions of [true, false]) {
+      for (const waitMinutes of [0, 1, 10, 60]) {
+        for (const waitedSeconds of [0, 30, 600, 36_000]) {
+          assert.notEqual(
+            decideBusyAction({ ...down, waitedSeconds, waitMinutes, actions }).action,
+            "run",
+            `probeKnown:false must never run on the box (actions=${actions} wait=${waitMinutes} waited=${waitedSeconds})`,
+          );
+        }
+      }
+    }
+    // A free, answering box is untouched by any of it.
+    assert.equal(
+      decideBusyAction({ busyRuns: [], waitedSeconds: 0, waitMinutes: 0, actions: true, probeKnown: true }).reason,
+      "free",
+      "an idle box that answered must still just run — the escalation may never change the free path",
+    );
+    // The flag DEFAULTS to true, so every caller written before the ruling keeps its old meaning rather
+    // than silently escalating.
+    assert.equal(
+      decideBusyAction({ busyRuns: [], waitedSeconds: 0, waitMinutes: 0, actions: true }).action,
+      "run",
+      "probeKnown must default to true: a caller that omits it gets the busy logic, not an escalation",
     );
 
     const GUARD = stripComments(
