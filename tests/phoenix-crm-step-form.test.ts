@@ -62,17 +62,36 @@ export function runPhoenixCrmStepFormTests(): void {
       ["the heading's eyebrow", "text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-600"],
     ] as const) {
       assert.ok(reference.includes(piece), `the shared form kit still carries ${what} — the reference moved`);
-      assert.ok(shell.includes(piece), `the CRM step form carries ${what}, as the form kit does`);
     }
-    assert.match(
-      reportIt,
-      /<FormWizard\b/,
-      "Report It must still RENDER the shared form kit, or the kit this test measures against is " +
-        "no longer the screen the owner pointed at",
+    // 🔴 THE CRM FORM IS A READER OF THE KIT, NOT A COPY OF IT (2026-10-07). Until then this loop also
+    // required each of those five class strings INSIDE step-form.tsx, which is exactly what a copy
+    // looks like: the CRM carried Report It's whole shell a second time, so a token change reached one
+    // screen and not the other and nothing went red. Requiring the RENDER instead is strictly stronger
+    // — a copy cannot satisfy it — and it is the same assertion Report It itself already answers.
+    for (const [who, file] of [
+      ["Report It", reportIt],
+      ["the CRM step form", shell],
+    ] as const) {
+      assert.match(
+        file,
+        /<FormWizard\b/,
+        `${who} must RENDER the shared form kit — a second copy of the shell is how the two drift apart`,
+      );
+    }
+    assert.equal(
+      /function (?:Vertical|Mobile)Stepper\b/.test(shell),
+      false,
+      "and the CRM step form must not declare a stepper of its own — the kit owns the rail",
     );
-    assert.ok(shell.includes('{String(step).padStart(2, "0")}'), "the step's number reads 01, 02 …");
-    assert.match(shell, /Step \{step\} of \{steps\.length\}/, "and the strip says Step N of 4");
-    assert.ok(shell.includes("const pct = Math.round((step / steps.length) * 100);"), "with the percent Report It shows");
+    // What the CRM needs and Report It does not is PROPS of that kit, never a fork of it.
+    for (const [what, prop] of [
+      ["a tap is the step's answer here, so the rail follows the form's own rule", "canJump={canJump}"],
+      ["the step owns its foot, so the kit draws no second Back", "footer={footer ?? <></>}"],
+      ["the CRM panel already draws the card", "panel={false}"],
+      ["and its blocks run to that card's edge", "bleed"],
+    ] as const) {
+      assert.ok(shell.includes(prop), `${what} — ${prop}`);
+    }
     const rounded = [...shell.matchAll(/(?<![\w-])rounded(?:-[\w./[\]-]+)?(?![\w-])/g)].map((match) => match[0]).filter((token) => token !== "rounded-none");
     assert.deepEqual(rounded, [], "the step form is square");
     assert.equal(/\b(truncate|text-ellipsis|line-clamp-\d)\b/.test(shell), false, "and never cuts a word short");

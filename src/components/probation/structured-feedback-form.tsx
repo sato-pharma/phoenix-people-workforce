@@ -2,7 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { ShieldCheck } from "lucide-react";
+
 import {
+  AddBlockButton,
+  CheckTile,
+  FormBlock,
+  FormField,
+  FormGrid,
+  FormWizard,
+  type FormWizardStep,
+} from "@/components/ui/form-kit";
+import {
+  phxButtonDangerClassName,
+  phxButtonGhostClassName,
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
@@ -13,13 +26,20 @@ import { cn } from "@/lib/utils";
 // development actions — replacing the legacy free-text feedback box. Posts to
 // /api/probation/dv/[dvDayId]/feedback (submitDvFeedback). Server enforces the same rules; we mirror
 // the key gates client-side so the manager gets immediate feedback.
+//
+// 🔒 THE ONE FORM DESIGN (owner, 2026-10-06). It was four stacked `rounded-lg` cards on one long
+// page; it is now the Adverse Drug Reaction wizard — Scores → Recommendation → Narrative → Actions —
+// assembled from `form-kit.tsx`, so the skin follows the tokens and the corners are square. The gates
+// did not move: the server still enforces them and the same three are mirrored here, only now each
+// one belongs to the step that asks for it, so a missing score is said on the scores step instead of
+// greying out a Submit four sections further down with no reason given.
 
 type Recommendation = "on_track" | "needs_improvement" | "serious_concern";
 
-const RECOMMENDATIONS: Array<{ value: Recommendation; label: string }> = [
-  { value: "on_track", label: "On track" },
-  { value: "needs_improvement", label: "Needs improvement" },
-  { value: "serious_concern", label: "Serious concern" },
+const RECOMMENDATIONS: Array<{ value: Recommendation; label: string; hint: string }> = [
+  { value: "on_track", label: "On track", hint: "Performing at the level the probation expects." },
+  { value: "needs_improvement", label: "Needs improvement", hint: "Short of it, and the gap is closable." },
+  { value: "serious_concern", label: "Serious concern", hint: "Far short of it — raise it with HR." },
 ];
 
 type DevActionRow = { title: string; description: string; ownerHrId: string; dueDate: string };
@@ -48,6 +68,8 @@ export function StructuredFeedbackForm({
   backHref: string;
 }) {
   const router = useRouter();
+  const [step, setStep] = useState(1);
+  const [stepError, setStepError] = useState<string | null>(null);
   const [scores, setScores] = useState<Record<string, string>>({});
   const [recommendation, setRecommendation] = useState<Recommendation | "">("");
   const [strengths, setStrengths] = useState("");
@@ -80,7 +102,39 @@ export function StructuredFeedbackForm({
   const narrativeOk = strengths.trim().length > 0 || developmentAreas.trim().length > 0;
   const canSubmit = scoreErrors.length === 0 && recommendation !== "" && narrativeOk && !busy;
 
+  // A hand-opened scorecard (manual-dv-day.ts) carries no CRM visits. Say so rather than
+  // printing "0 visits", which reads like a captured field day that found nothing.
+  const isManualScorecard = visitCount === 0;
+
+  const STEPS: FormWizardStep[] = [
+    { label: "Scores", description: "The skills, one at a time", title: `Scorecard (${scale.min}–${scale.max} per skill)` },
+    { label: "Recommendation", description: "Where the employee stands today", title: "Your recommendation" },
+    { label: "Narrative", description: "What you saw, in words", title: "What you observed" },
+    { label: "Actions", description: "What happens before the next visit", title: "Development actions" },
+  ];
+
+  /** The one gate each step owns. Returning false keeps him on it with the reason said out loud. */
+  function validateStep(current: number): boolean {
+    if (current === 1 && scoreErrors.length > 0) {
+      setStepError(
+        `Each skill needs a whole number ${scale.min}–${scale.max}. Still missing or out of range: ${scoreErrors.join(", ")}.`,
+      );
+      return false;
+    }
+    if (current === 2 && recommendation === "") {
+      setStepError("Choose where this person stands today.");
+      return false;
+    }
+    if (current === 3 && !narrativeOk) {
+      setStepError("Write at least one of strengths or development areas — a score on its own is not feedback.");
+      return false;
+    }
+    setStepError(null);
+    return true;
+  }
+
   async function submit() {
+    if (!validateStep(1) || !validateStep(2) || !validateStep(3)) return;
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
@@ -124,125 +178,174 @@ export function StructuredFeedbackForm({
 
   if (done) {
     return (
-      <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-        <h2 className="text-sm font-semibold text-emerald-800">Feedback submitted</h2>
+      <section className="border border-emerald-200 bg-emerald-50 p-4">
+        <h2 className="text-sm font-black text-emerald-800">Feedback submitted</h2>
         <p className="mt-1 text-sm text-emerald-700">
           Your Double-Visit feedback for {employeeName} ({dvDate}) has been recorded and added to the case score.
         </p>
         {actionsWarning && (
           <p className="mt-3 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{actionsWarning}</p>
         )}
-        <a href={backHref} className="mt-3 inline-block rounded bg-emerald-700 px-4 py-2 text-sm font-medium text-white">
+        <a
+          className="mt-3 inline-block border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-bold text-white"
+          href={backHref}
+        >
           Back to my feedback tasks
         </a>
       </section>
     );
   }
 
-  const cell = cn(phxFieldClassName, "h-9 w-16 px-2 text-center");
-  const area = cn(phxTextareaClassName, "w-full px-3 py-2");
-  // A hand-opened scorecard (manual-dv-day.ts) carries no CRM visits. Say so rather than
-  // printing "0 visits", which reads like a captured field day that found nothing.
-  const isManualScorecard = visitCount === 0;
+  const cell = cn(phxFieldClassName, "w-20 px-2 text-center");
+  const area = cn(phxTextareaClassName, "w-full");
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h1 className="text-base font-semibold text-slate-900">
-          {isManualScorecard ? "Probation scorecard" : "Double-Visit feedback"} — {employeeName}
-        </h1>
-        <p className="mt-0.5 text-xs text-slate-500">
-          {dvDate} ·{" "}
-          {isManualScorecard ? "opened manually — no field visits captured" : `${visitCount} visit${visitCount === 1 ? "" : "s"}`}
-          {evaluatorRoleLabel ? ` · as ${evaluatorRoleLabel}` : ""}
-        </p>
-      </div>
-
-      {/* Scorecard */}
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">Scorecard ({scale.min}–{scale.max} per skill)</h2>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <FormWizard
+      description={`${dvDate} · ${
+        isManualScorecard ? "opened manually — no field visits captured" : `${visitCount} visit${visitCount === 1 ? "" : "s"}`
+      }${evaluatorRoleLabel ? ` · as ${evaluatorRoleLabel}` : ""}`}
+      error={stepError ?? error}
+      eyebrow="Probation"
+      footnote="Only HR and the CEO read the confidential note. Everything else goes to this person's probation case."
+      onNext={() => validateStep(step)}
+      onStepChange={(next) => {
+        setStepError(null);
+        setStep(next);
+      }}
+      onSubmit={() => void submit()}
+      step={step}
+      steps={STEPS}
+      submitLabel="Submit feedback"
+      submitting={busy}
+      title={`${isManualScorecard ? "Probation scorecard" : "Double-Visit feedback"} — ${employeeName}`}
+    >
+      {step === 1 && (
+        <FormGrid>
           {dimensions.map((dim) => (
-            <label key={dim} className="flex items-center justify-between gap-2 rounded border border-slate-100 px-2 py-1.5 text-sm text-slate-700">
-              <span>{humanize(dim)}</span>
+            <FormField key={dim} label={humanize(dim)} required>
               <input
-                type="number" min={scale.min} max={scale.max} step={1}
-                value={scores[dim] ?? ""}
-                onChange={(e) => setScore(dim, e.target.value)}
-                className={cell}
                 aria-label={humanize(dim)}
+                className={cell}
+                max={scale.max}
+                min={scale.min}
+                onChange={(e) => setScore(dim, e.target.value)}
+                step={1}
+                type="number"
+                value={scores[dim] ?? ""}
               />
-            </label>
+            </FormField>
           ))}
-        </div>
-        {scoreErrors.length > 0 && (
-          <p className="mt-2 text-phx-xs text-amber-600">
-            Each skill needs a whole number {scale.min}–{scale.max}. Missing/invalid: {scoreErrors.join(", ")}.
-          </p>
-        )}
-      </section>
+        </FormGrid>
+      )}
 
-      {/* Recommendation */}
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">Recommendation</h2>
-        <div className="flex flex-wrap gap-2">
+      {step === 2 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {RECOMMENDATIONS.map((r) => (
-            <button
+            <CheckTile
+              checked={recommendation === r.value}
               key={r.value}
-              type="button"
-              onClick={() => setRecommendation(r.value)}
-              className={`rounded border px-3 py-1.5 text-sm ${recommendation === r.value ? "border-slate-800 bg-slate-800 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              name="dv-recommendation"
+              onChange={() => setRecommendation(r.value)}
+              type="radio"
             >
-              {r.label}
-            </button>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-slate-900">{r.label}</span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">{r.hint}</span>
+              </span>
+            </CheckTile>
           ))}
         </div>
-      </section>
+      )}
 
-      {/* Narrative */}
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">Narrative <span className="font-normal text-slate-400">(strengths or development areas required)</span></h2>
-        <div className="flex flex-col gap-2">
-          <textarea value={strengths} onChange={(e) => setStrengths(e.target.value)} rows={3} placeholder="Strengths observed…" className={area} />
-          <textarea value={developmentAreas} onChange={(e) => setDevelopmentAreas(e.target.value)} rows={3} placeholder="Development areas…" className={area} />
-          <textarea value={objectiveObservations} onChange={(e) => setObjectiveObservations(e.target.value)} rows={2} placeholder="Objective observations (optional)…" className={area} />
-          <textarea value={confidentialNote} onChange={(e) => setConfidentialNote(e.target.value)} rows={2} placeholder="Confidential note (HR/CEO only, optional)…" className={area} />
+      {step === 3 && (
+        <div className="flex flex-col gap-4">
+          <FormField hint="One of these two is required — the other three are yours to use or leave." label="Strengths observed">
+            <textarea className={area} onChange={(e) => setStrengths(e.target.value)} rows={3} value={strengths} />
+          </FormField>
+          <FormField label="Development areas">
+            <textarea className={area} onChange={(e) => setDevelopmentAreas(e.target.value)} rows={3} value={developmentAreas} />
+          </FormField>
+          <FormField label="Objective observations">
+            <textarea className={area} onChange={(e) => setObjectiveObservations(e.target.value)} rows={2} value={objectiveObservations} />
+          </FormField>
+          <FormField hint="Read by HR and the CEO only. It never appears on this person's own screens." label="Confidential note">
+            <textarea className={area} onChange={(e) => setConfidentialNote(e.target.value)} rows={2} value={confidentialNote} />
+          </FormField>
         </div>
-      </section>
+      )}
 
-      {/* Development actions */}
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700">Development actions <span className="font-normal text-slate-400">(optional)</span></h2>
-          <button type="button" onClick={() => setActions((a) => [...a, { title: "", description: "", ownerHrId: "", dueDate: "" }])} className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
-            + Add action
-          </button>
-        </div>
-        {actions.length === 0 && <p className="text-xs text-slate-400">No development actions. Add one to track a concrete improvement before the next Double-Visit.</p>}
-        <div className="flex flex-col gap-2">
+      {step === 4 && (
+        <div className="flex flex-col gap-3">
+          {actions.length === 0 && (
+            <p className="flex items-start gap-2 text-sm leading-relaxed text-slate-500">
+              <ShieldCheck aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+              No development actions yet. They are optional — add one to track a concrete improvement before the next
+              Double-Visit.
+            </p>
+          )}
           {actions.map((a, i) => (
-            <div key={i} className="rounded border border-slate-100 p-2">
-              <div className="flex items-center gap-2">
-                <input value={a.title} onChange={(e) => setActions((rows) => rows.map((r, j) => j === i ? { ...r, title: e.target.value } : r))} placeholder="Action title" className={`${area} flex-1`} />
-                <button type="button" onClick={() => setActions((rows) => rows.filter((_, j) => j !== i))} className="rounded border border-slate-200 px-2 py-1 text-xs text-rose-600">Remove</button>
+            <FormBlock
+              action={
+                <button
+                  className={phxButtonDangerClassName}
+                  onClick={() => setActions((rows) => rows.filter((_, j) => j !== i))}
+                  type="button"
+                >
+                  Remove
+                </button>
+              }
+              key={i}
+              label={`Action ${i + 1}`}
+            >
+              <div className="flex flex-col gap-4">
+                <FormField label="What will change">
+                  <input
+                    className={cn(phxFieldClassName, "w-full")}
+                    onChange={(e) => setActions((rows) => rows.map((r, j) => (j === i ? { ...r, title: e.target.value } : r)))}
+                    value={a.title}
+                  />
+                </FormField>
+                <FormField label="Detail">
+                  <input
+                    className={cn(phxFieldClassName, "w-full")}
+                    onChange={(e) =>
+                      setActions((rows) => rows.map((r, j) => (j === i ? { ...r, description: e.target.value } : r)))
+                    }
+                    value={a.description}
+                  />
+                </FormField>
+                <FormGrid>
+                  <FormField hint="Leave it empty and the action stays with you." label="Owner">
+                    <input
+                      className={cn(phxFieldClassName, "w-full")}
+                      onChange={(e) =>
+                        setActions((rows) => rows.map((r, j) => (j === i ? { ...r, ownerHrId: e.target.value } : r)))
+                      }
+                      value={a.ownerHrId}
+                    />
+                  </FormField>
+                  <FormField label="Due date">
+                    <input
+                      className={cn(phxFieldClassName, "w-full")}
+                      onChange={(e) => setActions((rows) => rows.map((r, j) => (j === i ? { ...r, dueDate: e.target.value } : r)))}
+                      type="date"
+                      value={a.dueDate}
+                    />
+                  </FormField>
+                </FormGrid>
               </div>
-              <div className="mt-1 flex flex-wrap gap-2">
-                <input value={a.description} onChange={(e) => setActions((rows) => rows.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} placeholder="Detail (optional)" className={`${area} flex-1`} />
-                <input value={a.ownerHrId} onChange={(e) => setActions((rows) => rows.map((r, j) => j === i ? { ...r, ownerHrId: e.target.value } : r))} placeholder="Owner HR_ID (optional)" className={`${area} w-40`} />
-                <input type="date" value={a.dueDate} onChange={(e) => setActions((rows) => rows.map((r, j) => j === i ? { ...r, dueDate: e.target.value } : r))} className={`${area} w-40`} />
-              </div>
-            </div>
+            </FormBlock>
           ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <AddBlockButton onClick={() => setActions((a) => [...a, { title: "", description: "", ownerHrId: "", dueDate: "" }])}>
+              Add an action
+            </AddBlockButton>
+            <a className={phxButtonGhostClassName} href={backHref}>
+              Cancel
+            </a>
+          </div>
         </div>
-      </section>
-
-      {error && <p className="text-sm text-rose-600">{error}</p>}
-      <div className="flex items-center gap-3">
-        <button disabled={!canSubmit} onClick={submit} className="rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-          {busy ? "Submitting…" : "Submit feedback"}
-        </button>
-        <a href={backHref} className="text-sm text-slate-500 hover:underline">Cancel</a>
-      </div>
-    </div>
+      )}
+    </FormWizard>
   );
 }

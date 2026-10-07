@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // ─── The one form design, pinned ──────────────────────────────────────────────
@@ -770,6 +770,95 @@ function darkGroundKeepTests(): void {
   }
 }
 
+// ── 4. ONE wizard shell ──────────────────────────────────────────────────────
+//
+// 🔴 The owner's rule is "every form wears THIS form's design", and a second
+// COPY of the shell satisfies that on the day it is written and quietly stops
+// satisfying it on the day a token changes. Until 2026-10-07 the app held the
+// kit's `FormWizard` and a class-for-class copy of it in Phoenix CRM's
+// `step-form.tsx` — so a change to the orange strip or the 244px rail reached
+// one of the two screens and the pair drifted with nothing going red.
+//
+// So the rail and the phone's stepper may be DECLARED in exactly one file. A
+// form that needs something the kit does not do adds a PROP to the kit — which
+// every other form then inherits — and never a fork of it.
+
+const WIZARD_SHELL = "src/components/ui/form-kit.tsx";
+
+/**
+ * 🔴 THE ONE EXEMPTION IS THE OWNER'S OWN, AND IT IS NOT A STYLE OPINION.
+ *
+ * The self spotlight was held against the Report It form until 2026-09-30, when he said "premium
+ * polish the page to follow the portal style" and moved it onto the EMPLOYEE PORTAL's look
+ * instead. `tests/spotlight-portal-look.test.ts` pins that new look — down to the portal's own
+ * card, which is `rounded` — so dragging the page back onto the kit's shell reverts an
+ * instruction he gave, and that test fails rather than this one. Measured on 2026-10-07: it was
+ * converted here, and the spotlight test caught it.
+ *
+ * Nothing goes in this map because a conversion was awkward. It takes HIS words putting that
+ * screen on another design, and the test that holds it there, named.
+ */
+const NOT_THE_KIT_BY_HIS_OWN_INSTRUCTION: ReadonlyArray<readonly [string, string]> = [
+  [
+    "src/components/spotlight/rep-spotlight-workspace.tsx",
+    "tests/spotlight-portal-look.test.ts",
+  ],
+];
+
+/** Every `.tsx` under src/components and app, from git rather than a walk. */
+function appTsxFiles(): string[] {
+  return execFileSync("git", ["ls-files", "src/components", "app"], { encoding: "utf8" })
+    .split("\n")
+    .map((f) => f.trim())
+    .filter((f) => f.endsWith(".tsx"));
+}
+
+function oneWizardShellTests(): void {
+  const kit = readFileSync(WIZARD_SHELL, "utf8");
+  // Anti-vacuity: if the kit stops declaring them, this whole check means nothing.
+  for (const name of ["VerticalStepper", "MobileStepper"]) {
+    assert.match(
+      kit,
+      new RegExp(`function ${name}\\b`),
+      `${WIZARD_SHELL} must declare ${name} — it is the one shell this check measures against`,
+    );
+  }
+
+  // Anti-vacuity for the exemption: an entry whose keeper has gone is a free pass nobody is
+  // holding any more, so it must be re-decided rather than inherited.
+  const exempt = new Set<string>();
+  for (const [file, keeper] of NOT_THE_KIT_BY_HIS_OWN_INSTRUCTION) {
+    assert.ok(
+      existsSync(file),
+      `${file} is exempt from the one-shell rule but no longer exists — drop the exemption`,
+    );
+    assert.ok(
+      existsSync(keeper),
+      `${file} is exempt because ${keeper} pins it to another design, and that test is gone — ` +
+        "re-decide the exemption instead of leaving it standing on nothing",
+    );
+    exempt.add(file);
+  }
+
+  const forks: string[] = [];
+  for (const file of appTsxFiles()) {
+    if (file === WIZARD_SHELL || exempt.has(file)) continue;
+    const code = readFileSync(file, "utf8");
+    if (/function (?:Vertical|Mobile)Stepper\b/.test(code)) forks.push(file);
+  }
+  assert.deepEqual(
+    forks,
+    [],
+    `these files declare a step rail of their own instead of rendering ${WIZARD_SHELL}'s FormWizard:\n  ` +
+      `${forks.join("\n  ")}\n` +
+      "A second copy of the shell is how the one form design dies: it looks identical the day it is " +
+      "written, and a token change afterwards reaches one screen and not the other. Render FormWizard " +
+      "and pass what you need as a prop — canJump, footer, panel, bleed and footnoteIcon all exist " +
+      "because the Phoenix CRM copy needed them. A screen the OWNER put on another design is " +
+      "exempted in NOT_THE_KIT_BY_HIS_OWN_INSTRUCTION above, with the test that holds it there.",
+  );
+}
+
 export async function runFormDesignSystemTests(): Promise<void> {
   identityTests();
   singleSourceTests();
@@ -777,4 +866,5 @@ export async function runFormDesignSystemTests(): Promise<void> {
   mergeSemanticsTests();
   sixteenPixelKeepTests();
   darkGroundKeepTests();
+  oneWizardShellTests();
 }

@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { FormActions, FormError, FormField, FormGrid } from "@/components/ui/form-kit";
 import {
+  phxButtonAccentClassName,
+  phxButtonGhostClassName,
   phxFieldClassName,
   phxSelectClassName,
   phxTextareaClassName,
@@ -21,6 +24,13 @@ import {
  * The approver's reason is rendered ABOVE the fields, not tucked into the timeline, because it is
  * the instruction the requester is acting on. It comes from `direct_order_events` — the decision
  * RPC never stores a return reason on the approval step.
+ *
+ * 🔒 THE ONE FORM DESIGN (owner, 2026-10-06), and deliberately NOT the step wizard. This is an
+ * INLINE panel inside an order's own card — four pre-filled boxes answering one objection — so the
+ * Adverse Drug Reaction form's 244px step rail would be a second frame around a correction that is
+ * over in one screen. It wears the design the way an inline form does: every label, field, hint and
+ * button comes from `form-kit.tsx` / `form-tokens.ts` instead of a hand-written near-copy of the
+ * same classes, which is what it carried until 2026-10-07.
  */
 export function DirectOrderCorrectResubmit({
   requestId,
@@ -106,11 +116,7 @@ export function DirectOrderCorrectResubmit({
       )}
 
       {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="mt-3 bg-amber-600 px-4 py-2 text-sm font-black text-white hover:bg-amber-700"
-        >
+        <button className={`${phxButtonAccentClassName} mt-3`} onClick={() => setOpen(true)} type="button">
           Correct &amp; Resubmit
         </button>
       ) : (
@@ -122,101 +128,90 @@ export function DirectOrderCorrectResubmit({
             To change the product or the pharmacy, raise a new order instead.
           </p>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Quantity</span>
+          <FormGrid className="sm:grid-cols-2">
+            <FormField label="Quantity" required>
               <input
-                type="number"
+                className={phxFieldClassName}
                 min={1}
-                value={nextQty}
                 onChange={(event) => setNextQty(event.target.value)}
-                className={`${phxFieldClassName} mt-1`}
+                type="number"
+                value={nextQty}
               />
-            </label>
+            </FormField>
 
-            <label className="block">
-              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Deal</span>
+            <FormField label="Deal" required>
               <select
-                value={nextDeal}
+                className={phxSelectClassName}
                 onChange={(event) => setNextDeal(event.target.value === "discount" ? "discount" : "bonus")}
-                className={`${phxSelectClassName} mt-1`}
+                value={nextDeal}
               >
                 <option value="bonus">Bonus</option>
                 <option value="discount">Discount</option>
               </select>
-            </label>
+            </FormField>
 
             {nextDeal === "bonus" ? (
-              <label className="block">
-                <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Bonus units</span>
+              <FormField label="Bonus units" required>
                 <input
-                  type="number"
+                  className={phxFieldClassName}
                   min={0}
-                  value={nextBonus}
                   onChange={(event) => setNextBonus(event.target.value)}
-                  className={`${phxFieldClassName} mt-1`}
-                />
-              </label>
-            ) : (
-              <label className="block">
-                <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Discount %</span>
-                <input
                   type="number"
-                  min={0}
-                  max={100}
-                  value={nextDiscount}
-                  onChange={(event) => setNextDiscount(event.target.value)}
-                  className={`${phxFieldClassName} mt-1`}
+                  value={nextBonus}
                 />
-              </label>
+              </FormField>
+            ) : (
+              <FormField label="Discount %" required>
+                <input
+                  className={phxFieldClassName}
+                  max={100}
+                  min={0}
+                  onChange={(event) => setNextDiscount(event.target.value)}
+                  type="number"
+                  value={nextDiscount}
+                />
+              </FormField>
             )}
 
-            <label className="block">
-              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">
-                Money-collection date
-              </span>
+            <FormField label="Money-collection date" required>
               <input
+                className={phxFieldClassName}
+                onChange={(event) => setNextCollectionDate(event.target.value)}
                 type="date"
                 value={nextCollectionDate}
-                onChange={(event) => setNextCollectionDate(event.target.value)}
-                className={`${phxFieldClassName} mt-1`}
               />
-            </label>
-          </div>
+            </FormField>
+          </FormGrid>
 
-          <label className="block">
-            <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">
-              What did you change? (the approver sees this)
-            </span>
+          <FormField hint="The approver sees this beside your correction." label="What did you change?" required>
             <textarea
-              value={note}
+              className={phxTextareaClassName}
               onChange={(event) => setNote(event.target.value)}
-              rows={2}
-              className={`${phxTextareaClassName} mt-1`}
               placeholder="e.g. Reduced the bonus to 20 units as requested."
+              rows={2}
+              value={note}
             />
-          </label>
+          </FormField>
 
-          {error ? <p className="text-sm font-bold text-red-600">{error}</p> : null}
+          <FormError>{error}</FormError>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={submit}
-              disabled={busy || !note.trim()}
-              className="bg-amber-600 px-4 py-2 text-sm font-black text-white hover:bg-amber-700 disabled:opacity-50"
-            >
-              {busy ? "Resubmitting…" : "Resubmit for approval"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={busy}
-              className="border border-[#d8dee3] px-4 py-2 text-sm font-black text-slate-700 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
+          <FormActions
+            left={
+              <button className={phxButtonGhostClassName} disabled={busy} onClick={() => setOpen(false)} type="button">
+                Cancel
+              </button>
+            }
+            right={
+              <button
+                className={phxButtonAccentClassName}
+                disabled={busy || !note.trim()}
+                onClick={submit}
+                type="button"
+              >
+                {busy ? "Resubmitting…" : "Resubmit for approval"}
+              </button>
+            }
+          />
         </div>
       )}
     </div>

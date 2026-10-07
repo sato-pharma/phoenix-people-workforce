@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import {
   ArrowUpDown,
   CalendarDays,
@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   PortalEmptyState,
   PortalSection,
@@ -35,7 +34,12 @@ import { todayInCairo } from "@/lib/date-only";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { cn } from "@/lib/utils";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { FormField } from "@/components/ui/form-kit";
+import {
+  phxButtonAccentClassName,
+  phxButtonGhostClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 
 type ActiveTab = "submit" | "history";
@@ -91,23 +95,6 @@ function statusVariant(status: string): "success" | "danger" | "warning" {
   if (normalized === "Approved") return "success";
   if (normalized === "Declined") return "danger";
   return "warning";
-}
-
-function Field({
-  children,
-  label,
-}: {
-  children: ReactNode;
-  label: string;
-}) {
-  return (
-    <label className="block min-w-0">
-      <span className="mb-2 block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
 }
 
 function ReadOnlyField({
@@ -217,7 +204,7 @@ async function downloadExpenseWorkbook(rows: OutstationExpenseRequest[], fallbac
 /** The house segmented-tab button (the same look as the Phoenix CRM space tabs). */
 function tabButtonClassName(active: boolean) {
   return cn(
-    "flex min-h-10 min-w-0 items-center justify-center gap-2 rounded px-3 py-2 text-center text-sm font-bold leading-tight transition",
+    "flex min-h-10 min-w-0 items-center justify-center gap-2 px-3 py-2 text-center text-sm font-bold leading-tight transition",
     active ? "bg-white text-orange-700 shadow-sm" : "text-slate-600 hover:bg-white/70",
   );
 }
@@ -395,28 +382,28 @@ export function MedicalRepExpensesWorkspace({
                 already fits the ~636px content column at 1024px with the sidebar open. */}
             <div className="grid gap-5 p-4 sm:p-6 md:grid-cols-6">
               <div className="md:col-span-3">
-                <Field label="Employee">
+                <FormField label="Employee">
                   <ReadOnlyField icon={ReceiptText} value={employeeName} />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-3">
-                <Field label="From">
+                <FormField label="From">
                   <ReadOnlyField
                     icon={MapPin}
                     value={residenceSummary || "Residence not configured"}
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-2">
-                <Field label="Type">
+                <FormField label="Type">
                   <ReadOnlyField icon={FileText} value="Traveling" />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-4">
-                <Field label="Attachment (optional)">
+                <FormField label="Attachment (optional)">
                   <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition hover:bg-orange-100">
                     <Upload className="h-4 w-4" />
                     <span className="whitespace-nowrap">
@@ -435,22 +422,22 @@ export function MedicalRepExpensesWorkspace({
                       type="file"
                     />
                   </label>
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-3">
-                <Field label="From Date">
+                <FormField label="From Date">
                   <Input
                     onChange={(event) => setTripStartDate(event.target.value)}
                     required
                     type="date"
                     value={tripStartDate}
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-3">
-                <Field label="To Date">
+                <FormField label="To Date">
                   <Input
                     min={tripStartDate || undefined}
                     onChange={(event) => setTripEndDate(event.target.value)}
@@ -458,11 +445,11 @@ export function MedicalRepExpensesWorkspace({
                     type="date"
                     value={tripEndDate}
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-3">
-                <Field label="Go Ticket Amount">
+                <FormField label="Go Ticket Amount">
                   <Input
                     min="0"
                     onChange={(event) => setGoTicketAmount(event.target.value)}
@@ -471,11 +458,11 @@ export function MedicalRepExpensesWorkspace({
                     type="number"
                     value={goTicketAmount}
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-3">
-                <Field label="Return Ticket Amount">
+                <FormField label="Return Ticket Amount">
                   <Input
                     min="0"
                     onChange={(event) => setReturnTicketAmount(event.target.value)}
@@ -484,11 +471,11 @@ export function MedicalRepExpensesWorkspace({
                     type="number"
                     value={returnTicketAmount}
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-6">
-                <Field label="To">
+                <FormField label="To">
                   {/* Was a free-text box. The one submission ever made through this path stored
                       "Baniseaf" as the trip's destination — a misspelling of Beni Suef that no
                       report could group, match or map. Picking from real Egyptian places costs the
@@ -503,11 +490,11 @@ export function MedicalRepExpensesWorkspace({
                     placeholder="Search destination…"
                     value={toLocation}
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-6">
-                <Field label="Note">
+                <FormField label="Note">
                   <textarea
                     className={cn(phxTextareaClassName, "min-h-40")}
                     onChange={(event) => setNotes(event.target.value)}
@@ -515,43 +502,43 @@ export function MedicalRepExpensesWorkspace({
                     required
                     value={notes}
                   />
-                </Field>
+                </FormField>
               </div>
 
               {/* AM · PM · Pharmacies, three figures apart (the golden rule) — a third of the row each.
                   The placeholder is short because a third of the row is ~185px at 1024px with the
                   sidebar open; where the figures come from is the sentence under the three. */}
               <div className="md:col-span-2">
-                <Field label="AM Visits">
+                <FormField label="AM Visits">
                   <Input
                     disabled
                     placeholder="Filled automatically"
                     readOnly
                     value={amWorkload}
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-2">
-                <Field label="PM Visits">
+                <FormField label="PM Visits">
                   <Input
                     disabled
                     placeholder="Filled automatically"
                     readOnly
                     value={pmWorkload}
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-2">
-                <Field label="Pharmacy Visits">
+                <FormField label="Pharmacy Visits">
                   <Input
                     disabled
                     placeholder="Filled automatically"
                     readOnly
                     value=""
                   />
-                </Field>
+                </FormField>
               </div>
 
               <div className="md:col-span-6">
@@ -575,14 +562,14 @@ export function MedicalRepExpensesWorkspace({
                 <CalendarDays className="h-5 w-5 shrink-0 text-orange-500" />
                 <span>Total: {egp(ticketTotal)}</span>
               </div>
-              <Button
-                className="min-h-12 w-full gap-2 rounded-none bg-orange-500 px-6 text-white hover:bg-orange-600 sm:w-auto sm:min-w-[220px]"
+              <button
+                className={cn(phxButtonAccentClassName, "w-full sm:w-auto sm:min-w-[220px]")}
                 disabled={!canSend}
                 type="submit"
               >
                 {isSubmitting ? <LoadingSpinner className="text-white" /> : <Send className="h-4 w-4" />}
                 Submit Expense
-              </Button>
+              </button>
             </div>
           </form>
         </PortalSection>
@@ -592,14 +579,14 @@ export function MedicalRepExpensesWorkspace({
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="neutral">{countLabel(filteredRequests.length, "claim", "claims")}</Badge>
               <Badge variant="neutral">{egp(filteredTotal)}</Badge>
-              <Button
-                className="min-h-10 gap-2 rounded-none border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50"
+              <button
+                className={phxButtonGhostClassName}
                 onClick={() => void downloadExpenseWorkbook(filteredRequests, employeeName)}
                 type="button"
               >
                 <Download className="h-4 w-4" />
                 Download Excel
-              </Button>
+              </button>
             </div>
           }
           eyebrow="History"
