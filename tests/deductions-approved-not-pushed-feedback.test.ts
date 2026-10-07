@@ -21,46 +21,74 @@
 // `requires_review` already carried a decision — one of them saved two minutes before he wrote
 // in. Every one of them was still being labelled as waiting for him.
 //
-// This test holds both ends. It does NOT assert that an approval reaches payroll — it must not,
-// because the owner's rule is that it does not until he pushes it.
+// THE RULE CHANGED THE NEXT DAY (owner, 2026-10-07: "make the Automated Payroll able to read them
+// and every other deduction from the Deductions module"). The push gate is retired: an APPROVED
+// deduction reaches payroll whether or not it was pushed, and a pushed one whose decision is no
+// longer approved does not. So the approved-but-unpushed sentence is gone — such a line is now
+// CHARGED, never withheld — and this test pins exactly that, from the bucket outwards.
 
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { PAYROLL_APPROVED_STATUS, withheldLineStatus } from "@/lib/automated-payroll/deductions-source";
+import {
+  buildDeductionBuckets,
+  PAYROLL_APPROVED_STATUS,
+  withheldLineStatus,
+} from "@/lib/automated-payroll/deductions-source";
+import type { DeductionsCandidateWithDecision } from "@/lib/deductions/types";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const WORKSPACE = "src/components/admin/deductions-workspace.tsx";
 
+function septemberVacation(
+  id: string,
+  decisionStatus: string,
+  pushedLineId: string | null,
+): DeductionsCandidateWithDecision {
+  return {
+    id,
+    category: "unpaid_vacation",
+    sourceSystem: "crm_vacation_signal",
+    employeeHrIdCompact: "b1",
+    employeeHrId: "B-1",
+    monthKey: "2026-09",
+    unit: "days",
+    rawValue: 1,
+    estimatedAmount: 500,
+    dates: ["2026-09-23"],
+    reason: "",
+    supersededAt: null,
+    pushedLineId,
+    decision: { decisionStatus, appliedValue: null, appliedAmount: null },
+  } as unknown as DeductionsCandidateWithDecision;
+}
+
 export function runDeductionsApprovedNotPushedFeedbackTests() {
-  // ---- 1. The payroll breakdown sentence ------------------------------------------------------
+  // ---- 1. Approved reaches payroll; pushed-but-not-approved does not ---------------------------
+  // The exact September 2026 shapes: Batool Rafiq approved and never pushed (500.00), and Mostafa
+  // Saied's line pushed and then decided "Do Not Take Action" sixteen seconds later.
+  const approvedUnpushed = buildDeductionBuckets([septemberVacation("c1", PAYROLL_APPROVED_STATUS, null)]).get("b1");
+  assert.equal(
+    approvedUnpushed?.buckets.unpaidVacation,
+    500,
+    "An APPROVED September deduction that was never pushed must reach payroll — the push gate is " +
+      "retired (owner, 2026-10-07). Reaching 0.00 here is the bug he reported.",
+  );
+  assert.equal(approvedUnpushed?.pendingLines.length, 0, "an approved line is charged, never withheld");
 
-  const approved = withheldLineStatus(PAYROLL_APPROVED_STATUS);
-
-  assert.ok(
-    !/awaiting your approval/i.test(approved),
-    `An APPROVED but un-pushed line still reads "awaiting your approval": ${JSON.stringify(approved)}. ` +
-      `He has approved it — that sentence names a step he has finished and hides the push, which is ` +
-      `the one thing left. It is what made him report payroll as broken twice.`,
-  );
-  assert.ok(
-    /push/i.test(approved),
-    `An APPROVED but un-pushed line must name the PUSH as the remaining action, because that is the ` +
-      `gate for pay (owner rule 2026-09-22). It reads: ${JSON.stringify(approved)}.`,
-  );
-  assert.ok(
-    /not charged/i.test(approved),
-    `An approved but un-pushed line must still say it is NOT charged — it contributes 0.00 to the ` +
-      `row, and a reader checking the breakdown against the figure must not read it as money. It ` +
-      `reads: ${JSON.stringify(approved)}.`,
-  );
-  assert.ok(
-    approved.startsWith(PAYROLL_APPROVED_STATUS),
-    `The line must keep carrying its real decision status first. It reads: ${JSON.stringify(approved)}.`,
+  const pushedThenRefused = buildDeductionBuckets([
+    septemberVacation("c2", "Do Not Take Action", "line-1"),
+  ]).get("b1");
+  assert.equal(
+    pushedThenRefused?.buckets.unpaidVacation,
+    0,
+    "A line that was pushed and then decided Do Not Take Action must charge NOTHING — the decision " +
+      "is what payroll reads now, and a stale pushed line must not override it.",
   );
 
-  // An undecided line keeps the original sentence: there the approval IS what is missing.
+  // ---- 2. The payroll breakdown sentence ------------------------------------------------------
+  // Only an undecided line is ever withheld now, and the approval IS what is missing there.
   for (const undecided of ["Pending", "Needs Follow-up", "Disputed", "Do Not Take Action"]) {
     const text = withheldLineStatus(undecided);
     assert.ok(

@@ -11,6 +11,7 @@ import {
   CLEARABLE_DEDUCTION_SELECT,
 } from "../src/lib/automated-payroll/draft-store.ts";
 import { monthRequiresPush } from "../src/lib/deductions/push-cutover.ts";
+import { decisionMovesPayroll } from "../src/lib/deductions/service.ts";
 import { visibleDeductionsCategories } from "../src/lib/deductions/types.ts";
 
 /**
@@ -136,34 +137,45 @@ export function runDeductionPayrollResyncTests() {
     "a failed resync is reported, because the deduction IS pushed and payroll is the half that did not move",
   );
 
-  // ---- The cutover is one constant, read by both the server and the browser -----------------------
-  assert.equal(monthRequiresPush("2026-08"), false, "July and August 2026 published under the old approval gate");
-  assert.equal(monthRequiresPush("2026-09"), true);
-  assert.equal(monthRequiresPush("2026-10"), true);
-  assert.equal(monthRequiresPush(null), false);
-  assert.equal(monthRequiresPush("nonsense"), false);
+  // ---- The push gate is retired (owner, 2026-10-07) -----------------------------------------------
+  // Payroll reads the DECISION in every month, so no month is gated on a push any more.
+  for (const month of ["2026-08", "2026-09", "2026-10", null, "nonsense"]) {
+    assert.equal(monthRequiresPush(month), false, `${month} must not be gated on a push — the gate is the decision`);
+  }
 
-  // ---- The push path actually calls it -------------------------------------------------------------
+  // ---- WHICH decision changes re-open a confirmed step ---------------------------------------------
+  const approved = "Approved for Payroll";
+  assert.equal(decisionMovesPayroll({ before: null, after: { decisionStatus: approved, appliedAmount: 500 } }), true,
+    "a first approval moves money");
+  assert.equal(decisionMovesPayroll({ before: { decisionStatus: approved, appliedAmount: 500 }, after: { decisionStatus: "Do Not Take Action", appliedAmount: null } }), true,
+    "un-approving moves money back");
+  assert.equal(decisionMovesPayroll({ before: { decisionStatus: approved, appliedAmount: "500.00" }, after: { decisionStatus: approved, appliedAmount: 250 } }), true,
+    "narrowing an approved deduction's days moves money");
+  assert.equal(decisionMovesPayroll({ before: { decisionStatus: approved, appliedAmount: "500.00" }, after: { decisionStatus: approved, appliedAmount: 500 } }), false,
+    "re-saving the same approved figure must not re-open a confirmed step");
+  assert.equal(decisionMovesPayroll({ before: { decisionStatus: "Pending", appliedAmount: null }, after: { decisionStatus: "Needs Follow-up", appliedAmount: null } }), false,
+    "a change between two unpaid decisions charges 0.00 either side");
+
+  // ---- The decision path actually calls it, and the push path no longer does ------------------------
   // The whole fix is one call site. A refactor that drops it would leave every unit above passing
   // and the money still frozen, which is precisely how this got shipped the first time.
+  const service = readFileSync("src/lib/deductions/service.ts", "utf8");
+  const recordDecisionBody = service.slice(service.indexOf("export async function recordDecision"));
+  assert.ok(
+    recordDecisionBody.includes("resyncPayrollDeductionSteps"),
+    "recordDecision must resync the payroll steps, or an approval after a confirm reaches nobody's payslip",
+  );
   const push = readFileSync("src/lib/deductions/push.ts", "utf8");
   assert.ok(
-    push.includes("resyncPayrollDeductionSteps"),
-    "pushForEmployee must resync the payroll steps, or a push after a confirm reaches nobody's payslip",
-  );
-  assert.ok(
-    push.includes("resyncForCandidate"),
-    "and a WITHDRAW must too — a frozen copy goes on deducting money the Super Admin pulled back",
+    !push.includes("resyncPayrollDeductionSteps"),
+    "a push no longer moves payroll money, so it must not re-open a confirmed payroll step",
   );
 
   // ---- The step labels name the real gate ---------------------------------------------------------
-  // "Approved for Payroll" on these steps is now a sentence about the step BEFORE the one that
-  // releases money. Leaving it there is what made an approved-but-unpushed row read as payroll
-  // losing a deduction.
   const steps = readFileSync("src/lib/automated-payroll/step-definitions.ts", "utf8");
   const windowLabel = steps.slice(steps.indexOf("export function stepWindowLabel"));
   assert.ok(
-    windowLabel.includes("PUSHED"),
-    "stepWindowLabel must say a deduction has to be PUSHED, not merely approved",
+    windowLabel.includes("Approved for Payroll") && windowLabel.includes("pushed or not"),
+    "stepWindowLabel must say an APPROVED deduction is paid, pushed or not",
   );
 }

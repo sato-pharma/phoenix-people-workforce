@@ -12,7 +12,13 @@ import { monthNameAndYear } from "./step-definitions.ts";
 import type { StepKey } from "./types.ts";
 
 /**
- * Keeps the payroll deduction steps honest when a deduction is PUSHED or WITHDRAWN underneath them.
+ * Keeps the payroll deduction steps honest when a deduction's DECISION changes underneath them.
+ *
+ * Called from `recordDecision` (deductions/service.ts) whenever a decision crosses into or out of
+ * "Approved for Payroll", or an approved amount changes. Until 2026-10-07 it was called from the
+ * PUSH instead, because the push was the gate for pay; the owner retired that gate that day and
+ * payroll reads the decision again, so the trigger moved with it. The account below is how the
+ * snapshot problem was found, under the push gate; the mechanism is identical either way.
  *
  * WHY THIS EXISTS (measured on the live September 2026 run, 2026-10-06). Every module-sourced step
  * is a SNAPSHOT: confirming one copies the figure the Deductions module is proposing onto
@@ -34,8 +40,8 @@ import type { StepKey } from "./types.ts";
  * clear the frozen figure for exactly the employees whose pushed set moved, and re-open the step
  * that owns it — which also blocks Part 2 (`assertAllStepsConfirmed`) until HR has looked again.
  *
- * It NEVER throws. The push itself is already written and is the user's actual intent; a resync
- * failure must not roll it back or surface as "push failed". It is logged loudly and returned,
+ * It NEVER throws. The decision itself is already written and is the user's actual intent; a resync
+ * failure must not roll it back or surface as "decision failed". It is logged loudly and returned,
  * because a silent no-op here is the exact failure this module exists to end.
  */
 
@@ -180,7 +186,7 @@ export async function resyncPayrollDeductionSteps(
       // quiet — the same distinction expense-resync draws.
       if (reason === "part2_already_confirmed" && run) {
         logError(
-          "Automated payroll: a deduction was pushed or withdrawn after Part 2 was confirmed and did not reach payroll",
+          "Automated payroll: a deduction decision changed after Part 2 was confirmed and did not reach payroll",
           {
             labels: {
               event: "automated_payroll_deduction_resync_skipped_part2_confirmed",
@@ -274,9 +280,9 @@ async function loadSettledInPart1(runId: string, compacts: string[]): Promise<Ma
 }
 
 /**
- * Plain-language lines for every outcome where a push did NOT reach payroll, for the push response.
- * Without them the Deductions page reads "Pushed" while payroll goes on paying the old figure. No
- * open run for the month says nothing: that is normal.
+ * Plain-language lines for every outcome where a decision did NOT reach payroll, for the decision
+ * response. Without them the Deductions page reads "Approved" while payroll goes on paying the old
+ * figure. No open run for the month says nothing: that is normal.
  */
 export function describeDeductionResyncNotApplied(outcome: DeductionResyncOutcome): string[] {
   const period = periodFromMonthKey(outcome.monthKey);
@@ -288,7 +294,7 @@ export function describeDeductionResyncNotApplied(outcome: DeductionResyncOutcom
     ];
   }
   if (outcome.action === "failed") {
-    return [`Payroll for ${month} could not be updated with this deduction. The deduction itself is pushed.`];
+    return [`Payroll for ${month} could not be updated with this deduction. The decision itself is saved.`];
   }
   return [];
 }

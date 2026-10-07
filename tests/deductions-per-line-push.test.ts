@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildDeductionBuckets,
   candidateAmount,
-  DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY,
 } from "../src/lib/automated-payroll/deductions-source.ts";
+import { DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY } from "../src/lib/deductions/push-cutover.ts";
 import { resolvePublishedAppliedAmount } from "../src/lib/deductions/calculations.ts";
 import { resolveDeductionNotificationCc } from "../src/lib/deductions/notify-deduction.ts";
 import { describePushConflict, pushDeduction, pushForEmployee, withdrawDeduction } from "../src/lib/deductions/push.ts";
@@ -189,48 +189,18 @@ export async function runDeductionsPerLinePushTests() {
   );
 
   // ---------------------------------------------------------------------------
-  // 2. The payroll gate: PUSH releases money, not "Approved for Payroll".
+  // 2. The payroll gate: "Approved for Payroll" releases money, push or not
+  //    (owner, 2026-10-07 — the 2026-09-22 push gate is retired).
   // ---------------------------------------------------------------------------
   const approvedNotPushed = candidate({ id: "c-approved", category: "other", status: "Approved for Payroll", unit: "amount", estimatedAmount: 500 });
   const pendingButPushed = candidate({ id: "c-pending", category: "other", status: "Pending", unit: "amount", estimatedAmount: 700 });
 
-  // Legacy mode (no pushedCandidateIds): the 2026-08-03 rule stands — approved counts, pending does not.
-  const legacy = buildDeductionBuckets([approvedNotPushed, pendingButPushed]);
-  assert.equal(legacy.get("b1")?.buckets.other, 500, "legacy gate: an approved amount reaches payroll");
-
-  // Push mode: the ONLY thing that counts is being in the pushed set — decision
-  // status is irrelevant. The approved-but-unpushed row pays nothing; the pushed
-  // pending row pays.
-  const pushed = buildDeductionBuckets([approvedNotPushed, pendingButPushed], {
-    pushedCandidateIds: new Set(["c-pending"]),
-  });
   assert.equal(
-    pushed.get("b1")?.buckets.other,
-    700,
-    "push gate: only a PUSHED candidate reaches payroll — approval alone does not, a pushed row does",
-  );
-
-  // An empty pushed set (a month where nothing is pushed yet) deducts nothing,
-  // even though a candidate is approved — the whole point of "never automatic".
-  assert.equal(
-    Object.values(buildDeductionBuckets([approvedNotPushed], { pushedCandidateIds: new Set<string>() }).get("b1")?.buckets ?? {})
-      .reduce((sum, value) => sum + value, 0),
-    0,
-    "push gate: nothing pushed means nothing deducted, whatever is approved",
-  );
-
-  // pushedCandidateIds: null is legacy, identical to omitting it.
-  assert.equal(
-    buildDeductionBuckets([approvedNotPushed], { pushedCandidateIds: null }).get("b1")?.buckets.other,
+    buildDeductionBuckets([approvedNotPushed, pendingButPushed]).get("b1")?.buckets.other,
     500,
-    "a null pushed set falls back to the legacy approved-for-payroll gate",
+    "the decision is the gate: the approved amount reaches payroll and the pending one does not, whatever was pushed",
   );
-
-  // The cutover is 2026-09 and compares lexically (zero-padded YYYY-MM).
-  assert.equal(DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY, "2026-09", "the push cutover month is September 2026");
-  assert.ok("2026-08" < DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY, "August 2026 is before the cutover (legacy gate)");
-  assert.ok("2026-09" >= DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY, "September 2026 is at the cutover (push gate)");
-  assert.ok("2026-10" >= DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY, "October 2026 is after the cutover (push gate)");
+  assert.equal(DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY, "2026-09", "kept as the record of when the retired push gate began");
 
   // ---------------------------------------------------------------------------
   // 2b. The money invariant that makes gating-only SAFE: the amount frozen onto a
