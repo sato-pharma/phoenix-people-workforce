@@ -92,6 +92,7 @@ import {
   findLatestRun,
   findPublishedRun,
   getRunById,
+  listDraftCellHistory,
   listDraftRows,
   listStepStates,
   updateRun,
@@ -126,6 +127,7 @@ import type { PayrollSalarySource } from "@/lib/payroll/salary-source.ts";
 import { stepDefinition } from "./step-definitions.ts";
 import type {
   DraftRow,
+  DraftCellChange,
   DraftRowPatch,
   ManualRowCandidate,
   MonthlySalaryRun,
@@ -693,6 +695,8 @@ export async function saveStep(
     }
     patch.source = inputMode;
     patch.editedBy = actorId(access);
+    patch.writeReason = "step_saved";
+    patch.writeStepKey = stepKey;
     return patch;
   });
   await upsertDraftRows(runId, patches);
@@ -756,6 +760,8 @@ export async function confirmStep(
     .map((row) => {
       const patch = stepRowToPatch(stepKey, row);
       patch.editedBy = actorId(access);
+      patch.writeReason = "step_confirmed";
+      patch.writeStepKey = stepKey;
       return patch;
     });
   await upsertDraftRows(runId, patches);
@@ -1004,6 +1010,7 @@ export async function confirmPart1(
     firstPartFrozen: frozen.get(member.compact) ?? 0,
     settledInPart1: isSettledInPart1(member, lookupSource(sources, member.employee.hrId)),
     editedBy: actorId(access),
+    writeReason: "part1_confirmed",
   }));
   // The freeze and the phase write happen under one claim (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part1"], "Confirming Part 1");
@@ -1095,6 +1102,7 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
     fuelPaid: null,
     daysWorked: null,
     editedBy: actorId(access),
+    writeReason: "part1_reopened",
   }));
   // Under one claim with the phase write (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part2"], "Reopening Part 1");
@@ -1523,6 +1531,29 @@ async function employeeNamesByCompactKey(): Promise<Map<string, string>> {
   );
 }
 
+/**
+ * Every recorded change to one employee's cells on a run, each naming who made it — a person's name,
+ * or "system" for a resync after a Deductions push or an expense change. Read-only.
+ */
+export async function getDraftCellHistory(
+  access: AccessContext,
+  runId: string,
+  hrId: string,
+): Promise<DraftCellChange[]> {
+  assertAutomatedPayrollHrActor(access);
+  await requireRun(runId);
+  const changes = await listDraftCellHistory(runId, hrId);
+  if (changes.length === 0) return changes;
+  const names = await employeeNamesByCompactKey();
+  return changes.map((change) => ({
+    ...change,
+    changedByName:
+      change.changedBy && change.changedBy !== "system"
+        ? names.get(compactHrKey(change.changedBy)) || null
+        : null,
+  }));
+}
+
 async function heldPeopleFromDrafts(runId: string): Promise<Array<{ hrId: string; fullName: string }>> {
   const hrIds = await heldDraftHrIds(runId);
   if (hrIds.length === 0) return [];
@@ -1641,7 +1672,13 @@ export async function excludeEmployeeFromRun(
   }
 
   await upsertDraftRows(runId, [
-    { employeeHrId: hrId, excluded: true, excludedReason: trimmedReason, editedBy: actorId(access) },
+    {
+      employeeHrId: hrId,
+      excluded: true,
+      excludedReason: trimmedReason,
+      editedBy: actorId(access),
+      writeReason: "employee_excluded",
+    },
   ]);
   await writeAutomatedPayrollAudit({
     runId,
@@ -1662,7 +1699,13 @@ export async function includeEmployeeInRun(access: AccessContext, runId: string,
   if (!compact) throw new Error("Validation: a valid HR ID is required.");
 
   await upsertDraftRows(runId, [
-    { employeeHrId: hrId, excluded: false, excludedReason: null, editedBy: actorId(access) },
+    {
+      employeeHrId: hrId,
+      excluded: false,
+      excludedReason: null,
+      editedBy: actorId(access),
+      writeReason: "employee_included",
+    },
   ]);
   await writeAutomatedPayrollAudit({
     runId,
