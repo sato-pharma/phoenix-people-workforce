@@ -11,8 +11,7 @@
 --   answer: the drift report called them hand-entered, and they turned out to be the module's own
 --   figures frozen by a step confirm. A trigger, not app code, so no write path can skip it.
 -- ROLLBACK:
---   drop trigger if exists automated_payroll_draft_cell_history_capture on public.automated_payroll_draft_rows;
---   drop function if exists public.phx_automated_payroll_draft_cell_history_capture();
+--   --   drop function if exists public.phx_automated_payroll_draft_cell_history_capture();
 --   -- SAFE: the history table only exists to be kept; drop it only if this whole change is abandoned.
 --   drop table if exists public.automated_payroll_draft_cell_history;
 --   alter table public.automated_payroll_draft_rows drop column if exists write_reason, drop column if exists write_step_key;
@@ -94,10 +93,9 @@ $$;
 
 revoke execute on function public.phx_automated_payroll_draft_cell_history_capture() from public, anon, authenticated;
 
-drop trigger if exists automated_payroll_draft_cell_history_capture on public.automated_payroll_draft_rows;
 -- AFTER, not BEFORE: an upsert fires BEFORE INSERT even when it resolves to an update, which would
 -- record every cell of an existing row as freshly typed. AFTER INSERT fires only for a real insert.
-create trigger automated_payroll_draft_cell_history_capture
+create or replace trigger automated_payroll_draft_cell_history_capture
   after insert or update on public.automated_payroll_draft_rows
   for each row execute function public.phx_automated_payroll_draft_cell_history_capture();
 
@@ -115,13 +113,11 @@ $$;
 
 revoke execute on function public.phx_automated_payroll_draft_cell_history_append_only() from public, anon, authenticated;
 
-drop trigger if exists automated_payroll_draft_cell_history_no_change on public.automated_payroll_draft_cell_history;
-create trigger automated_payroll_draft_cell_history_no_change
+create or replace trigger automated_payroll_draft_cell_history_no_change
   before update or delete on public.automated_payroll_draft_cell_history
   for each row execute function public.phx_automated_payroll_draft_cell_history_append_only();
 
-drop trigger if exists automated_payroll_draft_cell_history_no_truncate on public.automated_payroll_draft_cell_history;
-create trigger automated_payroll_draft_cell_history_no_truncate
+create or replace trigger automated_payroll_draft_cell_history_no_truncate
   before truncate on public.automated_payroll_draft_cell_history
   for each statement execute function public.phx_automated_payroll_draft_cell_history_append_only();
 
