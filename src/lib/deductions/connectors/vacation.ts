@@ -242,25 +242,86 @@ export function excludeAlreadyClaimedVacationDays(input: {
 }
 
 /**
+ * WHETHER ONE LIVE LEDGER ROW STILL CLAIMS ITS DAYS AGAINST THIS RUN.
+ *
+ * 🔴 WHY THIS EXISTS, MEASURED ON PRODUCTION. Owner-reported 2026-10-07:
+ * *"since u can read the vacation with no balance deductions correct why no
+ * automated payroll showing the deductions i approved in deductions module"*.
+ * The answer was that the connector was deleting its own work every time it ran.
+ *
+ * `collect.ts` registers both vacation collectors with `reconcilesWholeCategory`,
+ * which means every live candidate in the category this run collects is the
+ * run's to keep or to retire: a key the fresh scan does not produce IS
+ * superseded. The already-claimed read, however, took every live candidate in
+ * the month with no category filter — including the run's OWN rows from the
+ * previous run. So the request path saw the day it charged last time, treated it
+ * as taken, emitted no draft for it, and reconcile then retired the row for
+ * being absent from the fresh scan. Every re-collect deleted the previous
+ * re-collect's candidates, with `superseded_by_candidate_id` NULL because there
+ * was no replacement to pair with, and the decision on each went with it.
+ *
+ * Measured for 2026-09 before this fix: `vacation_balance` held 11 candidate
+ * keys and 29 superseded rows against 2 live ones, and 13 of the owner's
+ * decisions had been erased — three of them approvals (1,050.00 + 500.00 +
+ * 483.33 EGP). Nine approved, still-unpaid vacation requests worth 7,374.99 EGP
+ * had no live candidate at all while the requests sat untouched in
+ * `v2_vacation_requests`. `crm_vacation_signal` never churned because the CRM
+ * path does not read the ledger — it defers to live HR requests directly — which
+ * is why the one pushed vacation line survived.
+ *
+ * 🔴 A LOCKED ROW IS THE EXCEPTION AND MUST STAY CLAIMED. Reconcile refuses to
+ * supersede a candidate with `locked_at` — published money is never retracted
+ * automatically — so that row will still be live after this run. Re-charging its
+ * day would put two live candidates on one employee-day, which
+ * `findDayCollisions` cannot see (it only reports a day claimed by more than one
+ * CATEGORY) and which surfaces as a raw unique_violation mid-publish from
+ * `deductions_publication_lines_guard_day_overlap`.
+ *
+ * Another category's row always claims its day: this run will not touch it.
+ */
+export function ledgerRowStillClaimsItsDays(
+  row: { category: string | null; lockedAt: string | null },
+  reconciledCategory: string,
+): boolean {
+  // Not in this run's reconcile scope — it survives the run, so the day is taken.
+  if (String(row.category ?? "") !== reconciledCategory) return true;
+  // This run's own row. Only a published one survives; the rest are ours to replace.
+  return Boolean(row.lockedAt);
+}
+
+/**
  * Every employee-day the live ledger already charges for this month, as
  * `${compactHrId}:${date}`. Superseded candidates do not count — they were
  * withdrawn, so the day is free again. Same read the holiday-bridge and DSM
- * no-record connectors make.
+ * no-record connectors make, narrowed by `ledgerRowStillClaimsItsDays` so a run
+ * cannot block itself out of re-producing the candidates it owns.
  */
-async function loadAlreadyDeductedDays(monthKey: string): Promise<Set<string>> {
+async function loadAlreadyDeductedDays(input: {
+  monthKey: string;
+  reconciledCategory: DeductionsCategory;
+}): Promise<Set<string>> {
   const claimed = new Set<string>();
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates")
-    .eq("month_key", monthKey)
+    .select("employee_hr_id_compact, dates, category, locked_at")
+    .eq("month_key", input.monthKey)
     .is("superseded_at", null);
   // Fail closed. An unreadable ledger is not an empty one, and continuing would
   // recreate exactly the duplicates this guard exists to stop.
   if (error) throw new Error(`Vacation connector: failed to load already-deducted days: ${error.message}`);
-  for (const row of (data ?? []) as Array<{ employee_hr_id_compact: string; dates: unknown }>) {
+  const rows = (data ?? []) as Array<{
+    employee_hr_id_compact: string;
+    dates: unknown;
+    category: string | null;
+    locked_at: string | null;
+  }>;
+  for (const row of rows) {
     const compact = String(row.employee_hr_id_compact ?? "");
     if (!compact) continue;
     if (!Array.isArray(row.dates)) continue;
+    if (!ledgerRowStillClaimsItsDays({ category: row.category, lockedAt: row.locked_at }, input.reconciledCategory)) {
+      continue;
+    }
     for (const date of row.dates as unknown[]) {
       if (typeof date === "string" && date.trim()) claimed.add(`${compact}:${date.trim()}`);
     }
@@ -298,9 +359,12 @@ async function collectVacationCandidatesByReason(input: {
   // Omar). Compute the money here, exactly as the CRM and No-Records connectors do.
   const [baseSalaryByCompact, alreadyDeducted] = await Promise.all([
     getBaseSalaryMap(),
-    // The CRM source can already have claimed some of these days on an earlier
-    // collection run — see excludeAlreadyClaimedVacationDays.
-    loadAlreadyDeductedDays(monthKey),
+    // Another category's live candidate can already have claimed some of these
+    // days — see excludeAlreadyClaimedVacationDays. This run's OWN category is
+    // excluded unless the row is locked, because reconcile retires whatever this
+    // scan does not re-produce: counting it would delete this connector's own
+    // candidates on every run (ledgerRowStillClaimsItsDays).
+    loadAlreadyDeductedDays({ monthKey, reconciledCategory: input.category }),
   ]);
   // Fail closed: an empty map is a feeder outage, not "nobody has a salary".
   assertBaseSalaryMapLoaded("Vacation connector", baseSalaryByCompact);
