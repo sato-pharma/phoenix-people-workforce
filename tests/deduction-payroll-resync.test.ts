@@ -194,6 +194,27 @@ export function runDeductionPayrollResyncTests() {
     "a push no longer moves payroll money, so it must not re-open a confirmed payroll step",
   );
 
+  // ---- The re-collect CARRY path resyncs too (owner, 2026-10-07) ----------------------------------
+  // A vacation/CRM re-collect supersedes a decided candidate and carries, drops or retires its
+  // decision onto a replacement. When that decision was Approved, the figure a confirmed step froze
+  // has just moved — so reconcile must resync exactly as the single-decision paths do, or an
+  // approved deduction stays frozen on the sheet after a routine nightly re-collect. This is the
+  // last approval path that did not, and the gap the owner reported ("any approved deduction, even
+  // a manual one, should appear in Automated Payroll"). It is one call site, so pin it.
+  const reconcileBody = service.slice(
+    service.indexOf("export async function reconcileCandidateDrafts"),
+    service.indexOf("function mapCandidateRow"),
+  );
+  assert.ok(reconcileBody.length > 0, "reconcileCandidateDrafts must be found in the service");
+  assert.ok(
+    reconcileBody.includes("resyncPayrollDeductionSteps"),
+    "reconcileCandidateDrafts must resync the payroll steps, or a re-collect leaves an approved deduction frozen",
+  );
+  assert.ok(
+    reconcileBody.includes('"Approved for Payroll"') && reconcileBody.includes("payrollResyncCompacts"),
+    "it must gate the resync on the SUPERSEDED decision having been Approved — a non-approved row charges 0.00 either side, so re-opening a step for it would only make HR re-confirm the same figure",
+  );
+
   // ---- The step labels name the real gate ---------------------------------------------------------
   const steps = readFileSync("src/lib/automated-payroll/step-definitions.ts", "utf8");
   const windowLabel = steps.slice(steps.indexOf("export function stepWindowLabel"));
