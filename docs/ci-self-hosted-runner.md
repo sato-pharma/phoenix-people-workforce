@@ -599,7 +599,7 @@ parked, and the session had no sanctioned way out.
 
 | Invocation | What happens | Cost |
 | --- | --- | --- |
-| *(no flag)* — the default | the probe asks the box; **busy OR no answer → dispatches `ci.yml` at once**, free → runs on the box | nothing when free, ~14 billable minutes otherwise |
+| *(no flag)* — the default | the probe asks the box; **busy OR no answer → reads the open PR's own run, or dispatches `ci.yml` at once if there is none**, free → runs on the box | nothing when free, nothing when a PR is read, ~14 billable minutes for a dispatch |
 | `--urgent` | the same thing, said out loud — kept as an alias, and still immediate when the knob below sets a wait | ~14 billable minutes, at once |
 | `--wait <minutes>` | queues for the box on your own budget, a line each 30 s, then escalates — **wins over `--urgent`'s zero, in either order** | nothing, then ~14 billable minutes |
 | `--no-actions` (alias `--free`) | waits **10 minutes** and **never bills** — refuses at the end of the wait | nothing, ever |
@@ -685,12 +685,44 @@ into a statement about somebody else's commit. Pushing the branch to make them a
 nothing.
 
 **It refuses to pay twice.** If the branch already has an open PR, that PR is already running the same
-two required jobs on the same commit, and a dispatch beside them bills a second round for one answer.
-The fallback then exits **6 — NO VERDICT** and names `gh pr checks <n> --watch` instead. So the honest
-rule of thumb is: **ready to open the PR → open it, the PR's checks ARE the Actions fallback; not ready
-→ run it bare and let a busy box escalate.** 🔴 **This refusal is what stops the 2026-10-08 default
-paying twice:** with no wait in front of it, a bare call on a branch that already has a PR would dispatch
-the instant the box was busy, for an answer already being computed on that very commit.
+two required jobs on the same commit, and a dispatch beside them would bill a second round for one
+answer. 🔴 **Until 2026-10-08 that arm printed `gh pr checks <n> --watch` and exited 6 — NO VERDICT,
+with a free, already-paid-for answer sitting on that very commit.** Survivable while the box was waited
+out for ten minutes first, because the arm was rare; the same day's ruling made a busy box escalate at
+ONCE, so it became the common ending, and by the time anything is pushed most branches HAVE a PR. The
+owner's answer: *"make the open-PR refusal read that PR's checks instead of exiting 6"*. It now polls
+that run and produces a real **PASS / FAIL**, for **no Actions minutes at all** — reading is `gh api`.
+So the rule of thumb is simply: **ready to open the PR → open it, and `remote-check` will read it**; not
+ready → run it bare and let a busy box dispatch.
+
+**Reading a PR's run takes a DIFFERENT job map, and that is the whole subtlety.** `ci.yml` puts the unit
+suite in `validate` on a pull request and in `checks` on every other event (exact complements, pinned by
+`tests/ci-suite-placement.test.ts`), and **a pull request never builds at all.** Measured on #5471's own
+green run, 2026-10-08:
+
+| Job | Lint | Typecheck | Test | Build |
+| --- | --- | --- | --- | --- |
+| `checks` | success | success | **skipped** | — |
+| `validate` | — | — | **success** | **skipped** |
+
+So grading that all-green PR with the dispatch map would have read `test` from `checks` / Test =
+`skipped` → **NO VERDICT**: the same defect wearing a new hat. `STAGE_JOBS_PR` grades `test` in
+`validate`, and `build: null` says out loud that a PR cannot answer for the build — `remote-check all`
+on a branch with a PR reports the three stages that passed and NO VERDICT for the build, instead of
+inheriting a pass from two green checks. Which map is used is read off **the run's own `event`**
+(`stageJobsFor`), never off the route that asked: the same sha can carry a PR run and a dispatched run
+at once. Both routes settle through **one** watcher (`settleActionsRun`), so there is a single
+allow-list, and a whole-run `success` is a short circuit only when that run ran every stage asked for
+(`stagesNotRunBy`) — otherwise a green PR would print PASS for a build that never happened.
+
+**The PR's run is asked for BY SHA** (`gh api .../actions/runs?head_sha=…`, filtered to `ci.yml` and the
+`pull_request` event), never scanned from `gh run list`, which is eventually consistent and has dropped a
+run that existed — here that would read as "the PR has no verdict" on a commit that had already passed,
+and send the reader to bill a dispatch for an answer they already had.
+
+**And a run that never appears is given up on in 3 minutes, not 25.** A run object exists the moment it
+is created, queued or not, so "no run at all" never becomes a run by waiting — and the arm this replaced
+had exactly one virtue, that it ended at once.
 
 **The verdict is allow-listed, never deny-listed.** Only `completed/success` passes and only
 `completed/failure` fails; `cancelled`, `timed_out`, `skipped`, `neutral`, `action_required`,
@@ -705,7 +737,10 @@ verdicts; an automated chain retries the rest.
 
 Pinned by `tests/remote-check.test.ts` section 10, in the required `validate` job: the default still
 refuses, the escalation never spawns a heavy runner locally, the open-PR short circuit sits BEFORE the
-dispatch, and both sha guards are asserted.
+dispatch and **settles that PR's run rather than exiting 6**, its run is asked for by sha, both sha
+guards are asserted, there is exactly **one** watcher, and **both job maps are checked against `ci.yml`
+for the event each one grades** — including the proof that `build: null` is still true, so the day a
+pull request starts building, that test fails instead of answering NO VERDICT for ever.
 
 ## 🔴 The safety rules
 
@@ -1650,7 +1685,10 @@ dispatch from `main` lands in the SAME group as the push run of that commit, whi
 Railway's "Wait for CI" holds the production deploy on. A cancelled or failed suite there makes
 Railway mark that deploy SKIPPED within minutes, and re-running it green does not resurrect it
 (AGENTS.md §2.3). There is nothing to gain either: `main` already runs the whole gate on every
-commit. It refuses with exit 6 and points at that run, the same shape as the open-PR refusal.
+commit. It refuses with exit 6 and POINTS AT that run rather than reading it, which is where it now
+differs from the open-PR arm above: `remote-check` is invoked from a feature branch (committing on
+local `main` is itself banned, AGENTS.md §2), so a session that lands here has a worktree to go to
+before any verdict would help it.
 
 ### The push guard leaked an `ssh`, which disarmed it for the rest of the session
 

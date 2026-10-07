@@ -22,7 +22,10 @@ import {
   parseBusyProbe,
   parseEscalation,
   STAGE_JOBS,
+  STAGE_JOBS_PR,
   runPaths,
+  stageJobsFor,
+  stagesNotRunBy,
 } from "../scripts/remote-check-plan.mjs";
 
 // scripts/remote-check.mjs runs the heavy checks on the self-hosted CI box instead of this laptop.
@@ -763,8 +766,8 @@ export async function runRemoteCheckTests(): Promise<void> {
 
     // 10e — AND IT REFUSES TO PAY TWICE. A branch that already has an open PR is already running the
     // same two required jobs on the same commit, so a dispatch beside them bills a second round for
-    // one answer (owner, 2026-09-27: every merge already costs ~28 billable CI minutes). The fallback
-    // sends the reader to `gh pr checks` instead, and that short circuit sits BEFORE the dispatch.
+    // one answer (owner, 2026-09-27: every merge already costs ~28 billable CI minutes). That short
+    // circuit sits BEFORE the dispatch, and it names `gh pr checks` as the by-hand equivalent.
     const fallback = CODE.slice(CODE.indexOf("function runOnActions"));
     const prGate = fallback.indexOf('"pr", "list", "--head", branch');
     const dispatch = fallback.indexOf('"workflow", "run", "ci.yml"');
@@ -772,6 +775,50 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.ok(dispatch > 0, "the dispatch call is gone");
     assert.ok(prGate < dispatch, "the open-PR check must come BEFORE the dispatch, or it bills before it looks");
     assert.match(fallback, /gh pr checks/, "it must name the command that reads the PR's own checks");
+
+    // 🔴 AND IT READS THAT PR'S CHECKS RATHER THAN EXITING 6 (owner, 2026-10-08: "make the open-PR
+    // refusal read that PR's checks instead of exiting 6"). It used to print the command and leave with
+    // NO VERDICT — survivable while the box was waited out for ten minutes first, and not survivable
+    // once the same day's ruling made a busy box escalate at once: this arm is now reached immediately,
+    // and by the time anything is pushed most branches HAVE a PR, so a session left with nothing while a
+    // free, already-billed answer sat on that very commit.
+    const prArm = fallback.slice(prGate, dispatch);
+    assert.match(prArm, /settleActionsRun\(/, "the open-PR arm must settle that PR's run, not exit with no verdict");
+    assert.doesNotMatch(
+      prArm,
+      /process\.exit\(6\)/,
+      "the open-PR arm is back to exiting 6 without reading anything — that is the defect the owner named",
+    );
+    // 🔴 THE PR'S RUN IS ASKED FOR BY SHA, NEVER SCANNED FROM `gh run list` — that list is eventually
+    // consistent and has dropped a run that existed (AGENTS.md §2.1), which here reads as "the PR has no
+    // verdict" on a commit that already passed, and sends the reader to bill a dispatch for an answer
+    // they already had. It must also filter to ci.yml AND to the pull_request event: one commit can
+    // carry a dispatched run, a push run and a PR run, and only the PR run is already paid for.
+    const prFinder = CODE.slice(CODE.indexOf("function findPullRequestRun"));
+    assert.match(prFinder, /actions\/runs\?head_sha=/, "the PR's run must be asked for by head sha");
+    assert.match(prFinder, /\.github\/workflows\/ci\.yml/, "it must filter to ci.yml");
+    assert.match(prFinder, /\.event == "pull_request"/, "it must filter to the PR run, not a dispatch on the same sha");
+    assert.doesNotMatch(prFinder, /"run", "list"/, "findPullRequestRun is scanning the run list again");
+
+    // 🔴 AND BOTH ROUTES SETTLE THROUGH ONE WATCHER, so there is a single allow-list of what counts as
+    // a verdict. Two copies is how one of them rots: the measured failure this allow-list exists for
+    // (a-padded-short-sha-422s-and-a-fallthrough-watcher-calls-it-green) was a watcher that fell out of
+    // its loop into a success line.
+    assert.equal(
+      (CODE.match(/function settleActionsRun/g) ?? []).length,
+      1,
+      "there must be exactly one Actions watcher",
+    );
+    assert.match(
+      CODE,
+      /settleActionsRun\(\{\s*\n\s*find: \(\) => findPullRequestRun\(sha\),/,
+      "the open-PR read must go through the one watcher",
+    );
+    assert.match(
+      CODE,
+      /settleActionsRun\(\{\s*\n\s*find: \(\) => findDispatchedRun\(branch, dispatchedAfter\),/,
+      "the dispatch must go through the one watcher",
+    );
 
     // 10f — AND IT NEVER DISPATCHES ON `main`. ci.yml groups a non-PR run by SHA and never cancels
     // one (`CI-<sha>`, concurrency block in .github/workflows/ci.yml), so a dispatch from `main`
@@ -873,36 +920,144 @@ export async function runRemoteCheckTests(): Promise<void> {
       }
       if (name) ciJobs.set(name, body.join("\n"));
     }
-    for (const [stage, spec] of Object.entries(STAGE_JOBS) as Array<[string, { job: string; step: string }]>) {
-      const jobBody = ciJobs.get(spec.job);
-      assert.ok(
-        jobBody !== undefined,
-        "STAGE_JOBS says " + stage + " runs in the `" + spec.job + "` job, and ci.yml has no such job any more",
-      );
-      const stepAt = jobBody.indexOf("      - name: " + spec.step + "\n");
-      assert.notEqual(
-        stepAt,
-        -1,
-        "STAGE_JOBS grades " + stage + " by a `" + spec.step + "` step inside ci.yml's `" + spec.job + "` job, and " +
-          "that job has no such step — every " + stage + " dispatch would silently read NO VERDICT",
-      );
+    // One step's own lines, cut at the next list item — never a fixed window, which can read the NEXT
+    // step's `if:` and fail a step that has none.
+    const stepBody = (jobBody: string, step: string): string | null => {
+      const at = jobBody.indexOf("      - name: " + step + "\n");
+      if (at === -1) return null;
+      const after = jobBody.slice(at);
+      const next = after.indexOf("\n      - ", 1);
+      return next === -1 ? after : after.slice(0, next);
+    };
+    const ifOf = (body: string): string | null => /^ {8}if: (.+)$/m.exec(body)?.[1] ?? null;
 
-      // 🔴 AND IT MUST RUN ON THE EVENT THIS SCRIPT CAUSES. The escalation is a `workflow_dispatch`,
-      // so a step gated on a pull request is SKIPPED on every run this script will ever grade, and
-      // `gradeConclusion("skipped")` is no-verdict — the same silent failure, one level down. There is
-      // no need to evaluate GitHub's expression language to catch it: a condition that REQUIRES a pull
-      // request can never hold for a dispatch, and that is the only shape ci.yml uses.
-      const ifLine = /^ {8}if: (.+)$/m.exec(jobBody.slice(stepAt, stepAt + 400));
-      assert.ok(
-        !ifLine || !/event_name\s*==\s*'pull_request'/.test(ifLine[1]),
-        "`" + spec.job + "` / " + spec.step + " only runs on a pull request (`" + (ifLine?.[1] ?? "") + "`), but " +
-          "remote-check escalates by dispatching ci.yml — so " + stage + " would be graded from a SKIPPED step and " +
-          "answer NO VERDICT on every run, after a ten-minute wait and a full billed workflow",
+    // 🔴 BOTH MAPS ARE CHECKED, AND AGAINST THE EVENT EACH ONE IS FOR. STAGE_JOBS grades a
+    // `workflow_dispatch`; STAGE_JOBS_PR grades the run an already-open PR produced (owner, 2026-10-08).
+    // ci.yml's two homes for the unit suite are exact complements, so a map checked against the wrong
+    // event passes while grading every stage from a SKIPPED step — NO VERDICT for ever, fail-open and
+    // therefore silent. `pr: true` below means "this map grades a pull_request run".
+    const maps: Array<[string, Record<string, { job: string; step: string } | null>, boolean]> = [
+      ["STAGE_JOBS", STAGE_JOBS, false],
+      ["STAGE_JOBS_PR", STAGE_JOBS_PR, true],
+    ];
+    for (const [label, map, pr] of maps) {
+      assert.deepEqual(
+        Object.keys(map).sort(),
+        ["build", "lint", "test", "typecheck"],
+        label + " must cover every stage this script can be asked for, or one of them grades as a typo",
       );
+      for (const [stage, spec] of Object.entries(map)) {
+        // 🔴 A `null` SPEC CLAIMS THE EVENT DOES NOT RUN THAT STAGE AT ALL, AND THAT CLAIM IS PROVED
+        // FROM ci.yml, never taken on trust. `build: null` in STAGE_JOBS_PR is why reading a green PR
+        // answers NO VERDICT for `remote-check build` instead of inheriting a pass from two green
+        // checks — so if a PR ever DOES build, this must fail and send someone to give it a real spec.
+        if (!spec) {
+          assert.ok(pr, label + " may not claim a stage is unrun outside the pull_request map");
+          const real = STAGE_JOBS[stage as keyof typeof STAGE_JOBS];
+          const body = real ? stepBody(ciJobs.get(real.job) ?? "", real.step) : null;
+          assert.ok(body, label + " says a pull request never runs " + stage + ", and ci.yml has no such step at all");
+          assert.match(
+            String(ifOf(body)),
+            /event_name\s*!=\s*'pull_request'/,
+            "STAGE_JOBS_PR says a pull request never runs the " + stage + ", but ci.yml's `" + real.job + "` / " +
+              real.step + " is not gated off a pull request any more — give " + stage + " a real spec, or reading a " +
+              "PR will keep answering NO VERDICT for a stage that now runs",
+          );
+          continue;
+        }
+        const jobBody = ciJobs.get(spec.job);
+        assert.ok(
+          jobBody !== undefined,
+          label + " says " + stage + " runs in the `" + spec.job + "` job, and ci.yml has no such job any more",
+        );
+        const body = stepBody(jobBody, spec.step);
+        assert.ok(
+          body,
+          label + " grades " + stage + " by a `" + spec.step + "` step inside ci.yml's `" + spec.job + "` job, and " +
+            "that job has no such step — every " + stage + " reading would silently answer NO VERDICT",
+        );
+
+        // 🔴 AND IT MUST RUN ON THE EVENT THAT MAP GRADES. A step gated the other way is SKIPPED on
+        // every run that map will ever see, and `gradeConclusion("skipped")` is no-verdict — the same
+        // silent failure, one level down. There is no need to evaluate GitHub's expression language:
+        // a condition that REQUIRES the other event can never hold, and that is the only shape ci.yml
+        // uses.
+        const condition = ifOf(body);
+        const fatal = pr ? /event_name\s*!=\s*'pull_request'/ : /event_name\s*==\s*'pull_request'/;
+        assert.ok(
+          !condition || !fatal.test(condition),
+          "`" + spec.job + "` / " + spec.step + " does not run on " + (pr ? "a pull request" : "a dispatch") +
+            " (`" + String(condition) + "`), but " + label + " grades " + stage + " from it — so it would be read " +
+            "from a SKIPPED step and answer NO VERDICT on every run",
+        );
+      }
     }
 
-    // And the script must actually USE it: the run's conclusion alone may not decide a FAIL.
-    assert.match(CODE, /gradeActionsStages\(names, jobs\)/, "the Actions fallback no longer grades per stage");
+    // 🔴 AND THE MAP IS CHOSEN FROM THE RUN'S OWN EVENT, not from the route that asked. The same sha
+    // can carry a dispatched run AND a PR run, which disagree about where the unit suite lives.
+    assert.equal(stageJobsFor("pull_request"), STAGE_JOBS_PR);
+    for (const event of ["workflow_dispatch", "push", "", null, undefined, "schedule"]) {
+      assert.equal(stageJobsFor(event as string), STAGE_JOBS, String(event) + " is not a pull request");
+    }
+    assert.deepEqual(stagesNotRunBy(["lint", "typecheck", "test"], STAGE_JOBS_PR), [], "a PR runs all three");
+    assert.deepEqual(stagesNotRunBy(["test", "build"], STAGE_JOBS_PR), ["build"], "a PR never builds");
+    assert.deepEqual(stagesNotRunBy(["test", "build"], STAGE_JOBS), [], "a dispatch runs everything");
+
+    // 🔴 SO A PR'S OWN RUN IS GRADED IN `validate`, WHERE A DISPATCH'S SUITE IS IN `checks` — the one
+    // mistake that would make reading a green PR answer NO VERDICT, which is the defect being fixed.
+    // Shaped like a real green PR run, SKIPPED steps included: GitHub lists a step whose `if:` was
+    // false with `conclusion: "skipped"`, and that is what makes grading a PR with the dispatch map
+    // answer NO VERDICT rather than quietly reading the job around it.
+    const prValidateGreen = job("validate", "success", [["Test", "success"], ["Build", "skipped"]]);
+    const prChecksGreen = job("checks", "success", [["Lint", "success"], ["Typecheck", "success"], ["Test", "skipped"]]);
+    const prJobs = [prValidateGreen, prChecksGreen];
+    assert.equal(gradeActionsStages(["test"], prJobs, STAGE_JOBS_PR).verdict, "pass", "a green PR's suite is in `validate`");
+    assert.equal(
+      gradeActionsStages(["test"], prJobs).verdict,
+      "no-verdict",
+      "the dispatch map must NOT be what grades a PR run — `checks` has no Test step on a pull request",
+    );
+    assert.equal(gradeActionsStages(["lint", "typecheck", "test"], prJobs, STAGE_JOBS_PR).verdict, "pass");
+
+    // A green PR says NOTHING about the build, and the reason must say so — not "ended skipped", which
+    // reads like a fault in the run. The three stages it DID answer are still reported.
+    const all = gradeActionsStages(["lint", "typecheck", "test", "build"], prJobs, STAGE_JOBS_PR);
+    assert.equal(all.verdict, "no-verdict", "a pull request never builds, so `all` cannot be fully answered by one");
+    assert.match(all.why, /pull_request run never runs the build/);
+    assert.deepEqual(all.passed, ["lint", "typecheck", "test"], "the stages that did pass must still be named");
+    assert.equal(
+      gradeActionsStages(["test"], [job("validate", "failure", [["Test", "failure"]])], STAGE_JOBS_PR).verdict,
+      "fail",
+      "a red suite on a PR is still a FAIL",
+    );
+    // An unknown stage name is still a typo, and must not be reported as "the event does not run it".
+    assert.match(gradeActionsStages(["nope"], prJobs, STAGE_JOBS_PR).why, /not a stage any CI job runs/);
+
+    // And the script must actually USE it: the run's conclusion alone may not decide a FAIL, and the
+    // map it grades with must be the one chosen from the run's event.
+    assert.match(CODE, /gradeActionsStages\(names, jobs, stageJobs\)/, "the Actions fallback no longer grades per stage");
+    assert.match(CODE, /stageJobsFor\(run\?\.event\)/, "the watcher must pick the map from the run's own event");
+    // 🔴 AND A WHOLE-RUN `success` IS ONLY A PASS WHEN THAT RUN RAN EVERY STAGE ASKED FOR. A dispatch
+    // does; a green PR never built, so the short circuit must consult stagesNotRunBy or it would print
+    // PASS for `remote-check build` off a run that did not compile a line.
+    assert.match(
+      CODE,
+      /graded\.verdict === "pass" && notRun\.length === 0/,
+      "the whole-run success short circuit no longer checks that the run ran the requested stages",
+    );
+    // 🔴 AND A RUN THAT NEVER APPEARS IS GIVEN UP ON IN MINUTES, NOT AFTER THE SETTLE DEADLINE. A run
+    // object exists the moment it is created, queued or not, so "no run at all" never becomes a run by
+    // waiting — and the arm this replaced had exactly one virtue, that it ended at once. Burning the
+    // full 25 minutes on a dispatch that produced nothing would spend that virtue for no answer.
+    assert.match(
+      CODE,
+      /!sawRun && Date\.now\(\) - started > ACTIONS_APPEAR_MINUTES/,
+      "the watcher waits the whole settle deadline for a run that does not exist",
+    );
+    assert.ok(
+      /const ACTIONS_APPEAR_MINUTES = [1-5];/.test(CODE),
+      "the appear deadline must stay a few minutes — it is the only thing that keeps a missing run cheap",
+    );
     assert.match(CODE, /"run", "view", String\(runId\), "--json", "jobs"/, "it must read the run's jobs to grade a stage");
     assert.ok(
       !/graded\.verdict === "fail"/.test(CODE),
