@@ -964,7 +964,7 @@ function AddManualDeduction({
     setSaving(true);
     setError(null);
     try {
-      await fetchJson("/api/admin/deductions/manual", {
+      const saved = await fetchJson<{ payrollNotices?: string[] }>("/api/admin/deductions/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -981,8 +981,15 @@ function AddManualDeduction({
       setQuery("");
       setValue("1");
       setReason("");
-      setOpen(false);
       onAdded();
+      // Added, but payroll could not follow it (Part 2 confirmed, or the resync failed) — keep the
+      // form open to say so rather than closing as if payroll has it.
+      const notices = saved?.payrollNotices ?? [];
+      if (notices.length > 0) {
+        setError(notices.join(" "));
+        return;
+      }
+      setOpen(false);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not add this deduction.");
     } finally {

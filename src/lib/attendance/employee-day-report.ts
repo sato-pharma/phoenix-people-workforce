@@ -584,7 +584,7 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
   /** Super Admin actor — gated by recordDecision's own role check; its hrId/loginId also
    * become the candidate's created_by and the decision's decided_by/audit actor. */
   actor: Pick<AccessContext, "role" | "hrId" | "loginId">;
-}): Promise<DeductionsDecision> {
+}): Promise<DeductionsDecision & { payrollNotices: string[] }> {
   const hrId = normalizeAttendanceHrId(input.employeeHrId);
   if (!hrId) throw validationError("Invalid employee HR id.");
   // Alias-aware, byte-for-byte the derivation the unified table stores in

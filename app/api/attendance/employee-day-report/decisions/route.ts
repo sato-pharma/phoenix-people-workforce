@@ -107,7 +107,9 @@ export async function POST(request: Request) {
       appliedDeductionValue: decision.appliedValue,
       appliedAmount: decision.appliedAmount,
     };
-    return NextResponse.json({ decision: decisionInfo });
+    // Saved, but payroll could not follow it (Part 2 confirmed, or the resync failed) — the
+    // page must say so, or a frozen payroll figure reads as applied.
+    return NextResponse.json({ decision: decisionInfo, payrollNotices: decision.payrollNotices });
   } catch (error) {
     return errorResponse(error);
   }
