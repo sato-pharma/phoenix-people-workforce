@@ -410,6 +410,7 @@
   "employee-360-module-design": "employees",
   "employee-360-subtree-picker-and-exclusion": "employees",
   "employee-hire-auto-replacement-double-seat": "employees",
+  "employee-hr-id-compact-is-lowercase-so-upper-joins-nothing": "payroll",
   "employee-import-blanks-salaries-and-job-title-creates-positions": "employees",
   "employee-import-payroll-ineligible-block-fix": "employees",
   "employee-nickname-display-audit": "employees",
