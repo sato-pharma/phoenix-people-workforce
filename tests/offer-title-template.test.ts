@@ -35,6 +35,7 @@ export function runOfferTitleTemplateTests() {
     costOfLiving: 0,
     id: `jt-${title}`,
     reportsTo: null,
+    roleSummary: null,
     templateId,
     title,
   });
