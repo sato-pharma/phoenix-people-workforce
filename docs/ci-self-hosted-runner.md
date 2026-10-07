@@ -580,9 +580,10 @@ number.
 **While `CI_RUNNER` reads `ubuntu-latest`, the replicas still bill** — roughly $8/month in idle memory
 for three. That is spend producing nothing, and parking them at 0 is a dashboard decision.
 
-## 🔴 When the box is busy: wait, or pay for Actions — owner's policy, 2026-10-06
+## 🔴 When the box is busy: pay for Actions — owner's policy, 2026-10-06, sharpened 2026-10-08
 
-**His words:** *"in critical situations, let's depend on GitHub Actions; in normal situations we are on
+**His words, 2026-10-08:** *"if free use it directly but if busy use github actions."* The original,
+2026-10-06: *"in critical situations, let's depend on GitHub Actions; in normal situations we are on
 the box to decrease the cost."* This is that policy, implemented in `scripts/remote-check.mjs` rather
 than left to each session's judgement.
 
@@ -594,45 +595,55 @@ One did, around a finished branch waiting to open its PR: **14 consecutive refus
 session's `all` held it. Nothing was wrong with the branch, the box or the refusal. The work was simply
 parked, and the session had no sanctioned way out.
 
-**The three routes out of a busy box, cheapest first.**
+**The routes out of a busy box.**
 
 | Invocation | What happens | Cost |
 | --- | --- | --- |
-| *(no flag)* — the default | waits **10 minutes**, printing a line each 30 s, then dispatches `ci.yml` | nothing, then ~14 billable minutes |
-| `--urgent` | **no wait at all** — dispatches `ci.yml` immediately | ~14 billable minutes, at once |
-| `--wait <minutes>` | that wait with your own budget, then escalates — **wins over `--urgent`'s zero, in either order** | nothing, then ~14 billable minutes |
-| `--no-actions` (alias `--free`) | waits but **never bills** — refuses at the end of the wait | nothing, ever |
-| `--no-wait --no-actions` | the pre-2026-10-06 behaviour: refuses at once | nothing, ever |
+| *(no flag)* — the default | the probe asks the box; **busy → dispatches `ci.yml` at once**, free → runs on the box | nothing when free, ~14 billable minutes when busy |
+| `--urgent` | the same thing, said out loud — kept as an alias, and still immediate when the knob below sets a wait | ~14 billable minutes, at once |
+| `--wait <minutes>` | queues for the box on your own budget, a line each 30 s, then escalates — **wins over `--urgent`'s zero, in either order** | nothing, then ~14 billable minutes |
+| `--no-actions` (alias `--free`) | waits **10 minutes** and **never bills** — refuses at the end of the wait | nothing, ever |
+| `--no-wait --no-actions` | refuses at once | nothing, ever |
+| `PHX_CHECK_WAIT_MINUTES=<0-60>` | the house default for every call in that shell — `=10` restores the pre-2026-10-08 wait-then-escalate | as the number says |
 
-🔴 **THE DEFAULT ESCALATES, AS OF THE SECOND RULING OF 2026-10-06** — *"make `--urgent` the default when
-the box queue is over 10 minutes"*. What produced it, the same evening: the box queued **three sessions
-deep for over 25 minutes**; a 10-minute wait expired and refused; the second attempt was still waiting
-when opening the PR overtook it. So a bare invocation now waits visibly and then pays, because a session
-idling is the expensive outcome. `DEFAULT_WAIT_MINUTES` in `scripts/remote-check-plan.mjs` is the knob.
+🔴 **THE BOX WHEN IT IS FREE, GITHUB ACTIONS THE MOMENT IT IS BUSY — OWNER RULING, 2026-10-08:** *"i
+want to make the run depend on github actions if the self hosted box is busy .. if free use it directly
+but if busy use github actions"*. `DEFAULT_WAIT_MINUTES` is therefore **0**: a bare invocation probes the
+box and, on a busy answer, dispatches immediately instead of polling first.
 
-🔴 **AND `--urgent` NO LONGER QUEUES AT ALL, AS OF THE THIRD RULING OF THE SAME DAY** — *"make
-`--urgent` escalate immediately instead of after 4 minutes"*. Four minutes was the right number for one
-evening, while the **default** still refused instantly and any wait was the new thing on offer. Once the
-default became wait-ten-then-escalate, the only thing `--urgent` bought was six minutes, which is not
-what the word means: urgent is *do not queue me*. So the two tiers now differ in kind rather than by a
-margin — the default waits for the free box and pays only if it stays busy, `--urgent` pays at once.
-`URGENT_WAIT_MINUTES` is **0**, and **an explicit `--wait <minutes>` still wins over it in either
-order**, so `--wait 6 --urgent` waits six minutes and then escalates: this zero may never *shorten* a
-budget the caller asked for. Both halves are pinned in `tests/remote-check.test.ts` section 10b.
+**What that replaces, and what it costs.** The 2026-10-06 ruling made the default *wait ten minutes, then
+escalate* — the same policy with a queue in front of it. The queue was the cheap half of the trade, since
+the box bills nothing, and the evidence against it is from the evening it shipped: the box was **three
+sessions deep for over 25 minutes**, the ten-minute wait expired into a refusal anyway, and the second
+attempt was still waiting when opening the PR overtook it. So the wait bought a session ten idle minutes
+and, often enough, the dispatch as well. Paying at once is the owner's call on that trade and it is not
+free: **a dispatch is ~14 billable Actions minutes**, and a busy box is common here. `PHX_CHECK_WAIT_MINUTES`
+is the knob that buys the waiting back — for one shell, one session or this whole machine — without a code
+change, and an unreadable value is **refused** rather than ignored, because an ignored setting runs the
+other policy and reports success.
 
-🔴 **AND THAT IS WHY `--no-actions` IS LOAD-BEARING RATHER THAN A NICETY.**
-`.claude/hooks/push-typecheck-guard.mjs` runs `remote-check typecheck` on **every push**. Under the new
-default a busy box would delay each push by ten minutes and then spend ~14 billable minutes on a verdict
-the PR's own `checks` job produces anyway — so the guard passes `--no-wait --no-actions` and keeps its
-instant "NO VERDICT, push allowed". `tests/remote-check.test.ts` section 10b asserts that exact argument
-list in the hook's source; it was watched firing on its own break. **Any other per-push or per-commit
-caller added later must opt out the same way.**
+🔴 **`--urgent` IS NOW AN ALIAS, NOT A TIER.** It was 4 minutes while the default refused instantly, then 0
+(*"make `--urgent` escalate immediately instead of after 4 minutes"*, 2026-10-06), and the default has now
+caught up with it. It is kept because callers and docs already pass it, and because it is the way to say
+*immediately* when `PHX_CHECK_WAIT_MINUTES` has set a house wait: **an explicit `--wait <minutes>` wins
+over its zero in either order**, so `--wait 6 --urgent` waits six minutes — the zero may never *shorten* a
+budget the caller asked for.
 
-**Why the wait is allowed now when the refusal's own comment argued against queueing.** The objection
-was never to waiting — it was to waiting *silently*: a 30-minute `flock` on the box reads as a hang.
-Every poll here prints the runs it is waiting for and how much budget is left, so a quiet terminal
-still means something is wrong. The wait was opt-in for one evening; the owner's second ruling made it
-the default, and the opt-out above is what protects the callers that must stay instant and free.
+🔴 **AND THAT IS WHY `--no-actions` IS LOAD-BEARING RATHER THAN A NICETY — IT IS ALSO THE ONE PLACE THE
+WAIT SURVIVES.** `.claude/hooks/push-typecheck-guard.mjs` runs `remote-check typecheck` on **every push**,
+where the default would now spend ~14 billable minutes *immediately* on a verdict the PR's own `checks` job
+produces anyway — so the guard passes `--no-wait --no-actions` and keeps its instant "NO VERDICT, push
+allowed". And because `--free` promises never to bill, a zero wait there would turn it into that same
+instant refusal under a flag that says it waits: `FREE_WAIT_MINUTES` keeps the ten-minute poll on the one
+path where polling is the only route to a verdict. `tests/remote-check.test.ts` section 10b pins the
+default, the `--free` wait, the flag-beats-knob ordering and the hook's exact argument list; each was
+watched firing on its own break. **Any other per-push or per-commit caller added later must opt out the
+same way.**
+
+**Why a wait is allowed at all, when the refusal's own comment argued against queueing.** The objection
+was never to waiting — it was to waiting *silently*: a 30-minute `flock` on the box reads as a hang. Every
+poll prints the runs it is waiting for and how much budget is left, so a quiet terminal still means
+something is wrong. That is what makes `--wait` and `--free` safe to keep now that neither is the default.
 
 **Why the Actions fallback verifies the sha twice.** `gh workflow run` takes a **ref**, not a commit, so
 it checks whatever origin holds for that branch. The script compares `git ls-remote origin
@@ -646,7 +657,9 @@ nothing.
 two required jobs on the same commit, and a dispatch beside them bills a second round for one answer.
 The fallback then exits **6 — NO VERDICT** and names `gh pr checks <n> --watch` instead. So the honest
 rule of thumb is: **ready to open the PR → open it, the PR's checks ARE the Actions fallback; not ready
-→ `--urgent`.**
+→ run it bare and let a busy box escalate.** 🔴 **This refusal is what stops the 2026-10-08 default
+paying twice:** with no wait in front of it, a bare call on a branch that already has a PR would dispatch
+the instant the box was busy, for an answer already being computed on that very commit.
 
 **The verdict is allow-listed, never deny-listed.** Only `completed/success` passes and only
 `completed/failure` fails; `cancelled`, `timed_out`, `skipped`, `neutral`, `action_required`,
