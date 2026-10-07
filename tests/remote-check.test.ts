@@ -9,7 +9,9 @@ import { stripComments } from "./support/comment-strip.ts";
 import {
   BUSY_POLL_SECONDS,
   DEFAULT_WAIT_MINUTES,
+  FREE_WAIT_MINUTES,
   URGENT_WAIT_MINUTES,
+  WAIT_MINUTES_ENV,
   buildBusyProbeScript,
   buildRunScript,
   decideBusyAction,
@@ -518,9 +520,10 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.equal(parseEscalation(["test", "--wait", "3"]).waitMinutes, 3);
     assert.equal(parseEscalation(["all", "--wait=6"]).waitMinutes, 6);
 
-    // --urgent is the owner's critical-situation switch, and since 2026-10-06 it escalates AT ONCE
-    // ("make --urgent escalate immediately instead of after 4 minutes") — once the default waited ten
-    // minutes, a 4-minute tier differed from it only by six minutes, which is not what urgent means.
+    // --urgent escalates AT ONCE ("make --urgent escalate immediately instead of after 4 minutes",
+    // 2026-10-06) — and since 2026-10-08 that is what a BARE invocation does too, so the flag survives
+    // as a documented alias: every caller already passing it must keep working, and it must still mean
+    // "immediately" when PHX_CHECK_WAIT_MINUTES has set a house wait (asserted in 10b).
     const urgent = parseEscalation(["all", "--urgent"]);
     assert.equal(urgent.waitMinutes, URGENT_WAIT_MINUTES);
     assert.equal(URGENT_WAIT_MINUTES, 0, "--urgent must not queue at all: it escalates immediately");
@@ -537,23 +540,63 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.equal(parseEscalation(["all", "--wait", "6", "--urgent"]).waitMinutes, 6);
     assert.equal(parseEscalation(["all", "--urgent", "--wait", "6"]).waitMinutes, 6);
 
-    // 10b — THE DEFAULT IS WAIT-THEN-ESCALATE since the owner's ruling of 2026-10-06 ("make --urgent
-    // the default when the box queue is over 10 minutes"). A bare invocation must never leave the
-    // caller with nothing, and it must never wait SILENTLY — the poll prints a line each time.
-    const bare = parseEscalation(["all"]);
-    assert.equal(bare.waitMinutes, DEFAULT_WAIT_MINUTES, "a bare invocation must wait, not refuse at once");
-    assert.equal(bare.actions, true, "a bare invocation must escalate once the wait is spent");
-    assert.ok(DEFAULT_WAIT_MINUTES > URGENT_WAIT_MINUTES, "--urgent must escalate SOONER than the default");
+    // 10b — 🔴 THE BOX WHEN FREE, GITHUB ACTIONS THE MOMENT IT IS BUSY — owner ruling, 2026-10-08:
+    // *"if free use it directly but if busy use github actions"*. So the default wait is ZERO and a
+    // bare invocation on a busy box DISPATCHES rather than polling: the ten-minute queue of 2026-10-06
+    // was the same policy with ten minutes of a session's time in front of it.
+    const bare = parseEscalation(["all"], {});
+    assert.equal(bare.waitMinutes, DEFAULT_WAIT_MINUTES);
+    assert.equal(DEFAULT_WAIT_MINUTES, 0, "a busy box must escalate at once, not queue for the box first");
+    assert.equal(bare.actions, true, "a bare invocation must escalate, never leave the caller with nothing");
+    assert.equal(
+      decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: bare.waitMinutes, actions: bare.actions })
+        .action,
+      "actions",
+      "the default on a busy box must be a dispatch, with no poll in front of it",
+    );
 
-    // And the opt-out is what keeps a per-push hook free: `--no-wait --no-actions` is the old instant
-    // "no verdict". Without it, push-typecheck-guard would delay EVERY push by ten minutes and bill
-    // ~14 Actions minutes for a verdict the PR's own `checks` job produces anyway.
-    const free = parseEscalation(["typecheck", "--no-wait", "--no-actions"]);
+    // 🔴 AND THE WAIT SURVIVES EXACTLY WHERE IT IS THE ONLY ROUTE TO A VERDICT. `--free` says never
+    // bill, so a zero there would turn it into an instant refusal — the old `--no-wait --no-actions`
+    // behaviour under a flag that promises waiting. One shared default cannot serve both paths.
+    assert.ok(FREE_WAIT_MINUTES > 0, "--free must still wait: with Actions disarmed, the poll is the only route");
+    assert.equal(parseEscalation(["all", "--free"], {}).actions, false, "--free is the documented alias");
+    assert.equal(parseEscalation(["all", "--free"], {}).waitMinutes, FREE_WAIT_MINUTES, "--free waits, it never pays");
+    assert.equal(
+      decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: FREE_WAIT_MINUTES, actions: false }).action,
+      "poll",
+      "--free on a busy box must keep asking the box, never bill and never refuse at once",
+    );
+
+    // 🔴 THE HOUSE DEFAULT IS AN ENV KNOB, AND AN EXPLICIT FLAG ALWAYS WINS OVER IT. That ordering is
+    // what keeps the push guard instant and free however this machine is configured.
+    assert.equal(parseEscalation(["all"], { [WAIT_MINUTES_ENV]: "10" }).waitMinutes, 10, "the knob must set the wait");
+    assert.equal(
+      parseEscalation(["all", "--urgent"], { [WAIT_MINUTES_ENV]: "10" }).waitMinutes,
+      0,
+      "--urgent must still mean immediately when the house default is a wait",
+    );
+    assert.equal(parseEscalation(["all", "--free"], { [WAIT_MINUTES_ENV]: "0" }).waitMinutes, 0);
+    // An unreadable value is REFUSED, not ignored: an ignored setting runs the other policy and reports
+    // success, which is the silent-ignore defect this parser exists to refuse for flags.
+    assert.deepEqual(
+      parseEscalation(["all"], { [WAIT_MINUTES_ENV]: "soon" }).unknown,
+      [WAIT_MINUTES_ENV + "=soon (minutes, 0-60)"],
+      "a garbage house default must die loudly, never fall back to a policy nobody asked for",
+    );
+    assert.deepEqual(parseEscalation(["all"], { [WAIT_MINUTES_ENV]: "" }).unknown, [], "an empty knob is not set");
+
+    // And the opt-out is what keeps a per-push hook free: `--no-wait --no-actions` is the instant
+    // "no verdict". Without it, a busy box would bill ~14 Actions minutes on EVERY push for a verdict
+    // the PR's own `checks` job produces anyway — and since 2026-10-08 it would do so immediately.
+    const free = parseEscalation(["typecheck", "--no-wait", "--no-actions"], {});
     assert.equal(free.waitMinutes, 0, "--no-wait must mean no wait");
     assert.equal(free.actions, false, "--no-actions must mean never bill");
     assert.deepEqual(free.positional, ["typecheck"], "a negation flag must not leak into the check names");
-    assert.equal(parseEscalation(["all", "--free"]).actions, false, "--free is the documented alias");
-    assert.equal(parseEscalation(["all", "--free"]).waitMinutes, DEFAULT_WAIT_MINUTES, "--free waits, it just never pays");
+    assert.equal(
+      decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: 0, actions: false }).action,
+      "refuse",
+      "the push guard's own argument list must still refuse at once, billing nothing",
+    );
 
     const GUARD = stripComments(
       readFileSync(path.join(ROOT, ".claude", "hooks", "push-typecheck-guard.mjs"), "utf8"),
@@ -561,7 +604,7 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.match(
       GUARD,
       /spawn(?:Sync)?\([\s\S]{0,120}?'typecheck',\s*'--no-wait',\s*'--no-actions'/,
-      "push-typecheck-guard must pass --no-wait --no-actions: the default now waits 10 min and then bills, on EVERY push",
+      "push-typecheck-guard must pass --no-wait --no-actions: a busy box now bills IMMEDIATELY, on EVERY push",
     );
 
     const busy = { busyRuns: ["run-a"] };
