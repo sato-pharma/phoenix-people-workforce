@@ -215,6 +215,7 @@ export function runCrmSingleSourceTests() {
     "getDoubleVisitRows",
     "queryVisitsPage",
     "scanVisitsForRange",
+    "scanVisitsForRangeCreditingPartners",
     "getVisitAgentNames",
     "getMappedAgentHrIds",
     "getVisitsReportData",
@@ -230,9 +231,24 @@ export function runCrmSingleSourceTests() {
     /includeResignedAgents\?: boolean;/,
     "the door must expose an explicit opt-in to see resigned-agent rows, not require callers to bypass the door themselves",
   );
+  // BOTH doors, named separately. These used to be one assertion matching a single source line,
+  // which the CHECK-IN door happened to satisfy on its own — so when the visit door grew its second
+  // opt-in (`creditDepartedAgentPartners`, 2026-10-07) the pin went on passing without ever reading
+  // the visit door again.
   assert.match(
     reads,
     /const excludedInList = options\.includeResignedAgents \? "" : await getEffectiveExcludedInList\(\);/,
-    "the resigned-agent exclusion must default ON — only skipped when a caller explicitly opts in",
+    "the CHECK-IN door's resigned-agent exclusion must default ON — only skipped when a caller explicitly opts in",
+  );
+  assert.match(
+    reads,
+    /const excludedInList =\s*\n?\s*options\.includeResignedAgents \|\| options\.creditDepartedAgentPartners \? "" : await getEffectiveExcludedInList\(\);/,
+    "the VISIT door's resigned-agent exclusion must default ON, with exactly two documented opt-ins and no third",
+  );
+  // The second opt-in is only safe because it anonymises the agent side of what it lets through.
+  assert.match(
+    reads,
+    /markPartnerCreditOnlyRows\(rows, excludedCrmIds\);/,
+    "creditDepartedAgentPartners must mark and anonymise the rows it keeps, or it is includeResignedAgents without the review",
   );
 }

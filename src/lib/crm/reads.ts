@@ -667,6 +667,20 @@ function participantFilterMatchesNobody(filter: CrmVisitFilter): boolean {
   );
 }
 
+/**
+ * The one PostgREST test for "this row carries a REAL double-visit partner", shared by the
+ * `doubleOnly` filter and the departed-partner rescue ({@link scanVisitsForRangeCreditingPartners}).
+ *
+ * A real partner is a partner crm id that is not the `0` sentinel, OR — on a Phoenix native row only
+ * — a resolved partner hr id. The hr half exists for the CRM cutover: a native double visit with a
+ * partner who has no CRM id carries `double_hr_id` and a NULL `double_crm_id`, and the crm-only test
+ * dropped every one of them from Double Visit Analytics. It is limited to `source = phoenix` because
+ * a vendor row can carry a stray resolved hr id beside a null or 0 partner, which is not a double
+ * visit (employee-360 audit finding A; the same rule as {@link isCrmDoubleVisitRow}).
+ */
+export const REAL_DOUBLE_PARTNER_OR_FILTER =
+  "and(source.eq.phoenix,double_hr_id.not.is.null),and(double_crm_id.not.is.null,double_crm_id.neq.0)";
+
 /* eslint-disable @typescript-eslint/no-explicit-any -- structural PostgREST builder shape; the
    real type is too deep to thread through a helper (see visits-report/service.ts precedent). */
 export type VisitFilterableQuery = {
@@ -700,14 +714,9 @@ export function applyVisitFilter(
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
   if (filter.doubleHrIds && filter.doubleHrIds.length > 0) result = result.in("double_hr_id", expandHrIdFilterValues(filter.doubleHrIds));
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
-  // A real partner is a partner crm id that is not the `0` sentinel, OR — on a Phoenix native row only
-  // — a resolved partner hr id. The hr half exists for the CRM cutover: a native double visit with a
-  // partner who has no CRM id carries `double_hr_id` and a NULL `double_crm_id`, and the crm-only test
-  // dropped every one of them from Double Visit Analytics. It is limited to `source = phoenix` because
-  // a vendor row can carry a stray resolved hr id beside a null or 0 partner, which is not a double
-  // visit (employee-360 audit finding A; the same rule as isCrmDoubleVisitRow).
+  // See REAL_DOUBLE_PARTNER_OR_FILTER for why a stray `double_hr_id` on a vendor row is not a partner.
   if (filter.doubleOnly) {
-    result = result.or("and(source.eq.phoenix,double_hr_id.not.is.null),and(double_crm_id.not.is.null,double_crm_id.neq.0)");
+    result = result.or(REAL_DOUBLE_PARTNER_OR_FILTER);
   }
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
   if (filter.requireDoubleHrId) result = result.not("double_hr_id", "is", null);
@@ -733,6 +742,43 @@ export function withIdColumn(columns: string): string {
   if (columns.trim() === "*") return columns;
   const parts = columns.split(",").map((part) => part.trim()).filter(Boolean);
   return parts.includes("id") ? parts.join(", ") : ["id", ...parts].join(", ");
+}
+
+/** Ensure `exclusion_crm_id` is present — it is how {@link markPartnerCreditOnlyRows} tells whose
+ * row it is, whatever the caller asked for. Same "widen internally, extra columns ride along"
+ * pattern as {@link withIdColumn}. */
+export function withExclusionCrmIdColumn(columns: string): string {
+  if (columns.trim() === "*") return columns;
+  const parts = columns.split(",").map((part) => part.trim()).filter(Boolean);
+  return parts.includes("exclusion_crm_id") ? parts.join(", ") : [...parts, "exclusion_crm_id"].join(", ");
+}
+
+/**
+ * Marker {@link scanVisitsForRangeCreditingPartners} and `queryVisits`'
+ * `creditDepartedAgentPartners` put on a rescued row: its AGENT is departed and excluded, so ONLY
+ * the row's double-visit partner may be credited from it. The same pass nulls `agent_hr_id`, so a
+ * consumer that credits by hr id is already correct without reading this flag; it exists for the one
+ * consumer (the FWC matrix builder) that can resolve a person from `agent_crm_id` instead.
+ */
+export type PartnerCreditOnlyRow = { partner_credit_only?: boolean };
+
+/**
+ * Anonymise the AGENT side of every row logged by a departed/excluded agent, in place.
+ *
+ * `agent_crm_id` is deliberately LEFT INTACT: it is the key
+ * {@link collapseDuplicateVisitSubmissions} groups a re-saved stop by, so nulling it would stop the
+ * duplicate collapse working on these rows and inflate the partner's visit count. Exported for its
+ * unit test; callers use the doors.
+ */
+export function markPartnerCreditOnlyRows(rows: readonly unknown[], excludedCrmIds: readonly number[]): void {
+  if (rows.length === 0 || excludedCrmIds.length === 0) return;
+  const excluded = new Set(excludedCrmIds.map((id) => Number(id)));
+  for (const row of rows) {
+    const fields = row as PartnerCreditOnlyRow & { agent_hr_id?: string | null; exclusion_crm_id?: number | null };
+    if (fields.exclusion_crm_id == null || !excluded.has(Number(fields.exclusion_crm_id))) continue;
+    fields.partner_credit_only = true;
+    if ("agent_hr_id" in fields) fields.agent_hr_id = null;
+  }
 }
 
 // ── Duplicate visit submission collapse ───────────────────────────────────────────────────────
@@ -949,6 +995,18 @@ export async function queryVisits<T = CrmVisitRow>(
      * everywhere coverage/scoring/reporting depends on that exclusion.
      */
     includeResignedAgents?: boolean;
+    /**
+     * Opt-in, for a read whose SUBJECT is the people named on the DOUBLE side: keep a row whose
+     * agent has departed, and null that row's `agent_hr_id` (plus set `partner_credit_only`) so the
+     * departed agent is credited nothing while the partner keeps the day.
+     *
+     * The {@link scanVisitsForRangeCreditingPartners} rule at a bounded read: a manager's fieldwork
+     * is logged on the REP's row as its double, so excluding the rep's rows the day he resigns
+     * erases the manager's working day with them and bills him for it (owner report 2026-10-07).
+     * Only for a caller that gates each credited person against its own wanted set — a departed
+     * agent's row is still here, it is merely anonymous on the agent side.
+     */
+    creditDepartedAgentPartners?: boolean;
     /** Opt-in: collapse iReports360 burst-duplicate double-visit submissions (the same read-time
      * dedup {@link getDoubleVisitRows} applies — see {@link collapseDuplicateVisitSubmissions}).
      * Off by default so raw-mirror browsers are unaffected. When on, the duplicate-detection columns
@@ -970,11 +1028,22 @@ export async function queryVisits<T = CrmVisitRow>(
   if (participantFilterMatchesNobody(options)) return [];
   if (options.agentCrmOrHrIds && buildAgentCrmOrHrIdOrFilter(options.agentCrmOrHrIds) === null) return [];
   const supabase = getSupabaseAdmin();
-  const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
+  // `creditDepartedAgentPartners` lifts the exclusion the same way `includeResignedAgents` does; the
+  // difference is what happens to the rows it lets through — they come back anonymous on the agent
+  // side (see the option, and the marking pass after the scan).
+  const excludedCrmIds =
+    options.creditDepartedAgentPartners && !options.includeResignedAgents
+      ? await getEffectiveExcludedAgentCrmIds()
+      : [];
+  const excludedInList =
+    options.includeResignedAgents || options.creditDepartedAgentPartners ? "" : await getEffectiveExcludedInList();
   // When collapsing, widen the projection so the duplicate-detection fingerprint columns are present
   // even if the caller only asked for a subset (otherwise the collapse silently no-ops).
   const requestedColumns = options.collapseDoubleVisits ? withDuplicateDetectionColumns(options.columns ?? "*") : options.columns;
-  const projection = withIdColumn(requestedColumns ?? "*");
+  // The marking pass needs to know whose row it is, whatever the caller projected.
+  const projection = withIdColumn(
+    excludedCrmIds.length > 0 ? withExclusionCrmIdColumn(requestedColumns ?? "*") : (requestedColumns ?? "*"),
+  );
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   type Row = T & { id: string };
   const filtered = () => {
@@ -1031,6 +1100,7 @@ export async function queryVisits<T = CrmVisitRow>(
       })
     : await scan(null);
   if (rows === null) return [];
+  if (excludedCrmIds.length > 0) markPartnerCreditOnlyRows(rows, excludedCrmIds);
   return options.collapseDoubleVisits
     ? (collapseDuplicateVisitSubmissions(rows as unknown as DuplicateVisitDetectionRow[]) as unknown as T[])
     : rows;
@@ -1766,6 +1836,11 @@ async function keysetScanVisitsForRange<T>(options: {
   dateTo: string;
   columns: string;
   excludedInList: string | null;
+  /** The INVERSE of `excludedInList`: keep ONLY rows whose agent is one of these crm ids. For the
+   * partner rescue in {@link scanVisitsForRangeCreditingPartners}; never set beside `excludedInList`. */
+  onlyExcludedCrmIds?: readonly number[] | null;
+  /** Keep only rows carrying a real double-visit partner ({@link REAL_DOUBLE_PARTNER_OR_FILTER}). */
+  requireRealDoublePartner?: boolean;
 }): Promise<T[]> {
   const supabase = getSupabaseAdmin();
   const projection = withIdColumn(options.columns);
@@ -1773,6 +1848,8 @@ async function keysetScanVisitsForRange<T>(options: {
   const windowed = () => {
     let query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(projection);
     if (options.excludedInList) query = query.not("exclusion_crm_id", "in", options.excludedInList);
+    if (options.onlyExcludedCrmIds) query = query.in("exclusion_crm_id", [...options.onlyExcludedCrmIds]);
+    if (options.requireRealDoublePartner) query = query.or(REAL_DOUBLE_PARTNER_OR_FILTER);
     return query.gte("visit_date", options.dateFrom).lte("visit_date", options.dateTo);
   };
   /** One keyset scan of the window, narrowed to one `visit_date` when `day` is set. `null` when the
@@ -1853,6 +1930,66 @@ export async function scanVisitsForRangeIncludingDeparted<T = CrmVisitRow>(optio
   columns: string;
 }): Promise<T[]> {
   return keysetScanVisitsForRange<T>({ ...options, excludedInList: null });
+}
+
+/**
+ * {@link scanVisitsForRange} plus the DOUBLE-VISIT ROWS A DEPARTED AGENT LOGGED, with the departed
+ * agent's own identity stripped so only the partner can be credited.
+ *
+ * WHY (owner report, 2026-10-07; measured the same day). A manager's fieldwork is recorded on the
+ * REP's visit row, as `double_hr_id` — the manager logs nothing himself. The exclusion that hides a
+ * resigned rep's visits from live views is keyed on `exclusion_crm_id`, which the unified view
+ * defines as `agent_crm_id`: the person who LOGGED the row. So the day a rep resigned, every double
+ * visit his manager did with him disappeared from the Field Workforce Compliance matrix, and the
+ * manager's own working day read as "no CRM activity" — a deduction. It is RETROACTIVE: the day was
+ * correct until the resignation, which then rewrote it. Measured on production: 213 manager-days
+ * since June lost their only evidence this way, and 37 of them were charged — among them Salim Salim
+ * Abdo Ibrahim Gomaa, deducted for 7 and 13 September, each a day he spent on 9 double visits with
+ * Aml Mohamed Mohamed Eid elmashad, whose last working day was 17 September: she was still employed
+ * on both days and her later resignation erased his evidence.
+ *
+ * WHAT IT DOES. Two scans: the normal excluded one, plus a narrow rescue of rows whose agent IS
+ * excluded and which carry a real partner ({@link REAL_DOUBLE_PARTNER_OR_FILTER}). A rescued row
+ * comes back with `partner_credit_only` set and its `agent_hr_id` nulled, so the departed rep gains
+ * no activity of his own — the exclusion keeps doing exactly what it exists for — while the partner
+ * who was genuinely in the field keeps his day. A row naming no partner is still dropped, and a
+ * departed rep's solo visits stay invisible.
+ *
+ * A consumer that resolves a person from `agent_crm_id` (only the FWC matrix builder does) must read
+ * `partner_credit_only` and skip the agent side; one that credits by hr id alone is already right.
+ * Why the crm id is left intact: {@link markPartnerCreditOnlyRows}.
+ *
+ * Use this for any read that decides whether somebody WORKED (no-activity deductions, the
+ * compliance matrix). A read that reports a rep's own numbers keeps using {@link scanVisitsForRange}.
+ */
+export async function scanVisitsForRangeCreditingPartners<T = CrmVisitRow>(options: {
+  dateFrom: string;
+  dateTo: string;
+  columns: string;
+}): Promise<Array<T & PartnerCreditOnlyRow>> {
+  const [excludedInList, excludedCrmIds] = await Promise.all([
+    getEffectiveExcludedInList(),
+    getEffectiveExcludedAgentCrmIds(),
+  ]);
+  const visible = await keysetScanVisitsForRange<T & PartnerCreditOnlyRow>({ ...options, excludedInList });
+  if (excludedCrmIds.length === 0) return visible;
+  const rescued = await keysetScanVisitsForRange<T & PartnerCreditOnlyRow>({
+    ...options,
+    columns: withExclusionCrmIdColumn(options.columns),
+    excludedInList: null,
+    onlyExcludedCrmIds: excludedCrmIds,
+    requireRealDoublePartner: true,
+  });
+  markPartnerCreditOnlyRows(rescued, excludedCrmIds);
+  if (rescued.length === 0) return visible;
+  // Merged back into the single scan's `id` order. Both halves are already id-ascending, and every
+  // consumer's day label (`describeCrmDay`, `dayCellValue`'s first match) is documented as
+  // order-dependent-but-display-only, so appending at the end would quietly change what a mixed day
+  // says about itself. Keyset scans always carry `id` (withIdColumn), rescued or not.
+  type Keyed = T & PartnerCreditOnlyRow & { id?: string };
+  return [...visible, ...rescued].sort((a, b) =>
+    compareUuidText((a as Keyed).id ?? "", (b as Keyed).id ?? ""),
+  );
 }
 
 /**
