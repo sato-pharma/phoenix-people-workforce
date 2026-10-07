@@ -38,7 +38,7 @@ import { SECTION_TITLES } from "../src/lib/phoenix-crm/report-guide.ts";
 import { buildSamplesReport, type SamplesTerritory, type SamplesVisit } from "../src/lib/phoenix-crm/samples-report.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { PHOENIX_CRM_DEFAULT_SETTINGS } from "../src/lib/phoenix-crm/types.ts";
-import { readsFieldHeardByProduct, readsTeamReports, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
+import { readsFieldHeardByProduct, readsOwnRideAlongs, readsTeamReports, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { TIMELINE_VISIT_COLUMNS, TIMELINE_VISITS_MAX } from "../src/lib/phoenix-crm/server/customer-timeline.ts";
 import {
   fieldHeardAudience,
@@ -1016,7 +1016,31 @@ function runScopeTests(): void {
   assert.match(tab, /const productsAudience = view\?\.audience === "products";/);
   // `offer(...)` builds each option's label and note from the report guide (2026-10-03) — before
   // that, every section was spelled out inline here.
-  assert.match(tab, /productsAudience\s*\?\s*\[\{ \.\.\.offer\("heard"\)/, "a product or marketing manager is offered the one section");
+  assert.match(tab, /productsAudience\s*\?\s*\[\s*\{ \.\.\.offer\("heard"\)/, "a product or marketing manager is offered What the field heard");
+  // 🔴 AND, SINCE 2026-10-07, THE VISITS HE WAS ON (owner: the visits Nada Abdullah filed with Ahmed
+  // SharafEldeen "are not appearing in his data"). It is the SAME section a manager reads, scoped on
+  // the server to his own row — so the chip must be offered to him or the report has no door.
+  assert.match(tab, /\{ \.\.\.offer\("managers"\), note: "The visits you were on" \}/, "the double visitor is offered the visits he was on");
+  assert.match(
+    source("src/lib/phoenix-crm/server/reports.ts"),
+    /hasManagers: managersInScope\(viewer\.org, viewer\.hrId, viewer\.basis\)\.length > 0 \|\| readsOwnRideAlongs\(viewer\),/,
+    "and the scope says he has one row to show, himself",
+  );
+  for (const [hrId, role] of [
+    ["A-10", "Product Manager"],
+    ["A-8", "Group Product Manager"],
+    ["A-9", "Marketing Manager"],
+  ] as const) {
+    assert.equal(readsOwnRideAlongs(viewerFor(hrId, role)), true, `${role} reads the visits he was on`);
+  }
+  for (const role of ["Medical Rep", "District Manager", "Training Manager", "Super Admin", "HR Operations"]) {
+    assert.equal(readsOwnRideAlongs(viewerFor("X-1", role)), false, `${role} does not read a one-row board about himself`);
+  }
+  // 🔴 THE TEAM'S GATE IS ASKED FIRST: a product manager who ALSO held a manager seat reads the whole
+  // board as a manager, never the one-row version — otherwise the wider report would be taken away
+  // from him by a role he holds beside it.
+  assert.equal(readsOwnRideAlongs(viewerFor("D-1", "District Manager")), false);
+  assert.equal(readsOwnRideAlongs(viewerFor("A-10", "Product Manager", { managerSeats: heldManagerSeats(ORG, "D-1") })), false, "a seat beats the ruling");
 
   // The service gates every board before it reads anything.
   const service = source("src/lib/phoenix-crm/server/insight-reports.ts");

@@ -6842,3 +6842,68 @@ form, because what gets invented is an approval rather than a chore.
 A standing pre-approval also cannot be carried forward: an approval given for one PR is spent on
 that PR, and leaving it somewhere a later session would act on it is laundering a permission
 decision out of the window it was given in.
+
+## Every double visitor reads the visits he was on — owner, 2026-10-07
+
+> "nada abdullah yesterday submitted double visits with ahmed sharaf those visists are not appearing
+> in his data also check all double visists are appearing to the double visitor"
+
+Both halves of that message are answered here: why one rider could see nothing, and what the sweep
+of every other rider found.
+
+### It was a column, not a missing screen
+
+`phoenix_crm_visits.product_manager_hr_id` has existed since `20261002205436` — the owner's own
+ruling that a product manager rides in his own column and never in `manager_hr_id`, because
+`double_visits` is counted from `kind = 'double'` on every board and district managers are judged on
+it. Two things were never widened to match:
+
+1. **`phoenix_crm_countable_visits` did not carry the column.** Every Phoenix CRM report reads that
+   view and none of them reads the raw table, so no report could name the person in it even in
+   principle.
+2. **`phoenix_crm_report_manager_visits` joined `manager_hr_id` and `senior_hr_id` only.** The one
+   report that says who went out with whom had two branches where the data has three.
+
+And a third, which would have kept the report empty even with the first two fixed: a product manager
+**holds no seat in the sales organogram** (`au.v_org_tree` is sales-only), so `managersInScope` can
+never name him and `chooseTerritories` hands him no territory. `scopeTerritories` is empty for him,
+which is why every visit, team, plan and photo route had already been answering him with nothing.
+
+### The sweep, measured on production 2026-10-07
+
+Every non-rep who stood on a Phoenix CRM visit, and whether a seat above the rep's territory gives
+him sight of it:
+
+| Slot | Person | Kind | Visits | Rep seats under a seat he holds |
+| --- | --- | --- | --- | --- |
+| `manager_hr_id` | Nermeen Salah Abohussien, District Sales Manager | double | 27 | 3 of 3 |
+| `manager_hr_id` | Dina Hamdy Bdair, District Sales Manager | double | 18 | 2 of 2 |
+| `manager_hr_id` | Mahmoud ElHassanin, District Sales Manager | double | 17 | 3 of 3 |
+| `manager_hr_id` | Nermeen Salah Abohussien, District Sales Manager | chain | 4 | 1 of 1 |
+| `senior_hr_id` | Hany Saad Omar, Regional Sales Manager | chain | 4 | 1 of 1 |
+| `product_manager_hr_id` | **Ahmed SharafEldeen, Product Manager** | product_manager | **13** | **0 of 2** |
+
+So 66 of the 79 non-single visits were already reaching their rider through downward scope, and 13
+were reaching nobody — every one of them Ahmed SharafEldeen's, 8 with Nada Abdullah on 2026-10-06
+and the rest with another Pedia rep the next morning. The owner's "check all double visits are
+appearing to the double visitor" has exactly one answer, and this is it.
+
+### The fix
+
+- the view gains `product_manager_hr_id`, **appended last** — `create or replace view` accepts a new
+  column only at the end, and `crm_visits_unified` and `crm_checkins_unified` depend on this view so
+  it cannot be dropped to order the column properly. Read it by name, never by position.
+- the function gains a third branch, `role_on_visit = 'product_manager'`, counted in its own
+  `product_manager_visits` column.
+- `readsOwnRideAlongs` → `loadOwnRideAlongReport`: the **same** "Double and chain visits" report,
+  with HIS hr id as the whole `p_hr_ids` and every open line's territories as the reach — one row,
+  his own. The team's gate is asked first, so a product manager who also held a manager seat reads
+  the full board instead.
+
+### What did NOT change, proven rather than asserted
+
+The pre-migration two-branch output was rebuilt as an ad-hoc query and diffed against the live
+function narrowed to those same two roles, over every rider and the whole week: **11 rows each, 0
+rows in either direction, `double_visits` 57 = 57.** No district manager's figure moved by one. A
+product manager is still never filed as a double visit; his own screen says "double" because that is
+the word the rep ticked, and only the stored kind and the counted figure keep them apart.

@@ -279,7 +279,17 @@ export function runPhoenixCrmAdminSurfaceTests(): void {
     for (const section of sections) {
       assert.ok(reports.includes(`offer("${section}")`), `the tab offers ${section}`);
     }
-    assert.match(reports, /const panelDescription = combo \? reportAnswers\(activeSection\) : REPORTS_DESCRIPTION;/, "the admin reads the question this report answers");
+    assert.match(reports, /combo\s*\?\s*reportAnswers\(activeSection\)\s*:\s*REPORTS_DESCRIPTION;/, "the admin reads the question this report answers");
+    // 🔴 WITH ONE EXCEPTION, AND IT IS NOT AN ADMIN/PORTAL ONE. "Double and chain visits" answers
+    // "each manager", because its rows are the managers above a team — but a product manager reads
+    // that same report about HIMSELF (owner, 2026-10-07), one row with no team on it, so the sentence
+    // would be false of what he is looking at. His question is shown on every surface, because the
+    // reason he opens it at all is that he could not tell where the visits he rode had gone.
+    assert.match(
+      reports,
+      /productsAudience && activeSection === "managers"\s*\?\s*OWN_RIDE_ALONGS_ANSWER/,
+      "and the double visitor reads the question HIS version of that report answers",
+    );
     assert.match(reports, /sectionGroups\.map\(\(group\)/, "and picks a report by subject");
   }
 

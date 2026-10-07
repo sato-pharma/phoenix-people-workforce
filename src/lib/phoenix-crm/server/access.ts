@@ -403,6 +403,28 @@ export function readsFieldHeardByProduct(viewer: Pick<PhoenixCrmViewer, "role">)
   return FIELD_HEARD_PRODUCT_ROLES.has(viewer.role);
 }
 
+/**
+ * 🔒 THE DOUBLE VISITOR READS THE VISITS HE WAS ON — and for a product manager that is a report about
+ * HIMSELF and nobody else (owner, 2026-10-07: *"nada abdullah yesterday submitted double visits with
+ * ahmed sharaf those visists are not appearing in his data also check all double visists are
+ * appearing to the double visitor"*).
+ *
+ * A manager already reads his own double and chain visits on "Double and chain visits", because the
+ * rep's seat is inside his downward scope. A PRODUCT manager holds no seat in the sales organogram at
+ * all, so `scopeTerritories` is empty for him and every visit, team, plan and report route answered
+ * him with nothing — the visits he personally rode existed in his column of the row and on no screen
+ * he could open. Measured on production the day he said so: 11 visits, 8 of them Nada Abdullah's with
+ * Ahmed SharafEldeen on 2026-10-06.
+ *
+ * 🔴 IT IS HIS OWN ROW AND NOTHING ELSE — the loader passes HIS hr id alone, so this is not a widened
+ * team board and it adds no line, area or rep comparison to the one report the 2026-10-02 ruling gave
+ * him. The team's gate is asked FIRST, so a product manager who also held a manager seat would read
+ * the full board as a manager instead.
+ */
+export function readsOwnRideAlongs(viewer: PhoenixCrmViewer): boolean {
+  return !readsTeamReports(viewer) && readsFieldHeardByProduct(viewer);
+}
+
 export function canWriteAsRep(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
   if (viewer.isTestPersona) return isTest && viewer.canCreate && viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId);
   if (isTest) return viewer.isSuperAdmin;

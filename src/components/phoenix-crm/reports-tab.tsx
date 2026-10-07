@@ -94,6 +94,7 @@ import type {
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import {
   groupReportSections,
+  OWN_RIDE_ALONGS_ANSWER,
   reportAnswers,
   REPORT_GUIDE,
   SECTION_TITLES,
@@ -800,12 +801,20 @@ function CoverageSection({
 
 // ── Double and chain visits per manager ─────────────────────────────────────────────────────────
 
-/** "3 double · 1 chain · 2 chain as senior manager"; null when the manager was on none. */
+/**
+ * "3 double · 1 chain · 2 chain as senior manager"; null when the manager was on none.
+ *
+ * A product manager's own visits are said as "double", because that is the one word the rep used —
+ * he ticked ONE person under "Double visit" and it was him. Only the stored kind and the counted
+ * `double_visits` figure keep them apart, and neither is on this line.
+ */
 function managerKindsText(row: ManagerReportRow): string | null {
   const parts = [
     row.doubleVisits > 0 ? `${countText(row.doubleVisits)} double` : null,
     row.chainVisits > 0 ? `${countText(row.chainVisits)} chain` : null,
     row.seniorChainVisits > 0 ? `${countText(row.seniorChainVisits)} chain as senior manager` : null,
+    row.productManagerVisits > 0 ? `${countText(row.productManagerVisits)} double` : null,
+    row.productManagerChainVisits > 0 ? `${countText(row.productManagerChainVisits)} chain` : null,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
@@ -826,7 +835,11 @@ function managerEntryLine(entry: ManagerReportEntry): string {
   const kinds =
     entry.roleOnVisit === "senior"
       ? `${countText(entry.chainVisits)} chain as senior manager`
-      : [entry.doubleVisits > 0 ? `${countText(entry.doubleVisits)} double` : null, entry.chainVisits > 0 ? `${countText(entry.chainVisits)} chain` : null]
+      : [
+          // The product-manager kind is the rep's own "Double visit", so it reads as one here.
+          entry.doubleVisits + entry.productManagerVisits > 0 ? `${countText(entry.doubleVisits + entry.productManagerVisits)} double` : null,
+          entry.chainVisits > 0 ? `${countText(entry.chainVisits)} chain` : null,
+        ]
           .filter((part): part is string => part !== null)
           .join(" · ");
   const withWhom = entry.repName ? `with ${entry.repName}` : "with no rep on the visit";
@@ -862,10 +875,15 @@ function ManagersSection({ idPrefix, resource, today }: { idPrefix: string; reso
   let chainVisits = 0;
   let daysOut = 0;
   let wentOut = 0;
+  let visits = 0;
+  let reps = 0;
   for (const row of report.rows) {
-    doubleVisits += row.doubleVisits;
-    chainVisits += row.chainVisits;
+    // A product manager's own visits are the rep's "Double visit" — said as one, counted apart.
+    doubleVisits += row.doubleVisits + row.productManagerVisits;
+    chainVisits += row.chainVisits + row.productManagerChainVisits;
     daysOut += row.daysOut;
+    visits += row.amVisits + row.pmVisits;
+    reps += row.reps;
     if (row.daysOut > 0) wentOut += 1;
   }
 
@@ -874,18 +892,38 @@ function ManagersSection({ idPrefix, resource, today }: { idPrefix: string; reso
       <RefreshFailed error={resource.error} />
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="Double visits" note="A manager out with a rep" value={countText(doubleVisits)} />
-          <CrmStat label="Chain visits" note="A rep, their manager and a senior manager" value={countText(chainVisits)} />
-          <CrmStat label="Managers who went out" note={periodText(report.period)} value={`${countText(wentOut)} of ${countText(report.rows.length)}`} />
-          <CrmStat label="Manager days out" note="Each manager's days with a double or chain visit, added up" value={countText(daysOut)} />
+          <CrmStat label="Double visits" note={report.own ? "You out with a rep" : "A manager out with a rep"} value={countText(doubleVisits)} />
+          <CrmStat
+            label="Chain visits"
+            note={report.own ? "You, a rep and their manager" : "A rep, their manager and a senior manager"}
+            value={countText(chainVisits)}
+          />
+          {/*
+            His own report has no team to count, so "1 of 1 managers went out" would be noise. What he
+            opened it for is how many customers he saw and with how many reps.
+          */}
+          {report.own ? (
+            <CrmStat label="Customers seen" note={periodText(report.period)} value={countText(visits)} />
+          ) : (
+            <CrmStat label="Managers who went out" note={periodText(report.period)} value={`${countText(wentOut)} of ${countText(report.rows.length)}`} />
+          )}
+          <CrmStat
+            label={report.own ? "Days out" : "Manager days out"}
+            note={report.own ? `With ${plural(reps, "rep", "reps")}` : "Each manager's days with a double or chain visit, added up"}
+            value={countText(daysOut)}
+          />
         </CrmStatGrid>
       </CrmBlock>
       <ReportList
         columns={["28%", "20%", null, "15%"]}
-        explain="A double visit is a manager out with a rep; a chain visit adds a senior manager. Each counts for every manager on it as soon as the rep saves it."
+        explain={
+          report.own
+            ? "Every visit a rep recorded with you on it, counted as soon as it is saved. A double visit is the two of you; a chain visit adds the rep's manager."
+            : "A double visit is a manager out with a rep; a chain visit adds a senior manager. Each counts for every manager on it as soon as the rep saves it."
+        }
         hasData={(row) => row.daysOut > 0}
         headers={[
-          "Manager",
+          report.own ? "You" : "Manager",
           "Went out",
           "Visits with a rep",
           <span className="sr-only" key="days">
@@ -948,7 +986,7 @@ function ManagersSection({ idPrefix, resource, today }: { idPrefix: string; reso
           noneMatch: "Nothing matches",
           searchLabel: "Find a manager",
           searchPlaceholder: "Name, title or line",
-          title: "By manager",
+          title: report.own ? "Your visits" : "By manager",
           with: "Went out",
           without: "Did not go out",
         }}
@@ -1789,11 +1827,15 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const territories = view?.territories ?? [];
   const lineTerritories = lineCode ? territories.filter((territory) => territory.lineCode === lineCode) : territories;
   const chosen = seatId ? lineTerritories.filter((territory) => territory.seatId === seatId) : lineTerritories;
-  // A product or marketing manager reads ONE section — what the field heard about his own products,
-  // company-wide (owner, 2026-10-02) — and the server decides that he is one.
+  // A product or marketing manager reads what the field heard about his own products, company-wide
+  // (owner, 2026-10-02) — and, since 2026-10-07, the double and chain visits HE WAS ON: his own row
+  // and nobody else's. Before that they sat in his column of the visit and on no screen he could
+  // open. The server decides both that he is one and whose visits that report holds.
   const productsAudience = view?.audience === "products";
   const activeSection: ReportSection = productsAudience
-    ? "heard"
+    ? section === "managers"
+      ? "managers"
+      : "heard"
     : (section === "managers" && view && !view.hasManagers) ||
         ((section === "locations" || section === "exceptions" || section === "bricks" || section === "adoption" || INSIGHT_SECTIONS.includes(section)) &&
           view &&
@@ -1850,6 +1892,12 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       return problem
         ? null
         : crmUrl(REPORTS_PATH, { ...filters, lineCode: productsAudience ? null : filters.lineCode, seatId: null, from: period.from, to: period.to });
+    }
+    // A product manager's own ride-alongs are company-wide for the same reason: he rides across every
+    // line he owns a product on, so a line or territory filter would hide a visit he was on. The
+    // server ignores both for him; sending neither keeps the URL honest about what was asked.
+    if (name === "managers" && productsAudience) {
+      return problem ? null : crmUrl(REPORTS_PATH, { ...filters, lineCode: null, seatId: null, from: period.from, to: period.to });
     }
     return problem ? null : crmUrl(REPORTS_PATH, { ...filters, from: period.from, to: period.to });
   }
@@ -1970,7 +2018,12 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     note: REPORT_GUIDE[value].note,
   });
   const sectionOptions: Array<CrmChoiceOption<ReportSection>> = productsAudience
-    ? [{ ...offer("heard"), note: "Your products, company-wide" }]
+    ? [
+        { ...offer("heard"), note: "Your products, company-wide" },
+        // The visits he was on. Offered whatever the count — a product manager who rode nothing this
+        // period reads that he rode nothing, which is the honest answer and not an empty screen.
+        { ...offer("managers"), note: "The visits you were on" },
+      ]
     : [
       // First, because it is the one a manager opens the tab FOR. Same gate as the place-vs-actual
       // report — one predicate, `readsTeamReports`, so the two can never disagree about who is a
@@ -2006,7 +2059,12 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
    * (*"without touching the reps account"*), and a screen a medical rep opens is not changed on an
    * inference about what he would also have wanted.
    */
-  const panelDescription = combo ? reportAnswers(activeSection) : REPORTS_DESCRIPTION;
+  const panelDescription =
+    productsAudience && activeSection === "managers"
+      ? OWN_RIDE_ALONGS_ANSWER
+      : combo
+        ? reportAnswers(activeSection)
+        : REPORTS_DESCRIPTION;
   const presetOptions: Array<CrmChoiceOption<PeriodPreset>> = PRESETS.map(({ label, value }) => {
     const range = presetPeriod(value, today);
     const beforeOpening = range.to < FIRST_REPORT_DAY;

@@ -193,6 +193,19 @@ export const REPORT_GUIDE: Record<ReportSection, ReportEntry> = {
   },
 };
 
+/**
+ * `managers` read by a PRODUCT or MARKETING manager, about HIMSELF (owner, 2026-10-07: the visits
+ * Nada Abdullah filed with Ahmed SharafEldeen "are not appearing in his data"). That report's own
+ * sentence says "each manager", because its rows are the managers above a team; his row is his own
+ * and there is no team on it, so the sentence would be false of what he is looking at. One section,
+ * two readers, two questions — and still ONE place either of them is written.
+ *
+ * Shown on every surface, not the admin one alone: the whole reason he opens it is that he could not
+ * tell where the visits he rode had gone.
+ */
+export const OWN_RIDE_ALONGS_ANSWER =
+  "Every double and chain visit you were on, day by day — which rep, which territory, and how many AM and PM visits you made together.";
+
 /** The question a report answers, for the line under its title. */
 export function reportAnswers(section: ReportSection): string {
   return REPORT_GUIDE[section].answers;
