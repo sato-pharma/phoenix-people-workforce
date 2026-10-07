@@ -50,8 +50,10 @@ import {
   findPartSplitConflicts,
 } from "./part-split-conflict.ts";
 import {
+  chargeSourceKind,
   detectModuleDrift,
   describeModuleDriftBlock,
+  draftColumnForField,
   mergeModuleDrift,
   MODULE_SOURCED_STEP_KEYS,
   RECOMMENDED_AT_CONFIRM_KEY,
@@ -94,6 +96,7 @@ import {
   getRunById,
   listDraftCellHistory,
   listDraftRows,
+  listLatestCellWrites,
   listStepStates,
   updateRun,
   upsertDraftRows,
@@ -856,7 +859,45 @@ export async function getModuleDrift(access: AccessContext, runId: string): Prom
     const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
     reports.push(detectModuleDrift({ stepKey, rows, snapshot, chargedByCompact }));
   }
-  return mergeModuleDrift(reports);
+  const merged = mergeModuleDrift(reports);
+  return attachChargeSources(runId, merged);
+}
+
+/**
+ * Who set each figure that differs from its confirm, from the cell history — so the report says
+ * "typed" only when a person did. Wording only: whether a row blocks is decided by detectModuleDrift
+ * and is unchanged by this.
+ */
+async function attachChargeSources(runId: string, report: ModuleDriftReport): Promise<ModuleDriftReport> {
+  const differing = report.rows.filter((row) => row.overridden);
+  if (differing.length === 0) return report;
+  const compacts = [...new Set(differing.map((row) => compactHrKey(row.hrId)).filter(Boolean))];
+  const columns = [...new Set(differing.map((row) => draftColumnForField(row.field)))];
+  const [latest, names] = await Promise.all([
+    listLatestCellWrites(runId, compacts, columns),
+    employeeNamesByCompactKey(),
+  ]);
+  return {
+    ...report,
+    rows: report.rows.map((row) => {
+      if (!row.overridden) return row;
+      const write = latest.get(`${compactHrKey(row.hrId)}|${draftColumnForField(row.field)}`);
+      if (!write) return { ...row, chargeSource: { kind: "unknown", name: null, stepKey: null, at: null } };
+      const kind = chargeSourceKind(write.writeReason);
+      return {
+        ...row,
+        chargeSource: {
+          kind,
+          name:
+            kind === "typed" && write.changedBy && write.changedBy !== "system"
+              ? names.get(compactHrKey(write.changedBy)) || null
+              : null,
+          stepKey: write.stepKey,
+          at: write.changedAt || null,
+        },
+      };
+    }),
+  };
 }
 
 /**

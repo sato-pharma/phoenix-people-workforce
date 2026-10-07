@@ -31,6 +31,7 @@ import {
 } from "@/lib/automated-payroll/data-quality";
 import type { PayrollDayCollision } from "@/lib/automated-payroll/day-collisions";
 import type { ModuleDriftReport } from "@/lib/automated-payroll/module-drift";
+import { cairoTimeLabel, describeChargeSource } from "@/lib/automated-payroll/cell-history-labels";
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
@@ -847,8 +848,9 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           decision 2026-10-06) — under the push gate a figure goes stale by the ordinary order of
           work, not only because somebody changed their mind, so the old "warning, never a gate"
           reading let a run pay a number the module had already replaced.
-          A row carrying a figure somebody entered BY HAND is their decision, still wins, and never
-          blocks — those keep the warning tone they always had. Re-confirm the step to take the
+          A row whose figure differs from the confirm still wins and never blocks — those keep the
+          warning tone they always had. It is called hand-typed ONLY when the cell history says a
+          person saved it: a figure another step's confirm wrote differs just the same. Re-confirm the step to take the
           module's current figure; a Part 1 step stays confirmable while the run is in Part 2. */}
       {moduleDrift && moduleDrift.rows.length > 0 ? (
         <AdminCallout tone={moduleDrift.staleCharges > 0 ? "danger" : "warning"}>
@@ -874,13 +876,13 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                     {row.fullName} ({row.hrId}) — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
                     says {row.proposedNow.toFixed(2)}
                     {row.overridden
-                      ? `; this run charges ${row.charged.toFixed(2)}, which someone entered by hand and still stands`
+                      ? `; this run charges ${row.charged.toFixed(2)}, ${describeChargeSource(row.chargeSource, cairoTimeLabel)}`
                       : `; this run still charges ${row.charged.toFixed(2)}`}
                   </div>
                 ))}
                 <div className="opacity-80">
                   {moduleDrift.staleCharges > 0
-                    ? "Re-confirm the step above to take the module's current figures. A figure somebody entered by hand still stands and is not blocking anything."
+                    ? "Re-confirm the step above to take the module's current figures. A figure that differs from the one confirmed still stands and is not blocking anything."
                     : "Nothing here is wrong on its own. Re-open the step and re-enter a figure to take the module's new one."}
                 </div>
               </div>
