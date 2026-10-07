@@ -202,7 +202,7 @@ export async function runDeductionsModuleAppliedDaysTests(): Promise<void> {
     );
     assert.match(
       service,
-      /from\("deductions_decisions"\)\s*\n?\s*\.select\("applied_value, applied_dates"\)/,
+      /from\("deductions_decisions"\)\s*\n?\s*\.select\("(?=[^"]*\bapplied_value\b)(?=[^"]*\bapplied_dates\b)[^"]*"\)/,
       "recordDecision must READ the existing decision before upserting over it",
     );
     // Fail-open guard. maybeSingle() returns data null AND error null for an

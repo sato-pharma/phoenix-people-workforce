@@ -2,14 +2,16 @@
 //
 // Owner rule (2026-09-22): deductions are functioning but NEVER automatic. The
 // Super Admin reviews an employee's candidates and PUSHES them one at a time —
-// "push two of an employee's three, leave one". A pushed line is the single gate
-// for two things at once:
-//   * the employee's PORTAL shows it (portal.ts reads active lines only), and
-//   * PAYROLL deducts it (deductions-source.ts gates on the active pushed set
-//     from the push cutover month onward).
-// Nothing else releases a deduction. Push also fires the employee + manager-chain
-// notification (notify-deduction.ts); withdraw pulls the line back and frees the
-// candidate to be edited and re-pushed.
+// "push two of an employee's three, leave one". A pushed line is what the
+// employee's PORTAL shows (portal.ts reads active lines only), and pushing fires
+// the employee + manager-chain notification (notify-deduction.ts); withdraw pulls
+// the line back and frees the candidate to be edited and re-pushed.
+//
+// 🔴 A PUSH NO LONGER DECIDES PAY (owner, 2026-10-07). From 2026-09-22 to
+// 2026-10-07 it did — payroll counted only pushed lines — and September 2026
+// lost 17 approved deductions to it. Automated Payroll now reads the DECISION
+// ("Approved for Payroll"), so nothing here re-opens a payroll step any more;
+// `recordDecision` does that when a decision moves the money.
 //
 // SUPER ADMIN ONLY. Every entry point asserts `assertDeductionsPublishActor`
 // before it touches the database — the same gate the month-atomic publish uses.
@@ -17,10 +19,6 @@
 // database grant, is what authorizes the write.
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import {
-  resyncPayrollDeductionSteps,
-  type DeductionResyncOutcome,
-} from "@/lib/automated-payroll/deduction-resync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
@@ -41,7 +39,7 @@ import type { DeductionsCandidateWithDecision, DeductionsCategory } from "./type
 
 type PushActor = Pick<AccessContext, "role" | "hrId" | "loginId">;
 
-/** A line that was successfully pushed (released to portal + payroll). */
+/** A line that was successfully pushed (released to the employee's portal, with its notice). */
 export type PushedLineResult = {
   ok: true;
   candidateId: string;
@@ -51,8 +49,6 @@ export type PushedLineResult = {
   category: DeductionsCategory;
   appliedAmount: number;
   notification: DeductionPushNotificationResult;
-  /** Set on a single-candidate push — see PushForEmployeeResult.payrollResync. */
-  payrollResync?: DeductionResyncOutcome;
 };
 
 /** A candidate that could not be pushed, with the reason (never money-bearing). */
@@ -65,17 +61,6 @@ export type PushSkipped = {
 export type PushForEmployeeResult = {
   pushed: PushedLineResult[];
   skipped: PushSkipped[];
-  /**
-   * What the push did to an already-confirmed payroll step for this month.
-   *
-   * A pushed line is only half of reaching the payslip: a module-sourced step that was CONFIRMED
-   * before the push carries a frozen copy of the figure the module proposed at that moment, and
-   * `assemble.ts` reads that copy, never the module. Under the push gate (owner rule 2026-09-22)
-   * the confirm routinely happens first — the September 2026 run confirmed all ten Part 1 steps on
-   * 2026-09-24 and every push landed on 2026-10-06 — so the resync is what makes the push actually
-   * move the money. Absent when nothing needed unfreezing. See deduction-resync.ts.
-   */
-  payrollResync?: DeductionResyncOutcome;
 };
 
 /** Optional injection point so the push→notify wiring is testable without live sends. */
@@ -300,25 +285,7 @@ export async function pushForEmployee(input: {
     }
   }
 
-  // A pushed line that lands on a step already confirmed is money the sheet will not pay: the
-  // confirm froze a copy of what the module proposed then (0.00, since nothing was pushed yet) and
-  // assemble.ts reads that copy. Unfreeze exactly those employees and re-open the step, the same
-  // safeguard outstation expenses have had since the July 2026 run. Never throws — the lines are
-  // already pushed and the notices already sent.
-  const payrollResync =
-    pushed.length > 0
-      ? await resyncPayrollDeductionSteps({
-          monthKey,
-          employees: [
-            {
-              hrIdCompact: input.employeeHrIdCompact,
-              categories: Array.from(new Set(pushed.map((line) => line.category))),
-            },
-          ],
-        })
-      : undefined;
-
-  return { pushed, skipped, payrollResync };
+  return { pushed, skipped };
 }
 
 /**
@@ -355,35 +322,9 @@ export async function pushDeduction(input: {
   });
 
   const pushed = result.pushed[0];
-  if (pushed) return { ...pushed, payrollResync: result.payrollResync };
+  if (pushed) return pushed;
   const skipped = result.skipped[0];
   throw new Error(skipped?.reason ?? `Validation: ${input.candidateId} could not be pushed.`);
-}
-
-/**
- * The resync for one candidate, resolved from the candidate row itself.
- *
- * A withdraw is addressed by LINE id and the RPC answers with the candidate id only, so the month
- * and category have to be read back. Swallows its own failure the way the resync does: the line is
- * already withdrawn, and a failed resync must not present itself as a failed withdraw.
- */
-async function resyncForCandidate(candidateId: string): Promise<DeductionResyncOutcome | undefined> {
-  try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("deductions_candidates")
-      .select("month_key, category, employee_hr_id_compact")
-      .eq("id", candidateId)
-      .maybeSingle();
-    if (error || !data) return undefined;
-    const row = data as { month_key?: string; category?: DeductionsCategory; employee_hr_id_compact?: string };
-    if (!row.month_key || !row.category || !row.employee_hr_id_compact) return undefined;
-    return await resyncPayrollDeductionSteps({
-      monthKey: normalizeMonthKey(row.month_key),
-      employees: [{ hrIdCompact: row.employee_hr_id_compact, categories: [row.category] }],
-    });
-  } catch {
-    return undefined;
-  }
 }
 
 export type WithdrawResult = {
@@ -392,14 +333,13 @@ export type WithdrawResult = {
   candidateId?: string;
   lineId?: string;
   reason?: string;
-  /** See PushForEmployeeResult.payrollResync — a withdraw has to unfreeze the same copy a push does. */
-  payrollResync?: DeductionResyncOutcome;
 };
 
 /**
  * Withdraw one pushed line. The candidate's lock is cleared so HR can edit and
  * re-push it; the line is kept (line_status='withdrawn') for the audit trail and
- * vanishes from both the portal and payroll. Withdrawing an already-withdrawn or
+ * vanishes from the portal. Payroll is unaffected — it reads the decision, which
+ * a withdraw does not change (re-deciding it does). Withdrawing an already-withdrawn or
  * unknown line is a no-op that reports `ok:false`, not an error.
  */
 export async function withdrawDeduction(input: {
@@ -417,16 +357,11 @@ export async function withdrawDeduction(input: {
 
   const row = (data ?? {}) as Record<string, unknown>;
   if (row.ok === true) {
-    const candidateId = row.candidate_id ? String(row.candidate_id) : undefined;
     return {
       ok: true,
       publicationId: row.publication_id ? String(row.publication_id) : undefined,
-      candidateId,
+      candidateId: row.candidate_id ? String(row.candidate_id) : undefined,
       lineId: row.line_id ? String(row.line_id) : undefined,
-      // A WITHDRAW is the same problem pointing the other way: a step confirmed while the line was
-      // pushed froze the figure, and withdrawing the line does not un-charge it. Payroll would go
-      // on deducting money the Super Admin has pulled back — the worse direction of the two.
-      payrollResync: candidateId ? await resyncForCandidate(candidateId) : undefined,
     };
   }
   return { ok: false, reason: (row.reason as string | undefined) ?? "line not found or already withdrawn" };

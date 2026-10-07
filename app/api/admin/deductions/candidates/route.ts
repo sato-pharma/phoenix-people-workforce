@@ -29,7 +29,7 @@ export async function GET(request: Request) {
         : undefined;
 
     // The workspace shows, per candidate, whether it is already PUSHED (released
-    // to the employee's portal and to payroll) and — when it is — the active line
+    // to the employee's portal; payroll reads the decision, pushed or not) and — when it is — the active line
     // id needed to withdraw it. `pushedLineId` is null for a not-yet-pushed
     // candidate. Loaded once for the month and joined in memory.
     const [candidates, pushedLineByCandidate] = await Promise.all([

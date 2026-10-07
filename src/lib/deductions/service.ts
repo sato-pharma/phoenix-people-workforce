@@ -3,6 +3,10 @@
 // deductions_publications/deductions_publication_lines. Governance-only here.
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import {
+  describeDeductionResyncNotApplied,
+  resyncPayrollDeductionSteps,
+} from "@/lib/automated-payroll/deduction-resync";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -34,6 +38,7 @@ import {
   type DeductionsCandidate,
   type DeductionsCandidateDraft,
   type DeductionsCandidateWithDecision,
+  type DeductionsCategory,
   type DeductionsDecision,
   type DeductionsDecisionStatus,
 } from "./types.ts";
@@ -1519,7 +1524,7 @@ export async function recordDecision(input: {
   appliedDates?: readonly unknown[] | null;
   /** See resolveDecisionCharge. Passed only by the weekly attendance bridge. */
   allowAboveDetected?: boolean;
-}): Promise<DeductionsDecision> {
+}): Promise<DeductionsDecision & { payrollNotices: string[] }> {
   assertDeductionsDecisionActor(input.actor);
   if (!deductionsDecisionStatuses.includes(input.decisionStatus)) {
     throw new Error(`Validation: decisionStatus "${input.decisionStatus}" is not recognized`);
@@ -1531,7 +1536,7 @@ export async function recordDecision(input: {
   const supabase = getSupabaseAdmin();
   const candidate = await supabase
     .from("deductions_candidates")
-    .select("id, locked_at, unit, raw_value, estimated_amount, dates, category, employee_hr_id")
+    .select("id, locked_at, unit, raw_value, estimated_amount, dates, category, employee_hr_id, employee_hr_id_compact, month_key")
     .eq("id", input.candidateId)
     .single();
   if (candidate.error) throw new Error(`Not found: deductions candidate could not be loaded (${candidate.error.message})`);
@@ -1543,6 +1548,8 @@ export async function recordDecision(input: {
     dates: unknown;
     category: string | null;
     employee_hr_id: string | null;
+    employee_hr_id_compact: string | null;
+    month_key: string | null;
   };
   if (candidateRow.locked_at) {
     throw new Error("Conflict: this candidate is locked by a publication — it can no longer be decided directly.");
@@ -1562,7 +1569,7 @@ export async function recordDecision(input: {
   // about days at all, would quietly undo a reviewer's day selection.
   const existing = await supabase
     .from("deductions_decisions")
-    .select("applied_value, applied_dates")
+    .select("applied_value, applied_dates, decision_status, applied_amount")
     .eq("candidate_id", input.candidateId)
     .maybeSingle();
   // Refuse on a failed read rather than treating it as "there was nothing here".
@@ -1574,7 +1581,12 @@ export async function recordDecision(input: {
   if (existing.error) {
     throw new Error(`Failed to load the existing deduction decision: ${existing.error.message}`);
   }
-  const existingRow = (existing.data ?? null) as { applied_value: number | string | null; applied_dates: unknown } | null;
+  const existingRow = (existing.data ?? null) as {
+    applied_value: number | string | null;
+    applied_dates: unknown;
+    decision_status: string | null;
+    applied_amount: number | string | null;
+  } | null;
 
   const appliedValueInput =
     input.appliedValue === undefined
@@ -1638,5 +1650,53 @@ export async function recordDecision(input: {
     summary: `Deductions decision recorded: ${input.decisionStatus}`,
   });
 
-  return mapDecisionRow(data as Record<string, unknown>)!;
+  // The decision is what Automated Payroll charges (owner, 2026-10-07 — the push gate is retired), so
+  // a decision that moves payroll money has to reach a step that was already confirmed, exactly as a
+  // push did while the push was the gate. Never throws: the decision is saved and is his intent.
+  const payrollNotices =
+    decisionMovesPayroll({
+      before: existingRow
+        ? { decisionStatus: existingRow.decision_status, appliedAmount: existingRow.applied_amount }
+        : null,
+      after: { decisionStatus: input.decisionStatus, appliedAmount: charge.appliedAmount },
+    }) && candidateRow.month_key && candidateRow.employee_hr_id_compact && candidateRow.category
+      ? describeDeductionResyncNotApplied(
+          await resyncPayrollDeductionSteps({
+            monthKey: normalizeMonthKey(candidateRow.month_key),
+            employees: [
+              {
+                hrIdCompact: candidateRow.employee_hr_id_compact,
+                categories: [candidateRow.category as DeductionsCategory],
+              },
+            ],
+          }),
+        )
+      : [];
+
+  return { ...mapDecisionRow(data as Record<string, unknown>)!, payrollNotices };
+}
+
+/**
+ * Whether a decision change moves what Automated Payroll charges, and so has to reach a payroll step
+ * that was already confirmed.
+ *
+ * Payroll counts a candidate iff its decision is "Approved for Payroll" (deductions-source.ts), so
+ * money moves when the decision crosses into or out of that status, or when an approved decision's
+ * amount changes (days narrowed or widened). Anything else — Pending to Needs Follow-up, a reason or
+ * a note edited — charges 0.00 before and after, and re-opening a confirmed step for it would only
+ * make HR confirm the same figure again.
+ *
+ * Pure and exported so the rule is pinned without a database.
+ */
+export function decisionMovesPayroll(input: {
+  before: { decisionStatus: string | null; appliedAmount: number | string | null } | null;
+  after: { decisionStatus: string; appliedAmount: number | string | null };
+}): boolean {
+  const approved = (status: string | null | undefined) => status === "Approved for Payroll";
+  const wasApproved = approved(input.before?.decisionStatus);
+  const isApproved = approved(input.after.decisionStatus);
+  if (wasApproved !== isApproved) return true;
+  if (!isApproved) return false;
+  const amount = (value: number | string | null | undefined) => (value == null ? null : Number(value));
+  return amount(input.before?.appliedAmount) !== amount(input.after.appliedAmount);
 }

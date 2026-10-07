@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
-import { describeDeductionResyncNotApplied } from "@/lib/automated-payroll/deduction-resync";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsPublishActor } from "@/lib/deductions/permissions.ts";
 import { pushDeduction, pushForEmployee, withdrawDeduction } from "@/lib/deductions/push.ts";
@@ -50,11 +49,7 @@ export async function POST(request: Request) {
         candidateId: body.candidateId,
         actor: access,
       });
-      // A push whose figure could not reach an already-settled payroll run says so out loud —
-      // "Pushed" on this page while payroll pays the old number is the failure the resync exists
-      // to end, and the one case it cannot fix is a run whose Part 2 is already confirmed.
-      const notices = line.payrollResync ? describeDeductionResyncNotApplied(line.payrollResync) : [];
-      return NextResponse.json({ success: true, line, notices });
+      return NextResponse.json({ success: true, line });
     }
 
     if (typeof body.employeeHrIdCompact === "string" && body.employeeHrIdCompact.trim()) {
@@ -67,8 +62,7 @@ export async function POST(request: Request) {
         candidateIds,
         actor: access,
       });
-      const notices = result.payrollResync ? describeDeductionResyncNotApplied(result.payrollResync) : [];
-      return NextResponse.json({ success: true, ...result, notices });
+      return NextResponse.json({ success: true, ...result });
     }
 
     throw new Error("Validation: provide candidateId, or employeeHrIdCompact (with an optional candidateIds list).");
@@ -93,8 +87,7 @@ export async function DELETE(request: Request) {
     }
 
     const result = await withdrawDeduction({ lineId: body.lineId, actor: access });
-    const notices = result.payrollResync ? describeDeductionResyncNotApplied(result.payrollResync) : [];
-    return NextResponse.json({ success: result.ok, ...result, notices });
+    return NextResponse.json({ success: result.ok, ...result });
   } catch (error) {
     return jsonError(error, "Failed to withdraw this deduction.");
   }

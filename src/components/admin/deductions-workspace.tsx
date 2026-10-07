@@ -10,7 +10,6 @@ import {
   resolveAppliedDeductionDates,
   scaleDeductionAmountToDays,
 } from "@/lib/deductions/calculations.ts";
-import { monthRequiresPush } from "@/lib/deductions/push-cutover.ts";
 import {
   visibleDeductionsCategories,
   type AdminDeductionCommentThread,
@@ -232,6 +231,9 @@ function DeductionDaysEditor({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the days were saved but payroll could not follow them (Part 2
+  // already confirmed, or the resync failed) — the editor stays open to say so.
+  const [payrollNotice, setPayrollNotice] = useState<string | null>(null);
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const detectedSet = useMemo(() => new Set(detected), [detected]);
@@ -286,7 +288,9 @@ function DeductionDaysEditor({
       // that was already "Approved for Payroll" approved, and keeps the DB's
       // reason-required-when-decided constraint satisfied.
       const status = row.decision?.decisionStatus ?? "Pending";
-      const payload = await fetchJson<{ decision: CandidateApiRow["decision"] }>("/api/admin/deductions/decisions", {
+      const payload = await fetchJson<{
+        decision: CandidateApiRow["decision"] & { payrollNotices?: string[] };
+      }>("/api/admin/deductions/decisions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -298,7 +302,12 @@ function DeductionDaysEditor({
           appliedDates: selected,
         }),
       });
+      const notices = payload.decision?.payrollNotices ?? [];
       onSaved(row.id, payload.decision);
+      if (notices.length > 0) {
+        setPayrollNotice(notices.join(" "));
+        return;
+      }
       onClose();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save these days.");
@@ -481,6 +490,7 @@ function DeductionDaysEditor({
       ) : null}
 
       {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
+      {payrollNotice ? <p className="text-phx-xs font-semibold text-amber-800">{payrollNotice}</p> : null}
     </div>
   );
 }
@@ -562,34 +572,14 @@ type CollectorRun = {
 };
 
 /**
- * The row's decision, and — from the push cutover — whether that decision has actually been released.
- *
- * APPROVED IS NOT PAID. From 2026-09 the single gate for pay is the PUSH (owner rule 2026-09-22), so
- * an approved row that has not been pushed is worth 0.00 to payroll. Rendering it in the same
- * confident green as a released one is what this badge used to do, and on 2026-10-06 that is exactly
- * how it read: four unpaid-vacation rows approved, one pushed, and the Automated Payroll step
- * correctly showing one person — which looked like payroll losing three deductions rather than three
- * deductions never having left this page. The badge now says so itself.
- *
- * Months BEFORE the cutover are untouched: July and August 2026 were published under the old
- * "approved reaches payroll" rule, so an approved row there really was released and still reads green.
+ * The row's decision. "Approved for Payroll" IS what Automated Payroll charges, pushed or not — the
+ * push gate was retired on 2026-10-07 (owner), so the amber "Approved — not pushed" state this badge
+ * carried for a fortnight no longer describes anything and is gone.
  */
-function StatusBadge({
-  status,
-  monthKey,
-  pushed,
-}: {
-  status: string | null;
-  monthKey?: string | null;
-  pushed?: boolean;
-}) {
-  const decision = status ?? "Pending";
-  const awaitingPush = decision === "Approved for Payroll" && monthRequiresPush(monthKey) && pushed === false;
-  const label = awaitingPush ? "Approved — not pushed" : decision;
+function StatusBadge({ status }: { status: string | null }) {
+  const label = status ?? "Pending";
   const tone =
-    awaitingPush
-      ? "bg-amber-100 text-amber-800"
-      : label === "Approved for Payroll"
+    label === "Approved for Payroll"
       ? "bg-emerald-100 text-emerald-700"
       : label === "Do Not Take Action"
         ? "bg-slate-200 text-slate-700"
@@ -618,6 +608,10 @@ function CandidateDecideRow({
   const [reason, setReason] = useState(row.decision?.decisionReason ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the decision is saved but could NOT reach Automated Payroll (Part 2 already confirmed, or
+  // the step could not be updated). The decision is what payroll charges, so saying nothing here would
+  // leave this page reading "Approved" while payroll pays the old figure.
+  const [payrollNotice, setPayrollNotice] = useState<string | null>(null);
 
   async function decide(status: (typeof DECISION_STATUSES)[number]) {
     // Every non-Pending decision needs a reason — the server enforces this
@@ -633,13 +627,18 @@ function CandidateDecideRow({
     }
     setSubmitting(true);
     setError(null);
+    setPayrollNotice(null);
     try {
-      const payload = await fetchJson<{ decision: CandidateApiRow["decision"] }>("/api/admin/deductions/decisions", {
+      const payload = await fetchJson<{
+        decision: CandidateApiRow["decision"] & { payrollNotices?: string[] };
+      }>("/api/admin/deductions/decisions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ candidateId: row.id, decisionStatus: status, decisionReason: effectiveReason }),
       });
       onDecided(row.id, payload.decision);
+      const notices = payload.decision?.payrollNotices ?? [];
+      setPayrollNotice(notices.length > 0 ? notices.join(" ") : null);
       setOpen(false);
     } catch (decideError) {
       setError(decideError instanceof Error ? decideError.message : "Unable to record this decision.");
@@ -652,6 +651,9 @@ function CandidateDecideRow({
 
   return (
     <div className="mt-1.5">
+      {payrollNotice && !open ? (
+        <p className="mb-1 text-phx-xs font-semibold text-amber-800">{payrollNotice}</p>
+      ) : null}
       {open ? (
         <div className="space-y-1.5 rounded-sm border border-slate-200 bg-slate-50 p-2">
           <input
@@ -1312,7 +1314,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                           {row.reason ?? "—"}
                         </td>
                         <td className="px-4 py-2.5">
-                          <StatusBadge monthKey={row.monthKey} pushed={Boolean(row.pushedLineId)} status={row.decision?.decisionStatus ?? null} />
+                          <StatusBadge status={row.decision?.decisionStatus ?? null} />
                         </td>
                         {canDecide ? (
                           <td className="px-4 py-2.5">
@@ -1359,7 +1361,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                 <div className={["px-4 py-3", index % 2 === 1 ? "bg-slate-50/60" : ""].join(" ")} key={row.id}>
                   <div className="flex items-center justify-between gap-2">
                     <p className="whitespace-nowrap font-semibold text-slate-900">{employeeLabel(row)}</p>
-                    <StatusBadge monthKey={row.monthKey} pushed={Boolean(row.pushedLineId)} status={row.decision?.decisionStatus ?? null} />
+                    <StatusBadge status={row.decision?.decisionStatus ?? null} />
                   </div>
                   <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">Hired {hireDateLabel(row.hireDate)}</p>
                   <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">

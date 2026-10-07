@@ -279,7 +279,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "Resignations CRM",
     subtitle:
-      "CRM no-activity deduction for this month's RESIGNATIONS only — dedicated to leavers so its rules never collide with the normal CRM tab (owner request 2026-07-26). Everything here uses the SAME daily rate as the resignation settlement: NET (Base + Cost of Living + Fuel) ÷ the month's ACTUAL calendar days, NOT the Base and NOT ÷30 — so one no-activity day costs exactly one day of the pay it cancels (owner rule 2026-08-30). Working Days + Non-Working Days sum to the DAYS WORKED you confirmed on the Resignations step — that same number, never a fresh count of the calendar — so they can never be deducted for a day they were not employed, nor for a day you already said they did not work. Edit either day field and the other adjusts. Days and value are pre-filled from the deductions you have PUSHED in the Deductions module; anything still awaiting your decision there, or approved but not yet pushed, is worth 0.00 here and is listed in the row's breakdown so you can see what is being held back. Reason is optional.",
+      "CRM no-activity deduction for this month's RESIGNATIONS only — dedicated to leavers so its rules never collide with the normal CRM tab (owner request 2026-07-26). Everything here uses the SAME daily rate as the resignation settlement: NET (Base + Cost of Living + Fuel) ÷ the month's ACTUAL calendar days, NOT the Base and NOT ÷30 — so one no-activity day costs exactly one day of the pay it cancels (owner rule 2026-08-30). Working Days + Non-Working Days sum to the DAYS WORKED you confirmed on the Resignations step — that same number, never a fresh count of the calendar — so they can never be deducted for a day they were not employed, nor for a day you already said they did not work. Edit either day field and the other adjusts. Days and value are pre-filled from the deductions you have marked \"Approved for Payroll\" in the Deductions module, pushed or not; anything still awaiting your decision there is worth 0.00 here and is listed in the row's breakdown so you can see what is being held back. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
@@ -499,7 +499,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part2",
     title: "Vacation (no balance)",
     subtitle:
-      "Unpaid-vacation deductions you have PUSHED in the Deductions module — this step no longer recalculates them, it pays what you released there. Covers both vacation categories, and each needs an explicit \"Approved for Payroll\" AND a push on that page: approving alone releases nothing (owner rule 2026-09-22). ONLY employees who actually owe something are listed. Highest deduction first. Continuing two-part employees only; resignations and one-part-salary employees are settled in Part 1 instead. Confirming this step still debits leave balances exactly as before — that bookkeeping is separate from the money. Expand a row to see each approved deduction behind the figure. Edit or confirm.",
+      "Unpaid-vacation deductions you have marked \"Approved for Payroll\" in the Deductions module — this step no longer recalculates them, it pays what you approved there. Covers both vacation categories; the approval is what releases it, and a push is not needed for payroll. ONLY employees who actually owe something are listed. Highest deduction first. Continuing two-part employees only; resignations and one-part-salary employees are settled in Part 1 instead. Confirming this step still debits leave balances exactly as before — that bookkeeping is separate from the money. Expand a row to see each approved deduction behind the figure. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Confirmed Lines", label: "Confirmed Lines" },
@@ -518,7 +518,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part2",
     title: "CRM (no activity)",
     subtitle:
-      "CRM no-activity deductions you have PUSHED in the Deductions module — this step no longer recalculates them, and nothing you have not released is deducted (owner rule 2026-09-22). A flagged day pays 0.00 here until it is both approved AND pushed, so this total can be lower than the Deductions Overview for the same month — the gap is exactly the rows still awaiting a decision or a push. Continuing two-part employees only — resignations and one-part-salary employees are settled in Part 1 instead. Expand a row to see each confirmed deduction behind the figure. Edit or confirm.",
+      "CRM no-activity deductions you have marked \"Approved for Payroll\" in the Deductions module, pushed or not — this step no longer recalculates them, and nothing you have not approved is deducted. A flagged day pays 0.00 here until it is approved, so this total can be lower than the Deductions Overview for the same month — the gap is exactly the rows still awaiting a decision. Continuing two-part employees only — resignations and one-part-salary employees are settled in Part 1 instead. Expand a row to see each confirmed deduction behind the figure. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Confirmed Lines", label: "Confirmed Lines" },
@@ -553,7 +553,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part2",
     title: "Any more deductions?",
     subtitle:
-      "Add any other deduction per employee, with a reason. Pre-filled with the Loan and Other deductions you have PUSHED in the Deductions module for continuing two-part employees — approving one is the step before pushing it, and only a pushed line reaches payroll (owner rule 2026-09-22) — resignations and one-part-salary employees take theirs on the Part 1 Other Deductions tab instead, so nobody is charged twice. Expand a row to see what made up the figure. Edit freely, or leave 0 for none.",
+      "Add any other deduction per employee, with a reason. Pre-filled with the Loan and Other deductions you have marked \"Approved for Payroll\" in the Deductions module for continuing two-part employees, pushed or not — resignations and one-part-salary employees take theirs on the Part 1 Other Deductions tab instead, so nobody is charged twice. Expand a row to see what made up the figure. Edit freely, or leave 0 for none.",
     contextColumns: [{ key: "Hire Date", label: "Hire Date" }],
     fields: [
       { key: "p2ManualDeductionDays", label: "Days", kind: "days", autoCalcMoneyKey: "manualOtherDeductions", notPersisted: true },
@@ -606,13 +606,11 @@ export function stepWindowLabel(stepKey: StepKey, period: PayrollPeriod): string
     return `Trips finance tagged for the ${monthText} payout. The trip dates themselves are often earlier — expand a row to see them.`;
   }
   if (stepKey === "p1_fingerprint" || stepKey === "p2_crm" || stepKey === "p2_vacation") {
-    // SAYS "PUSHED", NOT "APPROVED" — the gate moved and this sentence did not follow it. From
-    // 2026-09 nothing is deducted until the Super Admin PUSHES that specific line (owner rule
-    // 2026-09-22, DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY); approving it is the step before. Telling
-    // HR an approved deduction is on this step is what made an approved-but-unpushed row read as a
-    // payroll fault on 2026-10-06, when three of four approved unpaid-vacation rows were simply
-    // never pushed.
-    return `Only the ${monthText} deductions you have PUSHED in the Deductions module. Approving one is the step before pushing it — anything approved but not yet pushed, and anything still Pending, pays nothing here.`;
+    // SAYS "APPROVED", AND THAT A PUSH IS NOT NEEDED. For a fortnight (owner rule 2026-09-22) the
+    // gate was the push and this sentence said "PUSHED"; the owner retired that gate on 2026-10-07,
+    // after three of four approved September unpaid-vacation rows never reached this step. The
+    // decision is the gate again, in every month — see loadConfirmedDeductions.
+    return `Only the ${monthText} deductions you have marked "Approved for Payroll" in the Deductions module — pushed or not. Anything still Pending, Needs Follow-up, Disputed or Do Not Take Action pays nothing here.`;
   }
   return null;
 }

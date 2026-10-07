@@ -2,8 +2,6 @@ import {
   resolveAppliedDeductionDates,
   scaleDeductionAmountToDays,
 } from "@/lib/deductions/calculations";
-import { DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY as PUSH_FROM } from "@/lib/deductions/push-cutover";
-import { loadActivePushedCandidateIds } from "@/lib/deductions/pushed-lines";
 import { listCandidatesForMonth } from "@/lib/deductions/service";
 import type { DeductionsCandidateWithDecision, DeductionsCategory } from "@/lib/deductions/types";
 import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance/weekend-policy";
@@ -63,31 +61,17 @@ export const PAYROLL_APPROVED_STATUS = "Approved for Payroll";
 /**
  * The sentence a WITHHELD deduction line carries in a payroll breakdown.
  *
- * Two different reasons, which need two different sentences. Since the push cutover (owner rule
- * 2026-09-22) the gate is the PUSH, not the decision: nothing is deducted until the Super Admin
- * pushes that specific line. So a line pays nothing either because it has not been decided, or
- * because it WAS decided "Approved for Payroll" and nobody pushed it.
+ * Since the push gate was retired (owner, 2026-10-07 — see `loadConfirmedDeductions`) the only
+ * thing that withholds a line is its decision: Pending, Needs Follow-up, Disputed or Do Not Take
+ * Action. An approved line is never withheld, so there is one sentence again. The parameter keeps
+ * its name and type so the breakdown's caller is unchanged.
  *
- * Both used to read "awaiting your approval in Deductions". For the approved kind that is false
- * and falsely actionable — it names the step he has finished and hides the one that is left.
- * Owner-reported 2026-10-06/07; measured on production, 17 approved candidates worth 11,580.17
- * EGP sat un-pushed across four categories, every one labelled as awaiting his approval.
- *
- * Neither sentence changes a figure. Both say the line is not charged.
+ * Never changes a figure. It says the line is not charged and why.
  * Pinned by tests/deductions-approved-not-pushed-feedback.test.ts.
  */
 export function withheldLineStatus(decisionStatus: string): string {
-  return decisionStatus === PAYROLL_APPROVED_STATUS
-    ? `${decisionStatus} — NOT charged: push this line in Deductions to send it to payroll`
-    : `${decisionStatus} — not charged, awaiting your approval in Deductions`;
+  return `${decisionStatus} — not charged, awaiting your approval in Deductions`;
 }
-
-/**
- * Re-exported so every existing importer of this module keeps working; the constant itself moved to
- * `@/lib/deductions/push-cutover` because the Deductions workspace (a client component) has to read
- * it too, and this file reaches the Supabase admin client. One answer, two readers.
- */
-export { DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY } from "@/lib/deductions/push-cutover";
 
 /**
  * Whether a candidate is confirmed for payroll. Deliberately explicit rather
@@ -339,33 +323,21 @@ export function candidateAmount(candidate: DeductionsCandidateWithDecision): num
  * database — this decides real money, and a rule that only exists inside a
  * Supabase round-trip cannot be pinned by a test.
  *
- * THE GATE HAS TWO MODES (owner rule 2026-09-22).
- *   * Legacy (`options.pushedCandidateIds` omitted / null): a candidate counts
- *     iff its decision is "Approved for Payroll" — the 2026-08-03 rule, kept for
- *     every month before the push cutover.
- *   * Push (`options.pushedCandidateIds` a Set): a candidate counts iff it has an
- *     ACTIVE pushed line, whatever its decision status. Nothing is deducted until
- *     the Super Admin pushes that specific line.
- *
- * Only the GATE changes between modes — `candidateAmount` is unchanged, so the
- * money a pushed candidate contributes is identical to what it always was. This
- * is safe because a pushed candidate is `locked_at` at push time and the module
- * refuses to re-decide a locked candidate, so its amount cannot drift after push.
+ * THE GATE IS THE DECISION, FOR EVERY MONTH (owner, 2026-10-07): a candidate
+ * counts iff its decision is "Approved for Payroll" — see `loadConfirmedDeductions`
+ * for why the push no longer decides it. Whether the line was pushed is not read
+ * here at all.
  */
 export function buildDeductionBuckets(
   candidates: DeductionsCandidateWithDecision[],
-  options?: { pushedCandidateIds?: ReadonlySet<string> | null },
 ): Map<string, EmployeeDeductions> {
-  const pushedCandidateIds = options?.pushedCandidateIds ?? null;
   const byCompact = new Map<string, EmployeeDeductions>();
   for (const candidate of candidates) {
     if (candidate.supersededAt) continue;
     const compact = candidate.employeeHrIdCompact;
     if (!compact) continue;
 
-    const confirmed = pushedCandidateIds
-      ? pushedCandidateIds.has(candidate.id)
-      : isConfirmedForPayroll(candidate);
+    const confirmed = isConfirmedForPayroll(candidate);
     const amount = candidateAmount(candidate);
     const entry = byCompact.get(compact) ?? { buckets: emptyBuckets(), lines: [], pendingLines: [] };
 
@@ -402,6 +374,22 @@ export function buildDeductionBuckets(
  * Every employee's confirmed deductions for a payroll period, keyed by compact
  * HR id.
  *
+ * 🔴 PAYROLL READS THE DECISION, NOT THE PUSH (owner, 2026-10-07: "make the
+ * Automated Payroll able to read them and every other deduction from the
+ * Deductions module"). From 2026-09 the gate had been the PUSH (owner rule
+ * 2026-09-22): an approved deduction paid nothing until the Super Admin pushed
+ * that line. September 2026 showed the cost — 17 approved candidates worth
+ * 11,580.17 EGP across four categories never reached the sheet, and one line
+ * pushed and then decided "Do Not Take Action" would still have been charged.
+ * Now "Approved for Payroll" is what payroll pays, in every month; July and
+ * August already ran on exactly this rule, so they do not move.
+ *
+ * The push is unchanged for everything else it does — it still puts the line
+ * on the employee's portal and sends the notice. It just no longer decides pay.
+ * A decision that changes after its step was confirmed re-opens that step
+ * (`recordDecision` → `resyncPayrollDeductionSteps`), so a late approval is not
+ * lost behind a frozen 0.00.
+ *
  * Defensive by design: a failure here returns an EMPTY map, which recommends
  * zero deductions rather than blocking the whole wizard. That is the safe
  * direction — a zero is visible to HR on the step and can be corrected, whereas
@@ -414,14 +402,7 @@ export async function loadConfirmedDeductions(
   const monthKey = `${period.year}-${String(period.month).padStart(2, "0")}`;
   try {
     const candidates = await listCandidatesForMonth({ monthKey });
-    // From the push cutover, push is the single gate for pay (owner 2026-09-22):
-    // count only candidates with an ACTIVE pushed line. Before it, the legacy
-    // "Approved for Payroll" gate stands — those months already paid under it.
-    const pushedCandidateIds =
-      monthKey >= PUSH_FROM
-        ? await loadActivePushedCandidateIds(monthKey)
-        : null;
-    return buildDeductionBuckets(candidates, { pushedCandidateIds });
+    return buildDeductionBuckets(candidates);
   } catch (error) {
     logError("Automated payroll: confirmed-deductions load failed", {
       labels: {
