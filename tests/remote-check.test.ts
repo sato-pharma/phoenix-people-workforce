@@ -772,6 +772,58 @@ export async function runRemoteCheckTests(): Promise<void> {
 
   const tmp = mkdtempSync(path.join(os.tmpdir(), "phx-remote-check-"));
   try {
+    // Exercise the configured remote test command with the real shard runner and a tiny suite.
+    // No SSH, dependencies or production env: the fixture proves complete coverage and that a
+    // failed or incomplete shard propagates through the shell command as a failing remote stage.
+    const fixture = path.join(tmp, "sharded-suite");
+    for (const dir of ["bin", "scripts", "tests"]) mkdirSync(path.join(fixture, dir), { recursive: true });
+    for (const file of ["run-tests-sharded.mjs", "run-tests-sharded-plan.mjs"]) {
+      writeFileSync(path.join(fixture, "scripts", file), readFileSync(path.join(ROOT, "scripts", file)));
+    }
+    writeFileSync(path.join(fixture, "package.json"), JSON.stringify({ type: "module", scripts: { test: "node tests/fixture-suite.mjs" } }));
+    writeFileSync(path.join(fixture, "tests", "fixture-suite.mjs"), `
+const [index, total] = (process.env.PHX_TEST_SHARD || '1/1').split('/').map(Number);
+let ran = 0;
+for (let test = 1; test <= 6; test++) {
+  if ((test - 1) % total !== index - 1) continue;
+  console.log('FIXTURE_TEST ' + test);
+  ran++;
+}
+if (process.env.FIXTURE_FAIL_SHARD === String(index)) process.exit(1);
+if (process.env.FIXTURE_MISSING_MARKER !== String(index)) {
+  console.log('PHX_SHARD_RESULT shard=' + index + '/' + total + ' seen=6 ran=' + ran);
+}
+`);
+    writeFileSync(path.join(fixture, "bin", "corepack"), `#!${process.execPath}
+import { spawnSync } from 'node:child_process';
+const [manager, action, script] = process.argv.slice(2);
+const target = { test: 'tests/fixture-suite.mjs', 'test:sharded': 'scripts/run-tests-sharded.mjs' }[script];
+if (manager !== 'pnpm' || action !== 'run' || !target) process.exit(2);
+const result = spawnSync(process.execPath, [target], { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`, { mode: 0o755 });
+    const testCommand = /^\s*test:\s*"([^"]+)"/m.exec(SRC)?.[1];
+    assert.ok(testCommand, "the configured remote test command must be discoverable");
+    const runFixture = (extra: Record<string, string> = {}) => spawnSync("bash", ["-c", testCommand], {
+      cwd: fixture,
+      env: { ...process.env, PATH: path.join(fixture, "bin") + path.delimiter + process.env.PATH,
+        PHX_TEST_SHARDS: "2", FIXTURE_FAIL_SHARD: "", FIXTURE_MISSING_MARKER: "", ...extra },
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    const complete = runFixture();
+    assert.equal(complete.status, 0, "the remote test stage failed on a complete fixture suite:\n" + complete.stderr);
+    assert.match(complete.stdout, /6 test files passed .* across 2 shard\(s\)/,
+      "the remote test stage must use CI's shard runner instead of repeating the serial suite");
+    assert.deepEqual([...complete.stdout.matchAll(/FIXTURE_TEST (\d+)/g)].map((match) => Number(match[1])).sort((a, b) => a - b),
+      [1, 2, 3, 4, 5, 6], "every fixture test must execute exactly once through the remote test command");
+    const failed = runFixture({ FIXTURE_FAIL_SHARD: "2" });
+    assert.equal(failed.status, 1, "a failed shard must fail the remote test stage");
+    assert.match(failed.stderr, /shard 2 exited 1/);
+    const incomplete = runFixture({ FIXTURE_MISSING_MARKER: "2" });
+    assert.equal(incomplete.status, 1, "a shard with no coverage marker must fail the remote test stage");
+    assert.match(incomplete.stderr, /printed no PHX_SHARD_RESULT line/);
+
     const g = (cwd: string, ...args: string[]) => {
       const r = spawnSync("git", args, { cwd, encoding: "utf8" });
       assert.equal(r.status, 0, "git " + args.join(" ") + " failed: " + r.stderr);

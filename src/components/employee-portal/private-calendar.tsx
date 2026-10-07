@@ -141,6 +141,14 @@ const kindTones: Record<PrivateCalendarActivityKind, { accent: string; chip: str
     chip: "border-l-[3px] border-l-violet-600 bg-violet-50",
     swatch: "bg-violet-600",
   },
+  // An approved plan is an INTENTION, not a record, so it wears the hatched treatment the campaign
+  // visits already use for "read me second", in neutral stone — no recorded source's hue, and visibly
+  // not one of them at a glance on a phone marker.
+  plan: {
+    accent: "border-dashed border-l-stone-500",
+    chip: "border border-l-[3px] border-dashed border-stone-300 border-l-stone-500 bg-white",
+    swatch: "bg-[repeating-linear-gradient(135deg,var(--color-stone-500)_0_2px,var(--color-stone-200)_2px_4px)]",
+  },
   single_regular: {
     accent: "border-l-blue-700",
     chip: "border-l-[3px] border-l-blue-700 bg-blue-50",
@@ -1739,6 +1747,7 @@ function KeyFigures({
             <KeyFigure label="Vacations" ready={sourceReadiness.vacation} swatch={kindSwatchColor("vacation")} value={String(summary.vacation)} />
             <KeyFigure label="Excuses" ready={sourceReadiness.excuse} swatch={kindSwatchColor("excuse")} value={String(summary.excuse)} />
             <KeyFigure label="National" ready={sourceReadiness.holiday} swatch={kindSwatchColor("holiday")} value={String(summary.holiday)} />
+            <KeyFigure label="Planned" ready={sourceReadiness.plan} swatch={kindSwatchColor("plan")} value={String(summary.plan ?? 0)} />
             <KeyFigure label="Other CRM" ready={sourceReadiness.field_visit} swatch={kindSwatchColor("other_crm")} value={String(otherCrmDays)} />
             <KeyFigure alert={noActivityDays > 0} label="No activity" swatch={noActivitySwatch} value={String(noActivityDays)} />
             <KeyFigure alert={exceptionCount > 0} label="Exceptions" value={String(exceptionCount)} />

@@ -24,14 +24,14 @@
 //   node scripts/remote-check.mjs lockfile     # regenerate pnpm-lock.yaml and bring it back
 //
 //   node scripts/remote-check.mjs test --wait 6    # box busy? ask again every 30s for 6 minutes
-//   node scripts/remote-check.mjs all --urgent     # that wait, then run ci.yml on GitHub Actions
+//   node scripts/remote-check.mjs all --urgent     # busy box? escalate immediately to GitHub Actions
 //
 // 🔴 THE BOX BY DEFAULT BECAUSE IT IS FREE; GITHUB ACTIONS WHEN THE WORK CANNOT WAIT (owner, 2026-10-06).
 // Several sessions share one 7,740 MB box, so a second run is refused rather than queued — and until
 // that day the refusal was the END of the road, which left a finished branch retrying by hand while
 // another session built. `--wait` waits VISIBLY (a line per poll, never a silent lock) and `--urgent`
 // escalates to a ci.yml workflow_dispatch afterwards, at ~14 billable Actions minutes against the
-// box's zero. Default behaviour with no flag is exactly what it was: refuse at once.
+// box's zero. With no flag it waits ten minutes, then escalates; --no-wait --no-actions refuses at once.
 //
 // 🔴 WHY `lockfile` IS HERE, AND WHY IT IS NOT A CHECK. Until 2026-09-30 there was no sanctioned place
 // in this setup to regenerate a lockfile at all. `.claude/hooks/bash-guard.mjs` clause C6 denies pnpm
@@ -161,7 +161,9 @@ const CHECKS = {
   // leaving one would read as a memory guarantee nothing honours.
   typecheck:
     "flock -w 1200 /tmp/phx-typecheck.lock sh -c './node_modules/.bin/next typegen >/dev/null && ./node_modules/.bin/tsc --noEmit --incremental false --pretty false --checkers 1'",
-  test: "corepack pnpm run test",
+  // Use CI's coverage-checked, CPU/memory-bounded shards on the box too. The stage stays `test`,
+  // so callers and PASS/FAIL grading do not change; every registered test still has to run once.
+  test: "corepack pnpm run test:sharded",
   // 🔴 THE BUILD TAKES THE TYPECHECK LOCK, BECAUSE CONTENTION IS WHAT KILLED IT — NOT ITS SIZE.
   //
   // It died `Killed` with exit 137 on 2026-10-04 — the kernel OOM killer, not a code error — during

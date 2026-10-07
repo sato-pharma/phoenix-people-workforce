@@ -41,6 +41,7 @@ export const privateCalendarActivityKinds = [
   "vacation",
   "excuse",
   "holiday",
+  "plan",
   ...privateCalendarVisitKinds,
   "other_crm",
 ] as const satisfies readonly PrivateCalendarActivityKind[];
@@ -50,6 +51,7 @@ export const privateCalendarActivityKindLabels: Record<PrivateCalendarActivityKi
   vacation: "Vacation",
   excuse: "Excuse",
   holiday: "National holiday",
+  plan: "Approved plan",
   single_regular: "Single · Regular",
   single_campaign: "Single · Campaign",
   double_regular: "Double · Regular",

@@ -12,6 +12,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { listDisputesForEmployee, type PrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
 import { listMessagesForDisputes } from "@/lib/private-calendar/dispute-messages";
+import { loadPlanPrivateCalendarItems } from "@/lib/private-calendar/plan-items";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -381,11 +382,12 @@ export function canUsePrivateCalendarAdminSurface(access: AccessContext) {
 
 export async function getPrivateCalendarWorkspace(input: {
   access: AccessContext;
-  // Historically distinguished "what actually happened" from planned/intended
-  // activity (the Planning Calendar), which is no longer a private-calendar
-  // source at all — every source returned here is already an actually
-  // recorded/verified event, so this flag currently has no effect. Kept on the
-  // API surface for backward compatibility with existing callers.
+  // Historically distinguished "what actually happened" from planned/intended activity, and it has
+  // no effect: it does NOT drop the approved-plan source, which joined the calendar on 2026-10-07.
+  // Deliberately so — the employee's own portal is the one caller that passes `true`, and he is
+  // precisely the person whose approved Travel day used to read "No Activity Recorded". Hiding the
+  // plan from him while letting it excuse the day would leave a blank day with no exception and
+  // nothing on screen that explains either. Kept on the API surface for existing callers.
   actualOnly?: boolean;
   employeeHrId?: string | null;
   month: number;
@@ -409,7 +411,7 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, attendancePolicyRows, disputesByEmployee] =
+  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, plans, attendancePolicyRows, disputesByEmployee] =
     await Promise.all([
       loadAttendanceItems(scopeHrIds, start, end),
       loadVacationItems(scopeHrIds, start, end),
@@ -419,6 +421,9 @@ export async function getPrivateCalendarWorkspace(input: {
       // The CRM accounts ride along so the field-visit read can find each person's own visits by
       // account as well as by HR id (see loadFieldVisitPrivateCalendarItems).
       loadFieldVisitPrivateCalendarItems(scopeHrIds, start, end, scopeEmployees.map((employee) => employee.crmId)),
+      // The approved weekly plan — the only evidence a manager-approved Travel, Admin or Meeting day
+      // ever produces. It covers the day for those types only; see lib/private-calendar/plan-items.ts.
+      loadPlanPrivateCalendarItems(scopeHrIds, start, end),
       loadAttendancePolicyScheduleRows(),
       // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a dispute is read by
       // employee and date range alone — nothing loaded beside it feeds it — so it loads with the
@@ -435,6 +440,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...holidays,
     ...doubleVisits.items,
     ...fieldVisits.items,
+    ...plans.items,
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
@@ -458,6 +464,7 @@ export async function getPrivateCalendarWorkspace(input: {
     excuse: excuses.ready,
     field_visit: fieldVisits.ready,
     holiday: true,
+    plan: plans.ready,
     vacation: vacations.ready,
   };
 
@@ -563,7 +570,7 @@ export async function getCompanyNoActivityDays(input: {
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(input.start, input.end);
 
-  const [attendance, vacations, excuses, doubleVisits, fieldVisits, attendancePolicyRows, ...holidaysByMonth] =
+  const [attendance, vacations, excuses, doubleVisits, fieldVisits, plans, attendancePolicyRows, ...holidaysByMonth] =
     await Promise.all([
       loadAttendanceItems(hrIds, input.start, input.end),
       loadVacationItems(hrIds, input.start, input.end),
@@ -573,6 +580,11 @@ export async function getCompanyNoActivityDays(input: {
       // Only the double-visit feed was ever wired in, so 86% of field work was
       // invisible here — see loadFieldVisitPrivateCalendarItems.
       loadFieldVisitPrivateCalendarItems(hrIds, input.start, input.end),
+      // The SAME approved-plan source the calendar workspace reads. It has to be here too: this path
+      // is what the Deductions module's No Records Activity connector adjudicates, so a day the
+      // employee's own calendar shows as covered by an approved plan must not arrive there as a
+      // deduction candidate — the two can never be allowed to disagree.
+      loadPlanPrivateCalendarItems(hrIds, input.start, input.end),
       loadAttendancePolicyScheduleRows(),
       ...months.map(({ year, month }) => loadHolidayItems(year, month, input.start, input.end)),
     ]);
@@ -584,6 +596,7 @@ export async function getCompanyNoActivityDays(input: {
     ...holidaysByMonth.flat(),
     ...doubleVisits.items,
     ...fieldVisits.items,
+    ...plans.items,
   ], employees), employees);
 
   // Same per-employee suppression the calendar workspace uses. This path spans

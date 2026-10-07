@@ -226,7 +226,7 @@ export async function runPrivateCalendarTests() {
   );
   assert.equal(
     noItemsExceptions[0]?.description,
-    "Employee Two: no CRM field or double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.",
+    "Employee Two: no CRM field or double visit, no fingerprint attendance, no approved vacation, no approved excuse, and no approved plan activity that stands on its own recorded for this workday.",
     "the description must spell out exactly which sources were checked and came up empty",
   );
 
@@ -451,6 +451,7 @@ export async function runPrivateCalendarTests() {
     excuse: 1,
     field_visit: 0,
     holiday: 0,
+    plan: 0,
     total: 3,
     vacation: 1,
   });

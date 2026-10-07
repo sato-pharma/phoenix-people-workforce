@@ -14,8 +14,8 @@ Located in `tests/*.test.ts`. Each file exports a named run function (e.g., `run
 ### Running
 
 ```bash
-pnpm run test           # one process, every test, in order — what the box and every local run use
-pnpm run test:sharded   # the same suite as one process per CPU; what CI runs
+pnpm run test           # one process, every test, in order — opt-in serial run
+pnpm run test:sharded   # the same suite, CPU/memory-bounded shards; CI and remote-check use this
 ```
 
 This executes `tests/run-tests.ts`, which imports and runs all registered test functions. Tests run with Node.js `--experimental-strip-types` (requires Node 24+ — the repo's `engines.node` floor).
@@ -149,7 +149,9 @@ gate hard-coded to a count from a doc does not merely wait — it waits for chec
 ### Before every push: `remote-check.mjs test` is a standing step (owner rule, 2026-10-04)
 
 `node scripts/remote-check.mjs test` runs the unit suite on the preview box against the **committed**
-sha — about 133 s, nothing on the laptop, no Actions minutes — and a push follows only a final
+sha using the same `test:sharded` runner as CI, with its CPU/memory ceiling and coverage refusal.
+This also applies to the test stage inside `remote-check.mjs all`. Nothing runs on the laptop and
+the box run consumes no Actions minutes; actual time depends on available capacity. A push follows only a final
 `remote-check: PASS — <sha>` for that exact sha. `all` (lint, typecheck, suite, build — ~7 min) replaces it when the
 change adds a route, a file or a member of a closed union, because the suite runs with
 `--experimental-strip-types` and cannot see a type error. A docs-only push is not exempt: the module
