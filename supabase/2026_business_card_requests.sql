@@ -40,9 +40,12 @@ comment on column public.business_card_requests.status is
 comment on column public.business_card_requests.card_email is
   'Snapshot of the work email at request time — never editable by the employee.';
 
--- Touch updated_at on row modification
+-- Touch updated_at on row modification.
+-- search_path is pinned empty (the body only calls now(), from pg_catalog) so the
+-- function is not flagged function_search_path_mutable by the security linter.
 create or replace function public.business_card_requests_touch()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = '' as $$
 begin
   new.updated_at := now();
   return new;
