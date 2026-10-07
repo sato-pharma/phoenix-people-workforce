@@ -5234,7 +5234,21 @@ What landed instead was a `REVOKE`, which is not destructive — and it mattered
 functions had been created in `public` and so inherited the schema default: their ACL read `=X/postgres`,
 the bare `=X/` being **PUBLIC**, which `anon` and `authenticated` inherit. After the revoke both read
 `postgres=X/postgres | service_role=X/postgres`, the same shape as every real Phoenix CRM function. The
-exposure is closed; the objects are inert debris, dropped by `20261003075838` whenever a door will run it.
+exposure was closed from that day; what remained was inert debris.
+
+**The two functions are now gone — `20261003075838` was applied on production on 2026-10-07**, ledger
+version `20261007203921`. `supabase-production` declined the `DROP FUNCTION` a second time that day, and
+it ran through the account connector the owner allowed on 2026-10-05; one apply, one ledger row,
+`statements` populated. Verified against `pg_proc` rather than the ledger: 0 functions matching
+`zz_probe%` in `public`, `phoenix_crm_validate_customer` untouched, and `function_search_path_mutable`
+gone **entirely** from the security advisor — the lint no longer appears, where before it was WARN with
+exactly these two findings.
+
+🔴 **Four days is the cost of the gap, and it is the measurable half of the lesson below.** The file and
+this document both said, correctly, that the drop had not run — but nothing was watching that sentence,
+so the two functions stayed on production as the only two `function_search_path_mutable` findings until a
+session auditing that WARN found them cold and re-derived this entire account. A statement of what did
+*not* happen needs an owner and a trigger, or it becomes the next session's investigation.
 
 **The durable lesson:** a throwaway probe gets the same treatment as shipped SQL, or it is not
 throwaway — it is an undocumented object carrying the schema's default grants. A probe that must return
@@ -5261,7 +5275,8 @@ seat.
 
 ### What is still on production
 
-All `is_test = true` on `SEAT-PED-REP-AB1` — 5 customers named `ZZ …`, 1 place, 8 list events, 1 photo
+**Rows only — the two probe functions are no longer among them** (dropped 2026-10-07, above). All
+`is_test = true` on `SEAT-PED-REP-AB1` — 5 customers named `ZZ …`, 1 place, 8 list events, 1 photo
 slot, 1 storage row. Real rows on that seat: **0 before, 0 after.** They are invisible to every real
 figure, because every KPI reads `is_test = false`. To clear them:
 

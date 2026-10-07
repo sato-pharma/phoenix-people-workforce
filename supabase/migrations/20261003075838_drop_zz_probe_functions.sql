@@ -23,16 +23,29 @@
 --   it is not throwaway — it is an undocumented object with the schema's default grants on it. A probe
 --   that must return rows belongs in a transaction that drops it, or nowhere.
 --
---   🔴 THIS FILE IS NOT APPLIED ON PRODUCTION, AND SAYING SO IS THE POINT. The Supabase tool declined
---   every destructive statement of the probe's cleanup — the batched `DELETE`s, a single narrow `DELETE`,
---   and this `DROP FUNCTION` — which is its standing guardrail and not something to route around. What
---   DID land, because a grant change is not destructive, is the REVOKE: measured straight after, both
---   functions read `postgres=X/postgres | service_role=X/postgres` with no bare `=X/`, which is the same
---   ACL shape as every real Phoenix CRM function. **So the exposure is closed and the objects are inert
---   debris.** This file is how they get dropped by a door that will run it; until then, treat
---   `zz_probe_listed` / `zz_probe_after` on production as known and harmless, not as a finding.
+--   🔴 APPLIED ON PRODUCTION 2026-10-07, FOUR DAYS AFTER THIS FILE WAS WRITTEN. The header this
+--   replaces said "THIS FILE IS NOT APPLIED ON PRODUCTION, AND SAYING SO IS THE POINT", and it was
+--   right to say so — but for those four days the two functions sat on production as the ONLY two
+--   `function_search_path_mutable` findings on the security advisor, so the next session to read that
+--   WARN found them cold and had to re-derive this whole account before it could act.
 --
---   🔴 THE TEST-WORLD ROWS THE PROBE WROTE ARE ALSO STILL THERE, for the same reason. They are
+--   What landed on 2026-10-03, because a grant change is not destructive, was the REVOKE: both
+--   functions read `postgres=X/postgres | service_role=X/postgres` with no bare `=X/`, the same ACL
+--   shape as every real Phoenix CRM function — so the exposure was closed from that day and what
+--   remained was inert debris. The `DROP FUNCTION` was declined on 2026-10-03 and declined AGAIN on
+--   2026-10-07 by `supabase-production`; it ran through the account connector the owner allowed on
+--   2026-10-05. One apply, one ledger row, `statements` populated — so the declined call did not also
+--   land (`a-declined-tool-call-is-not-proof-the-change-did-not-land`).
+--
+--   Ledger version `20261007203921`, not this filename: `apply_migration` stamps its own UTC version,
+--   so this file's version being absent from `supabase_migrations.schema_migrations` is the EXPECTED
+--   state, never drift (`a-ledger-version-never-matches-the-file`). Verified against `pg_proc`, not the
+--   ledger: 0 functions matching `zz_probe%` in `public`, `phoenix_crm_validate_customer` untouched and
+--   still present, and `function_search_path_mutable` gone ENTIRELY from the advisor — the lint no
+--   longer appears at all, rather than merely dropping from 2 findings to fewer.
+--
+--   🔴 THE TEST-WORLD ROWS THE PROBE WROTE ARE STILL THERE — only the two functions were dropped, and
+--   nothing in `phoenix_crm_customers` was read or written by this change. They are
 --   `is_test = true` on `SEAT-PED-REP-AB1` — 5 customers named `ZZ …`, 1 place, 8 list events, 1 photo
 --   slot, 1 storage row — so they are invisible to every real figure in the module (every KPI reads
 --   `is_test = false`, and real rows on that seat were 0 before the probe and 0 after). The statements
