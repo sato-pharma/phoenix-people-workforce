@@ -27,6 +27,7 @@ import {
   linesFor,
   loadConfirmedDeductions,
   pendingLinesFor,
+  withheldLineStatus,
   type DeductionLine,
   type EmployeeDeductions,
 } from "./deductions-source.ts";
@@ -869,11 +870,27 @@ function deductionDetailLines(lines: DeductionLine[]): StepRowDetail[] {
  * The amount is shown because the missing NUMBER is the useful part, and the
  * status is rewritten to say plainly that it is not being charged — a bare
  * "Pending" beside a real figure is the ambiguity, not the cure.
+ *
+ * 🔴 TWO REASONS A LINE IS WITHHELD, AND THEY NEED DIFFERENT SENTENCES (owner-reported
+ * 2026-10-06 — the 2026-08-30 complaint in a new disguise). Since the push cutover (owner rule
+ * 2026-09-22) the gate is the PUSH, not the decision: "nothing is deducted until the Super Admin
+ * pushes that specific line" (deductions-source.ts). So a line is withheld either because it has
+ * not been decided, or because it WAS decided "Approved for Payroll" and never pushed.
+ *
+ * This function said "awaiting your approval in Deductions" for both, and for the second kind that
+ * is false and falsely actionable — it tells him to repeat the one step he has already finished
+ * and never names the one that is left. He approved the September unpaid-vacation candidates, read
+ * the step, saw only the employee whose line he had also pushed, and reported payroll as broken.
+ * Measured on production the same day: 17 approved candidates worth 11,580.17 EGP sat un-pushed
+ * across four categories, every one of them labelled as awaiting his approval.
+ *
+ * Payroll is correct in both cases and this changes no figure — only which action the breakdown
+ * asks for. Pinned by tests/deductions-approved-not-pushed-feedback.test.ts.
  */
 function pendingDeductionDetailLines(lines: DeductionLine[]): StepRowDetail[] {
   return deductionDetailLines(lines).map((line) => ({
     ...line,
-    Status: `${line.Status} — not charged, awaiting your approval in Deductions`,
+    Status: withheldLineStatus(String(line.Status)),
   }));
 }
 
