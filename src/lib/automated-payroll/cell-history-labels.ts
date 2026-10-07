@@ -1,4 +1,5 @@
 import { STEP_DEFINITIONS } from "./step-definitions.ts";
+import type { ChargeSource } from "./module-drift.ts";
 import type { DraftCellChange, DraftWriteReason, StepKey } from "./types.ts";
 
 /**
@@ -104,6 +105,34 @@ export function valueLabel(value: string | null): string {
     return asNumber.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   }
   return value;
+}
+
+/**
+ * The clause that explains a drift row's charged figure, after "this run charges X". Says "typed"
+ * ONLY when the cell history says a person saved it. The drift report used to call every mismatch
+ * hand-entered, and on 2026-10-07 that named two CRM deductions a step confirm had written as
+ * somebody's own figure. Lives here, not in module-drift.ts, because the wizard renders it in the
+ * browser and module-drift.ts pulls in server-side helpers.
+ */
+export function describeChargeSource(
+  source: ChargeSource | undefined,
+  formatTime: (iso: string) => string = cairoTimeLabel,
+): string {
+  const when = source?.at ? ` on ${formatTime(source.at)}` : "";
+  const step =
+    source?.stepKey && Object.prototype.hasOwnProperty.call(STEP_DEFINITIONS, source.stepKey)
+      ? STEP_DEFINITIONS[source.stepKey as StepKey].title
+      : null;
+  switch (source?.kind) {
+    case "typed":
+      return `which ${source.name ?? "a user not on the employee list"} typed${step ? ` on ${step}` : ""}${when}; it still stands`;
+    case "step":
+      return `which ${step ? `the ${step} step` : "another step"} wrote when it was confirmed${when}; nobody typed it, and it still stands`;
+    case "system":
+      return `which Phoenix set automatically${when}; it still stands`;
+    default:
+      return "which differs from the figure confirmed here; who set it is not recorded (the edit history starts 7 October 2026), and it still stands";
+  }
 }
 
 /** When, in Cairo local time — the owner's standing rule for every time shown. */

@@ -218,7 +218,12 @@ export function runAutomatedPayrollModuleDriftTests() {
 
   // ---- The sentence a person reads ------------------------------------------------------------------
   assert.match(describeModuleDrift(merged), /no longer match the Deductions module/);
-  assert.match(describeModuleDrift(merged), /entered by hand, which still stands/);
+  // A differing figure is NOT called hand-entered here: the summary cannot know who set it, and on
+  // 2026-10-07 it named two CRM figures a step confirm had written as somebody's own. Only the cell
+  // history may say "typed" — see describeChargeSource in tests/automated-payroll-cell-history.test.ts.
+  assert.match(describeModuleDrift(merged), /different from the one confirmed, which still stands/);
+  assert.doesNotMatch(describeModuleDrift(merged), /by hand/);
+  assert.doesNotMatch(describeModuleDriftBlock(merged), /by hand/);
   assert.equal(
     describeModuleDrift({ rows: [], staleCharges: 0, overriddenButMoved: 0 }),
     "Every confirmed figure still matches the Deductions module.",
