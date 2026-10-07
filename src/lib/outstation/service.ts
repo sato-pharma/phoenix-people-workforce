@@ -118,7 +118,7 @@ import {
 } from "@/lib/outstation/submit-recipients";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
-import { logError } from "@/lib/observability/log";
+import { logError, logInfo } from "@/lib/observability/log";
 import {
   canViewEmployeeExpenseScope,
   EXPENSE_DECISION_SELECT,
@@ -3331,15 +3331,23 @@ export async function approveOutstationRequestForPayroll(
 export async function releaseOutstationRequestToPayrollIfReady(
   requestId: number,
   access: AccessContext,
-): Promise<{ released: boolean; reason: string }> {
+): Promise<{ released: boolean; reason: string; awaitingDecision?: boolean }> {
   try {
     const request = await getOutstationRequestById(requestId);
     if (!request) return { reason: "The request is no longer available.", released: false };
 
     // Only an ACCEPTED request belongs in payroll. A rejected or still-pending one is not held
     // by the evidence gate — it is held by a decision, and this must never override that.
+    //
+    // `awaitingDecision` marks exactly this case for an automatic caller: the decline is the normal
+    // order of events (evidence captured before a Super Admin accepts), not a stranded claim, so it
+    // must not be logged as an error. The guard itself is unchanged and load-bearing.
     if (!request.status.startsWith("accepted")) {
-      return { reason: `The request is ${request.status}, so it is not waiting on evidence.`, released: false };
+      return {
+        awaitingDecision: true,
+        reason: `The request is ${request.status}, so it is not waiting on evidence.`,
+        released: false,
+      };
     }
 
     // A queued-but-unimported expense row is NOT "already in payroll" — releasing is exactly what
@@ -5083,10 +5091,23 @@ async function runAutomaticOutstationRelease(
 ) {
   const release = await releaseOutstationRequestToPayrollIfReady(request.id, access);
   if (!release.released) {
-    logError("Outstation request stayed held after an automatic release attempt", {
-      error: new Error(release.reason),
-      labels: { event: "outstation_auto_release_held", requestId: String(request.id) },
-    });
+    if (release.awaitingDecision) {
+      // The employee has captured evidence while the request is still `submitted` — i.e. waiting on
+      // a Super Admin to accept or reject it. That is the normal order of events, not a stranded
+      // claim: the release fires correctly once the admin accepts. Logging it at ERROR wrote a
+      // false-positive row into app_error_events / the System Issues dashboard on every such capture
+      // (~14/week in production), burying the genuinely-held case this log exists to surface. INFO
+      // keeps it searchable (event=outstation_auto_release_awaiting_decision) without persisting or
+      // paging.
+      logInfo("Outstation automatic release skipped — request not yet accepted", {
+        labels: { event: "outstation_auto_release_awaiting_decision", requestId: String(request.id) },
+      });
+    } else {
+      logError("Outstation request stayed held after an automatic release attempt", {
+        error: new Error(release.reason),
+        labels: { event: "outstation_auto_release_held", requestId: String(request.id) },
+      });
+    }
   }
   return release;
 }
