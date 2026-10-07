@@ -122,7 +122,47 @@ export function detectCrossCategoryConflict(a: ConflictCandidate, b: ConflictCan
 }
 
 /** connectors/manual.ts's sourceSystem. Its `dates` are a placeholder anchor. */
-const MANUAL_ENTRY_SOURCE_SYSTEM = "manual_hr";
+export const MANUAL_ENTRY_SOURCE_SYSTEM = "manual_hr";
+
+/** One live ledger row, as the connector reads it back to work out which days are already claimed. */
+export type LedgerClaimRow = {
+  employee_hr_id_compact?: string | null;
+  dates: unknown;
+  category?: string | null;
+  locked_at?: string | null;
+  source_system?: string | null;
+};
+
+/**
+ * The `${compactHrId}:${date}` set a batch of live ledger rows already claims — the shared core of
+ * the three connector "already deducted days" reads (vacation, holiday-bridge, dsm-no-record).
+ *
+ * A `manual_hr` row is SKIPPED, exactly as findDayCollisions skips it: connectors/manual.ts anchors
+ * every manual Loan/Other entry to `${monthKey}-01` as a deterministic placeholder meaning "no
+ * specific date", never a detected day. Counting that placeholder as a real claim dropped a genuine
+ * same-category deduction that happened to fall on the real 1st of the month.
+ *
+ * `keepRow` lets a caller drop rows BEFORE their days count — the vacation reconcile passes
+ * `ledgerRowStillClaimsItsDays` so a run does not block itself out of re-producing its own rows.
+ * Pure, so the three reads can be unit-tested without the database.
+ */
+export function collectClaimedLedgerDays(
+  rows: ReadonlyArray<LedgerClaimRow>,
+  keepRow?: (row: LedgerClaimRow) => boolean,
+): Set<string> {
+  const claimed = new Set<string>();
+  for (const row of rows) {
+    const compact = String(row.employee_hr_id_compact ?? "").trim();
+    if (!compact) continue;
+    if (!Array.isArray(row.dates)) continue;
+    if (String(row.source_system ?? "").trim() === MANUAL_ENTRY_SOURCE_SYSTEM) continue;
+    if (keepRow && !keepRow(row)) continue;
+    for (const date of row.dates as unknown[]) {
+      if (typeof date === "string" && date.trim()) claimed.add(`${compact}:${date.trim()}`);
+    }
+  }
+  return claimed;
+}
 
 export type DeductionsDayCollision = {
   employeeHrId: string;

@@ -389,6 +389,8 @@ import { runDeductionsReadGateTests } from "./deductions-read-gate.test.ts";
 import { runDeductionsDisputeThreadsTests } from "./deductions-dispute-threads.test.ts";
 import { runDeductionsPerLinePushTests } from "./deductions-per-line-push.test.ts";
 import { runDeductionsSupersedeCarriesDecisionTests } from "./deductions-supersede-carries-decision.test.ts";
+import { runDeductionsManualDayLedgerSkipTests } from "./deductions-manual-day-ledger-skip.test.ts";
+import { runDeductionsCrmSuspectDateWeightingTests } from "./deductions-crm-suspect-date-weighting.test.ts";
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
@@ -3345,7 +3347,9 @@ await runTest("deductions module portal read path (single-source publications: l
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
 await runTest("deductions dispute inbox (employee comments group into reachable, deep-linked threads)", runDeductionsDisputeThreadsTests);
-await runTest("deductions supersede carries the decision (identity survives a changed day set; a grown day set resets to Pending)", runDeductionsSupersedeCarriesDecisionTests);
+await runTest("deductions supersede carries the decision (identity survives a changed day set; a grown day set resets to Pending; a narrowed or emptied carry publishes its subset, never the full replacement)", runDeductionsSupersedeCarriesDecisionTests);
+await runTest("deductions: a manual_hr placeholder day is skipped in the already-claimed ledger reads, so a genuine deduction on the real 1st survives", runDeductionsManualDayLedgerSkipTests);
+await runTest("deductions: suspect-date exclusion keeps the Thursday half-day weighting, so a surviving Thursday is not re-priced as a full day", runDeductionsCrmSuspectDateWeightingTests);
 await runTest(
   "deductions module applied days (per-day selection drives the quantity, the amount, publish, and the collision gate)",
   runDeductionsModuleAppliedDaysTests,

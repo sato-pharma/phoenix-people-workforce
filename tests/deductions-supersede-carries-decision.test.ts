@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { resolveCarriedDecision } from "../src/lib/deductions/calculations.ts";
+import {
+  carriedAppliedFigures,
+  resolveCarriedDecision,
+  resolvePublishedAppliedAmount,
+  resolvePublishedAppliedValue,
+} from "../src/lib/deductions/calculations.ts";
 import {
   buildDeductionsCandidateKey,
   deductionsCandidateIdentityKey,
@@ -174,6 +179,132 @@ export function runDeductionsSupersedeCarriesDecisionTests() {
       service,
       /replacementCandidateId,\n\s*\}\);/,
       "reconcileCandidateDrafts must pass replacementCandidateId — the parameter supersedeCandidate already accepts and writes",
+    );
+  }
+
+  // ── 9. A carried NARROWED or EMPTIED decision publishes its subset, not the full replacement ──
+  // The carry write used to blank applied_value/applied_amount in every case. The publish resolvers
+  // fall back to the candidate's full rawValue/estimatedAmount when those are null, so a narrowed
+  // approval republished at FULL and a zeroed one re-armed to a full charge. carriedAppliedFigures
+  // now pins both figures to the carried selection, scaled off the replacement's own estimate.
+  {
+    // Replacement detects 3 days at 300.00 total — 100.00 per day.
+    const replacement = { rawValue: 3, estimatedAmount: 300 };
+    // The replacement's full day set — the superset every narrowed selection is taken from, and the
+    // denominator for the retained fraction. rawValue (3) equals its length here, as it does for
+    // every COUNT-based (CRM) candidate.
+    const replacementDates = ["2026-07-06", "2026-07-07", "2026-07-08"];
+
+    // Narrowed to one day: must publish 1 day / 100.00, never 3 / 300.00.
+    const narrowed = carriedAppliedFigures({
+      appliedDates: ["2026-07-06"],
+      replacementDates,
+      replacementEstimatedAmount: replacement.estimatedAmount,
+      replacementRawValue: replacement.rawValue,
+    });
+    assert.equal(narrowed.appliedValue, 1);
+    assert.equal(narrowed.appliedAmount, 100);
+    assert.equal(
+      resolvePublishedAppliedValue({ rawValue: replacement.rawValue, decision: { appliedValue: narrowed.appliedValue } }),
+      1,
+      "a narrowed carried decision must publish the narrowed day count, not the replacement's full 3",
+    );
+    assert.equal(
+      resolvePublishedAppliedAmount({ estimatedAmount: replacement.estimatedAmount, decision: { appliedAmount: narrowed.appliedAmount } }),
+      100,
+      "…and its narrowed amount, not the replacement's full 300.00",
+    );
+
+    // Emptied (reviewer cleared every day): must publish 0 / 0.00, never re-arm to full.
+    const emptied = carriedAppliedFigures({
+      appliedDates: [],
+      replacementDates,
+      replacementEstimatedAmount: replacement.estimatedAmount,
+      replacementRawValue: replacement.rawValue,
+    });
+    assert.equal(emptied.appliedValue, 0);
+    assert.equal(emptied.appliedAmount, 0, "0 applied days scales to 0.00, never null");
+    assert.equal(
+      resolvePublishedAppliedValue({ rawValue: replacement.rawValue, decision: { appliedValue: emptied.appliedValue } }),
+      0,
+      "a zeroed carried decision must publish 0 days — not re-arm to the replacement's full 3",
+    );
+    assert.equal(
+      resolvePublishedAppliedAmount({ estimatedAmount: replacement.estimatedAmount, decision: { appliedAmount: emptied.appliedAmount } }),
+      0,
+      "…and 0.00, not the replacement's full 300.00",
+    );
+
+    // The seam: an emptied carry whose replacement detected ZERO days. scaleDeductionAmountToDays
+    // returns null for rawValue 0, which would fall through to the publish estimate fallback and
+    // re-arm the charge — so carriedAppliedFigures pins 0.00 explicitly for any emptied selection.
+    const emptiedZeroReplacement = carriedAppliedFigures({
+      appliedDates: [],
+      replacementDates: [],
+      replacementEstimatedAmount: 300,
+      replacementRawValue: 0,
+    });
+    assert.equal(emptiedZeroReplacement.appliedValue, 0);
+    assert.equal(
+      emptiedZeroReplacement.appliedAmount,
+      0,
+      "an emptied decision stays 0.00 even when the replacement detected 0 days — never null, never the estimate",
+    );
+
+    // Never narrowed (null): the figures STAY null so publish re-derives the replacement's full
+    // value/amount — the one case where the full figure is correct.
+    const notNarrowed = carriedAppliedFigures({
+      appliedDates: null,
+      replacementDates,
+      replacementEstimatedAmount: replacement.estimatedAmount,
+      replacementRawValue: replacement.rawValue,
+    });
+    assert.equal(notNarrowed.appliedValue, null);
+    assert.equal(notNarrowed.appliedAmount, null);
+
+    // ── A FRACTIONAL-DAY replacement carries its WEIGHT, not its date count ──
+    // The denominator bug: rawValue is NOT a date count for every category. A fingerprint half-day
+    // is rawValue 0.5 on a SINGLE date (fingerprint.ts sets rawValue = deductionDays, which can be
+    // 0.5; its `dates` is [one dateIso]); a vacation candidate's day-weight is fractional too.
+    // Retaining that one date is retaining the whole 0.5-day finding — so it must publish 0.5 days
+    // at the half-day's own amount, NEVER (estimate / 0.5) × 1 date = a DOUBLED full-day charge.
+    // Before the fix appliedValue was the date COUNT (1) and the amount scaled to 300.00.
+    const halfDay = carriedAppliedFigures({
+      appliedDates: ["2026-07-02"],
+      replacementDates: ["2026-07-02"],
+      replacementEstimatedAmount: 150,
+      replacementRawValue: 0.5,
+    });
+    assert.equal(halfDay.appliedValue, 0.5, "a retained half-day carries 0.5 days, not the 1 its date count would give");
+    assert.equal(halfDay.appliedAmount, 150, "…and its own half-day amount — never doubled to a full day (300.00)");
+    assert.equal(
+      resolvePublishedAppliedValue({ rawValue: 0.5, decision: { appliedValue: halfDay.appliedValue } }),
+      0.5,
+      "the half-day publishes 0.5, not re-armed to a full day",
+    );
+    assert.equal(
+      resolvePublishedAppliedAmount({ estimatedAmount: 150, decision: { appliedAmount: halfDay.appliedAmount } }),
+      150,
+      "…at the half-day amount, never the doubled 300.00",
+    );
+    assert.equal(
+      resolvePublishedAppliedValue({ rawValue: replacement.rawValue, decision: { appliedValue: notNarrowed.appliedValue } }),
+      3,
+      "a never-narrowed decision correctly re-derives the replacement's full day count",
+    );
+    assert.equal(
+      resolvePublishedAppliedAmount({ estimatedAmount: replacement.estimatedAmount, decision: { appliedAmount: notNarrowed.appliedAmount } }),
+      300,
+      "…and its full amount",
+    );
+
+    // The production carry write must actually use the helper, or the pure guarantee above never
+    // reaches the database.
+    const serviceSource = readFileSync(new URL("../src/lib/deductions/service.ts", import.meta.url), "utf8");
+    assert.match(
+      serviceSource,
+      /carriedAppliedFigures\(\{/,
+      "reconcileCandidateDrafts must write applied_value/applied_amount through carriedAppliedFigures, not blank them",
     );
   }
 }

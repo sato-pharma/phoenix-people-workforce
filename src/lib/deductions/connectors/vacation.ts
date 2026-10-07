@@ -19,6 +19,7 @@ import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { assertBaseSalaryMapLoaded, assertSourceScanned } from "./health.ts";
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
+import { collectClaimedLedgerDays, type LedgerClaimRow } from "../conflict.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory } from "../types.ts";
 
 type VacationRequestRow = {
@@ -300,33 +301,19 @@ async function loadAlreadyDeductedDays(input: {
   monthKey: string;
   reconciledCategory: DeductionsCategory;
 }): Promise<Set<string>> {
-  const claimed = new Set<string>();
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates, category, locked_at")
+    .select("employee_hr_id_compact, dates, category, locked_at, source_system")
     .eq("month_key", input.monthKey)
     .is("superseded_at", null);
   // Fail closed. An unreadable ledger is not an empty one, and continuing would
   // recreate exactly the duplicates this guard exists to stop.
   if (error) throw new Error(`Vacation connector: failed to load already-deducted days: ${error.message}`);
-  const rows = (data ?? []) as Array<{
-    employee_hr_id_compact: string;
-    dates: unknown;
-    category: string | null;
-    locked_at: string | null;
-  }>;
-  for (const row of rows) {
-    const compact = String(row.employee_hr_id_compact ?? "");
-    if (!compact) continue;
-    if (!Array.isArray(row.dates)) continue;
-    if (!ledgerRowStillClaimsItsDays({ category: row.category, lockedAt: row.locked_at }, input.reconciledCategory)) {
-      continue;
-    }
-    for (const date of row.dates as unknown[]) {
-      if (typeof date === "string" && date.trim()) claimed.add(`${compact}:${date.trim()}`);
-    }
-  }
-  return claimed;
+  // Skips a manual_hr placeholder row (its date is `${monthKey}-01`, not a detected day) and this
+  // run's OWN category unless locked — see collectClaimedLedgerDays / ledgerRowStillClaimsItsDays.
+  return collectClaimedLedgerDays((data ?? []) as LedgerClaimRow[], (row) =>
+    ledgerRowStillClaimsItsDays({ category: row.category ?? null, lockedAt: row.locked_at ?? null }, input.reconciledCategory),
+  );
 }
 
 async function collectVacationCandidatesByReason(input: {

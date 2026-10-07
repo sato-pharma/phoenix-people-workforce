@@ -352,6 +352,60 @@ export function scaleDeductionAmountToDays(input: {
 }
 
 /**
+ * The `applied_value` / `applied_amount` a carried decision must write onto its REPLACEMENT
+ * candidate when a re-collect supersedes a decided one.
+ *
+ * `resolveCarriedDecision` re-expresses the reviewer's day selection against the replacement's days,
+ * and `appliedDates` then means one of three things:
+ *   - `null`  — never narrowed. Keep both figures null so the publish resolvers re-derive the
+ *               replacement's FULL value/amount, which is exactly right.
+ *   - `[...]` — a NARROWED subset. Pin the figures to that subset, or the resolvers'
+ *               `?? rawValue` / `?? estimatedAmount` fallback republishes the full replacement — the
+ *               defect this closes (a narrowed approval re-charged at full, a zeroed one re-armed).
+ *   - `[]`    — the reviewer cleared every day. appliedValue 0 and appliedAmount 0.00 EXPLICITLY, so
+ *               a replacement with no detected days (rawValue 0, where scale would return null and the
+ *               publish resolvers fall back to the estimate) cannot re-arm the deliberate zero to full.
+ *
+ * The amount is scaled from the REPLACEMENT's own estimate (not the old one), the same figure the
+ * reviewer now sees on screen — see scaleDeductionAmountToDays.
+ */
+export function carriedAppliedFigures(input: {
+  appliedDates: readonly string[] | null;
+  /** The REPLACEMENT's full detected day set — the superset `appliedDates` was narrowed from.
+   * Its LENGTH is the only honest denominator for the retained fraction, because `rawValue` is NOT
+   * a date count for every category: a fingerprint half-day is `rawValue` 0.5 on a SINGLE date
+   * (fingerprint.ts), and a vacation candidate's day-weight can be fractional too. Dividing the
+   * retained date COUNT by such a `rawValue` doubled a half-day charge on the carry path — a
+   * retained single 0.5-day date scaled `(est / 0.5) × 1 = 2 × est`. */
+  replacementDates: readonly string[];
+  replacementEstimatedAmount: number | null | undefined;
+  replacementRawValue: number;
+}): { appliedValue: number | null; appliedAmount: number | null } {
+  if (input.appliedDates == null) return { appliedValue: null, appliedAmount: null };
+  const retainedDates = input.appliedDates.length;
+  // A cleared decision charges exactly 0.00 regardless of the replacement's own figures — never let a
+  // null from scaleDeductionAmountToDays (replacement rawValue 0) fall through to the publish
+  // resolvers' estimate fallback and re-arm a deliberately-zeroed decision to full.
+  if (retainedDates === 0) return { appliedValue: 0, appliedAmount: 0 };
+  // The carried quantity is the retained FRACTION of the replacement's finding — the retained date
+  // count over the replacement's total dates — applied to the replacement's own day-VALUE. For a
+  // count-based candidate (rawValue === dates.length, every CRM row) this is unchanged. For a
+  // fractional one it carries the real weight: a single retained 0.5-day date yields appliedValue
+  // 0.5, not 1. Multiply before dividing so the all-retained case lands EXACTLY on rawValue and
+  // scaleDeductionAmountToDays's exact passthrough returns the estimate untouched — no rounding
+  // piaster, and no doubled half-day.
+  const totalDates = input.replacementDates.length;
+  const appliedValue =
+    totalDates > 0 ? (input.replacementRawValue * retainedDates) / totalDates : input.replacementRawValue;
+  const appliedAmount = scaleDeductionAmountToDays({
+    estimatedAmount: input.replacementEstimatedAmount,
+    rawValue: input.replacementRawValue,
+    appliedDays: appliedValue,
+  });
+  return { appliedValue, appliedAmount };
+}
+
+/**
  * Resolves a day-based deduction candidate's payroll amount: the decided
  * amount if one exists (`appliedAmount`, set on approval), otherwise an
  * ESTIMATE from base salary (base ÷ actual days in month × days) using
