@@ -5,9 +5,12 @@
  * integrity board's flags for the completed Sat–Wed week, to the Super Admin and the SFE Managers,
  * in-app and Telegram.
  *
- * It judges nothing of its own — see the rules file. It reads `phoenix_crm_location_integrity`
- * through the board's own reader (`loadIntegrityCasesForWindow`), the single reader of that table,
- * and summarises the week. No detector re-runs here and no threshold lives here.
+ * It judges nothing of its own — see the rules file. It never reads the evidence table: the week
+ * arrives from the board's own reader (`loadIntegrityCasesForWindow`), which stays the SINGLE reader
+ * of it, and this file only summarises what comes back. No detector re-runs here and no threshold
+ * lives here. The table is deliberately not spelled out anywhere in this file — check 5 of
+ * `tests/phoenix-crm-blind-half.test.ts` reads raw source, so naming it here would declare a read
+ * that does not happen.
  *
  * ## Two tiers, one read
  *
