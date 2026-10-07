@@ -110,6 +110,28 @@ export function runNotificationAutoArchiveTests() {
     assert.equal(candidates.vacation.length + candidates.excuse.length + candidates.plan.length, 0, "a Phoenix CRM notice never lands in another domain");
   }
 
+  {
+    // 🔴 THE WEEKLY PLAN NOTICE (owner, 2026-10-07). "Weekly plan to review from <rep>" is the
+    // notice Phoenix CRM sends most, and nothing withdrew it: measured on production that night,
+    // all four of one district manager's were dead, two of them the SAME rep for the SAME week —
+    // the first send, and the re-send after his own return — with identical titles. It is keyed by
+    // the PLAN id, and it is its OWN domain: `phoenixCrm` is matched against off-plan VISIT ids, so
+    // a plan id landing there would be archived the instant it was read.
+    const candidates = classifyActionableApprovalCandidates([
+      { id: "p1", module: "phoenix_crm", event_type: "plan_waiting", metadata: { planId: "PLAN-A" } },
+      // The REP's own copies of the same week are his record of what happened, never approver notices.
+      { id: "p2", module: "phoenix_crm", event_type: "plan_approved", metadata: { planId: "PLAN-A" } },
+      { id: "p3", module: "phoenix_crm", event_type: "plan_returned", metadata: { planId: "PLAN-A" } },
+      // The MONTH is a different record with a different id — it must not ride on the week's rule.
+      { id: "p4", module: "phoenix_crm", event_type: "monthly_plan_waiting", metadata: { planId: "PLAN-A" } },
+      // A row written before the plan id travelled in the metadata is left visible, never guessed at.
+      { id: "p5", module: "phoenix_crm", event_type: "plan_waiting", metadata: {} },
+    ]);
+    assert.deepEqual(candidates.phoenixCrmPlan, [{ id: "p1", requestId: "PLAN-A" }], "only the reviewer's waiting notice, keyed by its plan id");
+    assert.equal(candidates.phoenixCrm.length, 0, "a weekly-plan notice never lands in the off-plan VISIT domain");
+    assert.equal(candidates.plan.length, 0, "nor in the weekly_plans module's own domain, which is a different workflow");
+  }
+
   // --- API + UI + workflow wiring: static source assertions (matches this repo's
   // approvals-hub.test.ts convention for locking in cross-file wiring without a live server) ---
 
@@ -125,6 +147,14 @@ export function runNotificationAutoArchiveTests() {
   // The visit id has to be ON the notice, or the classifier above can never key it.
   const crmNotices = readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8");
   assert.match(crmNotices, /metadata: \{ visitId: notice\.visitId \},/, "the waiting notice carries its visit id");
+  // The same three pieces for the weekly plan: the rule the bell asks, the allowlist entry, and the
+  // plan id ON the notice. `recordId` is NOT persisted — notification_events has no column for it —
+  // so without the metadata copy the bell cannot tell which week a notice is about.
+  assert.match(crmAwaiting, /canReviewTerritory\(viewer, seat, row\.is_test === true\)/, "the bell asks the module's own approve rule, never a second copy");
+  assert.match(crmAwaiting, /\.eq\("status", "submitted"\)/, "a week that is approved, returned or back in draft is awaiting nobody");
+  assert.match(inAppSource, /"phoenix_crm:plan_waiting": \{ domain: "phoenixCrmPlan", idField: "planId" \}/, "the weekly plan review is in the actionable allowlist");
+  assert.match(inAppSource, /const awaitingIds = await phoenixCrmPlanIdsAwaitingDecision\(access\);/, "and the bell asks Phoenix CRM which weeks are still his");
+  assert.match(crmNotices, /metadata: \{ planId: notice\.planId \},/, "the plan-to-review notice carries its plan id");
   assert.match(crmNotices, /metadata: \{ \.\.\.\(delivery\.metadata \?\? \{\}\), idempotencyKey: delivery\.idempotencyKey/, "and the deliverer passes it through");
   assert.match(inAppSource, /export async function archiveAllInAppNotifications/, "archiveAllInAppNotifications must be exported for the Clear All route");
   assert.match(inAppSource, /export async function archiveInAppNotification/, "archiveInAppNotification must be exported");

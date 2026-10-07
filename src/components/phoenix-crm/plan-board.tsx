@@ -87,7 +87,7 @@ import { monthKeyOf } from "@/lib/phoenix-crm/calendar";
 import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { setPlannedStart, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerGrades, plannerSpecialities, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
-import { isPlanEditable, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
+import { isPlanEditable, planTurnSentence, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import { monthPlacements, suggestDay } from "@/lib/phoenix-crm/plan-suggest";
 import {
   addCopiedItems,
@@ -1231,6 +1231,22 @@ export function PlanBoard({
       />
     ) : null;
 
+  // 🔴 WHOSE TURN THE WEEK IS (owner, 2026-10-07: "no buttons, but say whose turn it is"). A week this
+  // viewer can neither approve nor return draws no decision block at all, and the page used to end
+  // there — a week he had just returned read as a screen with the buttons missing. The rule says who
+  // holds it in one line; his own board already says it in its send step, so it is the Team side only.
+  const turnSentence = selected
+    ? planTurnSentence({
+        status: selected.week.status,
+        returnedDay: selected.week.returnedDay,
+        deciderName: selected.week.plan?.decidedByName ?? null,
+        decidedStamp: selected.week.plan?.decidedAt ? cairoStamp(selected.week.plan.decidedAt) : null,
+        repName: view.territory.repName,
+        reviewerName: view.territory.reviewerName,
+        dueLabel: selected.week.dueOnLabel,
+      })
+    : null;
+
   // The week panel as an ELEMENT built once per render — never a function called during render, which
   // the React compiler reads as running every handler inside it then (react-hooks/refs).
   const panelSection: "days" | "day" | "send" | undefined = repBoard ? (planStep === 2 ? "days" : planStep === 3 ? "day" : "send") : undefined;
@@ -1272,6 +1288,7 @@ export function PlanBoard({
       reviewerSentence={reviewerSentence(view)}
       seatId={seatId}
       section={panelSection}
+      turnSentence={repBoard ? null : turnSentence}
       selectedDay={selectedDay}
       dayFocus={repBoard && panelSection === "day" ? daySession : undefined}
       onFillDay={() => fillDay(selectedDay.date, true)}

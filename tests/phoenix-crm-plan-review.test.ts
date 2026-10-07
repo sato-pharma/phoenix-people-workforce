@@ -26,6 +26,7 @@ import {
   onlyReturnedDayEditable,
   planDayLabel,
   planDayStatus,
+  planTurnSentence,
   repChangeableDays,
   repWeekState,
   standingReturnedDay,
@@ -618,9 +619,77 @@ export function runPhoenixCrmPlanReviewTests(): void {
     assert.ok(day.includes("only={reviewList}"), "the read-only day shows the one list the reviewer's step is on");
   }
 
+  runWhoseTurnTests();
+
   runStillPlannedTests();
 
   console.log("phoenix-crm plan review: OK");
+}
+
+// ── 6. WHOSE TURN IT IS (owner ruling, 2026-10-07) ──────────────────────────────────────────────────
+//
+// "No buttons, but SAY whose turn it is." A week this viewer can neither approve nor return draws no
+// decision block at all — PlanDecision returns null — so the district manager who had just returned
+// 10 October read a screen with the buttons missing and reported the plan screen as broken. The rule
+// stays exactly as it was (the rep answers a return first); the page now names who holds the week.
+function runWhoseTurnTests(): void {
+  const base = {
+    deciderName: "Ahmed Samir",
+    decidedStamp: "7 Oct 2026, 8:36 PM",
+    repName: "Mostafa Galal",
+    reviewerName: "Ahmed Samir",
+    dueLabel: "Thursday 8 October",
+  };
+
+  // A week returned whole, and the one-day return: both say the rep holds it and what brings it back.
+  const whole = planTurnSentence({ ...base, status: "returned", returnedDay: null });
+  assert.equal(
+    whole,
+    "This week went back to Mostafa Galal 7 Oct 2026, 8:36 PM by Ahmed Samir. It is with Mostafa Galal now — it comes back here for review when they send it again.",
+  );
+  const oneDay = planTurnSentence({ ...base, status: "returned", returnedDay: "2026-10-10" });
+  assert.ok(oneDay.startsWith(`${planDayLabel("2026-10-10")} went back to Mostafa Galal`), "the one-day return names its day, never the whole week");
+  assert.ok(oneDay.includes("when they send it again"), "and still says what brings it back");
+
+  // The other three states, and the one thing the sentence must never do: claim nothing is waiting on a
+  // week that is still with someone.
+  assert.equal(planTurnSentence({ ...base, status: "submitted", returnedDay: null }), "Sent for review. Ahmed Samir approves it.");
+  assert.equal(
+    planTurnSentence({ ...base, reviewerName: null, status: "submitted", returnedDay: null }),
+    "Sent for review. The manager above this territory approves it.",
+  );
+  assert.equal(planTurnSentence({ ...base, status: "approved", returnedDay: null }), "Approved 7 Oct 2026, 8:36 PM by Ahmed Samir. Nothing is waiting on this week.");
+  assert.equal(planTurnSentence({ ...base, status: null, returnedDay: null }), "Not sent yet. Mostafa Galal sends it by Thursday 8 October.");
+  assert.equal(planTurnSentence({ ...base, status: "draft", returnedDay: null }), "Not sent yet. Mostafa Galal sends it by Thursday 8 October.");
+  for (const status of ["returned", "submitted", "draft", null] as const) {
+    assert.doesNotMatch(
+      planTurnSentence({ ...base, status, returnedDay: null }),
+      /Nothing is waiting/,
+      `a ${status ?? "never sent"} week never reads as finished`,
+    );
+  }
+
+  // A vacant seat and a plan nobody has decided yet: the sentence still reads as a sentence.
+  const vacant = planTurnSentence({ ...base, deciderName: null, decidedStamp: null, repName: null, status: "returned", returnedDay: null });
+  assert.equal(vacant, "This week went back to the rep. It is with the rep now — it comes back here for review when they send it again.");
+
+  // It is drawn exactly where the buttons would have been, and only when there are none.
+  const panel = source("src/components/phoenix-crm/plan-week-panel.tsx");
+  assert.match(
+    panel,
+    /\{showClose && turnSentence && !week\.canApprove && !week\.canReturn \? \(\s*<CrmBlock className="border-t border-slate-100" title="Where this week stands">/,
+    "the sentence shows only when this viewer has no decision to make",
+  );
+  assert.ok(
+    panel.indexOf("turnSentence && !week.canApprove") < panel.indexOf("<PlanDecision"),
+    "and sits where PlanDecision would have been",
+  );
+
+  // The Team side only: the rep's own board says it in its send step already.
+  const board = source("src/components/phoenix-crm/plan-board.tsx");
+  assert.match(board, /turnSentence=\{repBoard \? null : turnSentence\}/, "his own board is left alone");
+  assert.match(board, /status: selected\.week\.status,\s*returnedDay: selected\.week\.returnedDay,/, "the sentence reads the week's STANDING returned day");
+  assert.match(board, /decidedStamp: selected\.week\.plan\?\.decidedAt \? cairoStamp\(selected\.week\.plan\.decidedAt\) : null,/, "the stamp is Cairo local, like every other stamp on the board");
 }
 
 // ── 5. STILL PLANNED (owner ruling, 2026-10-02) ─────────────────────────────────────────────────────

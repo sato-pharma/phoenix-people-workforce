@@ -775,6 +775,11 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       recordId: notice.planId,
       idempotencyKey: `phoenix_crm:plan:${notice.planId}:v${notice.version}:submitted`,
       subjectHrId: notice.submitterHrId,
+      // 🔴 `recordId` IS NOT PERSISTED ON THE ROW — it steers governance and the audit line, and
+      // `notification_events` has no column for it. So the plan id has to travel in the METADATA or
+      // the bell cannot tell which week this notice is about, and cannot withdraw it once the week is
+      // decided (owner, 2026-10-07). The off-plan notice carries `visitId` for exactly this reason.
+      metadata: { planId: notice.planId },
     };
   }
 

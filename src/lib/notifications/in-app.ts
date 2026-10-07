@@ -11,7 +11,7 @@ import { canViewerSeeNotification, isPersonalBellCategory, PERSONAL_BELL_CATEGOR
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
 // A LEAF of the Phoenix CRM server tree, chosen deliberately: it imports only access, db and the
 // pure rules, so the bell never ends up in a cycle with that module's own notifications file.
-import { phoenixCrmVisitIdsAwaitingDecision } from "@/lib/phoenix-crm/server/awaiting-decisions";
+import { phoenixCrmPlanIdsAwaitingDecision, phoenixCrmVisitIdsAwaitingDecision } from "@/lib/phoenix-crm/server/awaiting-decisions";
 import { logError } from "@/lib/observability/log";
 import { fetchVacationNotificationEnrichments } from "@/lib/vacation/notification-enrichment";
 import {
@@ -110,7 +110,7 @@ export function testNoticeVisibleToViewer(viewerTestLoginId: string | null, row:
 // below using a field already present in that event's own metadata (never guessed/inferred).
 const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<
   string,
-  { domain: "excuse" | "phoenixCrm" | "plan" | "vacation"; idField: "planId" | "requestId" | "visitId" }
+  { domain: "excuse" | "phoenixCrm" | "phoenixCrmPlan" | "plan" | "vacation"; idField: "planId" | "requestId" | "visitId" }
 > = {
   "excuse:request_resubmitted": { domain: "excuse", idField: "requestId" },
   "excuse:request_submitted": { domain: "excuse", idField: "requestId" },
@@ -137,6 +137,12 @@ const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<
   // the moment he decides it, it moves on to SFE, or the visit is removed. There is no awareness
   // copy to tell apart: `unplanned_visit_waiting` goes to the one reviewer and nobody else.
   "phoenix_crm:unplanned_visit_waiting": { domain: "phoenixCrm", idField: "visitId" },
+  // 🔴 THE REVIEWING MANAGER'S "Weekly plan to review from <rep>" (owner, 2026-10-07). It is the
+  // notice this module sends most — thirteen in one evening — and until now nothing withdrew it, so
+  // his bell kept every week he had already approved or returned, including TWO copies of one week
+  // when the rep re-sent it after a return. Addressed to the territory's reviewer and to nobody
+  // else, like the off-plan one above, so there is no awareness copy to tell apart.
+  "phoenix_crm:plan_waiting": { domain: "phoenixCrmPlan", idField: "planId" },
 };
 
 const VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS = "Pending your approval";
@@ -164,7 +170,7 @@ const VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS = "Pending your approval";
 const NOTIFICATION_STATE_CONFLICT_TARGET = "notification_event_id,hr_id";
 
 export type ApprovalCandidate = { id: string; requestId: string };
-export type ApprovalCandidatesByDomain = Record<"excuse" | "phoenixCrm" | "plan" | "vacation", ApprovalCandidate[]>;
+export type ApprovalCandidatesByDomain = Record<"excuse" | "phoenixCrm" | "phoenixCrmPlan" | "plan" | "vacation", ApprovalCandidate[]>;
 
 /**
  * Pure classification: which raw notification rows are approver "please decide" candidates
@@ -172,7 +178,7 @@ export type ApprovalCandidatesByDomain = Record<"excuse" | "phoenixCrm" | "plan"
  * likely to hide the wrong thing if wrong — can be unit-tested without a database.
  */
 export function classifyActionableApprovalCandidates(rows: InAppNotificationEventRow[]): ApprovalCandidatesByDomain {
-  const candidatesByDomain: ApprovalCandidatesByDomain = { excuse: [], phoenixCrm: [], plan: [], vacation: [] };
+  const candidatesByDomain: ApprovalCandidatesByDomain = { excuse: [], phoenixCrm: [], phoenixCrmPlan: [], plan: [], vacation: [] };
 
   for (const row of rows) {
     const key = `${row.module ?? ""}:${row.event_type ?? ""}`;
@@ -247,6 +253,17 @@ async function archiveStaleApprovalNotifications(access: AccessContext, rows: In
       // fail-open — leave the off-plan candidates visible. A viewer who is not a Phoenix CRM user
       // at all lands here too (resolvePhoenixCrmViewer throws), and keeping an unreadable notice is
       // the harmless half of that trade.
+    }
+  }
+
+  if (candidatesByDomain.phoenixCrmPlan.length > 0) {
+    try {
+      // "Still his" again: a week he approved, a week he returned, and a week the rep took back are
+      // all gone from this set, and the next send writes its own notice.
+      const awaitingIds = await phoenixCrmPlanIdsAwaitingDecision(access);
+      for (const candidate of candidatesByDomain.phoenixCrmPlan) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+    } catch {
+      // fail-open — leave the weekly-plan candidates visible, as the off-plan ones above are.
     }
   }
 
