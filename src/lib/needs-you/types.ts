@@ -70,6 +70,12 @@ export const needsYouSourceIds = [
   // ages out of sight — five direct orders sat 48–52 days this way before a hand sweep found them.
   // Produced by `src/lib/approvals/orphaned-requests.ts`.
   "orphaned-requests",
+  // Added 2026-10-07. A Private Calendar review request an employee raised on one of his own days —
+  // Super Admin only end to end, so nobody else can clear it for him. It reached him exactly once,
+  // on the day it was submitted, and then only in the notification: the Disputes Inbox is a tab he
+  // has to remember to open. One sat pending for two days before this row existed, which is the shape
+  // this board exists to stop. Produced by `src/lib/private-calendar/disputes.ts`.
+  "calendar-review-requests",
 ] as const;
 
 export type NeedsYouSourceId = (typeof needsYouSourceIds)[number];
@@ -100,6 +106,7 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "salary-flags": "Unresolved salary flags",
   "phoenix-crm-decisions": "Phoenix CRM decisions",
   "orphaned-requests": "Requests stranded on someone who left",
+  "calendar-review-requests": "Calendar review requests",
 };
 
 /**
@@ -139,6 +146,9 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // adapter). This source-level default is only the fallback for the amber "could not be read" row
   // and the every-source band label; Direct Orders is where today's real orphans live.
   "orphaned-requests": { href: "/admin/direct-orders", screen: "Direct Orders" },
+  // The hub's Disputes Inbox tab, deep-linked — the same destination the submitted-and-replied
+  // notifications carry, so the board and the notice land on the same screen.
+  "calendar-review-requests": { href: "/admin/approvals-hub?tab=disputes", screen: "Disputes Inbox" },
 };
 
 /**

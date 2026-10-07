@@ -2285,6 +2285,7 @@ import { runWhatsAppTemplateManageGateTests } from "./whatsapp-template-manage-g
 import { runScreeningDecideGateTests } from "./screening-decide-gate.test.ts";
 import { runCandidateCommentLinksAndInAppTests } from "./candidate-comment-links-and-in-app.test.ts";
 import { runRecordConversationAnyStatusTests } from "./record-conversation-any-status.test.ts";
+import { runPrivateCalendarReviewRequestThreadTests } from "./private-calendar-review-request-thread.test.ts";
 import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy-redirect.test.ts";
 import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
@@ -8821,6 +8822,11 @@ await runTest(
 await runTest(
   "a comment on a candidate: its link names the candidate (?candidate=), the portal My Candidates page forwards an admin-shell viewer to the candidate's admin page instead of /overview, and the Super Admin is told IN THE APP only (never added to the email's To or CC, and HR Advisory is not on the copy), except for a comment they wrote themselves",
   runCandidateCommentLinksAndInAppTests,
+);
+
+await runTest(
+  "a Private Calendar review request is a two-way conversation: only the employee who raised it or a Super Admin may read or reply (attendance:read is not enough), every reply is delivered in-app, by email, on Telegram and by push through the one shared notifier with the message id as its per-message key, the opening claim is never copied into the replies table, and both the employee's calendar and the reviewer's Disputes Inbox mount the same thread",
+  runPrivateCalendarReviewRequestThreadTests,
 );
 
 await runTest(

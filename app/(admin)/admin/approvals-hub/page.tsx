@@ -16,6 +16,7 @@ import {
   type DecidedForMeItem,
 } from "@/lib/action-center/decided-for-me";
 import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
+import { attachDisputeMessages } from "@/lib/private-calendar/dispute-messages";
 
 export const dynamic = "force-dynamic";
 
@@ -67,13 +68,17 @@ export default async function AdminApprovalsHubPage({
     Awaited<ReturnType<typeof getAwaitingMyActionItems>>,
     MyRequestItem[],
     HistoricalApprovalItem[],
-    Awaited<ReturnType<typeof listPendingPrivateCalendarDataDisputes>> | null,
+    Awaited<ReturnType<typeof attachDisputeMessages>> | null,
     DecidedForMeItem[] | null,
   ] = await Promise.all([
     getAwaitingMyActionItems(access, "admin"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
-    access.role === "Super Admin" ? listPendingPrivateCalendarDataDisputes(access).catch(() => []) : Promise.resolve(null),
+    // Each pending request carries its own reply thread, so the reviewer can read the conversation
+    // and answer it in the tab rather than deciding on the opening claim alone.
+    access.role === "Super Admin"
+      ? listPendingPrivateCalendarDataDisputes(access).then(attachDisputeMessages).catch(() => [])
+      : Promise.resolve(null),
     // Still never fatal to the page — but null, not []. An empty array claims "nothing was
     // decided for you", which is a confident lie when the lookup actually failed; null lets the
     // tab say "could not load" instead.
@@ -112,6 +117,7 @@ export default async function AdminApprovalsHubPage({
       historicalItems={historicalItems}
       initialModule={initialModule}
       initialId={initialId}
+      callerHrId={access.hrId}
       callerRole={access.role}
       initialTab={initialTab}
       disputes={disputes}

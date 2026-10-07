@@ -109,6 +109,36 @@ export type PrivateCalendarTeamSummary = PrivateCalendarEmployeeOption & {
   visitCounts: VisitCountSplit;
 };
 
+/** One reply on a review request. The author's NAME, never his id — the owner's standing rule. */
+export type PrivateCalendarReviewMessage = {
+  authorHrId: string;
+  authorIsAdmin: boolean;
+  authorName: string | null;
+  body: string;
+  createdAt: string;
+  id: string;
+};
+
+/**
+ * A review request on one day, with the conversation under it.
+ *
+ * The request's own `claimText` is the first thing said in that conversation and is NOT repeated in
+ * `messages` — whoever renders the thread shows the claim, then the replies.
+ */
+export type PrivateCalendarReviewRequest = {
+  claimSourceText: string;
+  claimText: string;
+  createdAt: string;
+  date: string;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  employeeHrId: string;
+  employeeName: string | null;
+  id: string;
+  messages: PrivateCalendarReviewMessage[];
+  status: "accepted" | "pending_review" | "rejected";
+};
+
 export type PrivateCalendarWorkspace = {
   access: {
     canSelectEmployee: boolean;
@@ -117,6 +147,8 @@ export type PrivateCalendarWorkspace = {
   exceptions: PrivateCalendarException[];
   items: PrivateCalendarItem[];
   month: number;
+  /** The review requests touching the month in view, each carrying its own reply thread. */
+  reviewRequests: PrivateCalendarReviewRequest[];
   schemaReady: boolean;
   selectedEmployee: PrivateCalendarEmployeeOption;
   sourceReadiness: Record<PrivateCalendarSource, boolean>;

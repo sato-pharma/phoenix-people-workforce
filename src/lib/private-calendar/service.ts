@@ -11,6 +11,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { listDisputesForEmployee, type PrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
+import { listMessagesForDisputes } from "@/lib/private-calendar/dispute-messages";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -36,6 +37,8 @@ import {
   type PrivateCalendarException,
   type PrivateCalendarItem,
   type PrivateCalendarSource,
+  type PrivateCalendarReviewMessage,
+  type PrivateCalendarReviewRequest,
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
@@ -462,6 +465,27 @@ export async function getPrivateCalendarWorkspace(input: {
   const itemsWithCorrections = applyAcceptedDisputeOverlays(items, employeeDisputes);
   const exceptionsWithStatuses = appendDisputeStatusExceptions(exceptions, employeeDisputes);
 
+  // The reply thread under each request. One batched read for the whole month, and best-effort: a
+  // thread that fails to load must leave the calendar itself intact, so it falls back to none — the
+  // same contract the dispute read above already has.
+  const messagesByDispute = await listMessagesForDisputes(employeeDisputes.map((dispute) => dispute.id))
+    .catch(() => new Map<string, PrivateCalendarReviewMessage[]>());
+  const reviewRequests: PrivateCalendarReviewRequest[] = employeeDisputes
+    .map((dispute) => ({
+      claimSourceText: dispute.claimSourceText,
+      claimText: dispute.claimText,
+      createdAt: dispute.createdAt,
+      date: dispute.disputeDate,
+      decidedAt: dispute.decidedAt,
+      decisionNote: dispute.adminDecisionNote,
+      employeeHrId: dispute.employeeHrId,
+      employeeName: dispute.employeeName,
+      id: dispute.id,
+      messages: messagesByDispute.get(dispute.id) ?? [],
+      status: dispute.status,
+    }))
+    .sort((left, right) => `${left.date}-${left.createdAt}`.localeCompare(`${right.date}-${right.createdAt}`));
+
   const displayItems = itemsWithCorrections;
 
   return {
@@ -471,6 +495,7 @@ export async function getPrivateCalendarWorkspace(input: {
     },
     items: displayItems,
     month: input.month,
+    reviewRequests,
     schemaReady: privateCalendarSources.every((source) => sourceReadiness[source]),
     selectedEmployee: mapPrivateCalendarEmployee(selectedEmployee),
     sourceReadiness,
