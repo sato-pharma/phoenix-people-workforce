@@ -34,6 +34,7 @@ import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
 import { CardSection, SectionHeading } from "./section-shell";
+import { CellHistorySection } from "./cell-history";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type Props = {
@@ -1239,6 +1240,10 @@ export function RecommendationStep({
                         </button>
                       )
                     ) : null}
+
+                    {/* Who changed which figure, and why — the question the sheet's single
+                        "last edited by" could never answer (owner, 2026-10-07). */}
+                    <CellHistorySection runId={runId} hrId={row.hrId} />
                   </div>
                 </article>
               );

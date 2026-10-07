@@ -1392,6 +1392,7 @@ import { runFakeSupabaseTableSqlNullsTests } from "./fake-supabase-table-sql-nul
 import { runAutomatedPayrollCrmLeaveOneMechanismTests } from "./automated-payroll-crm-leave-one-mechanism.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runDeductionPayrollResyncTests } from "./deduction-payroll-resync.test.ts";
+import { runAutomatedPayrollCellHistoryTests } from "./automated-payroll-cell-history.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
@@ -2713,6 +2714,10 @@ await runTest(
 await runTest(
   "deductions: a line pushed after a payroll step was confirmed still reaches the payslip",
   runDeductionPayrollResyncTests,
+);
+await runTest(
+  "automated payroll: every change to a sheet figure is recorded with who, why and when",
+  runAutomatedPayrollCellHistoryTests,
 );
 await runTest(
   "automated payroll: one absence day is charged once, on the path that pays people",
