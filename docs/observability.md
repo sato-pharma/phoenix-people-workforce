@@ -335,6 +335,7 @@ policy):
    | `phoenix-crm-plan-reminder` | `57 12,17 * * *` | 2h | cron-job.org job `8562812` · **in-house only** |
    | `phoenix-crm-approval-nudge` | `57 9 * * *` | 2h | cron-job.org job `8563266` · **in-house only** |
    | `phoenix-crm-visit-rollup` | `49 * * * *` | 1h | cron-job.org job `8580289` · **in-house only** |
+   | `phoenix-crm-fraud-scan` | `0 7 * * 4` | 2h | cron-job.org job `(set on first --apply)` · **in-house only** |
    | `phoenix-rep-ranks` | `17 4 * * *` | 3h | cron-job.org job `(set on first --apply)` · **in-house only** |
    | `phoenix-retention-risk-sweep` | `40 7 * * *` | 1h | cron-job.org job `8397172` · **in-house only** |
    | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | cron-job.org job `8397174` · **in-house only** |

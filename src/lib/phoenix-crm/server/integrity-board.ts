@@ -33,6 +33,7 @@
 import { notFoundError } from "@/lib/http/api-errors";
 import { PHOENIX_CRM_BEHAVIOUR_LABELS, type PhoenixCrmBehaviourFlag } from "@/lib/phoenix-crm/behaviour-integrity";
 import { PHOENIX_CRM_PHOTO_LABELS, type PhoenixCrmPhotoFlag } from "@/lib/phoenix-crm/duplicate-photos";
+import type { FraudScanCase } from "@/lib/phoenix-crm/fraud-scan-rules";
 import { PHOENIX_CRM_INTEGRITY_LABELS, type PhoenixCrmIntegrityFlag } from "@/lib/phoenix-crm/location-integrity";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -319,4 +320,56 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     behaviour: behaviourRead.cases.map((entry) => ({ ...entry, repName: nameOf(people, entry.repHrId) || entry.repHrId })),
     behaviourNotChecked: behaviourRead.notChecked,
   };
+}
+
+/**
+ * The capture-level integrity cases for one working week, for the weekly fraud scan.
+ *
+ * Lives HERE, beside `loadIntegrityBoard`, on purpose: this file is the ONLY reader of
+ * `phoenix_crm_location_integrity`, and a second query anywhere else would be the first step towards
+ * the rep-facing bundle importing it. The scan calls this, never the table directly.
+ *
+ * `includeGps` is the tier, not a convenience: the position (GPS) cases are the Super Admin's alone
+ * (owner, 2026-10-02), so the SFE's copy asks with `includeGps: false` and a GPS case never leaves
+ * the database for it — exactly as the board's own query narrows for an SFE viewer.
+ *
+ * Visit subjects only: the window is a Sat–Wed range on `visit_date`, and a PLACE validation case has
+ * no visit day to fall in it. Behaviour months are deliberately absent — they are a month's shape,
+ * recomputed nightly, not a capture in a week.
+ */
+export async function loadIntegrityCasesForWindow(options: {
+  fromIso: string;
+  toIso: string;
+  includeGps: boolean;
+}): Promise<FraudScanCase[]> {
+  let query = getSupabaseAdmin()
+    .from("phoenix_crm_location_integrity")
+    .select("subject_kind, rep_hr_id, source, flags, strong")
+    .eq("is_test", false)
+    .eq("subject_kind", "visit")
+    .gte("visit_date", options.fromIso)
+    .lte("visit_date", options.toIso)
+    .order("captured_at", { ascending: false })
+    .limit(BOARD_LIMIT);
+  // The position cases are the Super Admin's alone: for the SFE copy the query asks for the photo
+  // detector's cases only, so a GPS case is never read for a recipient who may not see it.
+  if (!options.includeGps) query = query.eq("source", "photo");
+
+  const { data, error } = await query;
+  throwIfError(error);
+  const rows = (data ?? []) as Row[];
+  if (rows.length === 0) return [];
+
+  const people = await loadPeopleNames([...new Set(rows.map((row) => String(row.rep_hr_id ?? "")).filter(Boolean))]);
+  return rows.map((row) => {
+    const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)) as IntegrityBoardFlag[];
+    const repHrId = String(row.rep_hr_id ?? "");
+    return {
+      repHrId,
+      repName: nameOf(people, repHrId) || repHrId,
+      source: row.source === "photo" ? "photo" : "gps",
+      strong: row.strong === true,
+      reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
+    };
+  });
 }

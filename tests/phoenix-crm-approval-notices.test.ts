@@ -186,8 +186,10 @@ export function runPhoenixCrmApprovalNoticeTests() {
       // like the digest, and the Telegram-failure fallback is shut for it too (an unlinked NSM is the rule).
       // `crm_visit_rollup` joined the same day: the batched half of that feed — routine planned visits
       // gathered hourly for the NSM and SFE — in-app and Telegram only for the same reasons.
-      ["activity_mirror", "crm_daily_digest", "crm_visit_rollup", "day_start_seen", "plan_edit_expired"],
-      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, and the hourly visit rollup",
+      // `crm_fraud_scan` joined on 2026-10-07: the weekly Thursday 07:00 visit-fraud scan to the Super
+      // Admin and SFE Managers — integrity evidence, so in-app and Telegram only, never the phone or email.
+      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "plan_edit_expired"],
+      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, and the weekly fraud scan",
     );
     // Behaviour, not source: the re-send's own channel list, filtered.
     assert.deepEqual(
