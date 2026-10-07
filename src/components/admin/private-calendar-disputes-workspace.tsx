@@ -3,9 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AlertTriangle, Check, X } from "lucide-react";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonApproveClassName,
+  phxButtonDangerClassName,
+  phxButtonGhostClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import type { PrivateCalendarReviewMessage, PrivateCalendarReviewRequest } from "@/lib/private-calendar/logic";
+import { cn } from "@/lib/utils";
 
 export type AdminPrivateCalendarDispute = {
   adminDecisionNote: string | null;
@@ -126,15 +132,15 @@ export function PrivateCalendarDisputesWorkspace({
             <div className="px-5 py-4" key={dispute.id}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="whitespace-nowrap font-mono text-phx-xs font-semibold text-slate-500">{formatDate(dispute.disputeDate)}</span>
-                <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
+                <span className="whitespace-nowrap bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
                   {dispute.employeeName ?? dispute.employeeHrId} ({dispute.employeeHrId})
                 </span>
                 {dispute.itemSource ? (
-                  <span className="whitespace-nowrap rounded-sm bg-indigo-100 px-2 py-0.5 text-phx-xs font-semibold text-indigo-700">
+                  <span className="whitespace-nowrap bg-indigo-100 px-2 py-0.5 text-phx-xs font-semibold text-indigo-700">
                     {dispute.itemSource}
                   </span>
                 ) : (
-                  <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-500">
+                  <span className="whitespace-nowrap bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-500">
                     whole day
                   </span>
                 )}
@@ -168,7 +174,7 @@ export function PrivateCalendarDisputesWorkspace({
               </div>
 
               {decidingId === dispute.id ? (
-                <div className="mt-3 rounded-sm border border-slate-200 bg-slate-50 p-3">
+                <div className="mt-3 border border-slate-200 bg-slate-50 p-3">
                   <textarea
                     className={phxTextareaClassName}
                     onChange={(event) => setNoteById((current) => ({ ...current, [dispute.id]: event.target.value }))}
@@ -178,7 +184,7 @@ export function PrivateCalendarDisputesWorkspace({
                   />
                   <div className="mt-2 flex items-center gap-2">
                     <button
-                      className="inline-flex items-center gap-1.5 rounded-sm bg-emerald-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                      className={phxButtonApproveClassName}
                       disabled={submittingId === dispute.id}
                       onClick={() => decide(dispute.id, "accept")}
                       type="button"
@@ -187,7 +193,7 @@ export function PrivateCalendarDisputesWorkspace({
                       Accept
                     </button>
                     <button
-                      className="inline-flex items-center gap-1.5 rounded-sm bg-red-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+                      className={phxButtonDangerClassName}
                       disabled={submittingId === dispute.id}
                       onClick={() => decide(dispute.id, "reject")}
                       type="button"
@@ -196,7 +202,7 @@ export function PrivateCalendarDisputesWorkspace({
                       Reject
                     </button>
                     <button
-                      className="rounded-sm border border-slate-300 px-3 py-1.5 text-xs font-black text-slate-600 transition hover:bg-slate-100"
+                      className={phxButtonGhostClassName}
                       onClick={() => setDecidingId(null)}
                       type="button"
                     >
@@ -206,7 +212,7 @@ export function PrivateCalendarDisputesWorkspace({
                 </div>
               ) : (
                 <button
-                  className="mt-3 rounded-sm border border-slate-300 px-3 py-1.5 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+                  className={cn(phxButtonGhostClassName, "mt-3")}
                   onClick={() => setDecidingId(dispute.id)}
                   type="button"
                 >

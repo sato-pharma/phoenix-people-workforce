@@ -20,6 +20,8 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+import { phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
 import { MarketingAdvisoryCommentBox } from "@/components/employee-portal/marketing-advisory-comment-box";
 import {
   ApprovalHistory,
@@ -348,7 +350,10 @@ function InboxRowCard({
           re-run the whole gate, so hiding a control here removes a dead end, it grants nothing. */}
       <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3">
         <Link
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-emerald-600 px-4 text-phx-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+          className={cn(
+            phxButtonApproveDenseClassName,
+            "inline-flex min-h-9 items-center gap-1.5 px-4 text-phx-sm font-bold shadow-sm transition",
+          )}
           href={decisionHref(decisionBasePath, row.id, "approve")}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />

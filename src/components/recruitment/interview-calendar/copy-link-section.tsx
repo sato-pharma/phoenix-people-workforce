@@ -11,6 +11,7 @@
 import { Check, ClipboardCopy, Link2, Loader2, MessageCircle, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { phxWhatsAppShareButtonClassName } from "@/components/ui/brand-tokens";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import {
   ACCESS_LEVEL_LABEL,
@@ -228,7 +229,7 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
                   </Action>
                   {link.isActive ? (
                     <a
-                      className="inline-flex items-center gap-1.5 border border-emerald-700 bg-emerald-600 px-2 py-1.5 text-[12px] font-bold leading-none text-white hover:bg-emerald-700"
+                      className={phxWhatsAppShareButtonClassName}
                       href={whatsAppShareUrl(shareMessage(link))}
                       rel="noreferrer"
                       target="_blank"

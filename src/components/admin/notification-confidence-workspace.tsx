@@ -10,7 +10,11 @@ import {
   hoursHeldSince,
   summarizeHeldQueue,
 } from "@/lib/notifications/held-ageing";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
+import {
+  phxButtonApproveDenseClassName,
+  phxFieldClassName,
+} from "@/components/ui/form-tokens";
 
 export type AdminConfidenceCheck = {
   detail: string;
@@ -170,7 +174,10 @@ function ReviewRow({ review, onDecided }: { review: AdminNotificationSendReview;
           value={note}
         />
         <button
-          className="inline-flex items-center gap-1.5 bg-emerald-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-emerald-700 disabled:opacity-50"
+          className={cn(
+            phxButtonApproveDenseClassName,
+            "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-black transition disabled:opacity-50",
+          )}
           disabled={submitting !== null}
           onClick={() => decide("approve")}
           type="button"

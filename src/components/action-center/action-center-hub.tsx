@@ -25,7 +25,13 @@ import {
 } from "@/lib/marketing-requests/decision-confirm-prompt";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
+import {
+  phxButtonApproveClassName,
+  phxButtonApproveDenseClassName,
+  phxButtonDangerClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 
 // ── Snooze helpers (localStorage, no backend) ────────────────────────────────
@@ -1120,7 +1126,10 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   <button
                     disabled={bulkBusy}
                     onClick={() => void handleBulkApprove()}
-                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                    className={cn(
+                      phxButtonApproveDenseClassName,
+                      "px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50",
+                    )}
                   >
                     {bulkBusy ? "Approving…" : "Approve all"}
                   </button>
@@ -1321,7 +1330,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               {selected.module === "excuse" && (
                                 <>
                                   <button disabled={busy} onClick={() => handleExcuseAction("approve")}
-                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                    className={phxButtonApproveClassName}>
                                     {busy ? "…" : "Approve"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleExcuseAction("return")}
@@ -1329,7 +1338,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                     {busy ? "…" : "Return with reply"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleExcuseAction("reject")}
-                                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                    className={phxButtonDangerClassName}>
                                     {busy ? "…" : "Reject"}
                                   </button>
                                 </>
@@ -1338,11 +1347,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               {selected.module === "outstation" && (
                                 <>
                                   <button disabled={busy} onClick={() => handleOutstationAction("approve")}
-                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                    className={phxButtonApproveClassName}>
                                     {busy ? "…" : "Approve for Payroll"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleOutstationAction("reject")}
-                                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                    className={phxButtonDangerClassName}>
                                     {busy ? "…" : "Reject"}
                                   </button>
                                 </>
@@ -1353,7 +1362,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                 return (
                                   <>
                                     <button disabled={busy} onClick={() => handleMarketingAction("approve")}
-                                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                      className={phxButtonApproveClassName}>
                                       {busy ? "…" : (labels?.approve ?? "Approve")}
                                     </button>
                                     {labels?.return && (
@@ -1363,7 +1372,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                       </button>
                                     )}
                                     <button disabled={busy} onClick={() => handleMarketingAction("reject")}
-                                      className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                      className={phxButtonDangerClassName}>
                                       {busy ? "…" : (labels?.reject ?? "Reject")}
                                     </button>
                                   </>
@@ -1387,11 +1396,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                       </button>
                                     )}
                                     <button disabled={busy} onClick={() => handleContractRenewalAction("renew")}
-                                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                      className={phxButtonApproveClassName}>
                                       {busy ? "…" : "Renew Contract"}
                                     </button>
                                     <button disabled={busy} onClick={() => handleContractRenewalAction("not_renew")}
-                                      className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                      className={phxButtonDangerClassName}>
                                       {busy ? "…" : "Do Not Renew"}
                                     </button>
                                   </>
@@ -1401,7 +1410,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               {selected.module === "weekly_plan" && selected.detail.module === "weekly_plan" && (
                                 <>
                                   <button disabled={busy} onClick={() => handleWeeklyPlanAction("approve")}
-                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                    className={phxButtonApproveClassName}>
                                     {busy ? "…" : selected.detail.stage === "manager" ? "Approve → CEO" : "Approve (final)"}
                                   </button>
                                   {selected.detail.stage === "manager" && selected.detail.items.some((i) => i.activityType === "Field") && (
@@ -1415,7 +1424,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                     {busy ? "…" : "Return for edit"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleWeeklyPlanAction("reject")}
-                                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                    className={phxButtonDangerClassName}>
                                     {busy ? "…" : "Reject"}
                                   </button>
                                 </>

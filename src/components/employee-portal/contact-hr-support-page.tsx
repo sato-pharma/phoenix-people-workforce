@@ -352,7 +352,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {showSuccess && (
               <div
                 aria-live="polite"
-                className="flex items-start gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-phx-sm font-semibold text-emerald-800"
+                className="flex items-start gap-2 border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-phx-sm font-semibold text-emerald-800"
                 role="status"
               >
                 <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
@@ -367,7 +367,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {submitError && (
               <div
                 aria-live="polite"
-                className="rounded border border-rose-200 bg-rose-50 px-3 py-2.5 text-phx-sm font-semibold text-rose-700"
+                className="border border-rose-200 bg-rose-50 px-3 py-2.5 text-phx-sm font-semibold text-rose-700"
                 role="status"
               >
                 <span className="break-words">{submitError}</span>
@@ -472,7 +472,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               />
               <button
                 aria-label="Choose files to attach"
-                className="flex min-h-16 w-full cursor-pointer flex-col items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50/40 px-3 py-3 text-center transition hover:border-orange-300 hover:bg-slate-50/80"
+                className="flex min-h-16 w-full cursor-pointer flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50/40 px-3 py-3 text-center transition hover:border-orange-300 hover:bg-slate-50/80"
                 onClick={() => fileInputRef.current?.click()}
                 type="button"
               >
@@ -488,7 +488,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 <ul className="mt-2 grid gap-1.5">
                   {attachments.map((file) => (
                     <li
-                      className="flex min-w-0 items-center gap-2 rounded border border-orange-200 bg-orange-50 py-1 pl-2.5 pr-1 text-phx-xs font-medium text-orange-800"
+                      className="flex min-w-0 items-center gap-2 border border-orange-200 bg-orange-50 py-1 pl-2.5 pr-1 text-phx-xs font-medium text-orange-800"
                       key={`${file.name}-${file.size}`}
                     >
                       {/* A phone camera's file name is one unbroken token; it breaks anywhere
@@ -515,7 +515,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
             <Button
               aria-label="Submit support request"
-              className="h-11 w-full rounded text-sm font-semibold"
+              className="h-11 w-full text-sm font-semibold"
               disabled={isSubmitting}
               type="submit"
             >
@@ -695,7 +695,7 @@ function SupportStatusChip({ status }: { status: string }) {
           ? "border-sky-200 bg-sky-50 text-sky-700"
           : "border-slate-200 bg-slate-100 text-slate-600";
   return (
-    <span className={`inline-flex whitespace-nowrap rounded border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${tone}`}>
+    <span className={`inline-flex whitespace-nowrap border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${tone}`}>
       {status}
     </span>
   );

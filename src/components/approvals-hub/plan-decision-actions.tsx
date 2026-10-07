@@ -6,7 +6,10 @@ import { CheckCircle2, CornerUpLeft, Flag, ListChecks, MessageSquarePlus, XCircl
 
 import type { PlanReturnableActivity } from "@/lib/approvals-hub/service";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonApproveClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 export type PlanDecisionActionsProps = {
   planId: string;
@@ -368,7 +371,7 @@ export function PlanDecisionActions({
       <div className="flex flex-wrap gap-2 px-4 py-4">
         {isEditRequestDecision ? (
           <>
-            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve_edit" }); }} className="inline-flex items-center gap-1.5 bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">
+            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve_edit" }); }} className={phxButtonApproveClassName}>
               <CheckCircle2 className="h-4 w-4" /> Allow edits
             </button>
             <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "reject_edit" }); }} className="inline-flex items-center gap-1.5 border border-rose-500 px-4 py-2 text-sm font-bold text-rose-700 hover:bg-rose-50">
@@ -379,7 +382,7 @@ export function PlanDecisionActions({
 
         {hasStandard ? (
           <>
-            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve" }); }} className="inline-flex items-center gap-1.5 bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">
+            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve" }); }} className={phxButtonApproveClassName}>
               <CheckCircle2 className="h-4 w-4" /> Approve
             </button>
             <button type="button" onClick={() => { reset(); setMode({ kind: "return" }); }} className="inline-flex items-center gap-1.5 border border-amber-500 px-4 py-2 text-sm font-bold text-amber-700 hover:bg-amber-50">

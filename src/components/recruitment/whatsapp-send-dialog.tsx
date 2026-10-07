@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { cn } from "@/lib/utils";
+import { phxWhatsAppSendButtonClassName } from "@/components/ui/brand-tokens";
 import {
   phxFieldClassName,
   phxTextareaClassName,
@@ -447,7 +448,10 @@ export function WhatsAppSendDialog({
             Opens WhatsApp with the message written. You press send there.
           </p>
           <button
-            className="border border-[#25D366] bg-[#25D366] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300"
+            className={cn(
+              phxWhatsAppSendButtonClassName,
+              "disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300",
+            )}
             disabled={busy || !selected || missing.length > 0 || !toNumber.trim()}
             onClick={onSend}
             type="button"

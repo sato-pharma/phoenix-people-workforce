@@ -86,7 +86,12 @@ import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import type { Candidate } from "@/lib/recruitment/types";
 import type { ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
+import {
+  phxButtonApproveClassName,
+  phxButtonDangerClassName,
+  phxFieldClassName,
+} from "@/components/ui/form-tokens";
 
 type LoadedCandidate = {
   profile: CandidateProfile;
@@ -1369,7 +1374,7 @@ export function CandidateScreeningSession({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button
-                className="flex items-center justify-center gap-1.5 bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                className={cn(phxButtonApproveClassName, "justify-center")}
                 disabled={busy}
                 onClick={() => void decide("shortlisted")}
                 type="button"
@@ -1377,7 +1382,7 @@ export function CandidateScreeningSession({
                 <Check className="h-4 w-4" /> Shortlist <kbd className="text-phx-2xs font-normal opacity-70">S</kbd>
               </button>
               <button
-                className="flex items-center justify-center gap-1.5 bg-rose-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-50"
+                className={cn(phxButtonDangerClassName, "justify-center")}
                 disabled={busy}
                 onClick={() => void decide("rejected")}
                 type="button"

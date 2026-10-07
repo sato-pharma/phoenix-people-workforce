@@ -74,7 +74,11 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ExpenseTripRecord } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonApproveDenseClassName,
+  phxButtonDangerDenseClassName,
+  phxFieldClassName,
+} from "@/components/ui/form-tokens";
 
 type LoadedRecord = ExpenseTripRecord & {
   approvedAmount?: number | null;
@@ -1099,7 +1103,7 @@ export function ExpenseApprovalsWorkspace({
               <X className="h-3 w-3" /> Clear selection
             </button>
             <Button
-              className="bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+              className={cn(phxButtonApproveDenseClassName, "disabled:opacity-60")}
               disabled={bulkPlan.approvableTripIds.length === 0}
               onClick={approveSelected}
             >
@@ -1984,14 +1988,14 @@ function ExpenseDecisionPanel({
           ) : (
             <>
               <Button
-                className="bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                className={cn(phxButtonApproveDenseClassName, "disabled:opacity-60")}
                 disabled={reasonMissing}
                 onClick={onApprove}
               >
                 <Check className="mr-2 h-4 w-4" /> Approve
               </Button>
               <Button
-                className="bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-60"
+                className={cn(phxButtonDangerDenseClassName, "disabled:opacity-60")}
                 disabled={rejectReasonMissing}
                 onClick={onReject}
               >

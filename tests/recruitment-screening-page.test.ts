@@ -1125,15 +1125,37 @@ export async function runRecruitmentScreeningPageTests() {
   //
   // Pinned at the SOURCE for that reason -- the emitted-artifact rule says check what renders, and
   // what renders here is square either way. The thing being defended is the class not coming back.
-  for (const [label, colour] of [
-    ["Shortlist", "bg-emerald-600"],
-    ["Reject", "bg-rose-600"],
+  // 🔴 ANCHORED ON THE TOKEN, NOT THE COLOUR, SINCE 2026-10-07. The owner asked for an
+  // approve-green button token and then for it to go on every decision pair, so these two buttons
+  // no longer name `bg-emerald-600`/`bg-rose-600` themselves -- they wear
+  // `phxButtonApproveClassName` and `phxButtonDangerClassName`. The square pin did not weaken: the
+  // tokens are themselves asserted to carry no radius by `tests/form-design-system.test.ts`
+  // (`identityTests`), and what is checked HERE is the only part that can still go wrong locally,
+  // which is a radius added in the per-call override beside the token.
+  for (const [label, anchor] of [
+    ["Shortlist", "phxButtonApproveClassName"],
+    ["Reject", "phxButtonDangerClassName"],
   ] as const) {
-    const at = session.indexOf(colour);
-    assert.ok(at >= 0, `the ${label} button must still be found by its colour`);
-    const classAttribute = session.slice(session.lastIndexOf('className="', at), at);
+    // The FIRST occurrence is the import, so walk the occurrences and take the one that is
+    // actually inside a className -- anchoring on the import would pass with no button at all.
+    let at = -1;
+    let start = -1;
+    for (let from = session.indexOf(anchor); from >= 0; from = session.indexOf(anchor, from + 1)) {
+      const open = session.lastIndexOf("className=", from);
+      if (open >= 0 && from - open < 200) {
+        at = from;
+        start = open;
+        break;
+      }
+    }
     assert.ok(
-      !classAttribute.includes("rounded"),
+      at >= 0,
+      `the ${label} button must still wear ${anchor} in its own className -- if it has gone back ` +
+        `to a hand-written colour, form-design-system.test.ts section 6 fails first`,
+    );
+    const classExpression = session.slice(start, session.indexOf("}", at) + 1);
+    assert.ok(
+      !classExpression.includes("rounded"),
       `${label} must have no rounded-* class -- the square-edge golden rule, and a shell sweep ` +
         `holding a corner down is not the same as the corner not being there`,
     );
