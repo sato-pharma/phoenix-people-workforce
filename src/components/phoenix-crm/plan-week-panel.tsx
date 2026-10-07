@@ -235,6 +235,7 @@ export function PlanWeekPanel({
   reviewerSentence,
   seatId,
   section,
+  turnSentence,
   selectedDay,
   showProblems,
   showSpread,
@@ -316,6 +317,13 @@ export function PlanWeekPanel({
    */
   section?: "days" | "day" | "send";
   selectedDay: PlanDayView;
+  /**
+   * Whose turn this week is on (`planTurnSentence`), shown exactly where the decision block would
+   * have been when there is no decision to make (owner, 2026-10-07: "no buttons, but say whose turn
+   * it is"). Before it, a manager who had returned a week scrolled to the bottom of it and found the
+   * page simply ending.
+   */
+  turnSentence?: string | null;
   showProblems: boolean;
   showSpread: boolean;
   /** The week's drafted Start AM / Start PM (editable weeks only). */
@@ -770,6 +778,15 @@ export function PlanWeekPanel({
         tints={tints}
         today={today}
       />
+      ) : null}
+
+      {/* 🔴 WHOSE TURN IT IS, WHERE THE BUTTONS WOULD BE (owner, 2026-10-07). PlanDecision draws
+          nothing when this viewer can neither approve nor return — a week he has just returned, a
+          week nobody has sent, a week that is already approved — and the page ended there. */}
+      {showClose && turnSentence && !week.canApprove && !week.canReturn ? (
+        <CrmBlock className="border-t border-slate-100" title="Where this week stands">
+          <CrmNote tone="info">{turnSentence}</CrmNote>
+        </CrmBlock>
       ) : null}
 
       {showClose && plan ? (

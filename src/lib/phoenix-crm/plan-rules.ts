@@ -243,6 +243,52 @@ export function isPlanDaySent(input: Parameters<typeof planDayStatus>[0]): boole
   return isPlanSentForReview(planDayStatus(input));
 }
 
+/**
+ * 🔴 WHOSE TURN THE WEEK IS ON, IN ONE SENTENCE — for a reader who has no button on it (owner,
+ * 2026-10-07, shown the screen itself and asked directly: "no buttons, but say whose turn it is").
+ *
+ * A manager who RETURNS a week gets no Approve and no Return on it afterwards, and that is correct:
+ * it is the rep's to change until he sends it again. But the page then simply ENDED — the day's
+ * customers, and nothing under them. He read that as his week lost, and the whole "it comes back to
+ * the manager with no option to approve" started there, on a week that had never come back at all
+ * (PED Giza 1's week of 10 October: returned 20:36, the rep's last save 16:52, before the return).
+ *
+ * So wherever the decision block would have been, this says who holds it now. It is NOT a second
+ * copy of who may decide — it is only ever read when `canApprove` and `canReturn` are both false,
+ * and it states what the plan row itself already says.
+ *
+ * Every stamp and every name arrives already formatted: this file prints no dates and resolves no
+ * people.
+ */
+export function planTurnSentence(input: {
+  status: PhoenixCrmPlanStatus | null;
+  /** The STANDING one-day return (`standingReturnedDay`), never the raw column. */
+  returnedDay: string | null;
+  /** Who decided it last, resolved to a name; null when nobody has, or the name is not known. */
+  deciderName: string | null;
+  /** When it was decided, as a Cairo stamp; null when that is not known. */
+  decidedStamp: string | null;
+  /** The territory's rep; null on a vacant seat. */
+  repName: string | null;
+  /** The manager who approves this territory's weeks; null when the chain above it is vacant. */
+  reviewerName: string | null;
+  /** The due date with its deadline, exactly as every other screen prints it (`planDueLabel`). */
+  dueLabel: string;
+}): string {
+  const rep = input.repName ?? "the rep";
+  const when = input.decidedStamp ? ` ${input.decidedStamp}` : "";
+  const by = input.deciderName ? ` by ${input.deciderName}` : "";
+  if (input.status === "returned") {
+    const what = input.returnedDay ? `${planDayLabel(input.returnedDay)} went back to ${rep}` : `This week went back to ${rep}`;
+    return `${what}${when}${by}. It is with ${rep} now — it comes back here for review when they send it again.`;
+  }
+  if (input.status === "submitted") {
+    return `Sent for review. ${input.reviewerName ? `${input.reviewerName} approves it.` : "The manager above this territory approves it."}`;
+  }
+  if (input.status === "approved") return `Approved${when}${by}. Nothing is waiting on this week.`;
+  return `Not sent yet. ${rep} sends it by ${input.dueLabel}.`;
+}
+
 export type PlanItemDraft = {
   planDate: string;
   customerId: string;
