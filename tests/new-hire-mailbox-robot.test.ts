@@ -27,8 +27,14 @@ import {
   LOGIN_SUBMIT_WORDINGS,
   MAILBOX_EMAIL_FIELD,
   MAILBOX_LOGIN_URL,
+  TurbifyJoinerStepError,
   withoutSecrets,
 } from "../src/lib/new-hire-mailbox/robot/turbify-joiner.ts";
+import {
+  runTurbifyJoinerRobot,
+  type JoinerCandidate,
+  type JoinerRunnerDeps,
+} from "../src/lib/new-hire-mailbox/robot/runner.ts";
 import {
   APP_PASSWORD_PAGE,
   APP_PASSWORD_WORDINGS,
@@ -41,6 +47,7 @@ import {
 import {
   JOINER_STEP_ORDER,
   createDryRunJoinerDriver,
+  type JoinerConsoleDriver,
 } from "../src/lib/new-hire-mailbox/robot/driver.ts";
 import {
   TurbifyAmbiguousControlError,
@@ -1019,6 +1026,125 @@ function runCorrectedRefusalCases(): void {
   );
 }
 
+/**
+ * 🔴 THE EXPECTED "ALREADY EXISTS" SKIP IS LOGGED AT INFO, NOT ERROR — the #5453 pattern.
+ *
+ * In production the daily sweep re-attempted the same three mailboxes (Elsayed Rady, Ahmed Mohamed,
+ * Esraa Ibrahim) every morning, each already in Turbify, and each threw from `createMailbox`. That
+ * threw straight to `logError("…could not finish a mailbox", event=new_hire_robot_failed)`, which
+ * persists a row to `app_error_events` on EVERY sweep — so three already-known, already-surfaced
+ * mailboxes wrote nine ERROR rows a day and buried genuinely-new failures. The robot was working
+ * (it read the console and declined to double-create); only the LOG LEVEL was wrong, exactly as the
+ * outstation auto-release's "awaiting a decision" skip was before #5453.
+ *
+ * This drives the real runner with a fake console driver and reads which severity actually fired —
+ * a source-text assertion would not prove the branch is reached. The negative half (a genuine
+ * console failure STILL logs ERROR) is the break-the-fix control: collapse the branch back to a
+ * single `logError` and the `new_hire_robot_exists` assertion fails; drop the `alreadyExists` guard
+ * so everything downgrades and the `new_hire_robot_failed` assertion fails.
+ */
+async function runAlreadyExistsLogLevelCases(): Promise<void> {
+  /** A driver whose only live step is `createMailbox`, which throws whatever the case hands it. */
+  const driverThatThrowsOnCreate = (thrown: unknown): JoinerConsoleDriver => {
+    const unreached = (step: string) => async () => {
+      throw new Error(`${step} must not be reached once createMailbox has thrown`);
+    };
+    return {
+      close: async () => {},
+      createMailbox: async () => {
+        throw thrown;
+      },
+      describeAppPasswords: unreached("describeAppPasswords"),
+      generateAppPassword: unreached("generateAppPassword"),
+      rehearseAppPasswordRemoval: unreached("rehearseAppPasswordRemoval"),
+      resetAndCapture: unreached("resetAndCapture"),
+      setMailboxPassword: unreached("setMailboxPassword"),
+      signIn: async () => {},
+    } as unknown as JoinerConsoleDriver;
+  };
+
+  // One candidate that passes every gate, so the run reaches the console and `createMailbox` throws.
+  const candidate: JoinerCandidate = {
+    addressHeldBy: null,
+    employee: employee(),
+    task: task(),
+  };
+  const deps: JoinerRunnerDeps = {
+    companyPassword: () => "Sato@2027",
+    loadCandidates: async () => [candidate],
+    record: async () => {
+      throw new Error("record must not be called for a mailbox that was never provisioned");
+    },
+    today: () => TODAY,
+  };
+
+  /** Run one pass with the given throw, capturing every console line by severity. */
+  const runCapturing = async (thrown: unknown): Promise<{ logs: string[]; errors: string[] }> => {
+    const logs: string[] = [];
+    const errors: string[] = [];
+    const realLog = console.log;
+    const realError = console.error;
+    console.log = (...args: unknown[]) => void logs.push(args.map(String).join(" "));
+    console.error = (...args: unknown[]) => void errors.push(args.map(String).join(" "));
+    try {
+      await runTurbifyJoinerRobot({
+        deps,
+        driver: driverThatThrowsOnCreate(thrown),
+        dryRun: false,
+        enabled: true,
+      });
+    } finally {
+      console.log = realLog;
+      console.error = realError;
+    }
+    return { logs, errors };
+  };
+
+  // ── the already-exists throw: INFO, searchable, and NOT persisted as an error ────────────────
+  const exists = await runCapturing(
+    new TurbifyJoinerStepError(
+      "mariam.hassan@satopharma.com already exists in Turbify as PENDING, so the robot did not "
+      + "create it again.",
+      { alreadyExists: true },
+    ),
+  );
+  assert.ok(
+    exists.logs.some((line) => line.includes('"event":"new_hire_robot_exists"')),
+    "an already-exists mailbox must log at INFO under event=new_hire_robot_exists — it is the "
+    + "expected skip, surfaced on the New Hire Mailboxes card, not a console failure",
+  );
+  assert.ok(
+    !exists.errors.some((line) => line.includes('"event":"new_hire_robot_failed"')),
+    "and it must NOT log new_hire_robot_failed at ERROR — that is the daily app_error_events row "
+    + "#5453's pattern exists to stop",
+  );
+
+  // ── a genuine console failure: STILL ERROR (the break-the-fix control) ────────────────────────
+  const failed = await runCapturing(new Error("Turbify returned an unexpected page"));
+  assert.ok(
+    failed.errors.some((line) => line.includes('"event":"new_hire_robot_failed"')),
+    "a real console failure must still log at ERROR under new_hire_robot_failed — only the expected "
+    + "already-exists skip is downgraded",
+  );
+  assert.ok(
+    !failed.logs.some((line) => line.includes('"event":"new_hire_robot_exists"')),
+    "and a real failure must NOT be miscounted as the expected skip",
+  );
+
+  // A bare TurbifyJoinerStepError without the flag is a real failure too — the discriminator is the
+  // flag, never the error type, so a future throw that forgets it loudly stays loud.
+  const unflagged = await runCapturing(new TurbifyJoinerStepError("some other step failed"));
+  assert.ok(
+    unflagged.errors.some((line) => line.includes('"event":"new_hire_robot_failed"')),
+    "a TurbifyJoinerStepError without alreadyExists must stay at ERROR — the flag is the signal",
+  );
+
+  // The discriminator defaults to false and is set only when asked.
+  assert.equal(new TurbifyJoinerStepError("x").alreadyExists, false);
+  assert.equal(new TurbifyJoinerStepError("x", {}).alreadyExists, false);
+  assert.equal(new TurbifyJoinerStepError("x", { alreadyExists: true }).alreadyExists, true);
+}
+
 export async function runNewHireMailboxRobotTests(): Promise<void> {
   runExistenceReadingCases();
   runExistenceWiringCases();
@@ -1026,6 +1152,7 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   runCredentialReadCases();
   runCorrectedRefusalCases();
   await runPageDescriptionCases();
+  await runAlreadyExistsLogLevelCases();
   // ── the happy path, so every refusal below is attributable to the one thing it changed ───────
   const ok = verdict();
   assert.equal(ok.allowed, true);

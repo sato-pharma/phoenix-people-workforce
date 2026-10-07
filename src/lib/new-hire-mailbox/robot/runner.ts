@@ -30,6 +30,7 @@ import { logError, logInfo } from "@/lib/observability/log";
 
 import { createDryRunJoinerDriver, type JoinerConsoleDriver } from "./driver";
 import { explainUnusableInitialPassword, isUsableInitialPassword } from "./initial-password";
+import { TurbifyJoinerStepError } from "./turbify-joiner";
 import {
   ROBOT_ACTOR,
   ROBOT_DEFAULT_MAX_CREATES_PER_RUN,
@@ -220,10 +221,29 @@ export async function runTurbifyJoinerRobot(options: {
           hrId,
           status: partial ? "partial" : "failed",
         });
-        logError("New hire mailbox robot could not finish a mailbox", {
-          error: error instanceof Error ? error : new Error(detail),
-          labels: { event: partial ? "new_hire_robot_partial" : "new_hire_robot_failed", hrId },
-        });
+        // 🔴 THE ONE EXPECTED FAILURE IS NOT LOGGED AT ERROR. When `createMailbox` finds the mailbox
+        // already exists in Turbify it throws with `alreadyExists`, and that is not a console failure
+        // — the robot read the console correctly and declined. The task stays OPEN and surfaced on
+        // the New Hire Mailboxes card for a Super Admin to finish (adoption and the invitation never
+        // run on a sweep), so writing the same row to app_error_events every daily sweep was pure
+        // duplication that buried genuinely-new failures. It logs at INFO instead, searchable via
+        // `event=new_hire_robot_exists` — the identical treatment the outstation auto-release gives
+        // its expected "awaiting a decision" skip (#5453). Every OTHER failure, partial or not, is a
+        // real console problem and stays at ERROR. A partial can never be this case: `createMailbox`
+        // throws its existence refusal before `created` is ever set, so `partial` is always false
+        // here — the `!partial` guard only makes that explicit.
+        const expectedExists =
+          !partial && error instanceof TurbifyJoinerStepError && error.alreadyExists;
+        if (expectedExists) {
+          logInfo("New hire mailbox robot skipped a mailbox that already exists in Turbify", {
+            labels: { event: "new_hire_robot_exists", hrId },
+          });
+        } else {
+          logError("New hire mailbox robot could not finish a mailbox", {
+            error: error instanceof Error ? error : new Error(detail),
+            labels: { event: partial ? "new_hire_robot_partial" : "new_hire_robot_failed", hrId },
+          });
+        }
       }
     }
   } finally {

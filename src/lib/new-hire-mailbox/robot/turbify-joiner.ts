@@ -222,9 +222,21 @@ type ConsolePage = {
 };
 
 export class TurbifyJoinerStepError extends Error {
-  constructor(message: string) {
+  /**
+   * True ONLY for the one condition that is EXPECTED and self-explanatory: the mailbox already exists
+   * in Turbify, so the create path cannot — and must not — run. It is not a console failure (the
+   * robot read the console correctly and declined) and it does not self-resolve on a sweep: a Super
+   * Admin finishes it on the New Hire Mailboxes card, because adoption and the invitation never run
+   * on a schedule. The runner logs this at INFO rather than ERROR, the same treatment the outstation
+   * auto-release gives its expected "awaiting a decision" skip (#5453) — the task stays OPEN and
+   * surfaced on the card, so the daily ERROR it used to persist to app_error_events was pure
+   * duplication that buried genuinely-new failures. Every OTHER throw here is a real problem.
+   */
+  readonly alreadyExists: boolean;
+  constructor(message: string, options: { alreadyExists?: boolean } = {}) {
     super(message);
     this.name = "TurbifyJoinerStepError";
+    this.alreadyExists = options.alreadyExists === true;
   }
 }
 
@@ -1079,6 +1091,12 @@ export async function createTurbifyJoinerDriver(
       const reading = await readExistingRow(page, address);
       if ("refusal" in reading) throw new TurbifyJoinerStepError(reading.refusal);
       if (reading.exists) {
+        // 🔴 `alreadyExists` MARKS THIS AS THE EXPECTED SKIP, NOT A CONSOLE FAILURE. The robot read
+        // the console and found the mailbox already there, so creating it again is wrong — the task
+        // stays open on the New Hire Mailboxes card for a Super Admin to finish by adoption or by
+        // completing the invitation, neither of which runs on a sweep. The runner logs it at INFO on
+        // the strength of this flag, so the daily sweep stops writing the same row to
+        // app_error_events (see the flag's own note, and #5453 for the identical outstation pattern).
         throw new TurbifyJoinerStepError(
           reading.status === "pending"
             ? `${address} already exists in Turbify as PENDING, so the robot did not create it again. `
@@ -1086,6 +1104,7 @@ export async function createTurbifyJoinerDriver(
               + "password at all — it needs that invitation finished, not a second create."
             : `${address} already exists in Turbify, so the robot did not create it. Phoenix's record `
               + "disagreed with the console — reconcile before re-running.",
+          { alreadyExists: true },
         );
       }
 
