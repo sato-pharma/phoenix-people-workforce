@@ -120,6 +120,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
       "export function phoenixCrmDecisionSeats",
       "export async function countPhoenixCrmListRequestsWaitingForYou",
       "export async function countPhoenixCrmOffPlanVisitsWaitingForYou",
+      "export async function countPhoenixCrmWeeklyPlansWaitingForYou",
     ]) {
       assert.ok(queues.includes(producer), `decision-queues.ts owns ${producer}`);
     }
@@ -130,6 +131,11 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     assert.ok(overview.includes("phoenixCrmDecisionSeats("), "overview.ts reads the shared seat split");
     assert.ok(overview.includes("countPhoenixCrmListRequestsWaitingForYou("), "and the shared list-request count");
     assert.ok(overview.includes("countPhoenixCrmOffPlanVisitsWaitingForYou("), "and the shared off-plan count");
+    // 🔴 THE WEEKLY-PLAN COUNT MOVED INTO THE PRODUCER ON 2026-10-08, and this is the pair of lines
+    // that keeps it there: `overview.ts` had the only copy, inlined, which is exactly why the board
+    // read 0 for a manager with weeks sitting on his desk.
+    assert.ok(overview.includes("countPhoenixCrmWeeklyPlansWaitingForYou("), "and the shared weekly-plan count");
+    assert.ok(!overview.includes('countPhoenixCrmWaiting("phoenix_crm_plans"'), "overview.ts no longer counts the sent weeks itself");
     assert.ok(!/async function countUnplannedVisits/.test(overview), "overview.ts holds no private copy of the off-plan count");
     assert.ok(!/async function countWaiting\b/.test(overview), "nor of the waiting count");
     assert.ok(
@@ -140,6 +146,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     // The board's own side reads the same two functions and counts nothing itself.
     assert.ok(crmNeedsYou.includes("countPhoenixCrmListRequestsWaitingForYou("), "the board's loader reads the producer");
     assert.ok(crmNeedsYou.includes("countPhoenixCrmOffPlanVisitsWaitingForYou("));
+    assert.ok(crmNeedsYou.includes("countPhoenixCrmWeeklyPlansWaitingForYou("), "and the weekly plans, which it did not count at all before 2026-10-08");
     assert.ok(!crmNeedsYou.includes(".from("), "it writes no query of its own");
     assert.ok(crmNeedsYou.includes("loadReadiness("), "and the validation figure is the Team tab's own readiness read");
     assert.ok(
@@ -176,7 +183,17 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
       assert.ok(!crmNeedsYou.includes(swallow), `a failed read must travel, never become a figure (${swallow})`);
     }
     // And no item is produced at zero: the four pushes are each behind a `> 0`.
-    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 4, "each of the four counts produces an item only when it is non-zero");
+    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 5, "each of the five counts produces an item only when it is non-zero");
+
+    // 🔴 THE WEEKLY PLANS ARE ON THE BOARD (2026-10-08). The module's own badge always counted them;
+    // this board did not, so a district manager read 0 here while weeks sat on his desk — the
+    // under-report `src/lib/needs-you/types.ts` exists to make impossible.
+    assert.ok(block.includes('key: "phoenix-crm-decisions:weekly-plans"'), "the weekly plans have their own row");
+    assert.ok(block.includes("counts.weeklyPlans > 0"), "and it is produced only when something is waiting");
+    assert.ok(
+      block.includes('`${counts.weeklyPlans} weekly ${plural(counts.weeklyPlans, "plan is", "plans are")} waiting for your approval`'),
+      "named in words, singular and plural",
+    );
   }
 
   // ── 5. No measurement, no money, no id ───────────────────────────────────────────────────────

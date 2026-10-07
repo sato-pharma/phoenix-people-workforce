@@ -209,10 +209,50 @@ PGRST202 for a function it has not seen, and this repo's error reader files that
 provisioned" and degrades to empty — so the digest and the reminder would have read every territory as
 not started. Added to the file and applied to both environments.
 
+## 2026-10-08 — the sent weekly plan, chased at last
+
+The owner's own instruction ("okay start fixing", after the three holes the 2026-10-07 plan-screen
+audit named) answered the open question below, and three more of the same family went with it.
+
+**1. The nudge never read a plan.** `runPhoenixCrmApprovalNudge` read list requests, off-plan visits
+and week-edit requests. A sent week — the thing this module notifies most, thirteen in one evening —
+was chased by nothing at all, so it could sit `submitted` for days on the single notice sent the
+evening it arrived, while the rep who sent it could not change a day of it. `weekly_plan` is now one
+of the four kinds, named FIRST in the message because it holds a rep's whole week, read from
+`submitted_at` so a RE-SENT week is chased from the re-send rather than the first send, and bounded by
+`plannableWeeks(cairoToday)[0]` — the Team tab's own window, so the message can never send him to a
+screen that cannot open the week.
+
+**2. The Needs You board counted 0 while the module's badge counted them.** `server/overview.ts` held
+the only copy of the waiting-plan count, inlined, and `server/needs-you.ts` had no plan count at all —
+the under-report `src/lib/needs-you/types.ts` exists to make impossible. The count moved into
+`countPhoenixCrmWeeklyPlansWaitingForYou` in `server/decision-queues.ts`, which both now read.
+
+**3. The Team tab opened on a week with nothing on it.** `loadPlanReviews` defaulted to
+`plannableWeeks()[0]`, but a rep plans the week starting the COMING Saturday (`repPlanWeek`) — so what
+a manager has to decide is almost never the calendar's first week. He landed on an empty week and had
+to find the right one in the picker while his own notice said a plan was waiting. The default is now
+the earliest week with something at HIS step, chosen after `waitingByWeek` is built, from plan rows
+already loaded, so it costs no extra read; a week he picks himself still wins, outside the window
+included.
+
+**4. The SFE Manager who returned a week was never told it came back.** He asked for the change and
+heard nothing. His notice is a SECOND delivery of its own `plan_resent` type, in-app and Telegram only
+(push-blocked, so the Telegram-failure fallback cannot mail him either) — deliberately NOT a second
+recipient on `plan_waiting`, for two reasons that are both load bearing: he can never approve a plan,
+so an actionable notice would offer him a decision he cannot take; and the bell withdraws a
+`plan_waiting` the moment the week is not the READER's to decide (2026-10-07), which for him is
+immediately, so his copy would have vanished before he read it. The returner is read off the
+PRE-transition plan row, because `submit` clears `decided_by_*`.
+
+🔴 **A plan has NO SFE step anywhere in this.** `canReviewTerritory` is the whole rule: the SFE Manager
+returns a week and approves none, so counting his scope — in the nudge, the badge or the board — would
+put a number in front of him for a decision he cannot take.
+
 ## The questions left open, not to be built without his word
 
 Raised by the audit and deliberately not built: whether the digest should go to district managers only
-(today it also reaches regional and national managers), whether weekly plans waiting for approval
-should be nudged, whether SFE should approve plans when a territory's whole manager chain is vacant,
-and whether the reminder should follow the Super Admin's Start button (`phoenix_crm_team_starts`)
-instead of "any real row".
+(today it also reaches regional and national managers), whether SFE should approve plans when a
+territory's whole manager chain is vacant, and whether the reminder should follow the Super Admin's
+Start button (`phoenix_crm_team_starts`) instead of "any real row". **"Whether weekly plans waiting for
+approval should be nudged" left this list on 2026-10-08 — he said fix it, and it is built.**

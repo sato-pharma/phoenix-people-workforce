@@ -851,6 +851,27 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
       });
     }
 
+    // Added 2026-10-08. The module's own badge has always counted these; this board did not, so a
+    // district manager with weeks sitting on his desk read 0 here — the under-report
+    // `src/lib/needs-you/types.ts` exists to make impossible.
+    if (counts.weeklyPlans > 0) {
+      items.push({
+        key: "phoenix-crm-decisions:weekly-plans",
+        sourceId: "phoenix-crm-decisions",
+        kind: "approval",
+        lane: "yours",
+        label: `${counts.weeklyPlans} weekly ${plural(counts.weeklyPlans, "plan is", "plans are")} waiting for your approval`,
+        count: counts.weeklyPlans,
+        people: [],
+        href: needsYouDestinations["phoenix-crm-decisions"].href,
+        externalUrl: null,
+        oldestAt: null,
+        ageDays: null,
+        overdue: false,
+        note: world ?? "A rep cannot change a week once it is sent, so until you approve it or return it with a note it is waiting on you.",
+      });
+    }
+
     if (counts.offPlanVisits > 0) {
       items.push({
         key: "phoenix-crm-decisions:off-plan-visits",

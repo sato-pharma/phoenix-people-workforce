@@ -188,8 +188,11 @@ export function runPhoenixCrmApprovalNoticeTests() {
       // gathered hourly for the NSM and SFE — in-app and Telegram only for the same reasons.
       // `crm_fraud_scan` joined on 2026-10-07: the weekly Thursday 07:00 visit-fraud scan to the Super
       // Admin and SFE Managers — integrity evidence, so in-app and Telegram only, never the phone or email.
-      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "plan_edit_expired"],
-      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, and the weekly fraud scan",
+      // `plan_resent` joined on 2026-10-08: the SFE Manager's own copy of a week he returned being sent
+      // again. Informational — he approves no plan — so no phone, and the fallback is shut so a re-send
+      // cannot mail him instead.
+      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "plan_edit_expired", "plan_resent"],
+      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, the weekly fraud scan, and the SFE's copy of a re-send",
     );
     // Behaviour, not source: the re-send's own channel list, filtered.
     assert.deepEqual(
@@ -346,6 +349,75 @@ export function runPhoenixCrmApprovalNoticeTests() {
     const notify = source("src/lib/phoenix-crm/server/notifications.ts");
     assert.match(notify, /resolveHrIdsForRole\("SFE Manager", "Phoenix CRM — SFE Managers"\)/, "the SFE step is read from the accounts");
     assert.match(notify, /hrIds\.filter\(\(hrId\) => !hrId\.startsWith\("TEST-"\)\)/, "and a test account's TEST- id is never a real person to tell");
+  }
+
+  // ── 7. The SFE Manager who RETURNED a week is told it came back (2026-10-08) ───────────────────
+  //
+  // He returns a week and approves none, so the plan's actionable notice is the reviewing manager's —
+  // and nothing at all told the person who asked for the change that it had arrived. His notice is a
+  // SECOND delivery of its own event type, never a second recipient on `plan_waiting`: that one is
+  // withdrawn by the bell the moment the week is not the READER's to decide, which for him is at once,
+  // so his copy would vanish before he read it.
+  {
+    const notify = source("src/lib/phoenix-crm/server/notifications.ts");
+    const branch = notify.slice(notify.indexOf('if (notice.kind === "plan_submitted")'), notify.indexOf('if (notice.kind === "monthly_plan_submitted")'));
+    assert.ok(branch.length > 0, "the plan_submitted branch could not be located");
+
+    assert.match(branch, /const sfeReturner = notice\.returnedBySfeHrId \?\? null;/);
+    assert.match(branch, /if \(!reviewer && !sfeReturner\) return null;/, "a vacant chain no longer silences the SFE's own copy");
+    assert.match(branch, /eventType: "plan_resent"/, "its OWN event type");
+    assert.match(branch, /recipients: \[sfeReturner\]/, "to the person who returned it, and nobody else");
+    assert.match(branch, /resent_to_sfe/, "and its own key, so it can never overwrite the reviewer's notice");
+    assert.ok(branch.includes("nothing is waiting on you."), "it says plainly that he has no decision to take");
+
+    // The reviewer's notice is untouched — same event type, same key, still carrying the plan id the
+    // bell keys its withdrawal on.
+    assert.match(branch, /eventType: "plan_waiting"/);
+    assert.match(branch, /idempotencyKey: `phoenix_crm:plan:\$\{notice\.planId\}:v\$\{notice\.version\}:submitted`/);
+    assert.match(branch, /metadata: \{ planId: notice\.planId \}/);
+
+    // It is read off the PRE-transition row, because `submit` clears the decision off the plan.
+    const plans = source("src/lib/phoenix-crm/server/plans.ts");
+    assert.match(plans, /\.select\("id, seat_id, week_start, status, is_test, decided_by_hr_id, decided_by_role"\)/);
+    assert.match(
+      plans,
+      /planRow\.status === "returned" && planRow\.decided_by_role === "sfe_manager" \? textOrNull\(planRow\.decided_by_hr_id\) : null/,
+      "only an SFE return, and only while the week is still returned",
+    );
+
+    // In-app and Telegram only: informational, so no phone — and on the push-blocked list rather than
+    // merely off the email list, because the Telegram-failure fallback would otherwise mail him.
+    assert.ok(PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES.includes("plan_resent"));
+    assert.ok(!PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("plan_resent"), "the module's emails are the person-taken steps, and this is not one");
+    assert.deepEqual(phoenixCrmChannels("plan_resent"), ["in_app", "telegram"]);
+    // The module comes FIRST: called with one argument the event type lands in `module`, which is not
+    // `phoenix_crm`, so the guard answers false and the assertion passes for nobody.
+    assert.equal(phoenixCrmBlocksTelegramFallback("phoenix_crm", "plan_resent"), true);
+  }
+
+  // ── 8. The Team tab opens on the week that is WAITING (2026-10-08) ─────────────────────────────
+  //
+  // A rep plans the week starting the COMING Saturday, so what a manager has to decide is almost never
+  // the calendar's first week: he landed on a week with nothing on it and had to find the right one in
+  // the picker, while his own notice said a plan was waiting.
+  {
+    const plans = source("src/lib/phoenix-crm/server/plans.ts");
+    // 🔴 The end anchor must come AFTER the function in the file — `PlanReviewRow` is declared ABOVE it,
+    // and a backwards slice is the empty string, which fails every assertion below for the wrong reason.
+    const fn = plans.slice(plans.indexOf("export async function loadPlanReviews("), plans.indexOf("export type PlanCopySourceView"));
+    assert.ok(fn.length > 0, "loadPlanReviews could not be located");
+    assert.match(fn, /const requestedWeek = isFieldWeekStart\(raw\.weekStart\) \? raw\.weekStart : null;/);
+    assert.match(
+      fn,
+      /const weekStart = requestedWeek \?\? weeks\.find\(\(week\) => \(waitingByWeek\.get\(week\) \?\? 0\) > 0\) \?\? weeks\[0\];/,
+      "the week he picked wins; else the earliest week with something at HIS step; else the first week",
+    );
+    // It must be chosen AFTER the waiting counts exist, and the week list must still carry a picked
+    // week that is outside the window — otherwise the picker cannot show it.
+    assert.ok(fn.indexOf("const waitingByWeek") < fn.indexOf("const weekStart ="), "the default is read from the counts, so it cannot precede them");
+    assert.match(fn, /const weekList = requestedWeek !== null && !weeks\.includes\(requestedWeek\) \? \[requestedWeek, \.\.\.weeks\] : weeks;/);
+    // And no second read: every listed week's plans are already loaded.
+    assert.equal((fn.match(/from\("phoenix_crm_plans"\)/g) ?? []).length, 1, "one plan read for the whole window");
   }
 
   console.log("phoenix-crm approval notices: OK");

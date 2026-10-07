@@ -751,7 +751,14 @@ export async function transitionPlan(
   if (day !== null && action !== "return") throw validationError("Only a return names a day. Reload the page.");
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("phoenix_crm_plans").select("id, seat_id, week_start, status, is_test").eq("id", planId).maybeSingle();
+  const { data, error } = await supabase
+    .from("phoenix_crm_plans")
+    // `decided_by_hr_id` / `decided_by_role` are read for ONE reason: a send has to know whether the
+    // SFE Manager is the person who returned this week, so he can be told it came back (2026-10-08).
+    // They must be read BEFORE the transition — `submit` clears the decision off the row.
+    .select("id, seat_id, week_start, status, is_test, decided_by_hr_id, decided_by_role")
+    .eq("id", planId)
+    .maybeSingle();
   throwIfError(error);
   const planRow = data as Row | null;
   if (!planRow) throw notFoundError("This plan is no longer there. Reload the page.");
@@ -844,7 +851,15 @@ export async function transitionPlan(
   const weekStart = String(result.week_start);
 
   if (action === "submit") {
-    await notifyPhoenixCrm({ kind: "plan_submitted", org: viewer.org, seat, planId, version, weekStart, submitterHrId: viewer.hrId }, isTest);
+    // The SFE Manager who returned this week, when it was him — read off the PRE-transition row above,
+    // because `submit` clears `decided_by_*`. He is told it came back; the reviewing manager gets his
+    // own actionable notice as always.
+    const returnedBySfeHrId =
+      planRow.status === "returned" && planRow.decided_by_role === "sfe_manager" ? textOrNull(planRow.decided_by_hr_id) : null;
+    await notifyPhoenixCrm(
+      { kind: "plan_submitted", org: viewer.org, seat, planId, version, weekStart, submitterHrId: viewer.hrId, returnedBySfeHrId },
+      isTest,
+    );
   } else if (action === "approve" || action === "return") {
     // The rep who sent it and the territory's rep today (the same person unless the seat changed hands).
     const repHrIds = [...new Set([textOrNull(result.submitted_by_hr_id), seat.occupantHrId].filter((hrId): hrId is string => Boolean(hrId)))];
@@ -906,8 +921,9 @@ const REVIEW_ORDER: Record<PhoenixCrmPlanStatus | "none", number> = { submitted:
 export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unknown; weekStart: unknown }): Promise<PlanReviewView> {
   const isTest = testModeFor(viewer, raw.test);
   const weeks = plannableWeeks(viewer.cairoToday);
-  const weekStart = isFieldWeekStart(raw.weekStart) ? raw.weekStart : weeks[0];
-  const weekList = weeks.includes(weekStart) ? weeks : [weekStart, ...weeks];
+  // The week he ASKED for, when he picked one. Nothing below ever overrides it.
+  const requestedWeek = isFieldWeekStart(raw.weekStart) ? raw.weekStart : null;
+  const weekList = requestedWeek !== null && !weeks.includes(requestedWeek) ? [requestedWeek, ...weeks] : weeks;
 
   const territories = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const territoryById = new Map(territories.map((seat) => [seat.seatId, seat]));
@@ -939,6 +955,14 @@ export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unk
     const week = String(row.week_start);
     waitingByWeek.set(week, (waitingByWeek.get(week) ?? 0) + 1);
   }
+
+  // 🔴 IT OPENS ON THE WEEK THAT IS WAITING FOR HIM (2026-10-08), not on the calendar's first week.
+  // A rep plans the week starting the COMING Saturday (`repPlanWeek`), so what a manager has to decide
+  // is almost never `weeks[0]` — he landed on a week with nothing on it and had to find the right one
+  // from the picker, while his own notice said a plan was waiting. The earliest week with something at
+  // HIS step wins; with nothing waiting anywhere it is `weeks[0]`, exactly as before. Every plan row of
+  // every listed week is already loaded above, so this costs no extra read.
+  const weekStart = requestedWeek ?? weeks.find((week) => (waitingByWeek.get(week) ?? 0) > 0) ?? weeks[0];
 
   const weekPlans = planRows.filter((row) => String(row.week_start) === weekStart);
   const planBySeat = new Map(weekPlans.map((row) => [String(row.seat_id), row]));

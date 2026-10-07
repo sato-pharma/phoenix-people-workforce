@@ -116,6 +116,13 @@ export type PhoenixCrmNotice =
       version: number;
       weekStart: string;
       submitterHrId: string;
+      /**
+       * The SFE Manager who RETURNED this week, when he is the one who did and the rep has now sent it
+       * again (2026-10-08). He asked for the change and nothing told him it had come back: the plan's
+       * actionable notice belongs to the reviewing manager, because the SFE returns a week and approves
+       * none. Null for a week returned by its own reviewer, or never returned at all.
+       */
+      returnedBySfeHrId?: string | null;
     }
   | {
       kind: "plan_decided";
@@ -763,24 +770,49 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
 
   if (notice.kind === "plan_submitted") {
     const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
-    if (!reviewer) return null;
+    const sfeReturner = notice.returnedBySfeHrId ?? null;
+    if (!reviewer && !sfeReturner) return null;
     const names = await loadPeopleNames([notice.submitterHrId]);
     const rep = nameOf(names, notice.submitterHrId, "A rep");
-    return {
-      recipients: [reviewer.hrId],
-      eventType: "plan_waiting",
-      title: `Weekly plan to review from ${rep}`,
-      message: `${rep} sent the ${territory} plan for the week starting ${formatPhoenixLongDate(notice.weekStart)}. Approve it or return it with a note in Phoenix CRM.`,
-      tab: "team",
-      recordId: notice.planId,
-      idempotencyKey: `phoenix_crm:plan:${notice.planId}:v${notice.version}:submitted`,
-      subjectHrId: notice.submitterHrId,
-      // 🔴 `recordId` IS NOT PERSISTED ON THE ROW — it steers governance and the audit line, and
-      // `notification_events` has no column for it. So the plan id has to travel in the METADATA or
-      // the bell cannot tell which week this notice is about, and cannot withdraw it once the week is
-      // decided (owner, 2026-10-07). The off-plan notice carries `visitId` for exactly this reason.
-      metadata: { planId: notice.planId },
-    };
+    const week = formatPhoenixLongDate(notice.weekStart);
+    const deliveries: Delivery[] = [];
+    if (reviewer) {
+      deliveries.push({
+        recipients: [reviewer.hrId],
+        eventType: "plan_waiting",
+        title: `Weekly plan to review from ${rep}`,
+        message: `${rep} sent the ${territory} plan for the week starting ${week}. Approve it or return it with a note in Phoenix CRM.`,
+        tab: "team",
+        recordId: notice.planId,
+        idempotencyKey: `phoenix_crm:plan:${notice.planId}:v${notice.version}:submitted`,
+        subjectHrId: notice.submitterHrId,
+        // 🔴 `recordId` IS NOT PERSISTED ON THE ROW — it steers governance and the audit line, and
+        // `notification_events` has no column for it. So the plan id has to travel in the METADATA or
+        // the bell cannot tell which week this notice is about, and cannot withdraw it once the week is
+        // decided (owner, 2026-10-07). The off-plan notice carries `visitId` for exactly this reason.
+        metadata: { planId: notice.planId },
+      });
+    }
+    // 🔴 THE SFE MANAGER WHO RETURNED IT IS TOLD IT CAME BACK (2026-10-08) — and in a notice of his
+    // OWN event type, never as a second recipient on `plan_waiting` above. Two reasons, both load
+    // bearing: he can never approve a plan (`canReviewTerritory`), so an actionable notice would offer
+    // him a decision he cannot take; and the bell withdraws a `plan_waiting` the moment the week is not
+    // the READER's to decide, which for him is immediately — his copy would vanish before he read it.
+    if (sfeReturner) {
+      deliveries.push({
+        recipients: [sfeReturner],
+        eventType: "plan_resent",
+        title: `Weekly plan sent again: ${rep}`,
+        message: `${rep} sent the ${territory} plan for the week starting ${week} again, after you returned it. ${
+          reviewer ? "The manager above this territory approves it" : "Nobody above this territory approves it"
+        } — nothing is waiting on you.`,
+        tab: "team",
+        recordId: notice.planId,
+        idempotencyKey: `phoenix_crm:plan:${notice.planId}:v${notice.version}:resent_to_sfe`,
+        subjectHrId: notice.submitterHrId,
+      });
+    }
+    return deliveries;
   }
 
   if (notice.kind === "monthly_plan_submitted") {

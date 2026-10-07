@@ -75,6 +75,11 @@ const EVENT_TYPES = [
   // telegram to them". In-app and Telegram only, never email and never the phone (push-blocked below),
   // because it is the module's highest-volume feed to its two widest-scope readers.
   "activity_mirror",
+  // The SFE Manager's own copy of a re-send, on the week HE returned (2026-10-08): he asked for the
+  // change and nothing told him it had come back. Informational — the plan's actionable notice is the
+  // reviewing manager's, because the SFE returns a week and approves none — so in-app and Telegram
+  // only, never email and never the phone (push-blocked below).
+  "plan_resent",
 ];
 
 /**
@@ -91,6 +96,10 @@ const PUSH_BLOCKED_EVENT_TYPES = [
   // The activity mirror (2026-10-05): in-app and Telegram only, for the same reason — a high-volume feed
   // to the NSM and SFE whose Telegram is often not linked yet, so a push/email fallback would flood them.
   "activity_mirror",
+  // The SFE's copy of a re-send (2026-10-08): on this list for the day_start_seen reason — the
+  // Telegram-failure fallback would mail him one per re-send, and the module's emails are the four
+  // person-taken plan-edit steps plus a rep's first visit and the held place, nothing else.
+  "plan_resent",
 ];
 
 /**
@@ -144,7 +153,7 @@ export function runPhoenixCrmEmailBlockTests() {
     // calls createSystemNotificationForRecipients directly, so none comes through the notifier and
     // none is harvested into EVENT_TYPES; all three are in-app and Telegram only.
     ["crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
-    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy and the activity mirror",
+    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy, the activity mirror and the SFE's copy of a re-send",
   );
   for (const eventType of EMAIL_EVENT_TYPES) {
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });

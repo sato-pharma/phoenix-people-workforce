@@ -73,7 +73,9 @@ screen that owns the cleanup, and — like the payroll row — it never states t
 carries.
 
 `phoenix-crm-decisions` joined on 2026-10-03: Phoenix CRM's list requests and off-plan visits at the
-viewer's own step, plus the carried-over customers still waiting to be validated. 🔴 **It counts
+viewer's own step, plus the carried-over customers still waiting to be validated. **The sent weekly
+plans joined on 2026-10-08** — the module's own badge had always counted them while this board read 0,
+so a district manager with a rep's whole week on his desk saw nothing here. 🔴 **It counts
 nothing itself** — `src/lib/phoenix-crm/server/decision-queues.ts` is the ONE producer and the Phoenix
 CRM page's own "waiting for you" badge reads the same functions, so the board and the module can never
 disagree about whose turn it is. A medical rep is `not-applicable`, never a zero and never a row.

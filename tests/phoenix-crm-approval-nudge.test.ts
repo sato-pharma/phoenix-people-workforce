@@ -6,6 +6,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import { phoenixCrmChannels } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
 import {
+  APPROVAL_KINDS,
   APPROVAL_NUDGE_AFTER_MS,
   APPROVAL_NUDGE_CRON,
   APPROVAL_NUDGE_JOB_SLUG,
@@ -26,7 +27,8 @@ import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts"
 /**
  * Owner, 2026-10-02 — the daily nudge to a slow approver.
  *
- * A list request, an off-plan visit and a request to edit a sent week each wait on a person: the
+ * A sent weekly plan, a list request, an off-plan visit and a request to edit a sent week each wait on
+ * a person: the
  * territory's district manager, then the SFE Manager. Each is told ONCE, when it is raised, and nothing
  * reminded anybody after that. Once a day at 09:57 Cairo, whoever has something waiting on him for
  * MORE THAN 24 HOURS at his step gets ONE message naming the counts by kind — "3 list requests, 1
@@ -103,15 +105,15 @@ export function runPhoenixCrmApprovalNudgeTests() {
   // ── The words: counts by kind, in his own sentence ─────────────────────────────────────────────
   {
     assert.equal(
-      approvalCountsText({ list_request: 3, unplanned_visit: 1, plan_edit: 1 }),
+      approvalCountsText({ list_request: 3, unplanned_visit: 1, plan_edit: 1, weekly_plan: 0 }),
       "3 list requests, 1 off-plan visit and 1 request to edit a week",
       "the owner's own sentence",
     );
-    assert.equal(approvalCountsText({ list_request: 1, unplanned_visit: 0, plan_edit: 0 }), "1 list request");
-    assert.equal(approvalCountsText({ list_request: 0, unplanned_visit: 2, plan_edit: 0 }), "2 off-plan visits");
-    assert.equal(approvalCountsText({ list_request: 1, unplanned_visit: 0, plan_edit: 2 }), "1 list request and 2 requests to edit a week", "a kind with nothing waiting is not named");
+    assert.equal(approvalCountsText({ list_request: 1, unplanned_visit: 0, plan_edit: 0, weekly_plan: 0 }), "1 list request");
+    assert.equal(approvalCountsText({ list_request: 0, unplanned_visit: 2, plan_edit: 0, weekly_plan: 0 }), "2 off-plan visits");
+    assert.equal(approvalCountsText({ list_request: 1, unplanned_visit: 0, plan_edit: 2, weekly_plan: 0 }), "1 list request and 2 requests to edit a week", "a kind with nothing waiting is not named");
 
-    const many = approvalNudgeNotice({ hrId: "D-1", counts: { list_request: 3, unplanned_visit: 1, plan_edit: 1 }, cairoToday: "2026-10-02" });
+    const many = approvalNudgeNotice({ hrId: "D-1", counts: { list_request: 3, unplanned_visit: 1, plan_edit: 1, weekly_plan: 0 }, cairoToday: "2026-10-02" });
     assert.equal(many?.title, APPROVAL_NUDGE_TITLE);
     assert.equal(APPROVAL_NUDGE_TITLE, "Waiting on you for more than a day");
     assert.equal(
@@ -119,10 +121,36 @@ export function runPhoenixCrmApprovalNudgeTests() {
       "3 list requests, 1 off-plan visit and 1 request to edit a week have waited more than a day. Open Team in Phoenix CRM to decide them.",
     );
     assert.equal(many?.idempotencyKey, "phoenix_crm:approval_nudge:D-1:2026-10-02", "one per approver per Cairo day");
-    const one = approvalNudgeNotice({ hrId: "D-1", counts: { list_request: 0, unplanned_visit: 1, plan_edit: 0 }, cairoToday: "2026-10-03" });
+    const one = approvalNudgeNotice({ hrId: "D-1", counts: { list_request: 0, unplanned_visit: 1, plan_edit: 0, weekly_plan: 0 }, cairoToday: "2026-10-03" });
     assert.equal(one?.message, "1 off-plan visit has waited more than a day. Open Team in Phoenix CRM to decide it.", "one item, said as one");
     assert.notEqual(one?.idempotencyKey, many?.idempotencyKey, "a new day is a new key");
-    assert.equal(approvalNudgeNotice({ hrId: "D-1", counts: { list_request: 0, unplanned_visit: 0, plan_edit: 0 }, cairoToday: "2026-10-02" }), null, "nothing overdue, no message");
+    assert.equal(approvalNudgeNotice({ hrId: "D-1", counts: { list_request: 0, unplanned_visit: 0, plan_edit: 0, weekly_plan: 0 }, cairoToday: "2026-10-02" }), null, "nothing overdue, no message");
+
+    // ── The sent weekly plan (2026-10-08) — the thing the module sends most and nudged least ──────
+    //
+    // It was missing from the run entirely: a week could sit `submitted` for days on the one notice
+    // sent the evening it arrived, while the rep who sent it could not change a day of it.
+    assert.ok(APPROVAL_KINDS.includes("weekly_plan"), "a sent week is one of the things that waits on a person");
+    assert.equal(APPROVAL_KINDS[0], "weekly_plan", "named FIRST: it is the one that holds a rep's whole week");
+    assert.equal(
+      approvalCountsText({ list_request: 1, unplanned_visit: 0, plan_edit: 0, weekly_plan: 2 }),
+      "2 weekly plans and 1 list request",
+      "the weeks lead the sentence",
+    );
+    assert.equal(approvalCountsText({ list_request: 0, unplanned_visit: 0, plan_edit: 0, weekly_plan: 1 }), "1 weekly plan");
+    assert.equal(
+      approvalNudgeNotice({ hrId: "D-1", counts: { list_request: 0, unplanned_visit: 0, plan_edit: 0, weekly_plan: 1 }, cairoToday: "2026-10-08" })?.message,
+      "1 weekly plan has waited more than a day. Open Team in Phoenix CRM to decide it.",
+    );
+
+    // 🔴 A PLAN HAS NO SFE STEP — the SFE Manager returns a week and approves none, so the loader files
+    // every one of them at the MANAGER step and the count can never land on his board.
+    const nudge = source("src/lib/phoenix-crm/server/approval-nudge.ts");
+    assert.match(nudge, /items\.push\(\{ kind: "weekly_plan", seatId, stage: "manager", waitingSince: waitingSinceOf\("manager", sentAt, null\) \}\);/);
+    assert.match(nudge, /\.from\("phoenix_crm_plans"\)[\s\S]*?\.eq\("is_test", false\)[\s\S]*?\.eq\("status", "submitted"\)/, "real entries, sent and not yet decided");
+    assert.match(nudge, /\.lt\("submitted_at", raisedBefore\)/, "it waits from the SEND — so a re-sent week is chased from the re-send, not the first one");
+    assert.match(nudge, /\.gte\("week_start", plannableWeeks\(cairoToday\)\[0\]\)/, "the Team tab's own window: a week that is over waits for nobody");
+    assert.doesNotMatch(nudge, /kind: "weekly_plan", seatId, stage: "sfe"/, "there is no SFE step on a plan");
   }
 
   // ── Who is told: the decide rule's own people ───────────────────────────────────────────────────
@@ -197,7 +225,7 @@ export function runPhoenixCrmApprovalNudgeTests() {
     assert.deepEqual(composeApprovalNudges({ org, items: [item("list_request", "A1", "manager", 3)], sfeHrIds: sfe, openLines, now: NOW, cairoToday: "2026-10-02" }).notices, []);
   }
 
-  // ── The sender: real entries, the three queues, never email ────────────────────────────────────
+  // ── The sender: real entries, the four queues, never email ─────────────────────────────────────
   {
     assert.deepEqual(phoenixCrmChannels("approval_nudge"), ["in_app", "telegram", "push"], "in-app, Telegram and the phone — never email");
     const runner = source("src/lib/phoenix-crm/server/approval-nudge.ts");
@@ -205,7 +233,7 @@ export function runPhoenixCrmApprovalNudgeTests() {
     assert.equal(/"email"/.test(runner), false, "and never names email");
     assert.ok(runner.includes('eventType: "approval_nudge"'), "under its own event");
     assert.ok(runner.includes("module: PHOENIX_CRM_NOTIFICATION_MODULE"), "under the module key the email guard filters on");
-    assert.equal((runner.match(/\.eq\("is_test", false\)/g) ?? []).length, 3, "real entries only, in each of the three queues");
+    assert.equal((runner.match(/\.eq\("is_test", false\)/g) ?? []).length, 4, "real entries only, in each of the four queues — the sent weeks joined them on 2026-10-08");
     for (const table of ["phoenix_crm_list_requests", "phoenix_crm_unplanned_visits", "phoenix_crm_plan_edit_requests"]) {
       assert.ok(runner.includes(`.from("${table}")`), `it reads ${table}`);
     }

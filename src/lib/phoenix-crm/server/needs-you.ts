@@ -49,6 +49,7 @@ import { readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/serve
 import {
   countPhoenixCrmListRequestsWaitingForYou,
   countPhoenixCrmOffPlanVisitsWaitingForYou,
+  countPhoenixCrmWeeklyPlansWaitingForYou,
   phoenixCrmDecisionSeats,
 } from "@/lib/phoenix-crm/server/decision-queues";
 import { loadReadiness } from "@/lib/phoenix-crm/server/list";
@@ -59,6 +60,12 @@ export type PhoenixCrmDecisionCounts = {
   listRequests: number;
   /** Off-plan visits at a step this viewer takes. */
   offPlanVisits: number;
+  /**
+   * Weekly plans SENT and waiting for this viewer's own approval, in the weeks the Team tab lists.
+   * There is no SFE step on a plan — the SFE Manager returns one and approves none — so this is the
+   * reviewer's count alone, and it is the SAME function the module's own badge reads.
+   */
+  weeklyPlans: number;
   /**
    * Customers carried over from iReports360 and still waiting to be validated, across the territories
    * this viewer reads. REAL entries, always (see the header). It is a count of work still to do on the
@@ -93,7 +100,7 @@ export function phoenixCrmReadsDecisions(viewer: PhoenixCrmViewer): boolean {
 }
 
 /**
- * The four counts, in one wave. It THROWS on any failed read rather than reporting a zero — the
+ * The five counts, in one wave. It THROWS on any failed read rather than reporting a zero — the
  * board turns a rejection into its amber "could not be read" row, and a zero it cannot prove is the
  * one shape that board must never have.
  */
@@ -101,9 +108,12 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
   const seats = phoenixCrmDecisionSeats(viewer);
   const seatIds = viewer.scopeTerritories.map((seat) => seat.seatId);
 
-  const [listRequests, offPlanVisits, readiness, placeCheck] = await Promise.all([
+  const [listRequests, offPlanVisits, weeklyPlans, readiness, placeCheck] = await Promise.all([
     countPhoenixCrmListRequestsWaitingForYou(seats),
     countPhoenixCrmOffPlanVisitsWaitingForYou(seats),
+    // The weekly plans waiting on him. It was missing here until 2026-10-08 while the module's own
+    // badge counted it, so the board read 0 for a manager with weeks sitting on his desk.
+    countPhoenixCrmWeeklyPlansWaitingForYou(seats, viewer.cairoToday),
     // `loadReadiness` answers for EVERY seat asked about or throws — a territory the database did not
     // answer for is never read as ready, or as anything else. That is precisely the contract this
     // board needs, so it is called bare and its rejection travels.
@@ -120,6 +130,7 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
   return {
     listRequests,
     offPlanVisits,
+    weeklyPlans,
     awaitingValidation,
     territories: seatIds.length,
     placeChecks: placeCheck.count,
