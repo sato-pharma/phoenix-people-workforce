@@ -107,6 +107,12 @@ export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = [
   // SFE Managers, rather than one notice each. In-app and Telegram only, exactly like the mirror and
   // the digest: no phone, and the Telegram-failure fallback shut so an unlinked manager is not mailed.
   "crm_visit_rollup",
+  // The weekly visit-fraud scan (owner, 2026-10-07): the integrity board's flags for the completed
+  // Sat–Wed week, to the Super Admin and the SFE Managers only. Like the digest and the rollup it
+  // calls the notifier directly and is in-app and Telegram ONLY — the evidence is Golden Rule #1
+  // material and must never reach a phone lock screen or an inbox, and the Telegram-failure fallback
+  // is shut so an admin whose Telegram is not linked yet is not mailed the week's flags instead.
+  "crm_fraud_scan",
 ];
 
 export function isPhoenixCrmModule(module: string | null | undefined): boolean {

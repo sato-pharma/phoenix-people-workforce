@@ -147,6 +147,13 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job.
   { slug: "phoenix-rep-ranks", kind: "cron", schedule: "17 4 * * *", graceSeconds: 3 * HOUR },
   { slug: "phoenix-crm-visit-rollup", kind: "cron", schedule: "49 * * * *", graceSeconds: 1 * HOUR },
+  // 07:00 Cairo on Thursday (owner, 2026-10-07): the weekly visit-fraud scan, reporting the completed
+  // Sat–Wed working week to the Super Admin and the SFE Managers. Weekly, so the heartbeat judges one
+  // fire a week — on :00 of an hour no other job holds, and on wday 4 (Thursday) so a red execution
+  // names one job. Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its
+  // cron job (see the digest's note above). NO watchingSince: this is a NEW declaration, never a
+  // restored one, so there is no stand-down window to exempt — only a restored job carries that date.
+  { slug: "phoenix-crm-fraud-scan", kind: "cron", schedule: "0 7 * * 4", graceSeconds: 2 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
   // so the 25th leaves several working days to check on someone before any money moves. The other

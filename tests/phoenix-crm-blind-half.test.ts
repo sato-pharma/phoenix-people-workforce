@@ -57,6 +57,12 @@ const REP_FACING_PURE_EXCLUDED = new Set([
   // And the behaviour rules (2026-09-27), for the same reason: a module that names the checks
   // cannot also be forbidden from naming them. Check 2 is what proves no rep-facing file imports it.
   "behaviour-integrity.ts",
+  // And the weekly scan's pure half (2026-10-07). It composes the board's OWN flags into the message
+  // the Super Admin and the SFE Manager read, so it necessarily says "flagged" and "integrity" — in
+  // text only they will ever see. It is the fourth and last file with this justification, and it is
+  // only safe because "fraud-scan" is on SILENT_MODULES below: check 2 refuses the import from every
+  // rep-facing file, so the exclusion is a statement about WHO reads the words, not a hole.
+  "fraud-scan-rules.ts",
 ]);
 
 /**
@@ -131,6 +137,9 @@ const SILENT_MODULES: ReadonlyArray<string> = [
   "photo-dupes",
   "behaviour-integrity",
   "phoenix-crm/server/behaviour",
+  // Both halves of the weekly scan (2026-10-07): the rules module above and the sender beside it. Its
+  // audience is the board's own two roles, so a rep-facing file reaching either is the defect.
+  "fraud-scan",
 ];
 
 /**

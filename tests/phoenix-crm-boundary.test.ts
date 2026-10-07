@@ -428,7 +428,17 @@ const NOT_THIS_MODULE: ReadonlyArray<readonly [RegExp, string]> = [
   [/@\/lib\/weekly-planning/, "the district managers' weekly plans, a different workflow that emails"],
   [/ireports360_/i, "iReports360's own tables"],
   [/["'`]\/api\/crm\//, "the old CRM's and the pilot's API routes"],
-  [/["'`]\/(?:admin|employee-portals)\/phoenix-crm\b/, "the pilot's pages"],
+  // 🔴 `/admin/phoenix-crm` and `/employee-portals/phoenix-crm` are the retired 2026-09-14 pilot's
+  // own pages — the first only forwards to `/admin/field-crm` (see src/lib/needs-you/types.ts), and a
+  // module file linking to either is the defect this catches. Four sub-paths beneath it are NOT the
+  // pilot's: the integrity board, the duplicate sweep, the refused readings and the list template are
+  // this module's own admin screens, linked from system-navigation.ts, and the board page is pinned as
+  // a blind reader in tests/phoenix-crm-blind-half.test.ts. They are named one at a time on purpose —
+  // anything else under the retired path still fails, so a real pilot link cannot ride in behind them.
+  [
+    /["'`]\/(?:admin|employee-portals)\/phoenix-crm(?!\/(?:integrity|duplicates|refused-readings|list-template)\b)\b/,
+    "the pilot's pages",
+  ],
 ];
 
 function runIsolationTests() {

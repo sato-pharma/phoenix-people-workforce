@@ -191,6 +191,17 @@ const JOBS = {
     // One keyset-paged read of an hour of visits, then at most a handful of notifications.
     requestTimeout: 300,
   },
+  "phoenix-crm-fraud-scan": {
+    title: "Phoenix — CRM weekly fraud scan",
+    path: "/api/cron/phoenix-crm-fraud-scan",
+    // 07:00 Cairo on Thursday (owner, 2026-10-07). Weekly, the morning after the Sat–Wed working week
+    // it reports. On :00 of an hour no other job holds and on wday 4 (Thursday — cron-job.org counts
+    // 0=Sunday, matching the `0 7 * * 4` in JOB_SCHEDULES and docs/observability.md), so a red
+    // execution names one job. It reads the integrity board for the week and sends at most one notice
+    // per Super Admin and SFE Manager, so it is nowhere near the 30s platform cut.
+    schedule: { hours: [7], minutes: [0], mdays: [-1], months: [-1], wdays: [4] },
+    requestTimeout: 300,
+  },
   "job-heartbeat-sweep": {
     title: "Phoenix — job heartbeat sweep",
     path: "/api/cron/job-heartbeat-sweep",
