@@ -186,6 +186,23 @@ claude-recovery-2026-09-21/
 /*-day-card-*.html
 /*-day-card-*.pdf
 
+# The same class, three more shapes, added 2026-10-07 at the owner's instruction after the app's
+# diff pane reported `+1,073 -0` pending on `main` with no tracked change at all — the whole
+# count was three untracked HTML deliverables sitting at the root: a per-person period card
+# (`hassan-elsherbiny-period-card-2026-10-01-to-06.html`, 172 lines), a role handbook
+# (`production-planner-handbook-2026-10-06.html`, 609) and a per-person guide
+# (`sahar-khalil-production-planner-guide-2026-10-06.html`, 292), each beside its rendered
+# `.pdf`, which the pane counts as 0 lines because it is binary. Generated for one person or one
+# role on one day, archived outside every git tree by the never-delete rule, never repository
+# content. Leading `/` again, so `docs/` and `public/` are untouched; verified 2026-10-07 that no
+# tracked file anywhere in this repository matches any of the six.
+/*-period-card-*.html
+/*-period-card-*.pdf
+/*-handbook-*.html
+/*-handbook-*.pdf
+/*-guide-*.html
+/*-guide-*.pdf
+
 # The session hand-off notes sessions drop at the root (`_handoff-crm-batch-2.md`,
 # `_handoff-turbify-mailbox-ops.md`, …). Added at the owner's instruction on 2026-10-06, in the
 # same breath as the two patterns above. They are one session's notes to the next, never
