@@ -34,3 +34,5 @@
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
 - [MSYS turns a `git rev-parse "<ref>:<path>"` failure into a verdict](msys-mangles-a-git-ref-colon-path-into-a-false-verdict.md) — it reported a byte-identical file as DIFFERING; mangle both sides and every file reads "same" instead.
+- [Employee portal deductions stay PUSH-gated, not approval](portal-deductions-stay-push-gated-not-approval.md) — owner chose 2026-10-07 to leave it; payslip shows approved deductions that reached the payroll sheet at publish, so an unpushed one missing from the portal is BY DESIGN, not a bug.
+- [The period card's call tables use the TIGHT density](period-card-call-tables-use-the-tight-density.md) — cell padding 1.1mm + call-table line-height 1.30, so the closing panels land on the last call page; owner ruled it 2026-10-07 after seeing the cost.
