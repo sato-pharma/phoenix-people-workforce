@@ -489,12 +489,25 @@ function explainSshFailure(stderr) {
   );
 }
 
-function ssh(script, { capture = false } = {}) {
+// 🔴 `softFail` IS WHAT MAKES AN UNREACHABLE BOX ESCALATABLE AT ALL (owner, 2026-10-08). Without it
+// this `die` fires BEFORE the probe's output is ever parsed, so `probeKnown: false` could only ever
+// describe a box that ANSWERED but said nothing useful — and a box that is genuinely down, the case he
+// named, still ended the invocation here at exit 2. The probe passes `softFail` and gets `null`, which
+// `parseBusyProbe` reads as `known: false`; EVERY OTHER CALL still dies, because a failed ssh around
+// the real run is the transport fault that must not wear a verdict (exit 5).
+//
+// The reason is still PRINTED on the soft path — a host-key change is the first failure anyone hits
+// here and it must never be swallowed into a silent "box busy".
+function ssh(script, { capture = false, softFail = false } = {}) {
   const args = [...SSH_OPTS, USER + "@" + HOST, "bash -s"];
   if (capture) {
     const run = spawnSync("ssh", args, { input: script, encoding: "utf8" });
     if (run.status !== 0) {
-      die(explainSshFailure(run.stderr) || "ssh failed: " + String(run.stderr || "").trim().split("\n").slice(-3).join(" "));
+      const why = explainSshFailure(run.stderr) ||
+        "ssh failed: " + String(run.stderr || "").trim().split("\n").slice(-3).join(" ");
+      if (!softFail) die(why);
+      console.error("remote-check: " + why);
+      return null;
     }
     return String(run.stdout).trim();
   }
@@ -581,9 +594,12 @@ const state = ssh(
     "[ -d " + BARE + " ] || git init -q --bare " + BARE + "\n" +
     "if pgrep -f Runner.Worker >/dev/null 2>&1; then echo BUSY; else echo IDLE; fi\n" +
     buildBusyProbeScript(REMOTE_ROOT),
-  { capture: true },
+  // 🔴 THE PROBE IS THE ONE SOFT-FAILING SSH CALL — a box that is DOWN must reach the escalation rather
+  // than die in the transport, which is the whole of the owner's 2026-10-08 ruling. It returns null here
+  // and `parseBusyProbe` reads that as `known: false`.
+  { capture: true, softFail: true },
 );
-if (state.includes("BUSY")) {
+if (state !== null && state.includes("BUSY")) {
   console.log("             ⚠ a CI job is running on the box — 4 vCPU shared, both will be slower");
 }
 
@@ -633,7 +649,7 @@ while (plan.action === "poll") {
   );
   sleepSeconds(BUSY_POLL_SECONDS);
   waitedSeconds += BUSY_POLL_SECONDS;
-  const again = parseBusyProbe(ssh(buildBusyProbeScript(REMOTE_ROOT), { capture: true }));
+  const again = parseBusyProbe(ssh(buildBusyProbeScript(REMOTE_ROOT), { capture: true, softFail: true }));
   busy.known = again.known;
   busy.runs = again.runs;
   plan = decideBusyAction({

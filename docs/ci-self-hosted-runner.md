@@ -619,6 +619,18 @@ piece of evidence that most argues *for* GitHub Actions, namely that the box can
 and an unreachable box dispatches, polls a budget if one was given (a dropped ssh is often a blip, and
 a poll costs nothing), or refuses under `--no-actions`.
 
+🔴 **AND THE PROBE'S OWN `ssh` HAD TO SOFT-FAIL, WHICH IS WHERE THE FIRST ATTEMPT AT THIS WAS WRONG.**
+`ssh()` dies on a failed connection, *before* any output is parsed — so a `probeKnown: false` branch on
+its own could only ever describe a box that answered and said nothing useful, while a box that was
+genuinely **down**, the case he actually named, still ended the invocation in the transport. Measured on
+the branch that shipped this: `PHX_CHECK_HOST=127.0.0.1 remote-check test` printed `ssh failed: …
+Permission denied` and stopped. The probe now passes `softFail`, gets `null`, and `parseBusyProbe` reads
+that as `known: false`. **It is the only call that soft-fails** — a failed ssh around the real run is
+still the transport fault that must not wear a verdict (exit 5) — and the test asserts the count is
+exactly two (the one-shot probe and the poll loop's), so nobody can extend it to the run. The ssh
+reason is still printed either way: a changed host key is the first failure anyone hits here, and it
+must never be swallowed into a silent "box busy".
+
 🔴 **THIS DOES NOT WEAKEN THE FAIL-CLOSED PROBE, AND NOBODY SHOULD "RESTORE" IT.** The probe fails
 closed so an unreadable answer is never mistaken for an **idle box** — what that forbids is *starting a
 run there*, which is what OOM-kills another session's build. `run` remains unreachable from

@@ -290,6 +290,31 @@ export async function runRemoteCheckTests(): Promise<void> {
     /!busy\.known[\s\S]{0,120}?die\(/,
     "remote-check.mjs still dies on an unreadable probe instead of escalating (owner ruling, 2026-10-08)",
   );
+  // 🔴 AND THE PROBE'S OWN SSH MUST SOFT-FAIL, OR THE ESCALATION IS UNREACHABLE FOR THE CASE HE NAMED.
+  // `ssh()` dies on a failed connection, BEFORE any output is parsed — so without `softFail` the
+  // `probeKnown: false` branch could only ever describe a box that answered and said nothing useful,
+  // while a box that is genuinely DOWN still exited 2 in the transport. Measured on this branch: with
+  // the flag missing, a host it cannot reach printed `ssh failed: … Permission denied` and stopped.
+  // Anchored on `const state = ssh(` deliberately: `buildBusyProbeScript(REMOTE_ROOT)` appears in the
+  // poll loop's own call too, so a window around the NAME alone was satisfiable by the second probe
+  // while the FIRST one — the only probe a one-shot invocation ever reaches — had lost its flag.
+  assert.match(
+    SRC,
+    /const state = ssh\([\s\S]{0,1200}?softFail: true/,
+    "the FIRST busy probe's ssh no longer soft-fails, so an unreachable box dies before it can escalate",
+  );
+  assert.equal(
+    (SRC.match(/softFail: true/g) ?? []).length,
+    2,
+    "softFail belongs to the TWO probe calls only — a failed ssh around the real run must still die as " +
+      "the transport fault (exit 5), never be absorbed into a busy-box decision",
+  );
+  assert.equal(
+    parseBusyProbe(null).known,
+    false,
+    "parseBusyProbe must read a soft-failed ssh (null) as 'could not tell', never as an idle box",
+  );
+  assert.deepEqual(parseBusyProbe(null).runs, []);
   // 🔴 THE REFUSAL MOVED BEHIND `decideBusyAction` ON 2026-10-06 AND MUST STILL END IN `die(`. The
   // escalation (section 10) added two other routes out of a busy box, and the risk it introduces is
   // precisely that the no-flag path quietly becomes "carry on anyway" — which is what OOM-kills a
