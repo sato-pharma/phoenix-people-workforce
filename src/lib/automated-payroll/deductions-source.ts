@@ -61,6 +61,28 @@ import type { PayrollPeriod } from "./types.ts";
 export const PAYROLL_APPROVED_STATUS = "Approved for Payroll";
 
 /**
+ * The sentence a WITHHELD deduction line carries in a payroll breakdown.
+ *
+ * Two different reasons, which need two different sentences. Since the push cutover (owner rule
+ * 2026-09-22) the gate is the PUSH, not the decision: nothing is deducted until the Super Admin
+ * pushes that specific line. So a line pays nothing either because it has not been decided, or
+ * because it WAS decided "Approved for Payroll" and nobody pushed it.
+ *
+ * Both used to read "awaiting your approval in Deductions". For the approved kind that is false
+ * and falsely actionable — it names the step he has finished and hides the one that is left.
+ * Owner-reported 2026-10-06/07; measured on production, 17 approved candidates worth 11,580.17
+ * EGP sat un-pushed across four categories, every one labelled as awaiting his approval.
+ *
+ * Neither sentence changes a figure. Both say the line is not charged.
+ * Pinned by tests/deductions-approved-not-pushed-feedback.test.ts.
+ */
+export function withheldLineStatus(decisionStatus: string): string {
+  return decisionStatus === PAYROLL_APPROVED_STATUS
+    ? `${decisionStatus} — NOT charged: push this line in Deductions to send it to payroll`
+    : `${decisionStatus} — not charged, awaiting your approval in Deductions`;
+}
+
+/**
  * Re-exported so every existing importer of this module keeps working; the constant itself moved to
  * `@/lib/deductions/push-cutover` because the Deductions workspace (a client component) has to read
  * it too, and this file reaches the Supabase admin client. One answer, two readers.

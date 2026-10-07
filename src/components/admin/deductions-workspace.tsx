@@ -1287,8 +1287,24 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                         <td className="max-w-xs px-4 py-2.5 text-xs text-slate-600">
                           {/* A candidate the engine could not settle on its own —
                               a vacation day that also carried real work, for
-                              instance — must not read like every other row. */}
-                          {row.calculationStatus === "requires_review" ? (
+                              instance — must not read like every other row.
+
+                              🔴 BUT IT CLEARS ONCE HE HAS DECIDED IT (owner-reported 2026-10-07:
+                              "i presss approv to payroll nothing happns and kept needs review").
+                              calculation_status is the ENGINE's verdict and no decision ever rewrites
+                              it, so this pill kept demanding a review he had already done. Measured
+                              that night: all five September unpaid-vacation rows marked
+                              requires_review already carried a decision, one saved two minutes before
+                              he wrote in, and every one still showed this pill. The decision landed
+                              and the screen denied it, which reads exactly like a broken button.
+
+                              The engine's inability to compute still matters — it is why the amount
+                              comes from the estimate — but "needs YOUR review" is a claim about him,
+                              and it stops being true the moment he decides. StatusBadge in the next
+                              column already states the decision, so the row is never left silent.
+                              Pinned by tests/deductions-approved-not-pushed-feedback.test.ts. */}
+                          {row.calculationStatus === "requires_review" &&
+                          (row.decision?.decisionStatus ?? "Pending") === "Pending" ? (
                             <span className="mr-1.5 whitespace-nowrap rounded-full bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-phx-warn">
                               Needs your review
                             </span>
