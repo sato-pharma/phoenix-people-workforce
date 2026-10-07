@@ -15,7 +15,6 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import { isTelegramConnected } from "@/lib/notifications/settings";
 import { logError } from "@/lib/observability/log";
-import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import { PLAN_EDIT_WAITING_STATUSES, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -30,7 +29,7 @@ import {
 import {
   countPhoenixCrmListRequestsWaitingForYou,
   countPhoenixCrmOffPlanVisitsWaitingForYou,
-  countPhoenixCrmWaiting,
+  countPhoenixCrmWeeklyPlansWaitingForYou,
   phoenixCrmDecisionSeats,
 } from "@/lib/phoenix-crm/server/decision-queues";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -258,9 +257,9 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       // (server/decision-queues.ts). An out-of-list visit's approval is one of these: the visit files
       // an `add` whose first step is the district manager.
       countPhoenixCrmListRequestsWaitingForYou(decisionSeats),
-      reviewSeatIds !== null && reviewSeatIds.length === 0
-        ? 0
-        : countPhoenixCrmWaiting("phoenix_crm_plans", "submitted", waitingIsTest, reviewSeatIds, plannableWeeks(viewer.cairoToday)[0]),
+      // The weekly plans at his own step, through the one producer (server/decision-queues.ts) — the
+      // Needs You board reads the SAME function, so the badge and the board cannot drift.
+      countPhoenixCrmWeeklyPlansWaitingForYou(decisionSeats, viewer.cairoToday),
       // A request to edit a sent week (owner, 2026-10-01): the district manager's step, SFE's, and HR's.
       // The Super Admin's test count holds every step, as his list-request count does.
       reviewSeatIds !== null && reviewSeatIds.length === 0

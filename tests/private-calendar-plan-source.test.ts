@@ -83,6 +83,34 @@ function planItem(date: string, activityType: string, overrides: Partial<Private
   } satisfies PrivateCalendarItem;
 }
 
+/** A fingerprint attendance item for one day, so a test can put a real punch beside a plan. */
+function latePunchFixture(date: string): PrivateCalendarItem {
+  return {
+    approvalImpact: null,
+    description: null,
+    detailLines: [],
+    employeeDepartmentName: null,
+    employeeHrId: employee.hrId,
+    employeeJobTitle: null,
+    employeeLineName: null,
+    employeeName: employee.fullName,
+    endDate: date,
+    exceptionFlags: ["Late"],
+    id: "attendance-late",
+    managerName: null,
+    severity: "warning",
+    source: "attendance",
+    sourceLabel: "Fingerprint attendance",
+    sourceRecordId: "punch-1",
+    sourceSystem: "Fingerprint",
+    sourceTable: "attendance_raw_punches",
+    startDate: date,
+    status: "Late",
+    time: "09:40",
+    title: "Late arrival",
+  };
+}
+
 /** Exceptions for one employee over one day, with the plan as the only thing on the calendar. */
 function exceptionsFor(items: PrivateCalendarItem[], date: string) {
   return derivePrivateCalendarExceptions({
@@ -157,11 +185,18 @@ export function runPrivateCalendarPlanSourceTests() {
     assert.equal(travel.plannedActivityCoversTheDay, true, "the mapper carries the coverage decision onto the item");
     assert.equal(travel.source, "plan");
     assert.equal(travel.severity, "info", "an approved plan is news, never something to review");
+    // No Activity Recorded is gone, and a plain `info` note takes its place — so the day SAYS the plan
+    // is why it is not flagged, instead of going quietly blank and reading like a day nobody judged.
+    const travelDay = exceptionsFor([travel], "2026-10-04");
     assert.deepEqual(
-      exceptionsFor([travel], "2026-10-04").map((exception) => exception.title),
-      [],
-      "an approved Travel day with nothing else recorded no longer reads No Activity Recorded",
+      travelDay.map((exception) => exception.title),
+      ["Covered by the approved plan"],
+      "an approved Travel day no longer reads No Activity Recorded, and says what covers it instead",
     );
+    assert.equal(travelDay[0]?.severity, "info", "it is news, never a finding — every counter on the screen excludes info");
+    assert.equal(travelDay[0]?.code, "covered_by_approved_plan");
+    assert.deepEqual(travelDay[0]?.relatedItemIds, [travel.id], "the note points at the plan item that covers the day");
+    assert.match(travelDay[0]?.description ?? "", /records this day as Travel/, "the note names the planned activity");
 
     // And the day the same plan says is Field work: nothing was logged, so the gap stands.
     const field = planItem("2026-10-07", "Field");
@@ -170,6 +205,21 @@ export function runPrivateCalendarPlanSourceTests() {
       exceptionsFor([field], "2026-10-07").map((exception) => exception.title),
       ["No Activity Recorded"],
       "a planned Field day with no logged visit KEEPS its exception — the plan proves it was expected, not that it happened",
+    );
+
+    // The note appears ONLY when the plan is alone. A day that also carries a punch already explains
+    // itself, and a second line saying so would be noise on the days that need it least.
+    const punchAndPlan: PrivateCalendarItem = {
+      ...latePunchFixture("2026-10-04"),
+      exceptionFlags: [],
+      severity: "info",
+      status: "Complete",
+      title: "Attendance",
+    };
+    assert.deepEqual(
+      exceptionsFor([travel, punchAndPlan], "2026-10-04").map((exception) => exception.title),
+      [],
+      "a planned day that also has a punch says nothing extra",
     );
 
     // The same, for the two other types that have their own record and are the bulk of the volume.
@@ -194,30 +244,7 @@ export function runPrivateCalendarPlanSourceTests() {
 
   // ── 4 · A plan never silences an attendance problem, and both engines read it ───────────────────
   (function aPlanSuppressesNothingAndBothEnginesReadIt() {
-    const latePunch: PrivateCalendarItem = {
-      approvalImpact: null,
-      description: null,
-      detailLines: [],
-      employeeDepartmentName: null,
-      employeeHrId: employee.hrId,
-      employeeJobTitle: null,
-      employeeLineName: null,
-      employeeName: employee.fullName,
-      endDate: "2026-10-06",
-      exceptionFlags: ["Late"],
-      id: "attendance-late",
-      managerName: null,
-      severity: "warning",
-      source: "attendance",
-      sourceLabel: "Fingerprint attendance",
-      sourceRecordId: "punch-1",
-      sourceSystem: "Fingerprint",
-      sourceTable: "attendance_raw_punches",
-      startDate: "2026-10-06",
-      status: "Late",
-      time: "09:40",
-      title: "Late arrival",
-    };
+    const latePunch = latePunchFixture("2026-10-06");
     const plannedAdmin = planItem("2026-10-06", "Admin");
     // Only a CRM-verified double visit suppresses a Late flag. A plan is a document the employee
     // wrote himself, so it must leave the punch problem exactly where it is.

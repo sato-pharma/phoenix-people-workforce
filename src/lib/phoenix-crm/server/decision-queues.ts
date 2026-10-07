@@ -27,6 +27,7 @@
  * `loadUnplannedRows`); anything that needs only the number asks here.
  */
 
+import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { canReviewTerritory, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { UNPLANNED_FIRST_STATUSES, type UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
@@ -134,6 +135,26 @@ export async function countPhoenixCrmUnplannedVisits(
     total += partCount ?? 0;
   }
   return total;
+}
+
+/**
+ * Weekly plans SENT and still waiting for this viewer's approval.
+ *
+ * 🔴 THE MANAGER STEP IS THE WHOLE RULE — there is no SFE step on a plan. The SFE Manager may RETURN
+ * any week and approves none (`canReviewTerritory`), so counting his scope here would put a number on
+ * his board for a decision he cannot take. `loadPlanReviews` says the same thing in the same words,
+ * and the two counts must stay the same number.
+ *
+ * `plannableWeeks(cairoToday)[0]` is the floor: a plan whose week is over no longer waits for anyone,
+ * and it is the Team tab's own window, so the count can never name a week that screen cannot open.
+ *
+ * It moved here on 2026-10-08 from `server/overview.ts`, where it was inlined — the module's own badge
+ * counted it and the Needs You board did not, which is the under-report this file's header exists to
+ * make impossible.
+ */
+export async function countPhoenixCrmWeeklyPlansWaitingForYou(seats: PhoenixCrmDecisionSeats, cairoToday: string): Promise<number> {
+  if (reviewsNothing(seats)) return 0;
+  return countPhoenixCrmWaiting("phoenix_crm_plans", "submitted", seats.isTest, seats.reviewSeatIds, plannableWeeks(cairoToday)[0]);
 }
 
 /** A viewer who reviews nothing: a true zero, and no query at all. */

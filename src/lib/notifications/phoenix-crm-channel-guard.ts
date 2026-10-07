@@ -113,6 +113,13 @@ export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = [
   // material and must never reach a phone lock screen or an inbox, and the Telegram-failure fallback
   // is shut so an admin whose Telegram is not linked yet is not mailed the week's flags instead.
   "crm_fraud_scan",
+  // The SFE Manager's own copy of a re-send, on the week HE returned (2026-10-08): he asked for the
+  // change, and nothing told him it had come back — the plan's actionable notice is the reviewing
+  // manager's, because the SFE returns a week and approves none. It is informational, so no phone; and
+  // on THIS list rather than merely off the email list, because the Telegram-failure fallback would
+  // mail him one per re-send and the module's emails are the four person-taken plan-edit steps plus a
+  // rep's first visit, nothing else.
+  "plan_resent",
 ];
 
 export function isPhoenixCrmModule(module: string | null | undefined): boolean {

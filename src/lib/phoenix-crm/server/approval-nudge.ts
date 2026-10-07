@@ -32,6 +32,7 @@ import {
   type ApprovalNudgeNotice,
   type WaitingApproval,
 } from "@/lib/phoenix-crm/approval-nudge-rules";
+import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
   PHOENIX_CRM_NOTIFICATION_CATEGORY,
@@ -59,7 +60,7 @@ export type ApprovalNudgeRun = {
 /** What is waiting at a manager or SFE step and was raised before `raisedBefore`, real entries only. */
 async function loadWaitingApprovals(raisedBefore: string, cairoToday: string): Promise<WaitingApproval[]> {
   const supabase = getSupabaseAdmin();
-  const [listRequests, unplannedVisits, planEdits] = await Promise.all([
+  const [listRequests, unplannedVisits, planEdits, sentPlans] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () =>
         supabase
@@ -92,6 +93,18 @@ async function loadWaitingApprovals(raisedBefore: string, cairoToday: string): P
           .gte("week_start", addDaysIso(cairoToday, -5)),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
+    fetchAllRowsKeyset<Row>(
+      () =>
+        supabase
+          .from("phoenix_crm_plans")
+          .select("id, seat_id, submitted_at")
+          .eq("is_test", false)
+          .eq("status", "submitted")
+          .lt("submitted_at", raisedBefore)
+          // The Team tab's own window: a week that is over waits for nobody.
+          .gte("week_start", plannableWeeks(cairoToday)[0]),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    ),
   ]);
 
   const items: WaitingApproval[] = [];
@@ -101,6 +114,14 @@ async function loadWaitingApprovals(raisedBefore: string, cairoToday: string): P
     if (!seatId || !raisedAt) continue;
     const stage = listRequestStage(row.stage);
     items.push({ kind: "list_request", seatId, stage, waitingSince: waitingSinceOf(stage, raisedAt, textOrNull(row.manager_decided_at)) });
+  }
+  // A sent week waits at ONE step and only ever the reviewer's — `approversFor` resolves it through
+  // `territoryReviewer`, the same person `canReviewTerritory` lets approve it.
+  for (const row of sentPlans) {
+    const seatId = textOrNull(row.seat_id);
+    const sentAt = textOrNull(row.submitted_at);
+    if (!seatId || !sentAt) continue;
+    items.push({ kind: "weekly_plan", seatId, stage: "manager", waitingSince: waitingSinceOf("manager", sentAt, null) });
   }
   for (const [kind, rows] of [
     ["unplanned_visit", unplannedVisits],

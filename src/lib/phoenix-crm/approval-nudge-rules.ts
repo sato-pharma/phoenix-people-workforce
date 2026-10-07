@@ -12,6 +12,13 @@
  *     `phoenix_crm_plan_edit_requests`, status `manager_pending` / `sfe_pending` (HR's own step is the
  *     owner's, and is not nudged).
  *
+ * 🔴 AND, SINCE 2026-10-08, THE THING THE MODULE SENDS MOST AND NUDGED LEAST — A SENT WEEKLY PLAN:
+ * `phoenix_crm_plans`, status `submitted`, in the weeks the Team tab lists. It was missing from this
+ * run entirely, so a week could sit submitted for days on one notice sent the evening it arrived,
+ * while the rep who sent it could not change a day of it. It has **no SFE step** — the SFE Manager
+ * returns a week and approves none — so it is the territory reviewer's alone, and it is named FIRST in
+ * the message because it is the one that holds a rep's whole week.
+ *
  * Each is told to its approver ONCE, when it is raised. Nothing reminded anybody after that, so an
  * item could sit at one step for days while the rep it belongs to waited. Once a day, at 09:57 Cairo,
  * whoever has something waiting on him for MORE THAN 24 HOURS at his step gets ONE message naming the
@@ -44,17 +51,18 @@ export const APPROVAL_NUDGE_CRON = "57 9 * * *";
 /** Waiting at one step for MORE than this is waiting too long. */
 export const APPROVAL_NUDGE_AFTER_MS = 24 * 60 * 60 * 1000;
 
-export type ApprovalKind = "list_request" | "unplanned_visit" | "plan_edit";
+export type ApprovalKind = "list_request" | "unplanned_visit" | "plan_edit" | "weekly_plan";
 
 export type ApprovalStage = "manager" | "sfe";
 
 /** The order the message names them in. */
-export const APPROVAL_KINDS: readonly ApprovalKind[] = ["list_request", "unplanned_visit", "plan_edit"];
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["weekly_plan", "list_request", "unplanned_visit", "plan_edit"];
 
 const KIND_WORDS: Record<ApprovalKind, readonly [one: string, many: string]> = {
   list_request: ["list request", "list requests"],
   unplanned_visit: ["off-plan visit", "off-plan visits"],
   plan_edit: ["request to edit a week", "requests to edit a week"],
+  weekly_plan: ["weekly plan", "weekly plans"],
 };
 
 export type WaitingApproval = {
@@ -91,7 +99,7 @@ export function isOverdue(waitingSince: string, now: Date): boolean {
 export type ApprovalCounts = Record<ApprovalKind, number>;
 
 function emptyCounts(): ApprovalCounts {
-  return { list_request: 0, unplanned_visit: 0, plan_edit: 0 };
+  return { list_request: 0, unplanned_visit: 0, plan_edit: 0, weekly_plan: 0 };
 }
 
 /** "a", "a and b", "a, b and c". */

@@ -833,6 +833,46 @@ export function derivePrivateCalendarExceptions(input: {
           title: "No Activity Recorded",
         }));
       }
+
+      // The MIRROR of the block above: a day whose ONLY coverage is the approved plan says so, in as
+      // many words, instead of going quietly blank.
+      //
+      // Before this, closing the plan gap left the opposite confusion behind. The red "No Activity
+      // Recorded" block disappeared and a neutral plan chip took its place, so the one thing the day
+      // did not say was the thing somebody reading it wants to know: that the chip IS the reason the
+      // day is not flagged. A manager comparing two blank-looking days could not tell a covered one
+      // from a day nobody had judged yet, which is how a resolved review request turns into a second
+      // review request.
+      //
+      // `info`, deliberately: it is news, never a finding. Every counter on the screen and in the team
+      // snapshot excludes info (reviewExceptions, daysWithIssues, dayNeedsReview, exceptionCount), and
+      // getCompanyNoActivityDays filters on the No Activity title — so this note cannot inflate a
+      // review queue or reach a deduction candidate list.
+      //
+      // Only when the plan is ALONE. A day that also carries a punch, a visit, leave, an excuse or a
+      // holiday already explains itself, and a second line saying so would be noise on the days that
+      // need it least.
+      const planIsTheOnlyCover =
+        coveringPlans.length > 0 &&
+        attendance.length === 0 &&
+        vacations.length === 0 &&
+        excuses.length === 0 &&
+        holidays.length === 0 &&
+        doubleVisits.length === 0 &&
+        fieldVisits.length === 0;
+      if (isExpectedWorkday(employee, date) && planIsTheOnlyCover) {
+        const planned = coveringPlans.map((item) => item.title).join(" + ");
+        exceptions.push(createException({
+          code: "covered_by_approved_plan",
+          date,
+          description: `${employee.fullName}: the approved weekly plan records this day as ${planned}, and that kind of day produces no fingerprint punch and no logged visit by design — so the day is covered, not missing.`,
+          employeeHrId: employee.hrId,
+          employeeName: employee.fullName,
+          relatedItemIds: coveringPlans.map((item) => item.id),
+          severity: "info",
+          title: "Covered by the approved plan",
+        }));
+      }
     }
   }
 
