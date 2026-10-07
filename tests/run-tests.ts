@@ -2227,6 +2227,7 @@ import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
+import { runSlowAuditTests } from "./slow-audit.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
@@ -9264,6 +9265,10 @@ await runTest(
 await runTest(
   "a manager's double visit with a rep who LATER resigned is still his working day — the exclusion is keyed on who LOGGED the row, so a resignation used to erase its partner's evidence retroactively and charge him a no-activity deduction (100 person-days, 18 active people, 11 of them charged and 2 approved for payroll, June-September 2026); the rescued row credits the partner only, keeps agent_crm_id so the duplicate collapse still works, and every money-deciding read goes through the new door",
   runCrmDoubleVisitWithDepartedPartnerTests,
+);
+await runTest(
+  "the slowness audit keeps reading `Memory\\Pages Input/sec` FIRST and never reasons from the disk figure (a 95%-idle NVMe was serving 9,447 hard faults/sec on 2026-10-08, which is why the 2026-09-17 \"disk idle, so not paging\" inference was wrong), it never reports a step that did not run as the step that dominated a job — GitHub spells a skipped step `0001-01-01T00:00:00Z`, not null, and subtracting that named main's skipped `Test` as 719s when it had built for 246s — it keeps the critical path (the wait) and the per-job-rounded billed minutes (the bill) as separate figures, and it may spawn only PowerShell, gh and node, never a build, typecheck, test run, dev server, dev-server-reaper or scratchpad-guard sweep",
+  runSlowAuditTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
