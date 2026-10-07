@@ -30,6 +30,7 @@ const FIELDS = {
   dateOfIssue: "17 September 2026",
   reference: "SP-HR-MR-2026-999",
   reportsTo: "District Manager",
+  roleSummary: "",
   salutationName: "Candidate",
   startDate: "1 October 2026",
   territory: "Cairo",

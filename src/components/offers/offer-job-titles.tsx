@@ -8,7 +8,7 @@
 // "make everything editable to add, for example, job title and add its cost of living."
 
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   offerInputClassName,
   offerLabelClassName,
   offerMoney,
+  offerTextareaClassName,
 } from "@/components/offers/offer-ui";
 import { offerCostOfLivingDrift } from "@/lib/offers/cost-of-living-agreement";
 import type { OfferJobTitle, OfferTemplate } from "@/lib/offers/types";
@@ -25,11 +26,19 @@ type Draft = {
   contractTerm: string;
   costOfLiving: string;
   reportsTo: string;
+  roleSummary: string;
   templateId: string;
   title: string;
 };
 
-const BLANK: Draft = { contractTerm: "", costOfLiving: "", reportsTo: "", templateId: "", title: "" };
+const BLANK: Draft = {
+  contractTerm: "",
+  costOfLiving: "",
+  reportsTo: "",
+  roleSummary: "",
+  templateId: "",
+  title: "",
+};
 
 /**
  * What has been typed into a row and not yet saved.
@@ -39,10 +48,23 @@ const BLANK: Draft = { contractTerm: "", costOfLiving: "", reportsTo: "", templa
  * figure also rewrite the letter binding to whatever the select happened to be showing, which is
  * the silent-erase shape this codebase has been bitten by before.
  */
-type RowEdit = { costOfLiving?: string; templateId?: string };
+type RowEdit = { costOfLiving?: string; roleSummary?: string; templateId?: string };
 
 /** The picker's "no preference" option. Empty string, normalised to null by the route. */
 const NO_TEMPLATE = "";
+
+/**
+ * The one sentence that explains the whole mechanism, written for whoever is hiring rather than for
+ * an engineer — this box is the answer to "the letter talks about sales and I am hiring a recruiter".
+ */
+const ROLE_SUMMARY_HINT =
+  "The paragraph after the greeting, in this position's own words. This is where a letter stops "
+  + "talking about districts and sales to somebody who will not be doing either — one design serves "
+  + "every position, and the position supplies its words. Write {{territory}} where the candidate's "
+  + "own area should appear. Leave it empty for the standard sentence.";
+
+const ROLE_SUMMARY_PLACEHOLDER =
+  "Throughout our selection process you demonstrated… and we would like you to bring both to {{territory}}.";
 
 export function OfferJobTitleCatalogue({
   canDelete,
@@ -88,6 +110,16 @@ export function OfferJobTitleCatalogue({
     return edits[row.id]?.templateId ?? row.templateId ?? NO_TEMPLATE;
   }
 
+  /**
+   * The role paragraph a row is showing. Blank is a real, meaningful value here — "use the standard
+   * sentence" — so the box is left EMPTY rather than prefilled with that sentence's text: filling it
+   * in would turn the next Save into a decision nobody made, and then rewording the standard sentence
+   * would stop reaching this title for ever.
+   */
+  function rowRoleSummary(row: OfferJobTitle): string {
+    return edits[row.id]?.roleSummary ?? row.roleSummary ?? "";
+  }
+
   async function call(url: string, method: string, body?: unknown) {
     const response = await fetch(url, {
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -113,6 +145,7 @@ export function OfferJobTitleCatalogue({
         contractTerm: draft.contractTerm.trim() || null,
         costOfLiving: Number(draft.costOfLiving || 0),
         reportsTo: draft.reportsTo.trim() || null,
+        roleSummary: draft.roleSummary.trim() || null,
         templateId: draft.templateId || null,
         title,
       });
@@ -152,6 +185,12 @@ export function OfferJobTitleCatalogue({
       said.push(chosen ? `letter design "${chosen.name}"` : "letter design back to the default");
     }
 
+    if (pending.roleSummary !== undefined) {
+      const trimmed = pending.roleSummary.trim();
+      body.roleSummary = trimmed === "" ? null : trimmed;
+      said.push(trimmed === "" ? "the letter's wording back to the standard paragraph" : "what the letter says this job is");
+    }
+
     setBusy(row.id);
     try {
       const payload = await call(`/api/offers/job-titles/${row.id}`, "PATCH", body);
@@ -185,8 +224,8 @@ export function OfferJobTitleCatalogue({
   return (
     <div className="flex flex-col gap-5">
       <AdminTableShell
-        description={`Cost of living is flat per title, and each title can open its offers on its own letter design. Change either here and every new offer for that title picks it up — offers already issued keep what they were sent with. A title left on "${defaultTemplateName}" follows the default, so moving the default moves it too.`}
-        title="Job titles, cost of living and letter design"
+        description={`Cost of living is flat per title, each title can open its offers on its own letter design, and each one says in its own words what the job is. Change any of them here and every new offer for that title picks it up — offers already issued keep what they were sent with. A title left on "${defaultTemplateName}" follows the default, so moving the default moves it too. The Letter Designer has no filter by position on purpose: it designs the LOOK, and this screen holds the WORDS.`}
+        title="Job titles, cost of living, letter design and wording"
       >
         {/* Desktop: the full table. Mobile gets cards below — the admin shell never shows a table
             on a phone. */}
@@ -228,7 +267,8 @@ export function OfferJobTitleCatalogue({
               {jobTitles.map((row) => {
                 const pending = edits[row.id];
                 return (
-                  <tr className="border-b border-slate-100 last:border-0" key={row.id}>
+                  <Fragment key={row.id}>
+                  <tr className="border-b border-slate-100">
                     <td className="break-words px-5 py-3">
                       <span className="block font-bold text-slate-900">{row.title}</span>
                       <span className="mt-0.5 block text-xs text-slate-500">
@@ -286,6 +326,31 @@ export function OfferJobTitleCatalogue({
                       </div>
                     </td>
                   </tr>
+                  {/*
+                    The role paragraph gets a row of its own across all four columns rather than a
+                    fifth column. The fits-the-screen rule (AGENTS.md §4) is why: a paragraph needs
+                    width, and a fifth column here would reintroduce exactly the sideways scroll the
+                    merge above was done to remove. A full-width row under the title it belongs to
+                    costs no horizontal space at any viewport.
+                  */}
+                  <tr className="border-b border-slate-100 last:border-0">
+                    <td className="px-5 pb-4" colSpan={4}>
+                      <label className={offerLabelClassName} htmlFor={`role-${row.id}`}>
+                        What the letter says this job is
+                      </label>
+                      <textarea
+                        className={offerTextareaClassName}
+                        disabled={!canManage || busy === row.id}
+                        id={`role-${row.id}`}
+                        onChange={(event) => editRow(row.id, { roleSummary: event.target.value })}
+                        placeholder={ROLE_SUMMARY_PLACEHOLDER}
+                        rows={3}
+                        value={rowRoleSummary(row)}
+                      />
+                      <p className={offerHintClassName}>{ROLE_SUMMARY_HINT}</p>
+                    </td>
+                  </tr>
+                  </Fragment>
                 );
               })}
               {jobTitles.length === 0 ? (
@@ -336,6 +401,21 @@ export function OfferJobTitleCatalogue({
                   ))}
                 </select>
               </div>
+              <div className="mt-3">
+                <label className={offerLabelClassName} htmlFor={`role-m-${row.id}`}>
+                  What the letter says this job is
+                </label>
+                <textarea
+                  className={offerTextareaClassName}
+                  disabled={!canManage || busy === row.id}
+                  id={`role-m-${row.id}`}
+                  onChange={(event) => editRow(row.id, { roleSummary: event.target.value })}
+                  placeholder={ROLE_SUMMARY_PLACEHOLDER}
+                  rows={4}
+                  value={rowRoleSummary(row)}
+                />
+                <p className={offerHintClassName}>{ROLE_SUMMARY_HINT}</p>
+              </div>
               <div className="mt-3 flex gap-2">
                 <Button
                   disabled={!canManage || edits[row.id] === undefined || busy === row.id}
@@ -362,7 +442,7 @@ export function OfferJobTitleCatalogue({
       </AdminTableShell>
 
       <AdminTableShell
-        description="A new title becomes available to every offer immediately. Reports-to, contract term and the letter design are all prefilled into the offer form when the title is chosen."
+        description="A new title becomes available to every offer immediately. Reports-to, contract term, the letter design and the wording below are all prefilled into the offer form when the title is chosen."
         title="Add a job title"
       >
         <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-4">
@@ -438,6 +518,19 @@ export function OfferJobTitleCatalogue({
               ))}
             </select>
             <p className={offerHintClassName}>Left on the default, this title follows whichever design is the default.</p>
+          </div>
+          <div className="md:col-span-2 xl:col-span-4">
+            <label className={offerLabelClassName} htmlFor="new-role">What the letter says this job is</label>
+            <textarea
+              className={offerTextareaClassName}
+              disabled={!canManage}
+              id="new-role"
+              onChange={(event) => setDraft({ ...draft, roleSummary: event.target.value })}
+              placeholder={ROLE_SUMMARY_PLACEHOLDER}
+              rows={4}
+              value={draft.roleSummary}
+            />
+            <p className={offerHintClassName}>{ROLE_SUMMARY_HINT}</p>
           </div>
           <div className="md:col-span-2 xl:col-span-4">
             <Button disabled={!canManage || busy === "add"} onClick={() => void addTitle()} size="lg" type="button">

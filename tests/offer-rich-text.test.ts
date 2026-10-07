@@ -44,6 +44,7 @@ export function runOfferRichTextTests() {
     dateOfIssue: "27 August 2026",
     reference: "SP-HR-DSM-2026-019",
     reportsTo: "National Sales Manager",
+    roleSummary: "",
     salutationName: "Dr SAMAA SHALABY",
     startDate: "1 September 2026",
     territory: "Delta (3)",
