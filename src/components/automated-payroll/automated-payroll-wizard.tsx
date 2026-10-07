@@ -873,7 +873,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               <div className="mt-2 flex flex-col gap-1 text-xs">
                 {moduleDrift.rows.map((row) => (
                   <div key={`${row.stepKey}:${row.hrId}:${row.field}`} className="opacity-80">
-                    {row.fullName} ({row.hrId}) — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
+                    {row.fullName}, {stepDefinition(row.stepKey).title} — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
                     says {row.proposedNow.toFixed(2)}
                     {row.overridden
                       ? `; this run charges ${row.charged.toFixed(2)}, ${describeChargeSource(row.chargeSource, cairoTimeLabel)}`
@@ -882,7 +882,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 ))}
                 <div className="opacity-80">
                   {moduleDrift.staleCharges > 0
-                    ? "Re-confirm the step above to take the module's current figures. A figure that differs from the one confirmed still stands and is not blocking anything."
+                    ? "Open each step named above and confirm it again — it now takes the module's current figure for every line nobody changed. A figure that differs from the one confirmed still stands and is not blocking anything."
                     : "Nothing here is wrong on its own. Re-open the step and re-enter a figure to take the module's new one."}
                 </div>
               </div>
