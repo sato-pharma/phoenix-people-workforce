@@ -652,6 +652,10 @@ export async function reconcileCandidateDrafts(input: {
   let superseded = 0;
   let decisionsCarried = 0;
   let decisionsReset = 0;
+  // Employees whose APPROVED deduction this pass retired, re-derived or dropped —
+  // every one of which can leave a confirmed Automated Payroll step frozen on a
+  // figure the module has just moved. Resynced once after the pass (see below).
+  const payrollResyncCompacts = new Set<string>();
 
   try {
     const live = await listCandidatesForMonth({
@@ -738,6 +742,16 @@ export async function reconcileCandidateDrafts(input: {
       const previousStatus = previous?.decisionStatus ?? "Pending";
       if (previousStatus === "Pending") continue;
 
+      // Only an APPROVED decision reaches the payroll sheet (deductions-source.ts),
+      // so only an approved one now being retired, re-derived onto a replacement, or
+      // dropped to Pending can leave a confirmed Automated Payroll step frozen on a
+      // stale figure. Collect the employee and resync after the pass — the same
+      // safeguard recordDecision and the manual route already apply to a single
+      // decision. A non-approved row charges 0.00 before and after and is left alone.
+      if (previousStatus === "Approved for Payroll" && candidate.employeeHrIdCompact) {
+        payrollResyncCompacts.add(candidate.employeeHrIdCompact);
+      }
+
       // A decided row is being retired. Either carry that decision onto its replacement, or — if
       // there is no replacement — say so loudly, because silently dropping an approval is how
       // 9,306.42 EGP of review work disappeared and had to be re-entered by hand.
@@ -787,6 +801,22 @@ export async function reconcileCandidateDrafts(input: {
       } else {
         decisionsCarried += 1;
       }
+    }
+
+    // One resync for the whole pass: clear the frozen columns and re-open any
+    // confirmed step that owns a moved figure, so the sheet re-derives from the
+    // live candidates rather than paying a figure the re-collect has superseded.
+    // Never throws; a run whose Part 2 is already confirmed comes back as a
+    // warning the caller can surface, exactly as the single-decision paths do.
+    if (payrollResyncCompacts.size > 0) {
+      const resync = await resyncPayrollDeductionSteps({
+        monthKey: normalizeMonthKey(input.scope.monthKey),
+        employees: Array.from(payrollResyncCompacts, (hrIdCompact) => ({
+          hrIdCompact,
+          categories: [input.scope.category],
+        })),
+      });
+      warnings.push(...describeDeductionResyncNotApplied(resync));
     }
   } catch (error) {
     warnings.push(
