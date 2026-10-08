@@ -5,12 +5,14 @@ import type {
   VacationBalanceSnapshot,
   VacationDayPart,
   VacationPaymentStatus,
+  VacationRequestStatus,
   VacationType,
   VacationUnpaidReason,
 } from "./types.ts";
 import {
   VACATION_DAY_PARTS,
   VACATION_PAYMENT_STATUSES,
+  VACATION_STATUSES,
   VACATION_TYPES,
 } from "./types.ts";
 
@@ -86,6 +88,19 @@ export function normalizeVacationType(value: unknown): VacationType | null {
   return VACATION_TYPES.some((option) => option.value === normalized)
     ? (normalized as VacationType)
     : null;
+}
+
+/**
+ * The status a stored request is shown with. Every value in VACATION_STATUSES passes through as it
+ * is; only an unknown value falls back to pending_manager. The old reader listed the statuses by
+ * hand and left "returned" out, so a request sent back to the employee read as Pending Manager,
+ * sat in the approvers' queue, and could not be resubmitted (VAC-0653, 2026-10-08).
+ */
+export function normalizeVacationRequestStatus(value: unknown): VacationRequestStatus {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return VACATION_STATUSES.some((option) => option.value === normalized)
+    ? (normalized as VacationRequestStatus)
+    : "pending_manager";
 }
 
 export function normalizeVacationDayPart(value: unknown): VacationDayPart | null {
