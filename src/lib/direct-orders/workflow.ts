@@ -42,7 +42,19 @@ export type DirectOrderWorkflowActionKey =
   // exist in the directory moves nothing. The order still owes the same approvals to the same
   // seats. `keep_held` set the precedent that an action worth auditing is an action worth
   // declaring, even when it does not move the status.
-  | "repair_approval_rung";
+  | "repair_approval_rung"
+  // Added 2026-10-08 with migration 20261008040000_direct_orders_close_orphaned.sql, and the call
+  // site (closeOrphanedDirectOrder) in the same commit — the union, the DB row and the caller
+  // together, per the F2 rule above.
+  //
+  // `returned` -> `cancelled`. A return is a question addressed to the ONE person who raised the
+  // order; `reviseDirectOrder` refuses everyone else by canonical HR_ID. Once that person resigns
+  // the question can never be answered, and nothing expires a `returned` order, so it ages out of
+  // sight for ever. Five such orders had to be cleared by hand-written SQL on 2026-10-08 because
+  // this action did not exist — the Needs You board found them and named a remedy the product could
+  // not perform. Super Admin only, and the service refuses outright while the requester can still
+  // log in: that guard is the difference between clearing a dead end and deleting someone's work.
+  | "close_orphaned";
 
 /** Map a request status to the registry status vocabulary (identical here — kept explicit for safety). */
 export function toDirectOrderWorkflowStatus(status: DirectOrderStatus | string | null | undefined): string {

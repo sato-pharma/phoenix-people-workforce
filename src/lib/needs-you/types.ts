@@ -152,8 +152,9 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   "phoenix-crm-decisions": { href: "/admin/field-crm?tab=team", screen: "Phoenix CRM Team" },
   // Spans three modules, so each ITEM carries its own href to the screen that owns it (see the
   // adapter). This source-level default is only the fallback for the amber "could not be read" row
-  // and the every-source band label; Direct Orders is where today's real orphans live.
-  "orphaned-requests": { href: "/admin/direct-orders", screen: "Direct Orders" },
+  // and the every-source band label; Stuck Approvals is the cross-module screen that can actually
+  // act on these, and since 2026-10-08 it is where a stranded direct order is closed.
+  "orphaned-requests": { href: "/admin/approvals/stuck", screen: "Stuck Approvals" },
   // The final-settlement flow for one leaver inside an unfinished month lives on /admin/deductions —
   // the only screen where a human can still net an uncollected leaver deduction in. The board links;
   // it never acts, and it never states the EGP, which lives on that screen.

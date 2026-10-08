@@ -54,11 +54,34 @@ export const orphanedRequestModuleLabels: Record<OrphanedRequestModule, string> 
   vacation: "vacation request",
 };
 
-/** Where each module's stranded request is cleared up. The board links here; it never acts. */
-export const orphanedRequestModuleScreens: Record<OrphanedRequestModule, { href: `/${string}`; screen: string }> = {
-  "direct-order": { href: "/admin/direct-orders", screen: "Direct Orders" },
-  marketing: { href: "/admin/marketing-requests/inbox", screen: "Marketing Inbox" },
-  vacation: { href: "/admin/approvals/vacation", screen: "Leave Approvals" },
+/**
+ * Where each module's stranded request is cleared up. The board links here; it never acts.
+ *
+ * 🔴 `requesterRemedy` IS THE VERB THAT SCREEN CAN ACTUALLY PERFORM, and it lives here as a field
+ * rather than as a word in the copy because getting it wrong is a real defect this file shipped.
+ * Until 2026-10-08 the direct-order note read "reassign or close them on the Direct Orders screen"
+ * and **neither control existed anywhere in Phoenix** — Stuck Approvals reassigned weekly plans and
+ * excuses only, and cancelling a direct order took `held` only. So five stranded orders were found
+ * correctly by this module, shown correctly on the board, and then cleared by hand-written SQL
+ * against production, because the remedy the board named could not be clicked. Naming a verb here
+ * without building the control is that bug again.
+ *
+ * `vacation` has no requester case at all (`BACK_WITH_REQUESTER.vacation` is empty — a vacation
+ * request is never handed back to the employee), so its remedy is never rendered.
+ */
+export const orphanedRequestModuleScreens: Record<
+  OrphanedRequestModule,
+  { href: `/${string}`; screen: string; requesterRemedy: string }
+> = {
+  // CLOSED, never reassigned: a resubmit reprices the basket on today's basis and resumes at the
+  // rung that returned it, so re-addressing one hands a live manager a money edit rather than an
+  // administrative tidy. `closeOrphanedDirectOrder` — Super Admin only, and it refuses outright
+  // while the requester can still log in.
+  "direct-order": { href: "/admin/approvals/stuck", requesterRemedy: "close", screen: "Stuck Approvals" },
+  // `cancelMarketingRequest` accepts `returned`, Super Admin only, from the request's own Case File
+  // — which is reached from the inbox.
+  marketing: { href: "/admin/marketing-requests/inbox", requesterRemedy: "cancel", screen: "Marketing Inbox" },
+  vacation: { href: "/admin/approvals/vacation", requesterRemedy: "reassign", screen: "Leave Approvals" },
 };
 
 /**
