@@ -78,6 +78,7 @@ cost, the deploy path or the region.
 - **There is a staging application**, wired to the staging Supabase project — §3.
 - **A hand-run typecheck must start cold:** `tsc --incremental false`.
 - **Never foreground-watch a long pipeline.** Background it and check at batched checkpoints.
+- **Batch your look-arounds: when you already know the next few files, greps or status reads you need, send them as parallel tool calls in ONE step** (or one shell command that prints them all). Every step is a full model round trip, ~10 s here; on 8 Oct 2026 a build task averaged 14 single look-around steps and only 10% of steps batched. `.claude/hooks/batch-nudge.mjs` reminds a session after three in a row and never blocks. Account: `docs/hook-dispatcher.md`, "batch-nudge".
 - **Role sweeps use dev-auth request headers** (`PHOENIX_ENABLE_DEV_AUTH_HEADERS=true` + `x-phoenix-role`/`x-phoenix-hr-id`), never the cookie flow — it logs the real user out.
 - **Merged-branch checks must be squash-aware:** `gh pr list --head <branch> --state merged`, never `git branch --merged` — 🔴 **but that asks about a NAME, so a REUSED name returns the OLD merged PR while yours is still open**: before deleting a branch ask for the PR by NUMBER and check its files are byte-identical on `main`. `a-reused-branch-name-finds-the-old-merged-pr`
 - **A regression test counts only if you break the fix and see its own headline assertion fire.**
