@@ -219,12 +219,30 @@ export function googleMismatchMessage(customerName: string): string {
  * A held validation, as the rep reads it. AUTOMATED, by the owner's word: "do not show the rep that a
  * person is accepting or rejecting; show him that it's automated from system". No name, no role, no
  * "review" — the system is checking, and the system answers.
+ *
+ * 🔴 IT SAYS "THIS PLACE", NOT "THE LOCATION", SINCE 2026-10-08 (owner, asked directly and answered
+ * "widen it to this place"). From that day a place can be held for what its SIGNBOARD shows as well
+ * as for where its pin is, and a photo held for its sign is not a location problem — the old wording
+ * would have told the rep something slightly untrue about his own work. One impersonal sentence
+ * covering both holds is cheaper than a second set of strings and keeps the voice he approved; the
+ * alternative, naming the photo, would have been the module's first sentence telling a rep his
+ * evidence was being judged.
  */
-export const LOCATION_CHECKING_TITLE = "The system is checking the location";
+export const LOCATION_CHECKING_TITLE = "The system is checking this place";
 export const LOCATION_CHECKING_TEXT =
-  "The system checks every new place against the map before it is confirmed, and it confirms this one automatically. Until then the customer stays under To validate.";
-export const LOCATION_CHECKING_PILL = "Location being checked";
+  "The system checks every new place before it is confirmed, and it confirms this one automatically. Until then the customer stays under To validate.";
+export const LOCATION_CHECKING_PILL = "Place being checked";
 export const LOCATION_NOT_CONFIRMED_PILL = "Validate again";
+/**
+ * 🔴 THIS CONSTANT WAS MISSING UNTIL 2026-10-08, and its absence hid a live defect for five days.
+ * list-customer.tsx hard-coded "Validate again" as a literal instead, which is why nobody noticed
+ * that its two notices both tested `pending && !checking` and therefore BOTH fired on a rejected
+ * rep — "Validate again" and "Not validated yet", one under the other, the second written for a
+ * customer who had never been validated at all. Every title on that screen now comes from a constant.
+ */
+export const LOCATION_NOT_CONFIRMED_TITLE = "Validate again";
+/** A customer waiting for his first validation — never shown beside "Validate again" (list-customer.tsx). */
+export const NOT_VALIDATED_YET_TITLE = "Not validated yet";
 /** After the check could not confirm it — the customer is back under To validate. */
 export const LOCATION_NOT_CONFIRMED_TEXT =
-  "The system could not confirm this location. Validate the customer again, standing at the entrance with precise location on.";
+  "The system could not confirm this place. Validate the customer again, standing at the entrance with precise location on.";

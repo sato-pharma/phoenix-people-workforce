@@ -149,6 +149,17 @@ const REFUSALS: Record<string, Refusal> = {
   visit_ask_answered: { status: 409, message: "This ask was already answered. Reload the page." },
   visit_ask_cancelled: { status: 409, message: "The rep cancelled this ask. Reload the page." },
   visit_ask_bad_day: { status: 409, message: "Choose one of the days offered: today or a field day in the next four weeks, never a Friday. Reload the page." },
+  // The same-seat duplicate merge (owner, 2026-10-08). Only the one-off script reaches these — the
+  // function is service-role only — so the reader is whoever runs it, and each names the pair it skips.
+  keeper_is_loser: { status: 400, message: "A customer cannot be merged into itself. Choose two different records." },
+  not_same_list: { status: 409, message: "These two records are not on the same rep's list, so they are not merged." },
+  list_type_differs: { status: 409, message: "One record is AM and the other PM, so they are not merged." },
+  keeper_not_validated: { status: 409, message: "The record being kept is not validated, so the pair is not merged." },
+  keeper_holds_no_place: { status: 409, message: "The record being kept has no place while the other has one, so the pair is not merged." },
+  loser_has_moves: { status: 409, message: "The record being removed was moved between reps, so the pair is left for a person to decide." },
+  visit_same_day: { status: 409, message: "Both records have a visit on the same day, so the pair is left for a person to decide." },
+  plan_same_day: { status: 409, message: "Both records are planned on the same day, so the pair is left for a person to decide." },
+  ask_waiting_twice: { status: 409, message: "Both records have a visit ask waiting, so the pair is left for a person to decide." },
 };
 
 function messageOf(error: unknown): string {

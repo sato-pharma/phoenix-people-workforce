@@ -244,6 +244,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // belongs to the reviewing manager, because the SFE returns a week and approves none — so in-app and
   // Telegram only, and it is on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES as well, which shuts both the
   // phone and the Telegram-failure email fallback. This row is the intent, that guard the enforcement.
+  // The rep's "validate this customer again" (owner, 2026-10-08): what is wrong with HIS photo, from a
+  // closed list, worded about the picture and never a person. The notifier sends it in-app only, and
+  // it is on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES, which shuts the phone and the Telegram-failure email
+  // fallback. This row is the intent, that guard the enforcement.
+  "phoenix_crm.validation_not_confirmed": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.plan_resent": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // The hourly routine-visit rollup (owner, 2026-10-05): the batched half of the mirror — routine
   // planned visits gathered into one message an hour to the NSM and the SFE Managers. In-app and

@@ -7,8 +7,20 @@
  * rows carry every field a filter reads, so one set of functions narrows all three sections.
  */
 
-/** Which sections are shown. "all" is everything; the rest narrow to one outcome. */
-export type ValidationReviewOutcome = "all" | "pending" | "approved" | "rejected" | "validated";
+/**
+ * Which sections are shown. "all" is everything; the rest narrow to one outcome.
+ *
+ * "unseen" (2026-10-08) narrows the validations in use to the ones NOBODY HAS EVER LOOKED AT — no review
+ * row of any status. 598 of the module's first 643 places were exactly that, and the page could not say
+ * so; combined with the signboard verdict on every place it is the one sort that matters.
+ */
+export type ValidationReviewOutcome = "all" | "pending" | "approved" | "rejected" | "validated" | "unseen";
+
+/** A validated place passes the outcome when the outcome shows that section — "unseen" only if never reviewed. */
+export function validatedPassesOutcome(row: { reviewed: boolean }, outcome: ValidationReviewOutcome): boolean {
+  if (outcome === "unseen") return !row.reviewed;
+  return outcome === "all" || outcome === "validated";
+}
 
 /** How far back a row may be, by its own date (captured, decided, or validated). */
 export type ValidationReviewPeriod = "all" | "today" | "7" | "14" | "30";

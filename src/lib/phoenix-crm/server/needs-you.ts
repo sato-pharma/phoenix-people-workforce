@@ -53,7 +53,11 @@ import {
   phoenixCrmDecisionSeats,
 } from "@/lib/phoenix-crm/server/decision-queues";
 import { loadReadiness } from "@/lib/phoenix-crm/server/list";
-import { canDecideValidationReviews, countValidationReviewsWaiting } from "@/lib/phoenix-crm/server/validation-reviews";
+import {
+  canDecideValidationReviews,
+  countReopenedCustomersWaiting,
+  countValidationReviewsWaiting,
+} from "@/lib/phoenix-crm/server/validation-reviews";
 
 export type PhoenixCrmDecisionCounts = {
   /** List requests — a grade, a drop, an add, a bring-back — at a step this viewer takes. */
@@ -84,6 +88,15 @@ export type PhoenixCrmDecisionCounts = {
   placeChecks: number;
   /** When the oldest of those was held, so the row can state its age. */
   oldestPlaceCheckAt: string | null;
+  /**
+   * Customers whose place the Super Admin refused, back under To validate and not captured again yet
+   * (added 2026-10-08: measured that day, 0 of 22 had been, the oldest 76.7 hours later). His alone,
+   * like `placeChecks` — 0 with no query for everyone else. NOT a decision of his: the rep redoes the
+   * photo, so the row is worth knowing and never his own lane.
+   */
+  reopenedWaiting: number;
+  /** When the oldest of those was refused, so the row can state how long it has waited. */
+  oldestReopenedAt: string | null;
   /** True when the two decision counts are TEST entries — the Super Admin, or a test account. */
   isTest: boolean;
 };
@@ -108,7 +121,8 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
   const seats = phoenixCrmDecisionSeats(viewer);
   const seatIds = viewer.scopeTerritories.map((seat) => seat.seatId);
 
-  const [listRequests, offPlanVisits, weeklyPlans, readiness, placeCheck] = await Promise.all([
+  const decidesPlaces = canDecideValidationReviews(viewer);
+  const [listRequests, offPlanVisits, weeklyPlans, readiness, placeCheck, reopened] = await Promise.all([
     countPhoenixCrmListRequestsWaitingForYou(seats),
     countPhoenixCrmOffPlanVisitsWaitingForYou(seats),
     // The weekly plans waiting on him. It was missing here until 2026-10-08 while the module's own
@@ -121,7 +135,9 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
     // The held-place queue is the Super Admin's alone, so for everybody else it is a TRUE zero and no
     // query is made at all — the gate is the module's own (`canDecideValidationReviews`), never a
     // role test spelled out again here.
-    canDecideValidationReviews(viewer) ? countValidationReviewsWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
+    decidesPlaces ? countValidationReviewsWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
+    // The same gate for the same reason: only he refuses a place, so only he is told it is not redone.
+    decidesPlaces ? countReopenedCustomersWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
   ]);
 
   let awaitingValidation = 0;
@@ -135,6 +151,8 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
     territories: seatIds.length,
     placeChecks: placeCheck.count,
     oldestPlaceCheckAt: placeCheck.oldestAt,
+    reopenedWaiting: reopened.count,
+    oldestReopenedAt: reopened.oldestAt,
     isTest: seats.isTest,
   };
 }

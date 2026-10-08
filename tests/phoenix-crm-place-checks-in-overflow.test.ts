@@ -97,7 +97,9 @@ function checkLoadersGoThroughSelectByIds(): void {
   // The two reads that return many rows per id must select `id`, or the keyset pager cannot seek.
   const validated = functionBody(service, "loadValidatedPlaces");
   assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_visits",\s*"id, place_id"/, "the visits read carries id for the keyset walk");
-  assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_validation_reviews",\s*"id, place_id"/, "the pending-review read carries id too");
+  // Since 2026-10-08 it reads EVERY review of the customer (status tells held from merely reviewed),
+  // so the select carries status beside the id the pager seeks on.
+  assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_validation_reviews",\s*"id, place_id, status"/, "the review read carries id too");
 }
 
 export function runPhoenixCrmPlaceChecksInOverflowTests(): void {

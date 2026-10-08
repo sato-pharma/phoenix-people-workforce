@@ -133,7 +133,12 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
     assert.ok(board.includes(`"${key}"`), `the board offers the ${key} control`);
   }
 
-  // The page hands the board all three sets rather than rendering the sections itself.
+  // The page hands the board every set — and, since 2026-10-08, the customers waiting to be captured
+  // again and which reads hit their ceiling — rather than rendering the sections itself.
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(page, /<ValidationReviewsBoard pending=\{waiting\} decided=\{decided\} validated=\{validated\} \/>/, "the page delegates the sections to the board");
+  assert.match(
+    page,
+    /<ValidationReviewsBoard pending=\{waiting\} decided=\{decided\} validated=\{validated\} reopened=\{reopened\} capped=\{capped\} \/>/,
+    "the page delegates the sections to the board",
+  );
 }

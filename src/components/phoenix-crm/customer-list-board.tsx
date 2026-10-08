@@ -58,7 +58,7 @@ import {
 } from "@/lib/phoenix-crm/customer-list-grouping";
 import { clusterRows, describeSharing, findNeighbours, type NearbyContact } from "@/lib/crm/location-confidence";
 import { factInk, gradeInk, listRowFacts, rowPoint } from "@/lib/phoenix-crm/list-row-facts";
-import { visitsWaitingFirst } from "@/lib/phoenix-crm/validate-next";
+import { validateFirstIn } from "@/lib/phoenix-crm/validate-next";
 import { planPatternRows } from "@/lib/phoenix-crm/plan-pattern";
 import { LOCATION_CHECKING_PILL, LOCATION_NOT_CONFIRMED_PILL } from "@/lib/phoenix-crm/google-place-rules";
 import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
@@ -763,9 +763,13 @@ export function CustomerListBoard({
             // 🔴 Only the few with the MOST visits waiting are marked, per brick (owner, 2026-09-30:
             // "mark only the ones with the most visits waiting, not all 88"). A brick whose
             // candidates all carry the same count marks none — there is no "most" to point at.
-            const waitingFirst = variant === "pending" ? visitsWaitingFirst(neighbourhoods.rows) : null;
+            // 🔴 AND A CUSTOMER WAITING TO BE CAPTURED AGAIN COMES BEFORE ALL OF THEM, oldest wait
+            // first, in rose (owner, 2026-10-08) — `validateFirstIn`. His own "Validate again" pill
+            // says why; the rose rail only puts him where the rep looks first.
+            const waitingFirst = variant === "pending" ? validateFirstIn(neighbourhoods.rows) : null;
             const entry = { ...rawEntry, rows: waitingFirst?.rows ?? neighbourhoods.rows };
             const markedForValidating = waitingFirst?.marked ?? EMPTY_MARKS;
+            const captureAgain = waitingFirst?.again ?? EMPTY_MARKS;
             return (
               <div key={entry.group.key}>
                 <GroupHeading
@@ -783,12 +787,24 @@ export function CustomerListBoard({
                         // rail and tint when validating this customer starts visits counting. The
                         // order is already the row order — both read `entry.rows`.
                         <CrmCard
-                          accent={markedForValidating.has(customer.customerId) ? "border-l-amber-500" : undefined}
+                          accent={
+                            captureAgain.has(customer.customerId)
+                              ? "border-l-rose-500"
+                              : markedForValidating.has(customer.customerId)
+                                ? "border-l-amber-500"
+                                : undefined
+                          }
                           actions={rowAction(customer)}
-                          className={markedForValidating.has(customer.customerId) ? "bg-amber-50" : undefined}
+                          className={
+                            captureAgain.has(customer.customerId)
+                              ? "bg-rose-50"
+                              : markedForValidating.has(customer.customerId)
+                                ? "bg-amber-50"
+                                : undefined
+                          }
                           key={customer.customerId}
                           meta={cardMetaText(customer)}
-                          status={rowPills(customer, variant, markedForValidating.has(customer.customerId))}
+                          status={rowPills(customer, variant, markedForValidating.has(customer.customerId) && !captureAgain.has(customer.customerId))}
                           title={<span dir="auto">{customer.name}</span>}
                         >
                           {/* The same facts the table prints, folded to a phone's one column — and
@@ -874,7 +890,8 @@ export function CustomerListBoard({
                         {entry.rows.map((customer) => {
                           const facts = listRowFacts(customer);
                           const shared = (customer.sharedWith?.length ?? 0) > 0;
-                          const ready = markedForValidating.has(customer.customerId);
+                          const again = captureAgain.has(customer.customerId);
+                          const ready = markedForValidating.has(customer.customerId) && !again;
                           const near = neighbourhoods.of.get(customer.customerId) ?? null;
                           const nearTint = near?.cluster == null ? null : NEIGHBOUR_TINTS[near.cluster % NEIGHBOUR_TINTS.length];
                           return (
@@ -891,9 +908,9 @@ export function CustomerListBoard({
                             // was built, and ready-to-count takes the amber RAIL on the first cell
                             // plus its own pill. A row that is both still says both, and neither
                             // colour is ever painted over the other.
-                            <tr className={shared ? "bg-violet-50" : ready ? "bg-amber-50" : undefined} key={customer.customerId}>
+                            <tr className={shared ? "bg-violet-50" : again ? "bg-rose-50" : ready ? "bg-amber-50" : undefined} key={customer.customerId}>
                               <td
-                                className={`${crmTdClassName} ${GRID_CELL} first:border-l-0 ${ready ? "border-l-[3px] border-l-amber-500 first:border-l-[3px]" : ""}`}
+                                className={`${crmTdClassName} ${GRID_CELL} first:border-l-0 ${again ? "border-l-[3px] border-l-rose-500 first:border-l-[3px]" : ready ? "border-l-[3px] border-l-amber-500 first:border-l-[3px]" : ""}`}
                               >
                                 <p className="font-black text-slate-950">
                                   <span dir="auto">{customer.name}</span>

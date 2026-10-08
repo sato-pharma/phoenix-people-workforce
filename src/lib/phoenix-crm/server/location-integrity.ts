@@ -16,8 +16,15 @@
  *      the capture it would have described is still on file to be re-judged later.
  */
 
+import { assessCaptureTrust, fixesAreBitIdentical, type CaptureFix } from "@/lib/evidence/capture-trust";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
-import { checkLocationIntegrity, REPLAY_DECIMALS, type PhoenixCrmPriorFix } from "@/lib/phoenix-crm/location-integrity";
+import {
+  checkLocationIntegrity,
+  PHOENIX_CRM_STRONG_INTEGRITY_FLAGS,
+  REPLAY_DECIMALS,
+  type PhoenixCrmIntegrityFlag,
+  type PhoenixCrmPriorFix,
+} from "@/lib/phoenix-crm/location-integrity";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -201,5 +208,143 @@ export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
     }
   } catch (error) {
     console.error("[phoenix-crm] location integrity check failed", { subjectId: input.subjectId, error });
+  }
+}
+
+/**
+ * Compare a place's TWO readings with each other and file what the comparison says.
+ *
+ * A place stores the photo's own shutter fix and the separate Capture-location pin, and until
+ * 2026-10-08 nothing anywhere compared them: each was measured against its own ceiling and that was
+ * all. `assessCaptureTrust` already answers exactly this question for three other modules, so no
+ * threshold is declared here — the verdict is read, never re-derived.
+ *
+ * 🔴 A FLAG, NEVER A REFUSAL AND NEVER A HOLD. A rep cannot pass a gap refusal by standing anywhere:
+ * he does not choose which of his two readings drifted, and the photo's fix is taken once by the
+ * shutter with no retry. A hold would stall his admission and stop his visits counting over a signal
+ * that says nothing about WHO the customer is.
+ *
+ * 🔴 `source: "capture_trust"`, NEVER `"gps"`. `source` is part of this table's unique key, so filing
+ * under `"gps"` would REPLACE `judgeCapture`'s own verdict on the same place — the write succeeds, the
+ * row is there, and the flags are somebody else's. The `source` CHECK was widened to allow this value
+ * in migration 20261008023051; this function has its own `catch` as well, so a database that has not
+ * had that migration applied can never turn a successful validation into a 500 after the place saved.
+ *
+ * Void and never throws, by rule 2 of this file's header.
+ */
+export async function filePlaceCaptureTrust(input: {
+  placeId: string;
+  seatId: string;
+  repHrId: string;
+  customerId: string | null;
+  isTest: boolean;
+  photoFix: CaptureFix | null;
+  pinFix: CaptureFix | null;
+  /** The place's own fixed point, so the evidence row reads on its own like every other one. */
+  fixed: { lat: number; lon: number; accuracyMeters: number | null; capturedAt: Date };
+}): Promise<void> {
+  try {
+    const assessment = assessCaptureTrust({ locationFix: input.pinFix, photoFix: input.photoFix });
+    // 🔴 `unmeasured` writes NOTHING. A place with only one reading has not been measured, and an
+    // unmeasured pair is never corroboration — filing it would put a row on the board for every
+    // place captured before the shutter fix shipped.
+    if (!assessment.measured) return;
+
+    const flags: PhoenixCrmIntegrityFlag[] = [];
+    if (assessment.verdict === "disagrees") flags.push("photo_pin_disagrees");
+    else if (assessment.verdict === "drifted") flags.push("photo_pin_drifted");
+    if (assessment.gapIsLong) flags.push("photo_pin_gap_long");
+    if (fixesAreBitIdentical(input.pinFix, input.photoFix)) flags.push("photo_pin_identical");
+    if (flags.length === 0) return;
+
+    const strong = flags.some((flag) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag));
+    const { error } = await getSupabaseAdmin().from("phoenix_crm_location_integrity").upsert(
+      {
+        subject_kind: "place",
+        subject_id: input.placeId,
+        source: "capture_trust",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        captured_at: input.fixed.capturedAt.toISOString(),
+        visit_date: cairoBusinessDay(input.fixed.capturedAt),
+        lat: input.fixed.lat,
+        lon: input.fixed.lon,
+        accuracy_meters: input.fixed.accuracyMeters,
+        device_mocked: null,
+        flags,
+        strong,
+        // The measurements themselves, so a reader can see the gap rather than take the flag on trust.
+        signals: {
+          gapSeconds: assessment.gapSeconds,
+          metresApart: assessment.distanceMeters,
+          verdict: assessment.verdict,
+        },
+        is_test: input.isTest,
+      },
+      { onConflict: "subject_kind,subject_id,source" },
+    );
+    if (error) {
+      console.error("[phoenix-crm] capture trust not recorded", { placeId: input.placeId, message: error.message });
+    }
+  } catch (error) {
+    console.error("[phoenix-crm] capture trust check failed", { placeId: input.placeId, error });
+  }
+}
+
+/**
+ * File what the signboard in a place's own photo said, when it said the wrong thing.
+ *
+ * Only the two confident negatives reach here; a match and an `unjudged` write nothing, for the same
+ * reason `judgeCapture` writes nothing on a clean capture — an evidence log that records "nothing
+ * happened" six hundred times is a log nobody reads. What the system read is kept on the place row
+ * itself (`phoenix_crm_places.signboard_check`), for every place and not only the flagged ones, so
+ * "how many validated places has the system actually read the sign of" stays a query.
+ *
+ * 🔴 `source: "signboard"`, beside the other detectors and never instead of one. And a FLAG only: the
+ * owner's ruling of 2026-10-08 is that he decides each of the already-validated places himself, so
+ * nothing here un-validates a customer or tells a rep anything.
+ *
+ * Void and never throws.
+ */
+export async function filePlaceSignboardFlag(input: {
+  placeId: string;
+  seatId: string;
+  repHrId: string;
+  customerId: string | null;
+  isTest: boolean;
+  flag: "sign_other_name" | "sign_no_name";
+  /** What was read, for the board: the sign's own words and the names on it. */
+  signals: Record<string, unknown>;
+  fixed: { lat: number; lon: number; accuracyMeters: number | null; capturedAt: Date };
+}): Promise<void> {
+  try {
+    const flags: PhoenixCrmIntegrityFlag[] = [input.flag];
+    const { error } = await getSupabaseAdmin().from("phoenix_crm_location_integrity").upsert(
+      {
+        subject_kind: "place",
+        subject_id: input.placeId,
+        source: "signboard",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        captured_at: input.fixed.capturedAt.toISOString(),
+        visit_date: cairoBusinessDay(input.fixed.capturedAt),
+        lat: input.fixed.lat,
+        lon: input.fixed.lon,
+        accuracy_meters: input.fixed.accuracyMeters,
+        device_mocked: null,
+        flags,
+        strong: PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(input.flag),
+        signals: input.signals,
+        is_test: input.isTest,
+      },
+      { onConflict: "subject_kind,subject_id,source" },
+    );
+    if (error) {
+      console.error("[phoenix-crm] signboard flag not recorded", { placeId: input.placeId, message: error.message });
+    }
+  } catch (error) {
+    console.error("[phoenix-crm] signboard flag failed", { placeId: input.placeId, error });
   }
 }

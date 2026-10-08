@@ -22,6 +22,7 @@ import { useMemo, useState } from "react";
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { CrmButton, CrmField, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
+import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
 import {
@@ -29,6 +30,7 @@ import {
   EMPTY_VALIDATION_REVIEW_FILTERS,
   hasActiveValidationReviewFilter,
   matchesValidationReviewFilters,
+  validatedPassesOutcome,
   validationReviewPeriodCutoff,
   withinValidationReviewPeriod,
   type ValidationReviewFilterable,
@@ -36,7 +38,7 @@ import {
   type ValidationReviewOutcome,
   type ValidationReviewPeriod,
 } from "@/lib/phoenix-crm/validation-review-filters";
-import type { ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
+import type { ReopenedCustomerRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 const OUTCOME_LABELS: Record<ValidationReviewOutcome, string> = {
   all: "Every outcome",
@@ -44,6 +46,7 @@ const OUTCOME_LABELS: Record<ValidationReviewOutcome, string> = {
   approved: "Approved",
   rejected: "Rejected",
   validated: "In use",
+  unseen: "Never looked at",
 };
 
 const PERIOD_LABELS: Record<ValidationReviewPeriod, string> = {
@@ -54,14 +57,25 @@ const PERIOD_LABELS: Record<ValidationReviewPeriod, string> = {
   "30": "Last 30 days",
 };
 
+/** A row the shared filters can read, for a reopened customer who has no place on file any more. */
+function filterableReopened(row: ReopenedCustomerRow): ValidationReviewFilterable {
+  return { ...row, speciality: null, placeLabel: null, address: null, brickName: null, areaName: null };
+}
+
 export function ValidationReviewsBoard({
   pending,
   decided,
   validated,
+  reopened,
+  capped,
 }: {
   pending: ValidationReviewRow[];
   decided: ValidationReviewRow[];
   validated: ValidatedPlaceRow[];
+  /** Customers sent back to To validate and not captured again since — oldest wait first. */
+  reopened: ReopenedCustomerRow[];
+  /** Which reads stopped at their ceiling, so the page says "showing the newest" instead of lying. */
+  capped: { reviews: boolean; validated: boolean; reopened: boolean };
 }) {
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
@@ -89,14 +103,27 @@ export function ValidationReviewsBoard({
     [decided, filters, cutoff],
   );
   const filteredValidated = useMemo(
-    () => validated.filter((row) => matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.validatedAt, cutoff)),
+    () =>
+      validated.filter(
+        (row) =>
+          validatedPassesOutcome(row, filters.outcome) &&
+          matchesValidationReviewFilters(row, filters) &&
+          withinValidationReviewPeriod(row.validatedAt, cutoff),
+      ),
     [validated, filters, cutoff],
+  );
+  const filteredReopened = useMemo(
+    () =>
+      reopened.filter((row) => matchesValidationReviewFilters(filterableReopened(row), filters) && withinValidationReviewPeriod(row.reopenedAt, cutoff)),
+    [reopened, filters, cutoff],
   );
 
   const anyFilter = hasActiveValidationReviewFilter(filters);
   const showWaiting = filters.outcome === "all" || filters.outcome === "pending";
   const showDecided = filters.outcome === "all" || filters.outcome === "approved" || filters.outcome === "rejected";
-  const showValidated = filters.outcome === "all" || filters.outcome === "validated";
+  const showValidated = filters.outcome === "all" || filters.outcome === "validated" || filters.outcome === "unseen";
+  const showReopened = filters.outcome === "all" || filters.outcome === "rejected";
+  const validatedTitle = filters.outcome === "unseen" ? "Validations nobody has looked at" : "Validations the system did not question";
   const decidedTitle = filters.outcome === "approved" ? "Approved in the last 14 days" : filters.outcome === "rejected" ? "Rejected in the last 14 days" : "Decided in the last 14 days";
 
   // The filter signature remounts the paged validated list so "Show more" starts over when a filter
@@ -202,6 +229,15 @@ export function ValidationReviewsBoard({
           </div>
         </div>
 
+        {capped.reviews || capped.validated || capped.reopened ? (
+          <AdminCallout tone="warning">
+            <span>
+              This page is showing the newest rows only: there are more than it can hold in one read. Narrow the period or the
+              filters to reach the older ones.
+            </span>
+          </AdminCallout>
+        ) : null}
+
         {showWaiting ? (
           <AdminTableShell
             title={`Waiting for your decision (${filteredPending.length})`}
@@ -233,15 +269,32 @@ export function ValidationReviewsBoard({
           </AdminTableShell>
         ) : null}
 
+        {showReopened ? (
+          <AdminTableShell
+            title={`Waiting to be captured again (${filteredReopened.length})`}
+            description="Customers sent back to To validate because their place was refused, and not validated again since — the longest wait first. The rep was told what is wrong with the photo and nothing else."
+          >
+            {filteredReopened.length === 0 ? (
+              <div className="px-4 py-4">
+                <AdminCallout tone="success">
+                  <span>{anyFilter ? "Nobody waiting matches these filters." : "Nobody is waiting to be captured again."}</span>
+                </AdminCallout>
+              </div>
+            ) : (
+              <ReopenedCustomerList rows={filteredReopened} />
+            )}
+          </AdminTableShell>
+        ) : null}
+
         {showValidated ? (
           <AdminTableShell
-            title={`Validations the system did not question (${filteredValidated.length})`}
-            description="Only AM customers are checked against Google, so a PM customer's validation is never held — and an AM one that matched its listing is not either. These are the places validated in the last 30 days and still in use. Refusing one retires the place and, when it is the customer's only place, sends them back to To validate; the rep reads the system's own wording and never that a person looked at them."
+            title={`${validatedTitle} (${filteredValidated.length})`}
+            description="Only AM customers are checked against Google, and since 8 October every new place has its signboard read before it is accepted; a place whose sign named the customer is not held. These are the places still in use, whenever they were validated, each with what the system read on its signboard and whether anybody has looked at it. Refusing one retires the place and, when it is the customer's only place, sends them back to To validate; the rep is told what is wrong with the photo and never that a person looked at them."
           >
             {filteredValidated.length === 0 ? (
               <div className="px-4 py-4">
                 <AdminCallout tone="neutral">
-                  <span>{anyFilter ? "Nothing validated matches these filters." : "Nothing has been validated in the last 30 days."}</span>
+                  <span>{anyFilter || filters.outcome === "unseen" ? "Nothing validated matches these filters." : "Nothing is validated and in use."}</span>
                 </AdminCallout>
               </div>
             ) : (

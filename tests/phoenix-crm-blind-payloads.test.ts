@@ -241,6 +241,7 @@ const PLACE_ROW = {
   pin_lat: 30.7861,
   pin_lon: 31.0001,
   pin_accuracy_meters: 22,
+  brick_lookup: "none_nearby",
   photo_lat: 30.7871,
   photo_lon: 31.0012,
   photo_accuracy_meters: 140,
@@ -249,7 +250,7 @@ const PLACE_ROW = {
 };
 
 /** What nobody below the Super Admin and the SFE Manager may receive about a place. */
-const PLACE_MEASUREMENTS = ["clockOff", "accuracyMeters", "pinReading", "photoReading", "pointSource", "moved", "brickDistanceKm"] as const;
+const PLACE_MEASUREMENTS = ["clockOff", "accuracyMeters", "pinReading", "photoReading", "pointSource", "moved", "brickDistanceKm", "brickLookup"] as const;
 
 function listView(place: ListPlace): TerritoryListView {
   return {

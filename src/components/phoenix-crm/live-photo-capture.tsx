@@ -52,6 +52,24 @@ const LOCATION_ENDPOINT = "/api/phoenix-crm/location";
 /** A newer reading replaces a sharper one once the sharper one is this old (the person may have moved). */
 const FIX_STALE_MS = 15_000;
 
+// ── The guide box ───────────────────────────────────────────────────────────────────────────────
+//
+// 🔴 THE BOTTOM EDGE IS LOAD-BEARING, NOT A LOOK. The server reads the signboard out of the stored
+// photo, and before it can it must crop off `drawStamp`'s caption box — which carries the customer's
+// own name, burned in below, and would otherwise be read as the sign. The band's height is
+// `stampBandFraction` in src/lib/phoenix-crm/signboard-rules.ts, measured against the two canvas
+// shapes `getCompressedEvidenceCanvasSize` produces:
+//
+//   portrait  720 x 1280 -> 0.18 of the height is stamp, so 0.82 survives
+//   landscape 1280 x 720 -> 0.49 of the height is stamp, so 0.51 survives
+//
+// so a box ending at 0.44 clears the crop in BOTH, with 38 points of room in portrait and 7 in
+// landscape. Moving it down silently crops signboards away and reports them as unreadable.
+// tests/phoenix-crm-signboard-check.test.ts asserts the clearance for both shapes.
+const SIGNBOARD_FRAME_TOP = 0.06;
+const SIGNBOARD_FRAME_BOTTOM = 0.44;
+const SIGNBOARD_FRAME_SIDE = 0.1;
+
 export type CapturedPhoto = {
   path: string;
   previewUrl: string;
@@ -178,6 +196,7 @@ async function sendToSlot(slot: PhotoSlot, blob: Blob): Promise<void> {
 
 export function LivePhotoCapture({
   disabled = false,
+  frameGuide,
   hint,
   onChange,
   purpose,
@@ -187,6 +206,21 @@ export function LivePhotoCapture({
   value,
 }: {
   disabled?: boolean;
+  /**
+   * A guide box drawn over the live camera, with the one line it has to satisfy. Absent means no box.
+   *
+   * 🔴 IT GUIDES AND NEVER CROPS. `takePhoto` still draws the whole video frame, byte for byte. A crop
+   * in the browser is forgeable so it buys no safety; it throws away pixels a Super Admin reading the
+   * stored photo may need, because a sign half outside the box is still evidence; and it would change
+   * the stored aspect ratio that `getCompressedEvidenceCanvasSize` derives from the source. The box's
+   * job is to get the signboard big and HIGH in the frame, which is what the server's reading of it
+   * depends on — see SIGNBOARD_FRAME_BOTTOM.
+   *
+   * A prop rather than a constant inside this component, although Phoenix CRM's place capture is its
+   * only caller today: the frame states a REQUIREMENT, and it must not silently become the look of a
+   * camera that has no such requirement.
+   */
+  frameGuide?: { note: string };
   hint?: ReactNode;
   onChange: (photo: CapturedPhoto | null) => void;
   purpose: "place" | "visit";
@@ -212,6 +246,16 @@ export function LivePhotoCapture({
   const [locationNote, setLocationNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [shot, setShot] = useState<Shot | null>(null);
+  /**
+   * The camera's own width/height, read once the stream has metadata.
+   *
+   * 🔴 WITHOUT IT A PERCENTAGE OVERLAY WOULD NOT MAP TO A PERCENTAGE OF THE CAPTURED FRAME. The video
+   * is `object-contain`, so whenever the element's ratio differs from the camera's, the picture is
+   * letterboxed inside the element and "44% down the box" is not 44% down the photo — which is
+   * precisely the number the server's crop clearance is measured against. Giving the wrapper the
+   * camera's own ratio removes the letterbox, so the two agree by construction instead of by luck.
+   */
+  const [camAspect, setCamAspect] = useState<number | null>(null);
 
   useEffect(() => {
     return () => {
@@ -453,9 +497,66 @@ export function LivePhotoCapture({
       {hint && !value ? <p className="text-sm font-medium leading-6 text-slate-600">{hint}</p> : null}
 
       {/* The video leaves room under it for the shutter row, the page header and the bottom bar.
-          `svh` is the height with a phone browser's toolbars showing, so it never grows under them. */}
-      <div className={cn("relative min-w-0 overflow-hidden rounded-none border border-slate-200 bg-slate-950", showVideo ? "block" : "hidden")}>
-        <video autoPlay className="block max-h-[calc(100svh-15rem)] w-full object-contain" muted playsInline ref={videoRef} />
+          `svh` is the height with a phone browser's toolbars showing, so it never grows under them.
+
+          With a frame guide the HEIGHT BUDGET MOVES from the video's own max-height onto the wrapper's
+          max-width, so the wrapper can carry the camera's aspect ratio and lose the letterbox the
+          overlay would otherwise be measured against. `mx-auto` keeps it centred and `w-full` plus
+          `overflow-hidden` keep it inside the column at 375 px — no horizontal scroll either way. */}
+      <div
+        className={cn(
+          "relative min-w-0 overflow-hidden rounded-none border border-slate-200 bg-slate-950",
+          showVideo ? "block" : "hidden",
+          frameGuide && camAspect ? "mx-auto w-full" : null,
+        )}
+        style={
+          frameGuide && camAspect
+            ? { aspectRatio: String(camAspect), maxWidth: `calc((100svh - 15rem) * ${camAspect})` }
+            : undefined
+        }
+      >
+        <video
+          autoPlay
+          className={cn(
+            "block w-full object-contain",
+            frameGuide && camAspect ? "h-full" : "max-h-[calc(100svh-15rem)]",
+          )}
+          muted
+          onLoadedMetadata={(event) => {
+            const element = event.currentTarget;
+            if (element.videoWidth > 0 && element.videoHeight > 0) {
+              setCamAspect(element.videoWidth / element.videoHeight);
+            }
+          }}
+          playsInline
+          ref={videoRef}
+        />
+        {/* The requirement, stated where he is looking. Square corners, no pointer target, and a
+            single box-shadow for the scrim so the overlay stays one element. */}
+        {showVideo && cameraReady && frameGuide ? (
+          <div aria-hidden className="pointer-events-none absolute inset-0">
+            <div
+              className="absolute rounded-none border-2 border-white/90"
+              style={{
+                bottom: `${(1 - SIGNBOARD_FRAME_BOTTOM) * 100}%`,
+                boxShadow: "0 0 0 9999px rgba(2,6,23,0.45)",
+                left: `${SIGNBOARD_FRAME_SIDE * 100}%`,
+                right: `${SIGNBOARD_FRAME_SIDE * 100}%`,
+                top: `${SIGNBOARD_FRAME_TOP * 100}%`,
+              }}
+            />
+            <p
+              className="absolute bg-slate-950/75 px-2 py-1 text-center text-xs font-bold leading-5 text-white"
+              style={{
+                left: `${SIGNBOARD_FRAME_SIDE * 100}%`,
+                right: `${SIGNBOARD_FRAME_SIDE * 100}%`,
+                top: `calc(${SIGNBOARD_FRAME_BOTTOM * 100}% + 0.5rem)`,
+              }}
+            >
+              {frameGuide.note}
+            </p>
+          </div>
+        ) : null}
         {!cameraReady ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-white/80">
             <LoaderCircle aria-hidden className="mr-2 h-4 w-4 animate-spin" />

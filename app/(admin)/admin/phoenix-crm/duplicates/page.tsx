@@ -29,6 +29,21 @@ export const dynamic = "force-dynamic";
  * those two seats. Reading it is the whole feature.
  */
 
+/**
+ * What the one-off merge would do (owner, 2026-10-08) — a sentence under the names, never a control.
+ * The kept spelling is quoted as typed, because which spelling stays is what a reader wants to check.
+ */
+function MergeVerdict({ group }: { group: DuplicateCustomerGroup }) {
+  if (group.verdict.kind === "refused") {
+    return <p className="mt-2 break-words text-xs font-semibold text-amber-700">Not merged: {group.verdict.why}.</p>;
+  }
+  return (
+    <p className="mt-2 break-words text-xs font-semibold text-slate-500">
+      The merge keeps <span dir="auto">{group.verdict.keptName}</span> — {group.verdict.why.toLowerCase()}.
+    </p>
+  );
+}
+
 function GroupNames({ group }: { group: DuplicateCustomerGroup }) {
   return (
     <ul className="space-y-1">
@@ -132,6 +147,7 @@ export default async function PhoenixCrmDuplicateCustomersPage() {
                     <td className="break-words px-5 py-4 text-sm text-slate-700">{group.territoryName ?? "—"}</td>
                     <td className="px-5 py-4">
                       <GroupNames group={group} />
+                      <MergeVerdict group={group} />
                     </td>
                   </tr>
                 ))}
@@ -147,6 +163,7 @@ export default async function PhoenixCrmDuplicateCustomersPage() {
                 <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{group.territoryName ?? "—"}</p>
                 <div className="mt-2">
                   <GroupNames group={group} />
+                  <MergeVerdict group={group} />
                 </div>
               </div>
             ))}

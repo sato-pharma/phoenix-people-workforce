@@ -206,6 +206,21 @@ export const VISIT_MAX_ACCURACY_METERS = 500;
 /** Shown on the validation screen before the photo — the rule, never his reading. */
 export const PLACE_PRECISION_NOTE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m. Turn on precise location for ${BROWSER_PLACEHOLDER} before you start, and take the photo and capture the location standing at the clinic.`;
 
+/**
+ * What the frame drawn on the camera must contain, shown inside the frame itself.
+ *
+ * Owner, 2026-10-08: require the customer's name always, no exception for a building with no
+ * nameplate. Until that day the module asked for a photo and said nothing whatever about what had to
+ * be IN it, which is the largest single cause of the 179 failures among its first 643 captures — a
+ * rep cannot satisfy a requirement nobody ever stated.
+ *
+ * It is a statement of HIS OWN work, like "take a live photo", and not a word about any check on him
+ * (Golden Rule #1). 🔴 It may not say "doctor": tests/phoenix-crm-am-pm-words.test.ts refuses that
+ * string anywhere under src/lib/phoenix-crm.
+ */
+export const SIGNBOARD_FRAME_NOTE =
+  "Put the signboard inside the box, with the customer's name readable.";
+
 export const ROUGH_FIX_AT_THE_PLACE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m, and your phone gave only a rough one. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then take the photo and press Capture location again at the clinic.`;
 export const ROUGH_FIX_FOR_A_VISIT = `Your phone gave only a rough location. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then tap Log visit again.`;
 
@@ -312,6 +327,19 @@ export type PlaceDraft = CapturedFix & {
   label: string | null;
   photoPath: string;
   timings: PhoenixCrmTiming[];
+  /**
+   * When the Capture-location button took ITS reading — not when the photo was taken.
+   *
+   * 🔴 ON `PlaceDraft` AND NOT ON `CapturedFix`, deliberately: only a place is captured twice, so a
+   * visit and a marketing capture have no second reading for this to be the time of, and widening the
+   * shared shape would put a field on three parsers none of them can fill. Null from any caller that
+   * does not send it, and `assessCaptureTrust` then reports the gap as UNMEASURED rather than as
+   * agreement — an absence of a timestamp is never corroboration.
+   *
+   * It is not stored on the place row: the only thing that reads it is the capture-trust comparison,
+   * which runs in the same request as the save.
+   */
+  pinCapturedAt: string | null;
 };
 
 /**
@@ -471,6 +499,11 @@ export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
       ...fix.value,
       label: cleanText(body.label, PLACE_TEXT_MAX),
       photoPath,
+      // Read, never required: a caller that sends no pin timestamp leaves the gap unmeasured, which is
+      // what it is. An ISO string is the only shape accepted; anything else is no reading.
+      pinCapturedAt: typeof body.pinCapturedAt === "string" && !Number.isNaN(Date.parse(body.pinCapturedAt))
+        ? body.pinCapturedAt
+        : null,
       timings: timings.timings,
     },
   };

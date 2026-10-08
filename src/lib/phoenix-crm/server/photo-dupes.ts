@@ -41,6 +41,7 @@ import {
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { downloadPhoto } from "@/lib/phoenix-crm/server/photos";
+import { runPhoenixCrmSignboardSweep, type SignboardSweepResult } from "@/lib/phoenix-crm/server/signboard-sweep";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -320,8 +321,12 @@ export async function runPhoenixCrmPhotoSweep(options: { limit?: number; include
  */
 export async function runPhoenixCrmIntegritySweep(
   options: { limit?: number; today?: string } = {},
-): Promise<{ photos: PhotoSweepResult; behaviour: BehaviourSweepResult }> {
+): Promise<{ photos: PhotoSweepResult; signboards: SignboardSweepResult; behaviour: BehaviourSweepResult }> {
   const photos = await runPhoenixCrmPhotoSweep({ limit: options.limit });
+  // The signboard pass (2026-10-08) sits BETWEEN the two for the same reason the photos lead: a case
+  // it files tonight is evidence about this month, and the behaviour pass reads the month whole. It
+  // never holds a place and tells nobody — see server/signboard-sweep.ts.
+  const signboards = await runPhoenixCrmSignboardSweep();
   const behaviour = await runPhoenixCrmBehaviourSweep({ today: options.today });
-  return { photos, behaviour };
+  return { photos, signboards, behaviour };
 }

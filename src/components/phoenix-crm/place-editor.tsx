@@ -16,7 +16,7 @@ import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/l
 import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import { CrmBlock, CrmField, CrmNote, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
-import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX } from "@/lib/phoenix-crm/entry-rules";
+import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, SIGNBOARD_FRAME_NOTE } from "@/lib/phoenix-crm/entry-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -84,6 +84,9 @@ export function placePayload(photo: CapturedPhoto, draft: PlaceDraftState) {
     lat: draft.pin ? draft.pin.lat : null,
     lon: draft.pin ? draft.pin.lon : null,
     accuracyMeters: draft.pin ? draft.pin.accuracyMeters : null,
+    // When the BUTTON read its position, so the server can measure how long before the shutter it was
+    // taken. Nothing is refused on it; it is the one missing half of comparing the two readings.
+    pinCapturedAt: draft.pin ? draft.pin.capturedAt : null,
     deviceCapturedAt: photo.deviceCapturedAt,
     shutterLat: photo.shutterLat,
     shutterLon: photo.shutterLon,
@@ -217,7 +220,8 @@ export function PlaceEditor({
           ) : (
             <LivePhotoCapture
               disabled={disabled}
-              hint="Stand at the clinic's signboard and take a live photo. The photo keeps its own location and time."
+              frameGuide={{ note: SIGNBOARD_FRAME_NOTE }}
+              hint="Stand at the clinic's signboard and take a live photo. Put the signboard inside the box on the screen, with the customer's name readable. The photo keeps its own location and time."
               onChange={takePhoto}
               purpose="place"
               seatId={seatId}

@@ -174,8 +174,8 @@ function checkScreens(): void {
   assert.match(page, /loadValidatedPlaces\(viewer\)/, "and now also loads the validations the system did not question");
   assert.match(
     page,
-    /<ValidationReviewsBoard pending=\{waiting\} decided=\{decided\} validated=\{validated\} \/>/,
-    "which it hands to the Place checks board, with the queue and the validated list",
+    /<ValidationReviewsBoard pending=\{waiting\} decided=\{decided\} validated=\{validated\} reopened=\{reopened\} capped=\{capped\} \/>/,
+    "which it hands to the Place checks board, with the queue, the validated list, the customers waiting to be captured again, and which reads hit their ceiling",
   );
 
   const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
@@ -183,8 +183,10 @@ function checkScreens(): void {
 
   const list = read("src/components/phoenix-crm/validated-place-list.tsx");
   assert.match(list, /"\/api\/phoenix-crm\/validation-reviews\/refuse"/, "the button posts to the refusal route");
-  assert.match(list, /\{ placeId: row\.placeId, note \}/, "with the place and the written reason");
-  assert.match(list, /disabled=\{note\.trim\(\)\.length === 0\}/, "and cannot be armed before the reason is written");
+  // Since 2026-10-08 the refusal carries one of six closed reasons the rep is told, beside the note
+  // kept for the record (owner: "tell the rep why, from a fixed pick-list, never naming a person").
+  assert.match(list, /\{ placeId: row\.placeId, note, refusalReason: reason \}/, "with the place, the note and the chosen reason");
+  assert.match(list, /disabled=\{reason === "" \|\| note\.trim\(\)\.length === 0\}/, "and cannot be armed before both are given");
   assert.match(list, /armed \?/, "a refusal is confirmed before it is sent — it retires a place and cannot be undone");
 
   // Fits the screen: the module's fixed table on desktop, the same rows as cards on a phone.
@@ -197,15 +199,22 @@ function checkScreens(): void {
 
 function checkTheRepReadsNothingAboutAPerson(): void {
   const list = read("src/components/phoenix-crm/validated-place-list.tsx");
-  assert.match(list, /never shown to the rep/, "the note is marked as the record's, not the rep's");
+  // The note is still the record's: its label says the rep reads only the chosen reason.
+  assert.match(list, /\{VALIDATION_NOTE_LABEL\}/, "the note is labelled as the record's, not the rep's");
+  const feedback = read("src/lib/phoenix-crm/validation-feedback.ts");
+  assert.match(feedback, /VALIDATION_NOTE_LABEL = "Note for the record \(the rep reads only the reason above\)"/);
 
-  // What the rep's own list says after a refusal is the system's sentence, unchanged by this feature.
+  // What the rep's own list says after a refusal is still the SYSTEM's sentence ("this place" since
+  // 2026-10-08), with the chosen reason about his photo in place of it when there is one.
   const rules = read("src/lib/phoenix-crm/google-place-rules.ts");
-  assert.match(rules, /LOCATION_NOT_CONFIRMED_TEXT =\s*\n?\s*"The system could not confirm this location\./, "the rep still reads the system's own wording");
+  assert.match(rules, /LOCATION_NOT_CONFIRMED_TEXT =\s*\n?\s*"The system could not confirm this place\./, "the rep still reads the system's own wording");
 
+  // He IS told now (owner, 2026-10-08) — through the one in-app notice worded about his photo, never
+  // through a call here that could name who refused him.
   const service = read("src/lib/phoenix-crm/server/validation-reviews.ts");
   const refuse = functionBody(service, "refuseValidatedPlace");
-  assert.doesNotMatch(refuse, /notifyPhoenixCrm|createSystemNotificationForRecipients/, "and is never notified that somebody refused him");
+  assert.match(refuse, /tellRepValidateAgain\(/, "the refusal tells the rep what is wrong with the photo");
+  assert.doesNotMatch(refuse, /createSystemNotificationForRecipients/, "and never through a raw notification that bypasses the module's wording");
 }
 
 export function runPhoenixCrmRefuseValidationTests(): void {

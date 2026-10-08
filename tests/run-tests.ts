@@ -1762,6 +1762,11 @@ import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blo
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
+import { runPhoenixCrmSignboardCheckTests } from "./phoenix-crm-signboard-check.test.ts";
+import { runPhoenixCrmCaptureTrustPlaceTests } from "./phoenix-crm-capture-trust-place.test.ts";
+import { runPhoenixCrmValidationFeedbackTests } from "./phoenix-crm-validation-feedback.test.ts";
+import { runPhoenixCrmPlaceBrickLookupTests } from "./phoenix-crm-place-brick-lookup.test.ts";
+import { runPhoenixCrmDuplicateMergeTests } from "./phoenix-crm-duplicate-merge.test.ts";
 import { runPhoenixCrmListCustomerFixtureTests } from "./phoenix-crm-list-customer-fixture.test.ts";
 import { runPhoenixCrmPlaceChecksInOverflowTests } from "./phoenix-crm-place-checks-in-overflow.test.ts";
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
@@ -6492,6 +6497,31 @@ await runTest(
 await runTest(
   "Phoenix CRM Validate next (owner, 2026-09-30): the customers still to validate ranked so the most useful come first - visits already saved, then grade, then the brick with most waiting - one Validate per card, never Add visit, never a distance",
   runPhoenixCrmValidateNextTests,
+);
+
+await runTest(
+  "Phoenix CRM signboard check (owner, 2026-10-08): the module validated a location while he graded an identification, so the signboard in the place photo is now read — a confident \"no signboard at all\" holds on either list, an AM capture is judged on the place name only and an AM sign naming nobody is a match, a PM capture is judged on the person, NO ANSWER NEVER HOLDS, Phoenix's own caption band is cropped off in both canvas shapes without reaching the camera's frame guide, and the nightly pass reads the backlog oldest first, files a case, and never holds, un-validates or tells anybody",
+  runPhoenixCrmSignboardCheckTests,
+);
+
+await runTest(
+  "Phoenix CRM capture trust on places (2026-10-08): a place's photo fix and its pin are finally compared with each other through assessCaptureTrust — filed under its own source so it never replaces the position verdict, nothing written for an unmeasured pair, only a disagreement strong, and never a hold or a refusal",
+  runPhoenixCrmCaptureTrustPlaceTests,
+);
+
+await runTest(
+  "Phoenix CRM validation feedback (owner, 2026-10-08): a refusal needs one of six closed reasons, worded about the photo and never a person; the rep is told in-app only, once per refusal, and the notice is taken back when he is validated; his row shows the reason with no second note under it; and the Super Admin sees who is waiting to be captured again and for how long",
+  runPhoenixCrmValidationFeedbackTests,
+);
+
+await runTest(
+  "Phoenix CRM place brick lookup (2026-10-08): \"nobody looked for the brick\" and \"no brick within reach\" are finally two values, the default is the unknown one, and it is withheld below the Super Admin and the SFE Manager with the distance it explains",
+  runPhoenixCrmPlaceBrickLookupTests,
+);
+
+await runTest(
+  "Phoenix CRM same-seat duplicate merge (owner, 2026-10-08): the keep rule (active place, validated, visits, oldest) with its refusals, the write archiving and never deleting with every guard re-checked inside the transaction, the script dry-run by default and refusing --apply without a pre-image it has read back, and the duplicates board stating the verdict while acting on nothing",
+  runPhoenixCrmDuplicateMergeTests,
 );
 
 await runTest(

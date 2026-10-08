@@ -18,7 +18,9 @@ import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { VALIDATION_NOTE_LABEL, VALIDATION_REASON_REQUIRED, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = {
@@ -28,7 +30,15 @@ const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = 
   listing_off:
     "The rep was refused once for standing away from this customer's Google pin, and captured the same place again — so it is here instead of being refused a second time. Both their readings are precise; the distance to each listing is below.",
   refused_by_admin: "The system did not question this one — it was refused here, by hand. The reason is the note.",
+  sign_other_name: "The signboard in the photo names somebody else — not this customer, and not their place. What the system read is below.",
+  sign_no_name:
+    "No name the system could judge on: the photo shows no signboard at all, or a PM customer's signboard names no person. What the system read is below.",
 };
+
+/** A signboard hold is not a Google question, so its evidence is headed for what it is. */
+function evidenceHeading(row: ValidationReviewRow): string {
+  return row.reason === "sign_other_name" || row.reason === "sign_no_name" ? "What the signboard says" : "What Google Maps returned";
+}
 
 function readingText(label: string, reading: ValidationReviewRow["pin"]): string | null {
   if (!reading) return null;
@@ -77,14 +87,24 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
         </a>
       </div>
       <div className="border-t border-slate-100 pt-2">
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">What Google Maps returned</p>
+        <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{evidenceHeading(row)}</p>
         {row.reason ? <p className="mt-1 break-words text-xs text-slate-600">{REASON_TEXT[row.reason]}</p> : null}
+        {row.signText ? (
+          <p className="mt-1 break-words text-sm font-semibold text-slate-800" dir="auto">
+            {row.signText}
+          </p>
+        ) : null}
+        {row.signNames.length > 0 ? (
+          <p className="mt-0.5 break-words text-xs text-slate-500">
+            Names read: <span dir="auto">{row.signNames.join(" · ")}</span>
+          </p>
+        ) : null}
         {row.query ? (
           <p className="mt-0.5 break-words text-xs text-slate-500">
             Searched for <span dir="auto">{row.query}</span>
           </p>
         ) : null}
-        {row.listings.length === 0 ? (
+        {row.signText !== null || row.signNames.length > 0 || row.reason === "sign_no_name" ? null : row.listings.length === 0 ? (
           <p className="mt-1 text-xs text-slate-500">No listing came back.</p>
         ) : (
           <ul className="mt-1 space-y-1">
@@ -161,6 +181,7 @@ function Restore({ row }: { row: ValidationReviewRow }) {
 function Decision({ row }: { row: ValidationReviewRow }) {
   const router = useRouter();
   const [note, setNote] = useState("");
+  const [reason, setReason] = useState<ValidationRefusalReason | "">("");
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -169,6 +190,7 @@ function Decision({ row }: { row: ValidationReviewRow }) {
       <div className="space-y-1">
         <CrmPill tone={row.status === "approved" ? "good" : "warn"}>{row.status === "approved" ? "Approved" : "Rejected"}</CrmPill>
         <p className="break-words text-xs text-slate-500">{[row.decidedByName, row.decidedAtText].filter(Boolean).join(" · ")}</p>
+        {row.refusalLabel ? <p className="break-words text-xs font-semibold text-slate-700">The rep was told: {row.refusalLabel}</p> : null}
         {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
         {row.restorable ? <Restore row={row} /> : null}
       </div>
@@ -180,7 +202,11 @@ function Decision({ row }: { row: ValidationReviewRow }) {
     setSaving(decision);
     setProblem(null);
     try {
-      await crmPost<unknown>("/api/phoenix-crm/validation-reviews", { reviewId: row.reviewId, decision, note }, "decided");
+      await crmPost<unknown>(
+        "/api/phoenix-crm/validation-reviews",
+        { reviewId: row.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
+        "decided",
+      );
       router.refresh();
     } catch (error) {
       setProblem(messageOf(error));
@@ -190,8 +216,9 @@ function Decision({ row }: { row: ValidationReviewRow }) {
 
   return (
     <div className="space-y-2">
+      <RefusalReasonField disabled={saving !== null} id={`review-reason-${row.reviewId}`} onChange={setReason} value={reason} />
       <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`review-note-${row.reviewId}`}>
-        Note (kept on the record, never shown to the rep)
+        {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
@@ -202,14 +229,16 @@ function Decision({ row }: { row: ValidationReviewRow }) {
         rows={2}
         value={note}
       />
+      <RefusalNoteHint />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
         <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant="primary">
           {saving === "approve" ? "Approving…" : "Approve"}
         </CrmButton>
-        <CrmButton disabled={saving !== null} onClick={() => void decide("reject")} variant="danger">
+        <CrmButton disabled={saving !== null || reason === ""} onClick={() => void decide("reject")} variant="danger">
           {saving === "reject" ? "Rejecting…" : "Reject"}
         </CrmButton>
       </div>
+      {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

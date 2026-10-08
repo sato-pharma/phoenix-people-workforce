@@ -1,6 +1,7 @@
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { isLinkableName, specialityConflicts } from "@/lib/customer-identity/suggestions";
 import type { IdentityCandidate, IdentityKind } from "@/lib/customer-identity/types";
+import { mergeRefusalText, planMerge, type MergeCandidate } from "@/lib/phoenix-crm/duplicate-merge-rules";
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -56,9 +57,17 @@ export type DuplicateCustomerEntry = {
   speciality: string | null;
 };
 
+/**
+ * What the one-off merge (owner, 2026-10-08) would do with this group — a SENTENCE, never a button.
+ * The board still acts on nothing; this only makes the backlog readable without running the script.
+ */
+export type DuplicateMergeVerdict = { kind: "keep"; keptName: string; why: string } | { kind: "refused"; why: string };
+
 export type DuplicateCustomerGroup = {
   /** The kind and the folded name the rows share — the key, never shown as a label. */
   nameKey: string;
+  /** The merge's verdict on this group, by the one keep rule the script uses (`planMerge`). */
+  verdict: DuplicateMergeVerdict;
   entries: DuplicateCustomerEntry[];
   repName: string | null;
   seatId: string;
@@ -157,7 +166,7 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await admin
       .from("phoenix_crm_customers")
-      .select("id, name, speciality, grade, list_type, seat_id")
+      .select("id, name, speciality, grade, potential_grade, phone, primary_pharmacy_name, list_type, seat_id, validated_at, created_at")
       .eq("is_test", false)
       // 🔴 THE ARCHIVE IS LEFT OUT, OR THE LIST NEVER CLEARS. Removing a duplicate means dropping one
       //    row, and a dropped row is `dropped` — it stays in the database for ever, so a group that
@@ -204,33 +213,40 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
   const detail = new Map<string, Row>();
   for (const row of customers) detail.set(text(row.id), row);
 
+  const grouped = [...bySeat].flatMap(([seatId, candidates]) =>
+    [...groupSameRepDuplicates(candidates)].map(([nameKey, group]) => ({ seatId, nameKey, group })),
+  );
+  const facts = await loadMergeFacts(grouped.flatMap((entry) => entry.group.map((one) => one.sourceId)));
+
   const groups: DuplicateCustomerGroup[] = [];
   let rows = 0;
-  for (const [seatId, candidates] of bySeat) {
-    for (const [nameKey, group] of groupSameRepDuplicates(candidates)) {
-      const seat = seats.get(seatId);
-      rows += group.length;
-      groups.push({
-        entries: group.map((one) => {
-          const row = detail.get(one.sourceId);
-          return {
-            customerId: one.sourceId,
-            grade: text(row?.grade) || null,
-            listType: text(row?.list_type) || null,
-            name: one.name,
-            speciality: one.speciality ?? null,
-          };
-        }),
-        nameKey,
-        // 🔴 NULL FOR A VACANT SEAT, WHICH IS WHAT THE PAGE READS. `nameOf` answers "Unknown person"
-        //    for an id it cannot resolve AND for no id at all, and the page prints "Seat vacant" only
-        //    on null — so a territory with nobody in it was filed under a phrase that reads like a data
-        //    fault. A vacant seat is a fact about the organogram, not a missing name.
-        repName: seat?.rep ? nameOf(names, seat.rep) : null,
-        seatId,
-        territoryName: seat?.territory ?? null,
-      });
-    }
+  for (const { seatId, nameKey, group } of grouped) {
+    const seat = seats.get(seatId);
+    const plan = planMerge(group.map((one) => mergeCandidateOf(one.sourceId, one.name, detail.get(one.sourceId), facts)));
+    rows += group.length;
+    groups.push({
+      entries: group.map((one) => {
+        const row = detail.get(one.sourceId);
+        return {
+          customerId: one.sourceId,
+          grade: text(row?.grade) || null,
+          listType: text(row?.list_type) || null,
+          name: one.name,
+          speciality: one.speciality ?? null,
+        };
+      }),
+      nameKey,
+      verdict: plan.ok
+        ? { kind: "keep", keptName: plan.keeper.name, why: plan.why }
+        : { kind: "refused", why: mergeRefusalText(plan.refused) },
+      // 🔴 NULL FOR A VACANT SEAT, WHICH IS WHAT THE PAGE READS. `nameOf` answers "Unknown person"
+      //    for an id it cannot resolve AND for no id at all, and the page prints "Seat vacant" only
+      //    on null — so a territory with nobody in it was filed under a phrase that reads like a data
+      //    fault. A vacant seat is a fact about the organogram, not a missing name.
+      repName: seat?.rep ? nameOf(names, seat.rep) : null,
+      seatId,
+      territoryName: seat?.territory ?? null,
+    });
   }
 
   // The rep's name first, then the doctor's, so one rep's housekeeping reads together.
@@ -241,4 +257,51 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
       (a.entries[0]?.name ?? "").localeCompare(b.entries[0]?.name ?? ""),
   );
   return { groups, rows };
+}
+
+type MergeFacts = { activePlaces: Map<string, number>; visits: Map<string, number>; moves: Map<string, number> };
+
+/** Per-customer counts the keep rule reads, paged and chunked so no read can stop at 1,000 silently. */
+async function loadMergeFacts(ids: readonly string[]): Promise<MergeFacts> {
+  const admin = getSupabaseAdmin();
+  const count = async (table: string, activeOnly: boolean): Promise<Map<string, number>> => {
+    const counts = new Map<string, number>();
+    for (let i = 0; i < ids.length; i += 150) {
+      const part = ids.slice(i, i + 150);
+      for (let from = 0; ; from += PAGE) {
+        let query = admin.from(table).select("id, customer_id").in("customer_id", part);
+        if (activeOnly) query = query.eq("status", "active");
+        const { data, error } = await query.order("id", { ascending: true }).range(from, from + PAGE - 1);
+        if (error) throw new Error(`phoenix-crm: reading ${table} for the duplicates failed — ${error.message}`);
+        const rows = (data ?? []) as Row[];
+        for (const row of rows) counts.set(text(row.customer_id), (counts.get(text(row.customer_id)) ?? 0) + 1);
+        if (rows.length < PAGE) break;
+      }
+    }
+    return counts;
+  };
+  if (ids.length === 0) return { activePlaces: new Map(), visits: new Map(), moves: new Map() };
+  const [activePlaces, visits, moves] = await Promise.all([
+    count("phoenix_crm_places", true),
+    count("phoenix_crm_visits", false),
+    count("phoenix_crm_customer_moves", false),
+  ]);
+  return { activePlaces, visits, moves };
+}
+
+function mergeCandidateOf(id: string, name: string, row: Row | undefined, facts: MergeFacts): MergeCandidate {
+  return {
+    customerId: id,
+    name,
+    listType: text(row?.list_type),
+    activePlaces: facts.activePlaces.get(id) ?? 0,
+    validatedAt: text(row?.validated_at) || null,
+    visits: facts.visits.get(id) ?? 0,
+    createdAt: text(row?.created_at),
+    hasMoves: (facts.moves.get(id) ?? 0) > 0,
+    grade: text(row?.grade) || null,
+    potentialGrade: text(row?.potential_grade) || null,
+    phone: text(row?.phone) || null,
+    primaryPharmacyName: text(row?.primary_pharmacy_name) || null,
+  };
 }

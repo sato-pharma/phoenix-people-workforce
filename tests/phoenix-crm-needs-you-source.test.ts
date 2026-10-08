@@ -183,7 +183,8 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
       assert.ok(!crmNeedsYou.includes(swallow), `a failed read must travel, never become a figure (${swallow})`);
     }
     // And no item is produced at zero: the four pushes are each behind a `> 0`.
-    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 5, "each of the five counts produces an item only when it is non-zero");
+    // Six since 2026-10-08: a refused place not yet captured again is the sixth.
+    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 6, "each of the six counts produces an item only when it is non-zero");
 
     // 🔴 THE WEEKLY PLANS ARE ON THE BOARD (2026-10-08). The module's own badge always counted them;
     // this board did not, so a district manager read 0 here while weeks sat on his desk — the
@@ -328,6 +329,44 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     assert.equal(board.allClearProvable, false, "a held place can never sit under the all-clear");
     const printed = [needsYouHeroDescription(board), ...needsYouSectionLines(buildNeedsYouSections(board))].join("\n");
     assert.ok(printed.includes("held for your approval"), "the row is printed in his own words");
+  }
+
+  // ── 🔴 A REFUSED PLACE NOT YET CAPTURED AGAIN — his alone, worth knowing, with an age ────────────
+  // Added 2026-10-08: 0 of 22 refused customers had been validated again, the oldest 76.7 hours
+  // later, and nothing outside the page said so. The rep redoes the photo, so it is never his lane.
+  {
+    const reviews = source("src/lib/phoenix-crm/server/validation-reviews.ts");
+    const crmNeedsYou = source("src/lib/phoenix-crm/server/needs-you.ts");
+    assert.ok(reviews.includes("export async function countReopenedCustomersWaiting"), "the module owns the count");
+    assert.match(
+      crmNeedsYou,
+      /decidesPlaces \? countReopenedCustomersWaiting\(\) : Promise\.resolve\(\{ count: 0, oldestAt: null \}\)/,
+      "asked only for the Super Admin, a true zero with no query for everyone else",
+    );
+    const countBlock = reviews.slice(reviews.indexOf("export async function countReopenedCustomersWaiting"));
+    const countBody = countBlock.slice(0, countBlock.indexOf("\n}\n"));
+    assert.ok(countBody.includes('{ count: "exact", head: true }'), "a head count, so no row ceiling can shorten it");
+    assert.ok(!countBody.includes("catch"), "a failed read travels");
+
+    const adapterSource = source("src/lib/needs-you/sources.ts");
+    const block = adapterSource.slice(adapterSource.indexOf('key: "phoenix-crm-decisions:reopened-waiting"'));
+    const rowSource = block.slice(0, block.indexOf("});"));
+    assert.ok(rowSource.includes('lane: "worth-knowing"'), "worth knowing — nothing waits on his decision");
+    assert.ok(rowSource.includes("overdue: false"), "no SLA upstream, so no verdict");
+    assert.ok(rowSource.includes("ageDays: ageDaysSince(counts.oldestReopenedAt, now)"), "but the wait is stated");
+    assert.ok(rowSource.includes("href: VALIDATION_REVIEWS_PATH"), "and it opens the page that lists each one");
+
+    const waiting = item({
+      key: "phoenix-crm-decisions:reopened-waiting",
+      kind: "flag",
+      lane: "worth-knowing",
+      label: "3 refused places are still waiting to be captured again",
+      href: "/admin/field-crm/validation-reviews",
+      oldestAt: "2026-10-05T06:00:00.000Z",
+      ageDays: 3,
+    });
+    const board = buildNeedsYouBoard(withPhoenixCrm([waiting]), NOW);
+    assert.equal(board.yours.some((entry) => entry.key === "phoenix-crm-decisions:reopened-waiting"), false, "never in his own lane");
   }
 
   console.log("phoenix-crm on the needs-you board: OK");

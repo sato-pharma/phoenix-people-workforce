@@ -27,9 +27,11 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
+import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
+import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
+import { parseValidationRefusalReason, validationRefusalLabel, VALIDATION_REASON_REQUIRED } from "@/lib/phoenix-crm/validation-feedback";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -52,28 +54,63 @@ function text(value: unknown): string | null {
 
 // ── What the rep's own list reads ───────────────────────────────────────────────────────────────
 
+/** One customer's standing, as his own list reads it. */
+export type LocationCheckReading = {
+  state: LocationCheckState;
+  /**
+   * What is wrong with the PHOTO, from `@/lib/phoenix-crm/validation-feedback`, on a `not_confirmed`
+   * row only. Null for a refusal decided before `refusal_reason` existed, and for every other state.
+   */
+  reason: string | null;
+  decidedAt: string | null;
+};
+
 /**
  * Each customer's check, as his list shows it: `checking` while one waits, `not_confirmed` when the
- * latest one was turned down. A customer never held is simply absent.
+ * latest one was turned down, and with it the one sentence he is told about his own picture. A customer
+ * never held is simply absent.
+ *
+ * 🔴 IT PAGES, AND THE ORDER IS A TOTAL ONE. This ran on `.limit(1000)` until 2026-10-08, which on a
+ * busy seat silently answered about its newest thousand reviews and left an older `not_confirmed`
+ * reading as nothing at all. `created_at desc` ALONE is not enough either — two reviews written in the
+ * same millisecond make the walk both skip and repeat at the page seam, and here that would flicker a
+ * rep's own row between "Validate again" and nothing between two reloads of the same list.
  */
-export async function loadLocationChecks(seatId: string, isTest: boolean): Promise<Map<string, LocationCheckState>> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_validation_reviews")
-    .select("customer_id, status, created_at")
-    .eq("seat_id", seatId)
-    .eq("is_test", isTest)
-    .order("created_at", { ascending: false })
-    .limit(1000);
+export async function loadLocationChecks(seatId: string, isTest: boolean): Promise<Map<string, LocationCheckReading>> {
+  const { rows, error } = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_validation_reviews")
+        .select("id, customer_id, status, created_at, decided_at, refusal_reason")
+        .eq("seat_id", seatId)
+        .eq("is_test", isTest)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
+    {
+      maxRows: 5_000,
+      // It PRESENTS, it does not JUDGE — and newest first means a ceiling loses only the oldest
+      // answers, which are the ones a customer has already moved on from.
+      whenFull: "stop",
+      what: "The validation checks on this territory's customers",
+      uniqueBy: (row) => String(row.id),
+    },
+  );
   throwIfError(error);
-  const checks = new Map<string, LocationCheckState>();
-  for (const row of (data ?? []) as Row[]) {
+  const checks = new Map<string, LocationCheckReading>();
+  for (const row of rows) {
     const customerId = String(row.customer_id);
     if (row.status === "pending") {
-      checks.set(customerId, "checking");
+      checks.set(customerId, { decidedAt: null, reason: null, state: "checking" });
       continue;
     }
     // Newest first: the first decided row is his latest answer, unless a waiting one already spoke.
-    if (!checks.has(customerId)) checks.set(customerId, row.status === "rejected" ? "not_confirmed" : null);
+    if (checks.has(customerId)) continue;
+    const rejected = row.status === "rejected";
+    checks.set(customerId, {
+      decidedAt: rejected ? text(row.decided_at) : null,
+      reason: rejected ? text(row.refusal_reason) : null,
+      state: rejected ? "not_confirmed" : null,
+    });
   }
   return checks;
 }
@@ -149,7 +186,7 @@ export async function notifyValidationReviewWaiting(input: { customerName: strin
         category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
         channels: phoenixCrmChannels("validation_review_waiting"),
         eventType: "validation_review_waiting",
-        message: `${rep} validated ${input.customerName} (${territoryName(input.seat)}), and the system could not confirm it against Google Maps. It waits for your decision.`,
+        message: `${rep} validated ${input.customerName} (${territoryName(input.seat)}), and the system could not confirm it — against Google Maps, or from its signboard. It waits for your decision.`,
         metadata: { idempotencyKey: reviewNoticeKey(input.reviewId), seatId: input.seat.seatId },
         module: PHOENIX_CRM_NOTIFICATION_MODULE,
         priority: "normal",
@@ -162,6 +199,58 @@ export async function notifyValidationReviewWaiting(input: { customerName: strin
     );
   } catch (error) {
     logError("Phoenix CRM validation review notice failed", { error, labels: { event: "phoenix_crm_validation_review_notify_failed" } });
+  }
+}
+
+// ── Telling the rep what is wrong with his photo (2026-10-08) ───────────────────────────────────
+
+/** Every "validate this one again" notice ever raised about one customer — every review, both worlds. */
+export function validationNotConfirmedKeyPrefix(customerId: string): string {
+  return `phoenix_crm:validation_not_confirmed:${customerId}:`;
+}
+
+/**
+ * Withdraw the rep's "validate again" notice about one customer — when he has validated him again,
+ * and when the refusal is taken back. A bell left asking for something already done is the exact
+ * frustration the owner named. Never throws.
+ */
+export async function withdrawValidationNotConfirmed(customerId: string): Promise<void> {
+  if (!customerId) return;
+  await withdrawInAppNotificationsByEventKeyPrefix(validationNotConfirmedKeyPrefix(customerId)).catch(() => undefined);
+}
+
+/**
+ * Tell the rep, in-app only, that one customer is back under To validate and what is wrong with his
+ * photo. Built from what `phoenix_crm_decide_validation_review` returns, so no second read is made.
+ *
+ * 🔴 ONLY WHEN THE CUSTOMER IS REALLY BACK UNDER TO VALIDATE. A rejected SECOND place of a customer who
+ * keeps another one changes nothing on his list, and a bell about it would be a judgement with nothing
+ * for him to do — the very thing Golden Rule #1 keeps off his phone. Never throws.
+ */
+async function tellRepValidateAgain(viewer: PhoenixCrmViewer, result: Row): Promise<void> {
+  try {
+    const customerId = text(result.customer_id);
+    const repHrId = text(result.rep_hr_id);
+    const reviewId = text(result.review_id);
+    const seat = viewer.org.seats.get(String(result.seat_id));
+    if (!customerId || !repHrId || !reviewId || !seat) return;
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("status").eq("id", customerId).maybeSingle();
+    throwIfError(error);
+    if ((data as Row | null)?.status !== "pending") return;
+    await notifyPhoenixCrm(
+      {
+        kind: "validation_not_confirmed",
+        seat,
+        repHrId,
+        customerId,
+        customerName: text(result.customer_name) ?? "A customer",
+        reviewId,
+        reason: parseValidationRefusalReason(result.refusal_reason),
+      },
+      result.is_test === true,
+    );
+  } catch (error) {
+    logError("Phoenix CRM validate-again notice failed", { error, labels: { event: "phoenix_crm_validate_again_notify_failed" } });
   }
 }
 
@@ -194,8 +283,26 @@ export type ValidationReviewRow = {
   photo: ValidationReviewReading | null;
   /** The signboard photo, signed on the page by the CRM's own photo link (the Super Admin reads all). */
   photoPath: string | null;
-  /** Why the system held it, and every listing Google returned for the name. */
-  reason: "no_confident_listing" | "lookup_failed" | "listing_far" | "listing_off" | "refused_by_admin" | null;
+  /**
+   * Why the system held it, and every listing Google returned for the name. Since 2026-10-08 a place
+   * can also be held for what its SIGNBOARD says (`sign_other_name` / `sign_no_name`), and the
+   * record then sits in the same `google` column — see `signboardHoldRecord` for why.
+   */
+  reason:
+    | "no_confident_listing"
+    | "lookup_failed"
+    | "listing_far"
+    | "listing_off"
+    | "refused_by_admin"
+    | "sign_other_name"
+    | "sign_no_name"
+    | null;
+  /** What the system read on the signboard, verbatim — set on a signboard hold only. */
+  signText: string | null;
+  /** The names the system read on it, people and places together, for the Super Admin's eye. */
+  signNames: string[];
+  /** What was wrong with the photo, as the Super Admin chose it on a rejection — his label, not the rep's sentence. */
+  refusalLabel: string | null;
   query: string | null;
   listings: Array<GoogleListing & { distanceMeters: number }>;
   decidedByName: string | null;
@@ -233,19 +340,35 @@ function listingsOf(google: Row, point: GeoPoint): Array<GoogleListing & { dista
   return listings.sort((left, right) => left.distanceMeters - right.distanceMeters);
 }
 
-/** Every waiting review, and the ones decided in the last two weeks — newest first. */
-export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<ValidationReviewRow[]> {
+/** A read the page presents, and whether it stopped at its ceiling so the page can say so honestly. */
+export type ValidationBoardRead<T> = { rows: T[]; capped: boolean };
+
+/**
+ * Every waiting review, and the ones decided in the last two weeks — newest first.
+ *
+ * 🔴 IT PAGES (2026-10-08). It ran on `.limit(500)`, which silently answered about the newest 500 and
+ * presented that as the queue. The order is a TOTAL one (`created_at`, then `id`) or the walk skips and
+ * repeats at a page seam; `whenFull: "stop"` because this read PRESENTS rather than judges, and newest
+ * first means a ceiling loses only the oldest — which `capped` then says out loud.
+ */
+export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidationReviewRow>> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 86_400_000).toISOString();
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_validation_reviews")
-    .select("id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note")
-    .or(`status.eq.pending,decided_at.gte.${since}`)
-    .order("created_at", { ascending: false })
-    .limit(500);
-  throwIfError(error);
-  const reviews = (data ?? []) as Row[];
-  if (reviews.length === 0) return [];
+  const read = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_validation_reviews")
+        .select(
+          "id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason",
+        )
+        .or(`status.eq.pending,decided_at.gte.${since}`)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
+    { maxRows: 5_000, whenFull: "stop", what: "The place checks waiting and decided", uniqueBy: (row) => String(row.id) },
+  );
+  throwIfError(read.error);
+  const reviews = read.rows;
+  if (reviews.length === 0) return { rows: [], capped: false };
 
   const customerIds = [...new Set(reviews.map((row) => String(row.customer_id)))];
   const placeIds = [...new Set(reviews.map((row) => String(row.place_id)))];
@@ -264,7 +387,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
   const placeById = new Map(places.map((row) => [String(row.id), row]));
   const names = await loadPeopleNames(reviews.flatMap((row) => [text(row.created_by_hr_id), text(row.decided_by_hr_id)]));
 
-  return reviews.map((row) => {
+  const rows = reviews.map((row): ValidationReviewRow => {
     const customer = customerById.get(String(row.customer_id)) ?? {};
     const place = placeById.get(String(row.place_id)) ?? {};
     const google = (row.google && typeof row.google === "object" ? row.google : {}) as Row;
@@ -277,10 +400,22 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       google.reason === "lookup_failed" ||
       google.reason === "listing_far" ||
       google.reason === "listing_off" ||
-      google.reason === "refused_by_admin"
+      google.reason === "refused_by_admin" ||
+      google.reason === "sign_other_name" ||
+      google.reason === "sign_no_name"
         ? google.reason
         : null;
+    // A signboard hold carries what was read; a Google hold does not, and reads as nothing here.
+    const signboard = google.verdict === "signboard";
+    const signNames = signboard
+      ? [...(Array.isArray(google.personNames) ? google.personNames : []), ...(Array.isArray(google.placeNames) ? google.placeNames : [])]
+          .map((name) => text(name))
+          .filter((name): name is string => name !== null)
+      : [];
     return {
+      signText: signboard ? text(google.signText) : null,
+      signNames,
+      refusalLabel: status === "rejected" ? validationRefusalLabel(text(row.refusal_reason)) : null,
       reviewId: String(row.id),
       status,
       kind: row.kind === "added_place" ? "added_place" : "validation",
@@ -314,14 +449,19 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       restorable: status === "rejected" && place.status === "retired",
     };
   });
+  return { rows, capped: read.capped };
 }
 
 // ── The decision ────────────────────────────────────────────────────────────────────────────────
 
 /**
  * Approve or reject one held place. Approve validates a held customer in the rep's own name; reject
- * retires the place and, when it was his only one, sends him back to To validate. The rep is not
- * notified by a person: his list simply moves on, in the system's words.
+ * retires the place and, when it was his only one, sends him back to To validate.
+ *
+ * 🔴 A REJECTION NOW CARRIES WHAT IS WRONG WITH THE PHOTO, AND THE REP IS TOLD IT (owner, 2026-10-08:
+ * "tell the rep why"). The reason is REQUIRED on a reject and never asked on an approve; it is one of
+ * the six in validation-feedback.ts, and the rep reads only its sentence about his own picture — never
+ * the free-text note, never who decided, never that anybody did.
  */
 export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; status: "approved" | "rejected" }> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
@@ -329,10 +469,12 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   if (!isUuid(body.reviewId)) throw validationError("Choose the place to decide.");
   const decision = body.decision === "approve" ? "approve" : body.decision === "reject" ? "reject" : null;
   if (!decision) throw validationError("Choose approve or reject.");
+  const refusalReason = decision === "reject" ? parseValidationRefusalReason(body.refusalReason) : null;
+  if (decision === "reject" && !refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
   const reviewId = String(body.reviewId).toLowerCase();
   // `review_not_found` and `review_decided` come back worded by the module's refusal table (db.ts).
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
-    p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision, note: cleanText(body.note, 500) },
+    p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision, note: cleanText(body.note, 500), refusal_reason: refusalReason },
   });
   // A retired place changes what every visit to the customer is measured against.
   if (decision === "reject") {
@@ -347,6 +489,8 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   }
   // The "waiting for you" notice is answered.
   await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
+  // And the rep is told what is wrong with his photo — in-app only, about his picture alone.
+  if (decision === "reject") await tellRepValidateAgain(viewer, result);
   return { reviewId, status: decision === "approve" ? "approved" : "rejected" };
 }
 
@@ -383,6 +527,8 @@ export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown):
     settings: viewer.config.settings,
     scope: "all",
   });
+  // The refusal is taken back, so the bell that asked him to capture it again goes with it.
+  await withdrawValidationNotConfirmed(String(result.customer_id));
   return { reviewId: String(result.review_id), validated: result.validated === true };
 }
 
@@ -399,9 +545,6 @@ export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown):
  * rep's own list reads `not_confirmed` in the system's automated wording either way (golden rule #1:
  * "do not show the rep that a person is accepting or rejecting").
  */
-
-/** How far back the page offers validations to refuse. */
-const VALIDATED_SHOWN_DAYS = 30;
 
 export type ValidatedPlaceRow = {
   placeId: string;
@@ -430,36 +573,57 @@ export type ValidatedPlaceRow = {
   visits: number;
   /** Other active places this customer has: when there are none, refusing sends him back to To validate. */
   otherPlaces: number;
+  /**
+   * Whether ANY review row exists for this place, whatever its status. False is "never looked at by
+   * anybody" — 598 of the first 643 places, which nothing on this page could say until 2026-10-08.
+   */
+  reviewed: boolean;
+  /**
+   * What the system read on this place's signboard: null when it has not been read yet. A verdict,
+   * never a decision — the Super Admin decides each one himself (owner, 2026-10-08).
+   */
+  signboard: { verdict: "match" | "other_name" | "no_name" | "unjudged"; signText: string | null } | null;
 };
 
 /**
- * Every place validated in the last VALIDATED_SHOWN_DAYS that is still active and is not already
- * waiting in the queue above — newest first, so "he just validated this, take it back" is the top row.
+ * Every place still active and not already waiting in the queue above — newest first, so "he just
+ * validated this, take it back" is the top row.
+ *
+ * 🔴 NO DATE FLOOR AND NO 400-ROW CAP ANY MORE (2026-10-08). It read the newest 400 of the last 30 days,
+ * so on the day it was measured the page showed 400 of 612 and presented that as the field — and the
+ * 30-day floor made the board's own "Any time" period a lie. The whole set goes to the browser on
+ * purpose: the board filters rep, line, region, area, list, period and text IN THE BROWSER, so a server
+ * page would make every filter answer about one page. It pages with a total order and stops, newest
+ * first, at a ceiling far above the field, and says so when it does.
  */
-export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<ValidatedPlaceRow[]> {
+export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidatedPlaceRow>> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
-  const since = new Date(Date.now() - VALIDATED_SHOWN_DAYS * 86_400_000).toISOString();
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_places")
-    .select(
-      "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at",
-    )
-    .eq("status", "active")
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
-    .limit(400);
-  throwIfError(error);
-  const places = (data ?? []) as Row[];
-  if (places.length === 0) return [];
+  const read = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_places")
+        .select(
+          "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check",
+        )
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
+    { maxRows: 10_000, whenFull: "stop", what: "The validated places in use", uniqueBy: (row) => String(row.id) },
+  );
+  throwIfError(read.error);
+  const places = read.rows;
+  if (places.length === 0) return { rows: [], capped: false };
 
   const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
   // selectByIds, never a bare `.in()`: with the field grown past ~395 active places (482 on
   // production, 2026-10-07), a 400-id `.in()` overflowed the response headers and threw
   // UND_ERR_HEADERS_OVERFLOW ("fetch failed"), which the admin error boundary showed as "Admin
   // workspace unavailable". It also pages each chunk, so the visit count cannot be cut at 1,000 rows.
-  const [customers, pending, visits, activePlaces] = await Promise.all([
+  // Every review of these customers, whatever its status: the pending ones are held above and left out
+  // here, and ANY one at all means somebody has looked at that place.
+  const [customers, reviewRows, visits, activePlaces] = await Promise.all([
     selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
-    selectByIds<Row>("phoenix_crm_validation_reviews", "id, place_id", "customer_id", customerIds, (query) => query.eq("status", "pending")),
+    selectByIds<Row>("phoenix_crm_validation_reviews", "id, place_id, status", "customer_id", customerIds),
     selectByIds<Row>(
       "phoenix_crm_visits",
       "id, place_id",
@@ -469,7 +633,8 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
     selectByIds<Row>("phoenix_crm_places", "id, customer_id", "customer_id", customerIds, (query) => query.eq("status", "active")),
   ]);
   const customerById = new Map(customers.map((row) => [String(row.id), row]));
-  const held = new Set(pending.map((row) => String(row.place_id)));
+  const held = new Set(reviewRows.filter((row) => row.status === "pending").map((row) => String(row.place_id)));
+  const reviewed = new Set(reviewRows.map((row) => String(row.place_id)));
   const visitsByPlace = new Map<string, number>();
   for (const row of visits) {
     const placeId = String(row.place_id ?? "");
@@ -482,9 +647,9 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
   }
   const names = await loadPeopleNames(places.map((row) => text(row.created_by_hr_id)));
 
-  return places
+  const rows = places
     .filter((row) => !held.has(String(row.id)))
-    .map((row) => {
+    .map((row): ValidatedPlaceRow => {
       const customer = customerById.get(String(row.customer_id)) ?? {};
       const point = { lat: numberOrNull(row.lat) ?? 0, lon: numberOrNull(row.lon) ?? 0 };
       const seat = viewer.org.seats.get(String(row.seat_id));
@@ -512,8 +677,20 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         photoPath: text(row.photo_path),
         visits: visitsByPlace.get(String(row.id)) ?? 0,
         otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
+        reviewed: reviewed.has(String(row.id)),
+        signboard: signboardOf(row.signboard_check),
       };
     });
+  return { rows, capped: read.capped };
+}
+
+/** The stored signboard verdict, read defensively: anything unrecognised is "not read yet". */
+function signboardOf(value: unknown): ValidatedPlaceRow["signboard"] {
+  if (!value || typeof value !== "object") return null;
+  const check = value as Row;
+  const verdict = check.verdict;
+  if (verdict !== "match" && verdict !== "other_name" && verdict !== "no_name" && verdict !== "unjudged") return null;
+  return { verdict, signText: text(check.signText) };
 }
 
 /**
@@ -525,6 +702,10 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.placeId)) throw validationError("Choose the place to refuse.");
+  // What is wrong with the photo FIRST, because it is the one thing the rep is told (2026-10-08); the
+  // note is still required too — it is the record a reader comes back to, and the rep never sees it.
+  const refusalReason = parseValidationRefusalReason(body.refusalReason);
+  if (!refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
   const note = cleanText(body.note, 500);
   if (!note) throw validationError("Write why this validation is refused — it stays on the record.");
   const placeId = String(body.placeId).toLowerCase();
@@ -570,7 +751,7 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   const reviewId = String((upserted.data as Row).id);
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
-    p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision: "reject", note },
+    p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision: "reject", note, refusal_reason: refusalReason },
   });
   // A retired place changes what every visit to the customer is measured against.
   await restampVisitLocationsQuietly({
@@ -581,5 +762,120 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
     settings: viewer.config.settings,
     scope: "all",
   });
+  // He is told what is wrong with his photo, exactly as an automatic hold's rejection tells him — one
+  // notice, one wording, and nothing in it says a person looked.
+  await tellRepValidateAgain(viewer, result);
   return { placeId, reopened: result.reopened === true };
+}
+
+// ── Waiting to be captured again ────────────────────────────────────────────────────────────────
+
+export type ReopenedCustomerRow = {
+  customerId: string;
+  customerName: string;
+  listType: string;
+  isTest: boolean;
+  repName: string;
+  territory: string;
+  line: string | null;
+  region: string | null;
+  reopenedAt: string;
+  reopenedAtText: string;
+  /** Whole hours since he went back to To validate. The AGE is the point — see the header below. */
+  waitingHours: number;
+  /** What was wrong with the photo, as chosen — null for a refusal that predates the reason. */
+  reasonLabel: string | null;
+};
+
+/**
+ * Every customer sent back to To validate by a refused place and not validated since — oldest wait
+ * first.
+ *
+ * 🔴 IT CARRIES THE AGE, NOT A VERDICT (2026-10-08). Measured the day it landed: 0 of the 22 reopened
+ * customers had been validated again, average wait 40.8 hours, oldest 76.7 — and nothing anywhere
+ * said so, because "Validate again" lived only on the rep's own row. The module publishes no SLA, so
+ * this invents none (`overdue` stays false on the Needs You board); it states how long each has waited.
+ *
+ * The same two worlds the rest of the page shows, each row marked, so a count here can never read 0
+ * where the page lists a row. Paged with a total order, and it stops rather than refuses: it presents.
+ */
+export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ReopenedCustomerRow>> {
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const read = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_customers")
+        .select("id, seat_id, name, list_type, is_test, reopened_at")
+        .eq("status", "pending")
+        .not("reopened_at", "is", null)
+        .order("reopened_at", { ascending: true })
+        .order("id", { ascending: true }),
+    { maxRows: 5_000, whenFull: "stop", what: "The customers waiting to be captured again", uniqueBy: (row) => String(row.id) },
+  );
+  throwIfError(read.error);
+  const customers = read.rows;
+  if (customers.length === 0) return { rows: [], capped: false };
+
+  const reviews = await selectByIds<Row>(
+    "phoenix_crm_validation_reviews",
+    "id, customer_id, status, refusal_reason, created_by_hr_id, decided_at",
+    "customer_id",
+    customers.map((row) => String(row.id)),
+    (query) => query.eq("status", "rejected"),
+  );
+  // The LATEST refusal per customer is the one he is waiting on.
+  const latest = new Map<string, Row>();
+  for (const review of reviews) {
+    const customerId = String(review.customer_id);
+    const current = latest.get(customerId);
+    if (!current || String(review.decided_at ?? "") > String(current.decided_at ?? "")) latest.set(customerId, review);
+  }
+  const names = await loadPeopleNames([...latest.values()].map((row) => text(row.created_by_hr_id)));
+  const now = Date.now();
+
+  const rows = customers.map((row): ReopenedCustomerRow => {
+    const review = latest.get(String(row.id));
+    const seat = viewer.org.seats.get(String(row.seat_id));
+    const reopenedAt = String(row.reopened_at);
+    const at = new Date(reopenedAt).getTime();
+    return {
+      customerId: String(row.id),
+      customerName: String(row.name ?? "Unknown customer"),
+      listType: String(row.list_type ?? ""),
+      isTest: row.is_test === true,
+      // The rep who took the refused photo — the occupant may since have changed.
+      repName: review ? nameOf(names, text(review.created_by_hr_id), "A rep") : "A rep",
+      territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
+      line: seat?.lineName ?? null,
+      region: seat?.regionName ?? null,
+      reopenedAt,
+      reopenedAtText: formatPhoenixDateTime(reopenedAt),
+      waitingHours: Number.isNaN(at) ? 0 : Math.max(0, Math.floor((now - at) / 3_600_000)),
+      reasonLabel: review ? validationRefusalLabel(text(review.refusal_reason)) : null,
+    };
+  });
+  return { rows, capped: read.capped };
+}
+
+/**
+ * How many customers wait to be captured again, and since when — the figure the Needs You board asks.
+ * A head count plus the oldest stamp, so PostgREST's 1,000-row ceiling cannot shorten it. Throws on a
+ * failed read: the board turns that into "could not be read", never a zero it cannot prove.
+ */
+export async function countReopenedCustomersWaiting(): Promise<{ count: number; oldestAt: string | null }> {
+  const supabase = getSupabaseAdmin();
+  const [waiting, oldest] = await Promise.all([
+    supabase.from("phoenix_crm_customers").select("id", { count: "exact", head: true }).eq("status", "pending").not("reopened_at", "is", null),
+    supabase
+      .from("phoenix_crm_customers")
+      .select("reopened_at")
+      .eq("status", "pending")
+      .not("reopened_at", "is", null)
+      .order("reopened_at", { ascending: true })
+      .limit(1),
+  ]);
+  throwIfError(waiting.error);
+  throwIfError(oldest.error);
+  const first = ((oldest.data ?? []) as Row[])[0];
+  return { count: waiting.count ?? 0, oldestAt: first ? String(first.reopened_at) : null };
 }

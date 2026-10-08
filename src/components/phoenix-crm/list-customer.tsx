@@ -66,7 +66,14 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { DROP_REASONS } from "@/lib/phoenix-crm/entry-rules";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
-import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE, LOCATION_NOT_CONFIRMED_TEXT } from "@/lib/phoenix-crm/google-place-rules";
+import {
+  LOCATION_CHECKING_TEXT,
+  LOCATION_CHECKING_TITLE,
+  LOCATION_NOT_CONFIRMED_TEXT,
+  LOCATION_NOT_CONFIRMED_TITLE,
+  NOT_VALIDATED_YET_TITLE,
+} from "@/lib/phoenix-crm/google-place-rules";
+import { validationRefusalRepText } from "@/lib/phoenix-crm/validation-feedback";
 import { awaitsValidation, neverAdmitted, onTheList, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { CustomerPharmacy, ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
@@ -141,6 +148,7 @@ export function CustomerScreen({
   // Not while the system is checking the place he already captured (2026-10-03): there is nothing to
   // validate until the check answers.
   const checking = customer.locationCheck === "checking";
+  const notConfirmed = customer.locationCheck === "not_confirmed";
   const canValidateThis = pending && !checking && customer.referenceContactCrmId !== null && view.canValidateReference;
   const requests = sortRequests(
     view.requests.filter(
@@ -248,19 +256,24 @@ export function CustomerScreen({
           <CrmFacts facts={facts} />
         </div>
 
-        {/* The Google check, in the system's words — never a person's (owner, 2026-10-03). */}
+        {/* The place check, in the system's words — never a person's (owner, 2026-10-03). 🔴 EXACTLY ONE
+            of the next three notices can show (2026-10-08): "Validate again" and "Not validated yet" both
+            tested `pending && !checking` for five live days, so a refused rep read both, one under the
+            other, the second written for somebody never validated at all. */}
         {checking ? (
           <CrmNote className="mt-3" title={LOCATION_CHECKING_TITLE} tone="info">
             {LOCATION_CHECKING_TEXT}
           </CrmNote>
         ) : null}
-        {pending && !checking && customer.locationCheck === "not_confirmed" ? (
-          <CrmNote className="mt-3" title="Validate again" tone="warn">
-            {LOCATION_NOT_CONFIRMED_TEXT}
+        {pending && !checking && notConfirmed ? (
+          <CrmNote className="mt-3" title={LOCATION_NOT_CONFIRMED_TITLE} tone="warn">
+            {/* What is wrong with HIS PHOTO, from the closed list — never the note, never who decided. A
+                refusal from before the list existed falls back to the impersonal sentence. */}
+            {validationRefusalRepText(customer.validateAgainReason) ?? LOCATION_NOT_CONFIRMED_TEXT}
           </CrmNote>
         ) : null}
-        {pending && !checking ? (
-          <CrmNote className="mt-3" title="Not validated yet" tone="info">
+        {pending && !checking && !notConfirmed ? (
+          <CrmNote className="mt-3" title={NOT_VALIDATED_YET_TITLE} tone="info">
             {PENDING_COUNTS_NOTE} Validating captures this customer&apos;s signboard photo, the location and the days and hours. It happens once.
           </CrmNote>
         ) : null}

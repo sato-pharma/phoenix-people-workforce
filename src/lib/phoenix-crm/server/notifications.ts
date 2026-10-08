@@ -71,12 +71,14 @@ import { testAccountsMirroring } from "@/lib/auth/test-persona-directory";
 import { logError } from "@/lib/observability/log";
 import { minuteClock } from "@/lib/phoenix-crm/day-start-rules";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
+import { LOCATION_NOT_CONFIRMED_TEXT, LOCATION_NOT_CONFIRMED_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { managerChain, personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
+import { validationRefusalRepText } from "@/lib/phoenix-crm/validation-feedback";
 import type { VisitAskKind } from "@/lib/phoenix-crm/visit-ask-rules";
 
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
@@ -269,6 +271,29 @@ export type PhoenixCrmNotice =
       lon: number;
       /** What his sent plan said he would start the morning at, when he had one. */
       plannedAmMinute: number | null;
+    }
+  | {
+      /**
+       * 🔴 THE ONE NOTICE IN THIS MODULE THAT TELLS A REP HIS OWN WORK WAS TURNED DOWN (owner,
+       * 2026-10-08, after he was shown that the mandatory note on a refusal was the single character
+       * "-" in 22 of 24 refusals and that 0 of the 22 reopened customers had been validated again,
+       * average wait 40.8 hours): "tell the rep why", from a fixed pick-list.
+       *
+       * 🔴 A NARROW, DELIBERATE BEND OF GOLDEN RULE #1 AND NOTHING WIDER. What travels is what is
+       * wrong with HIS PHOTO, chosen from the closed six-item list in
+       * `@/lib/phoenix-crm/validation-feedback` — never the free-text note the Super Admin writes for
+       * the record, never who decided, never that anybody decided, never a distance, a reading or a
+       * threshold. In-app only, and push-blocked as well (`PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES`): no
+       * email, no Telegram, no phone, ever.
+       */
+      kind: "validation_not_confirmed";
+      seat: OrgSeat;
+      repHrId: string;
+      customerId: string;
+      customerName: string;
+      reviewId: string;
+      /** A key from `VALIDATION_REFUSAL_REASON_KEYS`. Null only for a caller that sent none. */
+      reason: string | null;
     };
 
 type Delivery = {
@@ -768,6 +793,29 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
     };
   }
 
+  if (notice.kind === "validation_not_confirmed") {
+    // 🔴 EVERY WORD HERE IS ABOUT HIS PICTURE. No name of a decider, no "rejected", no "admin", no
+    // "review", no metres: `validationRefusalRepText` is the only sentence that varies, and a regex
+    // sweep in tests/phoenix-crm-validation-feedback.test.ts refuses any of those words inside the six.
+    const why = validationRefusalRepText(notice.reason) ?? LOCATION_NOT_CONFIRMED_TEXT;
+    return {
+      recipients: [notice.repHrId],
+      eventType: "validation_not_confirmed",
+      title: `${LOCATION_NOT_CONFIRMED_TITLE}: ${notice.customerName}`,
+      // Every Phoenix CRM customer name is Arabic inside an English sentence, so it is isolated or the
+      // punctuation around it jumps to the wrong end of the line.
+      message: `${bidiIsolate(notice.customerName)} on ${territory} is back under To validate. ${why}`,
+      tab: "list",
+      recordId: notice.reviewId,
+      // 🔴 CUSTOMER FIRST, REVIEW SECOND, so one PREFIX withdrawal
+      // (`withdrawValidationNotConfirmed`) clears every such notice for one customer the moment he
+      // validates again — a rep must never be left with a bell asking for something he has done.
+      idempotencyKey: `phoenix_crm:validation_not_confirmed:${notice.customerId}:${notice.reviewId}`,
+      subjectHrId: notice.repHrId,
+      inAppOnly: true,
+    };
+  }
+
   if (notice.kind === "plan_submitted") {
     const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
     const sfeReturner = notice.returnedBySfeHrId ?? null;
@@ -1065,6 +1113,7 @@ function activityMirrorPeopleIds(notice: PhoenixCrmNotice): string[] {
     case "unplanned_visit_raised":
     case "day_start":
     case "first_visit":
+    case "validation_not_confirmed":
       ids.push(notice.repHrId);
       break;
   }
@@ -1253,6 +1302,23 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
         keySuffix: `day_start:${personKey(notice.repHrId) ?? notice.repHrId}:${notice.startedAt.slice(0, 10)}`,
       };
     }
+    case "validation_not_confirmed": {
+      const rep = nameOf(names, notice.repHrId, "A rep");
+      return {
+        title: `Activity · validate again: ${notice.customerName}`,
+        // 🔴 THE MIRROR CARRIES THE FACT, NEVER THE REASON. The NSM and the SFE Manager read that the
+        // customer is back under To validate; what is wrong with the photograph is the rep's own
+        // sentence and the Super Admin's evidence, and routing it here would make a managers' feed out
+        // of a judgement on one rep's picture. 🔴 And a case is REQUIRED, not optional: this function
+        // returns null for an unhandled kind, so a missing case is a silent hole in the feed rather
+        // than a type error.
+        message: `${bidiIsolate(notice.customerName)} is back under To validate for ${rep}, ${territory}.`,
+        tab: "team",
+        recordId: notice.reviewId,
+        subjectHrId: notice.repHrId,
+        keySuffix: `validation_not_confirmed:${notice.reviewId}`,
+      };
+    }
   }
 }
 
@@ -1272,6 +1338,12 @@ function activityMirrorActorHrId(notice: PhoenixCrmNotice): string | null {
       return notice.actorHrId;
     case "visit_ask":
       return notice.status === "waiting" ? notice.repHrId : notice.askedHrId;
+    // 🔴 Explicitly nobody, and not left to the default: this notice deliberately carries NO decider
+    // hr id — the rep must never be able to learn that a person judged his photo (Golden Rule #1) —
+    // and the one person who can decide these is the Super Admin, who is not in the mirror's audience
+    // (the national sales manager and the SFE Managers) in the first place.
+    case "validation_not_confirmed":
+      return null;
     default:
       return null;
   }

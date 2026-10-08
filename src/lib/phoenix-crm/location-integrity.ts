@@ -56,13 +56,60 @@ export type PhoenixCrmIntegrityFlag =
   /** A coordinate with a typist's precision rather than a receiver's. */
   | "typed_coordinate"
   /** The phone was handing out approximate location, so no precision test below means anything. */
-  | "coarse_location";
+  | "coarse_location"
+  // ── The place's two readings, compared with each other at last (2026-10-08) ──────────────────
+  //
+  // A place stores TWO independent fixes — the photo's own shutter reading and the separate Capture
+  // location pin — and until this date NOTHING anywhere compared them to one another. Each was
+  // checked against PLACE_MAX_ACCURACY_METERS on its own and that was all, so three live active
+  // places sit with their photo and their pin 687 m, 869 m and 1,553 m apart, both readings
+  // individually "precise" and the gap unmeasured. `assessCaptureTrust` in
+  // src/lib/evidence/capture-trust.ts already answers exactly this question and three other modules
+  // already consume it; Phoenix CRM simply never called it.
+  //
+  // 🔴 ONLY `photo_pin_disagrees` IS STRONG. CAPTURE_DRIFT_AGREE_METRES' own doc records that two
+  // urban-canyon fixes can legitimately sit ~150 m apart and a rep who steps outside a building for
+  // signal moves further still, so a drift is corroboration and never an accusation. Measured on
+  // production the day these landed: 3 places `drifted`, ZERO `disagrees` — the strong flag fires on
+  // nobody, which is the right shape for a detector nobody has calibrated yet.
+  /** The photo and the pin are irreconcilable — past CAPTURE_DRIFT_DISAGREE_METRES. */
+  | "photo_pin_disagrees"
+  /** Further apart than one doorway, between the two capture-trust lines. */
+  | "photo_pin_drifted"
+  /** The pin was taken long before the shutter — past CAPTURE_GAP_FLAG_SECONDS. */
+  | "photo_pin_gap_long"
+  /** Both readings identical to the bit, which a receiver does not do twice. */
+  | "photo_pin_identical"
+  // ── What the signboard in the photo actually says (2026-10-08) ───────────────────────────────
+  //
+  // The module validated a LOCATION while the owner graded an IDENTIFICATION, and only the first was
+  // ever built: of the 643 places validated in the module's first five days, 561 got no identity
+  // check of any kind, because the only one that existed covers AM accounts alone. These two flags
+  // are what the nightly sweep files once it has read a place's own signboard
+  // (src/lib/phoenix-crm/signboard-rules.ts).
+  //
+  // 🔴 A FLAG, NEVER A HOLD, FOR A PLACE ALREADY VALIDATED (owner, 2026-10-08: "flag them, you decide
+  // each"). Nothing un-validates one of the 643 and no rep is told anything — he works through the
+  // integrity board at his own pace, and every move off a place carries a written reason.
+  /** The sign names somebody else — not this customer, and not his place. */
+  | "sign_other_name"
+  /**
+   * No name to judge: the photo shows no signboard at all, or a PM signboard names no person — on a
+   * PM capture a person is what identifies the door.
+   *
+   * 🔴 WEAK, AND IT HAS TO BE: many real Egyptian practices sign the specialty and the building and
+   * no person, which is exactly why an AM capture judged against its place name treats a sign naming
+   * nobody as a MATCH. On a PM capture it is worth looking at and is never on its own an accusation.
+   */
+  | "sign_no_name";
 
 export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
   "mock_provider",
   "coordinate_replay",
   "impossible_travel",
   "zero_jitter",
+  "photo_pin_disagrees",
+  "sign_other_name",
 ];
 
 /**
@@ -87,6 +134,12 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   constant_accuracy: "Every reading had identical accuracy",
   typed_coordinate: "The coordinate looks typed, not measured",
   coarse_location: "The phone was set to approximate location, not precise",
+  photo_pin_disagrees: "The photo and the pin are in different parts of the city",
+  photo_pin_drifted: "The photo and the pin are further apart than one doorway",
+  photo_pin_gap_long: "The pin was taken long before the photo",
+  photo_pin_identical: "The photo and the pin are the same reading, to the bit",
+  sign_other_name: "The signboard in the photo names somebody else",
+  sign_no_name: "No name could be read on the signboard in the photo",
 };
 
 // ── Thresholds ──────────────────────────────────────────────────────────────────────────────────
