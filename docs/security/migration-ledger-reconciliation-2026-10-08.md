@@ -118,6 +118,33 @@ no migration will ever correct it — the only statement that would have is perm
 Anyone reading that row to understand the territory reads the wrong decision. Correcting it is a
 one-row documentation write to a live org record, which is why it is flagged here instead of done.
 
+## Addendum, the same evening: an eleventh file
+
+`20261006185533_crm_contact_list_refusal_neutral.sql` was flagged after the ten above had been
+settled, so it appears in no table on this page. The run that surfaced it read **815 local
+migrations against 1,267 recorded** on `ozucdzovmcqvepbozvqf` and named this one file, 52 hours old.
+
+It is case 2, and the clearest example of it on this page:
+
+| `public.crm_contact_list_change_apply` | `20261006185533` (this file) | `20261007200000` (the later one) | Production **and** staging |
+| --- | --- | --- | --- |
+| body length | 6,498 chars | 9,516 chars | 9,516 chars |
+| raw md5 | `50644d369fc29cfd0134683670861fc3` | `b5a5a2ab9ec3a9ef14f6bff322c0f445` | `b5a5a2ab9ec3a9ef14f6bff322c0f445` |
+
+Re-applying it would `create or replace` a 6,498-character body over the 9,516-character one that is
+running, taking the later migration's own changes to that function with it, and nothing would go red.
+
+**It is superseded, not reverted**, and that was established separately from the digest: all seven
+neutral refusal strings this file introduces are live in production's `prosrc`, matched one at a time
+with `position(<msg> in prosrc)` — `That change was not found.`, `This change has already been
+decided or withdrawn.`, the iReports360 team-has-not-started refusal, `Only the manager this change
+was sent to can approve it.`, `That doctor is already on this list.`, `That doctor is not on this
+list any more.` and `That doctor already has this grade.` Seven of seven returned true.
+
+Production's ledger holds no row for it under any name; staging's holds it by version **and** name
+(`20261006185533 / crm_contact_list_refusal_neutral`). So the entry masks nothing on staging, and the
+asymmetry is the same staging-first, production-second shape as the other ten.
+
 ## What to do when this check goes red again
 
 1. **Do not re-apply on the strength of a catalog probe.** Digest the function bodies.
