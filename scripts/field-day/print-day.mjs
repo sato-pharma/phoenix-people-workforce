@@ -105,6 +105,8 @@ const css = () => `
   .title h1 { margin: 0; color: ${C.deep}; font-size: 17pt; font-weight: 700; line-height: 1.2; }
   .title p { margin: 1.2mm 0 0; color: ${C.muted}; font-size: 8pt; font-weight: 600; }
   .purpose { margin: 0 0 4mm; padding: 1.5mm 0; border-top: .5pt solid ${C.hair}; border-bottom: .5pt solid ${C.hair}; color: ${C.deep}; font-size: 8.5pt; font-weight: 700; text-align: center; }
+  /* The day-off line sits straight under the addressee, sharing its rule rather than drawing a second one. */
+  .purpose.rest { margin-top: -4mm; border-top: 0; color: ${C.body}; font-weight: 600; }
   h2 { margin: 5mm 0 1.8mm; color: ${C.deep}; font-size: 10pt; font-weight: 700; border-bottom: .5pt solid ${C.blue}; padding-bottom: 1mm; break-after: avoid; page-break-after: avoid; }
   h3 { margin: 3.4mm 0 1.2mm; color: ${C.ink}; font-size: 9pt; font-weight: 700; break-after: avoid; page-break-after: avoid; }
   h3 span { color: ${C.muted}; font-weight: 600; font-size: 8pt; }
@@ -161,13 +163,42 @@ const AUTHORED = {
 };
 
 /**
+ * How a day off is named in a sentence — `Armed Forces Day, a public holiday`, or `Friday, the
+ * weekly day off`. One phrase, so no paper words it differently from another.
+ */
+export const restDayPhrase = (restDay) =>
+  !restDay ? "" : restDay.kind === "holiday" ? `${restDay.name}, a public holiday` : "Friday, the weekly day off";
+
+/**
+ * The line every paper carries when the day was a day off, directly under the addressee.
+ *
+ * It states what the day was and why the figures below are what they are, because a reader who meets
+ * a column of zeroes first reads them as a failure and only then, if at all, reads the explanation.
+ */
+export function restDayBanner(dayData) {
+  if (!dayData.restDay) return "";
+  const worked = dayData.groups.flatMap((group) => group.reps).filter((rep) => !rep.quiet).length;
+  const consequence =
+    worked === 0
+      ? "No work was recorded, and none was expected: the figures below are zero for that reason alone, and there is nothing here for a manager to follow up."
+      : "Whatever is recorded below was recorded on a day the company was off, and nothing was expected of anyone who recorded nothing.";
+  return `<p class="purpose rest">${esc(longDay(dayData.day))} was ${esc(restDayPhrase(dayData.restDay))}. ${esc(consequence)}</p>`;
+}
+
+/**
  * What the data itself says about a rep's day, in words.
  *
  * No pronouns: these papers name fourteen people and a guessed one is a real discourtesy on a
  * document that goes to their managers.
+ *
+ * 🔴 AN EMPTY DAY OFF IS NOT AN EMPTY DAY. Without `restDay` this printed "Nothing was recorded
+ * today, and nothing was planned for it either" under all fifteen names on Armed Forces Day — a
+ * sentence that reads as fifteen people who did not work, on a paper their district manager and the
+ * Chief Executive both read. On a day off the absence is explained and nothing is left to chase.
  */
-export function derivedNotes(rep) {
+export function derivedNotes(rep, restDay) {
   if (rep.quiet) {
+    if (restDay) return [`${restDayPhrase(restDay)}. Nothing was recorded, and nothing was expected to be.`];
     return [
       rep.planned > 0
         ? `Nothing was recorded today, and ${rep.planned} customers were planned for it.`
@@ -197,7 +228,18 @@ export function derivedNotes(rep) {
   return notes;
 }
 
-const notesFor = (rep) => [...(AUTHORED[rep.name] ? [AUTHORED[rep.name]] : []), ...derivedNotes(rep)];
+/**
+ * A rep's notes: the authored sentence about that rep's day, then what the data itself says.
+ *
+ * 🔴 AN AUTHORED NOTE IS ABOUT A DAY'S CAPTURES, SO A DAY OFF HAS NONE. Rendered from production for
+ * 8 October 2026, the holiday paper put "The phone was on approximate location all morning — every
+ * reading came back at exactly 2,000 m" directly beside "Nothing was recorded", under one name: the
+ * paper asserted a morning's work on a day the company was off.
+ */
+const notesFor = (rep, restDay) => [
+  ...(AUTHORED[rep.name] && !restDay ? [AUTHORED[rep.name]] : []),
+  ...derivedNotes(rep, restDay),
+];
 
 export const figuresOf = (group) => ({
   worked: group.reps.filter((rep) => !rep.quiet).length,
@@ -252,7 +294,7 @@ export function renderLinePage(group, dayData) {
             `<li><b>${esc(event.at)}</b><span class="what">${esc(event.what)}</span><span class="who" dir="auto">${esc(event.who)}</span><span class="how">${esc(event.how)}</span></li>`,
         )
         .join("");
-      const notes = notesFor(rep).map((note) => `<p class="note">${esc(note)}</p>`).join("");
+      const notes = notesFor(rep, dayData.restDay).map((note) => `<p class="note">${esc(note)}</p>`).join("");
       const title = rep.title && rep.title !== "Medical Representative" ? ` <span>— ${esc(rep.title)}</span>` : "";
       return `<div class="rep${rep.quiet ? " quiet" : ""}">
         <h3>${esc(rep.name)} <span>· ${esc(rep.area)}</span>${title}</h3>
@@ -269,8 +311,9 @@ export function renderLinePage(group, dayData) {
     `${letterhead("Internal operations report", stampOf(dayData))}
   <div class="title"><h1>Field Day Report</h1><p>${esc(group.line)} · Delta (1) · ${esc(longDay(dayData.day))}</p></div>
   <p class="purpose">District Manager ${esc(group.dm)}</p>
+  ${restDayBanner(dayData)}
   <div class="figures">
-    <div><dt>Reps</dt><dd>${figures.worked} of ${figures.occupied}<small>recorded work today${group.vacant.length ? ` · ${group.vacant.length} seat vacant` : ""}</small></dd></div>
+    <div><dt>Reps</dt><dd>${figures.worked} of ${figures.occupied}<small>recorded work ${dayData.restDay ? `on ${dayData.restDay.kind === "holiday" ? "the public holiday" : "the weekly day off"}` : "today"}${group.vacant.length ? ` · ${group.vacant.length} seat vacant` : ""}</small></dd></div>
     <div><dt>Calls</dt><dd>${figures.am + figures.pm}<small>${figures.am} hospitals · ${figures.pm} doctors</small></dd></div>
     <div><dt>Places validated</dt><dd>${figures.kept}<small>of ${figures.places} captured at the door</small></dd></div>
     <div><dt>List standing</dt><dd>${figures.validated}<small>validated of ${figures.list.toLocaleString("en-GB")} customers</small></dd></div>
@@ -315,6 +358,58 @@ export function renderSummaryPage(dayData) {
   const within25 = dayData.places.filter((place) => Math.max(Number(place.photo_accuracy_meters ?? 0), Number(place.pin_accuracy_meters ?? 0)) <= 25).length;
   const within100 = dayData.places.filter((place) => Math.max(Number(place.photo_accuracy_meters ?? 0), Number(place.pin_accuracy_meters ?? 0)) <= 100).length;
   const withdrawn = places - kept;
+  const restDay = dayData.restDay ?? null;
+
+  /**
+   * What the day shows, in the order it is read.
+   *
+   * 🔴 A DAY OFF LEADS ITS OWN PAGE. On a public holiday the three sections below say nothing true:
+   * "0 of the 15 reps who hold a seat recorded real work" is a performance sentence, "Of the 0
+   * places captured, 0 were accurate" is arithmetic about nothing, and both stood on a paper
+   * prepared for the Chief Executive on Armed Forces Day. So the day off is stated first, and a
+   * section whose figures are empty is not printed at all rather than printed as a zero.
+   */
+  const shows = [];
+  if (restDay) {
+    shows.push(`<h3>The day was a day off</h3>
+  <p class="note">${
+    restDay.kind === "holiday"
+      ? `${esc(restDay.name)} is a public holiday for the whole company, confirmed on the company holiday calendar — which is where this page reads it from, so a day off the company moves is a day off on this paper.`
+      : "The day was a Friday, the weekly day off."
+  } ${
+    worked === 0
+      ? "Nothing was due from the field and nothing was recorded, so every figure on this page reads zero because the day was off — not because a day's work went unreported."
+      : `${worked === 1 ? "One rep" : `${worked} reps`} recorded work on it even so; nothing was asked of anyone who recorded none.`
+  }</p>`);
+  }
+  if (worked > 0) {
+    shows.push(`<h3>The field is on the system</h3>
+  <p class="note">${worked} of the ${occupied} reps who hold a seat recorded real work — ${am} hospital calls
+  and ${pm} doctor calls, every one tied to a photograph taken at the door and to the GPS reading of the
+  phone that took it. Nothing here is typed in from memory at the end of the day.</p>`);
+  }
+  if (places > 0) {
+    shows.push(`<h3>The locations are accurate</h3>
+  <p class="note">Of the ${places} places captured, ${within25} were accurate to within 25 metres and
+  ${within100} within the 100 metres the company requires. Each one becomes the fixed point every future
+  visit to that customer is measured against, so today's care is what makes next month's coverage figures
+  trustworthy.</p>`);
+  }
+  if (withdrawn > 0) {
+    shows.push(`<h3>The system caught what it should</h3>
+  <p class="note">${withdrawn} ${withdrawn === 1 ? "place was" : "places were"} withdrawn after the system
+  flagged the capture itself — a phone left on approximate location puts every hospital on one point, and
+  the repeated coordinate is caught without a manager having to notice it. Those customers go back to
+  “To validate” and are re-validated standing at the door, so no wrong point survives into the record.</p>`);
+  }
+  const vacantClause = vacant === 0 ? "" : ` ${vacant === 1 ? "One seat is" : `${vacant} seats are`} vacant, which the district managers are following.`;
+  shows.push(`<h3>The work ahead is the lists</h3>
+  <p class="note">${validated} customers of ${list.toLocaleString("en-GB")} are validated so far — a job that
+  runs over the coming weeks, one doorway at a time.${
+    restDay
+      ? ` No call was due on ${esc(restDay.name)}, so the lists stand where the last working day left them.${vacantClause}`
+      : ` ${quiet === 0 ? "Every rep with a seat recorded work" : quiet === 1 ? "One rep recorded nothing" : `${quiet} reps recorded nothing`} today.${vacantClause}`
+  }</p>`);
 
   const rows = per
     .map(
@@ -331,41 +426,21 @@ export function renderSummaryPage(dayData) {
     `${letterhead("Executive summary", stampOf(dayData))}
   <div class="title"><h1>Phoenix CRM · Field Day</h1><p>Delta (1) — CNS, Pedia and Anti-Infective · ${esc(longDay(dayData.day))}</p></div>
   <p class="purpose">Prepared for Anwar Gaweesh, Chief Executive Officer</p>
+  ${restDayBanner(dayData)}
   <div class="figures">
     <div><dt>Teams live</dt><dd>${dayData.groups.length}<small>all of Delta (1)</small></dd></div>
-    <div><dt>Reps working</dt><dd>${worked} of ${occupied}<small>${vacant} seats vacant besides</small></dd></div>
+    <div><dt>${restDay ? "Reps in the field" : "Reps working"}</dt><dd>${worked} of ${occupied}<small>${restDay ? "the company was off" : "recorded work"} · ${vacant === 1 ? "one seat" : `${vacant} seats`} vacant besides</small></dd></div>
     <div><dt>Calls logged</dt><dd>${am + pm}<small>${am} hospitals · ${pm} doctors</small></dd></div>
     <div><dt>Places validated</dt><dd>${kept}<small>of ${places} captured at the door</small></dd></div>
   </div>
   <h2>The three lines</h2>
   <table>
     <colgroup><col style="width:17%"><col style="width:29%"><col style="width:13%"><col style="width:11%"><col style="width:13%"><col style="width:17%"></colgroup>
-    <thead><tr><th>Line</th><th>District Manager</th><th class="num">Reps working</th><th class="num">Calls</th><th class="num">Places</th><th class="num">Validated of list</th></tr></thead>
+    <thead><tr><th>Line</th><th>District Manager</th><th class="num">${restDay ? "Reps in the field" : "Reps working"}</th><th class="num">Calls</th><th class="num">Places</th><th class="num">Validated of list</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <h2>What the day shows</h2>
-  <h3>The field is on the system</h3>
-  <p class="note">${worked} of the ${occupied} reps who hold a seat recorded real work — ${am} hospital calls
-  and ${pm} doctor calls, every one tied to a photograph taken at the door and to the GPS reading of the
-  phone that took it. Nothing here is typed in from memory at the end of the day.</p>
-  <h3>The locations are accurate</h3>
-  <p class="note">Of the ${places} places captured, ${within25} were accurate to within 25 metres and
-  ${within100} within the 100 metres the company requires. Each one becomes the fixed point every future
-  visit to that customer is measured against, so today's care is what makes next month's coverage figures
-  trustworthy.</p>
-  ${
-    withdrawn > 0
-      ? `<h3>The system caught what it should</h3>
-  <p class="note">${withdrawn} ${withdrawn === 1 ? "place was" : "places were"} withdrawn after the system
-  flagged the capture itself — a phone left on approximate location puts every hospital on one point, and
-  the repeated coordinate is caught without a manager having to notice it. Those customers go back to
-  “To validate” and are re-validated standing at the door, so no wrong point survives into the record.</p>`
-      : ""
-  }
-  <h3>The work ahead is the lists</h3>
-  <p class="note">${validated} customers of ${list.toLocaleString("en-GB")} are validated so far — a job that
-  runs over the coming weeks, one doorway at a time. ${quiet === 0 ? "Every rep with a seat recorded work" : quiet === 1 ? "One rep recorded nothing" : `${quiet} reps recorded nothing`}
-  today and ${vacant === 1 ? "one seat is" : `${vacant} seats are`} vacant, which the district managers are following.</p>
+  ${shows.join("\n  ")}
   <h2>What this replaces</h2>
   <p class="note">Visit reporting for these teams now comes from Phoenix rather than the outside system:
   the plan, the call, the photograph, the location and the approval all sit in one record that the district

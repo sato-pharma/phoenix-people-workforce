@@ -1,8 +1,9 @@
 // Phoenix CRM — one field day, read from production.
 //
 // Returns the day as the papers need it: the three Delta (1) teams, every rep who holds a seat under
-// them, each rep's calls and places with their real accuracy readings, and the events of the day in
-// order. No judgement and no prose — `print-day.mjs` adds those.
+// them, each rep's calls and places with their real accuracy readings, the events of the day in
+// order, and whether the day was a day off at all. No judgement and no prose — `print-day.mjs` adds
+// those.
 //
 // 🔴 EVERY FIGURE IS READ, NEVER TYPED, AND THAT IS THE WHOLE REASON THIS FILE EXISTS. The first cut
 // of these papers carried hand-copied numbers, and the day moved three times while they were being
@@ -35,6 +36,71 @@ export const cairoDate = (iso) => (iso ? new Date(iso).toLocaleDateString("en-CA
 /** The worse of a place's two readings — the photo's own fix and the separate Capture location pin. */
 export const worstReading = (place) =>
   Math.max(Number(place.photo_accuracy_meters ?? 0), Number(place.pin_accuracy_meters ?? 0));
+
+/** The weekday a Cairo calendar day falls on. The string already IS the Cairo day, so it is read, not converted. */
+export const weekdayOf = (day) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "long" });
+
+/**
+ * `Day off for Armed Forces Day` -> `Armed Forces Day`.
+ *
+ * Google's Egypt calendar carries a substitute as its own event named `Day off for <X>`, and on
+ * 8 October 2026 BOTH rows are confirmed on that one date — the holiday the owner moved there, and
+ * Google's twin. A paper names the holiday, never the mechanism that moved it.
+ */
+export const holidayNameOf = (name) =>
+  String(name ?? "").replace(/^day\s+off\s+for\s+/i, "").trim() || "a public holiday";
+
+/**
+ * The CONFIRMED public holiday a day falls on, or null — read from `attendance_holiday_overrides`,
+ * the same table `listHolidayOverridesOverlappingRange` loads for every TS reader
+ * (`getConfirmedNationalHolidays` -> `loadPlanHolidays`, which is what greys the day out in a plan).
+ * This file is plain node and cannot import `@/lib`, so it reads that table directly.
+ *
+ * 🔴 WHAT IT MUST NEVER DO IS CARRY DATES OF ITS OWN: the owner moved the 6 October day off to
+ * Thursday the 8th from an admin screen, and a hard-coded list would move everywhere except here —
+ * on the one document that reaches the Chief Executive.
+ *
+ * 🔴 `official_date` IS NOT A DAY OFF. The 6 October row is observed on the 8th and 6 October is a
+ * normal working day; only `observed_date`..`observed_end_date` is the holiday. The whole table is
+ * read and filtered in memory for the same reason the TS side caches it whole — about twenty rows,
+ * one per postponed holiday per year, where a per-day query would share nothing.
+ *
+ * NEVER THROWS, like `loadPlanHolidays`. A calendar it cannot read gives no holiday, so the papers
+ * read exactly as they did before this existed, and the nightly log carries the line saying why.
+ */
+export async function readConfirmedHoliday(db, day) {
+  try {
+    const { data, error } = await db
+      .from("attendance_holiday_overrides")
+      .select("holiday_name, observed_date, observed_end_date");
+    if (error) throw new Error(error.message);
+    const confirmedToday = (data ?? []).filter(
+      (row) => row.observed_date <= day && (row.observed_end_date ?? row.observed_date) >= day,
+    );
+    if (confirmedToday.length === 0) return null;
+    // The plain name wins over the `Day off for <X>` twin confirmed on the same date.
+    const named = confirmedToday.find((row) => !/^day\s+off\s+for\s+/i.test(String(row.holiday_name ?? "")));
+    return { name: holidayNameOf((named ?? confirmedToday[0]).holiday_name) };
+  } catch (error) {
+    console.error(`field-day: the confirmed holiday calendar could not be read for ${day} — ${error?.message ?? error}`);
+    return null;
+  }
+}
+
+/**
+ * Why the field would be empty on this day — a public holiday or the weekly day off — or null when
+ * it is a working day and an empty field really is the finding.
+ *
+ * 🔴 ZERO ON A DAY OFF IS NOT A FINDING. The papers for Thursday 8 October 2026 showed 0 of 15 reps
+ * working and told the Chief Executive that fifteen reps "recorded nothing today … which the
+ * district managers are following" — on Armed Forces Day, the holiday the owner moved there himself.
+ */
+export function restDayOf(day, holiday) {
+  if (holiday) return { kind: "holiday", name: holiday.name };
+  if (weekdayOf(day) === "Friday") return { kind: "friday", name: "Friday" };
+  return null;
+}
 
 function env() {
   return Object.fromEntries(
@@ -70,7 +136,8 @@ export async function readDay(day = cairoToday()) {
     auth: { persistSession: false },
   });
 
-  const [tree, visits, allPlaces, dayStarts, unplanned, requests] = await Promise.all([
+  const [holiday, tree, visits, allPlaces, dayStarts, unplanned, requests] = await Promise.all([
+    readConfirmedHoliday(db, day),
     all(() => db.from("au_v_org_tree").select("seat_id, parent_seat_id, line_name, area_name, occupant_hr_id, is_vacant")),
     all(() =>
       db
@@ -198,5 +265,5 @@ export async function readDay(day = cairoToday()) {
     })
     .sort((left, right) => LINE_ORDER.indexOf(left.line) - LINE_ORDER.indexOf(right.line));
 
-  return { day, readAt: cairoClock(new Date().toISOString()), groups, places };
+  return { day, readAt: cairoClock(new Date().toISOString()), groups, places, restDay: restDayOf(day, holiday) };
 }
