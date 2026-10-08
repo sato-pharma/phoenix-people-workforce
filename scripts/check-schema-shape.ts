@@ -552,15 +552,44 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
           "The recovery undo log is deployed but protects nothing: recovery.protected_tables has " +
           "no enabled rows. Production has no PITR, so this is the payroll safety net being off.",
       });
+    } else if (never.length === enabled.length) {
+      // 🔴 EVERY enabled table uncaptured is a DIFFERENT fault from SOME of them, and saying
+      // "something is failing inside take_snapshots()" here sends the reader to an empty table.
+      // take_snapshots() writes a recovery.snapshot_runs row on every invocation, success or
+      // failure, so if it had ever run, at least one table would have been captured — a store
+      // with nothing in it at all has never been CALLED. Measured on staging 2026-10-08: all 7
+      // registered and enabled, 0 snapshots, `recovery.snapshot_runs` EMPTY, and `cron.job` does
+      // not exist because pg_cron is not installed there. A session told to "read
+      // recovery.snapshot_runs.error" read zero rows and learned nothing.
+      //
+      // Nothing in supabase/migrations/ ever schedules this. Production's hourly job
+      // (`phoenix-recovery-snapshot`, `5 * * * *`) was created by hand, so a restored or
+      // recreated database comes back with the store deployed and never running — exactly the
+      // "looks like protection" state this gate exists for.
+      v.push({
+        severity: "error",
+        code: "recovery_never_ran",
+        message:
+          `The recovery undo log has captured NOTHING: all ${enabled.length} enabled table(s) ` +
+          `are uncaptured (${never.map((r) => `${r.source_schema}.${r.source_table}`).join(", ")}). ` +
+          "take_snapshots() writes a recovery.snapshot_runs row on every invocation, so this is " +
+          "not a failure inside it — it has never been CALLED. Check that pg_cron is installed " +
+          "(`select * from pg_extension where extname = 'pg_cron'`) and that the job exists " +
+          "(`select jobname, schedule, active from cron.job`). Production's is " +
+          "`phoenix-recovery-snapshot` at `5 * * * *`; no migration creates it, so a restored " +
+          "database needs it scheduled by hand.",
+      });
     } else if (never.length > 0) {
       v.push({
         severity: "error",
         code: "recovery_table_never_captured",
         message:
-          `${never.length} protected table(s) have never been captured by the recovery undo log: ` +
+          `${never.length} of ${enabled.length} protected table(s) have never been captured by ` +
+          "the recovery undo log: " +
           `${never.map((r) => `${r.source_schema}.${r.source_table}`).join(", ")}. ` +
-          "They are registered and enabled, so something is failing silently inside " +
-          "recovery.take_snapshots() — read recovery.snapshot_runs.error.",
+          "The others HAVE been, so the scheduler is running and these specific tables are " +
+          "failing inside recovery.take_snapshots() — read recovery.snapshot_runs.error, and " +
+          "check each one's pk_columns and max_rows in recovery.protected_tables.",
       });
     } else if (hoursSince > 36) {
       v.push({
