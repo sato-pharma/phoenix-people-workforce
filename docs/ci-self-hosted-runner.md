@@ -581,6 +581,46 @@ number.
 for three. That is spend producing nothing, and parking them at 0 is a dashboard decision.
 
 ## 🔴 When the box is busy: pay for Actions — owner's policy, 2026-10-06, sharpened 2026-10-08
+### The dispatch route was reading its own run from the list that drops runs — 2026-10-08
+
+`findPullRequestRun` was deliberately written against `gh run list`: that list is eventually
+consistent and has dropped a run that existed, so the PR's run is asked for with
+`gh api repos/{owner}/{repo}/actions/runs?head_sha=<sha>`. The DISPATCH finder beside it was not
+moved at the same time, and kept scanning `gh run list --workflow ci.yml --branch <branch>
+--event workflow_dispatch`.
+
+That is the worse of the two places to keep it, because the dispatch route has already spent the
+money. The order is: dispatch (~14 billable Actions minutes committed), then poll for the run.
+`settleActionsRun`'s `sawRun` latches only on a run the finder actually returned, so a list that
+omits the brand-new run for the first three minutes of polling — nine reads at 20s — makes the
+watcher exit 6 with:
+
+    remote-check: NO VERDICT — no the dispatched run exists for <sha> after 3 minutes, and a run
+    is registered the moment it is created, queued or not.
+
+That sentence is true of the runs API, which is what the finder now asks. It was never true of
+`gh run list`, which is what it was asking — so the single message asserting the run cannot exist
+was produced by the one reader in the script that can fail to see it, while the dispatched run goes
+on to complete, billed and unread.
+
+**The `event` filter is load-bearing and is why the two finders are not one function.** Measured
+2026-10-08 on `15bacd57a`: one sha carried both a `pull_request` run and a `workflow_dispatch` run
+of `ci.yml`. `stageJobsFor` grades those by DIFFERENT maps, so answering the dispatch route from the
+PR's run would reproduce the no-verdict-on-green defect #5475 closed, in the other direction. The
+`createdAt >= dispatchedAfter` gate stays for the same class of reason: by-sha alone would happily
+return an EARLIER dispatch of the same commit.
+
+**What the no-PR arm gets right, verified against live runs rather than the YAML (2026-10-08).** On
+a real `workflow_dispatch` run, `checks`/Lint, `checks`/Typecheck, `checks`/Test and
+`validate`/Build are all `success` while `validate`/Test is `skipped` — the exact complement of a
+pull request, and `STAGE_JOBS` grades all four requested stages `pass`. Grading that same run with
+`STAGE_JOBS_PR` answers `no-verdict` for `test`, which is what makes the two maps demonstrably
+non-interchangeable rather than merely declared so. The ordering in `settleActionsRun` — the
+whole-run `pass` short circuit sitting above the headSha guard — cannot misfire, because
+`gradeActionsRun` compares `headSha` first and returns `no-verdict` for a foreign sha, so the later
+guard is defence in depth.
+
+
 
 **His words, 2026-10-08:** *"if free use it directly but if busy use github actions."* The original,
 2026-10-06: *"in critical situations, let's depend on GitHub Actions; in normal situations we are on
