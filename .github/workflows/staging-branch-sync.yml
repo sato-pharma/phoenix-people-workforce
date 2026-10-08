@@ -159,15 +159,36 @@ jobs:
           # removed for a RED one, which withholds a production deploy in exactly the same way.
           #
           # So: re-read the remote, and exit 0 when staging now holds a DESCENDANT of our commit.
-          # Anything else — a push rejected while staging is NOT ahead of us — is a real fault and
-          # still fails, because that is the hostile-writer case the verify step also guards.
-          set +e
-          PUSH_OUT="$(git push origin "$NEW_SHA:refs/heads/staging" 2>&1)"
-          PUSH_RC=$?
-          set -e
-          printf '%s\n' "$PUSH_OUT"
+          #
+          # 🔴 AND A REJECTION WHILE STAGING IS STILL AN *ANCESTOR* OF OUR COMMIT IS ALSO A LOST RACE —
+          # THE OTHER HALF OF IT, AND IT MUST BE RETRIED, NOT FAILED. Measured on run 37742802757
+          # (2026-10-08 10:20 Cairo): #5489, #5491, #5490 and #5487 merged inside ~2 minutes. This run
+          # read staging at 0c7f7656e and pushed 1c0b73c78; in between a sibling sync moved staging
+          # to 3ad0c8cc6 — OLDER than 1c0b73c78, an ancestor of it — so GitHub refused the ref lock
+          # ("cannot lock ref ... is at 3ad0c8cc6 but expected 0c7f7656e"). staging was not ahead of
+          # us, so the old handler called it "not a lost race" and went red, and that red suite
+          # withheld #5487's production deploy. A re-fetch and the same fast-forward would have won.
+          #
+          # So the push is a bounded loop. After each rejection, re-read staging ONCE (see below) and:
+          #   * staging is a DESCENDANT of ours (or equal) -> a sibling carried it further; exit 0;
+          #   * staging is an ANCESTOR of ours (or absent) -> a sibling moved it but not past us; wait
+          #     a beat and push the SAME fast-forward again — still never --force;
+          #   * neither -> diverged history or a hostile writer: the one real fault; exit 1.
+          # Running out of attempts while staging is still behind us also fails: by then the push is
+          # being refused for a reason that is not a race, and staging is stuck behind a green commit.
+          MAX_ATTEMPTS=5
+          ATTEMPT=1
+          while :; do
+            set +e
+            PUSH_OUT="$(git push origin "$NEW_SHA:refs/heads/staging" 2>&1)"
+            PUSH_RC=$?
+            set -e
+            printf '%s\n' "$PUSH_OUT"
 
-          if [ "$PUSH_RC" -ne 0 ]; then
+            if [ "$PUSH_RC" -eq 0 ]; then
+              break
+            fi
+
             # 🔴 ONE NETWORK READ, NOT TWO, AND THE FETCH IS WHAT MAKES THE ANSWER TRUSTWORTHY. The
             # first version of this handler fetched the branch and then asked `git ls-remote` for its
             # sha — two separate reads of a ref that three concurrent syncs are moving. A sha that
@@ -197,9 +218,19 @@ jobs:
               echo "::notice::the push was rejected because staging is already at $NOW_SHA, a descendant of $NEW_SHA — a concurrent sync won the race and carried staging FURTHER FORWARD. Nothing was lost and nothing is stale, so this run is not failed."
               exit 0
             fi
-            echo "::error::pushing $NEW_SHA to refs/heads/staging failed, and staging (${NOW_SHA:-<absent>}) is NOT a descendant of it — so this is not a lost race. Read the push output above before touching the branch."
+            if [ -z "$NOW_SHA" ] || git merge-base --is-ancestor "$NOW_SHA" "$NEW_SHA"; then
+              if [ "$ATTEMPT" -ge "$MAX_ATTEMPTS" ]; then
+                echo "::error::pushing $NEW_SHA to refs/heads/staging was rejected $ATTEMPT times while staging (${NOW_SHA:-<absent>}) stayed BEHIND it. A race settles within a retry or two, so this is a push being refused for some other reason, and staging is stuck behind a verified commit. Read the push output above."
+                exit 1
+              fi
+              echo "::notice::the push was rejected (attempt $ATTEMPT of $MAX_ATTEMPTS) while staging moved to ${NOW_SHA:-<absent>}, still BEHIND $NEW_SHA — a concurrent sync advanced it but not past this commit. Re-trying the same fast-forward."
+              sleep "$ATTEMPT"
+              ATTEMPT=$((ATTEMPT + 1))
+              continue
+            fi
+            echo "::error::pushing $NEW_SHA to refs/heads/staging failed, and staging ($NOW_SHA) is neither an ancestor nor a descendant of it — diverged history or another writer, so this is not a lost race. Read the push output above before touching the branch."
             exit 1
-          fi
+          done
           echo "staging -> $NEW_SHA"
 
       # A push that silently does nothing is the failure mode this whole area keeps being bitten by,

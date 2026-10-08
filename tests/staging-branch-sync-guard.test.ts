@@ -27,12 +27,96 @@
  */
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const WORKFLOW = ".github/workflows/staging-branch-sync.yml";
+const PUSH_STEP = "Fast-forward staging to the commit CI just verified";
+
+/**
+ * The `run: |` body of a step, exactly as the live workflow spells it, dedented. Lifted rather than
+ * re-implemented for the same reason as the guard line above: a copy here would keep passing after
+ * the workflow regressed.
+ */
+function stepRunScript(yml: string, stepName: string): string {
+  const lines = yml.split("\n");
+  const start = lines.findIndex((l) => l.includes(`- name: ${stepName}`));
+  assert.ok(start !== -1, `${WORKFLOW} no longer has a step named "${stepName}", so this test cannot execute it.`);
+  const runIdx = lines.findIndex((l, i) => i > start && /^\s*run:\s*\|\s*$/.test(l));
+  assert.ok(runIdx !== -1, `the "${stepName}" step in ${WORKFLOW} no longer has a \`run: |\` block.`);
+  const indentOf = (l: string) => (l.match(/^\s*/) as RegExpMatchArray)[0].length;
+  const runIndent = indentOf(lines[runIdx]);
+  const body: string[] = [];
+  for (let i = runIdx + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.trim() === "") {
+      body.push("");
+      continue;
+    }
+    if (indentOf(l) <= runIndent) break;
+    body.push(l);
+  }
+  const min = Math.min(...body.filter((l) => l.trim()).map(indentOf));
+  const script = body.map((l) => l.slice(min)).join("\n");
+  assert.ok(
+    !script.includes("${{"),
+    `the "${stepName}" step now interpolates a \`\${{ }}\` expression inside its script; this test binds only env ` +
+      "vars and can no longer execute it faithfully. Move the expression into the step's `env:` block.",
+  );
+  return script;
+}
+
+type RaceShape = {
+  /** Where a "sibling sync" moves staging the moment our push arrives. Omit: staging is not moved. */
+  moveTo?: string;
+  /** How many of our pushes the remote rejects before it accepts one. */
+  rejectTimes: number;
+};
+
+/**
+ * Run the workflow's OWN push step against a real bare remote whose pre-receive hook plays the
+ * concurrent sync: on each of the first `rejectTimes` pushes it moves `staging` to `moveTo` and
+ * refuses — the shape GitHub reports as "cannot lock ref 'refs/heads/staging': is at X but expected Y".
+ */
+function runPushStep(
+  script: string,
+  fx: { remote: string; work: string },
+  newSha: string,
+  race: RaceShape,
+): { status: number; output: string } {
+  writeFileSync(join(fx.remote, "race-count"), "0");
+  writeFileSync(join(fx.remote, "race-move-to"), race.moveTo ?? "");
+  writeFileSync(join(fx.remote, "race-reject-times"), String(race.rejectTimes));
+  const hook = join(fx.remote, "hooks", "pre-receive");
+  writeFileSync(
+    hook,
+    [
+      "#!/bin/sh",
+      "n=$(cat race-count); n=$((n + 1)); echo \"$n\" > race-count",
+      "if [ \"$n\" -le \"$(cat race-reject-times)\" ]; then",
+      "  to=$(cat race-move-to)",
+      // A ref update inside pre-receive is refused under the object quarantine; the target commit
+      // is already in the main object store, so lifting the quarantine for this one call is safe.
+      "  if [ -n \"$to\" ]; then env -u GIT_QUARANTINE_PATH git update-ref refs/heads/staging \"$to\" || exit 3; fi",
+      "  echo \"simulated: cannot lock ref 'refs/heads/staging'\" >&2",
+      "  exit 1",
+      "fi",
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(hook, 0o755);
+  // `sleep` is stubbed so the retry back-off costs the suite no wall clock; every other line is the
+  // workflow's own.
+  const r = spawnSync("bash", ["-c", `sleep() { :; }\n${script}`], {
+    cwd: fx.work,
+    encoding: "utf8",
+    env: { ...process.env, NEW_SHA: newSha, RUN_URL: "https://example.invalid/run" },
+  });
+  return { status: r.status ?? -1, output: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+}
 
 /** The `--is-ancestor` line exactly as the live workflow spells it. */
 function guardLineFromWorkflow(yml: string): string {
@@ -324,5 +408,109 @@ export function runStagingBranchSyncGuardTests(): void {
     );
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ── The push step, executed against a real remote, through every shape of a lost race ───────
+  //
+  // 🔴 Run 37742802757 (2026-10-08 10:20 Cairo) went RED on a race it should have won. Four PRs
+  // merged inside ~2 minutes; while this sync was pushing 1c0b73c78, a sibling moved staging from
+  // 0c7f7656e to 3ad0c8cc6 — an ANCESTOR of 1c0b73c78. GitHub refused the ref lock, the handler saw
+  // staging was "not a descendant" and failed, and the red suite withheld #5487's production deploy.
+  // A re-fetch and the same fast-forward would have succeeded. These cases pin all three answers.
+  const pushScript = stepRunScript(yml, PUSH_STEP);
+  const root = mkdtempSync(join(tmpdir(), "phx-staging-push-"));
+  try {
+    const build = join(root, "build");
+    const remote = join(root, "remote.git");
+    git(root, "init", "-q", "--bare", remote);
+    git(root, "init", "-q", "-b", "main", build);
+    const commit = (msg: string) => {
+      git(build, "commit", "-q", "--allow-empty", "-m", msg);
+      return git(build, "rev-parse", "HEAD");
+    };
+    // main: A <- B <- C <- D ; side: X off A (diverged from C)
+    const a = commit("A");
+    const b = commit("B");
+    const c = commit("C");
+    const d = commit("D");
+    git(build, "checkout", "-q", "-b", "side", a);
+    const x = commit("X");
+    git(build, "remote", "add", "origin", remote);
+    git(build, "push", "-q", "origin", `${d}:refs/heads/main`, `${x}:refs/heads/side`);
+
+    const remoteStaging = () => git(remote, "rev-parse", "refs/heads/staging");
+    const fresh = (name: string) => {
+      git(remote, "update-ref", "refs/heads/staging", a); // every case starts with staging at A
+      const work = join(root, name);
+      git(root, "clone", "-q", remote, work);
+      return { remote, work };
+    };
+
+    // 1 — the 37742802757 shape: staging moved to an ANCESTOR of ours mid-push. Retry and win.
+    {
+      const r = runPushStep(pushScript, fresh("ancestor-race"), c, { moveTo: b, rejectTimes: 1 });
+      assert.equal(
+        r.status,
+        0,
+        "a push rejected because a sibling sync moved staging to an ANCESTOR of the verified commit is a lost race, " +
+          "not a fault: the step must re-fetch and retry the same fast-forward. Failing here is exactly run " +
+          `37742802757, whose red suite withheld #5487's production deploy.\n${r.output}`,
+      );
+      assert.equal(
+        remoteStaging(),
+        c,
+        `after the retry, staging must hold the verified commit C, not the sibling's older B.\n${r.output}`,
+      );
+    }
+
+    // 2 — staging moved to a DESCENDANT of ours: a sibling carried it further. Done, no retry.
+    {
+      const r = runPushStep(pushScript, fresh("descendant-race"), c, { moveTo: d, rejectTimes: 99 });
+      assert.equal(r.status, 0, `staging carried PAST the verified commit is the correct end state.\n${r.output}`);
+      assert.equal(remoteStaging(), d, `staging must be left at the sibling's newer D, never moved back.\n${r.output}`);
+      assert.equal(
+        readFileSync(join(remote, "race-count"), "utf8").trim(),
+        "1",
+        `once staging is a descendant there is nothing to retry; the step must stop after one push.\n${r.output}`,
+      );
+    }
+
+    // 3 — staging moved to a DIVERGED commit: the one real fault. Red, and nothing overwritten.
+    {
+      const r = runPushStep(pushScript, fresh("diverged"), c, { moveTo: x, rejectTimes: 99 });
+      assert.notEqual(
+        r.status,
+        0,
+        "staging moved to a commit that is NEITHER an ancestor nor a descendant of the verified one is diverged " +
+          `history or another writer, and must fail rather than be retried or overwritten.\n${r.output}`,
+      );
+      assert.equal(remoteStaging(), x, `a diverged staging must be left untouched — never forced.\n${r.output}`);
+    }
+
+    // 4 — rejected over and over while staging stays behind: not a race any more. Bounded, then red.
+    {
+      const r = runPushStep(pushScript, fresh("refused"), c, { rejectTimes: 99 });
+      assert.notEqual(
+        r.status,
+        0,
+        "a push refused on every attempt while staging stays BEHIND the verified commit is not a race — the retry " +
+          `loop must be bounded and then fail, or the job loops until its timeout.\n${r.output}`,
+      );
+      const attempts = Number(readFileSync(join(remote, "race-count"), "utf8").trim());
+      assert.ok(
+        attempts > 1 && attempts <= 10,
+        `the step must retry a bounded handful of times (made ${attempts} push attempts).\n${r.output}`,
+      );
+      assert.equal(remoteStaging(), a, `a refused push must leave staging where it was.\n${r.output}`);
+    }
+
+    // 5 — the plain path still works: no race at all.
+    {
+      const r = runPushStep(pushScript, fresh("no-race"), c, { rejectTimes: 0 });
+      assert.equal(r.status, 0, `an uncontested fast-forward must succeed.\n${r.output}`);
+      assert.equal(remoteStaging(), c, `an uncontested fast-forward must land the verified commit.\n${r.output}`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 }
