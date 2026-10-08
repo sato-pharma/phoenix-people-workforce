@@ -65,6 +65,7 @@ type VacationRequestFormProps = {
     employee: VacationEmployeeSummary;
     manager: VacationEmployeeSummary | null;
     managerOfManager: VacationEmployeeSummary | null;
+    thirdManager?: VacationEmployeeSummary | null;
     pendingPaidDaysByType?: Partial<Record<VacationType, number>>;
     vacationTypeOptions: ReadonlyArray<{ label: string; value: VacationType }>;
     weeklyOffPolicy: VacationWeeklyOffPolicyRecord | null;
@@ -1618,7 +1619,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               <VacationBalanceCard balance={balance} pendingPaidDays={pendingPaidDays} />
 
               <div className="border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-                <div className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto] md:items-center">
+                <div
+                  className={
+                    initialData?.thirdManager
+                      ? "grid gap-2 md:grid-cols-[1fr_1fr_1fr_1fr_auto] md:items-center"
+                      : "grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto] md:items-center"
+                  }
+                >
                   <VacationSummaryPerson
                     label="Employee"
                     name={initialData?.employee.displayName ?? "-"}
@@ -1631,6 +1638,9 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                     label="Manager of manager"
                     name={initialData?.managerOfManager?.displayName ?? (initialData?.manager ? "Top of hierarchy" : "Not assigned")}
                   />
+                  {initialData?.thirdManager ? (
+                    <VacationSummaryPerson label="Third approver" name={initialData.thirdManager.displayName} />
+                  ) : null}
                   <Badge
                     className="w-fit px-3 py-1.5 text-phx-2xs font-bold tracking-[0.12em] md:justify-self-end"
                     variant={balance?.paymentStatus === "paid" ? "success" : "warning"}
