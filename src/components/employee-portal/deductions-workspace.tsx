@@ -6,6 +6,7 @@ import { MessageSquare, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PictureStrip } from "@/components/deductions/dispute-pictures";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { periodLabel } from "@/lib/business-review/period-format";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
@@ -256,6 +257,7 @@ export function DeductionsPortalWorkspace({
                               {fromHr ? `${comment.authorName ?? "HR"} · HR` : "You"}
                             </p>
                             <p className="mt-1 break-words text-slate-700">{comment.body}</p>
+                            <PictureStrip attachments={comment.attachments} />
                             <p className="mt-1 text-phx-xs font-semibold text-slate-400">
                               {cairoDate(comment.createdAt)}
                             </p>

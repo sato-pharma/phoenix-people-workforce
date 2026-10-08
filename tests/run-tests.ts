@@ -389,6 +389,7 @@ import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.
 import { runDeductionsReadGateTests } from "./deductions-read-gate.test.ts";
 import { runDeductionsDisputeThreadsTests } from "./deductions-dispute-threads.test.ts";
 import { runDeductionsDisputeBasisTests } from "./deductions-dispute-basis.test.ts";
+import { runDeductionsDisputePicturesTests } from "./deductions-dispute-pictures.test.ts";
 import { runDeductionsPerLinePushTests } from "./deductions-per-line-push.test.ts";
 import { runDeductionsSupersedeCarriesDecisionTests } from "./deductions-supersede-carries-decision.test.ts";
 import { runDeductionsManualDayLedgerSkipTests } from "./deductions-manual-day-ledger-skip.test.ts";
@@ -3387,6 +3388,7 @@ await runTest("deductions module safety guards (the 9 PR-1 defects — including
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
 await runTest("deductions dispute inbox (employee comments group into reachable, deep-linked threads)", runDeductionsDisputeThreadsTests);
 await runTest("deductions dispute case file (why a deduction was made, in words and never a code) and the reply audience (employee To, managers and sender CC)", runDeductionsDisputeBasisTests);
+await runTest("deduction dispute reply pictures (bytes decide the type, stored privately, checked before the reply is written, shown only to the owner of the deduction or an admin reader, on both screens)", runDeductionsDisputePicturesTests);
 await runTest("deductions supersede carries the decision (identity survives a changed day set; a grown day set resets to Pending; a narrowed or emptied carry publishes its subset, never the full replacement)", runDeductionsSupersedeCarriesDecisionTests);
 await runTest("deductions: a manual_hr placeholder day is skipped in the already-claimed ledger reads, so a genuine deduction on the real 1st survives", runDeductionsManualDayLedgerSkipTests);
 await runTest(

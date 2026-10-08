@@ -264,6 +264,17 @@ export type DeductionsComment = {
   authorName?: string | null;
   body: string;
   createdAt: string;
+  /** Pictures the sender attached (a Super Admin reply can carry up to four). Absent or empty when
+   *  there are none; each is opened through `url`, a permission-checked route, never a stored link. */
+  attachments?: DeductionsCommentAttachment[];
+};
+
+export type DeductionsCommentAttachment = {
+  contentType: string;
+  fileName: string;
+  id: string;
+  sizeBytes: number;
+  url: string;
 };
 
 /** One labelled fact from a deduction's evidence — already in words, never a code or an HR id. */
