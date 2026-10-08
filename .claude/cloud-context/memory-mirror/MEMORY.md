@@ -33,7 +33,4 @@
 
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
-- [The recovery-snapshot cron is in a migration now](the-recovery-snapshot-cron-is-hand-made-state.md) — `20261008140000`, safe to re-apply because `cron.schedule` BY NAME updates the one job instead of stacking a second hourly caller (jobid 1 and all 206 run rows preserved); it was hand-made state until then, staging still has no `pg_cron`, and a snapshot is written only when a table CHANGES.
-- [The Hetzner previews run on STAGING, not production](the-hetzner-previews-run-on-staging-not-production.md) — since 2026-10-08 (owner-approved) `~phx/secure/.env.local` holds staging keys, APP_ENV=staging and the email fail-safe; never put production keys back. Key rotation and run-user isolation are still open.
-- [Outstation evidence credits only the FIRST chain-visit manager](outstation-evidence-credits-only-the-first-manager-on-a-chain-visit.md) — owner ruling 2026-10-08; every report credits both managers, outstation money evidence does not.
-- [Old-CRM two-row chain visits stay as history](old-crm-two-row-chain-visits-stay-as-history.md) — they still count 2 received for the rep; owner said leave them (2026-10-08).
+- [A production `update` can be declined in EVERY tool form](a-production-update-is-refused-in-every-tool-form.md) — `apply_migration` and `execute_sql`, both environments, and his retyped instruction did not clear it (2026-10-08, 4 attempts); hand him the SQL-editor paste WITH its `schema_migrations` insert, and never reach for a direct connection, which writes no ledger row at all.

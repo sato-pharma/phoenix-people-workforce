@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ddbd6fd7-8a24-45e4-b9cc-5c709ace3bd5
-  modified: 2026-10-08T11:42:45.748Z
+  modified: 2026-10-08T13:05:06.181Z
 ---
 
 On 2026-10-08 the owner approved "move the box previews to staging and restart preview-b" (security
@@ -27,11 +27,16 @@ a file from code running as its owner, so any remote-check run could read a prod
 - The setup:
   - Linger is on for `phx`.
   - `~/preview-scope.sh` starts each preview as `phx-preview-<port>.scope` in `phx-previews.slice`.
-  - Each preview is capped at 3 GB RAM + 1 GB swap; both together at 4 GB.
+  - Each preview is capped at 4 GB RAM (reclaim from 3.5 GB) + 1 GB swap; both together at 5 GB RAM + 2 GB swap (raised from 3 GB / 4 GB on 2026-10-08 ~16:00 Cairo, owner-approved, applied live with no restart; backups `*.pre-4g`).
   - `phx-preview-idle.timer` runs `~/preview-idle-reaper.sh` every 5 minutes. It stops a preview after
     60 minutes with no request and no connection (4 hours if a tab sits open with no request).
-- Arming the reaper is the owner's word: remove `Environment=PHX_PREVIEW_REAPER_DRY=1` from
-  `~/.config/systemd/user/phx-preview-idle.service`, then run `daemon-reload`.
+- ARMED 2026-10-08 ~16:05 Cairo on the owner's word ("arm the box preview idle reaper"), before the 24 h trial ended; the dry run had logged no real "would stop" line. It now really stops an idle preview, writes `~/preview-state/<port>.stopped`, and logs to `~/preview-idle.log`. Disarm: put `Environment=PHX_PREVIEW_REAPER_DRY=1` back in
+  `~/.config/systemd/user/phx-preview-idle.service` (backup `.pre-arm`), then run `daemon-reload`.
+- 🔴 **SUPERSEDED ~16:10 Cairo the same day — the owner then chose "back to trial, arm 14:41"** (asked as
+  multiple choice). It is back in TRIAL (logs only; the early-armed file kept as
+  `.armed-early-20261008`), and box `at` job 1 runs `~/preview-reaper-arm.sh` at 2026-10-09 11:41 UTC
+  (14:41 Cairo), which arms it, backs up `.pre-arm-20261009` and logs `ARMED` in `~/preview-idle.log`.
+  Do not arm it by hand before then.
 - Backups: `~/preview-*.sh.pre-caps` on the box and `~/.claude/scripts/phx-preview.ps1.pre-caps` on the
   laptop.
 
@@ -39,7 +44,28 @@ a file from code running as its owner, so any remote-check run could read a prod
 - Never "fix" a preview back to production data. Production previews are not offered, because the app
   reads through the service-role client and has no safe read-only mode.
 - Still open (each needs the owner's approval):
-  - rotate the production service-role key, which sat on the box from about 30 Sep to 8 Oct;
-  - check whether the old box `PHOENIX_AUTH_SECRET` equalled production's;
-  - run remote-check as a non-sudo user;
-  - identify the unlabelled SSH key on `phx`.
+  - DONE 2026-10-08 15:55 Cairo: production moved to a new secret key `phoenix_server_2026_10` and the
+    publishable key (Railway, GitHub secrets + variable, six laptop .env.local files), and the legacy
+    JWT keys (anon + service_role) were DISABLED — the old key answers 401. Re-enabling is one switch
+    in the Supabase dashboard (API keys → legacy). Staging also runs the new key types; its legacy keys
+    stay ON because the box previews use them;
+  - CHECKED 2026-10-08 16:00 Cairo, old box `PHOENIX_AUTH_SECRET` vs production: NOT provable directly —
+    the old file was overwritten at 14:40 with no fingerprint taken. Circumstantial answer NO: all 30
+    laptop env copies back to 10 Aug carry ONE auth secret, and its fingerprint differs from production's
+    (and staging's); the box file was a 13-key subset of the laptop's, with the same service key. So
+    production's session secret was most likely never on the box — rotating it (signs every user out,
+    voids reset codes and app tickets) is not recommended on this evidence;
+  - DONE 2026-10-08 15:55 Cairo (owner-approved): `phx` is in `systemd-journal`, so it reads every log
+    (kernel OOM kills included) without sudo; undo with `sudo gpasswd -d phx systemd-journal`;
+  - DONE 2026-10-08 ~16:40 Cairo (owner-approved): remote-check runs as `phxci` (no sudo, cannot
+    read /home/phx); the box lock is shared with `phx` through `/var/lib/phx-locks` + root-owned
+    `/tmp` links (`/etc/tmpfiles.d/phx-locks.conf`). The code default changes in PR #5513; until it
+    merges, older sessions still run as `phx`;
+  - IDENTIFIED 2026-10-08 16:05 Cairo — the "unlabelled" SSH key is NOT unknown: it is the laptop's own
+    `~/.ssh/id_ed25519` (fingerprint `SHA256:YTblKT…`), the SAME key as the `omar` line, written twice
+    (once without a comment) into both `phx` and `root` authorized_keys when the server was created on
+    30 Sep 00:40 UTC. It has never been used to log in since boot; every login (phx AND root) uses
+    `railway_phoenix_ed25519` (`phx-automation`, `SHA256:qPdc0j…`) from Egyptian ISP addresses.
+    The comment-less duplicate line was REMOVED 2026-10-08 ~16:15 Cairo (owner-approved) from both files;
+    backups `authorized_keys.pre-dedup-20261008`. The personal key is passphrase-protected, so a
+    `BatchMode=yes` ssh with it fails client-side — that is not a server refusal ("Server accepts key").
