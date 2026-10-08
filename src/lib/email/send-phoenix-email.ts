@@ -96,6 +96,16 @@ export type SendPhoenixEmailInput = {
    */
   origin?: NotificationOrigin | null;
   /**
+   * Withhold the standing admin BCC for this one send, because the body IS a live credential.
+   *
+   * Owner instruction, 2026-10-08, for the self-service reset code. It is set from the TEMPLATE
+   * KEY by sendTemplatedEmail (`isOneTimeCodeTemplateKey`) rather than passed by domain code, so
+   * a queued outbox row written before this existed is covered too — the key is re-resolved on
+   * every delivery attempt. Nothing else removes that BCC: leaving it unset keeps the standing
+   * copy exactly as it has always been.
+   */
+  suppressAdminStandingBcc?: boolean;
+  /**
    * Per-send Reply-To override. When unset, falls back to NOTIFICATION_REPLY_TO / the
    * system default reply-to. Lets a specific email type (e.g. job offers) route replies
    * to a dedicated inbox without changing every other email's reply-to.
@@ -260,6 +270,32 @@ function removeNonDeliverable(emails: string[]): string[] {
   return emails.filter((e) => !isNonDeliverableEmail(e));
 }
 
+/**
+ * Attach the standing admin BCC, or withhold it for the one case that must not carry a copy.
+ *
+ * A FUNCTION, not three lines inline, so the rule can be executed by a test. The defect this
+ * whole change repairs shipped green because every assertion around it read SOURCE TEXT: the send
+ * path is too entangled with providers to call in a unit test, so the decision it makes is pulled
+ * out here where it can be called directly.
+ *
+ * - `testingRedirectActive` - PHOENIX_EMAIL_FORCE_TESTING has rewritten the recipients; the
+ *   standing copy has never applied in that mode and still does not.
+ * - `suppress` - the body IS a live credential (owner, 2026-10-08). Set from the template key by
+ *   sendTemplatedEmail, never by domain code.
+ *
+ * Everything else keeps the copy, which is the default when neither flag is set.
+ */
+export function withStandingAdminBcc(options: {
+  bcc: string[] | undefined;
+  suppress?: boolean;
+  testingRedirectActive: boolean;
+}): string[] | undefined {
+  if (options.testingRedirectActive || options.suppress) return options.bcc;
+  return options.bcc
+    ? [...new Set([...options.bcc, ADMIN_STANDING_EMAIL])]
+    : [ADMIN_STANDING_EMAIL];
+}
+
 export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<SendPhoenixEmailResult> {
   if (!emailNotificationsEnabled()) {
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
@@ -382,10 +418,18 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
 
   // Always BCC omar.anwar@satopharma.com on every automated system email (all modules, all
   // types) - a standing copy of outbound HR/workflow mail, invisible to other recipients.
-  if (!testingRecipients) {
-    const alwaysBcc = ADMIN_STANDING_EMAIL;
-    bcc = bcc ? [...new Set([...bcc, alwaysBcc])] : [alwaysBcc];
-  }
+  //
+  // ONE exception, and it is narrow: an email whose body IS a live credential takes no standing
+  // copy (owner, 2026-10-08 - "stop bcc-ing the reset code email to my mailbox"). A reset code is
+  // not a record of a workflow, it is the secret itself for the 15 minutes it lives, and a copy
+  // puts one person's account recovery in a second mailbox. The flag is decided from the template
+  // key in sendTemplatedEmail, never by domain code - see isOneTimeCodeTemplateKey. The Telegram
+  // mirror below is a SEPARATE channel and is deliberately left alone: he asked about the mailbox.
+  bcc = withStandingAdminBcc({
+    bcc,
+    suppress: input.suppressAdminStandingBcc,
+    testingRedirectActive: Boolean(testingRecipients),
+  });
 
   const emailHeaders = input.headers && Object.keys(input.headers).length > 0 ? input.headers : undefined;
   const attachments = guardAttachments(input.attachments);
