@@ -2360,6 +2360,7 @@ import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-sourc
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywhere.test.ts";
 import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-admin-reports.test.ts";
+import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
@@ -9162,6 +9163,10 @@ await runTest(
 await runTest(
   "The Phoenix field set on the old CRM's admin reports (owner, 2026-10-07: everything, GPS and evidence included) is shaped to the READER, in the three tiers he set on 2026-10-02: the Super Admin and the SFE Manager read the accuracy, the raw point, the photo's own fix, the dwell and the capture timing; every other admin seat, the CEO included, reads the DISTANCE ONLY and a weak reading as its plain distance; a reader on his own row as its rep reads none of it, resolved per ROW and not per page; the WORK half — products, samples, the shelf, the objection, the next step, an off-plan reason — is whole at every tier; a vendor row prints nothing rather than a zero; the sheet is flat and omits a column its reader may not read rather than leaving it empty; and the rep drill-down names BOTH managers on a chain visit; every one of the four admin reports folds in the ONE select-list constant rather than retyping the 29 columns, counted so the import alone cannot satisfy it; and a combined double-visit audit tab prints ONE detail header for every month it stacks, the union of their field-set columns in order, because a per-month header would put the same cell under two headings on one sheet; and Company Activity's builder hands a NAMED reader's tier per visit, prints nothing at all when no reader was named (which is not the `none` tier, since that one still shows the work half), and prints nothing for a vendor visit even to the Super Admin",
   runPhoenixFieldSetOnAdminReportsTests,
+);
+await runTest(
+  "A chain visit is ONE visit for the rep and is in BOTH managers' records (owner, 2026-10-08): the rep receives it once on every rep-side figure, and the second manager is counted on every manager-side figure exactly as the first one is — Double Visit Analytics given totals, days and leaderboard, the report filters, the manager-rep pairs, the private calendar, Employee 360 and the coaching audit; a scope or allow-list that removes one manager removes only his credit, never the other's or the rep's visit",
+  runChainVisitOneVisitBothManagersTests,
 );
 await runTest(
   "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",

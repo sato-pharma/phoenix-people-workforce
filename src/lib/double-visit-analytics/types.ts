@@ -99,6 +99,10 @@ export type DoubleVisitLogEntry = {
   date: string;
   doubleVisitorHrId: string | null;
   doubleVisitorName: string | null;
+  /** A chain visit's SECOND double visitor. The entry is still ONE visit (`visitCount` 1); a manager-side
+   * figure reads it through `visitLogPerDoubleVisitor`, which credits him exactly as the first. */
+  doubleVisitor2HrId?: string | null;
+  doubleVisitor2Name?: string | null;
   /** A Phoenix CRM double visit — see the note at the top. */
   fromPhoenix?: boolean;
   period: DoubleVisitPeriod;
@@ -394,9 +398,12 @@ export type DoubleVisitReportRow = {
   fromPhoenix?: boolean;
   doubleVisitorHrId: string | null;
   doubleVisitorName: string | null;
-  /** A chain visit's SECOND double visitor, named so nobody's coaching disappears. It moves no count —
-   * `visitCount` on this row stays 1 (see the note on `double_visitor2_hr_id` in service.ts). */
+  /** A chain visit's SECOND double visitor (owner, 2026-10-08: one visit, in both managers' records).
+   * `visitCount` stays 1 — the rep received it once — and the visitor filters match EITHER manager
+   * (report-filters.ts), so each finds the visit under his own name. */
+  doubleVisitor2HrId?: string | null;
   doubleVisitor2Name?: string | null;
+  doubleVisitor2Role?: string | null;
   /** The double-visitor's job title / role label (e.g. "District Manager"), resolved via
    * resolveDvRole. Null when the double-visitor can't be matched to a directory employee. */
   doubleVisitorRole: string | null;

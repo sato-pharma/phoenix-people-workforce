@@ -18,7 +18,7 @@ export function checkPlannedDate(params: {
   dateTo: string;
   plannedDate: string;
   today: string;
-  visits: readonly { activityDate: string; doubleVisitorName: string | null }[];
+  visits: readonly { activityDate: string; doubleVisitorName: string | null; doubleVisitor2Name?: string | null }[];
 }): DateCheckResult | null {
   const { dateFrom, dateTo, plannedDate, today, visits } = params;
   if (!plannedDate) return null;
@@ -29,7 +29,10 @@ export function checkPlannedDate(params: {
   if (matches.length === 0) return { status: "not-recorded" };
 
   const visitorNames = Array.from(
-    new Set(matches.map((visit) => visit.doubleVisitorName).filter((name): name is string => Boolean(name))),
+    // Both managers of a chain visit went (owner, 2026-10-08), so both are named.
+    new Set(
+      matches.flatMap((visit) => [visit.doubleVisitorName, visit.doubleVisitor2Name]).filter((name): name is string => Boolean(name)),
+    ),
   );
   return { status: "confirmed", visitorNames };
 }

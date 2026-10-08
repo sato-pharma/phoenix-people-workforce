@@ -54,6 +54,12 @@ import {
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
 import { doubleVisitCountBucket, entryPeriodLabel, sumDoubleVisitSplit } from "@/lib/double-visit-analytics/count-bucket";
+import {
+  doubleVisitorViews,
+  keepDoubleVisitors,
+  perDoubleVisitorRows,
+  visitLogPerDoubleVisitor,
+} from "@/lib/double-visit-analytics/chain-visitors";
 import type {
   DoubleVisitBreakdownRow,
   DoubleVisitCadenceBand,
@@ -142,10 +148,9 @@ export type DoubleVisitDbRow = {
   // rows and `resolveDoubleVisitChains` below reassembles them; Phoenix CRM saves one row carrying both
   // people, so without these the second person did a double visit nobody can see.
   //
-  // 🔴 NAMED HERE, NOT COUNTED HERE, AND THAT IS DELIBERATE. `visit_count` stays 1 on this row, so no
-  // rep's double-visit total and no manager's activity figure moves. Whether a chain visit is ONE double
-  // visit the rep received or TWO is a business fact only the owner can settle — the vendor's own split
-  // made it two, which is an argument, not a decision — so it is parked for him rather than guessed at.
+  // 🔴 ONE VISIT, IN BOTH MANAGERS' RECORDS (owner, 2026-10-08 — chain-visitors.ts). `visit_count` stays
+  // 1 on this row, so the rep receives it once; every MANAGER-side figure reads `perDoubleVisitorRows`,
+  // which gives slot 2 the same view of the row slot 1 has, so he is counted exactly as slot 1 is.
   double_visitor2_hr_id?: string | null;
   double_visitor2_name?: string | null;
   // The Phoenix field set, raw and unshaped. Sight is decided by the reader (phoenix-visit-detail.ts),
@@ -415,21 +420,33 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
 export function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessContext, employees: EmployeeDirectoryRow[]) {
   const scope = resolveDoubleVisitAccessScope(access, employees);
   if (scope.all) return rows;
-  return rows.filter((row) => {
-    const doubleVisitorKey = normalizedHrKey(row.double_visitor_hr_id);
-    const visitedKey = normalizedHrKey(row.visited_employee_hr_id);
+  const admitted: DoubleVisitDbRow[] = [];
+  for (const original of rows) {
     // Downward rule FIRST, before any admit: a visit BY someone above the viewer (or, on a widening
     // role, at/above his rank) is hidden from the rows AND the totals (owner, 2026-09-13), even
     // though it was made to one of HIS reps. Keyed on the visitor only, and on exclusion — never on
     // directory membership — so an unmapped `CRM:<id>` visitor and a visit to a vacant territory
     // still reach the line-label fallback below.
-    if (doubleVisitorKey && scope.excludedVisitorKeys.has(doubleVisitorKey)) return false;
-    if (doubleVisitorKey && scope.allowedHrIds.has(doubleVisitorKey)) return true;
-    if (visitedKey && scope.allowedHrIds.has(visitedKey)) return true;
-    if (row.area_name && scope.allowedAreas.has(normalizeLabelKey(row.area_name))) return true;
-    if (row.line_name && scope.allowedLines.has(normalizeLabelKey(row.line_name))) return true;
-    return false;
-  });
+    //
+    // A chain visit carries TWO visitors, and the rule is applied to each: the one above the viewer is
+    // taken off the row (his credit hidden), the other keeps it. The row goes only when both are above.
+    const row = keepDoubleVisitors(original, (hrId) => {
+      const key = normalizedHrKey(hrId);
+      return !(key && scope.excludedVisitorKeys.has(key));
+    });
+    if (!row) continue;
+    const visitorKeys = doubleVisitorViews(row).map((view) => normalizedHrKey(view.double_visitor_hr_id));
+    const visitedKey = normalizedHrKey(row.visited_employee_hr_id);
+    if (
+      visitorKeys.some((key) => key && scope.allowedHrIds.has(key)) ||
+      (visitedKey && scope.allowedHrIds.has(visitedKey)) ||
+      (row.area_name && scope.allowedAreas.has(normalizeLabelKey(row.area_name))) ||
+      (row.line_name && scope.allowedLines.has(normalizeLabelKey(row.line_name)))
+    ) {
+      admitted.push(row);
+    }
+  }
+  return admitted;
 }
 
 export function filterEmployeesForDoubleVisitAccess(employees: EmployeeDirectoryRow[], access: AccessContext) {
@@ -916,10 +933,14 @@ function isDisallowedExecutiveManager(employee: EmployeeDirectoryRow | null) {
 }
 
 function filterRowsByAllowedDoubleVisitor(rows: DoubleVisitDbRow[], employeeByHrId: Map<string, EmployeeDirectoryRow>) {
-  return rows.filter((row) => {
-    const doubleVisitorKey = normalizedHrKey(row.double_visitor_hr_id);
-    if (!doubleVisitorKey) return true;
-    return isAllowedDoubleVisitor(employeeByHrId.get(doubleVisitorKey) ?? null);
+  // Per visitor: a chain visit whose second manager is not an allowed double-visitor keeps the first.
+  return rows.flatMap((original) => {
+    const row = keepDoubleVisitors(original, (hrId) => {
+      const doubleVisitorKey = normalizedHrKey(hrId);
+      if (!doubleVisitorKey) return true;
+      return isAllowedDoubleVisitor(employeeByHrId.get(doubleVisitorKey) ?? null);
+    });
+    return row ? [row] : [];
   });
 }
 
@@ -952,7 +973,8 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
       .reduce((sum, row) => sum + asNumber(row.visit_count), 0);
     const trendDirection: DoubleVisitMrScore["trendDirection"] =
       dvsLast90Days > dvsPrev90Days ? "improving" : dvsLast90Days < dvsPrev90Days ? "declining" : "flat";
-    const distinctVisitors = new Set(mrRows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean));
+    // The visits are the rep's (counted once above); the PEOPLE who gave them are both managers.
+    const distinctVisitors = new Set(perDoubleVisitorRows(mrRows).map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean));
     const band = days == null || days > 60 || dvsLast90Days === 0
       ? "critical"
       : days > 30
@@ -1014,7 +1036,8 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
 
   // Pass 2: functional double-visitors (PM / GPM / MM / Training / SFE) who appear in
   // the rows but are not in the org-chart hierarchy above any MR.
-  const doubleVisitorKeys = new Set(rows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean));
+  const visitorRows = perDoubleVisitorRows(rows);
+  const doubleVisitorKeys = new Set(visitorRows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean));
   for (const dvKey of doubleVisitorKeys) {
     if (reportsByManager.has(dvKey ?? "")) continue;
     const dvEmployee = dvKey ? employeesByHrId.get(dvKey) : undefined;
@@ -1038,7 +1061,7 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
     // TM does not get incorrectly assigned the entire MR universe.
     const dvVisitedMrKeys = isLineScopedRole
       ? new Set(
-          rows
+          visitorRows
             .filter((r) => canonicalHrIdKey(r.double_visitor_hr_id) === dvKey)
             .map((r) => canonicalHrIdKey(r.visited_employee_hr_id))
             .filter(Boolean),
@@ -1153,8 +1176,9 @@ export function buildManagerSummariesDetailed(
     return keys;
   };
 
+  // One entry per (visit, manager): a chain visit's second manager is summarised exactly like the first.
   const rowsByVisitor = new Map<string, DoubleVisitDbRow[]>();
-  for (const row of rows) {
+  for (const row of perDoubleVisitorRows(rows)) {
     const key = canonicalHrIdKey(row.double_visitor_hr_id);
     if (!key) continue;
     rowsByVisitor.set(key, [...(rowsByVisitor.get(key) ?? []), row]);
@@ -1477,7 +1501,7 @@ export function buildManagerMrPairs(visitLog: DoubleVisitLogEntry[]): DoubleVisi
     visits: number;
   };
   const pairs = new Map<string, Acc>();
-  for (const entry of visitLog) {
+  for (const entry of visitLogPerDoubleVisitor(visitLog)) {
     const managerKey = canonicalHrIdKey(entry.doubleVisitorHrId);
     if (!managerKey) continue;
     const mrKey = canonicalHrIdKey(entry.visitedHrId);
@@ -1547,9 +1571,12 @@ function buildHeatmapRows(
 }
 
 function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
+  // A chain visit is ONE visit in the company total, and in BOTH managers' days and averages.
   const totalVisits = rows.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
-  const activeDoubleVisitDays = new Set(rows.map((row) => `${canonicalHrIdKey(row.double_visitor_hr_id)}|${row.activity_date}`)).size;
-  const doubleVisitorCount = new Set(rows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean)).size;
+  const visitorRows = perDoubleVisitorRows(rows);
+  const visitorVisits = visitorRows.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+  const activeDoubleVisitDays = new Set(visitorRows.map((row) => `${canonicalHrIdKey(row.double_visitor_hr_id)}|${row.activity_date}`)).size;
+  const doubleVisitorCount = new Set(visitorRows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean)).size;
   // AM · PM · Pharmacies apart, so the AM : PM ratio below compares doctors' periods only.
   const visitSplit = sumDoubleVisitSplit(rows, doubleVisitCountBucket, (row) => asNumber(row.visit_count), fromPhoenixRow);
   const amVisitCount = visitSplit.am;
@@ -1563,8 +1590,8 @@ function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
     activeMappedVisitCount,
     amPmRatio: pmVisitCount > 0 ? round(amVisitCount / pmVisitCount, 4) : null,
     amVisitCount,
-    averageVisitsPerDoubleVisitDay: activeDoubleVisitDays > 0 ? round(totalVisits / activeDoubleVisitDays, 2) : 0,
-    averageVisitsPerDoubleVisitor: doubleVisitorCount > 0 ? round(totalVisits / doubleVisitorCount, 2) : 0,
+    averageVisitsPerDoubleVisitDay: activeDoubleVisitDays > 0 ? round(visitorVisits / activeDoubleVisitDays, 2) : 0,
+    averageVisitsPerDoubleVisitor: doubleVisitorCount > 0 ? round(visitorVisits / doubleVisitorCount, 2) : 0,
     doubleVisitorCount,
     mrCoverageCount: new Set(rows.map((row) => canonicalHrIdKey(row.visited_employee_hr_id)).filter(Boolean)).size,
     pharmacyVisitCount,
@@ -1583,7 +1610,9 @@ function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
  *
  * Every emitter (KPI band, leaderboard, By Manager tab, idle list, MR scores) is built from the one
  * `filteredRows` / `scopedEmployees` pair, which is what keeps the KPI total equal to the
- * leaderboard sum once out-of-scope visitors are removed.
+ * leaderboard sum once out-of-scope visitors are removed — with ONE ruled exception: a chain visit is
+ * one visit in the KPI total and one in EACH of its two managers' leaderboard rows (owner, 2026-10-08),
+ * so the leaderboard sum exceeds the total by exactly the chain visits on the board.
  *
  * `employees` must be the FULL directory (includeInactive: true).
  */
@@ -1664,7 +1693,7 @@ export async function getDoubleVisitDashboardData(input: {
   const isLeaverVisitor = (hrId: string | null | undefined) => isLeaverVisitorHrId(hrId, leaverVisitorKeys);
   const doubleVisitors = Array.from(
     new Set(
-      filteredRows
+      perDoubleVisitorRows(filteredRows)
         .filter((row) => !isLeaverVisitor(row.double_visitor_hr_id))
         .map((row) => nullableText(row.double_visitor_name) ?? nullableText(row.double_visitor_hr_id))
         .filter((value): value is string => Boolean(value)),
@@ -1679,6 +1708,12 @@ export async function getDoubleVisitDashboardData(input: {
       ...(row.from_phoenix ? { fromPhoenix: true } : {}),
       doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
       doubleVisitorName: isLeaverVisitor(row.double_visitor_hr_id) ? null : nullableText(row.double_visitor_name),
+      ...(row.double_visitor2_hr_id || row.double_visitor2_name
+        ? {
+            doubleVisitor2HrId: nullableText(row.double_visitor2_hr_id ?? null),
+            doubleVisitor2Name: isLeaverVisitor(row.double_visitor2_hr_id) ? null : nullableText(row.double_visitor2_name ?? null),
+          }
+        : {}),
       period: row.period,
       visitCount: asNumber(row.visit_count),
       visitedHrId: nullableText(row.visited_employee_hr_id),
@@ -1857,7 +1892,7 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
     return key ? scopedHrKeys.has(key) : false;
   });
   const ownRows = viewerCanonicalKey
-    ? allDvRows.filter((row) => canonicalHrIdKey(row.double_visitor_hr_id) === viewerCanonicalKey)
+    ? perDoubleVisitorRows(allDvRows).filter((row) => canonicalHrIdKey(row.double_visitor_hr_id) === viewerCanonicalKey)
     : [];
 
   // Block 1 — viewer's own monthly DV trend (own performed visits only, per owner decision).
@@ -2170,6 +2205,9 @@ export async function getDoubleVisitReportData(input: {
       const visitedHireDate = visitedKey ? hireDateByKey.get(visitedKey) ?? null : null;
       const doubleVisitorKey = canonicalHrIdKey(row.double_visitor_hr_id);
       const doubleVisitorEmployee = doubleVisitorKey ? employeeByHrKey.get(doubleVisitorKey) ?? null : null;
+      const doubleVisitor2Key = canonicalHrIdKey(row.double_visitor2_hr_id ?? null);
+      const doubleVisitor2Employee = doubleVisitor2Key ? employeeByHrKey.get(doubleVisitor2Key) ?? null : null;
+      const hasSecond = Boolean(row.double_visitor2_hr_id || row.double_visitor2_name);
       const areaName = nullableText(row.area_name);
       const areaKey = areaName?.trim().toLowerCase();
       return {
@@ -2181,6 +2219,12 @@ export async function getDoubleVisitReportData(input: {
         doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
         doubleVisitorName: nullableText(row.double_visitor_name),
         doubleVisitor2Name: nullableText(row.double_visitor2_name ?? null),
+        ...(hasSecond
+          ? {
+              doubleVisitor2HrId: nullableText(row.double_visitor2_hr_id ?? null),
+              doubleVisitor2Role: resolveDvRole(doubleVisitor2Employee)?.role ?? null,
+            }
+          : {}),
         doubleVisitorRole: resolveDvRole(doubleVisitorEmployee)?.role ?? null,
         phoenix: row.phoenix_detail
           ? phoenixVisitDetail(row.phoenix_detail, phoenixRowSight(detailViewer, row.visited_employee_hr_id))
@@ -2241,10 +2285,17 @@ export async function getDoubleVisitReportData(input: {
 
   const areas = Array.from(new Set(rows.map((row) => row.areaName).filter((value): value is string => Boolean(value)))).sort();
   const regions = Array.from(new Set(rows.map((row) => row.regionName).filter((value): value is string => Boolean(value)))).sort();
+  // Both managers of a chain visit are in the pickers: either one filters to it (report-filters.ts).
   const doubleVisitors = Array.from(
-    new Set(rows.map((row) => row.doubleVisitorName ?? row.doubleVisitorHrId).filter((value): value is string => Boolean(value))),
+    new Set(
+      rows
+        .flatMap((row) => [row.doubleVisitorName ?? row.doubleVisitorHrId, row.doubleVisitor2Name ?? row.doubleVisitor2HrId])
+        .filter((value): value is string => Boolean(value)),
+    ),
   ).sort();
-  const doubleVisitorRoles = Array.from(new Set(rows.map((row) => row.doubleVisitorRole).filter((value): value is string => Boolean(value)))).sort();
+  const doubleVisitorRoles = Array.from(
+    new Set(rows.flatMap((row) => [row.doubleVisitorRole, row.doubleVisitor2Role]).filter((value): value is string => Boolean(value))),
+  ).sort();
   const visitKinds = Array.from(new Set(rows.map((row) => row.visitKind))).sort();
 
   return {
@@ -2512,8 +2563,15 @@ export function doubleVisitPrivateCalendarItemsFromRows(rows: DoubleVisitDbRow[]
   const classified = classifyDoubleVisitRows(rows);
   const items: PrivateCalendarItem[] = [];
 
+  // Performed: one entry per (visit, manager), so a chain visit's second manager has it on his calendar
+  // exactly as the first does — the other manager named beside the rep, as on a vendor chain.
+  const performedEntries = classified.flatMap((entry) =>
+    doubleVisitorViews(entry.row).map((view, index) =>
+      index === 0 ? entry : { ...entry, row: view, seniorName: view.double_visitor2_name ?? null },
+    ),
+  );
   const performed = groupCalendarRows(
-    classified.filter((entry) => selected.has(normalizedHrKey(entry.row.double_visitor_hr_id) ?? "")),
+    performedEntries.filter((entry) => selected.has(normalizedHrKey(entry.row.double_visitor_hr_id) ?? "")),
     (entry) => {
       const key = normalizedHrKey(entry.row.double_visitor_hr_id);
       return key ? `${key}|${entry.row.activity_date}|${calendarVisitKind(entry)}` : null;
@@ -2569,6 +2627,8 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
 
   const employees = await getEmployeeDirectoryRows({ includeInactive: true });
   const rows = await getLiveDoubleVisitRows(start, end, employees);
+  // Slot 1 only, deliberately: this is outstation TRIP evidence, which money is decided on, and the
+  // 2026-10-08 chain-visit ruling was not extended to it. Widening it is the owner's decision.
   const ownRows = rows.filter((row) => normalizeHrIdForAccess(row.double_visitor_hr_id) === employeeKey);
   const dateBreakdown = dates.map((date) => {
     const dayRows = ownRows.filter((row) => row.activity_date === date);

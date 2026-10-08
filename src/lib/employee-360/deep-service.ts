@@ -530,8 +530,9 @@ export type DoubleVisitEvent = {
   date: string;
   doubleHrId: string;
   doubleName: string | null;
-  /** A chain visit's SECOND manager. The vendor had one partner column, so this is Phoenix-only; it
-   * names a person and moves no figure — `totalReceived` still counts one per visit. */
+  /** A chain visit's SECOND manager (Phoenix-only — the vendor had one partner column). The visit is ONE
+   * visit the rep received (`totalReceived` counts it once) and it is in BOTH managers' records, so he is
+   * in `byVisitor` and `distinctVisitors` exactly as the first manager is (owner, 2026-10-08). */
   double2Name: string | null;
   isTrainingManager: boolean;
   kind: "Regular" | "Campaign" | "Other";
@@ -549,7 +550,7 @@ export type DoubleVisitHistory = {
   events: DoubleVisitEvent[];
 };
 
-function buildDoubleVisitHistory(
+export function buildDoubleVisitHistory(
   visits: VisitRow[],
   tmIds: Set<string>,
   nameByHrId: Map<string, string>,
@@ -564,7 +565,9 @@ function buildDoubleVisitHistory(
     // require a resolved double_hr_id here because this history names the partner.
     if (!isCrmDoubleVisitRow(v) || !v.double_hr_id || !v.visit_date) continue;
     const key = String(v.double_hr_id).trim().toLowerCase();
-    const isTm = tmIds.has(key);
+    const key2 = v.double2_hr_id ? String(v.double2_hr_id).trim().toLowerCase() : null;
+    // A Training Manager on EITHER slot makes this a training double visit the rep received.
+    const isTm = tmIds.has(key) || (key2 !== null && tmIds.has(key2));
     const name = v.double_name ?? nameByHrId.get(key) ?? null;
     const visitBucket = classifyVisit(v.visit_type, v.comment, v.visit_type_description).bucket;
     const kind = visitBucket === "regular" ? "Regular" : visitBucket === "campaign" ? "Campaign" : "Other";
@@ -579,9 +582,14 @@ function buildDoubleVisitHistory(
       customerName: v.contact_name ?? v.customer_name ?? null,
       phoenix: v.visit_kind ? phoenixVisitDetail(v, sight) : null,
     });
-    const agg = byVisitor.get(key) ?? { name, count: 0, isTm };
-    agg.count += 1;
-    byVisitor.set(key, agg);
+    // Each manager on the visit is credited once — a chain visit's second manager exactly like the first.
+    const credit = (visitorKey: string, visitorName: string | null) => {
+      const agg = byVisitor.get(visitorKey) ?? { name: visitorName, count: 0, isTm: tmIds.has(visitorKey) };
+      agg.count += 1;
+      byVisitor.set(visitorKey, agg);
+    };
+    credit(key, name);
+    if (key2 && key2 !== key) credit(key2, v.double2_name?.trim() || nameByHrId.get(key2) || null);
   }
   events.sort((a, b) => b.date.localeCompare(a.date));
   const visitorList: DoubleVisitor[] = Array.from(byVisitor.entries())
@@ -1534,7 +1542,14 @@ export async function getEmployee360Profile(
   const coachingDates = coaching.reports.map((r) => r.date);
   // Use the FULL visit set for TM dates (doubleVisits.events is capped for display).
   const tmDvDates = visits
-    .filter((v) => isCrmDoubleVisitRow(v) && v.double_hr_id && v.visit_date && tmIds.has(String(v.double_hr_id).trim().toLowerCase()))
+    .filter(
+      (v) =>
+        isCrmDoubleVisitRow(v) &&
+        v.double_hr_id &&
+        v.visit_date &&
+        (tmIds.has(String(v.double_hr_id).trim().toLowerCase()) ||
+          (v.double2_hr_id ? tmIds.has(String(v.double2_hr_id).trim().toLowerCase()) : false)),
+    )
     .map((v) => v.visit_date as string);
 
   const impact: InterventionImpact = {

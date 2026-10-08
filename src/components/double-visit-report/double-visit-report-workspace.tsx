@@ -364,8 +364,12 @@ export function DoubleVisitReportWorkspace({
   // viewer performed no visits in the default range (nothing to pre-filter to).
   const viewerVisitorLabel = useMemo(() => {
     if (!viewerHrId) return null;
-    const match = data.rows.find((row) => row.doubleVisitorHrId?.toUpperCase() === viewerHrId.toUpperCase());
-    return match ? match.doubleVisitorName ?? match.doubleVisitorHrId : null;
+    const viewer = viewerHrId.toUpperCase();
+    const match = data.rows.find((row) => row.doubleVisitorHrId?.toUpperCase() === viewer);
+    if (match) return match.doubleVisitorName ?? match.doubleVisitorHrId;
+    // The viewer may only ever have been a chain visit's SECOND manager — still his own visits.
+    const second = data.rows.find((row) => row.doubleVisitor2HrId?.toUpperCase() === viewer);
+    return second ? second.doubleVisitor2Name ?? second.doubleVisitor2HrId ?? null : null;
   }, [data.rows, viewerHrId]);
   const [visitorFilter, setVisitorFilter] = useState(initialVisitorIsViewer && viewerVisitorLabel ? viewerVisitorLabel : ALL);
   const [flaggedOnly, setFlaggedOnly] = useState(false);

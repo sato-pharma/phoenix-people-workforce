@@ -4,8 +4,8 @@
 //   * probation_dv_days: insert NEW (evaluator,employee,date) days only (ON CONFLICT DO NOTHING),
 //     so a re-sync never duplicates and never clobbers a day that already advanced into the
 //     feedback lifecycle. Already-persisted keys are marked "duplicate" by validation and skipped.
-//   * probation_dv_visits: per-visit detail, ON CONFLICT (crm_visit_id) DO NOTHING — a CRM activity
-//     attaches to exactly one DV-Day, ever.
+//   * probation_dv_visits: per-visit detail, ON CONFLICT (crm_visit_id, dv_day_id) DO NOTHING — a CRM
+//     activity attaches to one DV-Day per evaluator: a chain visit to each of its two managers' days.
 //   * probation_dv_ingest_issues: identity-less rows, ON CONFLICT (crm_visit_id, reason) DO NOTHING.
 //   * probation_cases.last_crm_sync_at bumped for touched cases (sync-health, P3-T10).
 //
@@ -207,10 +207,15 @@ export async function syncProbationDvDays(
       for (const vr of toDvVisitRows(day)) visitRows.push({ ...vr, dv_day_id: dvDayId });
     }
     if (visitRows.length > 0) {
-      const { data: insVisits, error: vErr } = await supabase
-        .from("probation_dv_visits")
-        .upsert(visitRows, { onConflict: "crm_visit_id", ignoreDuplicates: true })
-        .select("id");
+      // (crm_visit_id, dv_day_id): a chain visit is in BOTH its managers' DV-Days (20261008141330).
+      const upsertVisits = (onConflict: string) =>
+        supabase.from("probation_dv_visits").upsert(visitRows, { onConflict, ignoreDuplicates: true }).select("id");
+      let { data: insVisits, error: vErr } = await upsertVisits("crm_visit_id,dv_day_id");
+      // 🔴 Until 20261008141330 is applied the table holds only UNIQUE (crm_visit_id), and Postgres
+      // answers 42P10 (no constraint matches the ON CONFLICT target). The days above are ALREADY written
+      // and a later run skips an existing day, so a throw here would leave them with no visits for good.
+      // Fall back to the old key instead: the deploy and the migration can then land in either order.
+      if (vErr?.code === "42P10") ({ data: insVisits, error: vErr } = await upsertVisits("crm_visit_id"));
       if (vErr) throw new Error(vErr.message);
       visitsWritten = (insVisits ?? []).length;
     }

@@ -12,7 +12,8 @@
 //
 //   Attribution (from dbRowFromMirrorVisit):
 //     probation employee (the one being evaluated) = agent_hr_id
-//     accompanying evaluator                       = double_hr_id
+//     accompanying evaluator                       = double_hr_id, AND double2_hr_id on a chain visit
+//                                                    (one Phoenix row, two managers — mapRawDvVisits)
 //     CRM source id (dedup / traceability / resync) = crm_visit_id
 //     date                                          = visit_date
 //     sub-day granularity                           = ampm  ("AM" | "PM"; no clock time in CRM)
@@ -47,7 +48,7 @@ export const DV_VISIT_TYPE_CODES = [0, -8] as const;
 /** Columns selected from ireports360_visits for probation DV detection. */
 export const DV_SOURCE_COLUMNS =
   "id, crm_visit_id, visit_date, visit_type, visit_type_description, " +
-  "agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name, " +
+  "agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name, double2_hr_id, double2_name, " +
   "contact_name, customer_name, comment, ampm";
 
 /** Raw shape of a selected ireports360_visits row. */
@@ -62,6 +63,9 @@ export type RawDvVisitRow = {
   double_crm_id: number | null;
   double_hr_id: string | null;
   double_name: string | null;
+  /** A chain visit's SECOND manager (Phoenix CRM only; absent on a vendor row). */
+  double2_hr_id?: string | null;
+  double2_name?: string | null;
   contact_name: string | null;
   customer_name: string | null;
   comment: string | null;
@@ -118,6 +122,21 @@ export function mapRawDvVisit(row: RawDvVisitRow): SourceDvVisit {
     customerName: row.customer_name,
     comment: row.comment,
   };
+}
+
+/**
+ * Every evaluator's view of one CRM row: the first manager's, and on a chain visit the second
+ * manager's too. 🔴 A CHAIN VISIT IS ONE VISIT, AND IT IS IN BOTH MANAGERS' RECORDS (owner,
+ * 2026-10-08): the probationer received it once, and each manager who went has his own DV-Day for it —
+ * keyed (evaluator, employee, date) like every other — so the second manager is validated by exactly
+ * the same rules as the first. Slot 2 is never the same person as slot 1 (it is filled only when slot 1
+ * is), so no evaluator is credited twice for one visit.
+ */
+export function mapRawDvVisits(row: RawDvVisitRow): SourceDvVisit[] {
+  const first = mapRawDvVisit(row);
+  const secondHrId = row.double2_hr_id?.trim() ? row.double2_hr_id : null;
+  if (!secondHrId) return [first];
+  return [first, { ...first, evaluatorHrId: secondHrId, evaluatorName: row.double2_name ?? null }];
 }
 
 /**

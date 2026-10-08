@@ -117,19 +117,37 @@ slot-2 person's own day came back empty.
 `crm/visit-workload.ts` deliberately needs nothing: its role test is
 `submitter === self ? "agent" : "partner"`, so slot 2 is already "partner".
 
-**Still one-slot.** Each of these changes a reported COUNT, so each ships with the second partner's
-NAME beside the credit — that is the layout half, and it needs a browser measurement:
+**The ruling — one visit for the rep, in BOTH managers' records** (owner, 2026-10-08, in his words:
+"the rep submits the chain visit and chooses, for example, two managers; it is counted one visit for
+the rep and for the two managers — one visit for the three, so the three have this visit in their
+records, but the one who submitted is the medical rep").
 
-`double-visit-analytics/service.ts` + `audit-export.ts` · `employee-360/service.ts` +
-`deep-service.ts` · `probation/intelligence/dv-source.ts` · `weekly-planning/plan-adherence-data.ts` ·
-`employee-portal/nsm-crm-compliance.ts` + `early-birds/collect.ts` ·
-`field-workforce-compliance/ireports360-source.ts` · `private-calendar/field-visits.ts` ·
-`reconciliation/checks/crm-sales.ts` · `crm/master.ts` · `crm/rep-visits.ts` ·
-`field-activity/report.ts`.
+- **The rep's side counts the ROW, once.** His visits, his double visits received, a company total
+  and a rep's Employee 360 never count a chain visit twice.
+- **Every manager-side figure counts each manager on it, the second exactly like the first.**
+  `double-visit-analytics/chain-visitors.ts` holds the one mechanism: `perDoubleVisitorRows` hands
+  each manager his own view of the row (himself in slot 1), so every reader written for slot 1 counts
+  slot 2 unchanged; `keepDoubleVisitors` lets a scope or an allow-list take ONE manager off a row
+  without touching the other's credit or the rep's visit.
+- **Where it reaches:** Double Visit Analytics (given totals, days, the leaderboard, the manager-rep
+  pairs, the log and report filters, the portal focus), the coaching audit (the second coach has his
+  own tab), Employee 360 (credited to both, received once), the private calendar (a performed chain
+  day for each manager), and the probation DV-Days (each manager his
+  own day — migration `20261008141330` moved `probation_dv_visits` to UNIQUE (`crm_visit_id`,
+  `dv_day_id`) so the second day keeps its visits). Field Activity, compliance, the first-visit board,
+  plan adherence, the day maps and the deduction connectors already credited both slots.
+- **The ruled consequence:** the leaderboard's sum now exceeds the KPI total by exactly the number of
+  chain visits. That is his ruling, not drift — the downward-scope test's "total equals the
+  leaderboard sum" holds only for a board with no chain visit on it.
+- **Not extended, deliberately:** the outstation trip workload evidence
+  (`getDoubleVisitExpenseWorkloadEvidence`) still reads slot 1 only — money is decided on it, and the
+  ruling was not given for it.
+- **Left as it is:** `reconciliation/checks/crm-sales.ts` — its left side reads `ireports360_visits`,
+  which has one partner column. And the vendor's OWN chains, which iReports360 split into two rows,
+  keep their old history.
 
-**The settled answer for all of them: a chain visit credits BOTH managers.** Each really gave that
-ride, and no double count is possible — slot 1 is `coalesce(manager, product_manager, senior)`, so
-the two slots never hold the same person. Each reader must SELECT `double2_hr_id` as well as read it;
+Pinned by `tests/chain-visit-one-visit-both-managers.test.ts`, `tests/probation-dv-detection.test.ts`
+and `tests/probation-dv-sync.test.ts`. Each reader must SELECT `double2_hr_id` as well as read it;
 one without the other is silently `undefined`.
 
 **The whole exposure is bounded:** 10 visits on production have ever carried a second partner — two

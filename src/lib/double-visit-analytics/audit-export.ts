@@ -27,6 +27,7 @@ import ExcelJS from "exceljs";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getDoubleVisitRows, queryCheckins } from "@/lib/crm/reads";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
+import { perDoubleVisitorRows } from "@/lib/double-visit-analytics/chain-visitors";
 import { doubleVisitCountBucket } from "@/lib/double-visit-analytics/count-bucket";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -105,8 +106,8 @@ export type DoubleVisitAuditVisitRow = {
   speciality: string;
   period: string;
   visitType: string;
-  /** A chain visit's SECOND coach. Empty on a vendor row and on a plain double visit. It names a
-   * person and moves no figure — every count on this sheet still comes off one row per visit. */
+  /** On a chain visit, the OTHER coach — the second one on the first coach's tab, the first on the
+   * second's. Empty on a vendor row and on a plain double visit. Each coach's tab counts the visit once. */
   partner2: string;
   /** The Phoenix field set, already shaped to this reader's tier, one value per column. Null on a
    * vendor row — there is nothing behind it to print. */
@@ -402,9 +403,10 @@ export async function loadDoubleVisitAuditData(input: {
   // Per-coach KPI strip + role code, from the SAME builder the board uses (so figures match).
   const { summaries } = buildManagerSummariesDetailed(scopedRows, employees, generatedAt);
 
-  // Group the scoped rows by coach (the double-visitor).
+  // Group the scoped rows by coach (the double-visitor). One entry per (visit, coach): a chain visit is in
+  // BOTH coaches' tabs, counted the same in each (owner, 2026-10-08 — chain-visitors.ts).
   const rowsByCoach = new Map<string, DoubleVisitDbRow[]>();
-  for (const row of scopedRows) {
+  for (const row of perDoubleVisitorRows(scopedRows)) {
     const key = canonicalHrIdKey(row.double_visitor_hr_id);
     if (!key) continue;
     rowsByCoach.set(key, [...(rowsByCoach.get(key) ?? []), row]);
@@ -548,7 +550,9 @@ function buildCoach(input: {
         speciality: text(row.speciality) || "—",
         period: row.period,
         visitType: text(row.visit_type_description) || String(row.visit_type ?? ""),
-        partner2: mirrorById.get(row.id)?.partner2 ?? "",
+        // The OTHER coach on a chain visit, from this coach's own view of the row — never himself.
+        // A coach the reader's scope took off the row is not named either (filterRowsForAccess).
+        partner2: nullableText(row.double_visitor2_name ?? null) ?? "",
         phoenixColumns: mirrorById.get(row.id)?.phoenixColumns ?? null,
       };
     });

@@ -51,6 +51,7 @@ import type {
   DoubleVisitTrendPoint,
 } from "@/lib/double-visit-analytics/types";
 import { entryCountBucket, entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
+import { visitLogPerDoubleVisitor } from "@/lib/double-visit-analytics/chain-visitors";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
@@ -297,7 +298,8 @@ function buildManagerProfile(
   periodFilter: PeriodFilter,
 ) {
   // All-period rows for this manager — drives the stable summary chips.
-  const allRows = visitLog.filter((e) => hk(e.doubleVisitorHrId) === managerKey);
+  // A chain visit is in BOTH managers' records (owner, 2026-10-08): each finds it under his own name.
+  const allRows = visitLogPerDoubleVisitor(visitLog).filter((e) => hk(e.doubleVisitorHrId) === managerKey);
   const totalVisits = allRows.reduce((s, e) => s + e.visitCount, 0);
   // AM · PM · Pharmacies apart — a pharmacy visit is never one of the PM doctors (count-bucket.ts).
   const amVisits = allRows.filter((e) => entryCountBucket(e) === "AM").reduce((s, e) => s + e.visitCount, 0);
@@ -858,7 +860,7 @@ export function DoubleVisitAnalyticsWorkspace({
   // Per-manager all-period totals (drives the sidebar ranking — always all periods).
   const managerTotals = useMemo(() => {
     const map = new Map<string, { dvs: number; lastDate: string | null; mrs: Set<string>; name: string }>();
-    for (const e of visitLog) {
+    for (const e of visitLogPerDoubleVisitor(visitLog)) {
       const mKey = hk(e.doubleVisitorHrId);
       if (!mKey) continue;
       const existing = map.get(mKey) ?? { dvs: 0, lastDate: null, mrs: new Set<string>(), name: e.doubleVisitorName ?? e.doubleVisitorHrId ?? mKey };
