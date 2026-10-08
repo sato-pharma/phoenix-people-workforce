@@ -78,3 +78,38 @@ On a day off:
 
 Vacant seats are still reported on a day off: a seat nobody holds is a fact about the org, not about
 the day.
+
+## The authored notes, and the day each one belongs to
+
+The `AUTHORED` map in `print-day.mjs` holds six sentences — the only ones on these papers a human
+wrote. Every one of them is about **Saturday 3 October 2026**, the Delta (1) launch day: a phone stuck
+on approximate location all morning, a hospital 3.6 km from the pin Google still holds for it, an
+attempt refused from inside a building and retaken outside.
+
+They were keyed by **rep full name alone, with no date**. So each sentence printed on the paper for
+*every* day its rep appeared on. The holiday fix above stopped them on a day off — the 8 October paper
+had put *“The phone was on approximate location all morning”* directly beside *“Nothing was
+recorded”* — but a day off was only half of it: on **7 October**, an ordinary working Wednesday, and on
+every working day since, the same 3 October judgement printed as though it had happened that morning,
+on a sheet that goes to the district manager and is summarised for the Chief Executive. A wrong
+judgement about a named person's morning is worse than no judgement, and it was signed by the owner.
+
+So the map is keyed **by Cairo day first, then by rep**:
+
+```js
+const AUTHORED = {
+  "2026-10-03": {
+    "Yasmeen Samy Shawky Mahdy": "The phone was on approximate location all morning — …",
+    …
+  },
+};
+```
+
+`notesFor(rep, day, restDay)` looks the day up before the rep, so a note prints on the day it was
+written about and on no other. The sentences themselves are untouched — they are the owner's own words
+about real incidents and real named people; this changed **when** they print, never what they say.
+
+The `restDay` guard stays, behind the day key rather than instead of it: a day off has no captures to
+explain, so should a note ever be written against a date the company later moves its day off onto, the
+note still does not print. A rep with nothing to explain on a day gets only the derived notes, exactly
+as before, and a rep is always still **named** on the paper — only the borrowed sentence is gone.
