@@ -284,23 +284,23 @@ export async function runHrCommandCenterTests() {
   // Latency is the smaller half. HR Advisory holds no deductions grant at all, so a dashboard that
   // read the deductions month under her session would be doing work her job description forbids —
   // the boundary is in HR_ROLE_BOUNDARIES and this is the one code path that could quietly cross it.
-  const advisorySources = sourcesFor("HR Advisory");
+  const resourcingSources = sourcesFor("HR Resourcing");
   const operationsSources = sourcesFor("HR Operations");
   assert.ok(
-    !advisorySources.includes("deductions"),
-    `HR Advisory's dashboard loads the deductions month (sources: ${advisorySources.join(", ")}) — ` +
+    !resourcingSources.includes("deductions"),
+    `the Talent Acquisition seat's dashboard loads the deductions month (sources: ${resourcingSources.join(", ")}) — ` +
       "she holds no deductions grant, and reading it on her behalf crosses a job-description boundary",
   );
   for (const source of ["recruitment", "offers", "supportRequests"] as const) {
     assert.ok(
       !operationsSources.includes(source),
-      `HR Operations' dashboard loads "${source}", which only an HR Advisory function asks for`,
+      `HR Operations' dashboard loads "${source}", which only the Talent Acquisition seat's functions ask for`,
     );
   }
   // A control: without it, a sourcesFor that returned [] would satisfy both assertions above.
   assert.ok(
-    advisorySources.length >= 4 && operationsSources.length >= 4,
-    `sourcesFor returned almost nothing (Advisory ${advisorySources.length}, Operations ` +
+    resourcingSources.length >= 4 && operationsSources.length >= 4,
+    `sourcesFor returned almost nothing (Talent Acquisition ${resourcingSources.length}, Operations ` +
       `${operationsSources.length}) — the checks above passed by loading nothing, not by scope`,
   );
 
@@ -388,8 +388,8 @@ export async function runHrCommandCenterTests() {
   // than no control at all.
   //
   // /hr/offers replaces it, and it is a stronger control because it discriminates in BOTH
-  // directions on the SAME href: offers:read is a recruiting grant, so HR Advisory is offered the
-  // row and HR Operations is not. A one-sided check cannot tell "correctly rejected" from
+  // directions on the SAME href: offers:read is a recruiting grant, so the recruiting seat is offered
+  // the row and HR Operations is not. That seat is the Talent Acquisition seat since "move recruiting off the HR Business Partner" (owner, 2026-10-08). A one-sided check cannot tell "correctly rejected" from
   // "rejects everything"; this one can.
   assert.ok(
     !offeredHrefs("HR Operations").has("/hr/offers"),
@@ -398,15 +398,16 @@ export async function runHrCommandCenterTests() {
       "above is blind",
   );
   assert.ok(
-    offeredHrefs("HR Advisory").has("/hr/offers"),
-    "/hr/offers is NOT offered to HR Advisory — offers is hers, so this set is now rejecting " +
+    offeredHrefs("HR Resourcing").has("/hr/offers"),
+    "/hr/offers is NOT offered to the Talent Acquisition seat — offers is hers, so this set is now rejecting " +
       "everything and the control above passes for the wrong reason",
   );
 
   // The row that replaced it as a subject, pinned as a fact rather than left implied. Both
   // directions again: the seat that was granted the screen on 2026-09-03 is offered it, and the
-  // seat that was deliberately not granted it is not — payroll appears nowhere in the HR Business
-  // Partner job description, and she holds no deductions grant at all.
+  // seat that was deliberately not granted it is not. That was the HR Business Partner until her
+  // seat was retired on 2026-10-08; the Talent Acquisition seat holds no deductions grant either —
+  // the owner did not tick payroll for her.
   assert.ok(
     offeredHrefs("HR Operations").has("/hr/admin/deductions"),
     "/hr/admin/deductions is no longer offered to HR Operations — the owner granted her that " +
@@ -414,9 +415,9 @@ export async function runHrCommandCenterTests() {
       "restores the offered-but-closed shape this file exists to catch",
   );
   assert.ok(
-    !offeredHrefs("HR Advisory").has("/hr/admin/deductions"),
-    "/hr/admin/deductions is offered to HR Advisory — she holds no deductions grant and the page " +
-      "refuses her by name; a row here would be a dead link and a claim she can read payroll",
+    !offeredHrefs("HR Resourcing").has("/hr/admin/deductions"),
+    "/hr/admin/deductions is offered to the Talent Acquisition seat — she holds no deductions grant; " +
+      "a row here would be a dead link and a claim she can read payroll",
   );
 
   // ── Every chart plots what it says it plots ───────────────────────────────────────────────────
@@ -510,8 +511,10 @@ export async function runHrCommandCenterTests() {
     `only ${chartsChecked} charts were built across both seats — the catalogue returned almost ` +
       "nothing and every assertion above passed by reading an empty page",
   );
+  // 15 until the owner retired the HR Business Partner seat on 2026-10-08: its probation and directory charts went with it, and
+  // the two live seats measured 14 series the same evening.
   assert.ok(
-    seriesChecked >= 15,
+    seriesChecked >= 12,
     `only ${seriesChecked} series were checked — the row/series agreement assertion, which is the ` +
       "only thing standing between a typo and a silently empty plot, read almost nothing",
   );
@@ -534,10 +537,14 @@ export async function runHrCommandCenterTests() {
   // seats is six charts — so the owner's complaint ("there are no any chart") was true of one
   // account while the only assertion guarding it passed. A per-seat floor is the assertion that
   // can tell those two states apart, which is why it is here rather than a larger global number.
+  //
+  // HR Advisory's floor was lowered to two when recruiting left her seat, and the seat itself was
+  // retired the same evening (2026-10-08) — so every live seat is back on one floor.
   for (const seat of seats) {
     const built = chartsPerSeat.get(seat) ?? 0;
+    const floor = 3;
     assert.ok(
-      built >= 3,
+      built >= floor,
       `${seat} is shown ${built} chart(s). Every seat gets a shape for its own work, not just ` +
         "the seat whose functions happened to be built first — see CHARTS_BY_FUNCTION for the " +
         "two functions that legitimately return none, and why neither is a gap",

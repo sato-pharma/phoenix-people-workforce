@@ -60,8 +60,9 @@ import { resolvePersonalWorkspaceTabs } from "../src/lib/workspace/personal-work
  * pins those three by name so nobody "simplifies" the authored list back into a derived one.
  */
 
-// HR Resourcing — the Talent Acquisition seat — since 2026-10-08.
-const HR_ROLES: PhoenixRole[] = ["HR Advisory", "HR Operations", "HR Resourcing"];
+// HR Resourcing — the Talent Acquisition seat — since 2026-10-08. HR Advisory left the namespace
+// the same evening, when the owner retired the HR Business Partner seat.
+const HR_ROLES: PhoenixRole[] = ["HR Operations", "HR Resourcing"];
 const ALL_MODES: NavigationMode[] = ["admin", "employee-portal", "hr"];
 
 function lookupFor(role: PhoenixRole): PermissionLookup {
@@ -366,10 +367,10 @@ export function runHrUrlNamespaceTests() {
   assert.deepEqual(
     inNamespace.sort(),
     [...HR_ROLES].sort(),
-    "exactly the three HR seats use the /hr namespace — the third (HR Resourcing, the Talent " +
-      "Acquisition seat) was the owner's decision on 2026-10-08; adding a fourth is a decision, not a side effect",
+    "exactly the two HR seats use the /hr namespace — HR Resourcing (the Talent Acquisition seat) " +
+      "joined and HR Advisory left on 2026-10-08, both the owner's decisions; adding a third is a decision, not a side effect",
   );
-  assert.equal(hrNamespaceRoles.size, 3);
+  assert.equal(hrNamespaceRoles.size, 2);
 
   // 11 ── The shell header cannot be forged, and `/hr` cannot become a second spelling of the API.
   //
@@ -474,8 +475,8 @@ export function runHrUrlNamespaceTests() {
   const hrSeatAccess = {
     hrId: "a-1",
     loginId: "a-1",
-    role: "HR Advisory" as PhoenixRole,
-    scope: scopeForRole("HR Advisory"),
+    role: "HR Operations" as PhoenixRole,
+    scope: scopeForRole("HR Operations"),
     source: "session" as const,
   };
   assert.equal(

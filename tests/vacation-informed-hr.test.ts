@@ -149,14 +149,14 @@ export function runVacationInformedHrTests() {
 
   // ── 3. The absence panel: who loads it ──────────────────────────────────────────────────────
   const operations = sourcesFor("HR Operations");
-  const advisory = sourcesFor("HR Advisory");
+  const resourcing = sourcesFor("HR Resourcing");
   assert.ok(
     operations.includes("vacationsToday"),
     "HR Operations' landing page loads today's absences — that is the owner's instruction",
   );
   assert.ok(
-    !advisory.includes("vacationsToday"),
-    "HR Advisory holds no time_attendance function, so she is not shown the company's absences",
+    !resourcing.includes("vacationsToday"),
+    "the Talent Acquisition seat holds no time_attendance function, so she is not shown the company's absences",
   );
 
   // ── 4. The absence rows ─────────────────────────────────────────────────────────────────────

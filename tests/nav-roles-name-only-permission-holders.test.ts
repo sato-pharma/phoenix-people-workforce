@@ -314,7 +314,9 @@ export async function runNavRolesNameOnlyPermissionHoldersTests(): Promise<void>
   // 5-consumer ["Super Admin"] list standing, so a >= 5 floor passed while the mechanism was
   // broken. Identify the list by its contents and check ITS sharing.
   const hrAuthorityList = [...groups.entries()]
-    .filter(([roles]) => roles.includes("HR Advisory") && roles.includes("HR Operations"))
+    // Identified by HR Operations + HR Resourcing since 2026-10-08, when HR Advisory left the list
+    // with its retired seat and the Talent Acquisition seat took its place.
+    .filter(([roles]) => roles.includes("HR Operations") && roles.includes("HR Resourcing"))
     .sort((a, b) => b[1].length - a[1].length)[0];
   assert.ok(
     hrAuthorityList && hrAuthorityList[1].length >= 8,

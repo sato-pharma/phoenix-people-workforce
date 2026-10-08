@@ -21,7 +21,9 @@ import {
  * prohibition here - so the PAGE was re-gated to `recruitment:update`, with the admin assertion
  * kept underneath as the fallback that still produces the refusal for everyone else. The two
  * totality checks below pin BOTH halves: that `admin:update` stayed Super-Admin-only, and that
- * the effective audience is exactly Super Admin plus HR Advisory and nobody else.
+ * the effective audience is exactly Super Admin plus the recruiting seat and nobody else. That seat
+ * is the Talent Acquisition seat since the owner moved recruiting off the HR Business Partner on
+ * 2026-10-08.
  *
  * The pure pieces (key generation, the permission gate) are tested directly. Everything else in
  * whatsapp-screening-questions-admin.ts touches the database, and — like every other DB-touching
@@ -93,8 +95,8 @@ export function runWhatsAppScreeningQuestionsAdminTests() {
   // the same grant the HR Business Partner edits on. Still NOT admin:update (asserted above).
   assert.deepEqual(
     [...effectiveAudience].sort(),
-    ["HR Advisory", "HR Resourcing", "Super Admin"],
-    "exactly three seats may edit the questions an applicant is asked on WhatsApp: the Super Admin, the HR Business Partner the owner named on 2026-09-01, and the Talent Acquisition seat he ticked on 2026-10-08",
+    ["HR Resourcing", "Super Admin"],
+    "exactly two seats may edit the questions an applicant is asked on WhatsApp: the Super Admin and the Talent Acquisition seat he ticked on 2026-10-08 — the HR Business Partner he named on 2026-09-01 left with recruiting the same evening",
   );
 
   // ── The DB-touching half, pinned against its own source ────────────────────────────────────────

@@ -129,7 +129,9 @@ export async function runOrganogramNavLinkExistsTests() {
   // The pairing this test exists to enforce is unchanged: grant and nav entry move together, and
   // tests/hr-seats-see-the-company-organogram.test.ts is the other half, pinning company mode and
   // Head Office for both seats.
-  for (const role of ["HR Advisory", "HR Operations", "Training Manager"] as const) {
+  // HR Advisory was the first of these until the owner retired the seat on 2026-10-08; the Talent
+  // Acquisition seat holds organogram:read and the company chart, so she takes its place here.
+  for (const role of ["HR Operations", "HR Resourcing", "Training Manager"] as const) {
     const access = createAccessContext({ hrId: "T-1", role });
     const mode = resolveNavigationMode(access);
     assert.equal(

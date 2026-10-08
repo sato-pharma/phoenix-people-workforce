@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
-import { buildPermissionLookup, permissionMatrix, phoenixRoles } from "../src/lib/auth/permissions.ts";
+import { assignablePhoenixRoles, buildPermissionLookup, permissionMatrix } from "../src/lib/auth/permissions.ts";
 import { sosPeriodDisplayLabel, type CeoCommandCenterData } from "../src/lib/ceo/command-center.ts";
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import { getSections } from "../src/lib/navigation/active-path.ts";
@@ -156,7 +156,8 @@ export function runCeoCommandCenterTests() {
   // Both halves are asserted because they fail in opposite directions: without the redirect a
   // typed URL still reaches the dead page, and without the nav exclusion the sidebar still offers
   // a row that now bounces.
-  for (const role of ["HR Advisory", "HR Operations"]) {
+  // HR Advisory left the list when the owner retired the HR Business Partner seat on 2026-10-08; the Talent Acquisition seat has its own page too.
+  for (const role of ["HR Operations", "HR Resourcing"]) {
     assert.ok(
       adminRedirectRoles.includes(`"${role}"`),
       `/admin must redirect ${role} to /hr/admin/hr-command-center — the generic dashboard it used to `
@@ -185,7 +186,10 @@ export function runCeoCommandCenterTests() {
   // precisely the one that reaches the fall-through. Redirecting it unconditionally would be an
   // infinite redirect. Asserted as a property of every role rather than of the one line, because
   // the danger arrives when somebody ADDS a role, not when somebody edits this page.
-  for (const role of phoenixRoles) {
+  // Every role a person can hold. The retired HR Business Partner key (2026-10-08) resolves to /admin
+  // too, and reaches nobody; the guard asserted below is what would answer a stale one, with the
+  // access card rather than a loop.
+  for (const role of assignablePhoenixRoles) {
     if (resolveLandingPathForRole(role) !== "/admin") continue;
     assert.equal(
       role,

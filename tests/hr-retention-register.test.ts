@@ -10,8 +10,10 @@
  *    mean handing every Medical Rep what their colleagues said in confidence about their manager
  *    and their pay.
  * 2. **A grant widened sideways under cover of a rename.** `mailbox_offboarding` belongs to HR
- *    Operations and `retention` to HR Advisory — they must NOT cross, because splitting them is the
- *    whole reason the function catalogue exists. A single "helpful" edit granting both to both
+ *    Operations and `retention` was HR Advisory's — they must NOT cross, because splitting them is the
+ *    whole reason the function catalogue exists. Since the owner retired the HR Business Partner seat
+ *    on 2026-10-08, `retention` is no HR seat's at all: the Super Admin's ("Leave it for system
+ *    administrator now"), read by the CEO. A single "helpful" edit granting both to both
  *    would look tidier and would be the privacy defect.
  * 3. **A nav row advertising a permission its page does not gate on.** That defect shipped twice
  *    (the Deductions row, #2554; the contract-renewal tiles, #2568). tests/hr-command-center.test.ts
@@ -40,7 +42,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { HR_ROLE_BOUNDARIES, HR_ROLE_BUNDLES, hrBundleGrants } from "../src/lib/auth/hr-functions.ts";
+import {
+  HR_ROLE_BOUNDARIES,
+  HR_ROLE_BUNDLES,
+  UNASSIGNED_HR_FUNCTIONS,
+  composeHrRoleGrants,
+  hrBundleGrants,
+  type HrBundleName,
+} from "../src/lib/auth/hr-functions.ts";
 import {
   permissionMatrix,
   permissionResources,
@@ -64,7 +73,8 @@ const PAIR = ["mailbox_offboarding", "retention"] as const;
 /** Who may hold each resource at all, after hard boundaries. Everyone else must hold nothing. */
 const EXPECTED_HOLDERS: Record<(typeof PAIR)[number], PhoenixRole[]> = {
   mailbox_offboarding: ["Super Admin", "HR Operations", "CEO"],
-  retention: ["Super Admin", "HR Advisory", "CEO"],
+  // HR Advisory held it until the seat was retired on 2026-10-08.
+  retention: ["Super Admin", "CEO"],
 };
 
 function actionsFor(role: PhoenixRole, resource: PermissionResource): PermissionAction[] {
@@ -125,13 +135,13 @@ export async function runHrRetentionRegisterTests() {
     actionsFor("HR Operations", "retention").length,
     0,
     "HR Operations holds the retention register. A stay discussion is an employee telling HR what " +
-      "they think of their manager and their pay; that is hrbp 3, held by HR Advisory alone.",
+      "they think of their manager and their pay; that is hrbp 3, held by no HR seat since the HR Business Partner was retired (2026-10-08).",
   );
   assert.equal(
-    actionsFor("HR Advisory", "mailbox_offboarding").length,
+    actionsFor("HR Resourcing", "retention").length,
     0,
-    "HR Advisory holds the mailbox revocation register. Closing a leaver's company mail is ops 6, " +
-      "and it belongs to HR Operations.",
+    "the Talent Acquisition seat holds the retention register. The owner did not give her " +
+      "engagement_retention, and a stay discussion is not recruiting.",
   );
 
   // ── 3. Nobody but the Super Admin may delete either ───────────────────────────────────────────
@@ -155,22 +165,24 @@ export async function runHrRetentionRegisterTests() {
   }
 
   // ── 4. Composed from the FUNCTION, not hand-listed on the role ────────────────────────────────
-  // This is the claim the function catalogue exists to make: HR Advisory gained the whole retention
-  // module from one line inside `engagement_retention`, and would lose it if that function were
-  // taken away. A grant hand-written onto the role would pass every check above and break this one.
-  const advisory = hrBundleGrants("HR Advisory");
-  const operations = hrBundleGrants("HR Operations");
+  // This is the claim the function catalogue exists to make: the retention module is ONE line inside
+  // `engagement_retention`, and whoever holds that function holds the register. The HR Business
+  // Partner held it until her seat was retired on 2026-10-08; the function now sits on
+  // UNASSIGNED_HR_FUNCTIONS, so the grant must still travel with the function (ready for the day
+  // the owner hands it to a seat) while no seat carries it today.
   assert.ok(
-    (advisory.retention ?? []).length > 0,
-    "HR Advisory's composed bundle carries no retention grant — it must come from engagement_retention",
+    (composeHrRoleGrants(["engagement_retention"]).retention ?? []).length > 0,
+    "engagement_retention no longer carries a retention grant — the register is not traceable to a function",
   );
+  assert.ok(
+    UNASSIGNED_HR_FUNCTIONS.includes("engagement_retention"),
+    "engagement_retention is no longer on UNASSIGNED_HR_FUNCTIONS — if a seat holds it now, the " +
+      "hard boundary below must grant that seat retention, or the function catalogue lies",
+  );
+  const operations = hrBundleGrants("HR Operations");
   assert.ok(
     (operations.mailbox_offboarding ?? []).length > 0,
     "HR Operations' composed bundle carries no mailbox_offboarding grant — it must come from people_records",
-  );
-  assert.ok(
-    HR_ROLE_BUNDLES["HR Advisory"].includes("engagement_retention"),
-    "HR Advisory no longer holds engagement_retention — the retention grant above is not traceable",
   );
   assert.ok(
     HR_ROLE_BUNDLES["HR Operations"].includes("people_records"),
@@ -184,7 +196,8 @@ export async function runHrRetentionRegisterTests() {
   // interviews while holding nothing. That is the same shape as the Head Office grant that died in
   // a filter below its gate. permissionMatrix is post-boundary (applyHardPermissionBoundaries
   // mutates it at module load) and hrBundleGrants is pre-boundary, so comparing them is the check.
-  for (const seat of ["HR Advisory", "HR Operations"] as const) {
+  const seats = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
+  for (const seat of seats) {
     const claimed = hrBundleGrants(seat);
     for (const [resource, actions] of Object.entries(claimed)) {
       const live = actionsFor(seat, resource as PermissionResource);
@@ -200,17 +213,18 @@ export async function runHrRetentionRegisterTests() {
   // ── 5. The dashboards actually surface them ───────────────────────────────────────────────────
   // Driven through the REAL builders, so the hrefs asserted are the hrefs the page emits.
   // tests/hr-command-center.test.ts then checks every such href against the seat's own sidebar.
-  assert.ok(
-    sourcesFor("HR Advisory").includes("retention"),
-    "HR Advisory's dashboard never loads the retention register, so her landing page cannot show it",
-  );
-  assert.ok(
-    !sourcesFor("HR Operations").includes("retention"),
-    "HR Operations' dashboard loads the retention register, which she may not read at all",
-  );
+  // No live seat's landing page loads the retention register: no seat holds engagement_retention
+  // since the HR Business Partner was retired (2026-10-08), so loading it would be a round trip for
+  // figures nobody on that page may read.
+  for (const seat of seats) {
+    assert.ok(
+      !sourcesFor(seat).includes("retention"),
+      `${seat}'s dashboard loads the retention register, which no HR seat may read since 2026-10-08`,
+    );
+  }
   // The removed module must not leave a fetch behind either. A source key with no tiles is a live
   // Supabase round trip on every landing-page render, paid for by a seat who sees nothing for it.
-  for (const seat of ["HR Advisory", "HR Operations"] as const) {
+  for (const seat of seats) {
     assert.ok(
       !(sourcesFor(seat) as string[]).includes("clearance"),
       `${seat}'s dashboard still fetches clearance — the module is gone, so that is a round trip ` +
@@ -218,7 +232,11 @@ export async function runHrRetentionRegisterTests() {
     );
   }
 
-  const advisoryTiles = buildHrCommandGroups("HR Advisory", {
+  // Every live seat, built with a full retention fixture through the REAL builder: not one tile
+  // may link to the register. The HR Business Partner's dashboard showed three until her seat was
+  // retired on 2026-10-08; a retention tile on another seat's page now would be a figure she — or
+  // whoever holds the seat — has no grant to open.
+  const retentionFixture = {
     supportRequests: [],
     retention: {
       conversations: [],
@@ -237,30 +255,35 @@ export async function runHrRetentionRegisterTests() {
         resignationsInWindow: 4,
       },
     },
-  } as unknown as HrCommandSources).flatMap((group) => group.tiles);
-  const retentionTiles = advisoryTiles.filter((t) => t.href === "/hr/retention");
-  assert.ok(
-    retentionTiles.length >= 3,
-    `HR Advisory's dashboard shows ${retentionTiles.length} retention tiles — expected at least 3`,
+  } as unknown as HrCommandSources;
+  const everyTile = seats.flatMap((seat) =>
+    buildHrCommandGroups(seat, retentionFixture).flatMap((group) => group.tiles),
   );
-  // No tile may carry a percentage. `exitCoveragePercent` is legitimately null when nobody has
-  // left, and a tile value is a number — rendering that null as 0 would say "0% of leavers
-  // interviewed" on a month with no leavers, which is precisely the misleading zero AGENTS.md §7
-  // forbids. The page renders coverage properly, with a dash for the null case.
-  for (const tile of retentionTiles) {
+  assert.ok(everyTile.length > 0, "no seat built a single tile — the checks below would pass vacuously");
+  for (const tile of everyTile) {
     assert.ok(
-      !/%|percent|coverage/i.test(`${tile.label} ${tile.sub}`),
-      `the retention tile "${tile.label}" reads as a percentage. Exit coverage is null when nobody ` +
-        "has left, and a null rendered as 0 on this dashboard is a lie, not a zero.",
+      tile.href !== "/hr/retention",
+      `the tile "${tile.label}" links to the retention register, which no HR seat may read since 2026-10-08`,
     );
   }
 
-  // Nothing on either seat's landing page may still point at the deleted pages. A tile linking to a
+  // No retention tile may carry a percentage — pinned in the builder's SOURCE now that no seat
+  // renders it, so the rule is still there the day the owner hands engagement_retention to a seat.
+  // `exitCoveragePercent` is legitimately null when nobody has left, and a tile value is a number —
+  // rendering that null as 0 would say "0% of leavers interviewed" on a month with no leavers, which
+  // is precisely the misleading zero AGENTS.md §7 forbids. The page renders coverage with a dash.
+  const commandCenter = readFileSync(path.join(process.cwd(), "src", "lib", "hr", "command-center.ts"), "utf8");
+  const builderStart = commandCenter.indexOf("  engagement_retention: (loaded) => {");
+  const builderEnd = commandCenter.indexOf("  performance_probation: (loaded) =>", builderStart);
+  assert.ok(builderStart > 0 && builderEnd > builderStart, "the engagement_retention tile builder moved — re-anchor this check");
+  assert.ok(
+    !commandCenter.slice(builderStart, builderEnd).includes("stats.exitCoveragePercent"),
+    "the retention tiles read exitCoveragePercent. Exit coverage is null when nobody has left, and a " +
+      "null rendered as 0 on this dashboard is a lie, not a zero.",
+  );
+
+  // Nothing on any seat's landing page may still point at the deleted pages. A tile linking to a
   // route that no longer exists renders as a perfectly ordinary figure and 404s on click.
-  const everyTile = [
-    ...advisoryTiles,
-    ...buildHrCommandGroups("HR Operations", {} as HrCommandSources).flatMap((g) => g.tiles),
-  ];
   for (const tile of everyTile) {
     assert.ok(
       !tile.href.includes("/clearance"),

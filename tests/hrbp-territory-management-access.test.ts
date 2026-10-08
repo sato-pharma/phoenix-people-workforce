@@ -3,7 +3,13 @@ import { readFileSync } from "node:fs";
 
 import { PORTAL_NAV_REGISTRY } from "../src/components/employee-portal/employee-portal-nav-registry.ts";
 import { hrNavigationSections, sourceOfSalesPageItems } from "../src/config/system-navigation.ts";
-import { HR_ROLE_BUNDLES, hrBundleGrants } from "../src/lib/auth/hr-functions.ts";
+import {
+  HR_ROLE_BUNDLES,
+  UNASSIGNED_HR_FUNCTIONS,
+  composeHrRoleGrants,
+  hrBundleGrants,
+  type HrBundleName,
+} from "../src/lib/auth/hr-functions.ts";
 import { permissionMatrix, permissionResources } from "../src/lib/auth/permissions.ts";
 import { MODULE_LABELS } from "../src/lib/navigation/module-catalog.ts";
 import { accessRegistry } from "../src/lib/security/access-registry.ts";
@@ -30,11 +36,16 @@ import { accessRegistry } from "../src/lib/security/access-registry.ts";
  * resolves to EMPTY line/region/area sets rather than to "everything", so without the company-wide
  * branch in the territory service she would hold the grant, be offered the row, open the page - and
  * see a blank map. A page that looks broken is a worse answer than a page that refuses.
+ *
+ * RETIRED 2026-10-08. The owner retired the HR Business Partner seat that evening ("no more HR
+ * business partner"; the rest of its work "Leave it for system administrator now"). Her map left with
+ * it: the /hr row is gone, the hub card is back to its three admin-shell roles, and the company-wide
+ * branch in the territory service is EMPTY but kept. The split itself still stands, and so does the
+ * grant's home: `territory:read` travels with `workforce_insight`, now on UNASSIGNED_HR_FUNCTIONS,
+ * so the day he hands that function to a seat the map comes with it — read and nothing else.
  */
 
-// `as const`, not `: PhoenixRole`. It indexes HR_ROLE_BUNDLES and hrBundleGrants, both of which are
-// keyed by the two HR BUNDLE names rather than by the whole role union - widening it here is a
-// typecheck error, and it is the narrow type that carries the meaning anyway.
+// The retired key. It indexes the permission matrix only: it has no bundle any more.
 const HRBP = "HR Advisory" as const;
 
 function hrRow(href: string) {
@@ -61,35 +72,38 @@ export function runHrbpTerritoryManagementAccessTests() {
     "every resource needs a module label or the lock picker renders an empty name",
   );
 
-  // 2. The HR Business Partner holds it, and holds it from the catalogue.
-  assert.deepEqual(
-    permissionMatrix[HRBP].territory,
-    ["read"],
-    "the owner asked for the map, not for the pin editor: read and nothing else",
-  );
-  const composed = hrBundleGrants(HRBP) as Record<string, string[] | undefined>;
+  // 2. The retired seat holds nothing; the grant still lives in its function.
+  assert.equal(permissionMatrix[HRBP].territory, undefined, "the retired HR Business Partner seat holds no map");
+  const composed = composeHrRoleGrants(["workforce_insight"]) as Record<string, string[] | undefined>;
   assert.deepEqual(
     composed.territory,
     ["read"],
     "the grant must come from an HR function, so it traces to a job-description line rather than " +
-      "having been written straight into the matrix",
+      "being written straight into the matrix — and it is read, the map, never the pin editor",
   );
   assert.ok(
-    (HR_ROLE_BUNDLES[HRBP] as readonly string[]).includes("workforce_insight"),
-    "the grant lives in workforce_insight; moving it to a shared function would hand the map to " +
-      "HR Operations, who was never named",
+    UNASSIGNED_HR_FUNCTIONS.includes("workforce_insight"),
+    "workforce_insight left the unassigned list — if a seat holds it now, that seat holds the map " +
+      "and needs its /hr row and the company-wide branch back (sections 5 and 7)",
   );
+  for (const seat of Object.keys(HR_ROLE_BUNDLES) as HrBundleName[]) {
+    assert.equal(
+      hrBundleGrants(seat).territory,
+      undefined,
+      `${seat} holds territory — no live HR seat was given the map`,
+    );
+  }
 
-  // 3. And she does NOT gain the commercial surface.
+  // 3. And the function does NOT carry the commercial surface.
   assert.equal(
-    permissionMatrix[HRBP].sales,
+    composed.sales,
     undefined,
     "the whole point of the split: `territory` must not arrive as `sales:read`, which opens " +
       "Source of Sales, Monthly Closing and Sales vs Target",
   );
   for (const resource of ["weekly_sales", "direct_orders"] as const) {
     assert.equal(
-      permissionMatrix[HRBP][resource],
+      composed[resource],
       undefined,
       `${resource} is money and is not part of reading a brick map`,
     );
@@ -112,14 +126,15 @@ export function runHrbpTerritoryManagementAccessTests() {
     );
   }
 
-  // 5. Her scope is company-wide, or the page renders blank.
+  // 5. A non-sales seat's scope must be company-wide, or the page renders blank.
   // resolveSalesAccessScope answers NONE for any role off the sales ladder, and NONE means EMPTY
-  // sets, not "everything". The territory service carries an explicit branch ahead of that call;
-  // this asserts the branch is still there and still names her.
+  // sets, not "everything". The territory service carries an explicit branch ahead of that call. It
+  // named the HR Business Partner until her seat was retired; it is empty now and must stay CALLED,
+  // ahead of the sales scope, so the next non-sales seat given the map sees it whole.
   const service = readFileSync("src/lib/territory-management/service.ts", "utf8");
   assert.ok(
-    service.includes('TERRITORY_COMPANY_WIDE_NON_SALES_ROLES = new Set<PhoenixRole>(["HR Advisory"])'),
-    "without the company-wide branch her map is empty - she has no line, no region and no seat",
+    service.includes("TERRITORY_COMPANY_WIDE_NON_SALES_ROLES = new Set<PhoenixRole>([])"),
+    "the company-wide set must be empty since 2026-10-08 — the retired seat was its only member",
   );
   const branch = service.indexOf("TERRITORY_COMPANY_WIDE_NON_SALES_ROLES.has(access.role)");
   const salesScopeCall = service.indexOf("const salesScope = await resolveSalesAccessScope(access);");
@@ -175,25 +190,21 @@ export function runHrbpTerritoryManagementAccessTests() {
     "the portal registry's copy must track the page's gate, or the drift check fails in CI",
   );
 
-  // 7. Her sidebar actually carries the row.
-  // The grant alone renders nothing: the HR navigation is AUTHORED, deliberately not derived from
-  // the permission matrix, so a permission with no row is a module she still cannot find.
-  const row = hrRow("/hr/sales/territory-management");
-  assert.ok(row, "the HR sidebar must carry the row - that is the whole instruction");
-  assert.equal(row?.label, "Territory Management");
-  assert.deepEqual(row?.permissions, [{ resource: "territory" }], "the row's key must match the page's gate");
-  assert.deepEqual(row?.roles, [HRBP], "offered to the seat the owner named, not to both HR seats");
+  // 7. The HR rail no longer carries the row — no live HR seat holds the map.
+  assert.equal(
+    hrRow("/hr/sales/territory-management"),
+    null,
+    "the /hr Territory Management row was the HR Business Partner's alone and left with her seat",
+  );
 
-  // The admin twin's card keeps its own role list; only its key moved.
+  // The admin twin's card keeps its own role list; only its key moved in 2026-09.
   const card = sourceOfSalesPageItems.find((item) => item.href === "/sales/territory-management");
   assert.ok(card, "the Source of Sales hub card must survive the split");
   assert.deepEqual(card?.permissions, [{ resource: "territory" }]);
   assert.deepEqual(
     card?.roles,
-    ["CEO", "SFE Manager", "Super Admin", "HR Advisory"],
-    "the three admin-shell roles are unchanged - the portal roles reach the module through their " +
-      "twin - and she is named beside them because hr-url-namespace.test.ts reads an /hr row as a " +
-      "WIDENING unless the admin navigation already admits the seat to that page. The card itself " +
-      "stays out of her reach: the hub it sits on is sales:read",
+    ["CEO", "SFE Manager", "Super Admin"],
+    "the three admin-shell roles — the portal roles reach the module through their twin. The HR " +
+      "Business Partner was named beside them from 2026-09-07 until her seat was retired",
   );
 }

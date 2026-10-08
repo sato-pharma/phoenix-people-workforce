@@ -78,7 +78,7 @@ export function AccountActivationWorkspace({ initialUsers }: AccountActivationWo
           <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Accounts</p>
           <h2 className="mt-1 text-base font-semibold text-slate-900">{filtered.length} matching</h2>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-400">
-            Super Admin, CEO, Finance Manager, HR Advisory, and HR Operations accounts are never listed here.
+            Super Admin, CEO, Finance Manager and HR seat accounts are never listed here.
           </p>
         </div>
         <div className="divide-y divide-gray-100">

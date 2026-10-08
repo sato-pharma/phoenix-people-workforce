@@ -75,71 +75,33 @@ export function runHrNavNoEmptyInboxRowsTests() {
   const seats = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
   assert.deepEqual(
     seats,
-    ["HR Advisory", "HR Operations", "HR Resourcing"],
-    "this file reasons about exactly three HR seats; a fourth bundle needs its own verdict here " +
+    ["HR Operations", "HR Resourcing"],
+    "this file reasons about exactly two HR seats (there were three until " +
+      "the owner retired the HR Business Partner seat on 2026-10-08); a new bundle needs its own verdict here " +
       "rather than being silently unchecked",
   );
 
-  const advisory = offeredHrefs("HR Advisory");
   const operations = offeredHrefs("HR Operations");
   const resourcing = offeredHrefs("HR Resourcing");
 
-  // ── The headline ────────────────────────────────────────────────────────────
-  assert.equal(
-    advisory.has(OTHER_APPROVALS_HREF),
-    false,
-    'the HR Business Partner is offered "Other Approvals", an inbox that shows only resignation, ' +
-      "contract-renewal and outstation rows — she holds no grant for any of the three, so it can " +
-      "never contain one row for her, and it carries a pending badge while being empty",
-  );
-
-  // The 2026-08-29 precedent, pinned in the same place so the pair cannot drift apart.
-  //
-  // ── REPOINTED 2026-09-05 ──────────────────────────────────────────────────────────────────
-  //
-  // LEAVE_MANAGEMENT_HREF was a HUB — a page of modules — and the owner ruled that day that no
-  // rail row may open one: "I don't want any subtitle to be the one that when I press, it
-  // redirects me to a page with big modules. I want a recruitment and its modules under it." So
-  // the door went and its children became rows under a band still called Leave Management.
-  //
-  // Both assertions here were written against that door, and both would now be asking about a
-  // href that is on NOBODY's rail. The exclusion would pass because the row does not exist,
-  // which is unfailable rather than satisfied; the "she keeps it" check would fail for the same
-  // reason, over nothing she lost. Neither is the question. The question is whether leave
-  // ADMINISTRATION is still hers and still not the Business Partner's — so that is what is asked,
-  // of the children, which is where it now lives.
-  //
-  // Her own vacation stays out of it by construction: Request Vacation is
-  // /hr/workspace/leave-management/vacation-request, a self-service form under /hr/workspace,
-  // which is exactly the distinction `leave:read` blurs and this file exists to keep.
+  // The headline used to be the HR Business Partner's: offered "Other Approvals" (excluded
+  // 2026-09-01) and the Leave Management hub (excluded 2026-08-29), both empty for her. Her seat was
+  // retired on 2026-10-08 and holds no HR rail at all (tests/hr-advisory-module-access.test.ts pins
+  // that), so the two verdicts below are the live seats'. LEAVE_MANAGEMENT_HREF was a hub until
+  // 2026-09-05, when the owner ruled no rail row may open a page of modules; its children became rows
+  // under a band of the same name, so leave ADMINISTRATION is asked of the children.
   const leaveAdminRows = (rail: Set<string>) =>
     [...rail].filter((href) => href.startsWith(`${LEAVE_MANAGEMENT_HREF}/`)).sort();
 
-  assert.deepEqual(
-    leaveAdminRows(advisory),
-    [],
-    "the HR Business Partner is offered a leave-administration row. The hub she was excluded " +
-      "from on 2026-08-29 listed 0 of 3 children for her, so promoting those children to rows of " +
-      "their own must not hand her the ones the hub was hiding",
-  );
-  assert.equal(
-    advisory.has(LEAVE_MANAGEMENT_HREF),
-    false,
-    'the HR Business Partner is offered "Leave Management", which listed 0 of 3 children for her ' +
-      "when it was excluded on 2026-08-29. Kept beside the sweep above because the hub is still a " +
-      "PAGE — retiring the row is not the same as deleting the route, and re-adding the door " +
-      "would restore the original defect in one line",
-  );
-
   // ── The other seat keeps leave administration ───────────────────────────────
   // Excluding one seat from a shared row is one edit away from deleting the row. HR Operations
-  // owns leave administration, so this must survive every narrowing aimed at HR Advisory — and,
+  // owns leave administration, so this must survive every narrowing aimed at another seat — and,
   // since 2026-09-05, every promotion that dissolves the row it used to be reached through.
   assert.ok(
     leaveAdminRows(operations).length >= 2,
     `the HR Operations Coordinator is offered ${leaveAdminRows(operations).length} ` +
-      "leave-administration rows. Excluding HR Advisory from a shared row must narrow it for HER " +
-      "only, and retiring the hub must move its children onto this seat's rail rather than take " +
+      "leave-administration rows. Excluding another seat from a shared row must narrow it for that " +
+      "seat only, and retiring the hub must move its children onto this seat's rail rather than take " +
       "leave off it — measured 2026-09-05, she is offered Vacation Report and Vacation Control",
   );
 
@@ -157,8 +119,8 @@ export function runHrNavNoEmptyInboxRowsTests() {
   // ── Other Approvals is off HER rail too, for a DIFFERENT reason ─────────────
   //
   // This is the one assertion in the file that is not about emptiness, and the distinction is the
-  // reason it is spelled out rather than folded into the loop above. HR Advisory is excluded
-  // because the inbox can never hold a row for her. HR Operations is excluded because the owner
+  // reason it is spelled out rather than folded into the loop above. The HR Business Partner was
+  // excluded because the inbox could never hold a row for her. HR Operations is excluded because the owner
   // asked for it off her rail on 2026-09-01 while tidying the seat — "Remove other approvals from
   // the sidebar" — and her queue is NOT empty: she holds resignations and contracts at
   // read/create/update/export, which the block at the end of this file still proves.
@@ -195,7 +157,7 @@ export function runHrNavNoEmptyInboxRowsTests() {
   // any leave-administration page, and she holds no update or approve on resignations, contracts or
   // outstation, so either row would be the empty inbox this file exists to keep off a rail. Her own
   // Request Vacation is /hr/workspace/leave-management/vacation-request, which the prefix test below
-  // does not catch, exactly as for the Business Partner.
+  // does not catch.
   assert.equal(
     resourcing.has(OTHER_APPROVALS_HREF),
     false,
@@ -225,35 +187,7 @@ export function runHrNavNoEmptyInboxRowsTests() {
     );
   }
 
-  // ── Why the exclusion is correct, not merely current ────────────────────────
-  // Tie the verdict to its cause, and RE-DECIDED on 2026-09-01 when she was granted contracts.
-  //
-  // The original reason was "she holds none of resignations/contracts/outstation". That stopped
-  // being true the day the owner asked for Contract Renewal in her sidebar, and this assertion
-  // fired — which is what it is for. The verdict did not change, but the reason had to:
-  //
-  //   the hub is getAwaitingMyActionItems(access, "admin") — an inbox of things awaiting MY
-  //   ACTION. Her contracts grant is READ. She advises on a renewal and cannot decide one, so no
-  //   row in that inbox can ever be hers to act on and the page is still structurally empty for
-  //   her, exactly as before. An empty inbox reads as a broken page, and this one also carries a
-  //   pending-count badge, so it would advertise work that can never become hers.
-  //
-  // So the test now asks the sharper question: not "does she hold the resource at all" but "can
-  // she ACT on it". The day she is granted update or approve on any of the three, the exclusion is
-  // genuinely wrong and this fires again.
-  const advisoryGrants = permissionMatrix["HR Advisory" as PhoenixRole];
-  const actionableActions = ["update", "approve"] as const;
-  for (const resource of OTHER_APPROVALS_MODULES) {
-    const actions = advisoryGrants?.[resource] ?? [];
-    const actionable = actions.filter((action) =>
-      (actionableActions as readonly string[]).includes(action),
-    );
-    assert.equal(
-      actionable.length,
-      0,
-      `HR Advisory now holds ${resource}: ${JSON.stringify(actions)} — including an ACTIONABLE ` +
-        'action. "Other Approvals" is excluded for her because she can decide nothing in it; that ' +
-        "reason no longer holds, so re-decide the row rather than leaving a stale exclusion",
-    );
-  }
+  // The block that tied the Business Partner's exclusion to her holding no ACTIONABLE grant on
+  // resignations, contracts or outstation left with her seat: the owner retired the HR Business Partner seat on 2026-10-08.
+  // The Talent Acquisition seat's same check is above.
 }

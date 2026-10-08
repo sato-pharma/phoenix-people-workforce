@@ -620,8 +620,9 @@ export function runRecruitmentCvExtractionTests() {
     assert.equal(permissionMatrix[role].candidates, undefined, `${role} must still have no candidate PII access`);
   }
   // HR Advisory's broad recruiting access is untouched by this feature.
-  assert.ok(permissionMatrix["HR Advisory"].candidates?.includes("update"));
-  assert.ok(permissionMatrix["HR Advisory"].recruitment?.includes("create"));
+  // The recruiting seat is the Talent Acquisition seat since "move recruiting off the HR Business Partner" (owner, 2026-10-08).
+  assert.ok(permissionMatrix["HR Resourcing"].candidates?.includes("update"));
+  assert.ok(permissionMatrix["HR Resourcing"].recruitment?.includes("create"));
 
   // --- Access registry: the new hiring-manager surface is registered, session-guarded,
   //     and gated on `hiring_interviews` — never the broad `recruitment`/`candidates` ---

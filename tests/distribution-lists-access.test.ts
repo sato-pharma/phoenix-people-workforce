@@ -94,27 +94,26 @@ export function runDistributionListsAccessTests() {
 
   // ── Who reaches the screen at all ────────────────────────────────────────────────────────────
   assert.equal(canManageDistributionLists(superAdmin), true, "Super Admin keeps the screen");
-  assert.equal(canManageDistributionLists(hrbp), true, "the HR Business Partner reaches it — owner 2026-09-11");
-  for (const role of ["HR Operations", "Finance Manager", "CEO", "Medical Rep", "National Sales Manager", "Employee"]) {
+  // The HR Business Partner reached it from 2026-09-11 until the owner retired the HR Business Partner seat on 2026-10-08 ("Leave it
+  // for system administrator now"). The screen is the Super Admin's alone again.
+  assert.equal(canManageDistributionLists(hrbp), false, "the retired HR Business Partner seat no longer reaches it");
+  for (const role of ["HR Operations", "HR Resourcing", "Finance Manager", "CEO", "Medical Rep", "National Sales Manager", "Employee"]) {
     assert.equal(
       canManageDistributionLists(as(role)),
       false,
-      `${role} must not reach the distribution lists — the grant was to the HR Business Partner alone`,
+      `${role} must not reach the distribution lists — they are the Super Admin's`,
     );
   }
 
   // ── 🔴 Scope is an ALLOWLIST, and an unknown key is OUT ──────────────────────────────────────
   assert.equal(distributionListScopeFor(superAdmin), "all", "Super Admin is unscoped");
-  const hrScope = distributionListScopeFor(hrbp);
-  assert.notEqual(hrScope, "all", "the HR Business Partner is scoped, never unscoped");
-  if (hrScope === "all") return;
-
-  assert.equal(canManageDistributionList(hrbp, "hr_team"), true, "she owns the HR Team list");
-  assert.equal(canManageDistributionList(hrbp, "finance_team"), false, "she must not edit the Finance list — HR lists only");
+  // The HR allowlist stays (HR_OWNED_LIST_KEYS) for the next seat given this screen, and still fails
+  // closed: the retired seat holds NO list, not even the HR one it used to own.
+  assert.equal(canManageDistributionList(hrbp, "hr_team"), false, "the retired seat no longer edits the HR Team list");
   assert.equal(
     canManageDistributionList(hrbp, "a_list_invented_next_week"),
     false,
-    "🔴 a list she has never been granted is OUT — an allowlist fails closed, a denylist would have shown it to her by default",
+    "🔴 a list nobody was granted is OUT — an allowlist fails closed",
   );
   assert.equal(canManageDistributionList(superAdmin, "finance_team"), true, "Super Admin still edits everything");
   assert.equal(
@@ -126,7 +125,7 @@ export function runDistributionListsAccessTests() {
   // canManageDistributionList hides this: that helper short-circuits on the gate, so the scope
   // function could hand the HR allowlist to every role in the company and every test would stay
   // green. A future caller that reads the scope without the gate must get nothing.
-  for (const role of ["Medical Rep", "HR Operations", "Finance Manager", "CEO"]) {
+  for (const role of ["Medical Rep", "HR Operations", "HR Advisory", "Finance Manager", "CEO"]) {
     const scope = distributionListScopeFor(as(role));
     assert.notEqual(scope, "all", `${role} must not be unscoped`);
     if (scope === "all") continue;
@@ -163,11 +162,10 @@ export function runDistributionListsAccessTests() {
   // Owner 2026-09-11, asked and answered: a mail carries the HR Business Partner's address when
   // SHE is sending, not whenever the HR Team is addressed. Keying it on recipients meant a Super
   // Admin Bcc'ing HR Team sent a vendor's reply to her instead of to himself.
-  assert.match(
-    SETTINGS,
-    /seatReplyTo:\s*\{[^}]*"HR Advisory":\s*"hrbp@satopharma\.com"/,
-    "the HR Business Partner's seat must carry her reply address",
-  );
+  // The one entry was the HR Business Partner's hrbp@ address; it left with the seat (the owner retired the HR Business Partner seat on 2026-10-08).
+  // The mechanism stays — a seat with an entry gets its own reply address — and is still read from
+  // the SENDER below.
+  assert.match(SETTINGS, /seatReplyTo:\s*\{\}/, "no seat carries a reply address since the HR Business Partner seat was retired");
   assert.match(
     ROUTE_SEND,
     /replyTo:\s*systemEmail\.seatReplyTo\[access\.role\]/,

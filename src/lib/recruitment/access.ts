@@ -33,7 +33,9 @@ export function hiringManagerInterviewType(role: PhoenixRole): InterviewType {
 // Roles that manage the pipeline end to end. The Talent Acquisition seat is NOT in this list: it
 // also opens Inbound Intake Health and Missing Contact Details, which the owner left out of her seat.
 // Her screens read recruitmentWorkRoles below, and her alerts recruitmentAlertRoles.
-export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin", "HR Advisory"];
+// HR Advisory left it on 2026-10-08 when the owner moved recruiting off the HR Business Partner, so
+// those two screens are the Super Admin's alone.
+export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin"];
 // The AUDIENCE of every recruitment alert — new CVs (inbound/recruitment-notify.ts), stale sends
 // (stale-send-check.ts) and the triage backlog (triage-backlog-check.ts). The managers above plus the
 // Talent Acquisition seat, added 2026-10-08 at the owner's answer in chat: "Add her now".
@@ -46,7 +48,6 @@ const recruitmentWorkRoles: readonly PhoenixRole[] = [...recruitmentManageRoles,
 // Acquisition seat reads the whole pool — the owner chose "whole company" for her scope.
 export const recruitmentGlobalReadRoles: readonly PhoenixRole[] = [
   "Super Admin",
-  "HR Advisory",
   "HR Resourcing",
   "CEO",
 ];
@@ -56,7 +57,7 @@ export function canSeeAllRecruitment(access: AccessContext): boolean {
 }
 
 // Inbound Intake Health — the mailbox/queue monitor, and the only page that would say why CVs
-// stopped arriving. Same authority as the rest of the pipeline (Super Admin / HR Advisory), not the
+// stopped arriving. Same authority as the pipeline's managers (the Super Admin), not the
 // broader recruitmentGlobalReadRoles: the CEO does not need plumbing diagnostics. Deliberately NOT
 // recruitmentWorkRoles: the owner left Inbound Intake Health out of the Talent Acquisition seat.
 //

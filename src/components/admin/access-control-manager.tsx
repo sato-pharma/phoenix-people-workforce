@@ -40,11 +40,11 @@ import type {
   PhoenixLine,
 } from "@/lib/admin/access-control";
 import {
+  assignablePhoenixRoles,
   getPayrollScope,
   getSalesScope,
   permissionActions,
   permissionResources,
-  phoenixRoles,
   type BusinessScope,
   type PermissionAction,
   type PermissionMap,
@@ -71,7 +71,7 @@ type DashboardData = {
   lines: readonly PhoenixLine[];
   permissions: PermissionMap;
   permissionOverrides?: PermissionOverrideMarker[];
-  roles: typeof phoenixRoles;
+  roles: readonly PhoenixRole[];
   users: AccessUserRow[];
 };
 
@@ -1314,7 +1314,7 @@ export function AccessControlManager({
                       onChange={(e) => setForm((p) => ({ ...p, role: e.target.value as PhoenixRole }))}
                       value={form.role}
                     >
-                      {phoenixRoles.map((role) => (
+                      {assignablePhoenixRoles.map((role) => (
                         <option key={role} value={role}>
                           {displayTitleForRole(role)}
                         </option>
@@ -1469,7 +1469,7 @@ export function AccessControlManager({
                     value={roleFilter}
                   >
                     <option value="all">All roles</option>
-                    {phoenixRoles.map((role) => (
+                    {assignablePhoenixRoles.map((role) => (
                       <option key={role} value={role}>
                         {displayTitleForRole(role)}
                       </option>
@@ -1787,13 +1787,13 @@ export function AccessControlManager({
                       </tr>
                     </thead>
                     <tbody>
-                    {phoenixRoles.map((role) => (
+                    {assignablePhoenixRoles.map((role) => (
                       <tr className="group border-b border-slate-100/80 transition-colors hover:bg-stone-50/50" key={role}>
                         <td className={permissionRoleCellClass}>
                           <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium border ${
                             role === "Super Admin" || role === "CEO"
                               ? "bg-gradient-to-r from-rose-50 to-orange-50 text-rose-700 border-rose-200/60"
-                              : role === "HR Advisory" || role === "HR Operations" || role === "HR Resourcing" || role === "Finance Manager"
+                              : role === "HR Operations" || role === "HR Resourcing" || role === "Finance Manager"
                               ? "bg-gradient-to-r from-emerald-50 to-emerald-100/50 text-emerald-700 border-emerald-200/60"
                               : "bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border-violet-200/60"
                           }`}>

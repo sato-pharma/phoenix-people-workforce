@@ -39,7 +39,7 @@ export default async function EmployeePortalOffersPage() {
   if (!canRead) {
     return (
       <EmployeePortalEmptyState
-        message="Job offers are available to HR Advisory and Super Admin only."
+        message="Job offers are available to the Talent Acquisition seat and the Super Admin only."
         title="Job Offers Unavailable"
       />
     );

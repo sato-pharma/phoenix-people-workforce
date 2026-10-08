@@ -46,7 +46,9 @@ export async function runCvDatabaseRecruitingBoundaryTests() {
     && (await canAccess(createAccessContext({ hrId: "A-17", role }), "recruitment", "read"));
 
   assert.equal(await opens("HR Operations"), false, "OWNER RULE 2026-09-01: HR Operations must NOT open the CV Database.");
-  assert.equal(await opens("HR Advisory"), true, "HR Advisory owns recruiting and keeps it.");
+  // "move recruiting off the HR Business Partner" (owner, 2026-10-08): recruiting is the Talent Acquisition seat's now, and the owner fenced the CV Database
+  // off that seat on its blueprint — so no HR seat opens it, only the Super Admin.
+  assert.equal(await opens("HR Advisory"), false, "HR Advisory gave recruiting up on 2026-10-08.");
   assert.equal(await opens("Super Admin"), true, "Super Admin keeps it.");
 
   // The grant the owner DID ask for, in the same breath, must survive the block. If a later session
@@ -163,7 +165,8 @@ export async function runCvDatabaseRecruitingBoundaryTests() {
   // The other two seats keep them exactly where they were. A row listed in two sections is one
   // careless edit away from moving for everybody, and for a recruiting seat "Recruitment" is the
   // correct home.
-  for (const seat of ["HR Advisory", "Super Admin"] as const) {
+  // HR Advisory was the other one until the owner retired the HR Business Partner seat on 2026-10-08.
+  for (const seat of ["Super Admin"] as const) {
     const home = railSections(seat as PhoenixRole)
       .find((section) => section.items.some((item) => item.href === "/hr/hiring-documents"));
     assert.equal(

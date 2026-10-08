@@ -70,8 +70,8 @@ export function runEmployeeCvTests() {
   // ── 1. the four seats the owner named, and nobody else ────────────────────────────────────
   assert.deepEqual(
     [...employeeCvReaderRoles].sort(),
-    ["HR Advisory", "HR Operations", "SFE Manager", "Super Admin"],
-    "the owner named Super Admin, SFE Manager, the HR Business Partner (HR Advisory) and HR Operations",
+    ["HR Operations", "SFE Manager", "Super Admin"],
+    "the owner named Super Admin, SFE Manager, the HR Business Partner and HR Operations; the HR Business Partner seat was retired on 2026-10-08",
   );
 
   for (const role of employeeCvReaderRoles) {

@@ -83,22 +83,25 @@ export function runRecruitmentReadinessTests() {
 
   assert.ok(permissionMatrix["Super Admin"].recruitment?.includes("approve"));
   assert.ok(permissionMatrix["Super Admin"].candidates?.includes("import"));
-  assert.ok(permissionMatrix["HR Advisory"].recruitment?.includes("create"));
-  assert.ok(permissionMatrix["HR Advisory"].candidates?.includes("read"));
-  // HR Forms is hers, so she writes hiring documents.
-  assert.ok(permissionMatrix["HR Advisory"].employee_documents?.includes("update"));
-  // But APPROVING leave is not hers — that moved to HR Operations with the time_attendance
-  // function when the single Talent Acquisition seat was split on 2026-08-28. This pair is the
-  // assertion that fires if a future change collapses the two bundles back into one HR role.
-  assert.ok(!permissionMatrix["HR Advisory"].leave?.includes("update"), "approving leave is HR Operations' function, not HR Advisory's");
+  // The recruiting seat is the Talent Acquisition seat since "move recruiting off the HR Business Partner" (owner, 2026-10-08).
+  assert.ok(permissionMatrix["HR Resourcing"].recruitment?.includes("create"));
+  assert.ok(permissionMatrix["HR Resourcing"].candidates?.includes("read"));
+  // HR Advisory gave recruiting up on 2026-10-08 and the owner retired the seat the same evening:
+  // the dormant key holds no recruitment, no hiring documents and no leave administration.
+  assert.ok(!permissionMatrix["HR Advisory"].recruitment?.includes("create"), "the retired HR Business Partner key holds recruitment");
+  assert.equal(permissionMatrix["HR Advisory"].employee_documents, undefined, "the retired HR Business Partner key holds hiring documents");
+  // APPROVING leave is HR Operations' — it moved there with the time_attendance function when the
+  // single Talent Acquisition seat was split on 2026-08-28 — and not the recruiting seat's. This pair
+  // is the assertion that fires if a future change collapses the HR bundles back into one HR role.
+  assert.ok(!permissionMatrix["HR Resourcing"].leave?.includes("update"), "approving leave is HR Operations' function, not the Talent Acquisition seat's");
   assert.ok(permissionMatrix["HR Operations"].leave?.includes("update"));
   // Self-service payslip access (own payslip only, matching Financial Advisor) — without this,
   // an HR seat hits an uncaught Forbidden error on /payslips. It comes from HR_SEAT_SELF_SERVICE,
   // not from any HR function, so it must hold for BOTH bundles: composing a role purely from HR
   // functions produced a seat that could administer everyone's payslip except her own.
-  assert.ok(permissionMatrix["HR Advisory"].payslips?.includes("read"));
+  assert.ok(permissionMatrix["HR Resourcing"].payslips?.includes("read"));
   assert.ok(permissionMatrix["HR Operations"].payslips?.includes("read"));
-  assert.ok(permissionMatrix["HR Advisory"].leave?.includes("create"), "she must be able to request her own vacation");
+  assert.ok(permissionMatrix["HR Resourcing"].leave?.includes("create"), "she must be able to request her own vacation");
   assert.deepEqual(permissionMatrix.CEO.recruitment, undefined);
   assert.deepEqual(permissionMatrix.CEO.candidates, undefined);
   assert.deepEqual(permissionMatrix["District Manager"].recruitment, undefined);

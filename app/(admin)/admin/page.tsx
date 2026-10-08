@@ -30,7 +30,7 @@ const DEDICATED_COMMAND_CENTER_ROLES = new Set<PhoenixRole>([
   "CEO",
   "SFE Manager",
   "Finance Manager",
-  "HR Advisory",
+  // HR Advisory left when the owner retired the HR Business Partner seat on 2026-10-08.
   "HR Operations",
   // The Talent Acquisition seat (2026-10-08) — same redirect to her own HR command centre.
   "HR Resourcing",

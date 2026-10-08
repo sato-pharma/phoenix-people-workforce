@@ -366,17 +366,18 @@ export function runNavigationActivePathTests() {
   // The retired Talent Acquisition seat held all three of these at once. Its two
   // successors do not, and asserting them separately is the point: a bundle that
   // silently inherited the whole retired sidebar would pass a merged assertion and
-  // fail these. Recruitment belongs to HR Advisory; Leave Management to HR Operations;
-  // People Management is permission-gated, so both reach it through their own grants.
-  assertIncludesAll(
+  // fail these. Recruitment belonged to HR Advisory until the owner moved it to the Talent
+  // Acquisition seat on 2026-10-08, and the same evening retired HR Advisory altogether ("no more HR
+  // business partner"); Leave Management is HR Operations'; People Management is permission-gated,
+  // so each live seat reaches it through its own grants. The retired key reaches none of the three.
+  assertExcludesAll(
     adminBandsFor("HR Advisory"),
-    ["hub-people-management", "hub-recruitment-hiring"],
-    "HR Advisory must see the recruiting-side admin modules",
+    ["hub-people-management", "hub-recruitment-hiring", "leave-management"],
+    "the retired HR Business Partner key must reach no HR module band",
   );
   assert.ok(
-    !adminBandsFor("HR Advisory").includes("leave-management"),
-    "HR Advisory must NOT see Leave Management — approving leave is HR Operations' duty, and " +
-      "inheriting it here is exactly the wholesale-sidebar copy this split exists to prevent",
+    adminBandsFor("HR Resourcing").includes("hub-recruitment-hiring"),
+    "the Talent Acquisition seat must see Recruitment & Hiring — the pipeline is hers",
   );
   assertIncludesAll(
     adminBandsFor("HR Operations"),
@@ -385,7 +386,7 @@ export function runNavigationActivePathTests() {
   );
   assert.ok(
     !adminBandsFor("HR Operations").includes("hub-recruitment-hiring"),
-    "HR Operations must NOT see Recruitment & Hiring — it is HR Advisory's module",
+    "HR Operations must NOT see Recruitment & Hiring — it is the Talent Acquisition seat's module",
   );
   // …and not a single one of its pages by another door. She holds `employee_documents`, which is
   // the grant Hiring Documents and HR Forms are gated on, so those two cards would have promoted

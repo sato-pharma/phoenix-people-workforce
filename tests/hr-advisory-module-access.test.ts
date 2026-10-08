@@ -1,53 +1,57 @@
 /**
- * The HR Business Partner's 2026-09-01 module opening — and the one boundary inside it.
+ * THE HR BUSINESS PARTNER SEAT IS RETIRED — and stays retired without anyone remembering to.
  *
- * WHAT THE OWNER ASKED FOR. Seventeen modules were to appear in her account. Four already worked
- * and only lacked a sidebar row; seven were already there; six needed a decision, which he gave.
- * One of those six came with a rule attached, and that rule is what most of this file defends:
+ * The owner, 2026-10-08: first "move recruiting off the HR Business Partner", then the same evening
+ * "no more HR business partner. This title, no more … everything regarding recruiting is for the
+ * talent acquisition". Asked who takes the rest of the seat's work — engagement and retention, the
+ * hiring paperwork, the workforce reports — he answered "Leave it for system administrator now".
  *
- *     "in payslips, you will make her able to see the district managers, the Medicare reps,
- *      and herself only in the payslips."
+ * WHAT "RETIRED" MEANS HERE, AND WHY IT IS NOT A DELETION. The permission key "HR Advisory" stays in
+ * `phoenixRoles` as a DORMANT label (`retiredPhoenixRoles`). Every RESTRICTION written against it —
+ * the salary redaction for her own manager chain above all — keeps compiling and keeps applying to
+ * any stray stored copy of the role. What is gone is every GRANT: the matrix entry is empty, the
+ * bundle is gone, no seat set or navigation list names it, and nobody can be given it.
  *
- * WHY THAT RULE NEEDS A TEST AND THE OTHER SIXTEEN DO NOT. Every other item is a link appearing or
- * a gate widening: if one breaks, a page 404s or a row vanishes, and somebody says so within a day.
- * This one is the opposite shape. If the audience filter silently stops filtering, nothing looks
- * wrong — the page renders, the dropdown fills, the numbers are real. It just quietly shows her
- * every salary in the company, including the managers above her. A failure that LOOKS like success
- * is exactly the kind this repository writes tests for.
+ * WHY THIS FILE KEEPS ITS OLD NAME. It pinned the seat's 2026-09-01 module opening, and it is
+ * registered in tests/run-tests.ts under that name. It now pins the opposite, which is what a reader
+ * landing on the old name most needs to learn.
  *
- * THE TWO HALVES THAT MUST AGREE. The same sentence governs two screens: the Payslips Center rows
- * and the Employee Directory's salary columns. They deliberately share ONE list
- * (HR_ADVISORY_COMPENSATION_JOB_TITLES) so they cannot drift, and the test below asserts the
- * agreement rather than checking each against a copy of the answer.
- *
- * MEASURED AGAINST PRODUCTION when it was written: 796 published payslip rows in total, of which
- * 676 (144 people) are District Sales Managers and Medical Representatives. Those figures are NOT
- * asserted here — they move every payroll month, and a test that pins a count becomes a test that
- * fails for being right. What is asserted is the PREDICATE that produced the split.
+ * The four failures it watches for are each silent:
+ *   1. A grant creeping back onto the empty matrix entry — the role is in the type, so an edit
+ *      that re-adds `"HR Advisory": hrBundleGrants(...)` compiles without a murmur.
+ *   2. The picker offering the seat again — `phoenixRoles.map` is the natural way to list roles.
+ *   3. The server accepting it even if the picker does not — a hidden option is not a boundary.
+ *   4. A screen, a seat set or a role list naming it again, so a stray holder lands somewhere.
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import {
+  HR_FUNCTIONS,
   HR_ROLE_BUNDLES,
+  HR_SEAT_JOB_TITLES,
   hrBundleGrants,
-  type HrFunctionKey,
+  UNASSIGNED_HR_FUNCTIONS,
 } from "../src/lib/auth/hr-functions.ts";
 import { canViewManagerCvEngagement } from "../src/lib/recruitment/manager-cv-engagement.ts";
 import {
+  adminShellEmployeeRoles,
+  assignablePhoenixRoles,
   buildPermissionLookup,
-  HR_ADVISORY_COMPENSATION_JOB_TITLES,
-  matchesHrAdvisoryCompensationAudience,
+  hrAuthorityRoles,
+  hrNamespaceRoles,
   permissionMatrix,
+  phoenixCompanyJobTitles,
+  phoenixRoles,
+  retiredPhoenixRoles,
   type AccessContext,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
-import {
-  HR_ADVISORY_PAYSLIP_JOB_TITLES,
-  isPayslipRowVisibleToAudience,
-  resolvePayslipCenterAudience,
-} from "../src/lib/payroll/payslip-center.ts";
+import { resolvePayslipCenterAudience } from "../src/lib/payroll/payslip-center.ts";
+
+const RETIRED: PhoenixRole = "HR Advisory";
 
 function viewer(role: PhoenixRole, hrId: string | null = "HR-010"): AccessContext {
   return { hrId, loginId: hrId, role, scope: "self", source: "session" };
@@ -71,205 +75,117 @@ function hrRowsFor(role: PhoenixRole): { href: string; label: string; section: s
   return rows;
 }
 
+/** The body of one top-level function in a source file, from its signature to the next one. */
+function functionBody(source: string, signature: string): string {
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `${signature} must still exist`);
+  const next = source.indexOf("\nexport ", start + signature.length);
+  const nextPrivate = source.indexOf("\nasync function ", start + signature.length);
+  const ends = [next, nextPrivate].filter((index) => index > 0);
+  return source.slice(start, ends.length ? Math.min(...ends) : undefined);
+}
+
 export async function runHrAdvisoryModuleAccessTests() {
-  // ── 1. The payslip audience ────────────────────────────────────────────────
-  const advisory = resolvePayslipCenterAudience(viewer("HR Advisory"));
-  assert.ok(advisory, "the HR Business Partner must reach the Payslips Center at all");
-  assert.equal(advisory.kind, "job-titles", "she gets a NAMED audience, never company scope");
-
-  const operations = resolvePayslipCenterAudience(viewer("HR Operations", "HR-011"));
-  assert.deepEqual(operations, { kind: "company" }, "HR Operations keeps company-wide payroll sight");
-  assert.equal(
-    resolvePayslipCenterAudience(viewer("Medical Rep", "A-40")),
-    null,
-    "a rep has no Payslips Center audience and must be sent to her own payslip",
-  );
-
-  // The two screens must be governed by ONE list. Asserted by identity, not by re-listing the
-  // titles: a copy would agree with itself while the screens disagreed with each other.
+  // ── 1. It is retired, and it is the only retired key ───────────────────────
+  assert.deepEqual([...retiredPhoenixRoles], [RETIRED], "the HR Business Partner seat is the one retired key");
+  assert.ok(phoenixRoles.includes(RETIRED), "the key stays in the type so its restrictions keep compiling");
+  assert.equal(assignablePhoenixRoles.includes(RETIRED), false, "🔴 nobody may be given the retired seat");
   assert.deepEqual(
-    [...HR_ADVISORY_PAYSLIP_JOB_TITLES],
-    [...HR_ADVISORY_COMPENSATION_JOB_TITLES],
-    "the Payslips Center and the Employee Directory must share one job-title list",
+    [...assignablePhoenixRoles],
+    phoenixRoles.filter((role) => role !== RETIRED),
+    "every other role stays assignable — retiring one seat must not hide a live one",
   );
+  for (const live of ["HR Operations", "HR Resourcing", "Super Admin"] as const) {
+    assert.ok(assignablePhoenixRoles.includes(live), `${live} must still be offered in User Access`);
+  }
 
-  // ── 2. The predicate itself ────────────────────────────────────────────────
-  const see = (jobTitle: string | null, hrId: string | null = "A-99") =>
-    isPayslipRowVisibleToAudience(advisory, { hrId, jobTitle });
-
-  assert.equal(see("District Sales Manager"), true, "a district manager is hers to see");
-  assert.equal(see("Medical Representative"), true, "a medical rep is hers to see");
-  // The column is free text and already carries casing drift elsewhere ("Sfe Manager" beside "SFE
-  // Manager"), so a case-sensitive match would drop real rows — and a dropped payslip row reads as
-  // "this person was never paid" rather than as a bug.
-  assert.equal(see("  medical representative "), true, "casing and padding must not hide a row");
-
-  // The refusals are the point of the rule. Each of these is somebody's real salary.
-  assert.equal(see("National Sales Manager"), false, "her own management chain stays closed");
-  assert.equal(see("Regional Sales Manager"), false, "a title that merely LOOKS like a district row stays closed");
-  assert.equal(see("Finance Manager"), false, "finance stays closed");
-  assert.equal(see("HR Operations Coordinator"), false, "the other HR seat stays closed");
-  assert.equal(see(null), false, "a row with no job title is not admitted by default");
-
-  // "and herself". She had no salary record on the day this shipped (she joined 2026-09-01), so
-  // this is the half that cannot be verified by looking at production — only here.
-  assert.equal(see("HR Business Partner", "HR-010"), true, "her own record is hers to see");
-  // HR ids are MIXED CASE in this database and a plain equality has under-returned by 28%
-  // elsewhere, so the comparison must survive either spelling.
-  assert.equal(see("HR Business Partner", "hr-010"), true, "her own record matches case-insensitively");
+  // ── 2. It holds nothing an ordinary employee does not ──────────────────────
+  // Its own entry is empty. The hard boundaries then give EVERY role the self-service floor (open a
+  // support request, ask for a business card), so the honest bound is "nothing beyond Employee".
+  const granted = (role: PhoenixRole) =>
+    Object.entries(buildPermissionLookup(permissionMatrix, role))
+      .filter(([, allowed]) => allowed === true)
+      .map(([key]) => key);
+  const employeeFloor = new Set(granted("Employee"));
+  const beyondFloor = granted(RETIRED).filter((key) => !employeeFloor.has(key));
+  assert.deepEqual(beyondFloor, [], "🔴 the retired seat may hold nothing an ordinary Employee does not");
+  for (const key of ["recruitment:read", "employees:read", "retention:read", "payslips:read", "organogram:read"]) {
+    assert.equal(granted(RETIRED).includes(key), false, `${key} was hers and must stay gone`);
+  }
+  assert.equal(RETIRED in HR_ROLE_BUNDLES, false, "its bundle is gone from hr-functions.ts");
+  assert.equal(RETIRED in HR_SEAT_JOB_TITLES, false, "its title left the seat-title map");
   assert.equal(
-    see("HR Business Partner", "HR-999"),
+    (phoenixCompanyJobTitles as readonly string[]).includes("HR Business Partner"),
     false,
-    "another HR Business Partner is NOT her — the self match is by HR_ID, never by shared title",
+    'the owner: "This title, no more" — it left the company job-title list',
+  );
+  assert.equal(resolvePayslipCenterAudience(viewer(RETIRED)), null, "the Payslips Center audience it had is gone");
+
+  // ── 3. The work it held is the Super Admin's, NAMED rather than dropped ────
+  // "Leave it for system administrator now": the four functions only she held stay in the catalogue
+  // as UNASSIGNED_HR_FUNCTIONS, so handing them to a seat later is a move, not a rebuild.
+  const held = new Set<string>(Object.values(HR_ROLE_BUNDLES).flatMap((bundle) => [...bundle]));
+  for (const key of UNASSIGNED_HR_FUNCTIONS) {
+    assert.equal(held.has(key), false, `${key} is listed as unassigned but a seat holds it — take it off the list`);
+    assert.ok(HR_FUNCTIONS.some((fn) => fn.key === key), `${key} must still be in the catalogue`);
+  }
+  assert.ok(
+    (HR_ROLE_BUNDLES["HR Resourcing"] as readonly string[]).includes("recruiting"),
+    "recruiting is the Talent Acquisition seat's — the owner: everything regarding recruiting is hers",
+  );
+  assert.equal(
+    (HR_ROLE_BUNDLES["HR Operations"] as readonly string[]).includes("recruiting"),
+    false,
+    "and it did not land on HR Operations by accident",
   );
 
-  // A company viewer is filtered by nothing at all.
-  assert.equal(
-    isPayslipRowVisibleToAudience({ kind: "company" }, { hrId: "AA", jobTitle: "CEO" }),
-    true,
-    "company scope must keep seeing every row",
-  );
-
-  // ── 3. The same rule on the Employee Directory's salary columns ────────────
-  // Opened to her in the same breath, and it carries base/basic/gross/net columns — so without
-  // this the payslip restriction would be undone by the screen next to it.
-  const inAudience = (jobTitle: string, hrId = "A-99") =>
-    matchesHrAdvisoryCompensationAudience({ hrId, jobTitle }, "HR-010");
-  assert.equal(inAudience("Medical Representative"), true, "she sees a rep's pay in the directory too");
-  assert.equal(inAudience("National Sales Manager"), false, "and not an NSM's, on either screen");
-  assert.equal(inAudience("HR Business Partner", "HR-010"), true, "her own pay, in the directory too");
-
-  // ── 4. The grants that were widened, and the one that was NOT ──────────────
-  const advisoryGrants = hrBundleGrants("HR Advisory");
-  assert.ok(advisoryGrants.contracts?.includes("read"), "Contract Renewal needs contracts:read");
-  assert.ok(advisoryGrants.hr_calendar?.includes("read"), "Company Calendar needs hr_calendar:read");
-  // Refused on 2026-08-28 and still refused: hr_calendar:update saves an HR decision on a Field
-  // Workforce Compliance recommendation, the PATCH accepts payroll recommendations as well as leave
-  // ones, and "may not approve salary changes" is a named boundary in her job description.
-  assert.equal(
-    advisoryGrants.hr_calendar?.includes("update"),
-    false,
-    "hr_calendar:update must stay refused — read is sight of the calendar, update decides payroll recommendations",
-  );
-  assert.equal(
-    advisoryGrants.contracts?.includes("update"),
-    false,
-    "she advises on renewals and cannot change one — contract writes stay with HR Operations",
-  );
-  assert.equal(
-    advisoryGrants.employees?.includes("update"),
-    false,
-    "the Employee Directory row moved to employees:read; the write grant must NOT have moved with it",
-  );
-  // The widening lives in workforce_insight, which HR Advisory alone holds. If it is ever moved to
-  // a shared function, HR Operations silently gains it — this is the assertion that would notice.
-  // Widened to HrFunctionKey deliberately: the bundle is a literal tuple, so TypeScript refuses
-  // `.includes("workforce_insight")` on it outright. That refusal is the proof today — but it
-  // disappears the moment someone adds the function, which is exactly when the check has to fire.
-  // The runtime assertion is what survives that edit, so it is the one kept.
-  assert.equal(
-    (HR_ROLE_BUNDLES["HR Operations"] as readonly HrFunctionKey[]).includes("workforce_insight"),
-    false,
-    "workforce_insight must stay HR-Advisory-only, or the contracts/hr_calendar widening leaks",
-  );
-
-  // ── 5. Manager Engagement: a role set, amended for one seat only ───────────
-  assert.equal(canViewManagerCvEngagement(viewer("HR Advisory")), true, "owner amendment 2026-09-01");
+  // ── 4. No seat set, role list or screen names it ───────────────────────────
+  assert.equal(hrNamespaceRoles.has(RETIRED), false, "not an /hr namespace seat");
+  assert.equal((adminShellEmployeeRoles as readonly string[]).includes(RETIRED), false, "not an admin-shell seat");
+  assert.equal((hrAuthorityRoles as readonly string[]).includes(RETIRED), false, "not an HR authority");
+  // The /hr rail renders only for hrNamespaceRoles (asserted just above), so its open rows — Report
+  // It, Excuses, the command centre — never reach her. What must hold on top of that is that no row
+  // NAMES her or opens on a grant she holds, so re-adding her to the namespace alone lands nowhere.
+  const namedOrGranted = hrRowsFor(RETIRED).filter((row) => {
+    const item = getNavigationSections("hr").flatMap((section) => section.items).find((i) => i.href === row.href);
+    return Boolean(item?.roles?.length) || Boolean(item?.permissions?.length);
+  });
+  assert.deepEqual(namedOrGranted, [], "🔴 no /hr row names the retired seat or opens on a grant it holds");
+  assert.equal(canViewManagerCvEngagement(viewer(RETIRED)), false, "Manager CV Engagement left with recruiting");
+  assert.equal(canViewManagerCvEngagement(viewer("HR Resourcing")), true, "the Talent Acquisition seat opens it");
   assert.equal(
     canViewManagerCvEngagement(viewer("HR Operations", "HR-011")),
     false,
-    "the amendment was HR Advisory alone — 'add HR' would have been the easy misreading",
+    "it went to Talent Acquisition, not to 'HR' — HR Operations runs no pipeline",
   );
   assert.equal(canViewManagerCvEngagement(viewer("SFE Manager", "A-12")), false, "still NOT SFE");
 
-  // ── 6. Every module he listed is now a row she is offered ──────────────────
-  const rows = hrRowsFor("HR Advisory");
-  const byHref = new Map(rows.map((row) => [row.href, row]));
-  const required = [
-    "/hr/employees",
-    "/hr/reports/vacancies",
-    "/hr/contracts",
-    "/hr/probation",
-    "/hr/probation/dashboard",
-    "/hr/workspace/leave-management/vacation-request",
-    "/hr/workspace/excuses",
-    "/hr/admin/weekly-plans/calendar",
-    "/hr/recruitment/manager-engagement",
-    "/hr/hiring-documents",
-    "/hr/hiring-pack",
-    "/hr/recruitment",
-    "/hr/recruitment/returned-cvs",
-    "/hr/hr-calendar",
-    "/hr/admin/payslips-center",
-    "/hr/coaching/analytics",
-    "/hr/admin/screening-questions",
-  ];
-  for (const href of required) {
-    assert.ok(byHref.has(href), `${href} must be a row the HR Business Partner is offered`);
-  }
+  // ── 5. The SERVER refuses it, not only the picker ──────────────────────────
+  const accessControl = readFileSync("src/lib/admin/access-control.ts", "utf8");
+  const core = functionBody(accessControl, "async function upsertAccessUserCore(");
+  // The whole guard, not a fragment of it: "false && retiredPhoenixRoles.has(role)" contains the
+  // fragment and refuses nobody — proven by breaking it that way while this test was written.
+  const refusal = core.search(/\n\s*if \(retiredPhoenixRoles\.has\(role\)\) \{\s*throw new Error\(/);
+  const firstWrite = core.indexOf(".from(");
+  assert.ok(refusal > 0, "🔴 upsertAccessUserCore must refuse a retired role — every account write passes through it");
+  assert.ok(firstWrite < 0 || refusal < firstWrite, "and it must refuse BEFORE it writes anything");
+  const override = functionBody(accessControl, "export async function upsertRolePermissionOverride(");
+  assert.ok(
+    /\n\s*if \(retiredPhoenixRoles\.has\(permissionRole\)\) \{\s*throw new Error\(/.test(override),
+    "a permission override on the retired seat must be refused — it would re-grant the empty entry",
+  );
+  assert.match(accessControl, /roles:\s*assignablePhoenixRoles/, "the dashboard hands the screen the assignable list");
+  const manager = readFileSync("src/components/admin/access-control-manager.tsx", "utf8");
+  assert.equal(/\bphoenixRoles\.map\(/.test(manager), false, "User Access must never list roles from phoenixRoles again");
+  assert.ok(manager.includes("assignablePhoenixRoles.map("), "User Access lists assignablePhoenixRoles");
 
-  // ── 7. Where they were grouped ─────────────────────────────────────────────
-  // The grouping is the half of the answer he asked to see before any of it was built, so a later
-  // edit that scatters probation back across two sections should have to say so out loud.
-  // Two sections, not one. They were briefly merged as "Performance & Probation"; the owner split
-  // them the same day ("separate performance from probation"), so a later edit that quietly folds
-  // them back together has to fail here rather than just look tidier in the file.
-  assert.equal(byHref.get("/hr/probation")?.section, "Probation", "Probation moved out of People");
-  assert.equal(byHref.get("/hr/probation/dashboard")?.section, "Probation");
-  assert.equal(byHref.get("/hr/coaching")?.section, "Performance");
-  assert.equal(byHref.get("/hr/coaching/analytics")?.section, "Performance");
-  assert.equal(byHref.get("/hr/recruitment/returned-cvs")?.section, "Recruitment");
-  assert.equal(byHref.get("/hr/admin/screening-questions")?.section, "Recruitment");
-  assert.equal(byHref.get("/hr/recruitment/manager-engagement")?.section, "Recruitment");
-  assert.equal(byHref.get("/hr/admin/weekly-plans/calendar")?.section, "Attendance & Calendars");
-  assert.equal(byHref.get("/hr/hr-calendar")?.section, "Attendance & Calendars");
-  assert.equal(byHref.get("/hr/admin/payslips-center")?.section, "Payroll");
-  assert.equal(byHref.get("/hr/employees")?.section, "People");
-  assert.equal(byHref.get("/hr/contracts")?.section, "People");
-
-  // ── What the owner cut back out ───────────────────────────────────────────
-  // Three rows reached her rail and were then removed on 2026-09-01: "I think there are irrelevant
-  // modules... I don't want any crowd... remove them from this sidebar", and "I told you to remove
-  // the workforce compliance. Remove it."
-  //
-  // All three are DELETED outright. The two recruitment rows were always safe to delete, because
-  // `recruitment` is her grant alone and no other seat rendered them. Workforce Compliance was
-  // first excluded BY ROLE instead — it gates on hr_calendar:read, which HR Operations holds
-  // too, so deleting the line would have reached a seat the owner had not named — and then he
-  // was asked and said "yes remove it". Section 8 below pins the Operations half.
-  for (const href of [
-    "/hr/recruitment/contact-review",
-    "/hr/recruitment/intake-health",
-    "/hr/admin/field-workforce-compliance",
-  ]) {
-    assert.equal(
-      byHref.has(href),
-      false,
-      `${href} was cut from the HR Business Partner's sidebar on 2026-09-01 — do not re-add it`,
-    );
-  }
-
-  // ── 8. What HR Operations must NOT have gained ────────────────────────────
+  // ── 6. What HR Operations keeps — the live seat beside it ──────────────────
   const operationsRows = new Set(hrRowsFor("HR Operations").map((row) => row.href));
   assert.equal(
     operationsRows.has("/hr/recruitment/manager-engagement"),
     false,
     "Manager Engagement must not appear for HR Operations",
   );
-  // The Planning Calendar came out of a merge collision, and it is worth saying which way round.
-  // This line used to assert Operations must NOT have it, quoting the workforce_insight comment
-  // in hr-functions.ts. On the other seat's branch, at the same hour, the owner was naming
-  // /admin/weekly-plans/calendar in his own list of modules to open on HER rail. Both statements
-  // were true of their own branch and false of the merge, and only the suite could see it: the
-  // two branches touch different regions of different files and git reported nothing.
-  //
-  // She holds weekly_plans:read through `time_attendance` — attached there rather than borrowed
-  // from workforce_insight, argued at length at its own place in hr-functions.ts, and he was told
-  // before agreeing that it lets her see where every medical rep plans to be.
-  //
-  // What is asserted instead is the boundary that actually still holds: READ and nothing else.
-  // Approving or rejecting a plan belongs to the sales ladder, and a write action reaching an HR
-  // seat is the failure this line now watches for.
   assert.ok(
     operationsRows.has("/hr/admin/weekly-plans/calendar"),
     "the Planning Calendar must render for HR Operations — owner instruction, 2026-09-01",
@@ -283,16 +199,14 @@ export async function runHrAdvisoryModuleAccessTests() {
   );
   assert.ok(
     operationsRows.has("/hr/admin/payslips-center"),
-    "the Payslips Center row must render for HR Operations too — she is the company-wide viewer",
+    "the Payslips Center row must render for HR Operations — she is the company-wide viewer",
   );
-  // Workforce Compliance is gone for BOTH seats. It was excluded for Advisory alone first, since
-  // hr_calendar:read is shared and deleting the line would have reached a seat the owner had not
-  // named; he was then asked directly and said "yes remove it". Pinned for Operations as well so
-  // that a later edit restoring the row has to justify it against the instruction, not just
-  // against Advisory's half of it.
   assert.equal(
     operationsRows.has("/hr/admin/field-workforce-compliance"),
     false,
-    "Workforce Compliance was removed from BOTH HR rails on 2026-09-01 — field-force compliance is not an HR seat's work",
+    "Workforce Compliance was removed from the HR rail on 2026-09-01 — field-force compliance is not an HR seat's work",
   );
+  for (const href of ["/hr/admin/distribution-lists", "/hr/admin/sato-email", "/hr/sales/territory-management"]) {
+    assert.equal(operationsRows.has(href), false, `${href} existed for the retired seat alone and must not reappear`);
+  }
 }

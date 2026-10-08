@@ -9,6 +9,8 @@ import { canAccessSystemAdministratorWorkspace, type AccessContext } from "@/lib
  * resource also opens the old composer, the system email templates and the Telegram console, so it
  * cannot express "this module and nothing else".
  */
+// The HR Business Partner lost this when the owner retired the HR Business Partner seat on 2026-10-08 ("Leave it for system
+// administrator now"). The composer is the Super Admin's alone again.
 export function canUseSatoEmail(access: Pick<AccessContext, "role" | "scope">): boolean {
-  return canAccessSystemAdministratorWorkspace(access) || access.role === "HR Advisory";
+  return canAccessSystemAdministratorWorkspace(access);
 }

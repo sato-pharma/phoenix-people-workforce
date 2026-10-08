@@ -35,7 +35,7 @@ export default async function EmployeePortalIntakeHealthPage() {
   if (!canViewInboundIntakeHealth(access)) {
     return (
       <EmployeePortalEmptyState
-        message="Inbound intake health is available to HR Advisory and Super Admin only."
+        message="Inbound intake health is available to the Talent Acquisition seat and the Super Admin only."
         title="Intake Health Unavailable"
       />
     );

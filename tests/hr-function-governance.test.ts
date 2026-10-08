@@ -8,6 +8,7 @@ import {
   HR_FUNCTIONS,
   HR_ROLE_BOUNDARIES,
   HR_ROLE_BUNDLES,
+  UNASSIGNED_HR_FUNCTIONS,
   type HrBundleName,
   type HrFunctionKey,
 } from "../src/lib/auth/hr-functions.ts";
@@ -128,7 +129,7 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "app/(admin)/admin/deductions/page.tsx",
   "app/(admin)/admin/recruitment-hiring/page.tsx",
   "app/(admin)/attendance/page.tsx",
-  "app/employee-portals/account-activation/page.tsx",
+  // app/employee-portals/account-activation/page.tsx left this list on 2026-10-08: it named only the retired HR Advisory seat.
   // Names "HR Advisory" and "HR Business Partner" in a COMMENT only, and grants nothing.
   //
   // Reviewed verdict: it hands the seat NOTHING. The page's gate is `canSendWhatsAppTemplate`,
@@ -141,22 +142,7 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // Listed rather than reworded around, because the file genuinely does discuss the seat and this
   // set is the register of exactly that.
   "app/(admin)/recruitment/whatsapp-templates/page.tsx",
-  // Names HR Advisory in TERRITORY_COMPANY_WIDE_NON_SALES_ROLES, added 2026-09-07 with the owner's
-  // instruction to put Territory Management on her sidebar. Reviewed verdict: it GRANTS reach, and
-  // it is listed for exactly that reason - it is the string that decides she sees the WHOLE brick
-  // map rather than an empty one.
-  //
-  // It is not a permission. `territory:read` is what admits her, composed onto workforce_insight and
-  // asserted by the page and all four read routes; this set only answers "which areas", after the
-  // gate. It exists because every other reader of that function is on the sales ladder, so the scope
-  // resolver asks resolveSalesAccessScope - which answers NONE for her, and NONE means EMPTY sets,
-  // not "everything". Without this she would pass the gate and read a blank map.
-  //
-  // Company-wide is the right bound and withholds nothing the job description reserves: the map
-  // carries bricks, areas, coordinates, coverage counts and a rep-residence recommendation, and no
-  // money at all. The two privileged acts on the module stay shut - pinning is sales:import,
-  // publishing a public preview link is sales:export, and she holds neither.
-  "src/lib/territory-management/service.ts",
+  // src/lib/territory-management/service.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   // Names HR Operations in canViewEmployeeAttendanceReport, added 2026-09-17 on the owner's ruling
   // that she sees the requester's attendance and leave history beside the requests she approves in
   // the Approvals Hub. Reviewed verdict: it GRANTS reach — one person's attendance report, anyone —
@@ -228,14 +214,7 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "app/api/notifications/contract-renewals/route.ts",
   "src/config/system-navigation.ts",
   "src/lib/admin/access-control.ts",
-  // Names "HR Advisory" in a comment, added 2026-09-04. Reviewed verdict: it GRANTS NOTHING and
-  // GATES NOTHING — the seat appears once, in the header prose explaining why this module sits
-  // beside displayTitleForRole(), and nowhere in the code. The module maps an ACCOUNT (hr_id
-  // "b-10") to the job title the shell prints for that person, and its only consumer is a
-  // `roleLabel` string. `access.role` is untouched, so every gate still reads the permission key;
-  // the reason it is keyed on the account rather than the role is precisely that admin-HR shares
-  // the Super Admin key and must keep reading Super Admin.
-  "src/lib/auth/account-job-titles.ts",
+  // src/lib/auth/account-job-titles.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   "src/lib/auth/hr-functions.ts",
   "src/lib/auth/permissions.ts",
   // Names HR Operations in mapPhoenixRoleToAccessScopeType, which fills the access_scope COLUMN
@@ -244,48 +223,10 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // scopeForRole misleads anyone auditing user_access_profiles — keeping the two in step is for
   // legibility, not enforcement. SFE Manager already sits that way (scope "self", mirror
   // COMPANY_READ), which is why this is a per-seat note and not a general invariant.
-  // Names HR Advisory in systemEmail.seatReplyTo, added 2026-09-11. Reviewed verdict: it GRANTS
-  // NOTHING. The value is a Reply-To address chosen by the SENDER's seat when that seat composes a
-  // mail by hand — it opens no page, widens no query, and reads no record on her behalf. It is
-  // listed because the string is a seat name, which is what Rule 10 pins, and because a reply
-  // address is a CLAIM about who answers: if the HR Business Partner seat is ever retired or
-  // renamed, this line starts routing replies to a mailbox nobody watches.
-  //
-  // Deliberately not a From address — From stays on the verified sending subdomain, and
-  // tests/distribution-lists-access.test.ts pins both directions of that.
-  "src/config/system-settings.ts",
+  // src/config/system-settings.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   "src/lib/auth/supabase-identity.ts",
   "src/lib/contracts/service.ts",
-  // Names HR Advisory in canManageDistributionLists, added 2026-09-11 when the owner asked that the
-  // HR Business Partner reach /admin/distribution-lists. Reviewed verdict: it GRANTS reach, and the
-  // grant is bounded by a fail-CLOSED allowlist in the same file.
-  //
-  // What it opens: the named recipient groups and the Turbify alias register, narrowed by
-  // distributionListScopeFor to HR_OWNED_LIST_KEYS — `hr_team` alone today. A list absent from that
-  // set is invisible to her, so one added later is private until somebody decides it is hers. The
-  // owner answered "HR lists only" — so `finance_team` stays out, enforced in the [listKey] route
-  // and in both alias actions rather than merely hidden on the screen. (The Monthly Closing Cc list
-  // named in that exchange was retired the same day, when the lists became the Sato Email
-  // Composer's alone.)
-  //
-  // What it cannot do here: send. Editing a list sends nothing; the only sender that reads a list is
-  // the Sato Email Composer, gated separately in src/lib/sato-email/access.ts and listed below. The
-  // alias register cannot touch a mailbox at all because Turbify has no API — its output is a
-  // worklist a human applies by hand. No HR_ROLE_BOUNDARIES entry is crossed: this is not payroll,
-  // deductions, organogram, user_admin, permission_admin or report_it.
-  //
-  // Why by name rather than a permission: the fitting resource, `communication`, also gates the
-  // email composer, the email templates and the Telegram console, so scoping THIS screen through it
-  // could not have expressed "these lists and not those".
-  //
-  // ⚠ CORRECTED 2026-09-11. This note used to end "and no HR function grants it". That stopped
-  // being true in the same branch that added this file: `hr_communication` grants `communication`
-  // to the HR Advisory bundle. THIS IS THE FILE THAT EXISTS TO ANSWER "what was this seat given",
-  // and it was answering the opposite. She holds `communication`, and what that opened is fenced
-  // in three places rather than left to the accident that Super Admin used to be its only holder:
-  // the Telegram route's five Super-Admin checks, `privileged-fields.ts` on the template fields
-  // that decide where mail goes, and the list allowlist here.
-  "src/lib/distribution-lists/access.ts",
+  // src/lib/distribution-lists/access.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   // Names HR Operations in isDeductionsReadActor, added 2026-09-03 with the page above. Reviewed
   // verdict: it GRANTS reach, and it is the wider half of the two — the page is a door, this is the
   // data. Every company-wide deductions read route asserts this gate ON TOP of the matrix, so
@@ -325,18 +266,7 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/employees/employee-cv.ts",
   "src/lib/excuses/service.ts",
   "src/lib/hiring-documents/service.ts",
-  // Names HR Advisory in resolvePayslipCenterAudience, added 2026-09-01. Reviewed verdict: it
-  // GRANTS reach — this is the string that lets her open the Payslips Center at all — and it is
-  // listed for exactly that reason. The owner asked for it in those words and bounded it in the
-  // same breath: "you will make her able to see the district managers, the Medicare reps, and
-  // herself only in the payslips." Deliberately NOT a widening of getPayrollScope, which /payroll
-  // and the batch screens also consult; this opens one page's rows for two job titles.
-  //
-  // What it does NOT hand her is the thing her job description withholds: canExportPayslipDocument
-  // is unchanged (Super Admin + Finance Manager), so she reads figures on screen and cannot carry
-  // a rendered payslip document out of the building. tests/hr-advisory-module-access.test.ts pins
-  // the audience in both directions, including every title it must refuse.
-  "src/lib/payroll/payslip-center.ts",
+  // src/lib/payroll/payslip-center.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   // Names HR Advisory in managerCvEngagementRoles, added 2026-09-01. Reviewed verdict: it GRANTS
   // reach, by the owner's own amendment — the list was his, verbatim, and read "NOT SFE, NOT HR"
   // until he was asked directly and said to add the HR Business Partner. Chasing the managers who
@@ -382,30 +312,7 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/recruitment/interview-request-notifications.ts",
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
-  // Names HR Advisory in canUseSatoEmail, added 2026-09-12 for the Sato Email Composer. Owner
-  // 2026-09-11: "This module would be accessible for HR business partner and the system
-  // administrator." Reviewed verdict: it GRANTS reach, and this is the SENDING half of the pair
-  // whose editing half sits at src/lib/distribution-lists/access.ts above — so it is the one of the
-  // two that can actually put mail in somebody's inbox, and it was read as such.
-  //
-  // What it opens: one screen, where she writes a subject and a body, picks a fixed template or
-  // types freely, addresses the switched-on distribution lists or named colleagues, and sends. The
-  // owner asked for exactly this, and for both seats to be able to address any list.
-  //
-  // What it cannot do, and none of these is left to the screen: it cannot reach the whole company
-  // — `allEmployees` lists are withheld in the service, so naming one by hand gets nothing either.
-  // It cannot mail an address the directory does not know without declaring it, because the
-  // Recipient Assurance Guard still runs. It cannot exceed the manual-email recipient cap, because
-  // every email is cut to it. And it cannot skip the Notification Confidence Gate: the fan-out hold
-  // is not applied (owner: "in composer its manual email by human") but the gate itself runs on
-  // every send, pinned by tests/sato-email-lists-only-composer.test.ts.
-  //
-  // No HR_ROLE_BOUNDARIES entry is crossed: this is not payroll, deductions, organogram,
-  // user_admin, permission_admin or report_it. She already holds `communication` through
-  // hr_communication — the reason this is a by-name gate rather than that resource is that
-  // `communication` also opens the older HR reply composer, the system email templates and the
-  // Telegram console, and the owner scoped this to the new module alone.
-  "src/lib/sato-email/access.ts",
+  // src/lib/sato-email/access.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   // Names both seats in `roleHrefsForSubject`, added 2026-09-07 with the retention-risk alert.
   // Reviewed verdict: ROUTING ONLY, and it can only ever REMOVE a wrong destination — it grants
   // nothing and it cannot widen what either seat may open.
@@ -545,24 +452,32 @@ export async function runHrFunctionGovernanceTests() {
     assert.equal(getHrFunction(fn.key).key, fn.key, `getHrFunction("${fn.key}") does not round-trip`);
   }
 
-  // No orphans: a function held by no bundle is dead code that reads as live policy.
+  // No orphans: a function held by no bundle is dead code that reads as live policy — UNLESS it is
+  // named in UNASSIGNED_HR_FUNCTIONS. That list exists because the owner retired the HR Business Partner seat on 2026-10-08 and,
+  // asked who takes its work, answered "Leave it for system administrator now": four functions are
+  // the Super Admin's until he hands them to a seat. Naming them keeps that a decision on record
+  // rather than a silent orphan, and keeps handing them out a move rather than a rebuild.
   const heldByABundle = new Set<HrFunctionKey>();
   for (const name of bundleNames) {
     for (const key of HR_ROLE_BUNDLES[name]) heldByABundle.add(key);
   }
+  const unassigned = new Set<HrFunctionKey>(UNASSIGNED_HR_FUNCTIONS);
+  for (const key of unassigned) {
+    assert.ok(!heldByABundle.has(key), `"${key}" is listed as unassigned but a seat holds it — take it off the list`);
+  }
   for (const fn of HR_FUNCTIONS) {
     assert.ok(
-      heldByABundle.has(fn.key),
-      `HR function "${fn.key}" is in no bundle. Either give it to a seat or delete it: an unheld ` +
-        "function looks like policy and grants nothing.",
+      heldByABundle.has(fn.key) || unassigned.has(fn.key),
+      `HR function "${fn.key}" is in no bundle and not in UNASSIGNED_HR_FUNCTIONS. Give it to a seat, ` +
+        "name it as unassigned with the owner's word for it, or delete it: an unheld function looks like policy and grants nothing.",
     );
   }
-  // ...and the reverse, so a bundle cannot name a function that does not exist.
+  // ...and the reverse, so neither list can name a function that does not exist.
   assert.deepEqual(
-    [...heldByABundle].sort(),
+    [...heldByABundle, ...unassigned].sort(),
     HR_FUNCTIONS.map((fn) => fn.key).sort(),
-    "the union of both bundles must be exactly the function catalogue: at the end of the day, " +
-      "everything (owner, 2026-08-28)",
+    "the seats' bundles plus the unassigned list must be exactly the function catalogue: at the " +
+      "end of the day, everything (owner, 2026-08-28)",
   );
 
   // --- Rule 4: no bundle breaches a job-description boundary -----------------------------------

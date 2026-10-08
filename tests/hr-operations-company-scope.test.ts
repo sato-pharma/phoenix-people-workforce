@@ -100,6 +100,7 @@ function pageFileFor(href: string): string | null {
 
 const OPERATIONS = "HR Operations" as PhoenixRole;
 const ADVISORY = "HR Advisory" as PhoenixRole;
+const RESOURCING = "HR Resourcing" as PhoenixRole;
 
 /**
  * A whole AccessContext, because canAccess wants one — same shape and same cast the route-coherence
@@ -188,6 +189,8 @@ export async function runHrOperationsCompanyScopeTests() {
   );
 
   // ── 3. HR Advisory is the control — the ruling named one seat ──────────────────────────────
+  // The seat was retired on 2026-10-08 and its key holds nothing, so it is still a valid control:
+  // a key that should resolve to nobody must not inherit the company read on the way out.
   const advisory = accessFor(ADVISORY);
   assert.equal(scopeForRole(ADVISORY), "self", "the ruling was about HR Operations only");
   assert.equal(getPayrollScope({ role: ADVISORY }), "SELF", "Aya's job description does not mention payroll at all");
@@ -239,7 +242,9 @@ export async function runHrOperationsCompanyScopeTests() {
     );
   };
 
-  for (const seat of [OPERATIONS, ADVISORY]) {
+  // The HR Business Partner was the second seat here until she was retired on 2026-10-08; the
+  // Talent Acquisition seat takes her place as the other live HR rail.
+  for (const seat of [OPERATIONS, RESOURCING]) {
     const lookup = denseLookup(seat);
     const rows = getSections(catalog, "hr", lookup, seat).flatMap((section) => section.items);
     assert.ok(rows.length >= 10, `"${seat}" is offered only ${rows.length} HR nav rows — the shell did not build`);

@@ -216,7 +216,9 @@ export function runOrganogramHeadOfficeBranchTests() {
   // Owner instruction 2026-08-25: "in the admin account and talent acquisition show the head
   // office organogram." Both must hold, or the branch above is built and then stripped.
   assert.equal(canAccessHeadOffice(ctx("Super Admin")), true, "the admin account");
-  assert.equal(canAccessHeadOffice(ctx("HR Advisory")), true, "…and HR Advisory");
+  // That seat was HR Advisory until the owner retired it on 2026-10-08; recruiting, and Head Office
+  // with it, is the Talent Acquisition seat's now.
+  assert.equal(canAccessHeadOffice(ctx("HR Resourcing")), true, "…and the Talent Acquisition seat");
   // Training Manager joined them 2026-09-03 (owner) — Head Office staff himself, so the branch
   // built above was being stripped from the one viewer who sits inside it.
   assert.equal(canAccessHeadOffice(ctx("Training Manager")), true, "…and Training Manager");

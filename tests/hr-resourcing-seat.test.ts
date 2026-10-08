@@ -7,6 +7,7 @@ import {
   hrBundleGrants,
   HR_ROLE_BUNDLES,
   HR_SEAT_JOB_TITLES,
+  UNASSIGNED_HR_FUNCTIONS,
 } from "../src/lib/auth/hr-functions.ts";
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
 import {
@@ -105,12 +106,15 @@ export async function runHrResourcingSeatTests() {
   }
 
   // The split that made this seat possible: employment paperwork left `recruiting` for its own
-  // function, and HR Advisory holds both — so moving recruiting to this seat later never drags
-  // contracts with it, and HR Advisory lost nothing in the split.
-  assert.ok((HR_ROLE_BUNDLES["HR Advisory"] as readonly string[]).includes("hiring_paperwork"));
-  const advisory = hrBundleGrants("HR Advisory") as Record<string, readonly string[] | undefined>;
-  assert.ok(advisory.employee_documents?.includes("read"), "HR Advisory keeps the hiring documents");
-  assert.ok(advisory.account_activation?.includes("update"), "HR Advisory keeps account activation");
+  // function, so moving recruiting here never dragged contracts with it. When the HR Business
+  // Partner seat was retired (2026-10-08) the paperwork stayed OFF this seat — it is one of the
+  // functions left with the Super Admin ("Leave it for system administrator now").
+  assert.ok(UNASSIGNED_HR_FUNCTIONS.includes("hiring_paperwork"), "the hiring paperwork is the Super Admin's");
+  assert.equal(
+    (HR_ROLE_BUNDLES["HR Resourcing"] as readonly string[]).includes("hiring_paperwork"),
+    false,
+    "and not this seat's",
+  );
 
   // ── 2. The fences ─────────────────────────────────────────────────────────────────────────
   const fenced = [
@@ -170,17 +174,17 @@ export async function runHrResourcingSeatTests() {
   assert.equal(hrefOutsideSeatFence(SEAT, "/probation"), "/probation/dashboard");
   assert.equal(hrefOutsideSeatFence(SEAT, "/hr/admin/weekly-plans"), "/hr/admin/weekly-plans/calendar");
   assert.equal(hrefOutsideSeatFence(SEAT, "/hr/attendance/exceptions"), null, "a fenced page with no honest sibling is dropped");
-  assert.equal(hrefOutsideSeatFence("HR Advisory", "/hr/cv-database"), "/hr/cv-database");
+  assert.equal(hrefOutsideSeatFence("HR Operations", "/hr/cv-database"), "/hr/cv-database");
 
   const everyKey = new Proxy({}, { get: () => true }) as PermissionLookup;
   const cvDatabaseRow = { href: "/hr/cv-database", icon: null, label: "CV Database" } as unknown as Parameters<
     typeof navigationItemVisible
   >[0];
   assert.equal(navigationItemVisible(cvDatabaseRow, everyKey, SEAT), false, "the sidebar never offers her a fenced row");
-  assert.equal(navigationItemVisible(cvDatabaseRow, everyKey, "HR Advisory"), true, "the same row stays for HR Advisory");
+  assert.equal(navigationItemVisible(cvDatabaseRow, everyKey, "HR Operations"), true, "the same row stays for every other seat");
 
   assert.throws(() => assertPageOpenForRole(SEAT, "/hr/recruitment/returned-cvs"), /^Error: Forbidden:/);
-  assert.doesNotThrow(() => assertPageOpenForRole("HR Advisory", "/recruitment/returned-cvs"));
+  assert.doesNotThrow(() => assertPageOpenForRole("Super Admin", "/recruitment/returned-cvs"));
 
   assert.match(
     source("src/components/layout/app-shell.tsx"),
@@ -228,7 +232,7 @@ export async function runHrResourcingSeatTests() {
   assert.deepEqual([...(grants.spotlight ?? [])], ["read", "export"], "Spotlight, as the Super Admin holds it");
   assert.deepEqual([...(grants.milestones ?? [])], ["read", "export"], "Milestones, as the Super Admin holds it");
   assert.equal(canUseWhatsAppInbox(her), true, "the WhatsApp Inbox admits her");
-  for (const other of ["HR Advisory", "HR Operations", "CEO"] as PhoenixRole[]) {
+  for (const other of ["HR Operations", "CEO"] as PhoenixRole[]) {
     assert.equal(canUseWhatsAppInbox(accessFor(other)), false, `the WhatsApp Inbox still refuses ${other}`);
   }
   assert.match(
@@ -250,7 +254,7 @@ export async function runHrResourcingSeatTests() {
   assert.ok(!DOCTOR_COVERAGE_PORTAL_ROLES.includes(SEAT), "she reaches KPIs in the admin shell, not the portal");
   // Interview Calendar: "Full view built into her seat" — a Viewer, like the CEO.
   assert.equal(seesWholeInterviewCalendar(her), true, "she sees every interview");
-  assert.equal(seesWholeInterviewCalendar(accessFor("HR Advisory")), false, "the other HR seats are not widened");
+  assert.equal(seesWholeInterviewCalendar(accessFor("HR Operations")), false, "the other HR seat is not widened");
   // "Just build the account. I will add her later." (owner, 2026-10-08): the seat is handed out in
   // User Access, so its picker has to offer it by the title he will look for — "Talent Acquisition" —
   // and never by its key. The option VALUE stays the key; only the words change.
@@ -273,7 +277,7 @@ export async function runHrResourcingSeatTests() {
   assert.equal(canViewOrganogramSensitiveFields(her), false, "the money on an organogram node stays with the payroll seats");
 
   assert.equal(await canPrintBusinessCards(her), true, "she prints business cards from the request desk");
-  for (const seat of ["HR Advisory", "HR Operations"] as PhoenixRole[]) {
+  for (const seat of ["HR Operations"] as PhoenixRole[]) {
     assert.equal(await canPrintBusinessCards(accessFor(seat)), true, `${seat} still prints business cards`);
   }
   assert.equal(await canPrintBusinessCards(accessFor("Medical Rep")), false, "printing stays with HR seats");
