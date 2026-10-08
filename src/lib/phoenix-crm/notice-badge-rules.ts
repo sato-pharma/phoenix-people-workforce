@@ -39,6 +39,8 @@ export type PhoenixCrmUnreadNotice = {
   createdAt: string;
   eventType: string;
   id: string;
+  /** The territory the notice was raised about, when it names one. Null for a notice that is not about a territory. */
+  seatId?: string | null;
   title: string;
 };
 

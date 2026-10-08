@@ -28,6 +28,8 @@ import {
   PHOENIX_CRM_PORTAL_PATH,
   sfeManagerHrIds,
 } from "@/lib/phoenix-crm/server/notifications";
+import { seatIdIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
+import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { managerChain } from "@/lib/phoenix-crm/scope";
@@ -118,11 +120,14 @@ export async function runPhoenixCrmVisitRollup(
   };
   if (rows.length === 0) return base;
 
-  const [org, sfeHrIds] = await Promise.all([loadPhoenixCrmOrg(), sfeManagerHrIds()]);
+  const [org, sfeHrIds, live] = await Promise.all([loadPhoenixCrmOrg(), sfeManagerHrIds(), loadLiveTeamSeatIds()]);
+  // Only a LIVE team's visits are rolled up (owner, 2026-10-08); an unreadable gate fails open.
+  const liveRows = live ? rows.filter((row) => seatIdIsInLiveTeam(org.seats, row.seat_id, live)) : rows;
+  if (liveRows.length === 0) return base;
 
   // Every id the rollup names or addresses: the reps, the NSMs above each visit's seat, the SFE Managers.
   const needed = new Set<string>(sfeHrIds);
-  for (const row of rows) {
+  for (const row of liveRows) {
     if (row.rep_hr_id) needed.add(row.rep_hr_id);
     if (row.seat_id) {
       const nsmHrId = managerChain(org, row.seat_id).find((member) => member.seat.tier === "NSM")?.hrId ?? null;
@@ -132,7 +137,7 @@ export async function runPhoenixCrmVisitRollup(
   const names = await loadPeopleNames(needed);
 
   const recipients = buildVisitRollupRecipients(
-    rows.map((row) => ({ seatId: row.seat_id, repHrId: row.rep_hr_id })),
+    liveRows.map((row) => ({ seatId: row.seat_id, repHrId: row.rep_hr_id })),
     org,
     (hrId) => nameOf(names, hrId),
     sfeHrIds,

@@ -55,6 +55,8 @@ import {
 } from "@/lib/phoenix-crm/server/notifications";
 import { callPhoenixCrm, chunk } from "@/lib/phoenix-crm/server/db";
 import { gatherExceptions } from "@/lib/phoenix-crm/server/exceptions";
+import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
+import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
@@ -196,8 +198,9 @@ export async function runPhoenixCrmDailyDigest(
   // THE BOARD IS DELIBERATELY UNCHANGED — the exceptions screen still shows every territory, because
   // a manager who opens it is ASKING, and "nobody has started" is exactly what he needs to see there.
   // This narrows what is PUSHED at 06:55, never what can be read.
-  const started = await seatsWithRealActivity(openSeats.map((seat) => seat.seatId));
-  const seats = openSeats.filter((seat) => started.has(seat.seatId));
+  const [started, live] = await Promise.all([seatsWithRealActivity(openSeats.map((seat) => seat.seatId)), loadLiveTeamSeatIds(cairoToday)]);
+  // And only a LIVE team's territory (owner, 2026-10-08): activity alone is not a start. Unreadable fails open.
+  const seats = openSeats.filter((seat) => started.has(seat.seatId) && (!live || seatIsInLiveTeam(seat, live)));
 
   const board = await gatherExceptions({
     seats,
