@@ -22,7 +22,9 @@ from it, that paging was therefore not involved, is wrong. Do not reach for it a
 **Why it matters for a diagnosis.** Thrashing is the one cause that slows *everything at once* —
 file reads, hook spawns, keystrokes, UI repaint — so that symptom shape rules the repo and CI out
 before you look at them. It also contaminates other measurements: the same nine PreToolUse hooks
-cost **686ms per Bash call at 958 MB free and 1,008ms ten minutes later at 730 MB**, with one bare
+cost **686ms of CPU per Bash call at 958 MB free and 1,008ms ten minutes later at 730 MB** (a SUM across
+hooks that run in parallel — the call itself waits for the slowest one, ~130ms at 3.3 GB free; the
+audit prints wait and CPU apart since 2026-10-08), with one bare
 `node` spawn going 65ms → 138ms and nothing changed in between. A hook, build or test figure read
 under pressure is a thermometer, not a cause — which is why `slowness-audits-compare-before-and-after`
 holds and a single reading proves nothing.

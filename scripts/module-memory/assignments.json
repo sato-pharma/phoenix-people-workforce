@@ -69,6 +69,7 @@
   "a-pr-check-grades-the-merge-so-it-can-fail-on-a-commit-you-never-wrote": "engineering",
   "a-pre-gps-backfilled-venue-link-is-not-a-defect": "marketing",
   "a-price-fix-silently-restates-every-published-closing": "sales-closing",
+  "a-production-update-is-refused-in-every-tool-form": "database",
   "a-public-revoke-also-drops-the-supabase-platform-roles": "database",
   "a-python-heredoc-writes-real-control-chars-into-regex-literals": "phoenix-crm",
   "a-red-main-ci-makes-railway-skip-the-deploy-for-good": "engineering",
