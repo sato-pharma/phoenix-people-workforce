@@ -144,8 +144,8 @@ export const MODULES = [
   },
   {
     id: "production-planning",
-    title: "Production Planner (toll manufacturing — Ivyronc)",
-    scope: "Run geometry and the buy list for a toll-manufactured product, stock in two locations, the cost layer and its dollar rate, the consumption learner, and the reorder alarm.",
+    title: "Production Planner (toll manufacturing — Ivyronc and Guamusin)",
+    scope: "Run geometry and the buy list for two toll-manufactured products — a syrup measured in millilitres and a powder in 5 g sachets, twelve to a box — with stock per lot across three locations, the cost layer and its dollar rate, the consumption learner, and the two alarms: reorder and expiry.",
     globs: [
       "src/lib/production-planning/**",
       "src/components/production-planning/**",
@@ -154,7 +154,7 @@ export const MODULES = [
       "tests/production-planning-*",
       "supabase/migrations/*production_planning*",
     ],
-    keywords: ["ivyronc", "production planner", "production planning", "toll manufacturing", "egpi", "raw material", "raw materials", "reorder alarm", "overage", "تشغيلة", "خامات"],
+    keywords: ["ivyronc", "guamusin", "sachet", "production planner", "production planning", "toll manufacturing", "egpi", "dbk", "raw material", "raw materials", "reorder alarm", "expiry alarm", "overage", "تشغيلة", "خامات", "جواموسين", "كيس"],
     tables: ["prodplan_"],
   },
   {

@@ -93,7 +93,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `weekly-sales` — Weekly sales and stock | `src/lib/sales/weekly/**` and 3 more |
 | `direct-orders` — Direct orders | `src/lib/direct-orders/**` and 4 more |
 | `incentives` — Incentives and targets payout | `src/lib/incentives/**` and 2 more |
-| `production-planning` — Production Planner (toll manufacturing — Ivyronc) | `src/lib/production-planning/**` and 5 more |
+| `production-planning` — Production Planner (toll manufacturing — Ivyronc and Guamusin) | `src/lib/production-planning/**` and 5 more |
 | `phoenix-crm` — Phoenix CRM (the reps' own CRM) | `src/lib/phoenix-crm/**` and 4 more |
 | `phoenix-crm-approvals` — Phoenix CRM — lists, validation, plans and approvals | `src/lib/phoenix-crm/{adoption-rules,approval-nudge-rules,customer-list-grouping,entry-rules,list-request-rules,list-row-facts,list-sheet-hours,list-template-rules,monthly-plan-rules,offplan-day,pharmacy-call-rules,plan-edit-rules,plan-review-rules,plan-rules,unplanned-rules,validate-next}.ts` and 4 more |
 | `phoenix-crm-boards` — Phoenix CRM — the silent detectors, the touch trail and the SFE's boards | `src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts` and 7 more |
