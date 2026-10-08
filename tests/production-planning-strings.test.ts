@@ -567,7 +567,7 @@ export function runProductionPlanningStringsTests() {
     "src/lib/production-planning/workbook.ts",
   ]) {
     assert.ok(
-      !/\.nameAr/.test(stripComments(readFileSync(file, "utf8"))),
+      !stripComments(readFileSync(file, "utf8")).includes(".nameAr"),
       `${file} reads .nameAr directly — use S.name(item) so the English view shows the English name`,
     );
   }
