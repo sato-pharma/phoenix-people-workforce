@@ -14,7 +14,6 @@ import {
   ArrowUp,
   ArrowUpDown,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
   Download,
   FileText,
@@ -89,7 +88,6 @@ type EntitlementSortKey = "annualBalanceDays" | "daysSinceHire" | "fullName" | "
 
 type RequestSortKey = "createdAt" | "durationDays" | "employeeName" | "startDate" | "status";
 
-type PendingReportAction = { decision: "approve" | "reject"; requestId: string; status: VacationRequestStatus };
 
 const PAGE_SIZE = 25;
 
@@ -1036,12 +1034,14 @@ function RequestCard({
   canReviewAttachments,
   selfView = false,
   viewerHrId,
-  onDecide,
+  approvalsBase,
   onResubmit,
   onReview,
   row,
 }: {
   actingId: string | null;
+  /** Where this surface's Leave Approvals request pages live — decisions are made there, never here. */
+  approvalsBase: string;
   canAdminManage: boolean;
   canReviewAttachments: boolean;
   /**
@@ -1051,7 +1051,6 @@ function RequestCard({
    */
   selfView?: boolean;
   viewerHrId: string | null;
-  onDecide: (row: VacationRequestRecord, decision: "approve" | "reject") => void;
   onResubmit: (row: VacationRequestRecord) => void;
   onReview: (row: VacationRequestRecord) => void;
   row: VacationRequestRecord;
@@ -1202,29 +1201,12 @@ function RequestCard({
 
       {/* Decision info or action buttons */}
       {row.canDecide ? (
-        <>
-          <VacationApprovalImpactPreview row={row} />
-          <div className="mt-2.5 flex gap-2">
-            <Button
-              className={cn(phxButtonApproveDenseClassName, "h-8 flex-1 gap-1.5 text-phx-xs font-bold")}
-              disabled={actingId === row.id}
-              onClick={() => onDecide(row, "approve")}
-              type="button"
-            >
-              <CheckCircle2 className="h-3 w-3" />
-              {row.status === "pending_hr" ? "Final Approve" : "Approve"}
-            </Button>
-            <Button
-              className={cn(phxButtonDangerDenseClassName, "h-8 flex-1 gap-1.5 text-phx-xs font-bold")}
-              disabled={actingId === row.id}
-              onClick={() => onDecide(row, "reject")}
-              type="button"
-            >
-              <XCircle className="h-3 w-3" />
-              {row.status === "pending_hr" ? "Final Reject" : "Reject"}
-            </Button>
-          </div>
-        </>
+        <Link
+          className="mt-2.5 flex items-center justify-center gap-1.5 rounded-sm border border-orange-300 bg-white px-3 py-1.5 text-phx-xs font-bold text-orange-700 transition hover:bg-orange-50"
+          href={`${approvalsBase}/${encodeURIComponent(row.id)}`}
+        >
+          <ArrowRight className="h-3 w-3" /> Decide in Leave Approvals
+        </Link>
       ) : (
         <div className="mt-2 text-phx-xs text-slate-500">
           {row.hrDecisionAt ? <p>HR: {formatDateTime(row.hrDecisionAt)}</p> : null}
@@ -1254,22 +1236,6 @@ function RequestCard({
 /* ─── Exported Component (Error Boundary Wrapper) ──────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-function VacationApprovalImpactPreview({ compact = false, row }: { compact?: boolean; row: VacationRequestRecord }) {
-  const range = row.startDate === row.endDate ? formatDate(row.startDate) : `${formatDate(row.startDate)} to ${formatDate(row.endDate)}`;
-  return (
-    <div
-      className={compact
-        ? "mb-2 border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold leading-4 text-emerald-800"
-        : "mt-2 border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-emerald-800"}
-    >
-      <p className="font-black uppercase tracking-[0.1em]">Approval impact preview</p>
-      <p>
-        Approval will show this {vacationTypeLabel(row.vacationType).toLowerCase()} vacation on the private calendar for {row.employeeName} covering {range}.
-      </p>
-    </div>
-  );
-}
-
 export function VacationReport(props: VacationReportProps) {
   return (
     <WorkspaceErrorBoundary fallbackTitle="Vacation report failed to load">
@@ -1291,6 +1257,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   // redirects employee-portal users to /employee-portals (the landing page). Staying on `pathname`
   // keeps tab/filter/pagination navigation inside whichever surface the user is actually on.
   const pathname = usePathname();
+  // The request pages in Leave Approvals, on whichever surface this report is on — a decision is made
+  // there and never here.
+  const approvalsBase = pathname?.startsWith("/employee-portals")
+    ? "/employee-portals/approvals/vacation"
+    : "/admin/approvals/vacation";
   const activeTab: VacationReportTab = searchParams.get("tab") === "requests" ? "requests" : "entitlements";
 
   const [filters, setFilters] = useState({
@@ -1311,8 +1282,6 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const [adminError, setAdminError] = useState<string | null>(null);
   const [adminForm, setAdminForm] = useState<AdminVacationFormState>(() => emptyAdminVacationForm(initialData?.options.employees[0]?.value));
   const [adminMode, setAdminMode] = useState<"add" | null>(null);
-  const [decisionComment, setDecisionComment] = useState("");
-  const [pendingAction, setPendingAction] = useState<PendingReportAction | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<VacationRequestRecord | null>(null);
   const [timeline, setTimeline] = useState<VacationTimelineEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
@@ -1485,32 +1454,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
     router.push(buildReportUrl(activeTab, params));
   }
 
-  const performDecision = useCallback(async (requestId: string, decision: "approve" | "reject", comment: string | null) => {
-    setActingId(requestId);
-    setActionError(null);
-    try {
-      const response = await fetch(`/api/vacations/requests/${encodeURIComponent(requestId)}/decision`, {
-        body: JSON.stringify({ decision, decisionComment: comment }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(typeof payload.message === "string" ? payload.message : "Vacation decision failed.");
-      }
-      router.refresh();
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Vacation decision failed.");
-    } finally {
-      setActingId(null);
-    }
-  }, [router]);
-
-  const decide = useCallback((row: VacationRequestRecord, decision: "approve" | "reject") => {
-    setDecisionComment("");
-    setPendingAction({ decision, requestId: row.id, status: row.status });
-  }, []);
-
+  // Approve and Reject are NOT decided from this report (owner, 2026-10-08): a request waiting on the
+  // viewer links to its page in Leave Approvals, which is the one place every leave decision is made.
   const resubmit = useCallback(async (row: VacationRequestRecord) => {
     setActingId(row.id);
     setActionError(null);
@@ -1530,23 +1475,6 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
       setActingId(null);
     }
   }, [router]);
-
-  async function confirmPendingAction() {
-    if (!pendingAction) return;
-    if (pendingAction.decision === "reject" && !decisionComment.trim()) {
-      setActionError("Rejection reason is required.");
-      return;
-    }
-
-    const action = pendingAction;
-    setPendingAction(null);
-
-    await performDecision(
-      action.requestId,
-      action.decision,
-      action.decision === "reject" ? decisionComment.trim() : null,
-    );
-  }
 
   async function openRequestReview(row: VacationRequestRecord) {
     setSelectedRequest(row);
@@ -1663,58 +1591,6 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{adminError}</span>
           </AdminCallout>
-        ) : null}
-
-        {/* ── Tab Bar ────────────────────────────────────────────── */}
-        {pendingAction ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-6 print:hidden" role="presentation">
-            <div
-              aria-modal="true"
-              className="w-full max-w-md rounded-sm border border-slate-200 bg-white p-4 shadow-xl"
-              role="dialog"
-            >
-              <h3 className="text-base font-extrabold text-slate-950">
-                {pendingAction.decision === "approve"
-                  ? pendingAction.status === "pending_hr" ? "Final approve request" : "Approve request"
-                  : pendingAction.status === "pending_hr" ? "Final reject request" : "Reject request"}
-              </h3>
-              <p className="mt-2 text-phx-md font-medium leading-5 text-slate-600">
-                This records the workflow decision and notifies the next responsible people.
-              </p>
-              {pendingAction.decision === "reject" ? (
-                <label className="mt-3 block space-y-1.5">
-                  <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Rejection reason</span>
-                  <textarea
-                    className={cn(phxTextareaClassName, "min-h-24")}
-                    value={decisionComment}
-                    onChange={(event) => setDecisionComment(event.target.value)}
-                  />
-                </label>
-              ) : null}
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  className="rounded-sm border border-slate-200 bg-white text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-                  onClick={() => setPendingAction(null)}
-                  type="button"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  className={cn(
-                    "rounded-sm text-phx-sm font-bold text-white",
-                    pendingAction.decision === "reject"
-                      ? "bg-rose-600 hover:bg-rose-700"
-                      : "bg-emerald-600 hover:bg-emerald-700",
-                  )}
-                  disabled={Boolean(actingId)}
-                  onClick={() => void confirmPendingAction()}
-                  type="button"
-                >
-                  Confirm
-                </Button>
-              </div>
-            </div>
-          </div>
         ) : null}
 
         {/* Two equal columns on a phone, never a sideways-scrolling strip: `overflow-x-auto` over
@@ -2411,29 +2287,12 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             {row.timelineEventCount > 0 ? <span className="text-slate-400">({row.timelineEventCount})</span> : null}
                           </button>
                           {row.canDecide ? (
-                            <>
-                              <VacationApprovalImpactPreview compact row={row} />
-                              <div className="flex flex-wrap gap-1.5">
-                                <button
-                                  className={cn(phxButtonApproveDenseClassName, "flex items-center gap-1 px-2 py-1 text-phx-2xs font-bold transition")}
-                                  disabled={actingId === row.id}
-                                  onClick={() => decide(row, "approve")}
-                                  type="button"
-                                >
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  {row.status === "pending_hr" ? "Final Approve" : "Approve"}
-                                </button>
-                                <button
-                                  className={cn(phxButtonDangerDenseClassName, "flex items-center gap-1 px-2 py-1 text-phx-2xs font-bold transition")}
-                                  disabled={actingId === row.id}
-                                  onClick={() => decide(row, "reject")}
-                                  type="button"
-                                >
-                                  <XCircle className="h-3 w-3" />
-                                  {row.status === "pending_hr" ? "Final Reject" : "Reject"}
-                                </button>
-                              </div>
-                            </>
+                            <Link
+                              className="flex items-center gap-1 rounded-sm border border-orange-300 bg-white px-2 py-1 text-phx-2xs font-bold text-orange-700 transition hover:bg-orange-50"
+                              href={`${approvalsBase}/${encodeURIComponent(row.id)}`}
+                            >
+                              <ArrowRight className="h-3 w-3" /> Decide in Leave Approvals
+                            </Link>
                           ) : (
                             <div className="text-phx-xs">
                               <p className="font-medium text-slate-600">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "-"}</p>
@@ -2473,7 +2332,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       canReviewAttachments={canReviewAttachments}
                       selfView={isSelfView}
                       viewerHrId={viewerHrId}
-                      onDecide={decide}
+                      approvalsBase={approvalsBase}
                       onResubmit={resubmit}
                       onReview={openRequestReview}
                       row={row}

@@ -488,7 +488,20 @@ export function runVacationModuleTests() {
   assert.match(vacationReportSource, /Approval timeline/);
   assert.match(vacationReportSource, /Overlap intelligence/);
   assert.match(vacationReportSource, /Daily SLA run/);
-  assert.match(vacationReportSource, /pendingAction/);
+  // Owner, 2026-10-08: Approve and Reject are not on this report either — every leave decision is made on
+  // the request's page in Leave Approvals, and a request waiting on the viewer links there.
+  assert.doesNotMatch(
+    vacationReportSource,
+    /performDecision|confirmPendingAction|pendingAction|\/decision`|Final Approve|Final Reject|Approval impact preview/,
+    "the Vacation requests report must not decide a leave request — Approve and Reject live in Leave Approvals",
+  );
+  assert.match(
+    vacationReportSource,
+    /Decide in Leave Approvals/,
+    "a request waiting on the viewer must point at its Leave Approvals page",
+  );
+  assert.match(vacationReportSource, /\/admin\/approvals\/vacation/);
+  assert.match(vacationReportSource, /\/employee-portals\/approvals\/vacation/);
   assert.doesNotMatch(vacationReportSource, /window\.confirm|window\.prompt/);
   assert.match(vacationLayoutSource, /redirect\("\/login"\)/);
   assert.match(vacationLayoutSource, /!access\.loginId && !access\.hrId/);
