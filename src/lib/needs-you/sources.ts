@@ -937,7 +937,7 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
         ageDays: ageDaysSince(counts.oldestReopenedAt, now),
         // The module publishes no SLA for a redo, so this board invents no verdict.
         overdue: false,
-        note: "The rep has been told why. Until he validates the customer again, a visit there scores nothing.",
+        note: "The rep has been told why. Until the customer is validated again, a visit there scores nothing.",
       });
     }
 
