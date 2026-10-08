@@ -14,6 +14,8 @@ import {
 } from "@/lib/auth/permissions";
 import {
   getEmployeeDirectory,
+  getEmployeeDirectoryRows,
+  isActiveLifecycleStatus,
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
@@ -2694,6 +2696,234 @@ export async function listReturnedDirectOrdersAgeing(
       returnReason: event?.message ?? null,
     };
   });
+}
+
+// ── Stranded returned orders — the requester has left, so nobody can answer ───
+//
+// WHY THIS EXISTS (2026-10-08). `returned` is answerable by exactly one person: `reviseDirectOrder`
+// refuses anyone whose canonical HR_ID is not the requester's, because a return is a question
+// addressed to the person who raised the order. When that person resigns their login is disabled and
+// the question can never be answered — the order is not terminal, so nothing expires it, and it is
+// in nobody's queue, so nothing chases it.
+//
+// `src/lib/approvals/orphaned-requests.ts` already FINDS these and the Needs You board already shows
+// the count. What did not exist was any way to clear one. `cancelHeldDirectOrder` takes `held` only,
+// and the Stuck Approvals screen reassigns weekly plans and excuses and nothing else — so on
+// 2026-10-08 five of them (66,475.20 EGP, 52-56 days old, requesters B-23 and PD-0010, both resigned
+// District Sales Managers) had to be closed by hand-written SQL against production. That is what
+// this removes: the board named a remedy the product could not perform.
+//
+// WHY CLOSING AND NOT REASSIGNING. Reassigning looks kinder and is not. A resubmit reprices the
+// basket on TODAY's basis and resumes at the lowest still-pending rung — which for a CEO-returned
+// order is the CEO's own rung — so handing one to a live manager hands them a money edit, not an
+// administrative tidy. Four of those five had been returned by the CEO cutting the discount ("only
+// 15%", "only 17%"). If that volume is still wanted it is raised fresh, by the manager who holds
+// that territory now, at the percentage the CEO asked for. Closing retires the dead question; it
+// does not decide the business.
+//
+// WHAT IT IS NOT. Not an expiry. `listReturnedDirectOrdersAgeing`'s own note refuses to add one
+// deliberately — "killing an order the rep may never have seen would destroy real work to tidy a
+// queue". Nothing here touches an order whose requester can still log in; that guard is the whole
+// difference between clearing a dead end and deleting someone's work.
+
+/**
+ * A returned order whose requester the employee master reports as no longer active.
+ *
+ * Carries everything the returned desk carries, plus the one fact that puts it on this list. The
+ * same definition of "left" as the Needs You board: `isActiveLifecycleStatus`, which counts ONLY
+ * `active` and `on_leave` — a looser test returns an empty list for the wrong reason and reads
+ * exactly like a real all-clear.
+ */
+export type StrandedDirectOrderRow = ReturnedDirectOrderAgeingRow & {
+  /** What the employee master says about the requester — the whole reason this row is here. */
+  requesterEmploymentStatus: string | null;
+};
+
+/**
+ * Every returned order whose requester has left the company, oldest first.
+ *
+ * Super Admin / system scope only, inherited from `listReturnedDirectOrdersAgeing`.
+ *
+ * An actor the employee master does not hold AT ALL is left alone, matching
+ * `selectOrphanedRequests`: this surfaces a known resignation, never every odd id, because a false
+ * "stranded" invites a cleanup that is not needed.
+ */
+export async function listStrandedDirectOrders(access: AccessContext): Promise<StrandedDirectOrderRow[]> {
+  const returned = await listReturnedDirectOrdersAgeing(access);
+  if (returned.length === 0) return [];
+
+  // includeInactive — the people this list is ABOUT are the ones the default directory drops.
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  // Keyed canonically, never by raw string: `requester_hr_id` holds whichever case the submitting
+  // session had, and an exact match once hid 28% of reps' own orders
+  // (`direct-order-hr-id-columns-are-mixed-case-and-access-hrid-is-lowercase`).
+  const byKey = new Map<string, EmployeeDirectoryRow>();
+  for (const employee of directory) {
+    const key = canonicalHrIdKey(employee.hrId);
+    if (key) byKey.set(key, employee);
+  }
+
+  const stranded: StrandedDirectOrderRow[] = [];
+  for (const order of returned) {
+    const employee = byKey.get(canonicalHrIdKey(order.requesterHrId) ?? "");
+    if (!employee) continue;
+    if (isActiveLifecycleStatus(employee.employmentStatus)) continue;
+    stranded.push({ ...order, requesterEmploymentStatus: employee.employmentStatus });
+  }
+  return stranded;
+}
+
+/**
+ * Close one returned order whose requester has left — the way out that did not exist.
+ *
+ * The result is `cancelled`, never `rejected`, for the reason `cancelHeldDirectOrder` states: no
+ * approver turned this down, and merging the two would inflate every rejection rate and per-status
+ * counter that groups by status. Four of the five closed on 2026-10-08 had in fact been APPROVED by
+ * the SFE Manager and the National Sales Manager; only the requester's step was dead.
+ *
+ * The approval steps are deliberately left exactly as they are. An approver can only act when the
+ * request is `pending_approval`, so the untouched `pending` rungs on a cancelled order reach nobody,
+ * and the record of who approved what — and who returned it, and in whose words — stays readable.
+ *
+ * Nothing downstream moves. `trg_direct_order_weekly_sync_upd` does fire on a status change, but
+ * `phx_direct_order_weekly_sync` loops over the OLD and NEW `sales_month` filtered `where p is not
+ * null`, and an order that was never approved carries no month — so no weekly rebuild runs and no
+ * published closing ever contained it. Finance owns the month and this never writes one.
+ */
+export async function closeOrphanedDirectOrder(
+  access: AccessContext,
+  input: { requestId: string; reason: string },
+): Promise<{ requestId: string; status: "cancelled" }> {
+  await assertPermission(access, "direct_orders", "read");
+  // Super Admin / system scope, matching `repair_approval_rung`'s migration note: repair work must
+  // never widen access. A terminal decision on somebody else's sales request is further from a
+  // repair than that one was, so it does not get a wider gate than the rung repair did.
+  assertHeldDeskAccess(access);
+  const actorHrId = requireActorHrId(access);
+
+  const reason = input.reason?.trim();
+  if (!reason) {
+    // Symmetric with every other decision in this module, and this one needs it more: the order
+    // dies here, and this sentence is the only account of why that was right.
+    badRequest("Say why this order is being closed — it is the only record of the decision.");
+  }
+
+  // Read through getDirectOrderRequest, never a raw admin query. The scope guard lives at that
+  // choke point and it returns null for out-of-scope as well as for missing, so an id cannot be
+  // used to probe which requests exist.
+  const detail = await getDirectOrderRequest(access, input.requestId);
+  if (!detail) badRequest("Direct order request not found.");
+
+  if (detail.request.status !== "returned") {
+    badRequest(
+      `Only an order an approver sent back can be closed this way — this one is ` +
+        `${describeDirectOrderStatus(detail.request.status, detail.request.salesMonth).label.toLowerCase()}. ` +
+        "A held order is withdrawn from the Held Desk; one in the approval chain is decided by its approver.",
+    );
+  }
+
+  // THE GATE, and the only thing separating this from a delete button. The requester must actually
+  // be gone: while they can still log in, the return is theirs to answer and nobody else's.
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  const requesterKey = canonicalHrIdKey(detail.request.requesterHrId);
+  const requester = directory.find((employee) => canonicalHrIdKey(employee.hrId) === requesterKey) ?? null;
+  const requesterLabel = requester?.fullName.trim() || detail.request.requesterHrId;
+  if (!requester) {
+    // An id the master does not hold is NOT read as a departure — same rule as
+    // `selectOrphanedRequests`. It is a directory problem, and closing a real order over one would
+    // destroy work to paper over a missing HR record.
+    badRequest(
+      `${detail.request.requesterHrId} is not in the employee master at all, so this is a directory ` +
+        "problem rather than a departure. Fix the employee record first; this action only clears an " +
+        "order whose requester the master reports as having left.",
+    );
+  }
+  if (isActiveLifecycleStatus(requester.employmentStatus)) {
+    badRequest(
+      `${requesterLabel} is still employed, so this return is theirs to answer — they can correct ` +
+        "and resubmit it themselves. This action only clears an order whose requester has left the company.",
+    );
+  }
+
+  // The row's ACTUAL status, not a literal — the F6 lesson. Passing the real value keeps the
+  // registry check independent of what this code believes.
+  await assertDirectOrderWorkflowTransition({
+    access,
+    actionKey: "close_orphaned",
+    expectedNextStatus: "cancelled",
+    status: detail.request.status,
+  });
+
+  const supabase = getSupabaseAdmin();
+  const { data: updated, error: updateError } = await supabase
+    .from("direct_order_requests")
+    .update(decidedStatusPatch("cancelled"))
+    .eq("id", detail.request.id)
+    .eq("status", "returned")
+    .select("id");
+  if (updateError) throw updateError;
+  // The `.eq("status","returned")` guard is a real race, not a formality: a Super Admin may correct
+  // and resubmit on the departed requester's behalf at this moment, which moves the order to
+  // `pending_approval` and makes this update match NOTHING. Reporting success there would say an
+  // order was closed while it actually sat in an approver's queue — so an empty result is an error.
+  if (!updated || updated.length === 0) {
+    badRequest(
+      "This order is no longer in the returned lane — it was corrected and resubmitted a moment ago. " +
+        "Reload the list and check its current state.",
+    );
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: detail.request.id,
+    oldValues: { requesterHrId: detail.request.requesterHrId, status: "returned" },
+    newValues: { status: "cancelled" },
+    summary:
+      `Direct order closed as stranded by ${actorHrId} — its requester ${requesterLabel} ` +
+      `(${requester.employmentStatus ?? "not active"}) can no longer answer the return — ${reason}`,
+  });
+  await insertEvent({
+    requestId: detail.request.id,
+    actorHrId,
+    eventType: "cancelled",
+    message:
+      `Closed as stranded: ${reason} ` +
+      `The order was sent back for correction, and ${requesterLabel}, who raised it, has left the ` +
+      "company — a return can only be answered by the person who raised it, so it could never be " +
+      "corrected or resubmitted. It was not rejected by any approver.",
+    metadata: {
+      closedReason: "requester_left_cannot_resubmit",
+      previousStatus: "returned",
+      requesterEmploymentStatus: requester.employmentStatus ?? null,
+      salesValueAtClose: detail.request.salesValue,
+      strandedRequesterHrId: detail.request.requesterHrId,
+    },
+  });
+
+  // The SFE Manager is told, and nobody else. The requester has left — a notification addressed to
+  // a disabled login reaches no one — and the person who closed it does not need telling they did.
+  // In-app and Telegram only, never email: this is a queue being tidied, not news for an inbox.
+  const resolveName = await nameLookup();
+  const pharmacy =
+    (await loadPharmaciesByIds([detail.request.pharmacyId])).get(detail.request.pharmacyId) ?? null;
+  const notifyContext = await buildNotifyContext(detail.request, requesterLabel, pharmacy);
+  await notifyDirectOrder({
+    recipients: await hrIdsForRole("SFE Manager"),
+    channels: ["in_app", "telegram"],
+    title: "Direct order closed — its requester had left",
+    message:
+      `${buildDirectOrderNotificationLine(notifyContext)} ` +
+      `${requesterLabel} raised it and has since left the company, so the return could never be ` +
+      `answered. Closed by ${resolveName(actorHrId) ?? actorHrId}. Reason: ${reason}`,
+    metrics: buildDirectOrderNotificationMetrics(notifyContext),
+    eventType: "cancelled",
+    requestId: detail.request.id,
+    subjectHrId: detail.request.requesterHrId,
+  });
+
+  pingDirectOrderSheet("stranded_closed");
+  return { requestId: detail.request.id, status: "cancelled" };
 }
 
 /** Every held order, oldest first — the System Admin's queue (spec C3). */

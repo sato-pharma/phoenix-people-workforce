@@ -6,13 +6,34 @@ import { useRouter } from "next/navigation";
 import type { StuckApprovalManagerOption } from "@/lib/approvals-hub/service";
 import type { WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import type { ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
-import { phxSelectClassName } from "@/components/ui/form-tokens";
+import type { StrandedDirectOrderRow } from "@/lib/direct-orders/service";
+import {
+  phxButtonDangerClassName,
+  phxFieldClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+// A form-token override goes through cn(), never a template literal: a template concatenates
+// without tailwind-merging, so the token's own h-10/px-3/w-* wins and the override renders as
+// nothing. Pinned by tests/form-design-system.test.ts.
+import { cn } from "@/lib/utils";
+// Dates come from the shared Cairo formatter and nothing else. A bespoke
+// `toLocaleDateString("en-GB", { month: "short" })` in a "use client" file asks the READER's ICU
+// build for the month abbreviation, and CLDR 42 renamed en-GB September from "Sep" to "Sept" — so
+// the server renders one spelling, an older browser hydrates the other, and that is React error
+// #418 for every reader, in September only. Pinned repo-wide by
+// tests/react-418-hydration-safe-text.test.ts.
+import { cairoDate } from "@/lib/format/cairo-datetime";
 
 type StuckApprovalsPanelProps = {
   weeklyPlans: WeeklyPlanManagerGapRecord[];
   excuses: ExcuseManagerGapRecord[];
+  strandedDirectOrders: StrandedDirectOrderRow[];
+  canCloseStrandedDirectOrders: boolean;
   managerOptions: StuckApprovalManagerOption[];
 };
+
+/** EGP with separators and two decimals — never an abbreviated or rounded figure. */
+const egp = new Intl.NumberFormat("en-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // A single reassignable row: current (dead) approver + a picker for the new active manager. The
 // row calls the module's reassign route — reassignment only, it never decides the request.
@@ -98,6 +119,98 @@ function ReassignRow(props: {
   );
 }
 
+/**
+ * One stranded direct order: everything needed to judge it, a reason box, and a close button.
+ *
+ * This row is NOT a ReassignRow in another colour, and the copy says so. The stuck actor here is
+ * the REQUESTER, not an approver: a return is a question addressed to the person who raised the
+ * order, so once they leave nobody can answer it. Re-addressing it to a live manager would hand
+ * them a money edit — a resubmit reprices on today's basis and resumes at the rung that returned
+ * it — so the remedy is to retire the dead question. That decides the request, which is why this
+ * one asks for a written reason and wears the destructive button.
+ */
+function CloseStrandedOrderRow(props: { order: StrandedDirectOrderRow }) {
+  const router = useRouter();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const { order } = props;
+
+  async function close() {
+    if (!reason.trim()) {
+      setError("Say why this order is being closed — it is the only record of the decision.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/direct-orders/${encodeURIComponent(order.id)}/close-orphaned`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+      if (!res.ok || !data.success) {
+        setError(data.message || "Could not close this order. It may have already moved on.");
+        setBusy(false);
+        return;
+      }
+      setDone(true);
+      router.refresh();
+    } catch {
+      setError("Network error. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border border-phx-line bg-white px-4 py-3">
+      <div className="min-w-0">
+        <p className="break-words text-sm font-bold text-slate-900">{order.pharmacyName}</p>
+        <p className="break-words text-xs text-slate-500">
+          {order.productName} × {order.qty} · {egp.format(order.salesValue)} EGP
+        </p>
+        <p className="mt-0.5 break-words text-xs text-rose-600">
+          Raised by {order.requesterName}, who is {(order.requesterEmploymentStatus ?? "no longer active").replace(/_/g, " ")}
+          {" — "}nobody can answer the return
+        </p>
+        <p className="mt-0.5 break-words text-xs text-slate-500">
+          {order.returnedAt
+            ? `Sent back ${cairoDate(order.returnedAt)}, ${order.daysWaiting} days ago`
+            : "Sent back on a date the event log does not record"}
+          {/* The approver's own words, NEVER truncated — it is the question that went unanswered. */}
+          {order.returnReason ? `: “${order.returnReason}”` : " with no reason recorded"}
+        </p>
+      </div>
+      {done ? (
+        <p className="mt-2 text-sm font-bold text-slate-900">Closed ✓</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            disabled={busy}
+            placeholder="Why is this being closed?"
+            aria-label={`Reason for closing the ${order.pharmacyName} order`}
+            className={cn(phxFieldClassName, "w-full sm:w-auto sm:min-w-[260px] sm:flex-1")}
+          />
+          <button
+            type="button"
+            onClick={close}
+            disabled={busy}
+            className={cn(phxButtonDangerClassName, "w-full justify-center sm:w-auto")}
+          >
+            {busy ? "Closing…" : "Close order"}
+          </button>
+        </div>
+      )}
+      {error ? <p className="mt-2 text-sm font-semibold text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
 function Section(props: { title: string; count: number; children: ReactNode }) {
   return (
     <section className="border border-phx-line bg-white">
@@ -110,16 +223,29 @@ function Section(props: { title: string; count: number; children: ReactNode }) {
   );
 }
 
-export function StuckApprovalsPanel({ weeklyPlans, excuses, managerOptions }: StuckApprovalsPanelProps) {
-  const empty = weeklyPlans.length === 0 && excuses.length === 0;
+export function StuckApprovalsPanel({
+  weeklyPlans,
+  excuses,
+  strandedDirectOrders,
+  canCloseStrandedDirectOrders,
+  managerOptions,
+}: StuckApprovalsPanelProps) {
+  const empty = weeklyPlans.length === 0 && excuses.length === 0 && strandedDirectOrders.length === 0;
   if (empty) {
     return (
       <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-900">No stuck approvals.</p>
         <p className="mt-1 text-xs text-slate-500">
-          Every pending plan and excuse currently has an active approver. This surface fills in
-          when a manager resigns before deciding.
+          Every pending plan and excuse currently has an active approver, and no returned direct
+          order is waiting on someone who has left. This surface fills in when somebody resigns
+          mid-workflow.
         </p>
+        {canCloseStrandedDirectOrders ? null : (
+          <p className="mt-2 text-xs text-slate-400">
+            Stranded direct orders are listed for a Super Admin only, because closing one decides
+            the request rather than re-routing it.
+          </p>
+        )}
       </section>
     );
   }
@@ -159,6 +285,29 @@ export function StuckApprovalsPanel({ weeklyPlans, excuses, managerOptions }: St
           ))
         )}
       </Section>
+
+      {/* Super Admin only, so HR never sees a section it cannot act on. */}
+      {canCloseStrandedDirectOrders ? (
+        <Section title="Direct orders — nobody can answer the return" count={strandedDirectOrders.length}>
+          {strandedDirectOrders.length === 0 ? (
+            <p className="px-1 py-2 text-xs text-slate-500">No stranded direct orders.</p>
+          ) : (
+            <>
+              <p className="px-1 pb-1 text-xs leading-relaxed text-slate-500">
+                These were sent back for correction, and the manager who raised each one has left.
+                A return can only be answered by the person who raised the order, so none of them
+                can move. Closing one retires it; it is not a rejection, and it changes no sales
+                figure — nothing here was ever approved or booked to a month. If the volume is
+                still wanted, it is raised fresh by whoever holds that territory now, at the
+                discount the approver asked for.
+              </p>
+              {strandedDirectOrders.map((order) => (
+                <CloseStrandedOrderRow key={order.id} order={order} />
+              ))}
+            </>
+          )}
+        </Section>
+      ) : null}
     </div>
   );
 }

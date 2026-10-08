@@ -27,6 +27,7 @@ import { logStructured } from "@/lib/observability/log";
 import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
+import { listStrandedDirectOrders, type StrandedDirectOrderRow } from "@/lib/direct-orders/service";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage, resolveSubmitterIsDistrictManager } from "@/lib/weekly-planning/service";
 import { authRoleForHrId, loadDistrictManagerAppRoleMatcher } from "@/lib/weekly-planning/service";
@@ -859,19 +860,41 @@ export async function getExcuseWorkspaceData(access: AccessContext): Promise<Exc
   };
 }
 
-// ── Stuck approvals — needs reassignment (HR / Super Admin only) ──────────────
+// ── Stuck approvals — the requests nobody can move (HR / Super Admin only) ────
 //
-// Cross-module surface (weekly/monthly plans + excuses) listing requests pinned to a resigned or
-// missing approver, so HR can re-route each to an active manager. Gated identically to the two
-// reassignment routes (isAllVacationVisibility = system scope OR Super Admin) so anyone who can SEE
-// this panel can actually act on it. This is REASSIGNMENT only: the panel changes WHO owns the
-// pending step; it never decides a request in place (owner-locked approver model).
+// Cross-module surface listing requests pinned to someone who has left, so they can be unstuck.
+// Gated identically to the two reassignment routes (isAllVacationVisibility = system scope OR Super
+// Admin) so anyone who can SEE this panel can act on at least part of it.
+//
+// TWO DIFFERENT REMEDIES LIVE HERE, and the difference is the whole point of the copy:
+//
+//   * Weekly/monthly plans and excuses are REASSIGNED. The stuck actor is the APPROVER, the request
+//     is untouched, and the panel only changes who owns the pending step — it never decides a
+//     request in place (owner-locked approver model).
+//   * A stranded direct order is CLOSED. There the stuck actor is the REQUESTER: a return is a
+//     question addressed to the one person who raised the order, and `reviseDirectOrder` refuses
+//     everyone else, so once they resign nobody can ever answer it. Reassigning it would hand a live
+//     manager a money edit (a resubmit reprices on today's basis and resumes at the rung that
+//     returned it, often the CEO's own), which is why the remedy is to retire the dead question
+//     rather than to re-address it. That one DOES decide the request, so it is Super Admin only and
+//     the service refuses while the requester can still log in.
+//
+// Added 2026-10-08, after five stranded direct orders had to be closed by hand-written SQL against
+// production because the Needs You board named a remedy no screen could perform.
 
 export type StuckApprovalManagerOption = { hrId: string; name: string };
 
 export type StuckApprovalsData = {
   weeklyPlans: WeeklyPlanManagerGapRecord[];
   excuses: ExcuseManagerGapRecord[];
+  /** Returned direct orders whose requester has left. Empty for a viewer who cannot close one. */
+  strandedDirectOrders: StrandedDirectOrderRow[];
+  /**
+   * Whether this viewer may close a stranded direct order. HR can SEE this screen but closing is
+   * Super Admin only, so the panel must be able to tell "none stranded" from "not yours to close"
+   * rather than rendering a button that is certain to be refused.
+   */
+  canCloseStrandedDirectOrders: boolean;
   managerOptions: StuckApprovalManagerOption[];
 };
 
@@ -879,9 +902,16 @@ export async function getStuckApprovalsForReassignment(access: AccessContext): P
   if (!isAllVacationVisibility(access)) {
     throw new Error("Forbidden: only HR or Super Admin can view stuck approvals for reassignment.");
   }
-  const [weeklyPlans, excuses, directoryRows] = await Promise.all([
+  // The direct-orders reader's own gate (assertHeldDeskAccess), restated rather than discovered by
+  // catching its throw: a swallowed Forbidden is indistinguishable from "nothing is stranded", and
+  // this surface exists precisely because a stranded request that shows as nothing ages for ever.
+  const canCloseStrandedDirectOrders = access.scope === "system" || access.role === "Super Admin";
+  const [weeklyPlans, excuses, strandedDirectOrders, directoryRows] = await Promise.all([
     listWeeklyPlanManagerGapRecords().catch(() => [] as WeeklyPlanManagerGapRecord[]),
     listExcuseManagerGapRecords().catch(() => [] as ExcuseManagerGapRecord[]),
+    canCloseStrandedDirectOrders
+      ? listStrandedDirectOrders(access).catch(() => [] as StrandedDirectOrderRow[])
+      : Promise.resolve([] as StrandedDirectOrderRow[]),
     getEmployeeDirectoryRows().catch(() => [] as EmployeeDirectoryRow[]),
   ]);
   // Active employees only (getEmployeeDirectoryRows default) — the picker must never offer an
@@ -890,7 +920,7 @@ export async function getStuckApprovalsForReassignment(access: AccessContext): P
     .map((row) => ({ hrId: row.hrId, name: row.displayName || row.fullName || row.hrId }))
     .filter((option) => Boolean(option.hrId))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { weeklyPlans, excuses, managerOptions };
+  return { weeklyPlans, excuses, strandedDirectOrders, canCloseStrandedDirectOrders, managerOptions };
 }
 
 // ── Company-wide "All Decisions" (Super Admin / system-scope oversight only) ──

@@ -731,6 +731,13 @@ export const accessRegistry = [
   // last refusal is what keeps this a repair rather than a way to choose your own approver — a
   // permission string cannot express it, so the service owns it and this entry says so.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/repair-rung", permission: { resource: "direct_orders", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  // Close a returned order whose requester has LEFT — the return is a question only they could
+  // answer, and nothing expires `returned`, so it ages out of sight for ever. `read` is deliberately
+  // the permission named here and is NOT the gate: closeOrphanedDirectOrder is Super Admin / system
+  // scope (assertHeldDeskAccess), demands a written reason, takes `returned` only, and REFUSES while
+  // the requester can still log in — that last refusal is what keeps this a clear-up rather than a
+  // delete button, and no permission string can express it.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/close-orphaned", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Early Birds. The sync route mirrors the whole company-day from the vendor, so it is gated on a
   // role allowlist plus a GLOBAL rate-limit bucket rather than on a per-roster permission — the
   // roster guarantee is a read guarantee, not a write one.

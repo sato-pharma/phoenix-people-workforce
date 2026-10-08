@@ -23,13 +23,15 @@ export default async function AdminStuckApprovalsPage() {
     <div className="space-y-5">
       <AdminPageHero
         eyebrow="Approvals Hub"
-        title="Stuck Approvals — Needs Reassignment"
-        description="Weekly/monthly plans and excuses pinned to a resigned or missing approver. Reassign each to an active manager to unstick the workflow — this changes who owns the pending step, it never decides the request."
+        title="Stuck Approvals"
+        description="Requests nobody can move, because the one person who had to act next has left. Plans and excuses are reassigned to an active manager — that changes who owns the pending step and never decides the request. A returned direct order cannot be reassigned at all, because only the person who raised it may answer a return, so that one is closed instead."
         icon={<AlertTriangle className="h-3.5 w-3.5" />}
       />
       <StuckApprovalsPanel
         weeklyPlans={data.weeklyPlans}
         excuses={data.excuses}
+        strandedDirectOrders={data.strandedDirectOrders}
+        canCloseStrandedDirectOrders={data.canCloseStrandedDirectOrders}
         managerOptions={data.managerOptions}
       />
     </div>
