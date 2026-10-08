@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -76,6 +76,20 @@ export function runPhoenixCrmPlanNeverBlockedTests(): void {
     assert.match(text, /loadPlannerReferences\(seat\.seatId, isTest, customers\)/, `${builder} loads the references`);
     assert.match(text, /reference: references\.get\(customerId\) \?\? null,/, `${builder} attaches them`);
   }
+
+  // 🔴 THE DATABASE HALF (2026-10-08): the app stopped asking for a reason on 2026-09-30, but
+  // `phoenix_crm_plan_items_exception` still demanded one for a not-receiving item, so every such tick
+  // made `phoenix_crm_save_plan` fail with 23514 and the rep read "Could not save the plan." (~175 failed
+  // saves in one day). The newest migration that declares the constraint must let a not-receiving item
+  // carry NO reason.
+  const migrations = readdirSync(new URL("supabase/migrations/", ROOT)).filter((name) => name.endsWith(".sql")).sort();
+  const sqlOf = (name: string) => readFileSync(new URL(`supabase/migrations/${name}`, ROOT), "utf8").replace(/--.*$/gm, "");
+  const declaring = migrations.filter((name) => /add constraint phoenix_crm_plan_items_exception\s+check/i.test(sqlOf(name)));
+  assert.ok(declaring.length > 0, "some migration declares the constraint");
+  const check = /add constraint phoenix_crm_plan_items_exception\s+check\s*\(([\s\S]*?)\);/i.exec(sqlOf(declaring[declaring.length - 1]))?.[1] ?? "";
+  assert.ok(check, "the constraint's check is readable");
+  assert.doesNotMatch(check, /not receives\s+and\s+exception_type is not null/i, "a not-receiving item is never required to carry a reason");
+  assert.match(check, /\(not receives\)/i, "a not-receiving item is allowed whatever its reason");
 
   console.log("phoenix-crm plan never blocked: OK");
 }
