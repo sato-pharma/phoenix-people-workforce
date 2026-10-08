@@ -87,6 +87,16 @@ export function matcherTests(d: DispatchModule): void {
   assert.ok(d.matcherFits("", "Anything") && d.matcherFits("*", "Anything"));
   assert.deepEqual(d.parseCommand('node "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs" beat')?.args, ["beat"]);
   assert.equal(d.parseCommand("bash something.sh"), null, "anything but a node hook falls back to a process");
+
+  // The user-level copy runs `"command": "node", "args": [absolute script, …]` hooks.
+  const abs = d.parseCommand('node "C:/Users/someone/.claude/hooks/scratchpad-guard.mjs" pre');
+  assert.equal(abs?.script, resolve("C:/Users/someone/.claude/hooks/scratchpad-guard.mjs"));
+  assert.deepEqual(abs?.args, ["pre"]);
+  assert.equal(d.parseCommand('node "relative/x.mjs"'), null, "a relative script path is never guessed at");
+  const table = { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node", args: ["C:/u/.claude/hooks/g.mjs", "pre"], timeout: 9 }] }] } };
+  const [picked] = d.selectHooks(table, "PreToolUse", "Bash");
+  assert.equal(picked?.command, 'node "C:/u/.claude/hooks/g.mjs" pre', "the args form folds into one command string");
+  assert.deepEqual(d.parseCommand(picked?.command ?? "")?.args, ["pre"], "and that string runs in-process");
 }
 
 /** Every tool name worth checking: each exact name the table names, plus a Supabase MCP tool. */

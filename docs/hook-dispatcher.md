@@ -100,6 +100,37 @@ from a copy and byte-compared afterwards:
 | The rethrow removed from `trap-injector.mjs` | The contract check |
 | The dispatcher handing hooks an empty payload | The equivalence check |
 
+## The user-level copy
+
+`~/.claude/settings.json` has its own PreToolUse hooks, and they fire in every folder, not just this
+repo. So they cannot call this repo's dispatcher. Since 2026-10-08 a **byte-identical copy** of
+`hook-dispatch.mjs` and `hook-dispatch-worker.mjs` lives in `~/.claude/hooks/`, and runs the
+`dispatch.json` beside it. Edit the copy here, then copy it over; never edit the copy itself.
+
+| User hook | Matcher | Timeout | Where it runs now |
+| --- | --- | --- | --- |
+| weekly-review-readonly | Write\|Edit\|NotebookEdit\|Bash\|PowerShell\|mcp__ | 15 | the user dispatcher |
+| scratchpad-guard `pre` | Bash\|PowerShell | 90 | the user dispatcher |
+| risky-allow-guard | Write\|Edit | 10 | the user dispatcher |
+| dev-server-reaper | Bash\|PowerShell, `async` | 10 | **its own entry in settings.json** |
+
+- The dev-server reaper stays separate. An async hook never holds the call, and the dispatcher waits
+  for every hook it runs.
+- User settings write hooks as `"command": "node", "args": [script, …]`. `commandOf()` folds that
+  form into the same command string, and `parseCommand()` accepts an absolute script path.
+- Two hooks gained the rethrow line:
+  - `scratchpad-guard.mjs`: its `pre` catch would have swallowed the exit.
+  - `weekly-review-readonly.mjs`: its catch exits, so the contract check passed it, but it would have
+    logged a false "hook error" on every call first.
+- **Proof**, measured 2026-10-08:
+  - 11 tool calls through the installed copy, in-process and as one process per hook, gave identical
+    answers, 5 of them real decisions;
+  - all three hooks' own selftests reported `0 failed`.
+- A Bash, Write or Edit call now starts two node processes in all, one per dispatcher. Before, it
+  started nine or ten.
+- `~/.claude/scripts/claude-scripts-backup.mjs` copies `.mjs` files off the machine but never
+  `.json`. The table above is therefore the off-machine record of `~/.claude/hooks/dispatch.json`.
+
 ## When it misbehaves
 
 - **Fall back to the old way at once:** set `PHX_HOOK_DISPATCH_PROCESSES=1` in the environment. The

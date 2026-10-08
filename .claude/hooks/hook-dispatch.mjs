@@ -29,6 +29,10 @@
 // non-blocking, reported. If the dispatcher itself fails, it falls back to running the same commands
 // as separate processes, so no guard stops enforcing because of this file.
 // PHX_HOOK_DISPATCH_PROCESSES=1 forces that process mode (an escape hatch and an A/B switch).
+//
+// TWO COPIES, ONE SOURCE. This file and hook-dispatch-worker.mjs are also copied byte-for-byte into
+// ~/.claude/hooks/, where they run the USER-level PreToolUse hooks of ~/.claude/settings.json — every
+// copy reads the dispatch.json beside it. Edit here, then copy; never edit the copy.
 // Account: docs/hook-dispatcher.md.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -59,12 +63,31 @@ export function matcherFits(matcher, toolName) {
   }
 }
 
-/** `node "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.mjs" arg …` → { script, args }, else null. */
-const NODE_COMMAND = /^node\s+"\$\{CLAUDE_PROJECT_DIR\}\/(\.claude\/hooks\/[\w.-]+\.mjs)"((?:\s+[\w.-]+)*)\s*$/;
+/**
+ * `node "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.mjs" arg …` or `node "C:/absolute/path/x.mjs" arg …`
+ * → { script, args }, else null.
+ */
+const NODE_COMMAND =
+  /^node\s+"(\$\{CLAUDE_PROJECT_DIR\}\/\.claude\/hooks\/[\w.-]+\.mjs|(?:[A-Za-z]:)?\/[^"]*\/[\w.-]+\.mjs)"((?:\s+[\w.-]+)*)\s*$/;
+const PROJECT_PREFIX = '${CLAUDE_PROJECT_DIR}/';
 export function parseCommand(command) {
   const m = NODE_COMMAND.exec(command ?? '');
   if (!m) return null;
-  return { script: join(REPO_ROOT, m[1]), args: m[2].trim() ? m[2].trim().split(/\s+/) : [] };
+  const script = m[1].startsWith(PROJECT_PREFIX) ? join(REPO_ROOT, m[1].slice(PROJECT_PREFIX.length)) : resolve(m[1]);
+  return { script, args: m[2].trim() ? m[2].trim().split(/\s+/) : [] };
+}
+
+/**
+ * settings.json also takes `"command": "node", "args": [script, …]` — the form the user-level
+ * ~/.claude/settings.json uses, whose hooks a copy of this file dispatches. Fold it into the one
+ * command string everything below reads; plain `[\w.-]` arguments only, as parseCommand requires.
+ */
+export function commandOf(hook) {
+  if (!Array.isArray(hook?.args) || !hook.args.length) return hook?.command;
+  const quote = (a) => (/^[\w./:-]+$/.test(a) ? a : JSON.stringify(a));
+  const [first, ...rest] = hook.args.map(String);
+  if (hook.command === 'node' && /\.mjs$/.test(first)) return [`node "${first}"`, ...rest.map(quote)].join(' ');
+  return [hook.command, ...hook.args.map((a) => quote(String(a)))].join(' ');
 }
 
 /** Every hook of `event` whose matcher fits `toolName`, in table order. */
@@ -74,7 +97,7 @@ export function selectHooks(table, event, toolName) {
     if (!matcherFits(group.matcher, toolName)) continue;
     for (const hook of group.hooks ?? []) {
       if (hook.type && hook.type !== 'command') continue;
-      out.push({ command: hook.command, timeout: hook.timeout ?? DEFAULT_TIMEOUT_S, run: hook.run ?? 'in-process' });
+      out.push({ command: commandOf(hook), timeout: hook.timeout ?? DEFAULT_TIMEOUT_S, run: hook.run ?? 'in-process' });
     }
   }
   return out;
