@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllApprovalRows } from "@/lib/approvals-hub/page-rows";
 import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
 import {
+  canManageVacationRecords,
   getVacationActionCenterData,
   getVacationAwaitingBadgeSource,
   getVacationReportData,
@@ -617,6 +618,9 @@ export type VacationApprovalDetail = {
   // Stricter than canReviewAttachments: reviewVacationEvidence (accept/reject/needs-follow-up)
   // is HR/Super Admin only, even during a non-HR approver's active turn.
   canReviewEvidence: boolean;
+  // HR/Super Admin with the leave create/update/delete grants: shows Edit and Delete on the request
+  // page. The Vacation requests report no longer carries either (owner, 2026-10-08).
+  canAdminManage: boolean;
 };
 
 function readOnlyReasonForStatus(status: VacationRequestStatus): string {
@@ -647,6 +651,7 @@ async function fetchVacationStepsDirect(id: string): Promise<ApprovalTimelineSte
 
 export async function getVacationApprovalDetail(access: AccessContext, id: string): Promise<VacationApprovalDetail> {
   const hrId = access.hrId?.trim() ?? "";
+  const canAdminManage = await canManageVacationRecords(access).catch(() => false);
 
   // 1) Actionable / coming-to-me — full row with per-viewer availability and named steps.
   const center = await getVacationActionCenterData(access).catch(() => null);
@@ -682,6 +687,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
           : row.stageLabel ?? "This request is waiting on another approver.",
       canReviewAttachments: isAllVacationVisibility(access) || (actionable && !own),
       canReviewEvidence: isAllVacationVisibility(access),
+      canAdminManage,
     };
   }
 
@@ -704,6 +710,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
       readOnlyReason: null,
       canReviewAttachments: false,
       canReviewEvidence: false,
+      canAdminManage: false,
     };
   }
   const own = isViewer(record.employeeHrId, hrId);
@@ -724,6 +731,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
     // turn-based widening only applies while it's genuinely the viewer's active turn (branch above).
     canReviewAttachments: isAllVacationVisibility(access),
     canReviewEvidence: isAllVacationVisibility(access),
+    canAdminManage,
   };
 }
 

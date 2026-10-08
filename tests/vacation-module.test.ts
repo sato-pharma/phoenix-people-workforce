@@ -458,8 +458,28 @@ export function runVacationModuleTests() {
   assert.match(vacationReportSource, /SortableHeader/);
   assert.match(vacationReportSource, /requestId: initialData\?\.filters\.requestId/);
   assert.match(vacationReportSource, /Add Vacation/);
-  assert.match(vacationReportSource, /Save Changes/);
-  assert.match(vacationReportSource, /deleteAdminRequest/);
+  // Owner, 2026-10-08: any leave is edited or deleted in the Leave Approvals hub, NEVER in this report.
+  assert.doesNotMatch(
+    vacationReportSource,
+    /Save Changes|deleteAdminRequest|startAdminEdit|method: adminMode === "edit"|Delete vacation request/,
+    "the Vacation requests report must carry no Edit or Delete — they live on the request page in Leave Approvals",
+  );
+  const vacationAdminControlsSource = readFileSync(
+    new URL("../src/components/approvals-hub/vacation-admin-controls.tsx", import.meta.url),
+    "utf8",
+  );
+  const vacationRequestDetailSource = readFileSync(
+    new URL("../src/components/approvals-hub/vacation-request-detail.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(vacationAdminControlsSource, /method: "PATCH"/, "the hub edits a request through the PATCH route");
+  assert.match(vacationAdminControlsSource, /method: "DELETE"/, "the hub deletes a request through the DELETE route");
+  assert.match(
+    vacationRequestDetailSource,
+    /detail\.canAdminManage \? <VacationAdminControls/,
+    "the request page in Leave Approvals shows Edit and Delete, and only to a viewer who may manage records",
+  );
+  assert.doesNotMatch(vacationAdminControlsSource, /window\.confirm|window\.prompt/);
   assert.match(vacationReportSource, /VacationAttachmentLinks/);
   assert.match(vacationReportSource, /Audit XLSX/);
   assert.match(vacationReportSource, /canExport/);
