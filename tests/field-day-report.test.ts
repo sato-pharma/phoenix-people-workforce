@@ -14,6 +14,8 @@ import {
   assertPapersFit,
   supersedeLabel,
   supersedePaper,
+  supersededPathFor,
+  SUPERSEDED_DIR,
   verifyPaper,
 } from "../scripts/field-day/print-day.mjs";
 import { holidayNameOf, restDayOf, weekdayOf } from "../scripts/field-day/read-day.mjs";
@@ -378,6 +380,11 @@ export function runFieldDayReportTests() {
     "🔴 the path is logged only AFTER the file on disk has been stat-checked, never before",
   );
   assert.ok(cli.includes("assertPapersFit("), "and a FIELD_DAY_OUT too deep is refused BEFORE anything is printed");
+  assert.match(cli, /assertPapersFit\(OUT, papers, \{ day: dayData\.day, label \}\)/, "🔴 measuring the ARCHIVE path too, which is the longer one");
+  assert.ok(
+    cli.indexOf("supersedeLabel()") < cli.indexOf("assertPapersFit("),
+    "🔴 the label is read first, so the archive path the guard measures is the one supersedePaper will write",
+  );
   assert.doesNotMatch(cli, /execFileSync/, "Chrome is no longer launched bare from the loop");
   assert.ok(!cli.includes('stdio: "pipe"'), "🔴 and its stderr — where “Failed to write file … (0x3)” rides — is no longer discarded");
 
@@ -430,6 +437,28 @@ export function runFieldDayReportTests() {
   // The measured Windows geometry that produced the defect, as ARITHMETIC on the folder length: no
   // Windows path is resolved here, because this suite runs on Linux and would resolve it elsewhere.
   const winLen = (folderChars: number, file: string) => folderChars + `Phoenix-CRM-Field-Day-2026-10-07-${file}.pdf`.length;
+  // 🔴 THE ARCHIVE PATH IS LONGER THAN THE PAPER IT PRESERVES — one more folder, plus
+  // `-superseded-<sha>`. So a folder the four papers fit can still be one the archive cannot be
+  // written into, where `copyFileSync` would stop the run with a bare ENOENT AFTER this guard passed.
+  assert.equal(
+    assertPapersFit(shortOut, fourPapers, { day: "2026-10-07", label: "abc1234" }),
+    ceoPaper.length,
+    "a shallow folder fits the paper and its archive alike, and the PAPER's length is still what is reported",
+  );
+  const archiveTooDeep = path.resolve(root, "y".repeat(180));
+  assert.ok(
+    path.resolve(archiveTooDeep, "Phoenix-CRM-Field-Day-2026-10-07-Summary-for-the-CEO.pdf").length < 260,
+    "this folder is one the papers THEMSELVES fit — the paper guard above passes it",
+  );
+  assert.throws(
+    () => assertPapersFit(archiveTooDeep, fourPapers, { day: "2026-10-07", label: "abc1234" }),
+    /too deep to archive into: the longest archive path is \d{3} characters and Windows stops at 260/,
+    "🔴 a folder that fits the papers but not their archives is refused BEFORE printing, naming the count",
+  );
+  assert.doesNotThrow(
+    () => assertPapersFit(archiveTooDeep, fourPapers, { day: "2026-10-07" }),
+    "and with no label there is no archive to measure — the paper check alone decides",
+  );
   assert.equal(winLen(11, "Summary-for-the-CEO"), 67, "the 11-character folder of the short run that wrote all four papers");
   assert.ok(winLen(205, "Summary-for-the-CEO") > 260, "the 205-character folder that lost the CEO page");
   assert.ok(winLen(205, "Anti-Infective") <= 260, "while Anti-Infective still fitted, which is why it looked like the last paper");
@@ -482,6 +511,21 @@ export function runFieldDayReportTests() {
     assert.ok(
       archive?.endsWith("Phoenix-CRM-Field-Day-2026-10-08-CNS-superseded-abc1234.bin"),
       `the archive is keyed by the superseding commit, not a hand-typed PR number — got ${archive}`,
+    );
+    // 🔴 INTO field-day-superseded/, NOT BESIDE THE PAPER (owner, 2026-10-09). 40 archives had piled
+    // up against 28 live papers, so the folder a person opens to find today's paper was mostly old
+    // ones. The live papers stay at the top, where the hourly backup to F: looks.
+    assert.equal(SUPERSEDED_DIR, "field-day-superseded", "the archive folder is the one the owner named");
+    assert.equal(path.basename(path.dirname(archive!)), SUPERSEDED_DIR, "🔴 the archive lands inside field-day-superseded/");
+    assert.deepEqual(
+      readdirSync(archiving).sort(),
+      ["Phoenix-CRM-Field-Day-2026-10-08-CNS.bin", SUPERSEDED_DIR],
+      "🔴 and nothing but the live paper and that one folder is left at the top — no archive beside the paper",
+    );
+    assert.equal(
+      supersededPathFor(paper, "abc1234"),
+      archive,
+      "🔴 one function answers where an archive goes, so the fit guard can never measure a path the copy does not use",
     );
     assert.ok(
       existsSync(paper),
