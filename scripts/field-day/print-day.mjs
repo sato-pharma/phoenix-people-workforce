@@ -509,16 +509,31 @@ const MAX_PATH = 260;
  * A deterministic path error is not worth discovering one paper at a time: this names the longest
  * paper and the exact character count, so the fix is obvious from the log alone.
  */
-export function assertPapersFit(out, papers, { day = "0000-00-00", limit = MAX_PATH } = {}) {
-  const longest = papers
-    .map((paper) => path.resolve(out, `Phoenix-CRM-Field-Day-${day}-${paper.file}.pdf`))
-    .sort((a, b) => b.length - a.length)[0];
+export function assertPapersFit(out, papers, { day = "0000-00-00", limit = MAX_PATH, label = "" } = {}) {
+  const papers260 = papers.map((paper) => path.resolve(out, `Phoenix-CRM-Field-Day-${day}-${paper.file}.pdf`));
+  const longest = [...papers260].sort((a, b) => b.length - a.length)[0];
   if (longest && longest.length > limit) {
     throw new Error(
       `FIELD_DAY_OUT is too deep: the longest paper path is ${longest.length} characters and Windows ` +
         `stops at ${limit}. Chrome would exit 0 without writing it. Print somewhere shorter.
   ${longest}`,
     );
+  }
+  // 🔴 THE ARCHIVE PATH IS LONGER THAN THE PAPER IT PRESERVES — one more folder, plus
+  // `-superseded-<sha>` — so a folder the four papers fit can still be one the archive cannot be
+  // written into. `copyFileSync` would then stop the run with a bare ENOENT, after a fit check that
+  // passed. As arithmetic: a 180-character folder holds the CEO page at 233 characters and its
+  // archive at 278. Checked only when the caller knows the label, which the CLI does.
+  if (label) {
+    const longestArchive = papers260.map((paper) => supersededPathFor(paper, label)).sort((a, b) => b.length - a.length)[0];
+    if (longestArchive && longestArchive.length > limit) {
+      throw new Error(
+        `FIELD_DAY_OUT is too deep to archive into: the longest archive path is ${longestArchive.length} ` +
+          `characters and Windows stops at ${limit}. The papers themselves fit, but the copy that preserves ` +
+          `the previous ones does not, and a paper is never replaced unarchived. Print somewhere shorter.
+  ${longestArchive}`,
+      );
+    }
   }
   return longest ? longest.length : 0;
 }
@@ -577,6 +592,24 @@ export function supersedeLabel(repoRoot = REPO_ROOT) {
   return `nogit-${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12)}`;
 }
 
+/** The folder inside the output folder that holds every superseded paper. */
+export const SUPERSEDED_DIR = "field-day-superseded";
+
+/**
+ * Where the paper at `pdfPath` is archived to — the ONE place that answers this.
+ *
+ * `assertPapersFit` measures this path and `supersedePaper` writes it, so the guard can never be
+ * measuring a different path from the one the copy uses.
+ */
+export function supersededPathFor(pdfPath, label) {
+  const ext = path.extname(pdfPath);
+  return path.join(
+    path.dirname(pdfPath),
+    SUPERSEDED_DIR,
+    `${path.basename(pdfPath, ext)}-superseded-${label}${ext}`,
+  );
+}
+
 /**
  * 🔴 ARCHIVE A PAPER BEFORE REPLACING IT — THE PRINTER USED TO OVERWRITE IN PLACE.
  *
@@ -594,15 +627,21 @@ export function supersedeLabel(repoRoot = REPO_ROOT) {
  * The OLDEST archive for a label wins: a second run from the same commit finds its archive already
  * there and leaves it, because that first file is the one that went out.
  *
+ * 🔴 INTO `field-day-superseded/`, NOT BESIDE THE PAPER (owner, 2026-10-09: "make the printer archive
+ * into xlsx/field-day-superseded"). The archives had reached 40 files and 12 MB against 28 live
+ * papers, so the folder a person opens to find today's paper was mostly old ones. **The consequence
+ * he was told: the hourly backup to `F:\PHX backup` copies the top of the primary's `xlsx/` and
+ * nothing in a subfolder, so the live papers stay backed up and the archives now live on this disk
+ * alone.** That is the trade — the archive exists to stop a reprint destroying the paper that went
+ * out, which it still does.
+ *
  * Returns the archive path, or null when there was nothing to supersede (the first print of a day).
  */
 export function supersedePaper(pdfPath, { label }) {
   if (!existsSync(pdfPath)) return null;
-  const ext = path.extname(pdfPath);
-  const archive = path.join(
-    path.dirname(pdfPath),
-    `${path.basename(pdfPath, ext)}-superseded-${label}${ext}`,
-  );
+  const archive = supersededPathFor(pdfPath, label);
+  // The folder is made only once there is something to put in it, so a first print leaves no empty one.
+  mkdirSync(path.dirname(archive), { recursive: true });
   try {
     copyFileSync(pdfPath, archive, fsConstants.COPYFILE_EXCL);
   } catch (error) {
@@ -669,10 +708,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   mkdirSync(OUT, { recursive: true });
   const work = process.env.FIELD_DAY_TMP || tmpdir();
   const papers = papersOf(dayData);
-  // 🔴 Before anything is printed OR superseded: a FIELD_DAY_OUT too deep for the longest paper is a
-  // loud error naming the character count, not three papers and a silent hole where the CEO page should be.
-  assertPapersFit(OUT, papers, { day: dayData.day });
+  // 🔴 Before anything is printed OR superseded: a FIELD_DAY_OUT too deep for the longest paper — or
+  // for the archive that preserves it — is a loud error naming the character count, not three papers
+  // and a silent hole where the CEO page should be. The label is read first so the archive path the
+  // guard measures is the one `supersedePaper` will write.
   const label = supersedeLabel();
+  assertPapersFit(OUT, papers, { day: dayData.day, label });
   for (const paper of papers) {
     const htmlPath = path.join(work, `field-day-${dayData.day}-${paper.file}.html`);
     const pdfPath = path.join(OUT, `Phoenix-CRM-Field-Day-${dayData.day}-${paper.file}.pdf`);
@@ -681,7 +722,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const superseded = supersedePaper(pdfPath, { label });
     // 🔴 STDERR, NEVER STDOUT. `run-nightly.mjs` turns EVERY non-empty stdout line into a
     // "wrote <path>" entry in the task log, so a notice on stdout would be logged as a fifth paper.
-    if (superseded) process.stderr.write(`superseded ${path.basename(superseded)}
+    if (superseded) process.stderr.write(`superseded ${SUPERSEDED_DIR}/${path.basename(superseded)}
 `);
     // 🔴 `printPaper` THROWS rather than returning — the path is logged only once the file on disk
     // has been stat-checked, so this log can never again claim a paper that does not exist.

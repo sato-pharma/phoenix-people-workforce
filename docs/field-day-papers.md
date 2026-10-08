@@ -129,6 +129,29 @@ reprint too. The notice was prefixed `SKIPPED — ` because every other stdout l
 launcher logs as `wrote <line>`, and it exited 0, because a day off printing nothing is a correct
 outcome and Task Scheduler reads non-zero as a broken job.
 
+## Where a superseded paper goes (owner, 2026-10-09)
+
+The printer archives the paper already on disk before Chrome replaces it — by copy, keyed by the
+superseding commit's short sha, oldest archive per label winning. That started as a copy *beside* the
+paper, and by the night of 9 October `xlsx/` held **40 archives and 12 MB against 28 live papers**:
+the 8th alone had 20, because the printer had been re-run through five fixes that day. The folder a
+person opens to find today's paper was mostly old ones.
+
+His instruction: **"make the printer archive into xlsx/field-day-superseded"**. So
+`supersededPathFor` puts every archive in that subfolder, created only when there is something to put
+in it, and the 40 that already existed were moved there first.
+
+🔴 **The archive path is about 41 characters longer than the paper's** — one more folder, plus
+`-superseded-<sha>` — so `assertPapersFit` now measures **both**, with the label read before the
+check so the path it measures is the one `supersedePaper` will write. Without that, a folder the four
+papers fit (a 180-character one holds the CEO page at 233) is one the archive cannot be written into
+at 278, and `copyFileSync` would stop the run with a bare ENOENT *after* the fit check had passed.
+
+🔴 **The consequence, which he was told before this shipped: the hourly backup to `F:\PHX backup`
+copies the untracked files at the top of the primary's `xlsx/` and nothing in a subfolder.** So the
+live papers stay backed up and the archives now sit on that one SSD. That is the trade he chose; the
+archive's job is to stop a reprint destroying the paper that went out, and it still does that.
+
 ### 🔴 A launcher change is inert until the copy is refreshed
 
 Found while building that skip, and true of **any** `run-nightly.mjs` change.
