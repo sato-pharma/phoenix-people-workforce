@@ -16,13 +16,29 @@
 -- is REMOVED is the composition line and the product join — the two things that put it on a buy
 -- list. Nothing touches Ivyronc, whose own sticker is a real material with a real formula line.
 --
--- To revert: re-insert the join and the composition row, and set is_active = true:
+-- To revert: re-insert the join and the composition row, and set is_active = true.
+--
+-- 🔴 THESE STATEMENTS ARE THE PRE-IMAGE READ OFF PRODUCTION IMMEDIATELY BEFORE THIS MIGRATION RAN,
+-- not a reconstruction. An earlier draft of this header was written from memory and was wrong three
+-- ways at once: it named a column `qty` that does not exist (it is `qty_per_basis`, so the insert
+-- would have failed outright), it omitted `unit_kind` and `notes`, and it dated the row 2026-01-01
+-- when the real row was 2026-10-08. A revert recipe is read exactly once, under pressure, by
+-- someone who cannot check it — so it is written from a measurement or it is not written at all.
+-- The same pre-image is kept outside the repo at xlsx/guamusin-sticker-pre-image-2026-10-08.md.
+--
+-- PROVEN, not merely corrected: on 2026-10-08 these exact statements were run against STAGING, the
+-- restored row was compared field by field against the production pre-image and matched on all
+-- nine columns plus the join, and this migration was then re-applied to put staging back. The
+-- aluminium film's own formula line was untouched throughout.
+--
 --   insert into public.prodplan_product_materials (product_id, material_id)
 --     select p.id, m.id from public.prodplan_products p, public.prodplan_materials m
 --      where p.code = 'GUAMUSIN' and m.code = 'STICKER_GUAMUSIN';
---   insert into public.prodplan_compositions (product_id, material_id, basis, qty, overage_pct,
---                                             supplier, effective_from)
---     select p.id, m.id, 'per_box', 1, 0, 'sato', '2026-01-01'
+--   insert into public.prodplan_compositions
+--          (product_id, material_id, unit_kind, basis, qty_per_basis, overage_pct, supplier,
+--           effective_from, effective_to, notes)
+--     select p.id, m.id, 'count', 'per_box', 1.000000, 0.0000, 'sato',
+--            date '2026-10-08', null, 'One sticker per box'
 --       from public.prodplan_products p, public.prodplan_materials m
 --      where p.code = 'GUAMUSIN' and m.code = 'STICKER_GUAMUSIN';
 --   update public.prodplan_materials set is_active = true where code = 'STICKER_GUAMUSIN';
@@ -45,8 +61,12 @@ delete from public.prodplan_product_materials pm
    and p.code = 'GUAMUSIN'
    and m.code = 'STICKER_GUAMUSIN';
 
--- 3. The material itself stays, deactivated. It has no stock row and no price, so there is nothing
---    to close at zero — unlike the retired combined LEAFLET, which did.
+-- 3. The material itself stays, deactivated. It carries no price and ONE stock entry, and that
+--    entry is already a zero `own_count` at the Sato store noted "Nothing held here" — so there is
+--    nothing to close at zero, and deactivating it hides no real quantity that a later
+--    reactivation could bring back as cover. (The retired combined LEAFLET did hold stock, which is
+--    why that one had to be closed at zero explicitly.) An earlier draft of this line claimed the
+--    material had no stock row at all; it has one, measured on production before this ran.
 update public.prodplan_materials
    set is_active = false
  where code = 'STICKER_GUAMUSIN';
