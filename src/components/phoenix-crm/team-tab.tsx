@@ -19,6 +19,7 @@
 
 import { useId, useRef, useState, type ReactNode } from "react";
 
+import { AdministratorReversalsPanel } from "@/components/phoenix-crm/administrator-reversals-panel";
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { DoubleVisitPlanSection } from "@/components/phoenix-crm/double-visit-plan-section";
 import { cairoDayOf, cairoStamp, countText, dayLabel, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
@@ -72,7 +73,7 @@ import type {
 } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type TeamSection = "plans" | "edits" | "months" | "unplanned" | "requests" | "lists" | "double";
+type TeamSection = "plans" | "edits" | "months" | "unplanned" | "requests" | "lists" | "double" | "decided";
 type ReviewFilter = "waiting" | "not_sent" | "approved" | "all";
 type ListFilter = "not_ready" | "ready" | "vacant" | "all";
 type TeamNotice = { tone: NoteTone; title: string; message?: ReactNode };
@@ -462,6 +463,15 @@ export function TeamTab({
       note: waitingNote(summary && summary.waitingForYou, summary && summary.requestsWaiting),
     },
   );
+  // The Administrator alone (owner, 2026-10-08): the decisions he can still take back, fourteen days.
+  const reversible = team.data?.reversible ?? null;
+  if (reversible) {
+    sectionOptions.push({
+      value: "decided",
+      label: "Decided · reverse",
+      note: reversible.length > 0 ? `${countText(reversible.length)} you can take back` : undefined,
+    });
+  }
   if (!test) {
     sectionOptions.push({
       value: "lists",
@@ -604,6 +614,8 @@ export function TeamTab({
           ) : null}
 
           {current === "requests" && team.data ? <RequestsSection idPrefix={idPrefix} onChanged={requestDecided} team={team.data} test={test} /> : null}
+
+          {current === "decided" && reversible ? <AdministratorReversalsPanel items={reversible} onChanged={requestDecided} /> : null}
 
           {current === "lists" && team.data ? <ListsSection idPrefix={idPrefix} onOpenList={onOpenList} team={team.data} /> : null}
 

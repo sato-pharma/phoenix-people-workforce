@@ -121,6 +121,8 @@ export type PhoenixCrmNotice =
       customerName: string;
       proposedGrade: string | null;
       note: string | null;
+      /** An approval the Administrator took back (owner, 2026-10-08): "refused", worded as a reversal. */
+      reversed?: boolean;
     }
   | {
       kind: "plan_submitted";
@@ -204,6 +206,8 @@ export type PhoenixCrmNotice =
       /** Who just acted: the rep on a raise, the decider on a step. Told nothing about his own act. */
       actorHrId: string;
       note: string | null;
+      /** A reopened week the Administrator closed again (owner, 2026-10-08): "refused", worded as a reversal. */
+      reversed?: boolean;
     }
   | {
       kind: "forecast_sent";
@@ -225,6 +229,8 @@ export type PhoenixCrmNotice =
       status: UnplannedVisitStatus;
       deciderHrId: string;
       note: string | null;
+      /** An approval the Administrator took back (owner, 2026-10-08): "refused", worded as a reversal. */
+      reversed?: boolean;
       /**
        * The rep's written "why I went". It rides along so the copy the SFE step gets when a manager
        * passes the visit on carries the reason, exactly as the manager's own copy did — he should not
@@ -388,6 +394,7 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
   const reopened = status === "reopened";
   const refused = status === "refused";
   const expired = status === "expired";
+  const reversed = refused && notice.reversed === true;
   const note = notice.note ? ` Note: ${notice.note}` : "";
 
   const next: string[] =
@@ -412,7 +419,9 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
     : reopened
       ? `Weekly plan open to edit: ${rep}, week starting ${week}`
       : refused
-        ? `Refused: ${rep}'s request to edit a weekly plan`
+        ? reversed
+          ? `Reversed: ${rep}'s request to edit a weekly plan`
+          : `Refused: ${rep}'s request to edit a weekly plan`
         : expired
           ? `Expired: ${rep}'s request to edit a weekly plan`
           : `Approved by ${actor}: ${rep}'s request to edit a weekly plan`;
@@ -421,14 +430,18 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
     : reopened
       ? `${actor} approved ${rep}'s request. The ${territory} plan for the week starting ${week} is open again for them to change and send again.${note}`
       : refused
-        ? `${actor} refused ${rep}'s request to edit the ${territory} plan for the week starting ${week}. The week stays as it was sent.${note}`
+        ? reversed
+          ? `${actor} reversed the approval of ${rep}'s request to edit the ${territory} plan for the week starting ${week}. The week is closed again, as it was sent.${note}`
+          : `${actor} refused ${rep}'s request to edit the ${territory} plan for the week starting ${week}. The week stays as it was sent.${note}`
         : expired
           ? `The week starting ${week} passed before ${rep}'s request to edit the ${territory} plan was settled.`
           : `${actor} approved ${rep}'s request to edit the ${territory} plan for the week starting ${week}. ${nextStep}${note}`;
   const repMessage = reopened
     ? `${actor} approved your request. Your plan for the week starting ${week} is open again: change the days from today on and send it again. Until you send it, your visits this week count as off-plan.${note}`
     : refused
-      ? `${actor} refused your request to edit your plan for the week starting ${week}. The week stays as you sent it.${note}`
+      ? reversed
+        ? `${actor} reversed the approval of your request to edit your plan for the week starting ${week}. Your week is closed again, as you sent it.${note}`
+        : `${actor} refused your request to edit your plan for the week starting ${week}. The week stays as you sent it.${note}`
       : expired
         ? `The week starting ${week} passed before your request to edit it was settled.`
         : `${actor} approved your request to edit your plan for the week starting ${week}. ${nextStep}${note}`;
@@ -793,11 +806,14 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
             : `bringing ${notice.customerName} back to your list`;
     const note = notice.note ? ` Note: ${notice.note}` : "";
     const subject = { grade: "grade", drop: "drop", add: "add to list", restore: "bring back" }[notice.requestKind];
+    const reversed = notice.reversed === true;
     return {
       recipients: [notice.requesterHrId],
       eventType: approved ? "request_approved" : "request_refused",
-      title: `${approved ? "Approved" : "Refused"}: ${subject} for ${notice.customerName}`,
-      message: `${decider} ${approved ? "approved" : "refused"} ${what} on ${territory}.${note}`,
+      title: reversed ? `Reversed: ${subject} for ${notice.customerName}` : `${approved ? "Approved" : "Refused"}: ${subject} for ${notice.customerName}`,
+      message: reversed
+        ? `${decider} reversed the approval of ${what} on ${territory}. It is undone.${note}`
+        : `${decider} ${approved ? "approved" : "refused"} ${what} on ${territory}.${note}`,
       tab: "list",
       recordId: notice.requestId,
       idempotencyKey: `phoenix_crm:request:${notice.requestId}:${notice.status}`,
@@ -988,10 +1004,14 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       {
         recipients: [notice.repHrId],
         eventType: approved ? "unplanned_visit_approved" : refused ? "unplanned_visit_refused" : "unplanned_visit_moved_on",
-        title: approved || refused
-          ? `${approved ? "Approved" : "Refused"}: off-plan visit to ${notice.customerName}`
-          : `Passed to SFE: off-plan visit to ${notice.customerName}`,
-        message: approved
+        title: notice.reversed === true
+          ? `Reversed: off-plan visit to ${notice.customerName}`
+          : approved || refused
+            ? `${approved ? "Approved" : "Refused"}: off-plan visit to ${notice.customerName}`
+            : `Passed to SFE: off-plan visit to ${notice.customerName}`,
+        message: notice.reversed === true
+          ? `${decider} reversed the approval of your off-plan visit to ${notice.customerName} on ${day}, so it no longer counts.${note}`
+          : approved
           ? `${decider} approved your off-plan visit to ${notice.customerName} on ${day}. It counts like a planned visit.${note}`
           : refused
             ? `${decider} refused your off-plan visit to ${notice.customerName} on ${day}, so it does not count.${note}`
@@ -1172,9 +1192,12 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
             : notice.requestKind === "add"
               ? `adding ${bidiIsolate(notice.customerName)}`
               : `bringing ${bidiIsolate(notice.customerName)} back`;
+      const reversed = notice.reversed === true;
       return {
-        title: `Activity · list request ${approved ? "approved" : "refused"}: ${notice.customerName}`,
-        message: `${decider} ${approved ? "approved" : "refused"} ${rep}'s request — ${what} on ${territory}.`,
+        title: `Activity · list request ${reversed ? "reversed" : approved ? "approved" : "refused"}: ${notice.customerName}`,
+        message: reversed
+          ? `${decider} reversed the approval of ${rep}'s request — ${what} on ${territory}.`
+          : `${decider} ${approved ? "approved" : "refused"} ${rep}'s request — ${what} on ${territory}.`,
         tab: "team",
         recordId: notice.requestId,
         subjectHrId: notice.requesterHrId,
@@ -1271,10 +1294,20 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
       const decider = deciderNameOf(names, notice.deciderHrId, "A manager");
       const rep = nameOf(names, notice.repHrId, "a rep");
       const day = formatPhoenixLongDate(notice.visitDate);
-      const word = notice.status === "approved" ? "approved" : notice.status === "refused" ? "refused" : "passed to SFE";
+      const word =
+        notice.reversed === true
+          ? "reversed"
+          : notice.status === "approved"
+            ? "approved"
+            : notice.status === "refused"
+              ? "refused"
+              : "passed to SFE";
       return {
         title: `Activity · off-plan visit ${word}: ${notice.customerName}`,
-        message: `${decider} ${word} ${rep}'s off-plan visit to ${bidiIsolate(notice.customerName)} on ${territory} (${day}).`,
+        message:
+          notice.reversed === true
+            ? `${decider} reversed the approval of ${rep}'s off-plan visit to ${bidiIsolate(notice.customerName)} on ${territory} (${day}).`
+            : `${decider} ${word} ${rep}'s off-plan visit to ${bidiIsolate(notice.customerName)} on ${territory} (${day}).`,
         tab: "team",
         recordId: notice.visitId,
         subjectHrId: notice.repHrId,

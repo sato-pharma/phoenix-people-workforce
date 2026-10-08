@@ -24,6 +24,7 @@
 
 import { loadVendorLeftoversBySeat } from "@/lib/crm/phoenix-vendor-leftovers";
 import { logError } from "@/lib/observability/log";
+import type { ReversibleItem } from "@/lib/phoenix-crm/administrator-reversal-rules";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -37,6 +38,7 @@ import {
   testReadSeats,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
+import { loadReversibleItems } from "@/lib/phoenix-crm/server/administrator-reversals";
 import { offPlanLocationFlag } from "@/lib/phoenix-crm/server/blind-payloads";
 import { loadDayStartsBySeat } from "@/lib/phoenix-crm/server/day-start";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -243,6 +245,12 @@ export type TeamView = {
    * drawn in the Double visits section, apart from the district manager's own plan.
    */
   visitAsks: VisitAskSummary | null;
+  /**
+   * The decided items the Administrator can still take back (owner, 2026-10-08): a reopened week, an
+   * approved off-plan visit, an approved list request, fourteen days back. Null for everyone else, so no
+   * other viewer's payload carries it, and null too when it could not be read — the tab still opens.
+   */
+  reversible: ReversibleItem[] | null;
   summary: {
     territories: number;
     vacant: number;
@@ -255,7 +263,7 @@ export type TeamView = {
     /** Off-plan visits at a step this viewer decides — the manager's, or the SFE's. */
     unplannedWaitingForYou: number;
     planEditsWaiting: number;
-    /** Requests to edit a week at a step this viewer takes — the manager's, SFE's, or HR's. */
+    /** Requests to edit a week at a step this viewer takes — the manager's, or SFE's. */
     planEditsWaitingForYou: number;
     /** Visit asks waiting for this viewer's answer. */
     visitAsksWaitingForYou: number;
@@ -406,6 +414,13 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));
 
   const realRows = territories.filter((row) => row.readiness);
+  const reversible = await loadReversibleItems(viewer, isTest).catch((error: unknown) => {
+    logError("Phoenix CRM could not read the reversible decisions for the Team tab", {
+      error,
+      labels: { event: "phoenix_crm_reversible_items_failed" },
+    });
+    return null;
+  });
   return {
     isTest,
     viewerHrId: viewer.hrId,
@@ -415,6 +430,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     planEdits,
     doubleVisits: doubleVisitPlanReach(viewer, isTest),
     visitAsks,
+    reversible,
     summary: {
       territories: territories.length,
       vacant: territories.filter((row) => !row.territory.repHrId).length,

@@ -68,7 +68,8 @@ import {
 } from "@/lib/phoenix-crm/list-request-rules";
 import { planWeekdays, type PlanWeekday } from "@/lib/phoenix-crm/plan-pattern";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { territoryName, territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { PHOENIX_CRM_ADMINISTRATOR_HR_ID } from "@/lib/phoenix-crm/plan-edit-rules";
+import { personKey, territoryName, territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   assertListCurator,
   assertListRequestApprover,
@@ -931,7 +932,12 @@ export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): Lis
     note: text(row.note),
     requestedByName: nameOf(names, text(row.requested_by_hr_id)),
     requestedAt: String(row.requested_at),
-    decidedByName: text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id)) : null,
+    // The Administrator is named by his title, never by name and never as HR (owner, 2026-10-08).
+    decidedByName: text(row.decided_by_hr_id)
+      ? personKey(text(row.decided_by_hr_id)) === personKey(PHOENIX_CRM_ADMINISTRATOR_HR_ID)
+        ? "The Administrator"
+        : nameOf(names, text(row.decided_by_hr_id))
+      : null,
     decidedAt: text(row.decided_at),
     decisionNote: text(row.decision_note),
     kindLabel: requestKindLabel(kind),
