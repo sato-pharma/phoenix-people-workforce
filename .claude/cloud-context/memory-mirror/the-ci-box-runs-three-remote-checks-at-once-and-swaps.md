@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1baaa0f5-9436-457f-8907-da9439516d28
-  modified: 2026-10-03T22:16:42.539Z
+  modified: 2026-10-08T14:12:39.805Z
 ---
 
 Measured 2026-10-04 at 01:15 Cairo, while `node scripts/remote-check.mjs all` on
@@ -47,6 +47,20 @@ the shape measured here, 325s of lint and then the lock.
   pre-push step (`AGENTS.md` §7) is cheap for the LAPTOP and not free for the box. Prefer `test` over
   `all` unless the change adds a route, a file or a closed-union member — which is what the rule
   already says, and this is the reason it matters.
+
+**The kernel's own record, read 2026-10-08.** `phx` is in `systemd-journal`, so
+`journalctl -k -b | grep -E 'Out of memory: Killed process'` works without sudo. All 7 OOM kills
+since the 30 Sep boot were heavy check jobs, each with 2–4 GB resident; none was a preview:
+
+| When (Cairo) | What was killed |
+| --- | --- |
+| 30 Sep, 07:31 | the self-hosted Actions runner's job (3.1 GB) — the morning PRs ran on the box |
+| 4 Oct, 01:11–01:21 | 4 kills: two `MainThread` (3.3–3.4 GB, typecheck or test) and two `next-build` |
+| 5 Oct, 12:29 and 23:59 | 2 × `next-build` (3.8 and 4.2 GB) |
+
+The 4 Oct cluster is the evening measured above. None since 6 Oct, after #5342 put one run on the
+whole box. The 5 Oct 23:59 kill came after that lock merged, presumably from a session still on an
+older checkout.
 
 Related: [[desktop-slowness-oct-2026-is-thinking-level-and-model-not-memory]] and
 [[perf-audit-2026-10-03-ram-is-the-bottleneck-and-two-fixes-that-are-not-safe]] are the same shape on

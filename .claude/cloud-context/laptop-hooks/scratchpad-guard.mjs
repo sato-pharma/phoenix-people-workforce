@@ -293,6 +293,7 @@ if (mode === 'pre') {
     }
     if (repos.size) sweepRepos({ only: [...repos.values()] });
   } catch (e) {
+    if (e?.[Symbol.for('phx.hook-exit')]) throw e; // an exit above ended this hook (hook-dispatch.mjs)
     logLine(`pre-hook error (failed open): ${e.message}`);
   }
   process.exit(0);

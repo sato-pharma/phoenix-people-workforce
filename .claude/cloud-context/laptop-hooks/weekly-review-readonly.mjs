@@ -275,5 +275,8 @@ if (process.argv.includes('--selftest')) {
   console.log(`\nSELFTEST weekly-review-readonly: ${ran} cases, ${bad} failed`);
   process.exit(bad === 0 ? 0 : 1);
 } else {
-  try { main(); } catch (e) { logLine(`hook error (failed open): ${e.message}`); process.exit(0); }
+  try { main(); } catch (e) {
+    if (e?.[Symbol.for('phx.hook-exit')]) throw e; // main's own exit, under hook-dispatch.mjs — not an error
+    logLine(`hook error (failed open): ${e.message}`); process.exit(0);
+  }
 }
