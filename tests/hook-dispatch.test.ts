@@ -220,7 +220,7 @@ const CORPUS: Array<[string, Record<string, unknown>]> = [
 ];
 
 function runDispatcher(tool: string, input: Record<string, unknown>, processes: boolean, home: string): Merged {
-  const env: Record<string, string | undefined> = { ...process.env, CLAUDE_PROJECT_DIR: resolve("."), HOME: home, USERPROFILE: home };
+  const env: NodeJS.ProcessEnv = { ...process.env, CLAUDE_PROJECT_DIR: resolve("."), HOME: home, USERPROFILE: home };
   for (const key of Object.keys(env)) if (/^PHX_.*(_OK|_OFF)$/.test(key)) delete env[key];
   if (processes) env.PHX_HOOK_DISPATCH_PROCESSES = "1";
   else delete env.PHX_HOOK_DISPATCH_PROCESSES;
