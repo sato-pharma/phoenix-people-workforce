@@ -31,6 +31,7 @@ import { runCommandPaletteItemsTests } from "./command-palette-items.test.ts";
 import { runNavSingleGateNoBypassTests } from "./nav-single-gate-no-bypass.test.ts";
 import { runNavRolesNameOnlyPermissionHoldersTests } from "./nav-roles-name-only-permission-holders.test.ts";
 import { runNavigationGrantedButUnreachableTests } from "./navigation-granted-but-unreachable.test.ts";
+import { runApiGrantedButUncalledTests } from "./api-granted-but-uncalled.test.ts";
 import { runPageGateReaderRoleInequalityGateTests } from "./page-gate-reader-role-inequality-gates.test.ts";
 import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.test.ts";
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
@@ -2518,6 +2519,12 @@ await runTest(
 await runTest(
   "navigation granted but unreachable (a page a role can open that nothing links to, plus the unreadable-gate blind spot — both pinned to the backlog by identity)",
   runNavigationGrantedButUnreachableTests,
+);
+await runTest(
+  "API granted but uncalled (a permissioned route handler that serves and that no line of code asks " +
+    "for — the access registry declares every route and so can never answer this — pinned to the " +
+    "backlog by identity, with the external auth modes excluded mechanically)",
+  runApiGrantedButUncalledTests,
 );
 await runTest(
   "page gate reader reads role-INEQUALITY entry gates and const-bound predicates (25 pages wrote " +
