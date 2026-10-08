@@ -35,6 +35,7 @@ import { PaginationControls } from "@/components/ui/pagination-controls";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { PageContainer } from "@/components/layout/page-container";
 import { VacationAttachmentHistory } from "@/components/vacation/vacation-attachment-history";
+import { ReturnedRequestPanel, type ReturnedRequestEdits } from "@/components/vacation/returned-request-panel";
 import {
   vacationDayPartLabel,
   vacationTypeLabel,
@@ -1051,7 +1052,7 @@ function RequestCard({
    */
   selfView?: boolean;
   viewerHrId: string | null;
-  onResubmit: (row: VacationRequestRecord) => void;
+  onResubmit: (row: VacationRequestRecord, edits: ReturnedRequestEdits | null) => void;
   onReview: (row: VacationRequestRecord) => void;
   row: VacationRequestRecord;
 }) {
@@ -1182,21 +1183,9 @@ function RequestCard({
         </button>
       ) : null}
 
-      {/* Resubmit button for returned requests (employee only) */}
+      {/* A request sent back for editing: the employee who filed it can edit and resubmit, or resubmit as it stands */}
       {row.status === "returned" && viewerHrId && row.employeeHrId.toUpperCase() === viewerHrId.toUpperCase() ? (
-        <div className="mt-2.5 space-y-1.5 border border-amber-200 bg-amber-50 p-2">
-          <p className="text-phx-xs font-bold text-amber-900">
-            Returned by manager — {row.managerDecisionComment ? `"${row.managerDecisionComment}"` : "see the return reason in the timeline."}
-          </p>
-          <button
-            className="w-full border border-amber-600 bg-amber-600 px-3 py-1.5 text-phx-sm font-bold text-white disabled:opacity-50"
-            disabled={actingId === row.id}
-            onClick={() => onResubmit(row)}
-            type="button"
-          >
-            Resubmit for review
-          </button>
-        </div>
+        <ReturnedRequestPanel busy={actingId === row.id} onResubmit={onResubmit} row={row} />
       ) : null}
 
       {/* Decision info or action buttons */}
@@ -1456,11 +1445,12 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
 
   // Approve and Reject are NOT decided from this report (owner, 2026-10-08): a request waiting on the
   // viewer links to its page in Leave Approvals, which is the one place every leave decision is made.
-  const resubmit = useCallback(async (row: VacationRequestRecord) => {
+  const resubmit = useCallback(async (row: VacationRequestRecord, edits: ReturnedRequestEdits | null) => {
     setActingId(row.id);
     setActionError(null);
     try {
       const response = await fetch(`/api/vacations/requests/${encodeURIComponent(row.id)}/resubmit`, {
+        body: JSON.stringify(edits ? { edits } : {}),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });

@@ -16,6 +16,7 @@ export type LeaveWorkflowActionKey =
   | "admin_update"
   | "hr_approve"
   | "hr_reject"
+  | "hr_return"
   | "manager_approve"
   | "manager_reject"
   | "manager_return"
@@ -33,7 +34,12 @@ export function vacationDecisionAction(input: {
   status: VacationRequestStatus;
 }): { actionKey: LeaveWorkflowActionKey; expectedNextStatus: string } {
   if (input.decision === "return") {
-    return { actionKey: "manager_return", expectedNextStatus: "returned" };
+    // HR returns from its own stage (`pending_hr`) under its own registry action, so the roles that
+    // may return as a manager and the roles that may return as HR stay separately governed.
+    return {
+      actionKey: input.status === "pending_hr" ? "hr_return" : "manager_return",
+      expectedNextStatus: "returned",
+    };
   }
 
   const decisionValue = input.decision === "approve" ? "approve" : "reject";

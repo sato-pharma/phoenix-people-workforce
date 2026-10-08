@@ -3833,6 +3833,124 @@ type ApplyVacationDecisionInput = {
   request: VacationRequestRecord;
 };
 
+/** What the employee reads when an approver returns a request without typing a comment. */
+const DEFAULT_RETURN_PROMPT = "Please review your request, correct what is needed, and resubmit it.";
+
+/**
+ * Send a request back to the employee to edit. Shared by the sequential flow and the legacy Sick
+ * flow, which had no return branch at all — a "return" there fell through to the rejection path.
+ * The comment is optional: "Return for edit" and "Return for edit with comment" are two buttons.
+ */
+async function returnVacationToEmployee(args: {
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>;
+  input: ApplyVacationDecisionInput;
+  step: { stepKey: VacationWorkflowStepKey };
+}) {
+  const { directory, input, step } = args;
+  const now = new Date().toISOString();
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .update({
+      status: "returned",
+      manager_decision_comment: nullableText(input.decisionComment),
+      manager_decision_by_hr_id: input.actorHrId,
+      manager_decision_at: now,
+      updated_at: now,
+    })
+    .eq("id", input.request.id)
+    .eq("status", input.request.status)
+    .select("*")
+    .single();
+  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
+  const returned = mapVacationRow(data as VacationRequestDbRow);
+  await insertVacationEvent({
+    actorHrId: input.actorHrId,
+    actorLoginId: input.actorLoginId,
+    eventType: step.stepKey === "hr" ? "approval_hr_returned" : "approval_manager_returned",
+    message: step.stepKey === "hr"
+      ? "HR returned the request to the employee for editing."
+      : "Manager returned the request to the employee for editing.",
+    metadata: { decisionComment: input.decisionComment ?? null, stepKey: step.stepKey },
+    requestId: returned.id,
+  });
+  await writeRequiredAuditLog({
+    actorLoginId: input.actorLoginId ?? input.actorHrId ?? "system",
+    entityId: returned.id,
+    entityType: "vacation_request",
+    newValues: { decisionComment: input.decisionComment ?? null, status: "returned" },
+    oldValues: { status: input.request.status },
+    summary: "Vacation request returned to employee for revision.",
+  });
+  const actorName = findEmployeeByHrId(directory, input.actorHrId)?.displayName
+    ?? returned.managerName
+    ?? "Your manager";
+  const returnReason = text(input.decisionComment) || DEFAULT_RETURN_PROMPT;
+  // Employee: in-app + Telegram (already all 3 once email below fires)
+  void notifyRecipients({
+    channels: ["in_app", "telegram", "push"],
+    href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(returned.id)}`,
+    message: `Your ${vacationTypeLabel(returned.vacationType)} vacation request (${returned.startDate} → ${returned.endDate}) was returned by ${actorName} for revision. Reason: ${returnReason}`,
+    metadata: { requestId: returned.id, status: "returned" },
+    recipients: [returned.employeeHrId],
+    requestId: returned.id,
+    title: "Vacation request returned for revision",
+    type: "return",
+  }).catch(async (error) => {
+    await insertVacationEvent({
+      actorHrId: input.actorHrId,
+      actorLoginId: input.actorLoginId,
+      eventType: "notification_failed",
+      message: vacationErrorMessage(error),
+      requestId: returned.id,
+    }).catch(() => undefined);
+  });
+  // HR: in-app + Telegram so they know the request was sent back
+  const hrRecipientsForReturn = await getHrRecipients(directory);
+  void notifyRecipients({
+    channels: ["in_app", "telegram", "push"],
+    href: `/admin/approvals/vacation/${encodeURIComponent(returned.id)}`,
+    message: `${actorName} returned ${returned.employeeName}'s ${vacationTypeLabel(returned.vacationType)} request (${returned.startDate} → ${returned.endDate}) for revision. Reason: ${returnReason}`,
+    metadata: { requestId: returned.id, status: "returned" },
+    recipients: hrRecipientsForReturn.map((r) => r.hrId),
+    requestId: returned.id,
+    title: `${returned.employeeName}'s vacation request was returned for revision`,
+    type: "return_hr_notice",
+  }).catch(async (error) => {
+    await insertVacationEvent({
+      actorHrId: input.actorHrId,
+      actorLoginId: input.actorLoginId,
+      eventType: "notification_failed",
+      message: vacationErrorMessage(error),
+      requestId: returned.id,
+    }).catch(() => undefined);
+  });
+  // Email the employee (CC: HR) — completes the 3-channel requirement
+  if (returned.employeeWorkEmail) {
+    const hrEmailsForReturn = hrRecipientsForReturn
+      .map((r) => findEmployeeByHrId(directory, r.hrId)?.workEmail)
+      .filter((e): e is string => Boolean(e));
+    void sendVacationReturnedEmail({
+      cc: hrEmailsForReturn,
+      decisionComment: input.decisionComment ?? null,
+      employeeDisplayName: findEmployeeByHrId(directory, returned.employeeHrId)?.displayName,
+      employeeEmail: returned.employeeWorkEmail,
+      managerName: actorName,
+      request: returned,
+    }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: returned.id,
+      }).catch(() => undefined);
+    });
+  }
+  invalidateExecutiveDashboardCache("leave request returned", ["leave"]);
+  return returned;
+}
+
 // Dispatch on workflow type: Annual/Other/Compensatory/Emergency use the sequential flow; only
 // Sick keeps the legacy parallel flow (applyVacationDecisionLegacy is the original behavior, intact).
 async function applyVacationDecision(input: ApplyVacationDecisionInput) {
@@ -3853,8 +3971,10 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   if (input.request.status === "returned" && input.decision !== "return") {
     throw new Error("This vacation request has been returned to the employee. Wait for them to resubmit before taking action.");
   }
-  if ((input.decision === "reject" || input.decision === "return") && !text(input.decisionComment)) {
-    throw new Error(input.decision === "return" ? "A return reason is required." : "A rejection reason is required.");
+  // A return needs no comment: "Return for edit" and "Return for edit with comment" are two buttons,
+  // and the button that carries a comment makes the screen demand it. A rejection always needs one.
+  if (input.decision === "reject" && !text(input.decisionComment)) {
+    throw new Error("A rejection reason is required.");
   }
 
   const directory = await getEmployeeDirectory();
@@ -3961,109 +4081,10 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     }
   }
 
-  // "return" is a manager-only action: send the request back to the employee without finalizing
-  // the step. The approval step stays "pending" so the workflow can resume after resubmit.
+  // Any approver may send the request back for the employee to edit (owner, 2026-10-08). The step
+  // stays "pending" so the workflow resumes where it stopped after the employee resubmits.
   if (input.decision === "return") {
-    const now = new Date().toISOString();
-    const { data, error } = await getSupabaseAdmin()
-      .from(vacationRequestsTable)
-      .update({
-        status: "returned",
-        manager_decision_comment: nullableText(input.decisionComment),
-        manager_decision_by_hr_id: input.actorHrId,
-        manager_decision_at: now,
-        updated_at: now,
-      })
-      .eq("id", input.request.id)
-      .eq("status", input.request.status)
-      .select("*")
-      .single();
-    if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-    if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
-    const returned = mapVacationRow(data as VacationRequestDbRow);
-    await insertVacationEvent({
-      actorHrId: input.actorHrId,
-      actorLoginId: input.actorLoginId,
-      eventType: "approval_manager_returned",
-      message: "Manager returned the request to the employee for revision.",
-      metadata: { decisionComment: input.decisionComment ?? null, stepKey: step.stepKey },
-      requestId: returned.id,
-    });
-    await writeRequiredAuditLog({
-      actorLoginId: input.actorLoginId ?? input.actorHrId ?? "system",
-      entityId: returned.id,
-      entityType: "vacation_request",
-      newValues: { decisionComment: input.decisionComment ?? null, status: "returned" },
-      oldValues: { status: input.request.status },
-      summary: "Vacation request returned to employee for revision.",
-    });
-    const actorName = findEmployeeByHrId(directory, input.actorHrId)?.displayName
-      ?? returned.managerName
-      ?? "Your manager";
-    const returnReason = input.decisionComment ?? "No reason provided.";
-    // Employee: in-app + Telegram (already all 3 once email below fires)
-    void notifyRecipients({
-      channels: ["in_app", "telegram", "push"],
-      href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(returned.id)}`,
-      message: `Your ${vacationTypeLabel(returned.vacationType)} vacation request (${returned.startDate} → ${returned.endDate}) was returned by ${actorName} for revision. Reason: ${returnReason}`,
-      metadata: { requestId: returned.id, status: "returned" },
-      recipients: [returned.employeeHrId],
-      requestId: returned.id,
-      title: "Vacation request returned for revision",
-      type: "return",
-    }).catch(async (error) => {
-      await insertVacationEvent({
-        actorHrId: input.actorHrId,
-        actorLoginId: input.actorLoginId,
-        eventType: "notification_failed",
-        message: vacationErrorMessage(error),
-        requestId: returned.id,
-      }).catch(() => undefined);
-    });
-    // HR: in-app + Telegram so they know the request was sent back
-    const hrRecipientsForReturn = await getHrRecipients(directory);
-    void notifyRecipients({
-      channels: ["in_app", "telegram", "push"],
-      href: `/admin/approvals/vacation/${encodeURIComponent(returned.id)}`,
-      message: `${actorName} returned ${returned.employeeName}'s ${vacationTypeLabel(returned.vacationType)} request (${returned.startDate} → ${returned.endDate}) for revision. Reason: ${returnReason}`,
-      metadata: { requestId: returned.id, status: "returned" },
-      recipients: hrRecipientsForReturn.map((r) => r.hrId),
-      requestId: returned.id,
-      title: `${returned.employeeName}'s vacation request was returned for revision`,
-      type: "return_hr_notice",
-    }).catch(async (error) => {
-      await insertVacationEvent({
-        actorHrId: input.actorHrId,
-        actorLoginId: input.actorLoginId,
-        eventType: "notification_failed",
-        message: vacationErrorMessage(error),
-        requestId: returned.id,
-      }).catch(() => undefined);
-    });
-    // Email the employee (CC: HR) — completes the 3-channel requirement
-    if (returned.employeeWorkEmail) {
-      const hrEmailsForReturn = hrRecipientsForReturn
-        .map((r) => findEmployeeByHrId(directory, r.hrId)?.workEmail)
-        .filter((e): e is string => Boolean(e));
-      void sendVacationReturnedEmail({
-        cc: hrEmailsForReturn,
-        decisionComment: input.decisionComment ?? null,
-        employeeDisplayName: findEmployeeByHrId(directory, returned.employeeHrId)?.displayName,
-        employeeEmail: returned.employeeWorkEmail,
-        managerName: actorName,
-        request: returned,
-      }).catch(async (error) => {
-        await insertVacationEvent({
-          actorHrId: input.actorHrId,
-          actorLoginId: input.actorLoginId,
-          eventType: "notification_failed",
-          message: vacationErrorMessage(error),
-          requestId: returned.id,
-        }).catch(() => undefined);
-      });
-    }
-    invalidateExecutiveDashboardCache("leave request returned", ["leave"]);
-    return returned;
+    return returnVacationToEmployee({ directory, input, step });
   }
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
@@ -4338,8 +4359,8 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
   if (input.request.status !== "pending_manager") {
     throw new Error("This vacation request already has a final decision.");
   }
-  if ((input.decision === "reject" || input.decision === "return") && !text(input.decisionComment)) {
-    throw new Error(input.decision === "return" ? "A return reason is required." : "A rejection reason is required.");
+  if (input.decision === "reject" && !text(input.decisionComment)) {
+    throw new Error("A rejection reason is required.");
   }
 
   const directory = await getEmployeeDirectory();
@@ -4392,6 +4413,12 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
         requestId: input.request.id,
       });
     }
+  }
+
+  // Sick leave had no return branch: a "return" fell through to the line below and REJECTED the
+  // request. Any pending approver, manager or HR, may now send it back for the employee to edit.
+  if (input.decision === "return") {
+    return returnVacationToEmployee({ directory, input, step });
   }
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
@@ -4574,7 +4601,24 @@ export async function decideVacationRequest(access: AccessContext, input: {
   });
 }
 
-export async function resubmitVacationRequest(access: AccessContext, input: { requestId: string }) {
+/**
+ * What an employee may change while a returned request is in their hands. Every field is optional:
+ * an omitted one keeps the stored value, so "Resubmit without changes" sends nothing at all. The
+ * leave type is not editable — it decides the evidence, the approval chain and the balance bucket,
+ * so a wrong type is a new request, not an edit.
+ */
+export type ResubmitVacationEdits = {
+  dayPart?: unknown;
+  employeeNote?: unknown;
+  endDate?: unknown;
+  otherReason?: unknown;
+  startDate?: unknown;
+};
+
+export async function resubmitVacationRequest(
+  access: AccessContext,
+  input: { edits?: ResubmitVacationEdits | null; requestId: string },
+) {
   await assertPermission(access, "leave", "create");
   const request = await fetchVacationRequestById(input.requestId);
   if (!request) throw new Error("Vacation request was not found.");
@@ -4586,39 +4630,189 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
     throw new Error("Forbidden: only the employee who submitted this request can resubmit it.");
   }
 
+  const edits = input.edits ?? {};
   const now = new Date().toISOString();
+  const steps = await fetchVacationApprovalStepsForRequest(request.id);
+
+  const startDate = edits.startDate === undefined ? request.startDate : toDateOnlyString(String(edits.startDate ?? ""));
+  const endDate = edits.endDate === undefined ? request.endDate : toDateOnlyString(String(edits.endDate ?? ""));
+  const dayPart = edits.dayPart === undefined ? request.dayPart : normalizeVacationDayPart(edits.dayPart);
+  if (!startDate || !endDate) throw new Error("Vacation start and end dates are required.");
+  if (!dayPart) throw new Error("Vacation day part is invalid.");
+  if (endDate < startDate) throw new Error("Vacation end date cannot be before the start date.");
+  const datesChanged = startDate !== request.startDate || endDate !== request.endDate || dayPart !== request.dayPart;
+
+  const update: Record<string, unknown> = { updated_at: now };
+  const changedFields: string[] = [];
+  if (edits.employeeNote !== undefined) {
+    const employeeNote = nullableText(edits.employeeNote);
+    if (employeeNote !== request.employeeNote) {
+      update.employee_note = employeeNote;
+      changedFields.push("note");
+    }
+  }
+  if (edits.otherReason !== undefined && request.vacationType === "other") {
+    const reason = text(edits.otherReason);
+    if (!reason) throw new Error("Other vacation requires an explanation for HR review.");
+    if (reason !== request.notes) {
+      update.notes = reason;
+      changedFields.push("reason");
+    }
+  }
+
+  if (datesChanged) {
+    // The same checks a new submission passes, run again on the new dates — an edit is not a way
+    // round the retroactive, holiday and balance rules. An Emergency request is stored as such only
+    // because it was for today, so it is re-resolved from the dates like a fresh Annual one.
+    const resolvedVacationType = resolveSubmittedVacationType({
+      endDate,
+      requestedVacationType: request.vacationType === "emergency" ? "annual" : request.vacationType,
+      startDate,
+    });
+    validateVacationSubmissionDates({ endDate, resolvedVacationType, startDate });
+    await validateOfficialHolidayAdjacency({ endDate, startDate });
+    const policyWarnings = [...getVacationPolicyWarnings({ dayPart, endDate, startDate, vacationType: resolvedVacationType })];
+    const { employee } = await getCurrentEmployee(access);
+    if (employee.hireDate && startDate < employee.hireDate) {
+      throw new Error("Vacation date cannot be before the employee hire date.");
+    }
+    const weeklyOffPolicy = await fetchWeeklyOffPolicyForTitle(employeeVacationPolicyTitle(employee));
+    const durationDays = calculateVacationDurationDays({
+      dayPart,
+      endDate,
+      startDate,
+      weeklyOffPolicy: weeklyOffPolicyForDateCalculation(weeklyOffPolicy),
+    });
+    let balance = await calculatePaymentForRequest({
+      durationDays,
+      employeeHrId: employee.hrId,
+      excludeRequestId: request.id,
+      hireDate: employee.hireDate,
+      startDate,
+      vacationType: resolvedVacationType,
+    });
+    if (shouldForceUnpaidForPolicy({ dayPart, policyWarnings, vacationType: resolvedVacationType })) {
+      balance = {
+        ...balance,
+        balanceAfterDays: balance.balanceBeforeDays,
+        paidDurationDays: 0,
+        paymentStatus: "unpaid",
+        unpaidDurationDays: durationDays,
+        unpaidReason: null,
+      };
+    }
+    Object.assign(update, {
+      balance_after_days: balance.balanceAfterDays,
+      balance_before_days: balance.balanceBeforeDays,
+      day_part: dayPart,
+      duration_days: durationDays,
+      end_date: endDate,
+      entitlement_days: balance.entitlementDays,
+      payment_status: balance.paymentStatus,
+      paid_duration_days: balance.paidDurationDays,
+      period_end: balance.periodEnd,
+      period_start: balance.periodStart,
+      start_date: startDate,
+      unpaid_duration_days: balance.unpaidDurationDays,
+      unpaid_reason: balance.unpaidReason,
+      used_paid_days: balance.usedPaidDays,
+      vacation_type: resolvedVacationType,
+      weekly_off_policy_snapshot: buildWeeklyOffPolicySnapshot(weeklyOffPolicy),
+      // Approvals given for the old dates do not carry over to the new ones.
+      hr_decision: null,
+      hr_decision_at: null,
+      hr_decision_by_hr_id: null,
+      hr_decision_comment: null,
+      manager_decision: null,
+      manager_decision_at: null,
+      manager_decision_by_hr_id: null,
+      manager_decision_comment: null,
+    });
+    changedFields.push("dates");
+  }
+
+  // Where the request goes back to. Changed dates start the whole chain again. Otherwise it resumes
+  // at the stage it was returned from: the first management step still pending, else HR. Sick leave
+  // runs its approvers in parallel and keeps `pending_manager` for its whole life.
+  let nextStatus: VacationRequestStatus = "pending_manager";
+  if (!datesChanged && isSequentialWorkflowType(request.vacationType)) {
+    const managementPending = steps.some((step) => step.stepKey !== "hr" && step.status === "pending");
+    const hrPending = steps.some((step) => step.stepKey === "hr" && step.status === "pending");
+    if (!managementPending && hrPending) nextStatus = "pending_hr";
+  }
+  update.status = nextStatus;
+
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
-    .update({ status: "pending_manager", updated_at: now })
+    .update(update)
     .eq("id", request.id)
     .eq("status", "returned")
     .select("*")
     .single();
-  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  if (error) throwVacationDatabaseError(error);
   if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
   const resubmitted = mapVacationRow(data as VacationRequestDbRow);
+
+  if (datesChanged) {
+    const { error: resetError } = await getSupabaseAdmin()
+      .from(vacationApprovalStepsTable)
+      .update({
+        decided_at: null,
+        decision_comment: null,
+        overridden_at: null,
+        overridden_by_hr_id: null,
+        status: "pending",
+        updated_at: now,
+      })
+      .eq("request_id", resubmitted.id);
+    if (resetError) throwVacationDatabaseError(resetError);
+  }
 
   await insertVacationEvent({
     actorHrId,
     actorLoginId: access.loginId,
     eventType: "employee_resubmitted",
-    message: "Employee resubmitted the vacation request for manager review.",
+    message: changedFields.length > 0
+      ? `Employee edited the request (${changedFields.join(", ")}) and resubmitted it for review.`
+      : "Employee resubmitted the vacation request for review without changes.",
+    metadata: {
+      changedFields,
+      nextStatus,
+      previous: datesChanged
+        ? { dayPart: request.dayPart, endDate: request.endDate, startDate: request.startDate }
+        : null,
+    },
     requestId: resubmitted.id,
   });
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? actorHrId ?? "system",
     entityId: resubmitted.id,
     entityType: "vacation_request",
-    newValues: { status: "pending_manager" },
-    oldValues: { status: "returned" },
+    newValues: {
+      changedFields,
+      dayPart: resubmitted.dayPart,
+      endDate: resubmitted.endDate,
+      startDate: resubmitted.startDate,
+      status: nextStatus,
+    },
+    oldValues: {
+      dayPart: request.dayPart,
+      endDate: request.endDate,
+      startDate: request.startDate,
+      status: "returned",
+    },
     summary: "Vacation request resubmitted by employee.",
   });
+  const directory = await getEmployeeDirectory();
+  const reviewerIds = nextStatus === "pending_hr"
+    ? (await getHrRecipients(directory)).map((recipient) => recipient.hrId)
+    : ([resubmitted.managerHrId, resubmitted.managerOfManagerHrId].filter(Boolean) as string[]);
   void notifyRecipients({
     channels: ["in_app", "telegram", "push"],
     href: `/admin/approvals/vacation/${encodeURIComponent(resubmitted.id)}`,
-    message: `${resubmitted.employeeName}'s ${vacationTypeLabel(resubmitted.vacationType)} vacation request (${resubmitted.startDate} → ${resubmitted.endDate}) has been resubmitted and is pending your review.`,
-    metadata: { requestId: resubmitted.id, status: "pending_manager" },
-    recipients: [resubmitted.managerHrId, resubmitted.managerOfManagerHrId].filter(Boolean) as string[],
+    message: `${resubmitted.employeeName}'s ${vacationTypeLabel(resubmitted.vacationType)} vacation request (${resubmitted.startDate} → ${resubmitted.endDate}) has been ${changedFields.length > 0 ? "edited and " : ""}resubmitted and is pending your review.`,
+    metadata: { requestId: resubmitted.id, status: nextStatus },
+    recipients: reviewerIds,
     requestId: resubmitted.id,
     title: "Vacation request resubmitted",
     type: "resubmit",
@@ -4635,8 +4829,8 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
   void notifyRecipients({
     channels: ["in_app", "telegram", "push"],
     href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(resubmitted.id)}`,
-    message: `Your ${vacationTypeLabel(resubmitted.vacationType)} request (${resubmitted.startDate} → ${resubmitted.endDate}) has been resubmitted and is pending manager review.`,
-    metadata: { requestId: resubmitted.id, status: "pending_manager" },
+    message: `Your ${vacationTypeLabel(resubmitted.vacationType)} request (${resubmitted.startDate} → ${resubmitted.endDate}) has been resubmitted and is pending review.`,
+    metadata: { requestId: resubmitted.id, status: nextStatus },
     recipients: [resubmitted.employeeHrId],
     requestId: resubmitted.id,
     title: "Your vacation request has been resubmitted",
