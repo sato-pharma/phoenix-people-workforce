@@ -71,6 +71,7 @@ const PAGE = "app/(admin)/admin/approvals/stuck/page.tsx";
 const SOURCES = "src/lib/needs-you/sources.ts";
 const ORPHANS = "src/lib/approvals/orphaned-requests.ts";
 const MARKETING_CANCEL = "src/lib/marketing-requests/cancel.ts";
+const VACATION_SERVICE = "src/lib/vacation/service.ts";
 
 export function runDirectOrderCloseOrphanedTests() {
   const service = read(SERVICE);
@@ -364,6 +365,17 @@ export function runDirectOrderCloseOrphanedTests() {
       continue;
     }
 
+    // A NULL remedy is the honest answer "no control exists": the board then prints no verb at all
+    // (pinned on sources.ts below). It must not ALSO claim a control here — if one has been built,
+    // set the verb and name the function instead of leaving the board saying nothing can clear it.
+    if (screen.requesterRemedy === null) {
+      assert.ok(
+        !control,
+        `${moduleKey} offers NO requester remedy (null) but this test names a control for it — set its requesterRemedy verb to "${control?.verb}" so the board stops saying no screen can clear it`,
+      );
+      continue;
+    }
+
     assert.ok(
       control,
       `"${moduleKey}" HANDS REQUESTS BACK TO THE REQUESTER AND HAS NO REMEDY CONTROL IN THIS TEST. The board prints its requesterRemedy verb to the owner, so either name the function that performs it here, or do not offer a verb — printing one with nothing behind it is the 2026-10-08 defect exactly.`,
@@ -414,6 +426,36 @@ export function runDirectOrderCloseOrphanedTests() {
     sources,
     /the rep who raised/,
     'A MEDICAL REP CANNOT RAISE A DIRECT ORDER AT ALL (DIRECT_ORDER_REQUESTER_ROLES starts at District Manager) — the five found were raised by two District Sales Managers, so the copy says "the person who raised"',
+  );
+
+  // ── Vacation: handed back to the employee, and NO control can clear it ─────────────────
+  //
+  // A vacation IS returned to the employee (`manager_return`, "Waiting for the employee to
+  // resubmit"), so its lane must carry `returned` — while it was empty, a returned vacation of a
+  // resigned employee went down the approver branch, found no pending rung and was silently dropped.
+  // And nothing in Phoenix can clear one for them: there is no cancel, close or withdraw for a
+  // vacation at all, and the registry's `admin_delete` refuses `returned`. So the honest remedy is
+  // NULL, and the board must say "no screen can clear it yet" rather than print a verb.
+  assert.match(
+    lanes,
+    /vacation:\s*\[\s*"returned"\s*\]/,
+    "a RETURNED vacation waits on the EMPLOYEE, not an approver — without it in BACK_WITH_REQUESTER the reader looks for a pending rung, finds none and drops a resigned employee's returned vacation without a trace",
+  );
+  assert.equal(
+    orphanedRequestModuleScreens.vacation.requesterRemedy,
+    null,
+    'NO CONTROL CLEARS A RETURNED VACATION, so the board must offer no verb for one. The previous value "reassign" named a control that does not exist — the 2026-10-08 defect in the vacation lane. Build the control first, then name it in requesterRemedyControls and set the verb here.',
+  );
+  const vacationService = stripComments(read(VACATION_SERVICE));
+  assert.doesNotMatch(
+    vacationService,
+    /export async function (?:cancel|withdraw|close|void)\w*Vacation/i,
+    "A CONTROL THAT CAN CLEAR A VACATION NOW EXISTS, but the board still says no screen can. If it accepts `returned`, add it to requesterRemedyControls and set orphanedRequestModuleScreens.vacation.requesterRemedy to its verb.",
+  );
+  assert.match(
+    sources,
+    /screen\.requesterRemedy === null\s*\?\s*`[^`]*no screen in Phoenix can close or withdraw/,
+    "a module with NO remedy must render honest words — that nothing can clear it yet — never an interpolated null or a verb nobody can click",
   );
 
   // ── The screen ───────────────────────────────────────────────────────────────────────────

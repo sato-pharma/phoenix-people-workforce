@@ -66,12 +66,19 @@ export const orphanedRequestModuleLabels: Record<OrphanedRequestModule, string> 
  * against production, because the remedy the board named could not be clicked. Naming a verb here
  * without building the control is that bug again.
  *
- * `vacation` has no requester case at all (`BACK_WITH_REQUESTER.vacation` is empty — a vacation
- * request is never handed back to the employee), so its remedy is never rendered.
+ * 🔴 `requesterRemedy: null` MEANS NO CONTROL EXISTS, and the board then says so in plain words
+ * instead of printing a verb. That is `vacation` today. A vacation IS handed back to the employee
+ * (`manager_return` → `returned`, "Waiting for the employee to resubmit"), and only that employee may
+ * resubmit it — but nothing in Phoenix can clear a returned vacation for them: there is no cancel,
+ * close or withdraw for a vacation request at all, and the one admin removal,
+ * `deleteVacationRequestAsAdmin`, is refused for `returned` by the workflow registry (`leave_requests`
+ * `admin_delete` lists draft, pending_manager, pending_hr, approved, rejected and cancelled — read
+ * live 2026-10-08). Until a real control exists the honest answer is "no screen can clear it yet",
+ * never a verb.
  */
 export const orphanedRequestModuleScreens: Record<
   OrphanedRequestModule,
-  { href: `/${string}`; screen: string; requesterRemedy: string }
+  { href: `/${string}`; screen: string; requesterRemedy: string | null }
 > = {
   // CLOSED, never reassigned: a resubmit reprices the basket on today's basis and resumes at the
   // rung that returned it, so re-addressing one hands a live manager a money edit rather than an
@@ -81,7 +88,8 @@ export const orphanedRequestModuleScreens: Record<
   // `cancelMarketingRequest` accepts `returned`, Super Admin only, from the request's own Case File
   // — which is reached from the inbox.
   marketing: { href: "/admin/marketing-requests/inbox", requesterRemedy: "cancel", screen: "Marketing Inbox" },
-  vacation: { href: "/admin/approvals/vacation", requesterRemedy: "reassign", screen: "Leave Approvals" },
+  // NO requester remedy — see above. The approver case still links here.
+  vacation: { href: "/admin/approvals/vacation", requesterRemedy: null, screen: "Leave Approvals" },
 };
 
 /**
@@ -129,7 +137,10 @@ export type OrphanedRequestGroup = {
   oldestAt: string | null;
 };
 
-/** Upper-cased so a lookup never misses on casing — `assigned_hr_id` keeps the master's own casing. */
+/**
+ * Upper-cased so a lookup never misses on casing — `assigned_hr_id` keeps the master's own casing,
+ * and the master itself is not uniformly upper-case (one live HR_ID is stored lower-case).
+ */
 function hrKey(hrId: string | null | undefined): string {
   return String(hrId ?? "").trim().toUpperCase();
 }
@@ -194,22 +205,44 @@ export function summarizeOrphans(orphans: readonly OrphanedRequest[]): OrphanedR
 
 // ── The reader — the one part that touches the database ───────────────────────────────────────────
 
-/** Statuses that mean "handed back to the requester to edit", per module. The actor is the requester. */
+/**
+ * Statuses that mean "handed back to the requester to edit", per module. The actor is the requester.
+ *
+ * Vacation's `returned` belongs here: a manager's "Return for Edit" (`manager_return`) hands it to the
+ * EMPLOYEE, the approval screen disables every button with "Waiting for the employee to resubmit", and
+ * only `resubmitVacationRequest` moves it on. Until 2026-10-08 this list was empty for vacation, so a
+ * returned vacation fell into the approver branch, found no pending rung and was silently dropped.
+ */
 const BACK_WITH_REQUESTER: Record<OrphanedRequestModule, readonly string[]> = {
   marketing: ["returned"],
   "direct-order": ["returned"],
-  vacation: [],
+  vacation: ["returned"],
 };
 
 /**
  * Statuses that are finished OR deliberately paused — neither awaits an actor, so they are never
  * candidates. Everything else on a module is treated as awaiting its active-rung approver.
+ *
+ * 🔴 Every TERMINAL status must be listed, not only the common ones: a finished request's approval
+ * steps are NOT cleaned up (read live 2026-10-08: 59 still-`pending` direct-order steps sat on
+ * rejected orders, 39 on returned ones and 15 on cancelled ones), so a terminal status left off
+ * this list reads as "awaiting its approver" and a resigned name on that leftover rung is reported
+ * as stuck.
+ *
+ * Direct orders, against the live CHECK (draft, pending_approval, approved, rejected, returned,
+ * reversed, held, expired, cancelled): `reversed` and `expired` are terminal (the order page shows
+ * them as stopped, with no owner). `draft` is "not submitted yet — only you can see it": it sits with
+ * its author, is in no approver's queue and waits on nobody, so it is not a stranded request either
+ * — the same reading marketing already gives its own `draft`.
  */
 const NO_ACTOR_EXPECTED: Record<OrphanedRequestModule, readonly string[]> = {
   marketing: ["draft", "approved", "active", "roi_tracking", "closed", "finance_hold", "archived", "cancelled", "rejected"],
-  "direct-order": ["approved", "rejected", "cancelled", "held"],
+  "direct-order": ["draft", "approved", "rejected", "reversed", "expired", "cancelled", "held"],
   vacation: ["approved", "rejected", "cancelled"],
 };
+
+/** Page size for the employee-master read. Supabase caps a response at 1,000 rows. */
+const EMPLOYEE_PAGE_SIZE = 1000;
 
 type ParentRow = { id: string; status: string | null; actorHrId: string | null; updatedAt: string | null };
 
@@ -339,11 +372,14 @@ export async function findOrphanedRequests(
     .not("status", "in", `(${NO_ACTOR_EXPECTED.vacation.join(",")})`);
   if (vacationParents.error) throw vacationParents.error;
   const vacationRows = (vacationParents.data ?? []) as Array<{ id: string; status: string | null; employee_hr_id: string | null; updated_at: string | null }>;
-  const vacationSteps = vacationRows.length
+  const vacationAwaiting = vacationRows
+    .filter((row) => !new Set(BACK_WITH_REQUESTER.vacation).has(String(row.status ?? "").trim().toLowerCase()))
+    .map((row) => row.id);
+  const vacationSteps = vacationAwaiting.length
     ? await supabase
         .from("v2_vacation_approval_steps")
         .select("request_id, step_order, approver_hr_id, status")
-        .in("request_id", vacationRows.map((row) => row.id))
+        .in("request_id", vacationAwaiting)
     : { data: [], error: null };
   if (vacationSteps.error) throw vacationSteps.error;
   const vacationApproverByRequest = earliestPendingApprover(
@@ -356,20 +392,34 @@ export async function findOrphanedRequests(
   );
 
   // ── Resolve the actors and decide ──
+  //
+  // 🔴 THE WHOLE MASTER IS READ AND KEYED IN CODE, never filtered with `.in("hr_id", ids)`. Postgres
+  // equality is case-sensitive, so an `.in` over the request rows' raw ids misses any actor whose
+  // casing drifted from the master's — and a missing master row is exactly what `selectOrphanedRequests`
+  // reads as "unknown, leave alone", so the orphan vanished without a trace. The master is a few
+  // hundred rows; reading it whole and keying it through `hrKey` is the only form casing cannot beat.
+  // Paged, because Supabase silently caps one response at 1,000 rows.
   const candidates = [...marketingCandidates, ...directCandidates, ...vacationCandidates];
-  const actorHrIds = [...new Set(candidates.map((candidate) => candidate.actorHrId).filter((id): id is string => Boolean(id)))];
+  const wanted = new Set(candidates.map((candidate) => hrKey(candidate.actorHrId)).filter(Boolean));
   const actorsByHrId = new Map<string, OrphanedActorRecord>();
-  if (actorHrIds.length > 0) {
-    const employees = await supabase
-      .from("employees")
-      .select("hr_id, full_name, employment_status")
-      .in("hr_id", actorHrIds);
-    if (employees.error) throw employees.error;
-    for (const employee of (employees.data ?? []) as Array<{ hr_id: string; full_name: string | null; employment_status: string | null }>) {
-      actorsByHrId.set(hrKey(employee.hr_id), {
-        name: String(employee.full_name ?? "").trim() || employee.hr_id,
-        employmentStatus: employee.employment_status ?? null,
-      });
+  if (wanted.size > 0) {
+    for (let from = 0; ; from += EMPLOYEE_PAGE_SIZE) {
+      const employees = await supabase
+        .from("employees")
+        .select("hr_id, full_name, employment_status")
+        .order("hr_id", { ascending: true })
+        .range(from, from + EMPLOYEE_PAGE_SIZE - 1);
+      if (employees.error) throw employees.error;
+      const page = (employees.data ?? []) as Array<{ hr_id: string; full_name: string | null; employment_status: string | null }>;
+      for (const employee of page) {
+        const key = hrKey(employee.hr_id);
+        if (!wanted.has(key)) continue;
+        actorsByHrId.set(key, {
+          name: String(employee.full_name ?? "").trim() || employee.hr_id,
+          employmentStatus: employee.employment_status ?? null,
+        });
+      }
+      if (page.length < EMPLOYEE_PAGE_SIZE) break;
     }
   }
 
