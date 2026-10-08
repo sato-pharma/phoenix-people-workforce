@@ -15,8 +15,8 @@
 // honest answer and the only one that does not tell a manager he has reserved a CV when nothing was
 // stored.
 
-import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import {
   type CandidateCallClaim,
@@ -82,16 +82,8 @@ function mapClaim(row: ClaimRow): CandidateCallClaim | null {
  * join to a directory a leaver drops out of. Same resolver, same reason, as recordDistrictReturn.
  */
 async function resolveManagerName(managerHrId: string): Promise<string | null> {
-  const keys = hrIdLookupKeys(managerHrId);
-  if (keys.length === 0) return null;
-  const { data, error } = await recruitmentDb()
-    .from("employees")
-    .select("full_name,nickname,hr_id")
-    .in("hr_id", keys)
-    .limit(1);
-  if (error || !data || data.length === 0) return null;
-  const row = data[0] as { full_name?: string | null; nickname?: string | null };
-  return textOrNull(resolveEmployeeDisplayName(String(row.full_name ?? ""), row.nickname, managerHrId));
+  const names = await namesByHrId([managerHrId]);
+  return textOrNull(names.get(managerHrId));
 }
 
 /**

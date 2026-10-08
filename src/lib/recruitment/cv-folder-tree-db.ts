@@ -21,8 +21,8 @@
 // the sentence; the index is for the truth.
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { hrIdForStorage } from "@/lib/hr-id";
 import {
   cvFolderNameKey,
   describeCvFolderCreateRefusal,
@@ -90,32 +90,20 @@ function mapFolderRow(row: Record<string, unknown>): CvFolderRow {
 /**
  * Resolve who made each folder into a NAME.
  *
- * The owner's standing rule is names, never raw codes, and `created_by_hr_id` is a code. Nickname-
- * aware via `resolveEmployeeDisplayName`, the same way the shelf renders its filer. Failures are
- * swallowed per chunk: a folder tree that renders without a creator's name is fine, one that fails
- * to render because the employees table hiccuped is not.
+ * The owner's standing rule is names, never raw codes, and `created_by_hr_id` is a code. The read
+ * itself is the shared `namesByHrId` — the mixed-case trap, the chunking and the nickname all live
+ * there — and a failure costs the names and nothing else: a folder tree that renders without a
+ * creator's name is fine, one that fails to render because the employees table hiccuped is not.
  */
 async function attachFolderCreatorNames(rows: CvFolderRow[]): Promise<void> {
-  const hrIds = [...new Set(rows.map((row) => row.createdByHrId).filter((id): id is string => Boolean(id)))];
-  const keys = [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
-  if (keys.length === 0) return;
-
-  const byCanonical = new Map<string, string>();
-  const supabase = recruitmentDb();
-  for (const chunk of chunkIds(keys, HR_ID_LOOKUP_CHUNK)) {
-    const { data, error } = await supabase.from("employees").select("hr_id,full_name,nickname").in("hr_id", chunk);
-    if (error || !data) continue;
-    for (const row of data as Array<{ hr_id?: string | null; full_name?: string | null; nickname?: string | null }>) {
-      const key = canonicalHrIdKey(row.hr_id);
-      const fullName = String(row.full_name ?? "").trim();
-      if (!key || !fullName) continue;
-      byCanonical.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
-    }
-  }
+  const names = await namesByHrId(
+    new Set(rows.map((row) => row.createdByHrId).filter((id): id is string => Boolean(id))),
+  );
+  if (names.size === 0) return;
 
   for (const row of rows) {
     if (!row.createdByHrId) continue;
-    row.createdByName = byCanonical.get(canonicalHrIdKey(row.createdByHrId) ?? "") ?? null;
+    row.createdByName = names.get(row.createdByHrId);
   }
 }
 

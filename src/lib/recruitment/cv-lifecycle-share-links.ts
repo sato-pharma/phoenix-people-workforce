@@ -30,8 +30,8 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
-import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
-import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { hrIdForStorage } from "@/lib/hr-id";
+import { namesByHrId, type EmployeeNameIndex } from "@/lib/employees/names-by-hr-id";
 import { noteDeadShareTokenRead } from "@/lib/share-links/refusal-counter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -85,7 +85,7 @@ function previewOf(token: string): string {
   return String(token ?? "").slice(0, 8);
 }
 
-function mapLink(row: Record<string, unknown>, names: Map<string, string>): CvLifecycleShareLink {
+function mapLink(row: Record<string, unknown>, names: EmployeeNameIndex): CvLifecycleShareLink {
   const createdByHrId = String(row.created_by_hr_id ?? "");
   const revokedByHrId = row.revoked_by_hr_id ? String(row.revoked_by_hr_id) : null;
   return {
@@ -93,48 +93,16 @@ function mapLink(row: Record<string, unknown>, names: Map<string, string>): CvLi
     createdAt: String(row.created_at ?? ""),
     createdByHrId,
     // Owner rule: human-readable names, never raw ids. The id is the fallback, not the display.
-    createdByName: names.get(canonicalHrIdKey(createdByHrId) ?? "") ?? createdByHrId,
+    createdByName: names.get(createdByHrId) ?? createdByHrId,
     expiresAt: String(row.expires_at ?? ""),
     id: String(row.id ?? ""),
     label: row.label ? String(row.label) : null,
     lastAccessedAt: row.last_accessed_at ? String(row.last_accessed_at) : null,
     revokedAt: row.revoked_at ? String(row.revoked_at) : null,
     revokedByHrId,
-    revokedByName: revokedByHrId ? (names.get(canonicalHrIdKey(revokedByHrId) ?? "") ?? revokedByHrId) : null,
+    revokedByName: revokedByHrId ? (names.get(revokedByHrId) ?? revokedByHrId) : null,
     tokenPreview: previewOf(String(row.token ?? "")),
   };
-}
-
-/**
- * HR id -> display name, for the handful of people who have ever minted or revoked one of these.
- *
- * Looked up through `hrIdLookupKeys` rather than a bare `.eq`: HR ids in this database are MIXED
- * CASE, and an `.eq` against the wrong spelling under-returns silently — here that would print a
- * raw id where a name belongs, which reads as a data fault rather than a lookup miss. A failed
- * lookup costs the names and nothing else; the rows still render, keyed by id.
- */
-async function namesForHrIds(hrIds: readonly string[]): Promise<Map<string, string>> {
-  const resolved = new Map<string, string>();
-  const keys = [...new Set(hrIds.filter(Boolean).flatMap((hrId) => hrIdLookupKeys(hrId)))];
-  if (keys.length === 0) return resolved;
-
-  const supabase = getSupabaseAdmin();
-  // Chunked at 50: a PostgREST `.in()` carrying several hundred ids returns ZERO rows and no error.
-  // This list is capped at 100 links, so one chunk is the normal case and the loop is insurance.
-  for (let start = 0; start < keys.length; start += 50) {
-    const { data, error } = await supabase
-      .from("employees")
-      .select("hr_id,full_name,nickname")
-      .in("hr_id", keys.slice(start, start + 50));
-    if (error || !data) continue;
-    for (const row of data as Array<{ full_name?: string | null; hr_id?: string | null; nickname?: string | null }>) {
-      const key = canonicalHrIdKey(row.hr_id);
-      const fullName = String(row.full_name ?? "").trim();
-      if (!key || !fullName) continue;
-      resolved.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
-    }
-  }
-  return resolved;
 }
 
 /**
@@ -206,7 +174,9 @@ export async function listCvLifecycleShareLinks(access: AccessContext): Promise<
   if (error) throw error;
 
   const rows = (data ?? []) as Array<Record<string, unknown>>;
-  const names = await namesForHrIds(
+  // Both actors on every link, through the one shared lookup: this list is capped at 100 links, so
+  // the id set is small, and the mixed-case trap behind the read is `namesByHrId`'s to carry.
+  const names = await namesByHrId(
     rows.flatMap((row) => [String(row.created_by_hr_id ?? ""), String(row.revoked_by_hr_id ?? "")]),
   );
   return rows.map((row) => mapLink(row, names));

@@ -12,8 +12,8 @@
 // queue. The rule for WHICH folder a CV lands in stays in district-manager-folders.ts and is never
 // restated here. Table shape and the why: supabase/migrations/20260901120000_ats_candidate_district_returns.sql.
 
-import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { districtReturnSuppressionKey } from "@/lib/recruitment/district-manager-folders";
@@ -56,17 +56,8 @@ function textOrNull(value: string | null | undefined): string | null {
 
 /** The manager's name, snapshotted at return time so the admin queue is a plain read a leaver cannot blank. */
 async function resolveManagerName(managerHrId: string): Promise<string | null> {
-  const keys = hrIdLookupKeys(managerHrId);
-  if (keys.length === 0) return null;
-  const { data, error } = await recruitmentDb()
-    .from("employees")
-    .select("full_name,nickname,hr_id")
-    .in("hr_id", keys)
-    .limit(1);
-  if (error || !data || data.length === 0) return null;
-  const row = data[0] as { full_name?: string | null; nickname?: string | null };
-  const name = resolveEmployeeDisplayName(String(row.full_name ?? ""), row.nickname, managerHrId);
-  return textOrNull(name);
+  const names = await namesByHrId([managerHrId]);
+  return textOrNull(names.get(managerHrId));
 }
 
 export type RecordDistrictReturnInput = {
