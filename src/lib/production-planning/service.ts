@@ -525,7 +525,7 @@ function materialNameFor(
   body: { readonly lang?: unknown } | Record<string, unknown>,
   material: { readonly nameAr: string; readonly nameEn: string },
 ): string {
-  return stringsFor(body).lang === "en" ? material.nameEn || material.nameAr : material.nameAr;
+  return stringsFor(body).name(material);
 }
 
 export type PlanRequestInput = {
@@ -613,6 +613,7 @@ export type PlanResultRow = {
 export type PlanResult = {
   readonly productId: string;
   readonly productNameAr: string;
+  readonly productNameEn: string;
   readonly mode: PlanRequestMode;
   readonly requestedQty: string;
   readonly sampleUnits: string;
@@ -798,6 +799,7 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
   return {
     productId: product.id,
     productNameAr: product.nameAr,
+    productNameEn: product.nameEn,
     mode,
     requestedQty: requestedQty.toString(),
     sampleUnits: sampleUnits.toString(),

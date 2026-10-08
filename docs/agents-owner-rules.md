@@ -6640,6 +6640,13 @@ per-reader choice over it.
   screen preference held in one browser must not decide the language of somebody else's email.
 - **Latin digits and the genderless Arabic are untouched**, and now swept in both halves.
 
+- **Names follow the toggle too (owner, 2026-10-08: "If English, every single Arabic word").** The first
+  version flipped the labels and left every product, material and store name in Arabic, because the
+  screen and the workbook read `nameAr` directly. All three tables store both names, so the bundle
+  carries `S.name(item)` (Arabic reads `nameAr`; English reads `nameEn`, falling back to Arabic only if
+  the English name is blank) and neither the workspace nor the workbook may read `.nameAr` again. The
+  Excel filename now comes from `productNameEn` in plain ASCII, since it travels in a header.
+
 **The two things the toggle cannot reach**, both deliberate: the portal shell's `title` and
 `errorBoundaryTitle` are server props on a server component, so the client context cannot see them —
 they are page chrome, and the title a reader sees INSIDE the module is the header's, which does

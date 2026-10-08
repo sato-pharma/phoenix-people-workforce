@@ -547,6 +547,31 @@ export function runProductionPlanningStringsTests() {
   });
   assert.ok(!noSamplesEn.includes("sample"), `with no samples the English sentence does not mention them: ${noSamplesEn}`);
 
+  // ── Names follow the language too (owner, 2026-10-08) ─────────────────────────────────────────
+  //
+  // "If English, every single Arabic word" - the active and inactive constituents, the product and
+  // the stores included. Every product, material and location stores BOTH names, so the screen picks
+  // one rather than translating, and the workspace and the workbook may never read `nameAr`
+  // directly: that single property access is how an English screen came to print Arabic material
+  // names under English headings.
+  const named = { nameAr: "مستخلص أوراق اللبلاب", nameEn: "Ivy leaf extract" };
+  assert.equal(productionPlanningStrings("ar").name(named), named.nameAr, "Arabic reads the Arabic name");
+  assert.equal(productionPlanningStrings("en").name(named), "Ivy leaf extract", "English reads the English name");
+  assert.equal(
+    productionPlanningStrings("en").name({ nameAr: "سوربيتول", nameEn: "  " }),
+    "سوربيتول",
+    "a blank English name falls back to the Arabic one rather than to an empty cell",
+  );
+  for (const file of [
+    "src/components/production-planning/production-planning-workspace.tsx",
+    "src/lib/production-planning/workbook.ts",
+  ]) {
+    assert.ok(
+      !/\.nameAr/.test(stripComments(readFileSync(file, "utf8"))),
+      `${file} reads .nameAr directly — use S.name(item) so the English view shows the English name`,
+    );
+  }
+
   // ── The reorder EMAIL stays Arabic, whichever way the toggle is set ───────────────────────────
   //
   // Deliberate, and not an oversight the toggle forgot: four named people were given an Arabic
