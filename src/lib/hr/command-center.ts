@@ -319,6 +319,8 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   hiring_paperwork: [],
   employee_requests: ["supportRequests"],
   workforce_context: [],
+  // Recognition is two pages to open and print from, not a queue: it loads nothing.
+  recognition: [],
 };
 
 /** The seat's functions, straight from the permission bundle. Never a second hand-kept list. */
@@ -687,6 +689,8 @@ const TILES_BY_FUNCTION: Record<
   // NONE. Reading the chart, the calendars and the boards is context for her recruiting, not a
   // backlog — a tile here could only be invented.
   workforce_context: () => [],
+  // NONE. Spotlight and Milestones are sheets she prints, not a backlog.
+  recognition: () => [],
   // NONE, and for `cv_lookup` this is the privacy decision recorded in SOURCES_BY_FUNCTION rather
   // than "nothing to count": any figure counting candidates would put the size of the pool on the
   // landing page of the one seat the pool is withheld from. Returning an empty array drops the group
@@ -880,10 +884,11 @@ const CHARTS_BY_FUNCTION: Record<
   // set with a chart of a number that means nothing.
   hr_communication: () => [],
   hr_governance: () => [],
-  // No chart for two of the Talent Acquisition seat's functions: neither has a population to plot,
-  // and neither contributes a tile, so neither has a group for a chart to sit in.
+  // No chart for three of the Talent Acquisition seat's functions: none has a population to plot,
+  // and none contributes a tile, so none has a group for a chart to sit in.
   hiring_paperwork: () => [],
   workforce_context: () => [],
+  recognition: () => [],
 
   /**
    * The HR support desk as a fortnight rather than three totals — the Talent Acquisition seat's

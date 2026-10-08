@@ -47,7 +47,7 @@ import {
   getPlanAwaitingBadge,
   getVacationAwaitingBadge,
 } from "@/lib/approvals-hub/service";
-import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
+import { assertPermission, canAccessSystemAdministratorWorkspace, type AccessContext } from "@/lib/auth/permissions";
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
@@ -371,6 +371,19 @@ const marketAwarenessApprovals: NeedsYouAdapter = {
   },
 };
 
+// ── Owner-only queues ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * A queue only the Super Admin decides, asked of anybody else who opens this board — the Talent
+ * Acquisition seat since 2026-10-08. Every other adapter asks its own permission and is refused for a
+ * viewer without it; these three read company-wide state with no permission of their own, so without
+ * this they would hand her the owner's publish, salary and reassignment decisions labelled "yours".
+ * "Not yours" is a true answer, never a zero — the same state calendarReviewRequests returns.
+ */
+function ownerOnlyQueue(access: AccessContext, because: string): NeedsYouSourceState | null {
+  return canAccessSystemAdministratorWorkspace(access) ? null : { status: "not-applicable", because };
+}
+
 // ── Monthly closings ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -389,7 +402,9 @@ const marketAwarenessApprovals: NeedsYouAdapter = {
  */
 const monthlyClosings: NeedsYouAdapter = {
   id: "monthly-closings",
-  load: async (_access, now) => {
+  load: async (access, now) => {
+    const notYours = ownerOnlyQueue(access, "Publishing a monthly closing is the Super Admin's decision");
+    if (notYours) return notYours;
     const periods = await listUnpublishedClosings(now);
     return ok(
       periods.map((period) => ({
@@ -720,7 +735,8 @@ const coachingRedZone: NeedsYouAdapter = {
  */
 const salaryFlags: NeedsYouAdapter = {
   id: "salary-flags",
-  load: async () =>
+  load: async (access) =>
+    ownerOnlyQueue(access, "Salary flags are resolved by the Super Admin") ??
     countItem({
       id: "salary-flags",
       key: "salary-flags:unresolved",
@@ -754,7 +770,9 @@ const salaryFlags: NeedsYouAdapter = {
  */
 const orphanedRequests: NeedsYouAdapter = {
   id: "orphaned-requests",
-  load: async (_access, now) => {
+  load: async (access, now) => {
+    const notYours = ownerOnlyQueue(access, "Re-routing a stranded request is the Super Admin's decision");
+    if (notYours) return notYours;
     const groups = summarizeOrphans(await findOrphanedRequests());
     const items: NeedsYouItem[] = groups.map((group) => {
       const noun = group.count === 1

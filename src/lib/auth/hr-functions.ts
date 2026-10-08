@@ -53,7 +53,8 @@ export type HrFunctionKey =
   | "hr_governance"
   | "hiring_paperwork"
   | "employee_requests"
-  | "workforce_context";
+  | "workforce_context"
+  | "recognition";
 
 export type HrFunction = {
   key: HrFunctionKey;
@@ -498,7 +499,7 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
     key: "workforce_context",
     label: "Workforce Context",
     summary:
-      "Read the organogram, the planning and HR calendars, the punctuality boards and the probation dashboard. No personnel records.",
+      "Read the organogram, the planning and HR calendars, the punctuality boards, the KPIs board and the probation dashboard. No personnel records.",
     // The same blueprint. He ticked Organogram, Planning Calendar, HR Calendar, Early Birds and
     // Phoenix Ranks, and did NOT tick Employees, Contract Renewal, Territory Management or any
     // command centre. workforce_insight carries every one of those (employees, contracts,
@@ -516,6 +517,27 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // canReadAllProbation (src/lib/probation/service.ts); the tracker is fenced by page
       // (src/lib/auth/seat-page-fences.ts).
       probation: READ_ONLY,
+      // KPIs — call rate, coverage and frequency per rep. The owner ticked it on the blueprint and,
+      // asked in chat on 2026-10-08 whether that should carry the CRM visit data behind it, answered
+      // "Give her KPIs". READ only, company-wide: src/lib/crm/doctor-coverage-roles.ts places the seat
+      // with the other company seats, and the board's own page gate is what this grant opens.
+      crm_visits: READ_ONLY,
+    },
+  },
+  {
+    key: "recognition",
+    label: "Recognition",
+    summary:
+      "Open Spotlight and Milestones: the company-wide recognition sheet and the anniversary and birthday keepsakes, and print them.",
+    // The Talent Acquisition seat. The owner ticked both pages on the blueprint; both had been
+    // narrowed by his own earlier rulings (Spotlight to Super Admin and CEO, Milestones to Super
+    // Admin alone on 2026-09-23). Asked in chat on 2026-10-08 he answered "Open all four" — Needs You,
+    // WhatsApp Inbox, Milestones and Spotlight — so this function carries the two that are grants.
+    // READ and EXPORT, as the Super Admin holds them: printing the sheet is what both pages are for.
+    jdSections: ["owner 2026-10-08 — Talent Acquisition access blueprint, confirmed in chat the same day"],
+    grants: {
+      spotlight: READ_EXPORT,
+      milestones: READ_EXPORT,
     },
   },
 ] as const;
@@ -583,6 +605,7 @@ export const HR_ROLE_BUNDLES = {
     "cv_lookup",
     "employee_requests",
     "workforce_context",
+    "recognition",
   ],
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 

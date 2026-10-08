@@ -47,6 +47,7 @@
 import {
   Mail,
   ArrowUpRight,
+  Award,
   BriefcaseBusiness,
   ChevronDown,
   Fingerprint,
@@ -96,12 +97,13 @@ const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   recruiting: BriefcaseBusiness,
   time_attendance: Fingerprint,
   workforce_insight: Network,
-  // The Talent Acquisition seat's three non-recruiting functions (2026-10-08). Only
-  // employee_requests draws a group today; the other two contribute no tiles, and are declared for
+  // The Talent Acquisition seat's four non-recruiting functions (2026-10-08). Only
+  // employee_requests draws a group today; the other three contribute no tiles, and are declared for
   // the reason cv_lookup is above.
   employee_requests: LifeBuoy,
   hiring_paperwork: FileSignature,
   workforce_context: Network,
+  recognition: Award,
 };
 
 /**

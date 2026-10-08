@@ -25,7 +25,8 @@ import {
 } from "../src/components/whatsapp-inbox/inbox-format.ts";
 
 // The WhatsApp Inbox (owner, 2026-09-15): both company numbers read, answered and saved inside Phoenix,
-// by the Super Admin only. What this suite pins:
+// by the Super Admin only — and, since the owner's own answer on 2026-10-08, by the Talent Acquisition
+// seat (HR Resourcing) too. What this suite pins:
 //
 //   · the webhook reader keeps every message on both numbers, both directions — live, echoed from the
 //     handset, and replayed from the phone's history — and never files the company as a contact;
@@ -352,6 +353,9 @@ function listRouteFiles(dir: string): string[] {
 function runGateTests() {
   const access = (role: string, source = "session") => ({ role, source }) as Parameters<typeof canUseWhatsAppInbox>[0];
   assert.equal(canUseWhatsAppInbox(access("Super Admin")), true);
+  // The owner, asked in chat on 2026-10-08 whether his 2026-09-15 ruling held for the new seat:
+  // "Open all four" — the WhatsApp Inbox among them. Nobody else is widened.
+  assert.equal(canUseWhatsAppInbox(access("HR Resourcing")), true, "the Talent Acquisition seat opens the inbox");
   for (const role of ["CEO", "HR Advisory", "HR Operations", "Talent Acquisition Specialist", "Employee"]) {
     assert.equal(canUseWhatsAppInbox(access(role)), false, `${role} cannot open the inbox`);
   }
@@ -385,9 +389,18 @@ function runGateTests() {
   }
 
   const page = read("app/(admin)/recruitment/whatsapp-inbox/page.tsx");
-  assert.match(page, /\n {2}if \(access\.role !== "Super Admin"\) redirect\("\/employee-portals"\);/, "the page itself is Super Admin only");
+  assert.match(page, /\n {2}if \(!canUseWhatsAppInbox\(access\)\) redirect\("\/employee-portals"\);/, "the page asks the same rule as the routes");
   const nav = read("src/config/system-navigation.ts");
-  assert.match(nav, /href: "\/recruitment\/whatsapp-inbox"[^\n]*roles: \["Super Admin"\]/, "the sidebar row is offered to the Super Admin only");
+  assert.match(
+    nav,
+    /href: "\/recruitment\/whatsapp-inbox"[^\n]*roles: \["Super Admin", "HR Resourcing"\]/,
+    "the admin row is offered to exactly the two roles canUseWhatsAppInbox admits",
+  );
+  assert.match(
+    nav,
+    /href: "\/hr\/recruitment\/whatsapp-inbox"[^\n]*roles: \["HR Resourcing"\]/,
+    "the HR row is offered to the Talent Acquisition seat alone",
+  );
 }
 
 function runWiringTests() {

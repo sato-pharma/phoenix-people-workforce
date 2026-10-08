@@ -68,7 +68,12 @@ export function isAgentInScope(scope: DoctorCoverageScope, agentHrId: string | n
  * employee row to scope by. A `line` basis would resolve him to `none` and render an empty board,
  * which reads as "these reps did nothing" rather than as a missing grant.
  */
-const COMPANY_ROLES = ["Super Admin", "CEO", "SFE Manager", "Marketing Manager", "Training Manager"] as const;
+//
+// HR Resourcing — the Talent Acquisition seat — joined 2026-10-08 on the owner's answer "Give her
+// KPIs". Company for the same reason: she owns no line and supervises no rep. She is an admin-shell
+// seat, so she is NOT in DOCTOR_COVERAGE_PORTAL_ROLES below. Reps List keeps its own role list
+// (canAccessDoctorList) and does not open for her.
+const COMPANY_ROLES = ["Super Admin", "CEO", "SFE Manager", "Marketing Manager", "Training Manager", "HR Resourcing"] as const;
 /** One product line. Matches the scopes already baked into the Business Review access map for
  * these same three roles, so a viewer's reach does not change between the two modules. */
 export const LINE_ROLES = ["National Sales Manager", "Product Manager", "Group Product Manager"] as const;

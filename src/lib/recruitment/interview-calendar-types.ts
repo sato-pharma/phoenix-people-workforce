@@ -124,9 +124,13 @@ export function isInterviewCalendarOwner(access: { role: string | null; scope: s
  * interviews only"). He resolves to a Viewer: above the own-only tier, so every booking is served to
  * him, but he changes nothing and cannot share the calendar. His seat still lets him REQUEST an
  * interview — `mayRequestInterviews` reads the seat, not this role — so nothing he had is removed.
+ *
+ * The Talent Acquisition seat (HR Resourcing) reads it the same way since 2026-10-08 — the owner's
+ * answer in chat, "Full view built into her seat". A Viewer, like the CEO: every interview, and still
+ * able to request one by her HR seat. Booking, moving or cancelling for others needs an Editor share.
  */
 export function seesWholeInterviewCalendar(access: { role: string | null }): boolean {
-  return access.role === "CEO";
+  return access.role === "CEO" || access.role === "HR Resourcing";
 }
 
 /**

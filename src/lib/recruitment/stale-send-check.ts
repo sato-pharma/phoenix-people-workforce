@@ -34,7 +34,7 @@ import { cairoTodayIso } from "@/lib/attendance/working-days";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
-import { recruitmentManageRoles } from "@/lib/recruitment/access";
+import { recruitmentAlertRoles } from "@/lib/recruitment/access";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import {
   STALE_SEND_ESCALATE_AFTER_DAYS,
@@ -342,7 +342,8 @@ export async function loadActiveManagerHrIds(managerHrIds: readonly string[]): P
 /**
  * Whoever can reassign a candidate stuck with the wrong manager.
  *
- * `recruitmentManageRoles` — Super Admin and HR Advisory — is the same list `inbound/recruitment-notify.ts`
+ * `recruitmentAlertRoles` — Super Admin, HR Advisory and, since 2026-10-08, the Talent Acquisition
+ * seat (HR Resourcing) — is the same list `inbound/recruitment-notify.ts`
  * already notifies about every arriving CV, so the escalation lands with the people who are already
  * watching this pipeline rather than inventing a new audience. Do NOT read the role named "Talent
  * Acquisition" into this: it was retired from the role list on 2026-08-28 and holds nobody.
@@ -355,7 +356,7 @@ export async function recruitmentDeskHrIds(): Promise<string[]> {
   const { data, error } = await supabase
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", recruitmentManageRoles as unknown as string[]);
+    .in("role", recruitmentAlertRoles as unknown as string[]);
   if (error) {
     logError("Stale-send check could not resolve the recruitment escalation recipients.", {
       error,
