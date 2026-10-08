@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
-import { derivedNotes, figuresOf, papersOf, renderLinePage, renderSummaryPage, restDayPhrase, stampOf } from "../scripts/field-day/print-day.mjs";
+import {
+  derivedNotes,
+  figuresOf,
+  papersOf,
+  renderLinePage,
+  renderSummaryPage,
+  restDayPhrase,
+  stampOf,
+  verifyPaper,
+} from "../scripts/field-day/print-day.mjs";
 import { holidayNameOf, restDayOf, weekdayOf } from "../scripts/field-day/read-day.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 import { assertFetchRetriesALostLock } from "./support/launcher-fetch-retry.ts";
@@ -308,4 +319,55 @@ export function runFieldDayReportTests() {
   // 2026-10-08: both fetched origin/main into the same .git in the same second, the field day lost the
   // lock and wrote no papers. The launcher must retry that, boundedly, and still fetch exactly once.
   assertFetchRetriesALostLock(stripComments(readFileSync("scripts/field-day/run-nightly.mjs", "utf8")), "scripts/field-day/run-nightly.mjs");
+
+  // ── 🔴 THE CLI NEVER LOGS A PAPER IT HAS NOT STAT-CHECKED ──
+  // 2026-10-08, measured twice: the loop printed all FOUR paths and exited 0 with only THREE PDFs on
+  // disk, and the missing one was always the last — `Summary-for-the-CEO`, the Chief Executive's page.
+  // Chrome had raced the previous invocation's shutdown over the shared default profile and exited 0
+  // without writing, and `console.log(pdfPath)` ran regardless. Nobody watches the 21:00 job, so the
+  // log claiming a paper that does not exist is the whole defect.
+  const cli = printer.slice(printer.indexOf("if (process.argv[1] &&"));
+  assert.ok(cli.includes("printPaper({"), "the CLI prints each paper through the verifying printer");
+  assert.ok(
+    cli.indexOf("printPaper({") < cli.indexOf("console.log(pdfPath)"),
+    "🔴 the path is logged only AFTER the file on disk has been stat-checked, never before",
+  );
+  assert.doesNotMatch(cli, /execFileSync/, "Chrome is no longer launched bare from the loop");
+  assert.ok(!cli.includes('stdio: "pipe"'), "🔴 and its stderr — where the “bytes written” line rides — is no longer discarded");
+
+  const printPaperSource = printer.slice(printer.indexOf("export function printPaper"), printer.indexOf("function cleanProfile"));
+  assert.ok(printPaperSource.includes("--user-data-dir="), "🔴 each Chrome gets its own profile, so sequential invocations cannot race one");
+  assert.ok(printPaperSource.includes("verifyPaper("), "every attempt is verified against the file on disk");
+  assert.ok(printPaperSource.includes("PAPER_ATTEMPTS"), "a lost paper is retried a BOUNDED number of times");
+  assert.ok(printPaperSource.includes("run.stderr"), "Chrome's own stderr is captured and reported when every attempt failed");
+  assert.ok(printPaperSource.includes("throw new Error("), "🔴 and the failure is LOUD — run-nightly.mjs writes it into xlsx/field-day-task.log");
+  assert.match(printer, /const PAPER_ATTEMPTS = [23]/, "two or three attempts — enough for a profile race, short of hanging the nightly job");
+
+  // The verifier itself, against real bytes. 🔴 The fixtures are `.bin`, never `.pdf`: a test must not
+  // leave protected document types in a temp folder it then has to clear.
+  const scratch = mkdtempSync(path.join(tmpdir(), "field-day-verify-"));
+  try {
+    const paper = path.join(scratch, "Phoenix-CRM-Field-Day-2026-10-07-Summary-for-the-CEO.bin");
+    writeFileSync(paper, Buffer.concat([Buffer.from("%PDF-1.4"), Buffer.alloc(200_000, 0x20)]));
+    assert.equal(verifyPaper(paper, { writtenAfter: Date.now() - 60_000 }), 200_008, "a real paper verifies and reports its size");
+
+    assert.throws(
+      () => verifyPaper(path.join(scratch, "never-written.bin")),
+      /never-written.bin was not written/,
+      "🔴 the paper Chrome exited 0 without writing is caught — this is the 2026-10-08 defect",
+    );
+    const stub = path.join(scratch, "stub.bin");
+    writeFileSync(stub, "%PDF");
+    assert.throws(() => verifyPaper(stub), /stub.bin is 4 bytes/, "a truncated stub is not a paper, though existsSync would pass it");
+    const notPdf = path.join(scratch, "not-a-pdf.bin");
+    writeFileSync(notPdf, Buffer.alloc(200_000, 0x41));
+    assert.throws(() => verifyPaper(notPdf), /does not begin with %PDF/, "and neither is 200 KB of something else");
+    assert.throws(
+      () => verifyPaper(paper, { writtenAfter: Date.now() + 60_000 }),
+      /is stale/,
+      "a paper left by an EARLIER run of the same day is not mistaken for this run's work",
+    );
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
