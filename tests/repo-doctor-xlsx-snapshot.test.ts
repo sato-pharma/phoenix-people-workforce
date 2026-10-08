@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  BACKED_UP_SUBDIRS,
   classifyXlsxSnapshot,
   isCovered,
   isLockFile,
@@ -13,6 +14,10 @@ import {
   takeXlsxSnapshot,
   xlsxSnapshotLines,
 } from "../scripts/repo-doctor-xlsx-snapshot.mjs";
+// The printer's own name for the folder it archives into. The backup module repeats the string
+// instead of importing it — the hourly job extracts that file ALONE from origin/main — so this is
+// the one place the two are checked against each other.
+import { SUPERSEDED_DIR } from "../scripts/field-day/print-day.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -230,6 +235,97 @@ export async function runRepoDoctorXlsxSnapshotTests() {
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+  }
+
+  // --- 6b. The field day archives are backed up too (owner, 2026-10-09) ------------------------
+  //
+  // The backup covered the TOP of xlsx/ and nothing below it. On 2026-10-09 the field day printer
+  // began archiving the paper it replaces into `xlsx/field-day-superseded/` — the only copy of a
+  // paper that already went to a district manager or the Chief Executive, held by no commit — and he
+  // asked for that folder to be covered. Fixtures are `.bin`, never `.pdf`: a test must not leave a
+  // protected document type in a temp folder it then clears.
+
+  assert.deepEqual(
+    BACKED_UP_SUBDIRS,
+    [SUPERSEDED_DIR],
+    "🔴 the backed-up subfolder is the one the printer actually archives into — this is what catches a rename of it",
+  );
+
+  const archiveRepo = mkdtempSync(join(tmpdir(), "phx-xlsx-arch-src-"));
+  const archiveRoot = mkdtempSync(join(tmpdir(), "phx-xlsx-arch-dst-"));
+  try {
+    execFileSync("git", ["-C", archiveRepo, "init", "--quiet"], { stdio: ["ignore", "pipe", "pipe"] });
+    mkdirSync(join(archiveRepo, "xlsx", SUPERSEDED_DIR), { recursive: true });
+    mkdirSync(join(archiveRepo, "xlsx", "some-other-folder"), { recursive: true });
+    writeFileSync(join(archiveRepo, "xlsx", "Phoenix-CRM-Field-Day-2026-10-08-CNS.bin"), "%PDF live paper");
+    writeFileSync(
+      join(archiveRepo, "xlsx", SUPERSEDED_DIR, "Phoenix-CRM-Field-Day-2026-10-08-CNS-superseded-948bf66b6.bin"),
+      "%PDF the paper that went out",
+    );
+    writeFileSync(join(archiveRepo, "xlsx", "some-other-folder", "left-behind.bin"), "not covered");
+
+    const sources = readSourceFiles(archiveRepo) ?? [];
+    assert.deepEqual(
+      sources.map((f) => f.rel).sort(),
+      [join(SUPERSEDED_DIR, "Phoenix-CRM-Field-Day-2026-10-08-CNS-superseded-948bf66b6.bin"), "Phoenix-CRM-Field-Day-2026-10-08-CNS.bin"].sort(),
+      "🔴 the live paper AND its archive are sources; a file in any OTHER subfolder is still ignored",
+    );
+
+    const run = takeXlsxSnapshot({ repoRoot: archiveRepo, snapshotRoot: archiveRoot, now: Date.UTC(2026, 9, 9) });
+    assert.equal(run.copied, 2, "both the live paper and the archived one are copied");
+    assert.equal(run.mismatched.length, 0, "and both verify by SHA256 from disk on each side");
+    assert.deepEqual(run.collided, [], "nothing collided — an archive name carries -superseded-<sha>");
+    const held = readdirSync(run.dir!).filter((n: string) => n !== "MANIFEST.txt").sort();
+    assert.ok(
+      held.includes("Phoenix-CRM-Field-Day-2026-10-08-CNS-superseded-948bf66b6.bin"),
+      "🔴 the archived paper is off this disk now — before this it was on the laptop's SSD alone",
+    );
+    assert.equal(
+      readFileSync(join(run.dir!, "Phoenix-CRM-Field-Day-2026-10-08-CNS-superseded-948bf66b6.bin"), "utf8"),
+      "%PDF the paper that went out",
+      "the copy taken from the subfolder is the subfolder's file, not the live paper beside it",
+    );
+    assert.ok(!held.includes("left-behind.bin"), "and the unnamed subfolder is still none of the backup's business");
+
+    const report = classifyXlsxSnapshot({
+      destinationExists: true,
+      sourceFiles: readSourceFiles(archiveRepo),
+      snapshots: readSnapshots(archiveRoot),
+      now: Date.UTC(2026, 9, 9),
+    });
+    assert.equal(report.status, "covered", "the report and the write must agree about the archive folder too");
+
+    // 🔴 The snapshot folder is FLAT, so a shared basename would overwrite one copy and name one file
+    // in the manifest. It cannot happen with real archive names; if it ever does, that file is NOT
+    // copied and the job ends loud rather than reporting a file as backed up when it is not.
+    writeFileSync(join(archiveRepo, "xlsx", "collides.bin"), "the top-level one");
+    writeFileSync(join(archiveRepo, "xlsx", SUPERSEDED_DIR, "collides.bin"), "the nested one");
+    const clash = takeXlsxSnapshot({ repoRoot: archiveRepo, snapshotRoot: archiveRoot, now: Date.UTC(2026, 9, 10) });
+    assert.deepEqual(
+      clash.collided,
+      [join(SUPERSEDED_DIR, "collides.bin")],
+      "🔴 the second file sharing a basename is reported, never silently overwritten",
+    );
+    assert.equal(clash.copied, 1, "and only the first one was copied");
+    assert.equal(
+      readFileSync(join(clash.dir!, "collides.bin"), "utf8"),
+      "the top-level one",
+      "the copy that landed is the first source, intact",
+    );
+    // Against a FRESH root, so both files sharing the name are uncovered and the clash is live again:
+    // against `archiveRoot` the top-level one is already held and only the nested one would be left.
+    const freshRoot = mkdtempSync(join(tmpdir(), "phx-xlsx-arch-loud-"));
+    try {
+      const loud = spawnSync(process.execPath, [MODULE, "--repo", archiveRepo, "--root", freshRoot], { encoding: "utf8" });
+      assert.equal(loud.status, 4, "🔴 and the scheduled job exits non-zero on it — a backup that skips a file must say so");
+      assert.match(loud.stderr, /share a name with another source and were NOT copied/);
+      assert.match(loud.stderr, new RegExp(SUPERSEDED_DIR.replace(/-/g, "-")), "naming the file it did not copy");
+    } finally {
+      rmSync(freshRoot, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(archiveRepo, { recursive: true, force: true });
+    rmSync(archiveRoot, { recursive: true, force: true });
   }
 
   // --- 7. The scheduled job announces every way it can do nothing --------------------------------

@@ -59,6 +59,27 @@ export const DEFAULT_SNAPSHOT_ROOT = "F:\\PHX backup\\05-data-files";
  */
 export const isLockFile = (name) => name.startsWith("~$");
 
+/**
+ * Subfolders of `xlsx/` whose untracked files are backed up as well as the top level's.
+ *
+ * The backup used to cover the TOP of `xlsx/` and nothing below it, which was right while everything
+ * below it was a worktree's leftovers. It stopped being right on 2026-10-09, when the field day
+ * printer began archiving the paper it replaces into `xlsx/field-day-superseded/` (owner, that day:
+ * "add xlsx/field-day-superseded to the hourly backup"). Those archives are the only copy of a paper
+ * that already went to a district manager or the Chief Executive, and nothing else holds them: they
+ * are PDFs matched by no commit.
+ *
+ * 🔴 THE NAME IS REPEATED HERE AND NEVER IMPORTED, deliberately. `xlsx-snapshot.cmd` extracts THIS
+ * FILE ALONE from `origin/main` (`git show origin/main:scripts/repo-doctor-xlsx-snapshot.mjs`) and
+ * runs it as a standalone script, so an import of any other repo file would make the hourly backup
+ * fail outright — node would be resolving a path that was never extracted. Node builtins only, here
+ * and below. `tests/repo-doctor-xlsx-snapshot.test.ts` asserts this list still matches the printer's
+ * own `SUPERSEDED_DIR`, which is what catches a rename of that folder.
+ *
+ * Only named folders, never a recursive walk: `xlsx/` also holds whatever a session left behind.
+ */
+export const BACKED_UP_SUBDIRS = ["field-day-superseded"];
+
 export function snapshotRootFor(env = process.env) {
   const override = env.PHOENIX_XLSX_SNAPSHOT_ROOT;
   return override && override.trim() ? override.trim() : DEFAULT_SNAPSHOT_ROOT;
@@ -156,7 +177,7 @@ export function xlsxSnapshotLines(verdict, { deep = false, snapshotRoot = DEFAUL
 
   const LIST_LIMIT = 10;
   const shown = deep ? verdict.uncovered : verdict.uncovered.slice(0, LIST_LIMIT);
-  for (const f of shown) out.push(`    ${f.name}`);
+  for (const f of shown) out.push(`    ${f.rel ?? f.name}`);
   if (verdict.uncovered.length > shown.length) {
     out.push(
       `    ... and ${verdict.uncovered.length - shown.length} more not listed — re-run with --deep for the full list.`,
@@ -181,7 +202,13 @@ function statEntries(dir) {
     });
 }
 
-/** Untracked files under `xlsx/`. Tracked ones are git's problem, and recoverable from it. */
+/**
+ * Untracked files under `xlsx/`. Tracked ones are git's problem, and recoverable from it.
+ *
+ * Every entry carries `rel` — its path relative to `xlsx/` — because a file from one of
+ * `BACKED_UP_SUBDIRS` is read from the subfolder while `name`, the basename, stays the key the
+ * coverage test, the flat snapshot folder and the manifest all use.
+ */
 export function readSourceFiles(repoRoot) {
   const dir = path.join(repoRoot, "xlsx");
   if (!fs.existsSync(dir)) return [];
@@ -199,7 +226,19 @@ export function readSourceFiles(repoRoot) {
     return null; // git failed — an alarm, never an empty list
   }
   try {
-    return statEntries(dir).filter((f) => !tracked.has(f.name));
+    const top = statEntries(dir)
+      .filter((f) => !tracked.has(f.name))
+      .map((f) => ({ ...f, rel: f.name }));
+    // An ABSENT subfolder is nothing to copy; an UNREADABLE one throws into the catch below and the
+    // whole answer becomes null, which reads as "do NOT treat this as clean" everywhere above.
+    const nested = BACKED_UP_SUBDIRS.flatMap((sub) => {
+      const subDir = path.join(dir, sub);
+      if (!fs.existsSync(subDir)) return [];
+      return statEntries(subDir)
+        .filter((f) => !tracked.has(f.name))
+        .map((f) => ({ ...f, rel: path.join(sub, f.name) }));
+    });
+    return [...top, ...nested];
   } catch {
     return null;
   }
@@ -304,15 +343,30 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
     // file happens to appear. Reconcile it here so the record self-heals on the next quiet run.
     // Creates nothing: a day with no snapshot folder stays a day with no snapshot folder.
     const manifestHolds = fs.existsSync(dir) ? writeManifest({ dir, repoRoot, now, added: 0 }) : 0;
-    return { dir: null, copied: 0, skipped: all.length, verified: 0, mismatched: [], manifestHolds };
+    return { dir: null, copied: 0, skipped: all.length, verified: 0, mismatched: [], collided: [], manifestHolds };
   }
 
   fs.mkdirSync(dir, { recursive: true });
 
+  // 🔴 THE SNAPSHOT FOLDER IS FLAT AND KEYED BY BASENAME, so two sources sharing one basename would
+  // mean the second copy silently overwrote the first while the manifest named only one of them — a
+  // file believed backed up that is not, which is the single outcome this module exists to prevent.
+  // It cannot happen with what is there today: every archive carries `-superseded-<sha>`, which no
+  // live paper's name does. If it ever does, the nested file is NOT copied and the run ends LOUD.
+  const byName = new Map();
+  const collided = [];
+  for (const f of files) {
+    if (byName.has(f.name)) {
+      collided.push(f.rel ?? f.name);
+      continue;
+    }
+    byName.set(f.name, f);
+  }
+
   const rows = [];
   const mismatched = [];
-  for (const f of files) {
-    const src = path.join(repoRoot, "xlsx", f.name);
+  for (const f of byName.values()) {
+    const src = path.join(repoRoot, "xlsx", f.rel ?? f.name);
     const dst = path.join(dir, f.name);
     fs.copyFileSync(src, dst);
     // Verify from DISK on both sides, not against the buffer just written: the point is to prove the
@@ -327,10 +381,11 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
 
   return {
     dir,
-    copied: files.length,
+    copied: rows.length,
     skipped: all.length - files.length,
-    verified: files.length - mismatched.length,
+    verified: rows.length - mismatched.length,
     mismatched,
+    collided,
     manifestHolds: holds,
   };
 }
@@ -397,6 +452,15 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   if (result.mismatched.length) {
     console.error(`${stamp} FAILED — ${result.mismatched.length} copy/copies did not verify:`);
     for (const m of result.mismatched) console.error(`  ${m}`);
+    process.exit(4);
+  }
+  // Not copied, so not backed up — the same class of failure as a copy that did not verify, and it
+  // must never be the quiet part of an otherwise green run.
+  if (result.collided?.length) {
+    console.error(
+      `${stamp} FAILED — ${result.collided.length} file(s) share a name with another source and were NOT copied:`,
+    );
+    for (const c of result.collided) console.error(`  ${c}`);
     process.exit(4);
   }
 }
