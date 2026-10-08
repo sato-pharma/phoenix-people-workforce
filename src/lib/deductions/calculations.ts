@@ -36,13 +36,27 @@ export const DEDUCTIONS_CATEGORY_CONFIG: Record<DeductionsCategory, DeductionsCa
     salaryRecordsColumn: "crm",
     sortOrder: 2,
   },
+  // Owner, 2026-10-08: a half day a district manager or rep left unaccounted for
+  // (connectors/half-day.ts). Deliberately NOT mandatory like `crm` — "you decide
+  // each": nothing is charged until the row is approved. Paid through the CRM
+  // column, so an approved half day reaches the same payroll step as a CRM day.
+  // Sorted beside CRM; the categories after it moved down one
+  // (20261008200000_deductions_crm_half_day_category.sql).
+  crm_half_day: {
+    category: "crm_half_day",
+    label: "Half Day (CRM)",
+    detectionEngine: "crm_half_day",
+    requiresApproval: true,
+    salaryRecordsColumn: "crm",
+    sortOrder: 3,
+  },
   no_records_activity: {
     category: "no_records_activity",
     label: "No Records Activity",
     detectionEngine: "no_activity_engine",
     requiresApproval: true,
     salaryRecordsColumn: "other_deductions",
-    sortOrder: 3,
+    sortOrder: 4,
   },
   unpaid_vacation: {
     category: "unpaid_vacation",
@@ -50,7 +64,7 @@ export const DEDUCTIONS_CATEGORY_CONFIG: Record<DeductionsCategory, DeductionsCa
     detectionEngine: "vacation_balance",
     requiresApproval: true,
     salaryRecordsColumn: "unpaid_vacations",
-    sortOrder: 4,
+    sortOrder: 5,
   },
   insufficient_balance_vacation: {
     category: "insufficient_balance_vacation",
@@ -58,7 +72,7 @@ export const DEDUCTIONS_CATEGORY_CONFIG: Record<DeductionsCategory, DeductionsCa
     detectionEngine: "vacation_balance",
     requiresApproval: true,
     salaryRecordsColumn: "unpaid_vacations",
-    sortOrder: 5,
+    sortOrder: 6,
   },
   loan: {
     category: "loan",
@@ -66,7 +80,7 @@ export const DEDUCTIONS_CATEGORY_CONFIG: Record<DeductionsCategory, DeductionsCa
     detectionEngine: "manual_hr",
     requiresApproval: true,
     salaryRecordsColumn: "loans",
-    sortOrder: 6,
+    sortOrder: 7,
   },
   other: {
     category: "other",
@@ -74,7 +88,7 @@ export const DEDUCTIONS_CATEGORY_CONFIG: Record<DeductionsCategory, DeductionsCa
     detectionEngine: "manual_hr",
     requiresApproval: true,
     salaryRecordsColumn: "other_deductions",
-    sortOrder: 7,
+    sortOrder: 8,
   },
 };
 
@@ -315,6 +329,28 @@ export function normalizeAppliedDeductionDates(input: {
   }
 
   return { dates: [...accepted].sort(), rejected };
+}
+
+/**
+ * The DAYS a reviewer's ticked dates charge.
+ *
+ * A ticked date is NOT always one day: a CRM half day is `rawValue` 0.5 on a single date, and so is
+ * a fingerprint half day. Counting ticks as days offered 1 day on a 0.5-day finding and the editor
+ * then refused it as "more than detected". So a SINGLE-date candidate charges its own value when
+ * ticked and 0 when not.
+ *
+ * Every other candidate keeps the tick count, and its refusal when that exceeds what was detected.
+ * Its dates do not all weigh the same, so a pro-rata across them is a guess: a vacation row's
+ * `dates` lists every CALENDAR day of the request, Fridays included, while `rawValue` is the unpaid
+ * WORKING days. On a 3-day request over 5 dates, unticking the Friday and Saturday would read 1.8
+ * days where 3 is right, and unticking a working day he came back for would read 2.4 where 2 is
+ * right (risk review, 2026-10-08). For a count-based candidate
+ * (rawValue === dates, every full-day CRM row) the count is exact anyway.
+ */
+export function daysForTickedDates(input: { rawValue: number; detectedDates: number; tickedDates: number }): number {
+  const rawValue = Number(input.rawValue);
+  if (input.detectedDates === 1 && Number.isFinite(rawValue)) return input.tickedDates >= 1 ? rawValue : 0;
+  return input.tickedDates;
 }
 
 /**

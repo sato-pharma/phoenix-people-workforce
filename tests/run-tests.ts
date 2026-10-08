@@ -399,6 +399,7 @@ import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-
 import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-and-clip.test.ts";
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
+import { runDeductionsHalfDayTests } from "./deductions-half-day.test.ts";
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
 import { runDeductionsCrmVacationEmploymentJoinTests } from "./deductions-crm-vacation-employment-join.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
@@ -3412,6 +3413,10 @@ await runTest(
 await runTest(
   "deductions DSM no-record (the narrow manager exception, and every guard that keeps a gap from becoming a wrong deduction)",
   runDeductionsDsmNoRecordTests,
+);
+await runTest(
+  "deductions half day (a morning or afternoon with nothing on file is half a day; every check-in, save time, vacation, plan and request clears it first)",
+  runDeductionsHalfDayTests,
 );
 await runTest(
   "deductions vacation ledger guard (the HR-request path must not re-charge a day a CRM-signal candidate already claims)",

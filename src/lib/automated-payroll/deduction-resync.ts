@@ -112,7 +112,9 @@ export function payrollStepsForCategory(
   switch (category) {
     case "fingerprint":
       return [{ stepKey: "p1_fingerprint", columns: ["fingerprint_days", "fingerprint_value"] }];
+    // A CRM half day is paid through the CRM column (owner, 2026-10-08), so it clears the same steps.
     case "crm":
+    case "crm_half_day":
       return settledInPart1
         ? [
             { stepKey: "p1_crm", columns: ["p1od_crm_days", "p1od_crm_value"] },

@@ -51,6 +51,7 @@ const IN_CHUNK = 100;
  */
 const CATEGORY_TO_SALARY_COLUMN: Record<string, string> = {
   crm: "crm",
+  crm_half_day: "crm",
   no_records_activity: "crm",
   unpaid_vacation: "unpaid_vacations",
   insufficient_balance_vacation: "unpaid_vacations",

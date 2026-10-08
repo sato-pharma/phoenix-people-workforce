@@ -665,6 +665,7 @@ const CHART_COLORS = {
  */
 export const DEDUCTION_CATEGORY_LABELS: Record<DeductionsCategory, string> = {
   crm: "CRM",
+  crm_half_day: "Half day (CRM)",
   fingerprint: "Fingerprint",
   insufficient_balance_vacation: "Insufficient balance",
   loan: "Loan",

@@ -56,13 +56,14 @@ function portalLine(overrides: Partial<DeductionsPortalLine> = {}): DeductionsPo
 }
 
 export async function runDeductionsModulePortalTests(): Promise<void> {
-  // 1. mapPublicationLine — every one of the 7 categories maps to a distinct,
+  // 1. mapPublicationLine — every one of the 8 categories maps to a distinct,
   // valid payrollColumn (widened DeductionsSalaryRecordsColumn), never falls
   // through to the "else -> Unpaid Vacations" trap the legacy 3-value enum would hit.
   {
     const expectedColumns: Record<DeductionsCategory, string> = {
       fingerprint: "finger_print",
       crm: "crm",
+      crm_half_day: "crm",
       no_records_activity: "other_deductions",
       unpaid_vacation: "unpaid_vacations",
       insufficient_balance_vacation: "unpaid_vacations",
