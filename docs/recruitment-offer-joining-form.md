@@ -52,6 +52,23 @@ Opening the link changes nothing — a mail scanner follows every link. Only the
 Employee chain in its order (`src/lib/offers/joining-form-service.ts`): `upsertEmployee`,
 `provisionNewHireAccess`, `openAndAnnounceCrmAccountSetup`, `openAndAnnounceNewHireMailboxes`.
 
+## Who is told when an offer is accepted
+
+Owner, 2026-10-09: *"send the notification to SFE and HR and manager and manager of manager"*, his
+example being "Omar Arwa (Sohag 1) accepted the offer. Hire date: 11-1-2026."
+
+- HR (the `accepted_offer_alert` audience, Super Admin and HR Operations by default) keeps the fuller
+  notice it always had — the record, the seat, the Sato email, what is left to do.
+- A second, short notice (`announceAcceptedOfferToTeam`, event `offer_accepted_team`) goes to the
+  **SFE Manager** (by role, so no policy row and no migration), the hire's **manager** and that
+  manager's **manager**. Anyone already in the HR audience is left out, so nobody is told twice.
+- The manager is the new record's `manager_hr_id` once the joining form made it; before that (HR marked
+  the offer accepted by hand) it is the offer's seat, `position_vacancies.manager_hr_id`. A seatless
+  offer has no manager to name, and only the SFE Manager is told. A departed manager is skipped.
+- In-app, push and Telegram, never email. One per offer (`accepted-offer-team:<offer id>`), fired on
+  whichever acceptance comes first. It also fires when the HR audience resolves to nobody.
+- Pinned by `tests/accepted-offer-alert.test.ts`, section 6.
+
 ## The seat
 
 A Medical Representative or District Manager offer cannot be SENT without its AU organogram seat

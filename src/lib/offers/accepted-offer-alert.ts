@@ -16,13 +16,19 @@
  */
 
 import type { OfferRecord } from "@/lib/offers/types";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
-import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
+import {
+  resolveHrIdsForRole,
+  resolveNotificationPersonRecipients,
+  withoutDepartedHrIds,
+} from "@/lib/notifications/role-recipients";
 import {
   createSystemNotificationForRecipients,
   logNotificationSendFailure,
   type SystemNotificationChannel,
 } from "@/lib/notifications/system";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The admin-editable audience key (see role-recipients.ts). Defaults to Super Admin + HR Operations. */
 export const ACCEPTED_OFFER_AUDIENCE = "accepted_offer_alert" as const;
@@ -150,6 +156,135 @@ export async function announceJoiningFormBlocked(
   }
 }
 
+// ───────────────────────────────────────────────────── the team that works with the new hire ──
+
+/** The second notice: the hire's own line of management and the SFE Manager (owner, 2026-10-09). */
+export const ACCEPTED_OFFER_TEAM_EVENT_TYPE = "offer_accepted_team" as const;
+/** The SFE Manager is addressed by role, so it needs no new policy row and no migration. */
+export const ACCEPTED_OFFER_SFE_ROLE = "SFE Manager" as const;
+
+/** "Omar Arwa (Sohag 1) accepted the offer. Hire date: 11-1-2026." — the territory and date only when the offer has them. */
+export function acceptedOfferTeamMessage(offer: Pick<OfferRecord, "candidateName" | "startDate" | "territory">): string {
+  const territory = String(offer.territory ?? "").trim();
+  const start = String(offer.startDate ?? "").trim();
+  const where = territory ? ` (${territory})` : "";
+  const hireDate = start ? ` Hire date: ${start}.` : "";
+  return `${stated(offer.candidateName)}${where} accepted the offer.${hireDate}`;
+}
+
+export function acceptedOfferTeamTitle(offer: Pick<OfferRecord, "candidateName">): string {
+  return `Offer accepted: ${stated(offer.candidateName)}`;
+}
+
+function cleanId(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+/** One employee's manager, or null — a failed read answers null, never throws. */
+async function managerOf(hrId: string, warnings: string[]): Promise<string | null> {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("employees")
+      .select("manager_hr_id")
+      .in("hr_id", hrIdLookupKeys(hrId))
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return cleanId((data as { manager_hr_id?: string | null } | null)?.manager_hr_id) || null;
+  } catch (error) {
+    warnings.push(`manager of ${hrId} unavailable: ${error instanceof Error ? error.message : "unknown error"}`.slice(0, 160));
+    return null;
+  }
+}
+
+/**
+ * The hire's manager and that manager's manager. Once the joining form has made the record, the
+ * record's own manager is the answer; before it (HR marked the offer accepted by hand) the seat the
+ * offer was written against names the manager. A seatless offer has neither, and says so as a warning.
+ */
+export async function resolveHireManagerChain(
+  offer: Pick<OfferRecord, "vacancyId">,
+  hire: { hrId: string } | undefined,
+  warnings: string[],
+): Promise<string[]> {
+  let manager: string | null = null;
+  if (hire?.hrId) {
+    manager = await managerOf(cleanId(hire.hrId), warnings);
+  } else if (offer.vacancyId != null) {
+    try {
+      const { data, error } = await getSupabaseAdmin()
+        .from("position_vacancies")
+        .select("manager_hr_id")
+        .eq("id", offer.vacancyId)
+        .maybeSingle();
+      if (error) throw error;
+      manager = cleanId((data as { manager_hr_id?: string | null } | null)?.manager_hr_id) || null;
+    } catch (error) {
+      warnings.push(`seat manager unavailable: ${error instanceof Error ? error.message : "unknown error"}`.slice(0, 160));
+    }
+  }
+  if (!manager) {
+    warnings.push("the offer names no manager (no seat, or the seat has none)");
+    return [];
+  }
+  const managerOfManager = await managerOf(manager, warnings);
+  return managerOfManager && managerOfManager !== manager ? [manager, managerOfManager] : [manager];
+}
+
+/**
+ * Tell the SFE Manager, the hire's manager and the manager's manager that the offer was accepted.
+ * `alreadyTold` is the HR audience, who got the fuller notice above, so nobody is told twice.
+ * Once per offer, in-app + push + Telegram, never email. Swallows every failure.
+ */
+export async function announceAcceptedOfferToTeam(
+  offer: OfferRecord,
+  hire: { hrId: string } | undefined,
+  alreadyTold: ReadonlySet<string>,
+): Promise<{ announced: boolean; recipients: number; warnings: string[] }> {
+  const warnings: string[] = [];
+  const offerId = String(offer?.id ?? "").trim();
+  if (!offerId) return { announced: false, recipients: 0, warnings: ["the accepted offer carried no id"] };
+  try {
+    const sfe = await resolveHrIdsForRole(ACCEPTED_OFFER_SFE_ROLE, "Accepted offer — SFE Manager");
+    warnings.push(...sfe.warnings);
+    const chain = await resolveHireManagerChain(offer, hire, warnings);
+    const current = chain.length > 0 ? await withoutDepartedHrIds(chain, "Accepted offer — managers", warnings) : [];
+    const recipients = Array.from(new Set([...sfe.hrIds, ...current].map(cleanId).filter(Boolean))).filter(
+      (hrId) => !alreadyTold.has(hrId),
+    );
+    if (recipients.length === 0) return { announced: false, recipients: 0, warnings };
+
+    await createSystemNotificationForRecipients(
+      {
+        actionUrl: hire ? JOINED_EMPLOYEE_PATH : ACCEPTED_OFFER_PATH,
+        actorId: null,
+        channels: [...ACCEPTED_OFFER_CHANNELS],
+        eventType: ACCEPTED_OFFER_TEAM_EVENT_TYPE,
+        message: acceptedOfferTeamMessage(offer),
+        metadata: {
+          // Resolved from the SFE Manager role and the hire's reporting line, never from a request.
+          authorizedRecipient: true,
+          details: [
+            { label: "Candidate", value: stated(offer.candidateName) },
+            { label: "Role", value: stated(offer.title) },
+            { label: "Territory", value: stated(offer.territory) },
+            { label: "Hire date", value: stated(offer.startDate) },
+          ],
+          idempotencyKey: `accepted-offer-team:${offerId}`,
+        },
+        module: ACCEPTED_OFFER_MODULE,
+        priority: "high",
+        title: acceptedOfferTeamTitle(offer),
+      },
+      recipients,
+    );
+    return { announced: true, recipients: recipients.length, warnings };
+  } catch (error) {
+    logNotificationSendFailure("acceptedOffer.announceAcceptedOfferToTeam", error);
+    return { announced: false, recipients: 0, warnings: [...warnings, error instanceof Error ? error.message : String(error)] };
+  }
+}
+
 /**
  * Announce one accepted offer to the audience. Idempotent per offer id, so re-marking an offer
  * accepted (a correction, a double-save) never fires a second alert. Swallows every failure.
@@ -175,6 +310,8 @@ export async function announceAcceptedOffer(
         error: new Error(`offer ${offerId}; warnings: ${warnings.join("; ") || "none"}`),
         labels: { event: "accepted_offer_no_recipient" },
       });
+      // The HR audience resolving to nobody must not silence the people who work with the new hire.
+      await announceAcceptedOfferToTeam(offer, hire, new Set());
       return { announced: false, recipients: 0, warnings };
     }
 
@@ -203,6 +340,10 @@ export async function announceAcceptedOffer(
       },
       audience.recipients.map((recipient) => recipient.hrId),
     );
+    // The SFE Manager and the hire's manager and manager's manager (owner, 2026-10-09); the HR
+    // audience already has the fuller notice, so they are left out of this one.
+    const team = await announceAcceptedOfferToTeam(offer, hire, new Set(audience.recipients.map((r) => cleanId(r.hrId))));
+    warnings.push(...team.warnings);
     return { announced: true, recipients: audience.recipients.length, warnings };
   } catch (error) {
     logNotificationSendFailure("acceptedOffer.announceAcceptedOffer", error);

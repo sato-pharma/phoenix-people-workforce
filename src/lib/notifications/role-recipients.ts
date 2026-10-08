@@ -524,7 +524,7 @@ export async function resolveHrIdsForRole(
  * error is the failure nobody sees. An id with no employee row is kept - that is a system or service
  * login, matching `isTerminalEmploymentStatus`'s own rule.
  */
-async function withoutDepartedHrIds(hrIds: string[], warningLabel: string, warnings: string[]): Promise<string[]> {
+export async function withoutDepartedHrIds(hrIds: string[], warningLabel: string, warnings: string[]): Promise<string[]> {
   try {
     const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,employment_status").in("hr_id", hrIds);
     if (error) throw error;
