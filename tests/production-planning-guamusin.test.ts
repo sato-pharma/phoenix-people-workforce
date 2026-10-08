@@ -739,6 +739,97 @@ export async function runProductionPlanningGuamusinTests() {
   // Three months ahead, which is the 90-day default he asked for.
   assert.match(sql, /expiry_warn_days integer not null default 90/);
 
+  // ── Ivyronc's unrecorded excipients ───────────────────────────────────────────────────────────
+  // Found while verifying Guamusin on 2026-10-08: Ivyronc linked 14 materials but carried only 8
+  // composition lines in force, so its buy list silently understated FIVE of them — not the one a
+  // memory note had claimed. Three are answered outright by his own order calculator
+  // (`xlsx/Ivyronc - order calculator and stock ledger.xlsx`, sheet "Per batch", column
+  // "Per 5 ml (gram)"). The figures are literals here because `xlsx/` is gitignored and CI never
+  // sees the workbook — the same reason Guamusin's are literals above.
+  const ivyFormula = stripSqlComments(
+    readFileSync(
+      "supabase/migrations/20261008235500_production_planning_ivyronc_missing_formula_lines.sql",
+      "utf8",
+    ),
+  );
+
+  // Grams per 5 ml dose, written through unchanged, because these materials' base unit IS the gram.
+  // Contrast the aluminium film above, where his 0.018 kg per box had to become 18 g.
+  assert.match(ivyFormula, /\('XANTHAN_GUM',\s*0\.005000, 'shared_unsettled'/);
+  assert.match(ivyFormula, /\('CITRIC_ACID_ANH',\s*0\.005000, 'factory'/);
+  assert.match(ivyFormula, /\('LEMON_FLAVOUR',\s*0\.003500, 'shared_unsettled'/);
+  assert.match(ivyFormula, /'per_dose'/, "all three are dosed per 5 ml, never per bottle");
+  assert.match(ivyFormula, /'mass'/, "and the composite FK demands the material's own unit_kind");
+
+  // 🔴 `shared_unsettled` IS THE POINT, not a placeholder. His sheet files xanthan gum and lemon
+  // flavour under "Sometimes you, sometimes the factory" with the "YOU WILL SEND" cell left blank,
+  // so neither is his to buy yet; citric acid is the one the Settled tab gives to the factory
+  // outright. Writing `sato` would invent a purchase, `factory` would hide one he may still owe.
+  assert.ok(
+    !/'XANTHAN_GUM',\s*[\d.]+, 'sato'/.test(ivyFormula),
+    "🔴 xanthan gum is unsettled in his sheet — recording it as Phoenix's own invents a purchase he never agreed",
+  );
+
+  // The seal is one per bottle from the factory — HIS answer when asked, because the workbook puts
+  // it outside the sheet with the bottle and cap and states no count. It is a `count` because the
+  // composite FK demands the material's own unit_kind, and `per_packaging_set` because that is the
+  // basis its two trio-mates already use; on Ivyronc one packaging set IS one bottle.
+  assert.match(ivyFormula, /'ALUMINIUM_SEAL'/, "the seal now has its line");
+  assert.match(
+    ivyFormula,
+    /'count',\s*'per_packaging_set',\s*1\.000000,/,
+    "🔴 one per bottle, and a COUNT — a mass unit_kind would violate the composite FK to the material",
+  );
+
+  // 🔴 THE SCRAPPED OLD LEAFLET IS DEACTIVATED, NEVER GIVEN A FORMULA LINE. "100% forget about the
+  // old leaflet. Only consider the new one" (owner, 2026-10-08). A line would demand 115,875
+  // leaflets that are being thrown away; deactivating the material is what its own family already
+  // did to the pre-split LEAFLET, and `service.ts` reads materials with `is_active = true`.
+  assert.match(
+    ivyFormula,
+    /update public\.prodplan_materials[\s\S]*?set is_active = false[\s\S]*?where code = 'LEAFLET_OLD'/,
+    "🔴 the old leaflet must be switched OFF",
+  );
+  assert.ok(
+    !/\('LEAFLET_OLD'/.test(ivyFormula),
+    "🔴 and it must never appear as a composition row — that would demand 115,875 scrapped leaflets",
+  );
+  assert.ok(
+    !/LEAFLET_NEW/.test(ivyFormula),
+    "the new leaflet already has its line and must not be touched",
+  );
+  // 🔴 The write-off record stays. Deleting the 68,250 would destroy the evidence, not hide it.
+  assert.ok(
+    !/prodplan_stock_entries/.test(ivyFormula),
+    "🔴 no stock row is touched — the 68,250 scrapped leaflets stay on the books as the write-off",
+  );
+  assert.ok(
+    !/\bdelete\b/i.test(ivyFormula),
+    "and nothing is deleted",
+  );
+
+  // overage_pct stays null so it inherits the module's 3%, which is the overage his sheet applies.
+  // Guamusin's explicit 0 is a Guamusin decision and must not be copied here.
+  assert.match(ivyFormula, /spec\.qty_per_dose_g,\s*null,/, "overage_pct is left null to inherit the 3%");
+
+  // The guard against a second open line — the defect the LEAFLET split exists to prevent.
+  assert.match(ivyFormula, /not exists/);
+  assert.match(ivyFormula, /c\.effective_to is null/);
+
+  // And the engine reproduces his own "NEEDED for the whole order" cells rather than restating
+  // them. One Ivyronc run is 1,250,000 ml at a 5 ml dose, so 250,000 doses — the "250,000 doses of
+  // 5 ml" his sheet states for one batch.
+  assert.equal(dosesPerRun(IVYRONC), BigInt(250_000), "1,250 litres at 5 ml a dose is 250,000 doses");
+  assert.equal(
+    (parseQty("0.005") * dosesPerRun(IVYRONC)) / QTY_SCALE,
+    BigInt(1_250),
+    "0.005 g a dose is his sheet's 1.25 kg of xanthan gum — and of citric acid — a batch",
+  );
+  assert.equal(
+    (parseQty("0.0035") * dosesPerRun(IVYRONC)) / QTY_SCALE,
+    BigInt(875),
+    "and 0.0035 g a dose is his 0.875 kg of lemon flavour a batch",
+  );
 }
 
 function resolvedSix() {
