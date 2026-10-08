@@ -642,14 +642,88 @@ export async function runProductionPlanningGuamusinTests() {
     );
   }
 
-  // 🔴 The aluminium film has stock and NO composition row, and must keep both: nobody has told him
-  // how many kilograms a thousand sachets take, and a guessed figure would reach the buy list as a
-  // real number. Its absence is the only honest state until he has that figure.
+  // The aluminium film's stock, which the formula migration below deliberately does NOT touch: the
+  // owner identified the 16,667 beside his 0.018 as boxes per run, not a holding, so 230.95 kg
+  // stands.
   assert.match(sql, /SACHET_FILM_ALU/, "the film is a material");
   assert.match(sql, /230950\.000000, null/, "with 230.95 kg of stock and no expiry date");
+  // 🔴 The SEED still carries no composition for it — the figure arrived hours later and lands in
+  // its own migration. If this ever starts matching, two open lines exist for one material and
+  // every plan silently asks for twice the film.
   assert.ok(
     !/\('SACHET_FILM_ALU',\s*'per_/.test(sql),
-    "and NO composition row, so it cannot reach the buy list with an invented quantity",
+    "the seed opens no formula line for the film — the only one comes from 20261008234500",
+  );
+
+  // ── The aluminium film's formula line, 2026-10-08 ────────────────────────────────────────────
+  //
+  // The owner sent DBK's own table headed "Quantity Aluminum / box" reading 0.018, and confirmed
+  // the basis when asked: 0.018 kg per box of twelve. Everything below pins the three ways that
+  // number can be recorded wrongly.
+  const filmSql = readFileSync(
+    "supabase/migrations/20261008234500_production_planning_guamusin_film_per_box.sql",
+    "utf8",
+  );
+  const filmCode = stripSqlComments(filmSql);
+
+  // 🔴 GRAMS, NOT KILOGRAMS. `prodplan_materials.base_unit` for the film is `g` with
+  // base_per_display 1000, and every composition in this module stores BASE units — so 0.018 kg is
+  // 18. Writing 0.018 here would ask DBK for eighteen GRAMS of film for the whole 6-run order, a
+  // thousandfold under-order that looks completely ordinary on the row.
+  assert.match(filmCode, /\b18\.000000\b/, "18 grams per box — 0.018 kg in the module's base unit");
+  // The check has to look OUTSIDE string literals: the `notes` column deliberately records "0.018
+  // kg … per box" so the row can be read against his sheet, and a blanket search for 0.018 fires on
+  // that prose instead of on a quantity. Splitting on the quote character puts every even segment
+  // outside a literal; an odd quote count would mean the split is meaningless, so prove it first.
+  const quoteCount = (filmCode.match(/'/g) ?? []).length;
+  assert.equal(quoteCount % 2, 0, "unbalanced quotes — the outside-literals split below would be nonsense");
+  const outsideLiterals = filmCode
+    .split("'")
+    .filter((_, index) => index % 2 === 0)
+    .join(" ");
+  assert.ok(
+    !/\b0\.018\b/.test(outsideLiterals),
+    "🔴 0.018 must not reach the SQL as a QUANTITY: that is the display figure in kg, and stored raw it under-orders the film a thousandfold while the row still reads normally",
+  );
+  assert.match(outsideLiterals, /\b18\.000000\b/, "the quantity itself sits outside any literal");
+  assert.match(filmCode, /'per_box'/, "on the basis he gave, which is the one his own sheet can be checked against");
+  assert.match(filmCode, /'SACHET_FILM_ALU'/, "for the film");
+  assert.match(filmCode, /'mass'/, "whose unit_kind is mass, matching the material");
+
+  // 🔴 THE IDEMPOTENCE GUARD IS THE LEAFLET LESSON. Two open composition lines for one material
+  // double its requirement on every plan while each row still reads as ordinary — 68,250 pieces of
+  // superseded leaflet nearly started covering new production that way. Re-running this insert must
+  // be incapable of opening a second line.
+  assert.match(
+    filmCode,
+    /not exists/,
+    "🔴 the insert must be guarded — without it a re-run opens a SECOND open line and every plan silently asks for twice the film",
+  );
+  assert.match(filmCode, /c\.effective_to is null/, "and the guard must test for a line IN FORCE, not merely any row");
+
+  // It touches the formula and nothing else: the 230.95 kg stays, because the owner said the 16,667
+  // beside his 0.018 was boxes per run and not a holding.
+  assert.ok(
+    !/prodplan_stock_entries/.test(filmCode),
+    "it must not touch stock — the 16,667 in his image is boxes per run, not a new holding",
+  );
+  assert.ok(
+    !/\bdelete\b/i.test(filmCode),
+    "and it deletes nothing",
+  );
+
+  // THE ARITHMETIC, through the real engine rather than by restating it here. Six runs is 120,000
+  // sachets and exactly 10,000 boxes, so 18 g per box is 180 kg — comfortably inside the 230.95 kg
+  // DBK holds, which is why this order needs no film at all.
+  const filmSixRuns = resolvedSix();
+  const filmGramsPerBox = BigInt(18) * QTY_SCALE;
+  const boxesForSixRuns = filmSixRuns.totalBoxes;
+  assert.equal(boxesForSixRuns, BigInt(10_000), "six runs is exactly 10,000 boxes of twelve");
+  const filmNeeded = (filmGramsPerBox * boxesForSixRuns) / QTY_SCALE;
+  assert.equal(filmNeeded, BigInt(180_000), "so the film needed is 180,000 g — 180 kg");
+  assert.ok(
+    filmNeeded * QTY_SCALE < BigInt(230_950) * QTY_SCALE,
+    "which is under the 230.95 kg at DBK, so the 6-run order buys no film",
   );
 
   // Packaging carries a NULL expiry rather than a far-off placeholder — a placeholder would come due
