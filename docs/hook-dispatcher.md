@@ -109,11 +109,24 @@ repo. So they cannot call this repo's dispatcher. Since 2026-10-08 a **byte-iden
 
 | User hook | Matcher | Timeout | Where it runs now |
 | --- | --- | --- | --- |
-| weekly-review-readonly | Write\|Edit\|NotebookEdit\|Bash\|PowerShell\|mcp__ | 15 | the user dispatcher |
+| weekly-review-readonly | `^(Write\|Edit\|NotebookEdit\|Bash\|PowerShell\|mcp__.*)$` | 15 | the user dispatcher |
 | scratchpad-guard `pre` | Bash\|PowerShell | 90 | the user dispatcher |
 | risky-allow-guard | Write\|Edit | 10 | the user dispatcher |
 | dev-server-reaper | Bash\|PowerShell, `async` | 10 | **its own entry in settings.json** |
 
+- **The weekly-review matcher is a regex on purpose.** Until 2026-10-08 it read
+  `Write|Edit|NotebookEdit|Bash|PowerShell|mcp__`. Claude Code reads plain names and pipes as an
+  exact list, so `mcp__` matched no real tool, and the guard's block on MCP tools that can write
+  never fired. The dispatcher's own entry in `~/.claude/settings.json` was changed to the same regex,
+  so MCP calls reach it at all.
+
+  Proved through the installed dispatcher:
+  - in a weekly-review session, `execute_sql` and `update_scheduled_task` are denied;
+  - a read-only MCP tool and an ordinary session pass;
+  - `BashOutput`, `Read`, `MultiEdit` and `Grep` still match nothing.
+
+  With the old matcher swapped back in, the two denials disappear. The guard now starts one node
+  process per MCP call in every session, and outside the weekly review it exits at once.
 - The dev-server reaper stays separate. An async hook never holds the call, and the dispatcher waits
   for every hook it runs.
 - User settings write hooks as `"command": "node", "args": [script, …]`. `commandOf()` folds that
