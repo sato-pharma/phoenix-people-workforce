@@ -10,6 +10,8 @@ import {
   ACCEPTED_OFFER_CHANNELS,
   acceptedOfferDetails,
   acceptedOfferMessage,
+  acceptedOfferTeamMessage,
+  acceptedOfferTeamTitle,
   acceptedOfferTitle,
 } from "../src/lib/offers/accepted-offer-alert.ts";
 
@@ -90,4 +92,27 @@ export function runAcceptedOfferAlertTests() {
     /array\['Super Admin', 'HR Operations'\], true/.test(migration),
     "and seeds the owner's recipients, matching the code default",
   );
+
+  // 6 · The second notice (owner, 2026-10-09): SFE Manager + the hire's manager + manager's manager.
+  const example = { candidateName: "Omar Arwa", startDate: "11-1-2026", territory: "Sohag 1" };
+  assert.equal(
+    acceptedOfferTeamMessage(example),
+    "Omar Arwa (Sohag 1) accepted the offer. Hire date: 11-1-2026.",
+    "the owner's example, word for word",
+  );
+  assert.equal(acceptedOfferTeamTitle(example), "Offer accepted: Omar Arwa");
+  assert.equal(
+    acceptedOfferTeamMessage({ ...example, territory: "", startDate: "" }),
+    "Omar Arwa accepted the offer.",
+    "no territory and no date drop their clauses rather than printing blanks",
+  );
+  const teamSource = readFileSync("src/lib/offers/accepted-offer-alert.ts", "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  assert.ok(teamSource.includes('"SFE Manager"'), "the SFE Manager is addressed by role");
+  assert.ok(/position_vacancies/.test(teamSource) && /manager_hr_id/.test(teamSource), "the manager comes from the seat before the record exists");
+  assert.ok(
+    (teamSource.match(/announceAcceptedOfferToTeam\(offer, hire,/g) ?? []).length >= 2,
+    "the team notice fires on both paths — HR audience resolved, and HR audience empty",
+  );
+  assert.ok(/!alreadyTold\.has\(hrId\)/.test(teamSource), "the HR audience is not told twice");
+  assert.ok(/accepted-offer-team:\$\{offerId\}/.test(teamSource), "once per offer");
 }
