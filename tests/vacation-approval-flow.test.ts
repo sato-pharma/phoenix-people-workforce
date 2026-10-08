@@ -453,4 +453,17 @@ export function runVacationApprovalFlowTests() {
   const panelSource = readFileSync(new URL("../src/components/vacation/returned-request-panel.tsx", import.meta.url), "utf8");
   assert.match(panelSource, /Edit and resubmit/, "the employee can edit a returned request");
   assert.match(panelSource, /Resubmit without changes/, "the employee can resubmit a returned request as it stands");
+
+  // A return cannot write manager_decision (its check allows only approved/rejected), so after HR returns
+  // a request the direct manager already approved it still reads "approved" - History and All Decisions
+  // listed the return as an approval. The request's current status must win.
+  const actionCenterServiceSource = readFileSync(new URL("../src/lib/action-center/service.ts", import.meta.url), "utf8");
+  const hubServiceSource = readFileSync(new URL("../src/lib/approvals-hub/service.ts", import.meta.url), "utf8");
+  for (const [label, source] of [["History", actionCenterServiceSource], ["All Decisions", hubServiceSource]] as const) {
+    assert.match(
+      source,
+      /row\.status === "returned" \? \("returned" as const\) : decodeDecision\(/,
+      `${label} must show a returned request as returned even when manager_decision still reads approved`,
+    );
+  }
 }

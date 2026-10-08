@@ -1022,7 +1022,9 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
     const decisionRaw = isHrDecider && row.hr_decision ? row.hr_decision : row.manager_decision;
     const decidedAt = isHrDecider && row.hr_decision_at ? row.hr_decision_at : row.manager_decision_at;
     const deciderHrId = isHrDecider ? String(row.hr_decision_by_hr_id) : String(row.manager_decision_by_hr_id ?? "");
-    const decision = decodeDecision(decisionRaw as string | null) ?? (row.status === "returned" ? ("returned" as const) : null);
+    // A returned request's manager_decision can still read "approved" (HR returned after the direct
+    // manager approved), so the request's current status wins over the stored decision text.
+    const decision = row.status === "returned" ? ("returned" as const) : decodeDecision(decisionRaw as string | null);
     if (!decision) continue;
     seenIds.add(id);
     items.push({
