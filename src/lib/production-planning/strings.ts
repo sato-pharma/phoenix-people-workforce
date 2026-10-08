@@ -247,6 +247,12 @@ export const PP = {
   costUnpriced: "مواد بدون سعر",
   costIncomplete: "مواد تعذّر حساب عملتها الأخرى",
   costNotWholeNotice: "الإجمالي لا يشمل المواد التي بدون سعر",
+  // ── When the total is partial, or means nothing at all ────────────────────────────────────────
+  // Verbal nouns and impersonal outcomes, no imperative: both primary users are women and Arabic
+  // marks gender on the imperative, and `production-planning-strings.test.ts` scans for that.
+  costNoPrices: "لم تُدخل أسعار",
+  costPartialTotal: "الإجمالي جزئي — محسوب على المواد المسعّرة فقط",
+  costPricedOnBuyList: "المسعّر من قائمة الشراء",
 
   // ── The run tab ───────────────────────────────────────────────────────────────────────────────
   runTitle: "تسجيل تشغيلة",
@@ -566,6 +572,9 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   costUnpriced: "Materials with no price",
   costIncomplete: "Materials whose other currency could not be derived",
   costNotWholeNotice: "The total leaves out every material with no price",
+  costNoPrices: "No prices entered",
+  costPartialTotal: "This total is partial — only the priced materials are counted",
+  costPricedOnBuyList: "Priced, of the buy list",
 
   // ── The run tab ───────────────────────────────────────────────────────────────────────────────
   runTitle: "Record a run",
