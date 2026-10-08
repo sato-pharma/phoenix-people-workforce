@@ -51,6 +51,7 @@ import {
   type PermissionResource,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { displayTitleForRole } from "@/lib/auth/hr-functions";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
@@ -276,7 +277,7 @@ function RoleBadge({ role }: { role: PhoenixRole }) {
 
   return (
     <span className={badgeClassName(roleBadgeTone(role))}>
-      {role}
+      {displayTitleForRole(role)}
       <span className="ml-1 text-phx-2xs font-bold uppercase tracking-wider opacity-70">{label}</span>
     </span>
   );
@@ -391,7 +392,7 @@ export function AccessControlManager({
       return;
     }
     requestGovernanceConfirmation({
-      body: `Change ${role} permission for ${resource}:${action} to ${isAllowed ? "allowed" : "restricted"}. This affects every user assigned to that role and will be written to the governance audit log.`,
+      body: `Change ${displayTitleForRole(role)} permission for ${resource}:${action} to ${isAllowed ? "allowed" : "restricted"}. This affects every user assigned to that role and will be written to the governance audit log.`,
       confirmLabel: "Update permission",
       onConfirm: async (reason) => {
         await performPermissionUpdate(role, resource, action, isAllowed, reason);
@@ -461,7 +462,7 @@ export function AccessControlManager({
 
     if (roleChanged || privilegedRole || deactivating) {
       requestGovernanceConfirmation({
-        body: `Save ${form.hrId.trim() || form.loginId.trim() || "this user"} with role ${form.role}${deactivating ? " and deactivate access" : ""}. Role and status changes can alter payroll, employee, and admin visibility immediately.`,
+        body: `Save ${form.hrId.trim() || form.loginId.trim() || "this user"} with role ${displayTitleForRole(form.role)}${deactivating ? " and deactivate access" : ""}. Role and status changes can alter payroll, employee, and admin visibility immediately.`,
         confirmLabel: "Save user",
         onConfirm: async (reason) => {
           await performSaveUser(reason);
@@ -789,7 +790,7 @@ export function AccessControlManager({
 
   const users = data?.users ?? [];
   const filteredUsers = users.filter((user) => {
-    const haystack = [user.name, user.hrId, user.role, user.line, user.loginId, user.email]
+    const haystack = [user.name, user.hrId, user.role, displayTitleForRole(user.role), user.line, user.loginId, user.email]
       .join(" ")
       .toLowerCase();
     if (query && !haystack.includes(query.toLowerCase())) return false;
@@ -1126,7 +1127,7 @@ export function AccessControlManager({
                     <td className="px-4 py-2 font-mono text-xs">{result.row}</td>
                     <td className="px-4 py-2">{result.hrId}</td>
                     <td className="px-4 py-2">{result.name}</td>
-                    <td className="px-4 py-2">{result.role}</td>
+                    <td className="px-4 py-2">{displayTitleForRole(result.role)}</td>
                     <td className="px-4 py-2">{result.line}</td>
                     <td className="px-4 py-2">
                       <Badge
@@ -1315,7 +1316,7 @@ export function AccessControlManager({
                     >
                       {phoenixRoles.map((role) => (
                         <option key={role} value={role}>
-                          {role}
+                          {displayTitleForRole(role)}
                         </option>
                       ))}
                     </SearchableSelect>
@@ -1470,7 +1471,7 @@ export function AccessControlManager({
                     <option value="all">All roles</option>
                     {phoenixRoles.map((role) => (
                       <option key={role} value={role}>
-                        {role}
+                        {displayTitleForRole(role)}
                       </option>
                     ))}
                   </SearchableSelect>
@@ -1796,7 +1797,7 @@ export function AccessControlManager({
                               ? "bg-gradient-to-r from-emerald-50 to-emerald-100/50 text-emerald-700 border-emerald-200/60"
                               : "bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border-violet-200/60"
                           }`}>
-                            {role}
+                            {displayTitleForRole(role)}
                           </span>
                         </td>
                         <td className="px-4 py-3">

@@ -251,6 +251,20 @@ export async function runHrResourcingSeatTests() {
   // Interview Calendar: "Full view built into her seat" — a Viewer, like the CEO.
   assert.equal(seesWholeInterviewCalendar(her), true, "she sees every interview");
   assert.equal(seesWholeInterviewCalendar(accessFor("HR Advisory")), false, "the other HR seats are not widened");
+  // "Just build the account. I will add her later." (owner, 2026-10-08): the seat is handed out in
+  // User Access, so its picker has to offer it by the title he will look for — "Talent Acquisition" —
+  // and never by its key. The option VALUE stays the key; only the words change.
+  const userAccess = source("src/components/admin/access-control-manager.tsx");
+  assert.match(
+    userAccess,
+    /<option key=\{role\} value=\{role\}>\s*\{displayTitleForRole\(role\)\}\s*<\/option>/,
+    "the User Access role picker offers each seat by its job title",
+  );
+  assert.doesNotMatch(
+    userAccess,
+    /<option key=\{role\} value=\{role\}>\s*\{role\}\s*<\/option>/,
+    "no role picker on User Access may print the bare key",
+  );
   assert.equal(canViewWhatsAppOutboundLog(her), true);
   assert.equal(canSendWhatsAppTemplate(her), true);
   assert.equal(canViewInboundIntakeHealth(her), false, "Inbound Intake Health was left out");
