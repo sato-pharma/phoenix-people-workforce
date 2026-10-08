@@ -1146,7 +1146,7 @@ const defaultPermissionMatrix: PermissionMap = {
   // a governance section, from different angles. Union of the two bundles = all eight functions.
   "HR Advisory": hrBundleGrants("HR Advisory"),
   "HR Operations": hrBundleGrants("HR Operations"),
-  //   HR Resourcing  recruiting · cv_lookup · employee_requests · workforce_context
+  //   HR Resourcing  recruiting · cv_lookup · employee_requests · workforce_context · recognition
   //                  (shown as Talent Acquisition; built from the owner's 2026-10-08 blueprint)
   "HR Resourcing": hrBundleGrants("HR Resourcing"),
   // Finance Manager (Ahmed El Maraghy, B-185 — the only holder): the company's finance execution

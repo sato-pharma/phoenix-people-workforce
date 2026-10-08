@@ -274,7 +274,9 @@ export const adminNavigationSectionSeeds = [
       // broken in the most-seen pixel in the product: a dead read and a clean board would paint the
       // identical nothing. A badge needs a count source that can say "I do not know", which the
       // board itself has and the badge route does not.
-      { href: "/admin/needs-you", icon: BellRing, label: "Needs You", roles: ["Super Admin"] },
+      // HR Resourcing (the Talent Acquisition seat) since 2026-10-08, the owner's answers in chat on 2026-10-08 — her /hr row for
+      // this page must sit inside what this catalogue admits for her (tests/hr-url-namespace.test.ts).
+      { href: "/admin/needs-you", icon: BellRing, label: "Needs You", roles: ["Super Admin", "HR Resourcing"] },
       { href: "/admin/ceo-command-center", icon: LayoutDashboard, label: "CEO Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO"] },
       // `roles` alone already keeps this off the CEO's sidebar, but NOT off Super Admin's — the
       // system-administrator workspace bypasses role gating. excludedRoles is now honoured through
@@ -1024,7 +1026,9 @@ export const adminNavigationSectionSeeds = [
       // (app/(admin)/recruitment/whatsapp-inbox/page.tsx). SUPER ADMIN ONLY, owner 2026-09-15: the
       // page gate is the role itself, so this row names that one role and nothing wider — an offered
       // link that redirects is what every-offered-link-opens.test.ts exists to catch.
-      { href: "/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin"] },
+      // The Talent Acquisition seat (HR Resourcing) joined on 2026-10-08 — the owner's answers in chat on 2026-10-08 — and
+      // canUseWhatsAppInbox names her beside the Super Admin, so the two still agree.
+      { href: "/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin", "HR Resourcing"] },
     ],
     // ── Renamed 2026-09-05, and the reason is the promotion, not the rows ───────────────────
     // The promoted "Recruitment & Hiring" band (hub-recruitment-hiring) holds the module's eight rows
@@ -1429,7 +1433,8 @@ export const adminNavigationSectionSeeds = [
   {
     id: "sales-spotlight-module",
     items: [
-      { href: "/spotlight", icon: Trophy, label: "Spotlight", permissions: [{ action: "read", resource: "spotlight" }], roles: ["Super Admin", "CEO"] },
+      // HR Resourcing (the Talent Acquisition seat) since 2026-10-08, the owner's answers in chat on 2026-10-08.
+      { href: "/spotlight", icon: Trophy, label: "Spotlight", permissions: [{ action: "read", resource: "spotlight" }], roles: ["Super Admin", "CEO", "HR Resourcing"] },
       { href: "/spotlight/cheques", icon: Banknote, label: "Award cheques", permissions: [{ action: "export", resource: "spotlight" }], roles: ["Super Admin", "CEO"] },
     ],
     label: "Spotlight",
@@ -1444,7 +1449,8 @@ export const adminNavigationSectionSeeds = [
   {
     id: "people-milestones-module",
     items: [
-      { href: "/milestones", icon: Award, label: "Milestones", permissions: [{ action: "read", resource: "milestones" }], roles: ["Super Admin"] },
+      // HR Resourcing (the Talent Acquisition seat) since 2026-10-08, the owner's answers in chat on 2026-10-08.
+      { href: "/milestones", icon: Award, label: "Milestones", permissions: [{ action: "read", resource: "milestones" }], roles: ["Super Admin", "HR Resourcing"] },
     ],
     label: "Milestones",
   },
@@ -2134,6 +2140,9 @@ const hrNavigationSectionSeeds = [
       // (payslips, excuses, vacation request…) is still reachable — from that section, and from
       // the My Requests rows at the bottom of this catalogue.
       { href: "/hr/admin/hr-command-center", icon: Gauge, label: "Overview" },
+      // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08. The board shows her only the queues
+      // she holds a rung on; the owner-only ones read "not yours" (src/lib/needs-you/sources.ts).
+      { href: "/hr/admin/needs-you", icon: BellRing, label: "Needs You", roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
     ],
     label: "Overview",
   },
@@ -2318,6 +2327,9 @@ const hrNavigationSectionSeeds = [
       // exists to catch. "HR Advisory" is the permission key; "HR Business Partner" is the job
       // title shown for it (HR_SEAT_JOB_TITLES), never a role in its own right.
       { href: "/hr/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Advisory", "HR Resourcing"] },
+      // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08. Both company numbers, every chat;
+      // canUseWhatsAppInbox (src/lib/whatsapp-inbox/access.ts) is the gate this row mirrors.
+      { href: "/hr/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // Added 2026-09-01. The page was `admin:update` — Super Admin alone — and was re-gated to
       // `recruitment:update` rather than the resource being widened, because `admin:update` also
       // opens module locks, scope visibility, salary flags and a notification TEST-SEND endpoint.
@@ -2535,6 +2547,11 @@ const hrNavigationSectionSeeds = [
       // People. Read only: confirming a fortnight stays with each District Manager.
       { href: "/hr/admin/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/admin/ranks", icon: Award, label: "Phoenix Ranks", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08: KPIs on the CRM visit read, Spotlight
+      // and Milestones on the recognition function (src/lib/auth/hr-functions.ts).
+      { href: "/hr/admin/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/spotlight", icon: Trophy, label: "Spotlight", permissions: [{ resource: "spotlight", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/milestones", icon: Award, label: "Milestones", permissions: [{ resource: "milestones", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // NO "Workforce Compliance" (/hr/admin/field-workforce-compliance) row, for EITHER HR seat.
       // "I told you to remove the workforce compliance. Remove it." (2026-09-01). It was first
       // cut from HR Advisory alone, by excludedRoles rather than deletion, because the row gates
@@ -4328,7 +4345,8 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     label: "KPIs",
     description:
       "Call rate, coverage and frequency per rep for any month or week — the visits each rep made over their own working days, how much of their monthly plan they have reached, and whether they hit the visit count they planned per doctor.",
-    roles: ["Super Admin", "SFE Manager", "CEO"],
+    // HR Resourcing (the Talent Acquisition seat) since 2026-10-08, the owner's answers in chat on 2026-10-08.
+    roles: ["Super Admin", "SFE Manager", "CEO", "HR Resourcing"],
   },
   {
     // TAB TWO of the District Manager page — the plans a manager verifies.

@@ -36,9 +36,13 @@ import {
   canSendWhatsAppTemplate,
   canViewInboundIntakeHealth,
   canViewWhatsAppOutboundLog,
+  recruitmentAlertRoles,
   recruitmentManageRoles,
 } from "../src/lib/recruitment/access.ts";
 import { canViewOrganogramSensitiveFields } from "../src/lib/reports/organogram.ts";
+import { canSeeDoctorCoverage, DOCTOR_COVERAGE_PORTAL_ROLES } from "../src/lib/crm/doctor-coverage-roles.ts";
+import { seesWholeInterviewCalendar } from "../src/lib/recruitment/interview-calendar-types.ts";
+import { canUseWhatsAppInbox } from "../src/lib/whatsapp-inbox/access.ts";
 
 /**
  * The Talent Acquisition seat — role key "HR Resourcing" — built 2026-10-08 from the owner's own
@@ -69,7 +73,7 @@ export async function runHrResourcingSeatTests() {
   // ── 1. The composition and what it withholds ──────────────────────────────────────────────
   assert.deepEqual(
     [...HR_ROLE_BUNDLES["HR Resourcing"]],
-    ["recruiting", "cv_lookup", "employee_requests", "workforce_context"],
+    ["recruiting", "cv_lookup", "employee_requests", "workforce_context", "recognition"],
     "the Talent Acquisition seat is the recruiting pipeline, CV lookup, the two request desks and read-only workforce context",
   );
   assert.equal(HR_SEAT_JOB_TITLES["HR Resourcing"], "Talent Acquisition");
@@ -90,14 +94,13 @@ export async function runHrResourcingSeatTests() {
     "contracts",
     "retention",
     "resignations",
-    "spotlight",
   ]) {
     assert.equal(grants[withheld], undefined, `the Talent Acquisition seat must not hold ${withheld}`);
   }
   assert.ok(grants.recruitment?.includes("approve"), "she may mark an application hired (owner: hire = yes)");
   assert.ok(grants.offers?.includes("create") && grants.offers?.includes("update"), "she builds and sends offers");
   assert.ok(!grants.offers?.includes("approve"), "she never approves an offer (owner: build, never approve)");
-  for (const readOnly of ["organogram", "weekly_plans", "hr_calendar", "early_birds", "probation"]) {
+  for (const readOnly of ["organogram", "weekly_plans", "hr_calendar", "early_birds", "probation", "crm_visits"]) {
     assert.deepEqual([...(grants[readOnly] ?? [])], ["read"], `${readOnly} is reference for her, read only`);
   }
 
@@ -205,10 +208,49 @@ export async function runHrResourcingSeatTests() {
   assert.equal(canViewAllProbation(her), false, "canViewAllProbation is the administrators' gate and was not widened");
   assert.equal(canExportProbation(her), false, "she was not given the company-wide probation export");
 
+  // The owner's four answers in chat on 2026-10-08, each pinned at the gate that carries it.
+  // Recruitment alerts: "Add her now". The managers' list stays without her — it also opens Inbound
+  // Intake Health and Missing Contact Details, which he left out — so the alert list is its own.
+  assert.ok((recruitmentAlertRoles as readonly string[]).includes(SEAT), "she receives the recruitment alerts");
   assert.ok(
     !(recruitmentManageRoles as readonly string[]).includes(SEAT),
-    "recruitment ALERTS keep their current audience until the owner decides who receives them",
+    "the managers' list stays without her: it is also the gate of two screens he left out",
   );
+  for (const reader of [
+    "src/lib/recruitment/inbound/recruitment-notify.ts",
+    "src/lib/recruitment/stale-send-check.ts",
+    "src/lib/recruitment/triage-backlog-check.ts",
+  ]) {
+    assert.match(source(reader), /recruitmentAlertRoles/, `${reader} reads the alert audience`);
+    assert.doesNotMatch(source(reader), /recruitmentManageRoles/, `${reader} must not fall back to the managers' list`);
+  }
+  // "Open all four": Needs You, WhatsApp Inbox, Milestones and Spotlight.
+  assert.deepEqual([...(grants.spotlight ?? [])], ["read", "export"], "Spotlight, as the Super Admin holds it");
+  assert.deepEqual([...(grants.milestones ?? [])], ["read", "export"], "Milestones, as the Super Admin holds it");
+  assert.equal(canUseWhatsAppInbox(her), true, "the WhatsApp Inbox admits her");
+  for (const other of ["HR Advisory", "HR Operations", "CEO"] as PhoenixRole[]) {
+    assert.equal(canUseWhatsAppInbox(accessFor(other)), false, `the WhatsApp Inbox still refuses ${other}`);
+  }
+  assert.match(
+    source("app/(admin)/admin/needs-you/page.tsx"),
+    /!canAccessSystemAdministratorWorkspace\(access\) && access\.role !== "HR Resourcing"/,
+    "the Needs You page admits her beside the Super Admin",
+  );
+  const needsYouSources = source("src/lib/needs-you/sources.ts");
+  for (const queue of ["monthlyClosings", "salaryFlags", "orphanedRequests"]) {
+    const body = needsYouSources.slice(needsYouSources.indexOf(`const ${queue}: NeedsYouAdapter`));
+    assert.match(
+      body.slice(0, 600),
+      /ownerOnlyQueue\(access,/,
+      `${queue} reads company-wide state with no permission of its own, so it must answer "not yours" to her`,
+    );
+  }
+  // KPIs: "Give her KPIs" — a company seat, admin shell, not the portal.
+  assert.equal(canSeeDoctorCoverage(SEAT), true, "the KPIs board admits her");
+  assert.ok(!DOCTOR_COVERAGE_PORTAL_ROLES.includes(SEAT), "she reaches KPIs in the admin shell, not the portal");
+  // Interview Calendar: "Full view built into her seat" — a Viewer, like the CEO.
+  assert.equal(seesWholeInterviewCalendar(her), true, "she sees every interview");
+  assert.equal(seesWholeInterviewCalendar(accessFor("HR Advisory")), false, "the other HR seats are not widened");
   assert.equal(canViewWhatsAppOutboundLog(her), true);
   assert.equal(canSendWhatsAppTemplate(her), true);
   assert.equal(canViewInboundIntakeHealth(her), false, "Inbound Intake Health was left out");

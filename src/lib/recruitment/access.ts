@@ -30,11 +30,14 @@ export function hiringManagerInterviewType(role: PhoenixRole): InterviewType {
   return "hiring_manager";
 }
 
-// Roles that manage the pipeline end to end — and, read by inbound/recruitment-notify.ts,
-// stale-send-check.ts and triage-backlog-check.ts, the AUDIENCE of every recruitment alert. That
-// second use is why the Talent Acquisition seat is NOT in this list: who receives those alerts is
-// the owner's decision, and he has not made it for her. Her screens read recruitmentWorkRoles below.
+// Roles that manage the pipeline end to end. The Talent Acquisition seat is NOT in this list: it
+// also opens Inbound Intake Health and Missing Contact Details, which the owner left out of her seat.
+// Her screens read recruitmentWorkRoles below, and her alerts recruitmentAlertRoles.
 export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin", "HR Advisory"];
+// The AUDIENCE of every recruitment alert — new CVs (inbound/recruitment-notify.ts), stale sends
+// (stale-send-check.ts) and the triage backlog (triage-backlog-check.ts). The managers above plus the
+// Talent Acquisition seat, added 2026-10-08 at the owner's answer in chat: "Add her now".
+export const recruitmentAlertRoles: readonly PhoenixRole[] = [...recruitmentManageRoles, "HR Resourcing"];
 // Roles that WORK the pipeline's screens: the managers above plus the Talent Acquisition seat
 // (HR Resourcing), opened 2026-10-08 from the owner's own ticks on the access blueprint. A screen
 // list only — nothing here sends anybody anything.

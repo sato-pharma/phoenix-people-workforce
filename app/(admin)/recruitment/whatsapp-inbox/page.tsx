@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { WhatsAppInbox } from "@/components/whatsapp-inbox/whatsapp-inbox";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
+import { canUseWhatsAppInbox } from "@/lib/whatsapp-inbox/access";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logError } from "@/lib/observability/log";
 import { whatsAppInboxLines } from "@/lib/whatsapp-inbox/lines";
@@ -16,13 +17,14 @@ export const dynamic = "force-dynamic";
 // that answer, written as a role check rather than a permission because no grant in the matrix is
 // narrow enough: `recruitment:update` reaches every recruiter, and these chats include the HR
 // handset's private conversations with employees. Every API route under /api/whatsapp-inbox repeats
-// the same check — this page hiding is not the boundary.
+// the same check — this page hiding is not the boundary. Since 2026-10-08 that check is
+// canUseWhatsAppInbox, which also admits the Talent Acquisition seat at the owner's own answer.
 export default async function WhatsAppInboxPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals");
   }
-  if (access.role !== "Super Admin") redirect("/employee-portals");
+  if (!canUseWhatsAppInbox(access)) redirect("/employee-portals");
 
   const lines = whatsAppInboxLines().map((line) => ({
     displayNumber: line.displayNumber,

@@ -253,12 +253,14 @@ function emptySources(): HrCommandSources {
 // nothing of its own to count. workforce_context is read-only REFERENCE for that seat — organogram,
 // calendars, Early Birds, probation outcomes — every one of them a sidebar row whose figures belong
 // to the function that owns the work; a tile here would only repeat another group’s number.
+// `recognition` (same seat, same day): Spotlight and Milestones are sheets she prints, not a queue.
 const FUNCTIONS_WITH_NO_TILES = new Set([
   "hr_governance",
   "hr_communication",
   "cv_lookup",
   "hiring_paperwork",
   "workforce_context",
+  "recognition",
 ]);
 
 export async function runHrCommandCenterTests() {

@@ -2,7 +2,8 @@
 //
 // Every inbox route calls `requireRecruitmentAccess(request, "recruitment", "update")` itself and then
 // `inboxForbidden(access)`. The first is the session and matrix gate the access-registry test reads in
-// each route's own source; the second is the one that matters here — the Super Admin, and nobody else.
+// each route's own source; the second is the one that matters here — the Super Admin and, since
+// 2026-10-08, the Talent Acquisition seat (canUseWhatsAppInbox), and nobody else.
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { recruitmentApiError, recruitmentProblem } from "@/app/api/recruitment/_lib/http";
@@ -12,7 +13,7 @@ import { WhatsAppInboxInputError, WhatsAppInboxNotFoundError } from "@/lib/whats
 
 export function inboxForbidden(access: AccessContext) {
   if (canUseWhatsAppInbox(access)) return null;
-  return recruitmentProblem("Only the Super Admin can use the WhatsApp Inbox.", 403);
+  return recruitmentProblem("The WhatsApp Inbox is not open to your role.", 403);
 }
 
 export function inboxApiError(error: unknown, fallback: string) {
