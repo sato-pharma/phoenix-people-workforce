@@ -204,7 +204,7 @@ export async function buildProductionPlanningWorkbook(
   workbook.created = new Date();
   const sheet = workbook.addWorksheet(PPL.sheetName);
 
-  bandHeader(sheet, COLUMN_COUNT, `${PPL.moduleTitle} — ${product?.nameAr ?? ""}`.trim(), plan.sentence);
+  bandHeader(sheet, COLUMN_COUNT, `${PPL.moduleTitle} — ${product ? S.name(product) : ""}`.trim(), plan.sentence);
 
   // ── The typed inputs ───────────────────────────────────────────────────────────────────────────
   let row = 5;
@@ -212,7 +212,7 @@ export async function buildProductionPlanningWorkbook(
   row += 1;
   labelCell(sheet, row, PPL.productLabel);
   const productCell = sheet.getCell(row, 2);
-  productCell.value = product?.nameAr ?? "";
+  productCell.value = product ? S.name(product) : "";
   productCell.font = { bold: true, color: { argb: BLACK }, size: 10.5 };
   productCell.border = gridBorder();
   row += 1;
@@ -380,7 +380,7 @@ export async function buildProductionPlanningWorkbook(
       : PPL.chipNoComposition;
 
     return [
-      `${planRow.nameAr} (${S.unitLabel(planRow.displayUnit)})`,
+      `${S.name(planRow)} (${S.unitLabel(planRow.displayUnit)})`,
       planRow.supplier ? S.supplierLabels[planRow.supplier] : PPL.chipNoComposition,
       basisText,
       qtyPerBasis,
@@ -460,7 +460,7 @@ export async function buildProductionPlanningWorkbook(
     const egpFormula =
       currency === "EGP" ? `B${excelRow}*C${excelRow}` : `B${excelRow}*C${excelRow}*${FX}`;
     return [
-      `${entry.planRow.nameAr} (${S.unitLabel(entry.planRow.displayUnit)})`,
+      `${S.name(entry.planRow)} (${S.unitLabel(entry.planRow.displayUnit)})`,
       F(`K${entry.excelRow}`, num(entry.planRow.toBuy)),
       price,
       currency === "EGP" ? PPL.currencyEgp : currency === "USD" ? PPL.currencyUsd : "—",
@@ -536,7 +536,9 @@ export async function buildProductionPlanningWorkbook(
 /** The download's filename: the product, the run count and the Cairo date, so a mailed copy is dateable. */
 export function productionPlanningWorkbookFilename(plan: WirePlan): string {
   const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
-  const code = plan.productNameAr.replace(/[\\/:*?"<>|]/g, "").trim();
+  // ASCII only: the name travels in a Content-Disposition header, where an Arabic letter is not a
+  // legal byte, and a filename should read the same whichever language asked for the sheet.
+  const code = plan.productNameEn.replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/ +/g, "-");
   return `production-plan-${code || "plan"}-${plan.runs}-runs-${stamp}.xlsx`;
 }
 

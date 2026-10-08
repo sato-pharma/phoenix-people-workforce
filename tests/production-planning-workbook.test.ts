@@ -7,7 +7,7 @@ import { computePlan, type LoadedMaterial, type ProductionPlanningData } from ".
 import { parsePct, parseQty, QTY_SCALE } from "../src/lib/production-planning/rules.ts";
 import { PP, PP_EN, PRODUCTION_PLANNING_WORKBOOK_FONT } from "../src/lib/production-planning/strings.ts";
 import type { WireMaterial, WirePlan, WireWorkspace } from "../src/lib/production-planning/wire.ts";
-import { buildProductionPlanningWorkbook } from "../src/lib/production-planning/workbook.ts";
+import { buildProductionPlanningWorkbook, productionPlanningWorkbookFilename } from "../src/lib/production-planning/workbook.ts";
 
 /**
  * The Excel export — read back from the emitted bytes, with every formula EVALUATED.
@@ -506,7 +506,17 @@ export async function runProductionPlanningWorkbookTests() {
   // choice as `?lang=`. A sheet whose STRINGS are English while its view is still right-to-left is
   // the half-done version of this: Excel then lays column A on the right of an English sheet, which
   // reads as a corrupt file rather than as a language. So both halves are asserted together.
-  const { buffer: englishBuffer } = await buildProductionPlanningWorkbook(workspaceFor(plan), {
+  // The route asks the service for the plan in the SAME language as the sheet (`lang` is forwarded to
+  // `getProductionPlanningWorkspace`), so the header sentence comes out English; building the plan
+  // without it here would put an Arabic sentence on an English sheet that production never makes.
+  const englishPlan = computePlan(data, {
+    lang: "en",
+    mode: "total_boxes",
+    productId: "prod-ivyronc",
+    requestedQty: "100000",
+    sampleUnits: "10000",
+  });
+  const { buffer: englishBuffer } = await buildProductionPlanningWorkbook(workspaceFor(englishPlan), {
     actorName: "B-10",
     lang: "en",
   });
@@ -525,10 +535,21 @@ export async function runProductionPlanningWorkbookTests() {
     });
   });
   assert.ok(englishText.length > 0, "the English sheet should carry text at all");
-  // Named LABELS, not a sweep for Arabic characters: the product and material NAMES are data and
-  // stay Arabic in either language - آيفيرونك is what the material is called. So the assertion is
-  // that the sheet's own four section titles came from the English catalogue and that their Arabic
-  // counterparts are nowhere in it, which is the thing a half-applied language leaves behind.
+  // The owner, 2026-10-08: "If English, every single Arabic word" - the product and material NAMES
+  // included. They are stored in both languages, so the English sheet reads `nameEn` and carries no
+  // Arabic character anywhere, which is the assertion a half-applied language fails.
+  const arabicInEnglish = englishText.match(/[؀-ۿ]+/g);
+  assert.equal(
+    arabicInEnglish,
+    null,
+    `the English sheet still carries Arabic: ${JSON.stringify(arabicInEnglish)}`,
+  );
+  assert.ok(englishText.includes("Ivyronc"), "the English sheet names the product by its English name");
+  assert.ok(
+    !/[^ -~]/.test(productionPlanningWorkbookFilename(plan)),
+    "the download's filename is plain ASCII whichever language asked for the sheet",
+  );
+  // The section titles are checked by name as well, so a sweep that passes on an EMPTY sheet cannot.
   for (const key of ["sheetInputsTitle", "sheetOutputsTitle", "sheetMaterialsTitle", "sheetCostTitle"] as const) {
     assert.ok(
       englishText.includes(PP_EN[key]),

@@ -920,6 +920,22 @@ export const PRODUCTION_PLANNING_REFUSALS_EN: typeof PRODUCTION_PLANNING_REFUSAL
     `A newer stock report (${newestDate}) already stands after this delivery’s date, so the amount is not added automatically — record it as an adjustment carrying the final balance.`,
 };
 
+export type ProductionPlanningNamed = { readonly nameAr: string; readonly nameEn: string };
+
+/** Arabic reads `nameAr`. */
+export function nameArabic(item: ProductionPlanningNamed): string {
+  return item.nameAr;
+}
+
+/**
+ * English reads `nameEn`. A blank English name falls back to the Arabic one rather than to an empty
+ * cell: a row naming nothing is worse than a row in the other language, and the strings test sweeps
+ * the live master so the fallback is never the normal path.
+ */
+export function nameEnglish(item: ProductionPlanningNamed): string {
+  return item.nameEn.trim() !== "" ? item.nameEn : item.nameAr;
+}
+
 export type ProductionPlanningStrings = {
   readonly lang: ProductionPlanningLanguage;
   /** What the workspace root sets. The whole module flips direction, not just its text. */
@@ -938,6 +954,12 @@ export type ProductionPlanningStrings = {
   readonly basisLabels: Record<"per_dose" | "per_packaging_set" | "per_good_unit" | "per_sample_unit", string>;
   readonly severityLabels: Record<"out_of_stock" | "below_threshold" | "approaching", string>;
   readonly unitLabel: (unit: string | null | undefined) => string;
+  /**
+   * A product's, material's or location's name in the reader's language. Every one of them stores
+   * both names, so nothing is translated here: the Arabic bundle reads the Arabic name, the English
+   * bundle the English one.
+   */
+  readonly name: (item: ProductionPlanningNamed) => string;
   readonly plannerSentence: typeof buildPlannerSentence;
 };
 
@@ -947,6 +969,7 @@ const AR_BUNDLE: ProductionPlanningStrings = {
   errors: PRODUCTION_PLANNING_ERRORS,
   fontStack: PRODUCTION_PLANNING_FONT_STACK,
   lang: "ar",
+  name: nameArabic,
   plannerSentence: buildPlannerSentence,
   refusals: PRODUCTION_PLANNING_REFUSALS,
   severityLabels: ALARM_SEVERITY_LABELS,
@@ -962,6 +985,7 @@ const EN_BUNDLE: ProductionPlanningStrings = {
   errors: PRODUCTION_PLANNING_ERRORS_EN,
   fontStack: undefined,
   lang: "en",
+  name: nameEnglish,
   plannerSentence: buildPlannerSentenceEn,
   refusals: PRODUCTION_PLANNING_REFUSALS_EN,
   severityLabels: ALARM_SEVERITY_LABELS_EN,
