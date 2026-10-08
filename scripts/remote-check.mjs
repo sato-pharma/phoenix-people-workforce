@@ -420,8 +420,9 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy", disp
     console.error("    Pushing the branch costs NO Actions minutes (ci.yml runs on a PR and on main only):");
     console.error("      git push -u origin " + branch);
     die(
-      "push the branch, then re-run this — a busy box escalates on its own. Or open the PR: its " +
-        "validate + checks ARE this fallback, on the same commit, for the same minutes.",
+      "push the branch and open the PR — its validate + checks are the verdict on this commit. A busy " +
+        "box never dispatches on its own: re-run this and it reads that PR's run, and with no PR it stops " +
+        "at NO VERDICT unless --actions bills a run.",
     );
   }
 
