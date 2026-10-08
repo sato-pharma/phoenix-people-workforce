@@ -77,6 +77,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 
 import {
+  adminInsetPanelClassName,
+  adminPanelClassName,
+  adminSoftPanelClassName,
   pageHeaderDescriptionClassName,
   pageHeaderKickerClassName,
   pageHeaderRuleClassName,
@@ -166,19 +169,44 @@ function selectedProductOf(data: WireWorkspace | null): WireProduct | null {
   return data.products.find((product) => product.id === data.productId) ?? data.products[0] ?? null;
 }
 
-const PANEL = "border border-slate-300 bg-white px-4 py-4";
+/**
+ * 🔒 PREMIUM POLISH, the owner's golden rule of 2026-09-08 — depth is the default, and this module
+ * was built after the flat pass and never got it. Every surface here now takes the SHARED admin
+ * token rather than its own hairline border, so a planner panel sits on the page exactly the way a
+ * payroll or closing panel does instead of reading as an unstyled div.
+ *
+ * SHADOWS AND GRADIENTS ONLY — nothing in this pass changes a single box's width, height or
+ * padding. That is deliberate and it is what keeps the fits-the-screen golden rule intact: the
+ * `<colgroup>` percentages, `table-fixed` and the absence of `overflow-x-auto` are untouched, so
+ * the measured no-horizontal-scroll result cannot move. The square-edge golden rule is equally
+ * safe: the admin tokens carry no radius at all (see the corner note in admin-design-tokens.ts).
+ */
+const PANEL = `${adminPanelClassName} px-4 py-4`;
+/** The desktop table IS the panel — it was a flat bordered grid sitting on the page background. */
+const TABLE = `hidden w-full table-fixed ${adminPanelClassName} lg:table`;
+/** A notice strip is RECESSED, so it takes the inset token: its depth goes inward, never up. */
+const NOTICE = `${adminInsetPanelClassName} px-3 py-2`;
 const LABEL = "block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500";
 const INPUT = cn(phxSelectClassName, "mt-1 w-full min-w-0 px-2 py-1.5 text-[13px] tabular-nums disabled:text-slate-400");
+/**
+ * The primary action LIFTS, and a disabled one does not — `disabled:shadow-none` is the whole
+ * point of putting the shadow here rather than on each call site: a greyed-out button that still
+ * floats reads as clickable.
+ */
 const BUTTON =
   "inline-flex items-center justify-center gap-1.5 border border-slate-900 bg-slate-900 px-3 py-1.5 " +
-  "text-[12px] font-bold text-white hover:bg-slate-800 disabled:border-slate-300 " +
-  "disabled:bg-slate-200 disabled:text-slate-500";
+  "text-[12px] font-bold text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)] " +
+  "transition-shadow hover:bg-slate-800 disabled:border-slate-300 disabled:bg-slate-200 " +
+  "disabled:text-slate-500 disabled:shadow-none";
 const BUTTON_QUIET =
   "inline-flex items-center justify-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 " +
-  "text-[12px] font-bold text-slate-700 hover:bg-slate-50 disabled:text-slate-400";
+  "text-[12px] font-bold text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-shadow " +
+  "hover:bg-slate-50 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_16px_rgba(15,23,42,0.06)] " +
+  "disabled:text-slate-400 disabled:shadow-none";
 const TH = "px-3 py-2 text-right text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 const TD = "px-3 py-2 align-top text-[12px] leading-5 text-slate-800";
-const CARD = "border border-slate-300 bg-white px-3 py-3 lg:hidden";
+/** The mobile card is the same row of the same table, so it gets the soft panel, one step quieter. */
+const CARD = `${adminSoftPanelClassName} px-3 py-3 lg:hidden`;
 
 /**
  * Every number on this page goes through here, isolated per value rather than per block.
@@ -251,12 +279,28 @@ function Tile({
   unit?: string;
   tone?: "plain" | "warn";
 }) {
+  const warn = tone === "warn";
   return (
+    /* A KPI tile is the one thing on the page a reader looks at before anything else, so it is the
+       one that most needed lifting off the grey: a white ground, the panel's two-layer shadow, and
+       a 3px accent across the top — the hero's own gradient, amber when the tile is a warning. The
+       bar is absolutely positioned inside the existing padding box, so the tile's size is
+       unchanged and the KPI strip still wraps the way it did. */
     <div
-      className={`border px-3 py-3 text-center ${
-        tone === "warn" ? "border-amber-300 bg-amber-50" : "border-slate-300 bg-slate-50"
+      className={`relative px-3 py-3 text-center ${
+        warn
+          ? "border border-amber-300 bg-amber-50 shadow-[0_1px_2px_rgba(146,64,14,0.06),0_12px_28px_rgba(146,64,14,0.07)]"
+          : adminPanelClassName
       }`}
     >
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${
+          warn
+            ? "bg-gradient-to-r from-amber-400/0 via-amber-500/80 to-amber-400/0"
+            : "bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-orange-500/0"
+        }`}
+      />
       <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
       <p className="mt-1 text-3xl font-black leading-none text-slate-900">
         <Num>{formatNumberLatin(value)}</Num>
@@ -397,10 +441,10 @@ function ProductionPlanningLanguageToggle() {
       ).map((option) => (
         <button
           aria-pressed={lang === option.key}
-          className={`border px-2.5 py-1 text-[12px] font-bold ${
+          className={`border px-2.5 py-1 text-[12px] font-bold transition-shadow ${
             lang === option.key
-              ? "border-slate-900 bg-slate-900 text-white"
-              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              ? "border-slate-900 bg-slate-900 text-white shadow-[0_1px_2px_rgba(15,23,42,0.22),0_10px_22px_rgba(15,23,42,0.18)]"
+              : "border-slate-300 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:bg-slate-50 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_18px_rgba(15,23,42,0.07)]"
           }`}
           key={option.key}
           onClick={() => setLang(option.key)}
@@ -435,9 +479,20 @@ export function ProductionPlanningHeader() {
   );
 }
 
+/**
+ * A section heading, carrying the page header's own rail.
+ *
+ * One gradient serves the module's header and every heading under it, which is the point: two
+ * accents drawn separately drift, and a plain bold line is what a heading looks like when nobody
+ * chose it. The rail is mirrored for Arabic exactly as the header's is — on an RTL line `left-0`
+ * would put the accent at the END of the title — and the padding moves with it.
+ */
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
+  const S = useProductionPlanningStrings();
+
   return (
-    <div className="mb-3 min-w-0">
+    <div className={`relative mb-3 min-w-0 ${S.dir === "rtl" ? "pr-3" : "pl-3"}`}>
+      <span aria-hidden="true" className={S.dir === "rtl" ? RTL_HEADER_RAIL : LTR_HEADER_RAIL} />
       <h2 className="text-[15px] font-black tracking-[-0.02em] text-slate-900">{title}</h2>
       {subtitle ? (
         <p className="mt-1 text-[12px] leading-5 text-slate-500 break-words">{subtitle}</p>
@@ -661,19 +716,22 @@ export function ProductionPlanningWorkspace() {
   return (
     <div className="min-w-0" dir={S.dir} lang={S.lang} style={{ fontFamily: S.fontStack }}>
       {!canWrite && data ? (
-        <p className="border border-slate-300 bg-slate-50 px-3 py-2 text-[12px] font-bold text-slate-700">
-          {t.readOnlyNotice}
-        </p>
+        <p className={`${NOTICE} text-[12px] font-bold text-slate-700`}>{t.readOnlyNotice}</p>
       ) : null}
 
+      {/* An alert LIFTS — it is the one thing on the page that arrived after the reader did, so it
+          carries the panel's two-layer shadow in its own tone rather than the inset notice's. */}
       {error ? (
-        <p className="mt-4 border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-900 break-words" role="alert">
+        <p
+          className="mt-4 border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-900 shadow-[0_1px_2px_rgba(127,29,29,0.06),0_12px_28px_rgba(127,29,29,0.08)] break-words"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
       {notice ? (
-        <p className="mt-4 border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-900">
+        <p className="mt-4 border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-900 shadow-[0_1px_2px_rgba(6,78,59,0.06),0_12px_28px_rgba(6,78,59,0.07)]">
           {notice}
         </p>
       ) : null}
@@ -683,10 +741,10 @@ export function ProductionPlanningWorkspace() {
         {S.tabs.map((entry) => (
           <button
             aria-selected={tab === entry.key}
-            className={`border px-3 py-1.5 text-[12px] font-bold ${
+            className={`border px-3 py-1.5 text-[12px] font-bold transition-shadow ${
               tab === entry.key
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                ? "border-slate-900 bg-slate-900 text-white shadow-[0_1px_2px_rgba(15,23,42,0.22),0_10px_22px_rgba(15,23,42,0.18)]"
+                : "border-slate-300 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:bg-slate-50 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_18px_rgba(15,23,42,0.07)]"
             }`}
             key={entry.key}
             onClick={() => setTab(entry.key)}
@@ -1051,7 +1109,7 @@ function PlannerResult({
       <section className="min-w-0">
         {/* 31/23/23/23. Four columns, because the fifth would take the delivery input below its
             natural width in the admin shell's 669px box — fit by MERGING, never by shrinking. */}
-        <table className="hidden w-full table-fixed border border-slate-300 bg-white lg:table">
+        <table className={TABLE}>
           <colgroup>
             <col className="w-[31%]" />
             <col className="w-[23%]" />
@@ -1443,7 +1501,7 @@ export function StockTab({
             report date, and the report date moved under each quantity. Merged, never added: a fifth
             column takes this table below its natural width in the admin shell's 669px box, which is
             the fits-the-screen rule's own remedy (AGENTS.md §4). */}
-        <table className="hidden w-full table-fixed border border-slate-300 bg-white lg:table">
+        <table className={TABLE}>
           <colgroup>
             <col className="w-[34%]" />
             <col className="w-[22%]" />
@@ -1742,7 +1800,7 @@ export function CostTab({
       ) : null}
 
       <section className="min-w-0">
-        <table className="hidden w-full table-fixed border border-slate-300 bg-white lg:table">
+        <table className={TABLE}>
           <colgroup>
             <col className="w-[34%]" />
             <col className="w-[22%]" />
@@ -1954,7 +2012,7 @@ export function RunTab({
 
           {/* 28/24/24/24. The three editable figures each need a real input, and a fifth column
               would take them under their natural width in the 669px box. */}
-          <table className="mt-4 hidden w-full table-fixed border border-slate-300 lg:table">
+          <table className={`mt-4 ${TABLE}`}>
             <colgroup>
               <col className="w-[28%]" />
               <col className="w-[24%]" />
@@ -1993,9 +2051,11 @@ export function RunTab({
             </tbody>
           </table>
 
+          {/* The card's own `lg:hidden` is on this wrapper, so each one takes the soft panel's
+              depth alone rather than the shared CARD constant. */}
           <div className="mt-4 space-y-2 lg:hidden">
             {data.materials.map((material) => (
-              <article className="border border-slate-300 bg-white px-3 py-3" key={material.id}>
+              <article className={`${adminSoftPanelClassName} px-3 py-3`} key={material.id}>
                 <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
                 <div className="mt-2 grid grid-cols-1 gap-2">
                   {(["opening", "delivered", "closing"] as const).map((field) => (
@@ -2244,7 +2304,7 @@ export function SettingsTab({
             actions MERGED under the supplier rather than given a fifth: a fifth column takes this
             table below its natural width in the admin shell's 669px box, which is the
             fits-the-screen rule's own named remedy (AGENTS.md §4). */}
-        <table className="hidden w-full table-fixed border border-slate-300 bg-white lg:table">
+        <table className={TABLE}>
           <colgroup>
             <col className="w-[37%]" />
             <col className="w-[21%]" />
@@ -2390,9 +2450,13 @@ export function SettingsTab({
             changed by a migration: `saveMaterialAndComposition` and its route were correct, tested
             and reached by no control at all — this tab posted to /stock, /fx, /prices, /runs,
             /settings, /access-grants and /materials-with-an-active-flag, and never to the field
-            save. */}
+            save.
+
+            It opens INSIDE the panel, so its depth goes inward: the heavy slate-900 edge says
+            "this is the thing you are now working on", and the inner shadow says it is a well cut
+            into the panel rather than a second card floating on top of it. */}
         {canWrite && editingMaterial ? (
-          <div className="mt-4 border border-slate-900 bg-slate-50 px-3 py-3">
+          <div className="mt-4 border border-slate-900 bg-slate-50 px-3 py-3 shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)]">
             <p className="text-[10px] font-black tracking-[0.14em] text-slate-500 uppercase">
               {t.compositionEditorFor}
             </p>
@@ -2598,7 +2662,7 @@ export function SettingsTab({
         {/* "Nothing sent" and "switched off" are different answers, so the screen says which one
             this is rather than showing a zero. */}
         <p
-          className={`border px-3 py-2 text-[12px] font-bold ${
+          className={`border px-3 py-2 text-[12px] font-bold shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] ${
             settings.alarmEnabled
               ? settings.alarmDryRun
                 ? "border-amber-300 bg-amber-50 text-amber-900"
@@ -2650,7 +2714,7 @@ export function SettingsTab({
       <section className={PANEL}>
         <SectionTitle title={t.settingsExpiryAlarmEnabled} />
         <p
-          className={`border px-3 py-2 text-[12px] font-bold break-words ${
+          className={`border px-3 py-2 text-[12px] font-bold break-words shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] ${
             settings.expiryAlarmEnabled
               ? settings.expiryAlarmDryRun
                 ? "border-amber-300 bg-amber-50 text-amber-900"

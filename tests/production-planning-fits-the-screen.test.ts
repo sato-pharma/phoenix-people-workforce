@@ -68,6 +68,13 @@ export function runProductionPlanningFitsTheScreenTests() {
     ...[...source.matchAll(/className="([^"]*)"/g)].map((match) => match[1]),
     ...[...source.matchAll(/className=\{`([^`]*)`\}/g)].map((match) => match[1]),
     ...[...source.matchAll(/^const [A-Z_]+ =\s*((?:\s*"[^"]*"\s*\+?)+);/gm)].map((match) => match[1]),
+    // 🔴 AND THE TEMPLATE-LITERAL ONES. PANEL, TABLE, CARD and NOTICE became backticked when the
+    // module took the shared admin depth tokens (premium polish, 2026-10-09), which put them out
+    // of reach of the `"…" + "…"` pattern above — so the four surfaces that carry most of this
+    // file's classes would have stopped being scanned for an ellipsis, a nowrap, a radius or a
+    // scroller at the exact moment they were rewritten. The `${…}` interpolations survive
+    // tokenisation harmlessly: a forbidden class is a literal token beside them.
+    ...[...source.matchAll(/^const [A-Z_]+ = `([^`]*)`;$/gm)].map((match) => match[1]),
     ...[...source.matchAll(/^\s{2}[a-z]+: "([a-z0-9:\-[\]().,%\s]+)",$/gm)].map((match) => match[1]),
   ];
   const classTokens = new Set(
@@ -136,7 +143,24 @@ export function runProductionPlanningFitsTheScreenTests() {
 
   // 4. Every table is fixed-layout, and every one is paired with a card list for a phone. The
   //    owner's standing rule: desktop gets the table, mobile never does.
-  const tables = [...source.matchAll(/<table className="([^"]*)"/g)].map((match) => match[1]);
+  // 🔴 THE FIVE TABLES SHARE ONE CLASS CONSTANT since the premium-depth pass, so the layout tokens
+  //    are resolved from `TABLE` and then collected, instead of five literals being read. Both
+  //    spellings are covered — `className={TABLE}` and the one table that adds its own `mt-4` —
+  //    and a sixth table written with a hand-made className is still collected and still counted,
+  //    which is what keeps the count below a guard rather than a check on one string.
+  const tableConstant = source.match(/^const TABLE = `([^`]*)`;$/m);
+  assert.ok(
+    tableConstant,
+    `${WORKSPACE}: the shared TABLE class constant is gone. Five hand-written table classNames is ` +
+      `exactly how one of them quietly loses "table-fixed" — put the layout tokens back in one place.`,
+  );
+  const tables = [
+    ...source
+      .replace(/className=\{`([^`]*)`\}/g, 'className="$1"')
+      .replace(/className=\{TABLE\}/g, `className="${tableConstant[1]}"`)
+      .replace(/\$\{TABLE\}/g, tableConstant[1])
+      .matchAll(/<table className="([^"]*)"/g),
+  ].map((match) => match[1]);
   assert.equal(
     tables.length,
     5,
