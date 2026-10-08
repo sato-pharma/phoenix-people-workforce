@@ -152,6 +152,55 @@ export function totalCosts(
   return { usdScaled, egpScaled, incompleteMaterials, unpricedMaterials };
 }
 
+/** How much of a cost total is actually covered by prices. */
+export type CostCoverage = {
+  /** Buy-list materials that DO carry a price, so the total counts them. */
+  readonly priced: number;
+  /** Buy-list materials in total — the honest denominator. */
+  readonly onBuyList: number;
+  /** The total leaves at least one buy-list material out. */
+  readonly partial: boolean;
+  /** Nothing on the buy list is priced, so the figure is structurally zero and means nothing. */
+  readonly none: boolean;
+};
+
+/**
+ * Whether a cost total can be read as a cost at all.
+ *
+ * Measured on production 2026-10-09: of 12 materials, **10 are on the buy list and all 10 are
+ * unpriced**, so `costEgp` is `"0.00"` and `costUsd` is `"0.00"`. The screen showed those as the two
+ * bold figures under "Total cost", with the explanation as an 11px grey footnote two lines below —
+ * so the number the eye lands on reads "this costs nothing" when it means "nothing here is priced".
+ * AGENTS.md §7: when a source is unavailable the UI says so rather than showing a misleading zero.
+ *
+ * 🔴 THE DENOMINATOR IS `toBuyCount`, NEVER `materials`. `totalCosts` increments
+ * `unpricedMaterials` only for lines where `contributesToBuyList` is true — a factory-supplied
+ * material and one with no composition are skipped entirely, so they are neither priced nor
+ * counted as unpriced. Dividing by the 12 materials would have printed "2 of 12 priced" where the
+ * truth is "0 of 10": a figure wrong in the reassuring direction, which is the whole defect this
+ * function exists to stop.
+ *
+ * Priced is derived by subtraction rather than counted separately, because `unpricedMaterials` and
+ * `toBuyCount` are produced by the same loop over the same lines and cannot disagree.
+ */
+export function costCoverage(totals: {
+  readonly toBuyCount: number;
+  readonly unpricedMaterials: number;
+}): CostCoverage {
+  const onBuyList = Math.max(0, totals.toBuyCount);
+  const unpriced = Math.min(Math.max(0, totals.unpricedMaterials), onBuyList);
+  const priced = onBuyList - unpriced;
+  return {
+    priced,
+    onBuyList,
+    partial: unpriced > 0,
+    // An EMPTY buy list is not "no prices" — there is nothing to price, and a plan with every
+    // material already at the factory is a real and correct state. Only a non-empty list with no
+    // priced line at all makes the zero meaningless.
+    none: onBuyList > 0 && priced === 0,
+  };
+}
+
 /**
  * Money as a decimal string with exactly two places — the form a cell and a formula both carry.
  *

@@ -86,6 +86,7 @@ import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 // The three enums from the module's own pure kernel — it declares no imports at all and is
 // explicitly client-safe, so the editor's selects offer exactly the values the service accepts.
 // Retyping them here is how a select and a server-side CHECK start to disagree.
+import { costCoverage } from "@/lib/production-planning/costing";
 import { fromBaseUnits, toBaseUnits } from "@/lib/production-planning/display-units";
 import { COMPOSITION_BASES, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
 import {
@@ -987,6 +988,8 @@ function PlannerResult({
   const saleableWord = S.saleableUnitWord(plan.measureUnit);
   const boxed = (boxes: string) =>
     perBox === "1" ? saleableWord : `${saleableWord} (${formatNumberLatin(boxes)} ${t.unitBox})`;
+  // How much of the cost total is actually covered by prices — see the note at the total itself.
+  const coverage = costCoverage(plan.totals);
 
   return (
     <>
@@ -1158,14 +1161,40 @@ function PlannerResult({
 
       <section className={PANEL}>
         <SectionTitle title={t.costTotal} />
+        {/* 🔴 A STRUCTURAL ZERO IS NOT A COST. Measured on production 2026-10-09: 10 of 12
+            materials are on the buy list and all 10 are unpriced, so both totals are "0.00" — and
+            they were rendered as the two bold figures here with the explanation as an 11px grey
+            footnote two lines down. The number the eye lands on said "this costs nothing" when it
+            meant "nothing here is priced". So when no buy-list line carries a price, the figure is
+            replaced by words; when SOME do, the figure stays and is labelled partial, at a weight
+            that can actually be seen. AGENTS.md §7: the UI says a source is unavailable rather than
+            showing a misleading zero. The coverage arithmetic — including that the denominator is
+            `toBuyCount` and never `materials` — lives in `costCoverage`, so it is tested by being
+            run. */}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <p className="text-[13px] text-slate-800">
-            {t.currencyUsd} <Num className="font-bold">{formatNumberLatin(plan.totals.costUsd)}</Num>
+            {t.currencyUsd}{" "}
+            {coverage.none ? (
+              <span className="font-bold break-words text-amber-900">{t.costNoPrices}</span>
+            ) : (
+              <Num className="font-bold">{formatNumberLatin(plan.totals.costUsd)}</Num>
+            )}
           </p>
           <p className="text-[13px] text-slate-800">
-            {t.currencyEgp} <Num className="font-bold">{formatNumberLatin(plan.totals.costEgp)}</Num>
+            {t.currencyEgp}{" "}
+            {coverage.none ? (
+              <span className="font-bold break-words text-amber-900">{t.costNoPrices}</span>
+            ) : (
+              <Num className="font-bold">{formatNumberLatin(plan.totals.costEgp)}</Num>
+            )}
           </p>
         </div>
+        {coverage.partial ? (
+          <p className="mt-2 border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-bold break-words text-amber-900">
+            {t.costPartialTotal} — {t.costPricedOnBuyList}: <Num>{coverage.priced}</Num> /{" "}
+            <Num>{coverage.onBuyList}</Num>
+          </p>
+        ) : null}
         <ul className="mt-2 space-y-1 text-[11px] leading-5 text-slate-500">
           <li>
             {t.fxRate}: {fxSourceLabels(t)[plan.totals.fxSource]}
