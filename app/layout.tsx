@@ -2,10 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
 import { GlobalErrorReporter } from "@/components/layout/global-error-reporter";
 import { ReportingErrorBoundary } from "@/components/layout/reporting-error-boundary";
-import { StaleDeployPrompt } from "@/components/layout/stale-deploy-prompt";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { systemIdentity } from "@/config/system-settings";
-import { getDeployRevision } from "@/lib/observability/deploy-identity";
 import {
   DEFAULT_DISPLAY_SCALE,
   DISPLAY_SCALE_CSS_VAR,
@@ -133,9 +131,6 @@ export default function RootLayout({
         {/* React 19 / Next.js hoists <style> to <head> automatically */}
         <style dangerouslySetInnerHTML={{ __html: SCRIPT_FONT_CSS }} />
         <GlobalErrorReporter />
-        {/* The build that served THIS page load — a tab left open across a deploy compares it with
-            /api/healthz and offers a refresh (src/lib/utils/deploy-revision-watch.ts). */}
-        <StaleDeployPrompt loadedRevision={getDeployRevision()} />
         <ThemeProvider>
           <ReportingErrorBoundary>{children}</ReportingErrorBoundary>
         </ThemeProvider>
