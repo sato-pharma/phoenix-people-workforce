@@ -22,8 +22,9 @@
 // Printed by headless Chrome, which is how the approved specimen itself is built: a PDF library
 // cannot shape Arabic (render-shared.ts).
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync, mkdirSync, statSync, openSync, readSync, closeSync, rmSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -48,6 +49,11 @@ function primaryXlsx() {
 }
 const OUT = process.env.FIELD_DAY_OUT || primaryXlsx();
 const CHROME = process.env.FIELD_DAY_CHROME || "C:/Program Files/Google/Chrome/Application/chrome.exe";
+
+/** The smallest real paper measured is ~150 KB; the Chief Executive summary is 227 KB. */
+const MIN_PAPER_BYTES = 100_000;
+/** One paper, three tries — enough for a profile race, short of hanging the 21:00 job. */
+const PAPER_ATTEMPTS = 3;
 
 /** Sampled from the company mark, never chosen — src/lib/hiring-pack/house-identity.ts. */
 const C = {
@@ -463,6 +469,103 @@ export function papersOf(dayData) {
   ];
 }
 
+/**
+ * 🔴 CHROME EXITS 0 HAVING WRITTEN NOTHING, AND IT IS ALWAYS THE LAST PAPER.
+ *
+ * Measured twice on 2026-10-08: the loop below printed all four paths and exited 0, and only three
+ * PDFs were on disk — the missing one each time was `Summary-for-the-CEO`, the Chief Executive's own
+ * page. The HTML was sound (the same Chrome command run by hand wrote 227,229 bytes), so nothing was
+ * throwing: the 4th invocation raced the 3rd's shutdown over the SHARED DEFAULT PROFILE and gave up
+ * silently. `--user-data-dir` per invocation is the fix; this verifier is the proof, because a
+ * nightly job nobody watches must never log a paper it did not write.
+ *
+ * Returns the size in bytes. Throws, naming the paper, on anything else.
+ */
+export function verifyPaper(pdfPath, { writtenAfter = 0 } = {}) {
+  const name = path.basename(pdfPath);
+  let stat;
+  try {
+    stat = statSync(pdfPath);
+  } catch {
+    throw new Error(`${name} was not written — Chrome exited 0 and left no file`);
+  }
+  // A paper here is 150-350 KB. Chrome also leaves a 0-byte or few-hundred-byte stub when it dies
+  // mid-print, which `existsSync` alone would happily call a success.
+  if (stat.size < MIN_PAPER_BYTES) {
+    throw new Error(`${name} is ${stat.size} bytes — a paper here is over ${MIN_PAPER_BYTES}; Chrome wrote a stub`);
+  }
+  // 🔴 NOT a delete-then-check: these are protected documents (standing rule, never delete a PDF), so
+  // a stale paper from an earlier run of the SAME day is ruled out by its timestamp instead.
+  if (stat.mtimeMs < writtenAfter) {
+    throw new Error(`${name} is stale — it was last written ${new Date(stat.mtimeMs).toISOString()}, before this run`);
+  }
+  const magic = Buffer.alloc(5);
+  const fd = openSync(pdfPath, "r");
+  try {
+    readSync(fd, magic, 0, 5, 0);
+  } finally {
+    closeSync(fd);
+  }
+  if (!magic.toString("latin1").startsWith("%PDF")) {
+    throw new Error(`${name} does not begin with %PDF — Chrome wrote ${JSON.stringify(magic.toString("latin1"))}`);
+  }
+  return stat.size;
+}
+
+/**
+ * Print one paper and PROVE it landed, retrying that one paper before giving up.
+ *
+ * Each attempt gets its own `--user-data-dir`, so no two Chromes ever share a profile — not the
+ * sequential ones in the loop below, and not two sessions printing the same day at once. Chrome's own
+ * "N bytes written to file" line rides on stderr, which the old `{ stdio: "pipe" }` swallowed, so it
+ * is captured here and goes into the message when every attempt has failed.
+ */
+export function printPaper({ htmlPath, pdfPath, work }) {
+  const name = path.basename(pdfPath);
+  const failures = [];
+  for (let attempt = 1; attempt <= PAPER_ATTEMPTS; attempt += 1) {
+    const writtenAfter = Date.now() - 2000; // filesystem timestamp granularity and clock skew
+    const profile = path.join(work, `field-day-chrome-${process.pid}-${attempt}-${randomUUID().slice(0, 8)}`);
+    const run = spawnSync(
+      CHROME,
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--no-pdf-header-footer",
+        "--run-all-compositor-stages-before-draw",
+        "--virtual-time-budget=4000",
+        `--user-data-dir=${profile}`,
+        `--print-to-pdf=${pdfPath}`,
+        `file:///${htmlPath.replace(/\\/g, "/")}`,
+      ],
+      { encoding: "utf8", windowsHide: true },
+    );
+    const chatter = `${run.stdout ?? ""}\n${run.stderr ?? ""}`.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(" | ");
+    try {
+      if (run.error) throw run.error;
+      if (run.status !== 0) throw new Error(`Chrome exited ${run.status}${run.signal ? ` on ${run.signal}` : ""}`);
+      const size = verifyPaper(pdfPath, { writtenAfter });
+      cleanProfile(profile);
+      return { size, attempt };
+    } catch (error) {
+      cleanProfile(profile);
+      failures.push(`attempt ${attempt}: ${error?.message ?? error}${chatter ? ` — chrome said: ${chatter}` : ""}`);
+    }
+  }
+  // 🔴 LOUD, and naming the paper: `run-nightly.mjs` puts a thrown message into
+  // `xlsx/field-day-task.log`, which is the only thing anyone will ever read about a 21:00 run.
+  throw new Error(`${name} could not be printed in ${PAPER_ATTEMPTS} attempts.\n  ${failures.join("\n  ")}`);
+}
+
+/** A Chrome profile this run made, under FIELD_DAY_TMP — JSON and caches, no document types. */
+function cleanProfile(profile) {
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 2 });
+  } catch {
+    /* Chrome may still hold a lock; the temp folder is swept by Storage Sense anyway. */
+  }
+}
+
 // `pathToFileURL`, never a hand-built `file:///` string: this repository lives under "Phoenix
 // Workforce", and the space arrives percent-encoded in `import.meta.url` but raw in `argv[1]`, so a
 // string comparison silently fails and the script prints nothing at all.
@@ -474,19 +577,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const htmlPath = path.join(work, `field-day-${dayData.day}-${paper.file}.html`);
     const pdfPath = path.join(OUT, `Phoenix-CRM-Field-Day-${dayData.day}-${paper.file}.pdf`);
     writeFileSync(htmlPath, paper.html, "utf8");
-    execFileSync(
-      CHROME,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-pdf-header-footer",
-        "--run-all-compositor-stages-before-draw",
-        "--virtual-time-budget=4000",
-        `--print-to-pdf=${pdfPath}`,
-        `file:///${htmlPath.replace(/\\/g, "/")}`,
-      ],
-      { stdio: "pipe" },
-    );
+    // 🔴 `printPaper` THROWS rather than returning — the path is logged only once the file on disk
+    // has been stat-checked, so this log can never again claim a paper that does not exist.
+    printPaper({ htmlPath, pdfPath, work });
     console.log(pdfPath);
   }
 }
