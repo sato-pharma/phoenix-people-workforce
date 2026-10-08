@@ -89,6 +89,40 @@ export function runModuleMemoryTests() {
   assert.equal(normalizePath("F:\\Phoenix Workforce\\_wt-x\\src\\lib\\vacation\\a.ts", root), "src/lib/vacation/a.ts",
     "a path into ANY checkout — with the space in 'Phoenix Workforce' — must reduce to repo-relative");
 
+  // 3a. 🔴 HARNESS TEXT AND SEARCH PATTERNS ARE NOT THE WORK (.claude/hooks/lib/harness-text.mjs).
+  // Measured 2026-10-08: one settings audit that touched no module was handed payroll, sales-closing,
+  // sales-attribution, recruitment, notifications and engineering, because a background agent's
+  // `<task-notification>` arrives in `prompt` and a quoted grep pattern reads like a command.
+  const said = (prompt: string) => modulesFor({ hook_event_name: "UserPromptSubmit", prompt }, lib, root).touched;
+  const notice = "<task-notification>\n<summary>Agent finished</summary>\n<result>The payroll batch and the "
+    + "monthly closing read src/lib/payroll/policy.ts; one notification email was queued.</result>\n</task-notification>";
+  assert.deepEqual(said(notice), [], "a background agent's notification is the harness speaking, not the owner");
+  assert.deepEqual(
+    said("[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event about the payroll run.\n"),
+    [],
+    "the system banner and its paragraph are harness text",
+  );
+  const mixed = said(`why did the held payroll row vanish?\n${notice.replace(/payroll/g, "recruitment")}`);
+  assert.ok(mixed.includes("payroll") && !mixed.includes("recruitment"),
+    `the owner's own sentence still routes, the envelope after it does not: ${JSON.stringify(mixed)}`);
+  const shellOf = (command: string) =>
+    modulesFor({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } }, lib, root).touched;
+  assert.ok(!shellOf('git grep -n "railway run" -- docs/x.md').includes("engineering"),
+    "a quoted SEARCH pattern is not railway work");
+  assert.ok(shellOf("railway status").includes("engineering"), "a bare railway command still is");
+  assert.ok(shellOf('node "F:/Phoenix Workforce/_wt-x/scripts/new-session.mjs" --status').includes("sessions"),
+    "a quoted PATH is real work — every path under 'Phoenix Workforce' is quoted for its space");
+  assert.deepEqual(
+    modulesFor({ hook_event_name: "PreToolUse", tool_name: "Grep", tool_input: { pattern: "src/lib/payroll/" } }, lib, root).touched,
+    [],
+    "a Grep pattern is what is hunted for; only its path and glob say where the work is",
+  );
+  assert.ok(
+    modulesFor({ hook_event_name: "PreToolUse", tool_name: "Grep", tool_input: { pattern: "x", path: "src/lib/payroll/policy.ts" } }, lib, root)
+      .touched.includes("payroll"),
+    "a Grep INTO a module's folder still routes",
+  );
+
   // 4. The pointer stays small: Claude Code shows only a 2 KB preview of hook context over ~10 KB.
   // 🔴 THE LIMIT IS 4,000, NOT THE 4,500 CLIFF, SO A MODULE IS SPLIT BEFORE A RULE IS BLOCKED. On
   // 2026-10-03 `phoenix-crm` measured 4,478 of 4,500 with 38 rules: the next CRM ruling anyone wrote

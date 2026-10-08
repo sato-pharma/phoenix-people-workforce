@@ -38,9 +38,19 @@ session (Haiku, project settings only, a prompt with no module keyword so the ho
 delivered it). **Re-run it after a Claude Code update** — the loader is Claude Code's, not ours.
 
 **The hook covers work that opens no file.** `.claude/hooks/module-memory-injector.mjs` runs on
-UserPromptSubmit and PreToolUse. It matches the owner's message against each module's keywords,
-shell commands against paths and keywords, Grep/Glob paths, Edit/Write of a new file, and SQL text
-(Supabase MCP or `psql`) against each module's table names. It injects a **pointer**: the module's
+UserPromptSubmit and PreToolUse. It matches the owner's message against each module's keywords;
+shell commands by the module paths they name plus a short list of command words (`railway`,
+`gh pr merge`, `new-session.mjs`, `apply_migration` — `COMMAND_MODULES` in the hook, never a
+module's business keywords); Grep/Glob by their `path` and `glob` only; Edit/Write of a new file;
+and SQL text (Supabase MCP or `psql`) against each module's table names. **What it ignores, since
+2026-10-08** (`.claude/hooks/lib/harness-text.mjs`): any harness envelope in the prompt
+(`<task-notification>`, `<system-reminder>`, any lower-case hyphenated tag) and the
+`[SYSTEM NOTIFICATION …]` banner, because those are the app speaking, not the owner; a Grep
+`pattern`, which is what is hunted for, not where the work is; and every quoted string or heredoc
+body in a shell command that is not a path, so `git grep "railway run"` or a commit message naming a
+module routes nothing. A quoted path still counts. `.claude/hooks/trap-injector.mjs` reads commands
+through the same helper. Measured the day it changed: one settings audit that touched no module was
+handed six modules and six trap clusters, about 25,000 tokens. It injects a **pointer**: the module's
 title, the bold headline of each of its rules, and the file to Read. It never pastes the file —
 Claude Code persists any hook context over ~10 KB to disk and shows the model a 2 KB preview
 (observed 2026-10-02 on the trap hook's 12.5 KB clusters), and a truncated rule reads complete. A

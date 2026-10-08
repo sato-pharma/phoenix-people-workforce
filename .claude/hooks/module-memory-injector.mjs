@@ -6,7 +6,9 @@
 // moment a session READS a file matching the module's `paths:`. That covers most work — but not a
 // question in chat, a SQL query through the Supabase MCP, a shell `cat`/`git grep`, or a Write of a
 // brand-new file. This hook covers those: it matches the owner's message (keywords), shell commands
-// (paths, keywords), Grep/Glob paths and SQL text (table names) against scripts/module-memory/modules.mjs.
+// (paths, COMMAND_MODULES words), Grep/Glob paths and SQL text (table names) against
+// scripts/module-memory/modules.mjs. It never matches harness text in the prompt or a command's quoted
+// strings and search patterns (lib/harness-text.mjs) — those are not the work.
 //
 // WHAT IT INJECTS — A POINTER AND THE RULE HEADLINES, NEVER THE WHOLE FILE. Claude Code persists any
 // hook context over ~10 KB to a file and shows the model a 2 KB preview (measured 2026-10-02: a 12.5 KB
@@ -23,6 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { ownerText, commandForKeywords } from './lib/harness-text.mjs';
 
 const HOME = process.env.USERPROFILE || os.homedir();
 export const STATE_DIR = path.join(HOME, '.claude', 'relay', 'state');
@@ -115,7 +118,9 @@ export function modulesFor(input, lib, projectDir) {
   const add = (ids) => ids.forEach((id) => found.add(id));
 
   if (event === 'UserPromptSubmit') {
-    const prompt = String(input?.prompt || '');
+    // The owner's words only: a task notification, a system reminder or a slash-command echo rides in
+    // this same field, and its text is not his work (lib/harness-text.mjs).
+    const prompt = ownerText(input?.prompt);
     for (const m of MODULES) if (m.keywords.some((k) => mentions(prompt, k))) found.add(m.id);
     for (const p of pathTokens(prompt, projectDir)) add(modulesForPath(p));
     return { touched: [...found], inject: true };
@@ -132,13 +137,18 @@ export function modulesFor(input, lib, projectDir) {
     return { touched: [...found], inject: true };
   }
   if (/^(Grep|Glob)$/.test(tool)) {
-    for (const p of pathTokens([ti.path, ti.pattern, ti.glob].filter(Boolean).join(' '), projectDir)) add(modulesForPath(p));
+    // Where the search looks, never what it looks FOR: a pattern is text being hunted, not work done.
+    for (const p of pathTokens([ti.path, ti.glob].filter(Boolean).join(' '), projectDir)) add(modulesForPath(p));
     return { touched: [...found], inject: true };
   }
   if (/^(Bash|PowerShell)$/.test(tool)) {
     const cmd = String(ti.command || '');
     for (const p of pathTokens(cmd, projectDir)) add(modulesForPath(p));
-    for (const [re, id] of COMMAND_MODULES) if (re.test(cmd)) found.add(id);
+    // Command words are matched on the command's own words: a quoted search pattern, commit message
+    // or heredoc body is blanked first, so `git grep "railway run"` is not railway work. SQL keeps the
+    // raw command — a query run from the shell is nearly always the quoted argument.
+    const own = commandForKeywords(cmd);
+    for (const [re, id] of COMMAND_MODULES) if (re.test(own)) found.add(id);
     if (/\b(select|insert|update|delete)\b[\s\S]*\b(from|into|set)\b/i.test(cmd)) {
       for (const m of MODULES) if (tableMatches(cmd, m)) found.add(m.id);
     }

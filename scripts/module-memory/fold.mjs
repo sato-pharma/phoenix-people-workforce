@@ -38,6 +38,32 @@ const FALLBACK = "sessions";
 const APPLY = process.argv.includes("--apply");
 
 const git = (args, cwd = REPO) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 }).trim();
+
+// 🔴 A NETWORK BLIP MUST NOT COST A WHOLE FOLD. The 15:00 run on 2026-10-08 failed at 15:04 Cairo
+// when GitHub reset the connection mid `git push` — one transient error, no retry, and the notes
+// waited six hours for the next run. Only a transient NETWORK failure is retried (three attempts,
+// 5 s / 15 s / 45 s apart); anything else — a rejected push, a bad flag — throws at once, as before.
+export const TRANSIENT = /Connection was reset|Could not resolve host|Operation timed out|HTTP 5\d\d|unable to access/i;
+export const RETRY_DELAYS_MS = [5000, 15000, 45000];
+
+const failureText = (e) => [e?.message, e?.stderr, e?.stdout].filter(Boolean).map(String).join("\n");
+
+/** Runs `fn`, retrying it only on a transient network failure; logs every failed attempt. */
+export async function withRetry(label, fn, { tries = 3, delaysMs = RETRY_DELAYS_MS, log = say, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return fn();
+    } catch (e) {
+      const text = failureText(e);
+      if (attempt >= tries || !TRANSIENT.test(text)) throw e;
+      const wait = delaysMs[Math.min(attempt - 1, delaysMs.length - 1)];
+      const line = text.split("\n").find((l) => TRANSIENT.test(l))?.trim();
+      log(`${label}: attempt ${attempt} of ${tries} failed on a network error (${line}) — retrying in ${wait / 1000} s`);
+      await sleep(wait);
+    }
+  }
+}
+
 const say = (s) => console.log(`fold: ${s}`);
 
 /** Notes on the laptop, by slug -> raw text. */
@@ -234,8 +260,22 @@ async function main() {
       "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
     ].join("\n");
     git(["commit", "-q", "-m", `chore(memory): memory fold — ${filed.length} note(s) filed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`], wt);
-    git(["push", "-q", "-u", "origin", branch], wt);
-    const url = execFileSync("gh", ["pr", "create", "--title", `chore(memory): memory fold — ${day} ${clock} Cairo`, "--body", body, "--head", branch, "--base", "main"], { cwd: wt, encoding: "utf8" }).trim();
+    await withRetry("git push", () => git(["push", "-q", "-u", "origin", branch], wt));
+    let url;
+    try {
+      url = await withRetry("gh pr create", () => execFileSync("gh", ["pr", "create", "--title", `chore(memory): memory fold — ${day} ${clock} Cairo`, "--body", body, "--head", branch, "--base", "main"], { cwd: wt, encoding: "utf8" }).trim());
+    } catch (e) {
+      // A timed-out create can still have made the PR on GitHub's side, and the retry then fails
+      // with "already exists" — so ask for it by branch before treating the branch as an orphan.
+      let made = "";
+      try { made = execFileSync("gh", ["pr", "list", "--head", branch, "--state", "open", "--json", "url", "--jq", ".[0].url"], { cwd: wt, encoding: "utf8" }).trim(); } catch {}
+      if (made) { say(`opened ${made}`); return; }
+      // The push landed but no PR did: delete the remote branch, or the next run stacks a second
+      // branch beside an orphan nobody will ever be shown.
+      try { await withRetry("delete orphan branch", () => git(["push", "-q", "origin", "--delete", branch], wt)); say(`deleted the orphan remote branch ${branch}`); }
+      catch { say(`could not delete the orphan remote branch ${branch} — delete it with git push origin --delete ${branch}`); }
+      throw e;
+    }
     say(`opened ${url}`);
   } finally {
     // The branch is pushed; the temporary folder holds nothing that is not on origin.

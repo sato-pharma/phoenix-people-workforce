@@ -25,6 +25,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { commandForKeywords } from './lib/harness-text.mjs';
 
 const HOME = process.env.USERPROFILE || os.homedir();
 const STATE_DIR = path.join(HOME, '.claude', 'relay', 'state');
@@ -175,12 +176,13 @@ function writeState(sessionId, seen) {
 
 function commandOf(input) {
   const t = input?.tool_input || {};
-  let cmd = String(t.command || '');
-  // Strip heredoc BODIES before classifying. A `cat > notes.md <<'EOF' … worktree … EOF`
-  // is writing prose that happens to contain the word, not doing worktree work — matching on
-  // it fired a 4.9 KB cluster at nothing on this hook's very first live call.
-  cmd = cmd.replace(/<<-?\s*(['"]?)(\w+)\1[\s\S]*?^\s*\2\s*$/gm, ' ');
-  return [cmd, t.file_path, t.path, t.pattern, t.url].filter(Boolean).join(' ');
+  // Blank heredoc BODIES and quoted strings that are not paths before classifying
+  // (lib/harness-text.mjs). A `cat > notes.md <<'EOF' … worktree … EOF` is writing prose that
+  // happens to contain the word — matching on it fired a 4.9 KB cluster at nothing on this hook's
+  // very first live call — and `git grep "railway run"` is a search, not production work.
+  const cmd = commandForKeywords(t.command);
+  // A Grep `pattern` is what is being hunted for, never the work; only where it looks counts.
+  return [cmd, t.file_path, t.path, t.glob, t.url].filter((s) => s && String(s).trim()).join(' ');
 }
 
 // STAND DOWN when the machine-level copy is REGISTERED — both read and write the same
