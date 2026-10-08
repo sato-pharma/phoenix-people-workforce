@@ -10,6 +10,8 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import { assertDeductionsDecisionActor, isDeductionsDecisionActor } from "./permissions.ts";
+import type { CheckedDisputeImage } from "./comment-attachment-rules.ts";
+import { attachCommentAttachments, discardDisputeComment, storeDisputeAttachments } from "./comment-attachments.ts";
 import { loadTelegramReach, resolveDisputeAudience } from "./dispute-audience.ts";
 import type { DeductionDisputeDelivery, DeductionsComment } from "./types.ts";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
@@ -79,7 +81,7 @@ export async function listDeductionsComments(input: {
     rows.push(...((data ?? []) as CommentRow[]));
   }
   rows.sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")));
-  return attachAuthorNames(rows.map(mapCommentRow));
+  return attachCommentAttachments(await attachAuthorNames(rows.map(mapCommentRow)));
 }
 
 /**
@@ -102,7 +104,7 @@ export async function listRecentDeductionsComments(input?: {
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return attachAuthorNames(((data ?? []) as CommentRow[]).map(mapCommentRow));
+  return attachCommentAttachments(await attachAuthorNames(((data ?? []) as CommentRow[]).map(mapCommentRow)));
 }
 
 /** Returns the candidate's employee_hr_id_compact, or throws if this candidateId
@@ -192,19 +194,26 @@ export async function addDeductionsComment(input: {
  * sent TO the employee (their portal), opening a two-way thread. Super Admin ONLY — the owner's
  * decision, 2026-10-06 ("keep replies super-admin only"): CEO and HR Operations read the dispute
  * but cannot answer it, the same actor that decides and publishes a deduction.
+ *
+ * A reply may carry up to four pictures (owner, 2026-10-08), already checked by checkDisputeImage —
+ * the route does that BEFORE this runs, so a bad file never leaves a half-written reply. A reply of
+ * pictures alone is allowed: the text then reads "Picture attached.", because the row's body cannot be blank.
  */
 export async function addDeductionsReply(input: {
   access: AccessContext;
   body: string;
   candidateId: string;
+  images?: CheckedDisputeImage[];
 }): Promise<{ comment: DeductionsComment; delivery: DeductionDisputeDelivery | null }> {
   assertDeductionsDecisionActor(input.access);
   const ownerCompactHrId = await findDeductionsCandidateOwner(input.candidateId);
   if (!ownerCompactHrId) throw new Error("Deduction candidate not found.");
   await assertCandidatePublished(input.candidateId);
 
-  const body = String(input.body ?? "").replace(/\s+/g, " ").trim();
-  if (!body) throw new Error("Reply is required.");
+  const images = input.images ?? [];
+  let body = String(input.body ?? "").replace(/\s+/g, " ").trim();
+  if (!body && images.length === 0) throw new Error("Reply is required.");
+  if (!body) body = images.length === 1 ? "Picture attached." : "Pictures attached.";
   if (body.length > 2000) throw new Error("Reply cannot exceed 2000 characters.");
 
   const payload = {
@@ -225,19 +234,34 @@ export async function addDeductionsReply(input: {
     actorLoginId: payload.author_login_id,
     entityId: input.candidateId,
     entityType: "deductions_comment",
-    newValues: { bodyLength: body.length, reply: true },
+    newValues: { bodyLength: body.length, pictureCount: images.length, reply: true },
     summary: "HR reply added to a published deduction dispute (unified module).",
   });
 
   const row = data as CommentRow;
+  // The pictures are stored AFTER the reply row exists (they hang off its id). If they cannot be
+  // stored the reply is removed again, so the employee is never shown half a message and is never
+  // notified of one.
+  let attachments: Awaited<ReturnType<typeof storeDisputeAttachments>> = [];
+  if (images.length > 0) {
+    try {
+      attachments = await storeDisputeAttachments({ candidateId: input.candidateId, commentId: row.id, images });
+    } catch (storeError) {
+      await discardDisputeComment(row.id);
+      throw storeError;
+    }
+  }
+
   const delivery = await notifyDeductionsReply({
     authorHrId: input.access.hrId ?? null,
     body,
     candidateId: input.candidateId,
     messageKey: row.id,
+    pictureCount: attachments.length,
   });
 
-  return { comment: (await attachAuthorNames([mapCommentRow(row)]))[0], delivery };
+  const [comment] = await attachAuthorNames([mapCommentRow(row)]);
+  return { comment: { ...comment, attachments }, delivery };
 }
 
 /**
@@ -257,6 +281,9 @@ async function notifyDeductionsReply(input: {
   body: string;
   candidateId: string;
   messageKey: string;
+  /** How many pictures rode with the reply — the message says so, because an email and a Telegram
+   *  line cannot show them and the employee must know to open the portal. */
+  pictureCount?: number;
 }): Promise<DeductionDisputeDelivery | null> {
   try {
     // The employee and their name come from the active published line — the same row the portal
@@ -277,6 +304,7 @@ async function notifyDeductionsReply(input: {
       return null;
     }
 
+    const pictureCount = input.pictureCount ?? 0;
     const audience = await resolveDisputeAudience(employeeHrId);
     const managerHrIds = audience.managers.map((manager) => manager.hrId);
 
@@ -296,12 +324,15 @@ async function notifyDeductionsReply(input: {
       actionUrl: "/employee-portals/deductions",
       authorHrId: input.authorHrId,
       authorName,
-      body: input.body,
+      body:
+        pictureCount > 0
+          ? `${input.body}\n\n(${pictureCount === 1 ? "1 picture is" : `${pictureCount} pictures are`} attached - open your deductions page to see ${pictureCount === 1 ? "it" : "them"}.)`
+          : input.body,
       eventType: "deductions_comment",
       // Per-message key, so a second reply on one deduction is its own notification rather than
       // collapsing onto the first — the same reason the employee→HR path carries one.
       messageKey: input.messageKey,
-      metadata: { candidateId: input.candidateId, reply: true },
+      metadata: { candidateId: input.candidateId, pictureCount, reply: true },
       module: "deductions",
       participantHrIds: [employeeHrId, input.authorHrId, ...managerHrIds].filter((id): id is string => Boolean(id)),
       recordId: input.candidateId,

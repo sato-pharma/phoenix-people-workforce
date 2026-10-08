@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { PicturePicker, PictureStrip } from "@/components/deductions/dispute-pictures";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import { deductionsCategoryLabel } from "@/lib/deductions/calculations.ts";
 import { disputeDateLabel } from "@/lib/deductions/dispute-basis.ts";
@@ -382,6 +383,7 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
   const [query, setQuery] = useState("");
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [pictures, setPictures] = useState<Record<string, File[]>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Record<string, ReplyNotice>>({});
   const [delivered, setDelivered] = useState<Record<string, DeductionDisputeDelivery>>({});
@@ -437,8 +439,9 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
 
   async function submitReply(candidateId: string) {
     const body = String(drafts[candidateId] ?? "").trim();
-    if (!body) {
-      setNotice((current) => ({ ...current, [candidateId]: { text: "Write a reply first.", tone: "error" } }));
+    const attached = pictures[candidateId] ?? [];
+    if (!body && attached.length === 0) {
+      setNotice((current) => ({ ...current, [candidateId]: { text: "Write a reply or add a picture first.", tone: "error" } }));
       return;
     }
     setSavingId(candidateId);
@@ -450,11 +453,23 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
     try {
       const payload = await fetchJson<{ comment: DeductionsComment; delivery: DeductionDisputeDelivery | null }>(
         "/api/admin/deductions/comments",
-        {
-          body: JSON.stringify({ body, candidateId }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        },
+        attached.length > 0
+          ? {
+              // Pictures go as multipart; the browser sets the boundary, so no Content-Type here.
+              body: (() => {
+                const form = new FormData();
+                form.append("candidateId", candidateId);
+                form.append("body", body);
+                for (const file of attached) form.append("images", file, file.name);
+                return form;
+              })(),
+              method: "POST",
+            }
+          : {
+              body: JSON.stringify({ body, candidateId }),
+              headers: { "Content-Type": "application/json" },
+              method: "POST",
+            },
       );
       // Append the reply in place, so the conversation updates without a reload.
       setThreads((current) =>
@@ -465,6 +480,7 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
         ),
       );
       setDrafts((current) => ({ ...current, [candidateId]: "" }));
+      setPictures((current) => ({ ...current, [candidateId]: [] }));
       if (payload.delivery) {
         const delivery = payload.delivery;
         setDelivered((current) => ({ ...current, [candidateId]: delivery }));
@@ -688,6 +704,7 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
                         <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800" dir="auto">
                           {comment.body}
                         </p>
+                        <PictureStrip attachments={comment.attachments} />
                       </li>
                     );
                   })}
@@ -720,11 +737,17 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
                         {draft.length} / {REPLY_LIMIT}
                       </span>
                     </div>
+                    <PicturePicker
+                      disabled={saving}
+                      files={pictures[thread.candidateId] ?? []}
+                      idBase={`reply-${thread.candidateId}`}
+                      onChange={(next) => setPictures((current) => ({ ...current, [thread.candidateId]: next }))}
+                    />
                     <AudienceLine thread={thread} />
                     <div className="mt-3 flex justify-end">
                       <button
                         className={phxButtonAccentClassName}
-                        disabled={saving || draft.trim().length === 0}
+                        disabled={saving || (draft.trim().length === 0 && (pictures[thread.candidateId] ?? []).length === 0)}
                         onClick={() => {
                           void submitReply(thread.candidateId);
                         }}
