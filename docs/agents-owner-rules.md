@@ -7044,3 +7044,35 @@ suppression keys) and `gap-notice.ts` (the run), behind
 `app/api/cron/private-calendar-gap-notice/route.ts`. Pinned by
 `tests/private-calendar-gap-notice.test.ts`, which also holds the five registration sites to each
 other so the cron cannot strand. The hook: `.claude/rules/time-off.md`.
+
+## Phoenix CRM emails every step and pulses what is new — owner, 2026-10-08
+
+His words: *"I need Telegram, in app, email for every action on CRM to the person responsible … and show
+pulsing badges beside the thing that has a notification. I want the people to be alerted."*
+
+**What was measured first (production, 10 days).** The notices were being written and delivered in-app
+and to the phone — 47 plan-waiting, 48 plan-approved, 4 plan-returned, 106 off-plan-visit-waiting — and to
+Telegram only for the minority who linked it (plan-approved: 11 sent, 33 skipped). Email was blocked
+module-wide except seven event types, and nothing inside Phoenix CRM showed that anything was new: the
+only badge was a static "N waiting" on Team and Reports counting decisions, and a module page has no tab
+bar. "Silent" was real for email and for the screen, not for the bell.
+
+**The email list.** Every person-to-person step now emails beside the other channels: a weekly or monthly
+plan sent, approved or returned; a grade, drop, add or restore request waiting and decided; an off-plan
+visit waiting, approved, refused and moved on; a visit ask waiting, accepted and declined. Asked about by
+name the same day, he added the plan reminder (12:57 and 17:57), the daily approval nudge and the rep's
+"validate this customer again" — **the last reverses his own ruling from earlier that day** (in-app only,
+never email or phone). He chose it with the choice in front of him; its wording is unchanged and still
+about the photo alone.
+
+**Still off email, by his earlier explicit rulings:** the daily forecast alert, the courtesy copy of a visit
+ask, the SFE Manager's day-start and re-send copies, the plan-edit expiry, and the feeds (activity mirror,
+hourly rollup, 06:55 digest, fraud scan).
+
+**The badges.** `src/lib/phoenix-crm/notice-badge-rules.ts` maps an unread notice to the module its own
+link opens; `src/lib/notifications/unread.ts` reads the viewer's unread rows under the bell's fences
+(addressed to him, test-world fence, not read or archived). A chooser card pulses "N new" and the module
+page opens with a "New for you" strip. The feeds never pulse. A failed read draws no badge — never "nothing
+new". **It clears from a mounted page** (`POST /api/phoenix-crm/notices/seen`), never a server render,
+because the chooser cards prefetch the page on hover and a prefetch renders it with nobody looking.
+Pinned by `tests/phoenix-crm-notice-badges.test.ts` and `tests/phoenix-crm-email-block.test.ts`.

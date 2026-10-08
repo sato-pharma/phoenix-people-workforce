@@ -6,6 +6,7 @@ import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { loadPhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/server/unread-notices";
 import { isPhoenixCrmModuleKey, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import {
   loadPhoenixCrmPage,
@@ -45,13 +46,15 @@ export default async function PhoenixCrmPortalPage({
     redirect(`${phoenixCrmModulePath(PHOENIX_CRM_PORTAL_PATH, tab)}${add ? `?add=${add}` : ""}`);
   }
 
-  const load = await loadPhoenixCrmPage(access);
+  // The unread notices ride beside the page load: they only decorate the cards, and a failed read is a
+  // card without a pulse (null), never a broken chooser.
+  const [load, unread] = await Promise.all([loadPhoenixCrmPage(access), loadPhoenixCrmUnreadByModule(access)]);
 
   if (load.kind === "ready") {
     return (
       <EmployeePortalPageShell badge="CRM" description={phoenixCrmPageDescription(load.overview)} title="Phoenix CRM">
         <CrmPanel title="Phoenix CRM">
-          <PhoenixCrmModuleChooser base={PHOENIX_CRM_PORTAL_PATH} overview={load.overview} />
+          <PhoenixCrmModuleChooser base={PHOENIX_CRM_PORTAL_PATH} overview={load.overview} unread={unread} />
         </CrmPanel>
       </EmployeePortalPageShell>
     );

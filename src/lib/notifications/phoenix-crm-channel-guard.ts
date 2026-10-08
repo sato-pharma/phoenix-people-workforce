@@ -4,8 +4,10 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // request waiting for the district manager, a request decided, a weekly plan sent for review, a
 // plan approved or returned. Email is blocked for the whole module.
 //
-// FOUR exceptions, each by the owner's own order. Those event types — and only those — keep their
-// email. Every other Phoenix CRM notice, the 06:55 digest included, stays email-free.
+// FIVE exceptions, each by the owner's own order. Those event types — and only those — keep their
+// email. Every other Phoenix CRM notice, the 06:55 digest included, stays email-free. The fifth
+// (2026-10-08) is every person-to-person step of a plan, a request, an off-plan visit and a visit ask;
+// see the note at the end of the list below.
 //
 // (1) 2026-10-01: a rep's request to edit a week he already sent runs the district manager → SFE → HR,
 // and "every step" goes by email, in-app and Telegram to the next person to act, the rep, the district
@@ -71,6 +73,41 @@ export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
   // narrowed `day_start_confirmed` does not arise: one address, and only while a decision is waiting.
   // The rep's side is untouched — he still reads only "the system is checking" (Golden Rule #1).
   "validation_review_waiting",
+  // (5) 2026-10-08: "I need Telegram, in app, email for every action on CRM to the person responsible".
+  // Every notice that tells ONE named person something about his own work or a decision waiting on him
+  // now emails too: a weekly or monthly plan sent for review and its approval or return, a grade / drop /
+  // add / restore request waiting and its decision, an off-plan visit waiting and each time it moves, and
+  // a rep's ask for a visit and its answer. They are all person-to-person steps, a handful a day each —
+  // not feeds. What stays OFF this list is what he has ruled in-app (and Telegram) only, by name: the
+  // daily forecast alert, the courtesy copy of a visit ask, the SFE's day-start and re-send copies, the
+  // plan-edit expiry, the rep's validate-again notice, the activity mirror, the hourly rollup, the 06:55
+  // digest, the fraud scan and the plan reminders. A feed to the widest readers is a burial, not a notice.
+  "plan_waiting",
+  "plan_approved",
+  "plan_returned",
+  "monthly_plan_waiting",
+  "monthly_plan_approved",
+  "monthly_plan_returned",
+  "grade_request_waiting",
+  "drop_request_waiting",
+  "add_request_waiting",
+  "restore_request_waiting",
+  "request_approved",
+  "request_refused",
+  "unplanned_visit_waiting",
+  "unplanned_visit_approved",
+  "unplanned_visit_refused",
+  "unplanned_visit_moved_on",
+  "visit_ask_waiting",
+  "visit_ask_accepted",
+  "visit_ask_declined",
+  // (6) 2026-10-08, same day, asked about by name and answered "both": the plan reminder (12:57 and 17:57),
+  // the daily approval nudge, and the rep's "validate this customer again". The last REVERSES his own
+  // ruling from earlier that day (in-app only, never email or phone) — he chose it knowingly. Its wording
+  // is unchanged and still about the photo alone (validation-feedback.ts), and it still carries no decider.
+  "plan_reminder",
+  "approval_nudge",
+  "validation_not_confirmed",
 ];
 
 /**
@@ -120,17 +157,6 @@ export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = [
   // mail him one per re-send and the module's emails are the four person-taken plan-edit steps plus a
   // rep's first visit, nothing else.
   "plan_resent",
-  // 🔴 THE REP'S OWN "validate this one again" NOTICE (owner, 2026-10-08) — the one notice in this
-  // module that tells a rep his own work was turned down, so it is the one that must never leave the
-  // app. It asks for `["in_app"]` at the call site (`inAppOnly`), which already means no Telegram is
-  // attempted and so no failure fallback can fire — and it is on THIS list as well because "no email,
-  // no Telegram, no push, ever" must hold however a later caller spells its channels. Email is already
-  // impossible (it is not on the allowlist above); this shuts the phone.
-  //
-  // It carries no person, no decision and no threshold — only what is wrong with his PHOTO, from the
-  // closed list in src/lib/phoenix-crm/validation-feedback.ts (Golden Rule #1: his app stays easy and
-  // blind, and nothing he reads says a person judged him).
-  "validation_not_confirmed",
 ];
 
 export function isPhoenixCrmModule(module: string | null | undefined): boolean {

@@ -167,7 +167,7 @@ const VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS = "Pending your approval";
  * Every caller must therefore have a resolved hr_id before writing — with no unique index on
  * user_id, a NULL hr_id would silently accumulate duplicate rows instead of upserting.
  */
-const NOTIFICATION_STATE_CONFLICT_TARGET = "notification_event_id,hr_id";
+export const NOTIFICATION_STATE_CONFLICT_TARGET = "notification_event_id,hr_id";
 
 export type ApprovalCandidate = { id: string; requestId: string };
 export type ApprovalCandidatesByDomain = Record<"excuse" | "phoenixCrm" | "phoenixCrmPlan" | "plan" | "vacation", ApprovalCandidate[]>;
@@ -340,7 +340,7 @@ function stateSchemaMissing(error: unknown) {
   );
 }
 
-function viewerIdentity(access: AccessContext) {
+export function viewerIdentity(access: AccessContext) {
   return {
     hrId: normalizeHrId(resolveEmployeeIdentityId(access)),
     // A test account reads the mirrored person's bell, so this is the ONLY thing that tells the two

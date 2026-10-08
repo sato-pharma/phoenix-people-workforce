@@ -25,62 +25,21 @@ import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-gove
 //      category must reach the in-app bell (or the bell stays empty while the audit says "sent")
 
 const EVENT_TYPES = [
-  // The rep's "validate this customer again" (owner, 2026-10-08) — in-app only; see PUSH_BLOCKED below.
-  "validation_not_confirmed",
-  "grade_request_waiting",
-  "drop_request_waiting",
-  // The rep's flow rebuilt (owner, 2026-09-29): adding a customer met outside the list, and bringing one
-  // back from the Archive, go to the district manager too.
-  "add_request_waiting",
-  "restore_request_waiting",
-  "request_approved",
-  "request_refused",
-  "plan_waiting",
-  "plan_approved",
-  "plan_returned",
-  "monthly_plan_waiting",
-  "monthly_plan_approved",
-  "monthly_plan_returned",
-  // An off-plan visit (owner, 2026-09-26). The first visit in the module that tells anybody at all:
-  // it counts in nothing until it is decided, so the manager who must decide it is told and the rep
-  // is told each time it moves — which makes it the first place this rule could be broken by accident.
-  "unplanned_visit_waiting",
-  "unplanned_visit_approved",
-  "unplanned_visit_refused",
-  "unplanned_visit_moved_on",
   // The CNS daily forecast (owner, 2026-10-01): the district manager hears it is in — IN-APP ONLY.
   "forecast_sent",
-  // "Your coming week is not sent" (owner, 2026-10-02): the rep and his district manager, never by email.
-  "plan_reminder",
-  // The daily nudge to a slow approver (owner, 2026-10-02): the district manager or SFE, never by email.
-  "approval_nudge",
-  // A rep's ask for a visit with somebody (owner, 2026-10-02): the person asked, the person told (the
-  // manager above for a chain visit, the rep's district manager for a product manager's), and the rep
-  // when it is answered — in-app, Telegram and the phone, never by email.
-  "visit_ask_waiting",
+  // The courtesy copy of a rep's ask for a visit (owner, 2026-10-02: "told (in-app)"): the manager above
+  // for a chain visit, the rep's district manager for a product manager's. Nothing waits on it.
   "visit_ask_told",
-  "visit_ask_accepted",
-  "visit_ask_declined",
   // 🔴 The expiry of a request to edit a week MOVED HERE from the emailing list on 2026-10-02, when
   // the owner was asked directly whether the new daily pass should email as it closes one and chose
-  // "in-app and Telegram only, no email". It is the one step of a plan edit no PERSON takes — a week
-  // ran out — and the pass closes them in a batch, which is the unprompted-bulk mail he has ruled
-  // out standing. His "only" is enforced on both axes, so it is in PUSH_BLOCKED_EVENT_TYPES below.
+  // "in-app and Telegram only, no email". His "only" is enforced on both axes (PUSH_BLOCKED below).
   "plan_edit_expired",
-  // The SFE Manager's copy of a rep's day start (owner, 2026-10-03). The district manager's copy is
-  // `day_start_confirmed` and emails; this one is the same news to the person who reads every line, so
-  // it is in-app and Telegram only — about 74 a morning at full rollout is a burial, not a notice.
+  // The SFE Manager's copy of a rep's day start (owner, 2026-10-03): about 74 a morning is a burial.
   "day_start_seen",
-  // 🔴 The place check MOVED to the emailing list on 2026-10-05 — see EMAIL_EVENT_TYPES below.
-  // The activity mirror (owner, 2026-10-05): every Phoenix CRM action, to the national sales manager
-  // above the rep and to the SFE Managers — "in nsm and sfe i want every single action … sent to
-  // telegram to them". In-app and Telegram only, never email and never the phone (push-blocked below),
-  // because it is the module's highest-volume feed to its two widest-scope readers.
+  // The activity mirror (owner, 2026-10-05): every action, to the NSM and SFE Managers — in-app and
+  // Telegram only, the module's highest-volume feed to its two widest-scope readers.
   "activity_mirror",
-  // The SFE Manager's own copy of a re-send, on the week HE returned (2026-10-08): he asked for the
-  // change and nothing told him it had come back. Informational — the plan's actionable notice is the
-  // reviewing manager's, because the SFE returns a week and approves none — so in-app and Telegram
-  // only, never email and never the phone (push-blocked below).
+  // The SFE Manager's own copy of a re-send, on the week HE returned (2026-10-08). Informational.
   "plan_resent",
 ];
 
@@ -102,10 +61,6 @@ const PUSH_BLOCKED_EVENT_TYPES = [
   // Telegram-failure fallback would mail him one per re-send, and the module's emails are the four
   // person-taken plan-edit steps plus a rep's first visit and the held place, nothing else.
   "plan_resent",
-  // The rep's "validate this customer again" (2026-10-08): in-app only. It tells him what is wrong
-  // with his photo, and a push or an email fallback would carry the one sentence about his own work
-  // the owner allowed past golden rule #1 out of the app it was written for.
-  "validation_not_confirmed",
 ];
 
 /**
@@ -145,13 +100,40 @@ const EMAIL_EVENT_TYPES = [
   "first_visit_submitted",
   "day_start_confirmed",
   "validation_review_waiting",
+  // (2026-10-08, owner: "Telegram, in app, email for every action on CRM to the person responsible") the
+  // person-to-person steps: a plan sent and decided, a request waiting and decided, an off-plan visit
+  // waiting and each time it moves, a rep's ask for a visit and its answer.
+  "plan_waiting",
+  "plan_approved",
+  "plan_returned",
+  "monthly_plan_waiting",
+  "monthly_plan_approved",
+  "monthly_plan_returned",
+  "grade_request_waiting",
+  "drop_request_waiting",
+  "add_request_waiting",
+  "restore_request_waiting",
+  "request_approved",
+  "request_refused",
+  "unplanned_visit_waiting",
+  "unplanned_visit_approved",
+  "unplanned_visit_refused",
+  "unplanned_visit_moved_on",
+  "visit_ask_waiting",
+  "visit_ask_accepted",
+  "visit_ask_declined",
+  // (2026-10-08, same day, asked about by name and answered "both") the plan reminder, the approval nudge
+  // and the rep's "validate this customer again" — the last REVERSES his own ruling from earlier that day.
+  "plan_reminder",
+  "approval_nudge",
+  "validation_not_confirmed",
 ];
 
 export function runPhoenixCrmEmailBlockTests() {
   assert.deepEqual(
     [...PHOENIX_CRM_EMAIL_EVENT_TYPES].sort(),
     [...EMAIL_EVENT_TYPES].sort(),
-    "exactly the four person-taken steps of a plan edit, a rep's first visit, his daily start to his district manager, and a place waiting on the Super Admin, may email",
+    "exactly the person-taken steps (plan edit, plan, request, off-plan visit, visit ask), a rep's first visit, his daily start to his district manager, and a place waiting on the Super Admin, may email",
   );
   assert.deepEqual(
     [...PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES].sort(),
@@ -159,7 +141,7 @@ export function runPhoenixCrmEmailBlockTests() {
     // calls createSystemNotificationForRecipients directly, so none comes through the notifier and
     // none is harvested into EVENT_TYPES; all three are in-app and Telegram only.
     ["crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
-    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy, the activity mirror, the SFE's copy of a re-send and the rep's validate-again notice",
+    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy, the activity mirror, and the SFE's copy of a re-send",
   );
   for (const eventType of EMAIL_EVENT_TYPES) {
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });
@@ -214,12 +196,12 @@ export function runPhoenixCrmEmailBlockTests() {
       1,
       "every Phoenix CRM notice goes out through one send, its channels named by the guard's allowlist, and nothing else",
     );
-    // The in-app-only exceptions are THREE, and ONLY these three: the daily forecast's alert — the owner
+    // The in-app-only exceptions are TWO, and ONLY these two (the rep's validate-again was a third until 2026-10-08): the daily forecast's alert — the owner
     // asked for an in-app alert, and some 26 reps send one every working day — the courtesy a district
     // manager gets when one of his reps asks a product manager for a visit, which waits on nobody
     // (owner's brief, 2026-10-02: "told (in-app)"), and the rep's "validate this customer again"
     // (owner, 2026-10-08: tell the rep why, worded about his photo).
-    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 3, "exactly three notices are in-app only");
+    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 2, "exactly two notices are in-app only (the rep's validate-again joined the other channels on 2026-10-08)");
     const forecastBranch = notify.slice(notify.indexOf('if (notice.kind === "forecast_sent")'), notify.indexOf('if (notice.kind === "unplanned_visit_raised")'));
     assert.match(forecastBranch, /inAppOnly: true,/, "one is the daily forecast's");
     const visitAskBranch = notify.slice(notify.indexOf("async function describeVisitAsk("), notify.indexOf("async function describe(notice"));
@@ -263,7 +245,7 @@ export function runPhoenixCrmEmailBlockTests() {
     // pinned in its own test.
     const reminder = readFileSync("src/lib/phoenix-crm/server/plan-reminder.ts", "utf8");
     const nudge = readFileSync("src/lib/phoenix-crm/server/approval-nudge.ts", "utf8");
-    assert.doesNotMatch(nudge, /"email"/, "the approval nudge never names email");
+    assert.doesNotMatch(nudge, /"email"/, "the approval nudge never names email itself — it asks the guard");
     // The Super Admin's alert for a place the Google Maps check could not confirm (2026-10-03), which
     // emails him since 2026-10-05. 🔴 IT STILL MUST NOT NAME EMAIL ITSELF: it asks the guard, whose
     // allowlist is the one place the module's exception is declared. A hardcoded `["in_app","email",…]`
@@ -336,7 +318,8 @@ export function runPhoenixCrmEmailBlockTests() {
       "email is stripped and the two authorized channels survive",
     );
     assert.deepEqual(enforcePhoenixCrmEmailBlock(["email"], "phoenix_crm"), [], "email-only resolves to NOTHING");
-    assert.deepEqual(enforcePhoenixCrmEmailBlock(["email", "in_app"], "phoenix_crm", "plan_waiting"), ["in_app"], "a plan waiting is still never emailed");
+    assert.deepEqual(enforcePhoenixCrmEmailBlock(["email", "in_app"], "phoenix_crm", "forecast_sent"), ["in_app"], "the daily forecast alert is still never emailed");
+    assert.deepEqual(enforcePhoenixCrmEmailBlock(["email", "in_app"], "phoenix_crm", "plan_waiting"), ["email", "in_app"], "a plan waiting keeps its email since 2026-10-08");
     assert.deepEqual(enforcePhoenixCrmEmailBlock(["email", "in_app"], "phoenix_crm", null), ["in_app"], "no event type, no exception");
     assert.deepEqual(enforcePhoenixCrmEmailBlock(["in_app", "email", "in_app"], " Phoenix_CRM "), ["in_app"], "the module string is read loosely and channels are deduplicated");
 

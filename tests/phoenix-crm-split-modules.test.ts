@@ -145,7 +145,7 @@ export function runPhoenixCrmSplitModulesTests(): void {
     );
 
     const page = source("app/employee-portals/field-crm/page.tsx");
-    assert.match(page, /<PhoenixCrmModuleChooser base=\{PHOENIX_CRM_PORTAL_PATH\} overview=\{load\.overview\} \/>/, "it renders the chooser");
+    assert.match(page, /<PhoenixCrmModuleChooser base=\{PHOENIX_CRM_PORTAL_PATH\} overview=\{load\.overview\} unread=\{unread\} \/>/, "it renders the chooser");
     assert.ok(!page.includes("<PhoenixCrmApp"), "🔴 and never the one-screen app — that is exactly what he removed");
 
     // `?tab=` is forwarded with `?add=`, never dropped: the portal's "+" actions still work.
