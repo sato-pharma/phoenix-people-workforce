@@ -567,6 +567,31 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   "20261002205436_phoenix_crm_visit_product_manager.sql",
   "20261004141055_drop_line_month_targets_with_archive.sql",
   "20261006002000_phoenix_crm_customer_name_fold.sql",
+  // ── Added 2026-10-08 (evening). An ELEVENTH file of the same CRM family, flagged after the ten
+  // above had been reconciled and so not covered by that pass. Same shape as the two superseded
+  // ones, and judged the same way — digests, never a catalog probe.
+  //
+  // 🔴 SUPERSEDED — re-applying this would REVERT production to a SHORTER, older function.
+  // This file redefines public.crm_contact_list_change_apply with a 6,498-character body
+  // (md5 50644d369fc29cfd0134683670861fc3). The LATER
+  // 20261007200000_started_reps_doctor_list_is_phoenix_own.sql redefines that same function with a
+  // 9,516-character body, and THAT is byte-for-byte what both projects run: pg_proc.prosrc reads
+  // md5 b5a5a2ab9ec3a9ef14f6bff322c0f445 at 9,516 characters on production AND staging. The RAW
+  // digests match, so no comment-stripping was needed to reach the verdict.
+  //
+  // Its own change is live inside that newer body, which is what makes this superseded rather than
+  // reverted — and that was checked separately from the digest. All SEVEN neutral refusal strings
+  // this file introduces were matched one at a time in production's prosrc with position(), from
+  // 'That change was not found.' through 'That doctor already has this grade.'
+  //
+  // Why it can never match production's ledger: there is NO row for it there under any name
+  // (searched version like '20261006%' and '20261007%', plus name ilike '%refusal_neutral%'). The
+  // superseding file IS recorded, as 20261007200000/started_reps_doctor_list_is_phoenix_own, so
+  // that one passes on its own merits and this file is the only one left flagged.
+  //
+  // It masks nothing on staging: staging's ledger holds it by version AND name
+  // (20261006185533 / crm_contact_list_refusal_neutral), read live on cifwmndunmlxjhyjugxa.
+  "20261006185533_crm_contact_list_refusal_neutral.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
