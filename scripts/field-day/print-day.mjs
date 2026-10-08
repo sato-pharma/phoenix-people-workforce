@@ -144,22 +144,30 @@ const css = () => `
 
 /**
  * The judgements — the only sentences on these papers a human wrote, and each one is about a thing
- * the database records but cannot explain. Keyed by the rep they belong to; a rep with nothing to
- * explain gets only the derived notes below.
+ * the database records but cannot explain.
+ *
+ * 🔴 KEYED BY CAIRO DAY FIRST, THEN BY REP — because each sentence is about ONE day's captures and
+ * is false on every other day. Keyed by rep alone, these six notes printed on every paper that rep
+ * ever appeared on: "The phone was on approximate location all morning" is a 3 October incident, and
+ * it went out on the 7th and the 8th as though it had happened that morning, to a district manager
+ * and in summary to the Chief Executive. A rep with nothing to explain on a day gets only the
+ * derived notes below.
  */
 const AUTHORED = {
-  "Yasmeen Samy Shawky Mahdy":
-    "The phone was on approximate location all morning — every reading came back at exactly 2,000 m — so all four Benha hospitals landed on one single point, and the system flagged the repeated coordinate three times. The two visits logged afterwards read far only because they were measured against those wrong points, not because the hospitals were far away. The four places were withdrawn on the owner's instruction, the hospitals went back to “To validate”, and they are being re-validated with precise location on. An email went out with the district manager and the SFE copied.",
-  "Khaled Saied Abdelhady elkamry":
-    "Al-Menshawy General sits 3.6 km from the pin Google still holds for it, because the hospital moved into the new Tanta General building in Sibirai. The photograph shows the new building, so the place was kept and the validation rules were emailed with the district manager and the SFE copied.",
-  "Radwa Ahmed Abdel Qader Al-Sayed Moawad":
-    "The psychiatry and neurology hospital was checked by hand: the photograph shows Tanta University's psychiatry and neurology centre, which is the customer on the list, so the place was kept. The validation rules were emailed with the district manager and the SFE copied.",
-  "Esraa fotooh Mosaad Al-Shandalati":
-    "An earlier attempt from inside the building was refused by the system for a weak reading; it was retaken outside and both places came in well inside the 100 m line.",
-  "Hassan Mohamed Raffat Mohamed Elsherbiny":
-    "One of the reps who used the “show your manager you started working” button. A visit that reads with a weak signal was taken inside the building; the place for that same hospital is accurate to a few metres, so the hospital's own point is sound.",
-  "Sara Mohy Eldeen Helmy Mohamed Ebid":
-    "The unmeasured visit is to the One Day Surgery hospital in Ashmoun — a different customer from the General validated later the same day. Validating one hospital never measures a visit to the other.",
+  "2026-10-03": {
+    "Yasmeen Samy Shawky Mahdy":
+      "The phone was on approximate location all morning — every reading came back at exactly 2,000 m — so all four Benha hospitals landed on one single point, and the system flagged the repeated coordinate three times. The two visits logged afterwards read far only because they were measured against those wrong points, not because the hospitals were far away. The four places were withdrawn on the owner's instruction, the hospitals went back to “To validate”, and they are being re-validated with precise location on. An email went out with the district manager and the SFE copied.",
+    "Khaled Saied Abdelhady elkamry":
+      "Al-Menshawy General sits 3.6 km from the pin Google still holds for it, because the hospital moved into the new Tanta General building in Sibirai. The photograph shows the new building, so the place was kept and the validation rules were emailed with the district manager and the SFE copied.",
+    "Radwa Ahmed Abdel Qader Al-Sayed Moawad":
+      "The psychiatry and neurology hospital was checked by hand: the photograph shows Tanta University's psychiatry and neurology centre, which is the customer on the list, so the place was kept. The validation rules were emailed with the district manager and the SFE copied.",
+    "Esraa fotooh Mosaad Al-Shandalati":
+      "An earlier attempt from inside the building was refused by the system for a weak reading; it was retaken outside and both places came in well inside the 100 m line.",
+    "Hassan Mohamed Raffat Mohamed Elsherbiny":
+      "One of the reps who used the “show your manager you started working” button. A visit that reads with a weak signal was taken inside the building; the place for that same hospital is accurate to a few metres, so the hospital's own point is sound.",
+    "Sara Mohy Eldeen Helmy Mohamed Ebid":
+      "The unmeasured visit is to the One Day Surgery hospital in Ashmoun — a different customer from the General validated later the same day. Validating one hospital never measures a visit to the other.",
+  },
 };
 
 /**
@@ -231,13 +239,12 @@ export function derivedNotes(rep, restDay) {
 /**
  * A rep's notes: the authored sentence about that rep's day, then what the data itself says.
  *
- * 🔴 AN AUTHORED NOTE IS ABOUT A DAY'S CAPTURES, SO A DAY OFF HAS NONE. Rendered from production for
- * 8 October 2026, the holiday paper put "The phone was on approximate location all morning — every
- * reading came back at exactly 2,000 m" directly beside "Nothing was recorded", under one name: the
- * paper asserted a morning's work on a day the company was off.
+ * 🔴 AN AUTHORED NOTE PRINTS ON ITS OWN DAY AND NO OTHER, so the day is looked up before the rep.
+ * The `restDay` guard stays behind that: a day off has no captures to explain, so should a note ever
+ * be written against a date the company later moves its day off onto, the note still does not print.
  */
-const notesFor = (rep, restDay) => [
-  ...(AUTHORED[rep.name] && !restDay ? [AUTHORED[rep.name]] : []),
+const notesFor = (rep, day, restDay) => [
+  ...(AUTHORED[day]?.[rep.name] && !restDay ? [AUTHORED[day][rep.name]] : []),
   ...derivedNotes(rep, restDay),
 ];
 
@@ -294,7 +301,7 @@ export function renderLinePage(group, dayData) {
             `<li><b>${esc(event.at)}</b><span class="what">${esc(event.what)}</span><span class="who" dir="auto">${esc(event.who)}</span><span class="how">${esc(event.how)}</span></li>`,
         )
         .join("");
-      const notes = notesFor(rep, dayData.restDay).map((note) => `<p class="note">${esc(note)}</p>`).join("");
+      const notes = notesFor(rep, dayData.day, dayData.restDay).map((note) => `<p class="note">${esc(note)}</p>`).join("");
       const title = rep.title && rep.title !== "Medical Representative" ? ` <span>— ${esc(rep.title)}</span>` : "";
       return `<div class="rep${rep.quiet ? " quiet" : ""}">
         <h3>${esc(rep.name)} <span>· ${esc(rep.area)}</span>${title}</h3>

@@ -226,6 +226,18 @@ export function runFieldDayReportTests() {
   assert.doesNotMatch(holidayLine, authored, "🔴 but an authored note is about a day's captures, so a day off carries none");
   assert.doesNotMatch(fridayLine, authored, "🔴 nor does the weekly day off");
 
+  // 🔴 AND NOT ON A LATER WORKING DAY EITHER — the half a day-off guard cannot reach. All six
+  // sentences were keyed by rep NAME alone, with no date, so each printed on every paper its rep ever
+  // appeared on: this 3 October judgement about a phone on approximate location went out again on
+  // 7 October, and on every working day after it, to a district manager and in summary to the Chief
+  // Executive. Keyed by Cairo day first, a note prints on the day it was written about and no other.
+  const laterWorkingDay = { ...fixture(), day: "2026-10-07" };
+  laterWorkingDay.groups[0].reps[0].name = "Yasmeen Samy Shawky Mahdy";
+  const laterLine = renderLinePage(laterWorkingDay.groups[0] as never, laterWorkingDay as never);
+  assert.doesNotMatch(laterLine, authored, "🔴 a 3 October judgement never prints on a 7 October paper");
+  assert.match(laterLine, /Yasmeen Samy Shawky Mahdy/, "the rep is still on that paper, named");
+  assert.match(laterLine, /waiting: the system measures it/, "and still carries what the data itself says about THAT day");
+
   // 🔴 The CEO's page drops the sections whose figures are empty rather than printing them as zeroes.
   assert.doesNotMatch(holidaySummary, /reps who hold a seat recorded real work/, "🔴 no performance sentence about a day off");
   assert.doesNotMatch(holidaySummary, /Of the 0 places captured/, "nor arithmetic about nothing");
