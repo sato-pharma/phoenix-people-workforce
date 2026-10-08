@@ -16,6 +16,13 @@ import {
 // without tailwind-merging, so the token's own h-10/px-3/w-* wins and the override renders as
 // nothing. Pinned by tests/form-design-system.test.ts.
 import { cn } from "@/lib/utils";
+// Dates come from the shared Cairo formatter and nothing else. A bespoke
+// `toLocaleDateString("en-GB", { month: "short" })` in a "use client" file asks the READER's ICU
+// build for the month abbreviation, and CLDR 42 renamed en-GB September from "Sep" to "Sept" — so
+// the server renders one spelling, an older browser hydrates the other, and that is React error
+// #418 for every reader, in September only. Pinned repo-wide by
+// tests/react-418-hydration-safe-text.test.ts.
+import { cairoDate } from "@/lib/format/cairo-datetime";
 
 type StuckApprovalsPanelProps = {
   weeklyPlans: WeeklyPlanManagerGapRecord[];
@@ -27,19 +34,6 @@ type StuckApprovalsPanelProps = {
 
 /** EGP with separators and two decimals — never an abbreviated or rounded figure. */
 const egp = new Intl.NumberFormat("en-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/** A date in Cairo local time, the only timezone this system reports in. */
-function cairoDate(value: string | null): string {
-  if (!value) return "unknown";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "unknown";
-  return parsed.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  });
-}
 
 // A single reassignable row: current (dead) approver + a picker for the new active manager. The
 // row calls the module's reassign route — reassignment only, it never decides the request.
@@ -182,7 +176,9 @@ function CloseStrandedOrderRow(props: { order: StrandedDirectOrderRow }) {
           {" — "}nobody can answer the return
         </p>
         <p className="mt-0.5 break-words text-xs text-slate-500">
-          Sent back {cairoDate(order.returnedAt)}, {order.daysWaiting} days ago
+          {order.returnedAt
+            ? `Sent back ${cairoDate(order.returnedAt)}, ${order.daysWaiting} days ago`
+            : "Sent back on a date the event log does not record"}
           {/* The approver's own words, NEVER truncated — it is the question that went unanswered. */}
           {order.returnReason ? `: “${order.returnReason}”` : " with no reason recorded"}
         </p>

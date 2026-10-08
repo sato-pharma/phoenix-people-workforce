@@ -466,7 +466,22 @@ export function runDirectOrderCloseOrphanedTests() {
     "NEVER TRUNCATE: the return reason is the evidence for this decision, and the standing rule is that wrapping wins over shortening",
   );
   assert.doesNotMatch(panel, /rounded/, "the square-edge golden rule — no round or semi-round corners anywhere");
-  assert.match(panel, /timeZone: "Africa\/Cairo"/, "every time this system reports is Cairo local, never raw UTC");
+  // Cairo local, through the SHARED formatter and nothing else. A bespoke
+  // `toLocaleDateString("en-GB", { month: "short", timeZone: "Africa/Cairo" })` right here would
+  // satisfy "Cairo" and still be React error #418 every September, because the month abbreviation
+  // comes from the READER's ICU build and CLDR 42 renamed en-GB "Sep" to "Sept". That is exactly
+  // how this panel first went red. cairoDate() carries its own month table, so the zone is not the
+  // thing to pin — the import is.
+  assert.match(
+    panel,
+    /import \{ cairoDate \} from "@\/lib\/format\/cairo-datetime"/,
+    "dates come from the shared Cairo formatter — it pins the zone AND its own month abbreviations, which a bespoke en-GB formatter cannot",
+  );
+  assert.doesNotMatch(
+    panel,
+    /["']en-GB["']/,
+    "no en-GB formatter may come back into this client component — tests/react-418-hydration-safe-text.test.ts sweeps for that pairing repo-wide, and this file is what tripped it",
+  );
   assert.match(panel, /order\.requesterName/, "names, never HR codes — the owner reads the person, not the id");
 
   const page = read(PAGE);

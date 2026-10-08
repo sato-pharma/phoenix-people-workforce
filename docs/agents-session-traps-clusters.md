@@ -243,6 +243,7 @@ does not fire, so its silence is not evidence that no trap applies.
 - **A >2MB `unstable_cache` entry KILLS the dev server** — throws only in dev, uncatchable, muted in prod.
 - **`unstable_cache` SERIALIZES, so a returned `Map` comes back `{}`** — the page works on exactly ONE render, then throws for the whole revalidate window, rendered as the admin error boundary (which reads as a permission redirect). Cache the ROWS.
 - **Standalone tracing copies FILES, not pnpm SYMLINKS**, and **a top-level `import sharp` 500s a whole PAGE** when the `.so` is missing.
+- 🔴 **PINNING `timeZone: "Africa/Cairo"` DOES NOT MAKE A DATE HYDRATION-SAFE — the MONTH NAME is the bug and the zone has nothing to do with it.** `toLocaleDateString("en-GB", { month: "short" })` in a `"use client"` file asks the READER's ICU build for the abbreviation, and CLDR 42 renamed en-GB September from `Sep` to `Sept`: the server renders one spelling, an older browser hydrates the other, React error #418 — **in September only, so the other eleven months it looks perfect.** Use `cairoDate`/`cairoDateTime` from `src/lib/format/cairo-datetime.ts` (they carry their own month table) or `stableEnGbFormatter`, never a bespoke `Intl` call however carefully zoned. `tests/react-418-hydration-safe-text.test.ts` sweeps every client component for the two call shapes in the required `validate` job, so this arrives as a red PR, not as a bug report.
 
 **Browser and dev-auth**
 
