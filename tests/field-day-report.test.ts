@@ -46,6 +46,8 @@ function fixture() {
     places: 2,
     kept: 2,
     accuracy: "4 – 8 m",
+    // One worst-of-two reading per place in `places` — what the Summary's accuracy sentence is counted from.
+    readings: [4, 8],
     validated: 2,
     list: 169,
     events: [
@@ -58,7 +60,7 @@ function fixture() {
     quiet: false,
     ...over,
   });
-  const quiet = () => rep({ name: "A Quiet Rep", quiet: true, am: 0, pm: 0, places: 0, kept: 0, events: [], accuracy: "—", planned: 8 });
+  const quiet = () => rep({ name: "A Quiet Rep", quiet: true, am: 0, pm: 0, places: 0, kept: 0, events: [], accuracy: "—", readings: [] as number[], planned: 8 });
   const group = (over: Record<string, unknown> = {}) => ({
     line: "CNS",
     file: "CNS",
@@ -76,11 +78,6 @@ function fixture() {
       group({ reps: [rep({ kept: 1 }), quiet()] }),
       group({ line: "Pedia", file: "Pedia", vacant: [] }),
       group({ line: "Anti Infective", file: "Anti-Infective" }),
-    ],
-    places: [
-      { photo_accuracy_meters: 4, pin_accuracy_meters: 3 },
-      { photo_accuracy_meters: 34, pin_accuracy_meters: 8 },
-      { photo_accuracy_meters: 2000, pin_accuracy_meters: 2000 },
     ],
   };
 }
@@ -117,9 +114,9 @@ export function runFieldDayReportTests() {
           kept: 0,
           events: [],
           accuracy: "—",
+          readings: [] as number[],
         })),
       })),
-      places: [] as Array<Record<string, unknown>>,
     };
   };
   const holidayDay = off({ kind: "holiday", name: "Armed Forces Day" }, "2026-10-08");
@@ -195,6 +192,40 @@ export function runFieldDayReportTests() {
   const figures = day.groups.map((group) => figuresOf(group as never));
   const calls = figures.reduce((sum, row) => sum + row.am + row.pm, 0);
   assert.match(summary, new RegExp(`<dd>${calls}<small>`), `the calls figure is the sum of the lines (${calls})`);
+
+  // 🔴 THE ACCURACY SENTENCE NEVER COUNTS A PLACE THE DENOMINATOR DOES NOT. On 7 October 2026 the
+  // Summary told the Chief Executive "Of the 118 places captured, 96 were accurate to within 25 metres
+  // and 143 within the 100 metres the company requires": the numerators were counted from a day-wide
+  // list of every place created that day — 144, including 26 of reps under other district managers —
+  // while the 118 summed the reps these papers cover. The old day-wide list is handed to the renderer
+  // here, larger than the reps' own places and all within 25 m, exactly the shape that printed the lie.
+  const staleDayWide = Array.from({ length: 10 }, () => ({ photo_accuracy_meters: 5, pin_accuracy_meters: 5 }));
+  const mixed = { ...fixture(), places: staleDayWide } as ReturnType<typeof fixture> & { places: unknown[] };
+  mixed.groups[1].reps[0] = { ...mixed.groups[1].reps[0], places: 3, readings: [4, 60, 2000] };
+  const accuracy = (html: string) => {
+    const match = html.match(/Of the (\d+) places captured, (\d+) were accurate to within 25 metres and\s+(\d+) within the 100 metres/);
+    assert.ok(match, "the accuracy sentence is printed on a day with places");
+    return { places: Number(match[1]), within25: Number(match[2]), within100: Number(match[3]) };
+  };
+  assert.deepEqual(
+    accuracy(renderSummaryPage(mixed as never)),
+    { places: 7, within25: 5, within100: 6 },
+    "🔴 the numerators are counted from the same reps as the denominator, and a day-wide list beside them changes nothing",
+  );
+  const plain = accuracy(summary);
+  assert.ok(plain.within25 <= plain.within100 && plain.within100 <= plain.places, "🔴 a numerator never prints above its denominator");
+  assert.deepEqual(plain, { places: 6, within25: 6, within100: 6 }, "and the plain fixture reads its own reps");
+  // A rep whose readings outnumber its places (a malformed read) is clamped, never printed past the denominator.
+  const overfull = fixture();
+  overfull.groups[0].reps[0] = { ...overfull.groups[0].reps[0], places: 1, readings: [1, 2, 3, 4] };
+  const clamped = accuracy(renderSummaryPage(overfull as never));
+  assert.ok(clamped.within100 <= clamped.places, "🔴 even from malformed input, within100 never exceeds the places captured");
+  // The per-line papers read only their own reps for both sides of "of N captured", so kept <= captured.
+  for (const group of day.groups) {
+    const row = figuresOf(group as never);
+    assert.ok(row.kept <= row.places, "a line paper never reports more places validated than captured");
+    assert.match(renderLinePage(group as never, day as never), new RegExp(`<dd>${row.kept}<small>of ${row.places} captured at the door`), "the line paper prints its own reps' figures");
+  }
 
   // ── A day off is not a day nobody worked ──────────────────────────────────────────────────────
   //

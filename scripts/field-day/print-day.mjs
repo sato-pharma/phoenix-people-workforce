@@ -257,6 +257,13 @@ export const figuresOf = (group) => ({
   am: group.reps.reduce((total, rep) => total + rep.am, 0),
   pm: group.reps.reduce((total, rep) => total + rep.pm, 0),
   places: group.reps.reduce((total, rep) => total + rep.places, 0),
+  // 🔴 THE ACCURACY NUMERATORS COME FROM THE SAME REPS AS `places`. They were once counted from a
+  // separate day-wide list of every place created that Cairo day, which also held seats outside
+  // these three teams: the 7 October Summary told the Chief Executive "Of the 118 places captured,
+  // … 143 within the 100 metres" because 26 places of other district managers' reps (Delta 3,
+  // Upper Egypt) sat in the numerator and not in the denominator.
+  within25: group.reps.reduce((total, rep) => total + (rep.readings ?? []).filter((metres) => metres <= 25).length, 0),
+  within100: group.reps.reduce((total, rep) => total + (rep.readings ?? []).filter((metres) => metres <= 100).length, 0),
   kept: group.reps.reduce((total, rep) => total + rep.kept, 0),
   validated: group.reps.reduce((total, rep) => total + rep.validated, 0),
   list: group.reps.reduce((total, rep) => total + rep.list, 0),
@@ -365,8 +372,9 @@ export function renderSummaryPage(dayData) {
   const occupied = total((figures) => figures.occupied);
   const vacant = dayData.groups.reduce((sum, group) => sum + group.vacant.length, 0);
   const quiet = dayData.groups.flatMap((group) => group.reps).filter((rep) => rep.quiet).length;
-  const within25 = dayData.places.filter((place) => Math.max(Number(place.photo_accuracy_meters ?? 0), Number(place.pin_accuracy_meters ?? 0)) <= 25).length;
-  const within100 = dayData.places.filter((place) => Math.max(Number(place.photo_accuracy_meters ?? 0), Number(place.pin_accuracy_meters ?? 0)) <= 100).length;
+  // Clamped as a last guard: a numerator can never print above the denominator beside it.
+  const within100 = Math.min(places, total((figures) => figures.within100));
+  const within25 = Math.min(within100, total((figures) => figures.within25));
   const withdrawn = places - kept;
   const restDay = dayData.restDay ?? null;
 
