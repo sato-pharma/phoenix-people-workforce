@@ -98,6 +98,35 @@ export function phoenixDetailSight(role: string | null | undefined, options: { o
   return options.ownRow ? "none" : "distance";
 }
 
+/** A report's reader: the tier his role earns, and who he is — because his OWN rows are blind. */
+export type PhoenixDetailViewer = { sight: PhoenixDetailSight; ownHrIdKey: string | null };
+
+export function phoenixDetailViewer(role: string | null | undefined, hrId: string | null | undefined): PhoenixDetailViewer {
+  return { sight: phoenixDetailSight(role), ownHrIdKey: hrIdKey(hrId) };
+}
+
+function hrIdKey(value: string | null | undefined): string | null {
+  const trimmed = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * The tier for ONE row — golden rule #1's own-row half, which no page-wide answer can give.
+ *
+ * A reader looking at a visit whose AGENT is himself reads no distance, no flag and no check: it is
+ * his own work, and the rule is absolute (`isLocationBlind`, made so by the owner on 2026-09-29). A
+ * visit he merely rode along on is the REP's row, not his, so he keeps the measurement — that is the
+ * same boundary the Phoenix CRM module draws, and it is why this asks the agent column alone.
+ *
+ * The Super Admin and the SFE Manager are never blinded, including on their own rows: the measurement
+ * is their job.
+ */
+export function phoenixRowSight(viewer: PhoenixDetailViewer, agentHrId: unknown): PhoenixDetailSight {
+  if (viewer.sight === "full") return "full";
+  const agent = hrIdKey(typeof agentHrId === "string" ? agentHrId : null);
+  return agent !== null && agent === viewer.ownHrIdKey ? "none" : viewer.sight;
+}
+
 export type PhoenixVisitDetail = {
   /** "Single visit" · "Double visit" · "Chain visit" · the product-manager ask's own wording. */
   kindLabel: string | null;

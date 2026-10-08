@@ -70,8 +70,16 @@ export function runCrmPortalScopeTests() {
   const master = readFileSync("src/lib/crm/master.ts", "utf8");
   // scope is a REQUIRED parameter on both entry points — an optional one defaulting to unrestricted
   // would be fail-OPEN by construction.
-  assert.match(master, /export async function getCrmMasterData\(input: CrmMasterFilter, scope: CrmViewerScope\)/, "getCrmMasterData must take a required scope");
-  assert.match(master, /export async function\* streamCrmMasterExportPages\(\s*input: CrmMasterFilter,\s*scope: CrmViewerScope,/, "the streaming export must take a required scope");
+  assert.match(
+    master,
+    /export async function getCrmMasterData\(\s*input: CrmMasterFilter,\s*scope: CrmViewerScope,\s*viewer: PhoenixDetailViewer,/,
+    "getCrmMasterData must take a required scope — and, since 2026-10-07, a required VIEWER: the Phoenix field set's location and timing half is not every reader's (golden rule #1)",
+  );
+  assert.match(
+    master,
+    /export async function\* streamCrmMasterExportPages\(\s*input: CrmMasterFilter,\s*scope: CrmViewerScope,\s*viewer: PhoenixDetailViewer,/,
+    "the streaming export must take a required scope and the same required viewer",
+  );
   // Scope and the Line filter are INTERSECTED, never one overwriting the other.
   assert.ok(master.includes("intersectHrIdAllowLists("), "master.ts must intersect scope with the Line/Hire filter, not overwrite one with the other");
   // The fail-closed empty-set sentinel the whole design leans on must still be in applyMasterFilters.
@@ -146,7 +154,14 @@ export function runCrmPortalScopeTests() {
 
   const portalExport = readFileSync("app/api/employee-portals/crm/master-export/route.ts", "utf8");
   assert.ok(portalExport.includes("isPortalCrmRole(access.role)"), "the portal export must gate on isPortalCrmRole");
-  assert.ok(portalExport.includes("streamCrmMasterExportPages(filter, scope)"), "the portal export must stream with the resolved scope");
+  assert.ok(
+    portalExport.includes("streamCrmMasterExportPages(filter, scope, viewer)"),
+    "the portal export must stream with the resolved scope and the reader's own tier",
+  );
+  assert.ok(
+    portalExport.includes("crmMasterExportColumnsFor(filter, viewer)"),
+    "and build its header from the SAME viewer — a header for a column the shaper refuses to fill reads as 'there was no reading'",
+  );
   // Must stay row-by-row streaming — no buffering the whole result (the PR #1473 corruption regression).
   assert.doesNotMatch(portalExport, /await streamCrmMasterExportPages/, "the portal export must not await/buffer the generator");
   assert.doesNotMatch(portalExport, /Array\.from\(/, "the portal export must not collect the stream into an array");

@@ -4,7 +4,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
-  crmMasterExportColumns,
+  crmMasterExportColumnsFor,
   crmMasterExportLabel,
   streamCrmMasterExportPages,
   type CrmMasterAmpm,
@@ -12,6 +12,7 @@ import {
   type CrmMasterFilter,
   type CrmMasterMappingStatus,
 } from "@/lib/crm/master";
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { streamCrmMasterWorkbookResponse } from "@/lib/crm/master-export-workbook";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
@@ -53,6 +54,10 @@ export async function GET(request: NextRequest) {
   const minDuration = minDurationRaw != null && Number.isFinite(Number(minDurationRaw)) ? Number(minDurationRaw) : null;
   // Forward ALL 13 filters the master table supports so the export matches the on-screen rows exactly
   // (Line / Hire-date / Min-duration / Half-days-only were once dropped, silently exporting a superset).
+  // Golden rule #1's tier for this reader, resolved ONCE and used for both the sheet's header and
+  // its cells. A rep's own row is blinded inside the shaper, per row.
+  const viewer = phoenixDetailViewer(access.role, access.hrId);
+
   const filter: CrmMasterFilter = {
     agentHrId: params.get("agentHrId"),
     ampm: (params.get("ampm") ?? undefined) as CrmMasterAmpm | undefined,
@@ -115,8 +120,9 @@ export async function GET(request: NextRequest) {
     },
     filename: exportFileName(label),
     sheetName: label,
-    columns: crmMasterExportColumns(filter),
+    // ONE viewer for the header and the rows, so the sheet's shape and its cells can never disagree.
+    columns: crmMasterExportColumnsFor(filter, viewer),
     // Super-Admin only (gate above), one of exactly two places allowed to construct company scope.
-    pages: streamCrmMasterExportPages(filter, CRM_SCOPE_ALL),
+    pages: streamCrmMasterExportPages(filter, CRM_SCOPE_ALL, viewer),
   });
 }
