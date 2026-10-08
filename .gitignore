@@ -65,6 +65,13 @@ Phoenix Workforce/
 # not affect the six files already tracked in xlsx/.
 xlsx/*
 
+# ...and the one file in there that is CODE rather than output is tracked on purpose. A COPY of
+# `scripts/field-day/print-day.mjs` sat at this exact path from 2026-10-03, ignored and therefore
+# invisible, until it was 453 lines stale and a hand-run would have reprinted the defects #5573 and
+# #5574 had just fixed. It is now a thin launcher with no logic in it; tracked, any edit that puts
+# logic back shows up in `git status` and in review instead of waiting to be discovered on paper.
+!xlsx/field-day-print.mjs
+
 # Root-level scratch scripts from local automation sessions (e.g. Excel COM builds)
 _tmp-*
 
