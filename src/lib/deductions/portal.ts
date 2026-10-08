@@ -234,6 +234,10 @@ export function groupDeductionCommentThreads(
 ): AdminDeductionCommentThread[] {
   const threads = new Map<string, AdminDeductionCommentThread>();
   for (const comment of comments) {
+    // Only a deduction still ACTIVE on the payslip is a dispute to work (owner, 2026-10-08: a
+    // "Do Not Take Action" deduction must not show in the Disputes tab). A withdrawn or never-pushed
+    // line deducts nothing, so a comment on it has nothing left to contest.
+    if (!linesByCandidate.has(comment.candidateId)) continue;
     const existing = threads.get(comment.candidateId);
     if (existing) {
       existing.comments.push(comment);

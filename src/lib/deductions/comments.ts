@@ -411,12 +411,27 @@ export async function countOpenDeductionsDisputes(): Promise<number> {
     newestByCandidate.set(candidateId, row.author_role ?? null);
   }
 
-  let waiting = 0;
-  for (const authorRole of newestByCandidate.values()) {
+  const awaitingHr: string[] = [];
+  for (const [candidateId, authorRole] of newestByCandidate) {
     // `?? ""` rather than a cast straight off `string | null`: a null does not overlap a role
     // union, so `as` on the nullable type is a type error, and an empty string is simply not a
     // decision actor — which is the right answer for a row whose author_role never got written.
-    if (!isDeductionsDecisionActor({ role: (authorRole ?? "") as AccessContext["role"] })) waiting += 1;
+    if (!isDeductionsDecisionActor({ role: (authorRole ?? "") as AccessContext["role"] })) awaitingHr.push(candidateId);
+  }
+  if (awaitingHr.length === 0) return 0;
+
+  // Only a deduction still ACTIVE on the payslip is a dispute (owner, 2026-10-08): one set to
+  // "Do Not Take Action" has its line withdrawn, deducts nothing, and is not listed in the tab, so
+  // it must not hold the badge up either. The same filter as loadPublishedLinesByCandidate.
+  let waiting = 0;
+  for (let i = 0; i < awaitingHr.length; i += 100) {
+    const { data: lines, error: linesError } = await getSupabaseAdmin()
+      .from("deductions_publication_lines")
+      .select("candidate_id")
+      .in("candidate_id", awaitingHr.slice(i, i + 100))
+      .eq("line_status", "active");
+    if (linesError) throw linesError;
+    waiting += new Set((lines ?? []).map((line: { candidate_id: string }) => line.candidate_id)).size;
   }
   return waiting;
 }
