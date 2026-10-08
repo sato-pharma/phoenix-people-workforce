@@ -295,6 +295,11 @@ const ROUTE_GATES: RouteGate[] = [
   // as a mutation because it does write rows, but not REQUIRED — this route IS the record, so an
   // audit entry per flush would be a second copy of the same fact every few seconds per rep.
   { route: "touch-trail", method: "POST", action: "read", audit: "mutation", auditRequired: false },
+  // The pulsing "new" badge clearing (owner, 2026-10-08): the viewer has a module on screen, so his OWN
+  // unread notices that open it are marked read. `read` — a manager who only reads the module has
+  // notices too — and a mutation that is not REQUIRED in the audit, since it is one flag on rows that
+  // are already his and fires on every module visit.
+  { route: "notices/seen", method: "POST", action: "read", audit: "mutation", auditRequired: false },
   get("settings", "update"),
   post("settings", "update"),
 ];

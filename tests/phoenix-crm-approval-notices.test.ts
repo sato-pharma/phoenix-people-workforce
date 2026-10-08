@@ -168,8 +168,8 @@ export function runPhoenixCrmApprovalNoticeTests() {
     assert.equal(/"email"/.test(notify), false, "the Phoenix CRM notifier never asks for email itself");
     assert.equal(
       PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("unplanned_visit_waiting"),
-      false,
-      "and this notice is NOT one of the five the owner put on email: in-app, Telegram and the phone",
+      true,
+      "and this notice emails since 2026-10-08 (owner: email for every action to the person responsible), beside in-app, Telegram and the phone",
     );
   }
 
@@ -191,10 +191,10 @@ export function runPhoenixCrmApprovalNoticeTests() {
       // `plan_resent` joined on 2026-10-08: the SFE Manager's own copy of a week he returned being sent
       // again. Informational — he approves no plan — so no phone, and the fallback is shut so a re-send
       // cannot mail him instead.
-      // `validation_not_confirmed` joined on 2026-10-08: the rep told what is wrong with his photo after a
-      // refusal. A rep notice, but worded about the photo and never a person, so in-app and Telegram only.
-      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "plan_edit_expired", "plan_resent", "validation_not_confirmed"],
-      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, the weekly fraud scan, the SFE's copy of a re-send, and the rep's validate-again notice",
+      // `validation_not_confirmed` joined on 2026-10-08 and LEFT the same day: the owner, asked about it by name,
+      // chose email and the other channels for it too, so it is no longer "in-app and Telegram only".
+      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "plan_edit_expired", "plan_resent"],
+      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, the weekly fraud scan, and the SFE's copy of a re-send",
     );
     // Behaviour, not source: the re-send's own channel list, filtered.
     assert.deepEqual(

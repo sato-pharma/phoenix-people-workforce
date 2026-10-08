@@ -227,9 +227,9 @@ export function runPhoenixCrmApprovalNudgeTests() {
 
   // ── The sender: real entries, the four queues, never email ─────────────────────────────────────
   {
-    assert.deepEqual(phoenixCrmChannels("approval_nudge"), ["in_app", "telegram", "push"], "in-app, Telegram and the phone — never email");
+    assert.deepEqual(phoenixCrmChannels("approval_nudge"), ["in_app", "email", "telegram", "push"], "in-app, email, Telegram and the phone (email since 2026-10-08, owner)");
     const runner = source("src/lib/phoenix-crm/server/approval-nudge.ts");
-    assert.ok(runner.includes('channels: ["in_app", "telegram", "push"]'), "the runner asks for in-app, Telegram and the phone");
+    assert.ok(runner.includes('channels: phoenixCrmChannels("approval_nudge"),'), "the runner asks the guard for its channels, and names none itself");
     assert.equal(/"email"/.test(runner), false, "and never names email");
     assert.ok(runner.includes('eventType: "approval_nudge"'), "under its own event");
     assert.ok(runner.includes("module: PHOENIX_CRM_NOTIFICATION_MODULE"), "under the module key the email guard filters on");

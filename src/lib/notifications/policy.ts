@@ -248,7 +248,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // closed list, worded about the picture and never a person. The notifier sends it in-app only, and
   // it is on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES, which shuts the phone and the Telegram-failure email
   // fallback. This row is the intent, that guard the enforcement.
-  "phoenix_crm.validation_not_confirmed": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // (2026-10-08, owner, asked about by name and answered "both") the rep's "validate this customer again" now
+  // emails too, REVERSING his ruling from earlier that day; the plan reminder and approval nudge join it.
+  "phoenix_crm.validation_not_confirmed": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.approval_nudge": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.plan_resent": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // The hourly routine-visit rollup (owner, 2026-10-05): the batched half of the mirror — routine
   // planned visits gathered into one message an hour to the NSM and the SFE Managers. In-app and
@@ -261,9 +265,31 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // decider — and only while something waits on his decision. `PHOENIX_CRM_EMAIL_EVENT_TYPES` is the
   // enforcement; this row is the intent, and the two must agree or the email-block test goes red.
   "phoenix_crm.validation_review_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // (2026-10-08, owner: "Telegram, in app, email for every action on CRM to the person responsible") every
+  // person-to-person step of a plan, a request, an off-plan visit and a visit ask now emails as well.
+  // PHOENIX_CRM_EMAIL_EVENT_TYPES is the enforcement; these rows are the intent and must agree with it.
+  "phoenix_crm.plan_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_approved": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_returned": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.monthly_plan_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.monthly_plan_approved": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.monthly_plan_returned": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.grade_request_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.drop_request_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.add_request_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.restore_request_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.request_approved": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.request_refused": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.unplanned_visit_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.unplanned_visit_approved": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.unplanned_visit_refused": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.unplanned_visit_moved_on": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.visit_ask_waiting": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.visit_ask_accepted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.visit_ask_declined": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
-  // phone, never email.
+  // phone; email only for the event types named above (since 2026-10-08).
   // Recipients are passed explicitly (src/lib/phoenix-crm/server/notifications.ts), hence "cc". The
   // hard guarantee is phoenix-crm-channel-guard.ts — this row is the intent, that filter is the
   // enforcement.

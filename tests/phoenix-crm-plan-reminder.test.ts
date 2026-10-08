@@ -133,11 +133,11 @@ export function runPhoenixCrmPlanReminderTests() {
     assert.deepEqual(territoriesOfStartedTeams(org, territories, new Set()), [], "nobody has started: nobody is told");
   }
 
-  // ── 🔴 Never email; the phone and Telegram ──────────────────────────────────────────────────────
+  // ── 🔴 Email since 2026-10-08, the phone and Telegram ──────────────────────────────────────────────────────
   {
-    assert.deepEqual(phoenixCrmChannels("plan_reminder"), ["in_app", "telegram", "push"]);
+    assert.deepEqual(phoenixCrmChannels("plan_reminder"), ["in_app", "email", "telegram", "push"], "email too since 2026-10-08 (owner, asked about by name)");
     const runner = source("src/lib/phoenix-crm/server/plan-reminder.ts");
-    assert.ok(runner.includes('channels: ["in_app", "telegram", "push"]'), "the runner asks for in-app, Telegram and the phone");
+    assert.ok(runner.includes('channels: phoenixCrmChannels("plan_reminder"),'), "the runner asks the guard for its channels, and names none itself");
     assert.equal(/"email"/.test(runner), false, "and never names email");
     assert.ok(runner.includes("module: PHOENIX_CRM_NOTIFICATION_MODULE"), "under the module key the email guard filters on");
     assert.ok(runner.includes('.eq("is_test", false)'), "real plans only — the test world has no reminder");

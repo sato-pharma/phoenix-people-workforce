@@ -47,13 +47,13 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
   assert.ok(reviews.includes("tellRepValidateAgain("), "the rep is told");
   assert.ok(reviews.includes("withdrawValidationNotConfirmed("), "and the notice is taken back when the place is restored or approved");
 
-  // ── In-app only, never email or a push to anyone else ─────────────────────────────────────────
+  // ── Told only to the rep; the channels are the guard's ─────────────────────────────────────────
   const notices = stripComments(readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8"));
   const block = notices.slice(notices.indexOf('if (notice.kind === "validation_not_confirmed")'), notices.indexOf('if (notice.kind === "plan_submitted")'));
-  assert.ok(block.includes("inAppOnly: true"), "the rep's notice is in-app only");
+  assert.ok(!block.includes("inAppOnly"), "since 2026-10-08 (owner, asked about by name) the rep's notice takes the guard's channels: in-app, email, Telegram and the phone");
   assert.ok(block.includes("phoenix_crm:validation_not_confirmed:${notice.customerId}:${notice.reviewId}"), "one notice per refusal, never a repeat");
   const guard = readFileSync("src/lib/notifications/phoenix-crm-channel-guard.ts", "utf8");
-  assert.ok(guard.includes('"validation_not_confirmed"'), "and the channel guard blocks a push of it");
+  assert.ok(guard.includes('"validation_not_confirmed"'), "and the channel guard's email allowlist names it");
 
   // ── The rep's row reads the reason, in place of the generic sentence ──────────────────────────
   const row = stripComments(readFileSync("src/components/phoenix-crm/list-customer.tsx", "utf8"));

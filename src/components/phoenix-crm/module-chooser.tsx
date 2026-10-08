@@ -1,10 +1,12 @@
 import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, ListChecks, Search, Settings, Target, Users } from "lucide-react";
 
 // The one client piece: it starts the module's page and its screen at the touch (module-link.tsx).
+import { PhoenixCrmNewBadge } from "@/components/phoenix-crm/new-badge";
 import { PhoenixCrmModuleLink } from "@/components/phoenix-crm/module-link";
 // The other: "Get Phoenix CRM messages on Telegram", a client card the server decides to draw.
 import { TelegramConnectCard } from "@/components/phoenix-crm/telegram-connect-card";
 import { allowedPhoenixCrmModules, phoenixCrmModulePath, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
+import type { PhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/notice-badge-rules";
 import { showsTelegramCard } from "@/lib/phoenix-crm/telegram-card";
 // Through `view-types`, never `server/overview`: a component may not import server code (the
 // boundary test), and that file exists to re-export exactly these shapes for the screens.
@@ -44,7 +46,16 @@ const MODULE_ICONS: Record<PhoenixCrmModuleKey, typeof ClipboardList> = {
   settings: Settings,
 };
 
-export function PhoenixCrmModuleChooser({ base, overview }: { base: string; overview: PhoenixCrmOverview }) {
+export function PhoenixCrmModuleChooser({
+  base,
+  overview,
+  unread,
+}: {
+  base: string;
+  overview: PhoenixCrmOverview;
+  /** The viewer's unread notices by module (owner, 2026-10-08), or null when they could not be read. */
+  unread: PhoenixCrmUnreadByModule | null;
+}) {
   const modules = allowedPhoenixCrmModules(overview.tabs);
   // The Super Admin's counts are test entries, so the badge follows the same rule the tab bar uses.
   // The off-plan visits are in the sum since 2026-10-02: an off-plan visit counts in nothing until it
@@ -84,6 +95,8 @@ export function PhoenixCrmModuleChooser({ base, overview }: { base: string; over
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="break-words text-sm font-black text-slate-950">{module.label}</span>
+                    {/* A pulsing mark for what is NEW (an unread notice), beside the static count of what is WAITING. */}
+                    <PhoenixCrmNewBadge count={unread?.[module.key]?.count ?? 0} />
                     {badge === null ? null : (
                       <span className="inline-flex shrink-0 items-center border border-orange-300 bg-orange-100 px-1.5 py-px text-phx-2xs font-black uppercase tracking-[0.08em] text-orange-800">
                         {badge} waiting
