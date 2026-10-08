@@ -45,8 +45,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "candidateId is required." }, { status: 400 });
     }
 
-    const comment = await addDeductionsReply({ access, body: String(body.body ?? ""), candidateId });
-    return NextResponse.json({ success: true, comment });
+    // `delivery` says who the reply was addressed to and whether Telegram can reach them, so the
+    // Disputes inbox shows the sender what the reply did (owner, 2026-10-08).
+    const { comment, delivery } = await addDeductionsReply({ access, body: String(body.body ?? ""), candidateId });
+    return NextResponse.json({ success: true, comment, delivery });
   } catch (error) {
     return jsonError(error, "Failed to save the reply.");
   }

@@ -1,30 +1,27 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock3, Download, MessageSquare, PlayCircle, RotateCcw, UserMinus, UserPlus, XCircle } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, Clock3, Download, PlayCircle, RotateCcw, UserMinus, UserPlus, XCircle } from "lucide-react";
 
-import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
   daysForTickedDates,
-  deductionsCategoryLabel,
   resolveAppliedDeductionDates,
   scaleDeductionAmountToDays,
 } from "@/lib/deductions/calculations.ts";
 import {
   visibleDeductionsCategories,
-  type AdminDeductionCommentThread,
   type DeductionsCategory,
-  type DeductionsComment,
 } from "@/lib/deductions/types.ts";
-import { cairoDate, stableEnGbFormatter } from "@/lib/format/cairo-datetime";
-import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
   phxButtonApproveDenseClassName,
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+
+import { DisputesTab } from "./deductions-disputes-tab";
 
 type CandidateApiRow = {
   id: string;
@@ -2069,260 +2066,6 @@ function MasterExportBar({ monthKey }: { monthKey: string }) {
           </a>
         )}
       </div>
-    </div>
-  );
-}
-
-function formatDisputeMoney(value: number): string {
-  return stableCurrencyFormatter("en-EG", {
-    currency: "EGP",
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: "currency",
-  }).format(value);
-}
-
-function disputePayrollColumnLabel(column: string): string {
-  if (column === "crm") return "CRM";
-  if (column === "finger_print") return "Finger Print";
-  if (column === "loans") return "Loan";
-  if (column === "other_deductions") return "Other";
-  if (column === "unpaid_vacations") return "Unpaid Vacations";
-  return column;
-}
-
-/** Who wrote a comment, for the thread label: the deduction's own employee, or the HR person who
- *  replied. Compares the comment's author against the line's employee by compact HR id. */
-function disputeCommentAuthor(
-  comment: AdminDeductionCommentThread["comments"][number],
-  line: AdminDeductionCommentThread["line"],
-): { name: string; isEmployee: boolean } {
-  const isEmployee = Boolean(
-    line && comment.authorHrId && compactDeductionsHrId(comment.authorHrId) === line.employeeHrIdCompact,
-  );
-  const name = isEmployee
-    ? line?.employeeName ?? comment.authorName ?? "Employee"
-    : comment.authorName ?? "HR";
-  return { name, isEmployee };
-}
-
-/**
- * The Disputes inbox: every employee comment on a published deduction, newest thread first, and a
- * reply box so HR can answer — a two-way conversation (owner, 2026-10-06: "yes reply box to open
- * conversation").
- *
- * It exists because a deduction comment mails HR a link, and before this tab that link landed on
- * the current-month collection workspace, where no comment is ever shown — so a dispute was
- * unreachable in-app and the owner said so. This tab is month-independent: it lists the whole
- * company's disputes regardless of month, and a notification deep-links to one with
- * `?tab=disputes&candidate=<id>`, which highlights it and scrolls it in. A reply is delivered to
- * the employee's own portal. Replying is Super Admin only (owner, 2026-10-06 — "keep replies
- * super-admin only"); CEO and HR Operations read a dispute here but cannot answer it.
- */
-function DisputesTab({ canReply, highlightCandidateId }: { canReply: boolean; highlightCandidateId?: string }) {
-  const [threads, setThreads] = useState<AdminDeductionCommentThread[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const [savingCandidateId, setSavingCandidateId] = useState<string | null>(null);
-  const [replyMessage, setReplyMessage] = useState<Record<string, { tone: "success" | "error"; text: string }>>({});
-  const highlightRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setThreads(null);
-    setError(null);
-    fetchJson<{ threads: AdminDeductionCommentThread[] }>("/api/admin/deductions/comments")
-      .then((payload) => {
-        if (!cancelled) setThreads(payload.threads ?? []);
-      })
-      .catch((caught: unknown) => {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load disputes.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Once the threads are in and the deep-linked one is on screen, bring it into view. Runs after
-  // paint (the ref is set by then), and only when a candidate was named by the notification link.
-  useEffect(() => {
-    if (!highlightCandidateId || !threads) return;
-    highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlightCandidateId, threads]);
-
-  async function submitReply(candidateId: string) {
-    const body = String(replyDrafts[candidateId] ?? "").trim();
-    if (!body) {
-      setReplyMessage((current) => ({ ...current, [candidateId]: { tone: "error", text: "Write a reply first." } }));
-      return;
-    }
-    setSavingCandidateId(candidateId);
-    setReplyMessage((current) => {
-      const next = { ...current };
-      delete next[candidateId];
-      return next;
-    });
-    try {
-      const payload = await fetchJson<{ comment: DeductionsComment }>("/api/admin/deductions/comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, candidateId }),
-      });
-      // Append the reply to its thread in place, so the conversation updates without a reload.
-      setThreads((current) =>
-        (current ?? []).map((thread) =>
-          thread.candidateId === candidateId
-            ? { ...thread, comments: [payload.comment, ...thread.comments], latestCommentAt: payload.comment.createdAt }
-            : thread,
-        ),
-      );
-      setReplyDrafts((current) => ({ ...current, [candidateId]: "" }));
-      setReplyMessage((current) => ({ ...current, [candidateId]: { tone: "success", text: "Reply sent to the employee." } }));
-    } catch (caught) {
-      setReplyMessage((current) => ({
-        ...current,
-        [candidateId]: { tone: "error", text: caught instanceof Error ? caught.message : "Reply could not be sent." },
-      }));
-    } finally {
-      setSavingCandidateId(null);
-    }
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center gap-2 border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
-        <XCircle className="h-4 w-4 shrink-0" />
-        {error}
-      </div>
-    );
-  }
-
-  if (!threads) {
-    return <p className="px-1 py-6 text-sm font-semibold text-slate-500">Loading disputes…</p>;
-  }
-
-  if (threads.length === 0) {
-    return (
-      <div className="border border-slate-200 bg-white px-4 py-8 text-center">
-        <MessageSquare className="mx-auto h-8 w-8 text-slate-300" />
-        <p className="mt-3 text-sm font-black text-slate-900">No disputes</p>
-        <p className="mt-1 text-sm font-semibold text-slate-500">
-          When an employee comments on a published deduction, their message appears here
-          {canReply ? " and you can reply." : "."}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {threads.map((thread) => {
-        const isHighlighted = Boolean(highlightCandidateId && thread.candidateId === highlightCandidateId);
-        const line = thread.line;
-        const message = replyMessage[thread.candidateId];
-        return (
-          <div
-            className={[
-              "border bg-white p-4 shadow-sm transition",
-              isHighlighted ? "border-orange-400 ring-2 ring-orange-100" : "border-slate-200",
-            ].join(" ")}
-            key={thread.candidateId}
-            ref={isHighlighted ? highlightRef : undefined}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="min-w-0 break-words font-black text-slate-950">
-                {line?.employeeName ?? line?.employeeCode ?? "Employee"}
-              </p>
-              {line ? (
-                <>
-                  <span className="border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-emerald-700">
-                    {monthLabel(line.monthKey)}
-                  </span>
-                  <span className="border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-amber-700">
-                    {disputePayrollColumnLabel(line.payrollColumn)}
-                  </span>
-                </>
-              ) : (
-                <span className="border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
-                  Deduction withdrawn
-                </span>
-              )}
-            </div>
-
-            {line ? (
-              <p className="mt-2 text-sm font-semibold text-slate-700">
-                {deductionsCategoryLabel(line.deductionType)} · {formatDisputeMoney(line.appliedAmount)}
-                {line.dates.length > 0 ? ` · ${line.dates.length} day(s)` : ""}
-              </p>
-            ) : (
-              <p className="mt-2 text-sm font-semibold text-slate-500">
-                The disputed deduction has since been withdrawn from this employee&rsquo;s payroll.
-              </p>
-            )}
-            {line?.hrNote ? (
-              <p className="mt-1 break-words text-xs text-slate-600">HR note: {line.hrNote}</p>
-            ) : null}
-
-            <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-              {thread.comments.map((comment) => {
-                const author = disputeCommentAuthor(comment, line);
-                return (
-                  <div
-                    className={[
-                      "border p-3 text-sm",
-                      author.isEmployee ? "border-slate-100 bg-slate-50" : "border-orange-100 bg-orange-50",
-                    ].join(" ")}
-                    key={comment.id}
-                  >
-                    <p className="text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
-                      {author.name}
-                      {author.isEmployee ? "" : " · HR"}
-                    </p>
-                    <p className="mt-1 break-words text-slate-700">{comment.body}</p>
-                    <p className="mt-1 text-phx-xs font-semibold text-slate-400">{cairoDate(comment.createdAt)}</p>
-                  </div>
-                );
-              })}
-            </div>
-
-            {canReply ? (
-              <>
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                  <input
-                    className={cn(phxFieldClassName, "w-auto flex-1 font-semibold")}
-                    maxLength={2000}
-                    placeholder="Reply to the employee"
-                    value={replyDrafts[thread.candidateId] ?? ""}
-                    onChange={(event) =>
-                      setReplyDrafts((current) => ({ ...current, [thread.candidateId]: event.target.value }))
-                    }
-                  />
-                  <button
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-orange-500 px-4 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600 disabled:opacity-50"
-                    disabled={savingCandidateId === thread.candidateId}
-                    onClick={() => {
-                      void submitReply(thread.candidateId);
-                    }}
-                    type="button"
-                  >
-                    {savingCandidateId === thread.candidateId ? "Sending…" : "Reply"}
-                  </button>
-                </div>
-                {message ? (
-                  <p
-                    className={[
-                      "mt-2 text-xs font-semibold",
-                      message.tone === "success" ? "text-emerald-600" : "text-rose-600",
-                    ].join(" ")}
-                  >
-                    {message.text}
-                  </p>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        );
-      })}
     </div>
   );
 }

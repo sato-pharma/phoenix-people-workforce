@@ -10,7 +10,8 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import { assertDeductionsDecisionActor, isDeductionsDecisionActor } from "./permissions.ts";
-import type { DeductionsComment } from "./types.ts";
+import { loadTelegramReach, resolveDisputeAudience } from "./dispute-audience.ts";
+import type { DeductionDisputeDelivery, DeductionsComment } from "./types.ts";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { notifyConversationMessage, notifyHrConversationMessage } from "@/lib/conversations/notify";
 import { logError } from "@/lib/observability/log";
@@ -196,7 +197,7 @@ export async function addDeductionsReply(input: {
   access: AccessContext;
   body: string;
   candidateId: string;
-}): Promise<DeductionsComment> {
+}): Promise<{ comment: DeductionsComment; delivery: DeductionDisputeDelivery | null }> {
   assertDeductionsDecisionActor(input.access);
   const ownerCompactHrId = await findDeductionsCandidateOwner(input.candidateId);
   if (!ownerCompactHrId) throw new Error("Deduction candidate not found.");
@@ -229,28 +230,34 @@ export async function addDeductionsReply(input: {
   });
 
   const row = data as CommentRow;
-  await notifyDeductionsReply({
+  const delivery = await notifyDeductionsReply({
     authorHrId: input.access.hrId ?? null,
     body,
     candidateId: input.candidateId,
     messageKey: row.id,
   });
 
-  return (await attachAuthorNames([mapCommentRow(row)]))[0];
+  return { comment: (await attachAuthorNames([mapCommentRow(row)]))[0], delivery };
 }
 
 /**
  * Deliver an HR reply TO the employee whose deduction it is — the counterpart to
  * notifyDeductionsComment, which runs the other direction. To = the employee (submitter), CC = the
- * HR author, landing on the employee's own portal deductions page. Best-effort: the reply row is
- * already committed, so a delivery failure is logged and swallowed, never thrown back.
+ * HR author AND the employee's managers (the direct manager and the one above — owner, 2026-10-08:
+ * "CC their managers, in the email, Telegram, in-app"), landing on the employee's own portal
+ * deductions page. The managers are `participantHrIds`, so each gets their own in-app, Telegram
+ * and push notice and rides the employee's email on its cc line.
+ *
+ * Returns who it addressed and whether Telegram can reach each of them, so the Disputes inbox can
+ * show the sender what their reply did instead of a bare "sent". Best-effort: the reply row is
+ * already committed, so a delivery failure is logged and swallowed (returned as null), never thrown.
  */
 async function notifyDeductionsReply(input: {
   authorHrId: string | null;
   body: string;
   candidateId: string;
   messageKey: string;
-}): Promise<void> {
+}): Promise<DeductionDisputeDelivery | null> {
   try {
     // The employee and their name come from the active published line — the same row the portal
     // shows them, so the notification names the person the deduction belongs to, not an HR id.
@@ -267,8 +274,11 @@ async function notifyDeductionsReply(input: {
       logError("Deductions reply has no published line to address", {
         labels: { event: "deductions_reply_no_line", candidateId: input.candidateId },
       });
-      return;
+      return null;
     }
+
+    const audience = await resolveDisputeAudience(employeeHrId);
+    const managerHrIds = audience.managers.map((manager) => manager.hrId);
 
     let authorName: string | null = null;
     if (input.authorHrId) {
@@ -293,17 +303,43 @@ async function notifyDeductionsReply(input: {
       messageKey: input.messageKey,
       metadata: { candidateId: input.candidateId, reply: true },
       module: "deductions",
-      participantHrIds: [employeeHrId, input.authorHrId].filter((id): id is string => Boolean(id)),
+      participantHrIds: [employeeHrId, input.authorHrId, ...managerHrIds].filter((id): id is string => Boolean(id)),
       recordId: input.candidateId,
       submitterHrId: employeeHrId,
       subjectLabel: employeeName ?? "your deduction",
       threadLabel: "published deduction for",
     });
+
+    // What the sender is shown afterwards. Built from the same audience the send used, plus the
+    // one thing the send cannot promise: whether Telegram can reach each person.
+    const reach = await loadTelegramReach([employeeHrId, input.authorHrId, ...managerHrIds]);
+    const linked = (hrId: string | null | undefined) => {
+      const key = canonicalHrIdKey(hrId);
+      return key ? reach.get(key) === true : false;
+    };
+    const cc: DeductionDisputeDelivery["cc"] = audience.managers.map((manager) => ({
+      name: manager.name,
+      relation: "manager",
+      telegramLinked: linked(manager.hrId),
+      title: manager.title,
+    }));
+    if (authorName) {
+      cc.push({ name: authorName, relation: "sender", telegramLinked: linked(input.authorHrId), title: null });
+    }
+    return {
+      cc,
+      to: {
+        name: audience.employee?.name ?? employeeName ?? "the employee",
+        telegramLinked: linked(employeeHrId),
+        title: audience.employee?.title ?? null,
+      },
+    };
   } catch (error) {
     logError("Deductions reply failed to notify the employee", {
       labels: { event: "deductions_reply_notify_failed", candidateId: input.candidateId },
       error,
     });
+    return null;
   }
 }
 
