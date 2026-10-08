@@ -101,6 +101,13 @@ export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
   "visit_ask_waiting",
   "visit_ask_accepted",
   "visit_ask_declined",
+  // (6) 2026-10-08, same day, asked about by name and answered "both": the plan reminder (12:57 and 17:57),
+  // the daily approval nudge, and the rep's "validate this customer again". The last REVERSES his own
+  // ruling from earlier that day (in-app only, never email or phone) — he chose it knowingly. Its wording
+  // is unchanged and still about the photo alone (validation-feedback.ts), and it still carries no decider.
+  "plan_reminder",
+  "approval_nudge",
+  "validation_not_confirmed",
 ];
 
 /**
@@ -150,17 +157,6 @@ export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = [
   // mail him one per re-send and the module's emails are the four person-taken plan-edit steps plus a
   // rep's first visit, nothing else.
   "plan_resent",
-  // 🔴 THE REP'S OWN "validate this one again" NOTICE (owner, 2026-10-08) — the one notice in this
-  // module that tells a rep his own work was turned down, so it is the one that must never leave the
-  // app. It asks for `["in_app"]` at the call site (`inAppOnly`), which already means no Telegram is
-  // attempted and so no failure fallback can fire — and it is on THIS list as well because "no email,
-  // no Telegram, no push, ever" must hold however a later caller spells its channels. Email is already
-  // impossible (it is not on the allowlist above); this shuts the phone.
-  //
-  // It carries no person, no decision and no threshold — only what is wrong with his PHOTO, from the
-  // closed list in src/lib/phoenix-crm/validation-feedback.ts (Golden Rule #1: his app stays easy and
-  // blind, and nothing he reads says a person judged him).
-  "validation_not_confirmed",
 ];
 
 export function isPhoenixCrmModule(module: string | null | undefined): boolean {

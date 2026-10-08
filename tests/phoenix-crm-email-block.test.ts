@@ -25,14 +25,8 @@ import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-gove
 //      category must reach the in-app bell (or the bell stays empty while the audit says "sent")
 
 const EVENT_TYPES = [
-  // The rep's "validate this customer again" (owner, 2026-10-08) — in-app only; see PUSH_BLOCKED below.
-  "validation_not_confirmed",
   // The CNS daily forecast (owner, 2026-10-01): the district manager hears it is in — IN-APP ONLY.
   "forecast_sent",
-  // "Your coming week is not sent" (owner, 2026-10-02): the rep and his district manager, never by email.
-  "plan_reminder",
-  // The daily nudge to a slow approver (owner, 2026-10-02): the district manager or SFE, never by email.
-  "approval_nudge",
   // The courtesy copy of a rep's ask for a visit (owner, 2026-10-02: "told (in-app)"): the manager above
   // for a chain visit, the rep's district manager for a product manager's. Nothing waits on it.
   "visit_ask_told",
@@ -67,10 +61,6 @@ const PUSH_BLOCKED_EVENT_TYPES = [
   // Telegram-failure fallback would mail him one per re-send, and the module's emails are the four
   // person-taken plan-edit steps plus a rep's first visit and the held place, nothing else.
   "plan_resent",
-  // The rep's "validate this customer again" (2026-10-08): in-app only. It tells him what is wrong
-  // with his photo, and a push or an email fallback would carry the one sentence about his own work
-  // the owner allowed past golden rule #1 out of the app it was written for.
-  "validation_not_confirmed",
 ];
 
 /**
@@ -132,6 +122,11 @@ const EMAIL_EVENT_TYPES = [
   "visit_ask_waiting",
   "visit_ask_accepted",
   "visit_ask_declined",
+  // (2026-10-08, same day, asked about by name and answered "both") the plan reminder, the approval nudge
+  // and the rep's "validate this customer again" — the last REVERSES his own ruling from earlier that day.
+  "plan_reminder",
+  "approval_nudge",
+  "validation_not_confirmed",
 ];
 
 export function runPhoenixCrmEmailBlockTests() {
@@ -146,7 +141,7 @@ export function runPhoenixCrmEmailBlockTests() {
     // calls createSystemNotificationForRecipients directly, so none comes through the notifier and
     // none is harvested into EVENT_TYPES; all three are in-app and Telegram only.
     ["crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
-    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy, the activity mirror, the SFE's copy of a re-send and the rep's validate-again notice",
+    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy, the activity mirror, and the SFE's copy of a re-send",
   );
   for (const eventType of EMAIL_EVENT_TYPES) {
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });
@@ -201,12 +196,12 @@ export function runPhoenixCrmEmailBlockTests() {
       1,
       "every Phoenix CRM notice goes out through one send, its channels named by the guard's allowlist, and nothing else",
     );
-    // The in-app-only exceptions are THREE, and ONLY these three: the daily forecast's alert — the owner
+    // The in-app-only exceptions are TWO, and ONLY these two (the rep's validate-again was a third until 2026-10-08): the daily forecast's alert — the owner
     // asked for an in-app alert, and some 26 reps send one every working day — the courtesy a district
     // manager gets when one of his reps asks a product manager for a visit, which waits on nobody
     // (owner's brief, 2026-10-02: "told (in-app)"), and the rep's "validate this customer again"
     // (owner, 2026-10-08: tell the rep why, worded about his photo).
-    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 3, "exactly three notices are in-app only");
+    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 2, "exactly two notices are in-app only (the rep's validate-again joined the other channels on 2026-10-08)");
     const forecastBranch = notify.slice(notify.indexOf('if (notice.kind === "forecast_sent")'), notify.indexOf('if (notice.kind === "unplanned_visit_raised")'));
     assert.match(forecastBranch, /inAppOnly: true,/, "one is the daily forecast's");
     const visitAskBranch = notify.slice(notify.indexOf("async function describeVisitAsk("), notify.indexOf("async function describe(notice"));
@@ -250,7 +245,7 @@ export function runPhoenixCrmEmailBlockTests() {
     // pinned in its own test.
     const reminder = readFileSync("src/lib/phoenix-crm/server/plan-reminder.ts", "utf8");
     const nudge = readFileSync("src/lib/phoenix-crm/server/approval-nudge.ts", "utf8");
-    assert.doesNotMatch(nudge, /"email"/, "the approval nudge never names email");
+    assert.doesNotMatch(nudge, /"email"/, "the approval nudge never names email itself — it asks the guard");
     // The Super Admin's alert for a place the Google Maps check could not confirm (2026-10-03), which
     // emails him since 2026-10-05. 🔴 IT STILL MUST NOT NAME EMAIL ITSELF: it asks the guard, whose
     // allowlist is the one place the module's exception is declared. A hardcoded `["in_app","email",…]`

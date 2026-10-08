@@ -814,7 +814,6 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       // validates again — a rep must never be left with a bell asking for something he has done.
       idempotencyKey: `phoenix_crm:validation_not_confirmed:${notice.customerId}:${notice.reviewId}`,
       subjectHrId: notice.repHrId,
-      inAppOnly: true,
     };
   }
 

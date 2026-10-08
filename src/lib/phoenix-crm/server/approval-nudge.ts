@@ -21,6 +21,7 @@
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import {
@@ -145,8 +146,8 @@ async function deliver(notice: ApprovalNudgeNotice): Promise<void> {
     {
       actionUrl,
       category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
-      // In-app, Telegram and the phone. The module's guard strips email whatever is asked for here.
-      channels: ["in_app", "telegram", "push"],
+      // The guard's allowlist answers for every channel (email included since 2026-10-08), never this file.
+      channels: phoenixCrmChannels("approval_nudge"),
       eventType: "approval_nudge",
       message: notice.message,
       metadata: { idempotencyKey: notice.idempotencyKey },

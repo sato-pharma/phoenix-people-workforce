@@ -248,7 +248,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // closed list, worded about the picture and never a person. The notifier sends it in-app only, and
   // it is on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES, which shuts the phone and the Telegram-failure email
   // fallback. This row is the intent, that guard the enforcement.
-  "phoenix_crm.validation_not_confirmed": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // (2026-10-08, owner, asked about by name and answered "both") the rep's "validate this customer again" now
+  // emails too, REVERSING his ruling from earlier that day; the plan reminder and approval nudge join it.
+  "phoenix_crm.validation_not_confirmed": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.plan_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.approval_nudge": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.plan_resent": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // The hourly routine-visit rollup (owner, 2026-10-05): the batched half of the mirror — routine
   // planned visits gathered into one message an hour to the NSM and the SFE Managers. In-app and
