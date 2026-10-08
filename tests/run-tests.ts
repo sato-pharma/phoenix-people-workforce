@@ -2335,6 +2335,7 @@ import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts"
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
 import { runNeedsYouUncollectedLeaverDeductionsTests } from "./needs-you-uncollected-leaver-deductions.test.ts";
 import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
+import { runOrphanedRequestsReaderTests } from "./orphaned-requests-reader.test.ts";
 import { runNeedsYouPageNeverDecidesTests } from "./needs-you-page-never-decides.test.ts";
 import { runNeedsYouFitsTheScreenTests } from "./needs-you-fits-the-screen.test.ts";
 import { runNeedsYouDailyDigestTests } from "./needs-you-daily-digest.test.ts";
@@ -9063,6 +9064,10 @@ await runTest(
 await runTest(
   "the orphaned-request detector flags a request stranded because its next actor has left: a resigned actor is caught even through a casing difference (assigned_hr_id keeps the master's casing), while an ACTIVE actor, a role rung with no named person, and an actor the master does not hold are each left alone (it detects a KNOWN departure, never guesses one from a missing row); grouping is by (module, reason), dedupes the people and keeps the OLDEST timestamp; and the source is wired into the Needs You board in all four places (id, label, destination, adapter) so it reaches the morning digest rather than only existing",
   runOrphanedRequestsTests,
+);
+await runTest(
+  "the orphaned-request READER (findOrphanedRequests, through a fake Supabase client that is case-sensitive like Postgres): a RETURNED vacation of a resigned employee is flagged as the employee's (requester) case instead of being dropped down the approver branch, while an active employee's returned vacation is not and is never judged through a leftover rung; a REVERSED or EXPIRED direct order is finished and a DRAFT waits on nobody, so a leftover pending rung naming a resigned person on any of them is never reported; an approver whose HR_ID casing differs from the employee master is still found, because the master is read whole (paged past 1,000 rows) and keyed case-insensitively rather than filtered with a case-sensitive .in(); and an unreadable chain or master throws rather than reporting a calm empty board",
+  runOrphanedRequestsReaderTests,
 );
 await runTest(
   "a returned direct order whose requester has left can be CLOSED, and the board's remedy verb names a control that exists: the reader keys the requester canonically and judges \"left\" only by isActiveLifecycleStatus (active + on_leave, a blank reading active) over the includeInactive directory, skipping an HR_ID the master does not hold at all; the closer is Super Admin only, demands a written reason, takes `returned` and nothing else, REFUSES while the requester can still log in and refuses a missing employee record as a directory problem rather than a departure, passes the row's real status to the registry gate under close_orphaned, guards the update on `returned` and treats a lost race as an error, writes `cancelled` and never `rejected`, touches no approval step and no sales month, and tells the SFE Manager in-app and on Telegram but never by email; the registry triple (TS union, migration row, call site) all name close_orphaned with from `returned`, to `cancelled`, requiresReason and Super Admin, adding no status and never setting version by hand; and every requesterRemedy verb on the Needs You board resolves to a real exported function that accepts `returned` — the pin that stops the copy promising a button nobody built",
