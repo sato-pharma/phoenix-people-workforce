@@ -18,6 +18,13 @@ import { getRepContactList } from "@/lib/crm/contact-lists";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import {
+  phoenixDetailViewer,
+  phoenixRowSight,
+  phoenixVisitDetail,
+  type PhoenixDetailSight,
+  type PhoenixVisitDetail,
+} from "@/lib/crm/phoenix-visit-detail";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 import { currentCairoDateParts } from "@/lib/i18n/format";
@@ -523,10 +530,16 @@ export type DoubleVisitEvent = {
   date: string;
   doubleHrId: string;
   doubleName: string | null;
+  /** A chain visit's SECOND manager (Phoenix-only — the vendor had one partner column). The visit is ONE
+   * visit the rep received (`totalReceived` counts it once) and it is in BOTH managers' records, so he is
+   * in `byVisitor` and `distinctVisitors` exactly as the first manager is (owner, 2026-10-08). */
+  double2Name: string | null;
   isTrainingManager: boolean;
   kind: "Regular" | "Campaign" | "Other";
   ampm: string | null;
   customerName: string | null;
+  /** The Phoenix field set, shaped to THIS reader's tier. Null on a vendor row. */
+  phoenix: PhoenixVisitDetail | null;
 };
 export type DoubleVisitor = { hrId: string; name: string | null; count: number; isTrainingManager: boolean };
 export type DoubleVisitHistory = {
@@ -537,7 +550,12 @@ export type DoubleVisitHistory = {
   events: DoubleVisitEvent[];
 };
 
-function buildDoubleVisitHistory(visits: VisitRow[], tmIds: Set<string>, nameByHrId: Map<string, string>): DoubleVisitHistory {
+export function buildDoubleVisitHistory(
+  visits: VisitRow[],
+  tmIds: Set<string>,
+  nameByHrId: Map<string, string>,
+  sight: PhoenixDetailSight,
+): DoubleVisitHistory {
   const events: DoubleVisitEvent[] = [];
   const byVisitor = new Map<string, { name: string | null; count: number; isTm: boolean }>();
   for (const v of visits) {
@@ -547,7 +565,9 @@ function buildDoubleVisitHistory(visits: VisitRow[], tmIds: Set<string>, nameByH
     // require a resolved double_hr_id here because this history names the partner.
     if (!isCrmDoubleVisitRow(v) || !v.double_hr_id || !v.visit_date) continue;
     const key = String(v.double_hr_id).trim().toLowerCase();
-    const isTm = tmIds.has(key);
+    const key2 = v.double2_hr_id ? String(v.double2_hr_id).trim().toLowerCase() : null;
+    // A Training Manager on EITHER slot makes this a training double visit the rep received.
+    const isTm = tmIds.has(key) || (key2 !== null && tmIds.has(key2));
     const name = v.double_name ?? nameByHrId.get(key) ?? null;
     const visitBucket = classifyVisit(v.visit_type, v.comment, v.visit_type_description).bucket;
     const kind = visitBucket === "regular" ? "Regular" : visitBucket === "campaign" ? "Campaign" : "Other";
@@ -555,14 +575,21 @@ function buildDoubleVisitHistory(visits: VisitRow[], tmIds: Set<string>, nameByH
       date: v.visit_date,
       doubleHrId: v.double_hr_id,
       doubleName: name,
+      double2Name: v.double2_name?.trim() || null,
       isTrainingManager: isTm,
       kind,
       ampm: v.ampm,
       customerName: v.contact_name ?? v.customer_name ?? null,
+      phoenix: v.visit_kind ? phoenixVisitDetail(v, sight) : null,
     });
-    const agg = byVisitor.get(key) ?? { name, count: 0, isTm };
-    agg.count += 1;
-    byVisitor.set(key, agg);
+    // Each manager on the visit is credited once — a chain visit's second manager exactly like the first.
+    const credit = (visitorKey: string, visitorName: string | null) => {
+      const agg = byVisitor.get(visitorKey) ?? { name: visitorName, count: 0, isTm: tmIds.has(visitorKey) };
+      agg.count += 1;
+      byVisitor.set(visitorKey, agg);
+    };
+    credit(key, name);
+    if (key2 && key2 !== key) credit(key2, v.double2_name?.trim() || nameByHrId.get(key2) || null);
   }
   events.sort((a, b) => b.date.localeCompare(a.date));
   const visitorList: DoubleVisitor[] = Array.from(byVisitor.entries())
@@ -1432,6 +1459,10 @@ export async function getEmployee360Profile(
   includeExpenses: boolean = true,
   viewerRole: PhoenixRole = "Employee",
   roleCategory: Employee360RoleCategory | null = null,
+  /** The READER's own hr id. It decides nothing but one thing: a reader opening his OWN profile reads
+   * his Phoenix rows at the `none` tier (owner, 2026-09-29, absolute). Null means "not the subject",
+   * which is the safe default for a caller that has no reader to name. */
+  viewerHrId: string | null = null,
 ): Promise<Employee360Profile> {
   const salesTeam = teamHrIds.length ? teamHrIds : [hrId];
   const isLeader = isFieldLeaderCategory(roleCategory);
@@ -1466,7 +1497,15 @@ export async function getEmployee360Profile(
 
   const visitSummary = summarizeVisits(visits, window, listsByContact);
   const checkinSummary = summarizeCheckins(checkins, visits, visitSummary);
-  const doubleVisits = buildDoubleVisitHistory(visits, tmIds, nameByHrId);
+  // ONE sight for the whole profile: this page has a single subject, so every Phoenix row on it belongs
+  // to the same rep. `phoenixRowSight` still resolves it per row, which is what makes a rep opening his
+  // own 360 read `none` while his manager reads the distance.
+  const doubleVisits = buildDoubleVisitHistory(
+    visits,
+    tmIds,
+    nameByHrId,
+    phoenixRowSight(phoenixDetailViewer(viewerRole, viewerHrId), hrId),
+  );
 
   // Period-matched sales: only the months the visit window touches, never `sales.totalSales`
   // (every month since the history floor). The two efficiency ratios and the expense ratio below
@@ -1503,7 +1542,14 @@ export async function getEmployee360Profile(
   const coachingDates = coaching.reports.map((r) => r.date);
   // Use the FULL visit set for TM dates (doubleVisits.events is capped for display).
   const tmDvDates = visits
-    .filter((v) => isCrmDoubleVisitRow(v) && v.double_hr_id && v.visit_date && tmIds.has(String(v.double_hr_id).trim().toLowerCase()))
+    .filter(
+      (v) =>
+        isCrmDoubleVisitRow(v) &&
+        v.double_hr_id &&
+        v.visit_date &&
+        (tmIds.has(String(v.double_hr_id).trim().toLowerCase()) ||
+          (v.double2_hr_id ? tmIds.has(String(v.double2_hr_id).trim().toLowerCase()) : false)),
+    )
     .map((v) => v.visit_date as string);
 
   const impact: InterventionImpact = {

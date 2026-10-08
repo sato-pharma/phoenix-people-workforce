@@ -1,3 +1,4 @@
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { redirect } from "next/navigation";
 import { Activity } from "lucide-react";
 
@@ -69,7 +70,7 @@ export default async function AdminCompanyActivityReportPage({
   // Same "empty until Apply" gate the Company Vacation Report uses, with more reason: this scan
   // touches four data sources per employee-day, not one.
   const report = applied
-    ? await getCompanyActivityReport({ employees, endDate, startDate })
+    ? await getCompanyActivityReport({ employees, endDate, startDate, viewer: phoenixDetailViewer(access.role, access.hrId) })
     : { days: [], endDate, holidayCalendarReachable: true, startDate, summaries: [], unmappedCrmVisitCount: null };
 
   // Remount the panel on every applied query — see the identical pattern (and the comment

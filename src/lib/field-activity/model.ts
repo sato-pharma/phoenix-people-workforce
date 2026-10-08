@@ -44,6 +44,13 @@
  */
 
 import {
+  phoenixRowSight,
+  phoenixVisitDetail,
+  type PhoenixDetailViewer,
+  type PhoenixVisitDetail,
+  type PhoenixVisitDetailRow,
+} from "@/lib/crm/phoenix-visit-detail";
+import {
   addVisitToSplit,
   emptyVisitCountSplit,
   mergeVisitCountSplits,
@@ -53,13 +60,17 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { cairoWallClock } from "@/lib/format/cairo-zone";
 
 /** A visit row as the unified CRM view serves it. Vendor times are wall-clock strings (rule 3). */
-export type FieldActivityVisitRow = {
+export type FieldActivityVisitRow = PhoenixVisitDetailRow & {
   visitDate: string;
   agentHrId: string | null;
   agentName: string | null;
   agentCrmId: number | null;
   doubleHrId: string | null;
   doubleName: string | null;
+  /** A chain visit's SECOND manager. Slot 1 is `coalesce(manager, product_manager, senior)`, so a row
+   * that carries somebody here carries somebody there too — the two slots never hold one person. */
+  double2HrId: string | null;
+  double2Name: string | null;
   contactCrmId: number | null;
   contactName: string | null;
   speciality: string | null;
@@ -173,6 +184,8 @@ export type FieldActivityStop = {
   legMetres: number | null;
   /** Whose phone recorded the fix, when it was not the subject's own. */
   viaName: string | null;
+  /** The Phoenix field set at this reader's tier, or null on an iReports360 row. */
+  phoenix: PhoenixVisitDetail | null;
 };
 
 /** A call on the day that carries no GPS fix — no contact attached, or the subject's own record. */
@@ -184,6 +197,16 @@ export type FieldActivityUnlocatedVisit = {
   comment: string | null;
   /** Whether it is a customer call at all — a Traveling record never counts toward the buckets. */
   counts: boolean;
+  /**
+   * The Phoenix field set at this reader's tier, or null on an iReports360 row.
+   *
+   * 🔴 THIS IS WHERE A PHOENIX VISIT LANDS, and it is why the field set matters most here. A Phoenix
+   * visit IS its own check-in, so it never matches an iReports360 GPS fix and every one of them falls
+   * into this list — the list the report introduces as work with no GPS behind it. Its own distance,
+   * products and evidence were measured all along and simply had nowhere to be printed, so a day a rep
+   * spent in the field read as a day nothing was recorded. That is the owner's reported sentence.
+   */
+  phoenix: PhoenixVisitDetail | null;
 };
 
 export type FieldActivityDayKind = "field" | "field-no-gps" | "leave" | "office" | "weekend" | "empty";
@@ -337,9 +360,19 @@ function logLag(day: string, checkedAt: string, savedAt: string | null, savedOn:
   return to + dayShift * 1440 - from;
 }
 
-/** A visit the subject is on — as the agent himself, or tagged as the double-visit partner. */
+/**
+ * A visit the subject is on — as the agent himself, or tagged in EITHER ride-along slot.
+ *
+ * Slot 2 is not optional here. `participantHrIds` at the door already returns the row where he is
+ * the chain visit's second manager, and testing one slot threw it away again — which is the owner's
+ * reported sentence in code: the day he spent in the field reads as a day he did not work.
+ */
 function subjectIsOn(visit: FieldActivityVisitRow, subjectHrId: string): boolean {
-  return sameHrId(visit.agentHrId, subjectHrId) || sameHrId(visit.doubleHrId, subjectHrId);
+  return (
+    sameHrId(visit.agentHrId, subjectHrId) ||
+    sameHrId(visit.doubleHrId, subjectHrId) ||
+    sameHrId(visit.double2HrId, subjectHrId)
+  );
 }
 
 /** A vendor code that is not a customer call. -12 Traveling, -5/-6 leave, -19 meeting and friends. */
@@ -358,6 +391,12 @@ export function buildFieldActivityReport(input: {
   trips: FieldActivityTripRow[];
   punches: FieldActivityPunchRow[];
   leave: FieldActivityLeaveRow[];
+  /**
+   * Who is reading, so each Phoenix row's field set is shaped to his sight tier and blinded on a row
+   * whose rep is himself (golden rule #1's three tiers). Omitted → no Phoenix half at all, which is
+   * exactly the behaviour before 2026-10-07.
+   */
+  viewer?: PhoenixDetailViewer;
 }): FieldActivityReport {
   const { subject, fromIso, toIso } = input;
   const subjectHrId = subject.hrId;
@@ -430,11 +469,28 @@ export function buildFieldActivityReport(input: {
     const partners = new Map<string, { hrId: string | null; name: string }>();
 
     for (const visit of dayVisits) {
-      // Who he was out with: the other name on the row.
-      const partnerIsAgent = !sameHrId(visit.agentHrId, subjectHrId);
-      const partnerName = partnerIsAgent ? visit.agentName : visit.doubleName;
-      const partnerHrId = partnerIsAgent ? visit.agentHrId : visit.doubleHrId;
-      if (partnerName) partners.set(partnerName, { hrId: partnerHrId, name: partnerName });
+      // Whose phone recorded the day: his own, or — when he rode along — the rep's. Read on its own
+      // because a chain visit has TWO ride-along slots, so "the subject is not the agent" can no
+      // longer be inferred from which partner column happens to be filled.
+      const subjectRodeAlong = !sameHrId(visit.agentHrId, subjectHrId);
+
+      // The field set, at the tier this reader's role earns, blinded where HE is the row's rep —
+      // resolved per row, because a District Manager's own report carries his reps' days and his own.
+      const phoenix = input.viewer
+        ? phoenixVisitDetail(visit, phoenixRowSight(input.viewer, visit.agentHrId))
+        : null;
+
+      // Who he was out with: every OTHER person on the row. A chain visit carries three people, so
+      // the old agent-or-partner pair named only one of the two he actually rode with.
+      for (const person of [
+        { hrId: visit.agentHrId, name: visit.agentName },
+        { hrId: visit.doubleHrId, name: visit.doubleName },
+        { hrId: visit.double2HrId, name: visit.double2Name },
+      ]) {
+        if (!person.name) continue;
+        if (sameHrId(person.hrId, subjectHrId)) continue;
+        partners.set(person.name, { hrId: person.hrId, name: person.name });
+      }
 
       const counted = isCustomerCall(visit);
       if (counted) {
@@ -471,7 +527,8 @@ export function buildFieldActivityReport(input: {
             lon: checkin.lon,
             address: checkin.address,
             legMetres: null,
-            viaName: partnerIsAgent ? visit.agentName : null,
+            viaName: subjectRodeAlong ? visit.agentName : null,
+            phoenix,
           });
           continue;
         }
@@ -488,6 +545,7 @@ export function buildFieldActivityReport(input: {
             : "Call saved with no contact attached",
         comment: visit.comment,
         counts: counted,
+        phoenix,
       });
     }
 

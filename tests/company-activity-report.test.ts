@@ -89,6 +89,8 @@ function visit(overrides: Partial<CompanyActivityVisitDetail> = {}): CompanyActi
     customerName: "Test Pharmacy",
     isCampaign: false,
     label: "Regular Visit",
+    partner2Name: null,
+    phoenix: null,
     session: "AM",
     visitType: 0,
     ...overrides,

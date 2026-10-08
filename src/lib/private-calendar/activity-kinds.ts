@@ -7,6 +7,7 @@
 //
 // Pure: no database, so the pairing below is unit-tested on plain rows.
 
+import { hasSecondDoubleVisitor } from "@/lib/double-visit-analytics/chain-visitors";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import {
   addBucketToSplit,
@@ -160,6 +161,9 @@ export type PairableDoubleVisitRow = {
   chain_hinge_name?: string | null;
   double_visitor_hr_id: string | null;
   double_visitor_name: string | null;
+  /** A Phoenix CRM chain visit's second manager, on the SAME row (chain-visitors.ts). */
+  double_visitor2_hr_id?: string | null;
+  double_visitor2_name?: string | null;
   /** A Phoenix CRM visit (a started team's), which logs no pharmacy — see visit-count-buckets.ts. */
   from_phoenix?: boolean;
   id: string;
@@ -193,10 +197,12 @@ export function classifyDoubleVisitRows<T extends PairableDoubleVisitRow>(rows: 
     absorbed: false,
     bucket: visitCountBucket({ ampm: row.period === "UNKNOWN" ? null : row.period, speciality: row.speciality }),
     category: visitCategoryOfType(row.visit_type) ?? "regular",
-    companion: row.resolved_via_chain ? "chain" : "double",
+    // A Phoenix CRM chain visit is ONE row carrying both managers, so it is a chain on its own — no
+    // halves to pair — and the second manager is named exactly where a vendor chain names its senior.
+    companion: row.resolved_via_chain || hasSecondDoubleVisitor(row) ? "chain" : "double",
     physicalId: row.id,
     row,
-    seniorName: null,
+    seniorName: row.double_visitor2_name ?? null,
   }));
 
   const exact = new Map<string, number[]>();

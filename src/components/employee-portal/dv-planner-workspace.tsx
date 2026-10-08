@@ -172,10 +172,26 @@ function groupVisitsByDay(visits: DoubleVisitReportRow[]) {
 }
 
 function groupVisitsByRole(visits: DoubleVisitReportRow[]) {
+  // A chain visit is in BOTH managers' records (owner, 2026-10-08), so it appears under each one's role,
+  // named by that manager — the rep's own total above still counts it once.
   const byRole = new Map<string, DoubleVisitReportRow[]>();
   for (const visit of visits) {
-    const key = visit.doubleVisitorRole ?? "Unmapped role";
-    byRole.set(key, [...(byRole.get(key) ?? []), visit]);
+    const views: DoubleVisitReportRow[] =
+      visit.doubleVisitor2HrId || visit.doubleVisitor2Name
+        ? [
+            visit,
+            {
+              ...visit,
+              doubleVisitorHrId: visit.doubleVisitor2HrId ?? null,
+              doubleVisitorName: visit.doubleVisitor2Name ?? null,
+              doubleVisitorRole: visit.doubleVisitor2Role ?? null,
+            },
+          ]
+        : [visit];
+    for (const view of views) {
+      const key = view.doubleVisitorRole ?? "Unmapped role";
+      byRole.set(key, [...(byRole.get(key) ?? []), view]);
+    }
   }
   return Array.from(byRole.entries())
     .map(([role, roleVisits]) => {

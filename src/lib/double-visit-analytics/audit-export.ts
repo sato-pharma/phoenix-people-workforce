@@ -27,6 +27,7 @@ import ExcelJS from "exceljs";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getDoubleVisitRows, queryCheckins } from "@/lib/crm/reads";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
+import { perDoubleVisitorRows } from "@/lib/double-visit-analytics/chain-visitors";
 import { doubleVisitCountBucket } from "@/lib/double-visit-analytics/count-bucket";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -41,6 +42,12 @@ import {
   type MirrorVisitRow,
 } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitRoleCode } from "@/lib/double-visit-analytics/types";
+import {
+  PHOENIX_VISIT_DETAIL_COLUMNS,
+  phoenixDetailViewer,
+  phoenixRowSight,
+  phoenixVisitDetailColumns,
+} from "@/lib/crm/phoenix-visit-detail";
 
 const DOUBLE_VISIT_TYPE_CODES = [0, -8] as const;
 
@@ -99,6 +106,12 @@ export type DoubleVisitAuditVisitRow = {
   speciality: string;
   period: string;
   visitType: string;
+  /** On a chain visit, the OTHER coach — the second one on the first coach's tab, the first on the
+   * second's. Empty on a vendor row and on a plain double visit. Each coach's tab counts the visit once. */
+  partner2: string;
+  /** The Phoenix field set, already shaped to this reader's tier, one value per column. Null on a
+   * vendor row — there is nothing behind it to print. */
+  phoenixColumns: Record<string, string | number | null> | null;
 };
 
 export type DoubleVisitAuditCoach = {
@@ -131,6 +144,13 @@ export type DoubleVisitAuditData = {
   generatedAt: string;
   weeks: DoubleVisitAuditWeek[];
   coaches: DoubleVisitAuditCoach[];
+  /** The Phoenix field set's column headers, in order, computed ONCE for the whole workbook.
+   *
+   * 🔴 NOT PER COACH AND NOT FROM THE FIRST ROW THAT HAS ONE. Sight is decided per row — a reader
+   * looking at his own row as its rep is blinded — so a per-sheet header taken off whichever row
+   * came first would give one coach's sheet fewer columns than another's, and shift every cell of a
+   * row that carries more. The union, in first-appearance order, is the only stable header. */
+  phoenixHeaders: string[];
 };
 
 /** The mirror row plus the one extra id the board's own loader doesn't request — contact_crm_id,
@@ -312,7 +332,9 @@ export async function loadDoubleVisitAuditData(input: {
     ...(includeResignedAgents ? { includeResignedAgents: true } : {}),
     columns:
       "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
-      "double_crm_id, double_hr_id, double_name, ampm, visit_type, visit_type_description, speciality, contact_crm_id",
+      "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, ampm, " +
+      "visit_type, visit_type_description, speciality, contact_crm_id, " +
+      PHOENIX_VISIT_DETAIL_COLUMNS,
   });
 
   const resolutions = await getCrmIdentityResolutions();
@@ -321,15 +343,35 @@ export async function loadDoubleVisitAuditData(input: {
 
   // id → the mirror's crm ids (for the GPS check-in match) and the real customer/contact name,
   // which the resolved db row doesn't carry — so the dated detail names the doctor who was seen.
+  //
+  // 🔴 THE TIER IS DECIDED HERE, where the reader is known. A row this reader is himself the rep of
+  // reads `none` (phoenixRowSight) — the owner's 2026-10-02 rule, which "everything on the admin
+  // reports" does not reopen. `phoenixHeaders` below is the union of what survives that, in order.
+  const detailViewer = phoenixDetailViewer(access.role, access.hrId);
+  const phoenixHeaders: string[] = [];
   const mirrorById = new Map<
     string,
-    { agentCrmId: number | null; contactCrmId: number | null; customer: string | null }
+    {
+      agentCrmId: number | null;
+      contactCrmId: number | null;
+      customer: string | null;
+      partner2: string | null;
+      phoenixColumns: Record<string, string | number | null> | null;
+    }
   >();
   for (const row of mirrorRows) {
+    const phoenixColumns = row.visit_kind
+      ? phoenixVisitDetailColumns(row, phoenixRowSight(detailViewer, row.agent_hr_id))
+      : null;
+    for (const header of Object.keys(phoenixColumns ?? {})) {
+      if (!phoenixHeaders.includes(header)) phoenixHeaders.push(header);
+    }
     mirrorById.set(row.id, {
       agentCrmId: row.agent_crm_id,
       contactCrmId: row.contact_crm_id,
       customer: nullableText(row.contact_name) ?? nullableText(row.customer_name),
+      partner2: nullableText(row.double2_name ?? null),
+      phoenixColumns,
     });
   }
 
@@ -361,9 +403,10 @@ export async function loadDoubleVisitAuditData(input: {
   // Per-coach KPI strip + role code, from the SAME builder the board uses (so figures match).
   const { summaries } = buildManagerSummariesDetailed(scopedRows, employees, generatedAt);
 
-  // Group the scoped rows by coach (the double-visitor).
+  // Group the scoped rows by coach (the double-visitor). One entry per (visit, coach): a chain visit is in
+  // BOTH coaches' tabs, counted the same in each (owner, 2026-10-08 — chain-visitors.ts).
   const rowsByCoach = new Map<string, DoubleVisitDbRow[]>();
-  for (const row of scopedRows) {
+  for (const row of perDoubleVisitorRows(scopedRows)) {
     const key = canonicalHrIdKey(row.double_visitor_hr_id);
     if (!key) continue;
     rowsByCoach.set(key, [...(rowsByCoach.get(key) ?? []), row]);
@@ -398,6 +441,7 @@ export async function loadDoubleVisitAuditData(input: {
     generatedAt,
     weeks,
     coaches,
+    phoenixHeaders,
   };
 }
 
@@ -405,7 +449,17 @@ function buildCoach(input: {
   summary: ReturnType<typeof buildManagerSummariesDetailed>["summaries"][number];
   rows: DoubleVisitDbRow[];
   weeks: DoubleVisitAuditWeek[];
-  mirrorById: Map<string, { agentCrmId: number | null; contactCrmId: number | null; customer: string | null }>;
+  mirrorById: Map<
+    string,
+    {
+      agentCrmId: number | null;
+      contactCrmId: number | null;
+      customer: string | null;
+      /** A chain visit's second coach, and the field set already shaped to this reader's tier. */
+      partner2: string | null;
+      phoenixColumns: Record<string, string | number | null> | null;
+    }
+  >;
   checkInTimesByKey: Map<string, string[]>;
   employeeByHrKey: Map<string, EmployeeDirectoryRow>;
 }): DoubleVisitAuditCoach {
@@ -496,6 +550,10 @@ function buildCoach(input: {
         speciality: text(row.speciality) || "—",
         period: row.period,
         visitType: text(row.visit_type_description) || String(row.visit_type ?? ""),
+        // The OTHER coach on a chain visit, from this coach's own view of the row — never himself.
+        // A coach the reader's scope took off the row is not named either (filterRowsForAccess).
+        partner2: nullableText(row.double_visitor2_name ?? null) ?? "",
+        phoenixColumns: mirrorById.get(row.id)?.phoenixColumns ?? null,
       };
     });
 
@@ -557,7 +615,7 @@ export async function buildDoubleVisitAuditWorkbook(data: DoubleVisitAuditData):
   buildSummarySheet(workbook, data);
   const usedNames = new Set<string>(["summary"]);
   for (const coach of data.coaches) {
-    buildCoachSheet(workbook, sanitizeSheetName(coach.name, usedNames), coach, data.weeks);
+    buildCoachSheet(workbook, sanitizeSheetName(coach.name, usedNames), coach, data.weeks, data.phoenixHeaders ?? []);
   }
 
   return workbook;
@@ -621,6 +679,20 @@ export async function buildCombinedAuditWorkbook(sections: DoubleVisitAuditSecti
 
   // Gather each coach across every section, keyed by their resolved identity (hr id, else name), in
   // first-appearance order within each month so a coach's quarter reads in calendar order.
+  // 🔴 ONE header union for the WHOLE combined workbook, not one per section. A coach's tab stacks
+  // several months one under another, so two sections with different unions would put the same column
+  // under two different headings on one sheet — and a reader scrolling down would read a distance as a
+  // dwell. Order is first appearance, section by section.
+  const combinedPhoenixHeaders: string[] = [];
+  for (const section of sections) {
+    // `?? []` although the field is REQUIRED on the type: a payload serialized before this change
+    // (a cached response, a stored job input) carries no such key, and an export that throws is worse
+    // than one printing the columns it always had. The type still refuses a NEW caller that omits it.
+    for (const header of section.data.phoenixHeaders ?? []) {
+      if (!combinedPhoenixHeaders.includes(header)) combinedPhoenixHeaders.push(header);
+    }
+  }
+
   type CoachTimeline = { key: string; name: string; entries: { label: string; coach: DoubleVisitAuditCoach; weeks: DoubleVisitAuditWeek[] }[] };
   const timelines = new Map<string, CoachTimeline>();
   for (const section of sections) {
@@ -658,7 +730,7 @@ export async function buildCombinedAuditWorkbook(sections: DoubleVisitAuditSecti
         ]),
         SUBHEADER_FILL,
       );
-      writeCoachBlocks(sheet, coach, entry.weeks);
+      writeCoachBlocks(sheet, coach, entry.weeks, combinedPhoenixHeaders);
     }
 
     sheet.views = [{ state: "frozen", ySplit: 1 }];
@@ -759,6 +831,7 @@ function buildCoachSheet(
   sheetName: string,
   coach: DoubleVisitAuditCoach,
   weeks: DoubleVisitAuditWeek[],
+  phoenixHeaders: readonly string[] = [],
 ): void {
   const sheet = workbook.addWorksheet(sheetName);
   sheet.columns = [{ width: 30 }, { width: 12 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }];
@@ -770,14 +843,19 @@ function buildCoachSheet(
   sheet.addRow([`Area: ${coach.area ?? "—"}    Line: ${coach.line ?? "—"}`]);
   sheet.addRow([]);
 
-  writeCoachBlocks(sheet, coach, weeks);
+  writeCoachBlocks(sheet, coach, weeks, phoenixHeaders);
 
   sheet.views = [{ state: "frozen", ySplit: 1 }];
 }
 
 /** Write one coach's KPI strip, per-rep, per-day and dated-visit blocks into an existing sheet, at
  * the current row — so a single coach tab can stack several windows (months) one after another. */
-function writeCoachBlocks(sheet: ExcelJS.Worksheet, coach: DoubleVisitAuditCoach, weeks: DoubleVisitAuditWeek[]): void {
+function writeCoachBlocks(
+  sheet: ExcelJS.Worksheet,
+  coach: DoubleVisitAuditCoach,
+  weeks: DoubleVisitAuditWeek[],
+  phoenixHeaders: readonly string[] = [],
+): void {
   // KPI strip.
   const kpiHeader = sheet.addRow(["Total DVs", "Active Days", "MRs", "AM", "PM", "Pharmacies", "Days w/ GPS"]);
   styleBandRow(kpiHeader, HEADER_FILL);
@@ -828,7 +906,22 @@ function writeCoachBlocks(sheet: ExcelJS.Worksheet, coach: DoubleVisitAuditCoach
 
   // Every dated visit.
   styleBandRow(sheet.addRow(["Every double visit"]), SUBHEADER_FILL);
-  const detailHeader = sheet.addRow(["Date", "Day", "Week", "Rep", "Status", "Customer", "Speciality", "AM/PM", "Visit Type"]);
+  // THE PHOENIX FIELD SET IS FLAT HERE, one column each, after the columns this block always had. A
+  // sheet has no viewport, so the fits-the-screen rule has nothing to say about it and nothing is
+  // merged away. The header order comes from the workbook, never from this coach's own rows.
+  const detailHeader = sheet.addRow([
+    "Date",
+    "Day",
+    "Week",
+    "Rep",
+    "Status",
+    "Customer",
+    "Speciality",
+    "AM/PM",
+    "Visit Type",
+    "And With",
+    ...phoenixHeaders,
+  ]);
   styleBandRow(detailHeader, HEADER_FILL);
   for (const visit of coach.detail) {
     sheet.addRow([
@@ -841,6 +934,8 @@ function writeCoachBlocks(sheet: ExcelJS.Worksheet, coach: DoubleVisitAuditCoach
       visit.speciality,
       visit.period,
       visit.visitType,
+      visit.partner2,
+      ...phoenixHeaders.map((header) => visit.phoenixColumns?.[header] ?? ""),
     ]);
   }
   sheet.addRow([]);

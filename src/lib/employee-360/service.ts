@@ -23,6 +23,7 @@ import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
+import { PHOENIX_VISIT_DETAIL_COLUMNS, type PhoenixVisitDetailRow } from "@/lib/crm/phoenix-visit-detail";
 import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { visitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { classifyVisit } from "@/lib/crm/visit-types";
@@ -56,7 +57,10 @@ export type { VisitBucket, VisitClassification } from "@/lib/crm/visit-types";
 
 export type Employee360Window = { from: string; to: string; label: string };
 
-export type VisitRow = {
+export type VisitRow = PhoenixVisitDetailRow & {
+  /** Slot 2 — a chain visit's second manager. Absent on a vendor row, which has one partner column. */
+  double2_hr_id?: string | null;
+  double2_name?: string | null;
   visit_type: number | null;
   visit_type_description: string | null;
   visit_date: string | null;
@@ -308,7 +312,13 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     // (isCrmDoubleVisitRow). Without it a new hire's confirmed double visits never count here.
     // `speciality` is the pharmacy signal: it files a visit under Pharmacies, never AM or PM, and
     // marks a most-visited customer on no list of the rep's.
-    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment,source,speciality",
+    // THE PHOENIX FIELD SET. Selected unconditionally and shown only at the tier the reader earns
+    // (phoenix-visit-detail.ts): a select is a string, so a list that varied by role would read
+    // `undefined` and print a blank, which is indistinguishable from a visit that recorded nothing.
+    columns:
+      "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name," +
+      "double_crm_id,double_hr_id,double_name,double2_hr_id,double2_name,comment,source,speciality," +
+      PHOENIX_VISIT_DETAIL_COLUMNS.replaceAll(" ", ""),
     // Collapse iReports360 burst-duplicate double-visit re-saves so "doubles received" (summary
     // card) and the double-visit history aren't inflated. No-op for single visits, so the rest of
     // the activity mix is unchanged.

@@ -10,6 +10,7 @@
 import type { CallRateHolidays } from "@/lib/crm/call-rate";
 import { buildKnownContactIndex, type KnownContactIndex } from "@/lib/crm/campaign-contact-match";
 import { assistCampaignFragments } from "@/lib/crm/campaign-note-assist-model";
+import { PHOENIX_VISIT_DETAIL_COLUMNS, type PhoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import {
   buildRepVisits,
@@ -41,13 +42,23 @@ const VISIT_COLUMNS = [
   "double_crm_id",
   "double_hr_id",
   "double_name",
+  // The chain visit's SECOND manager. The door has returned the row since #5477; naming him here is
+  // what stops one of the two people a chain visit carried going unnamed on the screen.
+  "double2_hr_id",
+  "double2_name",
   // A Phoenix CRM row's customer, validated or not yet — the rate's `not-validated` (crm/call-rate.ts).
   "phoenix_customer_validated",
   "speciality",
   "visit_date",
   "visit_type",
   "visit_type_description",
-].join(",");
+]
+  .join(",")
+  // THE PHOENIX FIELD SET, always selected and shown only to the tier the reader's role earns. It is
+  // selected unconditionally on purpose: a select is a string, so a list that varied by role would
+  // read `undefined` and print a blank the moment a tier was added — indistinguishable from a visit
+  // that recorded nothing. The shaping is `phoenix-visit-detail.ts`'s job, not the query's.
+  .concat(`,${PHOENIX_VISIT_DETAIL_COLUMNS.replaceAll(" ", "")}`);
 
 const CHECKIN_COLUMNS = "agent_crm_id,agent_hr_id,contact_crm_id,check_date";
 
@@ -264,6 +275,11 @@ export type RepVisitsInput = {
   /** hr id (lower-cased) -> real name, for the double-visit partner column. */
   partnerNameByHrId?: ReadonlyMap<string, string>;
   /**
+   * Who is reading, so each row's Phoenix half is shaped to his sight tier and blinded on his own row
+   * (golden rule #1's three tiers, owner 2026-10-02). Omitted → no Phoenix half at all.
+   */
+  viewer?: PhoenixDetailViewer;
+  /**
    * The national holidays of the window — the SAME set the rate above the list was divided by, so a
    * call on a holiday is marked "not scored" here exactly where the rate left it out. Omitted, no
    * day is treated as a holiday (the weekend and the catch-all contact are still marked).
@@ -343,5 +359,6 @@ export async function loadRepVisits(
     holidays: input.holidays,
     partnerNameByHrId: input.partnerNameByHrId,
     territoryIndex,
+    viewer: input.viewer,
   });
 }

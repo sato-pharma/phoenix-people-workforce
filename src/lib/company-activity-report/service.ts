@@ -16,6 +16,7 @@ import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCompanyActivityChannels } from "@/lib/company-activity-report/channels";
 import { loadCompanyActivityCrmDetail } from "@/lib/company-activity-report/crm-detail";
+import type { PhoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { loadCompanyActivityLeaveDetail } from "@/lib/company-activity-report/leave-detail";
 import { reconcileCompanyActivityDay } from "@/lib/company-activity-report/reconcile";
 import { summarizeCompanyActivityEmployee } from "@/lib/company-activity-report/summary";
@@ -51,6 +52,9 @@ export async function getCompanyActivityReport(input: {
   employees: EmployeeDirectoryRow[];
   startDate: string;
   endDate: string;
+  /** Who is reading, for the Phoenix field set's tiers (`phoenix-visit-detail.ts`). Omitted means no
+   * Phoenix detail at all — never the full set by default. */
+  viewer?: PhoenixDetailViewer;
 }): Promise<CompanyActivityReport> {
   const { employees, startDate, endDate } = input;
   const dates = listIsoDatesInRange(startDate, endDate);
@@ -66,7 +70,7 @@ export async function getCompanyActivityReport(input: {
     loadEmployeeDayPunchMinutes({ dateFromIso: startDate, dateToIso: endDate, employeeHrIds }),
     getCompanyWideOutageDates(startDate, endDate),
     loadCompanyActivityChannels(),
-    loadCompanyActivityCrmDetail({ employeeHrIds, dateFromIso: startDate, dateToIso: endDate }),
+    loadCompanyActivityCrmDetail({ employeeHrIds, dateFromIso: startDate, dateToIso: endDate, viewer: input.viewer }),
     loadCompanyActivityLeaveDetail({ dateFromIso: startDate, dateToIso: endDate }),
   ]);
 

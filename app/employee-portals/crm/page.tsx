@@ -18,6 +18,7 @@ import {
 } from "@/lib/crm/master";
 import { CRM_MASTER_DATASETS } from "@/lib/crm/master-datasets";
 import { isPortalCrmRole, resolvePortalCrmScope, toPortalCrmScopeView } from "@/lib/crm/portal-crm-scope";
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { getCrmCutoverSetting } from "@/lib/crm/cutover";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
@@ -100,6 +101,10 @@ async function PortalCrmContent({
         visitType: stringParam(params.visitType),
       },
       scope,
+      // Golden rule #1, per READER and per ROW: a manager reads the distance and the far / at-the-place
+      // wording, the Super Admin and the SFE Manager read the measurement behind it, and a reader
+      // looking at his OWN visit reads none of it. This page can put all three on one screen.
+      phoenixDetailViewer(access.role, access.hrId),
     );
   } catch (error) {
     // Logged, and explained in words: `error.message` here is a Supabase or PostgREST sentence, never

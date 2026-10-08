@@ -1678,6 +1678,33 @@ function ImpactSection({ impact }: { impact: Employee360Profile["impact"] }) {
   );
 }
 
+/**
+ * One line of Phoenix detail under a double visit — the work, then the proof.
+ *
+ * The vendor feed carried none of this, so a vendor row returns null and the list reads exactly as it
+ * did. A Phoenix row gains what its reader's tier earns, decided server-side in `phoenix-visit-detail.ts`.
+ */
+function phoenixDoubleVisitLine(event: Employee360Profile["doubleVisits"]["events"][number]): string | null {
+  const detail = event.phoenix;
+  if (!detail) return null;
+  const parts = [
+    detail.kindLabel,
+    detail.products.length > 0 ? detail.products.join(", ") : null,
+    detail.samples,
+    detail.availability,
+    detail.objection,
+    detail.nextStep,
+    detail.pharmacyFeedback,
+    detail.offPlan,
+    detail.location,
+    detail.evidence,
+    detail.capture,
+  ]
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 function DoubleVisitSection({ dv, suppressTm = false }: { dv: Employee360Profile["doubleVisits"]; suppressTm?: boolean }) {
   return (
     <Card className={PREMIUM_CARD}>
@@ -1720,10 +1747,20 @@ function DoubleVisitSection({ dv, suppressTm = false }: { dv: Employee360Profile
                     <span className={LIST_DATE}>{dayLabel(e.date)}</span>
                     <span className="min-w-0 break-words text-slate-800">
                       {e.doubleName ?? NAME_NOT_ON_RECORD}
+                      {e.double2Name ? ` and ${e.double2Name}` : ""}
                       {e.isTrainingManager && !suppressTm ? <span className="ml-1.5 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-phx-2xs font-bold text-indigo-700">TM</span> : null}
                     </span>
                   </div>
-                  <span className={LIST_SIDE}>{e.kind}{e.ampm ? ` · ${e.ampm.toUpperCase()}` : ""}{e.customerName ? ` · ${e.customerName}` : ""}</span>
+                  <span className={LIST_SIDE}>
+                    {e.kind}{e.ampm ? ` · ${e.ampm.toUpperCase()}` : ""}{e.customerName ? ` · ${e.customerName}` : ""}
+                    {/* The Phoenix field set, under the cell rather than beside it — this list is already
+                        two columns wide at 375px and the fits-the-screen rule says fit by MERGING. What
+                        the reader may see was decided on the server; a `distance` reader simply has no
+                        accuracy to print. */}
+                    {phoenixDoubleVisitLine(e) ? (
+                      <span className="block text-phx-2xs font-semibold leading-4 text-slate-400">{phoenixDoubleVisitLine(e)}</span>
+                    ) : null}
+                  </span>
                 </div>
               ))}
             </div>

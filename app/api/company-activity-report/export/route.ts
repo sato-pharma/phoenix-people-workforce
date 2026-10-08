@@ -1,3 +1,4 @@
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/admin/audit";
@@ -81,7 +82,7 @@ export async function GET(request: Request) {
     const filters = parseCompanyActivityFilters(url.searchParams);
     const roster = await getEmployeeDirectoryRows({ includeInactive: true });
     const employees = filterCompanyActivityEmployees(roster, filters, startDate);
-    const report = await getCompanyActivityReport({ employees, endDate, startDate });
+    const report = await getCompanyActivityReport({ employees, endDate, startDate, viewer: phoenixDetailViewer(access.role, access.hrId) });
     const filterNote = describeCompanyActivityFilters(filters);
 
     await writeAuditLog({
