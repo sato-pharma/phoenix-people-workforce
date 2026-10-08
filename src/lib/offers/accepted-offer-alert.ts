@@ -96,7 +96,7 @@ export function joinedOfferMessage(
   const seat = hire.seated === false
     ? " is created WITHOUT a seat — set the department, line and manager on the Employee Master."
     : " is created and seated.";
-  return `${stated(offer.candidateName)} accepted the offer for ${stated(offer.title)}${starts} and completed the joining form. Their employee record ${hire.hrId}${seat}${email} Bank, insurance and payment-mode details are still HR's to add.`;
+  return `${stated(offer.candidateName)} accepted the offer for ${stated(offer.title)}${starts} and completed the joining form. Their employee record ${hire.hrId}${seat}${email} Bank and insurance details are still HR's to add.`;
 }
 
 /**

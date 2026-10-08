@@ -230,4 +230,13 @@ async function run() {
   assert.match(alert.joinedOfferMessage(joiner, { hrId: "A-1", seated: false, workEmail: null }), /WITHOUT a seat — set the department, line and manager/);
   assert.match(alert.joinedOfferMessage(joiner, { hrId: "A-1", seated: true, workEmail: null }), /is created and seated\./);
   assert.match(flatService, /seated: Boolean\(seat\?\.lineId \|\| seat\?\.departmentId\)/, "the service says which");
+
+  // 12. 🔴 PAYMENT MODE IS FIXED BY TITLE (owner, 2026-10-08) — field force two parts, office one.
+  for (const title of ["Medical Representative", "Senior Medical Representative", "District Sales Manager", "Senior District Manager"]) {
+    assert.equal(form.joiningFormPaymentMode(title), "two_parts", `${title} is paid in two parts`);
+  }
+  for (const title of ["Accountant", "Product Manager", "HR Generalist", "National Sales Manager", "Regional Sales Manager"]) {
+    assert.equal(form.joiningFormPaymentMode(title), "one_part", `${title} is paid in one part`);
+  }
+  assert.match(flatService, /salaryPaymentMode: joiningFormPaymentMode\(draft\.jobTitle\)/, "the record carries it, never Add Employee's default");
 }
