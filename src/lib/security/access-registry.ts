@@ -2125,9 +2125,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/product-mapping/template", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/sales/weekly/product-mapping", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/product-mapping", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Authenticated weekly product alias upsert/import; server validates each product_code against the Source-of-Sales master before write." }),
-  sessionApi({ methods: ["GET"], pattern: "/api/sales/weekly/mapping", permission: { resource: "weekly_sales", action: "update" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/mapping/export", permission: { resource: "weekly_sales", action: "update" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/mapping/import", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Authenticated weekly distributor mapping upsert/import; server validates each mapping row before write." }),
+  // `/api/sales/weekly/mapping`, `/mapping/export` and `/mapping/import` stood here until
+  // 2026-10-08. They were the API half of the old mapping/missing pages, which the current
+  // /sales/weekly/mapping page replaced — that page loads server-side through
+  // loadWeeklyBranchRegionAdmin/loadWeeklyProductAliasAdmin and its workspace calls
+  // branch-mapping and product-mapping above. No route.ts has existed at any of the three for as
+  // long as this registry has named them, so they declared guards over nothing.
   // Both declared `weekly_sales:update` until 2026-09-03; both handlers assert `weekly_sales:import`.
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/sales/weekly/pos-region-mappings", permission: { resource: "weekly_sales", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/pos-region-mappings/template", permission: { resource: "weekly_sales", action: "import" } }),
@@ -2193,12 +2196,14 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/employee-context", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/hub-data", permission: { resource: "employees", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/managers", permission: { resource: "employees", action: "read" } }),
-  sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/historical", permission: { resource: "leave", action: "read" } }),
-  // Legacy action-center paths kept for backwards compat (old bookmarks / mobile clients)
-  sessionApi({ methods: ["GET"], pattern: "/api/action-center/pending-count", permission: { resource: "leave", action: "read" } }),
-  sessionApi({ methods: ["GET"], pattern: "/api/action-center/employee-context", permission: { resource: "leave", action: "read" } }),
-  sessionApi({ methods: ["GET"], pattern: "/api/action-center/hub-data", permission: { resource: "employees", action: "read" } }),
-  sessionApi({ methods: ["GET"], pattern: "/api/action-center/managers", permission: { resource: "employees", action: "read" } }),
+  // Removed 2026-10-08, five entries that declared guards over routes with no route.ts:
+  //   /api/approvals-hub/historical — never built.
+  //   /api/action-center/{pending-count,employee-context,hub-data,managers} — carried the comment
+  //   "kept for backwards compat (old bookmarks)", but the handlers themselves are gone, so an old
+  //   bookmark 404s whatever this file says. The live surface is /api/approvals-hub/** above.
+  // Declaring a pattern here cannot create, route or protect anything — the registry is a
+  // declarative inventory — so an entry for a missing route only misinforms whoever reads it to
+  // learn what is callable.
 
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans/calendar", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },
