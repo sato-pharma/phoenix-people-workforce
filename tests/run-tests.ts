@@ -1448,6 +1448,7 @@ import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-res
 import { runPasswordResetCodeEmailCarriesTheCodeTests } from "./password-reset-code-email-carries-the-code.test.ts";
 import { runDeductionsApprovedNotPushedFeedbackTests } from "./deductions-approved-not-pushed-feedback.test.ts";
 import { runDeductionsVacationSelfRetireTests } from "./deductions-vacation-self-retire.test.ts";
+import { runDeductionsBulkDecideTests } from "./deductions-bulk-decide.test.ts";
 import { runDeductionsManualDayGuardTests } from "./deductions-manual-day-guard.test.ts";
 import { runAuthPasswordResetCodeTests } from "./auth-password-reset-code.test.ts";
 import { runLoginFormLocatorContractTests } from "./login-form-locator-contract.test.ts";
@@ -5233,6 +5234,10 @@ await runTest(
 await runTest(
   "a vacation re-collect never deletes its own candidates (the already-claimed read excludes this run's own replaceable rows but keeps a LOCKED one claimed — counting them retired 13 of his decisions in September, three of them approvals)",
   runDeductionsVacationSelfRetireTests,
+);
+await runTest(
+  "the Deductions workspace decides many candidates at once (tick several or all; one confirmed decision per row through the single-decision route, no amount or days sent, a pushed line can never be ticked)",
+  runDeductionsBulkDecideTests,
 );
 await runTest(
   "a manual HR entry claims no day in the database guard either (its date is a 1st-of-month placeholder; the trigger refused 6 of Ahmed Nabil's 7 approved September manual entries as double deductions of the 1st)",

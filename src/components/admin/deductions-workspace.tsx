@@ -702,6 +702,169 @@ function CandidateDecideRow({
   );
 }
 
+const BULK_DECIDE_CONCURRENCY = 3;
+
+/**
+ * Decide every ticked candidate with ONE decision and ONE reason.
+ *
+ * It posts to the same `/api/admin/deductions/decisions` route the single Decide button uses, one
+ * candidate per request, so every rule that route carries — the permission, the reason requirement,
+ * the locked-line refusal, the payroll resync on a decision made after a step was confirmed — applies
+ * to each row exactly as it does one at a time. No days are sent: a reviewer's saved day selection
+ * on a row is left as it is, and the amount is still derived server-side. A failure on one row never
+ * stops the others, and only the rows that succeeded are un-ticked, so the failures stay selected
+ * for a retry.
+ */
+function BulkDecideBar({
+  selectedRows,
+  onDecided,
+  onFinished,
+}: {
+  selectedRows: CandidateApiRow[];
+  onDecided: (candidateId: string, decision: CandidateApiRow["decision"]) => void;
+  onFinished: (succeededIds: string[]) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [pendingStatus, setPendingStatus] = useState<(typeof DECISION_STATUSES)[number] | null>(null);
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [summary, setSummary] = useState<{ ok: number; failed: Array<{ name: string; message: string }>; notices: number } | null>(
+    null,
+  );
+
+  const count = selectedRows.length;
+  const totalAmount = selectedRows.reduce((sum, row) => sum + (appliedAmountOf(row) ?? 0), 0);
+
+  async function apply(status: (typeof DECISION_STATUSES)[number]) {
+    const rows = selectedRows;
+    // Same default the single Decide button prefills: the server refuses a decision with no reason.
+    const effectiveReason =
+      reason.trim() || (status === "Approved for Payroll" ? `Approved for payroll after review (${rows[0]?.monthKey ?? ""})` : "");
+    if (!effectiveReason) {
+      setSummary({ ok: 0, failed: [{ name: "Nothing was changed", message: "A decision reason is required." }], notices: 0 });
+      setPendingStatus(null);
+      return;
+    }
+    setRunning(true);
+    setSummary(null);
+    setProgress(0);
+    const succeeded: string[] = [];
+    const failed: Array<{ name: string; message: string }> = [];
+    let notices = 0;
+    let cursor = 0;
+
+    async function worker() {
+      while (cursor < rows.length) {
+        const row = rows[cursor++];
+        try {
+          const payload = await fetchJson<{
+            decision: CandidateApiRow["decision"] & { payrollNotices?: string[] };
+          }>("/api/admin/deductions/decisions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ candidateId: row.id, decisionStatus: status, decisionReason: effectiveReason }),
+          });
+          onDecided(row.id, payload.decision);
+          succeeded.push(row.id);
+          notices += (payload.decision?.payrollNotices ?? []).length > 0 ? 1 : 0;
+        } catch (decideError) {
+          failed.push({
+            name: employeeLabel(row),
+            message: decideError instanceof Error ? decideError.message : "Unable to record this decision.",
+          });
+        }
+        setProgress((current) => current + 1);
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(BULK_DECIDE_CONCURRENCY, rows.length) }, () => worker()));
+    setRunning(false);
+    setPendingStatus(null);
+    setSummary({ ok: succeeded.length, failed, notices });
+    if (failed.length === 0) setReason("");
+    onFinished(succeeded);
+  }
+
+  if (count === 0 && !summary) return null;
+
+  return (
+    <div className="space-y-2 border-b border-slate-200 bg-orange-50/60 px-4 py-3">
+      {count > 0 ? (
+        <>
+          <p className="text-xs font-black uppercase tracking-[0.1em] text-slate-800">
+            {count} selected · {money(totalAmount)} EGP
+          </p>
+          <input
+            className={phxFieldClassName}
+            disabled={running}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Decision reason (applied to all selected)"
+            value={reason}
+          />
+          {pendingStatus ? (
+            <div className="space-y-1.5 border border-slate-300 bg-white p-2">
+              <p className="text-xs font-semibold text-slate-800">
+                Record “{pendingStatus}” on {count} deduction{count === 1 ? "" : "s"} ({money(totalAmount)} EGP)?
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+                  disabled={running}
+                  onClick={() => apply(pendingStatus)}
+                  type="button"
+                >
+                  {running ? `Saving ${progress} of ${count}` : `Confirm — ${pendingStatus}`}
+                </button>
+                <button
+                  className="rounded-sm px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500"
+                  disabled={running}
+                  onClick={() => setPendingStatus(null)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {DECISION_STATUSES.map((status) => (
+                <button
+                  className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+                  disabled={running}
+                  key={status}
+                  onClick={() => setPendingStatus(status)}
+                  type="button"
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : null}
+      {summary ? (
+        <div className="space-y-1">
+          {summary.ok > 0 ? (
+            <p className="text-xs font-semibold text-emerald-800">
+              Decision recorded on {summary.ok} deduction{summary.ok === 1 ? "" : "s"}.
+            </p>
+          ) : null}
+          {summary.notices > 0 ? (
+            <p className="text-xs font-semibold text-amber-800">
+              {summary.notices} of them could not reach Automated Payroll — open the row to read why.
+            </p>
+          ) : null}
+          {summary.failed.map((entry, index) => (
+            <p className="text-xs font-semibold text-red-700" key={`${entry.name}-${index}`}>
+              {entry.name}: {entry.message}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Would the server accept a PUSH for this row right now? Mirrors
  * isEligibleForPublish (calculations.ts): a category that requires approval needs
@@ -1153,6 +1316,9 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   // Bumped to force a refetch after a manual entry is added, so the new row
   // appears without a full page reload.
   const [reloadToken, setReloadToken] = useState(0);
+  // Ticked candidate ids for the bulk decision. Ids that are no longer decidable (a refetch, a
+  // push) simply drop out of `selectedRows` below, so a stale tick can never be decided.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -1185,6 +1351,37 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   }
 
   const config = DEDUCTIONS_CATEGORY_CONFIG[category];
+
+  // A pushed line is locked against edits, so it can be neither ticked nor decided in bulk.
+  const selectableRows = canDecide ? rows.filter((row) => !row.pushedLineId) : [];
+  const selectedRows = selectableRows.filter((row) => selectedIds.has(row.id));
+  const allSelected = selectableRows.length > 0 && selectedRows.length === selectableRows.length;
+  const pendingRows = selectableRows.filter((row) => (row.decision?.decisionStatus ?? "Pending") === "Pending");
+
+  function toggleSelected(candidateId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(candidateId)) next.delete(candidateId);
+      else next.add(candidateId);
+      return next;
+    });
+  }
+
+  function setSelection(ids: readonly string[]) {
+    setSelectedIds(new Set(ids));
+  }
+
+  function toggleAll() {
+    setSelection(allSelected ? [] : selectableRows.map((row) => row.id));
+  }
+
+  function handleBulkFinished(succeededIds: string[]) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const id of succeededIds) next.delete(id);
+      return next;
+    });
+  }
 
   return (
     <div className="border border-slate-200 bg-white shadow-sm">
@@ -1225,6 +1422,44 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
         </div>
       ) : null}
 
+      {canDecide && selectableRows.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-slate-100 bg-slate-50/60 px-4 py-2">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-slate-700">
+            <input
+              checked={allSelected}
+              className="h-3.5 w-3.5 accent-orange-500"
+              onChange={toggleAll}
+              ref={(element) => {
+                if (element) element.indeterminate = selectedRows.length > 0 && !allSelected;
+              }}
+              type="checkbox"
+            />
+            Select all ({selectableRows.length})
+          </label>
+          {pendingRows.length > 0 && pendingRows.length < selectableRows.length ? (
+            <button
+              className="whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+              onClick={() => setSelection(pendingRows.map((row) => row.id))}
+              type="button"
+            >
+              Select pending only ({pendingRows.length})
+            </button>
+          ) : null}
+          {selectedRows.length > 0 ? (
+            <button
+              className="whitespace-nowrap px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 hover:text-slate-800"
+              onClick={() => setSelection([])}
+              type="button"
+            >
+              Clear selection
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {canDecide ? (
+        <BulkDecideBar onDecided={handleDecided} onFinished={handleBulkFinished} selectedRows={selectedRows} />
+      ) : null}
+
       {!loading && rows.length === 0 ? (
         <div className="p-10 text-center">
           <p className="text-sm font-bold text-slate-500">No {config.label.toLowerCase()} candidates for {monthLabel(monthKey)}.</p>
@@ -1242,6 +1477,18 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
+                  {canDecide ? (
+                    <th className="w-8 px-3 py-2">
+                      <input
+                        aria-label="Select all candidates"
+                        checked={allSelected}
+                        className="h-3.5 w-3.5 accent-orange-500"
+                        disabled={selectableRows.length === 0}
+                        onChange={toggleAll}
+                        type="checkbox"
+                      />
+                    </th>
+                  ) : null}
                   <th className="px-4 py-2">Employee</th>
                   <th className="whitespace-nowrap px-4 py-2">Hire date</th>
                   <th className="px-4 py-2">Days</th>
@@ -1261,6 +1508,18 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                   return (
                     <Fragment key={row.id}>
                       <tr className="border-b border-slate-100 odd:bg-slate-50/60 hover:bg-orange-50/40">
+                        {canDecide ? (
+                          <td className="px-3 py-2.5">
+                            <input
+                              aria-label={`Select ${employeeLabel(row)}`}
+                              checked={selectedIds.has(row.id)}
+                              className="h-3.5 w-3.5 accent-orange-500"
+                              disabled={Boolean(row.pushedLineId)}
+                              onChange={() => toggleSelected(row.id)}
+                              type="checkbox"
+                            />
+                          </td>
+                        ) : null}
                         {/* Employee NAME only. Not "name, falling back to the HR
                             code" either — a raw code must never reach a screen, so
                             the name is resolved server-side from the employees
@@ -1355,7 +1614,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                       </tr>
                       {canDecide && editingId === row.id ? (
                         <tr className="border-b border-slate-200 bg-white">
-                          <td className="px-4 pb-3" colSpan={9}>
+                          <td className="px-4 pb-3" colSpan={canDecide ? 10 : 9}>
                             <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
                           </td>
                         </tr>
@@ -1374,7 +1633,19 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
               return (
                 <div className={["px-4 py-3", index % 2 === 1 ? "bg-slate-50/60" : ""].join(" ")} key={row.id}>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="whitespace-nowrap font-semibold text-slate-900">{employeeLabel(row)}</p>
+                    <label className="flex min-w-0 items-center gap-2">
+                      {canDecide ? (
+                        <input
+                          aria-label={`Select ${employeeLabel(row)}`}
+                          checked={selectedIds.has(row.id)}
+                          className="h-4 w-4 shrink-0 accent-orange-500"
+                          disabled={Boolean(row.pushedLineId)}
+                          onChange={() => toggleSelected(row.id)}
+                          type="checkbox"
+                        />
+                      ) : null}
+                      <span className="whitespace-nowrap font-semibold text-slate-900">{employeeLabel(row)}</span>
+                    </label>
                     <StatusBadge status={row.decision?.decisionStatus ?? null} />
                   </div>
                   <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">Hired {hireDateLabel(row.hireDate)}</p>
