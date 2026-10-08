@@ -87,3 +87,15 @@ earlier count; the script's set is the board's own `groupSameRepDuplicates`, and
 
 Archiving 166 rows in one run is a bulk production change: it is announced to the owner before
 `--apply`, and the pre-image is applied first.
+
+**Applied on production, 2026-10-08 at about 14:15 Cairo, on the owner's go-ahead ("Yes, backup
+first").** A fresh dry run first matched the plan byte for byte. The pre-image schema
+`phoenix_crm_merge_backup_20261008` was loaded and held all 329 customer rows (163 kept, 166 leaving)
+and their 34 child rows. Then 163 groups merged, 0 refused. After it: 166 rows `dropped` / `duplicate`
+and still present, 166 `customer_merged_out` and 166 `customer_merged_in` events by B-10, live real
+customers 10,830 → 10,664, no visit without its customer, and a fresh dry run finds 0 groups. The
+first `--apply` stopped before any write because the direct database host did not resolve from the
+laptop; the pre-image check now uses the session pooler, as `scripts/apply-sql-file.mjs` does.
+
+The owner also confirmed on 2026-10-08 that an AM photo with no signboard keeps holding, and that the
+PM "no name" holds are watched on the integrity board for their first week rather than sampled.
