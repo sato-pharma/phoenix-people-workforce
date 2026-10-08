@@ -97,18 +97,9 @@ try {
   const printer = path.join(tree, "scripts", "field-day", "print-day.mjs");
   if (!existsSync(printer)) throw new Error("origin/main has no scripts/field-day/print-day.mjs — has it been renamed?");
 
-  // 🔴 THE UNATTENDED RUN IS THE ONLY THING THAT ASKS FOR THE SKIP (owner, 2026-10-09: "make the
-  // nightly skip a day off"). A day NAMED on the command line prints whatever day of the week it was
-  // — that is a human asking for that day, and it is how the 8 October papers were reprinted once the
-  // holiday fix landed. The decision itself lives in the printer, which is versioned and tested; this
-  // file only asks for it, because all it has to do is survive being copied to ~/.claude/scripts.
   const day = process.argv[2];
-  const out = execFileSync(process.execPath, day ? [printer, day] : [printer, "--skip-day-off"], { cwd: tree, encoding: "utf8" });
-  for (const line of out.split(/\r?\n/).filter(Boolean)) {
-    // Every other stdout line is a PDF path. Only this prefix is a sentence, and #5578 is why the
-    // difference matters at all: the log must never claim a paper Chrome did not write.
-    say(line.startsWith("SKIPPED — ") ? line : `wrote ${line}`);
-  }
+  const out = execFileSync(process.execPath, day ? [printer, day] : [printer], { cwd: tree, encoding: "utf8" });
+  for (const line of out.split(/\r?\n/).filter(Boolean)) say(`wrote ${line}`);
   say("done");
 } catch (error) {
   // A nightly job that fails silently is worse than no job: the log is the only thing that will ever

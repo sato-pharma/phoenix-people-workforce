@@ -114,47 +114,34 @@ explain, so should a note ever be written against a date the company later moves
 note still does not print. A rep with nothing to explain on a day gets only the derived notes, exactly
 as before, and a rep is always still **named** on the paper — only the borrowed sentence is gone.
 
-## The nightly skips a day off (owner, 2026-10-09)
+## The nightly prints every day, a day off included (owner, 2026-10-09)
 
-*"make the nightly skip a day off."* The papers for a day off read correctly after the fix above —
-this is about not filling `xlsx/` with four sheets for a day nobody worked.
+Asked for and reversed within the same hour: *"make the nightly skip a day off"*, shipped as #5582,
+then **"leave the nightly printing on a day off"** — reverted by #5584. So the scheduled job prints
+four papers every day it runs, a public holiday and a Friday included. The papers read correctly on a
+day off since the fix above, which is what makes that an acceptable answer rather than a resigned one.
+🔴 **Do not add a skip back without his word for it.**
 
-The skip is **opt-in**, and that is the whole design:
+What it looked like, if it is ever asked for again: opt-in, the flag passed by the launcher **only
+when it was given no day**, so a day named on the command line always prints — that is the path the
+8 October papers were reprinted by, and a printer refusing a day off outright would have refused that
+reprint too. The notice was prefixed `SKIPPED — ` because every other stdout line is a PDF path the
+launcher logs as `wrote <line>`, and it exited 0, because a day off printing nothing is a correct
+outcome and Task Scheduler reads non-zero as a broken job.
 
-- `run-nightly.mjs` passes `--skip-day-off` **only when it was given no day**. The true nightly run
-  prints "today", so that is the only invocation that should ever skip.
-- A day **named on the command line always prints**, whatever day of the week it was. This is not a
-  nicety: the 8 October papers were reprinted by naming that day the morning after the holiday fix
-  landed, and a printer that refused a day off outright would have refused that reprint.
-- `parsePrintArgs` keeps the day and the flag independent in either order, so a flag never eats the
-  day beside it.
-- The skip **exits 0**. A day off printing nothing is the correct outcome; Windows Task Scheduler
-  shows a non-zero exit as a job that broke.
-- The notice is prefixed **`SKIPPED — `**, because every other stdout line is a PDF path that the
-  launcher logs as `wrote <line>`. Unprefixed, the log would read *"wrote 2026-10-09 was Friday…"* —
-  a written paper that is a sentence, which is exactly the class #5578 fixed.
-- The decision lives in the **printer**, never the launcher. `run-nightly.mjs` is node-builtins-only
-  (it runs before `node_modules` exists) and its one job is to survive being copied to
-  `~/.claude/scripts`; logic belongs in the versioned, tested file.
+### 🔴 A launcher change is inert until the copy is refreshed
 
-Verified by running it: `--skip-day-off` on Friday 9 October and on 8 October both printed the
-notice, exited 0 and wrote **no files**; `2026-10-08` with no flag still produced all four papers.
+Found while building that skip, and true of **any** `run-nightly.mjs` change.
 
-### 🔴 Merging a launcher change does NOTHING until the copy is refreshed
+The scheduled task **Phoenix CRM field day report** invokes `~\.claude\scripts\field-day-nightly.mjs`
+— a **copy** that `install-task.ps1:68` makes with `Copy-Item`, never a file in a checkout. Only the
+*printer* comes fresh from `origin/main` each night; the launcher does not.
 
-The scheduled task **Phoenix CRM field day report** invokes
-`~\.claude\scripts\field-day-nightly.mjs` — a **copy** that `install-task.ps1:68` makes with
-`Copy-Item`, never a file in a checkout. Only the *printer* comes fresh from `origin/main` each
-night; the launcher does not.
-
-So a change to `run-nightly.mjs` is **inert on the box the moment it merges**. Measured 2026-10-09:
-the copy was byte-identical to `origin/main`, passed no `--skip-day-off`, and the task's next run was
-that evening at 21:00 — merging the skip alone would have printed four Friday sheets anyway. After
-merging a launcher change, refresh the copy (`install-task.ps1`, or its `Copy-Item` alone).
+This is not theoretical. #5582 sat on `main` for the whole of the night of 8–9 October and the box
+**never skipped a single day**, because the copy still passed no flag. A launcher change reads as
+shipped the moment it merges, and is not.
 
 🔴 **And the order is load-bearing, not a preference.** The launcher hands the printer its arguments,
-and a printer from *before* the skip landed does `readDay(process.argv[2])` with no flag parsing — so
-a refreshed launcher against an old `origin/main` asks it to read a day literally named
-`--skip-day-off`, which is an invalid date and fails the whole run. **Printer to `main` first,
-launcher copy second.** Refreshing the copy first does not merely fail to skip — it produces no
-papers at all.
+so refresh the copy only *after* the printer it depends on is on `main`. A printer that does not yet
+parse a new flag reads it as the **day** — an invalid date that fails the whole run. Copy-first
+produces no papers at all, not merely the old behaviour.
