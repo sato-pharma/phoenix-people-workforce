@@ -11,6 +11,7 @@ import {
   buildPlannerSentenceEn,
   coerceProductionPlanningLanguage,
   formatNumberLatin,
+  packagingBoxName,
   PP,
   PP_EN,
   PRODUCTION_PLANNING_ERRORS,
@@ -22,6 +23,7 @@ import {
   PRODUCTION_PLANNING_TABS,
   PRODUCTION_PLANNING_TABS_EN,
   productionPlanningStrings,
+  reorderEmailMaterialLabel,
   storedPlanTitle,
   SUPPLIER_LABELS,
   SUPPLIER_LABELS_EN,
@@ -594,5 +596,19 @@ export function runProductionPlanningStringsTests() {
   assert.ok(
     /[\u0600-\u06FF]/.test(emailSummary),
     `the reorder email is Arabic by decision — the toggle is a screen preference: ${emailSummary}`,
+  );
+
+  // The owner, 2026-10-08: the packaging material is stored as `Box` / `علبة`, and the email also says
+  // boxes for the product count — so the packaging ROW is spelled out in the email, as in the export.
+  // Every other material keeps its stored name, and both documents read the SAME constants.
+  assert.equal(reorderEmailMaterialLabel("CARTON", "علبة"), "علبة التغليف", "the packaging row is spelled out in the email");
+  assert.equal(reorderEmailMaterialLabel("STICKER", "ستيكر"), "ستيكر", "any other material keeps its stored name");
+  assert.equal(packagingBoxName("ar"), "علبة التغليف");
+  assert.equal(packagingBoxName("en"), "Packaging box");
+  assert.ok(!/[؀-ۿ]/.test(packagingBoxName("en")), "the English packaging name carries no Arabic");
+  const sweepSource = stripComments(readFileSync("src/lib/production-planning/reorder-sweep.ts", "utf8"));
+  assert.ok(
+    sweepSource.includes("reorderEmailMaterialLabel("),
+    "the reorder sweep must label its rows through reorderEmailMaterialLabel, or the packaging box goes back to the bare name",
   );
 }
