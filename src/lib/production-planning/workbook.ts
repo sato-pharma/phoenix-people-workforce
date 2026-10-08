@@ -168,18 +168,26 @@ function purchaseFormula(excelRow: number, minOrder: number | null, increment: n
 }
 
 /** The derived cell a material's basis count reads, chosen by what the recipe is written per. */
-function basisCountRef(row: WirePlanRow, refs: { boxes: string; doses: string; goodUnits: string; samples: string }) {
+function basisCountRef(
+  row: WirePlanRow,
+  refs: { boxes: string; doses: string; goodUnits: string; packagingSets: string; samples: string },
+) {
   switch (row.basis) {
     case "per_dose":
       return refs.doses;
     case "per_packaging_set":
-      // A packaging set and a sellable box are the same count here — a sample consumes a full set —
-      // so this is deliberately the same cell as the total box count, not a second figure.
-      return refs.boxes;
+      // Its OWN cell since Guamusin — `goodUnits + samples`, because a sample consumes a full set.
+      // It used to point at the box count, which is the same number only while `unitsPerBox` is 1.
+      return refs.packagingSets;
     case "per_good_unit":
       return refs.goodUnits;
     case "per_sample_unit":
       return refs.samples;
+    case "per_box":
+      // The CARTON count, which is `goodUnits / unitsPerBox` — Guamusin's box holds twelve sachets,
+      // so the carton and the sticker are consumed once per box and not once per sachet. For a
+      // product whose `unitsPerBox` is 1 this is the same cell as `per_packaging_set`.
+      return refs.boxes;
     default:
       return null;
   }
@@ -209,6 +217,16 @@ export async function buildProductionPlanningWorkbook(
   const plan: WirePlan | null = workspace.plan;
   if (!plan) throw new Error("No plan to export.");
   const product = workspace.products.find((candidate) => candidate.id === plan.productId) ?? workspace.products[0];
+  // The unit pair the labels follow. From the PLAN and not the product, so a plan exported for the
+  // powder cannot be labelled with the syrup's millilitres even if the product lookup above fell back.
+  const measure = S.measureUnitLabels(plan.measureUnit);
+  // Built once: the per-dose label states the product's own dose, so it cannot be a flat constant.
+  const basisLabels = S.basisLabels({
+    dose: formatNumberLatin(product?.doseMl ?? "0"),
+    goodUnit: formatNumberLatin(product?.goodUnitMl ?? "0"),
+    measureUnit: plan.measureUnit,
+    sampleUnit: formatNumberLatin(product?.sampleUnitMl ?? "0"),
+  });
   const materialById = new Map(workspace.materials.map((material) => [material.id, material]));
 
   const workbook = new ExcelJS.Workbook();
@@ -240,22 +258,22 @@ export async function buildProductionPlanningWorkbook(
   row += 1;
 
   const runVolumeRow = row;
-  labelCell(sheet, runVolumeRow, PPL.sheetRunVolumeMl);
+  labelCell(sheet, runVolumeRow, `${PPL.sheetRunVolume} (${measure.small})`);
   inputCell(sheet, runVolumeRow, num(product?.runVolumeMl), UNITS_FMT);
   row += 1;
 
   const goodMlRow = row;
-  labelCell(sheet, goodMlRow, PPL.sheetGoodUnitMl);
+  labelCell(sheet, goodMlRow, `${PPL.sheetGoodUnitSize} (${measure.small})`);
   inputCell(sheet, goodMlRow, num(product?.goodUnitMl), UNITS_FMT);
   row += 1;
 
   const sampleMlRow = row;
-  labelCell(sheet, sampleMlRow, PPL.sheetSampleUnitMl);
+  labelCell(sheet, sampleMlRow, `${PPL.sheetSampleUnitSize} (${measure.small})`);
   inputCell(sheet, sampleMlRow, num(product?.sampleUnitMl), UNITS_FMT);
   row += 1;
 
   const doseMlRow = row;
-  labelCell(sheet, doseMlRow, PPL.sheetDoseMl);
+  labelCell(sheet, doseMlRow, `${PPL.sheetDose} (${measure.small})`);
   inputCell(sheet, doseMlRow, num(product?.doseMl), VALUE_FMT);
   row += 1;
 
@@ -297,7 +315,7 @@ export async function buildProductionPlanningWorkbook(
   row += 1;
 
   const neededVolumeRow = row;
-  labelCell(sheet, neededVolumeRow, PPL.sheetNeededVolumeMl);
+  labelCell(sheet, neededVolumeRow, `${PPL.sheetNeededVolume} (${measure.small})`);
   formulaCell(
     sheet,
     neededVolumeRow,
@@ -328,12 +346,23 @@ export async function buildProductionPlanningWorkbook(
   );
   row += 1;
 
+  // 🔴 PACKAGING SETS AND BOXES ARE TWO DIFFERENT CELLS, and they were one cell until Guamusin.
+  //
+  // A packaging set is consumed once per saleable unit (`goodUnits + samples`); a box is the carton
+  // he counts in (`packagingSets / unitsPerBox`). Ivyronc's `unitsPerBox` is 1, so the two were the
+  // same number and one cell served both — but Guamusin's carton holds twelve sachets, so a formula
+  // reading the BOX count for a per-packaging-set material would have understated its film by 12×.
+  const packagingSetsRow = row;
+  labelCell(sheet, packagingSetsRow, PPL.sheetPackagingSets);
+  formulaCell(sheet, packagingSetsRow, `$B$${yieldRow}+${SAMPLES}`, num(plan.packagingSets), UNITS_FMT);
+  row += 1;
+
   const boxesRow = row;
   labelCell(sheet, boxesRow, PPL.sheetTotalBoxes);
   formulaCell(
     sheet,
     boxesRow,
-    `($B$${yieldRow}+${SAMPLES})/${UNITS_PER_BOX}`,
+    `$B$${packagingSetsRow}/${UNITS_PER_BOX}`,
     num(plan.totalBoxes),
     UNITS_FMT,
   );
@@ -351,7 +380,7 @@ export async function buildProductionPlanningWorkbook(
   row += 1;
 
   const litresRow = row;
-  labelCell(sheet, litresRow, PPL.sheetTotalVolumeLitres);
+  labelCell(sheet, litresRow, `${PPL.sheetTotalVolume} (${measure.large})`);
   formulaCell(sheet, litresRow, `$B$${runsRow}*${RUN_VOLUME}/1000`, num(plan.totalVolumeLitres), VALUE_FMT);
   row += 1;
 
@@ -364,6 +393,7 @@ export async function buildProductionPlanningWorkbook(
     boxes: `$B$${boxesRow}`,
     doses: `$B$${dosesRow}`,
     goodUnits: `$B$${yieldRow}`,
+    packagingSets: `$B$${packagingSetsRow}`,
     samples: SAMPLES,
   };
 
@@ -388,7 +418,7 @@ export async function buildProductionPlanningWorkbook(
     const willSend = num(planRow.willSend);
 
     const basisText = planRow.basis
-      ? `${S.basisLabels[planRow.basis]} (${S.unitLabel(material?.baseUnit)})`.trim()
+      ? `${basisLabels[planRow.basis]} (${S.unitLabel(material?.baseUnit)})`.trim()
       : PPL.chipNoComposition;
 
     return [

@@ -29,7 +29,17 @@
  * The owner chose Latin numerals. `Intl.NumberFormat("ar-EG")` emits Arabic-Indic digits (٠١٢٣) and
  * `ج.م.`, so the locale here is `en-EG` and the test asserts the literal `"ar-EG"` never appears in
  * this module.
+ *
+ * ── The one import, and why it is type-only ──────────────────────────────────────────────────────
+ *
+ * This file is otherwise a LEAF: it imports nothing at runtime, which is what lets the cron, the
+ * workbook builder and a `"use client"` component all read it without pulling anything behind it.
+ * `import type` emits no code at all, so taking the two unions from the kernel keeps that property
+ * while making a drifted basis or measure unit a compile error rather than a label that silently
+ * stops matching.
  */
+import type { ExpirySeverity } from "./expiry";
+import type { CompositionBasis, MeasureUnit } from "./rules";
 
 /** The locale every number in this module is formatted with. NEVER `ar-EG` — see the note above. */
 export const PRODUCTION_PLANNING_NUMBER_LOCALE = "en-EG";
@@ -121,7 +131,10 @@ export const PP = {
   requestModeRuns: "عدد التشغيلات",
   requestedQtyLabel: "الكمية المطلوبة",
   sampleUnitsLabel: "عدد العينات المجانية",
-  sampleUnitsHint: "العينة 40 مل من نفس حجم التشغيلة — تقلل عدد العلب 100 مل وتستهلك عبوة كاملة",
+  // The sizes are NOT written in here any more: they were Ivyronc's 40 ml sample and 100 ml bottle,
+  // and a second product makes a hard-coded measurement a wrong sentence rather than a helpful one.
+  // `sampleUnitsHint(measure)` on the bundle fills them from the product's own geometry.
+  sampleUnitsHint: "العينة من نفس حجم التشغيلة — تقلل عدد الوحدات القابلة للبيع وتستهلك عبوة كاملة",
   overageLabel: "نسبة الفاقد",
   overageHintDefault: "النسبة الافتراضية من الإعدادات",
   overageHintMeasured: "نسبة مقيسة من التشغيلات المسجلة",
@@ -142,8 +155,14 @@ export const PP = {
   unitRuns: "تشغيلة",
   unitLitre: "لتر",
   unitMl: "مل",
+  // The same pair for a product measured by WEIGHT. A powder in 5 g sachets was reading "5 مل" on
+  // his screen, because the geometry columns are named `…_ml` and the labels followed the names
+  // instead of the product. `measureUnitLabels` picks the pair; the arithmetic never changed.
+  unitKilogram: "كجم",
+  unitGram: "جم",
   unitBox: "علبة",
   unitBottle: "زجاجة",
+  unitSachet: "كيس",
   unitSample: "عينة",
   roundedUpNote: "التشغيلات بأعداد صحيحة، فتم التقريب لأعلى",
   exactRunsNote: "الاحتياج الدقيق",
@@ -196,6 +215,12 @@ export const PP = {
   stockAdd: "إضافة تقرير مخزون",
   stockHistory: "سجل التقارير",
   stockNoneYet: "لا توجد تقارير مخزون لهذه المادة",
+  // ── The expiry date, on the stock tab ──
+  // The owner, three times over: "خانة الاكسبايري ديت مهمة جدا جدا جدا يا عمر".
+  stockExpiry: "تاريخ الانتهاء",
+  stockExpiryHint: "يُترك فارغًا لمواد التغليف — الفيلم والكراتين والاستيكر لا تنتهي",
+  stockNoExpiry: "لا ينتهي",
+  stockLotNote: "كل تاريخ انتهاء رصيد منفصل، والمتاح هو مجموعها",
 
   // ── The cost tab ──────────────────────────────────────────────────────────────────────────────
   costTitle: "التكلفة",
@@ -253,6 +278,12 @@ export const PP = {
   settingsAlarmDryRun: "وضع التجربة — تسجيل بدون إرسال",
   settingsAlarmOffNotice: "التنبيه غير مُفعَّل — لا يُرسل أي بريد",
   settingsAlarmDryRunNotice: "وضع التجربة مُفعَّل — يُسجَّل ما كان سيُرسل بدون إرسال فعلي",
+  settingsExpiryWarnDays: "التنبيه قبل الانتهاء (يوم)",
+  settingsExpiryWarnDaysHint: "تظهر المواد التي تنتهي خلال هذه المدة — الافتراضي ثلاثة شهور",
+  settingsExpiryAlarmEnabled: "تشغيل بريد تنبيه الانتهاء",
+  settingsExpiryAlarmDryRun: "وضع التجربة لبريد الانتهاء",
+  settingsExpiryOffNotice: "بريد الانتهاء غير مُفعَّل — التحذير يظهر على الشاشة ولا يُرسل بريد",
+  settingsExpiryDryRunNotice: "وضع التجربة مُفعَّل — يُسجَّل ما كان سيُرسل بدون إرسال فعلي",
   settingsFxEnabled: "تشغيل السحب اليومي لسعر الصرف",
   settingsFxDryRun: "وضع التجربة لسعر الصرف",
   settingsFxFallback: "سعر الصرف الاحتياطي",
@@ -305,16 +336,20 @@ export const PP = {
   sheetMaterialsTitle: "المواد الخام",
   sheetCostTitle: "تكلفة الشراء",
   sheetRequestedBoxes: "إجمالي العلب المطلوب",
-  sheetRunVolumeMl: "حجم التشغيلة (مل)",
-  sheetGoodUnitMl: "حجم العلبة القابلة للبيع (مل)",
-  sheetSampleUnitMl: "حجم العينة (مل)",
-  sheetDoseMl: "الجرعة (مل)",
+  // The unit is NOT written into these labels — the workbook appends the product's own unit, so the
+  // powder's sheet reads "(جم)" where the syrup's reads "(مل)". A hard-coded (مل) here is the same
+  // defect the screen had: a label following the column name instead of the product.
+  sheetRunVolume: "حجم التشغيلة",
+  sheetGoodUnitSize: "حجم الوحدة القابلة للبيع",
+  sheetSampleUnitSize: "حجم العينة",
+  sheetDose: "الجرعة",
   sheetUnitsPerBox: "عدد الوحدات في العلبة",
-  sheetGoodUnitsRequested: "العلب القابلة للبيع المطلوبة",
-  sheetNeededVolumeMl: "حجم الاحتياج (مل)",
-  sheetTotalVolumeLitres: "الحجم الكلي (لتر)",
+  sheetGoodUnitsRequested: "الوحدات القابلة للبيع المطلوبة",
+  sheetNeededVolume: "حجم الاحتياج",
+  sheetTotalVolume: "الحجم الكلي",
   sheetTotalDoses: "إجمالي الجرعات",
-  sheetTotalBoxes: "إجمالي العلب (العبوات الكاملة)",
+  sheetPackagingSets: "إجمالي العبوات الكاملة",
+  sheetTotalBoxes: "إجمالي العلب (الكراتين)",
   sheetColBasisLabel: "أساس الحساب",
   sheetColQtyPerBasis: "الكمية لكل أساس",
   sheetColBasisCount: "عدد الأساس",
@@ -338,6 +373,18 @@ export const PP = {
   alarmEmailCover: "الغطاء",
   alarmEmailHeld: "المتوفر",
   unitDay: "يوم",
+
+  // ── The expiry warning — on screen always, by email only when he arms it ───────────────────────
+  expiryTitle: "مواد تقترب من تاريخ الانتهاء",
+  expiryNoneFound: "لا توجد مادة تنتهي خلال مدة التنبيه",
+  expirySeverityExpired: "منتهي",
+  expirySeverityCritical: "ينتهي قريبًا جدًا",
+  expirySeverityWarning: "داخل مدة التنبيه",
+  expiryEmailSubject: "تنبيه تاريخ انتهاء مواد خام",
+  expiryEmailStatus: "الأرقام أرصدة كما وردت، كل تاريخ انتهاء على حدة — لم تُجمع.",
+  expiryToday: "ينتهي اليوم",
+  expiryLastEvaluated: "آخر فحص",
+  expiryLastSent: "آخر إرسال",
 } as const;
 
 export type ProductionPlanningStringKey = keyof typeof PP;
@@ -377,7 +424,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   requestedQtyLabel: "Quantity requested",
   sampleUnitsLabel: "Free samples",
   sampleUnitsHint:
-    "A 40 ml sample comes out of the same run volume — it reduces the 100 ml box count and still uses a full packaging set",
+    "A sample comes out of the same run volume — it reduces the saleable unit count and still uses a full packaging set",
   overageLabel: "Overage",
   overageHintDefault: "The default from Settings",
   overageHintMeasured: "Measured from the recorded runs",
@@ -395,8 +442,11 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   unitRuns: "runs",
   unitLitre: "L",
   unitMl: "ml",
+  unitKilogram: "kg",
+  unitGram: "g",
   unitBox: "box",
   unitBottle: "bottle",
+  unitSachet: "sachet",
   unitSample: "sample",
   roundedUpNote: "Runs are whole, so this is rounded up",
   exactRunsNote: "Exact requirement",
@@ -448,6 +498,10 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   stockAdd: "Add a stock report",
   stockHistory: "Report history",
   stockNoneYet: "No stock report for this material yet",
+  stockExpiry: "Expiry date",
+  stockExpiryHint: "Left blank for packaging — film, cartons and stickers do not expire",
+  stockNoExpiry: "No expiry",
+  stockLotNote: "Each expiry date is its own balance, and the held figure is their total",
 
   // ── The cost tab ──────────────────────────────────────────────────────────────────────────────
   costTitle: "Cost",
@@ -510,6 +564,12 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   settingsAlarmOffNotice: "The alarm is off — no email is sent",
   settingsAlarmDryRunNotice:
     "Dry run is on — what would have been sent is recorded and nothing is sent",
+  settingsExpiryWarnDays: "Warn this many days before expiry",
+  settingsExpiryWarnDaysHint: "Anything expiring inside this window is shown — the owner chose three months",
+  settingsExpiryAlarmEnabled: "Expiry warning email on",
+  settingsExpiryAlarmDryRun: "Dry run for the expiry email",
+  settingsExpiryOffNotice: "The expiry email is off — the warning shows on screen and nothing is sent",
+  settingsExpiryDryRunNotice: "Dry run is on — what would have been sent is recorded and nothing is sent",
   settingsFxEnabled: "Daily exchange-rate read on",
   settingsFxDryRun: "Dry run for the exchange rate",
   settingsFxFallback: "Fallback exchange rate",
@@ -561,16 +621,17 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   sheetMaterialsTitle: "Raw materials",
   sheetCostTitle: "Purchase cost",
   sheetRequestedBoxes: "Total boxes requested",
-  sheetRunVolumeMl: "Run volume (ml)",
-  sheetGoodUnitMl: "Saleable box size (ml)",
-  sheetSampleUnitMl: "Sample size (ml)",
-  sheetDoseMl: "Dose (ml)",
+  sheetRunVolume: "Run volume",
+  sheetGoodUnitSize: "Saleable unit size",
+  sheetSampleUnitSize: "Sample size",
+  sheetDose: "Dose",
   sheetUnitsPerBox: "Units per box",
-  sheetGoodUnitsRequested: "Saleable boxes requested",
-  sheetNeededVolumeMl: "Required volume (ml)",
-  sheetTotalVolumeLitres: "Total volume (L)",
+  sheetGoodUnitsRequested: "Saleable units requested",
+  sheetNeededVolume: "Required volume",
+  sheetTotalVolume: "Total volume",
   sheetTotalDoses: "Total doses",
-  sheetTotalBoxes: "Total boxes (full packaging sets)",
+  sheetPackagingSets: "Total full packaging sets",
+  sheetTotalBoxes: "Total boxes (cartons)",
   sheetColBasisLabel: "Basis",
   sheetColQtyPerBasis: "Quantity per basis",
   sheetColBasisCount: "Basis count",
@@ -595,6 +656,17 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   alarmEmailCover: "Cover",
   alarmEmailHeld: "Held",
   unitDay: "day",
+
+  expiryTitle: "Materials nearing their expiry date",
+  expiryNoneFound: "Nothing expires inside the warning window",
+  expirySeverityExpired: "Expired",
+  expirySeverityCritical: "Expires very soon",
+  expirySeverityWarning: "Inside the warning window",
+  expiryEmailSubject: "Raw material expiry warning",
+  expiryEmailStatus: "The figures are balances as reported, one expiry date at a time — not totalled.",
+  expiryToday: "Expires today",
+  expiryLastEvaluated: "Last checked",
+  expiryLastSent: "Last sent",
 };
 
 /**
@@ -629,12 +701,146 @@ export const SUPPLIER_LABELS = {
   shared_unsettled: PP.chipUnsettled,
 } as const;
 
-export const BASIS_LABELS = {
-  per_dose: "لكل جرعة 5 مل",
-  per_packaging_set: "لكل عبوة كاملة",
-  per_good_unit: "لكل علبة قابلة للبيع",
-  per_sample_unit: "لكل عينة",
+/**
+ * What a product is MEASURED in, and the two sizes a label may need to state.
+ *
+ * Every number arrives ALREADY FORMATTED with Latin digits — these builders never call
+ * `toLocaleString`, because under an Arabic locale it emits ٠١٢٣ and the owner's Latin-digit ruling
+ * is the one thing a label must not break.
+ */
+export type ProductMeasure = {
+  /** One dose — a 5 ml spoonful, or a 5 g sachet. */
+  readonly dose: string;
+  /** One saleable unit — a 100 ml bottle, or a 5 g sachet. */
+  readonly goodUnit: string;
+  /** One free sample. */
+  readonly sampleUnit: string;
+  readonly measureUnit: MeasureUnit;
+};
+
+/**
+ * The small and large unit words for a product.
+ *
+ * 🔴 THE GEOMETRY COLUMNS ARE NAMED `…_ml` AND THE LABELS MUST NOT FOLLOW THEM. The arithmetic is
+ * unit-free — a run is `runVolume / dose` whatever the unit — but every label was written when the
+ * only product was a syrup, so a powder in 5 g sachets rendered "5 مل". This pair is what the labels
+ * follow instead, and `measure_unit` on the product row is what picks it.
+ */
+export function measureUnitLabelsAr(unit: MeasureUnit): { small: string; large: string } {
+  return unit === "g" ? { large: PP.unitKilogram, small: PP.unitGram } : { large: PP.unitLitre, small: PP.unitMl };
+}
+
+export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: string } {
+  return unit === "g"
+    ? { large: PP_EN.unitKilogram, small: PP_EN.unitGram }
+    : { large: PP_EN.unitLitre, small: PP_EN.unitMl };
+}
+
+/**
+ * The sample-size hint, with the product's own two sizes written into it.
+ *
+ * It used to be a flat string naming 40 ml and 100 ml, which were Ivyronc's. A hint that states a
+ * measurement is more useful than one that does not — so the sizes stay, and they come from the
+ * product instead of from the sentence.
+ */
+export function buildSampleUnitsHintAr(measure: ProductMeasure): string {
+  const u = measureUnitLabelsAr(measure.measureUnit);
+  return (
+    `العينة ${measure.sampleUnit} ${u.small} من نفس حجم التشغيلة — ` +
+    `تقلل عدد الوحدات ${measure.goodUnit} ${u.small} وتستهلك عبوة كاملة`
+  );
+}
+
+export function buildSampleUnitsHintEn(measure: ProductMeasure): string {
+  const u = measureUnitLabelsEn(measure.measureUnit);
+  return (
+    `A ${measure.sampleUnit} ${u.small} sample comes out of the same run volume — ` +
+    `it reduces the ${measure.goodUnit} ${u.small} unit count and still uses a full packaging set`
+  );
+}
+
+/**
+ * How long one lot has left, as a phrase.
+ *
+ * Three branches and not a signed number: "باقي 24 يوم", "ينتهي اليوم" and "منتهي منذ 12 يوم" are
+ * three different facts, and a bare `-12` on a screen is the one rendering of this that a tired
+ * reader at 4am misreads as twelve days of cover.
+ */
+export function buildExpiryDaysNoteAr(daysLeft: string, expired: boolean, today: boolean): string {
+  if (today) return PP.expiryToday;
+  return expired ? `منتهي منذ ${daysLeft} ${PP.unitDay}` : `باقي ${daysLeft} ${PP.unitDay}`;
+}
+
+export function buildExpiryDaysNoteEn(daysLeft: string, expired: boolean, today: boolean): string {
+  if (today) return PP_EN.expiryToday;
+  return expired ? `expired ${daysLeft} days ago` : `${daysLeft} days left`;
+}
+
+/** The three expiry severity labels, keyed the way `evaluateExpiry` returns them. */
+export const EXPIRY_SEVERITY_LABELS = {
+  expired: PP.expirySeverityExpired,
+  critical: PP.expirySeverityCritical,
+  warning: PP.expirySeverityWarning,
 } as const;
+
+// `Record<ExpirySeverity, string>` and not `typeof EXPIRY_SEVERITY_LABELS`: the Arabic record is
+// `as const`, so its type is the three Arabic literals and an English label cannot satisfy it. The
+// KEYS are what must match, and the mapped type is what pins those — the same shape as its siblings.
+export const EXPIRY_SEVERITY_LABELS_EN: Record<ExpirySeverity, string> = {
+  expired: PP_EN.expirySeverityExpired,
+  critical: PP_EN.expirySeverityCritical,
+  warning: PP_EN.expirySeverityWarning,
+};
+
+/**
+ * The expiry email's own two sentences, in Arabic — the email stays Arabic whatever the screen is on,
+ * exactly like the reorder one, because its readers are the five people the owner named.
+ */
+export function buildExpiryEmailSummary(parts: { readonly productNameAr: string; readonly count: string }): string {
+  return `في ${parts.productNameAr}، ${parts.count} من أرصدة المواد داخل مدة التنبيه أو منتهية بالفعل.`;
+}
+
+export function buildExpiryRowValue(parts: {
+  readonly severityLabel: string;
+  readonly expiryDate: string;
+  readonly daysNote: string;
+  readonly heldText: string;
+  readonly displayUnit: string;
+  readonly locationName: string;
+}): string {
+  return [
+    `${parts.severityLabel} — ${PP.stockExpiry} ${parts.expiryDate}`,
+    parts.daysNote,
+    `${PP.alarmEmailHeld} ${parts.heldText} ${unitLabelAr(parts.displayUnit)}`,
+    `${PP.stockLocation} ${parts.locationName}`,
+  ].join(" · ");
+}
+
+/**
+ * The generic half of each basis label — no measurement, so it is the same for every product.
+ *
+ * `per_dose` used to read "لكل جرعة 5 مل". The 5 and the مل were Ivyronc's, so the label is built
+ * per product by `basisLabelsAr` below; this record is what that builder starts from, and what the
+ * Arabic-digit sweep in tests/production-planning-strings.test.ts reads.
+ */
+export const BASIS_LABELS = {
+  per_dose: "لكل جرعة",
+  per_packaging_set: "لكل عبوة كاملة",
+  // "وحدة" and not "علبة": the saleable unit is a 100 ml bottle for Ivyronc and a 5 g sachet for
+  // Guamusin, and calling a sachet a box is the same class of error as calling a gram a millilitre.
+  per_good_unit: "لكل وحدة قابلة للبيع",
+  per_sample_unit: "لكل عينة",
+  /** The carton he counts in — 12 sachets for Guamusin, consumed once per box and not once per sachet. */
+  per_box: "لكل علبة (كرتونة)",
+} as const;
+
+/** The same labels with the product's own dose written into the per-dose one. */
+export function basisLabelsAr(measure: ProductMeasure): Record<CompositionBasis, string> {
+  return {
+    ...BASIS_LABELS,
+    per_dose: `${BASIS_LABELS.per_dose} ${measure.dose} ${measureUnitLabelsAr(measure.measureUnit).small}`,
+  };
+}
 
 export const ALARM_SEVERITY_LABELS = {
   out_of_stock: PP.alarmSeverityOutOfStock,
@@ -685,15 +891,25 @@ export function buildPlannerSentence(parts: {
   readonly sampleUnitMl: string;
   readonly surplusBoxes: string | null;
   readonly shortfallBoxes: string | null;
+  /**
+   * What the figures are counted in. OPTIONAL and defaulting to `ml`, so the pinned Ivyronc sentence
+   * in tests/production-planning-strings.test.ts keeps reading exactly as it did — the syrup wording
+   * is not a special case here, it is still the default.
+   */
+  readonly measureUnit?: MeasureUnit;
 }): string {
+  const u = measureUnitLabelsAr(parts.measureUnit ?? "ml");
+  // A powder's saleable unit is a sachet, a syrup's is a box — the word follows the measure, because
+  // "20,000 علبة 5 جم" would be calling a sachet a box.
+  const unitWord = (parts.measureUnit ?? "ml") === "g" ? PP.unitSachet : PP.unitBox;
   const head =
-    `${parts.runs} ${PP.unitRuns} × ${parts.runVolumeLitres} ${PP.unitLitre} = ` +
-    `${parts.totalVolumeLitres} ${PP.unitLitre}`;
+    `${parts.runs} ${PP.unitRuns} × ${parts.runVolumeLitres} ${u.large} = ` +
+    `${parts.totalVolumeLitres} ${u.large}`;
   const yieldText =
     parts.sampleUnits === "0"
-      ? `${parts.goodUnits} ${PP.unitBox} ${parts.goodUnitMl} ${PP.unitMl}`
-      : `${parts.goodUnits} ${PP.unitBox} ${parts.goodUnitMl} ${PP.unitMl} و ${parts.sampleUnits} ` +
-        `${PP.unitSample} ${parts.sampleUnitMl} ${PP.unitMl}`;
+      ? `${parts.goodUnits} ${unitWord} ${parts.goodUnitMl} ${u.small}`
+      : `${parts.goodUnits} ${unitWord} ${parts.goodUnitMl} ${u.small} و ${parts.sampleUnits} ` +
+        `${PP.unitSample} ${parts.sampleUnitMl} ${u.small}`;
   const tail =
     parts.surplusBoxes && parts.surplusBoxes !== "0"
       ? `، بزيادة ${parts.surplusBoxes} ${PP.unitBox} عن المطلوب`
@@ -771,11 +987,22 @@ export const PRODUCTION_PLANNING_TABS_EN: readonly { key: ProductionPlanningTabK
 ] as const;
 
 export const BASIS_LABELS_EN = {
-  per_dose: "per 5 ml dose",
+  per_dose: "per dose",
   per_packaging_set: "per full packaging set",
-  per_good_unit: "per saleable box",
+  // "unit" and not "box": a saleable unit is a 100 ml bottle for Ivyronc and a 5 g sachet for
+  // Guamusin, and `per_box` below is the carton that holds twelve of them.
+  per_good_unit: "per saleable unit",
   per_sample_unit: "per sample",
+  per_box: "per box (carton)",
 } as const;
+
+/** The same labels with the product's own dose written into the per-dose one. */
+export function basisLabelsEn(measure: ProductMeasure): Record<CompositionBasis, string> {
+  return {
+    ...BASIS_LABELS_EN,
+    per_dose: `per ${measure.dose} ${measureUnitLabelsEn(measure.measureUnit).small} dose`,
+  };
+}
 
 /**
  * The stored unit codes are already English (`kg`, `piece`), so this maps them to the words a
@@ -809,15 +1036,19 @@ export function buildPlannerSentenceEn(parts: {
   readonly sampleUnitMl: string;
   readonly surplusBoxes: string | null;
   readonly shortfallBoxes: string | null;
+  /** Optional and defaulting to `ml`, so the pinned Ivyronc sentence is unchanged. */
+  readonly measureUnit?: MeasureUnit;
 }): string {
+  const u = measureUnitLabelsEn(parts.measureUnit ?? "ml");
+  const unitWord = (parts.measureUnit ?? "ml") === "g" ? "sachets" : "boxes";
   const head =
     `${parts.runs} ${parts.runs === "1" ? PP_EN.unitRun : PP_EN.unitRuns} × ${parts.runVolumeLitres} ` +
-    `${PP_EN.unitLitre} = ${parts.totalVolumeLitres} ${PP_EN.unitLitre}`;
+    `${u.large} = ${parts.totalVolumeLitres} ${u.large}`;
   const yieldText =
     parts.sampleUnits === "0"
-      ? `${parts.goodUnits} boxes of ${parts.goodUnitMl} ${PP_EN.unitMl}`
-      : `${parts.goodUnits} boxes of ${parts.goodUnitMl} ${PP_EN.unitMl} and ${parts.sampleUnits} ` +
-        `samples of ${parts.sampleUnitMl} ${PP_EN.unitMl}`;
+      ? `${parts.goodUnits} ${unitWord} of ${parts.goodUnitMl} ${u.small}`
+      : `${parts.goodUnits} ${unitWord} of ${parts.goodUnitMl} ${u.small} and ${parts.sampleUnits} ` +
+        `samples of ${parts.sampleUnitMl} ${u.small}`;
   const tail =
     parts.surplusBoxes && parts.surplusBoxes !== "0"
       ? `, ${parts.surplusBoxes} boxes over the request`
@@ -871,7 +1102,8 @@ export type ProductionPlanningErrorKey =
   | "unknownAccessLevel"
   | "unknownStockSource"
   | "unknownSupplier"
-  | "unknownUnitKind";
+  | "unknownUnitKind"
+  | "expiryDateInvalid";
 
 export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "أساس الحساب غير معروف.",
@@ -893,6 +1125,7 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   unknownStockSource: "مصدر تقرير المخزون غير معروف.",
   unknownSupplier: "مورد المادة غير معروف.",
   unknownUnitKind: "نوع الوحدة غير معروف.",
+  expiryDateInvalid: "تاريخ الانتهاء يجب أن يكون بالشكل سنة-شهر-يوم (مثال 2027-04-27).",
 };
 
 export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
@@ -915,6 +1148,7 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
   unknownStockSource: "Unknown stock report source.",
   unknownSupplier: "Unknown material supplier.",
   unknownUnitKind: "Unknown unit kind.",
+  expiryDateInvalid: "An expiry date must be written year-month-day (for example 2027-04-27).",
 };
 
 /**
@@ -978,8 +1212,22 @@ export type ProductionPlanningStrings = {
   readonly refusals: typeof PRODUCTION_PLANNING_REFUSALS;
   readonly tabs: readonly { key: ProductionPlanningTabKey; label: string }[];
   readonly supplierLabels: Record<"sato" | "factory" | "shared_unsettled", string>;
-  readonly basisLabels: Record<"per_dose" | "per_packaging_set" | "per_good_unit" | "per_sample_unit", string>;
+  /**
+   * A FUNCTION of the product's own geometry, not a flat record.
+   *
+   * `per_dose` reads "لكل جرعة 5 مل" for the syrup and "لكل جرعة 5 جم" for the powder, and neither
+   * sentence can be written without knowing which product is on screen. Call it once per render and
+   * index the result exactly as before.
+   */
+  readonly basisLabels: (measure: ProductMeasure) => Record<CompositionBasis, string>;
   readonly severityLabels: Record<"out_of_stock" | "below_threshold" | "approaching", string>;
+  readonly expirySeverityLabels: Record<ExpirySeverity, string>;
+  /** The two unit words for a product — ml/L for a syrup, g/kg for a powder. */
+  readonly measureUnitLabels: (unit: MeasureUnit) => { small: string; large: string };
+  /** The sample-size hint with the product's own two sizes in it. */
+  readonly sampleUnitsHint: (measure: ProductMeasure) => string;
+  /** How long one lot has left: three branches, never a signed number. */
+  readonly expiryDaysNote: (daysLeft: string, expired: boolean, today: boolean) => string;
   readonly unitLabel: (unit: string | null | undefined) => string;
   /**
    * A product's, material's or location's name in the reader's language. Every one of them stores
@@ -991,14 +1239,18 @@ export type ProductionPlanningStrings = {
 };
 
 const AR_BUNDLE: ProductionPlanningStrings = {
-  basisLabels: BASIS_LABELS,
+  basisLabels: basisLabelsAr,
   dir: "rtl",
   errors: PRODUCTION_PLANNING_ERRORS,
+  expiryDaysNote: buildExpiryDaysNoteAr,
+  expirySeverityLabels: EXPIRY_SEVERITY_LABELS,
   fontStack: PRODUCTION_PLANNING_FONT_STACK,
   lang: "ar",
+  measureUnitLabels: measureUnitLabelsAr,
   name: nameArabic,
   plannerSentence: buildPlannerSentence,
   refusals: PRODUCTION_PLANNING_REFUSALS,
+  sampleUnitsHint: buildSampleUnitsHintAr,
   severityLabels: ALARM_SEVERITY_LABELS,
   supplierLabels: SUPPLIER_LABELS,
   t: PP,
@@ -1007,14 +1259,18 @@ const AR_BUNDLE: ProductionPlanningStrings = {
 };
 
 const EN_BUNDLE: ProductionPlanningStrings = {
-  basisLabels: BASIS_LABELS_EN,
+  basisLabels: basisLabelsEn,
   dir: "ltr",
   errors: PRODUCTION_PLANNING_ERRORS_EN,
+  expiryDaysNote: buildExpiryDaysNoteEn,
+  expirySeverityLabels: EXPIRY_SEVERITY_LABELS_EN,
   fontStack: undefined,
   lang: "en",
+  measureUnitLabels: measureUnitLabelsEn,
   name: nameEnglish,
   plannerSentence: buildPlannerSentenceEn,
   refusals: PRODUCTION_PLANNING_REFUSALS_EN,
+  sampleUnitsHint: buildSampleUnitsHintEn,
   severityLabels: ALARM_SEVERITY_LABELS_EN,
   supplierLabels: SUPPLIER_LABELS_EN,
   t: PP_EN,

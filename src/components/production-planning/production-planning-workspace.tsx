@@ -92,12 +92,15 @@ import {
   type ProductionPlanningStrings,
   type ProductionPlanningStringKey,
   type ProductionPlanningTabKey,
+  type ProductMeasure,
 } from "@/lib/production-planning/strings";
 import type {
+  WireExpiryVerdict,
   WireGrant,
   WireMaterial,
   WirePlan,
   WirePlanRow,
+  WireProduct,
   WireRequestMode,
   WireWorkspace,
 } from "@/lib/production-planning/wire";
@@ -127,6 +130,33 @@ const RTL_HEADER_RAIL =
 const LTR_HEADER_RAIL =
   "pointer-events-none absolute left-0 top-[0.3rem] bottom-[0.3rem] w-[3px] " +
   "bg-[linear-gradient(180deg,#F97316_0%,#FB923C_45%,rgba(251,146,60,0.12)_100%)]";
+
+/**
+ * The product's own measurement, for every label that states a size or a unit.
+ *
+ * 🔴 NO LABEL IN THIS FILE MAY WRITE "مل" OR "ml" OF ITS OWN ANY MORE. The geometry columns are named
+ * `…_ml` because the first product was a syrup; Guamusin is a powder in 5 g sachets, and a tile
+ * reading "100 لتر" over 100 kg or a hint reading "العينة 40 مل" is a label following a column name
+ * instead of the product. Every size here comes from the product row, and the unit word from
+ * `S.measureUnitLabels(...)`.
+ *
+ * The sizes are formatted with Latin digits before they reach a label, which is the module's own
+ * rule: `toLocaleString` under an Arabic locale emits ٠١٢٣.
+ */
+function measureOf(product: WireProduct | null | undefined): ProductMeasure {
+  return {
+    dose: formatNumberLatin(product?.doseMl ?? "0"),
+    goodUnit: formatNumberLatin(product?.goodUnitMl ?? "0"),
+    measureUnit: product?.measureUnit ?? "ml",
+    sampleUnit: formatNumberLatin(product?.sampleUnitMl ?? "0"),
+  };
+}
+
+/** The product a payload belongs to — `data.productId` is the server's own answer. */
+function selectedProductOf(data: WireWorkspace | null): WireProduct | null {
+  if (!data) return null;
+  return data.products.find((product) => product.id === data.productId) ?? data.products[0] ?? null;
+}
 
 const PANEL = "border border-slate-300 bg-white px-4 py-4";
 const LABEL = "block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500";
@@ -495,6 +525,14 @@ export function ProductionPlanningWorkspace() {
         requestedQty: DEFAULT_REQUESTED_QTY,
         sampleUnits: DEFAULT_SAMPLE_UNITS,
       });
+      // 🔴 THE WHOLE PAYLOAD IS PER PRODUCT, so the product has to travel on the GET.
+      //
+      // The materials, the formula, the stock, the runs, the saved plans and the expiry verdicts in
+      // the response all belong to ONE product. Before Guamusin the server defaulted to the only one
+      // there was; with two, a Stock tab reading a payload fetched for the other product shows the
+      // wrong thirteen rows with nothing on screen to say so. Empty on the first load, which is the
+      // server's cue to answer for its own first product and TELL us which (`data.productId`).
+      if (productId) params.set("productId", productId);
       const response = await fetch(`/api/production-planning?${params.toString()}`, { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as WireWorkspace | { message?: string } | null;
       if (!response.ok) {
@@ -505,7 +543,10 @@ export function ProductionPlanningWorkspace() {
       const workspace = payload as WireWorkspace;
       setData(workspace);
       setPlan(workspace.plan);
-      if (workspace.products.length > 0) setProductId((current) => current || workspace.products[0].id);
+      // 🔴 `productId` is NOT seeded from the response, deliberately. Seeding it would change the
+      // state this `load` depends on and fire a SECOND identical fetch on every mount. The selected
+      // product is read as `productId || data.productId`, so an unset choice follows the server's
+      // own default and only an actual change refetches.
     } catch {
       setError(t.loadFailed);
       setData(null);
@@ -516,7 +557,7 @@ export function ProductionPlanningWorkspace() {
     // flips the toggle and then loses the network would be shown the message in the language they
     // just left. The refetch a language change now triggers costs one request and returns the same
     // payload - the query carries no language - so it is a message correctness fix, not a reload.
-  }, [t.loadFailed]);
+  }, [productId, t.loadFailed]);
 
   useEffect(() => {
     // The repo's `react-hooks/set-state-in-effect` is an error, and a fetch-on-mount effect trips
@@ -557,9 +598,17 @@ export function ProductionPlanningWorkspace() {
     [S.lang, t.saveFailed],
   );
 
+  /**
+   * The product every tab is showing — the explicit choice, or the one the server answered with.
+   *
+   * Two sources and not one because `productId` stays empty until somebody picks from the dropdown
+   * (see `load`), and every POST still has to name a product.
+   */
+  const selectedProductId = productId || data?.productId || "";
+
   const calculate = useCallback(async () => {
     const result = (await post("/plan", {
-      productId,
+      productId: selectedProductId,
       mode,
       requestedQty,
       sampleUnits,
@@ -567,7 +616,7 @@ export function ProductionPlanningWorkspace() {
       willSendByMaterialId: willSend,
     })) as WirePlan | null;
     if (result) setPlan(result);
-  }, [post, productId, mode, requestedQty, sampleUnits, overridePct, willSend]);
+  }, [post, selectedProductId, mode, requestedQty, sampleUnits, overridePct, willSend]);
 
   const saveAndReload = useCallback(
     async (path: string, body: Record<string, unknown>) => {
@@ -651,7 +700,7 @@ export function ProductionPlanningWorkspace() {
             onCalculate={calculate}
             onCommit={(commit) =>
               saveAndReload("/plans", {
-                productId,
+                productId: selectedProductId,
                 mode,
                 requestedQty,
                 sampleUnits,
@@ -670,7 +719,7 @@ export function ProductionPlanningWorkspace() {
             }
             overridePct={overridePct}
             plan={plan}
-            productId={productId}
+            productId={selectedProductId}
             requestedQty={requestedQty}
             sampleUnits={sampleUnits}
             willSend={willSend}
@@ -692,6 +741,7 @@ export function ProductionPlanningWorkspace() {
             data={data}
             materialsById={materialsById}
             onSave={saveAndReload}
+            productId={selectedProductId}
           />
         ) : null}
 
@@ -761,6 +811,10 @@ export function PlannerTab(props: PlannerTabProps) {
 
   if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
 
+  // The product the dropdown is on, and the unit pair every label below takes from it.
+  const product = data.products.find((candidate) => candidate.id === props.productId) ?? selectedProductOf(data);
+  const measure = measureOf(product);
+
   return (
     <>
       <section className={PANEL}>
@@ -802,7 +856,7 @@ export function PlannerTab(props: PlannerTabProps) {
             />
           </Field>
 
-          <Field hint={t.sampleUnitsHint} label={t.sampleUnitsLabel}>
+          <Field hint={S.sampleUnitsHint(measure)} label={t.sampleUnitsLabel}>
             <input
               className={INPUT}
               dir="ltr"
@@ -899,8 +953,15 @@ function PlannerResult({
         sampleUnitMl: formatNumberLatin(sentenceProduct.sampleUnitMl),
         surplusBoxes: formatNumberLatin(plan.surplusBoxes),
         shortfallBoxes: null,
+        // From the PLAN, not the product row: the plan is what these figures were computed under.
+        measureUnit: plan.measureUnit,
       })
     : plan.sentence;
+
+  // The unit words the tiles and the leftover line carry. `Tile` prints its `unit` verbatim, so a
+  // hard-coded `t.unitLitre` here would label 600 kg of powder as litres.
+  const units = S.measureUnitLabels(plan.measureUnit);
+  const basisLabels = S.basisLabels(measureOf(sentenceProduct));
 
   return (
     <>
@@ -916,7 +977,7 @@ function PlannerResult({
             `grid-cols-1 sm:grid-cols-2` ladder every other grid in this file already used. */}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Tile label={t.tileRuns} unit={t.unitRuns} value={plan.runs} />
-          <Tile label={t.tileRunVolume} unit={t.unitLitre} value={plan.runVolumeLitres} />
+          <Tile label={t.tileRunVolume} unit={units.large} value={plan.runVolumeLitres} />
           <Tile label={t.tileYield} unit={t.unitBox} value={plan.totalBoxes} />
           {plan.surplusBoxes !== "0" ? (
             <Tile label={t.tileSurplus} tone="warn" unit={t.unitBox} value={plan.surplusBoxes} />
@@ -949,7 +1010,7 @@ function PlannerResult({
           ) : null}
           {plan.leftoverMl !== "0" ? (
             <li>
-              {t.leftoverNote}: <Qty unit={t.unitMl} value={plan.leftoverMl} />
+              {t.leftoverNote}: <Qty unit={units.small} value={plan.leftoverMl} />
             </li>
           ) : null}
         </ul>
@@ -998,7 +1059,7 @@ function PlannerResult({
                   <p className="mt-0.5 break-words text-[11px] text-slate-500">{overageHint(row, t)}</p>
                   {row.basis ? (
                     <p className="mt-0.5 break-words text-[11px] text-slate-500">
-                      {S.basisLabels[row.basis]}
+                      {basisLabels[row.basis]}
                     </p>
                   ) : null}
                 </td>
@@ -1182,6 +1243,7 @@ export function StockTab({
   const [locationId, setLocationId] = useState("");
   const [qty, setQty] = useState("");
   const [asOfDate, setAsOfDate] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
   const [source, setSource] = useState("factory_report");
   const [note, setNote] = useState("");
 
@@ -1197,7 +1259,12 @@ export function StockTab({
   // implementation in floats is how the screen and the stored figure start to disagree.
   const isDelivery = source === "delivery";
   const formMaterial = data.materials.find((candidate) => candidate.id === materialId) ?? null;
-  const standingHere = formMaterial?.stock.find((row) => row.locationId === locationId) ?? null;
+  // 🔴 THE LOT, not the location. A delivery of the batch expiring in April 2027 lands on THAT
+  // batch's standing figure; the batch expiring in 2029 is a different balance and the hint must not
+  // offer it. An empty expiry field means the undated lot — packaging, which never expires.
+  const typedExpiry = expiryDate.trim() === "" ? null : expiryDate.trim();
+  const standingHere =
+    formMaterial?.stock.find((row) => row.locationId === locationId && row.expiryDate === typedExpiry) ?? null;
   const qtyHint = isDelivery
     ? standingHere
       ? `${t.stockDeliveryAdds}: ${standingHere.qtyDisplay} ${formMaterial?.displayUnit ?? ""}`.trim()
@@ -1256,6 +1323,17 @@ export function StockTab({
                 value={asOfDate}
               />
             </Field>
+            {/* The owner, 2026-10-08: "خانة الاكسبايري ديت مهمة جدا جدا جدا يا عمر" — and left blank
+                for packaging, because the film, the cartons and the stickers do not expire. */}
+            <Field hint={t.stockExpiryHint} label={t.stockExpiry}>
+              <input
+                className={INPUT}
+                dir="ltr"
+                onChange={(event) => setExpiryDate(event.target.value)}
+                type="date"
+                value={expiryDate}
+              />
+            </Field>
             <Field label={t.stockSource}>
               <select
                 className={INPUT}
@@ -1286,6 +1364,8 @@ export function StockTab({
                   // Typed in the display unit the person reads; the service stores base units.
                   qty: toBaseUnits(qty, material),
                   asOfDate: asOfDate || undefined,
+                  // `null` is the undated lot, which is what packaging has — not "unknown".
+                  expiryDate: typedExpiry,
                   source,
                   note: note.trim() === "" ? null : note.trim(),
                 });
@@ -1298,7 +1378,13 @@ export function StockTab({
         </section>
       ) : null}
 
+      {data.expiry.length > 0 ? <ExpiryBanner rows={data.expiry} /> : null}
+
       <section className="min-w-0">
+        {/* 34/22/22/22, UNCHANGED — the fourth column now carries the EXPIRY DATE instead of the
+            report date, and the report date moved under each quantity. Merged, never added: a fifth
+            column takes this table below its natural width in the admin shell's 669px box, which is
+            the fits-the-screen rule's own remedy (AGENTS.md §4). */}
         <table className="hidden w-full table-fixed border border-slate-300 bg-white lg:table">
           <colgroup>
             <col className="w-[34%]" />
@@ -1308,7 +1394,7 @@ export function StockTab({
           </colgroup>
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
-              {[t.colMaterial, t.atFactory, t.atOwnStore, t.stockAsOf].map((heading) => (
+              {[t.colMaterial, t.atFactory, t.atOwnStore, t.stockExpiry].map((heading) => (
                 <th className={TH} key={heading} scope="col">
                   {heading}
                 </th>
@@ -1317,16 +1403,17 @@ export function StockTab({
           </thead>
           <tbody>
             {data.materials.map((material) => {
-              const factory = material.stock.find(
+              // 🔴 The SUMMED figure the server computed, not `stock.find(...)`. With lots, several
+              // rows share a location, and `find` would show one batch as if it were the whole
+              // balance — reading 100 kg where 230 kg is held.
+              const factory = material.heldByLocation.find(
                 (row) => data.locations.find((location) => location.id === row.locationId)?.isFactory,
               );
-              const own = material.stock.find(
+              const own = material.heldByLocation.find(
                 (row) => !data.locations.find((location) => location.id === row.locationId)?.isFactory,
               );
-              const newest = material.stock
-                .map((row) => row.asOfDate)
-                .sort()
-                .at(-1);
+              const dated = material.stock.filter((row) => row.expiryDate !== null);
+              const soonest = dated[0] ?? null;
               return (
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
@@ -1337,20 +1424,41 @@ export function StockTab({
                   </td>
                   <td className={TD}>
                     {factory ? (
-                      <Qty unit={material.displayUnit} value={factory.qtyDisplay} />
+                      <>
+                        <Qty unit={material.displayUnit} value={factory.qtyDisplay} />
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          <Num>{factory.newestAsOfDate}</Num>
+                          {factory.lots > 1 ? ` · ${formatNumberLatin(factory.lots)}` : ""}
+                        </p>
+                      </>
                     ) : (
                       <span className="text-[11px] text-slate-500">{t.stockNoneYet}</span>
                     )}
                   </td>
                   <td className={TD}>
                     {own ? (
-                      <Qty unit={material.displayUnit} value={own.qtyDisplay} />
+                      <>
+                        <Qty unit={material.displayUnit} value={own.qtyDisplay} />
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          <Num>{own.newestAsOfDate}</Num>
+                          {own.lots > 1 ? ` · ${formatNumberLatin(own.lots)}` : ""}
+                        </p>
+                      </>
                     ) : (
                       <span className="text-[11px] text-slate-500">{t.stockNoneYet}</span>
                     )}
                   </td>
                   <td className={TD}>
-                    {newest ? <Num>{newest}</Num> : <span className="text-[11px]">—</span>}
+                    {soonest?.expiryDate ? (
+                      <>
+                        <Num>{soonest.expiryDate}</Num>
+                        {dated.length > 1 ? (
+                          <p className="mt-0.5 break-words text-[11px] text-slate-500">{t.stockLotNote}</p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="break-words text-[11px] text-slate-500">{t.stockNoExpiry}</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -1366,12 +1474,20 @@ export function StockTab({
                 {material.stock.length === 0 ? (
                   <p className="text-[11px] text-slate-500">{t.stockNoneYet}</p>
                 ) : (
+                  // One line per LOT on mobile, which is where the detail belongs: the card has the
+                  // room the desktop table does not, so each batch shows its own expiry rather than
+                  // only the soonest.
                   material.stock.map((row) => (
                     <div
                       className="flex flex-wrap justify-between gap-2"
-                      key={`${row.locationId}-${row.asOfDate}`}
+                      key={`${row.locationId}-${row.expiryDate ?? "none"}-${row.asOfDate}`}
                     >
-                      <dt className="font-bold break-words">{locationName(row.locationId)}</dt>
+                      <dt className="font-bold break-words">
+                        {locationName(row.locationId)}
+                        <span className="ms-1 font-normal text-slate-500">
+                          {row.expiryDate ? <Num>{row.expiryDate}</Num> : t.stockNoExpiry}
+                        </span>
+                      </dt>
                       <dd>
                         <Qty unit={material.displayUnit} value={row.qtyDisplay} /> <Num>{row.asOfDate}</Num>
                       </dd>
@@ -1384,6 +1500,44 @@ export function StockTab({
         </div>
       </section>
     </>
+  );
+}
+
+/**
+ * The expiry warning, on the Stock tab.
+ *
+ * On screen ALWAYS, armed or not. The email is a separate switch the owner has not turned on, and
+ * the thing he actually asked for is to be able to see it: "انا عندي حاجات هتنتهي 4 27 فانا لازم
+ * انتبه لها". Three tones, worst first, and never an ellipsis — a material name wraps.
+ */
+function ExpiryBanner({ rows }: { rows: WireExpiryVerdict[] }) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const TONES: Record<WireExpiryVerdict["severity"], string> = {
+    critical: "border-amber-300 bg-amber-50 text-amber-900",
+    expired: "border-rose-300 bg-rose-50 text-rose-900",
+    warning: "border-slate-300 bg-slate-50 text-slate-700",
+  };
+  return (
+    <section className={PANEL}>
+      <SectionTitle subtitle={t.stockLotNote} title={t.expiryTitle} />
+      <ul className="space-y-1">
+        {rows.map((row) => (
+          <li
+            className={`border px-3 py-2 text-[12px] font-semibold break-words ${TONES[row.severity]}`}
+            key={`${row.materialId}-${row.locationId}-${row.expiryDate}`}
+          >
+            {S.name(row)} — <Num>{row.expiryDate}</Num> · {S.expirySeverityLabels[row.severity]} ·{" "}
+            {S.expiryDaysNote(
+              formatNumberLatin(Math.abs(row.daysLeft)),
+              row.daysLeft < 0,
+              row.daysLeft === 0,
+            )}{" "}
+            · <Qty unit={row.displayUnit} value={row.qtyDisplay} />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -1649,12 +1803,21 @@ export function RunTab({
   busy,
   onSave,
   materialsById,
+  productId,
 }: {
   data: WireWorkspace | null;
   canWrite: boolean;
   busy: boolean;
   onSave: SaveFn;
   materialsById: Map<string, WireMaterial>;
+  /**
+   * The product the Planner tab is on.
+   *
+   * 🔴 It used to be `data.products[0]?.id` at the POST, which recorded every run against the FIRST
+   * product whatever the screen was showing — and a run recorded against the wrong product is what
+   * the consumption learner then measures its overage from.
+   */
+  productId: string;
 }) {
 
   const S = useProductionPlanningStrings();
@@ -1826,7 +1989,7 @@ export function RunTab({
               disabled={busy || runLabel.trim() === "" || goodUnits.trim() === ""}
               onClick={() =>
                 void onSave("/runs", {
-                  productId: data.products[0]?.id,
+                  productId: productId || data.productId,
                   runLabel: runLabel.trim(),
                   runsCount,
                   producedOn: producedOn || undefined,
@@ -1925,6 +2088,7 @@ export function SettingsTab({
   const t = S.t;
   const [defaultOverage, setDefaultOverage] = useState("");
   const [reorderCover, setReorderCover] = useState("");
+  const [expiryWarnDays, setExpiryWarnDays] = useState("");
   const [grantHrId, setGrantHrId] = useState("");
   const [grantLevel, setGrantLevel] = useState<"read" | "full">("read");
   const [grants, setGrants] = useState<WireGrant[]>([]);
@@ -1949,6 +2113,8 @@ export function SettingsTab({
 
   if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
   const settings = data.settings;
+  // Built once, not per row: the per-dose label states this product's own dose and unit.
+  const basisLabels = S.basisLabels(measureOf(selectedProductOf(data)));
 
   return (
     <>
@@ -1980,16 +2146,31 @@ export function SettingsTab({
               value={reorderCover}
             />
           </Field>
+          <Field hint={t.settingsExpiryWarnDaysHint} label={t.settingsExpiryWarnDays}>
+            <input
+              className={INPUT}
+              dir="ltr"
+              disabled={!canWrite}
+              inputMode="numeric"
+              onChange={(event) => setExpiryWarnDays(event.target.value)}
+              placeholder={formatNumberLatin(settings.expiryWarnDays)}
+              value={expiryWarnDays}
+            />
+          </Field>
         </div>
         {canWrite ? (
           <div className="mt-3">
             <button
               className={BUTTON}
-              disabled={busy || (defaultOverage.trim() === "" && reorderCover.trim() === "")}
+              disabled={
+                busy ||
+                (defaultOverage.trim() === "" && reorderCover.trim() === "" && expiryWarnDays.trim() === "")
+              }
               onClick={() =>
                 void onSave("/settings", {
                   defaultOveragePct: defaultOverage.trim() === "" ? undefined : defaultOverage.trim(),
                   reorderCoverRuns: reorderCover.trim() === "" ? undefined : reorderCover.trim(),
+                  expiryWarnDays: expiryWarnDays.trim() === "" ? undefined : expiryWarnDays.trim(),
                 })
               }
               type="button"
@@ -2046,6 +2227,60 @@ export function SettingsTab({
               type="button"
             >
               {settings.alarmDryRun ? t.dryRunSwitchOff : t.dryRunSwitchOn}
+            </button>
+          </div>
+        ) : null}
+      </section>
+
+      {/* The SECOND alarm, with its own independent pair of switches. It is a separate section and
+          not a row in the one above because the two answer different questions — "order more" and
+          "use this batch first" — and a material can be plentiful AND dying at the same time. */}
+      <section className={PANEL}>
+        <SectionTitle title={t.settingsExpiryAlarmEnabled} />
+        <p
+          className={`border px-3 py-2 text-[12px] font-bold break-words ${
+            settings.expiryAlarmEnabled
+              ? settings.expiryAlarmDryRun
+                ? "border-amber-300 bg-amber-50 text-amber-900"
+                : "border-emerald-300 bg-emerald-50 text-emerald-900"
+              : "border-slate-300 bg-slate-50 text-slate-700"
+          }`}
+        >
+          {!settings.expiryAlarmEnabled
+            ? t.settingsExpiryOffNotice
+            : settings.expiryAlarmDryRun
+              ? t.settingsExpiryDryRunNotice
+              : t.settingsExpiryAlarmEnabled}
+        </p>
+        <ul className="mt-2 space-y-1 text-[11px] text-slate-500">
+          {settings.expiryLastEvaluatedOn ? (
+            <li>
+              {t.expiryLastEvaluated} <Num>{settings.expiryLastEvaluatedOn}</Num>
+            </li>
+          ) : null}
+          {settings.expiryLastSentOn ? (
+            <li>
+              {t.expiryLastSent} <Num>{settings.expiryLastSentOn}</Num>
+            </li>
+          ) : null}
+        </ul>
+        {canWrite ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className={BUTTON_QUIET}
+              disabled={busy}
+              onClick={() => void onSave("/settings", { expiryAlarmEnabled: !settings.expiryAlarmEnabled })}
+              type="button"
+            >
+              {settings.expiryAlarmEnabled ? t.alarmSwitchOff : t.alarmSwitchOn}
+            </button>
+            <button
+              className={BUTTON_QUIET}
+              disabled={busy}
+              onClick={() => void onSave("/settings", { expiryAlarmDryRun: !settings.expiryAlarmDryRun })}
+              type="button"
+            >
+              {settings.expiryAlarmDryRun ? t.dryRunSwitchOff : t.dryRunSwitchOn}
             </button>
           </div>
         ) : null}
@@ -2139,7 +2374,7 @@ export function SettingsTab({
               {material.composition ? (
                 <>
                   <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />{" "}
-                  {S.basisLabels[material.composition.basis]} —{" "}
+                  {basisLabels[material.composition.basis]} —{" "}
                   {S.supplierLabels[material.composition.supplier]}
                 </>
               ) : (

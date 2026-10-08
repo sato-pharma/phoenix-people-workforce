@@ -80,6 +80,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   TELEGRAM_CONNECT: "telegram_connect",
   WEEKLY_SALES_UPLOADED: "weekly_sales_uploaded",
   PRODUCTION_PLANNING_REORDER: "production_planning_reorder",
+  PRODUCTION_PLANNING_EXPIRY: "production_planning_expiry",
 } as const satisfies Record<string, EmailTemplateKey>;
 
 export const emailTemplateRecipientRoleOptions = [
@@ -487,6 +488,19 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
     toRoles: [],
     toStaticEmails: ["sahar.khalil@satopharma.com"],
   },
+  // The same four people, for the same reason: it is the same module, the same stock and the same
+  // decision ("buy, or use what is about to die"). Copied from the reorder rules above rather than
+  // re-derived, so the two cannot diverge into one list that reaches somebody the other does not.
+  production_planning_expiry: {
+    bccRoles: [],
+    bccStaticEmails: ["omar.anwar@satopharma.com"],
+    ccRoles: [],
+    ccStaticEmails: ["anwar.gaweesh@satopharma.com", "ahmed.elmaraghy@satopharma.com"],
+    targetLines: [],
+    targetTitles: [],
+    toRoles: [],
+    toStaticEmails: ["sahar.khalil@satopharma.com"],
+  },
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
   marketing_request: emptyRules(["admin"], ["hr"]),
@@ -780,6 +794,24 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "production_planning_reorder",
     templateName: "Production Reorder Alarm",
+  },
+  // 🔴 EVERY CONTENT COLUMN IS WRITTEN, not just the key and the subject. A minimal row activates to
+  // `<p>Body content is not configured yet.</p>` — the memory note
+  // `activating-an-email-template-by-a-minimal-row-blanks-its-body` is exactly that mistake. Arabic,
+  // right-to-left and genderless, like the reorder one beside it, and SHIPPED INACTIVE: `isActive:
+  // false` is one of the four independent switches that keep this silent until the owner arms it.
+  production_planning_expiry: {
+    bodyHtml: '<p dir="rtl">{{summary}}</p>{{detailsTable}}<p dir="rtl">{{status}}</p>',
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
+    closingText: "تُستهلك الأرصدة الأقرب انتهاءً أولًا، وتُراجع من موديول تخطيط الإنتاج.",
+    description:
+      "Raw-material expiry warning: every stock lot already expired or inside the warning window, with its expiry date, how long it has left, the amount held and where it is held. Arabic, right-to-left. Ships INACTIVE — it sends nothing until the owner activates it here and arms the module's own expiry switch.",
+    greeting: "تحية طيبة إلى إدارة البحوث والتطوير،",
+    isActive: false,
+    previewText: "تنبيه تاريخ انتهاء خامات — تخطيط الإنتاج.",
+    subject: "{{subject}}",
+    templateKey: "production_planning_expiry",
+    templateName: "Production Expiry Warning",
   },
   general: {
     bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
@@ -1202,6 +1234,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   telegram_connect: "Account Access",
   weekly_sales_uploaded: "Sales",
   production_planning_reorder: "Production",
+  production_planning_expiry: "Production",
 };
 
 export const emailTemplateCategories = [

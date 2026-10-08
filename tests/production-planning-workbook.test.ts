@@ -100,8 +100,12 @@ function planningData(): ProductionPlanningData {
           unitsPerBox: BigInt(1),
           wholeRunsOnly: true,
         },
+        // Ivyronc's own factory, named on the PRODUCT: `locations.find((l) => l.isFactory)` took the
+        // first flagged row, so a second factory anywhere in the table would have moved this split.
+        factoryLocationId: EGPI,
         id: "prod-ivyronc",
         manufacturerName: "EGPI",
+        measureUnit: "ml",
         nameAr: "آيفيرونك",
         nameEn: "Ivyronc",
         notes: null,
@@ -112,18 +116,24 @@ function planningData(): ProductionPlanningData {
       { code: "SATO_STORE", id: SATO_STORE, isFactory: false, nameAr: "مخزن ساتو", nameEn: "Sato store" },
     ],
     materials: MATERIALS,
+    // All four belong to Ivyronc. The scoping is what keeps a second product's materials off this
+    // product's buy list, so the fixture has to carry it or the sheet would be built from every
+    // material in the module.
+    materialIdsByProductId: new Map([["prod-ivyronc", new Set(MATERIALS.map((material) => material.id))]]),
     compositionsByProductId: new Map([["prod-ivyronc", COMPOSITIONS]]),
+    // `expiryDate: null` throughout, which is what every Ivyronc row carries: the lots arrived with
+    // Guamusin, and a null-dated row is one lot whose sum is itself — so these figures cannot move.
     stock: [
-      { asOfDate: "2026-10-01", locationId: EGPI, materialId: "mat-IVY_EXTRACT", note: null, qty: parseQty("43000"), source: "factory_report" },
-      { asOfDate: "2026-10-01", locationId: EGPI, materialId: "mat-SORBITOL", note: null, qty: parseQty("299000"), source: "factory_report" },
-      { asOfDate: "2026-10-01", locationId: EGPI, materialId: "mat-CARTON", note: null, qty: parseQty("13850"), source: "factory_report" },
+      { asOfDate: "2026-10-01", expiryDate: null, locationId: EGPI, materialId: "mat-IVY_EXTRACT", note: null, qty: parseQty("43000"), source: "factory_report" },
+      { asOfDate: "2026-10-01", expiryDate: null, locationId: EGPI, materialId: "mat-SORBITOL", note: null, qty: parseQty("299000"), source: "factory_report" },
+      { asOfDate: "2026-10-01", expiryDate: null, locationId: EGPI, materialId: "mat-CARTON", note: null, qty: parseQty("13850"), source: "factory_report" },
       // 🔴 SATO'S OWN STORE HOLDS SOME OF THE IVY, and that is here on purpose: it is the only thing
       // that tells the two stock columns apart. What he must BUY is measured against everything he
       // owns, but what is left at the factory after the run is measured against the factory alone —
       // he sends from his own store, the run never reaches it. With this row at zero, a sheet that
       // subtracted the requirement from both locations computed the same answer and the break test
       // could not see the difference.
-      { asOfDate: "2026-10-01", locationId: SATO_STORE, materialId: "mat-IVY_EXTRACT", note: null, qty: parseQty("7000"), source: "own_count" },
+      { asOfDate: "2026-10-01", expiryDate: null, locationId: SATO_STORE, materialId: "mat-IVY_EXTRACT", note: null, qty: parseQty("7000"), source: "own_count" },
     ],
     prices: [
       { currency: "USD", effectiveFrom: "2026-01-01", materialId: "mat-IVY_EXTRACT", pricePerDisplayUnit: parseQty("120"), supplierName: null },
@@ -135,6 +145,11 @@ function planningData(): ProductionPlanningData {
       alarmLastEvaluatedOn: null,
       alarmLastSentOn: null,
       defaultOveragePct: parsePct("3"),
+      expiryAlarmDryRun: true,
+      expiryAlarmEnabled: false,
+      expiryLastEvaluatedOn: null,
+      expiryLastSentOn: null,
+      expiryWarnDays: 90,
       fxFallbackUsdToEgp: null,
       fxFetchDryRun: true,
       fxFetchEnabled: false,
@@ -167,6 +182,9 @@ function wireMaterials(): WireMaterial[] {
           }
         : null,
       displayUnit: material.displayUnit,
+      // Empty for the same reason `stock` is: the workbook reads neither, because every held figure
+      // on the sheet comes through `plan.rows` — the engine's own answer, already summed over lots.
+      heldByLocation: [],
       id: material.id,
       isImported: material.isImported,
       leadTimeDays: material.leadTimeDays,
@@ -195,19 +213,25 @@ function workspaceFor(plan: WirePlan): WireWorkspace {
   const data = planningData();
   return {
     canWrite: true,
+    // No lot is near its date in this fixture, so the banner is empty and the sheet is the only
+    // thing under test. `tests/production-planning-expiry.test.ts` is where the verdicts are pinned.
+    expiry: [],
     fx: { rate: "48", rateDate: "2026-10-05", source: "manual" },
     level: "full",
     locations: data.locations,
     materials: wireMaterials(),
     plan,
     plans: [],
+    productId: "prod-ivyronc",
     products: [
       {
         code: "IVYRONC",
         doseMl: "5",
+        factoryLocationId: EGPI,
         goodUnitMl: "100",
         id: "prod-ivyronc",
         manufacturerName: "EGPI",
+        measureUnit: "ml",
         nameAr: "آيفيرونك",
         nameEn: "Ivyronc",
         notes: null,
@@ -224,6 +248,11 @@ function workspaceFor(plan: WirePlan): WireWorkspace {
       alarmLastEvaluatedOn: null,
       alarmLastSentOn: null,
       defaultOveragePct: "3",
+      expiryAlarmDryRun: true,
+      expiryAlarmEnabled: false,
+      expiryLastEvaluatedOn: null,
+      expiryLastSentOn: null,
+      expiryWarnDays: 90,
       fxFallbackUsdToEgp: null,
       fxFetchDryRun: true,
       fxFetchEnabled: false,
@@ -382,7 +411,9 @@ export async function runProductionPlanningWorkbookTests() {
     "إجمالي العلب المطلوب",
     "عدد العينات المجانية",
     "حجم التشغيلة (مل)",
-    "حجم العلبة القابلة للبيع (مل)",
+    // "الوحدة" and not "العلبة": the saleable unit is a 100 ml bottle here and a 5 g sachet for
+    // Guamusin, and the unit in brackets is the PRODUCT's, not the column name's.
+    "حجم الوحدة القابلة للبيع (مل)",
     "عدد الوحدات في العلبة",
     "سعر الصرف",
   ];
@@ -417,7 +448,17 @@ export async function runProductionPlanningWorkbookTests() {
 
   close(evaluateCell(sheet, `B${runsRow}`), 8, "the run count");
   close(evaluateCell(sheet, `B${rowOfLabel(sheet, "الناتج الفعلي")}`), 96_000, "the yield");
-  close(evaluateCell(sheet, `B${rowOfLabel(sheet, "إجمالي العلب (العبوات الكاملة)")}`), 106_000, "the boxes delivered");
+  // 🔴 TWO rows now, and they are not the same figure. The packaging-set count is what a cap, a
+  // carton insert or a sticker is consumed per; the BOX count is `packagingSets / unitsPerBox`. The
+  // sheet carried one cell for both, which is only correct while a box holds one unit — true for
+  // Ivyronc and false for Guamusin's 12-sachet carton, where a per-packaging-set material would have
+  // been understated twelve-fold. Both are pinned here, and the Guamusin block below is where they
+  // are pinned APART.
+  const packagingSetsRow = rowOfLabel(sheet, "إجمالي العبوات الكاملة");
+  const boxesRow = rowOfLabel(sheet, "إجمالي العلب (الكراتين)");
+  assert.notEqual(packagingSetsRow, boxesRow, "the packaging-set count and the box count are separate cells");
+  close(evaluateCell(sheet, `B${packagingSetsRow}`), 106_000, "the packaging sets");
+  close(evaluateCell(sheet, `B${boxesRow}`), 106_000, "the boxes delivered — one bottle per box, so the same figure");
   close(evaluateCell(sheet, `B${rowOfLabel(sheet, "الزيادة عن المطلوب")}`), 6_000, "the surplus over the ask");
   close(evaluateCell(sheet, `B${rowOfLabel(sheet, "إجمالي الجرعات")}`), 2_000_000, "the dose count");
   close(evaluateCell(sheet, `B${rowOfLabel(sheet, "الحجم الكلي (لتر)")}`), 10_000, "the total volume in litres");

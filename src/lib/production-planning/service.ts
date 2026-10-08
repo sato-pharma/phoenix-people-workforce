@@ -36,6 +36,7 @@ import {
   type EffectiveFxRate,
   type LineCost,
 } from "./costing";
+import { evaluateExpiry, resolveExpiryArming, type ExpiryLot, type ExpiryVerdict } from "./expiry";
 import { formatExactRuns, resolveRunGeometry, type RunGeometry } from "./geometry";
 import { formatOveragePct, learnFromRuns, resolveOverage, type MaterialLearning, type RunObservation } from "./learning";
 import type { WireRun, WireWorkspace } from "./wire";
@@ -48,6 +49,7 @@ import {
   type OverageSource,
 } from "./requirements";
 import {
+  coerceMeasureUnit,
   COMPOSITION_BASES,
   formatPct,
   formatQty,
@@ -64,6 +66,7 @@ import {
   UNIT_KINDS,
   type CompositionBasis,
   type MaterialSupplier,
+  type MeasureUnit,
   type PlanRequestMode,
   type UnitKind,
 } from "./rules";
@@ -79,6 +82,7 @@ import { isStockMovement, isStockSource, storedStockQty, type StockSource } from
 const T = {
   products: "prodplan_products",
   materials: "prodplan_materials",
+  productMaterials: "prodplan_product_materials",
   compositions: "prodplan_compositions",
   locations: "prodplan_locations",
   stock: "prodplan_stock_entries",
@@ -90,6 +94,7 @@ const T = {
   runs: "prodplan_runs",
   runMaterials: "prodplan_run_materials",
   alarms: "prodplan_alarm_events",
+  expiryEvents: "prodplan_expiry_events",
   grants: "prodplan_access_grants",
 } as const;
 
@@ -105,19 +110,24 @@ export { T as PRODPLAN_TABLES };
 // Explicit column lists, never `select("*")`: a `*` read is how a column added for one screen
 // quietly starts travelling to every other one.
 const PRODUCT_COLUMNS =
-  "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, is_active, notes";
+  "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, measure_unit, factory_location_id, is_active, notes";
+/** Which materials belong to which product. Before Guamusin every material belonged to the only one. */
+const PRODUCT_MATERIAL_COLUMNS = "product_id, material_id, sort_order, is_active";
 const MATERIAL_COLUMNS =
   "id, code, name_ar, name_en, unit_kind, base_unit, display_unit, base_per_display::text, is_imported, lead_time_days, min_order_qty::text, purchase_increment::text, reorder_cover_runs::text, is_active, sort_order, notes";
 const COMPOSITION_COLUMNS =
   "id, product_id, material_id, unit_kind, basis, qty_per_basis::text, supplier, overage_pct::text, effective_from, effective_to, notes";
 const LOCATION_COLUMNS = "id, code, name_ar, name_en, is_factory, is_active, sort_order";
-const STOCK_COLUMNS = "id, material_id, unit_kind, location_id, qty::text, as_of_date, source, note, created_at";
+// `expiry_date` makes a stock row a LOT: the same material at the same location can be held in two
+// batches that die on different dates, which is the whole reason the owner asked for this column.
+const STOCK_COLUMNS =
+  "id, material_id, unit_kind, location_id, expiry_date, qty::text, as_of_date, source, note, created_at";
 const PRICE_COLUMNS =
   "id, material_id, unit_kind, currency, price_per_display_unit::text, effective_from, supplier_name, note, created_at";
 const FX_COLUMNS =
   "rate_date, fetched_usd_to_egp::text, fetch_ok, fetch_source, fetch_error, manual_usd_to_egp::text, manual_note";
 const SETTINGS_COLUMNS =
-  "id, default_overage_pct::text, reorder_cover_runs::text, alarm_enabled, alarm_dry_run, fx_fetch_enabled, fx_fetch_dry_run, fx_fallback_usd_to_egp::text, alarm_last_evaluated_on, alarm_last_sent_on, updated_by_hr_id, updated_by_login, updated_at";
+  "id, default_overage_pct::text, reorder_cover_runs::text, alarm_enabled, alarm_dry_run, fx_fetch_enabled, fx_fetch_dry_run, fx_fallback_usd_to_egp::text, alarm_last_evaluated_on, alarm_last_sent_on, expiry_warn_days, expiry_alarm_enabled, expiry_alarm_dry_run, expiry_last_evaluated_on, expiry_last_sent_on, updated_by_hr_id, updated_by_login, updated_at";
 const RUN_COLUMNS =
   "id, product_id, plan_id, run_label, runs_count, actual_good_units, actual_sample_units, snap_run_volume_ml, snap_dose_ml, snap_good_unit_ml, snap_sample_unit_ml, produced_on, is_excluded_from_learning, exclusion_reason, notes, recorded_by_login, created_at";
 const RUN_MATERIAL_COLUMNS =
@@ -171,6 +181,18 @@ export type LoadedProduct = {
   readonly nameEn: string;
   readonly manufacturerName: string | null;
   readonly geometry: RunGeometry;
+  /** What the geometry is counted in. `ml` for a syrup, `g` for a powder in sachets. */
+  readonly measureUnit: MeasureUnit;
+  /**
+   * THIS product's factory.
+   *
+   * 🔴 It is a product column and not `locations.is_factory` for a measured reason: every held-stock
+   * split used to read `locations.find((l) => l.isFactory)`, which takes the FIRST flagged location.
+   * Flagging DBK as a factory beside EGPI would therefore have re-pointed Ivyronc's factory to
+   * whichever row sorted first — silently moving 72 kg of ivy extract from "the factory already has
+   * it" to "send it". The column keeps each product's split its own.
+   */
+  readonly factoryLocationId: string | null;
   readonly notes: string | null;
 };
 
@@ -210,9 +232,18 @@ export type LoadedComposition = {
   readonly notes: string | null;
 };
 
+/**
+ * One LOT — material, location AND expiry date — not one location.
+ *
+ * Several rows can carry the same `(materialId, locationId)` pair with different `expiryDate`s. The
+ * planner's held figure SUMS them (`heldByMaterialAndLocation`), so the buy list is unchanged; what
+ * the lots add is the ability to say WHICH batch is about to die.
+ */
 export type LoadedStock = {
   readonly materialId: string;
   readonly locationId: string;
+  /** `null` for packaging — film, cartons and stickers never expire. */
+  readonly expiryDate: string | null;
   readonly qty: bigint;
   readonly asOfDate: string;
   readonly source: string;
@@ -237,6 +268,12 @@ export type LoadedSettings = {
   readonly fxFallbackUsdToEgp: bigint | null;
   readonly alarmLastEvaluatedOn: string | null;
   readonly alarmLastSentOn: string | null;
+  /** How far ahead the expiry warning looks. The owner asked for three months; the default is 90. */
+  readonly expiryWarnDays: number;
+  readonly expiryAlarmEnabled: boolean;
+  readonly expiryAlarmDryRun: boolean;
+  readonly expiryLastEvaluatedOn: string | null;
+  readonly expiryLastSentOn: string | null;
   readonly updatedByLogin: string | null;
   readonly updatedAt: string | null;
 };
@@ -246,7 +283,14 @@ export type ProductionPlanningData = {
   readonly level: ProductionPlanningLevel;
   readonly products: LoadedProduct[];
   readonly locations: LoadedLocation[];
+  /**
+   * EVERY material in the module, across all products. Almost nothing should read this directly —
+   * use `materialsForProduct(data, productId)`, which filters through `materialIdsByProductId`.
+   * An unscoped list puts one product's materials on another's buy list as "formula not entered".
+   */
   readonly materials: LoadedMaterial[];
+  /** Which materials belong to which product, from `prodplan_product_materials`. */
+  readonly materialIdsByProductId: Map<string, Set<string>>;
   readonly compositionsByProductId: Map<string, LoadedComposition[]>;
   readonly stock: LoadedStock[];
   readonly prices: LoadedPrice[];
@@ -266,6 +310,13 @@ const DEFAULT_SETTINGS: LoadedSettings = {
   fxFallbackUsdToEgp: null,
   alarmLastEvaluatedOn: null,
   alarmLastSentOn: null,
+  // Three months, as the owner asked for. The WINDOW is safe to default — it only decides what the
+  // screen shows. The two arming flags below are the fail-safe pair, and both say "send nothing".
+  expiryWarnDays: 90,
+  expiryAlarmEnabled: false,
+  expiryAlarmDryRun: true,
+  expiryLastEvaluatedOn: null,
+  expiryLastSentOn: null,
   updatedByLogin: null,
   updatedAt: null,
 };
@@ -291,10 +342,21 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
   const db = getSupabaseAdmin();
   const today = todayCairo();
 
-  const [productsRes, materialsRes, compositionsRes, locationsRes, stockRes, pricesRes, settingsRes, fxRes] =
+  const [
+    productsRes,
+    materialsRes,
+    productMaterialsRes,
+    compositionsRes,
+    locationsRes,
+    stockRes,
+    pricesRes,
+    settingsRes,
+    fxRes,
+  ] =
     await Promise.all([
       db.from(T.products).select(PRODUCT_COLUMNS).eq("is_active", true).order("code"),
       db.from(T.materials).select(MATERIAL_COLUMNS).eq("is_active", true).order("sort_order").order("code"),
+      db.from(T.productMaterials).select(PRODUCT_MATERIAL_COLUMNS).eq("is_active", true),
       db.from(T.compositions).select(COMPOSITION_COLUMNS).lte("effective_from", today).order("effective_from", { ascending: false }),
       db.from(T.locations).select(LOCATION_COLUMNS).eq("is_active", true).order("sort_order"),
       db.from(T.stock).select(STOCK_COLUMNS).order("as_of_date", { ascending: false }).order("created_at", { ascending: false }),
@@ -305,6 +367,11 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
 
   if (productsRes.error) failure(productsRes.error, "load the products");
   if (materialsRes.error) failure(materialsRes.error, "load the materials");
+  // 🔴 THROWS rather than falling back to "every material belongs to every product". A silent
+  // fallback is how Guamusin's thirteen rows would appear on Ivyronc's buy list as "formula not
+  // entered" — a wrong buy list reads exactly like a right one, which is the failure this module's
+  // whole design avoids.
+  if (productMaterialsRes.error) failure(productMaterialsRes.error, "load which materials each product uses");
   if (compositionsRes.error) failure(compositionsRes.error, "load the composition");
   if (locationsRes.error) failure(locationsRes.error, "load the stock locations");
   if (stockRes.error) failure(stockRes.error, "load the stock");
@@ -316,6 +383,11 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     nameAr: String(row.name_ar),
     nameEn: String(row.name_en),
     manufacturerName: asText(row.manufacturer_name),
+    measureUnit: coerceMeasureUnit(row.measure_unit),
+    // Falls back to the first flagged location ONLY where the column is null, which is how a product
+    // seeded before this column existed still resolves. Ivyronc was backfilled to EGPI in the same
+    // migration, so nothing actually takes this path.
+    factoryLocationId: asText(row.factory_location_id),
     notes: asText(row.notes),
     geometry: {
       runVolumeMl: BigInt(row.run_volume_ml),
@@ -326,6 +398,14 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
       unitsPerBox: BigInt(row.units_per_box),
     },
   }));
+
+  const materialIdsByProductId = new Map<string, Set<string>>();
+  for (const row of productMaterialsRes.data ?? []) {
+    const productId = String(row.product_id);
+    const ids = materialIdsByProductId.get(productId) ?? new Set<string>();
+    ids.add(String(row.material_id));
+    materialIdsByProductId.set(productId, ids);
+  }
 
   const materials: LoadedMaterial[] = (materialsRes.data ?? []).map((row) => ({
     id: String(row.id),
@@ -381,17 +461,24 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     isFactory: row.is_factory === true,
   }));
 
-  // Newest report per (material, location). Append-only means the history is all here; the current
-  // figure is the first row for each pair, which is why the query sorts before this loop.
+  // Newest report per LOT — (material, location, expiry). Append-only means the history is all here;
+  // the current figure is the first row for each lot, which is why the query sorts before this loop.
+  //
+  // 🔴 THE EXPIRY DATE IS PART OF THE KEY, and that is what makes two batches of the same powder at
+  // the same factory two separate standing figures rather than one overwriting the other. Before
+  // Guamusin every row had a null expiry, so each pair had exactly one lot and this fold returns the
+  // identical array it always did — which is why the pinned Ivyronc figures do not move.
   const stock: LoadedStock[] = [];
   const seenStock = new Set<string>();
   for (const row of stockRes.data ?? []) {
-    const key = `${String(row.material_id)}/${String(row.location_id)}`;
+    const expiryDate = asText(row.expiry_date);
+    const key = `${String(row.material_id)}/${String(row.location_id)}/${expiryDate ?? ""}`;
     if (seenStock.has(key)) continue;
     seenStock.add(key);
     stock.push({
       materialId: String(row.material_id),
       locationId: String(row.location_id),
+      expiryDate,
       qty: parseNonNegativeQty(String(row.qty), "qty"),
       asOfDate: String(row.as_of_date),
       source: String(row.source),
@@ -421,6 +508,7 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
   // boolean leaves the email switched off and silent.
   const alarmArming = resolveAlarmArming(settingsRow);
   const fxArming = resolveFxArming(settingsRow);
+  const expiryArming = resolveExpiryArming(settingsRow);
   const settings: LoadedSettings = settingsRow
     ? {
         defaultOveragePct: parsePct(String(settingsRow.default_overage_pct), "default_overage_pct"),
@@ -432,6 +520,14 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
         fxFallbackUsdToEgp: optionalQty(settingsRow.fx_fallback_usd_to_egp, "fx_fallback_usd_to_egp"),
         alarmLastEvaluatedOn: asText(settingsRow.alarm_last_evaluated_on),
         alarmLastSentOn: asText(settingsRow.alarm_last_sent_on),
+        expiryWarnDays:
+          typeof settingsRow.expiry_warn_days === "number" && settingsRow.expiry_warn_days > 0
+            ? settingsRow.expiry_warn_days
+            : DEFAULT_SETTINGS.expiryWarnDays,
+        expiryAlarmEnabled: expiryArming.enabled,
+        expiryAlarmDryRun: expiryArming.dryRun,
+        expiryLastEvaluatedOn: asText(settingsRow.expiry_last_evaluated_on),
+        expiryLastSentOn: asText(settingsRow.expiry_last_sent_on),
         updatedByLogin: asText(settingsRow.updated_by_login),
         updatedAt: asText(settingsRow.updated_at),
       }
@@ -455,6 +551,7 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     products,
     locations,
     materials,
+    materialIdsByProductId,
     compositionsByProductId,
     stock,
     prices,
@@ -495,6 +592,88 @@ async function loadLearning(): Promise<Map<string, MaterialLearning>> {
     });
   }
   return learnFromRuns(observations);
+}
+
+// ── Reading the loaded data, per product ───────────────────────────────────────────────────────────
+
+/**
+ * The materials of ONE product, in their sorted order.
+ *
+ * 🔴 EVERY LIST OF MATERIALS GOES THROUGH HERE. The unscoped `data.materials` was correct only while
+ * there was a single product, and the day a second one arrived it became a defect with no symptom:
+ * Guamusin's thirteen materials would appear on Ivyronc's buy list as thirteen "formula not entered"
+ * rows, and Ivyronc's fourteen on Guamusin's — a list that is wrong in a way that reads as right.
+ *
+ * A product with NO join rows gets every material, which is only how a product seeded before the
+ * join table existed still works. Both real products were backfilled in the same migration.
+ */
+export function materialsForProduct(data: ProductionPlanningData, productId: string | null): LoadedMaterial[] {
+  if (!productId) return [];
+  const ids = data.materialIdsByProductId.get(productId);
+  if (!ids || ids.size === 0) return data.materials;
+  return data.materials.filter((material) => ids.has(material.id));
+}
+
+/**
+ * Held stock per material, per location — the lots SUMMED.
+ *
+ * This is the one place the lot split is collapsed, and collapsing it is deliberate: the requirement
+ * engine asks "how much is at the factory", which is the total of every batch standing there. Keeping
+ * the sum here rather than in `requirements.ts` is what lets the expiry work arrive without the buy
+ * list moving by a single microgram — two lots of 100 and 130 answer 230, exactly as one row of 230
+ * did before.
+ */
+function heldByMaterialAndLocation(stock: readonly LoadedStock[]): Map<string, Map<string, bigint>> {
+  const byMaterial = new Map<string, Map<string, bigint>>();
+  for (const row of stock) {
+    const byLocation = byMaterial.get(row.materialId) ?? new Map<string, bigint>();
+    byLocation.set(row.locationId, (byLocation.get(row.locationId) ?? BigInt(0)) + row.qty);
+    byMaterial.set(row.materialId, byLocation);
+  }
+  return byMaterial;
+}
+
+/**
+ * Which location is this product's factory.
+ *
+ * The product's own column, falling back to the first flagged location only when it is null — see
+ * `LoadedProduct.factoryLocationId` for why a shared `is_factory` read was the bug.
+ */
+function factoryLocationIdFor(data: ProductionPlanningData, product: LoadedProduct): string | null {
+  return product.factoryLocationId ?? data.locations.find((location) => location.isFactory)?.id ?? null;
+}
+
+/** The lots of one product's materials, ready for `evaluateExpiry`. */
+function expiryLotsFor(data: ProductionPlanningData, productId: string | null): ExpiryLot[] {
+  const materials = materialsForProduct(data, productId);
+  const byId = new Map(materials.map((material) => [material.id, material]));
+  const lots: ExpiryLot[] = [];
+  for (const row of data.stock) {
+    const material = byId.get(row.materialId);
+    if (!material) continue;
+    lots.push({
+      code: material.code,
+      expiryDate: row.expiryDate,
+      locationId: row.locationId,
+      materialId: material.id,
+      nameAr: material.nameAr,
+      nameEn: material.nameEn,
+      qty: row.qty,
+    });
+  }
+  return lots;
+}
+
+/** The expiry verdicts for one product, in the shape the screen and the email both read. */
+export function evaluateExpiryForProduct(
+  data: ProductionPlanningData,
+  productId: string | null,
+  today: string = todayCairo(),
+): ExpiryVerdict[] {
+  return evaluateExpiry(expiryLotsFor(data, productId), {
+    today,
+    warnDays: data.settings.expiryWarnDays,
+  });
 }
 
 // ── Computing one plan ─────────────────────────────────────────────────────────────────────────────
@@ -614,6 +793,8 @@ export type PlanResult = {
   readonly productId: string;
   readonly productNameAr: string;
   readonly productNameEn: string;
+  /** What the `…Ml` and `…Litres` figures below are counted in — grams and kilograms for a powder. */
+  readonly measureUnit: MeasureUnit;
   readonly mode: PlanRequestMode;
   readonly requestedQty: string;
   readonly sampleUnits: string;
@@ -675,19 +856,14 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
   const run = resolveRunGeometry(product.geometry, { mode, requestedQty, sampleUnits });
   const compositions = data.compositionsByProductId.get(product.id) ?? [];
   const compositionByMaterialId = new Map(compositions.map((row) => [row.materialId, row]));
-  const factoryLocationId = data.locations.find((location) => location.isFactory)?.id ?? null;
-
-  const stockByMaterialId = new Map<string, Map<string, bigint>>();
-  for (const row of data.stock) {
-    const byLocation = stockByMaterialId.get(row.materialId) ?? new Map<string, bigint>();
-    byLocation.set(row.locationId, row.qty);
-    stockByMaterialId.set(row.materialId, byLocation);
-  }
+  const factoryLocationId = factoryLocationIdFor(data, product);
+  const stockByMaterialId = heldByMaterialAndLocation(data.stock);
   const priceByMaterialId = new Map(data.prices.map((row) => [row.materialId, row]));
 
+  const materials = materialsForProduct(data, product.id);
   const requirements: MaterialRequirement[] = [];
   const inputsByMaterialId = new Map<string, MaterialRequirementInput>();
-  for (const material of data.materials) {
+  for (const material of materials) {
     const composition = compositionByMaterialId.get(material.id) ?? null;
     const learned = data.learning.get(material.id);
     const overage =
@@ -725,7 +901,7 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
 
   const costed: { cost: LineCost | null; contributesToBuyList: boolean }[] = [];
   const rows: PlanResultRow[] = sorted.map((row) => {
-    const material = data.materials.find((candidate) => candidate.id === row.materialId)!;
+    const material = materials.find((candidate) => candidate.id === row.materialId)!;
     const price = priceByMaterialId.get(row.materialId) ?? null;
     // Cost what he has to BUY, not what the run consumes: he already owns the rest.
     const cost =
@@ -794,12 +970,16 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
     sampleUnitMl: formatNumberLatin(product.geometry.sampleUnitMl),
     surplusBoxes: formatNumberLatin(run.surplusBoxes),
     shortfallBoxes: null,
+    // So the sentence says "6 runs of 100 kg each … 5 g sachets" for a powder, and keeps every word
+    // of Ivyronc's litres-and-millilitres wording for a syrup.
+    measureUnit: product.measureUnit,
   });
 
   return {
     productId: product.id,
     productNameAr: product.nameAr,
     productNameEn: product.nameEn,
+    measureUnit: product.measureUnit,
     mode,
     requestedQty: requestedQty.toString(),
     sampleUnits: sampleUnits.toString(),
@@ -843,13 +1023,20 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
   };
 }
 
-/** Recorded runs, newest first, with their per-material actuals beside their own theory. */
-export async function listRuns(access: AccessContext) {
+/**
+ * Recorded runs, newest first, with their per-material actuals beside their own theory.
+ *
+ * Filtered by product when one is named: the Run tab belongs to the product the Planner tab is on,
+ * and a run of Ivyronc listed under Guamusin would be read as Guamusin's own history — which is also
+ * what the consumption learner would then be measuring.
+ */
+export async function listRuns(access: AccessContext, productId?: string | null) {
   const level = await resolveProductionPlanningLevel(access);
   assertProductionPlanningRead(access, level);
   const db = getSupabaseAdmin();
+  const runsQuery = db.from(T.runs).select(RUN_COLUMNS).order("produced_on", { ascending: false }).limit(60);
   const [runsRes, linesRes] = await Promise.all([
-    db.from(T.runs).select(RUN_COLUMNS).order("produced_on", { ascending: false }).limit(60),
+    productId ? runsQuery.eq("product_id", productId) : runsQuery,
     db.from(T.runMaterials).select(RUN_MATERIAL_COLUMNS),
   ]);
   if (runsRes.error) failure(runsRes.error, "load the recorded runs");
@@ -890,14 +1077,15 @@ export async function listRuns(access: AccessContext) {
 }
 
 /** Saved plans, newest first. A draft carries no lines; a committed one carries its whole snapshot. */
-export async function listPlans(access: AccessContext) {
+export async function listPlans(access: AccessContext, productId?: string | null) {
   const level = await resolveProductionPlanningLevel(access);
   assertProductionPlanningRead(access, level);
-  const { data, error } = await getSupabaseAdmin()
+  const query = getSupabaseAdmin()
     .from(T.plans)
     .select(PLAN_COLUMNS)
     .order("created_at", { ascending: false })
     .limit(40);
+  const { data, error } = await (productId ? query.eq("product_id", productId) : query);
   if (error) failure(error, "load the saved plans");
   return (data ?? []).map((row) => ({
     id: String(row.id),
@@ -950,11 +1138,34 @@ export async function getProductionPlanningWorkspace(
   // no plan computed, never a refusal to load.
   const askedForAPlan = asScalar(body.requestedQty) !== null;
   const plan = data.products.length > 0 && askedForAPlan ? computePlan(data, body) : null;
-  const [runs, plans] = await Promise.all([listRuns(access), listPlans(access)]);
+
+  // 🔴 WHICH PRODUCT THE WHOLE PAYLOAD BELONGS TO, resolved once and used by every array below.
+  //
+  // It used to be `data.products[0]` in four places and nowhere else, which was the same product
+  // either way while there was only one. With two, the Stock, Cost, Run and Settings tabs were all
+  // reading product one's formula and product one's runs no matter which product the Planner tab was
+  // showing — so a Guamusin material's basis read "formula not entered" while its formula sat in the
+  // database. The requested id wins; the first product is only the default for a bare first load.
+  const productId = asText(body.productId) ?? data.products[0]?.id ?? null;
+  const materials = materialsForProduct(data, productId);
+  const compositions = productId ? data.compositionsByProductId.get(productId) ?? [] : [];
+  const compositionByMaterialId = new Map(compositions.map((row) => [row.materialId, row]));
+  // Hoisted out of the map below: folding every lot once per material is quadratic, and the stock
+  // table is the longest list on this screen.
+  const heldByMaterial = heldByMaterialAndLocation(data.stock);
+  const lotsByMaterialAndLocation = new Map<string, LoadedStock[]>();
+  for (const row of data.stock) {
+    const key = `${row.materialId}/${row.locationId}`;
+    const list = lotsByMaterialAndLocation.get(key) ?? [];
+    list.push(row);
+    lotsByMaterialAndLocation.set(key, list);
+  }
+  const [runs, plans] = await Promise.all([listRuns(access, productId), listPlans(access, productId)]);
 
   return {
     level: data.level,
     canWrite: data.level === "full",
+    productId,
     products: data.products.map((product) => ({
       id: product.id,
       code: product.code,
@@ -967,13 +1178,13 @@ export async function getProductionPlanningWorkspace(
       sampleUnitMl: product.geometry.sampleUnitMl.toString(),
       wholeRunsOnly: product.geometry.wholeRunsOnly,
       unitsPerBox: product.geometry.unitsPerBox.toString(),
+      measureUnit: product.measureUnit,
+      factoryLocationId: factoryLocationIdFor(data, product),
       notes: product.notes,
     })),
     locations: data.locations,
-    materials: data.materials.map((material) => {
-      const composition = (data.compositionsByProductId.get(data.products[0]?.id ?? "") ?? []).find(
-        (row) => row.materialId === material.id,
-      );
+    materials: materials.map((material) => {
+      const composition = compositionByMaterialId.get(material.id);
       const learned = data.learning.get(material.id);
       const price = data.prices.find((row) => row.materialId === material.id) ?? null;
       return {
@@ -1001,16 +1212,33 @@ export async function getProductionPlanningWorkspace(
               notes: composition.notes,
             }
           : null,
+        // One row per LOT, soonest expiry first, with the undated packaging lots last. The screen
+        // reads this straight into its own rows, so the order here IS the order he sees.
         stock: data.stock
           .filter((row) => row.materialId === material.id)
+          .slice()
+          .sort((a, b) => (a.expiryDate ?? "9999-12-31").localeCompare(b.expiryDate ?? "9999-12-31"))
           .map((row) => ({
             locationId: row.locationId,
+            expiryDate: row.expiryDate,
             qty: formatQty(row.qty),
             qtyDisplay: display(row.qty, material.basePerDisplay),
             asOfDate: row.asOfDate,
             source: row.source,
             note: row.note,
           })),
+        // Summed HERE, in BigInt, for the same reason the delivery arithmetic is server-side: the
+        // screen would have to add decimal strings in floats, and this module exists to avoid that.
+        heldByLocation: [...(heldByMaterial.get(material.id)?.entries() ?? [])].map(([locationId, qty]) => {
+          const lots = lotsByMaterialAndLocation.get(`${material.id}/${locationId}`) ?? [];
+          return {
+            locationId,
+            lots: lots.length,
+            newestAsOfDate: lots.map((row) => row.asOfDate).sort().at(-1) ?? "",
+            qty: formatQty(qty),
+            qtyDisplay: display(qty, material.basePerDisplay),
+          };
+        }),
         price: price
           ? {
               currency: price.currency,
@@ -1046,6 +1274,11 @@ export async function getProductionPlanningWorkspace(
         data.settings.fxFallbackUsdToEgp === null ? null : formatQty(data.settings.fxFallbackUsdToEgp),
       alarmLastEvaluatedOn: data.settings.alarmLastEvaluatedOn,
       alarmLastSentOn: data.settings.alarmLastSentOn,
+      expiryWarnDays: data.settings.expiryWarnDays,
+      expiryAlarmEnabled: data.settings.expiryAlarmEnabled,
+      expiryAlarmDryRun: data.settings.expiryAlarmDryRun,
+      expiryLastEvaluatedOn: data.settings.expiryLastEvaluatedOn,
+      expiryLastSentOn: data.settings.expiryLastSentOn,
       updatedByLogin: data.settings.updatedByLogin,
       updatedAt: data.settings.updatedAt,
     },
@@ -1055,6 +1288,25 @@ export async function getProductionPlanningWorkspace(
       source: data.fx.source,
     },
     plan,
+    // Computed on EVERY load, armed or not: the banner is the half he reads, and the email is a
+    // separate switch he has not turned on. "خانة الاكسبايري ديت مهمة جدا جدا جدا" — so the warning
+    // is on the screen from the first load, with no cron and no arming involved.
+    expiry: evaluateExpiryForProduct(data, productId).map((verdict) => {
+      const material = materials.find((candidate) => candidate.id === verdict.materialId);
+      return {
+        code: verdict.code,
+        daysLeft: verdict.daysLeft,
+        displayUnit: material?.displayUnit ?? "",
+        expiryDate: verdict.expiryDate,
+        locationId: verdict.locationId,
+        materialId: verdict.materialId,
+        nameAr: verdict.nameAr,
+        nameEn: verdict.nameEn,
+        qty: formatQty(verdict.qty),
+        qtyDisplay: material ? display(verdict.qty, material.basePerDisplay) : formatQty(verdict.qty),
+        severity: verdict.severity,
+      };
+    }),
     runs,
     plans,
   };
@@ -1088,6 +1340,12 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
   if (!unitKind) throw new ProductionPlanningInputError(errorsFor(body).unknownUnitKind, "unitKind");
   const qty = parseNonNegativeQty(asScalar(body.qty), "qty");
   const asOfDate = asText(body.asOfDate) ?? todayCairo();
+  // The LOT this report is about. Absent means "the undated lot" — packaging, which never expires,
+  // and every Ivyronc row recorded before the column existed.
+  const expiryDate = asText(body.expiryDate);
+  if (expiryDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+    throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "expiryDate");
+  }
   // Validated here rather than left to the table's CHECK: a rejected CHECK surfaces as a raw
   // PostgREST message, which is not a sentence anybody should read on a form.
   const sourceText = asText(body.source) ?? "factory_report";
@@ -1101,25 +1359,32 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
   // A delivery adds to the balance standing on its OWN date. It refuses to guess when a LATER
   // report already exists, because that report has either counted this delivery already or
   // superseded it — adding underneath it would invent a figure nobody reported.
+  //
+  // 🔴 BOTH READS ARE SCOPED TO THIS LOT. A delivery of the batch expiring in April 2027 adds to
+  // that batch's standing figure, not to the batch expiring in 2029 — and the "is there a newer
+  // report" refusal likewise only asks about this lot, or a second batch arriving today would be
+  // refused because the FIRST batch happens to carry a later report.
   let previousQty = BigInt(0);
   if (isStockMovement(source)) {
+    const standingQuery = db
+      .from(T.stock)
+      .select("qty::text")
+      .eq("material_id", materialId)
+      .eq("location_id", locationId)
+      .lte("as_of_date", asOfDate);
+    const newerQuery = db
+      .from(T.stock)
+      .select("as_of_date")
+      .eq("material_id", materialId)
+      .eq("location_id", locationId)
+      .gt("as_of_date", asOfDate);
     const [standing, newer] = await Promise.all([
-      db
-        .from(T.stock)
-        .select("qty::text")
-        .eq("material_id", materialId)
-        .eq("location_id", locationId)
-        .lte("as_of_date", asOfDate)
+      (expiryDate === null ? standingQuery.is("expiry_date", null) : standingQuery.eq("expiry_date", expiryDate))
         .order("as_of_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      db
-        .from(T.stock)
-        .select("as_of_date")
-        .eq("material_id", materialId)
-        .eq("location_id", locationId)
-        .gt("as_of_date", asOfDate)
+      (expiryDate === null ? newerQuery.is("expiry_date", null) : newerQuery.eq("expiry_date", expiryDate))
         .order("as_of_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
@@ -1143,6 +1408,7 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
       material_id: materialId,
       unit_kind: unitKind,
       location_id: locationId,
+      expiry_date: expiryDate,
       qty: formatQty(storedQty),
       as_of_date: asOfDate,
       source,
@@ -1161,6 +1427,7 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
     newValues: {
       materialId,
       locationId,
+      expiryDate,
       qty: formatQty(storedQty),
       typedQty: formatQty(qty),
       previousQty: formatQty(previousQty),
@@ -1168,8 +1435,8 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
       source,
     },
     summary: isStockMovement(source)
-      ? `Production planner: delivery of ${formatQty(qty)} for material ${materialId} at ${locationId} — balance ${formatQty(previousQty)} → ${formatQty(storedQty)} as of ${asOfDate}`
-      : `Production planner: stock report for material ${materialId} at ${locationId} — ${formatQty(storedQty)} as of ${asOfDate}`,
+      ? `Production planner: delivery of ${formatQty(qty)} for material ${materialId} at ${locationId}${expiryDate ? ` (lot expiring ${expiryDate})` : ""} — balance ${formatQty(previousQty)} → ${formatQty(storedQty)} as of ${asOfDate}`
+      : `Production planner: stock report for material ${materialId} at ${locationId}${expiryDate ? ` (lot expiring ${expiryDate})` : ""} — ${formatQty(storedQty)} as of ${asOfDate}`,
   });
 
   return {
@@ -1306,10 +1573,14 @@ export async function recordRun(access: AccessContext, body: Record<string, unkn
   if (!runId) failure(null, "record the run");
 
   const lines = Array.isArray(body.materials) ? (body.materials as Record<string, unknown>[]) : [];
+  // Scoped to the product's own materials: a line naming a material this product does not use is a
+  // posted id the screen could not have offered, and recording it would teach the consumption learner
+  // about a material the run never touched.
+  const runMaterials = materialsForProduct(data, product.id);
   const rows = lines.map((line) => {
     const materialId = asText(line.materialId);
     if (!materialId) throw new ProductionPlanningInputError(errorsFor(body).rowMaterialMissingId, "materials");
-    const material = data.materials.find((candidate) => candidate.id === materialId);
+    const material = runMaterials.find((candidate) => candidate.id === materialId);
     if (!material) throw new ProductionPlanningInputError(errorsFor(body).rowMaterialNotFound, "materials");
     const opening = parseNonNegativeQty(asScalar(line.openingQty) ?? "0", "openingQty");
     const delivered = parseNonNegativeQty(asScalar(line.deliveredQty) ?? "0", "deliveredQty");
@@ -1380,6 +1651,17 @@ export async function updateSettings(access: AccessContext, body: Record<string,
   if (typeof body.alarmDryRun === "boolean") patch.alarm_dry_run = body.alarmDryRun;
   if (typeof body.fxFetchEnabled === "boolean") patch.fx_fetch_enabled = body.fxFetchEnabled;
   if (typeof body.fxFetchDryRun === "boolean") patch.fx_fetch_dry_run = body.fxFetchDryRun;
+  if (typeof body.expiryAlarmEnabled === "boolean") patch.expiry_alarm_enabled = body.expiryAlarmEnabled;
+  if (typeof body.expiryAlarmDryRun === "boolean") patch.expiry_alarm_dry_run = body.expiryAlarmDryRun;
+  if (asText(body.expiryWarnDays) !== null) {
+    // Refused here rather than left to the table's CHECK, so he reads a sentence and not a PostgREST
+    // message. The ceiling is three years: a window longer than that warns about everything.
+    const days = Number(parseWholeCount(asScalar(body.expiryWarnDays), "expiryWarnDays", {
+      min: BigInt(1),
+      max: BigInt(1095),
+    }));
+    patch.expiry_warn_days = days;
+  }
   if (asText(body.fxFallbackUsdToEgp) !== null) {
     patch.fx_fallback_usd_to_egp = formatQty(parseNonNegativeQty(asScalar(body.fxFallbackUsdToEgp), "fxFallbackUsdToEgp"));
   }
@@ -1389,7 +1671,11 @@ export async function updateSettings(access: AccessContext, body: Record<string,
 
   const armingChanged =
     (typeof body.alarmEnabled === "boolean" && body.alarmEnabled !== (previous.data?.alarm_enabled === true)) ||
-    (typeof body.alarmDryRun === "boolean" && body.alarmDryRun !== (previous.data?.alarm_dry_run !== false));
+    (typeof body.alarmDryRun === "boolean" && body.alarmDryRun !== (previous.data?.alarm_dry_run !== false)) ||
+    (typeof body.expiryAlarmEnabled === "boolean" &&
+      body.expiryAlarmEnabled !== (previous.data?.expiry_alarm_enabled === true)) ||
+    (typeof body.expiryAlarmDryRun === "boolean" &&
+      body.expiryAlarmDryRun !== (previous.data?.expiry_alarm_dry_run !== false));
 
   // Arming the email is REQUIRED on the trail: it is the moment this module starts speaking to
   // people outside it. Everything else here is a reversible threshold.
@@ -1406,11 +1692,14 @@ export async function updateSettings(access: AccessContext, body: Record<string,
           alarmDryRun: previous.data.alarm_dry_run,
           fxFetchEnabled: previous.data.fx_fetch_enabled,
           fxFetchDryRun: previous.data.fx_fetch_dry_run,
+          expiryWarnDays: previous.data.expiry_warn_days,
+          expiryAlarmEnabled: previous.data.expiry_alarm_enabled,
+          expiryAlarmDryRun: previous.data.expiry_alarm_dry_run,
         }
       : null,
     newValues: patch,
     summary: armingChanged
-      ? `Production planner: reorder email arming changed — enabled=${patch.alarm_enabled ?? previous.data?.alarm_enabled}, dryRun=${patch.alarm_dry_run ?? previous.data?.alarm_dry_run}`
+      ? `Production planner: email arming changed — reorder enabled=${patch.alarm_enabled ?? previous.data?.alarm_enabled}, dryRun=${patch.alarm_dry_run ?? previous.data?.alarm_dry_run}; expiry enabled=${patch.expiry_alarm_enabled ?? previous.data?.expiry_alarm_enabled}, dryRun=${patch.expiry_alarm_dry_run ?? previous.data?.expiry_alarm_dry_run}`
       : "Production planner: settings updated",
   });
 
@@ -1626,7 +1915,9 @@ export async function savePlan(access: AccessContext, body: Record<string, unkno
     const lineRows = result.rows
       .filter((row) => row.supplier === "sato" || row.supplier === "factory")
       .map((row) => {
-        const material = data.materials.find((candidate) => candidate.id === row.materialId)!;
+        const material = materialsForProduct(data, result.productId).find(
+          (candidate) => candidate.id === row.materialId,
+        )!;
         const toBase = (text: string) => toBaseText(text, material.basePerDisplay);
         return {
           plan_id: planId,
@@ -1761,7 +2052,7 @@ export async function evaluateReorderAlarms(data: ProductionPlanningData, produc
 
   const plan = computePlanInternal(data, product.id);
   const thresholdByMaterialId = new Map<string, bigint>();
-  for (const material of data.materials) {
+  for (const material of materialsForProduct(data, product.id)) {
     if (material.reorderCoverRuns !== null) thresholdByMaterialId.set(material.id, material.reorderCoverRuns);
   }
 
@@ -1788,16 +2079,10 @@ function computePlanInternal(data: ProductionPlanningData, productId: string) {
   const run = resolveRunGeometry(product.geometry, { mode: "runs", requestedQty: BigInt(1), sampleUnits: BigInt(0) });
   const compositions = data.compositionsByProductId.get(productId) ?? [];
   const compositionByMaterialId = new Map(compositions.map((row) => [row.materialId, row]));
-  const factoryLocationId = data.locations.find((location) => location.isFactory)?.id ?? null;
+  const factoryLocationId = factoryLocationIdFor(data, product);
+  const stockByMaterialId = heldByMaterialAndLocation(data.stock);
 
-  const stockByMaterialId = new Map<string, Map<string, bigint>>();
-  for (const row of data.stock) {
-    const byLocation = stockByMaterialId.get(row.materialId) ?? new Map<string, bigint>();
-    byLocation.set(row.locationId, row.qty);
-    stockByMaterialId.set(row.materialId, byLocation);
-  }
-
-  const requirements = data.materials.map((material) => {
+  const requirements = materialsForProduct(data, productId).map((material) => {
     const composition = compositionByMaterialId.get(material.id) ?? null;
     const overage = resolveOverage(
       composition?.overagePct ?? null,
