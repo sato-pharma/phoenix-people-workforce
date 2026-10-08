@@ -100,7 +100,7 @@ import {
   type PlannedActivityRow,
 } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts, savePlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
-import { loadSeatDaysOff } from "@/lib/phoenix-crm/server/leave-days";
+import { loadSeatDaysOff, loadSeatPendingLeave } from "@/lib/phoenix-crm/server/leave-days";
 import { assertRepMayChangeWeek, editAcknowledgedAt, loadPlanEditState, repStateOf } from "@/lib/phoenix-crm/server/plan-edits";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
@@ -290,6 +290,12 @@ export type PlanDayView = {
    * day picker, skipped by Suggest, every copy and "Next day", and refused by a save.
    */
   dayOff: PlanDayOff | null;
+  /**
+   * A leave the rep has asked for on this day that nobody has decided yet — "Annual Vacation" — or null
+   * (owner, 2026-10-08). Information only: the day stays plannable and nothing is refused over it; once
+   * HR approves it the day becomes a `dayOff` by itself. Never set on a day that is already a day off.
+   */
+  pendingLeave: string | null;
   ramadan: boolean;
   /** Today or later: the rep may still change it. */
   editable: boolean;
@@ -345,6 +351,8 @@ export function buildDays(input: {
   holidays?: ReadonlyMap<string, string>;
   /** The rep's own full days of approved leave, `day → name` (leave-days.ts `loadSeatDaysOff`). Days off too. */
   leave?: ReadonlyMap<string, string>;
+  /** Leave the rep has asked for and nobody has decided, `day → name` (leave-days.ts `loadSeatPendingLeave`). Shown, never a day off. */
+  pendingLeave?: ReadonlyMap<string, string>;
 }): PlanDayView[] {
   const byDay = new Map<string, Row[]>();
   for (const row of input.itemRows) {
@@ -417,6 +425,8 @@ export function buildDays(input: {
       listTypes: dayOff ? [] : planDayListTypes(date),
       holiday,
       dayOff,
+      // A day that is already a day off says that, not "pending": approved leave and a holiday outrank a request.
+      pendingLeave: dayOff ? null : (input.pendingLeave?.get(date) ?? null),
       ramadan,
       editable: date >= input.cairoToday,
       activities,
@@ -482,6 +492,8 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     canWriteAsRep(viewer, seat, isTest) ? loadPlannerInsights(seat.seatId, isTest, today, customersRead) : Promise.resolve(new Map<string, PlannerInsight>()),
     // The rep's own full days of approved leave are days off too (owner, 2026-10-02).
     loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
+    // Leave he has asked for and nobody has decided: named on the plan, never a day off (owner, 2026-10-08).
+    loadSeatPendingLeave(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -494,13 +506,14 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     holidays,
     insights,
     leave,
+    pendingLeave,
   ] = await wave;
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
   const territory = describeTerritory(viewer.org, seat, names);
   const plan = planRow ? mapPlan(planRow, names, territory) : null;
-  const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave });
+  const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave, pendingLeave });
 
   const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
     const customerId = String(row.id);
