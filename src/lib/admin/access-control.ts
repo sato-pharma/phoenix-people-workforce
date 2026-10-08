@@ -14,7 +14,8 @@ import {
   parsePermissionActionStrict,
   parsePermissionResourceStrict,
   parseRoleStrict,
-  phoenixRoles,
+  assignablePhoenixRoles,
+  retiredPhoenixRoles,
   type BusinessScope,
   type PermissionAction,
   type PermissionResource,
@@ -389,7 +390,7 @@ export async function getAccessControlDashboard() {
     lines: phoenixLines,
     permissions: await getPermissionMatrix(),
     permissionOverrides: await listPermissionOverrides(),
-    roles: phoenixRoles,
+    roles: assignablePhoenixRoles,
     users: ((data ?? []) as AccessUserDbRow[]).map((row) =>
       toUser(row, row.hr_id ? employeeMap.get(row.hr_id.trim().toLowerCase()) : undefined),
     ),
@@ -413,6 +414,9 @@ export async function upsertRolePermissionOverride(
   }
 
   const permissionRole = parseRoleStrict(input.role);
+  if (retiredPhoenixRoles.has(permissionRole)) {
+    throw new Error("That seat is retired; it holds no permissions to change.");
+  }
   const resource = parsePermissionResourceStrict(input.resource);
   const action = parsePermissionActionStrict(input.action);
   if (input.isAllowed && !isRolePermissionWithinHardBoundary(permissionRole, resource, action)) {
@@ -573,6 +577,11 @@ async function upsertAccessUserCore(input: AccessUserMutation, actor?: AccessAct
   if (!loginId) throw new Error("HR_ID or login ID is required.");
 
   const role = parseRoleStrict(input.role);
+  // A retired seat cannot be handed to anyone (owner, 2026-10-08: "no more HR business partner").
+  // Refused here, server-side, so the hidden picker option is never the only thing in the way.
+  if (retiredPhoenixRoles.has(role)) {
+    throw new Error("That seat is retired and cannot be given to anyone.");
+  }
   const line = normalizeLine(input.line);
   const salesScopeOverride = normalizeScope(input.salesScopeOverride);
 

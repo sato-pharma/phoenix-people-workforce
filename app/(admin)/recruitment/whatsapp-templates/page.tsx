@@ -18,10 +18,11 @@ export const dynamic = "force-dynamic";
 // are about to send — which is the point — without an edit button that would fail server-side
 // anyway. The API re-checks both gates; nothing here is the security boundary.
 //
-// THE HR BUSINESS PARTNER ALREADY REACHES THIS PAGE, and always did: her permission key is
-// `"HR Advisory"`, and "HR Business Partner" is the JOB TITLE shown for that key
-// (`HR_SEAT_JOB_TITLES` in hr-functions.ts). `canSendWhatsAppTemplate` names the key, so the title
-// needs no entry of its own — and adding one would add a string that is not a PhoenixRole at all.
+// THE RECRUITING SEAT REACHES THIS PAGE BY ITS PERMISSION KEY, NEVER ITS TITLE: `"HR Resourcing"`,
+// shown as "Talent Acquisition" (`displayTitleForRole` in hr-functions.ts). `canSendWhatsAppTemplate`
+// names the key, so the title needs no entry of its own — adding one would add a string that is not a
+// PhoenixRole at all. The HR Business Partner (`"HR Advisory"`) reached it until the owner moved
+// recruiting off her seat on 2026-10-08.
 //
 // THE HEADER IS `PremiumHero`, the module-page standard, not a hand-rolled <h1>. It is flat by
 // deliberate owner decision (2026-09-05, "NO MORE PREMIUM POLISH ... flat"): an accent rail, a

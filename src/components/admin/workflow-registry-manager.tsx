@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { displayTitleForRole } from "@/lib/auth/hr-functions";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import type {
   WorkflowRegistryAction,
@@ -64,8 +65,10 @@ const phoenixRoleOptions: PhoenixRole[] = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "HR Advisory",
+  // HR Advisory left when the owner retired the HR Business Partner seat on 2026-10-08; the Talent Acquisition seat took its place
+  // here, because recruiting and offers are hers.
   "HR Operations",
+  "HR Resourcing",
   "Manager",
   "CEO",
   "Super Admin",
@@ -801,7 +804,7 @@ export function WorkflowRegistryManager({
                               onChange={() => toggleActionRole(index, role)}
                               type="checkbox"
                             />
-                            {role}
+                            {displayTitleForRole(role)}
                           </label>
                         ))}
                       </div>

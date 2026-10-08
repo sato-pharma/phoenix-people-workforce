@@ -6,6 +6,7 @@ import {
   buildPermissionLookup,
   permissionMatrix,
   resolveNavigationMode,
+  retiredPhoenixRoles,
   scopeForRole,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
@@ -108,7 +109,10 @@ function parseRoutes(): Map<string, string> {
   return out;
 }
 
+// A retired seat (HR Advisory, 2026-10-08) is a dormant key nobody can be given: it holds no grant,
+// so it has no personal pages to need a door to.
 const adminShellRoles = (Object.keys(permissionMatrix) as PhoenixRole[])
+  .filter((role) => !retiredPhoenixRoles.has(role))
   .filter(
     (role) =>
       resolveNavigationMode({ hrId: null, role, scope: scopeForRole(role), source: "session" }) === "admin",

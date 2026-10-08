@@ -241,8 +241,9 @@ export function runPlanSyncConversationEmailTests() {
   // every call it ever made. Fixed 2026-09-03 and pinned at the foot of this file.
   assert.deepEqual(
     [...HR_SEAT_ROLES],
-    ["HR Advisory", "HR Operations"],
-    "the HR audience is the two HR seats, resolved by role",
+    ["HR Operations"],
+    "the HR audience is the HR Operations seat, resolved by role — the HR Business Partner was the " +
+      "second until the owner retired that seat on 2026-10-08",
   );
   assert.ok(
     /\.from\("app_auth_users"\)[\s\S]{0,200}\.in\("role", \[\.\.\.HR_SEAT_ROLES\]\)/.test(conversationNotify),
@@ -341,16 +342,15 @@ export function runPlanSyncConversationEmailTests() {
     isDeductionsReadActor({ role: "HR Operations" }),
     "HR Operations must pass the module read gate too, or the page opens and every panel 403s",
   );
-  // HR Advisory is mailed the same comment and cannot open the screen. That is deliberate and the
-  // owner was told so - payroll appears nowhere in the HR Business Partner job description - and it
-  // is pinned so a later session does not "fix" the asymmetry in either direction by accident. What
-  // makes it safe is the body: the message carries the comment IN FULL, asserted above.
+  // HR Advisory was mailed the same comment and could not open the screen - deliberate, since payroll
+  // appeared nowhere in the HR Business Partner job description. Her seat was retired on 2026-10-08
+  // and left the audience; the retired key still must not read the ledger.
   assert.ok(
     !isDeductionsReadActor({ role: "HR Advisory" }),
     "HR Advisory must NOT read the company's deductions - she is mailed the comment, not the ledger",
   );
-  // That BOTH seats stay on this conversation - an employee disputing a deduction is an employee
-  // concern, and engagement is hrbp 2 - is already pinned by the HR_SEAT_ROLES deepEqual above.
+  // That HR Operations stays on this conversation is already pinned by the HR_SEAT_ROLES deepEqual
+  // above.
   // Repeating it here would be an assertion that can never fire on its own, which is the shape this
   // suite exists to avoid.
 

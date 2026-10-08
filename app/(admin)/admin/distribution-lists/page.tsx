@@ -60,7 +60,7 @@ export default async function DistributionListsPage() {
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
       <div className="space-y-7">
         <AdminPageHero
-          description="Named recipient groups resolved from the live employee directory, plus the register of company email aliases on Turbify. Editing a list changes who future emails reach — nothing on this page sends mail. Super Admin, and the HR Business Partner for the HR-owned lists."
+          description="Named recipient groups resolved from the live employee directory, plus the register of company email aliases on Turbify. Editing a list changes who future emails reach — nothing on this page sends mail. Super Admin only."
           eyebrow="Email routing"
           icon={<Users className="h-3.5 w-3.5" />}
           title="Distribution Lists"

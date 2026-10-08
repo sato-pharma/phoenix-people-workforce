@@ -29,6 +29,12 @@ export const phoenixRoles = [
   // both job titles used as permission keys, and both had to be renamed across the codebase and
   // an eleven-table migration when the person left. These names are labels for a set of
   // functions and are read by nothing for intent, so none can go stale the same way.
+  //
+  // "HR Advisory" (shown as HR Business Partner) is RETIRED: the owner retired the HR Business Partner seat on 2026-10-08 ("no more HR business partner";
+  // recruiting went to Talent Acquisition, the rest of its work to the Super Admin — "Leave it for
+  // system administrator now").
+  // The key stays as a DORMANT label — see retiredPhoenixRoles below: nobody can be given it, its
+  // matrix entry is empty, and the restrictions written against it stay compiled.
   "HR Advisory",
   "HR Operations",
   // Shown everywhere as "Talent Acquisition" (HR_SEAT_JOB_TITLES). Opened 2026-10-08.
@@ -38,6 +44,21 @@ export const phoenixRoles = [
   "Super Admin",
 ] as const;
 export type PhoenixRole = (typeof phoenixRoles)[number];
+
+/**
+ * Roles nobody may be given any more. User Access offers only `assignablePhoenixRoles`, and
+ * upsertAccessUserCore (src/lib/admin/access-control.ts) refuses a retired role server-side, so a
+ * hidden option is never the only thing standing in the way.
+ *
+ * A retired key stays in `phoenixRoles` rather than being deleted so that every RESTRICTION written
+ * against it keeps compiling and keeps applying to any stray stored copy — while its grants are
+ * gone: its matrix entry is empty and no seat set, role list or role-name gate names it.
+ */
+export const retiredPhoenixRoles: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>(["HR Advisory"]);
+
+export const assignablePhoenixRoles: readonly PhoenixRole[] = phoenixRoles.filter(
+  (role) => !retiredPhoenixRoles.has(role),
+);
 
 export const phoenixCompanyJobTitles = [
   "District Sales Manager",
@@ -64,11 +85,11 @@ export const phoenixCompanyJobTitles = [
   "Office Co-ordinator",
   "Regulatory Affairs",
   "Talent Acquisition",
-  // The two HR seats opening 2026-09-01. These are JOB TITLES and belong here; the ACCESS
-  // they carry is "HR Advisory" / "HR Operations" in phoenixRoles above, which is a different
-  // list on purpose. Office Co-ordinator and Talent Acquisition stay listed because employee
-  // records, offers and candidate applications still name them historically.
-  "HR Business Partner",
+  // HR Operations Coordinator is a JOB TITLE and belongs here; the ACCESS it carries is
+  // "HR Operations" in phoenixRoles above, which is a different list on purpose. Office
+  // Co-ordinator and Talent Acquisition stay listed because employee records, offers and candidate
+  // applications still name them historically. "HR Business Partner" is NOT listed since
+  // 2026-10-08 — the owner: "no more HR business partner. This title, no more."
   "HR Operations Coordinator",
   "Finance Manager",
   "CEO",
@@ -391,7 +412,7 @@ export type NavigationMode = "admin" | "employee-portal" | "hr";
  * resource, which is the fail-OPEN direction. Adding a seat here is a decision someone makes on
  * purpose.
  */
-export const hrNamespaceRoles = new Set<PhoenixRole>(["HR Advisory", "HR Operations", "HR Resourcing"]);
+export const hrNamespaceRoles = new Set<PhoenixRole>(["HR Operations", "HR Resourcing"]);
 
 export function usesHrNamespace(role: PhoenixRole): boolean {
   return hrNamespaceRoles.has(role);
@@ -468,10 +489,9 @@ export const adminShellEmployeeRoles = [
   "SFE Manager",
   "Finance Manager",
   "Financial Advisor",
-  // Owner decision 2026-08-28: both new HR seats live on the ADMIN shell, not the employee
-  // portal. The portal needs a second copy of every admin tool, and two of those copies shipped
-  // unreachable for the seat this replaces.
-  "HR Advisory",
+  // Owner decision 2026-08-28: the HR seats live on the ADMIN shell, not the employee portal. The
+  // portal needs a second copy of every admin tool, and two of those copies shipped unreachable for
+  // the seat this replaces.
   "HR Operations",
   // Talent Acquisition, 2026-10-08: the owner chose the admin shell on the access blueprint, the
   // same side as both other HR seats.
@@ -485,13 +505,12 @@ export function isAdminShellEmployeeRole(role: PhoenixRole): boolean {
 
 // Every caller pairs this with a resource check — `isHrAuthorityRole(role) && canAccess(role, X, Y)` —
 // so listing every HR bundle here is safe and the grant does the discriminating: the recruitment
-// and offers pages also demand recruitment:read, which HR Advisory and HR Resourcing hold, and
+// and offers pages also demand recruitment:read, which only HR Resourcing holds, and
 // vacation control also demands leave:update, which only HR Operations holds. HR Resourcing MUST
 // be here: hardBoundaryAllowedActions strips recruitment, candidates, offers, employee_documents,
 // cv_lookup and the HR half of the two request desks from any role that is not.
 export const hrAuthorityRoles = [
   "Super Admin",
-  "HR Advisory",
   "HR Operations",
   "HR Resourcing",
 ] as const satisfies readonly PhoenixRole[];
@@ -689,11 +708,10 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       return role === "Super Admin" ? ["read"] : [];
     case "employees":
       if (role === "Super Admin") return allActions;
-      // HR Operations maintains personnel records; HR Advisory only reads them for workforce
-      // insight. NEITHER may delete: both job descriptions require records that survive an audit,
-      // so destruction stays Super Admin. This cap is belt-and-braces over HR_ROLE_BOUNDARIES.
+      // HR Operations maintains personnel records. She may not delete: her job description requires
+      // records that survive an audit, so destruction stays Super Admin. This cap is belt-and-braces
+      // over HR_ROLE_BOUNDARIES. (HR Advisory read them until the seat was retired, 2026-10-08.)
       if (role === "HR Operations") return ["read", "create", "update", "export", "import"];
-      if (role === "HR Advisory") return ["read", "export"];
       return [];
     case "mailbox_offboarding":
       // ops 6 - Resignation & Offboarding. HR Operations runs it; the CEO observes.
@@ -712,8 +730,9 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       // HR_ROLE_BOUNDARIES exists to catch - the same shape as the report_it:export entry.
       // The CEO reads it because company-wide turnover themes are exactly his question, and he
       // already reads every resignation and every payslip.
+      // The HR Business Partner kept this register until the seat was retired on 2026-10-08; it is the
+      // Super Admin's now ("Leave it for system administrator now"), and the CEO still reads it.
       if (role === "Super Admin") return allActions;
-      if (role === "HR Advisory") return ["read", "create", "update", "export"];
       if (role === "CEO") return ["read", "export"];
       return [];
     case "company_devices":
@@ -1136,15 +1155,13 @@ const defaultPermissionMatrix: PermissionMap = {
   // exactly how the seat this replaces accumulated company-wide employee write access over four
   // months of one-off expansions.
   //
-  // What each holds today:
-  //   HR Advisory    recruiting · engagement_retention · performance_probation ·
-  //                  workforce_insight · hr_governance
+  // What each holds today (hr-functions.ts is the source; this is a reading aid):
   //   HR Operations  people_records · time_attendance · payroll_inputs ·
-  //                  performance_probation · hr_governance
-  //
-  // The two shared functions are deliberate: both job descriptions carry a probation section and
-  // a governance section, from different angles. Union of the two bundles = all eight functions.
-  "HR Advisory": hrBundleGrants("HR Advisory"),
+  //                  performance_probation · hr_governance · cv_lookup
+  // The HR Business Partner seat (HR Advisory) is retired — see the entry below and
+  // UNASSIGNED_HR_FUNCTIONS for the work that is the Super Admin's until he hands it to a seat.
+  // RETIRED 2026-10-08 (retiredPhoenixRoles): holds nothing. Its bundle is gone from hr-functions.ts.
+  "HR Advisory": {},
   "HR Operations": hrBundleGrants("HR Operations"),
   //   HR Resourcing  recruiting · cv_lookup · employee_requests · workforce_context · recognition
   //                  (shown as Talent Acquisition; built from the owner's 2026-10-08 blueprint)
@@ -1844,7 +1861,6 @@ export function getRolePrivilegeRank(role: PhoenixRole) {
       return 400;
     case "CEO":
       return 300;
-    case "HR Advisory":
     case "HR Operations":
     case "HR Resourcing":
       return 150;
@@ -2291,11 +2307,11 @@ export function canSeeEmployee(
   // getExpensesScope key off role, not this helper, so org-wide oversight never exposes salaries.
   if (context.role === "Training Manager") return true;
 
-  // Both HR bundles have company-wide people oversight — HR Advisory to advise on the workforce
-  // (workforce_insight), HR Operations to maintain its records (people_records). Same carve-out
-  // shape as Training Manager above, for the same reason: sensitive financial domains stay
-  // self-scoped because they key off role, not this helper.
-  if (context.role === "HR Advisory" || context.role === "HR Operations") return true;
+  // HR Operations has company-wide people oversight to maintain the records (people_records). Same
+  // carve-out shape as Training Manager above, for the same reason: sensitive financial domains stay
+  // self-scoped because they key off role, not this helper. HR Advisory had it too, for workforce
+  // insight, until the seat was retired on 2026-10-08.
+  if (context.role === "HR Operations") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);

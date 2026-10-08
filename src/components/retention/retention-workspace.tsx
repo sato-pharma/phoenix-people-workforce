@@ -270,7 +270,7 @@ export function RetentionWorkspace({
         <ShieldAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
         <p className="text-[11px] font-semibold leading-relaxed text-slate-200">
           <span className="font-black text-white">Confidential.</span> This register is readable by
-          the {displayTitleForRole("HR Advisory")}, the Super Admin and the CEO only. It is not
+          the Super Admin and the CEO only. It is not
           visible to the {displayTitleForRole("HR Operations")}, to a line manager, or to the
           person&apos;s own team — say so when you open the conversation.
         </p>

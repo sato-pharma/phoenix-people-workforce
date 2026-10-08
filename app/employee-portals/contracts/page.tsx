@@ -47,7 +47,7 @@ export default async function EmployeePortalContractsPage() {
   if (!(await canAccess(access, "contracts", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Contract renewal is available to HR Advisory, HR Operations, and Super Admin only."
+        message="Contract renewal is available to the HR Operations Coordinator and the Super Admin only."
         title="Contract Renewal Unavailable"
       />
     );

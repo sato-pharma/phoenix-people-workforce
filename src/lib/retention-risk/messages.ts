@@ -116,7 +116,6 @@ export function roleHrefsForSubject(hrId: string): Record<string, string> {
   return {
     "District Manager": portal,
     "Group Product Manager": portal,
-    "HR Advisory": hr,
     "HR Operations": hr,
     Manager: portal,
     "Marketing Manager": portal,

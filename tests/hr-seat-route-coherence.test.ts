@@ -170,34 +170,10 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "hrBundleForRole(access.role) — the same lookup that decides the seat's grants, so it admits " +
     "exactly the two seats by construction rather than by a second list agreeing with the first",
   "/hr/probation": "canReadAllProbation(access) — true for both seats",
-  // Added 2026-09-11 with the HR-shell row. The owner asked that the HR Business Partner reach the
-  // distribution lists; that is the JOB TITLE for the "HR Advisory" key, so her gate never needed
-  // widening beyond this one screen — what she lacked was a row in the shell she actually works in.
-  // The adminToolsPageItems entry beside it is read only by the Super-Admin hub and the admin-mode
-  // palette, and was inert for her.
-  "/hr/admin/distribution-lists":
-    "canManageDistributionLists(access) — TRUE for Advisory, FALSE for Operations, and the row " +
-    'carries roles: ["HR Advisory"] so Operations is never offered it. Verified by CALLING the ' +
-    "predicate for each seat rather than by reading it: Advisory gate=true scope=[hr_team], " +
-    "Operations gate=false, Super Admin gate=true scope=all. The seat sees and edits the HR-owned " +
-    "lists ONLY — finance_team and every list added later are outside the allowlist, enforced in " +
-    "the [listKey] route and in both alias " +
-    "actions rather than hidden on the screen, so no row her sidebar offers 403s her halfway",
-  // Added 2026-09-12 with the Sato Email Composer. The owner asked for the module to be reachable
-  // by "HR business partner and the system administrator" — the job title for the "HR Advisory"
-  // key — so, as with the distribution lists above, her gate needed no widening beyond this screen;
-  // what she lacked was a row in the shell she actually works in. The adminToolsPageItems entry
-  // beside it is read only by the Super-Admin hub and the admin-mode palette, and is inert for her.
-  "/hr/admin/sato-email":
-    "canUseSatoEmail(access) — an OR chain of a helper and a role literal " +
-    '(canAccessSystemAdministratorWorkspace(access) || access.role === "HR Advisory"), which is why ' +
-    'it cannot be parsed, and the row carries roles: ["HR Advisory"] so no other HR seat is offered ' +
-    "it. Verified by CALLING the predicate for each seat rather than by reading it: Super Admin " +
-    "gate=true through the workspace helper, HR Advisory gate=true through the explicit role arm, " +
-    "HR Operations gate=false, Employee gate=false. Every API behind the page asserts the same " +
-    "predicate, so the screen is presentation and never the boundary — and a send is capped at the " +
-    "manual-email recipient policy both seats already live under, so no row her sidebar offers " +
-    "403s her halfway",
+  // NO distribution-lists / sato-email entries since 2026-10-08. Both /hr rows carried
+  // roles: ["HR Advisory"] alone — the owner gave the HR Business Partner those two screens on
+  // 2026-09-11 and 2026-09-12 — and both rows left the HR shell when he retired that seat. The pages
+  // and their admin-shell entries are untouched; the Super Admin reaches them there.
   // All three added 2026-09-01 with the owner's module opening, and all three verified by CALLING
   // the predicate for each seat rather than by reading it.
   "/hr/probation/dashboard":

@@ -385,7 +385,7 @@ function testLandingAndNavAgree() {
   const genericCommandCenterRow = /^.*href: "\/admin", icon: LayoutDashboard, label: "Command Center".*$/m
     .exec(nav)?.[0] ?? "";
   assert.ok(genericCommandCenterRow.length > 0, "the generic /admin Command Center nav row must still be findable");
-  for (const role of ["CEO", "SFE Manager", "Finance Manager", "HR Advisory", "HR Operations"]) {
+  for (const role of ["CEO", "SFE Manager", "Finance Manager", "HR Operations"]) {
     assert.ok(
       genericCommandCenterRow.includes(`"${role}"`),
       `the generic Command Center row must exclude every role that has its own — ${role} is missing`,

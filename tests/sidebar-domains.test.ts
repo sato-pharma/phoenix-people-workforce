@@ -153,7 +153,7 @@ export function runSidebarDomainsTests() {
     "SFE Manager": [],
     "Finance Manager": [],
     "Financial Advisor": [],
-    "HR Advisory": [],
+    // HR Advisory was measured here until the owner retired the seat on 2026-10-08.
     "HR Operations": [],
     CEO: [],
     "Super Admin": [],
@@ -221,5 +221,5 @@ export function runSidebarDomainsTests() {
   }
   // Anti-vacuity: the map must still cover every admin-shell role. Without this a role could be
   // dropped from it and its blanks would stop being watched with the assertion still green.
-  assert.equal(rolesMeasured, 7, `expected 7 admin-shell roles pinned, measured ${rolesMeasured}`);
+  assert.equal(rolesMeasured, 6, `expected 6 admin-shell roles pinned, measured ${rolesMeasured}`);
 }

@@ -10,9 +10,7 @@ import {
 } from "../src/config/system-navigation.ts";
 import {
   getSections,
-  permissionAllowed,
-  roleAllowed,
-  roleNotExcluded,
+  navigationItemVisible,
   type PermissionLookup,
 } from "../src/lib/navigation/active-path.ts";
 import {
@@ -45,7 +43,7 @@ import {
  * worked it, while carrying the retry action for dead-lettered inbound CVs — real applicants who
  * were silently never entered.
  *
- * HR Advisory is an admin-shell role, so she reaches every card directly and the mirrors are dead
+ * The recruiting seat is an admin-shell role, so she reaches every card directly and the mirrors are dead
  * surface rather than the route in. The invariant that replaces it is the same question asked of
  * the new shell: does the seat that owns each tool have a way to open it? Checked three ways,
  * because any one alone is passable while the tool stays unreachable:
@@ -62,8 +60,11 @@ function adminPageFileFor(href: string): string {
   return `app/(admin)${href}/page.tsx`;
 }
 
-/** The seat that owns recruiting. hr-functions.ts: the `recruiting` function, HR Advisory only. */
-const RECRUITING_SEAT = "HR Advisory" satisfies PhoenixRole;
+/**
+ * The seat that owns recruiting. hr-functions.ts: the `recruiting` function, the Talent Acquisition
+ * seat only — HR Advisory held it until "move recruiting off the HR Business Partner" (owner, 2026-10-08).
+ */
+const RECRUITING_SEAT = "HR Resourcing" satisfies PhoenixRole;
 
 /**
  * The seven portal mirrors, orphaned by the shell move. Listed rather than deleted because the
@@ -110,7 +111,9 @@ function hrefsFor(role: PhoenixRole, mode: "admin" | "employee-portal"): Set<str
 
 /** Exactly what the hub page itself renders for a role — same two gates, no replica. */
 /**
- * The hub page's OWN filter, through the same three helpers it calls — never a reimplementation.
+ * The hub page's OWN filter — `navigationItemVisible`, the very function it calls — never a
+ * reimplementation. Until 2026-10-08 this called the three helpers inside it by hand, and missed the
+ * owner's per-seat page fences the day the recruiting seat became one that carries them.
  *
  * This used to hand-write the rule, and it drifted from the page on the one detail that decides
  * every actionless clause: `permissionAllowed` resolves `{ resource: X }` to **X:read**, while the
@@ -124,12 +127,7 @@ function hrefsFor(role: PhoenixRole, mode: "admin" | "employee-portal"): Set<str
  */
 function hubCardsFor(role: PhoenixRole) {
   const lookup = lookupForRole(role);
-  return recruitmentHiringPageItems.filter(
-    (item) =>
-      permissionAllowed(lookup, item.permissions) &&
-      roleAllowed(role, item.roles) &&
-      roleNotExcluded(role, item.excludedRoles),
-  );
+  return recruitmentHiringPageItems.filter((item) => navigationItemVisible(item, lookup, role));
 }
 
 export function runRecruitmentHubPortalCoverageTests() {
@@ -139,7 +137,7 @@ export function runRecruitmentHubPortalCoverageTests() {
   assert.equal(
     resolveNavigationMode(createAccessContext({ hrId: "HRBP-1", role: RECRUITING_SEAT })),
     "admin",
-    `${RECRUITING_SEAT} is an admin-shell role (owner decision, 2026-08-28) — she reaches the ` +
+    `${RECRUITING_SEAT} is an admin-shell role (owner's blueprint, 2026-10-08) — she reaches the ` +
       "(admin) route group directly, which is what makes the seven portal mirrors redundant",
   );
 
@@ -174,12 +172,12 @@ export function runRecruitmentHubPortalCoverageTests() {
   // ── 3. Every card she owns opens ────────────────────────────────────────────────────────────
   assert.equal(
     cards.length,
-    9,
-    "the hub must carry exactly nine cards for the recruiting seat (Recruitment, CV Database, " +
-      "Hiring Documents, HR Forms, Business Cards, Job Offers, Inbound Intake Health, Missing Contact " +
-      "Details, WhatsApp Replies) — if that count moves, decide the reachability of the new one " +
-      "in the same change. Business Cards (2026-09-13) is employee_documents paperwork like HR Forms, " +
-      "on her rail through the hub promotion and on HR Operations' own rail under /hr. " +
+    3,
+    "the hub must carry exactly three cards for the recruiting seat (Recruitment, Job Offers, " +
+      "WhatsApp Replies) — the Talent Acquisition seat since 2026-10-08. The owner's blueprint fences " +
+      "the CV Database, Inbound Intake Health, Missing Contact Details, Hiring Documents and HR Forms " +
+      "off her seat, and the hiring paperwork stayed with the HR Business Partner. If that count " +
+      "moves, decide the reachability of the new one in the same change. " +
       `Got: ${cards.map((c) => c.href).join(", ")}`,
   );
   for (const card of cards) {
@@ -214,6 +212,18 @@ export function runRecruitmentHubPortalCoverageTests() {
     opsCards,
     ["/business-cards", "/hiring-documents", "/hiring-pack"],
     "HR Operations may clear only the shared employee-paperwork cards (Business Cards, Hiring Documents, HR Forms), never a recruiting one",
+  );
+  // HR Advisory: "move recruiting off the HR Business Partner", then the same evening "no more HR
+  // business partner" (owner, 2026-10-08). The retired key clears no card on this hub and is offered
+  // no Recruitment & Hiring band — its hiring paperwork is the Super Admin's now.
+  assert.deepEqual(
+    hubCardsFor("HR Advisory").map((c) => c.href).sort(),
+    [],
+    "the retired HR Business Partner key clears a card on the recruitment hub",
+  );
+  assert.ok(
+    !bandsFor("HR Advisory").includes("hub-recruitment-hiring"),
+    "the retired HR Business Partner key must not be offered a Recruitment & Hiring band",
   );
   // …and those two are currently reachable ONLY from a hub she is not offered, so the grant is
   // real and the route to it is not. That is the granted-but-unreachable shape every-offered-link

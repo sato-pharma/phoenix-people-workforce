@@ -243,7 +243,9 @@ type TerritoryReferenceData = Awaited<ReturnType<typeof loadSalesReferenceData>>
  * enforced elsewhere and separately — `canEditPins` and `canPublishPreview` are Super Admin, and
  * the pin/preview routes assert `sales:import` / `sales:export`, neither of which she holds.
  */
-const TERRITORY_COMPANY_WIDE_NON_SALES_ROLES = new Set<PhoenixRole>(["HR Advisory"]);
+// EMPTY since the owner retired the HR Business Partner seat on 2026-10-08 — she was its only member. The branch stays for the next
+// non-sales seat given territory:read, so its map renders whole rather than blank.
+const TERRITORY_COMPANY_WIDE_NON_SALES_ROLES = new Set<PhoenixRole>([]);
 
 async function resolveTerritoryScopeWithReferences(
   access: AccessContext,

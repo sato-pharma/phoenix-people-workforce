@@ -187,7 +187,10 @@ type NavigationSectionSeed = NavigationSection;
 // recruitment:read) and vacation control reaches HR Operations (which holds leave:update), from
 // one shared list. Mirrors hrAuthorityRoles in permissions.ts, which gates the pages themselves.
 // HR Resourcing — the Talent Acquisition seat — joined on 2026-10-08 with hrAuthorityRoles.
-const hrAuthorityNavigationRoles = ["Super Admin", "HR Advisory", "HR Operations", "HR Resourcing"] as const satisfies readonly PhoenixRole[];
+// "HR Advisory" (the HR Business Partner) left this list when the owner retired the seat on 2026-10-08:
+// "no more HR business partner … everything regarding recruiting is for the talent acquisition", the
+// rest of its work left with the Super Admin ("Leave it for system administrator now").
+const hrAuthorityNavigationRoles = ["Super Admin", "HR Operations", "HR Resourcing"] as const satisfies readonly PhoenixRole[];
 // Single consumer: the "Payroll Report" (/payroll) card in payrollManagementPageItems. Finance
 // Manager was dropped on 2026-08-10 (owner) — his payroll:read/export grant stays, because the
 // Automated Payroll finance sheets and the bank transfer file both need it; only this card goes.
@@ -305,7 +308,7 @@ export const adminNavigationSectionSeeds = [
       // answered EGP 0 payroll, EGP 0 sales and EGP 0 expenses for HR Advisory, and EGP 0 sales /
       // EGP 0 expenses for HR Operations, because their scopes resolve to nothing on those
       // aggregates while the tiles render regardless. /admin is now the Super Admin's alone.
-      { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager", "Finance Manager", "HR Advisory", "HR Operations"] },
+      { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager", "Finance Manager", "HR Operations", "HR Resourcing"] },
     ],
     // Heading restored on owner instruction (2026-08-08). It was blanked for the SFE Manager on
     // 2026-08-02, where this section resolves to a single button; Super Admin and CEO see several
@@ -378,7 +381,7 @@ export const adminNavigationSectionSeeds = [
       //           unrestricted default and sees every calendar-eligible plan, company-wide.
       // If anyone ever adds a "finance manager" branch to that function, this row starts showing
       // him a narrowed calendar without the nav changing at all.
-      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Planning Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO", "SFE Manager", "Finance Manager", "HR Advisory"] },
+      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Planning Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO", "SFE Manager", "Finance Manager"] },
     ],
     label: "Planning Calendar",
   },
@@ -393,7 +396,7 @@ export const adminNavigationSectionSeeds = [
       // active-path.ts); a National Sales Manager reaches the same report, scoped to his line,
       // through the portal twin. A plain sidebar row, NOT a hub card — hub cards trip four extra CI
       // gates for no more reach. The managers being measured never see any of it.
-      { href: "/recruitment/manager-engagement", icon: ClipboardList, label: "Manager CV Engagement", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO", "HR Advisory"] },
+      { href: "/recruitment/manager-engagement", icon: ClipboardList, label: "Manager CV Engagement", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO", "HR Resourcing"] },
       // Hiring Analytics: channel effectiveness and where the pipeline stops. Reads across
       // EVERY candidate, so it is gated on `candidates: read` rather than the per-manager
       // hiring_interviews grant, and has no portal twin - a portal role would be shown a
@@ -1019,9 +1022,9 @@ export const adminNavigationSectionSeeds = [
       //
       // THE ROLES ARE SPELLED OUT rather than reusing hrAuthorityNavigationRoles, which carries a
       // third role (HR Operations) the page gate does not. canSendWhatsAppTemplate resolves to
-      // Super Admin + HR Advisory, and a row offered to someone the page then redirects is exactly
+      // Super Admin + HR Resourcing (HR Advisory until recruiting moved off her seat, 2026-10-08), and a row offered to someone the page then redirects is exactly
       // what every-offered-link-opens.test.ts exists to catch. These two must be changed together.
-      { href: "/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin", "HR Advisory"] },
+      { href: "/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin", "HR Resourcing"] },
       // WhatsApp Inbox — both company numbers, every chat, reply / send files / templates
       // (app/(admin)/recruitment/whatsapp-inbox/page.tsx). SUPER ADMIN ONLY, owner 2026-09-15: the
       // page gate is the role itself, so this row names that one role and nothing wider — an offered
@@ -2171,7 +2174,8 @@ const hrNavigationSectionSeeds = [
       // `roles` pins it to HR Advisory even though the permission would do it alone: HR Operations
       // holds no `territory` grant today, and if she ever gains one it should be because somebody
       // decided that, not because this row was written permission-only.
-      { href: "/hr/sales/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "territory" }], roles: ["HR Advisory"] },
+      // NO Territory Management row since 2026-10-08: it existed for the HR Business Partner alone, and
+      // the owner retired that seat. The Super Admin reaches the map from the admin rail.
       // ONBOARDING PAPERWORK — HER COPY of the two rows the Recruitment section carries below.
       // Listed twice with mutually-exclusive gates, the same pattern Organogram already uses:
       // getSections dedupes by href and keeps the FIRST occurrence, so for HR Operations this copy
@@ -2235,7 +2239,8 @@ const hrNavigationSectionSeeds = [
       // final dues. It is not offboarding-only: the same register issues the machine on a joiner's
       // first morning, which is why the label names the OBLIGATION rather than either end of it.
       { href: "/hr/devices", icon: Laptop, label: "Device Custody", permissions: [{ resource: "company_devices" }] },
-      { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
+      // The Retention Register row left the HR rail on 2026-10-08 with the HR Business Partner seat:
+      // retention is the Super Admin's now (read by the CEO), and no HR seat holds it.
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
       { href: "/hr/admin/business-card-requests", icon: IdCard, label: "Business Card Requests", permissions: [{ resource: "business_card_requests" }] },
@@ -2246,25 +2251,9 @@ const hrNavigationSectionSeeds = [
       // `excludedRoles`). Business Cards opens for her on the request desk she works, not on
       // employee_documents, which she does not hold — src/lib/business-cards/access.ts.
       { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "business_card_requests", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      // 🔴 THE HR SHELL'S OWN ROW, and the only one that reaches her. Adding "HR Advisory" to the
-      // adminToolsPageItems entry looks equivalent and is inert: that array is read by the Admin
-      // Tools hub (Super-Admin-only) and by the command palette in ADMIN mode, while an HR seat
-      // renders the `hr` shell and app-shell.tsx redirects a bare /admin/… address into /hr/admin/….
-      // Without this line she could reach the page only by typing the URL. Same shape as the
-      // WhatsApp Templates row below, and caught by review 2026-09-11 rather than by a test —
-      // navigation-granted-but-unreachable derives her mode from resolveNavigationMode, which never
-      // returns "hr", so it believes she is offered the admin card.
-      { href: "/hr/admin/distribution-lists", icon: Users, label: "Distribution Lists", roles: ["HR Advisory"] },
-      // The composer that sends to those lists — same reasoning as the row above, and the same
-      // trap: the adminToolsPageItems entry for /admin/sato-email is inert for her seat. Owner
-      // 2026-09-11: "This module would be accessible for HR business partner and the system
-      // administrator."
-      //
-      // Named "Sato Email Composer" rather than the shorter "Email Composer" on purpose: that label
-      // already belongs to /admin/email-reply-composer, the older composer the owner asked to leave
-      // alone ("the other one, leave it now"). Two rows reading the same word would be a coin toss
-      // for anyone holding both, and the wrong one sends from a different identity.
-      { href: "/hr/admin/sato-email", icon: Mail, label: "Sato Email Composer", roles: ["HR Advisory"] },
+      // NO Distribution Lists and NO Sato Email Composer row here since 2026-10-08. Both rows existed
+      // for the HR Business Partner alone, and the owner retired that seat ("Leave it for system
+      // administrator now"); the Super Admin keeps both on the admin rail.
     ],
     label: "People",
   },
@@ -2272,10 +2261,11 @@ const hrNavigationSectionSeeds = [
     id: "hr-recruitment",
     items: [
       { href: "/hr/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }] },
-      // Added 2026-09-01. The page has always admitted both HR seats — its gate is
-      // isHrAuthorityRole + recruitment:read — and had no row anywhere, so the district managers'
-      // returned CVs sat in a queue nobody could navigate to.
-      { href: "/hr/recruitment/returned-cvs", icon: Undo2, label: "Returned CVs", permissions: [{ resource: "recruitment" }] },
+      // NO Returned CVs and NO CV Sheet Links row here since 2026-10-08. Both were the HR Business
+      // Partner's, and recruiting moved off her seat that day; the Talent Acquisition seat holds the
+      // key but the owner fenced both pages off it (src/lib/auth/seat-page-fences.ts). No HR seat can
+      // open either, so a row would only offer a redirect. They stay on the admin rail for the Super
+      // Admin.
       // The HR shell's own row for /recruitment/whatsapp-applicants, added with the page on
       // 2026-09-18. The admin row alone would leave the HR Business Partner, who works in this shell,
       // able to reach it only by typing the address (see WhatsApp Templates below). Same gate as
@@ -2286,11 +2276,6 @@ const hrNavigationSectionSeeds = [
       // HR Operations reaches it from "People" instead (see the copy there): she is its admin, but she
       // holds no recruitment grant and is never shown a Recruitment heading.
       { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", permissions: [{ resource: "recruitment" }] },
-      // The /hr spelling of /recruitment/cv-lifecycle-sheet — same page, rewritten by middleware.
-      // `action: "export"` rather than the bare resource used by its neighbours, because that is
-      // what the page asserts: HR Operations holds no recruitment grant at all, so the row is hers
-      // either way, but naming the action keeps this row honest if the bundles are ever recomposed.
-      { href: "/hr/recruitment/cv-lifecycle-sheet", icon: Link2, label: "CV Sheet Links", permissions: [{ resource: "recruitment", action: "export" }] },
       // `recruitment`, matching the page's own gate — NOT `vacancies`. Owner instruction
       // 2026-09-01, "block the cv database for her too": HR Operations was granted
       // vacancies:read for the Vacancies Report, which handed her this recruiting screen as a
@@ -2321,12 +2306,13 @@ const hrNavigationSectionSeeds = [
       // the page only by typing the URL. Measured 2026-09-08 by signing in as the seat and watching
       // the redirect land on /hr/recruitment/whatsapp-templates with no row to click.
       //
-      // `roles: ["HR Advisory"]` matches Manager CV Engagement two rows down, and it is required
-      // rather than cosmetic: HR Operations also renders this shell, and `canSendWhatsAppTemplate`
-      // redirects her — an offered link that redirects is what every-offered-link-opens.test.ts
-      // exists to catch. "HR Advisory" is the permission key; "HR Business Partner" is the job
-      // title shown for it (HR_SEAT_JOB_TITLES), never a role in its own right.
-      { href: "/hr/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Advisory", "HR Resourcing"] },
+      // `roles: ["HR Resourcing"]` matches Manager CV Engagement two rows down, and it is required
+      // rather than cosmetic: the other HR seats also render this shell, and `canSendWhatsAppTemplate`
+      // redirects them — an offered link that redirects is what every-offered-link-opens.test.ts
+      // exists to catch. It named "HR Advisory" until the owner moved recruiting off the HR Business
+      // Partner on 2026-10-08. "HR Resourcing" is the permission key; "Talent Acquisition" is the
+      // title shown for it (displayTitleForRole), never a role in its own right.
+      { href: "/hr/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"] },
       // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08. Both company numbers, every chat;
       // canUseWhatsAppInbox (src/lib/whatsapp-inbox/access.ts) is the gate this row mirrors.
       { href: "/hr/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
@@ -2344,7 +2330,7 @@ const hrNavigationSectionSeeds = [
       // was an ADMIN rail + hub-chrome pairing an HR seat provably never renders, and once
       // sidebar-label-width stopped charging it the reason for the short name went away. The full
       // name measures 153px against this rail's 157px budget, so it fits and the drift is closed.
-      { href: "/hr/recruitment/manager-engagement", icon: Radar, label: "Manager CV Engagement", permissions: [{ resource: "recruitment" }], roles: ["HR Advisory", "HR Resourcing"] },
+      { href: "/hr/recruitment/manager-engagement", icon: Radar, label: "Manager CV Engagement", permissions: [{ resource: "recruitment" }], roles: ["HR Resourcing"] },
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under People.
       { href: "/hr/recruitment/screening", icon: ListChecks, label: "Screening Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/recruitment/candidates", icon: Inbox, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
@@ -2463,7 +2449,7 @@ const hrNavigationSectionSeeds = [
       // The hub door is now gone per the owner's rule, and of the three cards HR Operations clears on
       // it, two (Payslips Center, Deductions) are already rows below. This is the third. Gate copied
       // from the card: payroll:read, which she holds with export and no write action.
-      { href: "/hr/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], excludedRoles: ["HR Advisory"] },
+      { href: "/hr/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }] },
       // Owner instruction 2026-09-01, and the only row in this change that needed NO permission
       // work at all: HR Operations was given payslips:[read, export] when the seat was composed,
       // and getPayrollScope was widened to return COMPANY for her on 2026-08-29 specifically so
@@ -2474,7 +2460,7 @@ const hrNavigationSectionSeeds = [
       // excludedRoles: HR Advisory, for the same reason as the row above. Payroll appears nowhere
       // in the HR Business Partner job description, and her payslips:read is the grant that shows
       // her HER OWN payslip through the employee-portal path, which this row does not affect.
-      { href: "/hr/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips", action: "read" }], excludedRoles: ["HR Advisory"] },
+      { href: "/hr/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips", action: "read" }] },
       // Deductions, added 2026-09-03. This row did not exist between the C6 cutover (2026-08-30) and
       // that date, and the note left in its place explained why: the unified replacement
       // app/(admin)/admin/deductions/page.tsx gated on a hard-coded `VIEW_ROLES = {Super Admin, CEO}`
@@ -2496,7 +2482,7 @@ const hrNavigationSectionSeeds = [
       // Admin alone) and every mutating route asserts deductions:approve or deductions:create,
       // which HR_ROLE_BOUNDARIES pins ABSENT from both seats. Her HR command center keeps its
       // read-only deduction count tiles; this row is the drill-through those tiles never had.
-      { href: "/hr/admin/deductions", icon: ReceiptText, label: "Deductions", permissions: [{ resource: "deductions", action: "read" }], excludedRoles: ["HR Advisory"] },
+      { href: "/hr/admin/deductions", icon: ReceiptText, label: "Deductions", permissions: [{ resource: "deductions", action: "read" }] },
 
       // Payslips Center, added 2026-09-01 at the owner's instruction. It renders for BOTH seats and
       // shows each a different set of people: HR Operations company-wide (getPayrollScope), HR
@@ -2807,15 +2793,10 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: Waypoints,
     label: "Territory Management",
     description: "Bricks, areas and territory coverage.",
-    // HR Advisory joined the list on 2026-09-07 and changes nothing on this hub: reaching the card
-    // means reaching /sales/source-of-sales-tools first, which is `sales:read` and which she does
-    // not hold. She is named because the roles list is the answer to "which admin-shell role may
-    // open this page", and hers now may — her own entry point is the /hr row beside the Organogram.
-    // tests/hr-url-namespace.test.ts checks exactly that equivalence: an /hr row may only point at
-    // a page the admin navigation already admits for a seat, so omitting her here would make her
-    // row read as the namespace WIDENING the matrix rather than narrowing it.
+    // HR Advisory (the HR Business Partner) was on this list from 2026-09-07 until the owner retired
+    // the seat on 2026-10-08.
     permissions: [{ resource: "territory" }],
-    roles: ["CEO", "SFE Manager", "Super Admin", "HR Advisory"],
+    roles: ["CEO", "SFE Manager", "Super Admin"],
   },
   {
     href: "/sales/distributor-profiles",
@@ -2962,7 +2943,7 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     // The HR Business Partner sees only the HR-owned lists — that narrowing lives in
     // @/lib/distribution-lists/access, not here. A nav entry decides whether the link is offered,
     // never what is behind it.
-    roles: ["Super Admin", "HR Advisory"],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/sato-email",
@@ -2975,7 +2956,7 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     // into /hr/admin/…, so her row is the /hr/admin/sato-email one in hrNavigationSections. Listing
     // her here offers the card in the Admin Tools hub and the admin command palette, both of which
     // she does not render — it is kept so the two lists agree about who the module is for.
-    roles: ["Super Admin", "HR Advisory"],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/ceo-email",
@@ -3127,7 +3108,7 @@ export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
     icon: ListChecks,
     label: "WhatsApp Screening Questions",
     description: "Add, reorder or retire the extra questions the CV-intake bot asks after the fixed six.",
-    roles: ["Super Admin", "HR Advisory"],
+    roles: ["Super Admin", "HR Resourcing"],
   },
   {
     href: "/admin/email-reply-composer",
@@ -3373,7 +3354,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     // not be grantable employees:read by role overrides" — in the required CI validate job. Giving
     // the CEO this page means moving that boundary and re-pinning that contract, which is an owner
     // decision about segregation of duties, not a navigation fix.
-    roles: ["Super Admin", "HR Operations", "HR Advisory"],
+    roles: ["Super Admin", "HR Operations"],
   },
   {
     href: "/attendance/analytics",
@@ -3392,7 +3373,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     // Both HR seats added 2026-09-01: HR Operations by owner instruction, HR Advisory in the
     // seventeen-module change the same day. The /hr namespace may only NARROW this registry
     // (tests/hr-url-namespace.test.ts), so a seat must appear HERE before it can have a row.
-    roles: ["CEO", "Super Admin", "HR Operations", "HR Advisory"],
+    roles: ["CEO", "Super Admin", "HR Operations"],
   },
   {
     href: "/hr-calendar",
@@ -4193,7 +4174,7 @@ export const probationPageItems: readonly AdminToolsPageItem[] = [
     // Both HR seats added 2026-09-01, same reason as the Planning Calendar above. The page's
     // own gate, canViewAllProbation, already named both by role — this closes the gap between
     // a page that let them in and a registry that never offered it.
-    roles: ["Super Admin", "Training Manager", "Marketing Manager", "SFE Manager", "HR Operations", "HR Advisory"],
+    roles: ["Super Admin", "Training Manager", "Marketing Manager", "SFE Manager", "HR Operations"],
   },
   {
     href: "/probation/analytics",

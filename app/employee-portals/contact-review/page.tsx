@@ -23,7 +23,7 @@ export default async function EmployeePortalContactReviewPage() {
   if (!canReviewCandidateContacts(access)) {
     return (
       <EmployeePortalEmptyState
-        message="Contact-details review is available to HR Advisory and Super Admin only."
+        message="Contact-details review is available to the Super Admin only."
         title="Contact Review Unavailable"
       />
     );

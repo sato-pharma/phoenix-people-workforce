@@ -48,10 +48,11 @@ export function runHiringDocumentsAccessTests() {
     },
   };
 
+  // HR Advisory had the same company-wide bypass until the owner retired the HR Business Partner seat on 2026-10-08; a stray
+  // holder of the retired key falls through to the self-scoped default like any other role.
   const taContext: AccessContext = { hrId: "TA-1", loginId: "TA-1", role: "HR Advisory", scope: "self", source: "session" };
   const taFiltered = filterHiringDocumentsForAccess(dashboard, taContext);
-  assert.equal(taFiltered.employees.length, 2, "HR Advisory sees every employee, not just her own scoped subset");
-  assert.deepEqual(taFiltered, dashboard, "HR Advisory gets the dashboard back unchanged (company-wide bypass)");
+  assert.notEqual(taFiltered.employees.length, dashboard.employees.length, "the retired seat no longer bypasses the scope");
 
   const hrOpsContext: AccessContext = { hrId: "HR-009", loginId: "HR-009", role: "HR Operations", scope: "company", source: "session" };
   const hrOpsFiltered = filterHiringDocumentsForAccess(dashboard, hrOpsContext);

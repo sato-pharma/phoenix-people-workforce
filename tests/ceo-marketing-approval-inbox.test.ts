@@ -174,7 +174,7 @@ export function runCeoMarketingApprovalInboxTests() {
 
   // ── The workspace gate now trusts an explicit allowedRoles list — verify it did not fail open ─
   assert.equal(
-    canAccessAdminShellEmployeeWorkspacePage("HR Advisory", workspaceMarketingRoles),
+    canAccessAdminShellEmployeeWorkspacePage("HR Operations", workspaceMarketingRoles),
     false,
     "an admin-shell employee role NOT named by the page is still denied — the list is authoritative, not additive",
   );
@@ -192,7 +192,7 @@ export function runCeoMarketingApprovalInboxTests() {
   }
   // Default list (the 18 pages that pass no allowedRoles) must behave exactly as before.
   assert.equal(
-    canAccessAdminShellEmployeeWorkspacePage("HR Advisory"),
+    canAccessAdminShellEmployeeWorkspacePage("HR Operations"),
     true,
     "the default allowedRoles is still adminShellEmployeeRoles",
   );

@@ -25,7 +25,7 @@ export default async function EmployeePortalAccountActivationPage() {
   if (access.role !== "HR Advisory" || !(await canAccess(access, "account_activation", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Account activation is available to HR Advisory only."
+        message="Account activation is not open to your role."
         title="Account Activation Unavailable"
       />
     );
@@ -52,7 +52,7 @@ export default async function EmployeePortalAccountActivationPage() {
   return (
     <EmployeePortalPageShell
       badge="Account Activation"
-      description="Activate or deactivate regular employee accounts. Super Admin, CEO, Finance Manager, HR Advisory, and HR Operations accounts are never shown here."
+      description="Activate or deactivate regular employee accounts. Super Admin, CEO, Finance Manager and HR seat accounts are never shown here."
       errorBoundaryTitle="Account Activation unavailable"
       title="Account Activation"
     >

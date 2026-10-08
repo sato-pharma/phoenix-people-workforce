@@ -158,7 +158,8 @@ export function runOrganogramLinePickerHeadOfficeTests() {
   for (const role of [
     "Super Admin",
     "CEO",
-    "HR Advisory",
+    // The Talent Acquisition seat, in the place of the HR Business Partner retired 2026-10-08.
+    "HR Resourcing",
     "Finance Manager",
     "Training Manager",
     "SFE Manager",

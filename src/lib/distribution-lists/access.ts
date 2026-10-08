@@ -34,8 +34,10 @@ import { canAccessSystemAdministratorWorkspace, type AccessContext } from "@/lib
  * linked with anything except the email composer"), and the alias register cannot touch a mailbox
  * at all, because Turbify has no API.
  */
+// The HR Business Partner lost this when the owner retired the HR Business Partner seat on 2026-10-08 ("Leave it for system
+// administrator now"). The screen is the Super Admin's alone again.
 export function canManageDistributionLists(access: AccessContext): boolean {
-  return canAccessSystemAdministratorWorkspace(access) || access.role === "HR Advisory";
+  return canAccessSystemAdministratorWorkspace(access);
 }
 
 /**

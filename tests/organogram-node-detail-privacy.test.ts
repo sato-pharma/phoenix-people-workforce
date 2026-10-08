@@ -84,7 +84,8 @@ function findItem(
 
 export function runOrganogramNodeDetailPrivacyTests() {
   // ---- The allowlist: exactly HR / Finance / executive / system see everything ----
-  for (const role of ["Super Admin", "CEO", "Finance Manager", "HR Advisory"]) {
+  // HR Advisory was on this list until the owner retired the seat on 2026-10-08 (now below).
+  for (const role of ["Super Admin", "CEO", "Finance Manager", "HR Operations"]) {
     assert.equal(
       canViewOrganogramSensitiveFields(access(role)),
       true,
@@ -103,6 +104,10 @@ export function runOrganogramNodeDetailPrivacyTests() {
     "Marketing Manager",
     "SFE Manager",
     "HR Specialist",
+    // The retired HR Business Partner key, and the Talent Acquisition seat: she reads the company
+    // chart to recruit against it, not the personal and pay fields behind each name.
+    "HR Advisory",
+    "HR Resourcing",
     "Employee",
   ]) {
     assert.equal(

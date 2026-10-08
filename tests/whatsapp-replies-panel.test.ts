@@ -169,14 +169,14 @@ export async function runWhatsAppRepliesPanelTests(): Promise<void> {
   );
 
   // ── 5. The gate admits exactly the seats that work the pipeline, and is checked before the read ─
-  // Three since 2026-10-08: the owner ticked WhatsApp Replies for the Talent Acquisition seat
-  // (HR Resourcing) on the access blueprint.
+  // The owner ticked WhatsApp Replies for the Talent Acquisition seat (HR Resourcing) on the access
+  // blueprint on 2026-10-08, and moved recruiting off the HR Business Partner the same evening.
   const allowed = phoenixRoles.filter((role: PhoenixRole) =>
     canViewWhatsAppOutboundLog(createAccessContext({ hrId: "HR-PANEL-TEST", role })),
   );
   assert.deepEqual(
     [...allowed].sort(),
-    ["HR Advisory", "HR Resourcing", "Super Admin"],
+    ["HR Resourcing", "Super Admin"],
     "this table holds applicants' phone numbers next to what was said to them. Exactly the " +
       `seats that work the pipeline may read it. Got: ${allowed.join(", ")}`,
   );

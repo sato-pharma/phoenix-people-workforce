@@ -108,15 +108,15 @@ async function loadWorkEmails(hrIds: Array<string | null>): Promise<Map<string, 
  * either (measured 2026-09-03). Titles drift; the role is what the app actually gates on. That
  * function now imports HR_SEAT_ROLES from here, so there is one answer to who HR is, not two.
  *
- * `HR Advisory` and `HR Operations` are the two HR seats, the same pair `hrAuthorityNavigationRoles`
- * names in system-navigation.ts. That constant is not imported here on purpose - navigation is UX
+ * `HR Operations` is the HR seat this audience reaches. `HR Advisory` was here too until
+ * the owner retired the HR Business Partner seat on 2026-10-08. `hrAuthorityNavigationRoles` in system-navigation.ts names the seats too. That constant is not imported here on purpose - navigation is UX
  * only, and a notification audience must not be able to change because somebody re-arranged a
  * sidebar.
  *
  * Falls back to Super Admin when both seats are empty, so an unstaffed HR function loses the
  * mailbox rather than the message.
  */
-export const HR_SEAT_ROLES = ["HR Advisory", "HR Operations"] as const;
+export const HR_SEAT_ROLES = ["HR Operations"] as const;
 
 async function resolveHrAudience(): Promise<string[]> {
   const supabase = getSupabaseAdmin();

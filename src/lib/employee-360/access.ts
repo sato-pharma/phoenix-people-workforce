@@ -41,7 +41,6 @@ const COMPANY_360_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Super Adm
 // company-wide, medical reps only.
 const MEDICAL_REP_ONLY_360_ROLES = new Set<PhoenixRole>([
   "Training Manager",
-  "HR Advisory",
   "HR Operations",
   "HR Resourcing",
 ]);

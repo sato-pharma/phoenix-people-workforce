@@ -46,10 +46,16 @@ export function runWhatsAppTemplateManageGateTests(): void {
       `${role} (scope ${other.scope}) must not rewrite what every recruiter sends in the company's name`,
     );
   }
-  // HR Advisory keeps the split the HR shell row promises: she sends, she does not edit.
-  const advisory = createAccessContext({ hrId: "A-99", role: "HR Advisory" });
-  assert.equal(canSendWhatsAppTemplate(advisory), true, "HR Advisory still sends a template");
-  assert.equal(canManageWhatsAppTemplates(advisory), false, "HR Advisory still cannot edit one");
+  // The recruiting seat keeps the split the HR shell row promises: she sends, she does not edit.
+  // That seat is the Talent Acquisition seat since "move recruiting off the HR Business Partner" (owner, 2026-10-08).
+  const advisory = createAccessContext({ hrId: "A-99", role: "HR Resourcing" });
+  assert.equal(canSendWhatsAppTemplate(advisory), true, "the Talent Acquisition seat sends a template");
+  assert.equal(canManageWhatsAppTemplates(advisory), false, "the Talent Acquisition seat cannot edit one");
+  assert.equal(
+    canSendWhatsAppTemplate(createAccessContext({ hrId: "A-98", role: "HR Advisory" })),
+    false,
+    "HR Advisory gave recruiting up on 2026-10-08",
+  );
 
   // ── 3. The screen and the API admit the same people, role by role ──
   // The write routes assert admin:update. If the editor's gate and that grant ever disagree, somebody

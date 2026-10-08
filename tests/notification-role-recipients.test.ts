@@ -78,7 +78,9 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // here, deliberately: it is one named manager per subject, and making it a role would mean every
   // District Manager in the company receiving every alert about everybody.
   retention_risk_alert: {
-    roles: ["HR Operations", "HR Advisory", "Super Admin", "SFE Manager"],
+    // HR Advisory was the fourth until the owner retired the HR Business Partner seat on 2026-10-08;
+    // the stored production row lost it in 20261008235900_retire_hr_advisory_seat.sql the same day.
+    roles: ["HR Operations", "Super Admin", "SFE Manager"],
     enabled: true,
   },
   // 20th key, added 2026-09-07. `employees.crm_username` and `employees.crm_id` are how every CRM

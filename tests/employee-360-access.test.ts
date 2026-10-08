@@ -97,7 +97,8 @@ export async function runEmployee360AccessTests() {
   // asserting with scope:"self" here proves the grant is pure role-set membership,
   // independent of the generic AccessScope value.
   assert.equal(isCompany360Viewer({ role: "SFE Manager", scope: "self" }), true);
-  assert.equal(isCompany360Viewer({ role: "HR Advisory", scope: "self" }), true);
+  // HR Advisory read it until the owner retired the HR Business Partner seat on 2026-10-08.
+  assert.equal(isCompany360Viewer({ role: "HR Advisory", scope: "self" }), false);
   assert.equal(isCompany360Viewer({ role: "HR Operations", scope: "self" }), true);
   assert.equal(isCompany360Viewer({ role: "Medical Rep", scope: "self" }), false);
   assert.equal(isCompany360Viewer({ role: "District Manager", scope: "team" }), false);
@@ -122,7 +123,6 @@ export async function runEmployee360AccessTests() {
   // successor added to the matrix but not to the 360 viewer set would show an empty
   // Employee 360 with no error, which is the shape that is hard to notice. ──
   for (const [role, hrId, jobTitle] of [
-    ["HR Advisory", "HRBP-1", "HR Business Partner"],
     ["HR Operations", "HROPS-1", "HR Operations Coordinator"],
   ] as const) {
     const seen = await visible(ctx(role, hrId, "self"));

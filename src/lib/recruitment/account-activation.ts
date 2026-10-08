@@ -18,10 +18,12 @@ export type AccountActivationRow = {
   role: PhoenixRole;
 };
 
-const HR_ADVISORY_RANK = getRolePrivilegeRank("HR Advisory");
+// The HR seats' rank: an account at or above it is never listed. It read the HR Business Partner's
+// rank until the owner retired the HR Business Partner seat on 2026-10-08; HR Operations holds the same rank, so the line it draws did not move.
+const HR_SEAT_RANK = getRolePrivilegeRank("HR Operations");
 
 function isEligibleRole(role: PhoenixRole) {
-  return getRolePrivilegeRank(role) < HR_ADVISORY_RANK;
+  return getRolePrivilegeRank(role) < HR_SEAT_RANK;
 }
 
 /**

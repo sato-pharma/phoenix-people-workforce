@@ -148,7 +148,7 @@ export function runOrganogramGodmodeTests() {
   assert.equal(isHeadOfficeRow({ lineId: 1, lineName: "Pedia" }), false);
   assert.equal(isHeadOfficeRow({ lineId: null, lineName: null }), false);
 
-  // H-5 — only CEO / Super Admin / Finance Manager / HR Advisory / HR Operations /
+  // H-5 — only CEO / Super Admin / Finance Manager / HR Operations / Talent Acquisition /
   // Training Manager / system scope may see Head Office. Marketing Manager may not, so the
   // vacancies route strips Head Office for it exactly like the organogram.
   // HR Advisory was added 2026-08-25 on the owner's instruction — she recruits for
@@ -158,7 +158,10 @@ export function runOrganogramGodmodeTests() {
   // employee in the company.
   assert.equal(canAccessHeadOffice(ctx("CEO")), true);
   assert.equal(canAccessHeadOffice(ctx("Super Admin")), true);
-  assert.equal(canAccessHeadOffice(ctx("HR Advisory")), true);
+  // The HR Business Partner seat that took that clearance was retired on 2026-10-08; the Talent
+  // Acquisition seat, who recruits for Head Office now, holds it in her place.
+  assert.equal(canAccessHeadOffice(ctx("HR Advisory")), false);
+  assert.equal(canAccessHeadOffice(ctx("HR Resourcing")), true);
   assert.equal(canAccessHeadOffice(ctx("Training Manager")), true);
   assert.equal(canAccessHeadOffice(ctx("SFE Manager")), true);
   assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), true);

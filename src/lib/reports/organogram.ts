@@ -129,8 +129,7 @@ export function canAccessHeadOffice(access: AccessContext) {
     // named seniors, and the node-detail route applies it (app/api/reports/organogram/
     // employee/[hrId]/route.ts). Since 2026-09-06 that carve-out is HR ADVISORY'S alone: HR
     // Operations maintains the employee master, salary columns included, so nothing is blanked
-    // for her on either surface.
-    access.role === "HR Advisory" ||
+    // for her on either surface. (HR Advisory was on this list until the owner retired the HR Business Partner seat on 2026-10-08.)
     access.role === "HR Operations" ||
     // The Talent Acquisition seat (2026-10-08) — Head Office staff who recruits for Head Office too,
     // the reason the old Talent Acquisition role was added here on 2026-08-25.
@@ -250,7 +249,6 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
     access.role === "CEO" ||
     access.role === "Marketing Manager" ||
     access.role === "Training Manager" ||
-    access.role === "HR Advisory" ||
     access.role === "HR Operations" ||
     // The Talent Acquisition seat (2026-10-08), ticked by the owner. The company chart and its
     // vacancies are what she recruits against. NOT added to canViewOrganogramSensitiveFields: the
@@ -290,7 +288,6 @@ export function canViewOrganogramSensitiveFields(access: AccessContext) {
     access.role === "Super Admin" ||
     access.role === "CEO" ||
     access.role === "Finance Manager" ||
-    access.role === "HR Advisory" ||
     access.role === "HR Operations"
   );
 }
@@ -329,7 +326,7 @@ export function isLineScopedOrganogramRole(access: AccessContext) {
 // explicit OR below is redundant but kept — it documents that vacancies visibility for her
 // must never regress even if organogram scope changes again independently in the future.
 export function canAccessCompanyVacancies(access: AccessContext) {
-  return canAccessCompanyOrganogram(access) || access.role === "HR Advisory" || access.role === "HR Operations";
+  return canAccessCompanyOrganogram(access) || access.role === "HR Operations";
 }
 
 // District Manager sees only vacancies reporting directly to them (their own team's open

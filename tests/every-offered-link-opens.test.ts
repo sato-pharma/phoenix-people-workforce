@@ -9,7 +9,7 @@ import {
   permissionActions,
   permissionMatrix,
   permissionResources,
-  phoenixRoles,
+  assignablePhoenixRoles,
   resolveNavigationMode,
   type PermissionAction,
   type PermissionResource,
@@ -236,7 +236,9 @@ export function runEveryOfferedLinkOpensTests() {
   let admitListsRead = 0;
   let portalHrefsChecked = 0;
 
-  for (const role of phoenixRoles) {
+  // Every role a person can actually hold. A retired seat (HR Advisory, 2026-10-08) is a dormant key
+  // User Access refuses to give anyone, so the links its empty grant set would be offered reach nobody.
+  for (const role of assignablePhoenixRoles) {
     const mode = resolveNavigationMode(createAccessContext({ hrId: "T-1", role }));
     const offered =
       mode === "admin" ? adminOfferedHrefs(role) : portalOfferedHrefs(role, registry);

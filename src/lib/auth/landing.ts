@@ -32,7 +32,8 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   // placeholder while the namespace was being built.
   // The Talent Acquisition seat (HR Resourcing) joined them on 2026-10-08 — same namespace, same
   // command centre, composed from her own bundle.
-  if (normalized === "hr advisory" || normalized === "hr operations" || normalized === "hr resourcing") {
+  // "hr advisory" left this line when the owner retired the HR Business Partner seat on 2026-10-08: a retired key lands nowhere of its own.
+  if (normalized === "hr operations" || normalized === "hr resourcing") {
     return "/hr/admin/hr-command-center";
   }
   if (normalized === "ceo") return "/admin/ceo-command-center";

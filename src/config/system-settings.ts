@@ -158,9 +158,8 @@ export const systemEmail = {
    *
    * A seat absent from here falls through to NOTIFICATION_REPLY_TO, then `defaultReplyTo`.
    */
-  seatReplyTo: {
-    "HR Advisory": "hrbp@satopharma.com",
-  } as Readonly<Record<string, string>>,
+  // Empty since the owner retired the HR Business Partner seat on 2026-10-08 — its hrbp@ entry was the only one.
+  seatReplyTo: {} as Readonly<Record<string, string>>,
   // Controlled internal inboxes only. NEVER add personal/external addresses here:
   // when testing-delivery is on, ALL mail is redirected to this list, so a personal
   // address would receive real employee/candidate PII.

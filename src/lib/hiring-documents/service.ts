@@ -581,7 +581,6 @@ export function filterHiringDocumentsForAccess(
   if (
     access.scope === "system" ||
     access.role === "Super Admin" ||
-    access.role === "HR Advisory" ||
     access.role === "HR Operations"
   ) {
     return dashboard;
@@ -669,7 +668,6 @@ async function assertCanReachEmployeeDocuments(access: AccessContext, employeeHr
   if (
     access.scope === "system" ||
     access.role === "Super Admin" ||
-    access.role === "HR Advisory" ||
     access.role === "HR Operations"
   ) {
     return;

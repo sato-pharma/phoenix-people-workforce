@@ -15,12 +15,12 @@ import type { PhoenixCompanyJobTitle, PhoenixRole } from "@/lib/auth/permissions
  * ## The rule this file follows
  *
  * Every `responsibility` below is a line from a job description the owner supplied, VERBATIM —
- * `Sato_HRBP_Job_Description_Requirements.docx` and
- * `Sato_HR_Operations_Job_Description_Requirements.docx`, both dated 2026-08-28. Nothing is
- * paraphrased, softened, merged or dropped, because the count is the promise: 29 lines for the HR
- * Business Partner across six numbered sections, 37 for the HR Operations Coordinator across nine,
- * 66 together. tests/hr-job-workbook.test.ts asserts those three numbers and every section's own
- * line count, so a line cannot be quietly lost in an edit.
+ * `Sato_HR_Operations_Job_Description_Requirements.docx`, dated 2026-08-28. Nothing is
+ * paraphrased, softened, merged or dropped, because the count is the promise: 37 lines for the HR
+ * Operations Coordinator across nine numbered sections. tests/hr-job-workbook.test.ts asserts that
+ * number and every section's own line count, so a line cannot be quietly lost in an edit. (The HR
+ * Business Partner's 29 lines, from `Sato_HRBP_Job_Description_Requirements.docx`, left with the
+ * seat when the owner retired it on 2026-10-08.)
  *
  * What is AUTHORED is the other three columns — the screen, the steps and the evidence. Those are
  * this system's answer to the line, and they are checked mechanically rather than trusted:
@@ -34,7 +34,7 @@ import type { PhoenixCompanyJobTitle, PhoenixRole } from "@/lib/auth/permissions
  *   • no line may have an empty screen list, an empty step list, or an empty evidence line.
  *
  * That last one is the completion test the owner was promised: "all 66 lines mapped to a real
- * screen, none left blank."
+ * screen, none left blank." — 37 since the HR Business Partner seat was retired.
  *
  * ## How the authored columns are WRITTEN
  *
@@ -72,7 +72,7 @@ export type WorkbookScreen = {
 };
 
 export type WorkbookLine = {
-  /** Stable, seat-and-section scoped: `hrbp-1-3` is the third line of HR Business Partner § 1. */
+  /** Stable, seat-and-section scoped: `ops-1-3` is the third line of HR Operations Coordinator § 1. */
   id: string;
   /** VERBATIM from the job description. Never edit to fit a screen — change the mapping instead. */
   responsibility: string;
@@ -88,7 +88,7 @@ export type WorkbookLine = {
 /**
  * Is this section's work DONE on a screen, or is it human work the screen only records?
  *
- * Every one of the 66 responsibilities has a real screen behind it — that is what the "none left
+ * Every one of the responsibilities has a real screen behind it — that is what the "none left
  * blank" test enforces. But a stay interview is a conversation, not a screen: Phoenix's job there
  * is to make sure it was written down and tagged. Saying "system" about that would be a lie of the
  * most expensive kind, because the reader would go looking for a screen that conducts an interview.
@@ -191,429 +191,12 @@ const S = {
   vacationRecord: { href: "/hr/leave-management/vacation-report", label: "Vacation Report" },
 } as const satisfies Record<string, WorkbookScreen>;
 
-// ── HR Business Partner (seat: HR Advisory) — 29 lines across 6 sections ───────
-
-const HRBP_SECTIONS: readonly WorkbookSection[] = [
-  {
-    number: 1,
-    title: "Talent Acquisition & Workforce Support",
-    // Sourcing, screening and tracking are screens; the headhunting call and the first-stage
-    // interview are not.
-    mode: "system-and-person",
-    lines: [
-      {
-        id: "hrbp-1-1",
-        responsibility:
-          "Own sourcing and first-stage screening for approved vacancies, with strong focus on Medical Representatives, sales leadership and business-critical Head Office roles.",
-        screens: [S.vacancies, S.recruitment, S.screening],
-        steps: [
-          "Start on the Vacancies Report. It lists the seats that are genuinely empty, taken straight from the organogram. If a job is on that list, it is real.",
-          "Go to Recruitment and open that job. The people who applied are already there — CVs that arrive by email or WhatsApp are filed against the job for you.",
-          "Do your first review from the Screening queue, not from your inbox. That way your yes or no is saved on the candidate.",
-        ],
-        evidence:
-          "Every step a candidate takes is saved with your name and the time. Those same times are what the system uses to work out how long a job has been open, so the numbers always match what really happened.",
-        fn: "recruiting",
-      },
-      {
-        id: "hrbp-1-2",
-        responsibility:
-          "Build active talent pools by territory, line, experience level and role type instead of restarting recruitment from zero for every vacancy.",
-        screens: [S.cvDatabase],
-        steps: [
-          "Open the CV Database and filter by region, line and job title. Those are the same things your job description asks you to organise people by.",
-          "Look here before you look outside. Every CV the company has ever received is still in this list.",
-          "The next time the same job opens, run the same filter again. You are not starting from zero.",
-        ],
-        evidence:
-          "You do not have to build this list yourself. CVs that arrive by email or WhatsApp are read and filed automatically, so it keeps growing even in a quiet month.",
-        fn: "recruiting",
-      },
-      {
-        id: "hrbp-1-3",
-        responsibility:
-          "Use direct sourcing and headhunting for hard-to-fill positions, not only job-post applications.",
-        screens: [S.cvDatabase, S.intakeHealth],
-        steps: [
-          "Add the person yourself in the CV Database when they came from a referral or you found them directly.",
-          "If a CV has no phone number or email, open Missing Contact Details. The details are usually already inside the CV and just need pulling out.",
-          "Check Inbound Intake Health now and then. It shows CVs that failed to come in, so you can tell a hard job from a broken email feed.",
-        ],
-        evidence:
-          "The screen keeps 'they came to us' and 'you found them' apart, so the people you went out and found stay visible as your work.",
-        fn: "recruiting",
-      },
-      {
-        id: "hrbp-1-4",
-        responsibility:
-          "Provide qualified shortlists with clear screening notes, salary expectations, availability, location fit and risk flags.",
-        screens: [S.screening, S.cvDatabase],
-        steps: [
-          "Write the screening note, expected salary, notice period and preferred area on the candidate. Not in a covering email, which nobody can search later.",
-          "Send the shortlist to the hiring manager from the same screen.",
-        ],
-        evidence:
-          "The manager gets it in the app and on Telegram, and the send is saved with your name and the time. So 'I never received it' is something anyone can check in seconds.",
-        fn: "recruiting",
-      },
-      {
-        id: "hrbp-1-5",
-        responsibility:
-          "Track vacancy ageing, interview progress, offer acceptance and joining status; escalate delays early.",
-        screens: [S.vacancies, S.recruitment, S.offers, S.overview],
-        steps: [
-          "Vacancies Report shows how long each job has been open. Recruitment shows how far each person has reached. Job Offers shows what was sent and what came back.",
-          "HR Overview is your daily view. Open Vacancies, In Screening, Interviewing, Offers Out and Hired are live numbers, and each one takes you to the screen behind it.",
-          "When something is stuck, raise it in HR Support Requests. Then the delay has a name and a date on it.",
-        ],
-        evidence:
-          "An offer saves three separate facts: sent, opened, accepted. So 'no reply' and 'they never even opened it' stop looking like the same thing.",
-        fn: "recruiting",
-      },
-      {
-        id: "hrbp-1-6",
-        responsibility: "Support internship, graduate and future-talent pipelines when required.",
-        screens: [S.cvDatabase, S.recruitment],
-        steps: [
-          "Keep graduate and intern CVs in the same CV Database, under their own job title. No separate list.",
-          "When a programme is approved, open it like any other job, so the intake runs through the normal pipeline.",
-        ],
-        evidence:
-          "You end up with the same record as a permanent hire. That is what lets you find last year's group when this year's programme opens.",
-        fn: "recruiting",
-      },
-    ],
-  },
-  {
-    number: 2,
-    title: "Employee Engagement & Field–HQ Partnership",
-    // The request queue IS the channel, but being an accessible HR contact is a person.
-    mode: "system-and-person",
-    lines: [
-      {
-        id: "hrbp-2-1",
-        responsibility:
-          "Build regular communication channels with field employees and managers to identify concerns before they become resignation or performance issues.",
-        screens: [S.support, S.overview],
-        steps: [
-          "Work the HR Support Requests queue every day. This IS the channel: an employee raises it from their own portal and it lands with you, whether they sit in Head Office or in Aswan.",
-          "Look at Longest Wait on HR Overview first. A request that has been sitting for weeks is the problem that turns into a resignation.",
-        ],
-        evidence:
-          "Every request keeps its whole conversation, so nothing depends on someone remembering what was said — including after you have moved on.",
-        fn: "engagement_retention",
-      },
-      {
-        id: "hrbp-2-2",
-        responsibility:
-          "Act as an accessible HR contact while maintaining professional boundaries, confidentiality and official communication standards.",
-        screens: [S.support],
-        steps: [
-          "Reply inside the request. Not by WhatsApp, and not by personal message.",
-          "Close it only when it is really finished, so the response-time numbers mean something.",
-        ],
-        evidence:
-          "Your reply is saved with your name and the time. Once a request is closed, the answer cannot be quietly changed into a different one.",
-        fn: "engagement_retention",
-      },
-      {
-        id: "hrbp-2-3",
-        responsibility:
-          "Capture recurring field concerns, identify patterns, and present practical recommendations to the HR Section Head.",
-        screens: [S.retention, S.overview],
-        steps: [
-          "Write the conversation in the Retention Register and pick a theme from the list.",
-          "Then read the theme totals instead of re-reading your notes. That is exactly why the themes are a fixed list.",
-        ],
-        evidence:
-          "You cannot count free writing, but you can count a theme. Twelve people tagged with the same one is a recommendation with a number behind it, not a feeling.",
-        fn: "engagement_retention",
-      },
-      {
-        id: "hrbp-2-4",
-        responsibility:
-          "Support recognition, engagement and communication initiatives that strengthen connection between employees, managers and Head Office.",
-        screens: [S.retention, S.support],
-        steps: [
-          "Write down what you promised to do, with a date, on the conversation it came from.",
-          "Let the system chase you. Overdue Follow-ups on HR Overview counts what was promised and not done.",
-        ],
-        evidence:
-          "A promise with a date can be checked. The register will not save one without a date, so nothing quietly turns into a good intention.",
-        fn: "engagement_retention",
-      },
-      {
-        id: "hrbp-2-5",
-        responsibility: "Ensure HR communication is understood by employees, not merely sent.",
-        screens: [S.support],
-        steps: [
-          "Close a request only when the employee's own reply shows they understood the answer.",
-          "If a request is reopened, treat it as useful news: the answer was sent, but it did not land.",
-        ],
-        evidence:
-          "Reopened requests are one of the things this role is measured on, and the system counts them for you. Nobody has to report them.",
-        fn: "engagement_retention",
-      },
-    ],
-  },
-  {
-    number: 3,
-    title: "Retention & Employee Experience",
-    // A stay or exit interview is a conversation. No screen conducts one — the register proves it
-    // happened and turns it into a countable theme.
-    mode: "person-led",
-    lines: [
-      {
-        id: "hrbp-3-1",
-        responsibility:
-          "Identify retention risks, particularly among strong performers and business-critical employees, and escalate them with evidence and recommended actions.",
-        screens: [S.retention, S.overview],
-        steps: [
-          "Write the conversation down, set how serious the risk is, and say what you think should be done.",
-          "That is all the escalating you need to do. High Retention Risk appears on HR Overview, and the HR Section Head reads it himself.",
-        ],
-        evidence:
-          "The risk flag sits on a real conversation with a date on it, so your warning arrives with its proof attached instead of arriving as an opinion.",
-        fn: "engagement_retention",
-      },
-      {
-        id: "hrbp-3-2",
-        responsibility:
-          "Conduct structured stay discussions and exit interviews when assigned; summarize actionable themes rather than only collecting comments.",
-        screens: [S.retention],
-        steps: [
-          "Choose Stay or Exit when you open the conversation. The register holds both kinds on purpose.",
-          "Write what was said, then tag the themes before you close it.",
-        ],
-        evidence:
-          "Stay and exit conversations sit in one place. So what people say while they are still here and what they say on the way out can finally be compared.",
-        fn: "engagement_retention",
-      },
-      {
-        id: "hrbp-3-3",
-        responsibility:
-          "Follow up onboarding quality during the first months of employment and flag early warning signs.",
-        screens: [S.probation, S.retention],
-        steps: [
-          "Read the probation list to see everyone still inside their first months.",
-          "If someone starts to struggle, open a stay conversation now. Do not wait for the probation result.",
-        ],
-        evidence:
-          "Probation holds the manager's view. The register holds the employee's own words. Both are dated, so you can see which one came first.",
-        fn: "performance_probation",
-      },
-      {
-        id: "hrbp-3-4",
-        responsibility:
-          "Support practical actions that improve employee experience without creating unauthorized policy exceptions.",
-        screens: [S.retention, S.support],
-        steps: [
-          "Write the agreed action and its follow-up date on the conversation.",
-          "Anything that needs an exception goes to the HR Section Head as a request. It is not agreed in the room.",
-        ],
-        evidence:
-          "The date is what turns a promise into something checkable. And an exception leaves a written request with a decision on it, instead of two people remembering it differently.",
-        fn: "engagement_retention",
-      },
-    ],
-  },
-  {
-    number: 4,
-    title: "Performance, Probation & Development Follow-up",
-    // The cases and their dates are screens; chasing the evaluator is a person.
-    mode: "system-and-person",
-    lines: [
-      {
-        id: "hrbp-4-1",
-        responsibility:
-          "Coordinate probation and performance follow-up cycles with managers and ensure required evaluations are completed on time.",
-        screens: [S.probation, S.overview],
-        steps: [
-          "Read the case list: who is due, who is late, and which manager each case is waiting for.",
-          "Chase that manager. Awaiting Decision on HR Overview is the same number they are being judged on.",
-        ],
-        evidence:
-          "Late is worked out from each case's own dates, not from anyone's memory. So a cycle cannot be called on time just because nobody kept a list.",
-        fn: "performance_probation",
-      },
-      {
-        id: "hrbp-4-2",
-        responsibility: "Track action plans, performance improvement plans and agreed follow-up dates.",
-        screens: [S.probation],
-        steps: [
-          "Open the case to see the assessment, anything attached to it, and what was agreed.",
-          "Follow up on the dates the case already carries.",
-        ],
-        evidence:
-          "The plan lives on the case, not in a document on somebody's laptop. So whoever picks the case up gets the plan with it.",
-        fn: "performance_probation",
-      },
-      {
-        id: "hrbp-4-3",
-        responsibility:
-          "Support managers with structured documentation and employee communication while keeping final HR decisions with the HR Section Head.",
-        screens: [S.probation, S.support],
-        steps: [
-          "Point the manager at the evaluation form. The form is the structure, and it is the same for everyone.",
-          "Anything that needs a decision goes to the HR Section Head in writing.",
-        ],
-        evidence:
-          "Your account can read every probation case and cannot record the result. That is deliberate: you run the process, the manager makes the call.",
-        fn: "performance_probation",
-      },
-      {
-        id: "hrbp-4-4",
-        responsibility: "Coordinate with Training and business leaders when development needs are identified.",
-        screens: [S.coaching, S.support],
-        steps: [
-          "Read the field coaching evaluations for that rep. They are what the manager actually saw in the field, not a summary written afterwards.",
-          "Send the training need to Training as a written request.",
-        ],
-        evidence:
-          "Each coaching evaluation carries the manager's name and the date, so a training need points back to a real visit rather than to a reputation.",
-        fn: "performance_probation",
-      },
-    ],
-  },
-  {
-    number: 5,
-    title: "HR Business Partnering & Workforce Insight",
-    mode: "system",
-    lines: [
-      {
-        id: "hrbp-5-1",
-        responsibility:
-          "Understand sales-force structure, territories, vacancies, reporting lines and business priorities so HR support reflects operational reality.",
-        screens: [S.organogram, S.vacancies],
-        steps: [
-          "Before answering any question about structure, open the organogram and look at the seat, its manager and its line.",
-          "Open the Vacancies Report to see what is genuinely empty.",
-        ],
-        evidence:
-          "The organogram is the one place the company's structure lives. A vacancy exists because a seat exists and nobody is sitting in it, so the two screens can never disagree.",
-        fn: "workforce_insight",
-      },
-      {
-        id: "hrbp-5-2",
-        responsibility:
-          "Use HR data to identify turnover, vacancy, attendance, performance or engagement patterns that need management attention.",
-        screens: [S.overview, S.vacancies, S.attendanceMonthly, S.retention],
-        steps: [
-          "Start on HR Overview. It is built from your own responsibilities, so everything on it is something this role owns.",
-          "Click a number to reach the screen behind it, instead of copying it into a file.",
-        ],
-        evidence:
-          "Every number is worked out fresh when the page opens. Nobody typed any of it, which is why you can quote it to the CEO without checking it first.",
-        fn: "workforce_insight",
-      },
-      {
-        id: "hrbp-5-3",
-        responsibility:
-          "Prepare concise people insights and recommendations for the HR Section Head and relevant managers.",
-        screens: [S.overview, S.retention],
-        steps: [
-          "Give the number, then the theme, then what you suggest. In that order.",
-          "Say which screen it came from, so the reader can see it for themselves.",
-        ],
-        evidence:
-          "A recommendation with a count behind it can be checked by whoever receives it. One built on a feeling cannot, and that is the whole difference.",
-        fn: "workforce_insight",
-      },
-      {
-        id: "hrbp-5-4",
-        responsibility:
-          "Support organizational changes, transfers and manpower discussions with accurate employee and vacancy information.",
-        screens: [S.organogram, S.vacancies, S.employee360],
-        steps: [
-          "Bring the numbers. The structure change itself is made by someone else.",
-          "Check Employee 360 before you say anything about a specific person.",
-        ],
-        evidence:
-          "Your account cannot change the organogram. So the information you give and the structure it describes can never drift apart because of an edit you made.",
-        fn: "workforce_insight",
-      },
-      {
-        id: "hrbp-5-5",
-        responsibility:
-          "Challenge incomplete or inconsistent information professionally and validate facts before escalating a case.",
-        screens: [S.overview, S.organogram, S.contactReview],
-        steps: [
-          "Check the record before you repeat what you were told. No Manager Set on HR Overview is the most common example.",
-          "If a candidate has gone quiet, check Missing Contact Details before deciding they lost interest.",
-        ],
-        evidence:
-          "The incomplete-record counts come from the directory itself. So 'their manager is wrong' is settled with one click instead of an argument.",
-        fn: "workforce_insight",
-      },
-    ],
-  },
-  {
-    number: 6,
-    title: "HR Governance, Systems & Documentation",
-    mode: "system",
-    lines: [
-      {
-        id: "hrbp-6-1",
-        responsibility:
-          "Maintain recruitment, engagement, probation and employee-relations actions accurately on Phoenix and approved HR trackers.",
-        screens: [S.recruitment, S.retention, S.support],
-        steps: [
-          "Write the action on the screen where it happened, at the time it happened.",
-          "Do not keep your own private tracker beside it. If something is worth tracking, it has a screen, and this book names it.",
-        ],
-        evidence:
-          "Each of these saves a line with your name and the time. That line is what an inspection reads. A spreadsheet is not.",
-        fn: "hr_governance",
-      },
-      {
-        id: "hrbp-6-2",
-        responsibility: "Ensure important employee conversations and decisions are documented through official channels.",
-        screens: [S.retention, S.support],
-        steps: [
-          "Conversations go in the register. Requests go in the request queue. Neither goes in a personal message.",
-        ],
-        evidence:
-          "Your account cannot delete a retention conversation, and that is on purpose: the conversation is the proof behind the turnover numbers the CEO reads.",
-        fn: "hr_governance",
-      },
-      {
-        id: "hrbp-6-3",
-        responsibility: "Protect confidential employee and company information at all times.",
-        screens: [S.employee360, S.retention],
-        steps: [
-          "If you can open it, you are allowed to open it. Your account only shows you what this role is meant to see.",
-        ],
-        evidence:
-          "Employee 360 shows you Medical Reps and yourself, nobody else. The retention register needs a permission only you and the CEO hold. Neither one depends on you remembering a rule.",
-        fn: "hr_governance",
-      },
-      {
-        id: "hrbp-6-4",
-        responsibility:
-          "Follow approved HR policies and escalation paths; do not make commitments outside delegated authority.",
-        screens: [S.offers, S.support],
-        steps: [
-          "You write the offer and send it. Approving the terms is not yours to do.",
-          "Escalate in writing, so it exists whether or not anyone answers.",
-        ],
-        evidence:
-          "Your account cannot approve an offer at all. An offer outside the agreed range simply cannot go out from here, which is safer than a rule asking you not to send one.",
-        fn: "hr_governance",
-      },
-      {
-        id: "hrbp-6-5",
-        responsibility: "Contribute ideas for simplifying and digitizing HR workflows.",
-        screens: [S.support],
-        steps: [
-          "Raise it as a written request to HR, instead of mentioning it in passing.",
-        ],
-        evidence:
-          "A written idea outlives the conversation and the person who had it. This book exists because an earlier one did not.",
-        fn: "hr_governance",
-      },
-    ],
-  },
-];
+// ── No HR Business Partner workbook since 2026-10-08 ─────────────────────────────
+//
+// Her 29 lines (6 sections) lived here. The owner retired the seat and the title that evening —
+// "no more HR business partner. This title, no more" — so there is no job left for them to describe.
+// Recruiting is the Talent Acquisition seat's; the rest is the Super Admin's for now
+// (UNASSIGNED_HR_FUNCTIONS in hr-functions.ts). git history holds the lines verbatim.
 
 // ── HR Operations Coordinator (seat: HR Operations) — 37 lines across 9 sections
 
@@ -1163,20 +746,6 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
 
 export const HR_SEAT_WORKBOOKS: readonly SeatWorkbook[] = [
   {
-    seat: "HR Advisory",
-    jobTitle: "HR Business Partner",
-    mission:
-      "Act as the people partner connecting Sato Pharma’s business leaders, field teams and Head Office with HR. The role combines talent acquisition, employee engagement, retention, performance follow-up and practical business partnering. It is a hands-on HR role: the successful candidate is expected to understand what is happening in the field, translate business needs into people actions, and follow through until actions are completed and documented.",
-    sections: HRBP_SECTIONS,
-    boundaries: [
-      "This role owns execution and recommendation — not unauthorized final decisions.",
-      "May source, screen, coordinate, interview at first stage, recommend, follow up and prepare documentation within approved processes.",
-      "May raise concerns, retention risks and recommended people actions directly to the HR Section Head.",
-      "May not independently approve headcount, salary changes, policy exceptions, disciplinary penalties, terminations, organizational changes, or offers outside approved ranges.",
-      "Sensitive employee relations, final hiring decisions for key roles, compensation and policy decisions remain subject to the HR Section Head and relevant management approval.",
-    ],
-  },
-  {
     seat: "HR Operations",
     jobTitle: "HR Operations Coordinator",
     mission:
@@ -1252,12 +821,6 @@ export type CompanyRoleWorkbook = {
 };
 
 export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
-  {
-    jobTitle: "HR Business Partner",
-    role: "HR Advisory",
-    purpose: "Recruitment, engagement, retention, probation follow-up and workforce insight.",
-    hasWrittenJd: true,
-  },
   {
     jobTitle: "HR Operations Coordinator",
     role: "HR Operations",
@@ -1346,7 +909,7 @@ export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
     jobTitle: "HR Manager",
     role: null,
     purpose:
-      "A historical HR title. It carries no access role of its own — HR access is composed from functions, and the two live bundles are HR Advisory and HR Operations.",
+      "A historical HR title. It carries no access role of its own — HR access is composed from functions, and the live bundles are HR Operations and the Talent Acquisition seat (HR Resourcing).",
     hasWrittenJd: false,
   },
   {

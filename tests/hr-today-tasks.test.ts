@@ -216,11 +216,11 @@ export async function runHrTodayTasksTests() {
       supportRequests: [],
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
-    const tasks = buildHrTodayTasks(emptySources as any, "HR Advisory");
+    const tasks = buildHrTodayTasks(emptySources as any, "HR Resourcing");
     assert.ok(tasks.length > 0, "a landing page whose sources all loaded empty must still render its queues, not nothing");
 
     assert.deepEqual(
-      buildHrTodayTasks({}, "HR Advisory"),
+      buildHrTodayTasks({}, "HR Resourcing"),
       [],
       "a source that did NOT load must drop its task rather than render at zero — 'nothing is waiting' and 'we could not look' are different answers, and only one of them is an all-clear",
     );
@@ -334,12 +334,14 @@ export async function runHrTodayTasksTests() {
         `${name}: task keys are React keys and must be unique`,
       );
 
-      // Six is the floor, not the target. HR Advisory has nine; HR Operations has six, against
-      // the TWO she had the day this was written. The floor was eight until the Clearance module
-      // was removed (owner, 2026-09-01) and took three of her tasks with it — — lower it again
-      // only for a deletion of that kind, never to make a thinning panel go green.
+      // Six is the floor, not the target. HR Advisory's was four once recruiting left her seat, and
+      // the seat was retired the same evening (2026-10-08). HR Operations has six, against the TWO
+      // she had the day this was written. The floor was eight until the
+      // Clearance module was removed (owner, 2026-09-01) and took three of her tasks with it — lower
+      // it again only for a removal of that kind, never to make a thinning panel go green.
+      const floor = 6;
       assert.ok(
-        tasks.length >= 6,
+        tasks.length >= floor,
         `${name} gets only ${tasks.length} task(s) — this page's opening panel IS the seat's day, and a day with ${tasks.length} rows in it is the two-row board this test exists to stop. Tasks: ${keys.join(", ") || "(none)"}`,
       );
     }
@@ -348,12 +350,6 @@ export async function runHrTodayTasksTests() {
     // recruiting tasks, which is what HR Operations effectively had: everything from one half of
     // the department and nothing from hers.
     const functionsWithAQueue: Record<HrBundleName, HrFunctionKey[]> = {
-      "HR Advisory": [
-        "engagement_retention",
-        "performance_probation",
-        "recruiting",
-        "workforce_insight",
-      ],
       "HR Operations": ["people_records", "performance_probation", "time_attendance"],
       // The Talent Acquisition seat (2026-10-08): the pipeline and the two request desks she works.
       // workforce_context is read-only reference and carries no queue of its own.
@@ -370,10 +366,18 @@ export async function runHrTodayTasksTests() {
     }
 
     // And the two days are genuinely different work, not one list shown twice.
-    const advisoryKeys = new Set((days.get("HR Advisory") ?? []).map((item) => item.key));
     const operationsKeys = new Set((days.get("HR Operations") ?? []).map((item) => item.key));
-    for (const key of ["screen-candidates", "chase-offers", "answer-support-requests"]) {
-      assert.ok(advisoryKeys.has(key), `HR Advisory lost her '${key}' task`);
+    // The recruiting tasks are the Talent Acquisition seat's (owner, 2026-10-08), never HR
+    // Operations'.
+    const resourcingKeys = new Set((days.get("HR Resourcing") ?? []).map((item) => item.key));
+    for (const key of ["screen-candidates", "chase-offers"]) {
+      assert.ok(resourcingKeys.has(key), `the Talent Acquisition seat lost her '${key}' task`);
+      assert.ok(!operationsKeys.has(key), `HR Operations is offered '${key}', recruiting work she never held`);
+    }
+    // The support desk was the HR Business Partner's under engagement_retention; since that seat was
+    // retired it is answered under employee_requests, by the Talent Acquisition seat.
+    for (const key of ["answer-support-requests"]) {
+      assert.ok(resourcingKeys.has(key), `the Talent Acquisition seat lost her '${key}' task`);
       assert.ok(
         !operationsKeys.has(key),
         `HR Operations is offered '${key}', which reads a source her bundle does not justify loading`,
@@ -387,8 +391,8 @@ export async function runHrTodayTasksTests() {
     ]) {
       assert.ok(operationsKeys.has(key), `HR Operations lost her '${key}' task`);
       assert.ok(
-        !advisoryKeys.has(key),
-        `HR Advisory is offered '${key}', which reads a source her bundle does not justify loading`,
+        !resourcingKeys.has(key),
+        `the Talent Acquisition seat is offered '${key}', which reads a source her bundle does not justify loading`,
       );
     }
   }

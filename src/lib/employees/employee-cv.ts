@@ -95,10 +95,10 @@ function sourceOf(value: string | null | undefined): EmployeeCvSource {
  * master are different privileges and must be able to diverge later without one dragging the
  * other along.
  */
+// HR Advisory (the HR Business Partner) left when the owner retired the HR Business Partner seat on 2026-10-08.
 export const employeeCvReaderRoles = [
   "Super Admin",
   "SFE Manager",
-  "HR Advisory",
   "HR Operations",
 ] as const satisfies readonly PhoenixRole[];
 

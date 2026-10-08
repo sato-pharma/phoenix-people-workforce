@@ -48,7 +48,9 @@ export function runRecruitmentManagerCvEngagementTests() {
   // engagement report is a narrower list than canSeeAllRecruitment on purpose.
   // Owner amendment 2026-09-01: the HR Business Partner opens this report. HR Operations does NOT —
   // that split is the assertion worth keeping, because "add HR" would have been the easy reading.
-  assert.equal(canViewManagerCvEngagement({ role: "HR Advisory", scope: "self" }), true, "HR Advisory opens it (owner, 2026-09-01)");
+  // "move recruiting off the HR Business Partner" (owner, 2026-10-08): it went with the rest of recruiting, to the Talent Acquisition seat.
+  assert.equal(canViewManagerCvEngagement({ role: "HR Advisory", scope: "self" }), false, "HR Advisory gave it up with recruiting (2026-10-08)");
+  assert.equal(canViewManagerCvEngagement({ role: "HR Resourcing", scope: "self" }), true, "the Talent Acquisition seat opens it");
   assert.equal(canViewManagerCvEngagement({ role: "HR Operations", scope: "self" }), false, "HR Operations must NOT see it");
   // NOT the managers being measured.
   assert.equal(canViewManagerCvEngagement({ role: "District Manager", scope: "self" }), false, "a measured manager cannot see it");

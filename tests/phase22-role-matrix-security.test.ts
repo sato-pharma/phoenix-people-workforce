@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  assignablePhoenixRoles,
   canAccess,
   canSeeEmployee,
   createAccessContext,
@@ -142,7 +143,9 @@ export async function runPhase22RoleMatrixSecurityTests() {
       "attendance, leave and payroll inputs for the whole company. If this ever reads \"self\" again, " +
       "her Payroll Report and Payslips Center rows are visible and both redirect on open",
   );
-  for (const seat of [hrAdvisory, hrOperations]) {
+  // HR Advisory was the other seat in this loop until the owner retired it on 2026-10-08; the
+  // dormant key holds nothing (tests/hr-advisory-module-access.test.ts pins that).
+  for (const seat of [hrOperations]) {
     assert.equal(resolveNavigationMode(seat), "admin");
     assert.equal(await canAccess(seat, "employee_profile", "read"), true);
     assert.equal(await canAccess(seat, "employee_profile", "update"), true);
@@ -162,18 +165,26 @@ export async function runPhase22RoleMatrixSecurityTests() {
   // The retired seat held every one of these at once. If a future change collapses the two
   // bundles back into one HR role, this block is what fails — which is the entire reason the
   // owner asked for a function catalogue rather than a second monolithic role name.
-  assert.equal(await canAccess(hrAdvisory, "recruitment", "create"), true, "recruiting is HR Advisory's function");
-  assert.equal(await canAccess(hrOperations, "recruitment", "create"), false, "…and only hers");
-  assert.equal(await canAccess(hrAdvisory, "candidates", "read"), true);
+  // Recruiting was HR Advisory's function until "move recruiting off the HR Business Partner" (owner, 2026-10-08); it is the
+  // Talent Acquisition seat's now, and neither of these two holds it.
+  const hrResourcing = createAccessContext({ hrId: "A-18", role: "HR Resourcing" });
+  assert.equal(await canAccess(hrResourcing, "recruitment", "create"), true, "recruiting is the Talent Acquisition seat's function");
+  assert.equal(await canAccess(hrAdvisory, "recruitment", "create"), false, "…not HR Advisory's since 2026-10-08");
+  assert.equal(await canAccess(hrOperations, "recruitment", "create"), false, "…nor HR Operations'");
+  assert.equal(await canAccess(hrResourcing, "candidates", "read"), true);
+  assert.equal(await canAccess(hrAdvisory, "candidates", "read"), false, "HR Advisory holds no candidate PII since recruiting moved");
   assert.equal(await canAccess(hrOperations, "candidates", "read"), false, "HR Operations holds no candidate PII");
-  assert.equal(await canAccess(hrAdvisory, "employee_documents", "update"), true, "HR Forms is hers to fill");
+  // The owner retired the HR Business Partner seat on 2026-10-08: the dormant key holds nothing, so
+  // every grant it had reads false below; its hiring paperwork is the Super Admin's now.
+  assert.equal(await canAccess(hrAdvisory, "employee_documents", "update"), false, "the retired key fills no HR Forms");
   assert.equal(await canAccess(hrOperations, "leave", "update"), true, "approving leave is HR Operations' function");
   assert.equal(await canAccess(hrAdvisory, "leave", "update"), false, "…and only hers");
   assert.equal(await canAccess(hrOperations, "contracts", "update"), true, "the records half");
   assert.equal(await canAccess(hrAdvisory, "contracts", "update"), false);
   // Owner-requested 2026-07-25 on the retired seat: the read-only Planning Calendar, no submission.
-  // It follows workforce_insight, which is why HR Advisory has always had it.
-  assert.equal(await canAccess(hrAdvisory, "weekly_plans", "read"), true);
+  // It follows workforce_insight, which HR Advisory held until the seat was retired on 2026-10-08;
+  // the function is unassigned now (the Super Admin's), so the retired key reads nothing.
+  assert.equal(await canAccess(hrAdvisory, "weekly_plans", "read"), false);
   assert.equal(await canAccess(hrAdvisory, "weekly_plans", "create"), false, "reading where the field force will be is not submitting a plan");
   // CHANGED 2026-09-01 (owner). This line asserted `false` for HR Operations until that day, and the
   // note above read "HR Operations never had a reason for it". He named /admin/weekly-plans/calendar
@@ -235,13 +246,16 @@ export async function runPhase22RoleMatrixSecurityTests() {
     lookups: { managers: [] },
     summary: {},
   } as unknown as EmployeeDirectoryData;
+  // Since the owner retired the HR Business Partner seat (2026-10-08) the key holds no employees
+  // grant, so the directory filter withholds B-10's row from it altogether — stronger than the
+  // blanked salary cells it used to return. The redaction list itself is kept (asserted above), so
+  // the key can never be handed back the directory with those salaries visible.
   const filteredForTalentAcquisition = filterEmployeeDirectoryForAccess(directory, hrAdvisory);
-  const redactedManager = filteredForTalentAcquisition.employees.find((row) => row.hrId === "B-10")!;
-  const ownRow = filteredForTalentAcquisition.employees.find((row) => row.hrId === "A-16")!;
-  assert.equal(redactedManager.baseSalary, null, "B-10's baseSalary is blanked for HR Advisory");
-  assert.equal(redactedManager.grossSalary, null, "B-10's grossSalary is blanked for HR Advisory");
-  assert.deepEqual(redactedManager.salaryDetails, null, "B-10's flexible salary details are blanked too");
-  assert.equal(ownRow.baseSalary, 10000, "her own salary is untouched by the redaction");
+  assert.equal(
+    filteredForTalentAcquisition.employees.find((row) => row.hrId === "B-10"),
+    undefined,
+    "the retired HR Business Partner key must not read B-10's row at all",
+  );
   const filteredForSuperAdmin = filterEmployeeDirectoryForAccess(directory, superAdmin);
   assert.equal(
     filteredForSuperAdmin.employees.find((row) => row.hrId === "B-10")!.baseSalary,
@@ -310,7 +324,9 @@ export async function runPhase22RoleMatrixSecurityTests() {
   // Telegram link." This is self-scoped only — employee_profile:update never edits OTHER
   // employees (that is the `employees` resource) — so granting it must not widen
   // cross-employee access.
-  for (const role of phoenixRoles) {
+  // Every role a person can hold. The retired HR Business Partner key (2026-10-08) holds nothing and
+  // reaches nobody, so it has no profile to manage.
+  for (const role of assignablePhoenixRoles) {
     const context = createAccessContext({ hrId: `SELF-${role}`, role });
     assert.equal(
       await canAccess(context, "employee_profile", "update"),
@@ -337,7 +353,8 @@ export async function runPhase22RoleMatrixSecurityTests() {
 
   // HR Resourcing — the Talent Acquisition seat — reads the inbox since 2026-10-08: the owner ticked
   // HR Support Requests for her on the access blueprint.
-  const hrAuthorityRoles = new Set<PhoenixRole>(["Super Admin", "HR Advisory", "HR Operations", "HR Resourcing"]);
+  // HR Advisory left this set when the owner retired the HR Business Partner seat on 2026-10-08.
+  const hrAuthorityRoles = new Set<PhoenixRole>(["Super Admin", "HR Operations", "HR Resourcing"]);
   for (const role of phoenixRoles) {
     const context = createAccessContext({ hrId: `ROLE-${role}`, role });
     assert.equal(await canAccess(context, "support_requests", "create"), true, `${role} can submit HR support requests`);

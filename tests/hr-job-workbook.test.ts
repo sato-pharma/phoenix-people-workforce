@@ -55,13 +55,12 @@ import {
  * The line count of each numbered section, straight off the two job descriptions. Partial because
  * a seat with no written job description (HR Resourcing, 2026-10-08) has no book to count.
  */
+// The HR Business Partner's book (29 lines, six sections) left with her seat: the owner retired the HR Business Partner seat on 2026-10-08.
 const SECTION_LINE_COUNTS: Partial<Record<HrBundleName, readonly number[]>> = {
-  "HR Advisory": [6, 5, 4, 4, 5, 5],
   "HR Operations": [4, 4, 4, 4, 4, 4, 4, 5, 4],
 };
 
 const EXPECTED_TOTALS: Partial<Record<HrBundleName, number>> = {
-  "HR Advisory": 29,
   "HR Operations": 37,
 };
 
@@ -71,15 +70,6 @@ const EXPECTED_TOTALS: Partial<Record<HrBundleName, number>> = {
  * so they stay true wherever the line ends up in the array.
  */
 const VERBATIM_PINS: { id: string; responsibility: string }[] = [
-  {
-    id: "hrbp-1-1",
-    responsibility:
-      "Own sourcing and first-stage screening for approved vacancies, with strong focus on Medical Representatives, sales leadership and business-critical Head Office roles.",
-  },
-  {
-    id: "hrbp-6-5",
-    responsibility: "Contribute ideas for simplifying and digitizing HR workflows.",
-  },
   {
     id: "ops-1-1",
     responsibility:
@@ -123,10 +113,11 @@ function pageExists(href: string): boolean {
 }
 
 export function runHrJobWorkbookTests() {
-  // 1 ── THE HEADLINE COUNT. 29 + 37 = 66, and each section holds exactly what the JD says.
+  // 1 ── THE HEADLINE COUNT. 37, and each section holds exactly what the JD says. It was 29 + 37 = 66
+  // until the owner retired the HR Business Partner seat on 2026-10-08 and its 29 lines left with it.
   const counts = workbookLineCounts();
-  assert.equal(counts.total, 66, `the workbook must hold all 66 responsibility lines, found ${counts.total}`);
-  assert.equal(HR_SEAT_WORKBOOKS.length, 2, "one workbook per HR seat");
+  assert.equal(counts.total, 37, `the workbook must hold all 37 responsibility lines, found ${counts.total}`);
+  assert.equal(HR_SEAT_WORKBOOKS.length, 1, "one workbook: HR Operations' — the only seat with a written job description");
 
   for (const book of HR_SEAT_WORKBOOKS) {
     const expected = SECTION_LINE_COUNTS[book.seat];
@@ -173,7 +164,7 @@ export function runHrJobWorkbookTests() {
 
   // 2 ── NOTHING LEFT BLANK. The owner's completion test, literally.
   const lines = allWorkbookLines();
-  assert.equal(lines.length, 66, `allWorkbookLines() must return all 66, returned ${lines.length}`);
+  assert.equal(lines.length, 37, `allWorkbookLines() must return all 37, returned ${lines.length}`);
 
   const ids = new Set<string>();
   for (const line of lines) {
@@ -192,7 +183,7 @@ export function runHrJobWorkbookTests() {
     }
     // The id encodes the seat and the section it sits in, so a line copied between sections during
     // an edit shows up here rather than silently reading under the wrong heading.
-    const prefix = line.seat === "HR Advisory" ? "hrbp" : "ops";
+    const prefix = "ops";
     assert.ok(
       line.id.startsWith(`${prefix}-${line.section.number}-`),
       `${where}: id does not match its seat and section (expected ${prefix}-${line.section.number}-…)`,
@@ -310,15 +301,16 @@ export function runHrJobWorkbookTests() {
   // nobody asked for, this is what catches it.
   assert.deepEqual(
     COMPANY_ROLE_WORKBOOKS.filter((entry) => entry.hasWrittenJd).map((entry) => entry.jobTitle),
-    ["HR Business Partner", "HR Operations Coordinator"],
-    "hasWrittenJd must be true only for the two titles whose job description the owner actually " +
-      "supplied. Do not invent responsibility lines for a role nobody has written one for",
+    ["HR Operations Coordinator"],
+    "hasWrittenJd must be true only for the titles whose job description the owner actually " +
+      "supplied (the HR Business Partner's was the other, retired with the seat on 2026-10-08). Do " +
+      "not invent responsibility lines for a role nobody has written one for",
   );
 
   // 7 ── The seat lookup used by the page, so a viewer's role resolves to their own book.
-  assert.equal(workbookForSeat("HR Advisory")?.jobTitle, "HR Business Partner");
+  assert.equal(workbookForSeat("HR Advisory"), null, "the HR Business Partner's book left with the retired seat");
   assert.equal(workbookForSeat("HR Operations")?.jobTitle, "HR Operations Coordinator");
-  assert.equal(workbookForSeat("Super Admin"), null, "only the two seats hold a workbook of their own");
+  assert.equal(workbookForSeat("Super Admin"), null, "only HR Operations holds a workbook of its own");
   assert.equal(workbookForSeat(null), null);
   assert.equal(workbookForSeat(undefined), null);
 
@@ -356,7 +348,7 @@ export function runHrJobWorkbookTests() {
 
   // And the helper the callers actually use, including the pass-through every other role relies
   // on — this must not become a company-wide relabelling.
-  assert.equal(displayTitleForRole("HR Advisory"), "HR Business Partner");
+  assert.notEqual(displayTitleForRole("HR Advisory"), "HR Business Partner", "the title retired with its seat");
   assert.equal(displayTitleForRole("HR Operations"), "HR Operations Coordinator");
   assert.equal(displayTitleForRole("HR Resourcing"), "Talent Acquisition");
   assert.equal(displayTitleForRole("Finance Manager"), "Finance Manager", "a non-HR role is unchanged");

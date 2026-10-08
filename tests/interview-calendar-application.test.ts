@@ -71,7 +71,9 @@ function runChoiceTests() {
 async function runAccessTests() {
   const context = (role: PhoenixRole) => createAccessContext({ hrId: "A-17", role });
 
-  assert.equal(await canOpenWhatsAppApplications(context("HR Advisory")), true, "HR Advisory runs recruiting and opens applications");
+  // "move recruiting off the HR Business Partner" (owner, 2026-10-08).
+  assert.equal(await canOpenWhatsAppApplications(context("HR Resourcing")), true, "the Talent Acquisition seat runs recruiting and opens applications");
+  assert.equal(await canOpenWhatsAppApplications(context("HR Advisory")), false, "HR Advisory gave recruiting up on 2026-10-08");
   assert.equal(await canOpenWhatsAppApplications(context("Super Admin")), true, "so does the Super Admin");
   assert.equal(
     await canOpenWhatsAppApplications(context("HR Operations")),

@@ -207,8 +207,8 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     key: "retention_risk_alert",
     label: "Retention risk alert",
     description:
-      "Who is told when a MEDICAL REP reaches three consecutive working days of recorded leave, or three consecutive working days with no CRM entry of any kind, and has not been seen since (owner, 2026-09-07: medical reps only, three days, still away). Defaults to HR Operations, HR Advisory, Super Admin and SFE Manager — the owner picked all four on 2026-09-06. The person's own line manager is added per alert by the sweep itself and is deliberately NOT a role here: it is one named manager per subject, not everyone holding a manager role.",
-    roles: ["HR Operations", "HR Advisory", "Super Admin", "SFE Manager"],
+      "Who is told when a MEDICAL REP reaches three consecutive working days of recorded leave, or three consecutive working days with no CRM entry of any kind, and has not been seen since (owner, 2026-09-07: medical reps only, three days, still away). Defaults to HR Operations, Super Admin and SFE Manager — the owner picked these with the HR Business Partner on 2026-09-06, and that seat was retired on 2026-10-08. The person's own line manager is added per alert by the sweep itself and is deliberately NOT a role here: it is one named manager per subject, not everyone holding a manager role.",
+    roles: ["HR Operations", "Super Admin", "SFE Manager"],
     enabled: true,
   },
   crm_account_setup_alert: {

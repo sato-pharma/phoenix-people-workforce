@@ -590,8 +590,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "offer_prepare",
             name: "Prepare the offer draft",
-            actor: "HR Advisory",
-            role: "HR Advisory / Super Admin",
+            actor: "Talent Acquisition",
+            role: "Talent Acquisition / Super Admin",
             statusProduced: "offer_draft",
             notificationRecipients: [],
             emailRecipients: [],
@@ -601,8 +601,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "offer_submit_approval",
             name: "Submit the offer for approval",
-            actor: "HR Advisory",
-            role: "HR Advisory / Super Admin",
+            actor: "Talent Acquisition",
+            role: "Talent Acquisition / Super Admin",
             statusProduced: "offer_pending_approval",
             notificationRecipients: [],
             emailRecipients: [],
@@ -622,8 +622,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "offer_sent",
             name: "Record the offer as sent",
-            actor: "HR Advisory",
-            role: "HR Advisory / Super Admin",
+            actor: "Talent Acquisition",
+            role: "Talent Acquisition / Super Admin",
             statusProduced: "offer_sent",
             notificationRecipients: [],
             emailRecipients: [],
@@ -633,8 +633,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "offer_answer",
             name: "Record the candidate's answer",
-            actor: "HR Advisory",
-            role: "HR Advisory / Super Admin",
+            actor: "Talent Acquisition",
+            role: "Talent Acquisition / Super Admin",
             statusProduced: "offer_accepted | offer_declined | offer_expired | offer_negotiation",
             notificationRecipients: [],
             emailRecipients: [],

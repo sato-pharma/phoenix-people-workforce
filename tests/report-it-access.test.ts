@@ -18,7 +18,8 @@ const SELF_ONLY_ROLES: PhoenixRole[] = [
   "SFE Manager",
   "Training Manager",
   "Marketing Manager",
-  "HR Advisory",
+  // HR Advisory left both lists when the owner retired the HR Business Partner seat (2026-10-08):
+  // the dormant key holds nothing and reaches nobody.
   "HR Operations",
   "Manager",
 ];
@@ -37,7 +38,7 @@ export function runReportItAccessTests() {
     "Super Admin", "CEO", "Finance Manager",
     "Employee", "Medical Rep", "District Manager", "Regional Manager",
     "National Sales Manager", "Product Manager", "Group Product Manager",
-    "SFE Manager", "Training Manager", "Marketing Manager", "HR Advisory", "HR Operations", "Manager",
+    "SFE Manager", "Training Manager", "Marketing Manager", "HR Operations", "Manager",
   ];
 
   for (const role of allRoles) {

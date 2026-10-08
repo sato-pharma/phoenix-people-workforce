@@ -143,8 +143,8 @@ export function runRetentionRiskNotifyTests() {
   assert.ok(policy, "the key needs a default policy, which is also the fallback when the DB row is missing");
   assert.deepEqual(
     [...policy.roles].sort(),
-    ["HR Advisory", "HR Operations", "SFE Manager", "Super Admin"],
-    "the four the owner picked on 2026-09-06 when asked directly",
+    ["HR Operations", "SFE Manager", "Super Admin"],
+    "the four the owner picked on 2026-09-06 when asked directly, less the HR Business Partner seat he retired on 2026-10-08",
   );
   assert.equal(policy.enabled, true);
 
@@ -160,7 +160,19 @@ export function runRetentionRiskNotifyTests() {
   );
   assert.ok(
     migration.includes("array['HR Operations', 'HR Advisory', 'Super Admin', 'SFE Manager']"),
-    "the seeded roles must equal DEFAULT_NOTIFICATION_ROLE_POLICIES, so the migration is a no-op against the fallback",
+    "the seed is history and never edited: it wrote the four the owner picked on 2026-09-06",
+  );
+  // ...and the retirement migration takes the fourth back out of the stored row, which wins over the
+  // code default — so the default above and production agree again after it.
+  const retirement = readFileSync(
+    join(ROOT, "supabase/migrations/20261008235900_retire_hr_advisory_seat.sql"),
+    "utf8",
+  );
+  const policyUpdate = retirement.slice(retirement.indexOf("update public.notification_role_policies"));
+  assert.ok(
+    policyUpdate.includes("array_remove(roles, 'HR Advisory')") &&
+      policyUpdate.includes("where notification_key = 'retention_risk_alert'"),
+    "the stored retention_risk_alert row must lose the retired seat, or production keeps a recipient the code default dropped",
   );
 
   // ── A date-only value must render on its own calendar day ──────────────────────────────────
@@ -223,7 +235,9 @@ export function runRetentionRiskNotifyTests() {
   assert.equal(hrefs["Regional Manager"], "/employee-portals/employee-360/B-999");
   assert.equal(hrefs["National Sales Manager"], "/employee-portals/employee-360/B-999");
   assert.equal(hrefs["HR Operations"], "/hr/employee-360/B-999");
-  assert.equal(hrefs["HR Advisory"], "/hr/employee-360/B-999");
+  // HR Advisory left this map with its retired seat (2026-10-08); the Talent Acquisition seat is
+  // not a recipient of this alert, so she needs no entry either.
+  assert.equal(hrefs["HR Advisory"], undefined);
   assert.ok(
     Object.values(hrefs).every((href) => !href.startsWith("/employee-360/")),
     "no role in this map may be sent to the admin-shell address — the map exists only for the roles that cannot use it",

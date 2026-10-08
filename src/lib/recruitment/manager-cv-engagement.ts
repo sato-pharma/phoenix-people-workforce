@@ -73,7 +73,8 @@ const managerCvEngagementRoles: readonly PhoenixRole[] = [
   "Super Admin",
   "CEO",
   "National Sales Manager",
-  "HR Advisory",
+  // HR Advisory left on 2026-10-08 with the rest of recruiting ("move recruiting off the HR Business
+  // Partner"): chasing a silent manager is recruiting work, now the Talent Acquisition seat's.
   "HR Resourcing",
 ];
 

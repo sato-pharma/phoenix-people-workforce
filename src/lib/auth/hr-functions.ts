@@ -313,6 +313,12 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // READ only, and there is no wider action to want: placing a pin is sales:import and
       // publishing a public preview link is sales:export, both of which stay Super Admin.
       territory: READ_ONLY,
+      // The vacancy board — "vacancies" is in this function's own summary above. Added 2026-10-08
+      // when the owner moved recruiting off the HR Business Partner: `recruiting` was the only
+      // function carrying this read, so the move would otherwise have taken her Vacancies Report and
+      // her dashboard's Vacant Seats tile with it, and he said she keeps workforce insight. READ
+      // only — opening a seat is the organogram's, and `create` is a resignation, not insight.
+      vacancies: READ_ONLY,
     },
   },
   {
@@ -563,18 +569,11 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
  * again.
  */
 export const HR_ROLE_BUNDLES = {
-  "HR Advisory": [
-    "recruiting",
-    // Split out of recruiting 2026-10-08 with its grants unchanged — her access did not move.
-    "hiring_paperwork",
-    "engagement_retention",
-    // HR Advisory ONLY - HR Operations is not a sender, and adding it to a shared function such as
-    // hr_governance would have handed her the composer as a side effect.
-    "hr_communication",
-    "performance_probation",
-    "workforce_insight",
-    "hr_governance",
-  ],
+  // NO "HR Advisory" bundle since 2026-10-08. The owner retired the HR Business Partner seat that
+  // evening: first "move recruiting off the HR Business Partner", then "no more HR business partner.
+  // This title, no more … everything regarding recruiting is for the talent acquisition", and, asked
+  // who takes the rest, "Leave it for system administrator now". So `recruiting` is the Talent
+  // Acquisition seat's, and the four functions only she held are UNASSIGNED_HR_FUNCTIONS below.
   "HR Operations": [
     "people_records",
     "time_attendance",
@@ -582,7 +581,7 @@ export const HR_ROLE_BUNDLES = {
     "performance_probation",
     "hr_governance",
     // Added 2026-09-30 at the owner's instruction. She is NOT a recruiting seat and this does not
-    // make her one: `recruiting` stays with HR Advisory, the CV Database stays shut to her
+    // make her one: `recruiting` is the Talent Acquisition seat's, the CV Database stays shut to her
     // (tests/cv-database-recruiting-boundary.test.ts), and what she gains is a search box that
     // answers with the people she searched for and nothing else.
     "cv_lookup",
@@ -592,10 +591,9 @@ export const HR_ROLE_BUNDLES = {
   // the key never strands when the person changes, which is the exact failure that retired the old
   // "Talent Acquisition" role on 2026-08-28.
   //
-  // `recruiting` is held by HR Advisory TOO, deliberately, for now. The owner chose to MOVE
-  // recruiting to this seat; taking it off HR Advisory in the same deploy that creates an EMPTY
-  // seat would leave the pipeline with nobody but the Super Admin until the hire starts. The move
-  // is one line (delete "recruiting" from HR Advisory above) and lands on her first day.
+  // `recruiting` is THIS seat's alone since 2026-10-08 — the owner moved it off the HR Business
+  // Partner the same evening and then retired that seat, before this one had a holder, so until he
+  // hands it out the pipeline is worked by the Super Admin alone, by his choice.
   //
   // No hiring_paperwork (he left Hiring Documents and HR Forms out), no hr_communication (he
   // answered "no" to system email), no engagement_retention, no workforce_insight, no
@@ -612,18 +610,34 @@ export const HR_ROLE_BUNDLES = {
 export type HrBundleName = keyof typeof HR_ROLE_BUNDLES;
 
 /**
+ * Functions NO seat holds — the Super Admin's, who holds every resource anyway.
+ *
+ * All four were the HR Business Partner's alone. The owner retired that seat on 2026-10-08 and,
+ * asked who takes the rest of its work, answered "Leave it for system administrator now". They stay
+ * in the catalogue rather than being deleted because "now" is his word: when he hands this work to a
+ * seat, it is a move of a key from this list into a bundle, with every grant still traced to its
+ * job-description line. Rule 3 of tests/hr-function-governance.test.ts asserts the seats plus this
+ * list cover the whole catalogue, so a function cannot sit unassigned without being named here.
+ */
+export const UNASSIGNED_HR_FUNCTIONS: readonly HrFunctionKey[] = [
+  "hiring_paperwork",
+  "engagement_retention",
+  "hr_communication",
+  "workforce_insight",
+];
+
+/**
  * THE JOB TITLE EACH SEAT IS SHOWN AS — display only, never a key.
  *
  * The bundle names above are deliberately NOT job titles: that is the whole point of this file,
  * and `tests/hr-function-governance.test.ts` fails the build if a bundle name ever collides with
- * an entry in `phoenixCompanyJobTitles`. But a person does not think of herself as "HR Advisory".
- * The owner's instruction (2026-08-30) is that Aya's title is **HR Business Partner** and that it
- * is the title shown everywhere in her account.
+ * an entry in `phoenixCompanyJobTitles`. But a person does not think of herself as "HR Operations".
  *
  * So the two live side by side, and the split is the resolution of the tension rather than a
- * compromise with it: `"HR Advisory"` stays the permission key that nothing reads for intent and
+ * compromise with it: the bundle name stays the permission key that nothing reads for intent and
  * that can never strand when the seat changes hands, while this map is the only thing a human ever
- * sees. Renaming the key to the title is precisely the mistake that cost two codebase-wide renames
+ * sees. (The HR Business Partner title left this map when the owner retired that seat, 2026-10-08:
+ * "no more HR business partner. This title, no more.") Renaming the key to the title is precisely the mistake that cost two codebase-wide renames
  * and an eleven-table migration — do not do it, and do not "simplify" this map away.
  *
  * `COMPANY_ROLE_WORKBOOKS` in `src/lib/hr/job-workbook.ts` holds the same pairing for the whole
@@ -632,7 +646,6 @@ export type HrBundleName = keyof typeof HR_ROLE_BUNDLES;
  * two agree, so they cannot drift apart.
  */
 export const HR_SEAT_JOB_TITLES = {
-  "HR Advisory": "HR Business Partner",
   "HR Operations": "HR Operations Coordinator",
   "HR Resourcing": "Talent Acquisition",
 } as const satisfies Record<HrBundleName, PhoenixCompanyJobTitle>;

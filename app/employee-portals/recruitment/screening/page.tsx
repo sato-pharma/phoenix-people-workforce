@@ -55,7 +55,7 @@ export default async function EmployeePortalScreeningPage({
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Recruitment tools are available to HR Advisory and Super Admin only."
+        message="Recruitment tools are available to the Talent Acquisition seat and the Super Admin only."
         title="Screening Unavailable"
       />
     );

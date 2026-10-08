@@ -178,7 +178,8 @@ export async function runFinanceManagerSixModuleAccessTests() {
   // directory), so it became a positive. That decision belongs to the DUTY, not the seat name, so
   // it carries to both successor bundles: HR Advisory recruits for Head Office, and HR Operations
   // holds its records. The Marketing Manager pair above now guards the scope-collapse shortcut.
-  for (const role of ["HR Advisory", "HR Operations"] as const) {
+  // HR Advisory inherited it too, until the owner retired the HR Business Partner seat on 2026-10-08.
+  for (const role of ["HR Operations"] as const) {
     assert.equal(
       canAccessHeadOffice(ctx(role)),
       true,

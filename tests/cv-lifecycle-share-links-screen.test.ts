@@ -251,7 +251,7 @@ export function runCvLifecycleShareLinksScreenTests() {
     "every entry point in the domain service asserts recruitment:export — list, create AND revoke",
   );
 
-  // ── 5. The nav rows carry that same clause, in both rails ──────────────────
+  // ── 5. The admin nav row carries that same clause ─────────────────────────
 
   const nav = read("../src/config/system-navigation.ts");
   assert.ok(
@@ -260,11 +260,12 @@ export function runCvLifecycleShareLinksScreenTests() {
     ),
     "the admin rail row must exist and carry the page's own gate",
   );
+  // No HR rail row since "move recruiting off the HR Business Partner" (owner, 2026-10-08): recruitment:export
+  // left the HR Business Partner with recruiting, and the owner fenced this screen off the Talent
+  // Acquisition seat on its blueprint — so a row there would be offered to no HR seat at all.
   assert.ok(
-    nav.includes(
-      '{ href: "/hr/recruitment/cv-lifecycle-sheet", icon: Link2, label: "CV Sheet Links", permissions: [{ resource: "recruitment", action: "export" }] }',
-    ),
-    "the HR rail spelling must exist too, or HR Advisory can open the page and never find it",
+    !nav.includes('href: "/hr/recruitment/cv-lifecycle-sheet"'),
+    "no HR seat opens CV Sheet Links since 2026-10-08 — an /hr row would be offered to nobody",
   );
 
   // ── 6. The owner's two golden rules, in the markup ─────────────────────────

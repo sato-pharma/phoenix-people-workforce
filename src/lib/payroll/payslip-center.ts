@@ -57,18 +57,8 @@ export function resolvePayslipCenterAudience(
 ): PayslipCenterAudience | null {
   if (access.scope === "system") return { kind: "company" };
   if (getPayrollScope(access) === "COMPANY") return { kind: "company" };
-  // The HR Business Partner. Deliberately NOT a widening of getPayrollScope, which is consulted by
-  // /payroll and the batch screens too — this grants sight of one page's rows for two job titles,
-  // not company payroll standing. Her own row is included by HR_ID because she has none today (she
-  // joined 2026-09-01), and an audience that silently excluded her own future payslip would be a
-  // bug nobody could see until her first pay run.
-  if (access.role === "HR Advisory") {
-    return {
-      jobTitles: HR_ADVISORY_PAYSLIP_JOB_TITLES,
-      kind: "job-titles",
-      selfHrId: access.hrId ?? null,
-    };
-  }
+  // The HR Business Partner had a "job-titles" audience here (HR_ADVISORY_PAYSLIP_JOB_TITLES) until
+  // the owner retired the HR Business Partner seat on 2026-10-08. No seat holds that narrower audience now; the shape stays for the next one.
   return null;
 }
 
