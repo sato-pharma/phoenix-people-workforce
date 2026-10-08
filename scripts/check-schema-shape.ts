@@ -562,10 +562,11 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
       // not exist because pg_cron is not installed there. A session told to "read
       // recovery.snapshot_runs.error" read zero rows and learned nothing.
       //
-      // Nothing in supabase/migrations/ ever schedules this. Production's hourly job
-      // (`phoenix-recovery-snapshot`, `5 * * * *`) was created by hand, so a restored or
-      // recreated database comes back with the store deployed and never running — exactly the
-      // "looks like protection" state this gate exists for.
+      // The schedule used to be hand-made state, which is how a restored database came back with
+      // the store deployed and never running. Since 20261008140000_schedule_recovery_snapshot_cron
+      // a migration creates it, so the first thing to check is whether that migration ran here —
+      // it SKIPS with a warning where pg_cron is absent, which is a real and reachable way to be
+      // in this state rather than a reason to go hunting inside take_snapshots().
       v.push({
         severity: "error",
         code: "recovery_never_ran",
@@ -576,8 +577,10 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
           "not a failure inside it — it has never been CALLED. Check that pg_cron is installed " +
           "(`select * from pg_extension where extname = 'pg_cron'`) and that the job exists " +
           "(`select jobname, schedule, active from cron.job`). Production's is " +
-          "`phoenix-recovery-snapshot` at `5 * * * *`; no migration creates it, so a restored " +
-          "database needs it scheduled by hand.",
+          "`phoenix-recovery-snapshot` at `5 * * * *`, created by migration " +
+          "20261008140000_schedule_recovery_snapshot_cron — which skips with a warning where " +
+          "pg_cron is not installed, so install pg_cron and re-apply it rather than scheduling " +
+          "by hand.",
       });
     } else if (never.length > 0) {
       v.push({

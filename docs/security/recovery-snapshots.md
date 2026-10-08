@@ -35,6 +35,37 @@ raises no alarm if it never runs, which is exactly why the dead-man's switch bel
 `pg_cron` is a Postgres extension, not a paid Supabase add-on, and nothing here uses GitHub Actions
 minutes.
 
+### The schedule is in a migration — it used not to be
+
+Until 2026-10-08 everything about this store was in a migration **except the one thing that makes it
+run**. `20260929200500_recovery_snapshot_store.sql` creates the schema, the registry and
+`take_snapshots()`; the hourly `cron.job` entry had been created by hand. So a restored, recreated
+or region-moved database came back with the store fully deployed and never running — 7 tables
+registered, the function present and correct, and nothing calling it. That is the "looks like
+protection" state the dead-man's switch below exists to catch, and it is exactly what staging reads
+today.
+
+`20261008140000_schedule_recovery_snapshot_cron.sql` closed it, at the owner's instruction. Two
+properties make it safe to re-apply against a live production:
+
+- **It schedules BY NAME.** `cron.schedule('phoenix-recovery-snapshot', …)` updates the existing job
+  of that name for the same user rather than creating a second one, so re-applying does not stack a
+  second hourly caller. Verified on production the day it shipped: before and after, **one** job of
+  that name, **jobid 1** unchanged, and `cron.job_run_details` still holding all **206** runs
+  (that table is keyed by jobid, so preserving the id is what preserves the history). The migration
+  refuses outright if it ever finds two jobs of that name, and re-asks `cron.job` afterwards so a
+  schedule that did not take fails the migration instead of passing quietly.
+- **It is guarded on `pg_extension`.** Staging has no `pg_cron`, so there it raises a warning and
+  moves on — which matters beyond tidiness, because a failing `staging-migrate` withholds the
+  production deploy. Applied to staging the same day: clean, and `pg_cron` still absent. It does
+  **not** install the extension; whether staging should run the store at all is a separate decision
+  the owner has not made.
+
+Where `pg_cron` is absent the schedule is therefore still missing, which is now the one reachable
+way into `recovery_never_ran` — so that verdict's message says to install `pg_cron` and re-apply
+this migration, not to schedule anything by hand. Migration plus gate is the whole loop. Pinned by
+`tests/schema-shape-recovery-health.test.ts`.
+
 ## What is protected
 
 | Table | Rows | Payload | Versions kept |
@@ -173,6 +204,6 @@ which is the stronger of the two answers. Re-run this probe after any grant chan
 | Created by | `supabase/migrations/20260929200500_recovery_snapshot_store.sql` |
 | Per-table caps | `supabase/migrations/20260929201500_recovery_per_table_version_cap.sql` |
 | Total ordering | `supabase/migrations/20260929203100_recovery_total_order_on_snapshots.sql` — must stay the LAST migration defining these functions |
-| Schedule | `cron.job` → `phoenix-recovery-snapshot`, `5 * * * *` |
+| Schedule | `cron.job` → `phoenix-recovery-snapshot`, `5 * * * *`, created by `supabase/migrations/20261008140000_schedule_recovery_snapshot_cron.sql` |
 | Health, for CI | `public.phx_ci_recovery_health()` — service role only, counts and timestamps, never contents |
 | Exempt from | `scripts/audit-backup-schemas.mjs` retention, deliberately — it is infrastructure |
