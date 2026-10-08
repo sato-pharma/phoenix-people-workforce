@@ -131,6 +131,7 @@ export type WirePlanRow = {
 export type WirePlan = {
   productId: string;
   productNameAr: string;
+  productNameEn: string;
   mode: WireRequestMode;
   requestedQty: string;
   sampleUnits: string;

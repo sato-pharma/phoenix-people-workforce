@@ -773,7 +773,7 @@ export function PlannerTab(props: PlannerTabProps) {
             >
               {data.products.map((product) => (
                 <option key={product.id} value={product.id}>
-                  {product.nameAr}
+                  {S.name(product)}
                 </option>
               ))}
             </select>
@@ -977,7 +977,7 @@ function PlannerResult({
             {plan.rows.map((row) => (
               <tr className="border-b border-slate-200 last:border-b-0" key={row.materialId}>
                 <td className={TD}>
-                  <p className="font-bold text-slate-900 break-words">{row.nameAr}</p>
+                  <p className="font-bold text-slate-900 break-words">{S.name(row)}</p>
                   <p className="mt-0.5 break-words text-[11px] text-slate-500">
                     <Num>{row.code}</Num>
                   </p>
@@ -1033,7 +1033,7 @@ function PlannerResult({
         <div className="space-y-2 lg:hidden">
           {plan.rows.map((row) => (
             <article className={CARD} key={row.materialId}>
-              <p className="font-bold text-slate-900 break-words">{row.nameAr}</p>
+              <p className="font-bold text-slate-900 break-words">{S.name(row)}</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {supplierChip(row, t)}
                 {row.isImported ? <Chip tone="amber">{t.chipImported}</Chip> : null}
@@ -1185,8 +1185,10 @@ export function StockTab({
   const [note, setNote] = useState("");
 
   if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
-  const locationName = (id: string) =>
-    data.locations.find((location) => location.id === id)?.nameAr ?? id;
+  const locationName = (id: string) => {
+    const found = data.locations.find((location) => location.id === id);
+    return found ? S.name(found) : id;
+  };
 
   // A delivery is the amount SENT and is added to what is already held, so the field asks for a
   // different number from the other three sources and says which balance it lands on. The sum
@@ -1216,7 +1218,7 @@ export function StockTab({
                 <option value="">{t.colMaterial}</option>
                 {data.materials.map((material) => (
                   <option key={material.id} value={material.id}>
-                    {material.nameAr}
+                    {S.name(material)}
                   </option>
                 ))}
               </select>
@@ -1230,7 +1232,7 @@ export function StockTab({
                 <option value="">{t.stockLocation}</option>
                 {data.locations.map((location) => (
                   <option key={location.id} value={location.id}>
-                    {location.nameAr}
+                    {S.name(location)}
                   </option>
                 ))}
               </select>
@@ -1327,7 +1329,7 @@ export function StockTab({
               return (
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
-                    <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
+                    <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
                     <p className="mt-0.5 break-words text-[11px] text-slate-500">
                       <Num>{material.code}</Num>
                     </p>
@@ -1358,7 +1360,7 @@ export function StockTab({
         <div className="space-y-2 lg:hidden">
           {data.materials.map((material) => (
             <article className={CARD} key={material.id}>
-              <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
+              <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
               <dl className="mt-2 space-y-1 text-[12px] text-slate-700">
                 {material.stock.length === 0 ? (
                   <p className="text-[11px] text-slate-500">{t.stockNoneYet}</p>
@@ -1494,7 +1496,7 @@ export function CostTab({
                 <option value="">{t.colMaterial}</option>
                 {data.materials.map((material) => (
                   <option key={material.id} value={material.id}>
-                    {material.nameAr}
+                    {S.name(material)}
                   </option>
                 ))}
               </select>
@@ -1573,7 +1575,7 @@ export function CostTab({
               return (
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
-                    <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
+                    <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
                   </td>
                   <td className={TD}>
                     {material.price ? (
@@ -1617,7 +1619,7 @@ export function CostTab({
         <div className="space-y-2 lg:hidden">
           {data.materials.map((material) => (
             <article className={CARD} key={material.id}>
-              <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
+              <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
               <p className="mt-1 text-[12px] text-slate-700">
                 {material.price ? (
                   <>
@@ -1768,7 +1770,7 @@ export function RunTab({
               {data.materials.map((material) => (
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
-                    <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
+                    <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
                     <p className="mt-0.5 text-[11px] text-slate-500">{S.unitLabel(material.displayUnit)}</p>
                   </td>
                   {(["opening", "delivered", "closing"] as const).map((field) => (
@@ -1790,7 +1792,7 @@ export function RunTab({
           <div className="mt-4 space-y-2 lg:hidden">
             {data.materials.map((material) => (
               <article className="border border-slate-300 bg-white px-3 py-3" key={material.id}>
-                <p className="font-bold text-slate-900 break-words">{material.nameAr}</p>
+                <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
                 <div className="mt-2 grid grid-cols-1 gap-2">
                   {(["opening", "delivered", "closing"] as const).map((field) => (
                     <Field
@@ -1884,7 +1886,7 @@ export function RunTab({
             .filter((material) => material.learning !== null)
             .map((material) => (
               <li className="break-words" key={material.id}>
-                <span className="font-bold">{material.nameAr}</span>{" "}
+                <span className="font-bold">{S.name(material)}</span>{" "}
                 {material.learning?.recommendedOveragePct ? (
                   <Num>{formatNumberLatin(material.learning.recommendedOveragePct)}%</Num>
                 ) : material.learning?.withheldReason === "not_enough_runs" ? (
@@ -2132,7 +2134,7 @@ export function SettingsTab({
         <ul className="space-y-1 text-[12px] text-slate-700">
           {data.materials.map((material) => (
             <li className="break-words" key={material.id}>
-              <span className="font-bold">{material.nameAr}</span>{" "}
+              <span className="font-bold">{S.name(material)}</span>{" "}
               {material.composition ? (
                 <>
                   <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />{" "}

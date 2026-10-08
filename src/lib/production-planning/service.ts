@@ -525,7 +525,7 @@ function materialNameFor(
   body: { readonly lang?: unknown } | Record<string, unknown>,
   material: { readonly nameAr: string; readonly nameEn: string },
 ): string {
-  return stringsFor(body).lang === "en" ? material.nameEn || material.nameAr : material.nameAr;
+  return stringsFor(body).name(material);
 }
 
 export type PlanRequestInput = {
@@ -542,9 +542,9 @@ export type PlanRequestInput = {
    * language with a toggle (2026-10-06). Anything other than `"en"` is Arabic, which keeps a
    * missing or unknown value on the language the module was specified in.
    *
-   * Only the sentence: every other word in this payload is either data (an Arabic material name,
-   * which is the material's actual name and not a translation) or a key the screen looks up in its
-   * own catalogue. The screen builds its own copy of this sentence from the bundle it is rendering
+   * Only the sentence: every other word in this payload is either data (a name, which carries both
+   * languages and is picked by the reader's bundle) or a key the screen looks up in its own
+   * catalogue. The screen builds its own copy of this sentence from the bundle it is rendering
    * in; this one is what the WORKBOOK's header line reads, so the sheet cannot be in one language
    * and its title in the other.
    */
@@ -613,6 +613,7 @@ export type PlanResultRow = {
 export type PlanResult = {
   readonly productId: string;
   readonly productNameAr: string;
+  readonly productNameEn: string;
   readonly mode: PlanRequestMode;
   readonly requestedQty: string;
   readonly sampleUnits: string;
@@ -798,6 +799,7 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
   return {
     productId: product.id,
     productNameAr: product.nameAr,
+    productNameEn: product.nameEn,
     mode,
     requestedQty: requestedQty.toString(),
     sampleUnits: sampleUnits.toString(),
