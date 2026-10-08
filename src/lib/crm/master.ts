@@ -329,14 +329,14 @@ export const CRM_VACATION_COLUMNS: readonly CrmMasterColumn[] = [
  */
 const PHOENIX_DETAIL_COLUMNS_EVERY_READER: readonly CrmMasterColumn[] = [
   { key: "phx_visit_kind", kind: "text", label: "Phoenix Visit Kind", note: "Single, Double, Chain, or a product manager's visit — the shape the rep's own app recorded. Blank on an iReports360 row: the vendor feed had no such field." },
-  { key: "phx_entered_by", kind: "text", label: "Entered By", note: "Whoever typed the row. Normally the rep himself; the Super Admin where a visit was entered later on his behalf." },
+  { key: "phx_entered_by", kind: "text", label: "Entered By", note: "Whoever typed the row. Normally the rep; the Super Admin where a visit was entered later on the rep's behalf." },
   { key: "phx_products", kind: "text", label: "Products Detailed" },
   { key: "phx_samples", kind: "text", label: "Samples Given" },
-  { key: "phx_availability", kind: "text", label: "Pharmacy Stock", note: "What the rep found on the shelf for each product he detailed — in stock or out of stock." },
-  { key: "phx_objection", kind: "text", label: "Objection", note: "What the DOCTOR pushed back on, in the rep's own words where he added them. It is the doctor's objection and never a mark against the rep. \"No objection\" is an answer he gave; a blank means he left the row alone." },
-  { key: "phx_next_step", kind: "text", label: "Next Step", note: "What the rep committed to, and the day he means to do it." },
+  { key: "phx_availability", kind: "text", label: "Pharmacy Stock", note: "What the rep found on the shelf for each product detailed in this call — in stock or out of stock." },
+  { key: "phx_objection", kind: "text", label: "Objection", note: "What the DOCTOR pushed back on, in the rep's own words where any were added. It is the doctor's objection and never a mark against the rep. \"No objection\" is an answer the rep gave; a blank means the row was left alone." },
+  { key: "phx_next_step", kind: "text", label: "Next Step", note: "What the rep committed to, and the day the rep means to do it." },
   { key: "phx_pharmacy", kind: "text", label: "Pharmacy Named", note: "A pharmacy the rep named as FEEDBACK on this doctor's call. It is never a pharmacy call — the AM/PM column still reads the customer's own list." },
-  { key: "phx_off_plan", kind: "text", label: "Off Plan", note: "Out of plan (someone on his list who was not on today's sent plan) or Out of list (someone not on his list at all). Blank on a planned visit." },
+  { key: "phx_off_plan", kind: "text", label: "Off Plan", note: "Out of plan (a doctor on the rep's list who was not on today's sent plan) or Out of list (a doctor not on that list at all). Blank on a planned visit." },
   { key: "phx_evidence", kind: "text", label: "Evidence", note: "The photo and the voice note the rep attached." },
   { key: "phx_location", kind: "text", label: "Location", note: "Where the phone was when the visit was saved, against the place saved for this customer." },
 ];
