@@ -2423,6 +2423,7 @@ import { runCiSuitePlacementTests } from "./ci-suite-placement.test.ts";
 import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
 import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
 import { runCrmDoubleVisitWithDepartedPartnerTests } from "./crm-double-visit-with-departed-partner.test.ts";
+import { runEmployeeNamesByHrIdTests } from "./employees-names-by-hr-id.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9475,6 +9476,10 @@ await runTest(
 await runTest(
   "a leave request the approver RETURNED to the employee reads as returned everywhere — the row reader listed statuses by hand and left \"returned\" out, so VAC-0653 showed Pending Manager, sat in the approvers' queue and could not be resubmitted; every defined status now passes through, only an unknown one falls back, and a returned request never shows SLA overdue",
   runVacationReturnedStatusTests,
+);
+await runTest(
+  "the shared HR id → name lookup resolves a lower-case id against the upper-case stored row (PostgREST matches case-sensitively and answers a miss with zero rows and NO error), answers to any spelling of an id and to null with no name rather than a lookup of the empty key, prefers the nickname, refuses a blank full_name instead of resolving a person with no name, chunks the filter at 50 keys because every id becomes two or three spellings, loses only the names in a failed chunk while the rest still resolve, never throws into the caller's page, and sends no query at all for an empty id list",
+  runEmployeeNamesByHrIdTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

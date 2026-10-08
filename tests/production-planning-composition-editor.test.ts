@@ -267,19 +267,29 @@ export function runProductionPlanningCompositionEditorTests() {
     "🔴 a grant row leads with the NAME and falls back to the id — the owner's standing rule, and " +
       "this list showed a bare HR id until now",
   );
-  const grantNames = bodyOf(service, "async function grantHolderNames(hrIds: readonly string[])");
+  // The lookup itself moved out to the shared `namesByHrId` once three modules were found keeping
+  // their own copy of it (and this one's copy did not chunk its filter). What this suite still owns
+  // is that the grant list READS IT THERE: the mixed-case trap, the chunking and the display name
+  // are pinned by `tests/employees-names-by-hr-id.test.ts`, against the behaviour rather than the
+  // text, so re-asserting them here would only duplicate a fingerprint of the old copy.
+  const grantList = bodyOf(service, "export async function listAccessGrants(access: AccessContext)");
   assert.match(
-    grantNames,
-    /hrIdLookupKeys/,
-    "🔴 the mixed-case lookup is the repo's own hrIdLookupKeys, not hand-rolled: production stores " +
-      "hr_id mixed-case, so a plain .in() matches nobody and returns NO error",
+    grantList,
+    /await namesByHrId\(/,
+    "🔴 the grant list resolves names through the shared namesByHrId — production stores hr_id " +
+      "mixed-case, so a hand-rolled .in() matches nobody and returns NO error",
   );
   assert.match(
-    grantNames,
-    /resolveEmployeeDisplayName/,
-    "and the display name is the one every other screen shows him",
+    grantList,
+    /personName: names\.get\(String\(row\.hr_id\)\)/,
+    "and it reads the index by the id itself — the accessor canonicalises, so no call site is left " +
+      "writing `get(canonicalHrIdKey(id) ?? \"\")`, which looks up the EMPTY key when there is no id",
   );
-  assert.match(grantNames, /if \(error \|\| !data\) return names/, "a failed read costs the names and nothing else");
+  assert.match(
+    service,
+    /import \{ namesByHrId \} from "@\/lib\/employees\/names-by-hr-id"/,
+    "imported from the shared module, not re-declared locally",
+  );
 
   // ── Both catalogues, no Arabic left in the English half ────────────────────────────────────────
 

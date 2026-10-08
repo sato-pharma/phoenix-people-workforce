@@ -17,8 +17,8 @@
  */
 import { writeAuditLog, writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { hrIdForStorage } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
@@ -2177,41 +2177,14 @@ export async function saveAccessGrant(access: AccessContext, body: Record<string
 }
 
 /**
- * The grant holders' NAMES — the owner's standing rule is names, never codes or ids.
+ * Who holds a stored grant. Full control only: it names people and what they can see.
  *
- * 🔴 The mixed-case trap is NOT hand-rolled here. Production stores `hr_id` mixed-case, so a plain
- * `.in("hr_id", ["b-10"])` matches nobody and returns no error at all — a silently empty name list
- * that reads exactly like "this person has no name on file". `hrIdLookupKeys` is the repo's own
- * answer (it yields every spelling) and `canonicalHrIdKey` folds the row back; both come from
- * `src/lib/hr-id.ts`. The display name itself goes through `resolveEmployeeDisplayName`, so this
- * screen shows the same name for a person as every other screen does.
- *
- * A failed read costs the names and nothing else: the row still renders, falling back to the id,
- * which is what this list showed before. Under-reporting a name beats inventing one.
- *
- * (`src/lib/crm`, `src/lib/mailbox-monitor` and `src/lib/recruitment` each carry their own version
- * of this loop. A shared `namesByHrId` is the obvious cleanup and is deliberately NOT done here —
- * it would put three other modules' tests inside a UI polish.)
+ * The NAMES come from the shared `namesByHrId` — the owner's standing rule is names, never codes or
+ * ids, and the mixed-case trap behind that lookup is not hand-rolled here. This screen's own copy
+ * used to be, and it read the whole grant list in ONE unchunked `.in()`: correct for the handful of
+ * rows it holds today and the exact shape that returns zero names and no error once a list grows.
+ * A grant whose holder cannot be resolved still renders, falling back to the id.
  */
-async function grantHolderNames(hrIds: readonly string[]): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  if (hrIds.length === 0) return names;
-  const keys = [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
-  const { data, error } = await getSupabaseAdmin()
-    .from("employees")
-    .select("hr_id, full_name, nickname")
-    .in("hr_id", keys);
-  if (error || !data) return names;
-  for (const row of data as Array<{ hr_id?: string | null; full_name?: string | null; nickname?: string | null }>) {
-    const key = canonicalHrIdKey(row.hr_id);
-    const fullName = String(row.full_name ?? "").trim();
-    if (!key || !fullName) continue;
-    names.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
-  }
-  return names;
-}
-
-/** Who holds a stored grant. Full control only: it names people and what they can see. */
 export async function listAccessGrants(access: AccessContext) {
   await assertWrite(access);
   const { data, error } = await getSupabaseAdmin()
@@ -2220,10 +2193,10 @@ export async function listAccessGrants(access: AccessContext) {
     .order("hr_id");
   if (error) failure(error, "load the grants");
   const rows = data ?? [];
-  const names = await grantHolderNames(rows.map((row) => String(row.hr_id)));
+  const names = await namesByHrId(rows.map((row) => String(row.hr_id)));
   return rows.map((row) => ({
     hrId: String(row.hr_id),
-    personName: names.get(canonicalHrIdKey(String(row.hr_id)) ?? "") ?? null,
+    personName: names.get(String(row.hr_id)),
     level: row.level === "full" ? "full" : "read",
     note: asText(row.note),
     grantedByLogin: asText(row.granted_by_login),
