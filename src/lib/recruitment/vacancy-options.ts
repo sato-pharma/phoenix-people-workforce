@@ -15,11 +15,10 @@
 // screening page loads it server-side and passes the plain array down as a prop, the same way it
 // loads the manager list.
 
-import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
-import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { cleanPositionText } from "@/lib/recruitment/position-folder";
 import {
   MANAGER_SEAT_COLUMNS,
@@ -114,50 +113,6 @@ async function loadManagerSeatRows(): Promise<ManagerSeatRow[]> {
 }
 
 /**
- * Real names for the stand-in managers, so a recruiter never reads a raw HR_ID.
- *
- * Looked up through `hrIdLookupKeys` rather than a bare `.eq`. The ids here cross tables that
- * disagree about case — `employees` holds upper-case — and PostgREST matches case-sensitively, so an
- * exact match on the wrong spelling returns no row and the manager silently loses their name.
- *
- * CHUNKED at 50 keys. This used to serve one caller with at most five ids, so the `in` filter could
- * not get long enough to matter; it now also resolves every manager NAMED on an open vacancy — 16
- * distinct people across 45 seats in production 2026-08-31, and `hrIdLookupKeys` turns each into two
- * or three spellings, which lands close enough to the length at which PostgREST starts returning
- * zero rows and no error at all to be worth not finding out about in a year's time.
- */
-const HR_ID_LOOKUP_CHUNK = 50;
-
-async function namesByHrId(hrIds: readonly string[]): Promise<Map<string, string>> {
-  const resolved = new Map<string, string>();
-  if (hrIds.length === 0) return resolved;
-
-  const keys = [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
-  const byCanonical = new Map<string, string>();
-  for (let start = 0; start < keys.length; start += HR_ID_LOOKUP_CHUNK) {
-    const { data, error } = await getSupabaseAdmin()
-      .from("employees")
-      .select("hr_id,full_name,nickname")
-      .in("hr_id", keys.slice(start, start + HR_ID_LOOKUP_CHUNK));
-    // A failed chunk costs the names in it and nothing else. The caller falls back to whatever the
-    // row itself said, which is what shipped before this lookup existed.
-    if (error || !data) continue;
-
-    for (const row of data as Array<{ hr_id?: string | null; full_name?: string | null; nickname?: string | null }>) {
-      const key = canonicalHrIdKey(row.hr_id);
-      const fullName = String(row.full_name ?? "").trim();
-      if (!key || !fullName) continue;
-      byCanonical.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
-    }
-  }
-  for (const hrId of hrIds) {
-    const name = byCanonical.get(canonicalHrIdKey(hrId) ?? "");
-    if (name) resolved.set(hrId, name);
-  }
-  return resolved;
-}
-
-/**
  * Fill in the manager on any seat whose own manager post is vacant.
  *
  * Costs nothing on a list where every vacancy names its manager: the organogram is read only once a
@@ -203,7 +158,7 @@ async function withEscalatedManagers(
       // Never the vacancy's own manager_name as a fallback here: that string names the EMPTY post,
       // and leaving it beside a stand-in's HR_ID would read as though this person holds it. An
       // unresolvable name degrades to none — the send picker carries the name either way.
-      managerName: names.get(standIn.hrId) ?? null,
+      managerName: names.get(standIn.hrId),
       // The vacancy's own wording first, where it has any. "Vacant Cairo District Manager" is what a
       // person wrote for a person to read; the organogram's "PEDIA Cairo DM (VACANT)" is a label.
       standingInFor: standIn.coveredSeatLabel ? option.managerName ?? standIn.coveredSeatLabel : null,

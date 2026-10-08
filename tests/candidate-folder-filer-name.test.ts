@@ -123,18 +123,26 @@ export async function runCandidateFolderFilerNameTests() {
   // ── 4 · The mixed-case HR id trap — the lookup must not use a bare .eq ──────
   //
   // AGENTS.md §2.1: HR ids in this database are mixed case, and a plain .eq silently under-returns.
-  // attachFolderFilerNames must look the filer up through hrIdLookupKeys / canonicalHrIdKey, the
-  // same case-blind path every other recruitment name resolver uses — never a raw `.eq("hr_id", …)`.
+  // The case-blind lookup now lives in the shared `namesByHrId` — three modules had their own copy
+  // and they had drifted — so what this suite owns is that the shelf resolves its filer THERE, by
+  // the id it holds, and still asks for the distinct set rather than one key per CV in the pool.
+  // The trap itself (and the chunking, and the nickname) is pinned on behaviour in
+  // `tests/employees-names-by-hr-id.test.ts`.
   {
     const candidates = code(read("src/lib/recruitment/candidates.ts"));
     const attach = topLevelFunction(candidates, "attachFolderFilerNames");
-    assert.match(attach, /hrIdLookupKeys\(/, "the filer lookup must go through hrIdLookupKeys, not a bare .eq");
-    assert.match(attach, /canonicalHrIdKey\(/, "the map must be keyed by the case-blind canonical id");
-    assert.ok(!/\.eq\("hr_id"/.test(attach), "a bare .eq('hr_id', …) is exactly the pattern that under-returns on mixed case");
+    assert.match(attach, /await namesByHrId\(/, "the filer lookup must go through the shared namesByHrId, not a bare .eq");
+    assert.match(attach, /new Set\(/, "the DISTINCT filers go to the database — 323 filed CVs carry one filer in production");
     assert.match(
       attach,
-      /resolveEmployeeDisplayName\(/,
-      "the name must go through the shared nickname-aware resolver, like every other live recruitment screen",
+      /names\.get\(candidate\.folder\.filedByHrId\)/,
+      "read by the stored id itself: the accessor canonicalises, so no call site is left writing " +
+        '`get(canonicalHrIdKey(id) ?? "")`, which looks up the EMPTY key when there is no id',
+    );
+    assert.ok(!/\.eq\("hr_id"/.test(attach), "a bare .eq('hr_id', …) is exactly the pattern that under-returns on mixed case");
+    assert.ok(
+      !/\.in\("hr_id"/.test(attach),
+      "and no second copy of the lookup — this module's own version is what the shared one replaced",
     );
   }
 }
