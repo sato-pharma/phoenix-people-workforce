@@ -93,6 +93,13 @@ const variables = [
     { railway: "APP_ENV", github: ["APP_ENV"], required: false },
     { railway: "BREVO_API_KEY", github: ["BREVO_API_KEY"], required: false },
     { railway: "BREVO_EMAIL_FROM", github: ["BREVO_EMAIL_FROM"], required: false },
+    // The extra sending accounts (2026-10-08, Resend daily quota): optional, each switched on by its
+    // own key — see src/lib/email/email-providers.ts.
+    { railway: "RESEND_API_KEY_2", github: ["RESEND_API_KEY_2"], required: false },
+    { railway: "RESEND_EMAIL_FROM_2", github: ["RESEND_EMAIL_FROM_2"], required: false },
+    { railway: "RESEND_WEBHOOK_SECRET_2", github: ["RESEND_WEBHOOK_SECRET_2"], required: false },
+    { railway: "BREVO_API_KEY_2", github: ["BREVO_API_KEY_2"], required: false },
+    { railway: "BREVO_EMAIL_FROM_2", github: ["BREVO_EMAIL_FROM_2"], required: false },
     { railway: "EMAIL_NOTIFICATIONS_ENABLED", github: ["EMAIL_NOTIFICATIONS_ENABLED"], required: true },
     // GitHub rejects any Actions secret name starting with "GITHUB_" (HTTP 422, reserved for
     // its own auto-provided secrets like GITHUB_TOKEN) — confirmed live 2026-08-08. The

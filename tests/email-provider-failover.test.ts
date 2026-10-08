@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { RetryableEmailError } from "../src/lib/email/email-errors.ts";
 import {
+  applySenderOverride,
   brevoProvider,
   checkResendAccepted,
   resendAcceptedCheckDelaysMs,
@@ -346,5 +347,99 @@ export async function runEmailProviderFailoverTests() {
     assert.equal(row.failure_reason, "reached_daily_quota", "the failed reason must be recorded");
     assert.equal(row.provider_message_id, "R-f");
     assert.equal(suppressionReasonForEvent(row), null, "a provider-side failure must never suppress the recipient");
+  }
+
+  // 15) EXTRA ACCOUNTS (owner, 2026-10-08 — Resend's daily quota runs out every day). A second Resend
+  //     account and a second Brevo account join the chain only when their key is set, in the order
+  //     resend → resend-2 → brevo → brevo-2. Each sends with ITS OWN key and its own verified From,
+  //     and the second Resend account reads its accepted-then-failed verdict with its own key — a
+  //     Resend id is readable only by the account that accepted it.
+  {
+    const names = [
+      "RESEND_API_KEY",
+      "RESEND_API_KEY_2",
+      "RESEND_EMAIL_FROM_2",
+      "BREVO_API_KEY",
+      "BREVO_API_KEY_2",
+      "BREVO_EMAIL_FROM",
+      "BREVO_EMAIL_FROM_2",
+      "EMAIL_FAILOVER_ENABLED",
+    ];
+    const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+    const realFetch = globalThis.fetch;
+    try {
+      for (const name of names) delete process.env[name];
+      process.env.RESEND_API_KEY = "re_one";
+      process.env.BREVO_API_KEY = "brevo_one";
+      assert.deepEqual(resolveEmailProviders().map((p) => p.name), ["resend", "brevo"], "no extra keys → the chain is unchanged");
+
+      process.env.RESEND_API_KEY_2 = "re_two";
+      process.env.BREVO_API_KEY_2 = "brevo_two";
+      const chain = resolveEmailProviders();
+      assert.deepEqual(chain.map((p) => p.name), ["resend", "resend-2", "brevo", "brevo-2"], "both Resend accounts before both Brevo accounts");
+
+      process.env.EMAIL_FAILOVER_ENABLED = "false";
+      assert.deepEqual(resolveEmailProviders().map((p) => p.name), ["resend"], "the kill switch drops every backup account");
+      delete process.env.EMAIL_FAILOVER_ENABLED;
+
+      const requests: Array<{ auth: string; body: Record<string, unknown> | null; url: string }> = [];
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const url = String(input);
+        requests.push({ auth: headers.Authorization ?? headers["api-key"] ?? "", body: init?.body ? JSON.parse(String(init.body)) : null, url });
+        if (url.includes("brevo")) return new Response(JSON.stringify({ messageId: "<B>" }), { status: 200 });
+        if (init?.method === "GET") return new Response(JSON.stringify({ last_event: "failed" }), { status: 200 });
+        return new Response(JSON.stringify({ id: "R" }), { status: 200 });
+      }) as typeof fetch;
+
+      const [, resendTwo, , brevoTwo] = chain;
+
+      // A bare address keeps the message's display name; only the verified address changes.
+      process.env.RESEND_EMAIL_FROM_2 = "phoenix@send2.satopharma.com";
+      await resendTwo.send(sampleEmail);
+      assert.equal(requests.at(-1)?.auth, "Bearer re_two", "the second Resend account sends with its own key");
+      assert.equal(requests.at(-1)?.body?.from, "Phoenix <phoenix@send2.satopharma.com>", "its From is its own verified address");
+      assert.equal(requests.at(-1)?.body?.reply_to, "reply@phoenix.example", "Reply-To is untouched");
+
+      const check = await checkResendAccepted("R2", { apiKey: "re_two", delaysMs: [1], sleep: async () => undefined });
+      assert.equal(check.state, "failed");
+      assert.equal(requests.at(-1)?.auth, "Bearer re_two", "the accepted-then-failed read uses the account that accepted the message");
+      assert.equal(typeof resendTwo.checkAccepted, "function", "the second Resend account carries the accepted check too");
+
+      // Unset, the second account sends from the message's own From.
+      delete process.env.RESEND_EMAIL_FROM_2;
+      await resendTwo.send(sampleEmail);
+      assert.equal(requests.at(-1)?.body?.from, sampleEmail.from);
+
+      // Brevo 2: its own key, then its own sender, falling back to the first account's sender.
+      process.env.BREVO_EMAIL_FROM = "Sato HR <hr@satopharma.com>";
+      await brevoTwo.send(sampleEmail);
+      assert.equal(requests.at(-1)?.auth, "brevo_two", "the second Brevo account sends with its own key");
+      assert.deepEqual(requests.at(-1)?.body?.sender, { email: "hr@satopharma.com", name: "Sato HR" });
+      process.env.BREVO_EMAIL_FROM_2 = "Sato People <people@satopharma.com>";
+      await brevoTwo.send(sampleEmail);
+      assert.deepEqual(requests.at(-1)?.body?.sender, { email: "people@satopharma.com", name: "Sato People" });
+    } finally {
+      globalThis.fetch = realFetch;
+      for (const name of names) {
+        if (saved[name] === undefined) delete process.env[name];
+        else process.env[name] = saved[name];
+      }
+    }
+
+    // The whole chain walks in order when every account before the last is out of quota.
+    const calls: string[] = [];
+    const result = await sendPreparedEmailWithFailover(sampleEmail, [
+      fakeProvider("resend", { outcome: "failover", reason: "daily quota" }, calls),
+      fakeProvider("resend-2", { outcome: "failover", reason: "daily quota" }, calls),
+      fakeProvider("brevo", { outcome: "failover", reason: "daily quota" }, calls),
+      fakeProvider("brevo-2", { outcome: "sent", id: "<B4>" }, calls),
+    ]);
+    assert.deepEqual(result, { id: "<B4>", provider: "brevo-2" });
+    assert.deepEqual(calls, ["resend", "resend-2", "brevo", "brevo-2"]);
+
+    assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", ""), "Phoenix HR <hr@send.satopharma.com>");
+    assert.equal(applySenderOverride("hr@send.satopharma.com", "hr@send2.satopharma.com"), "hr@send2.satopharma.com");
+    assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", "Other <x@y.com>"), "Other <x@y.com>");
   }
 }

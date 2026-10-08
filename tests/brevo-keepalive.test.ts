@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { pingBrevoApiKey } from "../src/lib/email/brevo-keepalive.ts";
+import { brevoKeepaliveKeyEnvs, pingBrevoApiKey } from "../src/lib/email/brevo-keepalive.ts";
 
 const ROUTE = "app/api/cron/brevo-keepalive/route.ts";
 const SLUG = "phoenix-brevo-keepalive";
@@ -92,6 +92,30 @@ export async function runBrevoKeepaliveTests() {
     if (savedKey === undefined) delete process.env.BREVO_API_KEY;
     else process.env.BREVO_API_KEY = savedKey;
   }
+
+  // ---- 4b. The SECOND Brevo account (2026-10-08) expires the same way, so it is pinged with its own key ----
+  const savedSecond = process.env.BREVO_API_KEY_2;
+  try {
+    delete process.env.BREVO_API_KEY_2;
+    assert.equal((await pingBrevoApiKey("BREVO_API_KEY_2")).status, "skipped", "an unset second account is not an alarm");
+    process.env.BREVO_API_KEY_2 = "xkeysib-second";
+    let sentKey = "";
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      sentKey = ((init?.headers ?? {}) as Record<string, string>)["api-key"] ?? "";
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    assert.equal((await pingBrevoApiKey("BREVO_API_KEY_2")).status, "ok");
+    assert.equal(sentKey, "xkeysib-second", "the second account must be pinged with ITS key, not the first account's");
+  } finally {
+    globalThis.fetch = savedFetch;
+    if (savedSecond === undefined) delete process.env.BREVO_API_KEY_2;
+    else process.env.BREVO_API_KEY_2 = savedSecond;
+  }
+  assert.deepEqual([...brevoKeepaliveKeyEnvs], ["BREVO_API_KEY", "BREVO_API_KEY_2"]);
+  assert.ok(
+    readFileSync(ROUTE, "utf8").includes("brevoKeepaliveKeyEnvs.map("),
+    `${ROUTE} must ping every Brevo account in the chain, not only the first`,
+  );
 
   // ---- 5. The keepalive must actually be SCHEDULED, and the schedule must be findable ----
   //

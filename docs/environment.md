@@ -487,6 +487,13 @@ copies directly with no variable fallback, so deleting the secret copies would s
 |---|---|
 | RESEND_API_KEY | Primary email provider |
 | RESEND_WEBHOOK_SECRET | Verifies inbound Resend delivery webhooks |
+| RESEND_API_KEY_2 | Second Resend account — tried after the first runs out of quota. Optional; unset leaves it out of the chain |
+| RESEND_EMAIL_FROM_2 | Sender verified on the second Resend account (a bare address keeps each email's display name). A domain verifies in one Resend account only, so this is usually a different sending subdomain |
+| RESEND_WEBHOOK_SECRET_2 | Signing secret of the second Resend account's webhook (same `/api/webhooks/resend` URL) |
+| BREVO_API_KEY | First Brevo account — tried after both Resend accounts |
+| BREVO_EMAIL_FROM | Sender verified on the first Brevo account |
+| BREVO_API_KEY_2 | Second Brevo account — the last in the chain. Pinged monthly by the Brevo keepalive with the first |
+| BREVO_EMAIL_FROM_2 | Sender verified on the second Brevo account; falls back to BREVO_EMAIL_FROM |
 | NOTIFICATION_WEBHOOK_SECRET | Verifies inbound Telegram webhook calls (`secret_token`) |
 | TELEGRAM_BOT_TOKEN | Telegram Bot API token |
 | NEXT_PUBLIC_ONESIGNAL_APP_ID | OneSignal app id (client-side) |
