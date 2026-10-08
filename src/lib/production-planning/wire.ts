@@ -316,6 +316,14 @@ export type WireSavedPlan = {
 
 export type WireGrant = {
   hrId: string;
+  /**
+   * The person's NAME, for the owner's standing "names, never codes or ids" rule.
+   *
+   * `null` when the lookup found nothing — someone who has left, or a failed read. The screen then
+   * falls back to the id, which is exactly what this list showed before: a missing name is reported
+   * as missing rather than replaced by an invented one.
+   */
+  personName: string | null;
   level: "full" | "read";
   note: string | null;
   grantedByLogin: string | null;

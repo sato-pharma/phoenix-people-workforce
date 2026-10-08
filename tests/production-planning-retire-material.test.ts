@@ -385,10 +385,43 @@ export function runProductionPlanningRetireMaterialTests() {
     /canWrite \? \(\s*<section className=\{PANEL\}>\s*<SectionTitle subtitle=\{t\.settingsRestoreHint\}/,
     "🔴 the whole restore section is gated on canWrite",
   );
-  assert.match(
-    screen,
-    /canWrite \? \(\s*<button[\s\S]{0,400}?t\.settingsRetire\b/,
-    "🔴 and so is the retire button",
+  /**
+   * 🔴 And so is EVERY retire button, counted rather than pattern-matched.
+   *
+   * This started as `canWrite ? (\s*<button … t.settingsRetire`, which held only while the retire
+   * button was the first thing inside the gate. The composition editor (2026-10-08) put an
+   * Edit/Enter button beside it inside a wrapper, and the regex stopped matching although the gate
+   * was exactly where it had always been — a test that fails on a harmless edit teaches the next
+   * session to loosen it, and a loosened one would pass with no gate at all.
+   *
+   * So the check is now arithmetic: find every `canWrite ? (` region by counting parentheses, and
+   * require that every single retire call in the file — `{ materialId: …, active: false }` — sits
+   * inside one. There are two, the table row and the phone card.
+   */
+  const gatedRegions: string[] = [];
+  for (let at = screen.indexOf("canWrite ? ("); at >= 0; at = screen.indexOf("canWrite ? (", at + 1)) {
+    const open = screen.indexOf("(", at + "canWrite ?".length);
+    let depth = 0;
+    for (let index = open; index < screen.length; index += 1) {
+      if (screen[index] === "(") depth += 1;
+      else if (screen[index] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          gatedRegions.push(screen.slice(open, index + 1));
+          break;
+        }
+      }
+    }
+  }
+  const RETIRE_CALL = /active: false/g;
+  const retireCalls = (screen.match(RETIRE_CALL) ?? []).length;
+  const gatedCalls = gatedRegions.reduce((total, region) => total + (region.match(RETIRE_CALL) ?? []).length, 0);
+  assert.equal(retireCalls, 2, "two retire controls: the desktop table row and the phone card");
+  assert.equal(
+    gatedCalls,
+    retireCalls,
+    "🔴 every retire control sits inside a `canWrite ? (` region — a read-only grant must not be " +
+      "offered one at all",
   );
 
   console.log("  production planning — retire a material: OK");
