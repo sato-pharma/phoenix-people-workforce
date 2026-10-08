@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { ApiError } from "@/lib/http/api-errors";
 import { listCalendarCases } from "@/lib/dispute-center/calendar.ts";
 import { listDeductionCases } from "@/lib/dispute-center/deduction.ts";
 import { listDigestCases } from "@/lib/dispute-center/digest.ts";
@@ -18,6 +20,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // Before anything is read, and before the per-module fan-out below, whose catch would
+    // otherwise turn a refusal into "that module is unavailable" and answer 200.
+    await assertPermission(access, "attendance", "read");
     const url = new URL(request.url);
     const requested = url.searchParams.getAll("kind").filter(isDisputeCaseKind);
     const kinds = requested.length > 0 ? requested : DISPUTE_CASE_KINDS;
@@ -31,7 +36,9 @@ export async function GET(request: Request) {
           return await listDigestCases(access);
         } catch (error) {
           // One module that cannot be read must not hide the other two — but it is NAMED, never
-          // silently dropped, or a reader takes a short list for a quiet week.
+          // silently dropped, or a reader takes a short list for a quiet week. An ACCESS error is
+          // not that: a refusal has to leave as a refusal, not as a quiet gap in the list.
+          if (error instanceof ApiError) throw error;
           unavailable.push(kind);
           void error;
           return [] as DisputeCase[];

@@ -1,6 +1,6 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { canReviewDisputes, reviewDispute } from "@/lib/attendance/digest-service.ts";
-import type { AccessContext } from "@/lib/auth/permissions";
+import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -270,6 +270,13 @@ async function employeeNames(hrIds: string[]): Promise<Map<string, string>> {
  * disputes; anybody else sees their own.
  */
 export async function listDigestCases(access: AccessContext): Promise<DisputeCase[]> {
+  // The registry row for every dispute-center route declares attendance:read with a
+  // domain-helper guard, so the helper is where it has to be enforced. Measured on production
+  // 2026-10-09: without this an UNAUTHENTICATED GET of /api/dispute-center/cases answered 200
+  // with an empty list, where the private-calendar sibling answers 403. No row leaked — each
+  // list self-scopes and an anonymous caller has no hr id — but an empty 200 is not a refusal,
+  // and "the list came back empty" must never be what stands in for access control.
+  await assertPermission(access, "attendance", "read");
   const viewerHrId = viewerHrIdOf(access);
   const isReviewer = await canReviewDisputes({ hrId: viewerHrId, role: access.role });
   if (!isReviewer && !viewerHrId) return [];
