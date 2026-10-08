@@ -126,11 +126,12 @@ export function runProductionPlanningFitsTheScreenTests() {
     `${WORKSPACE}: the toggle does not say which language is on. aria-pressed is the state a screen ` +
       `reader and the styling both read.`,
   );
-  // Each language named in its OWN script, so the one being offered is legible to somebody who
-  // cannot read the one currently showing. Translating either label defeats the whole control.
+  // "English" is always the Latin word; the Arabic option reads in the language being read - the
+  // Arabic script on the Arabic screen, the word "Arabic" on the English one (owner, 2026-10-08:
+  // "every single Arabic word"). Its two values are pinned in production-planning-strings.test.ts.
   assert.ok(
-    source.includes('label: "العربية"') && source.includes('label: "English"'),
-    `${WORKSPACE}: the toggle's two labels must be العربية and English, each in its own script.`,
+    source.includes("label: S.t.languageArabic") && source.includes('label: "English"'),
+    `${WORKSPACE}: the toggle's labels must be S.t.languageArabic and English.`,
   );
 
   // 4. Every table is fixed-layout, and every one is paired with a card list for a phone. The
