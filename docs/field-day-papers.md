@@ -147,10 +147,23 @@ check so the path it measures is the one `supersedePaper` will write. Without th
 papers fit (a 180-character one holds the CEO page at 233) is one the archive cannot be written into
 at 278, and `copyFileSync` would stop the run with a bare ENOENT *after* the fit check had passed.
 
-🔴 **The consequence, which he was told before this shipped: the hourly backup to `F:\PHX backup`
-copies the untracked files at the top of the primary's `xlsx/` and nothing in a subfolder.** So the
-live papers stay backed up and the archives now sit on that one SSD. That is the trade he chose; the
-archive's job is to stop a reprint destroying the paper that went out, and it still does that.
+🔴 **The consequence was put to him before this shipped: the hourly backup to `F:\PHX backup` copied
+the untracked files at the top of the primary's `xlsx/` and nothing in a subfolder**, which would have
+left every archived paper on this one SSD. His answer the same hour — *"add xlsx/field-day-superseded
+to the hourly backup"* — so `BACKED_UP_SUBDIRS` in `scripts/repo-doctor-xlsx-snapshot.mjs` names that
+folder and its files are copied and SHA256-verified like the live papers.
+
+🔴 **That module repeats the folder's name and must never import it.** `xlsx-snapshot.cmd` extracts
+that one file from `origin/main` (`git show origin/main:scripts/repo-doctor-xlsx-snapshot.mjs`) and
+runs it standalone, so an import of any other repo file would make the hourly backup fail outright —
+node builtins only, in that file. `tests/repo-doctor-xlsx-snapshot.test.ts` asserts the list still
+matches the printer's own `SUPERSEDED_DIR`, which is what catches a rename of the folder.
+
+🔴 **And the snapshot folder is flat, keyed by basename**, so a subfolder file whose name repeats a
+top-level one would mean one copy silently overwrote the other. Archive names all carry
+`-superseded-<sha>`, so it cannot happen with what the printer writes; if it ever does, that file is
+**not** copied and the job exits 4, because a file believed backed up that is not is the one outcome
+the backup exists to prevent.
 
 ### 🔴 A launcher change is inert until the copy is refreshed
 
