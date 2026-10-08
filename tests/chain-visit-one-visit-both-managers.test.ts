@@ -242,7 +242,7 @@ function runLogAndReportTests() {
 }
 
 function runEmployee360Tests() {
-  const visit = (over: Partial<VisitRow>): VisitRow =>
+  const visit = (over: Partial<VisitRow> & { crm_visit_id?: number }): VisitRow =>
     ({
       ampm: "AM",
       comment: null,
