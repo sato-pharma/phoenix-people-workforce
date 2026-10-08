@@ -3,8 +3,12 @@
 **This file is the body of `AGENTS.md` §2.1, moved out of the auto-loaded context on 2026-09-12.**
 It is not loaded on every request. `.claude/hooks/trap-injector.mjs` (PreToolUse) matches what a
 session is about to run and injects the matching cluster ONCE per session, so the git traps arrive
-when you touch git and the ExcelJS traps when you build a workbook — instead of all 30 KB of them
-arriving on every turn.
+when you touch git and the ExcelJS traps when you build a workbook — instead of all of them
+arriving on every turn. 🔴 **Since 2026-10-08 it injects each bullet's bold HEADLINE only, not the
+bullet** (owner's choice, perf plan P2-3: this file had grown to 131 KB, and one `gh pr merge` pasted
+46 KB into a single call). So **every bullet must open with a bold sentence that can stand alone as
+the cue** — a bullet without one is sent whole, and anything after the bold run reaches a session
+only when it reads this file. A session acting on a headline searches here for its words first.
 
 **Each line is a cue, not the fact.** The account of every one — measurements, dates, PR numbers,
 the diagnosis traps — is in **[docs/agents-session-traps.md](agents-session-traps.md)**; search it

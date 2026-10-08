@@ -6,7 +6,7 @@
 // every turn. Almost none of it is relevant to any given turn: the git traps matter when you
 // touch git, the ExcelJS traps when you build a workbook, the browser traps when you drive a
 // page. This hook watches what the session is actually about to run and injects only the
-// matching cluster, once per session.
+// matching cluster's HEADLINES, once per session — see "HEADLINES, NOT THE WHOLE CLUSTER" below.
 //
 // WHERE THE TEXT LIVES
 // `docs/agents-session-traps-clusters.md`. The trim landed 2026-09-12: §2.1 now holds only a
@@ -28,12 +28,38 @@ import path from 'node:path';
 
 const HOME = process.env.USERPROFILE || os.homedir();
 const STATE_DIR = path.join(HOME, '.claude', 'relay', 'state');
-// A cluster is injected WHOLE or not at all. There is deliberately no size cap: the three
-// clusters worth the most (Validation 5.9 KB, Shell and tooling 5.0 KB, Worktrees 4.7 KB) are
-// precisely the ones any cap drops, and a truncated trap is worse than none — it reads as the
-// complete rule. The lifetime ceiling is the whole of §2.1, 30 KB, and only if one session
-// touches all thirteen areas. That is what ONE turn costs today.
+// 🔴 HEADLINES, NOT THE WHOLE CLUSTER (owner, 2026-10-08, perf plan P2-3 — he chose "headlines +
+// link" over whole clusters one at a time and over no change). This used to inject a cluster WHOLE,
+// on the reasoning that a truncated trap reads as the complete rule. That held at 30 KB. By
+// 2026-10-08 the clusters had grown to 131 KB — CI and PRs alone 30.4 KB, and one `gh pr merge`
+// pasted Parallel sessions + CI and PRs, 46 KB, into a single tool call — which is what made a
+// session's context fill and compact early. So each trap now arrives as its bold first sentence
+// (every bullet opens with one; 21 KB for all thirteen clusters, 16% of the text), under a banner
+// saying in so many words that it is NOT the whole rule and naming the file to read it from. The
+// "truncated trap" risk is answered by that banner, not by size: a headline never poses as the
+// full text. A bullet with no bold lead is still sent whole, so no trap can be dropped. Pinned by
+// tests/trap-injector-clusters.test.ts.
 const MAX_CLUSTERS_PER_CALL = 2;
+
+const CLUSTERS_FILE = path.join('docs', 'agents-session-traps-clusters.md');
+
+/**
+ * One cluster reduced to its headlines: each bullet's leading marker (🔴, 🔒, ⏸️) and its first bold
+ * run. A bullet with no bold lead is kept whole. Continuation lines and blank lines are dropped —
+ * they belong to the bullet whose headline is already shown.
+ *
+ * @param {string} body
+ * @returns {{ text: string, count: number }}
+ */
+function headlinesOf(body) {
+  const out = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (!/^- /.test(line)) continue;
+    const m = /^-\s+((?:[^\s*]+\s+)*?)\*\*(.+?)\*\*/.exec(line);
+    out.push(m ? `- ${m[1]}**${m[2].trim()}**` : line);
+  }
+  return { text: out.join('\n'), count: out.length };
+}
 
 /**
  * command -> cluster names, in AGENTS.md §2.1's own wording.
@@ -89,7 +115,7 @@ function findProject(start) {
  * back to §2.1 inside AGENTS.md, which is where they live until that happens.
  */
 function loadClusters(projectDir) {
-  const dedicated = path.join(projectDir, 'docs', 'agents-session-traps-clusters.md');
+  const dedicated = path.join(projectDir, CLUSTERS_FILE);
   let body = null;
   try {
     body = fs.readFileSync(dedicated, 'utf8');
@@ -207,7 +233,8 @@ try {
 
   const parts = [];
   for (const c of fresh) {
-    parts.push(`**${c}**\n${clusters.get(c)}`);
+    const { text, count } = headlinesOf(clusters.get(c));
+    parts.push(`**${c}**\n(${count} trap headlines; the full text is under **${c}** in the clusters file)\n${text}`);
     seen.add(c);
   }
   writeState(input?.session_id, seen);
@@ -217,8 +244,8 @@ try {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         additionalContext: [
-          `AGENTS.md §2.1 traps for what you are about to do (delivered once per session, not on every turn).`,
-          `Each line is a cue, not the fact — the full account is in docs/agents-session-traps.md.`,
+          `AGENTS.md §2.1 traps for what you are about to do — HEADLINES ONLY, delivered once per session.`,
+          `Each line is a trap's first sentence, NOT the whole rule. Before acting on anything a headline touches, read that trap in full: search ${path.join(projectDir, CLUSTERS_FILE)} for its words. The account behind each is in docs/agents-session-traps.md.`,
           '',
           parts.join('\n\n'),
         ].join('\n'),

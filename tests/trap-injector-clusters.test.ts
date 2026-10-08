@@ -177,6 +177,46 @@ function testABrowserPaneCallIsShownTheBrowserTraps(root: string) {
   );
 }
 
+/** The doc's own text for one cluster: every line after its heading, up to the next heading. */
+function clusterBody(doc: string, cluster: string): string {
+  const lines = doc.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^\*\*([A-Z][^*]{2,60})\*\*\s*(\(.*\))?\s*$/.exec(line)?.[1].trim() === cluster);
+  assert.ok(start >= 0, `cluster "${cluster}" not found in ${CLUSTERS_DOC}`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^\*\*([A-Z][^*]{2,60})\*\*\s*(\(.*\))?\s*$/.test(line));
+  return (end < 0 ? rest : rest.slice(0, end)).join("\n");
+}
+
+/**
+ * 🔴 HEADLINES, NOT THE WHOLE CLUSTER (owner, 2026-10-08, perf plan P2-3). The clusters grew from
+ * 30 KB to 131 KB and one `gh pr merge` pasted 46 KB into a single tool call. Each trap now arrives
+ * as its bold first sentence under a banner that says it is NOT the whole rule and names the file —
+ * so nothing may be dropped (every bullet's headline arrives) and nothing may pose as complete.
+ */
+function testItDeliversEveryHeadlineAndNotTheWholeText(root: string) {
+  const home = join(root, "home-headlines");
+  mkdirSync(home);
+  const worktree = makeWorktree(join(root, "headlines"));
+  const context = runInjector({ home, projectDir: worktree, sessionId: "headlines", command: "gh run list --limit 5" });
+  assert.ok(delivered(context, "CI and PRs"), "the CI cluster must still be delivered");
+
+  const body = clusterBody(readFileSync(CLUSTERS_DOC, "utf8"), "CI and PRs");
+  const bullets = body.split("\n").filter((line) => line.startsWith("- "));
+  assert.ok(bullets.length >= 10, `expected the CI cluster's bullets, parsed ${bullets.length}`);
+  for (const bullet of bullets) {
+    const lead = /\*\*(.+?)\*\*/.exec(bullet)?.[1].trim() ?? bullet;
+    assert.ok(context.includes(lead), `a trap was dropped — its headline is missing from the injection: ${lead.slice(0, 90)}`);
+  }
+  assert.ok(
+    /HEADLINES ONLY/.test(context) && /NOT the whole rule/.test(context) && context.includes("agents-session-traps-clusters.md"),
+    "the injection must say it is headlines only and name the file holding the full text",
+  );
+  assert.ok(
+    Buffer.byteLength(context) < Buffer.byteLength(body) * 0.4,
+    `the injection must be the headlines, not the cluster: ${Buffer.byteLength(context)} bytes for a ${Buffer.byteLength(body)}-byte cluster`,
+  );
+}
+
 function testOncePerSession(root: string) {
   const home = join(root, "home-once");
   mkdirSync(home);
@@ -261,6 +301,7 @@ export function runTrapInjectorClustersTests() {
   try {
     testEveryClusterIsDelivered(root);
     testABrowserPaneCallIsShownTheBrowserTraps(root);
+    testItDeliversEveryHeadlineAndNotTheWholeText(root);
     testOncePerSession(root);
     testItFindsTheProjectFromTheWorkingDirectory(root);
     testItStandsDownForARegisteredMachineCopy(root);
