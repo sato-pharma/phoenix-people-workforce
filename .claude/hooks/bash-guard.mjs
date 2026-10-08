@@ -39,6 +39,14 @@
 //       on 4-8 Oct 2026, each pinned at the 600s Bash ceiling. Run remote-check once with
 //       run_in_background and act on the notification; its exit code is the verdict. A background
 //       loop is allowed. PHX_POLL_OK=1 stands it down.
+//   C15 a FOREGROUND remote-check RUN (`node scripts/remote-check.mjs lint|typecheck|test|build|all`)
+//       — on 8 Oct 2026, after the PR's CI became the verdict, sessions still ran them in the
+//       foreground: ~1 session-hour in 6 h, 19 min for one `all`. Run it with run_in_background, or
+//       skip it and let the PR answer. `lockfile` is work, not a check, and passes.
+//       PHX_REMOTE_FG_OK=1 stands it down.
+//   C16 a FOREGROUND sleep that waits on a BACKGROUND TASK's output file (`…/tasks/<id>.output`) —
+//       50 session-minutes in 6 h on 8 Oct 2026. The harness notifies the session when that task
+//       ends; read the file once then. PHX_POLL_OK=1 stands it down.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -501,6 +509,64 @@ try {
           "open PR, that PR's own `validate` + `checks` are the verdict — read them once with " +
           '`gh pr checks <number>` when the notification arrives.\n\n' +
           'If the owner asked for this loop, stand it down for one command: ' +
+          (input.tool_name === 'PowerShell' ? '$env:PHX_POLL_OK=1; <the same command>' : 'PHX_POLL_OK=1 <the same command>'),
+      );
+    }
+  }
+
+  // C15 — a remote-check RUN in the FOREGROUND (2026-10-08, after the owner's "building is slow").
+  // Measured that afternoon from the transcripts, AFTER the PR's CI became the verdict: ~1
+  // session-hour of foreground `remote-check.mjs all|test` in 6 hours, 19 minutes for one `all` —
+  // a session sat blocked through a box pass that the ~3-minute PR run decides anyway. Only the
+  // check stages start a box run; `lockfile` produces a file the session needs, and every other
+  // form (--status, --help) only reads. Heredoc bodies are data.
+  const REMOTE_FG_STAND_DOWN = /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_REMOTE_FG_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  if (
+    input?.tool_input?.run_in_background !== true &&
+    !REMOTE_FG_STAND_DOWN.test(cmd) &&
+    process.env.PHX_REMOTE_FG_OK !== '1'
+  ) {
+    const body = withoutHereStringBodies(withoutHeredocBodies(cmd));
+    const RUN = /\bnode(?:\.exe)?["']?\s+(?:-\S+\s+)*["']?[^\s;&|"']*remote-check\.mjs["']?([^;&|\n]*)/g;
+    let stage = null;
+    for (const m of body.matchAll(RUN)) {
+      stage = m[1].trim().split(/\s+/).find((t) => /^(?:lint|typecheck|test|build|all)$/.test(t)) ?? null;
+      if (stage) break;
+    }
+    if (stage) {
+      deny(
+        `C15 — a remote-check run in the FOREGROUND is refused: \`${stage}\` holds this session for minutes ` +
+          "(up to the 600s Bash ceiling), and the PR's own CI is the verdict anyway (owner, 2026-10-08).\n\n" +
+          'Either skip it — commit, push, open the PR, and read `validate` + `checks` once when they finish —\n' +
+          'or run the SAME command with run_in_background: true and act on the completion notification:\n' +
+          '  exit 0 PASS, 1 FAIL, 2-9 NO VERDICT; only `remote-check: PASS|FAIL — <sha9>` for your commit counts.\n\n' +
+          'If the owner asked for a foreground run, stand it down for one command: ' +
+          (input.tool_name === 'PowerShell'
+            ? '$env:PHX_REMOTE_FG_OK=1; <the same command>'
+            : 'PHX_REMOTE_FG_OK=1 <the same command>'),
+      );
+    }
+  }
+
+  // C16 — a FOREGROUND sleep that waits on a BACKGROUND TASK's output file (2026-10-08). The harness
+  // writes a backgrounded command's output to …/tasks/<id>.output and NOTIFIES the session when it
+  // ends, so `sleep 60; tail …/tasks/x.output` or a sleep loop over that file only blocks the
+  // session in between — 50 session-minutes in 6 hours that day. Reading the file once, with no
+  // sleep, stays allowed; so does the same wait launched in the background.
+  if (
+    input?.tool_input?.run_in_background !== true &&
+    !POLL_STAND_DOWN.test(cmd) &&
+    process.env.PHX_POLL_OK !== '1'
+  ) {
+    const body = withoutHereStringBodies(withoutHeredocBodies(cmd));
+    const sleeps = /(?:^|[\s;&|(])(?:sleep|Start-Sleep)\b/i.test(body);
+    if (sleeps && /[\\/]tasks[\\/][\w.-]+\.output\b/.test(body)) {
+      deny(
+        "C16 — waiting in the foreground on a background task's output file is refused: the harness " +
+          'NOTIFIES this session when that task ends, so the sleep only blocks the session in between.\n\n' +
+          'End the turn (say what is running) or do other work; when the task notification arrives, read ' +
+          'the output file once. To wait on something that is NOT a background task, use the Monitor tool.\n\n' +
+          'If the owner asked for this wait, stand it down for one command: ' +
           (input.tool_name === 'PowerShell' ? '$env:PHX_POLL_OK=1; <the same command>' : 'PHX_POLL_OK=1 <the same command>'),
       );
     }

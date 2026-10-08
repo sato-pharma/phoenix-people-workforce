@@ -166,7 +166,10 @@ What replaces it:
 - **`remote-check` when an earlier answer is worth it — once, with `run_in_background: true`,** acting
   on the completion notification (confirmed to arrive in the Desktop app the same day). Exit 0 PASS,
   1 FAIL, 2-9 NO VERDICT; only `remote-check: PASS|FAIL — <sha9>` naming the sha you pushed counts, and
-  a NO VERDICT is never a pass. `bash-guard.mjs` **C14** refuses a foreground poll loop.
+  a NO VERDICT is never a pass. `bash-guard.mjs` **C14** refuses a foreground poll loop,
+  **C15** a foreground run of a check stage (`lockfile` passes), and **C16** a foreground sleep that waits
+  on a background task's `tasks/<id>.output` file — the harness notifies when it ends (measured 8 Oct
+  2026: ~1 session-hour and 50 session-minutes in 6 hours).
 - **One result per sha, reused.** A run that ends in a printed PASS or FAIL records each stage in
   `<git-common-dir>/phx-remote-check/<sha>.json`. The push guard only READS it — it refuses a push
   solely when that record holds a typecheck FAIL for the exact commit, and starts nothing.
