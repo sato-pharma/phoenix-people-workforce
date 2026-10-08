@@ -471,7 +471,7 @@ async function assertVacationAdminManagement(access: AccessContext, action: "cre
   }
 }
 
-async function canManageVacationRecords(access: AccessContext) {
+export async function canManageVacationRecords(access: AccessContext) {
   return (
     isAllVacationVisibility(access) &&
     await canAccess(access, "leave", "create") &&

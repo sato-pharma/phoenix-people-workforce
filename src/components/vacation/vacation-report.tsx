@@ -19,12 +19,10 @@ import {
   Download,
   FileText,
   Filter,
-  Pencil,
   Plus,
   Printer,
   Search,
   Table2,
-  Trash2,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -91,9 +89,7 @@ type EntitlementSortKey = "annualBalanceDays" | "daysSinceHire" | "fullName" | "
 
 type RequestSortKey = "createdAt" | "durationDays" | "employeeName" | "startDate" | "status";
 
-type PendingReportAction =
-  | { kind: "decision"; decision: "approve" | "reject"; requestId: string; status: VacationRequestStatus }
-  | { kind: "delete"; row: VacationRequestRecord };
+type PendingReportAction = { decision: "approve" | "reject"; requestId: string; status: VacationRequestStatus };
 
 const PAGE_SIZE = 25;
 
@@ -117,18 +113,6 @@ function emptyAdminVacationForm(employeeHrId = ""): AdminVacationFormState {
     startDate: "",
     status: "pending_manager",
     vacationType: "annual",
-  };
-}
-
-function adminVacationFormFromRow(row: VacationRequestRecord): AdminVacationFormState {
-  return {
-    dayPart: row.dayPart,
-    employeeHrId: row.employeeHrId,
-    endDate: row.endDate,
-    notes: row.notes ?? "",
-    startDate: row.startDate,
-    status: row.status,
-    vacationType: row.vacationType,
   };
 }
 
@@ -1053,8 +1037,6 @@ function RequestCard({
   selfView = false,
   viewerHrId,
   onDecide,
-  onDelete,
-  onEdit,
   onResubmit,
   onReview,
   row,
@@ -1070,8 +1052,6 @@ function RequestCard({
   selfView?: boolean;
   viewerHrId: string | null;
   onDecide: (row: VacationRequestRecord, decision: "approve" | "reject") => void;
-  onDelete: (row: VacationRequestRecord) => void;
-  onEdit: (row: VacationRequestRecord) => void;
   onResubmit: (row: VacationRequestRecord) => void;
   onReview: (row: VacationRequestRecord) => void;
   row: VacationRequestRecord;
@@ -1264,22 +1244,6 @@ function RequestCard({
             <FileText className="h-3 w-3" />{" "}
             {row.vacationType === "sick" || row.vacationType === "compensatory" ? "Documents & timeline" : "Timeline"}
           </button>
-          <button
-            className="flex items-center gap-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-700"
-            disabled={actingId === row.id}
-            onClick={() => onEdit(row)}
-            type="button"
-          >
-            <Pencil className="h-3 w-3" /> Edit
-          </button>
-          <button
-            className="flex items-center gap-1 text-phx-xs font-bold text-rose-500 transition hover:text-rose-700"
-            disabled={actingId === row.id}
-            onClick={() => onDelete(row)}
-            type="button"
-          >
-            <Trash2 className="h-3 w-3" /> Delete
-          </button>
         </div>
       ) : null}
     </div>
@@ -1346,9 +1310,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const [actingId, setActingId] = useState<string | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
   const [adminForm, setAdminForm] = useState<AdminVacationFormState>(() => emptyAdminVacationForm(initialData?.options.employees[0]?.value));
-  const [adminMode, setAdminMode] = useState<"add" | "edit" | null>(null);
+  const [adminMode, setAdminMode] = useState<"add" | null>(null);
   const [decisionComment, setDecisionComment] = useState("");
-  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingReportAction | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<VacationRequestRecord | null>(null);
   const [timeline, setTimeline] = useState<VacationTimelineEvent[]>([]);
@@ -1388,9 +1351,6 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const showEntitlementsTab = activeTab === "entitlements";
   const showRequestsTab = activeTab === "requests";
   const addVacationTypeOptions = VACATION_TYPES.filter((option) => option.value !== "sick" && option.value !== "compensatory");
-  const editVacationTypeOptions = VACATION_TYPES.some((option) => option.value === adminForm.vacationType)
-    ? VACATION_TYPES
-    : addVacationTypeOptions;
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -1487,68 +1447,34 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
     window.history.pushState(null, "", buildReportUrl(nextTab, searchParams));
   }
 
+  // Editing and deleting a request are NOT done from this report (owner, 2026-10-08): they live on the
+  // request's own page in the Leave Approvals hub. This report only records a new admin vacation.
   function startAdminAdd() {
     setAdminError(null);
-    setEditingRequestId(null);
     setAdminForm(emptyAdminVacationForm(options?.employees[0]?.value ?? ""));
     setAdminMode("add");
   }
 
-  function startAdminEdit(row: VacationRequestRecord) {
-    setAdminError(null);
-    setEditingRequestId(row.id);
-    setAdminForm(adminVacationFormFromRow(row));
-    setAdminMode("edit");
-  }
-
   async function submitAdminForm() {
     setAdminError(null);
-    setActingId(editingRequestId ?? "admin-add");
+    setActingId("admin-add");
     try {
-      const response = await fetch(
-        adminMode === "edit" && editingRequestId
-          ? `/api/vacations/requests/${encodeURIComponent(editingRequestId)}`
-          : "/api/vacations/requests/admin",
-        {
-          body: JSON.stringify(adminForm),
-          headers: { "Content-Type": "application/json" },
-          method: adminMode === "edit" ? "PATCH" : "POST",
-        },
-      );
+      const response = await fetch("/api/vacations/requests/admin", {
+        body: JSON.stringify(adminForm),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(typeof payload.message === "string" ? payload.message : "Vacation admin update failed.");
       }
       setAdminMode(null);
-      setEditingRequestId(null);
       router.refresh();
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : "Vacation admin update failed.");
     } finally {
       setActingId(null);
     }
-  }
-
-  async function performDeleteAdminRequest(row: VacationRequestRecord) {
-    setAdminError(null);
-    setActingId(row.id);
-    try {
-      const response = await fetch(`/api/vacations/requests/${encodeURIComponent(row.id)}`, { method: "DELETE" });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(typeof payload.message === "string" ? payload.message : "Vacation delete failed.");
-      }
-      router.refresh();
-    } catch (error) {
-      setAdminError(error instanceof Error ? error.message : "Vacation delete failed.");
-    } finally {
-      setActingId(null);
-    }
-  }
-
-  function deleteAdminRequest(row: VacationRequestRecord) {
-    setDecisionComment("");
-    setPendingAction({ kind: "delete", row });
   }
 
   function applyFilters() {
@@ -1582,7 +1508,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
 
   const decide = useCallback((row: VacationRequestRecord, decision: "approve" | "reject") => {
     setDecisionComment("");
-    setPendingAction({ decision, kind: "decision", requestId: row.id, status: row.status });
+    setPendingAction({ decision, requestId: row.id, status: row.status });
   }, []);
 
   const resubmit = useCallback(async (row: VacationRequestRecord) => {
@@ -1607,17 +1533,13 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
 
   async function confirmPendingAction() {
     if (!pendingAction) return;
-    if (pendingAction.kind === "decision" && pendingAction.decision === "reject" && !decisionComment.trim()) {
+    if (pendingAction.decision === "reject" && !decisionComment.trim()) {
       setActionError("Rejection reason is required.");
       return;
     }
 
     const action = pendingAction;
     setPendingAction(null);
-    if (action.kind === "delete") {
-      await performDeleteAdminRequest(action.row);
-      return;
-    }
 
     await performDecision(
       action.requestId,
@@ -1752,18 +1674,14 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               role="dialog"
             >
               <h3 className="text-base font-extrabold text-slate-950">
-                {pendingAction.kind === "delete"
-                  ? "Delete vacation request"
-                  : pendingAction.decision === "approve"
-                    ? pendingAction.status === "pending_hr" ? "Final approve request" : "Approve request"
-                    : pendingAction.status === "pending_hr" ? "Final reject request" : "Reject request"}
+                {pendingAction.decision === "approve"
+                  ? pendingAction.status === "pending_hr" ? "Final approve request" : "Approve request"
+                  : pendingAction.status === "pending_hr" ? "Final reject request" : "Reject request"}
               </h3>
               <p className="mt-2 text-phx-md font-medium leading-5 text-slate-600">
-                {pendingAction.kind === "delete"
-                  ? `This removes ${pendingAction.row.requestCode} from the master report. The admin audit log keeps the deleted record context.`
-                  : "This records the workflow decision and notifies the next responsible people."}
+                This records the workflow decision and notifies the next responsible people.
               </p>
-              {pendingAction.kind === "decision" && pendingAction.decision === "reject" ? (
+              {pendingAction.decision === "reject" ? (
                 <label className="mt-3 block space-y-1.5">
                   <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Rejection reason</span>
                   <textarea
@@ -1784,7 +1702,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <Button
                   className={cn(
                     "rounded-sm text-phx-sm font-bold text-white",
-                    pendingAction.kind === "delete" || (pendingAction.kind === "decision" && pendingAction.decision === "reject")
+                    pendingAction.decision === "reject"
                       ? "bg-rose-600 hover:bg-rose-700"
                       : "bg-emerald-600 hover:bg-emerald-700",
                   )}
@@ -2297,7 +2215,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     <label className="space-y-1.5">
                       <span className={labelClass}>Type</span>
                       <SearchableSelect className={selectClass} value={adminForm.vacationType} onChange={(event) => updateAdminForm("vacationType", event.target.value)}>
-                        {(adminMode === "add" ? addVacationTypeOptions : editVacationTypeOptions).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        {addVacationTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </SearchableSelect>
                     </label>
                     <label className="space-y-1.5">
@@ -2331,7 +2249,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                         onClick={submitAdminForm}
                         type="button"
                       >
-                        {adminMode === "edit" ? "Save Changes" : "Create Vacation"}
+                        Create Vacation
                       </Button>
                       <Button
                         className="h-9 rounded-sm border border-slate-200 bg-white text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
@@ -2492,26 +2410,6 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             <FileText className="h-3 w-3" /> Timeline
                             {row.timelineEventCount > 0 ? <span className="text-slate-400">({row.timelineEventCount})</span> : null}
                           </button>
-                          {canAdminManage ? (
-                            <div className="mb-2 flex flex-wrap gap-1.5">
-                              <button
-                                className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50"
-                                disabled={actingId === row.id}
-                                onClick={() => startAdminEdit(row)}
-                                type="button"
-                              >
-                                <Pencil className="h-3 w-3" /> Edit
-                              </button>
-                              <button
-                                className={cn(phxButtonDangerDenseClassName, "flex items-center gap-1 px-2 py-1 text-phx-2xs font-bold transition")}
-                                disabled={actingId === row.id}
-                                onClick={() => deleteAdminRequest(row)}
-                                type="button"
-                              >
-                                <Trash2 className="h-3 w-3" /> Delete
-                              </button>
-                            </div>
-                          ) : null}
                           {row.canDecide ? (
                             <>
                               <VacationApprovalImpactPreview compact row={row} />
@@ -2576,8 +2474,6 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       selfView={isSelfView}
                       viewerHrId={viewerHrId}
                       onDecide={decide}
-                      onDelete={deleteAdminRequest}
-                      onEdit={startAdminEdit}
                       onResubmit={resubmit}
                       onReview={openRequestReview}
                       row={row}
