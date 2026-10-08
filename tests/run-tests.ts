@@ -6564,6 +6564,10 @@ await runTest(
 await runTest(
   "Phoenix CRM plan never blocks on hours: a tick places a customer on any day and asks nothing, the day shows every day and hour he receives in its own column, the 'Day full' word is gone, and a customer not validated yet carries a small inline word with iReports360's brick and address (owner, 2026-09-30)",
   runPhoenixCrmPlanNeverBlockedTests,
+);
+
+await runTest(
+  "Phoenix CRM plan shows leave the rep asked for as pending approval (owner, 2026-10-08): a pending request is named on its days and never a day off, approved leave outranks it, and approved days read as approved vacations",
   runPhoenixCrmPlanPendingVacationTests,
 );
 
