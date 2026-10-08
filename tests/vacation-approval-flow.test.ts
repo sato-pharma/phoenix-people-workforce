@@ -466,4 +466,22 @@ export function runVacationApprovalFlowTests() {
       `${label} must show a returned request as returned even when manager_decision still reads approved`,
     );
   }
+
+  // Owner rule, 2026-10-08: a compensatory leave needs a photo of the event, so it cannot be submitted
+  // before the event date has arrived (the leave day itself was already checked against the event date).
+  const compensatoryDetailsSource = serviceSource.slice(
+    serviceSource.indexOf("function validateCompensatoryDetails("),
+    serviceSource.indexOf("function validateCompensatoryDetails(") + 2500,
+  );
+  assert.match(
+    compensatoryDetailsSource,
+    /eventDate > getVacationPolicyToday\(\)/,
+    "the server refuses a compensatory leave whose event has not taken place yet",
+  );
+  const requestFormSource = readFileSync(new URL("../src/components/vacation/vacation-request-form.tsx", import.meta.url), "utf8");
+  assert.match(
+    requestFormSource,
+    /compensatoryEventDate > todayDateOnly\(\)/,
+    "the form blocks submitting a compensatory leave before its event date",
+  );
 }

@@ -1475,7 +1475,9 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     ? addDaysToDateOnly(compensatoryEventDate, 14)
     : null;
   const compensatoryDateError = isCompensatory && compensatoryEventDate
-    ? startDate < compensatoryEventDate
+    ? compensatoryEventDate > todayDateOnly()
+      ? "Compensatory Day cannot be submitted before the event has taken place. Submit it on or after the event date, with the event photo."
+      : startDate < compensatoryEventDate
       ? "Compensatory Day cannot be requested before the event date."
       : compensatoryExpiryDate && startDate > compensatoryExpiryDate
         ? `Compensatory Day expires on ${formatHolidayDate(compensatoryExpiryDate)}. It must be used within 14 days from the event date.`

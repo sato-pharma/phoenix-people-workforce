@@ -3046,6 +3046,11 @@ function validateCompensatoryDetails(input: CreateVacationRequestInput) {
   if (!eventDate) throw new Error("Compensatory Day requires the event date.");
   if (!eventLocation) throw new Error("Compensatory Day requires the event location.");
   if (!manager1) throw new Error("Compensatory Day requires the first manager name who attended or supervised the event.");
+  // Owner rule, 2026-10-08: the request needs a photo of the event, which cannot exist before the
+  // event has taken place. Checked against the day the request is SUBMITTED, not the leave day.
+  if (eventDate > getVacationPolicyToday()) {
+    throw new Error("Compensatory Day cannot be submitted before the event has taken place. Submit it on or after the event date, with the event photo.");
+  }
   if (requestStartDate && requestStartDate < eventDate) {
     throw new Error("Compensatory Day cannot be requested before the event date.");
   }
