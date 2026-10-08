@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 
+import { systemAccessContext } from "@/lib/auth/permissions";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import {
@@ -9,6 +10,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { generateNextHrIdForLine } from "@/lib/employees/hr-id-helper";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
+import { attachHiringDocumentFiles } from "@/lib/hiring-documents/service";
 import { joiningFormMailboxAddress } from "@/lib/new-hire-mailbox/address";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { logError, logInfo } from "@/lib/observability/log";
@@ -23,7 +25,9 @@ import {
   offerRequiresSeat,
   sameJoinerName,
   validateJoiningForm,
+  validateJoiningIdPhotos,
   type JoiningFormField,
+  type JoiningFormPhotoField,
   type JoiningFormState,
 } from "@/lib/offers/joining-form";
 import {
@@ -349,7 +353,7 @@ export async function loadJoiningForm(token: string): Promise<JoiningFormView> {
 
 export type JoiningFormSubmitResult =
   | { ok: true; hrId: string; satoEmail: string | null; satoEmailReason: string | null }
-  | { errors: Partial<Record<JoiningFormField, string>>; ok: false; status: 400 }
+  | { errors: Partial<Record<JoiningFormField | JoiningFormPhotoField, string>>; ok: false; status: 400 }
   | { message: string; ok: false; status: 404 | 409 | 500 };
 
 /** Keyed, so the stored value cannot be reversed by hashing every IPv4 address. */
@@ -398,6 +402,54 @@ async function findExistingHire(
   return { kind: "none" };
 }
 
+/** One uploaded national ID photo, as the route read it off the request. */
+export type JoiningFormPhoto = { bytes: Buffer; contentType: string };
+
+/**
+ * File the two national ID photos into the new record's "National ID copy" slot on Hiring Documents
+ * (owner, 2026-10-08), through the store's own attach — the same rows, bucket, size and type checks
+ * and checklist tick as HR's own upload, with the joiner named as the uploader.
+ *
+ * The slot is the one `hiring_document_definitions.joining_form_upload = 'national_id'` marks — never
+ * matched on its admin-editable name. Runs AFTER the record exists, so it never throws: a refusal is
+ * reported to HR in the acceptance alert, and the acceptance stands.
+ */
+async function fileJoiningIdPhotos(hrId: string, photos: Record<JoiningFormPhotoField, JoiningFormPhoto>): Promise<boolean> {
+  try {
+    const slot = await getSupabaseAdmin()
+      .from("hiring_document_definitions")
+      .select("id")
+      .eq("joining_form_upload", "national_id")
+      .eq("is_active", true)
+      .maybeSingle();
+    if (slot.error) throw new Error(slot.error.message);
+    const documentId = String((slot.data as { id?: string } | null)?.id ?? "").trim();
+    if (!documentId) throw new Error("No active Hiring Documents slot is marked for the joining form's national ID photos.");
+    const extension = (contentType: string) => (contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg");
+    await attachHiringDocumentFiles(
+      { ...systemAccessContext, loginId: "joining-form" },
+      {
+        documentId,
+        employeeHrId: hrId,
+        mode: "upload",
+        pages: [
+          { bytes: photos.idFront.bytes, contentType: photos.idFront.contentType, fileName: `national-id-front.${extension(photos.idFront.contentType)}` },
+          { bytes: photos.idBack.bytes, contentType: photos.idBack.contentType, fileName: `national-id-back.${extension(photos.idBack.contentType)}` },
+        ],
+        uploadedByHrId: hrId,
+      },
+    );
+    return true;
+  } catch (error) {
+    logError("The joining form created the record but could not file the national ID photos", {
+      context: { hrId },
+      error: error instanceof Error ? error : new Error(String(error)),
+      labels: { event: "offer_joining_form_id_photos_failed" },
+    });
+    return false;
+  }
+}
+
 /**
  * Submit — the acceptance. In order: the link, the offer's state, every answer, the seat still open,
  * the ID not already on file, the claim on the offer row, the record through HR's own chain, then the
@@ -407,6 +459,7 @@ async function findExistingHire(
 export async function submitJoiningForm(
   token: string,
   answers: Partial<Record<JoiningFormField, unknown>>,
+  photos: Partial<Record<JoiningFormPhotoField, JoiningFormPhoto | null>>,
   meta: { ip: string | null; userAgent: string | null },
 ): Promise<JoiningFormSubmitResult> {
   const loaded = await loadOffer(token);
@@ -419,9 +472,16 @@ export async function submitJoiningForm(
     return { message: JOINING_FORM_STATE_MESSAGE[state].body, ok: false, status: 409 };
   }
 
+  // The answers and the ID photos are judged together, so he sees every problem at once — and both
+  // BEFORE the claim, so a missing photo never costs him a record.
   const areaOptions = await residenceAreaOptions(seat?.areaCode ?? null);
   const { errors, value } = validateJoiningForm(answers, { residenceAreaOptions: areaOptions, todayIso: todayInCairo() });
-  if (!value) return { errors, ok: false, status: 400 };
+  const photoErrors = validateJoiningIdPhotos({
+    idBack: photos.idBack ? { contentType: photos.idBack.contentType, size: photos.idBack.bytes.length } : null,
+    idFront: photos.idFront ? { contentType: photos.idFront.contentType, size: photos.idFront.bytes.length } : null,
+  });
+  if (!value || Object.keys(photoErrors).length > 0) return { errors: { ...errors, ...photoErrors }, ok: false, status: 400 };
+  const idPhotos = { idBack: photos.idBack as JoiningFormPhoto, idFront: photos.idFront as JoiningFormPhoto };
 
   const db = getSupabaseAdmin();
   const draft = buildOfferHireDraft({ offer, vacancy });
@@ -532,11 +592,14 @@ export async function submitJoiningForm(
   }
 
   // From here the record EXISTS. Nothing below may give the claim back or report a failure to him:
-  // stamp the offer first, so a refresh shows "already completed", then the follow-ups, each of
-  // which swallows its own failures exactly as it does on HR's own Add Employee.
+  // file the ID photos (so the acceptance alert can say whether they landed), stamp the offer, so a
+  // refresh shows "already completed", then the follow-ups — each swallows its own failures exactly
+  // as it does on HR's own Add Employee. Until the stamp, the claim turns a second Submit away.
+  const idPhotosFiled = await fileJoiningIdPhotos(hrId, idPhotos);
   try {
     await stampOfferAcceptedByJoiningForm(offer.id, {
       hrId,
+      idPhotosFiled,
       seated: Boolean(seat?.lineId || seat?.departmentId),
       workEmail: satoEmail,
     });
@@ -554,6 +617,7 @@ export async function submitJoiningForm(
       offer_id: offer.id,
       payload: {
         ...value,
+        idPhotosFiled,
         satoEmail,
         satoEmailReason,
         userAgent: String(meta.userAgent ?? "").slice(0, 300),

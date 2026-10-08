@@ -239,4 +239,79 @@ async function run() {
     assert.equal(form.joiningFormPaymentMode(title), "one_part", `${title} is paid in one part`);
   }
   assert.match(flatService, /salaryPaymentMode: joiningFormPaymentMode\(draft\.jobTitle\)/, "the record carries it, never Add Employee's default");
+
+  // 13. 🔴 THE NATIONAL ID PHOTOS ARE REQUIRED, AND FILED ON HIRING DOCUMENTS (owner, 2026-10-08) —
+  //     front and back, judged before the claim, filed after the record into the slot the column marks.
+  const MB = 1024 * 1024;
+  const jpeg = (size: number) => ({ contentType: "image/jpeg", size });
+  assert.deepEqual(Object.keys(form.validateJoiningIdPhotos({})).sort(), ["idBack", "idFront"], "both sides are required");
+  assert.match(form.validateJoiningIdPhotos({ idBack: jpeg(MB) }).idFront ?? "", /front of your national ID/, "a missing front is named");
+  assert.deepEqual(form.validateJoiningIdPhotos({ idBack: jpeg(MB), idFront: jpeg(MB) }), {}, "two photos pass");
+  assert.match(
+    form.validateJoiningIdPhotos({ idBack: jpeg(MB), idFront: { contentType: "application/pdf", size: MB } }).idFront ?? "",
+    /JPG, PNG or WEBP/,
+    "a PDF is refused",
+  );
+  assert.match(form.validateJoiningIdPhotos({ idBack: jpeg(5 * MB), idFront: jpeg(MB) }).idBack ?? "", /too large/, "a photo over 4.5 MB is refused");
+  assert.ok(2 * form.JOINING_FORM_PHOTO_MAX_BYTES < 10 * MB, "two photos at the cap still fit the proxy's 10 MB body");
+  const flatRoute = flat("app/api/public/offer-acceptance/[token]/route.ts");
+  assert.match(flatRoute, /await request\.formData\(\)/, "the route reads a multipart body");
+  assert.match(
+    flatRoute,
+    /photos = \{ idBack: await readPhoto\(form\.get\("idBack"\)\), idFront: await readPhoto\(form\.get\("idFront"\)\) \}/,
+    "with both photos",
+  );
+  assert.match(flatRoute, /PROXY_BODY_LIMIT = 10 \* 1024 \* 1024/, "and refuses a body the proxy would cut");
+  const judged = service.indexOf("validateJoiningIdPhotos(");
+  assert.ok(judged > 0 && judged < service.indexOf("claimOfferForJoiningForm(offer.id)"), "photos are judged before the claim");
+  const filing = service.indexOf("fileJoiningIdPhotos(hrId, idPhotos)");
+  assert.ok(filing > service.indexOf("upsertEmployee(") && filing < service.indexOf("stampOfferAcceptedByJoiningForm(offer.id"), "filed after the record, before the stamp");
+  const filer = flatService.slice(flatService.indexOf("async function fileJoiningIdPhotos"), flatService.indexOf("export async function submitJoiningForm"));
+  assert.match(filer, /\.eq\("joining_form_upload", "national_id"\)/, "the slot is the one the column marks");
+  assert.ok(!/\.eq\("name"|ilike\(/.test(filer), "never matched on its admin-editable name");
+  assert.match(filer, /attachHiringDocumentFiles\(/, "through the store's own attach");
+  assert.match(filer, /catch \(error\) \{ logError\([\s\S]*return false; \}/, "and a refusal never fails the acceptance");
+  assert.match(alert.joinedOfferMessage(joiner, { hrId: "A-1", idPhotosFiled: true, workEmail: null }), /national ID photos are filed on Hiring Documents\./);
+  assert.match(
+    alert.joinedOfferMessage(joiner, { hrId: "A-1", idPhotosFiled: false, workEmail: null }),
+    /could NOT be filed — ask for them/,
+    "HR is told when they did not land",
+  );
+  const migration = code("supabase/migrations/20261008230000_joining_form_national_id_slot.sql");
+  assert.match(migration, /add column if not exists joining_form_upload text/, "the column exists");
+  assert.match(migration, /name = 'National ID copy'/, "and marks the National ID copy slot once");
+  const pageSource = flat("src/components/offers/joining-form-page.tsx");
+  assert.match(pageSource, /"birthDate", \.\.\.JOINING_FORM_PHOTO_FIELDS, "mobileNumber"/, "the page requires both photos, in page order");
+  assert.match(pageSource, /body\.append\("idFront", photos\.idFront\.file\)/, "and sends them");
+  assert.ok(!/content-type/i.test(pageSource.slice(pageSource.indexOf("new FormData()"))), "with no content-type header, so the browser writes the boundary");
+
+  // 14. 🔴 EVERY MESSAGE THE CANDIDATE CAN READ HAS ITS ARABIC (owner, 2026-10-08: "change language
+  //     between English and Arabic") — a new or reworded message cannot ship English-only.
+  const copy = await import("../src/components/offers/joining-form-copy.ts");
+  const said = new Set<string>();
+  for (const match of code("src/lib/offers/joining-form.ts").matchAll(/(?:errors(?:\.\w+|\[field\])\s*=|\bid(?:Back|Front):)\s*"([^"]+)"/g)) {
+    said.add(match[1]);
+  }
+  for (const message of Object.values(form.JOINING_FORM_STATE_MESSAGE) as Array<{ body: string; title: string }>) {
+    said.add(message.title);
+    said.add(message.body);
+  }
+  const hrWillContact = /const HR_WILL_CONTACT = "([^"]+)"/.exec(service)?.[1] ?? "";
+  assert.ok(hrWillContact, "the service's shared sentence is found");
+  for (const match of flatService.matchAll(/message: (?:"([^"]+)"|`([^`]+)`)/g)) {
+    said.add((match[1] ?? match[2]).replace("${HR_WILL_CONTACT}", hrWillContact));
+  }
+  for (const match of flatRoute.matchAll(/message: "([^"]+)"/g)) said.add(match[1]);
+  for (const match of flat("app/join/[token]/page.tsx").matchAll(/view\.kind === "invalid" \? "([^"]+)"/g)) said.add(match[1]);
+  assert.ok(said.size >= 40, `the sweep found the messages (${said.size})`);
+  const untranslated = [...said].filter((message) => !copy.AR_MESSAGES[message]);
+  assert.deepEqual(untranslated, [], "every message has its Arabic in joining-form-copy.ts");
+  assert.equal(copy.translateMessage("ar", "Please choose your gender."), "يُرجى اختيار النوع.", "and the page reads it");
+  assert.equal(copy.translateMessage("en", "Please choose your gender."), "Please choose your gender.", "English passes through");
+  //    The Arabic never assumes the reader is a man or a woman: no command addressed to one gender.
+  const arabic = code("src/components/offers/joining-form-copy.ts");
+  assert.ok(
+    !/(?:^|[\s«("])(?:اكتب|اختر|اضغط|راجع|أدخل|ارفع|التقط|اكتبي|اختاري|اضغطي|راجعي|أدخلي|ارفعي|التقطي)(?=[\s.،"]|$)/m.test(arabic),
+    "no imperative addressed to one gender",
+  );
 }

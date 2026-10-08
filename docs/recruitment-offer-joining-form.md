@@ -21,6 +21,22 @@ The button opens `/join/[token]`, a 100% Sato Pharma page with no login. The tok
   type, Sato email and the six pay lines.
 - The candidate TYPES only mobile, private email, national ID, gender, birth date, education and
   residence (area from the seat's own bricks, cascading to the governorate, then free-text address).
+- The candidate UPLOADS a photo of each side of the national ID card — both required (owner,
+  2026-10-08: "make in the form also required to upload a photo of his national ID"). The browser
+  shrinks each to 2,000px JPEG before sending, so two fit the proxy's 10 MB body; the server caps
+  each at 4.5 MB and accepts JPG, PNG or WEBP (`validateJoiningIdPhotos`), judged with the answers
+  BEFORE the claim. After the record exists they are filed into the Hiring Documents slot whose
+  `hiring_document_definitions.joining_form_upload` is `national_id` (migration
+  `20261008230000`, which marks the "National ID copy" slot once — never matched on the name
+  afterwards), uploaded by the new hire, and the slot is ticked. A filing failure never fails the
+  acceptance: the HR alert says the photos could NOT be filed and to ask for them.
+- English or Arabic (owner, 2026-10-08: "make him able to change language between English and
+  Arabic"). A switch in the header bar turns the whole page into Arabic, right to left, in Cairo,
+  remembered on that phone (an Arabic phone opens in Arabic). The words live in
+  `src/components/offers/joining-form-copy.ts`; values (titles, areas, names, emails) are never
+  translated. The Arabic never assumes the reader's gender — "يُرجى" plus a verbal noun, never a
+  command form. Every message the check, the submit and the route send is English, translated by its
+  exact text (`AR_MESSAGES`), and the test refuses a message with no Arabic.
 
 Opening the link changes nothing — a mail scanner follows every link. Only the POST
 (`/api/public/offer-acceptance/[token]`, rate limited) creates the employee, through HR's own Add

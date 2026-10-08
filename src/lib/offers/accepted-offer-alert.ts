@@ -84,7 +84,7 @@ export function joinedOfferTitle(offer: Pick<OfferRecord, "candidateName">): str
 
 export function joinedOfferMessage(
   offer: Pick<OfferRecord, "candidateName" | "title" | "startDate">,
-  hire: { hrId: string; seated?: boolean; workEmail: string | null },
+  hire: { hrId: string; idPhotosFiled?: boolean; seated?: boolean; workEmail: string | null },
 ): string {
   const start = String(offer.startDate ?? "").trim();
   const starts = start ? `, starting ${start}` : "";
@@ -96,7 +96,14 @@ export function joinedOfferMessage(
   const seat = hire.seated === false
     ? " is created WITHOUT a seat — set the department, line and manager on the Employee Master."
     : " is created and seated.";
-  return `${stated(offer.candidateName)} accepted the offer for ${stated(offer.title)}${starts} and completed the joining form. Their employee record ${hire.hrId}${seat}${email} Bank and insurance details are still HR's to add.`;
+  // The national ID photos the form requires: filed on Hiring Documents, or — when the store refused
+  // them after the record existed — HR is told to ask, never left to find the slot empty.
+  const idPhotos = hire.idPhotosFiled === true
+    ? " The national ID photos are filed on Hiring Documents."
+    : hire.idPhotosFiled === false
+      ? " The national ID photos could NOT be filed — ask for them and add them on Hiring Documents."
+      : "";
+  return `${stated(offer.candidateName)} accepted the offer for ${stated(offer.title)}${starts} and completed the joining form. Their employee record ${hire.hrId}${seat}${email}${idPhotos} Bank and insurance details are still HR's to add.`;
 }
 
 /**
@@ -151,7 +158,7 @@ export async function announceJoiningFormBlocked(
  */
 export async function announceAcceptedOffer(
   offer: OfferRecord,
-  hire?: { hrId: string; seated?: boolean; workEmail: string | null },
+  hire?: { hrId: string; idPhotosFiled?: boolean; seated?: boolean; workEmail: string | null },
 ): Promise<AcceptedOfferAnnounceResult> {
   const warnings: string[] = [];
   const offerId = String(offer?.id ?? "").trim();
