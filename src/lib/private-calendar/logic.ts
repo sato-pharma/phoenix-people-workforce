@@ -250,7 +250,16 @@ export function isPrivateCalendarGlobalViewer(
   access: AccessContext,
   globalHrIds: readonly string[] = configuredPrivateCalendarGlobalHrIds(),
 ) {
-  if (access.scope === "system" || access.role === "CEO" || access.role === "Super Admin") return true;
+  // HR Resourcing — the Talent Acquisition seat — added 2026-10-08: the owner ticked Private
+  // Calendars for her on the access blueprint.
+  if (
+    access.scope === "system" ||
+    access.role === "CEO" ||
+    access.role === "Super Admin" ||
+    access.role === "HR Resourcing"
+  ) {
+    return true;
+  }
   const allowed = new Set(globalHrIds.map((value) => privateCalendarHrIdKey(value)).filter(Boolean));
   return [access.hrId, access.loginId].some((value) => allowed.has(privateCalendarHrIdKey(value)));
 }

@@ -168,14 +168,16 @@ export async function runWhatsAppRepliesPanelTests(): Promise<void> {
     "every moment shown to a person is Cairo local time (AGENTS.md §4)",
   );
 
-  // ── 5. The gate admits exactly the two seats, and is checked before the read ─
+  // ── 5. The gate admits exactly the seats that work the pipeline, and is checked before the read ─
+  // Three since 2026-10-08: the owner ticked WhatsApp Replies for the Talent Acquisition seat
+  // (HR Resourcing) on the access blueprint.
   const allowed = phoenixRoles.filter((role: PhoenixRole) =>
     canViewWhatsAppOutboundLog(createAccessContext({ hrId: "HR-PANEL-TEST", role })),
   );
   assert.deepEqual(
     [...allowed].sort(),
-    ["HR Advisory", "Super Admin"],
-    "this table holds applicants' phone numbers next to what was said to them. Exactly the two " +
+    ["HR Advisory", "HR Resourcing", "Super Admin"],
+    "this table holds applicants' phone numbers next to what was said to them. Exactly the " +
       `seats that work the pipeline may read it. Got: ${allowed.join(", ")}`,
   );
   // Called BEFORE any data is fetched — a gate below the read has already leaked a query's worth

@@ -131,8 +131,9 @@ export async function runPageGateReaderRoleInequalityGateTests(): Promise<void> 
   );
   assert.deepEqual(
     roleSetGates(pageSource("(admin)", "admin", "ceo-probation")),
-    [["CEO", "Super Admin"]],
-    "an && chain of inequalities admits BOTH names — reading it as one would lock out the other",
+    // Three names since 2026-10-08, when the Talent Acquisition seat (HR Resourcing) joined the chain.
+    [["CEO", "Super Admin", "HR Resourcing"]],
+    "an && chain of inequalities admits EVERY name in it — reading it as one would lock out the others",
   );
 
   const analytics = pageSource("(admin)", "attendance", "analytics");

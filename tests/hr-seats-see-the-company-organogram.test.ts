@@ -54,9 +54,13 @@ export async function runHrSeatsCompanyOrganogramTests() {
   const seats = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
   assert.deepEqual(
     [...seats].sort(),
-    ["HR Advisory", "HR Operations"],
-    "this test pins the two HR seats by name; a third seat needs its own decision, not a silent pass",
+    ["HR Advisory", "HR Operations", "HR Resourcing"],
+    "this test pins the three HR seats by name; a fourth seat needs its own decision, not a silent pass",
   );
+  // HR Resourcing — the Talent Acquisition seat, 2026-10-08. The owner ticked the Organogram for
+  // her on the access blueprint: the company chart and its vacancies are what she recruits against.
+  // Same verdict as the other two seats, so the loop below asks her every question it asks them —
+  // company mode, Head Office kept, and no power over the skeleton.
 
   for (const seat of seats) {
     const role = seat as PhoenixRole;

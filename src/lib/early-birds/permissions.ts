@@ -38,6 +38,9 @@ const COMPANY_WIDE_ROLES = new Set([
   "Product Manager",
   "Group Product Manager",
   "Training Manager",
+  // The Talent Acquisition seat (2026-10-08). She manages no district, so without this the board
+  // would resolve her to an empty scope and print "no district reports to you".
+  "HR Resourcing",
 ]);
 
 /**

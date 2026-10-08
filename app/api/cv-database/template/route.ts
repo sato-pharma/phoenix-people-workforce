@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission, isHrAuthorityRole } from "@/lib/auth/permissions";
+import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { generateCvDatabaseTemplateWorkbook } from "@/lib/cv/cv-template";
 import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
@@ -34,6 +35,8 @@ export async function GET(request: Request) {
     // hands back the blank CV intake template, a recruiting artefact; leaving it on vacancies:read
     // would have left an authenticated download open to a seat whose page had just been closed.
     await assertPermission(access, "recruitment", "read");
+    // The CV Database is fenced off the Talent Acquisition seat (src/lib/auth/seat-page-fences.ts).
+    assertPageOpenForRole(access.role, "/cv-database");
 
     const workbook = await generateCvDatabaseTemplateWorkbook();
     const buffer = await workbook.xlsx.writeBuffer();

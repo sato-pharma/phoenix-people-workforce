@@ -37,7 +37,14 @@ export default async function AdminCompanyCalendarPage() {
   // but this page was Super-Admin-only and the portal mount bounces admin-shell roles, so
   // canManageCompanyCalendar returning true for him was dead code with no screen behind it.
   // Same shape as his two other dedicated pages (finance-command-center, finance-leave-management).
-  const allowed = access.role === "Finance Manager" || canAccessSystemAdministratorWorkspace(access);
+  //
+  // The Talent Acquisition seat (HR Resourcing) added 2026-10-08 — the owner ticked this page for
+  // her on the access blueprint. She READS it: she is not in CALENDAR_MANAGER_ROLES, so /api/calendar
+  // refuses her edits exactly as it refuses everyone else outside that list.
+  const allowed =
+    access.role === "Finance Manager" ||
+    access.role === "HR Resourcing" ||
+    canAccessSystemAdministratorWorkspace(access);
   if (!allowed) {
     redirect("/admin");
   }

@@ -148,8 +148,14 @@ export function canViewAllProbation(access: Pick<AccessContext, "role" | "scope"
   );
 }
 
+// The Talent Acquisition seat (HR Resourcing) reads beside the CEO, not beside the administrators:
+// the owner ticked the Decision Dashboard and Probation Analytics for her on 2026-10-08, both of
+// which open on this function, and every route behind it is a GET. canViewAllProbation is NOT
+// widened — it is also the company-wide EXPORT gate (canExportProbation), which he did not give her.
+// The Probation Tracker shares this gate and is closed to her by page instead
+// (src/lib/auth/seat-page-fences.ts).
 export function canReadAllProbation(access: Pick<AccessContext, "role" | "scope">) {
-  return canViewAllProbation(access) || access.role === "CEO";
+  return canViewAllProbation(access) || access.role === "CEO" || access.role === "HR Resourcing";
 }
 
 /**

@@ -132,6 +132,9 @@ export function canAccessHeadOffice(access: AccessContext) {
     // for her on either surface.
     access.role === "HR Advisory" ||
     access.role === "HR Operations" ||
+    // The Talent Acquisition seat (2026-10-08) — Head Office staff who recruits for Head Office too,
+    // the reason the old Talent Acquisition role was added here on 2026-08-25.
+    access.role === "HR Resourcing" ||
     // Training Manager added 2026-09-03 (owner: "the training manager ui want to make him able to
     // see full company organogram"). He is the THIRD person to hit the exact defect written up for
     // the Finance Manager above and for A-3 in the pin block above it: he IS Head Office staff, so
@@ -249,6 +252,10 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
     access.role === "Training Manager" ||
     access.role === "HR Advisory" ||
     access.role === "HR Operations" ||
+    // The Talent Acquisition seat (2026-10-08), ticked by the owner. The company chart and its
+    // vacancies are what she recruits against. NOT added to canViewOrganogramSensitiveFields: the
+    // money on a node stays with the seats that hold payroll.
+    access.role === "HR Resourcing" ||
     // Added 2026-08-02 on owner instruction, alongside organogram:read in the matrix. The page
     // has TWO gates: the matrix grant admits him past the first, and without this he fell to the
     // final `redirect("/employee-portals")` — granted on paper, still bounced in practice.

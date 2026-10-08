@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { assertPermission, isHrAuthorityRole } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { applyCardEdits } from "@/lib/business-cards/card-content";
 import type { BusinessCardFields, EditableCardField } from "@/lib/business-cards/card-content";
@@ -14,6 +13,7 @@ import {
   cardFileName,
   renderBusinessCardsPdf,
 } from "@/lib/business-cards/render-pdf";
+import { canPrintBusinessCards } from "@/lib/business-cards/access";
 import { listBusinessCardEmployees } from "@/lib/business-cards/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -74,8 +74,9 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "read");
-    if (!isHrAuthorityRole(access.role)) {
+    // employee_documents for HR Advisory / HR Operations, the request desk for Talent Acquisition —
+    // src/lib/business-cards/access.ts, the predicate the page uses too.
+    if (!(await canPrintBusinessCards(access))) {
       return fail(403, "forbidden", "Business cards are printed by HR.");
     }
 

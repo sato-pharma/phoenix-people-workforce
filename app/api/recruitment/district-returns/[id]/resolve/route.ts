@@ -7,6 +7,7 @@ import {
   requireRecruitmentAccess,
   str,
 } from "@/app/api/recruitment/_lib/http";
+import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { resolveDistrictReturn } from "@/lib/recruitment/district-returns";
 
 export const runtime = "nodejs";
@@ -27,6 +28,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "recruitment", "update");
+    // Returned CVs is fenced off the Talent Acquisition seat (src/lib/auth/seat-page-fences.ts) —
+    // her recruitment:update opens the pipeline, not this queue.
+    assertPageOpenForRole(access.role, "/recruitment/returned-cvs");
     const { id } = await params;
     if (!id) {
       return NextResponse.json({ error: "validation", message: "A return id is required.", success: false }, { status: 400 });

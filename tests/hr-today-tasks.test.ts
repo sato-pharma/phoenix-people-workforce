@@ -355,6 +355,9 @@ export async function runHrTodayTasksTests() {
         "workforce_insight",
       ],
       "HR Operations": ["people_records", "performance_probation", "time_attendance"],
+      // The Talent Acquisition seat (2026-10-08): the pipeline and the two request desks she works.
+      // workforce_context is read-only reference and carries no queue of its own.
+      "HR Resourcing": ["recruiting", "employee_requests"],
     };
     for (const name of seats) {
       const covered = new Set((days.get(name) ?? []).map((item) => item.functionKey));

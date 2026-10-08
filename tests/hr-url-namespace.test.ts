@@ -60,7 +60,8 @@ import { resolvePersonalWorkspaceTabs } from "../src/lib/workspace/personal-work
  * pins those three by name so nobody "simplifies" the authored list back into a derived one.
  */
 
-const HR_ROLES: PhoenixRole[] = ["HR Advisory", "HR Operations"];
+// HR Resourcing — the Talent Acquisition seat — since 2026-10-08.
+const HR_ROLES: PhoenixRole[] = ["HR Advisory", "HR Operations", "HR Resourcing"];
 const ALL_MODES: NavigationMode[] = ["admin", "employee-portal", "hr"];
 
 function lookupFor(role: PhoenixRole): PermissionLookup {
@@ -365,9 +366,10 @@ export function runHrUrlNamespaceTests() {
   assert.deepEqual(
     inNamespace.sort(),
     [...HR_ROLES].sort(),
-    "exactly the two HR seats use the /hr namespace — adding a third is a decision, not a side effect",
+    "exactly the three HR seats use the /hr namespace — the third (HR Resourcing, the Talent " +
+      "Acquisition seat) was the owner's decision on 2026-10-08; adding a fourth is a decision, not a side effect",
   );
-  assert.equal(hrNamespaceRoles.size, 2);
+  assert.equal(hrNamespaceRoles.size, 3);
 
   // 11 ── The shell header cannot be forged, and `/hr` cannot become a second spelling of the API.
   //

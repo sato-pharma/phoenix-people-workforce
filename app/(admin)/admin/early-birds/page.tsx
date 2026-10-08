@@ -26,7 +26,9 @@ import { assertDistrictInScope, assertRepInRoster, resolveEarlyBirdsScope } from
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED_ROLES = new Set(["Super Admin", "CEO", "SFE Manager"]);
+// HR Resourcing — the Talent Acquisition seat, ticked by the owner on 2026-10-08. Read only, like
+// the CEO: confirming a fortnight stays with each District Manager.
+const ALLOWED_ROLES = new Set(["Super Admin", "CEO", "SFE Manager", "HR Resourcing"]);
 const BASE_PATH = "/admin/early-birds";
 
 type PageProps = { searchParams?: Promise<{ district?: string; period?: string; rep?: string }> };

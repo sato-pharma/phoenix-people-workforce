@@ -4,6 +4,7 @@ import { Activity, ArrowRight, Hourglass, LayoutDashboard, ListChecks } from "lu
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
+import { isPageFencedForRole } from "@/lib/auth/seat-page-fences";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,10 @@ const probationModules = [
 export default async function CeoProbationPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  if (access.role !== "CEO" && access.role !== "Super Admin") redirect("/admin");
+  // The Talent Acquisition seat (HR Resourcing) since 2026-10-08 — the owner ticked this hub for her.
+  // Its cards are the tracker, the dashboard and analytics; the tracker is fenced for her
+  // (src/lib/auth/seat-page-fences.ts), so its card is not drawn.
+  if (access.role !== "CEO" && access.role !== "Super Admin" && access.role !== "HR Resourcing") redirect("/admin");
   if (!(await canAccess(access, "probation", "read"))) redirect("/employee-portals");
 
   return (
@@ -29,7 +33,7 @@ export default async function CeoProbationPage() {
         title="Probation"
       />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {probationModules.map((module) => {
+        {probationModules.filter((module) => !isPageFencedForRole(access.role, module.href)).map((module) => {
           const Icon = module.icon;
           return (
             <Link
