@@ -20,6 +20,34 @@ function walkRouteFiles(directory: string): string[] {
   });
 }
 
+function walkPageFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return walkPageFiles(fullPath);
+    return entry.name === "page.tsx" ? [fullPath] : [];
+  });
+}
+
+/**
+ * A page file's own address. Unlike `normalizeRoutePattern` — which only has to strip `app/api` and
+ * never meets one — this must drop route GROUPS and parallel-route slots, because they are real
+ * directories that contribute nothing to the URL: `app/(admin)/admin/weekly-plans/page.tsx` is
+ * served at `/admin/weekly-plans`.
+ */
+function pageUrlFromFile(filePath: string) {
+  return (
+    "/" +
+    path
+      .relative(path.join(process.cwd(), "app"), filePath)
+      .replace(/\\/g, "/")
+      .replace(/\/page\.tsx$/, "")
+      .split("/")
+      .filter((segment) => segment && !/^\(.*\)$/.test(segment) && !segment.startsWith("@"))
+      .map((segment) => segment.replace(/\[([^\]]+)\]/g, ":$1"))
+      .join("/")
+  );
+}
+
 function methodsFromSource(source: string): HttpMethod[] {
   return Array.from(source.matchAll(/export async function (GET|POST|PATCH|PUT|DELETE)\b/g))
     .map((match) => match[1] as HttpMethod);
@@ -165,6 +193,50 @@ export function runAccessRegistryCoverageTests() {
   assert.deepEqual(missingExportAudit, [], "export/template/download routes must require audit classification in the registry");
   assert.deepEqual(normalizerFellThrough, [], "every Source Normalizer route must have its own registry entry, not a wildcard blanket");
   assert.deepEqual(normalizerMissingAudit, [], "every Source Normalizer route must declare an audit classification");
+
+  // THE OTHER DIRECTION: AN ENTRY WHOSE ROUTE NO LONGER EXISTS.
+  //
+  // Everything above asks "is every route declared?". Nothing asked "does every declaration point
+  // at a route?", and that gap is structurally invisible: the declared-action loop below reads each
+  // entry's file inside `try { … } catch { continue }`, so a pattern whose file has been deleted or
+  // renamed is SKIPPED rather than flagged — it silently stops being checked by the one rule that
+  // would have read it. Measured 2026-10-08: eight concrete entries named routes with no route.ts
+  // at all (three `/api/sales/weekly/mapping*` left behind when the old mapping/missing pages were
+  // replaced, `/api/approvals-hub/historical` which was never built, and four
+  // `/api/action-center/*` carrying a comment about keeping old bookmarks working after the
+  // handlers had gone). A stale entry enforces nothing — the registry is a declarative inventory —
+  // so it costs exactly what a wrong declared action costs: it misinforms whoever reads this file
+  // to learn what is callable and under which gate.
+  //
+  // Concrete patterns only. A `*`/`**`/`:param` entry legitimately covers routes it cannot name.
+  const apiRoutesOnDisk = new Set(files.map(routeFromFile));
+  const pageUrlsOnDisk = new Set(walkPageFiles(path.join(process.cwd(), "app")).map(pageUrlFromFile));
+  const patternsWithNoRoute: string[] = [];
+  let patternsChecked = 0;
+  for (const entry of accessRegistry) {
+    if (entry.pattern.includes("*") || entry.pattern.includes(":")) continue;
+    patternsChecked += 1;
+    const onDisk = entry.surface === "page" ? pageUrlsOnDisk.has(entry.pattern) : apiRoutesOnDisk.has(entry.pattern);
+    if (!onDisk) {
+      patternsWithNoRoute.push(`${entry.surface} ${entry.pattern}`);
+    }
+  }
+  // Same reason as DECLARED_ACTION_FLOOR: a path-building check dies by matching nothing. 653
+  // concrete patterns resolved when this was written — 637 api and 16 page — against 450 page
+  // files and 1,055 route.ts files on disk.
+  assert.ok(
+    patternsChecked >= 500,
+    `the stale-pattern check examined only ${patternsChecked} concrete patterns (floor 500) - it has stopped seeing the registry rather than found it clean`,
+  );
+  assert.ok(
+    pageUrlsOnDisk.size >= 300,
+    `the page scan found only ${pageUrlsOnDisk.size} pages (floor 300) - pageUrlFromFile or the app tree has moved, so page patterns are no longer being compared`,
+  );
+  assert.deepEqual(
+    patternsWithNoRoute,
+    [],
+    "every concrete registry pattern must name a route that exists - an entry for a deleted route declares a gate over nothing and is skipped by the declared-action check below",
+  );
 
   // A DECLARED ACTION MUST BE ONE THE HANDLER ACTUALLY ASSERTS.
   //
