@@ -38,8 +38,15 @@ export function filterLogRows(rows: DoubleVisitReportRow[], filters: ReportLogFi
   return rows.filter((row) => {
     if (filters.areaFilter !== ALL && row.areaName !== filters.areaFilter) return false;
     if (filters.regionFilter !== ALL && row.regionName !== filters.regionFilter) return false;
-    if (filters.roleFilter !== ALL && row.doubleVisitorRole !== filters.roleFilter) return false;
-    if (filters.visitorFilter !== ALL && (row.doubleVisitorName ?? row.doubleVisitorHrId) !== filters.visitorFilter) return false;
+    // A chain visit is in BOTH managers' records (owner, 2026-10-08), so either one's name or role finds it.
+    if (filters.roleFilter !== ALL && row.doubleVisitorRole !== filters.roleFilter && row.doubleVisitor2Role !== filters.roleFilter) return false;
+    if (
+      filters.visitorFilter !== ALL &&
+      (row.doubleVisitorName ?? row.doubleVisitorHrId) !== filters.visitorFilter &&
+      (row.doubleVisitor2Name ?? row.doubleVisitor2HrId ?? null) !== filters.visitorFilter
+    ) {
+      return false;
+    }
     if (filters.visitKindFilter !== ALL && row.visitKind !== filters.visitKindFilter) return false;
     // A pharmacy row is found under "Pharmacies", never under the PM its CRM period says.
     if (filters.periodFilter !== ALL && entryPeriodLabel(row) !== filters.periodFilter) return false;
@@ -47,6 +54,7 @@ export function filterLogRows(rows: DoubleVisitReportRow[], filters: ReportLogFi
     return (
       (row.visitedName ?? "").toLowerCase().includes(term) ||
       (row.doubleVisitorName ?? "").toLowerCase().includes(term) ||
+      (row.doubleVisitor2Name ?? "").toLowerCase().includes(term) ||
       (row.visitedHrId ?? "").toLowerCase().includes(term)
     );
   });
@@ -121,7 +129,7 @@ export function buildReportSummaryMetrics(filtered: {
   return [
     { metric: "Total Visits (filtered)", value: sumVisitCount(logRows) },
     { metric: "Log Rows (filtered)", value: logRows.length },
-    { metric: "Distinct Double-Visitors", value: countDistinct(logRows.map((row) => row.doubleVisitorHrId ?? row.doubleVisitorName)) },
+    { metric: "Distinct Double-Visitors", value: countDistinct(logRows.flatMap((row) => [row.doubleVisitorHrId ?? row.doubleVisitorName, row.doubleVisitor2HrId ?? row.doubleVisitor2Name])) },
     { metric: "Distinct Visited MRs", value: countDistinct(logRows.map((row) => row.visitedHrId ?? row.visitedName)) },
     { metric: "Distinct Areas", value: countDistinct(logRows.map((row) => row.areaName)) },
     { metric: "Distinct Regions", value: countDistinct(logRows.map((row) => row.regionName)) },

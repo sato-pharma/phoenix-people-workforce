@@ -157,12 +157,43 @@ function minutesToClock(minutes: number | null): string {
   return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 }
 
+/**
+ * The Phoenix field set on one visit, appended to that visit's phrase in the Visit Details cell.
+ *
+ * 🔴 NOT FLAT COLUMNS HERE, and that is forced by the sheet's own shape: this cell holds a WHOLE DAY,
+ * whose visit count varies by row, so there is no fixed number of columns to spread them over. The
+ * other exports keep them flat because each of their rows is one visit. A vendor visit adds nothing,
+ * so a day of vendor visits reads byte-for-byte as it did.
+ */
+function phoenixVisitPhrase(visit: CompanyActivityDayRow["crmVisits"][number]): string {
+  const parts = [visit.partner2Name ? `and ${visit.partner2Name}` : null];
+  const detail = visit.phoenix;
+  if (detail) {
+    parts.push(
+      detail.kindLabel,
+      detail.products.length > 0 ? detail.products.join(", ") : null,
+      detail.samples,
+      detail.availability,
+      detail.objection,
+      detail.nextStep,
+      detail.pharmacyFeedback,
+      detail.offPlan,
+      detail.location,
+      detail.evidence,
+      detail.capture,
+    );
+  }
+  const kept = parts.map((part) => (part ?? "").trim()).filter(Boolean);
+  return kept.length > 0 ? ` (${kept.join(" · ")})` : "";
+}
+
 function visitSummaryText(day: CompanyActivityDayRow): string {
   if (day.crmVisits.length === 0) return "";
   return day.crmVisits
     .map((visit) => {
       const detail = visit.customerName?.trim() || visit.contactName?.trim() || visit.comment?.trim() || "";
-      return detail ? `${visit.label}: ${detail}` : visit.label;
+      const base = detail ? `${visit.label}: ${detail}` : visit.label;
+      return `${base}${phoenixVisitPhrase(visit)}`;
     })
     .join("; ");
 }

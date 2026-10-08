@@ -4,7 +4,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
-  crmMasterExportColumns,
+  crmMasterExportColumnsFor,
   crmMasterExportLabel,
   streamCrmMasterExportPages,
   type CrmMasterAmpm,
@@ -12,6 +12,7 @@ import {
   type CrmMasterFilter,
   type CrmMasterMappingStatus,
 } from "@/lib/crm/master";
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { streamCrmMasterWorkbookResponse } from "@/lib/crm/master-export-workbook";
 import { isPortalCrmRole, resolvePortalCrmScope } from "@/lib/crm/portal-crm-scope";
 import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
@@ -66,6 +67,10 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const minDurationRaw = params.get("minDuration");
   const minDuration = minDurationRaw != null && Number.isFinite(Number(minDurationRaw)) ? Number(minDurationRaw) : null;
+  // Golden rule #1's tier for this reader, resolved ONCE and used for both the sheet's header and
+  // its cells. A rep's own row is blinded inside the shaper, per row.
+  const viewer = phoenixDetailViewer(access.role, access.hrId);
+
   const filter: CrmMasterFilter = {
     agentHrId: params.get("agentHrId"),
     ampm: (params.get("ampm") ?? undefined) as CrmMasterAmpm | undefined,
@@ -127,7 +132,8 @@ export async function GET(request: NextRequest) {
     },
     filename: exportFileName(label),
     sheetName: label,
-    columns: crmMasterExportColumns(filter),
-    pages: streamCrmMasterExportPages(filter, scope),
+    // ONE viewer for the header and the rows, so the sheet's shape and its cells can never disagree.
+    columns: crmMasterExportColumnsFor(filter, viewer),
+    pages: streamCrmMasterExportPages(filter, scope, viewer),
   });
 }

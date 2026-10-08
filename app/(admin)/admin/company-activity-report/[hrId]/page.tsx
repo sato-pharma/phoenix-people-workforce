@@ -1,3 +1,4 @@
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { Activity, ArrowLeft } from "lucide-react";
@@ -64,7 +65,7 @@ export default async function AdminCompanyActivityReportEmployeePage({
   const employee = roster.find((row) => row.hrId === hrId);
   if (!employee) notFound();
 
-  const report = await getCompanyActivityReport({ employees: [employee], endDate, startDate });
+  const report = await getCompanyActivityReport({ employees: [employee], endDate, startDate, viewer: phoenixDetailViewer(access.role, access.hrId) });
   const summary = report.summaries[0] ?? null;
 
   const backParams = companyActivityReportRangeParams({ endDate, startDate });

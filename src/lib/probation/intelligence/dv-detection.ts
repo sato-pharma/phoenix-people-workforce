@@ -11,7 +11,7 @@
 import {
   dvDayKey,
   loadDoubleVisitRows,
-  mapRawDvVisit,
+  mapRawDvVisits,
   type RawDvVisitRow,
   type SourceDvVisit,
 } from "./dv-source";
@@ -54,11 +54,12 @@ function isPresent(value: string | null | undefined): value is string {
  */
 export function detectDvDays(rows: RawDvVisitRow[]): DvDetectionResult {
   const byKey = new Map<string, DetectedDvDay>();
-  const seenCrmIds = new Set<number>();
+  const seenVisitEvaluators = new Set<string>();
   const unresolved: DvDetectionResult["unresolved"] = [];
 
-  for (const raw of rows) {
-    const visit = mapRawDvVisit(raw);
+  // One entry per (visit, evaluator): a chain visit's second manager forms his own DV-Day exactly as
+  // the first does (mapRawDvVisits — owner, 2026-10-08).
+  for (const visit of rows.flatMap(mapRawDvVisits)) {
 
     // Zero is the only "no id". A NEGATIVE id is a real visit Phoenix recorded itself after the CRM
     // cutover (the unified views carry it as -legacy_id); rejecting it would turn every Phoenix
@@ -80,10 +81,12 @@ export function detectDvDays(rows: RawDvVisitRow[]): DvDetectionResult {
       continue;
     }
 
-    // A CRM activity can belong to exactly ONE DV-Day — ignore a repeated crm_visit_id (dedup
-    // within a single detection pass; the DB unique on crm_visit_id is the durable guard, P3-T03).
-    if (seenCrmIds.has(visit.crmVisitId)) continue;
-    seenCrmIds.add(visit.crmVisitId);
+    // A CRM activity belongs to ONE DV-Day per evaluator — ignore a repeated (crm_visit_id, evaluator)
+    // (dedup within a single detection pass; the DB unique on (crm_visit_id, dv_day_id) is the durable
+    // guard, P3-T03). A chain visit is therefore in each of its two managers' DV-Days, once each.
+    const visitEvaluatorKey = `${visit.crmVisitId}|${visit.evaluatorHrId.trim().toLowerCase()}`;
+    if (seenVisitEvaluators.has(visitEvaluatorKey)) continue;
+    seenVisitEvaluators.add(visitEvaluatorKey);
 
     const key = dvDayKey(visit.evaluatorHrId, visit.employeeHrId, visit.dvDate);
     const existing = byKey.get(key);

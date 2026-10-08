@@ -1,3 +1,4 @@
+import type { PhoenixVisitDetail } from "@/lib/crm/phoenix-visit-detail";
 /**
  * Company Activity Report — day-by-day account of what every employee actually did over a freely
  * chosen date range: CRM field/campaign visits, office attendance, leave activity, and days with
@@ -70,6 +71,11 @@ export type CompanyActivityVisitDetail = {
   /** True when this visit has neither agent_hr_id nor double_hr_id resolved — part of this
    * report's activity only by virtue of appearing in a wanted-id fetch; see crm-detail.ts. */
   attributionUncertain: boolean;
+  /** A chain visit's SECOND manager. Phoenix-only — the vendor feed had one partner column. */
+  partner2Name: string | null;
+  /** The Phoenix field set, shaped to THIS reader's tier (`phoenix-visit-detail.ts`). Null on a vendor
+   * row, where there is nothing behind it: the cell then reads exactly as it always did. */
+  phoenix: PhoenixVisitDetail | null;
 };
 
 export type CompanyActivityLeaveDetail = {

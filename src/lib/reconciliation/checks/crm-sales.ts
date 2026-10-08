@@ -108,6 +108,11 @@ const recentVisitsAllResolveToAnEmployee: ReconciliationCheck = {
     // employed that day) are dropped on BOTH sides by the same shared predicate, isSettledUnmappedRow.
     const settled = (crmId: number | null, label: string | null, row: VisitIdentityScanRow) =>
       isSettledUnmappedRow({ crmId, label, visitDate: row.visit_date, visitType: row.visit_type }, maps);
+    // 🔴 SLOT 2 IS DELIBERATELY NOT READ HERE, and must not be added. `getUnmappedCrmIdentities` on
+    // the left derives from `ireports360_visits`, which has ONE partner column and no `double2_*` at
+    // all, so a slot-2 identity on this side could never appear on that one — a breach nobody could
+    // ever clear. It cannot hide anything either: slot 2 exists only on a Phoenix CRM row, whose
+    // partner is an employee seat and so always carries a resolved hr id.
     const rightIds = visitRows
       .flatMap((row) => [
         row.agent_hr_id === null && !settled(row.agent_crm_id, row.agent_name, row) ? Number(row.agent_crm_id) : Number.NaN,

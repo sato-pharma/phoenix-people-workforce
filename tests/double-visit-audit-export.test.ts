@@ -133,10 +133,16 @@ export async function runDoubleVisitAuditExportTests() {
             speciality: "GP",
             period: "AM",
             visitType: "Regular",
+            // A Phoenix CRM chain visit: a second coach and the field set, shaped as a `full` reader
+            // gets it. The vendor had neither, so these two fields prove the sheet gains them without
+            // the figures above moving — this coach's totals are unchanged by their presence.
+            partner2: "Mona Fathy",
+            phoenixColumns: { "Visit kind": "Chain visit", Products: "Satoprazol", "Distance (m)": 42 },
           },
         ],
       },
     ],
+    phoenixHeaders: ["Visit kind", "Products", "Distance (m)"],
   };
 
   const workbook = await buildDoubleVisitAuditWorkbook(data);

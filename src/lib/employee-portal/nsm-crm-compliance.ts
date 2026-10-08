@@ -84,6 +84,9 @@ export type NsmCrmVisitRow = {
   agent_crm_id: number | null;
   contact_crm_id: number | null;
   double_hr_id: string | null;
+  /** The chain visit's SECOND manager. Slot 1 is `coalesce(manager, product_manager, senior)`, so a
+   * row that carries somebody here carries somebody there too — the two never hold one person. */
+  double2_hr_id: string | null;
   crm_save_date: string | null;
   synced_at: string | null;
   visit_type: number | null;
@@ -169,8 +172,8 @@ async function fetchVisitsForDate(date: string): Promise<VisitRow[]> {
     dateFrom: date,
     dateTo: date,
     columns:
-      "agent_hr_id, agent_crm_id, contact_crm_id, double_hr_id, crm_save_date, synced_at, visit_type, " +
-      "visit_type_description, contact_name, customer_name, comment",
+      "agent_hr_id, agent_crm_id, contact_crm_id, double_hr_id, double2_hr_id, crm_save_date, " +
+      "synced_at, visit_type, visit_type_description, contact_name, customer_name, comment",
   });
 }
 
@@ -359,8 +362,11 @@ export function buildNsmCrmCompliance(input: {
       const cur = agentEarliest.get(agent);
       if (cur === undefined || when < cur.when) agentEarliest.set(agent, best);
     }
-    const dbl = matchKey(row.double_hr_id);
-    if (dbl) {
+    // Both partner slots earn the ride, and crediting both cannot double-count: slot 1 is
+    // `coalesce(manager, product_manager, senior)`, so a chain visit's two slots hold two people.
+    for (const partner of [row.double_hr_id, row.double2_hr_id]) {
+      const dbl = matchKey(partner);
+      if (!dbl) continue;
       const cur = doubleEarliest.get(dbl);
       if (cur === undefined || when < cur.when) doubleEarliest.set(dbl, best);
     }

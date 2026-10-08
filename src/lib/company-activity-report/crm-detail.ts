@@ -15,11 +15,19 @@ import { collapseDuplicateVisitSubmissions, queryVisits, scanVisitsForRange } fr
 import { crmDayVisitTypeStatus } from "@/lib/attendance/crm-day-maps";
 import { mergeDayMapVisitPages } from "@/lib/attendance/crm-day-maps";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import {
+  PHOENIX_VISIT_DETAIL_COLUMNS,
+  phoenixRowSight,
+  phoenixVisitDetail,
+  type PhoenixDetailSight,
+  type PhoenixDetailViewer,
+  type PhoenixVisitDetailRow,
+} from "@/lib/crm/phoenix-visit-detail";
 import { isIsoDate } from "@/lib/attendance/working-days";
 import { CAMPAIGN_TYPE, classifyVisit, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import type { CompanyActivityVisitDetail } from "@/lib/company-activity-report/types";
 
-type CrmDetailRow = {
+export type CrmDetailRow = {
   id: string;
   crm_visit_id: number | null;
   visit_date: string | null;
@@ -36,10 +44,17 @@ type CrmDetailRow = {
   contact_crm_id: number | null;
   double_crm_id: number | null;
   crm_save_date: string | null;
-};
+  /** A chain visit's second manager's NAME — `double2_hr_id` above is the id, which is never shown. */
+  double2_name?: string | null;
+} & PhoenixVisitDetailRow;
 
 const CRM_DETAIL_COLUMNS =
-  "id,crm_visit_id,visit_date,visit_type,visit_type_description,comment,customer_name,contact_name,ampm,agent_hr_id,double_hr_id,double2_hr_id,agent_crm_id,contact_crm_id,double_crm_id,crm_save_date";
+  "id,crm_visit_id,visit_date,visit_type,visit_type_description,comment,customer_name,contact_name,ampm," +
+  "agent_hr_id,double_hr_id,double2_hr_id,double2_name,agent_crm_id,contact_crm_id,double_crm_id,crm_save_date," +
+  // THE PHOENIX FIELD SET. Selected unconditionally and printed only at the tier the reader earns: a
+  // select is a string, so a list that varied by role would read `undefined` and print a blank, which
+  // is indistinguishable from a visit that recorded nothing.
+  PHOENIX_VISIT_DETAIL_COLUMNS.replaceAll(" ", "");
 
 /** Same threshold as attendance/crm-day-maps.ts — above this many distinct employees, a full
  * window scan is cheaper than per-employee pushdown reads. */
@@ -56,7 +71,11 @@ async function fetchCrmDetailVisits(dateFromIso: string, dateToIso: string, want
   return mergeDayMapVisitPages<CrmDetailRow>([asAgent, asDouble]);
 }
 
-function buildVisitDetail(row: CrmDetailRow): CompanyActivityVisitDetail {
+/** `sight` is null when the caller named no reader: the row then carries NO Phoenix detail at all.
+ *  That is not the same as the `none` tier, which still shows the WORK half — products, samples, the
+ *  objection — because that half is the rep's own work and every admin reader sees it. With nobody
+ *  named there is no reader to judge, so the cell reads exactly as it did before this change. */
+export function buildVisitDetail(row: CrmDetailRow, sight: PhoenixDetailSight | null): CompanyActivityVisitDetail {
   const classification = classifyVisit(row.visit_type, row.comment, row.visit_type_description);
   return {
     visitType: row.visit_type,
@@ -68,6 +87,10 @@ function buildVisitDetail(row: CrmDetailRow): CompanyActivityVisitDetail {
     customerName: row.customer_name,
     comment: row.comment,
     attributionUncertain: !row.agent_hr_id && !row.double_hr_id,
+    partner2Name: row.double2_name?.trim() || null,
+    // `visit_kind` is the one column only a Phoenix row carries, so it is what tells the two feeds apart
+    // here — a vendor row gets null and its cell is byte-for-byte what it was before this change.
+    phoenix: row.visit_kind && sight ? phoenixVisitDetail(row, sight) : null,
   };
 }
 
@@ -95,6 +118,9 @@ export async function loadCompanyActivityCrmDetail(input: {
   employeeHrIds: string[];
   dateFromIso: string;
   dateToIso: string;
+  /** Who is reading. Omitted means no Phoenix detail at all, which is what a caller with no reader to
+   * name should get — never the full set by default. */
+  viewer?: PhoenixDetailViewer;
 }): Promise<CompanyActivityCrmResult> {
   if (!isIsoDate(input.dateFromIso) || !isIsoDate(input.dateToIso)) {
     return { byEmployeeDay: new Map(), unmappedCrmVisitCount: null };
@@ -149,7 +175,12 @@ export async function loadCompanyActivityCrmDetail(input: {
         else if (status === "AV") hasLeaveType = true;
       }
       dayMap.set(dateIso, {
-        visits: rows.map(buildVisitDetail),
+        // 🔴 AN EXPLICIT ARROW, NOT `rows.map(buildVisitDetail)`. `map` passes the INDEX as the second
+        // argument, so the bare reference would have handed the sight parameter a number — and `0`
+        // is not a tier, so every row would have fallen through to the widest reading.
+        visits: rows.map((row) =>
+          buildVisitDetail(row, input.viewer ? phoenixRowSight(input.viewer, row.agent_hr_id) : null),
+        ),
         isFieldVisitDay: regularCount > 0 || hasCampaignType,
         isLeaveDay: regularCount === 0 && !hasCampaignType && hasLeaveType,
       });

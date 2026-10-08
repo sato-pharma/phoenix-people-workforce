@@ -28,6 +28,7 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getDoubleVisitRecoveredChains } from "@/lib/double-visit-analytics/service";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
 export const runtime = "nodejs";
@@ -177,7 +178,11 @@ export default async function CrmHubPage({
     },
     // This page is Super-Admin-only (see the redirect above), so it is one of exactly two places
     // allowed to construct the company-wide scope. A test pins that set.
-    CRM_SCOPE_ALL);
+    CRM_SCOPE_ALL,
+    // Golden rule #1's tier, asked of his ROLE rather than assumed from the gate above: this page is
+    // the Super Admin's, so it resolves to `full` — but a widened gate must not silently widen a
+    // sight the owner narrowed himself.
+    phoenixDetailViewer(access.role, access.hrId));
 
     activeTab = data.dataset;
     syncPanel = { configured: data.configured, latestSyncRuns: data.latestSyncRuns };

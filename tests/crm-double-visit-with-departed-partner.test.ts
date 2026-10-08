@@ -156,6 +156,72 @@ export function runCrmDoubleVisitWithDepartedPartnerTests() {
     "the partner's credit is unchanged by the marker — it only ever removes the AGENT's",
   );
 
+  // ── 1b. A CHAIN VISIT'S SECOND MANAGER KEEPS HIS DAY TOO ──────────────────────────────────────
+  //
+  // The same defect, from the other direction. The vendor split a chain into two rows, so each
+  // manager had his own. Phoenix CRM saves ONE row carrying both, and the credit loop read slot 1
+  // only — so a senior who spent the whole day riding along read as having done nothing, on the very
+  // matrix a payroll deduction candidate is drawn from. Slot 2 often has NO CRM account, so it is
+  // gated on the hr id, not on a CRM id like slot 1.
+  const chainEmployees: FieldWorkforceEmployeeInput[] = [
+    ...employees,
+    {
+      // Deliberately NO crmId: a Phoenix-only product manager, which is the common case for slot 2.
+      crmId: null,
+      crmUsername: null,
+      employmentStatus: "active",
+      fullName: "PM Nine",
+      displayName: "PM Nine",
+      hireDate: "2024-01-01",
+      hrId: "A-9",
+      jobTitle: "Product Manager",
+      positionTitle: null,
+    },
+  ];
+  const chain = buildIReports360FieldWorkforceMatrix({
+    employees: chainEmployees,
+    month: 9,
+    year: 2026,
+    todayIso: "2026-09-30",
+    visits: [{ ...rescuedVisit(false), agentHrId: "A-1", double2HrId: "A-9", double2Name: "PM Nine" }],
+  });
+  assert.equal(
+    rowOf(chain.matrix, "A-9")[DAY_7],
+    1,
+    "THE SECOND MANAGER'S DAY: a chain visit's slot-2 manager rode along, so the day is worked — reading slot 1 alone is a no-activity deduction for a day he spent in the field",
+  );
+  assert.equal(
+    rowOf(chain.matrix, "A-6")[DAY_7],
+    1,
+    "and slot 1 keeps his, unchanged",
+  );
+  assert.equal(
+    rowOf(chain.matrix, "A-1")[DAY_7],
+    1,
+    "and the rep who logged it keeps his own day — crediting a second manager moves nobody else's figure",
+  );
+  assert.equal(
+    chain.ownRegularCountByHrKeyAndDate.get(`${canonicalHrIdKey("A-9")}|2026-09-07`),
+    undefined,
+    "the second manager's is a ride-along day with ZERO own visits, exactly as slot 1's is — never a duplicated visit count",
+  );
+
+  // Slot 2 naming the SAME person as slot 1 must credit that person ONCE. It cannot happen in the
+  // data (slot 2 is never filled while slot 1 is empty), and the guard is what makes that a promise:
+  // the row lands on a person's day list, so a duplicate would count one visit twice for them.
+  const sameTwice = buildIReports360FieldWorkforceMatrix({
+    employees: chainEmployees,
+    month: 9,
+    year: 2026,
+    todayIso: "2026-09-30",
+    visits: [{ ...rescuedVisit(false), agentHrId: "A-1", double2HrId: "A-6", double2Name: "Mgr Seven" }],
+  });
+  assert.equal(
+    rowOf(sameTwice.matrix, "A-6")[DAY_7],
+    1,
+    "one person named in both slots is credited the day once, not twice",
+  );
+
   // ── 2. The marker survives the mirror-row mapping ─────────────────────────────────────────────
 
   const mirrorRow: VisitsMirrorRow = {
@@ -165,6 +231,8 @@ export function runCrmDoubleVisitWithDepartedPartnerTests() {
     double_crm_id: 7,
     double_hr_id: "A-6",
     double_name: "Mgr Seven",
+    double2_hr_id: "A-9",
+    double2_name: "PM Nine",
     partner_credit_only: true,
     visit_date: "2026-09-07",
     visit_type: 0,
@@ -178,6 +246,11 @@ export function runCrmDoubleVisitWithDepartedPartnerTests() {
     visitFromMirrorRow({ ...mirrorRow, partner_credit_only: undefined }).partnerCreditOnly,
     false,
     "an ordinary row is not partner-credit-only — the mapping defaults to false, never undefined-as-truthy",
+  );
+  assert.equal(
+    visitFromMirrorRow(mirrorRow).double2HrId,
+    "A-9",
+    "and it carries slot 2 through as well, or the credit loop above can never see the second manager",
   );
 
   // ── 3. What the marking pass does, and what it must not touch ────────────────────────────────

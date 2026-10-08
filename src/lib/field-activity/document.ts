@@ -65,6 +65,31 @@ function escapeHtml(value: unknown): string {
  * El-Nasir, Qism Shebeen El-Kom" then reorders its Latin parts and throws the commas and full stops
  * to the wrong end. Each Arabic run gets its own isolated span and the Latin around it is untouched.
  */
+/**
+ * The Phoenix field set as ONE wrapped sentence under the row it belongs to.
+ *
+ * A printed page has no viewport either, but it has a COLUMN — this report prints two side by side — so
+ * the detail is still prose rather than cells. The tier was decided on the server
+ * (`phoenix-visit-detail.ts`); this prints what arrived and never re-derives one, and a PDF is a
+ * document somebody keeps and forwards, so it must say exactly what its reader could see on screen.
+ */
+function phoenixLine(detail: FieldActivityStop["phoenix"]): string | null {
+  if (!detail) return null;
+  const parts = [
+    detail.products.length > 0 ? detail.products.join(" · ") : null,
+    detail.samples ? `samples ${detail.samples}` : null,
+    detail.availability,
+    detail.objection,
+    detail.nextStep,
+    detail.pharmacyFeedback ? `pharmacy ${detail.pharmacyFeedback}` : null,
+    detail.offPlan,
+    detail.location,
+    detail.evidence,
+    detail.capture,
+  ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 export function bidi(value: string | null | undefined): string {
   const text = String(value ?? "");
   if (!text) return "";
@@ -371,10 +396,10 @@ export function buildFieldActivityDocument(input: {
         : "";
       const unlocated =
         day.unlocated.length > 0
-          ? `<h2 class="h2">Recorded on this day with no GPS behind it</h2><ul class="list">${day.unlocated
+          ? `<h2 class="h2">Recorded on this day with no iReports360 check-in to match</h2><ul class="list">${day.unlocated
               .map(
                 (item) =>
-                  `<li><strong>${clock12(item.savedAt)}</strong>${item.savedOn ? ` <span class="thin">(${escapeHtml(item.savedOn)})</span>` : ""} &middot; ${escapeHtml(item.ampm ?? "—")} &middot; ${bidi(item.label)}${item.counts ? "" : " <span class=\"thin\">— not a customer call, counted in nothing</span>"}</li>`,
+                  `<li><strong>${clock12(item.savedAt)}</strong>${item.savedOn ? ` <span class="thin">(${escapeHtml(item.savedOn)})</span>` : ""} &middot; ${escapeHtml(item.ampm ?? "—")} &middot; ${bidi(item.label)}${item.counts ? "" : " <span class=\"thin\">— not a customer call, counted in nothing</span>"}${phoenixLine(item.phoenix) ? `<br><span class="thin">${bidi(phoenixLine(item.phoenix) ?? "")}</span>` : ""}</li>`,
               )
               .join("")}</ul>`
           : "";

@@ -22,6 +22,10 @@ type TestVisit = {
   agent_crm_id: number | null;
   contact_crm_id: number | null;
   double_hr_id: string | null;
+  // Slot 2 — a chain visit's second partner. Required, not optional: the whole point of the slot is
+  // that a reader cannot forget to ask for it, and an optional field here would let a test pass while
+  // the production row silently carried `undefined`.
+  double2_hr_id: string | null;
   crm_save_date: string | null;
   synced_at: string | null;
   visit_type: number | null;
@@ -43,6 +47,7 @@ function visit(overrides: Partial<TestVisit> = {}): TestVisit {
     agent_crm_id: 100,
     contact_crm_id: 555,
     double_hr_id: null,
+    double2_hr_id: null,
     crm_save_date: `${DAY}T10:00:00+00:00`,
     synced_at: `${DAY}T10:05:00.000Z`,
     visit_type: 0,

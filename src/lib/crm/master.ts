@@ -11,6 +11,14 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { memoInFlight, type SingleFlightEntry } from "@/lib/crm/ttl-single-flight";
+import {
+  PHOENIX_VISIT_DETAIL_COLUMNS,
+  phoenixRowSight,
+  phoenixVisitDetail,
+  type PhoenixDetailSight,
+  type PhoenixDetailViewer,
+  type PhoenixVisitDetailRow,
+} from "@/lib/crm/phoenix-visit-detail";
 // The unified views, never the vendor tables: vendor history plus Phoenix's own visits and
 // check-ins from the cutover on. Every exclusion below is on `exclusion_crm_id`, which the views
 // carry for both halves — `agent_crm_id` is null for a rep hired without a CRM account.
@@ -107,6 +115,12 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "double_crm_id", kind: "number", label: "Double CRM ID" },
   { key: "double_hr_id", kind: "text", label: "Double HR ID" },
   { key: "double_name", kind: "text", label: "Double Name" },
+  // SLOT 2 — the chain visit's other person. Empty on every vendor row and on a plain double: the
+  // vendor feed carried one partner column, and a chain is the only shape with two people beside
+  // the rep. Named "Chain" rather than "Double 2" so the grid says what the row IS.
+  { key: "double2_crm_id", kind: "number", label: "Chain CRM ID", note: "The second person beside the rep on a CHAIN visit — the senior above the manager who rode along, or the product manager who came along. Blank on an iReports360 row (the vendor feed had one partner column) and on a plain double visit." },
+  { key: "double2_hr_id", kind: "text", label: "Chain HR ID" },
+  { key: "double2_name", kind: "text", label: "Chain Name" },
   { key: "contact_crm_id", kind: "number", label: "Contact CRM ID" },
   { key: "contact_name", kind: "text", label: "Contact Name" },
   // DELIBERATELY NOT A COLUMN: the vendor's `customer_name` (documented as "Facility name").
@@ -219,7 +233,9 @@ const CRM_TRIPLE_FLAG_COLUMN: CrmMasterColumn = {
 /** Double Visits tab = the visit columns with the "Triple?" flag inserted right after the double
  * visitor's name, so the triple signal sits next to the pair it describes. */
 const CRM_DOUBLE_VISIT_COLUMNS: readonly CrmMasterColumn[] = CRM_VISIT_COLUMNS.flatMap((col) =>
-  col.key === "double_name" ? [col, CRM_TRIPLE_FLAG_COLUMN] : [col],
+  // After the LAST partner column, so the triple signal still sits beside the people it describes
+  // now that a chain visit carries two of them.
+  col.key === "double2_name" ? [col, CRM_TRIPLE_FLAG_COLUMN] : [col],
 );
 
 /** Triple Visits tab columns: one row per detected triple — the rep→middle→top chain, the contact,
@@ -299,22 +315,104 @@ export const CRM_VACATION_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "comment", kind: "text", label: "Comment", note: "The leave note on the first day of the period (e.g. Annual Leave, Morning Excuse)." },
 ];
 
+/**
+ * THE PHOENIX FIELD SET on this grid — flat, one column each, and gated by what the reader may see.
+ *
+ * Owner, 2026-10-07: the old CRM reports get "everything, GPS and evidence included". This grid is
+ * the one table in the app he exempted from the fits-the-screen rule by name (2026-09-26: "this
+ * report only is the accepted horizontal scrolling because it's too wide"), so nothing is merged
+ * here — a column each is exactly what a reader filtering this grid wants.
+ *
+ * 🔴 THE LOCATION AND TIMING HALF IS NOT EVERY READER'S. Golden rule #1's tiers are decided once, in
+ * `phoenixVisitDetail`; the columns a reader may not read are ABSENT rather than empty, because an
+ * empty "Accuracy" cell beside a real distance reads as "there was no reading" and there was one.
+ */
+const PHOENIX_DETAIL_COLUMNS_EVERY_READER: readonly CrmMasterColumn[] = [
+  { key: "phx_visit_kind", kind: "text", label: "Phoenix Visit Kind", note: "Single, Double, Chain, or a product manager's visit — the shape the rep's own app recorded. Blank on an iReports360 row: the vendor feed had no such field." },
+  { key: "phx_entered_by", kind: "text", label: "Entered By", note: "Whoever typed the row. Normally the rep; the Super Admin where a visit was entered later on the rep's behalf." },
+  { key: "phx_products", kind: "text", label: "Products Detailed" },
+  { key: "phx_samples", kind: "text", label: "Samples Given" },
+  { key: "phx_availability", kind: "text", label: "Pharmacy Stock", note: "What the rep found on the shelf for each product detailed in this call — in stock or out of stock." },
+  { key: "phx_objection", kind: "text", label: "Objection", note: "What the DOCTOR pushed back on, in the rep's own words where any were added. It is the doctor's objection and never a mark against the rep. \"No objection\" is an answer the rep gave; a blank means the row was left alone." },
+  { key: "phx_next_step", kind: "text", label: "Next Step", note: "What the rep committed to, and the day the rep means to do it." },
+  { key: "phx_pharmacy", kind: "text", label: "Pharmacy Named", note: "A pharmacy the rep named as FEEDBACK on this doctor's call. It is never a pharmacy call — the AM/PM column still reads the customer's own list." },
+  { key: "phx_off_plan", kind: "text", label: "Off Plan", note: "Out of plan (a doctor on the rep's list who was not on today's sent plan) or Out of list (a doctor not on that list at all). Blank on a planned visit." },
+  { key: "phx_evidence", kind: "text", label: "Evidence", note: "The photo and the voice note the rep attached." },
+  { key: "phx_location", kind: "text", label: "Location", note: "Where the phone was when the visit was saved, against the place saved for this customer." },
+];
+
+/** The measurement BEHIND a reading — the Super Admin's and the SFE Manager's, and nobody else's. */
+const PHOENIX_DETAIL_COLUMNS_FULL_SIGHT: readonly CrmMasterColumn[] = [
+  { key: "phx_distance", kind: "number", label: "Distance (m)", note: "Metres between the phone and the place saved for this customer." },
+  { key: "phx_accuracy", kind: "number", label: "Accuracy (m)", note: "How sure the phone was of its own position. A long distance with a wide accuracy is a weak reading, not a rep who was elsewhere." },
+  { key: "phx_lat", kind: "coord", label: "Latitude" },
+  { key: "phx_lon", kind: "coord", label: "Longitude" },
+  { key: "phx_capture", kind: "text", label: "Capture", note: "How the row reached the server: on the phone or entered on the server, how long it sat offline, how long the form was open, how far out the phone's clock was, and when it synced." },
+];
+
+function phoenixDetailColumns(sight: PhoenixDetailSight): readonly CrmMasterColumn[] {
+  if (sight === "none") return PHOENIX_DETAIL_COLUMNS_EVERY_READER.filter((col) => col.key !== "phx_location");
+  if (sight === "full") return [...PHOENIX_DETAIL_COLUMNS_EVERY_READER, ...PHOENIX_DETAIL_COLUMNS_FULL_SIGHT];
+  // `distance` reads the distance itself beside the sentence, and nothing behind it.
+  return [...PHOENIX_DETAIL_COLUMNS_EVERY_READER, PHOENIX_DETAIL_COLUMNS_FULL_SIGHT[0]];
+}
+
+/**
+ * The shaped values, written onto the rows in place — the same shaper every other report calls.
+ *
+ * The tier is resolved PER ROW, not once for the grid: this report is also served from the employee
+ * portal, where a reader's own visits can be on screen beside somebody else's, and golden rule #1
+ * blinds a reader on his OWN row whatever his scope is.
+ */
+function attachPhoenixDetail(rows: CrmMasterRow[], viewer: PhoenixDetailViewer): void {
+  for (const row of rows) {
+    const sight = phoenixRowSight(viewer, row.agent_hr_id);
+    const detail = phoenixVisitDetail(row as PhoenixVisitDetailRow, sight);
+    row.phx_visit_kind = detail.kindLabel;
+    row.phx_entered_by = detail.enteredByHrId;
+    row.phx_products = detail.products.length > 0 ? detail.products.join(", ") : null;
+    row.phx_samples = detail.samples;
+    row.phx_availability = detail.availability;
+    row.phx_objection = detail.objection;
+    row.phx_next_step = detail.nextStep;
+    row.phx_pharmacy = detail.pharmacyFeedback;
+    row.phx_off_plan = detail.offPlan;
+    row.phx_evidence = detail.evidence;
+    row.phx_location = detail.location;
+    row.phx_capture = detail.capture;
+    // Measured numbers, never shaped text: this grid is where a manager sorts and filters on them.
+    const measured = detail.kindLabel !== null && sight !== "none";
+    row.phx_distance = measured ? (row.distance_meters ?? null) : null;
+    row.phx_accuracy = measured && sight === "full" ? Number(row.accuracy_meters ?? Number.NaN) || null : null;
+    row.phx_lat = measured && sight === "full" ? (row.lat ?? null) : null;
+    row.phx_lon = measured && sight === "full" ? (row.lon ?? null) : null;
+  }
+}
+
 /** Columns shown for a given dataset/tab. */
-function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[] {
+function columnsForDataset(dataset: CrmMasterDataset, sight: PhoenixDetailSight): readonly CrmMasterColumn[] {
   if (dataset === "checkins") return CRM_CHECKIN_COLUMNS;
   if (dataset === "vacations") return CRM_VACATION_COLUMNS;
-  if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") return CRM_VISIT_BASE_COLUMNS;
-  if (dataset === "regular_no_contact") return CRM_VISIT_BASE_COLUMNS;
+  // The Phoenix field set rides every VISIT tab, and none of the three computed ones: a check-in, a
+  // vacation period and a triple chain are not visit rows and carry none of these columns.
+  const withPhoenix = (base: readonly CrmMasterColumn[]): readonly CrmMasterColumn[] => [...base, ...phoenixDetailColumns(sight)];
+  if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") return withPhoenix(CRM_VISIT_BASE_COLUMNS);
+  if (dataset === "regular_no_contact") return withPhoenix(CRM_VISIT_BASE_COLUMNS);
   if (dataset === "triple_visits") return CRM_TRIPLE_COLUMNS;
-  if (dataset === "double_visits") return CRM_DOUBLE_VISIT_COLUMNS;
-  return CRM_VISIT_COLUMNS; // visits
+  if (dataset === "double_visits") return withPhoenix(CRM_DOUBLE_VISIT_COLUMNS);
+  return withPhoenix(CRM_VISIT_COLUMNS); // visits
 }
 
 const VISIT_SELECT =
   "id, crm_visit_id, agent_crm_id, agent_hr_id, agent_name, ampm, call_type, comment, " +
   "contact_crm_id, contact_name, crm_contact_grade, crm_region_id, crm_region_name, crm_save_date, " +
-  "customer_name, double_crm_id, double_hr_id, double_name, speciality, visit_date, visit_type, " +
-  "visit_type_description, synced_at, raw_payload";
+  "customer_name, double_crm_id, double_hr_id, double_name, " +
+  // The chain's OTHER person. Asking for slot 1 alone is what left a chain visit's second manager
+  // off this grid entirely, and a select is a string — a column printed but not asked for is a blank.
+  "double2_crm_id, double2_hr_id, double2_name, " +
+  "speciality, visit_date, visit_type, " +
+  "visit_type_description, synced_at, raw_payload, source, " +
+  PHOENIX_VISIT_DETAIL_COLUMNS;
 
 const CHECKIN_SELECT =
   "id, crm_checkin_id, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, " +
@@ -1796,6 +1894,7 @@ async function attachDerived(
   dataset: CrmMasterDataset,
   rows: CrmMasterRow[],
   range: { dateFrom: string | null; dateTo: string | null },
+  viewer: PhoenixDetailViewer,
   resources?: DeriveResources,
 ): Promise<void> {
   // The check-in-derived overlays, written onto the rows in place. Resolves to whether the check-in
@@ -1847,6 +1946,9 @@ async function attachDerived(
   if (byRegion && byContact) attachBrickMapping(rows, byRegion, byContact);
   // Recognition score reads phx_brick_id, so it must run after attachBrickMapping above.
   if (isVisitDataset(dataset)) attachRecognitionScore(rows);
+  // The Phoenix field set last: it reads only the row's own columns, so it depends on nothing above
+  // it, and it is the one overlay whose output differs per READER rather than per row.
+  if (isVisitDataset(dataset)) attachPhoenixDetail(rows, viewer);
 }
 
 /**
@@ -1891,7 +1993,11 @@ async function readMasterPage(
  * 108k-row mirror, so a future caller that forgot an optional scope would silently expose everyone.
  * Required turns that mistake into a compile error. See src/lib/crm/viewer-scope.ts.
  */
-export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerScope): Promise<CrmMasterData> {
+export async function getCrmMasterData(
+  input: CrmMasterFilter,
+  scope: CrmViewerScope,
+  viewer: PhoenixDetailViewer,
+): Promise<CrmMasterData> {
   const dataset = normalizeDataset(input.dataset);
   const page = Math.max(1, input.page ?? 1);
   const requested = input.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -1913,7 +2019,7 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
     input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped" ? input.mappingStatus : "all";
   const configured = isIReports360Configured();
 
-  const columns = columnsForDataset(dataset);
+  const columns = columnsForDataset(dataset, viewer.sight);
 
   // Line / hiring-date resolve to an employee-hr-id allow-set (applied to every tab). With neither
   // filter set it answers at once, without a read.
@@ -2062,15 +2168,24 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
   }
 
   const rows = (data ?? []) as unknown as CrmMasterRow[];
-  await attachDerived(dataset, rows, { dateFrom, dateTo });
+  await attachDerived(dataset, rows, { dateFrom, dateTo }, viewer);
 
   return { ...echo, latestSyncRuns, rows, schemaReady: true, totalCount: count ?? 0 };
 }
 
 /** Column set for a dataset's export sheet — resolved from the dataset alone (no I/O), so the export
  * route can build its header + sheet name up front, before the row stream begins. */
-export function crmMasterExportColumns(input: CrmMasterFilter = {}): readonly CrmMasterColumn[] {
-  return columnsForDataset(normalizeDataset(input.dataset));
+export function crmMasterExportColumns(input: CrmMasterFilter, sight: PhoenixDetailSight): readonly CrmMasterColumn[] {
+  return columnsForDataset(normalizeDataset(input.dataset), sight);
+}
+
+/**
+ * The export's own header is built from the VIEWER's tier, before a row is read, so the sheet's shape
+ * and its cells can never disagree — a header for a column the shaper then refuses to fill would hand
+ * a manager an empty "Accuracy" column and let him read it as "there was no reading".
+ */
+export function crmMasterExportColumnsFor(input: CrmMasterFilter, viewer: PhoenixDetailViewer): readonly CrmMasterColumn[] {
+  return crmMasterExportColumns(input, viewer.sight);
 }
 
 /** Human sheet/file label for a dataset (e.g. "Regular · No Check-in") — used to name the export. */
@@ -2092,6 +2207,7 @@ export function crmMasterExportLabel(input: CrmMasterFilter = {}): string {
 export async function* streamCrmMasterExportPages(
   input: CrmMasterFilter,
   scope: CrmViewerScope,
+  viewer: PhoenixDetailViewer,
 ): AsyncGenerator<CrmMasterRow[], void, unknown> {
   const dataset = normalizeDataset(input.dataset);
   const isCheckins = dataset === "checkins";
@@ -2221,7 +2337,7 @@ export async function* streamCrmMasterExportPages(
     }
     const pageRows = (data ?? []) as unknown as CrmMasterRow[];
     if (pageRows.length === 0) return;
-    await attachDerived(dataset, pageRows, range, resources);
+    await attachDerived(dataset, pageRows, range, viewer, resources);
     yield pageRows;
     if (pageRows.length < PAGE) return;
   }

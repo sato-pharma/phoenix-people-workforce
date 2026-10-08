@@ -196,6 +196,8 @@ function drilldownVisit(overrides: Partial<VisitForRepDrilldown> = {}): VisitFor
     crm_visit_id: -9001,
     customer_name: null,
     double_hr_id: null,
+    double2_hr_id: null,
+    double2_name: null,
     double_name: null,
     ...overrides,
   };
@@ -325,9 +327,12 @@ export function runCrmNewHireKeyingTests() {
     // rule and a new hire's confirmed double visits never count as "doubles received".
     const employee360 = readFileSync("src/lib/employee-360/service.ts", "utf8");
     const fetchVisits = employee360.slice(employee360.indexOf("export async function fetchVisitRows"));
+    // The list became several concatenated literals when the Phoenix field set was appended on
+    // 2026-10-07, so `columns: "...source..."` as ONE literal no longer matches. What matters is that
+    // `source` is a select ITEM somewhere in this read, which is what the comma-bounded form pins.
     assert.match(
       fetchVisits.slice(0, fetchVisits.indexOf("\n}")),
-      /columns: "[^"]*\bsource\b[^"]*"/,
+      /,source,/,
       "F1b: Employee 360 selects `source`, so a native double visit with an hr-id-only partner counts",
     );
   }

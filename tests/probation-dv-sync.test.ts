@@ -19,8 +19,15 @@ export function runProbationDvSyncTests() {
   // Idempotency guards on every write.
   assert.match(sync, /onConflict: "evaluator_hr_id,employee_hr_id,dv_date", ignoreDuplicates: true/,
     "DV-Days inserted idempotently (no dupes, no clobbering feedback lifecycle)");
-  assert.match(sync, /onConflict: "crm_visit_id", ignoreDuplicates: true/,
-    "a CRM visit attaches to exactly one DV-Day");
+  assert.match(sync, /upsertVisits\("crm_visit_id,dv_day_id"\)/,
+    "a CRM visit attaches to one DV-Day per evaluator — a chain visit to each manager's day (owner, 2026-10-08)");
+  assert.match(sync, /upsert\(visitRows, \{ onConflict, ignoreDuplicates: true \}\)/,
+    "the visit rows are written idempotently under whichever key the table holds");
+  // The days are written BEFORE their visits and a later run skips an existing day, so a visit write
+  // that throws strands those days with no visits for good. Under the pre-20261008141330 table the new
+  // key answers 42P10, so the write must fall back to the old key rather than throw.
+  assert.match(sync, /if \(vErr\?\.code === "42P10"\) \(\{ data: insVisits, error: vErr \} = await upsertVisits\("crm_visit_id"\)\);/,
+    "before the migration lands, the visit write falls back to UNIQUE (crm_visit_id) instead of stranding the days");
   assert.match(sync, /onConflict: "crm_visit_id,reason,employee_hr_id,evaluator_hr_id,dv_date", ignoreDuplicates: true/,
     "ingest issues deduped by a NULL-aware content key (missing-crm rows don't pile up)");
 

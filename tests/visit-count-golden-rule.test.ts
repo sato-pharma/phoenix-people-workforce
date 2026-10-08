@@ -277,7 +277,10 @@ export function runVisitCountGoldenRuleTests() {
       "Employee 360 counts a pharmacy under Pharmacies whatever period it carries, and an unmarked doctor visit stays unmarked",
     );
     const e360Service = readFileSync("src/lib/employee-360/service.ts", "utf8");
-    assert.match(e360Service, /comment,source,speciality",/, "the Employee 360 read carries the contact speciality that marks a pharmacy");
+    // `speciality` was the LAST select item until the Phoenix field set was appended on 2026-10-07 and
+    // the list became several concatenated literals. It pins the ITEM now: the guarantee is that the
+    // speciality is read, not that nothing is read after it.
+    assert.match(e360Service, /,source,speciality,/, "the Employee 360 read carries the contact speciality that marks a pharmacy");
     const e360View = readFileSync("src/components/employee-360/employee-360-view.tsx", "utf8");
     assert.match(
       e360View,
@@ -547,6 +550,8 @@ function runPhoenixPharmacyFigureTests() {
       contactName: "A Doctor",
       doubleHrId: null,
       doubleName: null,
+      double2HrId: null,
+      double2Name: null,
       savedAt: "2026-10-04 11:00:00+00",
       speciality: "Pediatrics",
       visitDate: "2026-10-04",
@@ -567,7 +572,10 @@ function runPhoenixPharmacyFigureTests() {
     assert.deepEqual(report.days[0].counts, { am: 1, pm: 1, pharmacies: 0, phoenix: 2 });
     assert.equal(formatVisitCountSplit(report.totals.counts), "AM 1 · PM 1 · Pharmacies 0", "the period total prints the count — these two days held no pharmacy call");
     const fieldReport = readFileSync("src/lib/field-activity/report.ts", "utf8");
-    assert.match(fieldReport, /crm_save_date, source";/, "the read carries `source`, or no row is ever known as Phoenix CRM's");
+    // `source` was the LAST select item until the Phoenix field set was appended on 2026-10-07, so this
+    // pinned the end of the string. It pins the ITEM now — the guarantee is that `source` is read, not
+    // that nothing is read after it, and a pin on the tail would go red every time the list grows.
+    assert.match(fieldReport, /crm_save_date, source, "/, "the read carries `source`, or no row is ever known as Phoenix CRM's");
     assert.match(fieldReport, /source: \(row\.source as string \| null\) \?\? null/);
   }
 

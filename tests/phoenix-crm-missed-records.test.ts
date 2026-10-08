@@ -239,7 +239,17 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
       /const enteredByAdmin = isEnteredForRep\(\{ enteredBy: row\.entered_by_hr_id, rep: row\.rep_hr_id, manager: row\.manager_hr_id, senior: row\.senior_hr_id \}\);/,
       "mapVisitRow reads the mark from who entered the visit",
     );
-    assert.match(visits, /locationLabel: enteredByAdmin\s*\?\s*MISSED_VISIT_LOCATION_LABEL/, "a manager reads 'no location', never 'no place saved', on an entered visit");
+    // The WORDING moved to `visit-location-words.ts` on 2026-10-07, unchanged, so the old CRM's admin
+    // reports could print the same sentences without dragging `server/visits.ts` — and with it
+    // `getSupabaseAdmin` — into a client bundle. The pin follows the code: `server/visits.ts` still owns
+    // WHO entered the visit (asserted above), and the sentence a manager then reads is asserted here.
+    const words = source("src/lib/phoenix-crm/visit-location-words.ts");
+    assert.match(words, /locationLabel: enteredByAdmin\s*\?\s*MISSED_VISIT_LOCATION_LABEL/, "a manager reads 'no location', never 'no place saved', on an entered visit");
+    assert.match(
+      visits,
+      /visitLocationFor\(options\.sight, flag, numberOrNull\(row\.distance_meters\), numberOrNull\(row\.accuracy_meters\), enteredByAdmin\)/,
+      "and mapVisitRow still hands that boolean to the one shaper, so the move cannot have dropped it",
+    );
     const activities = source("src/lib/phoenix-crm/server/day-activities.ts");
     assert.match(activities, /const DAY_ACTIVITY_COLUMNS = "activity_date, activity_type, half_day, note, entered_by_hr_id, rep_hr_id";/);
     assert.match(activities, /enteredByAdmin: isActivityEnteredForRep\(\{ enteredBy: row\.entered_by_hr_id, rep: row\.rep_hr_id \}\),/);

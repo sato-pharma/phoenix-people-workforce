@@ -48,7 +48,8 @@ import {
   VISIT_PRODUCTS_MAX,
   type ProductAvailability,
 } from "@/lib/phoenix-crm/entry-rules";
-import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
+import { checkVisitLocation } from "@/lib/phoenix-crm/geo";
+import { visitLocationFor, type VisitLocationFlag } from "@/lib/phoenix-crm/visit-location-words";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
 import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { deriveOfflineCaptureTime, parseOfflineCaptureClaim } from "@/lib/phoenix-crm/offline-clock";
@@ -72,7 +73,8 @@ import {
   isVisitObjection,
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
-import { raisesVisitAsk, VISIT_ASK_KIND_LABELS } from "@/lib/phoenix-crm/visit-ask-rules";
+import { raisesVisitAsk } from "@/lib/phoenix-crm/visit-ask-rules";
+import { PHOENIX_VISIT_KIND_LABELS } from "@/lib/phoenix-crm/visit-kind-labels";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import {
@@ -122,66 +124,22 @@ function record(raw: unknown): Row {
   return (raw && typeof raw === "object" ? raw : {}) as Row;
 }
 
-export type VisitLocationFlag = "ok" | "far" | "weak_gps" | "no_place";
-
-const KIND_LABEL: Record<PhoenixCrmVisitKind, string> = {
-  single: "Single visit",
-  double: "Double visit",
-  // The ask's own wording, so the request a rep sent and the visit it became read alike.
-  product_manager: VISIT_ASK_KIND_LABELS.product_manager,
-  chain: "Chain visit",
-};
-
 /**
- * What a MANAGER reads about a visit's location — plain and measured, never a verdict: the usual cause
- * of a long distance is a place saved from the wrong doorway, not a rep who was not there.
+ * THE LOCATION WORDING AND ITS THREE TIERS LIVE IN `@/lib/phoenix-crm/visit-location-words`,
+ * re-exported here so every existing caller keeps its import.
  *
- * 🔴 Never the rep's. The owner's polite sign on the rep's own visit (2026-09-26) was REMOVED on
- * 2026-09-29: the rep sees no distance, no flag and no check of any kind (Golden Rule #1). His rows
- * carry `BLIND_LOCATION` instead — see `mapVisitRow`.
+ * Moved on 2026-10-07 because the old CRM's ADMIN reports now print these same sentences (owner:
+ * "everything, GPS and evidence included"), and anything importing THIS file is server-only — it
+ * reaches `getSupabaseAdmin`. A report shaper that pulled it in would drag the service-role client
+ * into any client bundle that touched it. Nothing about the tiers changed in the move.
  */
-export function visitLocationLabel(flag: VisitLocationFlag, distanceMeters: number | null, accuracyMeters: number | null): string {
-  if (flag === "far") return `About ${formatDistance(distanceMeters)} from this customer's saved place`;
-  if (flag === "weak_gps") return `The phone was not sure where it was (within ${formatDistance(accuracyMeters)})`;
-  if (flag === "no_place") return "No place saved for this customer yet";
-  return distanceMeters === null ? "At the saved place" : `At the saved place (${formatDistance(distanceMeters)})`;
-}
-
-/**
- * The location fields on the REP's own visit: kept in the response so a caller one release behind
- * still reads a well-formed row, and saying nothing — no distance, no flag, no check.
- */
-export const BLIND_LOCATION: { locationFlag: VisitLocationFlag; locationLabel: string } = { locationFlag: "ok", locationLabel: "Visit saved" };
-
-/** What a manager reads where a location would be, on a visit the Super Admin entered for the rep. */
-export const MISSED_VISIT_LOCATION_LABEL = "No location: entered later by the Super Admin";
-
-/**
- * A visit's location, as this reader may read it (`locationSight`):
- *   - `none` — the rep's own visit: `BLIND_LOCATION`, nothing measured (Golden Rule #1);
- *   - `distance` — every manager below the Super Admin and SFE (owner, 2026-10-02): the distance and the
- *     far / at-the-place wording. A weak reading is never far (far beats weak, geo.ts), so it is read
- *     as the plain distance — the accuracy and the weak-signal sentence are not his;
- *   - `full` — the Super Admin and the SFE Manager: every sentence, the accuracy included.
- */
-export function visitLocationFor(
-  sight: LocationSight,
-  flag: VisitLocationFlag,
-  distanceMeters: number | null,
-  accuracyMeters: number | null,
-  enteredByAdmin = false,
-): { locationFlag: VisitLocationFlag; locationLabel: string } {
-  if (sight === "none") return BLIND_LOCATION;
-  const shown: VisitLocationFlag = sight === "distance" && flag === "weak_gps" ? "ok" : flag;
-  return {
-    locationFlag: shown,
-    // Entered later by the Super Admin, from wherever he was: there is no reading to describe, and "no
-    // place saved for this customer" would be a sentence about the wrong thing.
-    locationLabel: enteredByAdmin
-      ? MISSED_VISIT_LOCATION_LABEL
-      : visitLocationLabel(shown, distanceMeters, sight === "full" ? accuracyMeters : null),
-  };
-}
+export {
+  BLIND_LOCATION,
+  MISSED_VISIT_LOCATION_LABEL,
+  visitLocationFor,
+  visitLocationLabel,
+  type VisitLocationFlag,
+} from "@/lib/phoenix-crm/visit-location-words";
 
 // ── A territory's visits ────────────────────────────────────────────────────────────────────────
 
@@ -411,7 +369,7 @@ function mapVisitRow(
     customerName: textOrNull(record(row.customer).name) ?? "Customer",
     listType: parseListType(row.list_type),
     kind,
-    kindLabel: KIND_LABEL[kind],
+    kindLabel: PHOENIX_VISIT_KIND_LABELS[kind],
     repName: person(row.rep_hr_id),
     managerName: person(row.manager_hr_id),
     seniorName: person(row.senior_hr_id),

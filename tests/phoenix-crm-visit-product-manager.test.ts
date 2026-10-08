@@ -257,8 +257,11 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
   {
     assert.equal(VISIT_ASK_KIND_LABELS.product_manager, "Visit with a product manager");
     const visits = source("src/lib/phoenix-crm/server/visits.ts");
+    // The kind labels moved OUT of `server/visits.ts` into `visit-kind-labels.ts` on 2026-10-07, when the
+    // old CRM's admin reports began printing a Phoenix visit's kind too: two copies of that map would let
+    // one visit read "Chain visit" on one report and "chain" on another. The pin follows the code.
     assert.match(
-      visits,
+      source("src/lib/phoenix-crm/visit-kind-labels.ts"),
       /product_manager: VISIT_ASK_KIND_LABELS\.product_manager,/,
       "the visit's label IS the ask's, so the request a rep sent and the visit it became read alike",
     );

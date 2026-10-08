@@ -26,9 +26,12 @@ import type {
 import type { NsmCrmCheckinRow, NsmCrmVisitRow } from "@/lib/employee-portal/nsm-crm-compliance";
 
 // `crm_visit_id` and `source` mark a Phoenix CRM row, whose capture time is its rep's clock (phoenix-start.ts).
+// `double2_hr_id` is selected although nothing here reads it: `buildEarlyBirdsDailyWinners` replays the
+// first-visit board off these rows, and that board credits BOTH partner slots. Selecting one and not the
+// other leaves the second silently `undefined` in the replay while the live board counts it.
 const VISIT_COLUMNS =
-  "agent_hr_id, agent_crm_id, contact_crm_id, double_hr_id, crm_save_date, synced_at, visit_type, " +
-  "visit_type_description, contact_name, customer_name, comment, visit_date, crm_visit_id, source";
+  "agent_hr_id, agent_crm_id, contact_crm_id, double_hr_id, double2_hr_id, crm_save_date, synced_at, " +
+  "visit_type, visit_type_description, contact_name, customer_name, comment, visit_date, crm_visit_id, source";
 
 type VisitRowWithDate = NsmCrmVisitRow & { visit_date: string | null; crm_visit_id?: number | null; source?: string | null };
 

@@ -47,7 +47,52 @@ type Stop = {
   savedOn: string | null;
   speciality: string | null;
   viaName: string | null;
+  phoenix: PhoenixDetail | null;
 };
+
+/**
+ * The Phoenix field set as the server shaped it for THIS reader. Structurally mirrored rather than
+ * imported as a type from the shaper, like every other row shape in this file: the view is a client
+ * component and the shaper's own module is reachable from the server tree.
+ */
+type PhoenixDetail = {
+  availability: string | null;
+  capture: string | null;
+  evidence: string | null;
+  kindLabel: string | null;
+  location: string | null;
+  nextStep: string | null;
+  objection: string | null;
+  offPlan: string | null;
+  pharmacyFeedback: string | null;
+  products: string[];
+  samples: string | null;
+};
+
+/**
+ * The field set, as one wrapped sentence under the row it belongs to.
+ *
+ * 🔴 NOT COLUMNS, and not a table. The fits-the-screen golden rule says fit by MERGING, never by
+ * shrinking type — and this list is already prose, so the detail costs no width at all. What the reader
+ * is allowed to see was decided on the SERVER (`phoenix-visit-detail.ts`); this prints what arrived and
+ * never re-derives a tier, because a tier decided in the browser is a tier the browser can change.
+ */
+function phoenixLine(detail: PhoenixDetail | null): string | null {
+  if (!detail) return null;
+  const parts = [
+    detail.products.length > 0 ? detail.products.join(" · ") : null,
+    detail.samples ? `samples ${detail.samples}` : null,
+    detail.availability,
+    detail.objection,
+    detail.nextStep,
+    detail.pharmacyFeedback ? `pharmacy ${detail.pharmacyFeedback}` : null,
+    detail.offPlan,
+    detail.location,
+    detail.evidence,
+    detail.capture,
+  ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 type Day = {
   averageLogLagMinutes: number | null;
@@ -81,7 +126,14 @@ type Day = {
     transport: string | null;
     workloadGate: string | null;
   } | null;
-  unlocated: Array<{ ampm: string | null; counts: boolean; label: string; savedAt: string | null; savedOn: string | null }>;
+  unlocated: Array<{
+    ampm: string | null;
+    counts: boolean;
+    label: string;
+    savedAt: string | null;
+    savedOn: string | null;
+    phoenix: PhoenixDetail | null;
+  }>;
   weekday: string;
 };
 
@@ -308,7 +360,12 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
       {day.unlocated.length > 0 ? (
         <div className="px-4 pb-3">
           <h4 className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-500">
-            Recorded on this day with no GPS behind it
+            {/* 🔴 THE HEADING WAS A FALSE SENTENCE FOR A PHOENIX VISIT, and that is the owner's reported
+                defect in one line. A Phoenix visit IS its own check-in, so it never matches an
+                iReports360 GPS fix and every one of them lands in this list — under a heading that said
+                there was no GPS behind it, while Phoenix had measured the distance all along. The
+                heading now says what is actually true, and each row carries its own measurement. */}
+            Recorded on this day with no iReports360 check-in to match
           </h4>
           <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
             {day.unlocated.map((item, index) => (
@@ -316,6 +373,11 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
                 <strong>{clock12(item.savedAt)}</strong>
                 {item.savedOn ? ` (${item.savedOn})` : ""} · {item.ampm ?? "—"} · {item.label}
                 {item.counts ? "" : " — not a customer call, counted in nothing"}
+                {phoenixLine(item.phoenix) ? (
+                  <span className="mt-0.5 block text-phx-2xs font-semibold leading-4 text-slate-500">
+                    {phoenixLine(item.phoenix)}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>

@@ -13,6 +13,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { canOpenSubject, resolveFieldActivityAccess } from "@/lib/field-activity/access";
 import { resolvePeriod } from "@/lib/field-activity/period";
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { loadFieldActivityReport } from "@/lib/field-activity/report";
 
 export const runtime = "nodejs";
@@ -51,6 +52,10 @@ export async function GET(request: Request) {
       panels: resolved.panels,
       subjectHrId,
       toIso: period.toIso,
+      // WHO IS READING. The Phoenix field set is on this report because the owner asked for it
+      // (2026-10-07, "everything, GPS and evidence included"); which half each reader sees is his own
+      // 2026-10-02 ruling, and a reader opening the day of a rep who is himself reads none of it.
+      viewer: phoenixDetailViewer(resolved.role, resolved.viewerHrId),
     });
     if (!report) {
       return NextResponse.json({ error: "not_found", message: "No employee record for that person.", success: false }, { status: 404 });

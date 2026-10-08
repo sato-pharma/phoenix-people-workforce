@@ -51,7 +51,7 @@ export function runProbationDvDetectionTests() {
     assert.equal(dvDays.length, 4, "distinct evaluator/date/employee each form their own DV-Day");
   }
 
-  // A repeated crm_visit_id is counted once (a CRM activity belongs to exactly one DV-Day).
+  // A repeated crm_visit_id is counted once (a CRM activity belongs to ONE DV-Day per evaluator).
   {
     const { dvDays } = detectDvDays([
       row({ crm_visit_id: 500 }),
@@ -74,6 +74,26 @@ export function runProbationDvDetectionTests() {
     const reasons = unresolved.map((u) => u.reason).sort();
     assert.deepEqual(reasons, ["missing_crm_visit_id", "unresolved_employee", "unresolved_evaluator"],
       "each bad row surfaced with a specific reason");
+  }
+
+  // 🔴 A CHAIN VISIT IS ONE VISIT, IN BOTH MANAGERS' RECORDS (owner, 2026-10-08). Phoenix CRM saves it as
+  // ONE row carrying two managers; each forms his own DV-Day for the probationer, keyed exactly like
+  // the first manager's, and neither day counts a visit twice.
+  {
+    const { dvDays, unresolved } = detectDvDays([
+      row({ crm_visit_id: -71, double_hr_id: "A-12", double2_hr_id: "PD-0001", double2_name: "Second" }),
+      row({ crm_visit_id: -72, double_hr_id: "A-12", double2_hr_id: "PD-0001", double2_name: "Second" }),
+      row({ crm_visit_id: -73, double_hr_id: "A-12" }),
+    ]);
+    assert.equal(unresolved.length, 0);
+    assert.deepEqual(
+      dvDays.map((d) => [d.evaluatorHrId, d.visitCount]),
+      [["A-12", 3], ["PD-0001", 2]],
+      "the second manager of a chain visit has his own DV-Day for it, exactly as the first does",
+    );
+    assert.deepEqual(dvDays[1].crmVisitIds, [-71, -72], "his day carries the chain visits and nothing else");
+    assert.equal(dvDays[1].visits[0].evaluatorName, "Second", "named as himself on his own day");
+    assert.equal(dvDays[0].visits[0].evaluatorName, "Eval", "the first manager's day is untouched");
   }
 
   // Deterministic ordering (date, employee, evaluator).

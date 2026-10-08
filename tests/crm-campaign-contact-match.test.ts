@@ -39,6 +39,8 @@ function visit(overrides: Partial<VisitForRepDrilldown> = {}): VisitForRepDrilld
     crm_visit_id: 9001,
     customer_name: "El Nasr Clinic",
     double_hr_id: null,
+    double2_hr_id: null,
+    double2_name: null,
     double_name: null,
     speciality: "Pediatrics",
     visit_date: "2026-08-01",

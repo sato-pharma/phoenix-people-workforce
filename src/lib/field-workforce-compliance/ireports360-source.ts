@@ -170,6 +170,15 @@ function dayHasExcuseLabeledAv(visits: IReports360Visit[]): boolean {
 export type FieldWorkforceMatrixVisit = IReports360Visit & {
   agentHrId?: string | null;
   doubleHrId?: string | null;
+  /** Slot 2 — a chain visit's SECOND manager, who is on the same Phoenix row rather than a second
+   * vendor one. His working day lives on this row exactly as slot 1's does, so leaving it unread is
+   * the same defect the comment in the loader describes: a manager who rode along all day reads as
+   * having done nothing, and this matrix is what a payroll deduction candidate is drawn from.
+   *
+   * There is no `double2ID`: Phoenix carries the hr id and often no CRM account at all, which is why
+   * the credit below is gated on the hr id and not on a CRM id like slot 1's. */
+  double2HrId?: string | null;
+  double2Name?: string | null;
   /** This row's AGENT has left the company and is excluded from every live CRM read, so ONLY the
    * double-visit partner may be credited from it — see `scanVisitsForRangeCreditingPartners`. The
    * row is here at all because the partner's own working day depends on it. */
@@ -423,6 +432,8 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     if (agentSyncKey) syncResolvedHrKeys.add(agentSyncKey);
     const doubleSyncKey = canonicalHrIdKey(visit.doubleHrId ?? "");
     if (doubleSyncKey) syncResolvedHrKeys.add(doubleSyncKey);
+    const double2SyncKey = canonicalHrIdKey(visit.double2HrId ?? "");
+    if (double2SyncKey) syncResolvedHrKeys.add(double2SyncKey);
 
     // A row rescued for its PARTNER's sake credits the partner and nobody else: its agent has left
     // and is excluded from every live CRM read. `agentHrId` is already nulled by the read door, but
@@ -434,10 +445,20 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       const ownKey = `${agentKey}|${dayIso}`;
       ownRegularCountByHrKeyAndDate.set(ownKey, (ownRegularCountByHrKeyAndDate.get(ownKey) ?? 0) + 1);
     }
+    let doubleKey: string | null = null;
     if (visit.doubleID != null && visit.doubleID !== visit.agentID) {
-      const doubleKey = resolveHrKey(visit.doubleID, visit.doubleHrId);
+      doubleKey = resolveHrKey(visit.doubleID, visit.doubleHrId);
       if (doubleKey && doubleKey !== agentKey) credit(doubleKey, visit);
     }
+    // Slot 2, gated on the HR ID and not on a CRM id: a Phoenix chain visit's second manager often has
+    // no CRM account, so `resolveHrKey(null, …)` is the only form that reaches him. Nobody's figure
+    // moves — `credit` appends the row to that manager's own day, and a day is worked or it is not, so
+    // the rep's own count and slot 1's are untouched. Slot 2 can never be filled while slot 1 is empty,
+    // so the two keys are always two different people — and the `!== doubleKey` guard makes that a
+    // GUARANTEE rather than a reading of the data, because this row lands on a person's day list and a
+    // duplicate would count a visit twice for them.
+    const double2Key = resolveHrKey(null, visit.double2HrId);
+    if (double2Key && double2Key !== agentKey && double2Key !== doubleKey) credit(double2Key, visit);
   }
 
   const header: unknown[] = ["TM", "HR ID", "Hiring Date", "Month", "Year", ...dateIsos];
@@ -675,6 +696,8 @@ export type VisitsMirrorRow = {
   double_crm_id: number | null;
   double_hr_id?: string | null;
   double_name: string | null;
+  double2_hr_id?: string | null;
+  double2_name?: string | null;
   visit_date: string;
   visit_type: number | null;
 };
@@ -705,6 +728,8 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     contactGrade: null,
     customerName: null,
     doubleHrId: row.double_hr_id ?? null,
+    double2HrId: row.double2_hr_id ?? null,
+    double2Name: row.double2_name ?? null,
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
     id: 0,
@@ -755,7 +780,7 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
     dateTo: endDate,
     columns:
       "agent_crm_id, agent_hr_id, agent_name, ampm, comment, contact_crm_id, contact_name, crm_save_date, " +
-      "double_crm_id, double_hr_id, double_name, visit_date, visit_type",
+      "double_crm_id, double_hr_id, double_name, double2_hr_id, double2_name, visit_date, visit_type",
   });
   // scanVisitsForRange (unlike crm/reads' getDoubleVisitRows) returns EVERY visit, single and
   // double alike, so the collapse is applied here rather than inside the shared scanner. It keys

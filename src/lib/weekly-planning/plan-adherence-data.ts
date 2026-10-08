@@ -27,7 +27,8 @@ const PLAN_ITEM_COLUMNS =
 const PLAN_HEADER_COLUMNS =
   "id,plan_kind,period_key,period_start_date,period_end_date,employee_hr_id,employee_name,status";
 /** Only the four columns the evidence index is built from. A visit row is wide; this is not. */
-const EVIDENCE_VISIT_COLUMNS = "agent_hr_id,agent_name,double_hr_id,double_name,visit_date";
+const EVIDENCE_VISIT_COLUMNS =
+  "agent_hr_id,agent_name,double_hr_id,double_name,double2_hr_id,double2_name,visit_date";
 
 type PlanItemRow = {
   activity_date: string | null;
@@ -55,6 +56,10 @@ type EvidenceVisitRow = {
   agent_name: string | null;
   double_hr_id: string | null;
   double_name: string | null;
+  /** A chain visit's SECOND manager. Slot 1 is `coalesce(manager, product_manager, senior)`, so a row
+   * carrying somebody here carries somebody there too — the slots never hold one person. */
+  double2_hr_id: string | null;
+  double2_name: string | null;
   visit_date: string | null;
 };
 
@@ -179,14 +184,28 @@ export async function loadPlanAdherenceEvidence(
     bucket.add(partner);
   }
 
+  // `ownerPartnersByDate` is a SET per day, so naming the chain visit's second manager as well can
+  // never inflate a count — it only stops one of the two people he rode with going unnamed.
   for (const row of asAgent) {
-    noteOwnerDay(row.visit_date, row.double_hr_id);
-    remember(row.double_hr_id, row.double_name);
+    for (const [hrId, name] of [
+      [row.double_hr_id, row.double_name],
+      [row.double2_hr_id, row.double2_name],
+    ] as const) {
+      noteOwnerDay(row.visit_date, hrId);
+      remember(hrId, name);
+    }
   }
   for (const row of asDouble) {
-    // Roles reversed: the owner is the double partner here, so the other person is the agent.
-    noteOwnerDay(row.visit_date, row.agent_hr_id);
-    remember(row.agent_hr_id, row.agent_name);
+    // Roles reversed: the owner is a ride-along partner here, so the OTHER people on the row are the
+    // agent and — on a chain visit — the manager in the slot the owner is not in.
+    for (const [hrId, name] of [
+      [row.agent_hr_id, row.agent_name],
+      [row.double_hr_id, row.double_name],
+      [row.double2_hr_id, row.double2_name],
+    ] as const) {
+      noteOwnerDay(row.visit_date, hrId);
+      remember(hrId, name);
+    }
   }
   for (const row of [...asAgent, ...asDouble, ...partnerDays]) {
     const day = row.visit_date?.slice(0, 10);
