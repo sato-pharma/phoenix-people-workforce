@@ -5,20 +5,24 @@ import { PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES } from "@/lib/notifications/phoeni
 import { JOB_SCHEDULES } from "@/lib/observability/job-schedule";
 import {
   FRAUD_SCAN_CRON,
-  FRAUD_SCAN_JOB_SLUG,
-  FRAUD_SCAN_MAX_LINES,
   fraudScanWindow,
   sfeVisibleCases,
-  summarizeFraudCases,
   type FraudScanCase,
 } from "@/lib/phoenix-crm/fraud-scan-rules";
+import {
+  FRAUD_SCAN_JOB_SLUG,
+  FRAUD_SCAN_MAX_LINES,
+  summarizeFraudCases,
+} from "@/lib/phoenix-crm/server/fraud-scan-summary";
 
 /**
  * Phoenix CRM — the weekly visit-fraud scan.
  *
- * PURE and source-level only: importing the server half (`server/fraud-scan.ts`) would pull
- * `@/lib/supabase/server` into a unit test, exactly as the daily-digest and heartbeat tests avoid.
- * Two things are pinned here, and they fail for different reasons:
+ * PURE and source-level only. It imports the rules file and `server/fraud-scan-summary.ts` — both
+ * pure, with no I/O — but never `server/fraud-scan.ts`, which would pull `@/lib/supabase/server` into
+ * a unit test, exactly as the daily-digest and heartbeat tests avoid. (The summary and the slug live
+ * under `server/` so Golden Rule #1's blind half allows them to name the checks; they carry no I/O,
+ * so importing them here costs nothing.) Two things are pinned here, and they fail for different reasons:
  *
  *   1. The window maths and the summary composition — the owner's Sat–Wed window, the tier split,
  *      the clean-week message, and the line cap.

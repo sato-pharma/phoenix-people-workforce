@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
-import { FRAUD_SCAN_JOB_SLUG } from "@/lib/phoenix-crm/fraud-scan-rules";
 import { runPhoenixCrmFraudScan } from "@/lib/phoenix-crm/server/fraud-scan";
+import { FRAUD_SCAN_JOB_SLUG } from "@/lib/phoenix-crm/server/fraud-scan-summary";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";

@@ -42,19 +42,27 @@ import { logError } from "@/lib/observability/log";
 import {
   fraudScanWindow,
   sfeVisibleCases,
-  summarizeFraudCases,
   type FraudScanSummary,
   type FraudScanWindow,
 } from "@/lib/phoenix-crm/fraud-scan-rules";
+import { summarizeFraudCases } from "@/lib/phoenix-crm/server/fraud-scan-summary";
 import { loadIntegrityCasesForWindow } from "@/lib/phoenix-crm/server/integrity-board";
 import {
   PHOENIX_CRM_NOTIFICATION_CATEGORY,
   PHOENIX_CRM_NOTIFICATION_MODULE,
+  PHOENIX_CRM_PORTAL_PATH,
   sfeManagerHrIds,
 } from "@/lib/phoenix-crm/server/notifications";
 
-/** The admin integrity board the scan summarises. No rep can open `/admin` (Golden Rule #1). */
-const INTEGRITY_BOARD_PATH = "/admin/phoenix-crm/integrity";
+/**
+ * Where the notice points: the module's own exceptions surface, exactly as the 06:55 digest does.
+ * `PHOENIX_CRM_PORTAL_PATH` is the clean module's twin; the admin/portal twin forwarding routes each
+ * recipient to their own shell (the Super Admin to `/admin/field-crm`, a portal manager to the portal
+ * page), so one link serves both tiers. The retired pilot namespace is never linked — the clean
+ * module stays isolated from it (tests/phoenix-crm-boundary.test.ts). The GPS detail stays
+ * the Super Admin's alone through the message tiering above, not a separate destination.
+ */
+const EXCEPTIONS_PATH = `${PHOENIX_CRM_PORTAL_PATH}?tab=reports&section=exceptions`;
 
 export type FraudScanDelivery = {
   hrId: string;
@@ -81,7 +89,7 @@ export type PhoenixCrmFraudScanRun = {
 async function deliver(delivery: FraudScanDelivery): Promise<void> {
   await createSystemNotificationForRecipients(
     {
-      actionUrl: INTEGRITY_BOARD_PATH,
+      actionUrl: EXCEPTIONS_PATH,
       category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
       // In-app and Telegram. The module guard strips email and push for this event type.
       channels: ["in_app", "telegram"],
@@ -94,7 +102,7 @@ async function deliver(delivery: FraudScanDelivery): Promise<void> {
       module: PHOENIX_CRM_NOTIFICATION_MODULE,
       priority: "normal",
       subjectHrId: delivery.hrId,
-      telegram: { ctaLabel: "Open the integrity board", ctaUrl: INTEGRITY_BOARD_PATH },
+      telegram: { ctaLabel: "Open the exceptions board", ctaUrl: EXCEPTIONS_PATH },
       title: delivery.summary.title,
     },
     [delivery.hrId],
