@@ -51,7 +51,7 @@ import { loadAllDistrictBoards } from "@/lib/recruitment/district-manager-folder
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
 import { UNNAMED_USER_LABEL } from "@/lib/recruitment/person-labels";
-import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 import { isUuid } from "@/lib/http/uuid";
 
@@ -676,10 +676,13 @@ export async function canViewManagerEngagementCandidate(access: AccessContext, c
  * The owner's standing rule is that a person is shown by name, never by a raw id, and the access
  * context carries only an HR_ID — so the directory is asked for one. HR_IDs in this codebase are
  * mixed case (`A-12` / `a-12`) and a plain `.eq` has under-returned by 28% elsewhere, so the lookup
- * is case-insensitive; `ilike` with no wildcard in the value is an exact, case-blind match.
+ * goes through the shared `namesByHrId`. It was an `ilike` with no wildcard — an exact, case-blind
+ * match, which worked — and the shared read also folds the legacy `aaa`→`aa` alias, which `ilike`
+ * never did, and cannot be turned into a pattern match by an id carrying `%` or `_`.
  *
  * NEVER THROWS. This decorates a provenance line — an export that failed because the directory was
  * briefly unreachable would be a far worse outcome than one whose cover could not name the exporter.
+ * The shared lookup does not throw either; the catch stays as the belt to that braces.
  *
  * AND NEVER FALLS BACK TO THE ID. It used to answer `access.hrId ?? access.loginId ?? "System"`, so
  * a directory blip put "B-10" on the cover of a file that leaves the building — the raw code the
@@ -690,19 +693,10 @@ export async function resolveManagerEngagementViewerName(access: AccessContext):
   const hrId = String(access.hrId ?? "").trim();
   if (!hrId) return UNNAMED_USER_LABEL;
   try {
-    const { data, error } = await recruitmentDb()
-      .from("employees")
-      .select("full_name,nickname")
-      .ilike("hr_id", hrId)
-      .limit(1)
-      .maybeSingle();
-    if (error) return UNNAMED_USER_LABEL;
-    const row = data as { full_name?: unknown; nickname?: unknown } | null;
-    const fullName = textOrNull(row?.full_name);
-    if (!fullName) return UNNAMED_USER_LABEL;
     // Nickname-aware, like every other live surface: the cover says "Omar Gawish", not the legal
-    // name that only payroll and the signed documents use.
-    return resolveEmployeeDisplayName(fullName, textOrNull(row?.nickname), hrId);
+    // name that only payroll and the signed documents use. That rule lives in the shared lookup.
+    const names = await namesByHrId([hrId]);
+    return names.get(hrId) ?? UNNAMED_USER_LABEL;
   } catch {
     return UNNAMED_USER_LABEL;
   }

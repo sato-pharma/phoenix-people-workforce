@@ -8,8 +8,7 @@
 
 import { createSystemNotification } from "@/lib/notifications/system";
 import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
-import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import type { Interview } from "@/lib/recruitment/types";
 
 export type InterviewNotifyKind = "scheduled" | "rescheduled" | "cancelled";
@@ -41,16 +40,20 @@ export function interviewTypeLabel(type: string): string {
   return type.replace(/_/g, " ");
 }
 
+/**
+ * The interviewer's name for the notification, falling back to the id when nobody answers to it.
+ *
+ * 🔴 THIS READ WAS A BARE `.eq("hr_id", hrId)` UNTIL 2026-10-09 — the mixed-case miss itself.
+ * Production stores `hr_id` mixed-case and PostgREST matches case-sensitively, so an id in the other
+ * spelling returned NO row and NO error; with the id as the fallback, that shipped as "B-10" where
+ * an interviewer's name belongs, in a notification a candidate's interviewer reads. `namesByHrId`
+ * asks for every spelling, so the lookup only misses when the person genuinely is not there.
+ */
 async function interviewerName(hrId: string | null): Promise<string | null> {
   if (!hrId) return null;
   try {
-    const { data } = await getSupabaseAdmin()
-      .from("employees")
-      .select("full_name,nickname")
-      .eq("hr_id", hrId)
-      .maybeSingle();
-    const row = data as { full_name?: string; nickname?: string | null } | null;
-    return row?.full_name ? resolveEmployeeDisplayName(row.full_name, row.nickname) : hrId;
+    const names = await namesByHrId([hrId]);
+    return names.get(hrId) ?? hrId;
   } catch {
     return hrId;
   }

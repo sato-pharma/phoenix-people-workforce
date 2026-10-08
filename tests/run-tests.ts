@@ -2430,6 +2430,7 @@ import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold
 import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
 import { runCrmDoubleVisitWithDepartedPartnerTests } from "./crm-double-visit-with-departed-partner.test.ts";
 import { runEmployeeNamesByHrIdTests } from "./employees-names-by-hr-id.test.ts";
+import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9510,6 +9511,10 @@ await runTest(
 await runTest(
   "the shared HR id → name lookup resolves a lower-case id against the upper-case stored row (PostgREST matches case-sensitively and answers a miss with zero rows and NO error), answers to any spelling of an id and to null with no name rather than a lookup of the empty key, prefers the nickname, refuses a blank full_name instead of resolving a person with no name, chunks the filter at 50 keys because every id becomes two or three spellings, loses only the names in a failed chunk while the rest still resolve, never throws into the caller's page, and sends no query at all for an empty id list",
   runEmployeeNamesByHrIdTests,
+);
+await runTest(
+  "every recruitment read of a person's NAME goes through the shared namesByHrId and the module keeps no second copy — the six folded files import it and call it, none of them reads a name map as `get(canonicalHrIdKey(id) ?? \"\")` (which looks up the empty key), any read of `employees` asking ONLY for name columns is refused as a seventh copy with `candidate-views.ts` exempt in writing for reading full_name alone and throwing, and the bare `.eq(\"hr_id\", …)` count is ratcheted at 3 because that comparison is case-sensitive against a mixed-case column and misses with no error — which is what put a raw HR id into an interview notification",
+  runRecruitmentNamesByHrIdFoldTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
