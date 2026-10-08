@@ -68,6 +68,7 @@ import {
   resolveActiveStep,
   resolveStageLabel,
   shouldIncludeManagerOfManagerStep,
+  shouldIncludeThirdManagementStep,
   stepOrderForStepKey,
 } from "@/lib/vacation/approval-flow";
 import {
@@ -239,7 +240,7 @@ type VacationRequestDbRow = {
   weekly_off_policy_snapshot?: unknown;
 };
 
-type VacationApprovalStepKey = "direct_manager" | "manager_of_manager" | "hr";
+type VacationApprovalStepKey = "direct_manager" | "manager_of_manager" | "manager_level_3" | "hr";
 type VacationApprovalStepStatus = "pending" | "approved" | "rejected";
 
 type VacationApprovalStepRow = {
@@ -911,7 +912,8 @@ async function getCurrentEmployee(access: AccessContext, directory?: EmployeeDir
 function managerChain(directory: EmployeeDirectoryData, employee: EmployeeDirectoryRow) {
   const manager = findEmployeeByHrId(directory, employee.managerHrId);
   const managerOfManager = manager ? findEmployeeByHrId(directory, manager.managerHrId) : null;
-  return { manager, managerOfManager };
+  const thirdManager = managerOfManager ? findEmployeeByHrId(directory, managerOfManager.managerHrId) : null;
+  return { manager, managerOfManager, thirdManager };
 }
 
 function mapWeeklyOffPolicy(row: VacationWeeklyOffPolicyDbRow): VacationWeeklyOffPolicyRecord {
@@ -1702,7 +1704,7 @@ function approvalStatus(value: unknown): VacationApprovalStepStatus {
 }
 
 function approvalStepKey(value: unknown): VacationApprovalStepKey {
-  return value === "manager_of_manager" || value === "hr" ? value : "direct_manager";
+  return value === "manager_of_manager" || value === "manager_level_3" || value === "hr" ? value : "direct_manager";
 }
 
 function mapVacationApprovalStep(row: VacationApprovalStepRow) {
@@ -1769,7 +1771,7 @@ async function resolveVacationParallelApprovalRecipients(
   employee: EmployeeDirectoryRow,
   requesterRole: PhoenixRole,
 ): Promise<VacationApprovalRecipient[]> {
-  const { manager, managerOfManager } = managerChain(directory, employee);
+  const { manager, managerOfManager, thirdManager } = managerChain(directory, employee);
   // The direct manager is required. The manager-of-manager step is included only
   // when one exists — employees who report directly to the top of the org (e.g. the
   // CEO, who has no manager above) still get a valid chain of direct manager + HR.
@@ -1782,6 +1784,13 @@ async function resolveVacationParallelApprovalRecipients(
   // reporting straight to the NSM ends at that one management step; a DM reporting through a
   // Regional Sales Manager still escalates RSM -> NSM before HR.
   const includeManagerOfManager = shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole });
+  // Owner rule (2026-10-08): a Regional Manager between the District Manager and the NSM must not
+  // end the chain — the NSM is approver number three, then HR. Never the CEO.
+  const includeThirdManager = shouldIncludeThirdManagementStep({
+    includesManagerOfManagerStep: includeManagerOfManager,
+    managerOfManager,
+    thirdManager,
+  });
 
   const hrApprovers = await resolveVacationPilotHrApprovers(directory);
   return [
@@ -1799,6 +1808,17 @@ async function resolveVacationParallelApprovalRecipients(
             hrId: managerOfManager.hrId,
             name: managerOfManager.displayName,
             stepKey: "manager_of_manager" as const,
+            userId: null,
+          },
+        ]
+      : []),
+    ...(includeThirdManager && thirdManager?.hrId
+      ? [
+          {
+            email: thirdManager.workEmail,
+            hrId: thirdManager.hrId,
+            name: thirdManager.displayName,
+            stepKey: "manager_level_3" as const,
             userId: null,
           },
         ]
@@ -2102,6 +2122,12 @@ async function notifyVacationSubmittedByGovernance(input: {
       return {
         message: "FYI: a vacation request was submitted. Your approval will be available after the first management approval is completed.",
         status: "Available after the first management approval",
+      };
+    }
+    if (stepKey === "manager_level_3") {
+      return {
+        message: "FYI: a vacation request was submitted. Your approval will be available after the earlier management approvals are completed.",
+        status: "Available after the earlier management approvals",
       };
     }
     return {
@@ -3238,7 +3264,13 @@ export async function getVacationRequestPageData(access: AccessContext) {
   // instead of "annual" alone being correct and the other four types using the server's own
   // local/UTC clock.
   const today = currentCairoDateOnlyIso();
-  const { manager, managerOfManager } = managerChain(directory, employee);
+  const { manager, managerOfManager, thirdManager } = managerChain(directory, employee);
+  const previewIncludesManagerOfManager = shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole: access.role });
+  const previewIncludesThirdManager = shouldIncludeThirdManagementStep({
+    includesManagerOfManagerStep: previewIncludesManagerOfManager,
+    managerOfManager,
+    thirdManager,
+  });
   // STARTED ALONGSIDE THE BALANCES (2026-10-01, "slow to transfer between page and page"): the
   // weekly-off policy is one read the balances never use, and it used to hold all of them up. It is
   // awaited below, after them; its failure still fails the page with the same error, because the
@@ -3298,9 +3330,10 @@ export async function getVacationRequestPageData(access: AccessContext) {
     manager: manager ? summarizeEmployee(manager) : null,
     // Same gate as the chain that will actually be created on submit, so the preview can never
     // promise (or hide) a second approver the request will not (or will) get.
-    managerOfManager: shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole: access.role }) && managerOfManager
+    managerOfManager: previewIncludesManagerOfManager && managerOfManager
       ? summarizeEmployee(managerOfManager)
       : null,
+    thirdManager: previewIncludesThirdManager && thirdManager ? summarizeEmployee(thirdManager) : null,
     vacationTypeOptions: VACATION_REQUEST_TYPES,
     weeklyOffPolicy,
   };

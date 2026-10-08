@@ -25,6 +25,7 @@ function stepTitle(step: ApprovalTimelineStep): string {
   if (step.approverTitle) return `${step.approverTitle} Approval`;
   if (step.stepKey === "direct_manager") return "Direct Manager";
   if (step.stepKey === "manager_of_manager") return "Manager of Manager";
+  if (step.stepKey === "manager_level_3") return "Third Management Approval";
   return "Management Approval";
 }
 

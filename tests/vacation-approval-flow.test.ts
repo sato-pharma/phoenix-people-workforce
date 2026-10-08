@@ -9,6 +9,7 @@ import {
   resolveActiveStep,
   resolveStageLabel,
   shouldIncludeManagerOfManagerStep,
+  shouldIncludeThirdManagementStep,
   stepOrderForStepKey,
 } from "../src/lib/vacation/approval-flow.ts";
 import type {
@@ -309,4 +310,79 @@ export function runVacationApprovalFlowTests() {
     /if \(!data\) throw new Error\("Vacation request was updated by another user\. Refresh and try again\."\);/,
     "a lost race surfaces a clear conflict error instead of silently returning stale/undefined data",
   );
+
+  // ---- Third management level (owner rule 2026-10-08) ----
+  // Medical Rep -> District Manager -> Regional Manager -> National Sales Manager -> HR. The chain
+  // used to stop at the Regional Manager, so the NSM never saw 6 active Medical Reps' requests.
+  assert.equal(genericStepName("manager_level_3"), "management_approval_3");
+  assert.ok(
+    stepOrderForStepKey("manager_of_manager") < stepOrderForStepKey("manager_level_3") &&
+      stepOrderForStepKey("manager_level_3") < stepOrderForStepKey("hr"),
+    "the third management step sits between the second and HR",
+  );
+  const rsm = approver("Regional Sales Manager", "PD-0001");
+  const dsm = approver("District Sales Manager", "D-1");
+  assert.equal(
+    shouldIncludeThirdManagementStep({ managerOfManager: rsm, includesManagerOfManagerStep: true, thirdManager: nsm }),
+    true,
+    "Medical Rep -> DSM -> Regional Manager -> NSM: the NSM is the third approver",
+  );
+  assert.equal(
+    shouldIncludeThirdManagementStep({ managerOfManager: nsm, includesManagerOfManagerStep: true, thirdManager: ceo }),
+    false,
+    "once the NSM has been reached the chain stops — never the CEO",
+  );
+  assert.equal(
+    shouldIncludeThirdManagementStep({ managerOfManager: rsm, includesManagerOfManagerStep: true, thirdManager: ceo }),
+    false,
+    "a third approver who is not the NSM is never added",
+  );
+  assert.equal(
+    shouldIncludeThirdManagementStep({ managerOfManager: dsm, includesManagerOfManagerStep: true, thirdManager: null }),
+    false,
+    "no one above the second approver means no third step",
+  );
+  assert.equal(
+    shouldIncludeThirdManagementStep({ managerOfManager: rsm, includesManagerOfManagerStep: false, thirdManager: nsm }),
+    false,
+    "no third step without a second step",
+  );
+  const threeLevelChain = [
+    step("direct_manager", "pending"),
+    step("manager_of_manager", "pending"),
+    step("manager_level_3", "pending"),
+    step("hr", "pending"),
+  ];
+  const level3Early = evaluateStepAction({
+    steps: threeLevelChain,
+    actorStep: { stepKey: "manager_level_3", order: stepOrderForStepKey("manager_level_3") },
+    decision: "approve",
+  });
+  assert.equal(level3Early.allowed, false, "the NSM cannot approve before the first two approvers");
+  const afterSecond = [
+    step("direct_manager", "approved"),
+    step("manager_of_manager", "approved"),
+    step("manager_level_3", "pending"),
+    step("hr", "pending"),
+  ];
+  assert.equal(resolveActiveStep(afterSecond)?.stepKey, "manager_level_3", "the NSM is next once two approvers have approved");
+  const secondApproves = evaluateStepAction({
+    steps: [step("direct_manager", "approved"), step("manager_of_manager", "pending"), step("manager_level_3", "pending"), step("hr", "pending")],
+    actorStep: { stepKey: "manager_of_manager", order: stepOrderForStepKey("manager_of_manager") },
+    decision: "approve",
+  });
+  assert.equal(secondApproves.nextStatus, "pending_manager", "the second approval hands to the NSM, not to HR");
+  const nsmApproves = evaluateStepAction({
+    steps: afterSecond,
+    actorStep: { stepKey: "manager_level_3", order: stepOrderForStepKey("manager_level_3") },
+    decision: "approve",
+  });
+  assert.equal(nsmApproves.allowed, true);
+  assert.equal(nsmApproves.nextStatus, "pending_hr", "only the NSM's approval hands the request to HR acknowledgement");
+  const hrEarly = evaluateStepAction({
+    steps: [step("direct_manager", "approved"), step("manager_of_manager", "approved"), step("manager_level_3", "pending"), step("hr", "pending")],
+    actorStep: { stepKey: "hr", order: stepOrderForStepKey("hr") },
+    decision: "approve",
+  });
+  assert.equal(hrEarly.allowed, false, "HR cannot acknowledge before the NSM has approved");
 }

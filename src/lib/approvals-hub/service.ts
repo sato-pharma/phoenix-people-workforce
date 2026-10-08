@@ -1004,7 +1004,7 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
       db
         .from("v2_vacation_approval_steps")
         .select("request_id,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
-        .eq("step_key", "manager_of_manager")
+        .in("step_key", ["manager_of_manager", "manager_level_3"])
         .neq("status", "pending")
         .not("decided_at", "is", null)
         .order("decided_at", { ascending: false })

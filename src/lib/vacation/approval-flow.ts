@@ -28,13 +28,15 @@ export function isSequentialWorkflowType(type: VacationType | string | null | un
 export function stepOrderForStepKey(stepKey: VacationWorkflowStepKey): number {
   if (stepKey === "direct_manager") return 1;
   if (stepKey === "manager_of_manager") return 2;
-  return 3; // hr
+  if (stepKey === "manager_level_3") return 3;
+  return 4; // hr — rows written before the third management level keep their stored order 3
 }
 
 /** Conceptual generic identity used in code/API/UI (DB keeps the existing generic step keys). */
 export function genericStepName(stepKey: VacationWorkflowStepKey): VacationGenericStepName {
   if (stepKey === "direct_manager") return "management_approval_1";
   if (stepKey === "manager_of_manager") return "management_approval_2";
+  if (stepKey === "manager_level_3") return "management_approval_3";
   return "hr_acknowledgement";
 }
 
@@ -71,6 +73,29 @@ export function shouldIncludeManagerOfManagerStep(input: {
   if (!managerOfManager?.hrId) return false;
   if (requesterRole !== "District Manager") return true;
   return classifyOrganogramStructureLevel(managerOfManager) === "nsm";
+}
+
+/**
+ * Whether the request gets a THIRD management approval step (owner rule, 2026-10-08).
+ *
+ * The field ladder is Medical Rep -> District Manager -> Regional Manager (when there is one) ->
+ * National Sales Manager -> HR acknowledgement. Two management steps cannot hold that when a
+ * Regional Manager sits between the District Manager and the NSM: the chain stopped at the Regional
+ * Manager and the NSM never saw the request (6 active Medical Reps, measured 2026-10-08).
+ *
+ * The third step exists ONLY to reach the NSM, so it is included when the second approver is on the
+ * ladder but is not the NSM yet, and the person above them IS the NSM. It never reaches the CEO: a
+ * third approver who is not the NSM is not added.
+ */
+export function shouldIncludeThirdManagementStep(input: {
+  managerOfManager: VacationApproverIdentity | null | undefined;
+  includesManagerOfManagerStep: boolean;
+  thirdManager: VacationApproverIdentity | null | undefined;
+}): boolean {
+  const { managerOfManager, includesManagerOfManagerStep, thirdManager } = input;
+  if (!includesManagerOfManagerStep || !managerOfManager?.hrId || !thirdManager?.hrId) return false;
+  if (classifyOrganogramStructureLevel(managerOfManager) === "nsm") return false;
+  return classifyOrganogramStructureLevel(thirdManager) === "nsm";
 }
 
 function managementSteps(steps: VacationApprovalStepState[]): VacationApprovalStepState[] {
