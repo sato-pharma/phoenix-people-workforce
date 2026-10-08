@@ -286,7 +286,7 @@ export async function loadJoiningForm(token: string): Promise<JoiningFormView> {
   const draft = buildOfferHireDraft({ offer, vacancy });
   // No readable start date → no record: an active hire with a blank hire date is paid a full,
   // unprorated month. HR confirms the date first (the submit alerts them).
-  if (!draft.hireDate) return { ...JOINING_FORM_STATE_MESSAGE.seat_unavailable, kind: "closed", state: "seat_unavailable" };
+  if (!draft.hireDate) return { ...JOINING_FORM_STATE_MESSAGE.start_date_pending, kind: "closed", state: "start_date_pending" };
   const pay = payFor(offer, draft.jobTitle, seat, draft.hireDate);
 
   let hrIdPreview: string | null = null;
@@ -487,7 +487,7 @@ export async function submitJoiningForm(
   const draft = buildOfferHireDraft({ offer, vacancy });
   if (!draft.hireDate) {
     await announceJoiningFormBlocked(offer, "the offer has no readable start date, so no record was made.");
-    return { message: JOINING_FORM_STATE_MESSAGE.seat_unavailable.body, ok: false, status: 409 };
+    return { message: JOINING_FORM_STATE_MESSAGE.start_date_pending.body, ok: false, status: 409 };
   }
 
   const existing = await findExistingHire(offer, value);

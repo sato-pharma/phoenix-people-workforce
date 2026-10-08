@@ -41,13 +41,23 @@ export function joiningFormPaymentMode(title: string | null | undefined): "one_p
 export const OFFER_SEAT_REQUIRED_MESSAGE =
   "A Medical Representative or District Manager offer must name its seat in the organogram before it is sent, so the joining form can place the new hire in it.";
 
+/**
+ * Every offer leaves with a start date (owner, 2026-10-08, after one went out without one and its
+ * joining-form button could only say "being confirmed"). The joining form records it as the new
+ * hire's first day and refuses to make a record without it, so a letter with no date would hand the
+ * candidate a button that can never work.
+ */
+export const OFFER_START_DATE_REQUIRED_MESSAGE =
+  "An offer must have a start date before it is sent, so the joining form can record the new hire's first day.";
+
 export type JoiningFormState =
   | "open"
   | "submitted"
   | "withdrawn"
   | "declined"
   | "not_sent"
-  | "seat_unavailable";
+  | "seat_unavailable"
+  | "start_date_pending";
 
 /**
  * Whether the form may be filled. The token only says the link is genuine; this is the authority.
@@ -80,6 +90,11 @@ export const JOINING_FORM_STATE_MESSAGE: Record<Exclude<JoiningFormState, "open"
   seat_unavailable: {
     body: "Our HR team needs to confirm your position before you can complete this form. They will contact you shortly — you can also reply to the offer email.",
     title: "Your position is being confirmed",
+  },
+  // An offer sent before a start date was required: no first day, so no record can be made yet.
+  start_date_pending: {
+    body: "Our HR team needs to confirm your start date before you can complete this form. They will contact you shortly — you can also reply to the offer email.",
+    title: "Your start date is being confirmed",
   },
   submitted: {
     body: "Your joining form has been received and your employee record is ready. Our HR team will be in touch before your first day.",

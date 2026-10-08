@@ -69,7 +69,11 @@ of living and the fuel allowance is fixed per title. And the pay mode is also fi
 - A joiner already on the Employee Master: the national ID or mobile on any record, or the same name
   on a record created since the offer went out (Add Employee never stamps the offer, so the ID alone
   is not enough). A failed read blocks rather than passes.
-- An offer with no readable start date: the page does not open and the submit is refused, and HR is
-  told.
+- An offer with no readable start date: the page says "Your start date is being confirmed" and the
+  submit is refused, and HR is told.
+- 🔴 **No offer is SENT without a start date** (owner, 2026-10-08). One went out without one that
+  evening and its button could only say "Your position is being confirmed". The send refuses it
+  (`OFFER_START_DATE_REQUIRED_MESSAGE`, `src/lib/offers/send.ts`) and the composer says why before
+  saving. A sent offer cannot be edited, so one already out without a date is withdrawn and reissued.
 
 Pinned by `tests/offer-joining-form.test.ts`.
