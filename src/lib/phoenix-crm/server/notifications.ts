@@ -74,7 +74,7 @@ import { logError } from "@/lib/observability/log";
 import { minuteClock } from "@/lib/phoenix-crm/day-start-rules";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_NOT_CONFIRMED_TEXT, LOCATION_NOT_CONFIRMED_TITLE } from "@/lib/phoenix-crm/google-place-rules";
-import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
+import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
@@ -88,6 +88,14 @@ import type { VisitAskKind } from "@/lib/phoenix-crm/visit-ask-rules";
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
 export const PHOENIX_CRM_NOTIFICATION_CATEGORY = "phoenix_crm";
 export const PHOENIX_CRM_PORTAL_PATH = "/employee-portals/field-crm";
+
+/**
+ * How a decision's decider is named in a notice. The Administrator is always "The Administrator" — never
+ * Omar's name, never HR, never an "override" (owner, 2026-10-08).
+ */
+function deciderNameOf(names: PeopleNames, hrId: string, fallback: string): string {
+  return personKey(hrId) === personKey(PHOENIX_CRM_ADMINISTRATOR_HR_ID) ? "The Administrator" : nameOf(names, hrId, fallback);
+}
 
 export type PhoenixCrmNotice =
   | {
@@ -139,7 +147,7 @@ export type PhoenixCrmNotice =
       weekStart: string;
       status: "approved" | "returned";
       deciderHrId: string;
-      decidedAs: "reviewer" | "sfe";
+      decidedAs: "reviewer" | "sfe" | "administrator";
       repHrIds: string[];
       note: string | null;
       /** The ONE day returned, when only that day went back (owner, 2026-10-02); the notice names it. */
@@ -163,7 +171,7 @@ export type PhoenixCrmNotice =
       monthStart: string;
       status: "approved" | "returned";
       deciderHrId: string;
-      decidedAs: "reviewer" | "sfe";
+      decidedAs: "reviewer" | "sfe" | "administrator";
       repHrIds: string[];
       note: string | null;
     }
@@ -370,7 +378,9 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
   const sfe = await sfeManagerHrIds();
   const names = await loadPeopleNames([notice.repHrId, notice.actorHrId]);
   const rep = nameOf(names, notice.repHrId, "A rep");
-  const actor = nameOf(names, notice.actorHrId, "The approver");
+  // The Administrator is named by his title, never by name and never as HR (owner, 2026-10-08).
+  const byAdministrator = personKey(notice.actorHrId) === personKey(PHOENIX_CRM_ADMINISTRATOR_HR_ID);
+  const actor = byAdministrator ? "The Administrator" : nameOf(names, notice.actorHrId, "The approver");
   const week = formatPhoenixLongDate(notice.weekStart);
   const status = notice.status;
   const raised = notice.actorHrId === notice.repHrId && (status === "manager_pending" || status === "sfe_pending");
@@ -381,7 +391,7 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
   const note = notice.note ? ` Note: ${notice.note}` : "";
 
   const next: string[] =
-    status === "manager_pending" ? (reviewer ? [reviewer.hrId] : []) : status === "sfe_pending" ? sfe : status === "hr_pending" ? [PLAN_EDIT_ACKNOWLEDGER_HR_ID] : [];
+    status === "manager_pending" ? (reviewer ? [reviewer.hrId] : []) : status === "sfe_pending" ? sfe : [];
   const actorKey = personKey(notice.actorHrId);
   const repKey = personKey(notice.repHrId);
   const managers = [...new Set([...next, ...(reviewer ? [reviewer.hrId] : []), ...sfe])].filter((hrId) => {
@@ -391,14 +401,12 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
 
   const nextStep =
     status === "manager_pending"
-      ? "The district manager decides first, then SFE, then HR."
+      ? "The district manager decides first, then SFE."
       : status === "sfe_pending"
         ? raised
-          ? "SFE decides first (the territory has no district manager), then HR."
-          : "SFE decides next, then HR."
-        : status === "hr_pending"
-          ? "It opens again once HR acknowledges it."
-          : "";
+          ? "SFE decides (the territory has no district manager)."
+          : "SFE decides next."
+        : "";
   const title = raised
     ? `Request to edit a weekly plan: ${rep}`
     : reopened
@@ -411,14 +419,14 @@ async function describePlanEdit(notice: Extract<PhoenixCrmNotice, { kind: "plan_
   const message = raised
     ? `${rep} asks to edit the ${territory} plan for the week starting ${week}, which is already sent. ${nextStep}`
     : reopened
-      ? `HR acknowledged ${rep}'s request. The ${territory} plan for the week starting ${week} is open again for them to change and send again.`
+      ? `${actor} approved ${rep}'s request. The ${territory} plan for the week starting ${week} is open again for them to change and send again.${note}`
       : refused
         ? `${actor} refused ${rep}'s request to edit the ${territory} plan for the week starting ${week}. The week stays as it was sent.${note}`
         : expired
           ? `The week starting ${week} passed before ${rep}'s request to edit the ${territory} plan was settled.`
           : `${actor} approved ${rep}'s request to edit the ${territory} plan for the week starting ${week}. ${nextStep}${note}`;
   const repMessage = reopened
-    ? `HR acknowledged your request. Your plan for the week starting ${week} is open again: change the days from today on and send it again. Until you send it, your visits this week count as off-plan.`
+    ? `${actor} approved your request. Your plan for the week starting ${week} is open again: change the days from today on and send it again. Until you send it, your visits this week count as off-plan.${note}`
     : refused
       ? `${actor} refused your request to edit your plan for the week starting ${week}. The week stays as you sent it.${note}`
       : expired
@@ -773,7 +781,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
 
   if (notice.kind === "request_decided") {
     const names = await loadPeopleNames([notice.deciderHrId]);
-    const decider = nameOf(names, notice.deciderHrId, "Your manager");
+    const decider = deciderNameOf(names, notice.deciderHrId, "Your manager");
     const approved = notice.status === "approved";
     const what =
       notice.requestKind === "grade"
@@ -886,10 +894,10 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
 
   if (notice.kind === "monthly_plan_decided") {
     const names = await loadPeopleNames([notice.deciderHrId]);
-    const decider = nameOf(names, notice.deciderHrId, "Your manager");
+    const decider = deciderNameOf(names, notice.deciderHrId, "Your manager");
     const month = formatPhoenixMonth(notice.monthStart);
     const recipients = [...notice.repHrIds];
-    if (notice.status === "returned" && notice.decidedAs === "sfe") {
+    if (notice.status === "returned" && (notice.decidedAs === "sfe" || notice.decidedAs === "administrator")) {
       const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
       if (reviewer) recipients.push(reviewer.hrId);
     }
@@ -970,7 +978,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
 
   if (notice.kind === "unplanned_visit_decided") {
     const names = await loadPeopleNames([notice.deciderHrId, notice.repHrId]);
-    const decider = nameOf(names, notice.deciderHrId, "Your manager");
+    const decider = deciderNameOf(names, notice.deciderHrId, "Your manager");
     const day = formatPhoenixLongDate(notice.visitDate);
     const note = notice.note ? ` Note: ${notice.note}` : "";
     // Read as booleans first, so the eventType line below carries event NAMES and nothing else.
@@ -1024,10 +1032,10 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
   }
 
   const names = await loadPeopleNames([notice.deciderHrId]);
-  const decider = nameOf(names, notice.deciderHrId, "Your manager");
+  const decider = deciderNameOf(names, notice.deciderHrId, "Your manager");
   const week = formatPhoenixLongDate(notice.weekStart);
   const recipients = [...notice.repHrIds];
-  if (notice.status === "returned" && notice.decidedAs === "sfe") {
+  if (notice.status === "returned" && (notice.decidedAs === "sfe" || notice.decidedAs === "administrator")) {
     const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
     if (reviewer) recipients.push(reviewer.hrId);
   }
@@ -1153,7 +1161,7 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
       };
     }
     case "request_decided": {
-      const decider = nameOf(names, notice.deciderHrId, "A manager");
+      const decider = deciderNameOf(names, notice.deciderHrId, "A manager");
       const rep = nameOf(names, notice.requesterHrId, "a rep");
       const approved = notice.status === "approved";
       const what =
@@ -1185,7 +1193,7 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
       };
     }
     case "plan_decided": {
-      const decider = nameOf(names, notice.deciderHrId, "A manager");
+      const decider = deciderNameOf(names, notice.deciderHrId, "A manager");
       const approved = notice.status === "approved";
       const week = formatPhoenixLongDate(notice.weekStart);
       const oneDay = !approved && notice.returnedDay ? formatPhoenixLongDate(notice.returnedDay) : null;
@@ -1212,7 +1220,7 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
       };
     }
     case "monthly_plan_decided": {
-      const decider = nameOf(names, notice.deciderHrId, "A manager");
+      const decider = deciderNameOf(names, notice.deciderHrId, "A manager");
       const approved = notice.status === "approved";
       return {
         title: `Activity · monthly plan ${approved ? "approved" : "returned"}`,
@@ -1260,7 +1268,7 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
       };
     }
     case "unplanned_visit_decided": {
-      const decider = nameOf(names, notice.deciderHrId, "A manager");
+      const decider = deciderNameOf(names, notice.deciderHrId, "A manager");
       const rep = nameOf(names, notice.repHrId, "a rep");
       const day = formatPhoenixLongDate(notice.visitDate);
       const word = notice.status === "approved" ? "approved" : notice.status === "refused" ? "refused" : "passed to SFE";

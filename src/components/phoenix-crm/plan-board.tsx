@@ -26,7 +26,7 @@
  * passed. On his OWN plan (opened from the Plan tab, not from Team) the rep now gets one path: the
  * month of his week, that ONE week active and every other week greyed, its days, its customers. No
  * month chooser, no month send, no Copy last month. A week he has sent changes only through "Ask to
- * edit this week" (the district manager, then SFE, then HR). The server refuses any other week too.
+ * edit this week" (the district manager, then SFE). The server refuses any other week too.
  *
  * 🔴 Owner, 2026-10-02 — THE MANAGER'S REVIEW AS STEPS: a reviewer who opens a week WAITING FOR REVIEW
  * that he decides gets the step form too (plan-review-steps.tsx): the week with what changed since the
@@ -795,7 +795,7 @@ export function PlanBoard({
 
   /**
    * "Ask to edit this week" (owner, 2026-10-01): a sent week is no longer taken back by the rep. The
-   * request goes to his district manager, then SFE, then HR — and only HR's acknowledgement opens it.
+   * request goes to his district manager, then SFE — and SFE's approval opens it.
    */
   async function askToEdit(state: WeekState) {
     const plan = state.week.plan;
@@ -810,7 +810,7 @@ export function PlanBoard({
         title: `You asked to edit ${name}`,
         message: view.isTest
           ? "This is a test plan: you take every step yourself in Team, and nobody is notified."
-          : "Your district manager decides first, then SFE, then HR. The week opens again once HR acknowledges it.",
+          : "Your district manager decides first, then SFE. The week opens again once SFE approves it.",
       });
       onChanged?.();
       resource.reload();

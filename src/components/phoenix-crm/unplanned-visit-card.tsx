@@ -24,6 +24,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { CalendarClock } from "lucide-react";
 
+import { AdministratorDecline } from "@/components/phoenix-crm/administrator-decline";
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp, countText, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
@@ -216,6 +217,17 @@ function OffPlanVisitRow({
             </CrmNote>
           ) : null}
         </div>
+      ) : null}
+
+      {visit.canOverride ? (
+        <AdministratorDecline
+          hint="The rep reads it."
+          onSubmit={async (comment) => {
+            await postOffPlanDecision(visit, "refuse", comment);
+            onChanged(`Declined by the Administrator: off-plan visit to ${visit.customerName}.`);
+          }}
+          verb="Decline"
+        />
       ) : null}
     </div>
   );

@@ -237,7 +237,7 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
     const weekPanel = source("src/components/phoenix-crm/plan-week-panel.tsx");
     assert.doesNotMatch(weekPanel, /Take this week back|Take it back/, "the rep's take-back is gone");
     assert.match(weekPanel, /Ask to edit this week/, "Ask to edit this week is in its place");
-    assert.match(weekPanel, /changing it needs your manager, SFE and HR/, "and the Send confirmation says so before he sends");
+    assert.match(weekPanel, /changing it needs your manager and SFE/, "and the Send confirmation says so before he sends");
     assert.match(
       weekPanel,
       /\{week\.weekStart <= today \? " Your visits count as planned from the moment you send it\." : null\}/,

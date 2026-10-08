@@ -4,10 +4,9 @@
  * Phoenix CRM — one rep's request to edit a week he already sent, as each step sees it.
  *
  * Owner, 2026-10-01: a sent week is no longer taken back by the rep. He asks — one button, no reason —
- * and the request runs: his district manager APPROVES, then SFE APPROVES, then HR (Omar Gawish)
- * ACKNOWLEDGES, and only that acknowledgement opens the week again. A refusal at the manager's step or
- * SFE's ends it and needs a note, because the rep reads why. HR acknowledges; it never approves or
- * refuses.
+ * and the request runs: his district manager APPROVES, then SFE APPROVES, and SFE's approval opens the
+ * week again. A refusal at the manager's step or SFE's ends it and needs a note, because the rep reads
+ * why. The Administrator (owner, 2026-10-08) is no step: he may only decline, with a comment.
  *
  * "Open the week" shows the plan as it was sent, so a step is never taken without looking at it.
  */
@@ -15,6 +14,7 @@
 import { useId, useState } from "react";
 
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
+import { AdministratorDecline } from "@/components/phoenix-crm/administrator-decline";
 import { cairoStamp } from "@/components/phoenix-crm/format";
 import { CrmButton, CrmCard, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { PLAN_EDIT_NOTE_MAX, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
@@ -23,7 +23,6 @@ import type { TeamPlanEdit } from "@/lib/phoenix-crm/view-types";
 const STATUS: Record<PlanEditStatus, { tone: PillTone; accent: string }> = {
   manager_pending: { tone: "warn", accent: "border-l-amber-500" },
   sfe_pending: { tone: "warn", accent: "border-l-amber-500" },
-  hr_pending: { tone: "warn", accent: "border-l-amber-500" },
   reopened: { tone: "good", accent: "border-l-emerald-500" },
   refused: { tone: "bad", accent: "border-l-rose-500" },
   expired: { tone: "neutral", accent: "border-l-slate-300" },
@@ -32,8 +31,7 @@ const STATUS: Record<PlanEditStatus, { tone: PillTone; accent: string }> = {
 /** The button that moves the request one step on, in words that say where it goes. */
 function approveLabel(status: PlanEditStatus): string {
   if (status === "manager_pending") return "Approve · goes to SFE";
-  if (status === "sfe_pending") return "Approve · goes to HR";
-  return "Acknowledge · opens the week";
+  return "Approve · opens the week";
 }
 
 export function PlanEditCard({
@@ -49,15 +47,14 @@ export function PlanEditCard({
 }) {
   const fieldId = useId();
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState<"approve" | "refuse" | "acknowledge" | null>(null);
+  const [busy, setBusy] = useState<"approve" | "refuse" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
   const status = STATUS[edit.status];
   const noteId = `${fieldId}-note`;
-  const hrStep = edit.status === "hr_pending";
 
-  async function decide(decision: "approve" | "refuse" | "acknowledge") {
-    const trimmed = note.trim();
+  async function decide(decision: "approve" | "refuse", override?: string) {
+    const trimmed = (override ?? note).trim();
     if (decision === "refuse" && !trimmed) {
       setProblem("Write a note for the rep explaining why.");
       return;
@@ -73,9 +70,7 @@ export function PlanEditCard({
       onChanged(
         decision === "refuse"
           ? `Refused: ${edit.repName}'s request to edit a weekly plan.`
-          : decision === "acknowledge"
-            ? `Acknowledged: ${edit.repName}'s week is open again for them to change.`
-            : `Approved: ${edit.repName}'s request to edit a weekly plan.`,
+          : `Approved: ${edit.repName}'s request to edit a weekly plan.`,
       );
     } catch (error) {
       setProblem(messageOf(error));
@@ -113,13 +108,19 @@ export function PlanEditCard({
             {edit.sfeNote ? ` · ${edit.sfeNote}` : ""}
           </p>
         ) : null}
+        {edit.administratorDeclined ? (
+          <p className="break-words text-xs font-semibold text-slate-600">
+            Declined by the Administrator
+            {edit.administratorNote ? ` · ${edit.administratorNote}` : ""}
+          </p>
+        ) : null}
         <p className="break-words text-xs font-semibold text-slate-500">
-          The district manager decides first, then SFE, then HR acknowledges. The week opens again only after HR.
+          The district manager decides first, then SFE. The week opens again once SFE approves.
         </p>
       </div>
 
       <div className="mt-3 grid min-w-0 gap-2">
-        {edit.canDecide && !hrStep ? (
+        {edit.canDecide ? (
           <CrmField hint="Needed to refuse. The rep reads it." htmlFor={noteId} label="Note for the rep">
             <textarea
               className={crmTextareaClassName}
@@ -137,11 +138,11 @@ export function PlanEditCard({
         ) : null}
         <div className="flex flex-wrap gap-2">
           {edit.canDecide ? (
-            <CrmButton disabled={busy !== null} onClick={() => void decide(hrStep ? "acknowledge" : "approve")} variant="primary">
-              {busy === "approve" || busy === "acknowledge" ? "Saving…" : approveLabel(edit.status)}
+            <CrmButton disabled={busy !== null} onClick={() => void decide("approve")} variant="primary">
+              {busy === "approve" ? "Saving…" : approveLabel(edit.status)}
             </CrmButton>
           ) : null}
-          {edit.canDecide && !hrStep ? (
+          {edit.canDecide ? (
             <CrmButton disabled={busy !== null} onClick={() => void decide("refuse")}>
               {busy === "refuse" ? "Refusing…" : "Refuse"}
             </CrmButton>
@@ -150,6 +151,13 @@ export function PlanEditCard({
             Open the week
           </CrmButton>
         </div>
+        {edit.canOverride ? (
+          <AdministratorDecline
+            hint="The rep reads it."
+            onSubmit={(comment) => decide("refuse", comment)}
+            verb="Decline"
+          />
+        ) : null}
         {problem ? (
           <CrmNote tone="bad" title="The decision was not saved">
             {problem}

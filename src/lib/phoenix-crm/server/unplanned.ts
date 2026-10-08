@@ -15,7 +15,7 @@ import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-e
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
-import { assertUnplannedVisitApprover, canDecideUnplannedVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { assertUnplannedVisitApprover, canDecideUnplannedVisit, canOverrideDecision, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import type { OffPlanVisitRef } from "@/lib/phoenix-crm/server/offplan-day";
@@ -230,7 +230,13 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
   const status: UnplannedVisitStatus = isUnplannedVisitStatus(row.status) ? row.status : "approved";
   if (!isUnplannedVisitWaiting(status)) throw forbiddenError("This visit was already decided. Reload the page.");
   const stage = unplannedVisitStageOf(status) as UnplannedVisitStage;
-  assertUnplannedVisitApprover(viewer, seat, isTest, stage);
+  // The Administrator declines at whichever step it waits at; he never approves (owner, 2026-10-08).
+  const asAdministrator = canOverrideDecision(viewer, isTest);
+  if (asAdministrator) {
+    if (decision !== "refuse") throw validationError("The Administrator can only decline a visit.");
+  } else {
+    assertUnplannedVisitApprover(viewer, seat, isTest, stage);
+  }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_unplanned_visit", {
     p: {
@@ -238,7 +244,7 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
       stage,
       decision,
       actor_hr_id: viewer.hrId,
-      actor_role: viewer.role,
+      actor_role: asAdministrator ? "administrator" : viewer.role,
       note,
       expected_version: expectedVersion,
       is_test: isTest,

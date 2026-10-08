@@ -20,7 +20,6 @@ import { PLAN_EDIT_WAITING_STATUSES, type PlanEditStatus } from "@/lib/phoenix-c
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { telegramCardOffered } from "@/lib/phoenix-crm/telegram-card";
 import {
-  canAcknowledgePlanEdits,
   lineOpeningText,
   readsCalendar,
   readsFieldHeardByProduct,
@@ -99,12 +98,6 @@ export type PhoenixCrmOverview = {
     /** Requests to edit a sent week at a step this viewer takes (owner, 2026-10-01), in `isTest`'s world. */
     planEdits: number;
     isTest: boolean;
-    /**
-     * HR's acknowledgements, REAL entries, whatever world the counts above are in: Omar Gawish takes HR's
-     * step on real requests himself (access.ts `canAcknowledgePlanEdits`), while every other count of
-     * his is a test count. Zero for everyone else.
-     */
-    hrAcknowledgements: number;
     /**
      * A rep's asks for a visit waiting for THIS viewer's answer (owner, 2026-10-02), in `isTest`'s world:
      * a manager's on the Team tab, a product manager's on Reports — the one page of the module he opens.
@@ -250,7 +243,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     isSfeManager: viewer.isSfeManager,
   });
 
-  const [names, requests, plans, managerEdits, sfeEdits, hrAcknowledgements, telegramConnected, visitAsks, offPlanVisits] =
+  const [names, requests, plans, managerEdits, sfeEdits, telegramConnected, visitAsks, offPlanVisits] =
     await Promise.all([
       loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
       // The list requests at his own step — the reviewer's and the SFE's, summed by the one producer
@@ -260,7 +253,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       // The weekly plans at his own step, through the one producer (server/decision-queues.ts) — the
       // Needs You board reads the SAME function, so the badge and the board cannot drift.
       countPhoenixCrmWeeklyPlansWaitingForYou(decisionSeats, viewer.cairoToday),
-      // A request to edit a sent week (owner, 2026-10-01): the district manager's step, SFE's, and HR's.
+      // A request to edit a sent week (owner, 2026-10-01): the district manager's step and SFE's.
       // The Super Admin's test count holds every step, as his list-request count does.
       reviewSeatIds !== null && reviewSeatIds.length === 0
         ? 0
@@ -271,7 +264,6 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
             viewer.cairoToday,
           ),
       sfeSeatIds.length === 0 ? 0 : countPlanEdits(["sfe_pending"], false, sfeSeatIds, viewer.cairoToday),
-      canAcknowledgePlanEdits(viewer) ? countPlanEdits(["hr_pending"], false, null, viewer.cairoToday) : 0,
       // In the same wave, and never able to fail the page: an unreadable status draws no card.
       telegramOffered ? telegramConnectedOrNull(viewer) : null,
       // The visit asks waiting for his answer (owner, 2026-10-02), in the world his other counts are in.
@@ -341,7 +333,6 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       plans,
       planEdits: managerEdits + sfeEdits,
       isTest: waitingIsTest,
-      hrAcknowledgements,
       visitAsks,
       offPlanVisits,
     },

@@ -7086,3 +7086,13 @@ He had just been given email, Telegram, in-app and pulsing badges for every Phoe
 - **Where it is asked**: `notifyPhoenixCrm` (real world only; the test world keeps its in-app copies), the plan reminder, the approval nudge, the 06:55 digest (on top of its real-activity test), the hourly visit roll-up, and `unread-notices.ts`. Fraud scan and validation-review notices go to Super Admins and SFE and are not team notices.
 - **A failed read of the starts fails OPEN** (and is logged as `phoenix_crm_live_teams_unreadable`): an empty answer would silence a live team's approvals on a database hiccup.
 - Pinned by `tests/phoenix-crm-live-teams.test.ts`. Rule: `src/lib/phoenix-crm/live-team-rules.ts`; read: `src/lib/phoenix-crm/server/live-teams.ts`.
+
+## The Administrator is not an approval step — owner, 2026-10-08
+
+Voice message: take HR (Omar Gawish, B-10, the sole Super Admin) out of the approvals — the plan edit used to wait for his acknowledgement after the district manager and SFE. He may still decline, or return with a comment, any decision at any time, but nothing waits for him. Then: "call it the Administrator" — never HR, never an override.
+
+- **Scope: every approval** (weekly plans, monthly plans, list requests, off-plan visits, plan edits). **Effect: it reverses and the rep is told** — a declined plan edit or request returns to the rep with his comment, and the rep, district manager and SFE are notified naming "The Administrator".
+- **Plan edits:** two steps, district manager then SFE; SFE's approval reopens the week itself (`hr_acknowledged_at` is kept as "when the week was opened" because plan-rules and offplan-day read it). Migration `20261008160000_phoenix_crm_administrator_not_hr.sql` retires `hr_pending` (it refuses to run while one exists), adds `admin_decided_by_hr_id`, `admin_decided_at`, `admin_note`, and a stage `administrator` that may only refuse, with a note, at either waiting step.
+- **Code:** `canAdminister` and `canOverrideDecision` in `access.ts` (never on a test entry, compared as a person). The `canOverride` flag on Team requests, visits and plan edits sits APART from `canDecide`, so no "waiting for you" count holds him. List requests and off-plan visits accept only `refuse` from him; weekly and monthly plans accept his return. UI: `administrator-decline.tsx`.
+- **Not built:** reversing an item that is already approved or reopened — only a waiting item can be declined.
+- Pinned by `tests/phoenix-crm-administrator.test.ts` and `tests/phoenix-crm-plan-edit-requests.test.ts`.

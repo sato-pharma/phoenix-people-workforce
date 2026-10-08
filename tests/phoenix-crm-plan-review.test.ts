@@ -438,7 +438,7 @@ export function runPhoenixCrmPlanReviewTests(): void {
     assert.equal(assertCanReturnPlan(sfe, REP, false), "sfe", "the SFE Manager returns, never approves");
     refused(() => assertCanReturnPlan(nsm, REP, false), "the manager's manager reads and decides nothing");
     refused(() => assertCanReturnPlan(rep, REP, false), "the rep never returns his own week");
-    refused(() => assertCanReturnPlan(owner, REP, false), "the Super Admin's real reach is test entries only");
+    assert.equal(assertCanReturnPlan(owner, REP, false), "administrator", "the Administrator may return a week with a comment — he is no step, and never approves");
     assert.equal(assertCanReturnPlan(owner, REP, true), "reviewer", "on a test plan he takes the reviewer's place");
     assert.equal(assertCanReturnPlan(testDm, REP, true), "reviewer", "a test account returns a test week as the person it mirrors");
     refused(() => assertCanReturnPlan(testDm, REP, false), "and never a real one");
@@ -447,7 +447,7 @@ export function runPhoenixCrmPlanReviewTests(): void {
     const decides = (viewer: PhoenixCrmViewer, isTest: boolean) => canReviewTerritory(viewer, REP, isTest) || canReturnTerritoryPlan(viewer, REP, isTest);
     assert.deepEqual(
       [decides(dm, false), decides(sfe, false), decides(nsm, false), decides(rep, false), decides(owner, false), decides(owner, true)],
-      [true, true, false, false, false, true],
+      [true, true, false, false, true, true],
       "who reads a week as review steps — and so who is shown what changed since the last send",
     );
   }
