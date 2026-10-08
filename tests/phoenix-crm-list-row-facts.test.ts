@@ -300,9 +300,11 @@ export function runPhoenixCrmListRowFactsTests() {
     //    row. Shared is the older rule and the one a rep cannot work out for himself, so it takes
     //    the row colour; ready-to-count takes the rail on the first cell and its own pill, and is
     //    never painted over it.
+    //    A third arrived on 2026-10-08 — rose, for a customer waiting to be captured again — and it
+    //    sits between the two: shared still wins, and capture-again outranks ready-to-count.
     assert.ok(
-      board.includes('<tr className={shared ? "bg-violet-50" : ready ? "bg-amber-50" : undefined}'),
-      "a shared row is violet, as the old board had it, and it still outranks the amber mark",
+      board.includes('<tr className={shared ? "bg-violet-50" : again ? "bg-rose-50" : ready ? "bg-amber-50" : undefined}'),
+      "a shared row is violet, as the old board had it, and it still outranks the rose and amber marks",
     );
     assert.ok(board.includes("const shared = (customer.sharedWith?.length ?? 0) > 0;"), "and it is the same field the old board reads");
     assert.ok(board.includes("{describeSharing(shared)}"), "the small line names WHO and on what basis — the match is an inference a reader may overrule");
