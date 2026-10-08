@@ -24,6 +24,11 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
+  PHOENIX_VISIT_DETAIL_COLUMNS,
+  pickPhoenixVisitDetailRow,
+  type PhoenixDetailViewer,
+} from "@/lib/crm/phoenix-visit-detail";
+import {
   buildFieldActivityReport,
   cairoWallClockIso,
   type FieldActivityCheckinRow,
@@ -43,7 +48,11 @@ const IN_CHUNK = 80;
 const VISIT_COLUMNS =
   "visit_date, agent_hr_id, agent_name, agent_crm_id, double_hr_id, double_name, double2_hr_id, " +
   "double2_name, contact_crm_id, contact_name, speciality, crm_contact_grade, ampm, visit_type, " +
-  "visit_type_description, comment, crm_save_date, source";
+  "visit_type_description, comment, crm_save_date, source, " +
+  // THE PHOENIX FIELD SET. Selected unconditionally and shown only at the tier the reader earns: a
+  // select is a string, so a list that varied by role would read `undefined` and print a blank the
+  // moment a tier was added — indistinguishable from a visit that recorded nothing.
+  PHOENIX_VISIT_DETAIL_COLUMNS;
 
 /**
  * What the CRM door hands back. The door has already resolved the union that `rowsOf` below exists
@@ -97,6 +106,9 @@ function toVisitRow(row: Record<string, unknown>): FieldActivityVisitRow {
     comment: (row.comment as string | null) ?? null,
     savedAt: (row.crm_save_date as string | null) ?? null,
     source: (row.source as string | null) ?? null,
+    // The field set flows through AS THE DOOR SERVED IT — the shaper reads the raw measurements and
+    // decides the tier, so re-typing each column here would be a second place for one to go missing.
+    ...pickPhoenixVisitDetailRow(row),
   };
 }
 
@@ -116,6 +128,11 @@ export async function loadFieldActivityReport(input: {
   fromIso: string;
   toIso: string;
   panels: FieldActivityPanels;
+  /**
+   * Who is reading, so each Phoenix row's field set is shaped to his sight tier and blinded on a row
+   * whose rep is himself. Omitted → no Phoenix half, which is the behaviour before 2026-10-07.
+   */
+  viewer?: PhoenixDetailViewer;
 }): Promise<FieldActivityReport | null> {
   const supabase = getSupabaseAdmin();
   const { fromIso, toIso, subjectHrId } = input;
@@ -334,6 +351,7 @@ export async function loadFieldActivityReport(input: {
     trips,
     punches,
     leave,
+    viewer: input.viewer,
   });
 }
 

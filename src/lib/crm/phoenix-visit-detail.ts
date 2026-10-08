@@ -83,6 +83,24 @@ export type PhoenixVisitDetailRow = {
   phoenix_synced_at?: string | null;
 };
 
+/**
+ * The field set's own keys, lifted off a door row and nothing else.
+ *
+ * Every report's row mapper calls this instead of naming the 29 columns a second time: a second list is
+ * a second place for one to go missing, and a missing one reads `undefined` and prints a blank — which
+ * on this screen is indistinguishable from a visit that recorded nothing. Derived from
+ * `PHOENIX_VISIT_DETAIL_COLUMNS`, so the select list and the pick can never disagree.
+ */
+const DETAIL_KEYS = PHOENIX_VISIT_DETAIL_COLUMNS.split(",").map((part) => part.trim());
+
+export function pickPhoenixVisitDetailRow(row: Record<string, unknown>): PhoenixVisitDetailRow {
+  const picked: Record<string, unknown> = {};
+  for (const key of DETAIL_KEYS) {
+    if (key in row) picked[key] = row[key];
+  }
+  return picked as PhoenixVisitDetailRow;
+}
+
 export type PhoenixDetailSight = "none" | "distance" | "full";
 
 /** The two roles that read the measurement BEHIND a reading (`readsLocationDetail`, same two roles). */

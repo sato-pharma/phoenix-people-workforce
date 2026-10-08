@@ -569,7 +569,10 @@ function runPhoenixPharmacyFigureTests() {
     assert.deepEqual(report.days[0].counts, { am: 1, pm: 1, pharmacies: 0, phoenix: 2 });
     assert.equal(formatVisitCountSplit(report.totals.counts), "AM 1 · PM 1 · Pharmacies 0", "the period total prints the count — these two days held no pharmacy call");
     const fieldReport = readFileSync("src/lib/field-activity/report.ts", "utf8");
-    assert.match(fieldReport, /crm_save_date, source";/, "the read carries `source`, or no row is ever known as Phoenix CRM's");
+    // `source` was the LAST select item until the Phoenix field set was appended on 2026-10-07, so this
+    // pinned the end of the string. It pins the ITEM now — the guarantee is that `source` is read, not
+    // that nothing is read after it, and a pin on the tail would go red every time the list grows.
+    assert.match(fieldReport, /crm_save_date, source, "/, "the read carries `source`, or no row is ever known as Phoenix CRM's");
     assert.match(fieldReport, /source: \(row\.source as string \| null\) \?\? null/);
   }
 

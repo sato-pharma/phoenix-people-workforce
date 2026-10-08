@@ -44,6 +44,13 @@
  */
 
 import {
+  phoenixRowSight,
+  phoenixVisitDetail,
+  type PhoenixDetailViewer,
+  type PhoenixVisitDetail,
+  type PhoenixVisitDetailRow,
+} from "@/lib/crm/phoenix-visit-detail";
+import {
   addVisitToSplit,
   emptyVisitCountSplit,
   mergeVisitCountSplits,
@@ -53,7 +60,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { cairoWallClock } from "@/lib/format/cairo-zone";
 
 /** A visit row as the unified CRM view serves it. Vendor times are wall-clock strings (rule 3). */
-export type FieldActivityVisitRow = {
+export type FieldActivityVisitRow = PhoenixVisitDetailRow & {
   visitDate: string;
   agentHrId: string | null;
   agentName: string | null;
@@ -177,6 +184,8 @@ export type FieldActivityStop = {
   legMetres: number | null;
   /** Whose phone recorded the fix, when it was not the subject's own. */
   viaName: string | null;
+  /** The Phoenix field set at this reader's tier, or null on an iReports360 row. */
+  phoenix: PhoenixVisitDetail | null;
 };
 
 /** A call on the day that carries no GPS fix — no contact attached, or the subject's own record. */
@@ -188,6 +197,16 @@ export type FieldActivityUnlocatedVisit = {
   comment: string | null;
   /** Whether it is a customer call at all — a Traveling record never counts toward the buckets. */
   counts: boolean;
+  /**
+   * The Phoenix field set at this reader's tier, or null on an iReports360 row.
+   *
+   * 🔴 THIS IS WHERE A PHOENIX VISIT LANDS, and it is why the field set matters most here. A Phoenix
+   * visit IS its own check-in, so it never matches an iReports360 GPS fix and every one of them falls
+   * into this list — the list the report introduces as work with no GPS behind it. Its own distance,
+   * products and evidence were measured all along and simply had nowhere to be printed, so a day a rep
+   * spent in the field read as a day nothing was recorded. That is the owner's reported sentence.
+   */
+  phoenix: PhoenixVisitDetail | null;
 };
 
 export type FieldActivityDayKind = "field" | "field-no-gps" | "leave" | "office" | "weekend" | "empty";
@@ -372,6 +391,12 @@ export function buildFieldActivityReport(input: {
   trips: FieldActivityTripRow[];
   punches: FieldActivityPunchRow[];
   leave: FieldActivityLeaveRow[];
+  /**
+   * Who is reading, so each Phoenix row's field set is shaped to his sight tier and blinded on a row
+   * whose rep is himself (golden rule #1's three tiers). Omitted → no Phoenix half at all, which is
+   * exactly the behaviour before 2026-10-07.
+   */
+  viewer?: PhoenixDetailViewer;
 }): FieldActivityReport {
   const { subject, fromIso, toIso } = input;
   const subjectHrId = subject.hrId;
@@ -449,6 +474,12 @@ export function buildFieldActivityReport(input: {
       // longer be inferred from which partner column happens to be filled.
       const subjectRodeAlong = !sameHrId(visit.agentHrId, subjectHrId);
 
+      // The field set, at the tier this reader's role earns, blinded where HE is the row's rep —
+      // resolved per row, because a District Manager's own report carries his reps' days and his own.
+      const phoenix = input.viewer
+        ? phoenixVisitDetail(visit, phoenixRowSight(input.viewer, visit.agentHrId))
+        : null;
+
       // Who he was out with: every OTHER person on the row. A chain visit carries three people, so
       // the old agent-or-partner pair named only one of the two he actually rode with.
       for (const person of [
@@ -497,6 +528,7 @@ export function buildFieldActivityReport(input: {
             address: checkin.address,
             legMetres: null,
             viaName: subjectRodeAlong ? visit.agentName : null,
+            phoenix,
           });
           continue;
         }
@@ -513,6 +545,7 @@ export function buildFieldActivityReport(input: {
             : "Call saved with no contact attached",
         comment: visit.comment,
         counts: counted,
+        phoenix,
       });
     }
 

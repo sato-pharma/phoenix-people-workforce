@@ -14,6 +14,7 @@ import { canOpenSubject, resolveFieldActivityAccess } from "@/lib/field-activity
 import { buildFieldActivityDocument, type FieldActivityDayMap } from "@/lib/field-activity/document";
 import { fetchBasemap, fitZoom, renderRouteSvg, stopsToMapPoints } from "@/lib/field-activity/map";
 import { resolvePeriod } from "@/lib/field-activity/period";
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { loadFieldActivityReport } from "@/lib/field-activity/report";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
 
@@ -53,6 +54,9 @@ export async function GET(request: Request) {
       panels: resolved.panels,
       subjectHrId,
       toIso: period.toIso,
+      // The same tier the screen gives this reader. A PDF is a document somebody keeps and forwards, so
+      // it is the LAST place to widen a sight — it must print exactly what its reader could see.
+      viewer: phoenixDetailViewer(resolved.role, resolved.viewerHrId),
     });
     if (!report) {
       return NextResponse.json({ error: "not_found", success: false }, { status: 404 });
