@@ -146,7 +146,31 @@ commit's checks finish. So the merge gate and the deploy gate are the same two c
 gate hard-coded to a count from a doc does not merely wait — it waits for checks that no longer exist.
 **Count passes against `branches/main/protection/required_status_checks`, read live.**
 
-### Before every push: `remote-check.mjs test` is a standing step (owner rule, 2026-10-04)
+### Before every push: the PR's own CI is the verdict; `remote-check` is optional (owner, 2026-10-08)
+
+🔴 **The standing step below was RETIRED on 2026-10-08** by the owner's performance-recovery plan.
+Measured from 1,230 session transcripts: on 4-8 Oct sessions spent **6.5 session-hours a day** in
+`remote-check` and **17.6 hours** in foreground loops polling its output, because one 7.7 GB box
+served ~9 sessions one run at a time (lint alone took 182s cold), while the hosted PR CI it ran in
+front of queues in 2-3 seconds and answers in ~3 minutes. The trade-off is stated plainly: the PR red
+rate fell from 24% to 10.5% while the step stood, and some of that may come back as red PR runs —
+which block nothing but their own merge, never `main`.
+
+What replaces it:
+
+- **Commit, push, open the PR.** Its `validate` + `checks` are the verdict, and since 2026-10-08 a PR
+  whose diff can change the build also BUILDS (`scripts/ci-build-risk.mjs`, defined by exclusion).
+- **`remote-check` when an earlier answer is worth it — once, with `run_in_background: true`,** acting
+  on the completion notification (confirmed to arrive in the Desktop app the same day). Exit 0 PASS,
+  1 FAIL, 2-9 NO VERDICT; only `remote-check: PASS|FAIL — <sha9>` naming the sha you pushed counts, and
+  a NO VERDICT is never a pass. `bash-guard.mjs` **C14** refuses a foreground poll loop.
+- **One result per sha, reused.** A run that ends in a printed PASS or FAIL records each stage in
+  `<git-common-dir>/phx-remote-check/<sha>.json`. The push guard only READS it — it refuses a push
+  solely when that record holds a typecheck FAIL for the exact commit, and starts nothing.
+- **A busy or unreachable box never bills by default:** with an open PR it reads that PR's run by sha;
+  without one it ends NO VERDICT (exit 6). `--actions`/`--urgent` still dispatch on request.
+
+The 2026-10-04 account follows, kept for its evidence.
 
 `node scripts/remote-check.mjs test` runs the unit suite on the preview box against the **committed**
 sha using the same `test:sharded` runner as CI, with its CPU/memory ceiling and coverage refusal.

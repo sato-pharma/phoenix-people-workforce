@@ -16,8 +16,8 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/push-typecheck-guard.mjs\"",
-            "timeout": 480,
-            "statusMessage": "Typechecking on the CI box before the push"
+            "timeout": 10,
+            "statusMessage": "Reusing remote-check's recorded verdict for this commit"
           }
         ]
       },

@@ -1,12 +1,21 @@
 ---
 name: the-pre-push-remote-check-test-is-a-rule-never-a-guard
-description: "Owner 2026-10-04 — `node scripts/remote-check.mjs test` before every PR push is a RULE, not a hook; he ruled \"no guard\", so never build or propose a hook that refuses `git push` over the SUITE (the separate typecheck-only guard, PR #5288, is his own request and stands). It is behavioral (PR #5287); if the box does not answer, say so and push."
+description: "SUPERSEDED 2026-10-08 (owner, performance recovery) — the PR's own validate + checks are the verdict and `remote-check` is OPTIONAL, run once in the background, never before every push; the push guard only READS a recorded per-sha verdict and starts nothing. The 2026-10-04 \"no guard over the SUITE\" ruling still stands: never build a hook that refuses `git push` over the test run."
 metadata:
   node_type: memory
   type: feedback
   originSessionId: e39a8848-5059-4305-a1d5-83e9c4ec9c6f
-  modified: 2026-10-03T22:44:46.185Z
+  modified: 2026-10-08T11:01:25.346Z
 ---
+
+**🔴 SUPERSEDED IN PART, 2026-10-08 — read this first.** The owner approved the performance-recovery
+plan (branch `codex/perf-recovery`): the standing step below is RETIRED. Commit, push and open the
+PR; its `validate` + `checks` are the verdict. `remote-check` is optional — run it once with
+`run_in_background: true` and act on the notification (exit 0 PASS, 1 FAIL, 2-9 NO VERDICT), never
+in a poll loop (bash-guard C14). The push guard no longer runs anything: it reads
+`<git-common-dir>/phx-remote-check/<sha>.json` and refuses only on a recorded typecheck FAIL for that
+exact sha. What still stands from 2026-10-04: **no hook may refuse a push over the SUITE.** The
+account of the change: `docs/testing.md` "Before every push", `docs/ci-self-hosted-runner.md`.
 
 `node scripts/remote-check.mjs test` before every push that opens or updates a PR is a standing step
 (`all` when the change adds a route, a file or a closed-union member), shipped in PR #5287 (merge

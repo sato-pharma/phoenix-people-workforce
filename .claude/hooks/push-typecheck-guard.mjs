@@ -1,65 +1,45 @@
 #!/usr/bin/env node
-// PreToolUse(Bash|PowerShell) — run the typecheck ON THE CI BOX before a `git push` leaves this machine.
+// PreToolUse(Bash|PowerShell) — before a `git push`, REUSE what remote-check already proved about the
+// pushed commit. It starts nothing, waits for nothing and never touches the CI box.
 //
-// WHY THIS EXISTS. `buggy_code` is the top friction category in the owner's own usage report, and the
-// worst of it is a type error that only shows up AFTER the push: the PR's `checks` job goes red, costs a
-// full CI round (~14 billable minutes, twice with the `main` run) and the fix costs another. A local
-// `tsc` is not the answer — it needs 4.0-4.5 GB and `mem-watchdog.ps1` reaps it (bash-guard C8 refuses
-// one outright). `node scripts/remote-check.mjs typecheck` is: it ships the committed sha to the preview
-// box and answers in ~2 minutes without touching this laptop's RAM or billing a single Actions minute.
-// This hook makes running it the push's own first step instead of something a session must remember.
+// 🔴 WHAT CHANGED ON 2026-10-08, AND WHY (owner, performance recovery: *"the push guard must not start
+// a remote check that blocks a normal push. Previously completed verification for the exact commit SHA
+// may be reused, but the PR's required GitHub CI checks must remain the authoritative validation
+// gate"*). From 2026-10-04 this hook RAN `remote-check typecheck` on every push and held the push for up
+// to seven minutes. Measured from the session transcripts: push wall time went from a 7s median to a
+// 146s p75, ~1.3 session-hours a day were spent inside this hook, and on a busy box it answered NO
+// VERDICT anyway — so its protection depended on luck while its cost did not. The PR's own `checks`
+// job runs the same `tsc` on the same commit and is the gate that actually blocks a merge.
 //
-// 🔴 THIS IS NOT THE RETIRED PRE-PUSH GIT HOOK, AND NOT A LOCAL VALIDATION. AGENTS.md §7 retired
-// `check:harden` and `.git/hooks/pre-push` on 2026-08-18 because they ran HEAVY WORK ON THIS LAPTOP. This
-// one runs nothing heavy here, lives in the Claude hooks (a push typed in a plain terminal never sees it),
-// and exists because the owner asked for it by name on 2026-10-04 ("add a remote typecheck before every
-// push, in a worktree"). Do not read the retirement as a reason to remove it.
+// WHAT IT DOES NOW
+//   - It reads `<git-common-dir>/phx-remote-check/<sha>.json`, the per-stage record remote-check writes
+//     when a run ENDS IN A VERDICT (scripts/remote-check-plan.mjs, "THE VERDICT RECORD"). The directory
+//     is shared by every worktree and never tracked.
+//   - A recorded typecheck FAIL for the EXACT commit being pushed → DENY, with tsc's own lines. Pushing a
+//     commit already proved broken only buys a red PR and a second CI round.
+//   - A recorded PASS → a one-line note. Nothing recorded → allow, silently and at once.
+//   - It never reads a record for any other sha, so an older run's verdict can never speak for this one.
 //
-// WHAT IT DECIDES
-//   - It acts on a `git push` that sends the CHECKED-OUT commit. A push of another ref, a delete, a tag,
-//     a dry run, `--all`/`--mirror`, a push to a non-branch ref (refs/backups/…) or one that sends nothing
-//     new (origin already holds this sha) is none of its business.
-//   - It skips a push that changes nothing a typechecker reads: it diffs `origin/main...HEAD` and runs only
-//     if some file is .ts/.tsx/.js/.mjs/.json or the pnpm manifests. CI skips the same way for a
-//     docs-only change, so a migration-only or docs-only push is not made to wait two minutes for nothing.
-//   - It remembers a PASS per commit in `<git-common-dir>/phx-remote-typecheck/<sha>`, so pushing the same
-//     commit twice (an update-branch, a retry, a second remote) costs nothing. The directory is shared by
-//     every worktree and is never tracked.
-//   - It runs the check in a PROCESS GROUP of its own and reaps the GROUP when its own wait expires. Killing
-//     the `node` child alone left the `ssh` under it running: the box kept the run and its typecheck lock,
-//     and the NEXT push met a busy box, got NO VERDICT and went out unchecked.
-//   - It DENIES only on a verdict: the box ran the typecheck and it FAILED. Anything else — no SSH key, the
-//     box unreachable, a run whose tree moved (exit 3), an install failure, a timeout — ALLOWS and says so,
-//     because the PR's `checks` job is still the real gate and a guard that blocks every push when the box
-//     is down is a guard that gets switched off within the hour (bash-guard C12 makes the same call).
+// WHAT IT DECIDES ABOUT (unchanged): a `git push` that sends the CHECKED-OUT commit. A push of another
+// ref, a delete, a tag, a dry run, `--all`/`--mirror`, a push to a non-branch ref or one that sends
+// nothing new is none of its business. A push chained after a commit, merge, rebase, reset or checkout
+// in the same command is simply allowed: at hook time HEAD is not yet the commit that will be pushed,
+// so blocking on HEAD's record would block the wrong commit, and a brand-new commit has none anyway.
 //
-// 🔴 A CHAINED `git commit && git push` CANNOT BE CHECKED, SO IT IS REFUSED. A PreToolUse hook runs before
-// the WHOLE command, so at that moment HEAD is the commit BEFORE the one about to be pushed — checking it
-// would prove nothing about what ships. A push preceded in the same command by a commit, merge, rebase,
-// cherry-pick, pull, reset, am, revert, checkout or switch is refused with the instruction to run those
-// first as their own command. That is the one cost of "before every push", and the deny says so.
+// Stand-down: `PHX_PUSH_CHECK_OFF=1 <cmd>` (`$env:PHX_PUSH_CHECK_OFF=1; <cmd>` in PowerShell) for one
+// push the owner told you to make regardless of a recorded FAIL.
 //
-// 🔴 IT SENDS THE COMMIT, NOT THE WORKING TREE — `remote-check.mjs` says so itself and prints any
-// uncommitted file it ignored. Stage nothing here and commit nothing here; this hook only reads.
-//
-// Stand-downs: `PHX_PUSH_CHECK_OFF=1 <cmd>` (`$env:PHX_PUSH_CHECK_OFF=1; <cmd>` in PowerShell) for one
-// push the owner told you to make regardless. `PHX_PUSH_CHECK_TIMEOUT_MS` shortens the wait (the tests use
-// it); the default 7 minutes sits inside the hook's own 8-minute timeout in .claude/settings.json.
-//
-// FAILS OPEN: any parse or logic error exits 0 with no decision. A hook bug must never block a real push.
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+// FAILS OPEN: any parse, read or logic error exits 0 with no decision. A hook bug must never block a push.
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 
-const SCRIPT_RELATIVE = join('scripts', 'remote-check.mjs');
-const RUN_TIMEOUT_MS = Number(process.env.PHX_PUSH_CHECK_TIMEOUT_MS) || 7 * 60 * 1000;
-const CACHE_DIR_NAME = 'phx-remote-typecheck';
-const CACHE_KEEP_MS = 14 * 24 * 60 * 60 * 1000;
+/** remote-check-plan.mjs `VERDICT_DIR_NAME` — tests/push-typecheck-guard.test.ts pins the two together. */
+const VERDICT_DIR_NAME = 'phx-remote-check';
 
-/** What a typechecker (or the install in front of it) can read — see the header. */
-const TYPECHECK_INPUT = /\.(?:[cm]?[jt]sx?|json)$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|^\.npmrc$/i;
+const SHA_RE = /^[0-9a-f]{40}$/;
 
-/** Git subcommands that move HEAD — a push chained after one cannot be checked by a hook. */
+/** Git subcommands that move HEAD — a push chained after one sends a commit this hook cannot see yet. */
 const HEAD_MOVING = new Set(['commit', 'merge', 'rebase', 'cherry-pick', 'pull', 'reset', 'am', 'revert', 'checkout', 'switch']);
 
 /** Push flags that take their value as the NEXT token (the `--flag=value` spelling carries it inline). */
@@ -272,153 +252,20 @@ const nativePath = (value) =>
   process.platform === 'win32' ? String(value).replace(/^\/([A-Za-z])(?=\/|$)/, (_, drive) => `${drive.toUpperCase()}:`) : String(value);
 
 /**
- * Does any file this push would carry hold something a typechecker reads? `withWorkingTree` adds what is
- * staged, modified or untracked, for a chained command whose commit does not exist yet. If the diff cannot
- * be read the answer is YES — the safe side is to run the check.
+ * The verdict remote-check recorded for exactly this sha, or null. Never throws — an unreadable or
+ * malformed record is the same as none, which allows the push.
  */
-function typecheckRelevant(root, withWorkingTree) {
+function recordFor(commonDir, sha) {
   try {
-    const base = gitOut(root, ['merge-base', 'origin/main', 'HEAD']);
-    const files = gitOut(root, ['diff', '--name-only', base, 'HEAD']).split(/\r?\n/).filter(Boolean);
-    if (withWorkingTree) {
-      for (const line of execFileSync('git', ['status', '--porcelain'], {
-        cwd: root,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 15000,
-      }).split(/\r?\n/)) {
-        if (line.length < 4) continue;
-        files.push(line.slice(3).split(' -> ').pop().replace(/^"|"$/g, ''));
-      }
-    }
-    return files.some((file) => TYPECHECK_INPUT.test(file));
+    const parsed = JSON.parse(readFileSync(join(commonDir, VERDICT_DIR_NAME, `${sha}.json`), 'utf8'));
+    if (!parsed || parsed.sha !== sha || typeof parsed.stages !== 'object' || parsed.stages === null) return null;
+    return parsed;
   } catch {
-    return true;
+    return null;
   }
 }
 
-/** The lines between the typecheck's own banners — the errors tsc printed, nothing else. */
-function typecheckErrors(output) {
-  const lines = stripAnsi(output).split(/\r?\n/);
-  const start = lines.findIndex((line) => /^=== typecheck ===/.test(line));
-  const end = lines.findIndex((line) => /^--- typecheck FAIL in /.test(line));
-  const body = start >= 0 ? lines.slice(start + 1, end >= 0 ? end : undefined) : lines;
-  return body.filter((line) => line.trim()).slice(-60).join('\n');
-}
-
-/**
- * 🔴 KILLING THE CHILD IS NOT KILLING THE RUN — THE `ssh` UNDER IT IS WHAT HOLDS THE BOX.
- *
- * `spawnSync`'s own timeout signals the `node` it started and nothing else, so when the wait expired
- * the `ssh` grandchild survived: it kept the remote run going, kept /tmp/phx-typecheck.lock held,
- * and the NEXT push then met the busy probe, got NO VERDICT and went out unchecked. One orphan is
- * enough to silently disarm this guard for the rest of the session.
- *
- * So the child is started in a process GROUP of its own and the group is signalled — `kill(-pid)` on
- * POSIX, `taskkill /T` on Windows, where negative pids do not exist. SIGTERM first so ssh can close
- * the channel, SIGKILL after a grace period for the case where it cannot.
- */
-function killProcessTree(child) {
-  const pid = child?.pid;
-  if (!pid) return;
-  if (process.platform === 'win32') {
-    try {
-      spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 10000, windowsHide: true });
-    } catch {
-      // nothing left to try; the hook must still answer
-    }
-    return;
-  }
-  const signal = (sig) => {
-    try {
-      process.kill(-pid, sig); // the whole group: node, its ssh, and anything ssh started locally
-    } catch {
-      try {
-        process.kill(pid, sig);
-      } catch {
-        // already gone
-      }
-    }
-  };
-  signal('SIGTERM');
-  setTimeout(() => signal('SIGKILL'), 2000).unref();
-}
-
-/** How much of each stream is kept: the hook reads banner lines and the last 60 error lines only. */
-const OUTPUT_KEEP = 1024 * 1024;
-
-/**
- * Run `remote-check typecheck` and answer `{ status, stdout, stderr, timedOut }`.
- *
- * It is `spawn`, not `spawnSync`, for one reason: a timeout must be able to reap the whole process
- * GROUP (see killProcessTree). Everything else about it is the old call — same arguments, same cwd,
- * same wait.
- */
-function runRemoteCheck(script, root) {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(process.execPath, [script, 'typecheck', '--no-wait', '--no-actions'], {
-        cwd: root,
-        windowsHide: true,
-        // A group of its own, so the timeout can take the ssh with it. Windows has no process
-        // groups to join this way; `taskkill /T` walks the tree there instead.
-        detached: process.platform !== 'win32',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } catch {
-      resolve({ status: null, stdout: '', stderr: '', timedOut: false });
-      return;
-    }
-    let stdout = '';
-    let stderr = '';
-    let settled = false;
-    let timedOut = false;
-    const keep = (text, chunk) => {
-      const next = text + chunk;
-      return next.length > OUTPUT_KEEP ? next.slice(-OUTPUT_KEEP) : next;
-    };
-    // utf8 at the stream, not at the join: a chunk boundary inside a multi-byte character would
-    // otherwise mangle the em dash in `remote-check: PASS — <sha>` and in tsc's own output.
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (d) => { stdout = keep(stdout, d); });
-    child.stderr.on('data', (d) => { stderr = keep(stderr, d); });
-    let grace = null;
-    const settle = (status) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (grace) clearTimeout(grace);
-      resolve({ status, stdout, stderr, timedOut });
-    };
-    const timer = setTimeout(() => {
-      timedOut = true;
-      killProcessTree(child);
-      // If the group refuses to die, the hook must still answer: a guard that hangs is a guard that
-      // gets switched off. The reap has been fired either way.
-      grace = setTimeout(() => settle(null), 10000);
-      grace.unref();
-    }, RUN_TIMEOUT_MS);
-    child.on('error', () => settle(null));
-    child.on('close', (code) => settle(code));
-  });
-}
-
-function remember(cacheDir, sha) {
-  try {
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(join(cacheDir, sha), `${new Date().toISOString()}\n`);
-    for (const name of readdirSync(cacheDir)) {
-      const file = join(cacheDir, name);
-      if (Date.now() - statSync(file).mtimeMs > CACHE_KEEP_MS) unlinkSync(file);
-    }
-  } catch {
-    // an unwritable cache only means the next push of this commit re-runs the check
-  }
-}
-
-async function main() {
+function main() {
   let input;
   try {
     input = JSON.parse(readFileSync(0, 'utf8'));
@@ -431,13 +278,12 @@ async function main() {
   if (!/\bpush\b/.test(command)) return allow();
   if (process.env.PHX_PUSH_CHECK_OFF === '1' || OFF_IN_COMMAND.test(command)) return allow();
 
-  // Find the `git push`, and what ran before it in the same command.
+  // Find the `git push`, following any `cd` in front of it.
   const segments = commandSegments(withoutHereStringBodies(withoutHeredocBodies(command)));
   let dir = [input?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()].find((c) => c && existsSync(String(c)));
   if (!dir) return allow();
   dir = String(dir);
   let push = null;
-  const movedHead = [];
   for (const segment of segments) {
     const moved = changedDirectory(segment);
     if (moved) {
@@ -453,7 +299,9 @@ async function main() {
       push = git;
       break;
     }
-    if (HEAD_MOVING.has(git.sub)) movedHead.push(git.sub);
+    // A HEAD-moving command earlier in the SAME command means the commit pushed is not today's HEAD,
+    // so today's HEAD's record says nothing about it — allow rather than block on the wrong sha.
+    if (HEAD_MOVING.has(git.sub)) return allow();
   }
   if (!push) return allow();
   if (push.dir) {
@@ -464,116 +312,66 @@ async function main() {
   const read = readPush(push.args);
   if (read.skip) return allow();
 
-  // This repository only — the hook is project-level, but a checkout without the script has nothing to run.
   let root;
-  try {
-    root = gitOut(dir, ['rev-parse', '--show-toplevel']);
-  } catch {
-    return allow();
-  }
-  const script = join(root, SCRIPT_RELATIVE);
-  if (!existsSync(script)) return allow();
-
   let current = '';
-  try {
-    current = gitOut(root, ['branch', '--show-current']);
-  } catch {
-    // detached or unreadable — whatIsPushed handles an empty branch
-  }
-  const pushed = whatIsPushed(read.refspecs, current);
-  if (!pushed.sends) return allow();
-
-  if (movedHead.length > 0) {
-    // The same relevance test, over what the commit WILL hold: a chained docs-only commit is not worth a split.
-    if (!typecheckRelevant(root, true)) return allow();
-    return deny(
-      `PUSH REFUSED — this one command runs \`git ${movedHead[0]}\` and THEN \`git push\`, so the typecheck on the CI box ` +
-        `cannot see the commit the push would send: a PreToolUse hook runs before the whole command, when HEAD is still ` +
-        `the commit BEFORE this one.\n\n` +
-        `Run the \`git ${movedHead.join('\`, \`git ')}\` as a command of its own, then push in the next command — the ` +
-        `check runs on that push and answers in about two minutes without touching this laptop's RAM.\n\n` +
-        `If the owner told you to push regardless, stand it down for this one push:\n  ` +
-        (/powershell/i.test(tool) ? '$env:PHX_PUSH_CHECK_OFF=1; <the same command>' : 'PHX_PUSH_CHECK_OFF=1 <the same command>'),
-    );
-  }
-
   let sha;
   let commonDir;
   try {
+    root = gitOut(dir, ['rev-parse', '--show-toplevel']);
+    try {
+      current = gitOut(root, ['branch', '--show-current']);
+    } catch {
+      // detached or unreadable — whatIsPushed handles an empty branch
+    }
     sha = gitOut(root, ['rev-parse', 'HEAD']);
     commonDir = gitOut(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
   } catch {
     return allow();
   }
+  if (!SHA_RE.test(sha)) return allow();
+  const pushed = whatIsPushed(read.refspecs, current);
+  if (!pushed.sends) return allow();
 
-  // Nothing new to send, or already proved on the box.
+  // Nothing new to send: origin already holds this commit, so there is nothing to stop.
   try {
-    const remoteTip = gitOut(root, ['rev-parse', '--verify', '-q', `refs/remotes/${read.remote}/${pushed.branch}`]);
-    if (remoteTip === sha) return allow();
+    if (gitOut(root, ['rev-parse', '--verify', '-q', `refs/remotes/${read.remote}/${pushed.branch}`]) === sha) return allow();
   } catch {
-    // no remote-tracking ref yet — this is a first push of the branch
+    // no remote-tracking ref yet — a first push of the branch
   }
-  const cacheDir = join(commonDir, CACHE_DIR_NAME);
-  if (existsSync(join(cacheDir, sha))) return allow();
 
-  // A change no typechecker reads does not need one. If the diff cannot be read, check anyway.
-  if (!typecheckRelevant(root, false)) return allow();
-
-  const started = Date.now();
-  // 🔴 `--no-wait --no-actions` IS LOAD-BEARING, NOT TIDINESS. A bare `remote-check` pays for a GitHub
-  // Actions run the MOMENT the box is busy — with no wait in front of it since the owner's ruling of
-  // 2026-10-08 (`DEFAULT_WAIT_MINUTES` is 0; 2026-10-06 waited ten minutes first). This hook runs on
-  // EVERY push, so the default here would bill ~14 Actions minutes immediately, every time another
-  // session held the box, for a verdict the PR's own `checks` job produces for free. A push must stay
-  // instant AND free: a busy box gives NO VERDICT and the push is allowed.
-  const run = await runRemoteCheck(script, root);
-  const seconds = Math.round((Date.now() - started) / 1000);
-  const output = `${run.stdout ?? ''}\n${run.stderr ?? ''}`;
+  const record = recordFor(commonDir, sha);
+  if (!record) return allow();
   const short = sha.slice(0, 9);
+  const typecheck = record.stages.typecheck;
 
-  if (run.status === 0 && /^remote-check: PASS/m.test(output)) {
-    remember(cacheDir, sha);
-    return note(`Remote typecheck PASSED on the CI box for ${short} (${seconds}s) — the push may proceed.`);
-  }
-
-  if (run.status === 1 && /^remote-check: FAIL/m.test(output) && /^--- typecheck FAIL in /m.test(stripAnsi(output))) {
+  if (typecheck?.verdict === 'FAIL') {
+    const excerpt = typeof typecheck.excerpt === 'string' && typecheck.excerpt.trim() ? `\n\n${stripAnsi(typecheck.excerpt)}` : '';
     return deny(
-      `PUSH REFUSED — the typecheck on the CI box FAILED for ${short} (${seconds}s). This is the same \`tsc\` the PR's ` +
-        `\`checks\` job would run, and pushing now would only buy a red PR and a second CI round.\n\n` +
-        `${typecheckErrors(output)}\n\n` +
-        `Fix it, commit, and push again — the check re-runs for the new commit, and a PASS is remembered per commit, so ` +
-        `an unchanged one is never re-run. Re-run it by hand any time: node scripts/remote-check.mjs typecheck\n\n` +
+      `PUSH REFUSED — remote-check already ran the typecheck on this exact commit (${short}) and it FAILED ` +
+        `(${typecheck.source ?? 'recorded'}, ${typecheck.at ?? 'earlier'}). The PR's \`checks\` job runs the same \`tsc\`, ` +
+        `so pushing it now only buys a red PR and a second CI round.${excerpt}\n\n` +
+        `Fix it and commit — a new commit has no recorded FAIL, so its push goes straight through.\n\n` +
         `If the owner told you to push regardless, stand it down for this one push:\n  ` +
         (/powershell/i.test(tool) ? '$env:PHX_PUSH_CHECK_OFF=1; <the same command>' : 'PHX_PUSH_CHECK_OFF=1 <the same command>'),
     );
   }
 
-  // No verdict: say why, and let the push through — the PR's `checks` job is still the gate.
-  //
-  // 🔴 EVERY ONE OF THESE CODES IS "COULD NOT TELL", NEVER "YOUR CODE IS BROKEN". remote-check.mjs
-  // reserves 0 and 1 for verdicts; 3/4/5/7/8/9 are the box saying it never produced one (a moved
-  // tree, an OOM kill, a dropped ssh, a failed install, a signal, a lock it waited out). Naming each
-  // one matters because an unnamed "exited 7" reads like a crash a session should chase.
-  const NO_VERDICT_REASONS = {
-    2: 'the box could not be reached, or it was already busy (see the output below)',
-    3: "the box's tree changed under the run",
-    4: 'a stage was OOM-killed on the shared box',
-    5: 'the ssh connection to the box dropped',
-    7: 'the run could not be set up on the box (private tree or install)',
-    8: 'the run on the box was killed by a signal',
-    9: 'a stage waited out the box’s typecheck lock and never ran',
-  };
-  const why = run.timedOut
-    ? `it did not finish within ${Math.round(RUN_TIMEOUT_MS / 60000)} minutes (the run was reaped here, ssh included — it may still be finishing on the box)`
-    : NO_VERDICT_REASONS[run.status] ?? `it exited ${run.status ?? 'abnormally'} without a typecheck verdict`;
+  const passed = Object.entries(record.stages)
+    .filter(([, v]) => v && v.verdict === 'PASS')
+    .map(([name]) => name);
+  const failed = Object.entries(record.stages)
+    .filter(([, v]) => v && v.verdict === 'FAIL')
+    .map(([name]) => name);
+  if (passed.length === 0 && failed.length === 0) return allow();
   return note(
-    `The remote typecheck gave NO VERDICT for ${short} — ${why} — so this push was NOT checked before it left. The PR's ` +
-      `\`checks\` job will still run the typecheck. Last output:\n${stripAnsi(output).trim().split(/\r?\n/).slice(-8).join('\n')}`,
+    `remote-check already has a verdict for ${short}: ` +
+      [passed.length ? `PASS ${passed.join(', ')}` : '', failed.length ? `FAIL ${failed.join(', ')}` : ''].filter(Boolean).join('; ') +
+      ` — reused, nothing was re-run. The PR's \`validate\` + \`checks\` remain the merge gate.`,
   );
 }
 
 try {
-  main().catch(() => process.exit(0));
+  main();
 } catch {
   process.exit(0);
 }

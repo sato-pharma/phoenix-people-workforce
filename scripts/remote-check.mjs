@@ -30,11 +30,21 @@
 // *"if free use it directly but if busy use github actions"*, then *"make an unreachable box escalate
 // to Actions too, not only a busy one"*). Several sessions share one 7,740 MB box, so a second run can
 // never simply join it — and until 2026-10-06 the refusal was the END of the road, which left a finished
-// branch retrying by hand while another session built. A bare invocation now probes the box and, on a
-// busy answer OR no answer at all, dispatches ci.yml AT ONCE at ~14 billable Actions minutes against
-// the box's zero. `--wait <minutes>` buys the old queue back for one call (VISIBLY — a line per poll,
-// never a silent lock), `--free` waits ten minutes and never bills, `--no-wait --no-actions` refuses at
-// once, and PHX_CHECK_WAIT_MINUTES=<n> sets the house default without a code change.
+// branch retrying by hand while another session built. A bare invocation probes the box and, on a busy
+// answer OR no answer at all, never queues: it READS the branch's open PR run (already billed, free to
+// read). 🔴 SINCE THE 2026-10-08 PERFORMANCE RECOVERY IT NO LONGER DISPATCHES BY DEFAULT — owner: *"do
+// not dispatch paid Actions runs when the PR's own CI gives the same verdict"*. With no PR it stops at
+// NO VERDICT and says to open one; `--actions` / `--urgent` still dispatch ci.yml (~14 billable
+// minutes). `--wait <minutes>` buys a visible queue back for one call, `--free` waits ten minutes and
+// never touches Actions, `--no-wait --no-actions` refuses at once, and PHX_CHECK_WAIT_MINUTES=<n> sets
+// the house default without a code change.
+//
+// 🔴 THE PR'S OWN CI IS THE AUTHORITATIVE GATE; THIS IS AN OPTIONAL ACCELERATOR. Run it in the
+// background (`run_in_background`) and act on the completion notification — never a foreground
+// `until grep …; sleep` loop (bash-guard refuses those). Its last line is the one authoritative result:
+// `remote-check: PASS — <sha9>`, `FAIL — <sha9>` or `NO VERDICT — … <sha9>`, and a finished verdict is
+// also recorded per stage in `<git-common-dir>/phx-remote-check/<sha>.json`, which the push guard
+// reuses instead of running anything itself.
 //
 // 🔴 THE PROBE STILL FAILS CLOSED. An unreadable answer is never read as an IDLE BOX: `run` is
 // unreachable from `probeKnown: false`, so nothing is ever started beside another session's build. What
@@ -81,11 +91,13 @@
 // TELL" RATHER THAN AS A FAILURE. A FAIL blocks a push and is reported to the owner as "your code is
 // broken", so a failure that is not the code's must never wear it:
 //   0 PASS   1 FAIL (a check really failed)
-//   2 the laptop could not start the run (no key, unreadable probe, busy box, failed dispatch)
+//   2 the laptop could not start the run (no key, unreadable probe, busy box, failed dispatch), or the
+//     box run ended with a code that is not a verdict (exit 0 without every stage's PASS line, exit 1
+//     with no stage's FAIL line, anything unmapped) — NEVER read as PASS or FAIL
 //   3 the box's tree moved under the run      4 a stage was OOM-killed (137)
 //   5 the ssh connection dropped (255)        6 nothing was dispatched / the Actions run told us nothing
-//   7 the private tree or the install failed  8 the run was killed by a signal
-//   9 a stage waited out the box's typecheck lock and never ran
+//   7 the private tree or the install failed  8 the run was killed by a signal, or passed its ceiling
+//   9 the run's box lock or a stage's typecheck lock could not be taken, so nothing ran
 // A NO-VERDICT run prints no `remote-check: PASS|FAIL — <sha>` line at all, because that line is what
 // other tools parse (`a-verdict-line-without-its-sha-matches-an-older-run`).
 //
@@ -94,32 +106,42 @@
 //   PHX_CHECK_USER   default phx
 //   PHX_CHECK_KEY    default ~/.ssh/railway_phoenix_ed25519
 
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import {
   BUSY_POLL_SECONDS,
+  EXIT_CEILING,
   EXIT_INTERRUPTED,
   EXIT_LOCK_TIMEOUT,
   EXIT_SETUP,
   FREE_WAIT_MINUTES,
+  LINT_CACHE_FUNCTION_NAME,
   URGENT_WAIT_MINUTES,
+  VERDICT_DIR_NAME,
+  VERDICT_KEEP_DAYS,
   WAIT_MINUTES_ENV,
   buildBusyProbeScript,
   buildLockfileScript,
   buildRunScript,
+  ceilingCommand,
   decideBusyAction,
   gradeActionsRun,
   gradeActionsStages,
   isProtectedDispatchRef,
+  lintCacheFunction,
+  mergeVerdictRecord,
   newRunId,
   parseBusyProbe,
   parseEscalation,
+  runCeilingSeconds,
   runPaths,
   stageJobsFor,
+  stageVerdictsFromOutput,
   stagesNotRunBy,
+  typecheckExcerpt,
 } from "./remote-check-plan.mjs";
 
 const HOST = process.env.PHX_CHECK_HOST || "46.225.184.142";
@@ -149,7 +171,9 @@ const PRELUDE = ["export PATH=/usr/local/lib/nodejs/node/bin:$PATH", "export COR
 // typegen tsc would fail on route types CI generates. The old shared directory hid this the other way:
 // it carried whatever `.next/types` an earlier run of SOME commit had left behind.
 const CHECKS = {
-  lint: "corepack pnpm run lint",
+  // `corepack pnpm run lint` inside the persistent-cache wrapper (remote-check-plan.mjs,
+  // `lintCacheFunction`), which returns eslint's own exit code untouched — 182s cold to seconds warm.
+  lint: LINT_CACHE_FUNCTION_NAME,
   // 🔴 A LOCK TIMEOUT HERE CANNOT BE TOLD FROM A TYPE ERROR BY ITS EXIT CODE — `flock -w` gives up
   // with exit 1, which is also `tsc`'s code for "there are type errors". The conflict is therefore
   // detected BEFORE the stage runs, by the lock probe buildRunScript puts in front of any stage whose
@@ -256,6 +280,44 @@ function die(message) {
   process.exit(2);
 }
 
+/**
+ * Store what a FINISHED run proved about `sha`, per stage, in `<git-common-dir>/phx-remote-check/<sha>.json`
+ * (remote-check-plan.mjs, "THE VERDICT RECORD"). `.claude/hooks/push-typecheck-guard.mjs` reads it
+ * instead of starting a run of its own. Called only on a PASS or FAIL ending, with only the stages
+ * that printed one — a NO VERDICT ending records nothing. Best effort: an unwritable record only means
+ * the push guard has nothing to reuse.
+ *
+ * @param {string} commitSha the 40-char sha the run was about.
+ * @param {Record<string, "PASS"|"FAIL">} stages
+ * @param {string} source where the verdict came from (the box, or a named Actions run).
+ * @param {string} [excerpt] tsc's own lines, kept for a typecheck FAIL.
+ */
+function recordVerdicts(commitSha, stages, source, excerpt) {
+  if (!stages || Object.keys(stages).length === 0) return;
+  try {
+    const common = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim();
+    const dir = path.join(common, VERDICT_DIR_NAME);
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, commitSha + ".json");
+    let previous = null;
+    try {
+      previous = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      // no record yet, or an unreadable one — start fresh
+    }
+    const next = mergeVerdictRecord(previous, { sha: commitSha, stages, source, at: new Date().toISOString(), excerpt });
+    const tmp = file + "." + process.pid + ".tmp";
+    writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n");
+    renameSync(tmp, file);
+    for (const name of readdirSync(dir)) {
+      const old = path.join(dir, name);
+      if (Date.now() - statSync(old).mtimeMs > VERDICT_KEEP_DAYS * 24 * 60 * 60 * 1000) unlinkSync(old);
+    }
+  } catch {
+    // best effort, see above
+  }
+}
+
 /** A synchronous sleep, so the busy wait stays in this script's single straight line of control. */
 function sleepSeconds(seconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, seconds) * 1000);
@@ -291,7 +353,7 @@ function sleepSeconds(seconds) {
 // 🔴 PUSHING THE BRANCH IS FREE. ci.yml triggers on `pull_request` and on a push to `main` only, so
 // pushing a feature branch runs nothing at all. That is why this refuses rather than pushing for
 // you: the push is the session's act, and it bills nothing either way.
-function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
+function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy", dispatch = false }) {
   console.log("");
   // 🔴 THE LINE MUST NOT SAY "did not free in 0 min". Since the default wait became zero (owner,
   // 2026-10-08) the overwhelmingly common escalation has waited for nothing at all, and a report of a
@@ -311,10 +373,10 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
   console.log(
     waitedSeconds > 0
       ? "remote-check: the box " + (unreachable ? "never answered in " : "did not free in ") +
-          Math.round(waitedSeconds / 60) + " min — going to GitHub Actions for this answer."
-      : "remote-check: the box " + blocked + " — going to GitHub Actions for this answer at once. Pass " +
-          "--wait <minutes> to queue for the box instead, or --free to wait " + FREE_WAIT_MINUTES +
-          " min and never bill.",
+          Math.round(waitedSeconds / 60) + " min — looking to GitHub Actions for this answer."
+      : "remote-check: the box " + blocked + " — not queueing behind it; looking to GitHub Actions for this " +
+          "answer (this branch's open PR run, which is already billed" +
+          (dispatch ? ", or a dispatch, which you armed with --actions/--urgent)." : "; nothing is dispatched without --actions)."),
   );
   if (unreachable) {
     console.log("remote-check: nothing was pushed to the box, and this is NOT read as an idle box — " +
@@ -339,7 +401,7 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
     console.error("      gh run list --workflow ci.yml --branch " + branch + " --limit 3");
     console.error("      gh run watch <id>");
     console.error("    For a check of your own, put the commit on a branch and run this from there.");
-    console.error("remote-check: NO VERDICT — nothing was dispatched.");
+    console.error("remote-check: NO VERDICT — nothing was dispatched (" + sha.slice(0, 9) + ")");
     process.exit(6);
   }
 
@@ -403,6 +465,21 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
       source: "GitHub Actions — #" + openPr + "'s own run, not the box",
       hint: "    A pull request does not run the build; for that half, dispatch from a branch with no open PR.",
     });
+  }
+
+  // 🔴 NO PR AND NO `--actions`: STOP HERE, BILL NOTHING (owner, 2026-10-08 performance recovery —
+  // *"do not dispatch paid Actions runs when the PR's own CI gives the same verdict"*). The branch is
+  // already on origin (checked above), so the next step is the PR itself: its `validate` + `checks` are
+  // the authoritative gate and they run on this same commit, already paid for. A dispatch here would
+  // bill ~14 minutes for an answer the PR produces anyway, minutes later.
+  if (!dispatch) {
+    console.error("remote-check: " + branch + " has no open PR, and nothing is dispatched without --actions.");
+    console.error("    Open the PR — its `validate` + `checks` run on this same commit and ARE the verdict:");
+    console.error("      gh pr create --fill --head " + branch);
+    console.error("    Then this command reads that run for free. Or pass --actions to dispatch ci.yml (~14 billable min).");
+    console.error("remote-check: NO VERDICT — the box was " + (unreachable ? "unreachable" : "busy") +
+      " and no PR exists yet for " + sha.slice(0, 9));
+    process.exit(6);
   }
 
   // Nothing on GitHub holds an answer for this commit, so one has to be started — and THIS is where
@@ -519,12 +596,14 @@ function settleActionsRun({ find, sha, names, label, source, hint }) {
 
     if (graded.verdict === "pass" && notRun.length === 0) {
       console.log("remote-check: " + label + " " + run.url + " — completed/success");
+      const wanted = names.length ? names : Object.keys(stageJobs);
+      recordVerdicts(sha, Object.fromEntries(wanted.map((name) => [name, "PASS"])), source);
       console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (" + source + ")");
       process.exit(0);
     }
     // A run about another commit is about another commit — there is nothing of ours in it to grade.
     if (run?.headSha && run.headSha !== sha) {
-      console.error("remote-check: NO VERDICT — " + graded.why + (run?.url ? "  " + run.url : ""));
+      console.error("remote-check: NO VERDICT — " + graded.why + (run?.url ? "  " + run.url : "") + " (" + sha.slice(0, 9) + ")");
       process.exit(6);
     }
 
@@ -540,11 +619,13 @@ function settleActionsRun({ find, sha, names, label, source, hint }) {
     console.log("remote-check: " + label + " " + run.url + " — completed/" + String(run.conclusion ?? "unknown"));
     if (stages.verdict === "pass") {
       console.log("remote-check: " + asked + " — " + stages.why + elsewhere);
+      recordVerdicts(sha, stages.stages, source);
       console.log("remote-check: PASS — " + sha.slice(0, 9) + "  (" + source + ")");
       process.exit(0);
     }
     if (stages.verdict === "fail") {
       console.error("remote-check: " + stages.why + elsewhere);
+      recordVerdicts(sha, stages.stages, source);
       console.error("remote-check: FAIL — " + sha.slice(0, 9) + "  (" + source + ")");
       process.exit(1);
     }
@@ -554,11 +635,11 @@ function settleActionsRun({ find, sha, names, label, source, hint }) {
     if (stages.passed.length > 0) {
       console.log("remote-check: " + stages.passed.join(" + ") + " did pass on that run.");
     }
-    console.error("remote-check: NO VERDICT — " + stages.why + elsewhere + (run?.url ? "  " + run.url : ""));
+    console.error("remote-check: NO VERDICT — " + stages.why + elsewhere + (run?.url ? "  " + run.url : "") + " (" + sha.slice(0, 9) + ")");
     if (hint) console.error(hint);
     process.exit(6);
   }
-  console.error("remote-check: NO VERDICT — " + label + " had not settled after " + ACTIONS_WATCH_MINUTES + " minutes.");
+  console.error("remote-check: NO VERDICT — " + label + " had not settled after " + ACTIONS_WATCH_MINUTES + " minutes (" + sha.slice(0, 9) + ")");
   if (hint) console.error(hint);
   process.exit(6);
 }
@@ -711,8 +792,8 @@ const escalation = parseEscalation(process.argv.slice(2));
 if (escalation.unknown.length > 0) {
   die(
     "unknown flag(s): " + escalation.unknown.join(", ") + ". Known: --wait <minutes>, --actions, " +
-      "--no-actions/--free, --no-wait, --urgent (= --wait " + URGENT_WAIT_MINUTES + " --actions, which " +
-      "is also the default), and " + WAIT_MINUTES_ENV + "=<0-60>.",
+      "--no-actions/--free, --no-wait, --urgent (= --wait " + URGENT_WAIT_MINUTES + " --actions), and " +
+      WAIT_MINUTES_ENV + "=<0-60>.",
   );
 }
 const requested = escalation.positional;
@@ -846,7 +927,7 @@ while (plan.action === "poll") {
   });
 }
 if (plan.action === "actions" && !FORCED) {
-  runOnActions({ branch, sha, names, waitedSeconds, reason: plan.reason });
+  runOnActions({ branch, sha, names, waitedSeconds, reason: plan.reason, dispatch: escalation.dispatch });
 }
 // 🔴 THIS BLOCK IS GATED ON THE DECISION, NOT ON THE RUN LIST — an unreachable box has ZERO runs, so
 // the old `busy.runs.length > 0` condition would have skipped the refusal entirely and FALLEN THROUGH
@@ -876,9 +957,9 @@ if (plan.action === "refuse" && !FORCED) {
   }
   console.error("");
   console.error("    You asked NOT to escalate, so this is the end of the road for this invocation:");
-  console.error("      (default)          a box that is busy OR unreachable runs ci.yml on GitHub Actions " +
-    "AT ONCE — ~14 billable minutes. You passed --no-actions/--free, which waits " + FREE_WAIT_MINUTES +
-    " min and never bills.");
+  console.error("      (default)          a box that is busy OR unreachable reads this branch's open PR run " +
+    "(free), and stops at NO VERDICT when there is none. You passed --no-actions/--free, which waits " +
+    FREE_WAIT_MINUTES + " min and never touches Actions.");
   console.error("      --wait <minutes>   keep asking the box, a line every " + BUSY_POLL_SECONDS + "s.");
   console.error("      " + WAIT_MINUTES_ENV + "=<n>  the same wait as the house default, for every call in this shell.");
   console.error("      PHX_CHECK_FORCE=1  start beside the other run anyway (this is what OOM-kills a build).");
@@ -954,18 +1035,79 @@ if (LOCKFILE_MODE) {
   process.exit(0);
 }
 
-const status = ssh(
+// 🔴 THE RUN IS STREAMED, NOT ONLY INHERITED, SO ITS VERDICT CAN BE RECORDED PER STAGE — and it runs
+// under the box's own `timeout` (remote-check-plan.mjs, "THE RUN'S OWN CEILING"), so a hung run ends
+// as NO VERDICT and cleans its own tree up on the box. The local timer is the backstop for a box that
+// stops answering altogether: it fires a minute and a half after the box's own ceiling, ends ssh, and
+// is reported as NO VERDICT too. Neither is ever a PASS.
+const ceilingSeconds = runCeilingSeconds(names);
+const run = await sshRun(
   buildRunScript({
     remoteRoot: REMOTE_ROOT,
     runId,
     sha,
-    prelude: PRELUDE,
+    prelude: names.includes("lint")
+      ? [...PRELUDE, ...lintCacheFunction({ remoteRoot: REMOTE_ROOT, runDir: paths.runDir })]
+      : PRELUDE,
     install: "corepack pnpm install --frozen-lockfile --reporter=silent",
     steps: names.map((name) => ({ name, command: CHECKS[name] })),
   }),
+  { remoteCommand: ceilingCommand(names), timeoutMs: (ceilingSeconds + 90) * 1000 },
 );
+const status = run.status;
+
+/**
+ * Feed `script` to the box and stream what it prints, keeping stdout for the verdict record.
+ * Resolves `{ status, out, timedOut }`; `status` is null when ssh could not start or was ended here.
+ */
+function sshRun(script, { remoteCommand, timeoutMs }) {
+  return new Promise((resolve) => {
+    const KEEP = 4 * 1024 * 1024;
+    let out = "";
+    let timedOut = false;
+    let child;
+    try {
+      child = spawn("ssh", [...SSH_OPTS, USER + "@" + HOST, remoteCommand], { stdio: ["pipe", "pipe", "pipe"] });
+    } catch {
+      resolve({ status: null, out, timedOut });
+      return;
+    }
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (d) => {
+      process.stdout.write(d);
+      out = (out + d).slice(-KEEP);
+    });
+    child.stderr.on("data", (d) => process.stderr.write(d));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 5000).unref();
+    }, timeoutMs);
+    const settle = (status) => {
+      clearTimeout(timer);
+      resolve({ status, out, timedOut });
+    };
+    child.on("error", () => settle(null));
+    child.on("close", (code) => settle(code));
+    child.stdin.on("error", () => {});
+    child.stdin.end(script);
+  });
+}
 
 console.log("");
+if (run.timedOut || status === EXIT_CEILING || status === 128 + 9 || status === null) {
+  // 🔴 A CEILING, A LOCAL BACKSTOP, A SIGKILL FROM `timeout --kill-after`, OR AN ssh THAT NEVER STARTED:
+  // none of them is a verdict about the code, and none of them may print the PASS/FAIL line.
+  const why = run.timedOut
+    ? "the box stopped answering and the run was ended here after " + Math.round(ceilingSeconds / 60) + " min"
+    : status === null
+      ? "ssh could not be started"
+      : "the run passed its " + Math.round(ceilingSeconds / 60) + "-minute ceiling on the box and was stopped there";
+  console.log("remote-check: NO VERDICT — " + why + ", so nothing above is a verdict on " + sha.slice(0, 9));
+  console.log("             Any stage that printed PASS above really did pass. The PR's own checks remain the verdict.");
+  process.exit(EXIT_INTERRUPTED);
+}
 if (status === 3) {
   // same_tree fired: the tree under the run stopped being `sha`. Whatever the checks printed is about
   // some other commit, so this must never read as either a pass or a fail of this one.
@@ -1004,8 +1146,10 @@ if (status === EXIT_LOCK_TIMEOUT) {
   // used to exit 1 — the same code `tsc` uses for type errors — so a box too contended to start the
   // typecheck reported the branch as broken. That is the busy box, which this script already
   // refuses to call a failure anywhere else.
-  console.log("remote-check: NO VERDICT — a stage waited out the box's typecheck lock (20 min) and never ran, so nothing above is a verdict on " + sha.slice(0, 9));
-  console.log("             Something else on the box holds /tmp/phx-typecheck.lock — a CI typecheck step, or another session's run.");
+  // 🔴 SINCE 2026-10-08 THE RUN'S OWN BOX LOCK ENDS HERE TOO (FUP-010): a run that could not take
+  // /tmp/phx-remote-check.lock in 120s runs NOTHING rather than starting beside its holder.
+  console.log("remote-check: NO VERDICT — a lock on the box could not be taken (the run lock or the typecheck lock), so the stage never ran and nothing above is a verdict on " + sha.slice(0, 9));
+  console.log("             Another run holds the box. Nothing ran beside it. The PR's own checks are the verdict.");
   process.exit(EXIT_LOCK_TIMEOUT);
 }
 if (status === 255) {
@@ -1025,5 +1169,22 @@ if (status === 255) {
   console.log("             by the busy probe, which prints how to reap that one run by its directory.");
   process.exit(5);
 }
-console.log(status === 0 ? "remote-check: PASS — " + sha.slice(0, 9) : "remote-check: FAIL — " + sha.slice(0, 9));
-process.exit(status);
+// 🔴 ONLY 0 AND 1 ARE VERDICTS — AND 0 ONLY WHEN EVERY STAGE ASKED FOR PRINTED ITS OWN PASS. Until
+// 2026-10-08 any code this file had no arm for fell through to the FAIL line (a `timeout` 124, a 137
+// from `--kill-after`): a false FAIL. And a bare exit 0 was trusted without checking that every stage
+// ran. Both now end as NO VERDICT instead; the record is written only for a real verdict.
+const stageVerdicts = stageVerdictsFromOutput(run.out);
+if (status === 0 && names.every((name) => stageVerdicts[name] === "PASS")) {
+  recordVerdicts(sha, stageVerdicts, "the box");
+  console.log("remote-check: PASS — " + sha.slice(0, 9));
+  process.exit(0);
+}
+if (status === 1 && Object.values(stageVerdicts).includes("FAIL")) {
+  recordVerdicts(sha, stageVerdicts, "the box", typecheckExcerpt(run.out));
+  console.log("remote-check: FAIL — " + sha.slice(0, 9));
+  process.exit(1);
+}
+console.log("remote-check: NO VERDICT — the box run ended with exit " + String(status) +
+  " and " + (status === 0 ? "not every stage printed PASS" : "no stage printed FAIL") +
+  ", so nothing above is a verdict on " + sha.slice(0, 9));
+process.exit(2);

@@ -47,21 +47,23 @@ All commands run from the repo root.
 
 🔴 **`scripts/remote-check.mjs` IS THE ANSWER TO "I NEED A TYPECHECK NOW AND I AM NOT READY FOR A
 PR".** It pushes the committed sha to the self-hosted box over SSH and runs the check there —
-measured: typecheck **~20s** since it moved to TypeScript 7 on 2026-10-06 (it was 112s), lint 4s
-warm, unit suite 133s, a full `next build` 112s.
+measured: typecheck **~33s** on TypeScript 7, lint with its persistent cache (182s cold before
+2026-10-08), unit suite 113-205s, a full `next build` ~120s.
 Nothing heavy touches the 16 GB laptop, no Actions minutes are billed, and no PR is opened. It sends
 the **commit**, so it prints any uncommitted files it is ignoring. Pinned by
 `tests/remote-check.test.ts`.
 
-🔴 **STANDING STEP, owner rule 2026-10-04: `node scripts/remote-check.mjs test` BEFORE EVERY PUSH THAT
-OPENS OR UPDATES A PR** — commit first, push only on `remote-check: PASS` for that exact sha (a
-green run on the sha you are about to push needs no re-run). Use `all` instead of `test` when the
-change adds a route, a file, or a member of a closed union. Measured across the 2026-09/10 sessions:
-8 of the sessions that turned CI red did so on a stale or broken test or guard, 3 on a type error.
-Rule and account: `.claude/rules/engineering.md` (Validation), `docs/testing.md`.
+🔴 **THE PR'S OWN CI IS THE VERDICT — `remote-check` IS OPTIONAL, NEVER A STEP BEFORE EVERY PUSH**
+(owner, 2026-10-08, performance recovery; it retires the 2026-10-04 standing step, which put a
+single-lane 7-9 minute box pass in front of a ~3 minute hosted CI). Commit, push and open the PR;
+its `validate` + `checks` decide. When an earlier answer is worth it, run `remote-check` **once with
+`run_in_background: true` and act on the notification** — exit 0 PASS, 1 FAIL, 2-9 NO VERDICT, and
+only `remote-check: PASS|FAIL — <sha9>` for the sha you pushed counts. Never a poll loop (bash-guard
+**C14**). The push guard only reads a recorded verdict for the exact sha and starts nothing. Rule and
+account: `.claude/rules/engineering.md` (Validation), `docs/testing.md`.
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
-before pushing, no `pnpm run ci` as a pre-push ritual; the step above runs on the box, not here. Push
+before pushing, no `pnpm run ci` as a pre-push ritual; `remote-check` runs on the box, not here. Push
 the branch and let the PR's two required checks answer, and **read `branches/main/protection/required_status_checks` live rather than trusting
 any list**: it has rotted five times, and `lint`, `typecheck` and `test` are STEPS, not check names.
 Migrations and production deploys are the two things CI never sees.

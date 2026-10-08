@@ -12,10 +12,14 @@
 //      `tsc` starts serializes nothing and still looks installed.
 //   2. The two callers drift to different lock files — each then only ever waits for itself.
 //   3. The wait is unbounded — a stuck holder would hang every PR until the job timeout. Both
-//      callers must use `flock -w`, and ci.yml must fall through to running anyway.
+//      callers must use `flock -w`.
+//   4. (FUP-010, 2026-10-08) A timed-out wait RUNS ANYWAY — the overlap the lock exists to stop.
+//      ci.yml used to fall through to the typecheck after 20 minutes; it now fails the step, red,
+//      and never runs tsc without the lock. Red is honest; running unlocked risks an OOM.
 //
 // Where `flock` exists (the CI runners are Linux), the ci.yml snippet is also RUN: with the lock
-// held by another process it must wait and then run; with the lock free it must run at once.
+// held by another process it must wait and then run; with the lock free it must run at once; and
+// with the lock held past the wait it must FAIL without running.
 
 import { strict as assert } from "node:assert";
 import { spawn, spawnSync } from "node:child_process";
@@ -58,7 +62,12 @@ export async function runCiTypecheckLockTests() {
   assert.ok(lockAt >= 0, `the Typecheck step must open ${LOCK} on fd 9 — without it two typechecks run at once again`);
   assert.ok(tscAt > lockAt, "the typecheck must run AFTER the lock is taken, in the same step, so the lock is held while tsc runs");
   assert.match(block, /flock -w \d+ 9/, "the wait for the lock must be bounded (`flock -w`), or a stuck holder hangs every PR");
-  assert.match(block, /flock -w \d+ 9 \|\|/, "a timed-out wait must fall through and run the typecheck, never fail the PR by itself");
+  assert.match(
+    block,
+    /flock -w \d+ 9 \|\| \{[^}]*exit 1; \}/,
+    "a timed-out wait must FAIL the step (exit 1) — never fall through and run tsc without the lock (FUP-010)",
+  );
+  assert.doesNotMatch(block, /running without it/, "the old warn-and-run-anyway fall-through is back (FUP-010)");
 
   // 2. remote-check: the SAME lock, bounded, in front of tsc.
   const remote = readFileSync(resolve("scripts/remote-check.mjs"), "utf8");
@@ -91,6 +100,15 @@ export async function runCiTypecheckLockTests() {
     assert.match(held.stdout, /waiting for it/, "with the lock held the step must say it is waiting");
     assert.match(held.stdout, /TYPECHECK-RAN/, "after the holder lets go the typecheck must run");
     assert.ok(waitedMs >= 1500, `with the lock held the typecheck must WAIT for it — it ran after ${waitedMs}ms`);
+
+    // Held past the wait: a 1-second budget against a 6-second holder must fail WITHOUT running.
+    const shortWait = snippet.replace(/flock -w \d+ 9/, "flock -w 1 9");
+    const stuck = spawn("flock", [lockFile, "sleep", "6"], { stdio: "ignore" });
+    await new Promise((r) => setTimeout(r, 500));
+    const timedOut = spawnSync("bash", ["-e", "-c", shortWait], { encoding: "utf8", timeout: 30000 });
+    stuck.kill();
+    assert.notEqual(timedOut.status, 0, "a timed-out lock wait must fail the step, not pass it");
+    assert.doesNotMatch(timedOut.stdout, /TYPECHECK-RAN/, "a timed-out lock wait must NOT run the typecheck without the lock (FUP-010)");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
