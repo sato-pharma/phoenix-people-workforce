@@ -5,13 +5,19 @@
 // break first appeared on `main`, after the merge, and withheld the deploy. This decides, per PR,
 // whether the build runs too.
 //
-// It is defined by EXCLUSION, not inclusion, so it can only fail toward building:
-//   * a PR builds UNLESS every changed path is in SAFE_PATHS below;
-//   * an empty list, an unreadable list, a path it cannot classify, or ANY error → build;
-//   * a rename is read with --no-renames, so its OLD and NEW paths are both classified, and a
-//     deletion lists the deleted path — so deleting a route or moving a component builds.
-// A wrong answer can only fall back to what PRs did before this script (no build), never past it:
-// the required checks (`validate`, `checks`) are unchanged and `main` still builds every commit.
+// NARROWED 2026-10-08 (owner: "narrow the PR build to routes and config"). The first version, the
+// same morning, built unless every path was build-inert — measured on the last 120 merged PRs that
+// built 52.5% of them, ~3.5 min of wall each. It is now defined by INCLUSION: a PR builds only when
+// it touches a ROUTE or a BUILD CONFIG file (BUILD_PATHS below). The accepted cost, his call: a
+// break that lives only in a library or component file (`src/**`) — a misplaced "use client", an
+// import the bundler rejects — is caught by `main`'s build after the merge, as before 2026-10-08,
+// or earlier by `remote-check all` when wanted.
+//
+// What stays fail-safe: an empty list, an unreadable list, a path it cannot classify, or ANY error
+// → build. A rename is read with --no-renames, so its OLD and NEW paths are both classified, and a
+// deletion lists the deleted path — deleting or moving a route builds. A wrong answer can only fall
+// back to what PRs did before this script (no build), never past it: the required checks
+// (`validate`, `checks`) are unchanged and `main` still builds every commit.
 //
 // Usage (ci.yml): git diff --name-only --no-renames HEAD^1 HEAD | node scripts/ci-build-risk.mjs
 // Prints `build=true|false` (append it to $GITHUB_OUTPUT) and one reason line on stderr.
@@ -20,22 +26,24 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// Next's special files inside app/: a route's own files, its boundaries and its metadata routes.
+const APP_SPECIAL_FILE =
+  /^app\/(?:.*\/)?(?:page|layout|route|template|default|loading|error|global-error|not-found|forbidden|unauthorized|sitemap|robots|manifest|icon|apple-icon|opengraph-image|twitter-image)\.(?:tsx|ts|jsx|js|mdx)$/;
+
 /**
- * Paths a Next build never reads. Each entry is a test over a repo-relative POSIX path.
- * `scripts/**` is safe only because nothing under app/, src/ or a root config imports a script —
- * tests/ci-build-risk.test.ts re-proves that on every run, so a future import turns the test red.
+ * Paths that make a pull request build. Each entry is a test over a repo-relative POSIX path.
  */
-export const SAFE_PATHS = [
-  { name: "docs/**", test: (p) => p.startsWith("docs/") },
-  { name: "**/*.md", test: (p) => /\.md$/i.test(p) },
-  { name: "tests/**", test: (p) => p.startsWith("tests/") },
-  { name: ".claude/**", test: (p) => p.startsWith(".claude/") },
-  // Every workflow but ci.yml itself: the Build step and its environment live in ci.yml.
-  { name: ".github/** (not ci.yml)", test: (p) => p.startsWith(".github/") && p !== ".github/workflows/ci.yml" },
-  { name: "mobile/**", test: (p) => p.startsWith("mobile/") },
-  { name: "supabase/migrations/**", test: (p) => p.startsWith("supabase/migrations/") },
-  { name: "xlsx/**", test: (p) => p.startsWith("xlsx/") },
-  { name: "scripts/**", test: (p) => p.startsWith("scripts/") },
+export const BUILD_PATHS = [
+  { name: "app/** route and segment file", test: (p) => APP_SPECIAL_FILE.test(p) },
+  { name: "app/** stylesheet", test: (p) => p.startsWith("app/") && /\.css$/i.test(p) },
+  { name: "next.config", test: (p) => /^next\.config\.[cm]?[jt]s$/.test(p) },
+  { name: "proxy / middleware / instrumentation", test: (p) => /^(?:proxy|middleware|instrumentation(?:-client)?)\.[jt]s$/.test(p) },
+  { name: "dependency manifest", test: (p) => ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc"].includes(p) },
+  { name: "tsconfig", test: (p) => /^tsconfig[^/]*\.json$/.test(p) },
+  { name: "postcss / tailwind config", test: (p) => /^(?:postcss|tailwind)\.config\.[cm]?[jt]s$/.test(p) },
+  { name: "Dockerfile", test: (p) => p === "Dockerfile" },
+  // The Build step and its environment live in ci.yml.
+  { name: "ci.yml", test: (p) => p === ".github/workflows/ci.yml" },
 ];
 
 const PATH_RE = /^[^\0]+$/;
@@ -54,10 +62,12 @@ export function classifyBuildRisk(paths) {
       if (!PATH_RE.test(path) || path.startsWith("/") || path.split("/").includes("..")) {
         return { build: true, reason: `cannot classify ${JSON.stringify(path)} — building` };
       }
-      const safe = SAFE_PATHS.some((rule) => rule.test(path));
-      if (!safe) return { build: true, reason: `${path} can change the build` };
     }
-    return { build: false, reason: `all ${list.length} changed path(s) are outside the build` };
+    for (const path of list) {
+      const rule = BUILD_PATHS.find((r) => r.test(path));
+      if (rule) return { build: true, reason: `${path} is a ${rule.name} change` };
+    }
+    return { build: false, reason: `none of the ${list.length} changed path(s) is a route or build config` };
   } catch (error) {
     return { build: true, reason: `classifier error (${error?.message ?? error}) — building` };
   }

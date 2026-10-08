@@ -1,11 +1,12 @@
 // The targeted PR build — scripts/ci-build-risk.mjs and the ci.yml step that feeds it.
 //
 // A pull request used to never build (#4802), so a build break first surfaced on `main` and withheld
-// the deploy. Since 2026-10-08 a PR also builds when its diff can change the build. The classifier
-// is defined by EXCLUSION so every mistake it can make is "built when it did not need to": these
-// tests pin that direction — the false-negative cases (a change that CAN break the build must
-// build), the fail-safe answers (empty, unreadable, error → build), the rename/delete handling, the
-// one ci.yml consumer, and that `main` and the required checks are untouched.
+// the deploy. Since 2026-10-08 a PR also builds when it touches a ROUTE or a BUILD CONFIG file —
+// narrowed the same day at the owner's word ("narrow the PR build to routes and config") from a
+// build-unless-inert rule that built 52.5% of PRs. These tests pin what must build, what is now
+// deliberately skipped (a src/** library or component change — main's build catches it), the
+// fail-safe answers (empty, unreadable, odd, error → build), rename/delete handling, the one ci.yml
+// consumer, and that `main` and the required checks are untouched.
 
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
@@ -13,7 +14,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { SAFE_PATHS, classifyBuildRisk } from "../scripts/ci-build-risk.mjs";
+import { BUILD_PATHS, classifyBuildRisk } from "../scripts/ci-build-risk.mjs";
 import { STAGE_JOBS_PR } from "../scripts/remote-check-plan.mjs";
 
 const SCRIPT = resolve("scripts/ci-build-risk.mjs");
@@ -33,28 +34,27 @@ function step(yml: string, name: string): string {
 }
 
 export function runCiBuildRiskTests(): void {
-  // 1 — FALSE NEGATIVES: every one of these can change what `next build` produces, so each must build.
+  // 1 — every route and every build-config change builds.
   const mustBuild: Array<[string, string[]]> = [
-    ["a src/lib change", ["src/lib/payroll/run.ts"]],
+    ["a page", ["app/(admin)/payroll/page.tsx"]],
     ["a deleted route (the diff lists the deleted path)", ["app/(admin)/payroll/page.tsx"]],
-    ["a renamed component (both halves listed by --no-renames)", ["src/components/old-card.tsx", "src/components/new-card.tsx"]],
-    ["a component moved INTO docs/ (old half is code)", ["src/components/card.tsx", "docs/archive/card.tsx"]],
+    ["an API route handler", ["app/api/employees/route.ts"]],
+    ["a layout", ["app/(admin)/layout.tsx"]],
+    ["an error boundary", ["app/(admin)/sales/error.tsx"]],
+    ["a not-found boundary", ["app/not-found.tsx"]],
+    ["a metadata route", ["app/robots.ts"]],
+    ["the global stylesheet", ["app/globals.css"]],
     ["the lockfile", ["pnpm-lock.yaml"]],
     ["package.json", ["package.json"]],
     ["next.config", ["next.config.ts"]],
-    [".env.example", [".env.example"]],
-    ["a public asset read at runtime", ["public/brand/sato-pharma-logo.png"]],
-    ["an assets/ file read at runtime", ["assets/business-cards/Montserrat-Bold.ttf"]],
     ["tsconfig", ["tsconfig.json"]],
-    ["middleware / proxy", ["proxy.ts"]],
+    ["proxy", ["proxy.ts"]],
+    ["middleware", ["middleware.ts"]],
     ["instrumentation", ["instrumentation.ts"]],
-    ["postcss / tailwind", ["postcss.config.mjs"]],
-    ["the global stylesheet", ["app/globals.css"]],
+    ["postcss", ["postcss.config.mjs"]],
     ["ci.yml itself (the Build step lives there)", [".github/workflows/ci.yml"]],
     ["the Dockerfile", ["Dockerfile"]],
-    ["a Supabase edge function (not a migration)", ["supabase/functions/x/index.ts"]],
-    ["a mix: docs plus one code file", ["docs/testing.md", "tests/a.test.ts", "src/config/system-settings.ts"]],
-    ["an unknown root file", ["something-new.json"]],
+    ["a mix: docs, tests, a library file and one route", ["docs/testing.md", "tests/a.test.ts", "src/lib/payroll/run.ts", "app/(admin)/payroll/page.tsx"]],
   ];
   for (const [what, paths] of mustBuild) {
     const verdict = classifyBuildRisk(paths);
@@ -82,23 +82,29 @@ export function runCiBuildRiskTests(): void {
   assert.equal(crashed.build, true, "a classifier error must answer build=true");
   assert.match(crashed.reason, /classifier error/, "the error path itself must be the one exercised");
 
-  // 3 — the paths that genuinely never reach the build skip it.
-  const safe = [
-    "docs/testing.md", "README.md", "tests/ci-build-risk.test.ts", ".claude/rules/engineering.md",
-    ".github/workflows/staging-branch-sync.yml", "mobile/app/index.tsx",
+  // 3 — everything else skips the build. The src/** lines are the owner's accepted trade-off
+  // (2026-10-08): a library or component break is caught by main's build, or earlier by remote-check all.
+  const skip = [
+    "src/lib/payroll/run.ts", "src/components/ui/form-kit.tsx", "src/config/system-settings.ts",
+    "app/(admin)/payroll/payroll-table.tsx", "docs/testing.md", "README.md", "tests/ci-build-risk.test.ts",
+    ".claude/rules/engineering.md", ".github/workflows/staging-branch-sync.yml", "mobile/app/index.tsx",
     "supabase/migrations/20261008000000_x.sql", "xlsx/sheet.xlsx", "scripts/remote-check.mjs",
-    "src/lib/payroll/README.md",
+    "public/brand/sato-pharma-logo.png", ".env.example",
   ];
-  assert.equal(classifyBuildRisk(safe).build, false, `a diff of only build-inert paths must skip the build: ${classifyBuildRisk(safe).reason}`);
-  assert.ok(SAFE_PATHS.length > 0 && SAFE_PATHS.length <= 10, "the safe list grew — every entry is a skip, so each needs its own proof here");
+  assert.equal(classifyBuildRisk(skip).build, false, `a diff with no route or build config must skip the build: ${classifyBuildRisk(skip).reason}`);
+  for (const path of skip) {
+    assert.equal(classifyBuildRisk([path]).build, false, `${path} alone must skip the build`);
+  }
+  assert.ok(BUILD_PATHS.length > 0 && BUILD_PATHS.length <= 12, "the build list changed shape — re-measure the build share on recent PRs");
 
   // 4 — the CLI: one `build=` line on stdout, and the same fail-safe.
-  assert.equal(cli("src/lib/x.ts\n").stdout.trim(), "build=true");
+  assert.equal(cli("app/x/page.tsx\n").stdout.trim(), "build=true");
+  assert.equal(cli("src/lib/x.ts\n").stdout.trim(), "build=false", "a library file alone no longer builds (owner, 2026-10-08)");
   assert.equal(cli("docs/a.md\ntests/b.test.ts\n").stdout.trim(), "build=false");
   assert.equal(cli("").stdout.trim(), "build=true", "an empty diff on stdin must answer build=true");
   assert.equal(cli("docs/a.md\r\n").stdout.trim(), "build=false", "CRLF input must still classify");
 
-  // 5 — a REAL git rename: `--no-renames` must list both halves, so code → docs builds.
+  // 5 — a REAL git rename: `--no-renames` must list both halves, so moving a route out of app/ builds.
   const repo = mkdtempSync(join(tmpdir(), "phx-buildrisk-"));
   try {
     const git = (...args: string[]) => {
@@ -107,32 +113,20 @@ export function runCiBuildRiskTests(): void {
       return r.stdout;
     };
     git("init", "-q");
-    mkdirSync(join(repo, "src"), { recursive: true });
-    writeFileSync(join(repo, "src", "card.tsx"), "export const card = 1;\n".repeat(20));
+    mkdirSync(join(repo, "app", "reports"), { recursive: true });
+    writeFileSync(join(repo, "app", "reports", "page.tsx"), "export default function Page() { return null; }\n".repeat(10));
     git("add", "-A");
     git("commit", "-q", "-m", "base");
     mkdirSync(join(repo, "docs"), { recursive: true });
-    git("mv", "src/card.tsx", "docs/card.tsx");
+    git("mv", "app/reports/page.tsx", "docs/page.tsx");
     git("commit", "-q", "-m", "move");
     const listed = git("diff", "--name-only", "--no-renames", "HEAD^1", "HEAD");
-    assert.match(listed, /^src\/card\.tsx$/m, "--no-renames must list a rename's OLD path");
-    assert.match(listed, /^docs\/card\.tsx$/m, "--no-renames must list a rename's NEW path");
-    assert.equal(cli(listed).stdout.trim(), "build=true", "moving code into docs/ must build — the 2026-10-02 rename blind spot");
+    assert.match(listed, /^app\/reports\/page\.tsx$/m, "--no-renames must list a rename's OLD path");
+    assert.match(listed, /^docs\/page\.tsx$/m, "--no-renames must list a rename's NEW path");
+    assert.equal(cli(listed).stdout.trim(), "build=true", "moving a route out of app/ deletes it, so it must build");
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
-
-  // 6 — `scripts/**` is safe ONLY while nothing the build compiles imports a script. Re-proved here
-  // so the day an import appears, this goes red instead of the build silently skipping it.
-  const importOfScripts = spawnSync(
-    "git",
-    ["grep", "-nE", "(from|import\\(|require\\()\\s*['\"][^'\"]*\\bscripts/", "--", "app", "src", "*.config.*", "proxy.ts", "middleware.ts", "instrumentation*.ts"],
-    { encoding: "utf8" },
-  );
-  assert.equal(importOfScripts.stdout.trim(), "", `the build imports a file under scripts/, so scripts/** is no longer build-inert:\n${importOfScripts.stdout}`);
-  const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { scripts: Record<string, string> };
-  assert.equal(pkg.scripts.build, "next build", "the build script changed — re-check which paths it reads before trusting the safe list");
-  assert.ok(!pkg.scripts.prebuild && !pkg.scripts.postbuild, "a pre/postbuild script now runs with the build — re-check the safe list");
 
   // 7 — ci.yml: the step, its one consumer, and everything that must NOT move.
   const yml = readFileSync(WORKFLOW, "utf8").replace(/\r\n/g, "\n");

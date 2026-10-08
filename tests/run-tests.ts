@@ -8567,7 +8567,7 @@ await runTest(
 );
 
 await runTest(
-  "a pull request also BUILDS when its diff can change the build (2026-10-08): scripts/ci-build-risk.mjs answers build=true unless every changed path is build-inert — a src/lib change, a deleted route, both halves of a rename, the lockfile, next.config, .env.example, public/ and assets/ all build; an empty or unreadable diff, an escaping path or a classifier crash all build; a real git rename into docs/ builds; nothing the build compiles imports scripts/; the Build's if: is `not a PR || build risk` so main always builds; the canvas, standalone and smoke steps stay main-only; and STAGE_JOBS_PR.build stays null",
+  "a pull request also BUILDS when it touches a route or build config (2026-10-08, narrowed the same day at the owner's word): scripts/ci-build-risk.mjs answers build=true for an app/ route or segment file, an app/ stylesheet, next.config, proxy/middleware/instrumentation, the dependency manifests, tsconfig, postcss/tailwind, the Dockerfile and ci.yml, and build=false for a src/** library or component change, docs, tests, scripts, migrations, public/ and .env.example; an empty or unreadable diff, an escaping path or a classifier crash all build; a real git rename that moves a route out of app/ builds; the Build's if: is `not a PR || build risk` so main always builds; the canvas, standalone and smoke steps stay main-only; and STAGE_JOBS_PR.build stays null",
   runCiBuildRiskTests,
 );
 
