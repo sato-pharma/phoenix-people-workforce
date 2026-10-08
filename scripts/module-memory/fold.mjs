@@ -46,19 +46,27 @@ const git = (args, cwd = REPO) => execFileSync("git", args, { cwd, encoding: "ut
 export const TRANSIENT = /Connection was reset|Could not resolve host|Operation timed out|HTTP 5\d\d|unable to access/i;
 export const RETRY_DELAYS_MS = [5000, 15000, 45000];
 
+// 🔴 A FETCH THAT LOSES A LOCK IS RETRIED TOO — but only the fetch. Measured 2026-10-08 21:00 Cairo:
+// the fold's launcher and the CRM field day's both fetch `origin/main` into the same `.git` at 21:00,
+// and the loser died on `cannot lock ref 'refs/remotes/origin/main': is at … but expected …`. This
+// fetch races the same way against the field day and against every session in the primary. A lock
+// error on a PUSH means the remote moved and a retry cannot fix it, so `git push` keeps TRANSIENT only.
+export const LOCK_LOST = /cannot lock ref|unable to update local ref|Unable to create '[^']*\.lock'/i;
+export const FETCH_RETRYABLE = new RegExp(`${TRANSIENT.source}|${LOCK_LOST.source}`, "i");
+
 const failureText = (e) => [e?.message, e?.stderr, e?.stdout].filter(Boolean).map(String).join("\n");
 
-/** Runs `fn`, retrying it only on a transient network failure; logs every failed attempt. */
-export async function withRetry(label, fn, { tries = 3, delaysMs = RETRY_DELAYS_MS, log = say, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+/** Runs `fn`, retrying it only on a transient failure (`retryOn`, a network error by default); logs every failed attempt. */
+export async function withRetry(label, fn, { tries = 3, delaysMs = RETRY_DELAYS_MS, retryOn = TRANSIENT, log = say, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   for (let attempt = 1; ; attempt++) {
     try {
       return fn();
     } catch (e) {
       const text = failureText(e);
-      if (attempt >= tries || !TRANSIENT.test(text)) throw e;
+      if (attempt >= tries || !retryOn.test(text)) throw e;
       const wait = delaysMs[Math.min(attempt - 1, delaysMs.length - 1)];
-      const line = text.split("\n").find((l) => TRANSIENT.test(l))?.trim();
-      log(`${label}: attempt ${attempt} of ${tries} failed on a network error (${line}) — retrying in ${wait / 1000} s`);
+      const line = text.split("\n").find((l) => retryOn.test(l))?.trim();
+      log(`${label}: attempt ${attempt} of ${tries} failed on a transient error (${line}) — retrying in ${wait / 1000} s`);
       await sleep(wait);
     }
   }
@@ -186,7 +194,7 @@ function settleInbox(filedOnMain) {
 }
 
 async function main() {
-  git(["fetch", "-q", "origin", "main"]);
+  await withRetry("git fetch", () => git(["fetch", "-q", "origin", "main"]), { retryOn: FETCH_RETRYABLE });
   let onMain;
   try {
     onMain = JSON.parse(git(["show", "origin/main:scripts/module-memory/assignments.json"]));

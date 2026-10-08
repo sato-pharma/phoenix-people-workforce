@@ -50,6 +50,29 @@ const say = (line) => {
 
 const git = (args, cwd = PRIMARY) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
+/**
+ * 🔴 A FETCH THAT LOSES A LOCK IS RETRIED, NOT FATAL. Measured 2026-10-08 21:00 Cairo: this launcher
+ * and the memory fold's `run-fold.mjs` — both scheduled at 21:00 — fetched `origin/main` into the
+ * same `.git` in the same second, and this one died on `cannot lock ref 'refs/remotes/origin/main':
+ * is at … but expected …`. No papers that night. The other git process is done in seconds, so a lost
+ * lock (or a network blip) is retried up to five attempts, 5 s / 10 s / 15 s / 20 s apart; any other
+ * failure throws at once, as before. Moving 21:00 instead would only move the race: every session in
+ * the shared primary fetches too, and the papers are stamped "read at 21:00".
+ */
+const RETRYABLE = /cannot lock ref|unable to update local ref|Unable to create '[^']*\.lock'|Connection was reset|Could not resolve host|Operation timed out|HTTP 5\d\d|unable to access/i;
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const fetchMain = () => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return git(["fetch", "-q", "origin", "main"]);
+    } catch (error) {
+      if (attempt >= 5 || !RETRYABLE.test(`${error?.message ?? ""}\n${error?.stderr ?? ""}`)) throw error;
+      say(`fetch attempt ${attempt} of 5 lost a lock or the network — retrying in ${attempt * 5} s`);
+      pause(attempt * 5000);
+    }
+  }
+};
+
 if (!existsSync(path.join(PRIMARY, ".git"))) {
   say(`the primary checkout is not at ${PRIMARY} — set FIELD_DAY_PRIMARY`);
   process.exit(1);
@@ -58,7 +81,7 @@ if (!existsSync(path.join(PRIMARY, ".git"))) {
 const tree = path.join(tmpdir(), `phx-field-day-${Date.now()}`);
 let added = false;
 try {
-  git(["fetch", "-q", "origin", "main"]);
+  fetchMain();
   const head = git(["rev-parse", "--short", "origin/main"]);
   say(`building from origin/main at ${head}`);
 
