@@ -1340,6 +1340,34 @@ eslint cache per run. `~/remote-check/work` is no longer used. The bash lives in
 `scripts/remote-check-plan.mjs`; `tests/remote-check.test.ts` runs it for real against a throwaway
 bare repo with two overlapping invocations on two commits.
 
+### remote-check runs as phxci — owner, 2026-10-08
+
+🔴 **Branch code on the box runs as `phxci`, a user with no sudo — never as `phx`.** A check runs
+whatever the pushed branch says: its tests, its build, its package scripts. `phx` has passwordless
+sudo and owns the preview env file in `/home/phx/secure`, so until this change any branch that
+reached the box could read that file or change anything on the machine. The owner ordered it moved
+("run remote-check as a non-sudo user on the box").
+
+What is on the box (set up by hand on 2026-10-08, nothing in git creates it):
+
+- **User `phxci`**: password locked, not in `sudo`, its own `/home/phxci/remote-check` (the bare repo,
+  `runs/`, `eslint-cache/`), and a seeded corepack and pnpm store. Its `authorized_keys` holds the
+  laptop's existing remote-check key with `restrict`, so it cannot forward ports or agents.
+- **It cannot read `/home/phx`** (mode 750, `phxci` is not in group `phx`) and `sudo -n true` fails.
+  Both were tried as `phxci` and both were refused.
+- **The box lock is still ONE lock across both users.** `fs.protected_regular=2` refuses a cross-user
+  open of a plain file in `/tmp`, so the lock files moved to `/var/lib/phx-locks` (`root:phxlocks`,
+  2770; both users are in `phxlocks`) and the historical names `/tmp/phx-remote-check.lock` and
+  `/tmp/phx-typecheck.lock` became ROOT-owned links to them. A root-owned link is followable by
+  everyone, so a session still on the old code (running as `phx`) and a new one (running as `phxci`)
+  still exclude each other. Tested both ways: `phx` was refused the lock while `phxci` held it.
+- **`/etc/tmpfiles.d/phx-locks.conf`** recreates the directory, the two files and the two links at
+  boot, because `/tmp` is a tmpfs.
+
+`PHX_CHECK_USER` still overrides the default. Setting it to `phx` brings the old exposure back, so
+only do that to compare against a run from before this change. Pinned by assertion 6b in
+`tests/remote-check.test.ts`.
+
 ### The remote typecheck before every push — owner, 2026-10-04
 
 🔴 **SUPERSEDED 2026-10-08: the guard no longer runs anything.** The owner's performance-recovery
