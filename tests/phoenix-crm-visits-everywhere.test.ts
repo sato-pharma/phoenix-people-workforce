@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
-import { liveViewSql } from "./support/sql-definer.ts";
+import { lastDefinerSql, liveViewSql } from "./support/sql-definer.ts";
 
 import {
   callRateExclusionOf,
@@ -873,6 +873,42 @@ const VISIT_COLUMNS_CARRIED = new Set([
   "seat_id",
   "senior_hr_id",
   "visit_date",
+  // THE PHOENIX FIELD SET, 2026-10-07 — the owner's own ruling, asked directly and answered
+  // "everything, GPS and evidence included". Golden rule #1 did not loosen: it moved from the DOOR to
+  // the READER. The door carries the field set so an admin report can print it; WHO sees which half is
+  // decided once, in `src/lib/crm/phoenix-visit-detail.ts`, against his 2026-10-02 three tiers —
+  // mock-location evidence to the Super Admin alone, the DISTANCE ONLY to every reader below Super
+  // Admin and SFE Manager, and a reader on his own row as its rep fully blind. The rep's own portal
+  // My Visits is pinned below to select NONE of these.
+  "accuracy_meters",
+  "capture_source",
+  "device_skew_minutes",
+  "distance_meters",
+  "dwell_seconds",
+  "entered_by_hr_id",
+  "form_open_seconds",
+  "is_unplanned",
+  "kind",
+  "lat",
+  "location_flag",
+  "lon",
+  "next_step",
+  "next_step_on",
+  "objection",
+  "objection_note",
+  "offline_seconds",
+  "pharmacy_name",
+  "photo_accuracy_meters",
+  "photo_lat",
+  "photo_lon",
+  "photo_path",
+  "product_availability",
+  "products",
+  "samples_given",
+  "synced_at",
+  "unplanned_kind",
+  "voice_note_path",
+  "voice_note_seconds",
 ]);
 const ACTIVITY_COLUMNS_CARRIED = new Set(["activity_date", "activity_type", "created_at", "id", "is_test", "note", "rep_hr_id", "seat_id", "updated_at"]);
 
@@ -895,11 +931,28 @@ function runRowShapeTests(code: string): void {
   assert.ok(flat(visitBranch).includes("from public.phoenix_crm_countable_visits p"), "the module's own predicate for 'this visit counts', read and never re-typed");
   assert.ok(flat(visitBranch).endsWith("where not p.is_test"), "never a test account's visit");
   assert.doesNotMatch(view, /public\.phoenix_crm_visits\b/, "the view never reads the raw visits table, so an unapproved off-plan visit never counts");
-  assert.doesNotMatch(visitBranch, /is_unplanned|unplanned_kind|status/, "and never re-types the approval rule the countable view owns");
+  // 🔴 THE APPROVAL RULE IS STILL THE COUNTABLE VIEW'S, AND THE DOOR STILL NEVER RE-TYPES IT. From
+  // 2026-10-07 the door CARRIES `is_unplanned` and `unplanned_kind` for the admin reports to print —
+  // an off-plan visit and the reason the rep gave for it. Printing them is not deciding with them: the
+  // test therefore moved from "the words never appear" to "the words appear only as a column being
+  // selected, never in a predicate", which is the thing that would silently fork the count.
+  const visitSelect = itemsOf(visitBranch, "from public.phoenix_crm_countable_visits p");
+  const approvalItems = visitSelect.filter((item) => /is_unplanned|unplanned_kind|status/.test(item));
+  assert.deepEqual(
+    approvalItems,
+    ["p.is_unplanned", "p.unplanned_kind"],
+    "the only approval-shaped things the Phoenix branch names are the two columns it prints, bare",
+  );
+  const visitPredicate = flat(visitBranch).slice(flat(visitBranch).indexOf("from public.phoenix_crm_countable_visits p"));
+  assert.doesNotMatch(
+    visitPredicate,
+    /is_unplanned|unplanned_kind|status/,
+    "and nothing below the select list tests them — the countable view alone decides which visits count",
+  );
 
   const vendorItems = itemsOf(vendorBranch, "from public.ireports360_visits v");
   const phoenixItems = itemsOf(visitBranch, "from public.phoenix_crm_countable_visits p");
-  assert.equal(vendorItems.length, 34, "the 30 columns, and the four appended");
+  assert.equal(vendorItems.length, 63, "the 30 columns, the four appended in #5477, and the 29 of the Phoenix field set");
   assert.equal(phoenixItems.length, vendorItems.length, "both branches carry the same columns, item for item");
   const names = vendorItems.map(outputName);
   const phoenix = new Map(names.map((name, index): [string, string] => [name, phoenixItems[index]]));
@@ -910,11 +963,45 @@ function runRowShapeTests(code: string): void {
   assert.deepEqual(vendorItems.slice(0, 30), previousItems("crm_visits_unified", "from public.ireports360_visits v"), "the first 30 columns keep their names, types and order");
   assert.deepEqual(
     names.slice(30),
-    ["phoenix_customer_validated", "double2_crm_id", "double2_name", "double2_hr_id"],
+    [
+      "phoenix_customer_validated",
+      "double2_crm_id",
+      "double2_name",
+      "double2_hr_id",
+      "visit_kind",
+      "entered_by_hr_id",
+      "products",
+      "samples_given",
+      "product_availability",
+      "objection",
+      "objection_note",
+      "next_step",
+      "next_step_on",
+      "visit_pharmacy_name",
+      "is_unplanned",
+      "unplanned_kind",
+      "photo_path",
+      "voice_note_path",
+      "voice_note_seconds",
+      "lat",
+      "lon",
+      "accuracy_meters",
+      "distance_meters",
+      "location_flag",
+      "photo_lat",
+      "photo_lon",
+      "photo_accuracy_meters",
+      "dwell_seconds",
+      "form_open_seconds",
+      "capture_source",
+      "offline_seconds",
+      "device_skew_minutes",
+      "phoenix_synced_at",
+    ],
     "the appended columns, in the order they were added",
   );
   assert.deepEqual(
-    vendorItems.slice(30),
+    vendorItems.slice(30, 34),
     [
       "null::boolean as phoenix_customer_validated",
       "null::bigint as double2_crm_id",
@@ -923,6 +1010,13 @@ function runRowShapeTests(code: string): void {
     ],
     "and every one of them is null on an iReports360 row — the vendor shape records ONE partner",
   );
+  // THE PHOENIX FIELD SET IS NULL ON A VENDOR ROW, every one of the 29, each cast so the two branches
+  // agree on a type. iReports360 recorded none of it: no products, no samples, no GPS, no evidence and
+  // no timing. A blank is the honest answer there, and a `0` would have read as "stood at the door for
+  // no time at all" on a day the vendor simply never measured.
+  for (const item of vendorItems.slice(34)) {
+    assert.match(item, /^null::[a-z ]+(\[\])? as [a-z0-9_]+$/, `the vendor branch's "${item}" is a typed null, not a value`);
+  }
   assert.ok(
     flat(vendorBranch).includes("from public.ireports360_visits v where v.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) and not exists"),
     "the iReports360 branch keeps its source and its cutover clause, and gains its two clauses",
@@ -1012,14 +1106,53 @@ function runRowShapeTests(code: string): void {
 
   // AM · PM · PHARMACIES — the ampm column is the customer's list, the visit is a regular call, and no
   // Phoenix row is ever a pharmacy row.
-  assert.doesNotMatch(visitBranch, /pharmac/i, "a pharmacy is feedback ON a Phoenix visit — the Phoenix branch reads none, so adds none");
+  // 🔴 A PHARMACY ON A PHOENIX VISIT IS FEEDBACK ON A DOCTOR'S CALL, NEVER A PHARMACY CALL. The field
+  // set carries the name the rep typed, so the admin reports can print it — and it is RENAMED to
+  // `visit_pharmacy_name` for exactly one reason: the AM/PM/Pharmacies bucket keys off `ampm`, which is
+  // the CUSTOMER'S OWN LIST. A column called `pharmacy_name` beside it is the shape a later sweep
+  // "tidies" into the bucket, and that would move a published month's pharmacy figure.
+  assert.deepEqual(
+    phoenixItems.filter((item) => /pharmac/i.test(item)),
+    ["p.pharmacy_name"],
+    "the only pharmacy the Phoenix branch reads is the feedback the rep typed",
+  );
+  assert.equal(
+    phoenix.get("visit_pharmacy_name"),
+    "p.pharmacy_name",
+    "and the door serves it under visit_pharmacy_name — renamed away from the bucket's own vocabulary",
+  );
+  assert.equal(
+    names.filter((name) => /pharmac/i.test(name)).length,
+    1,
+    "nothing else the door serves is called a pharmacy, so nothing can be tidied into the AM/PM/Pharmacies bucket",
+  );
+  assert.equal(phoenix.get("ampm"), "p.list_type", "the bucket still reads the CUSTOMER'S OWN LIST and nothing the visit says");
 
   // Golden rule #1: nothing silent leaves Phoenix CRM.
   const columnsRead = new Set([...visitBranch.matchAll(/\bp\.([a-z_]+)/g)].map((match) => match[1]));
   for (const column of columnsRead) {
     assert.ok(VISIT_COLUMNS_CARRIED.has(column), `the Phoenix branch reads p.${column}, which golden rule #1 keeps inside Phoenix CRM`);
   }
-  assert.ok(!columnsRead.has("synced_at"), "never the offline-sync column — synced_at is when the row reached the server");
+  // 🔴 `p.synced_at` IS CARRIED, AND RENAMED, because the door ALREADY HAS a `synced_at` and it means
+  // something else: the vendor's `synced_at` output is `p.created_at`, when the row reached the server.
+  // Phoenix's own `synced_at` is when the rep's phone handed an offline row over, which is the number
+  // the Capture cell prints. Emitting it under the existing name would have silently restated every
+  // reader of the vendor column.
+  assert.deepEqual(
+    phoenixItems.filter((item) => /synced_at/.test(item)),
+    ["p.synced_at"],
+    "the offline-sync clock is read exactly once",
+  );
+  assert.equal(
+    phoenix.get("phoenix_synced_at"),
+    "p.synced_at",
+    "and it is served under its OWN name, never over the door's existing synced_at",
+  );
+  assert.equal(
+    phoenix.get("synced_at"),
+    "p.created_at",
+    "the door's own synced_at still means when the row reached the server — unchanged for every existing reader",
+  );
 
   // The ids: negative, exact in JavaScript, and what staging computes.
   for (const sample of STAGING_IDS) {
@@ -1686,6 +1819,76 @@ function runHygieneTests(code: string): void {
  * expression is pinned EQUAL ACROSS THE DOORS rather than three times separately: a session widening
  * one of them cannot leave the other two behind and stay green.
  */
+
+/**
+ * GOLDEN RULE #1 AT THE READER, not at the door.
+ *
+ * The door carries the Phoenix field set from 2026-10-07 (owner, asked directly: "everything, GPS and
+ * evidence included"), so the ADMIN reports can print it. That ruling named the admin reports and
+ * nothing else, and his 2026-10-05 ruling — "in the score, admin sees detail" — already settled where
+ * it stops: the rep's own portal **My Visits** is unchanged, and the metrics never leave the server for
+ * a portal.
+ *
+ * This is pinned at the SELECT STRING because that is where it can silently break. A select is a
+ * string: nothing type-checks it, and adding `distance_meters` to the portal's list would compile,
+ * render, and quietly put a rep's own GPS distance in front of him — the one reader his
+ * `isLocationBlind` rule (absolute since 2026-09-29) makes fully blind.
+ */
+function runPortalKeepsNoneOfTheFieldSetTests(): void {
+  const source = readFileSync("src/lib/employee-portal/my-crm-visits.ts", "utf8");
+  // Every column of the field set as the door NAMES it, which is what a select string would have to say.
+  const fieldSet = [
+    "visit_kind",
+    "entered_by_hr_id",
+    "products",
+    "samples_given",
+    "product_availability",
+    "objection",
+    "objection_note",
+    "next_step",
+    "next_step_on",
+    "visit_pharmacy_name",
+    "is_unplanned",
+    "unplanned_kind",
+    "photo_path",
+    "voice_note_path",
+    "voice_note_seconds",
+    "lat",
+    "lon",
+    "accuracy_meters",
+    "distance_meters",
+    "location_flag",
+    "photo_lat",
+    "photo_lon",
+    "photo_accuracy_meters",
+    "dwell_seconds",
+    "form_open_seconds",
+    "capture_source",
+    "offline_seconds",
+    "device_skew_minutes",
+    "phoenix_synced_at",
+  ];
+  // The select strings only — a comment may name a column, and a prose sentence about GPS is not a read.
+  const selects = [...source.matchAll(/"([a-z0-9_,.$ {}`]+)"/g)]
+    .map((match) => match[1])
+    .filter((value) => value.includes(","))
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim());
+  for (const column of fieldSet) {
+    assert.ok(
+      !selects.includes(column),
+      `the rep's own My Visits selects ${column} — the Phoenix field set goes on the ADMIN reports, and his own GPS never goes back to him`,
+    );
+  }
+  // And the shaper that decides who sees which half is never imported here at all, so there is no
+  // second route by which a sight tier could be resolved inside a portal page.
+  assert.doesNotMatch(
+    source,
+    /phoenix-visit-detail/,
+    "My Visits does not import the detail shaper — a portal has no sight tier to resolve",
+  );
+}
+
 function runContactIdAcrossDoorsTests(): void {
   const expressions = [
     { door: "crm_visits_unified", sql: VISITS_DOOR, from: "from public.phoenix_crm_countable_visits p" },
@@ -1713,19 +1916,36 @@ function runContactIdAcrossDoorsTests(): void {
   // crm_contacts_real_contact, direct_order_pharmacies_crm_contact_id_positive — and cannot be inserted
   // into ireports360_crm_customer_brick_resolutions.crm_contact_id at all, which is an INTEGER: it
   // answers 22003 numeric field overflow, turning a permanent blank into a permanent error.
-  const column = liveViewSql("crm_visits_unified");
+  // 🔴 EACH FACT IS ASKED OF ITS OWN LAST DEFINER, and the RANGE is pinned rather than the WORDING.
+  // Both halves cost a red pin on this branch. The column and the trigger were one migration when the
+  // id shipped, so reading the VIEW's definer found them by accident — and the accident ended the
+  // moment the Phoenix field set redefined the view in a file of its own. Then the column's own
+  // definer became `20261008001500`, which writes the constraint the way `pg_get_constraintdef` prints
+  // it (`>= … and <= …`), so a pin spelled `between … and …` went red over an IDENTICAL constraint.
+  // A pin on a spelling tests the author, not the database.
+  const column = lastDefinerSql(/add column if not exists own_contact_crm_id bigint/, "phoenix_crm_customers.own_contact_crm_id");
   assert.match(
     column,
-    /own_contact_crm_id bigint/,
+    /own_contact_crm_id bigint not null/,
     "the id is a column on the customer, issued once and never recomputed",
   );
   assert.match(
     column,
-    /check \(own_contact_crm_id between 1000000000 and 2000000000\)/,
-    "inside crm_contacts_phoenix_id_seq's reserved range, which 20260914020000 created for exactly this",
+    /nextval\('(public\.)?crm_contacts_phoenix_id_seq'/,
+    "drawn from the sequence 20260914020000 reserved for exactly this, which the vendor ids never touch",
+  );
+  for (const bound of ["1000000000", "2000000000"]) {
+    assert.ok(
+      column.includes(bound),
+      `the reserved range's ${bound} bound is enforced — POSITIVE, because a negative synthetic id breaks crm_contacts_real_contact and direct_order_pharmacies_crm_contact_id_positive, and answers 22003 against ireports360_crm_customer_brick_resolutions.crm_contact_id, which is an INTEGER`,
+    );
+  }
+  const trigger = lastDefinerSql(
+    /before update of reference_contact_crm_id on public\.phoenix_crm_customers/,
+    "phoenix_crm_customers_no_late_reference",
   );
   assert.match(
-    column,
+    trigger,
     /before update of reference_contact_crm_id on public\.phoenix_crm_customers/,
     "and a customer who has carried his own id can never be re-pointed at a vendor id afterwards",
   );
@@ -1745,4 +1965,5 @@ export function runPhoenixCrmVisitsEverywhereTests(): void {
   runCallRateTests();
   runHygieneTests(code);
   runContactIdAcrossDoorsTests();
+  runPortalKeepsNoneOfTheFieldSetTests();
 }

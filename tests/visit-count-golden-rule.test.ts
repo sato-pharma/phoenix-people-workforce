@@ -547,6 +547,8 @@ function runPhoenixPharmacyFigureTests() {
       contactName: "A Doctor",
       doubleHrId: null,
       doubleName: null,
+      double2HrId: null,
+      double2Name: null,
       savedAt: "2026-10-04 11:00:00+00",
       speciality: "Pediatrics",
       visitDate: "2026-10-04",

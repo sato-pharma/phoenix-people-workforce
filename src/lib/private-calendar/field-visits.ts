@@ -47,6 +47,9 @@ export type FieldVisitRow = {
   double_crm_id: number | null;
   double_hr_id: string | null;
   double_name: string | null;
+  /** The chain visit's SECOND manager's name. Nothing decides a KIND from it — `hasRealPartner`
+   * already answers true off slot 1, which slot 2 can never be filled without. */
+  double2_name: string | null;
   source: string | null;
   speciality: string | null;
   visit_date: string | null;
@@ -107,7 +110,7 @@ function countedList(counts: Map<string, number>): string {
 }
 
 const FIELD_VISIT_COLUMNS =
-  "visit_date,agent_hr_id,agent_name,agent_crm_id,contact_name,contact_crm_id,crm_visit_id,crm_save_date,double_crm_id,double_hr_id,double_name,source,visit_type,visit_type_description,ampm,speciality,comment";
+  "visit_date,agent_hr_id,agent_name,agent_crm_id,contact_name,contact_crm_id,crm_visit_id,crm_save_date,double_crm_id,double_hr_id,double_name,double2_name,source,visit_type,visit_type_description,ampm,speciality,comment";
 
 /** Above this many employees one company-wide window scan is cheaper than reading each person's own
  * visits by index — the attendance day maps' bound (DAY_MAP_PUSHDOWN_MAX_IDS in
@@ -233,8 +236,12 @@ export async function loadFieldVisitPrivateCalendarItems(
       };
       const customer = String(row.contact_name ?? "").trim();
       if (customer) existing.customers.add(customer);
-      const partner = String(row.double_name ?? "").trim();
-      if (partner && hasRealPartner(row)) existing.partners.add(partner);
+      // `partners` is a Set of NAMES, so naming a chain visit's second manager cannot move a count —
+      // it only stops one of the two people on the row going unnamed on the day's card.
+      for (const value of [row.double_name, row.double2_name]) {
+        const partner = String(value ?? "").trim();
+        if (partner && hasRealPartner(row)) existing.partners.add(partner);
+      }
       const activity = resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment);
       existing.activities.set(activity, (existing.activities.get(activity) ?? 0) + 1);
       addVisitToSplit(existing.split, row);

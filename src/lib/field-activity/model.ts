@@ -60,6 +60,10 @@ export type FieldActivityVisitRow = {
   agentCrmId: number | null;
   doubleHrId: string | null;
   doubleName: string | null;
+  /** A chain visit's SECOND manager. Slot 1 is `coalesce(manager, product_manager, senior)`, so a row
+   * that carries somebody here carries somebody there too — the two slots never hold one person. */
+  double2HrId: string | null;
+  double2Name: string | null;
   contactCrmId: number | null;
   contactName: string | null;
   speciality: string | null;
@@ -337,9 +341,19 @@ function logLag(day: string, checkedAt: string, savedAt: string | null, savedOn:
   return to + dayShift * 1440 - from;
 }
 
-/** A visit the subject is on — as the agent himself, or tagged as the double-visit partner. */
+/**
+ * A visit the subject is on — as the agent himself, or tagged in EITHER ride-along slot.
+ *
+ * Slot 2 is not optional here. `participantHrIds` at the door already returns the row where he is
+ * the chain visit's second manager, and testing one slot threw it away again — which is the owner's
+ * reported sentence in code: the day he spent in the field reads as a day he did not work.
+ */
 function subjectIsOn(visit: FieldActivityVisitRow, subjectHrId: string): boolean {
-  return sameHrId(visit.agentHrId, subjectHrId) || sameHrId(visit.doubleHrId, subjectHrId);
+  return (
+    sameHrId(visit.agentHrId, subjectHrId) ||
+    sameHrId(visit.doubleHrId, subjectHrId) ||
+    sameHrId(visit.double2HrId, subjectHrId)
+  );
 }
 
 /** A vendor code that is not a customer call. -12 Traveling, -5/-6 leave, -19 meeting and friends. */
@@ -430,11 +444,17 @@ export function buildFieldActivityReport(input: {
     const partners = new Map<string, { hrId: string | null; name: string }>();
 
     for (const visit of dayVisits) {
-      // Who he was out with: the other name on the row.
-      const partnerIsAgent = !sameHrId(visit.agentHrId, subjectHrId);
-      const partnerName = partnerIsAgent ? visit.agentName : visit.doubleName;
-      const partnerHrId = partnerIsAgent ? visit.agentHrId : visit.doubleHrId;
-      if (partnerName) partners.set(partnerName, { hrId: partnerHrId, name: partnerName });
+      // Who he was out with: every OTHER person on the row. A chain visit carries three people, so
+      // the old agent-or-partner pair named only one of the two he actually rode with.
+      for (const person of [
+        { hrId: visit.agentHrId, name: visit.agentName },
+        { hrId: visit.doubleHrId, name: visit.doubleName },
+        { hrId: visit.double2HrId, name: visit.double2Name },
+      ]) {
+        if (!person.name) continue;
+        if (sameHrId(person.hrId, subjectHrId)) continue;
+        partners.set(person.name, { hrId: person.hrId, name: person.name });
+      }
 
       const counted = isCustomerCall(visit);
       if (counted) {

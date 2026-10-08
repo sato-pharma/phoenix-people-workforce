@@ -51,6 +51,8 @@ function visit(overrides: Partial<FieldActivityVisitRow> = {}): FieldActivityVis
     contactName: "A Doctor",
     doubleHrId: "B-155",
     doubleName: "A Product Manager",
+    double2HrId: null,
+    double2Name: null,
     savedAt: "2026-09-20 15:20:54+00",
     speciality: "Pediatrics",
     visitDate: "2026-09-20",
@@ -654,4 +656,44 @@ export async function runFieldActivityReportTests() {
       assert.equal(found, null, `${file}: user-visible prose must not assume the subject is a man — ${found}`);
     }
   }
+}
+
+// ── A chain visit's SECOND manager: the day he rode must be a day he worked ──
+{
+  // SUBJECT is B-155, the Product Manager. On a chain visit the door fills slot 1 from
+  // `coalesce(manager, product_manager, senior)` and slot 2 with whoever is left — so B-155 can be
+  // either. Reading one slot is what made the day he spent in the field read as a day he did not
+  // work (owner, 2026-10-07), and the door already returns the row, so the defect is entirely here.
+  const chain = visit({
+    agentHrId: "B-100",
+    agentName: "A Medical Rep",
+    doubleHrId: "B-900",
+    doubleName: "A District Manager",
+    double2HrId: "B-155",
+    double2Name: "A Product Manager",
+  });
+
+  const report = buildFieldActivityReport({
+    checkins: [],
+    fromIso: "2026-09-20",
+    leave: [],
+    punches: [],
+    subject: SUBJECT,
+    toIso: "2026-09-20",
+    trips: [],
+    visits: [chain],
+  });
+
+  const day = report.days.find((entry) => entry.dateIso === "2026-09-20");
+  assert.ok(day, "the chain visit's day must be in the report");
+  assert.equal(
+    day.countedTotal,
+    1,
+    "a chain visit carrying the subject in the SECOND ride-along slot counts as a visit on his day",
+  );
+  assert.deepEqual(
+    day.partners.map((partner) => partner.name).sort(),
+    ["A District Manager", "A Medical Rep"],
+    "both other people on a chain visit are named as who he was out with, not just one",
+  );
 }

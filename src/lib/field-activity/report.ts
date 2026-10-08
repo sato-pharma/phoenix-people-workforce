@@ -41,8 +41,9 @@ const IN_CHUNK = 80;
 
 // `source` marks a started team's Phoenix CRM visit, which logs no pharmacy (visit-count-buckets.ts).
 const VISIT_COLUMNS =
-  "visit_date, agent_hr_id, agent_name, agent_crm_id, double_hr_id, double_name, contact_crm_id, " +
-  "contact_name, speciality, crm_contact_grade, ampm, visit_type, visit_type_description, comment, crm_save_date, source";
+  "visit_date, agent_hr_id, agent_name, agent_crm_id, double_hr_id, double_name, double2_hr_id, " +
+  "double2_name, contact_crm_id, contact_name, speciality, crm_contact_grade, ampm, visit_type, " +
+  "visit_type_description, comment, crm_save_date, source";
 
 /**
  * What the CRM door hands back. The door has already resolved the union that `rowsOf` below exists
@@ -84,6 +85,8 @@ function toVisitRow(row: Record<string, unknown>): FieldActivityVisitRow {
     agentCrmId: (row.agent_crm_id as number | null) ?? null,
     doubleHrId: (row.double_hr_id as string | null) ?? null,
     doubleName: (row.double_name as string | null) ?? null,
+    double2HrId: (row.double2_hr_id as string | null) ?? null,
+    double2Name: (row.double2_name as string | null) ?? null,
     contactCrmId: (row.contact_crm_id as number | null) ?? null,
     contactName: (row.contact_name as string | null) ?? null,
     speciality: (row.speciality as string | null) ?? null,
