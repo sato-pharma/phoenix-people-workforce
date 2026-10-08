@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ddbd6fd7-8a24-45e4-b9cc-5c709ace3bd5
-  modified: 2026-10-08T13:05:06.181Z
+  modified: 2026-10-08T13:44:35.798Z
 ---
 
 On 2026-10-08 the owner approved "move the box previews to staging and restart preview-b" (security
@@ -37,6 +37,17 @@ a file from code running as its owner, so any remote-check run could read a prod
   `.armed-early-20261008`), and box `at` job 1 runs `~/preview-reaper-arm.sh` at 2026-10-09 11:41 UTC
   (14:41 Cairo), which arms it, backs up `.pre-arm-20261009` and logs `ARMED` in `~/preview-idle.log`.
   Do not arm it by hand before then.
+- ARMED AGAIN 2026-10-08 16:19 Cairo on the owner's typed "arm the preview idle reaper on the box" —
+  given in a session that suggested it without having read the 16:10 trial decision above. Live
+  self-test: a dummy `phx-preview-3001` sleep scope was stopped and logged. No real preview was running.
+  The `at` job 1 is still queued and only logs "already live" if it stays armed.
+- 🔴 **BACK TO TRIAL 2026-10-08 16:20 Cairo** — he answered "put the preview reaper back on trial until
+  tomorrow 14:41". The service file was restored from `.pre-arm-20261008` (dry-run line present, which is
+  what the `at` job's grep needs), and `at` job 1 (2026-10-09 11:41 UTC) still arms it. Do not arm it by
+  hand before then.
+- `vm.swappiness` is **10** (was the default 60) since 2026-10-08 16:44 Cairo, owner-approved, live and
+  persistent via `/etc/sysctl.d/99-phx-swappiness.conf`; undo by deleting that file and
+  `sudo sysctl -w vm.swappiness=60`.
 - Backups: `~/preview-*.sh.pre-caps` on the box and `~/.claude/scripts/phx-preview.ps1.pre-caps` on the
   laptop.
 
