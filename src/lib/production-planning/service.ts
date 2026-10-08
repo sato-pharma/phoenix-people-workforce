@@ -39,7 +39,7 @@ import {
 import { evaluateExpiry, resolveExpiryArming, type ExpiryLot, type ExpiryVerdict } from "./expiry";
 import { formatExactRuns, resolveRunGeometry, type RunGeometry } from "./geometry";
 import { formatOveragePct, learnFromRuns, resolveOverage, type MaterialLearning, type RunObservation } from "./learning";
-import type { WireRun, WireWorkspace } from "./wire";
+import type { WireRetiredMaterial, WireRun, WireWorkspace } from "./wire";
 import {
   resolveMaterialRequirement,
   sortRequirements,
@@ -615,6 +615,32 @@ export function materialsForProduct(data: ProductionPlanningData, productId: str
 }
 
 /**
+ * The OTHER products that also use this material — what the Settings tab names before a retire.
+ *
+ * 🔴 Retiring is a MATERIAL-level switch, not a per-product one, so a material two products share
+ * leaves the other product's buy list short the moment it is retired from either screen. The citric
+ * acid anhydrous and the lemon flavour genuinely belong to both Ivyronc and Guamusin, so this is a
+ * live case and not a hypothetical, and an understated warning here produces exactly the failure
+ * this module keeps naming: a buy list that is wrong in a way that reads as right.
+ *
+ * 🔴 The no-join-rows case mirrors `materialsForProduct` deliberately. A product with no rows in
+ * `prodplan_product_materials` gets EVERY material there, so it really does use this one, and
+ * treating an absent entry as "does not use it" would hide the one product most at risk — one
+ * seeded before the join table existed.
+ */
+export function otherProductsUsingMaterial(
+  data: ProductionPlanningData,
+  productId: string | null,
+  materialId: string,
+): LoadedProduct[] {
+  return data.products.filter((product) => {
+    if (product.id === productId) return false;
+    const linked = data.materialIdsByProductId.get(product.id);
+    return linked === undefined || linked.size === 0 || linked.has(materialId);
+  });
+}
+
+/**
  * Held stock per material, per location — the lots SUMMED.
  *
  * This is the one place the lot split is collapsed, and collapsing it is deliberate: the requirement
@@ -1121,6 +1147,30 @@ export async function listPlans(access: AccessContext, productId?: string | null
 // ── The whole workspace payload ────────────────────────────────────────────────────────────────────
 
 /**
+ * The RETIRED materials — `is_active = false` — for the Settings tab's restore list.
+ *
+ * 🔴 Deliberately a separate read, and deliberately NOT a field on `ProductionPlanningData`. Putting
+ * it there would make an inactive material reachable from `computePlan`, and a retired material back
+ * on a buy list is exactly the double-count the leaflet split exists to prevent: 68,250 pieces of
+ * superseded artwork covering new production, with every figure on the row still looking ordinary.
+ * Nothing that computes a plan may see this list.
+ */
+async function listRetiredMaterials(): Promise<WireRetiredMaterial[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(T.materials)
+    .select("id, code, name_ar, name_en")
+    .eq("is_active", false)
+    .order("code");
+  if (error) failure(error, "load the retired materials");
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    code: String(row.code),
+    nameAr: String(row.name_ar),
+    nameEn: String(row.name_en),
+  }));
+}
+
+/**
  * One GET for the whole screen, so the five tabs do not each fetch their own half of the same data
  * and then disagree about it.
  */
@@ -1166,12 +1216,17 @@ export async function getProductionPlanningWorkspace(
     list.push(row);
     lotsByMaterialAndLocation.set(key, list);
   }
-  const [runs, plans] = await Promise.all([listRuns(access, productId), listPlans(access, productId)]);
+  const [runs, plans, retiredMaterials] = await Promise.all([
+    listRuns(access, productId),
+    listPlans(access, productId),
+    listRetiredMaterials(),
+  ]);
 
   return {
     level: data.level,
     canWrite: data.level === "full",
     productId,
+    retiredMaterials,
     products: data.products.map((product) => ({
       id: product.id,
       code: product.code,
@@ -1208,6 +1263,9 @@ export async function getProductionPlanningWorkspace(
         purchaseIncrement: material.purchaseIncrement === null ? null : formatQty(material.purchaseIncrement),
         reorderCoverRuns: material.reorderCoverRuns === null ? null : formatQty(material.reorderCoverRuns),
         notes: material.notes,
+        alsoUsedByProductIds: otherProductsUsingMaterial(data, productId, material.id).map(
+          (product) => product.id,
+        ),
         composition: composition
           ? {
               basis: composition.basis,
@@ -1841,6 +1899,91 @@ export async function saveMaterialAndComposition(access: AccessContext, body: Re
   });
 
   return { materialId, compositionId };
+}
+
+/**
+ * RETIRE a material, or bring a retired one back — `prodplan_materials.is_active`.
+ *
+ * 🔴 DEACTIVATE, NEVER DELETE. That is this module's own settled precedent, three times over: the
+ * pre-split combined `LEAFLET`, `STICKER_GUAMUSIN` when the owner corrected his packaging list, and
+ * `LEAFLET_OLD` when he said to forget the old artwork. Deleting a material would destroy the stock
+ * report EGPI actually sent, and the written-off quantity IS the record. **Stock rows are never
+ * touched here** — the 68,250 old leaflets stay on the books exactly as they are.
+ *
+ * What a retire does, and the order is the safety:
+ *
+ *  1. CLOSES every formula row in force, `effective_to = today`, never a delete — so a plan
+ *     committed last month still reproduces under the formula it was committed with. Rows opened
+ *     TODAY are left alone for the same reason `saveMaterialAndComposition` does: closing a row at
+ *     its own `effective_from` is not a window the database accepts, and the material is about to
+ *     become invisible anyway.
+ *  2. Switches off the `prodplan_product_materials` rows, so the link is remembered rather than
+ *     dropped and a restore puts the material back on the products it belonged to.
+ *  3. Switches off the material.
+ *
+ * Reversed on the way back, and both orders are chosen so a failure half-way leaves the SAFE state:
+ * a material still active with no formula line reads "formula not entered" on screen, which is
+ * visible and harmless, while a hidden material holding a live formula row would quietly restore a
+ * requirement nobody asked for.
+ *
+ * 🔴 A RESTORE DOES NOT RE-OPEN THE FORMULA ROWS. He re-enters the line deliberately, because a
+ * reactivation that also revived the old quantity is how two leaflet lines would start covering new
+ * production with every figure on the row still looking ordinary.
+ */
+export async function setMaterialActive(access: AccessContext, body: Record<string, unknown>) {
+  await assertWrite(access);
+  const who = actor(access);
+  const db = getSupabaseAdmin();
+  const materialId = asText(body.materialId);
+  if (!materialId) throw new ProductionPlanningInputError(errorsFor(body).materialRequired, "materialId");
+  if (typeof body.active !== "boolean") {
+    throw new ProductionPlanningInputError(errorsFor(body).activeFlagRequired, "active");
+  }
+  const active = body.active;
+
+  const previous = await db.from(T.materials).select(MATERIAL_COLUMNS).eq("id", materialId).maybeSingle();
+  if (!previous.data) throw new ProductionPlanningInputError(errorsFor(body).materialNotFound, "materialId");
+
+  const today = todayCairo();
+  const now = new Date().toISOString();
+  let closedCompositionIds: string[] = [];
+
+  if (!active) {
+    const { data: closed, error: closeError } = await db
+      .from(T.compositions)
+      .update({ effective_to: today, updated_at: now })
+      .eq("material_id", materialId)
+      .is("effective_to", null)
+      .lt("effective_from", today)
+      .select("id");
+    if (closeError) failure(closeError, "close the formula rows");
+    closedCompositionIds = (closed ?? []).map((row) => String(row.id));
+  }
+
+  const { error: joinError } = await db
+    .from(T.productMaterials)
+    .update({ is_active: active })
+    .eq("material_id", materialId);
+  if (joinError) failure(joinError, active ? "restore the product links" : "switch off the product links");
+
+  const { error: materialError } = await db
+    .from(T.materials)
+    .update({ is_active: active, updated_at: now })
+    .eq("id", materialId);
+  if (materialError) failure(materialError, active ? "restore the material" : "retire the material");
+
+  await writeAuditLog({
+    actorLoginId: who.login,
+    entityType: "production_material",
+    entityId: materialId,
+    oldValues: { isActive: previous.data.is_active },
+    newValues: { isActive: active, closedCompositionIds },
+    summary: active
+      ? `Production planner: material ${previous.data.code} restored — its product links are back on and its formula line must be re-entered`
+      : `Production planner: material ${previous.data.code} retired — ${closedCompositionIds.length} formula row(s) closed at ${today}, stock kept`,
+  });
+
+  return { materialId, active, closedCompositions: closedCompositionIds.length };
 }
 
 /** Save a plan as a draft, or commit it with its whole snapshot. */

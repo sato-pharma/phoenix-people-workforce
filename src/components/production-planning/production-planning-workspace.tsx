@@ -2394,24 +2394,91 @@ export function SettingsTab({
       </section>
 
       <section className={PANEL}>
-        <SectionTitle title={t.settingsComposition} />
+        <SectionTitle subtitle={canWrite ? t.settingsRetireHint : undefined} title={t.settingsComposition} />
         <ul className="space-y-1 text-[12px] text-slate-700">
           {data.materials.map((material) => (
-            <li className="break-words" key={material.id}>
-              <span className="font-bold">{S.name(material)}</span>{" "}
-              {material.composition ? (
-                <>
-                  <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />{" "}
-                  {basisLabels[material.composition.basis]} —{" "}
-                  {S.supplierLabels[material.composition.supplier]}
-                </>
-              ) : (
-                <span className="text-slate-500">{t.excludedNoComposition}</span>
-              )}
+            <li
+              className="flex flex-wrap items-center justify-between gap-2 break-words"
+              key={material.id}
+            >
+              <span className="min-w-0 break-words">
+                <span className="font-bold">{S.name(material)}</span>{" "}
+                {material.composition ? (
+                  <>
+                    <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />{" "}
+                    {basisLabels[material.composition.basis]} —{" "}
+                    {S.supplierLabels[material.composition.supplier]}
+                  </>
+                ) : (
+                  <span className="text-slate-500">{t.excludedNoComposition}</span>
+                )}
+                {/* 🔴 Named BEFORE the click, never after. Retiring is a material-level switch, so a
+                    material both products use leaves the other product's buy list short — and the
+                    citric acid anhydrous and the lemon flavour genuinely are shared. The ids come
+                    from the server and the names are resolved here, so an English reader never
+                    reads an Arabic product name (the owner's 2026-10-08 ruling). */}
+                {material.alsoUsedByProductIds.length > 0 ? (
+                  <span className="block text-[11px] font-bold text-slate-900">
+                    {t.settingsRetireAlsoUsedBy}:{" "}
+                    {material.alsoUsedByProductIds
+                      .map((id) => {
+                        const product = data.products.find((candidate) => candidate.id === id);
+                        return product ? S.name(product) : id;
+                      })
+                      .join(" · ")}
+                  </span>
+                ) : null}
+              </span>
+              {canWrite ? (
+                <button
+                  className={BUTTON_QUIET}
+                  disabled={busy}
+                  onClick={() => void onSave("/materials", { materialId: material.id, active: false })}
+                  type="button"
+                >
+                  {t.settingsRetire}
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
       </section>
+
+      {/* The way back. Without it the control above would be a one-way door: the workspace reads
+          materials with `is_active = true`, so a retired material leaves every tab and only a
+          database write could return it — the very hole the retire control closes, reversed. The
+          list is GLOBAL rather than per product, because retiring switches the product links off
+          too, so a product-scoped list would always be empty. */}
+      {canWrite ? (
+        <section className={PANEL}>
+          <SectionTitle subtitle={t.settingsRestoreHint} title={t.settingsRetired} />
+          {data.retiredMaterials.length === 0 ? (
+            <p className="text-[12px] text-slate-500">{t.settingsRetiredNone}</p>
+          ) : (
+            <ul className="space-y-1">
+              {data.retiredMaterials.map((material) => (
+                <li
+                  className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 px-3 py-2 text-[12px]"
+                  key={material.id}
+                >
+                  <span className="min-w-0 break-words">
+                    <span className="font-bold">{S.name(material)}</span>{" "}
+                    <Num className="text-slate-500">{material.code}</Num>
+                  </span>
+                  <button
+                    className={BUTTON_QUIET}
+                    disabled={busy}
+                    onClick={() => void onSave("/materials", { materialId: material.id, active: true })}
+                    type="button"
+                  >
+                    {t.settingsRestore}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
     </>
   );
 }

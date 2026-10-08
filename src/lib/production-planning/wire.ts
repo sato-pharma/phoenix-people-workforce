@@ -89,6 +89,17 @@ export type WireMaterial = {
   purchaseIncrement: string | null;
   reorderCoverRuns: string | null;
   notes: string | null;
+  /**
+   * The OTHER products that also use this material — ids, so the screen resolves the names through
+   * `S.name(product)` and an English reader never reads an Arabic product name.
+   *
+   * 🔴 It exists so the retire control cannot quietly change a product nobody is looking at.
+   * Retiring is a MATERIAL-level switch, and the citric acid anhydrous and the lemon flavour
+   * genuinely belong to both Ivyronc and Guamusin — so retiring one from Ivyronc's screen takes it
+   * off Guamusin's buy list too, which is precisely the shape this module keeps warning about: a
+   * list that is wrong in a way that reads as right. Empty for a material only this product uses.
+   */
+  alsoUsedByProductIds: string[];
   composition: {
     basis: WireBasis;
     qtyPerBasis: string;
@@ -311,11 +322,36 @@ export type WireGrant = {
   createdAt: string | null;
 };
 
+/**
+ * A material that has been RETIRED — `prodplan_materials.is_active = false`.
+ *
+ * It carries only what the Settings tab needs to name it and offer it back, because a retired
+ * material has no formula line in force and no place on any buy list. 🔴 This list is GLOBAL, not
+ * scoped to the selected product: retiring deactivates the `prodplan_product_materials` rows too,
+ * so scoping it by that join would return an empty list every time and the restore control would
+ * never appear.
+ */
+export type WireRetiredMaterial = {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+};
+
 export type WireWorkspace = {
   level: WireLevel;
   canWrite: boolean;
   products: WireProduct[];
   locations: WireLocation[];
+  /**
+   * The retired materials, so a retire is REVERSIBLE from the same screen that did it.
+   *
+   * 🔴 Without this the control would be a one-way door: `loadProductionPlanningDataAtLevel` reads
+   * materials with `is_active = true`, so a material switched off vanishes from every tab and only a
+   * database write could bring it back — which is the hole the retire control exists to close, in
+   * the opposite direction.
+   */
+  retiredMaterials: WireRetiredMaterial[];
   /**
    * 🔴 THE MATERIALS OF THE SELECTED PRODUCT ONLY, and `productId` says which one.
    *

@@ -168,6 +168,8 @@ function wireMaterials(): WireMaterial[] {
     const composition = COMPOSITIONS.find((row) => row.materialId === material.id) ?? null;
     const price = planningData().prices.find((row) => row.materialId === material.id) ?? null;
     return {
+      // This fixture has ONE product, so nothing is shared and the warning is genuinely empty here.
+      alsoUsedByProductIds: [],
       basePerDisplay: (material.basePerDisplay / QTY_SCALE).toString(),
       baseUnit: material.baseUnit,
       code: material.code,
@@ -241,6 +243,9 @@ function workspaceFor(plan: WirePlan): WireWorkspace {
         wholeRunsOnly: true,
       },
     ],
+    // The workbook must not read this — it is a Settings-tab control, and a retired material has no
+    // place on a buy list. Empty here is the assertion.
+    retiredMaterials: [],
     runs: [],
     settings: {
       alarmDryRun: true,

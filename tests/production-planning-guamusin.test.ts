@@ -15,6 +15,7 @@ import {
   computePlan,
   evaluateExpiryForProduct,
   materialsForProduct,
+  otherProductsUsingMaterial,
   type LoadedComposition,
   type LoadedMaterial,
   type ProductionPlanningData,
@@ -269,6 +270,9 @@ function workspaceFor(data: ProductionPlanningData, plan: WirePlan): WireWorkspa
     materials: materialsForProduct(data, "prod-guamusin").map((item): WireMaterial => {
       const composition = compositions.find((row) => row.materialId === item.id) ?? null;
       return {
+        // Through the real helper, not a hard-coded `[]`: a fixture that asserted "nothing else uses
+        // it" would be the one shape this field exists to disprove.
+        alsoUsedByProductIds: otherProductsUsingMaterial(data, "prod-guamusin", item.id).map((p) => p.id),
         basePerDisplay: (item.basePerDisplay / QTY_SCALE).toString(),
         baseUnit: item.baseUnit,
         code: item.code,
@@ -318,6 +322,9 @@ function workspaceFor(data: ProductionPlanningData, plan: WirePlan): WireWorkspa
       unitsPerBox: product.geometry.unitsPerBox.toString(),
       wholeRunsOnly: product.geometry.wholeRunsOnly,
     })),
+    // The sheet never reads the retired list — it is a Settings-tab control — and an empty one here
+    // is what proves the workbook did not start depending on it.
+    retiredMaterials: [],
     runs: [],
     settings: {
       alarmDryRun: true,
