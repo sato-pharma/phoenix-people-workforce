@@ -1,11 +1,11 @@
 ---
 name: hr-seats-are-composed-from-a-function-catalogue
-description: "The two HR permission roles are COMPOSED from eight HR functions in hr-functions.ts — there is no literal role block for either, so any test that scrapes permissions.ts source for one returns null"
+description: "The HR permission roles (HR Operations, HR Resourcing = Talent Acquisition) are COMPOSED from HR functions in hr-functions.ts — no literal role block exists for either, so a test scraping permissions.ts for one returns null. HR Advisory was RETIRED 2026-10-08; its leftover functions sit on UNASSIGNED_HR_FUNCTIONS (the Super Admin's)"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 10c9e0cd-506e-4881-977d-63fca5e0190c
-  modified: 2026-08-28T06:07:32.750Z
+  modified: 2026-10-08T21:40:00.000Z
 ---
 
 Owner rule, 2026-08-28: **stop naming permission roles after job titles.** It had cost two sweeps —
@@ -14,7 +14,15 @@ to define the HR **functions** and give each seat a subset: *"make, for example,
 The HR business partner have from this six, for example, four … but at the end of the day,
 everything."*
 
-`src/lib/auth/hr-functions.ts` holds **eight functions**, and `HR_ROLE_BUNDLES` composes two seats:
+**CURRENT (2026-10-08):** `HR_ROLE_BUNDLES` composes **HR Operations** and **HR Resourcing** (shown as
+Talent Acquisition). The HR Business Partner seat (`HR Advisory`) was **retired** that evening —
+"no more HR business partner … everything regarding recruiting is for the talent acquisition", the
+rest "Leave it for system administrator now" (PR #5565). `recruiting` is Talent Acquisition's
+alone; `hiring_paperwork`, `engagement_retention`, `hr_communication` and `workforce_insight`
+are on `UNASSIGNED_HR_FUNCTIONS` (the Super Admin's), and governance rule 3 now reads "bundles plus
+that list = the catalogue". Handing one out is a MOVE from that list into a bundle.
+
+The original two-seat layout, for history (`src/lib/auth/hr-functions.ts` then held **eight functions**):
 
 | | Functions |
 |---|---|
@@ -35,8 +43,8 @@ The job title is a historical fact about a person; only the ROLE was retired.
 
 ## The three things that bite
 
-- **No literal `"HR Advisory": { … }` block exists in `permissions.ts`.** The matrix entry is
-  `hrBundleGrants("HR Advisory")`. Any test that scrapes the source text for a role block — several
+- **No literal role block exists in `permissions.ts` for a live HR seat.** The matrix entry is
+  `hrBundleGrants(seat)` (the retired `HR Advisory` entry is now a literal `{}`). Any test that scrapes the source text for a role block — several
   do, e.g. the `roleBlock()` helper in `tests/coaching-permissions.test.ts` — gets `null` and reports
   "permission block must exist". Read `permissionMatrix[role]` instead.
 - **`permissionMatrix` is NOT the raw composition.** `applyHardPermissionBoundaries`
@@ -50,6 +58,11 @@ The job title is a historical fact about a person; only the ROLE was retired.
   [[report-it-sounds-like-hr-and-is-patient-data]].
 
 ## Retired seats fail CLOSED
+
+**HR Advisory (2026-10-08) is retired IN PLACE, not aliased:** it stays in `phoenixRoles` via
+`retiredPhoenixRoles` so its salary-redaction restrictions keep applying, every picker lists
+`assignablePhoenixRoles`, and the server refuses to assign it. Its one former holder (inactive)
+became Employee in the same migration — never the successor seat.
 
 `normalizeRole` aliases both `"hr specialist"` and `"talent acquisition"` to **`Employee`**, never
 to a successor. Aliasing a retired key sideways reads as continuity and is a privilege

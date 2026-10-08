@@ -292,6 +292,14 @@ export const PP = {
   settingsFxFallback: "سعر الصرف الاحتياطي",
   settingsMaterials: "المواد",
   settingsComposition: "التركيبة",
+  settingsRetire: "إيقاف المادة",
+  settingsRetireHint:
+    "الإيقاف يُغلق سطر التركيبة ويُخفي المادة من كل التبويبات، ويُبقي المخزون كما هو — والإرجاع ممكن",
+  settingsRetireAlsoUsedBy: "مستخدمة أيضاً في",
+  settingsRetired: "مواد موقوفة",
+  settingsRetiredNone: "لا توجد مواد موقوفة",
+  settingsRestore: "إرجاع المادة",
+  settingsRestoreHint: "الإرجاع يُعيد المادة وروابط المنتجات، ولا يُعيد سطر التركيبة — تعود المادة بدون تركيبة",
   settingsGeometry: "حجم التشغيلة والعبوات",
   settingsAccess: "الصلاحيات",
   settingsAccessHint: "الأشخاص الذين سمّاهم المالك مُثبتون في الكود — هنا تُضاف صلاحية إضافية بالاسم",
@@ -579,6 +587,20 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   settingsFxFallback: "Fallback exchange rate",
   settingsMaterials: "Materials",
   settingsComposition: "Composition",
+  settingsRetire: "Retire the material",
+  settingsRetireHint:
+    "Retiring closes the formula line and hides the material from every tab, keeps the stock exactly as it is, and can be undone",
+  settingsRetireAlsoUsedBy: "Also used by",
+  settingsRetired: "Retired materials",
+  settingsRetiredNone: "No retired materials",
+  settingsRestore: "Restore the material",
+  // 🔴 It says the material comes back WITHOUT a composition, and deliberately does not say "enter it
+  // again" — no screen control enters a formula line. `saveMaterialAndComposition` and its route exist
+  // and are correct, but nothing in the UI reaches them: before this change the Settings tab posted to
+  // /stock, /fx, /prices, /runs, /settings and /access-grants, and to /materials never. A hint that
+  // promised a place to type the line would be the screen claiming something only a migration can do.
+  settingsRestoreHint:
+    "Restoring brings the material and its product links back; the formula line is not restored, so the material comes back with no composition",
   settingsGeometry: "Run volume and packaging",
   settingsAccess: "Access",
   settingsAccessHint:
@@ -1274,6 +1296,9 @@ export type ProductionPlanningErrorKey =
   | "qtyMustBePositive"
   | "materialNotFound"
   | "materialRequired"
+  // Retire and restore are ONE endpoint with a boolean, so a body that forgets the flag must be
+  // refused rather than defaulted: either default silently does the opposite of what was meant.
+  | "activeFlagRequired"
   | "materialAndLocationRequired"
   | "productNotFound"
   | "hrIdRequired"
@@ -1296,6 +1321,7 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   qtyMustBePositive: "الكمية يجب أن تكون أكبر من صفر.",
   materialNotFound: "المادة غير موجودة.",
   materialRequired: "المادة مطلوبة.",
+  activeFlagRequired: "يجب تحديد إيقاف المادة أو إرجاعها.",
   materialAndLocationRequired: "المادة والموقع مطلوبان.",
   productNotFound: "المنتج غير موجود.",
   hrIdRequired: "رقم الموظف مطلوب.",
@@ -1319,6 +1345,7 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
   qtyMustBePositive: "A quantity must be greater than zero.",
   materialNotFound: "No such material.",
   materialRequired: "A material is required.",
+  activeFlagRequired: "Say whether the material is being retired or restored.",
   materialAndLocationRequired: "A material and a location are both required.",
   productNotFound: "No such product.",
   hrIdRequired: "An employee id is required.",
