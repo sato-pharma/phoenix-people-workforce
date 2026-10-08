@@ -21,6 +21,13 @@ export type DecisionActionsProps = {
     overrideReject?: boolean;
   };
   /**
+   * Offer a second, comment-free return beside the one that demands a comment. Vacation approvals
+   * pass it (owner, 2026-10-08): "Return for edit" sends the request back with one click, and
+   * "Return for edit with comment" makes the approver say what to fix. Everyone else keeps the one
+   * return button whose comment is mandatory.
+   */
+  returnWithoutComment?: boolean;
+  /**
    * Per-action label overrides. The vacation screen names the HR seat explicitly ("Reject as HR")
    * so the four buttons read as one set; excuses and weekly plans keep the plain verbs, because
    * their approvers are managers, not HR.
@@ -41,13 +48,14 @@ export type DecisionActionsProps = {
   extraPayload?: Record<string, unknown>;
 };
 
-type Pending = "approve" | "reject" | "return" | "acknowledge" | "overrideApprove" | "overrideReject" | null;
+type Pending = "approve" | "reject" | "return" | "returnPlain" | "acknowledge" | "overrideApprove" | "overrideReject" | null;
 type Action = Exclude<Pending, null>;
 
 const LABEL: Record<Action, string> = {
   approve: "Approve",
   reject: "Reject",
   return: "Return with comment",
+  returnPlain: "Return for edit",
   acknowledge: "Acknowledge (HR)",
   // The owner's wording, 2026-09-10: no button ever says "override", and none names the approver
   // who has not replied. The approval TRANSFERS; the System Administrator answers.
@@ -59,6 +67,7 @@ const REASON_REQUIRED: Record<Action, boolean> = {
   approve: false,
   reject: true,
   return: true,
+  returnPlain: false,
   acknowledge: false,
   // Approve stays one click by design — the server writes the override sentence itself. A
   // rejection still has to say why, because the employee reads it.
@@ -71,6 +80,7 @@ const DECISION_TOKEN: Record<Action, string> = {
   approve: "approve",
   reject: "reject",
   return: "return",
+  returnPlain: "return",
   acknowledge: "approve",
   overrideApprove: "approve",
   overrideReject: "reject",
@@ -81,6 +91,7 @@ const IS_OVERRIDE: Record<Action, boolean> = {
   approve: false,
   reject: false,
   return: false,
+  returnPlain: false,
   acknowledge: false,
   overrideApprove: true,
   overrideReject: true,
@@ -92,6 +103,7 @@ export function DecisionActions({
   actions,
   backHref,
   extraPayload,
+  returnWithoutComment,
   labelOverrides,
   disabledReasons,
   overrideNotice,
@@ -118,6 +130,7 @@ export function DecisionActions({
   const ordered = [
     ["approve", actions.approve],
     ["acknowledge", actions.acknowledge],
+    ["returnPlain", actions.return && returnWithoutComment],
     ["return", actions.return],
     ["reject", actions.reject],
     ["overrideApprove", actions.overrideApprove],
@@ -184,6 +197,7 @@ export function DecisionActions({
     approve: "bg-emerald-600 hover:bg-emerald-700 text-white",
     acknowledge: "bg-slate-900 hover:bg-black text-white",
     return: "border border-amber-500 text-amber-700 hover:bg-amber-50",
+    returnPlain: "border border-amber-500 text-amber-700 hover:bg-amber-50",
     reject: "border border-rose-500 text-rose-700 hover:bg-rose-50",
     // Outlined, not filled: an override must never be the button a tired thumb reaches for first.
     overrideApprove: "border border-slate-900 text-slate-900 hover:bg-slate-100",
@@ -232,9 +246,10 @@ export function DecisionActions({
             <p className="text-sm font-bold text-slate-900">
               {REASON_REQUIRED[pending]
                 ? `${labelFor(pending)} — provide a reason`
-                : IS_OVERRIDE[pending]
+                : IS_OVERRIDE[pending] || pending === "returnPlain"
                   // "Approve as System Administrator this request?" does not parse — the label
                   // already carries the object, so the override heading drops the trailing noun.
+                  // "Return for edit" is the same shape: it names the act, not the thing returned.
                   ? `Confirm: ${labelFor(pending)}?`
                   : `Confirm: ${labelFor(pending)} this request?`}
             </p>

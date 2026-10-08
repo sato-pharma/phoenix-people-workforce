@@ -120,8 +120,10 @@ export function evaluateStepAction(input: {
   const allManagementApproved = mgmt.every((step) => step.status === "approved");
 
   if (actorStep.stepKey === "hr") {
+    // HR may send a request back for the employee to edit at any time, like a rejection — it decides
+    // nothing, so it is never final (owner, 2026-10-08: return for edit on every approval, any type).
     if (decision === "return") {
-      return { allowed: false, reason: "HR cannot return requests to the employee.", nextStatus: "pending_hr", isFinal: false };
+      return { allowed: true, reason: null, nextStatus: "returned", isFinal: false };
     }
     if (decision === "reject") {
       return { allowed: true, reason: null, nextStatus: "rejected", isFinal: true };
@@ -424,9 +426,9 @@ function resolveBaseActionAvailability(input: {
   if (!input.actorStep) return availability;
 
   if (input.actorStep.stepKey === "hr") {
-    // HR may reject at any time; acknowledge only after management approvals; cannot return.
+    // HR may reject or return for edit at any time; acknowledge only after management approvals.
     availability.reject = { enabled: true, disabledReason: null };
-    availability.return = { enabled: false, disabledReason: "HR cannot return requests to the employee." };
+    availability.return = { enabled: true, disabledReason: null };
     const ack = evaluateStepAction({ steps: input.steps, actorStep: input.actorStep, decision: "approve" });
     availability.acknowledge = ack.allowed
       ? { enabled: true, disabledReason: null }

@@ -26,7 +26,25 @@ export async function POST(
       windowMs: 60_000,
     });
 
-    const result = await resubmitVacationRequest(access, { requestId: id });
+    // An empty body is "resubmit without changes"; a body carries the employee's edits. A body that
+    // is not JSON is treated as empty rather than refused — the plain button sends none.
+    const body = await request.json().catch(() => null);
+    const edits = body && typeof body === "object" && !Array.isArray(body) && "edits" in body && body.edits && typeof body.edits === "object"
+      ? (body.edits as Record<string, unknown>)
+      : null;
+
+    const result = await resubmitVacationRequest(access, {
+      edits: edits
+        ? {
+            dayPart: edits.dayPart,
+            employeeNote: edits.employeeNote,
+            endDate: edits.endDate,
+            otherReason: edits.otherReason,
+            startDate: edits.startDate,
+          }
+        : null,
+      requestId: id,
+    });
     return NextResponse.json({ request: result, success: true });
   } catch (error) {
     const message = vacationErrorMessage(error) || "Unable to resubmit vacation request.";

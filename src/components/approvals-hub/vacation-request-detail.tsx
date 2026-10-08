@@ -131,12 +131,15 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
               commentField="decisionComment"
               actions={detail.actions}
               backHref={backHref}
+              // Two returns on every vacation approval, any type, manager or HR (owner, 2026-10-08):
+              // "Return for edit" needs no comment; "Return for edit with comment" demands one.
+              returnWithoutComment
               // The four the owner asked for, as one set (2026-09-10). Only an HR viewer gets the
               // "as HR" naming — a manager deciding a vacation is not HR and must not read as it.
               labelOverrides={
                 detail.viewerStepKind === "hr"
-                  ? { acknowledge: "Acknowledge as HR", reject: "Reject as HR" }
-                  : undefined
+                  ? { acknowledge: "Acknowledge as HR", reject: "Reject as HR", return: "Return for edit with comment" }
+                  : { return: "Return for edit with comment" }
               }
               disabledReasons={detail.viewerStepKind === "hr" ? detail.actionReasons : undefined}
               overrideNotice={
