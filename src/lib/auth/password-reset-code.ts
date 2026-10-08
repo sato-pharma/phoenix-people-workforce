@@ -9,6 +9,17 @@ export const passwordResetCodeLength = 6;
 export const passwordResetCodeExpiryMs = 15 * 60 * 1000;
 export const passwordResetCodeMaxAttempts = 5;
 
+/**
+ * The metric label the six digits travel under, from requestPasswordResetCode to the email.
+ *
+ * It is a named constant because the code reaches the employee ONLY through the notification
+ * metrics -> {{detailsTable}} path: the sender writes this label, the password_reset_code template
+ * renders it, and nothing else in the email carries the digits. Shipped on 2026-10-07 against the
+ * shared password_reset template, whose stored body has no {{detailsTable}}, which is why three
+ * codes were delivered to Sato mailboxes with no code inside them.
+ */
+export const passwordResetCodeMetricLabel = "Your code";
+
 // HMAC key. Reusing the session-signing secret (same fail-closed contract as session-token.ts) means
 // the stored code hash cannot be brute-forced offline from a table dump — the key is not in the DB.
 function getCodeHmacSecret() {

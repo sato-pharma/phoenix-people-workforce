@@ -58,6 +58,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   OUTSTATION: "outstation",
   PASSWORD_SETUP: "password_setup",
   PASSWORD_RESET: "password_reset",
+  PASSWORD_RESET_CODE: "password_reset_code",
   PROBATION_REMINDER: "probation_reminder",
   PROBATION_WORKFLOW: "probation_workflow",
   PROBATION_DV_SNAPSHOT: "probation_dv_snapshot",
@@ -510,6 +511,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   offer: emptyRules(["candidate"]),
   password_setup: emptyRules(["candidate"]),
   password_reset: emptyRules(["candidate"]),
+  password_reset_code: emptyRules(["candidate"]),
   probation_reminder: emptyRules(["direct_manager"], ["manager_of_manager", "hr"]),
   probation_workflow: emptyRules(["direct_manager"], ["hr"]),
   // Owner-confirmed recipients. The role vocabulary covers CEO/HR/DM/NSM here; SFE Manager,
@@ -960,6 +962,23 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "password_reset",
     templateName: "Password Reset",
   },
+  // {{detailsTable}} IS THE CODE. requestPasswordResetCode passes the 6 digits as the "Your code"
+  // metric, and detailsTable is the only token that renders a metric - so a body edited to drop it
+  // sends a password-reset email with no code in it, which is exactly what the shared
+  // password_reset body did in production on 2026-10-07. Keep the token in any edit of this body.
+  password_reset_code: {
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}",
+    bodyText: "{{summary}}\n\n{{detailsTable}}",
+    closingText: "If you did not ask for this code, ignore this email - your password stays unchanged.",
+    description:
+      "Self-service password reset: the one-time 6-digit code emailed to the employee's Sato mailbox. The code itself arrives through {{detailsTable}}.",
+    greeting: "Dear {{honorific}}{{recipientName}},",
+    isActive: true,
+    previewText: "Your Phoenix Workforce password reset code.",
+    subject: "{{subject}}",
+    templateKey: "password_reset_code",
+    templateName: "Password Reset Code",
+  },
   password_setup: {
     bodyHtml: "<p>{{summary}}</p><p>This secure link expires: {{expiryText}}.</p><p>Use the action button below to continue.</p>",
     bodyText: "{{summary}}\n\nThis secure link expires: {{expiryText}}.\nUse the action link to continue.",
@@ -1159,6 +1178,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   offer_status: "Recruitment",
   outstation: "Outstation & Expenses",
   password_reset: "Account Access",
+  password_reset_code: "Account Access",
   password_setup: "Account Access",
   payroll_update: "Payroll",
   probation_day30: "Probation",
@@ -2642,6 +2662,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
   const authTemplateKeys: Set<string> = new Set([
     EMAIL_TEMPLATE_KEYS.PASSWORD_SETUP,
     EMAIL_TEMPLATE_KEYS.PASSWORD_RESET,
+    EMAIL_TEMPLATE_KEYS.PASSWORD_RESET_CODE,
     EMAIL_TEMPLATE_KEYS.USER_CREATED,
   ]);
   const unsubscribeHeaders = ((): Record<string, string> | undefined => {

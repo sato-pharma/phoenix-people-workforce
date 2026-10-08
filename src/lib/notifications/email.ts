@@ -1450,6 +1450,7 @@ function isAuthTemplateKey(templateKey: string) {
   return (
     templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_SETUP ||
     templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_RESET ||
+    templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_RESET_CODE ||
     templateKey === EMAIL_TEMPLATE_KEYS.USER_CREATED
   );
 }

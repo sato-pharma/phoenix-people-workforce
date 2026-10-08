@@ -31,6 +31,12 @@ export const emailTemplateKeys = [
   "vacation_balance_settlement",
   "password_setup",
   "password_reset",
+  // The SELF-SERVICE reset code is its OWN template, not a variant of password_reset. That one is
+  // the admin-minted LINK email ("click below"), and its stored production body carries no
+  // {{detailsTable}} - so the 6-digit code rendered into nothing and the employee received an
+  // email with no code in it (production, 2026-10-07: three codes delivered, none usable, none
+  // ever entered). A separate key stops the two emails competing for one admin-editable body.
+  "password_reset_code",
   "user_created",
   "weekly_plans",
   "outstation",
