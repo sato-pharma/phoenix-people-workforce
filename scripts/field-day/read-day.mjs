@@ -232,6 +232,9 @@ export async function readDay(day = cairoToday()) {
       am: myVisits.filter((row) => row.list_type === "AM").length,
       pm: myVisits.filter((row) => row.list_type === "PM").length,
       places: myPlaces.length,
+      // One worst-of-two reading per place counted in `places` above. The Summary's accuracy sentence
+      // sums THESE, so its denominator and numerators are one set (see `figuresOf` in print-day.mjs).
+      readings,
       kept: myPlaces.filter((row) => row.status === "active").length,
       accuracy:
         readings.length === 0
@@ -265,5 +268,5 @@ export async function readDay(day = cairoToday()) {
     })
     .sort((left, right) => LINE_ORDER.indexOf(left.line) - LINE_ORDER.indexOf(right.line));
 
-  return { day, readAt: cairoClock(new Date().toISOString()), groups, places, restDay: restDayOf(day, holiday) };
+  return { day, readAt: cairoClock(new Date().toISOString()), groups, restDay: restDayOf(day, holiday) };
 }
