@@ -31,6 +31,7 @@ type CrmDetailRow = {
   ampm: string | null;
   agent_hr_id: string | null;
   double_hr_id: string | null;
+  double2_hr_id: string | null;
   agent_crm_id: number | null;
   contact_crm_id: number | null;
   double_crm_id: number | null;
@@ -38,7 +39,7 @@ type CrmDetailRow = {
 };
 
 const CRM_DETAIL_COLUMNS =
-  "id,crm_visit_id,visit_date,visit_type,visit_type_description,comment,customer_name,contact_name,ampm,agent_hr_id,double_hr_id,agent_crm_id,contact_crm_id,double_crm_id,crm_save_date";
+  "id,crm_visit_id,visit_date,visit_type,visit_type_description,comment,customer_name,contact_name,ampm,agent_hr_id,double_hr_id,double2_hr_id,agent_crm_id,contact_crm_id,double_crm_id,crm_save_date";
 
 /** Same threshold as attendance/crm-day-maps.ts — above this many distinct employees, a full
  * window scan is cheaper than per-employee pushdown reads. */
@@ -116,8 +117,10 @@ export async function loadCompanyActivityCrmDetail(input: {
   for (const visit of visits) {
     const dateIso = (visit.visit_date ?? "").slice(0, 10);
     if (!dateIso) continue;
-    // A visit counts for whoever it belongs to, as the primary agent or as a double.
-    for (const rawHrId of [visit.agent_hr_id, visit.double_hr_id]) {
+    // A visit counts for whoever it belongs to, as the primary agent or as EITHER partner — the
+    // `doubleHrIds` read already returns a slot-2 row, and dropping it here is what made a chain
+    // visit's other person read as absent.
+    for (const rawHrId of [visit.agent_hr_id, visit.double_hr_id, visit.double2_hr_id]) {
       const hrId = normalizeAttendanceHrId(rawHrId ?? "");
       if (!hrId || !wanted.has(hrId)) continue;
       const byDate = byEmployeeDate.get(hrId) ?? new Map<string, CrmDetailRow[]>();

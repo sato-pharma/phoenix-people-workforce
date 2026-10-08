@@ -37,6 +37,7 @@ import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, countCallRateWorkingDays, isC
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { isOnOrAfterCrmCutover, type CrmCutoverSetting } from "@/lib/crm/cutover";
+import type { StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
 import { CATCH_ALL_CONTACT_CRM_ID, DEFAULT_REP_KPI_STANDARDS, kpiGradeTierOf, type RepKpiStandards } from "@/lib/crm/rep-kpi-reports";
 import { classifyVisit } from "@/lib/crm/visit-types";
 
@@ -56,22 +57,53 @@ function isoDay(value: string | null | undefined): string | null {
 }
 
 /**
- * Which rules score a period.
+ * Which rules score a period, COMPANY-WIDE.
  *
- * A period that STARTS on or after the cutover date is scored by the Phoenix rules. A period that
- * starts before it keeps the old rules whole, even when it ends after it: half a month judged one
+ * A period that STARTS on or after the company-wide cutover is scored by the Phoenix rules. A period
+ * that starts before it keeps the old rules whole, even when it ends after it: half a month judged one
  * way and half the other would be a number that describes neither. The board says so in `note`.
+ *
+ * 🔴 THIS DELIBERATELY DOES NOT ASK A TEAM'S GO-LIVE DAY, and must not be made to. Since the switch
+ * went per team (owner, 2026-10-07: "I want everything to be switched gradually based on the go live
+ * teams") ONE board holds both rules at once — Delta (1) from 3 October, Cairo and Giza from the 10th,
+ * everybody else still on the vendor. A board-level decision has no way to say that: folding a team
+ * start in here would return `"phoenix"` for the WHOLE board and score an unstarted rep by rules his
+ * own app does not follow yet — the mirror image of the defect the per-team switch fixed.
+ * {@link phoenixRuleRepKeys} is the per-team answer: it names the people, one row at a time.
  */
 export function kpiRulesFor(setting: CrmCutoverSetting, dateFrom: string, periodEnd: string): KpiRulesDecision {
-  if (!setting.cutoverDate) return { rules: "legacy", note: null };
+  const from = isoDay(setting.cutoverDate);
+  if (!from) return { rules: "legacy", note: null };
   if (isOnOrAfterCrmCutover(setting, dateFrom)) return { rules: "phoenix", note: null };
-  if (periodEnd.slice(0, 10) >= setting.cutoverDate) {
+  if (periodEnd.slice(0, 10) >= from) {
     return {
       rules: "legacy",
-      note: `This period starts before Phoenix became the visit record on ${setting.cutoverDate}, so it is scored by the old rules. The new KPI rules apply to periods that start on or after that day.`,
+      note: `This period starts before Phoenix became the visit record on ${from}, so it is scored by the old rules. The new KPI rules apply to periods that start on or after that day.`,
     };
   }
   return { rules: "legacy", note: null };
+}
+
+/**
+ * The people scored by the Phoenix rules over a period that begins on `dateFrom` — every rep whose
+ * team had already gone live by its first day. Keys are {@link normalizeHrIdForAccess} form, the same
+ * form `loadStartedRepWindows` returns, so a board can test one row with one lookup.
+ *
+ * A team that goes live INSIDE the period is deliberately not here: the period keeps the old rules
+ * whole, exactly as it does for the company-wide cutover, because half a month judged each way
+ * describes neither. His next period is scored by the new rules.
+ */
+export function phoenixRuleRepKeys(windows: readonly StartedRepWindow[], dateFrom: string): Set<string> {
+  const day = isoDay(dateFrom);
+  const keys = new Set<string>();
+  if (!day) return keys;
+  for (const window of windows) {
+    if (!window.hrIdKey) continue;
+    if (window.from > day) continue;
+    if (window.until != null && day >= window.until) continue;
+    keys.add(window.hrIdKey);
+  }
+  return keys;
 }
 
 /**

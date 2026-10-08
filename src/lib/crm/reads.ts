@@ -553,9 +553,11 @@ export type CrmVisitFilter = {
    * per-employee reads (e.g. probation SFE evidence) where the caller's hr-id casing may differ
    * from the mirror's stored casing. Combine with a date range, not with `agentHrIds`. */
   agentHrIdILike?: string;
-  /** Restrict to these resolved DOUBLE-visitor hr ids (`double_hr_id IN`). Empty array → no rows.
-   * Matched case-insensitively (see `agentHrIds`). For "double visits conducted by this manager"
-   * reads (e.g. Employee 360 leadership activity). */
+  /** Restrict to these resolved partner hr ids, in EITHER slot (`double_hr_id IN … OR double2_hr_id
+   * IN …`). Empty array → no rows. Matched case-insensitively (see `agentHrIds`). For "double visits
+   * conducted by this manager" reads (e.g. Employee 360 leadership activity) — and slot 2 is in it
+   * because a senior manager or a product manager on a chain stands there, and asking slot 1 alone
+   * answered zero for them. */
   doubleHrIds?: readonly string[];
   /** Restrict to these visit types (`visit_type IN`). */
   visitTypes?: readonly number[];
@@ -610,15 +612,20 @@ export type CrmVisitFilter = {
 };
 
 /**
- * PostgREST `or` expression for {@link CrmVisitFilter.participantCrmIds}: agent OR double-visit
- * partner in the id list. Non-finite ids are dropped and duplicates collapsed; returns `null` when
+ * PostgREST `or` expression for {@link CrmVisitFilter.participantCrmIds}: agent OR EITHER person
+ * beside him in the id list. Non-finite ids are dropped and duplicates collapsed; returns `null` when
  * nothing usable is left, which the door treats as "no rows". Pure, exported for its unit test.
+ *
+ * Slot 2 is here because a chain visit's second person is as much a participant as its first. Until
+ * 2026-10-07 the view had no second slot at all, so a senior manager or a product manager on a chain
+ * was unreachable by every participant read — the manager partner roll-up and the outstation workload
+ * evidence among them.
  */
 export function buildParticipantCrmIdOrFilter(ids: readonly number[]): string | null {
   const clean = Array.from(new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id))));
   if (clean.length === 0) return null;
   const list = clean.join(",");
-  return `agent_crm_id.in.(${list}),double_crm_id.in.(${list})`;
+  return `agent_crm_id.in.(${list}),double_crm_id.in.(${list}),double2_crm_id.in.(${list})`;
 }
 
 /** A PostgREST `in` list of text values, double-quoted so an hr id carrying a comma, a dot or a
@@ -635,15 +642,18 @@ function usableHrIdFilterValues(ids: readonly string[]): string[] {
 }
 
 /**
- * PostgREST `or` expression for {@link CrmVisitFilter.participantHrIds}: agent OR double-visit
- * partner hr id in the list, every casing variant included. `null` when no usable id is left.
+ * PostgREST `or` expression for {@link CrmVisitFilter.participantHrIds}: agent OR EITHER person beside
+ * him, hr id in the list, every casing variant included. `null` when no usable id is left.
  * Pure, exported for its unit test.
+ *
+ * The hr half is the ONLY way slot 2 can be matched for a product manager or a senior with no CRM
+ * account of his own, which is the ordinary case for a head-office manager.
  */
 export function buildParticipantHrIdOrFilter(ids: readonly string[]): string | null {
   const values = usableHrIdFilterValues(ids);
   if (values.length === 0) return null;
   const list = quotedInList(values);
-  return `agent_hr_id.in.(${list}),double_hr_id.in.(${list})`;
+  return `agent_hr_id.in.(${list}),double_hr_id.in.(${list}),double2_hr_id.in.(${list})`;
 }
 
 /**
@@ -712,9 +722,20 @@ export function applyVisitFilter(
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", expandHrIdFilterValues(filter.agentHrIds));
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
-  if (filter.doubleHrIds && filter.doubleHrIds.length > 0) result = result.in("double_hr_id", expandHrIdFilterValues(filter.doubleHrIds));
+  // EITHER slot, because "the double visits this manager was on" means every visit he was on. A senior
+  // manager or a product manager on a chain stands in slot 2, and matching slot 1 alone hid him —
+  // which is why Rasha Sabry Khalifa and Hany Saad Omar read as zero October visits before 2026-10-07.
+  if (filter.doubleHrIds && filter.doubleHrIds.length > 0) {
+    const partnerIds = quotedInList(expandHrIdFilterValues(filter.doubleHrIds));
+    result = result.or(`double_hr_id.in.(${partnerIds}),double2_hr_id.in.(${partnerIds})`);
+  }
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
   // See REAL_DOUBLE_PARTNER_OR_FILTER for why a stray `double_hr_id` on a vendor row is not a partner.
+  //
+  // Slot 2 needs NO arm of its own here, and must not be given one: the view fills slot 1 from
+  // coalesce(manager, product_manager, senior), so slot 2 can never carry somebody while slot 1 is
+  // empty. Every visit with a second person already matches on its first. The same reasoning covers
+  // `requireDoubleHrId` below.
   if (filter.doubleOnly) {
     result = result.or(REAL_DOUBLE_PARTNER_OR_FILTER);
   }
@@ -1412,7 +1433,8 @@ const MAX_EXPORT_ROWS = 20000;
 const visitReportColumns =
   "id, agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, " +
   "contact_crm_id, contact_name, crm_save_date, crm_visit_id, customer_name, double_crm_id, " +
-  "double_hr_id, double_name, visit_date, visit_date_time, visit_type, visit_type_description";
+  "double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, " +
+  "visit_date, visit_date_time, visit_type, visit_type_description";
 
 export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
   const crmSaveDate = (row.crm_save_date as string | null) ?? null;
@@ -1435,6 +1457,10 @@ export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
     doubleCrmId: row.double_crm_id == null ? null : Number(row.double_crm_id),
     doubleHrId: (row.double_hr_id as string | null) ?? null,
     doubleName: (row.double_name as string | null) ?? null,
+    // The chain's other person. Null on every vendor row, which carries one partner column.
+    double2CrmId: row.double2_crm_id == null ? null : Number(row.double2_crm_id),
+    double2HrId: (row.double2_hr_id as string | null) ?? null,
+    double2Name: (row.double2_name as string | null) ?? null,
     id: row.id as string,
     nearestCheckinAddress: null,
     nearestCheckinTime: null,

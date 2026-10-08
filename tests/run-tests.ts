@@ -1813,6 +1813,7 @@ import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
 import { runCrmNativeVacationDaysTests } from "./crm-native-vacation-days.test.ts";
 import { runCrmContactListChangesTests } from "./crm-contact-list-changes.test.ts";
+import { runDoctorListsEverywhereTests } from "./doctor-lists-everywhere.test.ts";
 import { runDoctorListsFollowTeamStartsTests } from "./doctor-lists-follow-team-starts.test.ts";
 import { runCrmSwitchOffSafetyTests } from "./crm-switch-off-safety.test.ts";
 import { runCrmNewHireKeyingTests } from "./crm-new-hire-keying.test.ts";
@@ -6687,6 +6688,11 @@ await runTest(
 await runTest(
   "a doctor list follows ITS OWN TEAM's Phoenix CRM start, not the global cutover date (which is NULL on production, so the apply function refused EVERY change for everyone while the hourly rebuild still ran the vendor passes): one migration moves both halves, all FOUR assignment passes skip a started rep - the INSERT above all, because a removed doctor has no open row and would be re-opened the next hour - the HR id decides with the CRM id only as a fallback, contact IDENTITY stays global on purpose, the run reports what it froze, and the migration writes no rows so every list reads the same today",
   runDoctorListsFollowTeamStartsTests,
+);
+
+await runTest(
+  "a started rep's doctor list IS his Phoenix CRM list, in the SAME table as a new dated period (the vendor period closed the day before his team started, the Phoenix period opened on it, nothing deleted, so a month already computed still reads the list as it stood): the fifth pass runs outside the global v_lists_live gate, a rep with NO Phoenix list KEEPS his vendor list (Nermeen Salah's 25, Mahmoud ElHassanin's 1, and every district manager's none), a drop closes the period at the manager's own day and a regrade opens a new one, a Phoenix-born doctor gets a crm_contacts row before the foreign key needs it, and an approved list change now reaches phoenix_crm_customers so the next hourly run cannot undo it",
+  runDoctorListsEverywhereTests,
 );
 
 await runTest(

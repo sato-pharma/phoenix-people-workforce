@@ -174,6 +174,7 @@ export function runCrmVisitTypeLabelTests() {
     customer_name: null,
     agent_hr_id: "B-1",
     double_hr_id: null,
+    double2_hr_id: null,
   });
   assert.equal(
     describeCrmDay([dayRow(-16, "Unknown", "Training")]),

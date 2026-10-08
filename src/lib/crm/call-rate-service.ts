@@ -11,7 +11,8 @@
 import { computeCallRate, type CallRateReport, type VisitForCallRate } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays, type CallRateHolidayLookup } from "@/lib/crm/call-rate-holidays";
 import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
-import { kpiRulesFor } from "@/lib/crm/phoenix-kpi-rules";
+import { kpiRulesFor, phoenixRuleRepKeys } from "@/lib/crm/phoenix-kpi-rules";
+import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -102,7 +103,7 @@ export async function loadCallRateReport(
   // visit of the SAME agent, so neither ever looks across reps: these reps' rows give these reps'
   // figures whether or not anyone else's month was read beside them.
   const narrowTo = input.agents ? { agentCrmOrHrIds: { crmIds: input.agents.crmIds, hrIds: input.agents.hrIds } } : {};
-  const [rawVisits, checkins, holidays, cutover] = await Promise.all([
+  const [rawVisits, checkins, holidays, cutover, startedWindows] = await Promise.all([
     queryVisits<VisitForCallRate & { crm_visit_id: number | null; double_crm_id: number | null }>({
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
@@ -114,8 +115,15 @@ export async function loadCallRateReport(
     // Phase 6: from the CRM cutover every submitted regular visit counts. With no date set, or an
     // unreadable setting, this answers the old rule and nothing on any screen moves.
     getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER),
+    // THE SWITCH IS PER GO-LIVE TEAM (owner, 2026-10-07). The global cutover date above is still null
+    // and a team start never sets it, so asking it alone judged a started rep's submitted visits
+    // against the vendor's GPS rule. Fails OPEN — an unreadable answer is "no started team", which
+    // leaves every row exactly where it was.
+    loadStartedRepWindows(),
   ]);
   const rules = kpiRulesFor(cutover, input.dateFrom, input.dateTo);
+  // Per rep, so one report can hold both rules: his team's go-live decides his row.
+  const phoenixBasisHrKeys = phoenixRuleRepKeys(startedWindows, input.dateFrom);
 
   // The same collapse every other CRM consumer applies, so this cannot disagree with the visit
   // count shown beside it on the same screen.
@@ -128,6 +136,7 @@ export async function loadCallRateReport(
     campaignLimit: input.campaignLimit,
     holidays: holidays.dates,
     basis: rules.rules === "phoenix" ? "submitted" : "verified",
+    phoenixBasisHrKeys,
   });
   return { ...report, basisNote: rules.note, holidaysComplete: holidays.complete };
 }

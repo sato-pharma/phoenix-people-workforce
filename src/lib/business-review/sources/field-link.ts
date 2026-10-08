@@ -66,7 +66,7 @@ const IN_CHUNK = 200;
 
 const VISIT_COLUMNS =
   "agent_crm_id, agent_hr_id, ampm, contact_crm_id, crm_save_date, crm_visit_id, double_crm_id, " +
-  "double_hr_id, source, speciality, visit_date, visit_type";
+  "double_hr_id, double2_hr_id, source, speciality, visit_date, visit_type";
 
 type VisitRow = {
   agent_crm_id: number | null;
@@ -77,6 +77,7 @@ type VisitRow = {
   crm_visit_id: number | null;
   double_crm_id: number | null;
   double_hr_id: string | null;
+  double2_hr_id: string | null;
   source?: string | null;
   speciality: string | null;
   visit_date: string | null;
@@ -231,19 +232,21 @@ export async function loadFieldLinkFacts(scope: FieldLinkScope): Promise<FieldLi
 
     // A ride: a real partner on a fieldwork type, the one predicate Double Visit Analytics uses.
     if (!isCrmDoubleVisitRow(row)) continue;
-    const manager = hrKey(row.double_hr_id);
-    if (!manager) continue;
-    if (repSet.has(agent)) {
-      const key = `${manager}|${agent}|${period}`;
-      const entry = rideKeys.get(key) ?? { days: new Set<string>(), fact: { days: 0, managerHrId: manager, period, repHrId: agent, visits: 0 } };
-      entry.days.add(date);
-      entry.fact.visits += 1;
-      rideKeys.set(key, entry);
-    } else if (managerSet.has(manager)) {
-      const key = `${manager}|${period}`;
-      const days = outside.get(key) ?? new Set<string>();
-      days.add(`${agent}|${date}`);
-      outside.set(key, days);
+    // BOTH partner slots: a chain visit carries two managers and each really gave that ride.
+    for (const manager of [hrKey(row.double_hr_id), hrKey(row.double2_hr_id)]) {
+      if (!manager) continue;
+      if (repSet.has(agent)) {
+        const key = `${manager}|${agent}|${period}`;
+        const entry = rideKeys.get(key) ?? { days: new Set<string>(), fact: { days: 0, managerHrId: manager, period, repHrId: agent, visits: 0 } };
+        entry.days.add(date);
+        entry.fact.visits += 1;
+        rideKeys.set(key, entry);
+      } else if (managerSet.has(manager)) {
+        const key = `${manager}|${period}`;
+        const days = outside.get(key) ?? new Set<string>();
+        days.add(`${agent}|${date}`);
+        outside.set(key, days);
+      }
     }
   }
 
@@ -253,13 +256,15 @@ export async function loadFieldLinkFacts(scope: FieldLinkScope): Promise<FieldLi
     const date = text(row.visit_date).slice(0, 10);
     const period = date.slice(0, 7);
     if (!inWindow.has(period) || !isCrmDoubleVisitRow(row)) continue;
-    const manager = hrKey(row.double_hr_id);
     const agent = hrKey(row.agent_hr_id);
-    if (!managerSet.has(manager) || repSet.has(agent)) continue;
-    const key = `${manager}|${period}`;
-    const days = outside.get(key) ?? new Set<string>();
-    days.add(`${agent}|${date}`);
-    outside.set(key, days);
+    if (repSet.has(agent)) continue;
+    for (const manager of [hrKey(row.double_hr_id), hrKey(row.double2_hr_id)]) {
+      if (!managerSet.has(manager)) continue;
+      const key = `${manager}|${period}`;
+      const days = outside.get(key) ?? new Set<string>();
+      days.add(`${agent}|${date}`);
+      outside.set(key, days);
+    }
   }
 
   // Every visited contact gets the register's brick, listed or not, so a brick's work is complete.

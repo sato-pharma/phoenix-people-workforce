@@ -335,13 +335,19 @@ export function runCrmNewHireKeyingTests() {
   // ── C6: the participant and check-in identity filters union CRM ids with hr ids ──────────────
   {
     const union = buildParticipantOrFilter({ participantCrmIds: [5], participantHrIds: ["N-900"] });
-    assert.ok(union?.startsWith("agent_crm_id.in.(5),double_crm_id.in.(5),agent_hr_id.in.("), "C6: the crm half comes first, unchanged");
+    assert.ok(
+      union?.startsWith("agent_crm_id.in.(5),double_crm_id.in.(5),double2_crm_id.in.(5),agent_hr_id.in.("),
+      "C6: the crm half comes first, and it asks BOTH partner slots",
+    );
     assert.ok(union?.includes('"N-900"') && union.includes('"n-900"'), "C6: the hr half carries the casing variants, quoted");
-    assert.ok(union?.includes(",double_hr_id.in.("), "C6: agent OR double partner on the hr side too");
+    assert.ok(
+      union?.includes(",double_hr_id.in.(") && union.includes(",double2_hr_id.in.("),
+      "C6: agent OR either partner slot on the hr side too",
+    );
     assert.equal(
       buildParticipantOrFilter({ participantCrmIds: [5] }),
-      "agent_crm_id.in.(5),double_crm_id.in.(5)",
-      "C6: a crm-only caller reads exactly what it always did",
+      "agent_crm_id.in.(5),double_crm_id.in.(5),double2_crm_id.in.(5)",
+      "C6: a crm-only caller reads the agent and both partner slots",
     );
 
     const hrOnly: Call[] = [];

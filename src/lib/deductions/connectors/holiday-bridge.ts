@@ -151,11 +151,12 @@ async function loadNoRecordOnBridgeDays(input: {
   const rows = await scanVisitsForRangeCreditingPartners<{
     agent_hr_id: string | null;
     double_hr_id: string | null;
+    double2_hr_id: string | null;
     visit_date: string | null;
   }>({
     dateFrom: first,
     dateTo: last,
-    columns: "agent_hr_id, double_hr_id, visit_date",
+    columns: "agent_hr_id, double_hr_id, double2_hr_id, visit_date",
   });
   for (const row of rows) {
     const date = String(row.visit_date ?? "").slice(0, 10);
@@ -172,6 +173,10 @@ async function loadNoRecordOnBridgeDays(input: {
     if (agent) withActivity.add(`${agent}:${date}`);
     const double = compactDeductionsHrId(String(row.double_hr_id ?? ""));
     if (double) withActivity.add(`${double}:${date}`);
+    // And the chain's SECOND manager, who is just as present and would otherwise be charged for a
+    // day he spent in the field.
+    const double2 = compactDeductionsHrId(String(row.double2_hr_id ?? ""));
+    if (double2) withActivity.add(`${double2}:${date}`);
   }
 
   // Anyone who produced CRM signal at some point this month. Zero signal for a

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripSqlComments } from "./support/comment-strip.ts";
+import { lastDefinerRaw, liveFunctionBody } from "./support/sql-definer.ts";
 
 // A doctor list follows ITS OWN TEAM'S Phoenix CRM start, not one global cutover date.
 //
@@ -25,7 +26,9 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 // not (1 open row). A guard that merely disabled the pass would have left B-15's removed too.
 
 const MIGRATION = "supabase/migrations/20261004120000_doctor_lists_follow_each_team_start.sql";
-/** The LAST definer of crm_contact_list_change_apply, so the body the database actually runs. */
+/** The migration that re-emitted the apply function to neutralise ONE WORD of its refusal (2026-10-06).
+ *  It is NOT the last definer any more — 20261007200000 is — so the live body comes from
+ *  liveFunctionBody(), and this path is read only to prove that re-emission changed nothing else. */
 const NEUTRAL_MIGRATION = "supabase/migrations/20261006185533_crm_contact_list_refusal_neutral.sql";
 
 /** The started-rep anti-join, as every assignment pass must spell it. */
@@ -79,13 +82,23 @@ function assignmentPasses(refresh: string): Record<string, string> {
 }
 
 export function runDoctorListsFollowTeamStartsTests() {
-  const raw = read(MIGRATION);
-  const sql = stripSqlComments(raw);
+  const sql = stripSqlComments(read(MIGRATION));
 
   // ── 1. Both halves move together, in one migration ────────────────────────────────────────────
-  const apply = functionBody(sql, "crm_contact_list_change_apply");
-  const refresh = functionBody(sql, "crm_contact_master_refresh");
-  assert.ok(apply.length > 0 && refresh.length > 0, "one migration redefines both halves of the list machinery");
+  // THIS migration's own two bodies, which is what section 6 measures. Everything after section 1 reads
+  // the LIVE definers instead: a pin naming a path keeps reading that file after a later migration has
+  // replaced the function, so it stays green while the database does the opposite of what it asserts.
+  // Both halves have been redefined since — the apply function by 20261006185533, both of them by
+  // 20261007200000 — so a pin left on MIGRATION would now be asserting about SQL nothing runs.
+  const applyHere = functionBody(sql, "crm_contact_list_change_apply");
+  const refreshHere = functionBody(sql, "crm_contact_master_refresh");
+  assert.ok(
+    applyHere.length > 0 && refreshHere.length > 0,
+    "one migration redefines both halves of the list machinery",
+  );
+
+  const apply = liveFunctionBody("crm_contact_list_change_apply");
+  const refresh = liveFunctionBody("crm_contact_master_refresh");
 
   // ── 2. The apply half no longer refuses on an unset global date ───────────────────────────────
   assert.match(
@@ -194,7 +207,7 @@ export function runDoctorListsFollowTeamStartsTests() {
   // Measured OUTSIDE both function bodies. Inside them a `delete from public.crm_contact_assignments`
   // (the discard pass) and `drop table if exists pg_temp.…` are the pre-existing, correct shape — an
   // earlier version of this assertion matched those and failed, which is what it is guarding against.
-  const outsideFunctions = sql.replace(apply, "").replace(refresh, "");
+  const outsideFunctions = sql.replace(applyHere, "").replace(refreshHere, "");
   assert.doesNotMatch(
     outsideFunctions,
     /\b(delete from|truncate|alter table|drop (table|function|view))\b/i,
@@ -215,12 +228,12 @@ export function runDoctorListsFollowTeamStartsTests() {
 
   // ── 7. The accompanying comments say which rule is live ───────────────────────────────────────
   assert.match(
-    raw,
+    lastDefinerRaw(/create or replace function public\.crm_contact_master_refresh\(/, "crm_contact_master_refresh"),
     /comment on function public\.crm_contact_master_refresh\(boolean\) is/,
     "the refresh carries a comment, so psql \\df+ states the rule",
   );
   assert.match(
-    raw,
+    lastDefinerRaw(/create or replace function public\.crm_contact_list_change_apply\(/, "crm_contact_list_change_apply"),
     /comment on function public\.crm_contact_list_change_apply\(uuid, text, text\) is/,
     "the apply function carries a comment too",
   );
@@ -249,13 +262,14 @@ export function runDoctorListsFollowTeamStartsTests() {
 
   // The refusal is the DATABASE'S OWN SENTENCE, byte for byte, so a screen can never explain a refusal
   // differently from the raise that produced it.
-  // Read from the LAST DEFINER — the body the database runs — never from the older migration whose text
-  // it replaced. The whole function is re-emitted there and differs by one word, which is checked below.
-  const liveApply = functionBody(stripSqlComments(read(NEUTRAL_MIGRATION)), "crm_contact_list_change_apply");
+  // Read from the LIVE definer — the body the database runs — never from a migration whose text a later
+  // one replaced. `neutralApply` below is the 2026-10-06 re-emission, kept only to prove that changing
+  // the one word changed nothing else.
+  const neutralApply = functionBody(stripSqlComments(read(NEUTRAL_MIGRATION)), "crm_contact_list_change_apply");
   const sentence = /"(Doctor lists for this rep still come from iReports360[^"]*)"/.exec(rules);
   assert.ok(sentence, "rules.ts must carry the team-not-started message");
   assert.ok(
-    liveApply.includes(sentence[1]),
+    apply.includes(sentence[1]),
     "the message the screen shows is the one crm_contact_list_change_apply raises, verbatim",
   );
   // Nothing this app shows anybody assumes its subject is a man (owner, 2026-10-05). The guard that
@@ -266,16 +280,16 @@ export function runDoctorListsFollowTeamStartsTests() {
   // a literal backspace byte and the pattern matched nothing — a check that can never fail, wearing
   // the shape of one that guards a sentence a person reads. A control character does not show in a diff.
   assert.doesNotMatch(
-    liveApply,
+    apply,
     new RegExp("\\bhis\\b"),
     "the refusal the editor reads is neutral, like every other sentence this app shows",
   );
   // And it changed ONE WORD: the rest of the body is 20261004120000's, so re-emitting it to fix the
   // wording cannot have quietly reverted the team-start rule itself.
   assert.equal(
-    liveApply.replace("their team has not started", "his team has not started"),
-    apply,
-    "the re-emitted body is the previous definer's, byte for byte, apart from the one word",
+    neutralApply.replace("their team has not started", "his team has not started"),
+    applyHere,
+    "the 2026-10-06 re-emission is 20261004120000's body, byte for byte, apart from the one word",
   );
 
   // The gate reads both halves of the ownership and asks about the rep it was handed.
