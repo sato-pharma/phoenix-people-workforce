@@ -29,6 +29,15 @@ export function offerRequiresSeat(title: string | null | undefined): boolean {
   return isMedicalRepJobTitle(value) || DISTRICT_MANAGER_TITLE.test(value);
 }
 
+/**
+ * Payment mode is fixed by title (owner, 2026-10-08): the field force — Medical Representatives and
+ * District Managers, Senior included — is paid in two parts, every other title in one part. Without
+ * this the record took Add Employee's "two parts" default, wrong for every office joiner.
+ */
+export function joiningFormPaymentMode(title: string | null | undefined): "one_part" | "two_parts" {
+  return offerRequiresSeat(title) ? "two_parts" : "one_part";
+}
+
 export const OFFER_SEAT_REQUIRED_MESSAGE =
   "A Medical Representative or District Manager offer must name its seat in the organogram before it is sent, so the joining form can place the new hire in it.";
 

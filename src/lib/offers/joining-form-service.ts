@@ -18,6 +18,7 @@ import { buildOfferHireDraft } from "@/lib/offers/hire-draft";
 import {
   JOINING_FORM_GOVERNORATES,
   JOINING_FORM_STATE_MESSAGE,
+  joiningFormPaymentMode,
   joiningFormState,
   offerRequiresSeat,
   sameJoinerName,
@@ -479,6 +480,7 @@ export async function submitJoiningForm(
     residenceAddress: value.residenceAddress,
     residenceArea: value.residenceArea,
     residenceCity: value.residenceCity,
+    salaryPaymentMode: joiningFormPaymentMode(draft.jobTitle),
     workEmail: satoEmail,
     ...(pay
       ? {

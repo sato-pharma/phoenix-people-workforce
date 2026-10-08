@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { JoiningFormPage, SatoBand, SatoFooter } from "@/components/offers/joining-form-page";
+import { JoiningFormPage, SatoNotice } from "@/components/offers/joining-form-page";
 import { loadJoiningForm } from "@/lib/offers/joining-form-service";
 
 export const dynamic = "force-dynamic";
@@ -36,15 +36,5 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
       ? "The link may be incomplete or out of date. Please open it again from the offer email, or reply to that email and our HR team will help you."
       : view.body;
 
-  return (
-    <div className="min-h-screen bg-[#f2f5f7] text-[#45515a]">
-      <SatoBand eyebrow="Joining form" title={title} />
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-8">
-        <section className="border border-[#dde4e8] bg-white px-4 py-5 sm:px-6">
-          <p className="text-[15px] leading-relaxed">{body}</p>
-        </section>
-      </main>
-      <SatoFooter />
-    </div>
-  );
+  return <SatoNotice body={body} title={title} />;
 }
