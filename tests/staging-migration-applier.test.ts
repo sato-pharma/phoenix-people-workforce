@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import {
   assertStagingTarget,
@@ -11,6 +13,7 @@ import {
   isWithinGraceWindow,
   selectMissingMigrations,
   type LocalMigration,
+  MIGRATIONS_DIR,
   type RemoteLedger,
 } from "../scripts/lib/migration-inventory.ts";
 
@@ -43,6 +46,72 @@ function migration(fileName: string, commitTimeMs: number | null = null): LocalM
 
 function ledger(versions: string[] = [], names: string[] = []): RemoteLedger {
   return { versions: new Set(versions), names: new Set(names) };
+}
+
+/**
+ * The first dollar-sign fault in a migration — a block opened and never closed, or a lone dollar
+ * that opens nothing — or null when the file is sound.
+ *
+ * WHY. The applier hands Postgres a whole FILE as one simple query, so either fault refuses the
+ * WHOLE migration with `syntax error at or near "$"`, and the only place that shows is this
+ * unattended workflow, after the merge. It happened on 2026-10-09: a script that rewrote
+ * 20261009120000_dispute_center.sql replaced text with String.replace, whose replacement string
+ * reads a doubled dollar as an escape for a single one — so three `do` blocks opened with one
+ * dollar instead of two. Every test that read that migration passed (they all match substrings),
+ * it merged, the staging apply went red, and the production deploy sat held behind it.
+ *
+ * WHY IT IS A SCANNER AND NOT A COUNT. 20260901133000_honour_manual_direct_areas.sql closes a
+ * dollar-quoted note on a line that STARTS with `--`, inside the string, where those two
+ * characters are text and not a comment. Anything that strips comments first loses that closing
+ * tag and calls a sound migration broken. So this walks the file the way the server does:
+ * comments, single-quoted strings and dollar-quoted blocks, in that order.
+ */
+function dollarFault(sql: string): string | null {
+  const lineOf = (index: number) => sql.slice(0, index).split("\n").length;
+  let i = 0;
+  while (i < sql.length) {
+    if (sql.startsWith("--", i)) {
+      const nl = sql.indexOf("\n", i);
+      i = nl === -1 ? sql.length : nl + 1;
+      continue;
+    }
+    if (sql.startsWith("/*", i)) {
+      let depth = 1;
+      i += 2;
+      while (i < sql.length && depth > 0) {
+        if (sql.startsWith("/*", i)) { depth += 1; i += 2; continue; }
+        if (sql.startsWith("*/", i)) { depth -= 1; i += 2; continue; }
+        i += 1;
+      }
+      continue;
+    }
+    if (sql[i] === "'") {
+      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === "'") {
+          if (sql[i + 1] === "'") { i += 2; continue; }
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (sql[i] === "$") {
+      const tag = /^\$([A-Za-z_][A-Za-z_0-9]*)?\$/.exec(sql.slice(i));
+      if (!tag) {
+        // Not a tag and not a parameter placeholder: outside a block, a bare dollar is the fault.
+        if (/^\$[0-9]/.test(sql.slice(i))) { i += 1; continue; }
+        return "a lone $ that opens no block, line " + lineOf(i);
+      }
+      const close = sql.indexOf(tag[0], i + tag[0].length);
+      if (close === -1) return tag[0] + " opened at line " + lineOf(i) + " and never closed";
+      i = close + tag[0].length;
+      continue;
+    }
+    i += 1;
+  }
+  return null;
 }
 
 export function runStagingMigrationApplierTests() {
@@ -241,5 +310,19 @@ export function runStagingMigrationApplierTests() {
     ),
     [],
     "an acknowledged exception is never selected, even against a completely empty ledger",
+  );
+
+  // ── No migration carries a dollar-sign fault ──────────────────────────────────────────────────
+  const faults: string[] = [];
+  for (const fileName of readdirSync(MIGRATIONS_DIR)) {
+    if (!fileName.endsWith(".sql")) continue;
+    const fault = dollarFault(readFileSync(path.join(MIGRATIONS_DIR, fileName), "utf8"));
+    if (fault !== null) faults.push(fileName + ": " + fault);
+  }
+  assert.deepEqual(
+    faults,
+    [],
+    `these migrations would be refused WHOLE by the applier, which sends one file as one query: ` +
+      `${faults.join(", ")}`,
   );
 }

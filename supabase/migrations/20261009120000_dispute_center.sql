@@ -161,7 +161,7 @@ begin
 end;
 $$;
 
-do $
+do $$
 begin
   if not exists (
     select 1 from pg_trigger
@@ -171,7 +171,7 @@ begin
       before update or delete on public.dispute_case_events
       for each row execute function public.phx_dispute_center_append_only();
   end if;
-end $;
+end $$;
 
 -- ── 4. Saved Case Briefings and questions — append-only ──────────────────────────────────────────
 create table if not exists public.dispute_assist_entries (
@@ -198,7 +198,7 @@ comment on table public.dispute_assist_entries is
   'Every Case Briefing and every question asked about a dispute, with the checked answer and the fingerprint of the records it was built from. Super Admin only, append-only.';
 create index if not exists dispute_assist_entries_case_idx on public.dispute_assist_entries (case_kind, case_ref, created_at);
 
-do $
+do $$
 begin
   if not exists (
     select 1 from pg_trigger
@@ -208,7 +208,7 @@ begin
       before update or delete on public.dispute_assist_entries
       for each row execute function public.phx_dispute_center_append_only();
   end if;
-end $;
+end $$;
 
 -- ── 5. Refunds owed after a paid month ──────────────────────────────────────────────────────────
 create table if not exists public.dispute_refunds (
@@ -317,7 +317,7 @@ end;
 $$;
 revoke execute on function public.phx_attendance_balance_reversal_shape() from public, anon, authenticated;
 
-do $
+do $$
 begin
   if not exists (
     select 1 from pg_trigger
@@ -328,7 +328,7 @@ begin
       before insert on public.attendance_annual_balance_charges
       for each row execute function public.phx_attendance_balance_reversal_shape();
   end if;
-end $;
+end $$;
 
 comment on table public.attendance_annual_balance_charges is
   'Annual leave days spent on attendance deductions the employee chose to pay from balance, and (negative rows, reverses_charge_id set) days given back when that dispute was revised to upheld. Every annual balance read sums days, so a reversal nets itself. Charges are written only by phx_attendance_settle_digest_line, reversals only by phx_attendance_revise_digest_dispute; never updated or deleted.';

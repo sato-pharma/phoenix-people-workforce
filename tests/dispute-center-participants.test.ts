@@ -158,4 +158,37 @@ export async function runDisputeCenterParticipantsTests() {
     assert.ok(row && row.includes("csrfRequired: true"), `the ${pattern} route requires a CSRF token`);
     assert.ok(row && row.includes('classification: "mutation"'), `the ${pattern} route is audited as a mutation`);
   }
+
+  // ── An ANONYMOUS caller is refused, not handed an empty list ──────────────────────────────────
+  // Measured on production 2026-10-09, straight after the merge: an unauthenticated GET of
+  // /api/dispute-center/cases answered 200 with {"cases":[]} where the private-calendar sibling
+  // answers 403. No row leaked — each list self-scopes and an anonymous caller has no hr id — but
+  // an empty 200 is not a refusal. The registry rows all declare attendance:read with a
+  // domain-helper guard, so each list has to assert it, and the route has to assert it before the
+  // per-module fan-out, whose catch would otherwise report a refusal as a module being unavailable.
+  for (const [file, fn] of [
+    ["src/lib/dispute-center/calendar.ts", "listCalendarCases"],
+    ["src/lib/dispute-center/deduction.ts", "listDeductionCases"],
+    ["src/lib/dispute-center/digest.ts", "listDigestCases"],
+  ] as const) {
+    const source = readFileSync(file, "utf8");
+    const start = source.indexOf(`export async function ${fn}(`);
+    assert.ok(start > 0, `${fn} is exported from ${file}`);
+    const head = source.slice(start, start + 1200);
+    assert.match(
+      head,
+      /await assertPermission\(access, "attendance", "read"\);/,
+      `${fn} asserts attendance:read itself — the registry says the domain helper is the guard`,
+    );
+  }
+  const listRoute = readFileSync("app/api/dispute-center/cases/route.ts", "utf8");
+  const asserted = listRoute.indexOf('await assertPermission(access, "attendance", "read");');
+  const fanOut = listRoute.indexOf("kinds.map(");
+  assert.ok(asserted > 0, "the list route asserts attendance:read");
+  assert.ok(asserted < fanOut, "…before the per-module fan-out, not inside it");
+  assert.match(
+    listRoute,
+    /if \(error instanceof ApiError\) throw error;/,
+    "a refusal leaves the route as a refusal, never as a module reported unavailable with a 200",
+  );
 }

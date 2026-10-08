@@ -1,4 +1,4 @@
-import type { AccessContext } from "@/lib/auth/permissions";
+import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { compactDeductionsHrId, normalizeMonthKey } from "@/lib/deductions/candidate-key.ts";
 import { attachCommentAttachments } from "@/lib/deductions/comment-attachments.ts";
 import { isDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
@@ -353,6 +353,13 @@ async function loadParts(candidateIds: string[]): Promise<{
  * readers) see all of them; an employee sees their own. Uncapped and including cancelled deductions.
  */
 export async function listDeductionCases(access: AccessContext): Promise<DisputeCase[]> {
+  // The registry row for every dispute-center route declares attendance:read with a
+  // domain-helper guard, so the helper is where it has to be enforced. Measured on production
+  // 2026-10-09: without this an UNAUTHENTICATED GET of /api/dispute-center/cases answered 200
+  // with an empty list, where the private-calendar sibling answers 403. No row leaked — each
+  // list self-scopes and an anonymous caller has no hr id — but an empty 200 is not a refusal,
+  // and "the list came back empty" must never be what stands in for access control.
+  await assertPermission(access, "attendance", "read");
   const viewerHrId = viewerHrIdOf(access);
   const isReviewer = isDeductionsDecisionActor(access);
   const viewerCompact = compactDeductionsHrId(viewerHrId);
