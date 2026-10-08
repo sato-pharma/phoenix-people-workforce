@@ -72,7 +72,8 @@ import {
   isVisitObjection,
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
-import { raisesVisitAsk, VISIT_ASK_KIND_LABELS } from "@/lib/phoenix-crm/visit-ask-rules";
+import { raisesVisitAsk } from "@/lib/phoenix-crm/visit-ask-rules";
+import { PHOENIX_VISIT_KIND_LABELS } from "@/lib/phoenix-crm/visit-kind-labels";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import {
@@ -123,14 +124,6 @@ function record(raw: unknown): Row {
 }
 
 export type VisitLocationFlag = "ok" | "far" | "weak_gps" | "no_place";
-
-const KIND_LABEL: Record<PhoenixCrmVisitKind, string> = {
-  single: "Single visit",
-  double: "Double visit",
-  // The ask's own wording, so the request a rep sent and the visit it became read alike.
-  product_manager: VISIT_ASK_KIND_LABELS.product_manager,
-  chain: "Chain visit",
-};
 
 /**
  * What a MANAGER reads about a visit's location — plain and measured, never a verdict: the usual cause
@@ -411,7 +404,7 @@ function mapVisitRow(
     customerName: textOrNull(record(row.customer).name) ?? "Customer",
     listType: parseListType(row.list_type),
     kind,
-    kindLabel: KIND_LABEL[kind],
+    kindLabel: PHOENIX_VISIT_KIND_LABELS[kind],
     repName: person(row.rep_hr_id),
     managerName: person(row.manager_hr_id),
     seniorName: person(row.senior_hr_id),
