@@ -330,15 +330,26 @@ export function sameJoinerName(a: string | null | undefined, b: string | null | 
 // the Hiring Documents store already expects an ID to arrive as two photographs.
 //
 // THE LIMIT IS THE PROXY'S, NOT THE BUCKET'S. This public route stays behind the proxy, which cuts any
-// body at 10 MB (proxy.ts, `proxyClientMaxBodySize`). Two photos at 4.5 MB plus the answers stay under
-// it; the page shrinks each photo on the phone first, so a real one arrives well below. Images only —
-// the page asks for a photograph, and the bucket takes JPG, PNG and WEBP.
+// body at 10 MB (proxy.ts, `proxyClientMaxBodySize`). Three photos (the two ID sides and the optional
+// photo) at 3 MB plus the answers stay under it; the page shrinks each photo on the phone first, so a
+// real one arrives well below. Images only — the page asks for a photograph, and the buckets take JPG,
+// PNG and WEBP.
 
 export const JOINING_FORM_PHOTO_FIELDS = ["idFront", "idBack"] as const;
 
 export type JoiningFormPhotoField = (typeof JOINING_FORM_PHOTO_FIELDS)[number];
 
-export const JOINING_FORM_PHOTO_MAX_BYTES = Math.floor(4.5 * 1024 * 1024);
+/**
+ * The candidate's photo (owner, 2026-10-08: "upload a photo for him", OPTIONAL by his ruling). It
+ * becomes the new record's Phoenix profile photo and is filed on Hiring Documents under the
+ * "(6) personal photos" slot WITHOUT ticking it — that slot asks for six prints, and HR still
+ * collects them. Called just "Photo" on the page, never "personal photo" (his words).
+ */
+export const JOINING_FORM_FACE_PHOTO_FIELD = "photo" as const;
+
+export type JoiningFormUploadField = JoiningFormPhotoField | typeof JOINING_FORM_FACE_PHOTO_FIELD;
+
+export const JOINING_FORM_PHOTO_MAX_BYTES = 3 * 1024 * 1024;
 
 export const JOINING_FORM_PHOTO_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
 
@@ -347,19 +358,33 @@ const PHOTO_MISSING: Record<JoiningFormPhotoField, string> = {
   idFront: "Please add a photo of the front of your national ID card.",
 };
 
+type PhotoFacts = { contentType: string; size: number };
+
+/** A photograph, and small enough to pass the proxy — or what is wrong with it. */
+function photoProblem(photo: PhotoFacts): string | undefined {
+  if (!JOINING_FORM_PHOTO_TYPES.includes(photo.contentType.trim().toLowerCase())) {
+    return "Please choose a photo — a JPG, PNG or WEBP image.";
+  }
+  if (photo.size > JOINING_FORM_PHOTO_MAX_BYTES) {
+    return "This photo is too large. Please take it again, or choose a smaller one.";
+  }
+  return undefined;
+}
+
 /** Present, a photograph, and small enough to pass the proxy. Keyed by field, like the answers. */
 export function validateJoiningIdPhotos(
-  photos: Partial<Record<JoiningFormPhotoField, { contentType: string; size: number } | null | undefined>>,
+  photos: Partial<Record<JoiningFormPhotoField, PhotoFacts | null | undefined>>,
 ): Partial<Record<JoiningFormPhotoField, string>> {
   const errors: Partial<Record<JoiningFormPhotoField, string>> = {};
   for (const field of JOINING_FORM_PHOTO_FIELDS) {
     const photo = photos[field];
-    if (!photo || photo.size <= 0) errors[field] = PHOTO_MISSING[field];
-    else if (!JOINING_FORM_PHOTO_TYPES.includes(photo.contentType.trim().toLowerCase())) {
-      errors[field] = "Please choose a photo — a JPG, PNG or WEBP image.";
-    } else if (photo.size > JOINING_FORM_PHOTO_MAX_BYTES) {
-      errors[field] = "This photo is too large. Please take it again, or choose a smaller one.";
-    }
+    const problem = !photo || photo.size <= 0 ? PHOTO_MISSING[field] : photoProblem(photo);
+    if (problem) errors[field] = problem;
   }
   return errors;
+}
+
+/** The optional photo: nothing to say when there is none, the same checks as the ID when there is. */
+export function validateJoiningFacePhoto(photo: PhotoFacts | null | undefined): string | undefined {
+  return !photo || photo.size <= 0 ? undefined : photoProblem(photo);
 }

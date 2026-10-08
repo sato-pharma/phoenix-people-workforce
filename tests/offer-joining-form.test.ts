@@ -262,14 +262,14 @@ async function run() {
     /JPG, PNG or WEBP/,
     "a PDF is refused",
   );
-  assert.match(form.validateJoiningIdPhotos({ idBack: jpeg(5 * MB), idFront: jpeg(MB) }).idBack ?? "", /too large/, "a photo over 4.5 MB is refused");
-  assert.ok(2 * form.JOINING_FORM_PHOTO_MAX_BYTES < 10 * MB, "two photos at the cap still fit the proxy's 10 MB body");
+  assert.match(form.validateJoiningIdPhotos({ idBack: jpeg(3.5 * MB), idFront: jpeg(MB) }).idBack ?? "", /too large/, "a photo over 3 MB is refused");
+  assert.ok(3 * form.JOINING_FORM_PHOTO_MAX_BYTES < 10 * MB, "three photos at the cap still fit the proxy's 10 MB body");
   const flatRoute = flat("app/api/public/offer-acceptance/[token]/route.ts");
   assert.match(flatRoute, /await request\.formData\(\)/, "the route reads a multipart body");
   assert.match(
     flatRoute,
-    /photos = \{ idBack: await readPhoto\(form\.get\("idBack"\)\), idFront: await readPhoto\(form\.get\("idFront"\)\) \}/,
-    "with both photos",
+    /photos = \{ idBack: await readPhoto\(form\.get\("idBack"\)\), idFront: await readPhoto\(form\.get\("idFront"\)\), photo: await readPhoto\(form\.get\("photo"\)\), \}/,
+    "with both ID photos and the optional photo",
   );
   assert.match(flatRoute, /PROXY_BODY_LIMIT = 10 \* 1024 \* 1024/, "and refuses a body the proxy would cut");
   const judged = service.indexOf("validateJoiningIdPhotos(");
@@ -302,6 +302,8 @@ async function run() {
   for (const match of code("src/lib/offers/joining-form.ts").matchAll(/(?:errors(?:\.\w+|\[field\])\s*=|\bid(?:Back|Front):)\s*"([^"]+)"/g)) {
     said.add(match[1]);
   }
+  for (const match of code("src/lib/offers/joining-form.ts").matchAll(/return "([^"]+\.)";/g)) said.add(match[1]);
+  assert.ok(said.has("This photo is too large. Please take it again, or choose a smaller one."), "a returned message is swept too");
   for (const message of Object.values(form.JOINING_FORM_STATE_MESSAGE) as Array<{ body: string; title: string }>) {
     said.add(message.title);
     said.add(message.body);
@@ -324,4 +326,38 @@ async function run() {
     !/(?:^|[\s«("])(?:اكتب|اختر|اضغط|راجع|أدخل|ارفع|التقط|اكتبي|اختاري|اضغطي|راجعي|أدخلي|ارفعي|التقطي)(?=[\s.،"]|$)/m.test(arabic),
     "no imperative addressed to one gender",
   );
+
+  // 15. 🔴 THE PHOTO IS OPTIONAL, BECOMES THE PROFILE PHOTO, AND IS FILED WITHOUT TICKING "(6) PERSONAL
+  //     PHOTOS" (owner, 2026-10-08: "upload a photo for him"; optional, profile + Hiring Documents, and
+  //     HR still collects the six prints — his three answers). Labelled just "Photo".
+  assert.equal(form.validateJoiningFacePhoto(null), undefined, "no photo is fine");
+  assert.equal(form.validateJoiningFacePhoto(jpeg(MB)), undefined, "a photo passes");
+  assert.match(form.validateJoiningFacePhoto({ contentType: "application/pdf", size: MB }) ?? "", /JPG, PNG or WEBP/, "a PDF is refused");
+  assert.match(form.validateJoiningFacePhoto(jpeg(3.5 * MB)) ?? "", /too large/, "and so is one over the cap");
+  const faceJudged = service.indexOf("validateJoiningFacePhoto(");
+  assert.ok(faceJudged > 0 && faceJudged < service.indexOf("claimOfferForJoiningForm(offer.id)"), "the photo is judged before the claim");
+  const faceFiling = service.indexOf("fileJoiningFacePhoto(hrId, facePhoto)");
+  assert.ok(faceFiling > service.indexOf("upsertEmployee(") && faceFiling < service.indexOf("stampOfferAcceptedByJoiningForm(offer.id"), "filed after the record");
+  assert.match(flatService, /const facePhotoOutcome = facePhoto \? await fileJoiningFacePhoto\(hrId, facePhoto\) : null;/, "only when one was sent");
+  const faceFiler = flatService.slice(flatService.indexOf("async function fileJoiningFacePhoto"), flatService.indexOf("export async function submitJoiningForm"));
+  assert.match(faceFiler, /await uploadEmployeePhoto\(hrId, photo\.bytes, photo\.contentType\)/, "it becomes the profile photo");
+  assert.match(faceFiler, /\.eq\("joining_form_upload", "photo"\)/, "it is filed into the slot the column marks");
+  assert.match(faceFiler, /markSubmitted: false,/, "WITHOUT ticking it");
+  assert.ok(!/\.eq\("name"|ilike\(/.test(faceFiler), "never matched on the slot's name");
+  assert.equal((faceFiler.match(/catch \(error\) \{ logError\(/g) ?? []).length, 2, "and neither half can fail the acceptance");
+  const attach = flat("src/lib/hiring-documents/service.ts");
+  assert.match(
+    attach,
+    /const markedSubmitted = input\.markSubmitted !== false; if \(markedSubmitted\) await markHiringDocumentSubmitted\(employeeHrId, documentId\);/,
+    "the store ticks by default, and skips it only when told",
+  );
+  const photoMigration = code("supabase/migrations/20261009001000_joining_form_photo_slot.sql");
+  assert.match(photoMigration, /joining_form_upload in \('national_id', 'photo'\)/, "the column accepts the photo");
+  assert.match(photoMigration, /name = '\(6\) personal photos'/, "and marks the personal photos slot once");
+  const requiredSource = pageSource.slice(pageSource.indexOf("function requiredFields("), pageSource.indexOf("function requiredFields(") + 600);
+  assert.ok(!/FACE_PHOTO|"photo"/.test(requiredSource), "the page does not require it");
+  assert.match(pageSource, /body\.append\("photo", photos\.photo\.file\)/, "and sends it when chosen");
+  const enCopy = copy.JOINING_COPY.en;
+  assert.equal(enCopy.facePhoto.label, "Photo", "called just Photo");
+  assert.ok(!/personal/i.test(JSON.stringify(enCopy.facePhoto)), "never \"personal photo\"");
 }

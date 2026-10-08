@@ -67,7 +67,7 @@ const en = {
     fullName: "Full name",
     fullNameHint: "In English, as written on your national ID card.",
     gender: "Gender",
-    groups: { contact: "Contact", education: "Education", identity: "Identity", photos: "National ID photos", residence: "Residence" },
+    groups: { contact: "Contact", education: "Education", identity: "Identity", photo: "Photo", photos: "National ID photos", residence: "Residence" },
     mobile: "Mobile number",
     nationalId: "National ID number",
     nationalIdHint: "14 digits. Your date of birth and gender are filled in from it.",
@@ -123,6 +123,11 @@ const en = {
     netNote: "Paid to you each month",
     note: "Monthly, in Egyptian pounds.",
     title: "Your package",
+  },
+  facePhoto: {
+    hint: "A clear, recent photo of your face on a plain background. It becomes your picture in Phoenix.",
+    label: "Photo",
+    optional: "Optional",
   },
   pending: "To be confirmed by HR",
   photos: {
@@ -217,7 +222,7 @@ const ar: JoiningCopy = {
     fullName: "الاسم الكامل",
     fullNameHint: "بالإنجليزية، كما هو مكتوب في بطاقة الرقم القومي.",
     gender: "النوع",
-    groups: { contact: "التواصل", education: "المؤهل الدراسي", identity: "الهوية", photos: "صور بطاقة الرقم القومي", residence: "محل الإقامة" },
+    groups: { contact: "التواصل", education: "المؤهل الدراسي", identity: "الهوية", photo: "الصورة", photos: "صور بطاقة الرقم القومي", residence: "محل الإقامة" },
     mobile: "رقم الموبايل",
     nationalId: "الرقم القومي",
     nationalIdHint: "14 رقماً، ويُستخرج منه تاريخ الميلاد والنوع تلقائياً.",
@@ -273,6 +278,11 @@ const ar: JoiningCopy = {
     netNote: "يُصرف لك كل شهر",
     note: "شهرياً، بالجنيه المصري.",
     title: "الراتب والمزايا",
+  },
+  facePhoto: {
+    hint: "صورة حديثة وواضحة للوجه على خلفية سادة، وستكون صورة الملف على Phoenix.",
+    label: "الصورة",
+    optional: "اختياري",
   },
   pending: "تؤكده الموارد البشرية",
   photos: {

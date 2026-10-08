@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { logError } from "@/lib/observability/log";
-import type { JoiningFormPhotoField } from "@/lib/offers/joining-form";
+import type { JoiningFormUploadField } from "@/lib/offers/joining-form";
 import { submitJoiningForm, type JoiningFormPhoto } from "@/lib/offers/joining-form-service";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 
@@ -45,21 +45,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     throw error;
   }
 
-  // Multipart: the answers as one JSON field, and the national ID photos as `idFront` and `idBack`.
+  // Multipart: the answers as one JSON field, the national ID photos as `idFront` and `idBack`, and the
+  // optional photo as `photo`.
   // The proxy cuts any body at 10 MB (proxy.ts), so a bigger one is refused here by its declared size
   // rather than arriving truncated and failing as an unreadable form.
   if (Number(request.headers.get("content-length") ?? 0) > PROXY_BODY_LIMIT) {
     return json({ message: "Your photos are too large to send. Please take them again, or choose smaller ones.", ok: false }, 413);
   }
   let answers: Record<string, unknown>;
-  let photos: Record<JoiningFormPhotoField, JoiningFormPhoto | null>;
+  let photos: Record<JoiningFormUploadField, JoiningFormPhoto | null>;
   try {
     const form = await request.formData();
     const raw = form.get("answers");
     const body = JSON.parse(typeof raw === "string" ? raw : "") as unknown;
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("not an object");
     answers = body as Record<string, unknown>;
-    photos = { idBack: await readPhoto(form.get("idBack")), idFront: await readPhoto(form.get("idFront")) };
+    photos = {
+      idBack: await readPhoto(form.get("idBack")),
+      idFront: await readPhoto(form.get("idFront")),
+      photo: await readPhoto(form.get("photo")),
+    };
   } catch {
     return json({ message: "The form could not be read. Please try again.", ok: false }, 400);
   }

@@ -8,6 +8,7 @@ import {
   upsertEmployee,
   type EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
+import { uploadEmployeePhoto } from "@/lib/employees/employee-photo";
 import { generateNextHrIdForLine } from "@/lib/employees/hr-id-helper";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { attachHiringDocumentFiles } from "@/lib/hiring-documents/service";
@@ -24,11 +25,13 @@ import {
   joiningFormState,
   offerRequiresSeat,
   sameJoinerName,
+  validateJoiningFacePhoto,
   validateJoiningForm,
   validateJoiningIdPhotos,
   type JoiningFormField,
   type JoiningFormPhotoField,
   type JoiningFormState,
+  type JoiningFormUploadField,
 } from "@/lib/offers/joining-form";
 import {
   claimOfferForJoiningForm,
@@ -353,7 +356,7 @@ export async function loadJoiningForm(token: string): Promise<JoiningFormView> {
 
 export type JoiningFormSubmitResult =
   | { ok: true; hrId: string; satoEmail: string | null; satoEmailReason: string | null }
-  | { errors: Partial<Record<JoiningFormField | JoiningFormPhotoField, string>>; ok: false; status: 400 }
+  | { errors: Partial<Record<JoiningFormField | JoiningFormUploadField, string>>; ok: false; status: 400 }
   | { message: string; ok: false; status: 404 | 409 | 500 };
 
 /** Keyed, so the stored value cannot be reversed by hashing every IPv4 address. */
@@ -451,6 +454,58 @@ async function fileJoiningIdPhotos(hrId: string, photos: Record<JoiningFormPhoto
 }
 
 /**
+ * The optional photo (owner, 2026-10-08): it becomes the new record's Phoenix profile photo, AND is
+ * filed on Hiring Documents into the slot `joining_form_upload = 'photo'` marks ("(6) personal
+ * photos") WITHOUT ticking it — that slot is six prints for the paper file, and HR still collects
+ * them (his ruling). The two halves are independent: either can land without the other. Runs AFTER
+ * the record exists and never throws — a photo that does not land costs the acceptance nothing.
+ */
+async function fileJoiningFacePhoto(hrId: string, photo: JoiningFormPhoto): Promise<{ filed: boolean; profile: boolean }> {
+  const outcome = { filed: false, profile: false };
+  try {
+    await uploadEmployeePhoto(hrId, photo.bytes, photo.contentType);
+    outcome.profile = true;
+  } catch (error) {
+    logError("The joining form created the record but could not set the profile photo", {
+      context: { hrId },
+      error: error instanceof Error ? error : new Error(String(error)),
+      labels: { event: "offer_joining_form_profile_photo_failed" },
+    });
+  }
+  try {
+    const slot = await getSupabaseAdmin()
+      .from("hiring_document_definitions")
+      .select("id")
+      .eq("joining_form_upload", "photo")
+      .eq("is_active", true)
+      .maybeSingle();
+    if (slot.error) throw new Error(slot.error.message);
+    const documentId = String((slot.data as { id?: string } | null)?.id ?? "").trim();
+    if (!documentId) throw new Error("No active Hiring Documents slot is marked for the joining form's photo.");
+    const extension = photo.contentType === "image/png" ? "png" : photo.contentType === "image/webp" ? "webp" : "jpg";
+    await attachHiringDocumentFiles(
+      { ...systemAccessContext, loginId: "joining-form" },
+      {
+        documentId,
+        employeeHrId: hrId,
+        markSubmitted: false,
+        mode: "upload",
+        pages: [{ bytes: photo.bytes, contentType: photo.contentType, fileName: `photo.${extension}` }],
+        uploadedByHrId: hrId,
+      },
+    );
+    outcome.filed = true;
+  } catch (error) {
+    logError("The joining form created the record but could not file the photo on Hiring Documents", {
+      context: { hrId },
+      error: error instanceof Error ? error : new Error(String(error)),
+      labels: { event: "offer_joining_form_photo_filing_failed" },
+    });
+  }
+  return outcome;
+}
+
+/**
  * Submit — the acceptance. In order: the link, the offer's state, every answer, the seat still open,
  * the ID not already on file, the claim on the offer row, the record through HR's own chain, then the
  * offer stamped accepted and the audit row. Any failure before the record exists gives the claim
@@ -459,7 +514,7 @@ async function fileJoiningIdPhotos(hrId: string, photos: Record<JoiningFormPhoto
 export async function submitJoiningForm(
   token: string,
   answers: Partial<Record<JoiningFormField, unknown>>,
-  photos: Partial<Record<JoiningFormPhotoField, JoiningFormPhoto | null>>,
+  photos: Partial<Record<JoiningFormUploadField, JoiningFormPhoto | null>>,
   meta: { ip: string | null; userAgent: string | null },
 ): Promise<JoiningFormSubmitResult> {
   const loaded = await loadOffer(token);
@@ -476,12 +531,17 @@ export async function submitJoiningForm(
   // BEFORE the claim, so a missing photo never costs him a record.
   const areaOptions = await residenceAreaOptions(seat?.areaCode ?? null);
   const { errors, value } = validateJoiningForm(answers, { residenceAreaOptions: areaOptions, todayIso: todayInCairo() });
-  const photoErrors = validateJoiningIdPhotos({
+  const photoErrors: Partial<Record<JoiningFormUploadField, string>> = validateJoiningIdPhotos({
     idBack: photos.idBack ? { contentType: photos.idBack.contentType, size: photos.idBack.bytes.length } : null,
     idFront: photos.idFront ? { contentType: photos.idFront.contentType, size: photos.idFront.bytes.length } : null,
   });
+  const facePhotoError = validateJoiningFacePhoto(
+    photos.photo ? { contentType: photos.photo.contentType, size: photos.photo.bytes.length } : null,
+  );
+  if (facePhotoError) photoErrors.photo = facePhotoError;
   if (!value || Object.keys(photoErrors).length > 0) return { errors: { ...errors, ...photoErrors }, ok: false, status: 400 };
   const idPhotos = { idBack: photos.idBack as JoiningFormPhoto, idFront: photos.idFront as JoiningFormPhoto };
+  const facePhoto = photos.photo && photos.photo.bytes.length > 0 ? photos.photo : null;
 
   const db = getSupabaseAdmin();
   const draft = buildOfferHireDraft({ offer, vacancy });
@@ -596,6 +656,7 @@ export async function submitJoiningForm(
   // refresh shows "already completed", then the follow-ups — each swallows its own failures exactly
   // as it does on HR's own Add Employee. Until the stamp, the claim turns a second Submit away.
   const idPhotosFiled = await fileJoiningIdPhotos(hrId, idPhotos);
+  const facePhotoOutcome = facePhoto ? await fileJoiningFacePhoto(hrId, facePhoto) : null;
   try {
     await stampOfferAcceptedByJoiningForm(offer.id, {
       hrId,
@@ -618,6 +679,7 @@ export async function submitJoiningForm(
       payload: {
         ...value,
         idPhotosFiled,
+        photo: facePhotoOutcome,
         satoEmail,
         satoEmailReason,
         userAgent: String(meta.userAgent ?? "").slice(0, 300),

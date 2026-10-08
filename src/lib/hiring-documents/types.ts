@@ -80,6 +80,12 @@ export type AttachHiringDocumentFilesInput = {
    * worse than none: the list prints it as fact.
    */
   pages: Array<{ bytes: Buffer; contentType: string; fileName: string; pageCount?: number | null }>;
+  /**
+   * Tick the checklist cell as submitted (the default). `false` files the evidence and leaves the
+   * cell as it was — for a file that is not yet the whole document, like the joining form's one
+   * photo against "(6) personal photos", where HR still collects the six prints (owner, 2026-10-08).
+   */
+  markSubmitted?: boolean;
   scanMode?: HiringDocumentScanMode;
   uploadedByHrId: string | null;
 };
