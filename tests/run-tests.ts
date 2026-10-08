@@ -391,6 +391,7 @@ import { runDeductionsDisputeThreadsTests } from "./deductions-dispute-threads.t
 import { runDeductionsPerLinePushTests } from "./deductions-per-line-push.test.ts";
 import { runDeductionsSupersedeCarriesDecisionTests } from "./deductions-supersede-carries-decision.test.ts";
 import { runDeductionsManualDayLedgerSkipTests } from "./deductions-manual-day-ledger-skip.test.ts";
+import { runDeductionsSourceScopedSelfClaimTests } from "./deductions-source-scoped-self-claim.test.ts";
 import { runDeductionsCrmSuspectDateWeightingTests } from "./deductions-crm-suspect-date-weighting.test.ts";
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
@@ -3381,6 +3382,10 @@ await runTest("deductions read gate (company-wide reads are admin-only; portal d
 await runTest("deductions dispute inbox (employee comments group into reachable, deep-linked threads)", runDeductionsDisputeThreadsTests);
 await runTest("deductions supersede carries the decision (identity survives a changed day set; a grown day set resets to Pending; a narrowed or emptied carry publishes its subset, never the full replacement)", runDeductionsSupersedeCarriesDecisionTests);
 await runTest("deductions: a manual_hr placeholder day is skipped in the already-claimed ledger reads, so a genuine deduction on the real 1st survives", runDeductionsManualDayLedgerSkipTests);
+await runTest(
+  "deductions: the district-manager and holiday-bridge collectors never count their OWN live rows as already-charged days (they did, so every second run emitted nothing and reconcile retired the previous run's candidates — three managers flipped on alternate 2026-09 runs) while a LOCKED own row and a sibling writer's row still claim theirs",
+  runDeductionsSourceScopedSelfClaimTests,
+);
 await runTest("deductions: suspect-date exclusion keeps the Thursday half-day weighting, so a surviving Thursday is not re-priced as a full day", runDeductionsCrmSuspectDateWeightingTests);
 await runTest(
   "deductions module applied days (per-day selection drives the quantity, the amount, publish, and the collision gate)",
