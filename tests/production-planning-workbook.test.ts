@@ -506,7 +506,17 @@ export async function runProductionPlanningWorkbookTests() {
   // choice as `?lang=`. A sheet whose STRINGS are English while its view is still right-to-left is
   // the half-done version of this: Excel then lays column A on the right of an English sheet, which
   // reads as a corrupt file rather than as a language. So both halves are asserted together.
-  const { buffer: englishBuffer } = await buildProductionPlanningWorkbook(workspaceFor(plan), {
+  // The route asks the service for the plan in the SAME language as the sheet (`lang` is forwarded to
+  // `getProductionPlanningWorkspace`), so the header sentence comes out English; building the plan
+  // without it here would put an Arabic sentence on an English sheet that production never makes.
+  const englishPlan = computePlan(data, {
+    lang: "en",
+    mode: "total_boxes",
+    productId: "prod-ivyronc",
+    requestedQty: "100000",
+    sampleUnits: "10000",
+  });
+  const { buffer: englishBuffer } = await buildProductionPlanningWorkbook(workspaceFor(englishPlan), {
     actorName: "B-10",
     lang: "en",
   });
