@@ -2246,6 +2246,7 @@ import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
 import { runRemoteCheckPollGuardTests } from "./remote-check-poll-guard.test.ts";
+import { runBatchNudgeTests } from "./batch-nudge.test.ts";
 import { runHookDispatchTests } from "./hook-dispatch.test.ts";
 import { runSlowAuditTests } from "./slow-audit.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
@@ -8645,6 +8646,11 @@ await runTest(
 await runTest(
   "bash-guard C14 refuses a FOREGROUND until/while/for … sleep loop polling remote-check, in bash and PowerShell (4-8 Oct 2026: 17.6 session-hours, each pinned at the 600s Bash ceiling), naming the run_in_background-plus-notification way and the 0/1/2-9 exit codes with a stand-down in the tool's dialect — while the same loop in the background, a plain remote-check call, an unrelated sleep loop, a mention with no loop, a heredoc documenting the loop and both stand-downs all pass; C15 refuses a FOREGROUND remote-check run of lint/typecheck/test/build/all (8 Oct 2026: ~1 session-hour in 6 h) while the background run, lockfile, --status and its stand-down pass; C16 refuses a FOREGROUND sleep waiting on a background task output file (50 session-minutes in 6 h) while a single read, the background wait and its stand-down pass",
   runRemoteCheckPollGuardTests,
+);
+
+await runTest(
+  "batch-nudge reminds a session ONCE per step to batch after three single read-only look-around steps in a row (Read, Grep, Glob, a read-only grep|head, git status&&log, Get-Content|Select-Object) — 8 Oct 2026: 14 such steps per build task, only 10% of steps batched — and stays silent for two steps, a batched step, an Edit, an owner prompt or a non-look-around command in between, a redirect, sed -i, a background call, a heredoc, a non-look-around call about to run, a step batching right now, a second call of the same step, the stand-down and a missing or broken transcript; the streak restarts after a reminder and a session gets at most six",
+  runBatchNudgeTests,
 );
 
 await runTest(

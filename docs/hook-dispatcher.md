@@ -1,7 +1,7 @@
 # The hook dispatcher — every PreToolUse hook in one process
 
 Since 2026-10-08, `.claude/settings.json` has one PreToolUse entry. It runs
-`.claude/hooks/hook-dispatch.mjs`, which runs the nine project guards in its own process. The guards
+`.claude/hooks/hook-dispatch.mjs`, which runs the ten project hooks in its own process. The guards
 themselves are wired in `.claude/hooks/dispatch.json`, in the same shape a settings.json hooks block
 uses: `matcher`, `command`, `timeout`.
 
@@ -152,3 +152,27 @@ repo. So they cannot call this repo's dispatcher. Since 2026-10-08 a **byte-iden
   stops enforcing because of this file.
 - **Timeouts:** an in-process hook cannot be stopped mid-way. The dispatcher entry's own timeout
   (90 s) bounds the whole call, and is at least the slowest hook's.
+
+## batch-nudge — one step, several reads
+
+Added 2026-10-08, after the owner's "building is slow". Measured from 72 hours of Phoenix transcripts
+(372 build tasks): a build task took a median of 25 steps, and 14 of them were single read-only
+look-arounds — one `grep`, one `cat`, one `sed -n`, one Read — each a full model round trip of
+about 10 seconds. Only 10% of steps sent two or more tool calls at once. Look-arounds were 19% of all
+build time, second only to the box-check waiting that #5500 and #5543 removed.
+
+`.claude/hooks/batch-nudge.mjs` runs on Read, Grep, Glob, Bash and PowerShell. It reads the tail of
+the session's own transcript, groups its entries into steps by request id, and counts the trailing
+steps that each ran exactly one read-only look-around. At three in a row, when the call about to run
+is a look-around too, it adds one short reminder to send the next reads together. It never blocks.
+
+- **What counts as a look-around:** Read, Grep, Glob, and a foreground shell command whose every
+  piece only reads (`grep`, `cat`, `head`, `sed -n`, `ls`, `find`, `git status/log/diff/show`,
+  `Get-Content`, `Select-String` …). A redirect, `sed -i`, `-delete`/`-exec`, a heredoc or a
+  background call is not one.
+- **What ends a streak:** an owner prompt, any step that ran something else, a step that already
+  batched, and the step it last reminded after.
+- **What it costs:** about 10 ms of work per look-around call inside the dispatcher (it reads the last
+  1 MB of the transcript and parses only the assistant and prompt lines), and at most six reminders of
+  about 450 characters per session.
+- **Stand-down:** `PHX_BATCH_NUDGE_OFF=1`. Pinned by `tests/batch-nudge.test.ts`.
