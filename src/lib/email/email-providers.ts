@@ -13,6 +13,17 @@
 //
 // The layer is INERT until the backup is configured (BREVO_API_KEY): with only Resend present it
 // behaves exactly as before — a 429 becomes a RetryableEmailError the outbox retries later.
+//
+// EXTRA ACCOUNTS (owner, 2026-10-08 — Resend's daily quota runs out every day): a second Resend
+// account, a third Resend account and a second Brevo account join the chain the moment their key
+// is set, in this order:
+//
+//   resend → resend-2 (RESEND_API_KEY_2) → resend-3 (RESEND_API_KEY_3) → brevo (BREVO_API_KEY) → brevo-2 (BREVO_API_KEY_2)
+//
+// Each extra account may send from its own verified address (RESEND_EMAIL_FROM_<n> /
+// BREVO_EMAIL_FROM_2), because one sending domain can be verified in only one Resend account. Every
+// hand-off between them obeys the same duplicate-safe rules above — a quota refusal or an
+// accepted-then-failed message moves on, an ambiguous failure never does.
 
 import { RetryableEmailError, parseRetryAfter } from "@/lib/email/email-errors";
 import { splitAddressList } from "@/lib/email/receivable-address";
@@ -166,9 +177,15 @@ export const resendAcceptedCheckDelaysMs = [1000, 2000];
  */
 export async function checkResendAccepted(
   id: string,
-  options: { delaysMs?: number[]; fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {},
+  options: {
+    /** The key of the account that accepted the message — a Resend id is readable only by its own account. */
+    apiKey?: string;
+    delaysMs?: number[];
+    fetchImpl?: typeof fetch;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
 ): Promise<AcceptedSendCheck> {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
+  const apiKey = (options.apiKey ?? process.env.RESEND_API_KEY)?.trim();
   if (!apiKey || !id) return { state: "pending" };
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -194,149 +211,215 @@ export async function checkResendAccepted(
   return { state: "pending" };
 }
 
-export const resendProvider: EmailProvider = {
-  name: "resend",
-  isConfigured() {
-    return Boolean(process.env.RESEND_API_KEY?.trim());
-  },
-  checkAccepted(id) {
-    return checkResendAccepted(id);
-  },
-  async send(email) {
-    const apiKey = process.env.RESEND_API_KEY?.trim();
-    if (!apiKey) return { outcome: "failover", reason: "RESEND_API_KEY is missing." };
+/** The env name for one account: the bare name for the first account, `<NAME>_<n>` for the others. */
+function accountEnvName(base: string, suffix: string | undefined) {
+  return suffix ? `${base}_${suffix}` : base;
+}
 
-    let response: Response;
-    try {
-      response = await fetch(resendEndpoint, {
-        body: JSON.stringify({
-          attachments: resendAttachments(email),
-          bcc: email.bcc,
-          cc: email.cc,
-          from: email.from,
-          headers: email.headers,
-          html: email.html,
-          // 🔴 `reply_to`, NOT `replyTo`. This is the raw REST API: only Resend's Node SDK maps the
-          // camelCase name across. Resend does not reject `replyTo` — it drops it, answers 200 and
-          // sends the mail with NO Reply-To header, so every reply to any Phoenix email went to the
-          // From address on the sending subdomain, which has no mailbox, and bounced.
-          // An array carries the several mailboxes a job offer replies to; a lone address stays a string.
-          reply_to: resendReplyTo(email.replyTo),
-          subject: email.subject,
-          text: email.text,
-          to: email.to,
-        }),
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          // Resend dedupes retries with the same key — makes a same-provider retry safe.
-          "Idempotency-Key": email.idempotencyKey,
-        },
-        method: "POST",
-        signal: AbortSignal.timeout(providerTimeoutMs),
-      });
-    } catch (networkError) {
-      // Network/timeout: the request may or may not have been delivered → ambiguous → retry same.
-      return {
-        outcome: "retry",
-        reason: networkError instanceof Error ? `Resend request failed: ${networkError.message}` : "Resend request failed.",
-      };
-    }
+function readEnv(name: string) {
+  return process.env[name]?.trim() || "";
+}
 
-    const payload = (await response.json().catch(() => null)) as { error?: string; id?: string; message?: string } | null;
+/**
+ * An extra account's sender override. A full `Name <address>` is used as written; a bare address
+ * keeps the display name of the message's own From, so a job offer still reads as HR and a
+ * notification still reads as Phoenix — only the verified address underneath changes.
+ */
+export function applySenderOverride(from: string, override: string | undefined): string {
+  const value = override?.trim();
+  if (!value) return from;
+  if (value.includes("<")) return value;
+  const { name } = parseSender(from);
+  return name ? `${name} <${value}>` : value;
+}
 
-    if (response.ok) {
-      if (!payload?.id) return { outcome: "error", reason: "Resend accepted the request without returning a message id." };
-      return { outcome: "sent", id: payload.id };
-    }
+/** Extra accounts beyond the first, by env suffix: RESEND_API_KEY_2 and _3, BREVO_API_KEY_2. */
+export const extraResendAccountSuffixes = ["2", "3"] as const;
+export const extraBrevoAccountSuffixes = ["2"] as const;
 
-    const reason = response.status === 429 ? "Resend rate limited (429)." : payload?.message ?? payload?.error ?? `Resend request failed with ${response.status}.`;
+type AccountLabel = { keyEnv: string; label: string };
+
+function createResendProvider(suffix?: string): EmailProvider {
+  const keyEnv = accountEnvName("RESEND_API_KEY", suffix);
+  // The first account keeps the message's own From, exactly as before; an extra account may send
+  // from its own verified address.
+  const fromEnv = suffix ? accountEnvName("RESEND_EMAIL_FROM", suffix) : null;
+  const label = suffix ? `Resend account ${suffix}` : "Resend";
+  return {
+    name: suffix ? `resend-${suffix}` : "resend",
+    isConfigured() {
+      return Boolean(readEnv(keyEnv));
+    },
+    checkAccepted(id) {
+      return checkResendAccepted(id, { apiKey: readEnv(keyEnv) });
+    },
+    send(email) {
+      const from = fromEnv ? applySenderOverride(email.from, readEnv(fromEnv)) : email.from;
+      return sendViaResend(email, { apiKey: readEnv(keyEnv), from, keyEnv, label });
+    },
+  };
+}
+
+async function sendViaResend(
+  email: PreparedEmail,
+  account: AccountLabel & { apiKey: string; from: string },
+): Promise<ProviderSendResult> {
+  const { apiKey } = account;
+  if (!apiKey) return { outcome: "failover", reason: `${account.keyEnv} is missing.` };
+
+  let response: Response;
+  try {
+    response = await fetch(resendEndpoint, {
+      body: JSON.stringify({
+        attachments: resendAttachments(email),
+        bcc: email.bcc,
+        cc: email.cc,
+        from: account.from,
+        headers: email.headers,
+        html: email.html,
+        // 🔴 `reply_to`, NOT `replyTo`. This is the raw REST API: only Resend's Node SDK maps the
+        // camelCase name across. Resend does not reject `replyTo` — it drops it, answers 200 and
+        // sends the mail with NO Reply-To header, so every reply to any Phoenix email went to the
+        // From address on the sending subdomain, which has no mailbox, and bounced.
+        // An array carries the several mailboxes a job offer replies to; a lone address stays a string.
+        reply_to: resendReplyTo(email.replyTo),
+        subject: email.subject,
+        text: email.text,
+        to: email.to,
+      }),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        // Resend dedupes retries with the same key — makes a same-provider retry safe.
+        "Idempotency-Key": email.idempotencyKey,
+      },
+      method: "POST",
+      signal: AbortSignal.timeout(providerTimeoutMs),
+    });
+  } catch (networkError) {
+    // Network/timeout: the request may or may not have been delivered → ambiguous → retry same.
     return {
-      outcome: classifyErrorStatus(response.status),
-      reason,
-      retryAfterMs: response.status === 429 ? parseRetryAfter(response.headers.get("retry-after")) : undefined,
+      outcome: "retry",
+      reason: networkError instanceof Error ? `${account.label} request failed: ${networkError.message}` : `${account.label} request failed.`,
     };
-  },
-};
+  }
 
-export const brevoProvider: EmailProvider = {
-  name: "brevo",
-  isConfigured() {
-    return Boolean(process.env.BREVO_API_KEY?.trim());
-  },
-  async send(email) {
-    const apiKey = process.env.BREVO_API_KEY?.trim();
-    if (!apiKey) return { outcome: "failover", reason: "BREVO_API_KEY is missing." };
+  const payload = (await response.json().catch(() => null)) as { error?: string; id?: string; message?: string } | null;
 
-    // Brevo's sender must be a verified sender/domain on the Brevo account; allow a dedicated
-    // BREVO_EMAIL_FROM override, else reuse the primary from-address.
-    const sender = parseSender(process.env.BREVO_EMAIL_FROM?.trim() || email.from);
+  if (response.ok) {
+    if (!payload?.id) return { outcome: "error", reason: `${account.label} accepted the request without returning a message id.` };
+    return { outcome: "sent", id: payload.id };
+  }
 
-    // Brevo cannot carry a Content-ID, so an inline image goes back to its public https copy here.
-    const { attachments: brevoAttachments, html: brevoHtml } = brevoInlineFallback(email);
+  const reason = response.status === 429 ? `${account.label} rate limited (429).` : payload?.message ?? payload?.error ?? `${account.label} request failed with ${response.status}.`;
+  return {
+    outcome: classifyErrorStatus(response.status),
+    reason,
+    retryAfterMs: response.status === 429 ? parseRetryAfter(response.headers.get("retry-after")) : undefined,
+  };
+}
 
-    // Brevo's transactional API takes a SINGLE replyTo object. When an offer routes replies to more
-    // than one mailbox the primary (Resend, which sends every offer in practice) carries them all;
-    // the backup can honour only the first, which is the HR inbox.
-    const brevoReplyTo = splitAddressList(email.replyTo)[0];
+export const resendProvider: EmailProvider = createResendProvider();
 
-    let response: Response;
-    try {
-      response = await fetch(brevoEndpoint, {
-        body: JSON.stringify({
-          sender,
-          to: email.to.map((address) => ({ email: address })),
-          cc: email.cc && email.cc.length > 0 ? email.cc.map((address) => ({ email: address })) : undefined,
-          bcc: email.bcc && email.bcc.length > 0 ? email.bcc.map((address) => ({ email: address })) : undefined,
-          subject: email.subject,
-          htmlContent: brevoHtml,
-          textContent: email.text,
-          replyTo: brevoReplyTo ? { email: brevoReplyTo } : undefined,
-          headers: email.headers,
-          attachment:
-            brevoAttachments && brevoAttachments.length > 0
-              ? brevoAttachments.map((att) => ({ content: att.content, name: att.filename }))
-              : undefined,
-        }),
-        headers: {
-          accept: "application/json",
-          "api-key": apiKey,
-          "Content-Type": "application/json",
-        },
-        method: "POST",
-        signal: AbortSignal.timeout(providerTimeoutMs),
-      });
-    } catch (networkError) {
-      return {
-        outcome: "retry",
-        reason: networkError instanceof Error ? `Brevo request failed: ${networkError.message}` : "Brevo request failed.",
-      };
-    }
+function createBrevoProvider(suffix?: string): EmailProvider {
+  const keyEnv = accountEnvName("BREVO_API_KEY", suffix);
+  const fromEnv = accountEnvName("BREVO_EMAIL_FROM", suffix);
+  const label = suffix ? `Brevo account ${suffix}` : "Brevo";
+  return {
+    name: suffix ? `brevo-${suffix}` : "brevo",
+    isConfigured() {
+      return Boolean(readEnv(keyEnv));
+    },
+    send(email) {
+      // Brevo's sender must be a verified sender/domain on THAT Brevo account. The first account
+      // reads BREVO_EMAIL_FROM, else the message's own From — unchanged. An extra account reads its
+      // own BREVO_EMAIL_FROM_<n>, then the first account's, then the message's own From.
+      const override = readEnv(fromEnv) || (suffix ? readEnv("BREVO_EMAIL_FROM") : "");
+      return sendViaBrevo(email, { apiKey: readEnv(keyEnv), keyEnv, label, sender: parseSender(override || email.from) });
+    },
+  };
+}
 
-    const payload = (await response.json().catch(() => null)) as { message?: string; messageId?: string | number } | null;
+async function sendViaBrevo(
+  email: PreparedEmail,
+  account: AccountLabel & { apiKey: string; sender: { email: string; name?: string } },
+): Promise<ProviderSendResult> {
+  const { apiKey, sender } = account;
+  if (!apiKey) return { outcome: "failover", reason: `${account.keyEnv} is missing.` };
 
-    if (response.ok) {
-      const id = payload?.messageId ? String(payload.messageId) : "";
-      if (!id) return { outcome: "error", reason: "Brevo accepted the request without returning a messageId." };
-      return { outcome: "sent", id };
-    }
+  // Brevo cannot carry a Content-ID, so an inline image goes back to its public https copy here.
+  const { attachments: brevoAttachments, html: brevoHtml } = brevoInlineFallback(email);
 
-    const reason = response.status === 429 ? "Brevo rate limited (429)." : payload?.message ?? `Brevo request failed with ${response.status}.`;
+  // Brevo's transactional API takes a SINGLE replyTo object. When an offer routes replies to more
+  // than one mailbox the primary (Resend, which sends every offer in practice) carries them all;
+  // the backup can honour only the first, which is the HR inbox.
+  const brevoReplyTo = splitAddressList(email.replyTo)[0];
+
+  let response: Response;
+  try {
+    response = await fetch(brevoEndpoint, {
+      body: JSON.stringify({
+        sender,
+        to: email.to.map((address) => ({ email: address })),
+        cc: email.cc && email.cc.length > 0 ? email.cc.map((address) => ({ email: address })) : undefined,
+        bcc: email.bcc && email.bcc.length > 0 ? email.bcc.map((address) => ({ email: address })) : undefined,
+        subject: email.subject,
+        htmlContent: brevoHtml,
+        textContent: email.text,
+        replyTo: brevoReplyTo ? { email: brevoReplyTo } : undefined,
+        headers: email.headers,
+        attachment:
+          brevoAttachments && brevoAttachments.length > 0
+            ? brevoAttachments.map((att) => ({ content: att.content, name: att.filename }))
+            : undefined,
+      }),
+      headers: {
+        accept: "application/json",
+        "api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+      signal: AbortSignal.timeout(providerTimeoutMs),
+    });
+  } catch (networkError) {
     return {
-      outcome: classifyErrorStatus(response.status),
-      reason,
-      retryAfterMs: response.status === 429 ? parseRetryAfter(response.headers.get("retry-after")) : undefined,
+      outcome: "retry",
+      reason: networkError instanceof Error ? `${account.label} request failed: ${networkError.message}` : `${account.label} request failed.`,
     };
-  },
-};
+  }
 
-// Ordered provider list: Resend primary, then any configured backup. The backup is skipped
-// entirely unless it is configured AND failover is not explicitly disabled — so with no backup
-// env set this returns just [resend] and behaviour is unchanged.
+  const payload = (await response.json().catch(() => null)) as { message?: string; messageId?: string | number } | null;
+
+  if (response.ok) {
+    const id = payload?.messageId ? String(payload.messageId) : "";
+    if (!id) return { outcome: "error", reason: `${account.label} accepted the request without returning a messageId.` };
+    return { outcome: "sent", id };
+  }
+
+  const reason = response.status === 429 ? `${account.label} rate limited (429).` : payload?.message ?? `${account.label} request failed with ${response.status}.`;
+  return {
+    outcome: classifyErrorStatus(response.status),
+    reason,
+    retryAfterMs: response.status === 429 ? parseRetryAfter(response.headers.get("retry-after")) : undefined,
+  };
+}
+
+export const brevoProvider: EmailProvider = createBrevoProvider();
+
+const extraResendProviders = extraResendAccountSuffixes.map((suffix) => createResendProvider(suffix));
+const extraBrevoProviders = extraBrevoAccountSuffixes.map((suffix) => createBrevoProvider(suffix));
+
+// Ordered provider list: Resend primary, then every configured backup — the other Resend accounts
+// first, then the Brevo accounts. A backup is skipped unless it is configured AND failover is not
+// explicitly disabled — so with no backup env set this returns just [resend] and behaviour is
+// unchanged.
 export function resolveEmailProviders(): EmailProvider[] {
   const providers: EmailProvider[] = [resendProvider];
   const failoverDisabled = String(process.env.EMAIL_FAILOVER_ENABLED ?? "").trim().toLowerCase() === "false";
-  if (!failoverDisabled && brevoProvider.isConfigured()) providers.push(brevoProvider);
+  if (failoverDisabled) return providers;
+  for (const backup of [...extraResendProviders, brevoProvider, ...extraBrevoProviders]) {
+    if (backup.isConfigured()) providers.push(backup);
+  }
   return providers;
 }
 

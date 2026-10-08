@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForceTestingDelivery, isProductionRuntime, systemEmail } from "@/config/system-settings";
+import { resolveEmailProviders } from "@/lib/email/email-providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +47,9 @@ export async function GET() {
   return NextResponse.json(
     {
       checks,
+      // The failover chain as production will walk it (names only, never a key) — shows at a glance
+      // whether the extra Resend and Brevo accounts are switched on.
+      providerChain: resolveEmailProviders().map((provider) => provider.name),
       deliveryMode,
       forceTesting,
       status: degraded ? "degraded" : "healthy",
