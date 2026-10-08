@@ -43,8 +43,9 @@ name: CI
 #
 # The one diff-driven step since 2026-10-08 runs the other way: `Build risk` in `validate` can only
 # ADD the Build to a pull request (which otherwise never builds), never remove a step. `main` builds
-# every commit whatever it says, it answers `build=true` on any error or path it does not know, and
-# a rename is read as both of its paths. Script: scripts/ci-build-risk.mjs; pinned by
+# every commit whatever it says. Narrowed the same day (owner): a PR builds only when it touches a
+# route or build-config file, ~19% of PRs; it still answers `build=true` on any error or unreadable
+# diff, and a rename is read as both of its paths. Script: scripts/ci-build-risk.mjs; pinned by
 # tests/ci-build-risk.test.ts and tests/ci-gate-parity.test.ts.
 #
 # It existed in two forms and both failed the same way. First as `paths-ignore` here plus a

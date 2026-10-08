@@ -159,7 +159,10 @@ which block nothing but their own merge, never `main`.
 What replaces it:
 
 - **Commit, push, open the PR.** Its `validate` + `checks` are the verdict, and since 2026-10-08 a PR
-  whose diff can change the build also BUILDS (`scripts/ci-build-risk.mjs`, defined by exclusion).
+  that touches a ROUTE or a BUILD-CONFIG file also BUILDS (`scripts/ci-build-risk.mjs`) — about 1 PR
+  in 5. Narrowed the same day at the owner's word from "build unless build-inert" (52.5% of PRs): a break
+  that lives only in a `src/**` library or component file is caught by `main`'s build, or earlier by
+  `remote-check all`.
 - **`remote-check` when an earlier answer is worth it — once, with `run_in_background: true`,** acting
   on the completion notification (confirmed to arrive in the Desktop app the same day). Exit 0 PASS,
   1 FAIL, 2-9 NO VERDICT; only `remote-check: PASS|FAIL — <sha9>` naming the sha you pushed counts, and
