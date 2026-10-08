@@ -30,10 +30,16 @@
 //   - a row saved 06:00-12:59 on the day clears the morning; one saved from 17:00, or before
 //     04:00 the next day, clears the afternoon,
 //   - a PHOENIX CRM visit's capture time, read exactly like a check-in. A started team logs no
-//     iReports360 check-in at all, and its `ampm` is the customer LIST (AM or PM list), not the
-//     hour — so without this a Phoenix rep's 14:10 visit cleared nothing while an iReports360 rep's
-//     14:10 check-in cleared both halves (risk review, 2026-10-08). It only ever clears; it never
-//     shows a rep a check-in (phoenix-team-starts.ts).
+//     iReports360 check-in at all — the phone captures each visit's location and time instead, and
+//     its `ampm` is the customer LIST (AM or PM list), not the hour (owner, 2026-10-08: "when they
+//     log a visit the location and time is captured, you can use it"). It only ever clears; it
+//     never shows a rep a check-in (phoenix-team-starts.ts).
+//
+// A PHOENIX VISIT MUST HAVE A LOCATION AND A TIME — "no negotiation" (owner, 2026-10-08). One with
+// no location (an admin typing a visit in for the rep, `capture_source` admin, `location_flag`
+// no_place: 18 of 726 in its first week) is not field evidence: it fills no half and clears none.
+// It is counted on the row's evidence so the reviewer sees it was there. The same condition the
+// check-in view already puts on a Phoenix check-in (`lat` and `lon` not null).
 // Applied to June-October 2026 that is the difference between 862 apparent half days and 308
 // confirmed ones. Every stamp here is Cairo wall-clock tagged UTC (the iReports360 convention, and
 // the Phoenix views convert to it), so the hour is read with getUTCHours and never shifted again.
@@ -65,6 +71,9 @@ export type HalfDayVisitRow = {
   contact_crm_id: number | string | null;
   /** `crm_visits_unified.source` — "phoenix" or "ireports360". Optional so a vendor-only fixture need not carry it. */
   source?: string | null;
+  /** A Phoenix visit's captured position. Null on every iReports360 row (its position is its check-in). */
+  lat?: number | string | null;
+  lon?: number | string | null;
 };
 
 export type HalfDayCheckinRow = {
@@ -91,6 +100,8 @@ export type HalfDayEvidence = {
   /** A row on the day carried a crm id this person shares with someone else, so it could not be
    * credited — the day is left alone rather than judged on half the evidence. */
   unattributedRow: boolean;
+  /** Phoenix customer visits with no captured location — not counted, but shown to the reviewer. */
+  visitsWithoutLocation: number;
 };
 
 /** Everything else on file for the person-day. */
@@ -122,6 +133,29 @@ const TIMED_CALL_VISIT_TYPES = new Set<number>([0, CRM_CAMPAIGN_VISIT_TYPE, -30]
 
 function trimmed(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+function isPhoenixRow(row: { source?: string | null }): boolean {
+  return trimmed(row.source).toLowerCase() === PHOENIX_VISIT_SOURCE;
+}
+
+function hasCapturedLocation(row: { lat?: unknown; lon?: unknown }): boolean {
+  const coordinate = (value: unknown) => trimmed(value) !== "" && Number.isFinite(Number(value));
+  return coordinate(row.lat) && coordinate(row.lon);
+}
+
+/**
+ * Whether a CRM row is a Phoenix customer visit WITHOUT a captured location — a visit Phoenix must
+ * never count (owner, 2026-10-08: a visit must have a location and a time, "no negotiation").
+ * Phoenix day activities (meeting, training…) are not visits and carry no position by design.
+ */
+export function isUnlocatedPhoenixVisit(row: Pick<HalfDayVisitRow, "source" | "visit_type" | "lat" | "lon">): boolean {
+  return isPhoenixRow(row) && Number(row.visit_type ?? 0) === 0 && !hasCapturedLocation(row);
+}
+
+/** A Phoenix visit with a captured location and time — that team's check-in. */
+function isLocatedPhoenixVisit(row: Pick<HalfDayVisitRow, "source" | "visit_type" | "lat" | "lon">): boolean {
+  return isPhoenixRow(row) && Number(row.visit_type ?? 0) === 0 && hasCapturedLocation(row);
 }
 
 /** The ledger's own compact hr id (candidate-key.ts), so every key here matches the ledger's. */
@@ -246,6 +280,7 @@ function emptyEvidence(): HalfDayEvidence {
     campaignVisits: 0,
     partnerVisits: 0,
     unattributedRow: false,
+    visitsWithoutLocation: 0,
   };
 }
 
@@ -307,7 +342,8 @@ export function buildHalfDayEvidence(input: {
     const slot = halfDaySlotOfRow(row);
     const visitType = Number(row.visit_type ?? 0);
     const saved = wallClockOf(row.crm_save_date);
-    const isPhoenixRow = trimmed(row.source).toLowerCase() === PHOENIX_VISIT_SOURCE;
+    const unlocated = isUnlocatedPhoenixVisit(row);
+    const phoenixCheckin = isLocatedPhoenixVisit(row);
     const linkedHours =
       checkinHoursByVisitKey.get(`${crmIdText(row.agent_crm_id)}|${crmIdText(row.contact_crm_id)}|${date}`) ?? [];
 
@@ -326,6 +362,11 @@ export function buildHalfDayEvidence(input: {
       if (!resolved.compact || credited.has(resolved.compact)) continue;
       credited.add(resolved.compact);
       const evidence = evidenceFor(`${resolved.compact}:${date}`);
+      // No location, no visit: it fills no half, clears none, and starts no one's month.
+      if (unlocated) {
+        evidence.visitsWithoutLocation += 1;
+        continue;
+      }
       const first = firstSignalByPerson.get(resolved.compact);
       if (!first || date < first) firstSignalByPerson.set(resolved.compact, date);
       if (slot === null) {
@@ -351,7 +392,7 @@ export function buildHalfDayEvidence(input: {
         if (clears.evening) evidence.eveningProof = true;
       }
       // A Phoenix visit's capture time IS that team's check-in.
-      if (isPhoenixRow && saved) {
+      if (phoenixCheckin && saved) {
         if (saved.date === date) {
           const clears = checkinClears(saved.hour);
           if (clears.morning) evidence.morningProof = true;
@@ -376,7 +417,7 @@ export function buildHalfDayEvidence(input: {
  */
 export function countGpsTracesByDate(input: {
   days: readonly string[];
-  visits: readonly Pick<HalfDayVisitRow, "visit_date" | "crm_save_date" | "source">[];
+  visits: readonly Pick<HalfDayVisitRow, "visit_date" | "crm_save_date" | "source" | "visit_type" | "lat" | "lon">[];
   checkins: readonly Pick<HalfDayCheckinRow, "check_date">[];
 }): Map<string, number> {
   const counts = new Map<string, number>(input.days.map((day) => [day, 0]));
@@ -388,7 +429,7 @@ export function countGpsTracesByDate(input: {
     if (clock) bump(clock.date);
   }
   for (const row of input.visits) {
-    if (trimmed(row.source).toLowerCase() !== PHOENIX_VISIT_SOURCE) continue;
+    if (!isLocatedPhoenixVisit(row)) continue;
     const saved = wallClockOf(row.crm_save_date);
     if (saved && saved.date === trimmed(row.visit_date).slice(0, 10)) bump(saved.date);
   }

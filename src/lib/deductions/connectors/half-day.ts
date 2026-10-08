@@ -153,7 +153,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
         dateFrom: start,
         dateTo: end,
         columns:
-          "visit_date, visit_type, ampm, crm_save_date, agent_hr_id, agent_crm_id, double_hr_id, double_crm_id, double2_hr_id, double2_crm_id, contact_crm_id, source",
+          "visit_date, visit_type, ampm, crm_save_date, agent_hr_id, agent_crm_id, double_hr_id, double_crm_id, double2_hr_id, double2_crm_id, contact_crm_id, source, lat, lon",
       }),
       // One day past the month: a check-in after midnight is the tail of the last evening.
       // includeResignedAgents: a check-in only ever CLEARS a half here, and a resigned rep's
@@ -362,7 +362,11 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
         estimatedAmount,
         calculationStatus: "calculated",
         severity: "Medium",
-        reason: halfDayReason(verdict),
+        reason:
+          halfDayReason(verdict) +
+          (evidence?.visitsWithoutLocation
+            ? ` (${evidence.visitsWithoutLocation} Phoenix visit(s) logged with no location were not counted — a visit must have a location and a time)`
+            : ""),
         evidence: {
           rule:
             "Saturday-Wednesday working day with exactly one half accounted for, and no visit, GPS check-in, save time, approved vacation, approved plan item or request in the other half. Thursday (a morning-only day), Friday and national holidays are never judged.",
@@ -374,6 +378,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
           visitsWholeDayOrUntimed: evidence?.visitsBoth ?? 0,
           campaignVisits: evidence?.campaignVisits ?? 0,
           creditedAsDoubleVisitPartner: evidence?.partnerVisits ?? 0,
+          phoenixVisitsWithoutLocationNotCounted: evidence?.visitsWithoutLocation ?? 0,
           approvedVacation: dayCover.vacationAm ? "AM off" : dayCover.vacationPm ? "PM off" : null,
           approvedPlan: dayCover.planAm || dayCover.planPm ? { am: Boolean(dayCover.planAm), pm: Boolean(dayCover.planPm) } : null,
           deductionDays: 0.5,
