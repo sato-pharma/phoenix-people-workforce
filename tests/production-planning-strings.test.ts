@@ -16,6 +16,7 @@ import {
   coerceProductionPlanningLanguage,
   formatNumberLatin,
   packagingBoxName,
+  pluralEn,
   PP,
   PP_EN,
   PRODUCTION_PLANNING_ERRORS,
@@ -29,9 +30,19 @@ import {
   type ProductMeasure,
   productionPlanningStrings,
   reorderEmailMaterialLabel,
+  requestModeLabelsAr,
+  requestModeLabelsEn,
+  runActualLabelAr,
+  runActualLabelEn,
+  runSizeLabelAr,
+  runSizeLabelEn,
+  saleableUnitWordAr,
+  saleableUnitWordEn,
   storedPlanTitle,
   SUPPLIER_LABELS,
   SUPPLIER_LABELS_EN,
+  unitsWithBoxesAr,
+  unitsWithBoxesEn,
 } from "../src/lib/production-planning/strings.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -182,6 +193,116 @@ export function runProductionPlanningStringsTests() {
   // digits nor the unit can drift back.
   const ivyronc: ProductMeasure = { dose: "5", goodUnit: "100", measureUnit: "ml", sampleUnit: "40" };
   const guamusin: ProductMeasure = { dose: "5", goodUnit: "5", measureUnit: "g", sampleUnit: "5" };
+
+  // ── A saleable unit is not a box, and the box count rides in brackets ───────────────────────────
+  // Owner, 2026-10-08: *"in alll ur calulation show sachets number and between brackets number of
+  // boxes for those sachets"*, after a tile reading `10,000 علبة` sat under a sentence reading
+  // `120,000 كيس`.
+  assert.equal(saleableUnitWordAr("g"), "كيس", "a powder's saleable unit is a sachet");
+  assert.equal(saleableUnitWordAr("ml"), "علبة", "and the syrup's is a box, 1:1 with its bottle");
+  assert.equal(saleableUnitWordEn("g"), "sachet");
+  assert.equal(saleableUnitWordEn("ml"), "box");
+
+  // 🔴 `box + "s"` IS "boxs", AND THAT REWRITES IVYRONC'S PINNED SENTENCE further down this file.
+  assert.equal(pluralEn("box"), "boxes", "the one plural that a bare +s gets wrong");
+  assert.equal(pluralEn("sachet"), "sachets");
+
+  const boxed = { boxes: "10,000", measureUnit: "g", units: "120,000", unitsPerBox: "12" } as const;
+  assert.equal(unitsWithBoxesAr(boxed), "120,000 كيس (10,000 علبة)", "his bracket, exactly as asked");
+  assert.equal(unitsWithBoxesEn(boxed), "120,000 sachets (10,000 boxes)");
+
+  // 🔴 AND IT IS DROPPED AT ONE UNIT A BOX, or Ivyronc reads "106,000 علبة (106,000 علبة)" — the same
+  // number printed twice, which is worse than the ambiguity the bracket exists to remove. The test is
+  // `unitsPerBox`, never the measure unit.
+  const flat = { boxes: "106,000", measureUnit: "ml", units: "106,000", unitsPerBox: "1" } as const;
+  assert.equal(unitsWithBoxesAr(flat), "106,000 علبة", "no bracket when a box holds one unit");
+  assert.equal(unitsWithBoxesEn(flat), "106,000 boxes");
+  assert.ok(
+    !unitsWithBoxesAr(flat).includes("("),
+    "nothing in brackets at all on Ivyronc — a redundant bracket is a regression, not a cosmetic",
+  );
+  // A powder in a one-sachet box takes no bracket either, and a syrup two to a box takes one: the
+  // rule is about PACKING, not about which unit the product is measured in.
+  assert.equal(
+    unitsWithBoxesAr({ boxes: "500", measureUnit: "g", units: "500", unitsPerBox: "1" }),
+    "500 كيس",
+  );
+  assert.equal(
+    unitsWithBoxesAr({ boxes: "250", measureUnit: "ml", units: "500", unitsPerBox: "2" }),
+    "500 علبة (250 علبة)",
+  );
+
+  // ── "حجم التشغيلة" is a VOLUME, and the powder is weighed ───────────────────────────────────────
+  // Owner, 2026-10-08: *"1 run is 100kg not liter"*, then *"batch ( run size ) 100kg"*.
+  assert.equal(runSizeLabelAr("ml"), "حجم التشغيلة", "the syrup keeps the volume noun");
+  assert.equal(runSizeLabelAr("g"), "وزن التشغيلة", "and the powder is weighed, not poured");
+  assert.equal(runSizeLabelEn("ml"), "Run volume");
+  assert.equal(runSizeLabelEn("g"), "Batch size", "his own word for it");
+
+  // ── The run tab's noun moves too, instead of carrying a suffix ──────────────────────────────────
+  // 🔴 A SUFFIX CONTRADICTS ITSELF: "Boxes actually produced (sachet)" in four words.
+  assert.equal(runActualLabelAr("g"), "الأكياس الناتجة فعليًا");
+  assert.equal(runActualLabelAr("ml"), PP.runActualGoodUnits, "Ivyronc's label does not move");
+  assert.equal(runActualLabelEn("g"), "Sachets actually produced");
+  assert.equal(runActualLabelEn("ml"), PP_EN.runActualGoodUnits);
+  for (const label of [runActualLabelAr("g"), runActualLabelEn("g")]) {
+    assert.ok(!label.includes("("), "and it is a noun, never a bracketed unit hung off the old one");
+  }
+
+  // ── The request modes still mean BOXES, and say what a box holds ────────────────────────────────
+  // 🔴 THE ONE CHANGE NOT MADE HERE, DELIBERATELY. `resolveRunGeometry`'s `total_boxes` reads the
+  // typed figure as BOXES, so renaming the label to sachets would put his 120,000 through as 72 runs
+  // instead of 6. The unit stays what the engine reads; the label says what is inside a box.
+  const guaModes = requestModeLabelsAr({ measureUnit: "g", unitsPerBox: "12" });
+  assert.ok(guaModes.total.startsWith(PP.requestModeTotalBoxes), "the box wording is untouched");
+  assert.ok(guaModes.total.includes("12 كيس في العلبة"), "and the box's contents are spelled out");
+  assert.ok(!guaModes.total.includes("إجمالي الأكياس"), "🔴 never renamed to a sachet count");
+  const ivyModes = requestModeLabelsAr({ measureUnit: "ml", unitsPerBox: "1" });
+  assert.equal(ivyModes.total, PP.requestModeTotalBoxes, "Ivyronc's modes are byte-identical");
+  assert.equal(ivyModes.goodUnits, PP.requestModeGoodUnits);
+  assert.equal(
+    requestModeLabelsEn({ measureUnit: "ml", unitsPerBox: "1" }).total,
+    PP_EN.requestModeTotalBoxes,
+  );
+  assert.ok(
+    requestModeLabelsEn({ measureUnit: "g", unitsPerBox: "12" }).total.endsWith("12 sachets per box"),
+  );
+
+  // ── The sentence carries the bracket, and Ivyronc's is unmoved ──────────────────────────────────
+  const sentenceParts = {
+    goodUnitMl: "5",
+    goodUnits: "120,000",
+    measureUnit: "g",
+    runs: "6",
+    runVolumeLitres: "100",
+    sampleUnitMl: "5",
+    sampleUnits: "0",
+    shortfallBoxes: null,
+    surplusBoxes: null,
+    totalBoxes: "10,000",
+    totalVolumeLitres: "600",
+    unitsPerBox: "12",
+  } as const;
+  assert.equal(
+    buildPlannerSentence(sentenceParts),
+    "6 تشغيلة × 100 كجم = 600 كجم — 120,000 كيس (10,000 علبة) 5 جم",
+    "the whole Guamusin sentence, in kilograms and sachets",
+  );
+  assert.equal(
+    buildPlannerSentenceEn(sentenceParts),
+    "6 runs × 100 kg = 600 kg — 120,000 sachets (10,000 boxes) of 5 g",
+  );
+  // 🔴 THE BRACKET IS BUILT FROM THE SALEABLE COUNT, NOT FROM `totalBoxes`. `totalBoxes` includes the
+  // samples' own boxes, so on an order WITH samples it is larger than the saleable figure — printing
+  // it beside `goodUnits` would read as that figure's equivalent and quietly overstate it.
+  const withSamples = buildPlannerSentence({
+    ...sentenceParts,
+    goodUnits: "108,000",
+    sampleUnits: "12,000",
+    totalBoxes: "10,000",
+  });
+  assert.ok(withSamples.includes("108,000 كيس (9,000 علبة)"), `9,000 and not 10,000 — ${withSamples}`);
+  assert.ok(!withSamples.includes("108,000 كيس (10,000"), "never the sample-inclusive box count");
 
   const ivyHint = buildSampleUnitsHintAr(ivyronc);
   assert.ok(

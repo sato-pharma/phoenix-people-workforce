@@ -814,6 +814,13 @@ export function PlannerTab(props: PlannerTabProps) {
   // The product the dropdown is on, and the unit pair every label below takes from it.
   const product = data.products.find((candidate) => candidate.id === props.productId) ?? selectedProductOf(data);
   const measure = measureOf(product);
+  // The two quantity modes mean BOXES to the engine. On a product whose box holds more than one
+  // saleable unit the label says so, because "إجمالي العلب" alone let the owner read the field as a
+  // sachet count — and his 120,000 typed there is 72 runs rather than 6.
+  const modeLabels = S.requestModeLabels({
+    measureUnit: measure.measureUnit,
+    unitsPerBox: product?.unitsPerBox ?? "1",
+  });
 
   return (
     <>
@@ -840,9 +847,9 @@ export function PlannerTab(props: PlannerTabProps) {
               onChange={(event) => props.onModeChange(event.target.value as WireRequestMode)}
               value={props.mode}
             >
-              <option value="total_boxes">{t.requestModeTotalBoxes}</option>
-              <option value="good_units">{t.requestModeGoodUnits}</option>
-              <option value="runs">{t.requestModeRuns}</option>
+              <option value="total_boxes">{modeLabels.total}</option>
+              <option value="good_units">{modeLabels.goodUnits}</option>
+              <option value="runs">{modeLabels.runs}</option>
             </select>
           </Field>
 
@@ -955,6 +962,10 @@ function PlannerResult({
         shortfallBoxes: null,
         // From the PLAN, not the product row: the plan is what these figures were computed under.
         measureUnit: plan.measureUnit,
+        // The owner's bracket. `unitsPerBox` comes off the PRODUCT because it is a packing fact
+        // rather than a plan one, and it is what decides whether a bracket appears at all.
+        totalBoxes: formatNumberLatin(plan.totalBoxes),
+        unitsPerBox: sentenceProduct.unitsPerBox,
       })
     : plan.sentence;
 
@@ -962,6 +973,13 @@ function PlannerResult({
   // hard-coded `t.unitLitre` here would label 600 kg of powder as litres.
   const units = S.measureUnitLabels(plan.measureUnit);
   const basisLabels = S.basisLabels(measureOf(sentenceProduct));
+  // The saleable-unit word, and whether a box holds more than one of them. Everything below counts
+  // in SACHETS with the box count in brackets when it does — the owner's 2026-10-08 instruction —
+  // and in boxes alone when a box is one unit, which is every Ivyronc figure.
+  const perBox = sentenceProduct?.unitsPerBox ?? "1";
+  const saleableWord = S.saleableUnitWord(plan.measureUnit);
+  const boxed = (boxes: string) =>
+    perBox === "1" ? saleableWord : `${saleableWord} (${formatNumberLatin(boxes)} ${t.unitBox})`;
 
   return (
     <>
@@ -977,8 +995,12 @@ function PlannerResult({
             `grid-cols-1 sm:grid-cols-2` ladder every other grid in this file already used. */}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Tile label={t.tileRuns} unit={t.unitRuns} value={plan.runs} />
-          <Tile label={t.tileRunVolume} unit={units.large} value={plan.runVolumeLitres} />
-          <Tile label={t.tileYield} unit={t.unitBox} value={plan.totalBoxes} />
+          <Tile label={S.runSizeLabel(plan.measureUnit)} unit={units.large} value={plan.runVolumeLitres} />
+          {/* The TOTAL, never the saleable count — 106,000 and not 96,000 (his headline rule). What
+              changed is the UNIT it is counted in: `packagingSets` is the saleable-unit count, so
+              Guamusin reads 120,000 with its 10,000 boxes in brackets, and Ivyronc at one bottle a
+              box reads exactly the 106,000 علبة it always did. */}
+          <Tile label={t.tileYield} unit={boxed(plan.totalBoxes)} value={plan.packagingSets} />
           {plan.surplusBoxes !== "0" ? (
             <Tile label={t.tileSurplus} tone="warn" unit={t.unitBox} value={plan.surplusBoxes} />
           ) : (
@@ -999,7 +1021,7 @@ function PlannerResult({
           {shortfall ? (
             <li>
               {t.oneRunFewerNote}: <Num>{formatNumberLatin(shortfall.runs)}</Num> {t.unitRuns} —{" "}
-              <Num>{formatNumberLatin(shortfall.totalBoxes)}</Num> {t.unitBox}
+              <Num>{formatNumberLatin(shortfall.packagingSets)}</Num> {boxed(shortfall.totalBoxes)}
               {shortfall.shortfallBoxes !== "0" ? (
                 <>
                   {" "}
@@ -1833,6 +1855,12 @@ export function RunTab({
 
   if (!data) return <p className={`${PANEL} text-[13px] text-slate-500`}>{t.notLoaded}</p>;
 
+  // The run tab records what the factory actually produced, and it counts in the product's own
+  // saleable unit — "العلب الناتجة فعليًا" was asking DBK for a box count and storing it as a sachet
+  // one. `actual_good_units` has always been a saleable-unit column; only the label was wrong.
+  const runProduct = data.products.find((candidate) => candidate.id === productId);
+  const runSaleableWord = S.saleableUnitWord(runProduct?.measureUnit ?? "ml");
+
   const setLine = (materialId: string, field: "opening" | "delivered" | "closing", value: string) =>
     setLines((current) => ({
       ...current,
@@ -1871,7 +1899,7 @@ export function RunTab({
                 value={producedOn}
               />
             </Field>
-            <Field label={t.runActualGoodUnits}>
+            <Field label={S.runActualLabel(runProduct?.measureUnit ?? "ml")}>
               <input
                 className={INPUT}
                 dir="ltr"
@@ -2029,7 +2057,7 @@ export function RunTab({
                 <p className="font-bold text-slate-900 break-words">{run.runLabel}</p>
                 <p className="mt-0.5 text-[12px] text-slate-700">
                   <Num>{run.producedOn}</Num> — <Num>{formatNumberLatin(run.runsCount)}</Num>{" "}
-                  {t.unitRuns}, <Num>{formatNumberLatin(run.actualGoodUnits)}</Num> {t.unitBox},{" "}
+                  {t.unitRuns}, <Num>{formatNumberLatin(run.actualGoodUnits)}</Num> {runSaleableWord},{" "}
                   <Num>{formatNumberLatin(run.actualSampleUnits)}</Num> {t.unitSample}
                 </p>
                 {run.isExcludedFromLearning ? (

@@ -192,7 +192,12 @@ export type WirePlan = {
   runVolumeLitres: string;
   totalDoses: string;
   leftoverMl: string;
-  oneRunFewer: { runs: string; totalBoxes: string; shortfallBoxes: string } | null;
+  /**
+   * `packagingSets` here is the SALEABLE-UNIT count for this scenario, emitted beside the box count
+   * so the note can read "108,000 كيس (9,000 علبة)" without the browser multiplying anything. The
+   * module is BigInt micro units exactly so the screen never owns a quantity calculation.
+   */
+  oneRunFewer: { runs: string; packagingSets: string; totalBoxes: string; shortfallBoxes: string } | null;
   sentence: string;
   rows: WirePlanRow[];
   totals: {

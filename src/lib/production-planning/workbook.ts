@@ -257,9 +257,21 @@ export async function buildProductionPlanningWorkbook(
   inputCell(sheet, samplesRow, num(plan.sampleUnits), UNITS_FMT);
   row += 1;
 
+  // 🔴 THIS CELL STAYS IN THE SMALL UNIT — grams for the powder — BECAUSE THE FORMULAS DIVIDE IT BY
+  // THE DOSE. The total-doses cell is `$B$<runs>*RUN_VOLUME/DOSE_ML` and DOSE_ML is in grams, so
+  // writing 100 here instead of 100,000 would divide the whole sheet by a thousand while every
+  // figure still looked like a plausible quantity. The LABEL is what was wrong: "حجم" is a volume,
+  // and the owner said so plainly — *"1 run is 100kg not liter"* (2026-10-08).
   const runVolumeRow = row;
-  labelCell(sheet, runVolumeRow, `${PPL.sheetRunVolume} (${measure.small})`);
+  labelCell(sheet, runVolumeRow, `${S.runSizeLabel(plan.measureUnit)} (${measure.small})`);
   inputCell(sheet, runVolumeRow, num(product?.runVolumeMl), UNITS_FMT);
+  row += 1;
+
+  // The same batch in the unit he says out loud, as a FORMULA over the cell above so the two cannot
+  // drift apart. 100,000 جم and 100 كجم are one batch; he asked to read the second.
+  const runSizeLargeRow = row;
+  labelCell(sheet, runSizeLargeRow, `${S.runSizeLabel(plan.measureUnit)} (${measure.large})`);
+  formulaCell(sheet, runSizeLargeRow, `$B$${runVolumeRow}/1000`, num(product?.runVolumeMl) / 1000, VALUE_FMT);
   row += 1;
 
   const goodMlRow = row;
@@ -281,8 +293,9 @@ export async function buildProductionPlanningWorkbook(
   // this sheet, because a model that assumed a box is one bottle would silently disagree with the
   // screen the day that changes.
   const unitsPerBoxRow = row;
+  const unitsPerBoxValue = Math.max(1, num(product?.unitsPerBox, 1));
   labelCell(sheet, unitsPerBoxRow, PPL.sheetUnitsPerBox);
-  inputCell(sheet, unitsPerBoxRow, Math.max(1, num(product?.unitsPerBox, 1)), UNITS_FMT);
+  inputCell(sheet, unitsPerBoxRow, unitsPerBoxValue, UNITS_FMT);
   row += 1;
 
   const fxRow = row;
@@ -353,7 +366,17 @@ export async function buildProductionPlanningWorkbook(
   // same number and one cell served both — but Guamusin's carton holds twelve sachets, so a formula
   // reading the BOX count for a per-packaging-set material would have understated its film by 12×.
   const packagingSetsRow = row;
-  labelCell(sheet, packagingSetsRow, PPL.sheetPackagingSets);
+  // Named in the product's OWN saleable unit, so this row and the carton row below it cannot be read
+  // as the same quantity — which is exactly what the owner could not tell apart on the screen. The
+  // suffix follows the same rule as the bracket: at one unit a box it says nothing and is left off,
+  // which is also what keeps Ivyronc's sheet byte-identical.
+  labelCell(
+    sheet,
+    packagingSetsRow,
+    unitsPerBoxValue === 1
+      ? PPL.sheetPackagingSets
+      : `${PPL.sheetPackagingSets} (${S.saleableUnitWord(plan.measureUnit)})`,
+  );
   formulaCell(sheet, packagingSetsRow, `$B$${yieldRow}+${SAMPLES}`, num(plan.packagingSets), UNITS_FMT);
   row += 1;
 

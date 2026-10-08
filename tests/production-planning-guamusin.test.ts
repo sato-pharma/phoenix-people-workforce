@@ -27,6 +27,7 @@ import {
 } from "../src/lib/production-planning/strings.ts";
 import type { WireMaterial, WirePlan, WireWorkspace } from "../src/lib/production-planning/wire.ts";
 import { buildProductionPlanningWorkbook } from "../src/lib/production-planning/workbook.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * Production Planner — Guamusin, and Ivyronc not moving while it arrives.
@@ -158,7 +159,6 @@ function planningData(): ProductionPlanningData {
           composition(PARACETAMOL.id, "per_dose", "1", ZERO_WASTE),
           composition(GUAIFENESIN.id, "per_dose", "0.2", ZERO_WASTE),
           composition(BOX_12.id, "per_box", "1", ZERO_WASTE),
-          composition(STICKER.id, "per_box", "1", ZERO_WASTE),
           composition(SACHET_LEVEL.id, "per_packaging_set", "1", ZERO_WASTE),
         ],
       ],
@@ -184,7 +184,9 @@ function planningData(): ProductionPlanningData {
     materialIdsByProductId: new Map([
       [
         "prod-guamusin",
-        new Set([PARACETAMOL.id, GUAIFENESIN.id, SACHET_LEVEL.id, BOX_12.id, STICKER.id]),
+        // 🔴 STICKER.id is DELIBERATELY ABSENT while the material stays in `materials` below: that is
+        // what makes the exclusion a real assertion rather than the absence of a row.
+        new Set([PARACETAMOL.id, GUAIFENESIN.id, SACHET_LEVEL.id, BOX_12.id]),
       ],
       ["prod-ivyronc", new Set([IVY_EXTRACT.id, SORBITOL.id, CARTON_1.id])],
     ]),
@@ -409,7 +411,14 @@ export async function runProductionPlanningGuamusinTests() {
   // 🔴 DEFECT 1 again, through the whole engine: the carton is per BOX and the fixture line is per
   // packaging SET, so one is 10,000 and the other 120,000 in the same plan.
   assert.equal(rowOf(plan, "BOX_GUAMUSIN_12").needed, "10000");
-  assert.equal(rowOf(plan, "STICKER_GUAMUSIN").needed, "10000", "one sticker a carton, not one a sachet");
+  // 🔴 NO STICKER. The owner corrected his own packaging list hours after it shipped — *"guamusin
+  // have no stickers"* — and it had a LIVE `per_box` line, so every plan was putting 10,000 stickers
+  // on his buy list. `20261008233000` drops the line and the join; Ivyronc's sticker is untouched.
+  assert.equal(
+    plan.rows.find((candidate) => candidate.code === "STICKER_GUAMUSIN"),
+    undefined,
+    "the Guamusin sticker is not a row on this plan at all",
+  );
   assert.equal(rowOf(plan, "FIXTURE_PER_SACHET_ITEM").needed, "120000");
 
   // The lots are SUMMED for the held figure, so the buy list cannot see the split: 200,000 g and
@@ -420,7 +429,7 @@ export async function runProductionPlanningGuamusinTests() {
   // ── DEFECT 2: one product's materials never reach the other's list ───────────────────────────
   assert.deepEqual(
     materialsForProduct(data, "prod-guamusin").map((item) => item.code),
-    ["PARACETAMOL_MICRO", "GUAIFENESIN", "FIXTURE_PER_SACHET_ITEM", "BOX_GUAMUSIN_12", "STICKER_GUAMUSIN"],
+    ["PARACETAMOL_MICRO", "GUAIFENESIN", "FIXTURE_PER_SACHET_ITEM", "BOX_GUAMUSIN_12"],
   );
   assert.deepEqual(
     materialsForProduct(data, "prod-ivyronc").map((item) => item.code),
@@ -486,9 +495,42 @@ export async function runProductionPlanningGuamusinTests() {
     (await buildProductionPlanningWorkbook(workspaceFor(data, plan), { actorName: "B-10" })).buffer as never,
   );
   const sheet = book.worksheets[0]!;
-  const packagingSetsRow = rowOfLabel(sheet, "إجمالي العبوات الكاملة");
+  // Named with its own unit since 2026-10-08, and ONLY where a box holds more than one — Ivyronc's
+  // sheet keeps the bare label, which `production-planning-workbook.test.ts` is what asserts.
+  const packagingSetsRow = rowOfLabel(sheet, "إجمالي العبوات الكاملة (كيس)");
   const boxesRow = rowOfLabel(sheet, "إجمالي العلب (الكراتين)");
   assert.notEqual(packagingSetsRow, boxesRow, "two rows, because they are two figures");
+
+  // 🔴 THE RUN-SIZE CELL IS IN GRAMS AND THE كجم FIGURE IS DERIVED FROM IT. The total-doses formula
+  // divides the gram cell by the gram dose, so writing 100 into it instead of 100,000 would divide
+  // the entire sheet by a thousand with every figure still looking like a plausible quantity. The
+  // noun is "وزن" and not "حجم", because the owner weighs this batch (*"1 run is 100kg not liter"*).
+  const runSizeSmallRow = rowOfLabel(sheet, "وزن التشغيلة (جم)");
+  const runSizeLargeRow = rowOfLabel(sheet, "وزن التشغيلة (كجم)");
+  assert.equal(sheet.getCell(`B${runSizeSmallRow}`).value, 100_000, "the cell every formula reads is grams");
+
+  // The كجم cell is asserted at its FORMULA and not at its cached value: the cached number is only
+  // what we wrote into it, so it would still read 100 after someone replaced the formula with a
+  // constant — and a constant is exactly the edit that lets the two figures drift apart.
+  const largeCell = sheet.getCell(`B${runSizeLargeRow}`).value as { formula?: string; result?: unknown };
+  assert.equal(
+    largeCell.formula,
+    `$B$${runSizeSmallRow}/1000`,
+    "and the kilogram figure is DERIVED from it, never typed beside it",
+  );
+  assert.equal(Number(largeCell.result), 100, "which comes to the 100 kg he asked to read");
+
+  // 🔴 The gram cell is what the total-doses formula divides, which is the whole reason it may not be
+  // converted: `runs * runVolume / dose` with runVolume in kg and dose in g is out by a thousand.
+  const dosesCell = sheet.getCell(`B${rowOfLabel(sheet, "إجمالي الجرعات")}`).value as { formula?: string };
+  assert.ok(
+    dosesCell.formula?.includes(`$B$${runSizeSmallRow}`),
+    `the doses formula reads the GRAM cell — ${dosesCell.formula}`,
+  );
+  assert.ok(
+    !dosesCell.formula?.includes(`$B$${runSizeLargeRow}`),
+    "and never the kilogram one, which would divide the sheet by a thousand",
+  );
 
   // `startsWith`, because the sheet spells a packaging line out beyond its stored name.
   const sheetRowOf = (code: string) => {
@@ -507,11 +549,6 @@ export async function runProductionPlanningGuamusinTests() {
     basisCountTarget(sheet, sheetRowOf("BOX_GUAMUSIN_12")),
     boxesRow,
     "a per-box material counts cartons — one box per twelve sachets",
-  );
-  assert.equal(
-    basisCountTarget(sheet, sheetRowOf("STICKER_GUAMUSIN")),
-    boxesRow,
-    "and so does the sticker, which goes on the carton",
   );
   assert.equal(
     basisCountTarget(sheet, sheetRowOf("FIXTURE_PER_SACHET_ITEM")),
@@ -570,7 +607,40 @@ export async function runProductionPlanningGuamusinTests() {
 
   // The two packaging lines are per BOX — 10,000 each for six runs, never 120,000.
   const perBox = [...sql.matchAll(/\('([A-Z0-9_]+)',\s*'per_box',\s*([\d.]+),/g)].map((match) => match[1]!);
+  // The seeding migration still lists both — history is not rewritten. The CORRECTION migration is
+  // what removes the sticker, and this asserts that it does, by reading its own SQL.
   assert.deepEqual(perBox, ["BOX_GUAMUSIN_12", "STICKER_GUAMUSIN"]);
+  const noStickers = readFileSync(
+    "supabase/migrations/20261008233000_production_planning_guamusin_no_stickers.sql",
+    "utf8",
+  );
+  assert.match(noStickers, /delete from public\.prodplan_compositions/, "it deletes the composition line");
+  assert.match(noStickers, /delete from public\.prodplan_product_materials/, "and the product join");
+  assert.match(noStickers, /set is_active = false/, "and deactivates rather than deletes the material");
+  assert.ok(
+    !/delete from public\.prodplan_materials/.test(noStickers),
+    "🔴 it must never DELETE the material row — the LEAFLET precedent: a delete makes his own earlier packaging message unreadable against the data, and a later reactivation cannot be told from a fresh seeding",
+  );
+  // 🔴 IVYRONC'S OWN PACKAGING IS `CARTON` AND A BARE `STICKER`, AND "STICKER" IS A SUBSTRING OF
+  // "STICKER_GUAMUSIN" — so `!includes("STICKER")` can never fail and proves nothing. What actually
+  // protects Ivyronc is that every match is an EQUALITY on the full code: a single `like '%STICKER%'`
+  // would deactivate the syrup's sticker too and read as a tidier version of the same migration.
+  assert.ok(!/\bi?like\b/i.test(noStickers), "no LIKE anywhere — a pattern would catch Ivyronc's bare STICKER");
+  // The comments are stripped before the codes below are read: the revert recipe in the header
+  // quotes the very statements this checks, and would otherwise match its own docs.
+  //
+  // 🔴 `stripSqlComments`, never a `^\s*--` replace. A line filter judges a line by how it STARTS,
+  // so a `--` written after real code survives it — and `tests/comment-strip-ratchet.test.ts` fails
+  // the build on the hand-rolled spelling, which is how this line was caught.
+  const sqlLines = stripSqlComments(noStickers);
+  assert.match(sqlLines, /m\.code = 'STICKER_GUAMUSIN'/, "the joins match the full code");
+  assert.match(sqlLines, /where code = 'STICKER_GUAMUSIN'/, "and so does the deactivation");
+  for (const code of [...sqlLines.matchAll(/code = '([A-Z0-9_]+)'/g)].map((m) => m[1]!)) {
+    assert.ok(
+      code === "STICKER_GUAMUSIN" || code === "GUAMUSIN",
+      `every code this migration names is Guamusin's own — found ${code}`,
+    );
+  }
 
   // 🔴 The aluminium film has stock and NO composition row, and must keep both: nobody has told him
   // how many kilograms a thousand sachets take, and a guessed figure would reach the buy list as a

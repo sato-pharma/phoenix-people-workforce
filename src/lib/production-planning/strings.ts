@@ -148,6 +148,9 @@ export const PP = {
   // wrong in the only way that matters while every number below it is right.
   tileRuns: "عدد التشغيلات",
   tileRunVolume: "حجم التشغيلة",
+  // The same tile for a product weighed rather than poured. "حجم" is volume, which is the wrong
+  // noun for 100 kg of powder — `runSizeLabel(measureUnit)` picks between the two.
+  tileRunWeight: "وزن التشغيلة",
   tileYield: "الناتج الفعلي",
   tileSurplus: "الزيادة عن المطلوب",
   tileShortfall: "النقص عن المطلوب",
@@ -435,6 +438,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
 
   tileRuns: "Runs",
   tileRunVolume: "Run volume",
+  tileRunWeight: "Batch size",
   tileYield: "Actual yield",
   tileSurplus: "Surplus over the request",
   tileShortfall: "Shortfall against the request",
@@ -737,6 +741,153 @@ export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: 
 }
 
 /**
+ * The word for ONE SALEABLE UNIT — a sachet for the powder, a box for the syrup.
+ *
+ * 🔴 A SALEABLE UNIT AND A BOX ARE THE SAME THING ONLY ON IVYRONC, where a box holds one bottle.
+ * Guamusin's box holds twelve sachets, so every label that said "علبة" for the thing the engine
+ * counts in `goodUnits` was calling a sachet a box: the owner read a tile saying "10,000 علبة"
+ * under a sentence saying "120,000 كيس" and could not tell which number the screen meant
+ * (2026-10-08 — *"their is a mismatch in guamusin between the sachet and the 1 box have 12
+ * sachets"*).
+ */
+export function saleableUnitWordAr(unit: MeasureUnit): string {
+  return unit === "g" ? PP.unitSachet : PP.unitBox;
+}
+
+export function saleableUnitWordEn(unit: MeasureUnit): string {
+  return unit === "g" ? PP_EN.unitSachet : PP_EN.unitBox;
+}
+
+/**
+ * The English plural of a unit word.
+ *
+ * 🔴 NOT `word + "s"`. The catalogue stores `box` and `sachet` in the singular, so a bare `+ "s"`
+ * renders **"boxs"** — and that is not a cosmetic slip, it rewrites the pinned Ivyronc sentence
+ * ("96,000 boxes of 100 ml") that `tests/production-planning-strings.test.ts` asserts verbatim.
+ * Arabic needs none of this: `علبة` and `كيس` follow a counted noun unchanged.
+ */
+export function pluralEn(word: string): string {
+  return /(?:s|x|z|ch|sh)$/.test(word) ? `${word}es` : `${word}s`;
+}
+
+/**
+ * A saleable-unit count with the box count it comes to in brackets — `120,000 كيس (10,000 علبة)`.
+ *
+ * The owner's instruction, 2026-10-08: *"in alll ur calulation show sachets number and between
+ * brackets number of boxes for those sachets"*.
+ *
+ * 🔴 THE BRACKET IS OMITTED WHEN A BOX HOLDS ONE UNIT, which is every Ivyronc figure. Printing it
+ * unconditionally reads `106,000 علبة (106,000 علبة)` — the same number twice, which is worse than
+ * the ambiguity this exists to remove. `unitsPerBox` is the test and never the measure unit: a
+ * powder sold in a one-sachet box would need no bracket either, and a syrup packed two bottles to
+ * a box would need one.
+ *
+ * Both figures arrive ALREADY FORMATTED, because only the caller knows whether it holds a wire
+ * string or a bigint, and `formatNumberLatin` is not idempotent over a string that already carries
+ * separators.
+ */
+export function unitsWithBoxesAr(parts: {
+  readonly units: string;
+  readonly boxes: string;
+  readonly unitsPerBox: string;
+  readonly measureUnit: MeasureUnit;
+}): string {
+  const unitWord = saleableUnitWordAr(parts.measureUnit);
+  if (parts.unitsPerBox === "1") return `${parts.units} ${unitWord}`;
+  return `${parts.units} ${unitWord} (${parts.boxes} ${PP.unitBox})`;
+}
+
+export function unitsWithBoxesEn(parts: {
+  readonly units: string;
+  readonly boxes: string;
+  readonly unitsPerBox: string;
+  readonly measureUnit: MeasureUnit;
+}): string {
+  const unitWord = pluralEn(saleableUnitWordEn(parts.measureUnit));
+  if (parts.unitsPerBox === "1") return `${parts.units} ${unitWord}`;
+  return `${parts.units} ${unitWord} (${parts.boxes} ${pluralEn(PP_EN.unitBox)})`;
+}
+
+/**
+ * "How many did the factory actually produce" — in the product's own saleable unit.
+ *
+ * 🔴 A SUFFIX WILL NOT DO HERE. Appending the unit to the flat string gives "العلب الناتجة فعليًا
+ * (كيس)" — *boxes* produced, measured in *sachets* — and in English "Boxes actually produced
+ * (sachet)", which contradicts itself in four words. `prodplan_runs.actual_good_units` has always
+ * been a SALEABLE-UNIT column; it was only ever the noun that was wrong, so the noun is what moves.
+ */
+export function runActualLabelAr(unit: MeasureUnit): string {
+  return unit === "g" ? "الأكياس الناتجة فعليًا" : PP.runActualGoodUnits;
+}
+
+export function runActualLabelEn(unit: MeasureUnit): string {
+  return unit === "g" ? "Sachets actually produced" : PP_EN.runActualGoodUnits;
+}
+
+/**
+ * The run-size label — a VOLUME for the syrup, a WEIGHT for the powder.
+ *
+ * 🔴 "حجم التشغيلة" MEANS "RUN VOLUME", WHICH IS INCOHERENT FOR A POWDER WEIGHED IN KILOGRAMS. The
+ * owner said it plainly on 2026-10-08 — *"1 run is 100kg not liter"*, then *"batch ( run size )
+ * 100kg"*. The figure was already right and already labelled كجم; it was the NOUN that still
+ * described a liquid, on the tile and on the exported sheet alike.
+ */
+export function runSizeLabelAr(unit: MeasureUnit): string {
+  return unit === "g" ? PP.tileRunWeight : PP.tileRunVolume;
+}
+
+export function runSizeLabelEn(unit: MeasureUnit): string {
+  return unit === "g" ? PP_EN.tileRunWeight : PP_EN.tileRunVolume;
+}
+
+/**
+ * The request-mode labels, with the box's own contents spelled out.
+ *
+ * 🔴 THIS IS THE ONE THAT COULD COST A REAL ORDER, AND THE FIX IS NOT TO RENAME THE UNIT. The two
+ * quantity modes mean BOXES to the engine (`resolveRunGeometry`, `mode: "total_boxes"`), so a label
+ * reading "إجمالي الأكياس" would make the words and the arithmetic disagree — the input would say
+ * sachets and the engine would still divide by twelve. Measured on Guamusin: typing his own sachet
+ * figure of 120,000 into a box field orders **72 runs, not 6** — 1,440,000 sachets, 7.2 tonnes of
+ * powder.
+ *
+ * So the unit stays what the engine reads, and the label says what a box HOLDS. Ivyronc, at one
+ * bottle a box, gets the flat string back unchanged — there is nothing to disambiguate there.
+ */
+export function requestModeLabelsAr(parts: {
+  readonly unitsPerBox: string;
+  readonly measureUnit: MeasureUnit;
+}): { total: string; goodUnits: string; runs: string } {
+  if (parts.unitsPerBox === "1") {
+    return { goodUnits: PP.requestModeGoodUnits, runs: PP.requestModeRuns, total: PP.requestModeTotalBoxes };
+  }
+  const per = `${parts.unitsPerBox} ${saleableUnitWordAr(parts.measureUnit)} في العلبة`;
+  return {
+    goodUnits: `${PP.requestModeGoodUnits} — ${per}`,
+    runs: PP.requestModeRuns,
+    total: `${PP.requestModeTotalBoxes} — ${per}`,
+  };
+}
+
+export function requestModeLabelsEn(parts: {
+  readonly unitsPerBox: string;
+  readonly measureUnit: MeasureUnit;
+}): { total: string; goodUnits: string; runs: string } {
+  if (parts.unitsPerBox === "1") {
+    return {
+      goodUnits: PP_EN.requestModeGoodUnits,
+      runs: PP_EN.requestModeRuns,
+      total: PP_EN.requestModeTotalBoxes,
+    };
+  }
+  const per = `${parts.unitsPerBox} ${pluralEn(saleableUnitWordEn(parts.measureUnit))} per box`;
+  return {
+    goodUnits: `${PP_EN.requestModeGoodUnits} — ${per}`,
+    runs: PP_EN.requestModeRuns,
+    total: `${PP_EN.requestModeTotalBoxes} — ${per}`,
+  };
+}
+
+/**
  * The sample-size hint, with the product's own two sizes written into it.
  *
  * It used to be a flat string naming 40 ml and 100 ml, which were Ivyronc's. A hint that states a
@@ -897,18 +1048,39 @@ export function buildPlannerSentence(parts: {
    * is not a special case here, it is still the default.
    */
   readonly measureUnit?: MeasureUnit;
+  /**
+   * How many saleable units go in one box, and the box count they come to.
+   *
+   * BOTH optional and both defaulting to the no-bracket case, for the same reason `measureUnit` is:
+   * Ivyronc packs one bottle to a box, so its pinned sentence must keep reading exactly as it did.
+   * The bracket appears only when a box genuinely holds more than one unit.
+   */
+  readonly unitsPerBox?: string;
+  readonly totalBoxes?: string;
 }): string {
   const u = measureUnitLabelsAr(parts.measureUnit ?? "ml");
+  const measure = parts.measureUnit ?? "ml";
   // A powder's saleable unit is a sachet, a syrup's is a box — the word follows the measure, because
   // "20,000 علبة 5 جم" would be calling a sachet a box.
-  const unitWord = (parts.measureUnit ?? "ml") === "g" ? PP.unitSachet : PP.unitBox;
+  const unitWord = saleableUnitWordAr(measure);
   const head =
     `${parts.runs} ${PP.unitRuns} × ${parts.runVolumeLitres} ${u.large} = ` +
     `${parts.totalVolumeLitres} ${u.large}`;
+  // The owner's bracket. `goodUnits` is the SALEABLE count and `totalBoxes` already includes the
+  // samples' own boxes, so the bracket is built from the saleable count alone — printing the whole
+  // box figure beside the saleable one would read as its equivalent and be larger than it.
+  const perBox = parts.unitsPerBox ?? "1";
+  const saleableBoxes =
+    perBox === "1" || !parts.totalBoxes
+      ? null
+      : formatNumberLatin((BigInt(parts.goodUnits.replaceAll(",", "")) / BigInt(perBox)).toString());
+  const saleable = saleableBoxes
+    ? `${parts.goodUnits} ${unitWord} (${saleableBoxes} ${PP.unitBox})`
+    : `${parts.goodUnits} ${unitWord}`;
   const yieldText =
     parts.sampleUnits === "0"
-      ? `${parts.goodUnits} ${unitWord} ${parts.goodUnitMl} ${u.small}`
-      : `${parts.goodUnits} ${unitWord} ${parts.goodUnitMl} ${u.small} و ${parts.sampleUnits} ` +
+      ? `${saleable} ${parts.goodUnitMl} ${u.small}`
+      : `${saleable} ${parts.goodUnitMl} ${u.small} و ${parts.sampleUnits} ` +
         `${PP.unitSample} ${parts.sampleUnitMl} ${u.small}`;
   const tail =
     parts.surplusBoxes && parts.surplusBoxes !== "0"
@@ -1038,16 +1210,27 @@ export function buildPlannerSentenceEn(parts: {
   readonly shortfallBoxes: string | null;
   /** Optional and defaulting to `ml`, so the pinned Ivyronc sentence is unchanged. */
   readonly measureUnit?: MeasureUnit;
+  /** Both optional and both defaulting to the no-bracket case — see the Arabic builder. */
+  readonly unitsPerBox?: string;
+  readonly totalBoxes?: string;
 }): string {
   const u = measureUnitLabelsEn(parts.measureUnit ?? "ml");
-  const unitWord = (parts.measureUnit ?? "ml") === "g" ? "sachets" : "boxes";
+  const unitWord = pluralEn(saleableUnitWordEn(parts.measureUnit ?? "ml"));
   const head =
     `${parts.runs} ${parts.runs === "1" ? PP_EN.unitRun : PP_EN.unitRuns} × ${parts.runVolumeLitres} ` +
     `${u.large} = ${parts.totalVolumeLitres} ${u.large}`;
+  const perBox = parts.unitsPerBox ?? "1";
+  const saleableBoxes =
+    perBox === "1" || !parts.totalBoxes
+      ? null
+      : formatNumberLatin((BigInt(parts.goodUnits.replaceAll(",", "")) / BigInt(perBox)).toString());
+  const saleable = saleableBoxes
+    ? `${parts.goodUnits} ${unitWord} (${saleableBoxes} ${pluralEn(PP_EN.unitBox)})`
+    : `${parts.goodUnits} ${unitWord}`;
   const yieldText =
     parts.sampleUnits === "0"
-      ? `${parts.goodUnits} ${unitWord} of ${parts.goodUnitMl} ${u.small}`
-      : `${parts.goodUnits} ${unitWord} of ${parts.goodUnitMl} ${u.small} and ${parts.sampleUnits} ` +
+      ? `${saleable} of ${parts.goodUnitMl} ${u.small}`
+      : `${saleable} of ${parts.goodUnitMl} ${u.small} and ${parts.sampleUnits} ` +
         `samples of ${parts.sampleUnitMl} ${u.small}`;
   const tail =
     parts.surplusBoxes && parts.surplusBoxes !== "0"
@@ -1236,6 +1419,19 @@ export type ProductionPlanningStrings = {
    */
   readonly name: (item: ProductionPlanningNamed) => string;
   readonly plannerSentence: typeof buildPlannerSentence;
+  /** The word for one saleable unit — a sachet for the powder, a box for the syrup. */
+  readonly saleableUnitWord: (unit: MeasureUnit) => string;
+  /**
+   * A saleable-unit count with its box count in brackets, the owner's 2026-10-08 instruction.
+   * Silently drops the bracket when a box holds one unit, so Ivyronc reads exactly as before.
+   */
+  readonly unitsWithBoxes: typeof unitsWithBoxesAr;
+  /** "حجم التشغيلة" for a volume, "وزن التشغيلة" for a weight. */
+  readonly runSizeLabel: (unit: MeasureUnit) => string;
+  /** "How many did the factory produce" in the product's own saleable unit. */
+  readonly runActualLabel: (unit: MeasureUnit) => string;
+  /** The request-mode labels in the product's own saleable unit. */
+  readonly requestModeLabels: typeof requestModeLabelsAr;
 };
 
 const AR_BUNDLE: ProductionPlanningStrings = {
@@ -1250,12 +1446,17 @@ const AR_BUNDLE: ProductionPlanningStrings = {
   name: nameArabic,
   plannerSentence: buildPlannerSentence,
   refusals: PRODUCTION_PLANNING_REFUSALS,
+  requestModeLabels: requestModeLabelsAr,
+  runActualLabel: runActualLabelAr,
+  runSizeLabel: runSizeLabelAr,
+  saleableUnitWord: saleableUnitWordAr,
   sampleUnitsHint: buildSampleUnitsHintAr,
   severityLabels: ALARM_SEVERITY_LABELS,
   supplierLabels: SUPPLIER_LABELS,
   t: PP,
   tabs: PRODUCTION_PLANNING_TABS,
   unitLabel: unitLabelAr,
+  unitsWithBoxes: unitsWithBoxesAr,
 };
 
 const EN_BUNDLE: ProductionPlanningStrings = {
@@ -1270,12 +1471,17 @@ const EN_BUNDLE: ProductionPlanningStrings = {
   name: nameEnglish,
   plannerSentence: buildPlannerSentenceEn,
   refusals: PRODUCTION_PLANNING_REFUSALS_EN,
+  requestModeLabels: requestModeLabelsEn,
+  runActualLabel: runActualLabelEn,
+  runSizeLabel: runSizeLabelEn,
+  saleableUnitWord: saleableUnitWordEn,
   sampleUnitsHint: buildSampleUnitsHintEn,
   severityLabels: ALARM_SEVERITY_LABELS_EN,
   supplierLabels: SUPPLIER_LABELS_EN,
   t: PP_EN,
   tabs: PRODUCTION_PLANNING_TABS_EN,
   unitLabel: unitLabelEn,
+  unitsWithBoxes: unitsWithBoxesEn,
 };
 
 /**

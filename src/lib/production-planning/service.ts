@@ -811,7 +811,12 @@ export type PlanResult = {
   readonly runVolumeLitres: string;
   readonly totalDoses: string;
   readonly leftoverMl: string;
-  readonly oneRunFewer: { runs: string; totalBoxes: string; shortfallBoxes: string } | null;
+  readonly oneRunFewer: {
+    runs: string;
+    packagingSets: string;
+    totalBoxes: string;
+    shortfallBoxes: string;
+  } | null;
   readonly sentence: string;
   readonly rows: PlanResultRow[];
   readonly totals: {
@@ -999,6 +1004,7 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
     oneRunFewer: run.oneRunFewer
       ? {
           runs: run.oneRunFewer.runs.toString(),
+          packagingSets: run.oneRunFewer.packagingSets.toString(),
           totalBoxes: run.oneRunFewer.totalBoxes.toString(),
           shortfallBoxes: run.oneRunFewer.shortfallBoxes.toString(),
         }
