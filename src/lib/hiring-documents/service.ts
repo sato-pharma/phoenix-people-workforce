@@ -847,8 +847,10 @@ export async function attachHiringDocumentFiles(
 
     // The evidence arriving IS the document being submitted. Leaving the cell on "pending" after a
     // certificate has been filed would mean HR has to remember to tick it separately, and the whole
-    // point of this feature is that the checklist stops depending on anyone's memory.
-    await markHiringDocumentSubmitted(employeeHrId, documentId);
+    // point of this feature is that the checklist stops depending on anyone's memory. A caller filing
+    // only PART of the document says so (`markSubmitted: false`), and the cell keeps its state.
+    const markedSubmitted = input.markSubmitted !== false;
+    if (markedSubmitted) await markHiringDocumentSubmitted(employeeHrId, documentId);
 
     const inserted = (data ?? []) as HiringDocumentFileDbRow[];
     const uploaderNames = await loadEmployeeDisplayNames(
@@ -866,13 +868,13 @@ export async function attachHiringDocumentFiles(
       entityType: "hiring_document_file",
       newValues: {
         fileNames: inserted.map((row) => row.file_name),
-        markedSubmitted: true,
+        markedSubmitted,
         mode: input.mode,
         totalBytes: inserted.reduce((sum, row) => sum + (row.size_bytes ?? 0), 0),
       },
       oldValues: {},
       summary: `${inserted.length} file(s) filed against ${target.documentName} for ${target.employeeName}`
-        + ` by ${input.mode}, and the checklist ticked.`,
+        + ` by ${input.mode}${markedSubmitted ? ", and the checklist ticked." : ", with the checklist left as it was."}`,
     });
 
     return inserted.map((row) => toHiringDocumentFile(row, uploaderNames));

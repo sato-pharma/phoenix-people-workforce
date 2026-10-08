@@ -23,13 +23,22 @@ The button opens `/join/[token]`, a 100% Sato Pharma page with no login. The tok
   residence (area from the seat's own bricks, cascading to the governorate, then free-text address).
 - The candidate UPLOADS a photo of each side of the national ID card — both required (owner,
   2026-10-08: "make in the form also required to upload a photo of his national ID"). The browser
-  shrinks each to 2,000px JPEG before sending, so two fit the proxy's 10 MB body; the server caps
-  each at 4.5 MB and accepts JPG, PNG or WEBP (`validateJoiningIdPhotos`), judged with the answers
+  shrinks each to 2,000px JPEG before sending, so every photo fits the proxy's 10 MB body; the server
+  caps each at 3 MB (three at the cap still fit) and accepts JPG, PNG or WEBP (`validateJoiningIdPhotos`), judged with the answers
   BEFORE the claim. After the record exists they are filed into the Hiring Documents slot whose
   `hiring_document_definitions.joining_form_upload` is `national_id` (migration
   `20261008230000`, which marks the "National ID copy" slot once — never matched on the name
   afterwards), uploaded by the new hire, and the slot is ticked. A filing failure never fails the
   acceptance: the HR alert says the photos could NOT be filed and to ask for them.
+- The candidate MAY upload a photo, labelled just "Photo" — never "personal photo" (owner,
+  2026-10-08: "upload a photo for him"). His three rulings the same evening: it is OPTIONAL; it
+  becomes the new record's Phoenix profile photo (`uploadEmployeePhoto`, `employees.photo_path`)
+  AND is filed on Hiring Documents into the slot `joining_form_upload = 'photo'` marks (migration
+  `20261009001000`, which marks "(6) personal photos" once); and that slot is NOT ticked
+  (`markSubmitted: false` on `attachHiringDocumentFiles`), because it asks for six prints for the
+  paper file and HR still collects them. Same type and size checks as the ID
+  (`validateJoiningFacePhoto`), judged before the claim; either half failing after the record exists
+  is logged and never fails the acceptance.
 - English or Arabic (owner, 2026-10-08: "make him able to change language between English and
   Arabic"). A switch in the header bar turns the whole page into Arabic, right to left, in Cairo,
   remembered on that phone (an Arabic phone opens in Arabic). The words live in

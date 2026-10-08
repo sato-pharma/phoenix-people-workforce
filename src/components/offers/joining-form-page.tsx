@@ -13,16 +13,18 @@ import {
 } from "@/components/offers/joining-form-copy";
 import {
   JOINING_FORM_EDUCATION_OPTIONS,
+  JOINING_FORM_FACE_PHOTO_FIELD,
   JOINING_FORM_GENDER_OPTIONS,
   JOINING_FORM_GOVERNORATES,
   JOINING_FORM_OTHER_AREA,
   JOINING_FORM_PHOTO_FIELDS,
   readEgyptianNationalId,
+  validateJoiningFacePhoto,
   validateJoiningForm,
   validateJoiningIdPhotos,
   type JoiningFormAnswers,
   type JoiningFormField,
-  type JoiningFormPhotoField,
+  type JoiningFormUploadField,
 } from "@/lib/offers/joining-form";
 import type { JoiningFormView } from "@/lib/offers/joining-form-service";
 
@@ -46,13 +48,16 @@ import type { JoiningFormView } from "@/lib/offers/joining-form-service";
  * THE NATIONAL ID PHOTOS (owner, 2026-10-08). Front and back are both required; each is shrunk in the
  * browser before it is sent, and Submit files them on Hiring Documents for the new record.
  *
+ * THE PHOTO (owner, 2026-10-08) — optional, labelled just "Photo". Shrunk the same way; Submit makes it
+ * the new record's profile photo and files it beside "(6) personal photos" without ticking that slot.
+ *
  * Mobile first: the candidate opens it from a phone's mail app. One column at 375px, the step rail
  * only from 1024px, nothing that scrolls sideways, and nothing cut with an ellipsis.
  */
 
 type OpenView = Extract<JoiningFormView, { kind: "open" }>;
 type Done = { hrId: string; satoEmail: string | null; satoEmailReason: string | null };
-type FieldKey = JoiningFormField | JoiningFormPhotoField;
+type FieldKey = JoiningFormField | JoiningFormUploadField;
 type Photo = { file: File; url: string };
 
 const LATIN_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
@@ -586,7 +591,8 @@ function Field({
 /**
  * One side of the national ID card: a framed tile at the card's own proportions, with camera corner
  * ticks while empty and the photo itself once chosen. The whole tile is the file input's label, so a
- * tap anywhere opens the phone's camera or gallery.
+ * tap anywhere opens the phone's camera or gallery. `portrait` draws the optional photo's tile instead:
+ * a 3:4 frame with a head-and-shoulders mark, and a tag beside its label.
  */
 function IdPhotoTile({
   busy,
@@ -595,21 +601,28 @@ function IdPhotoTile({
   label,
   onPick,
   photo,
+  portrait = false,
+  tag,
 }: {
   busy: boolean;
   error?: string;
-  field: JoiningFormPhotoField;
+  field: JoiningFormUploadField;
   label: string;
   onPick: (file: File) => void;
   photo: Photo | null;
+  portrait?: boolean;
+  tag?: string;
 }) {
   const { t } = useCopy();
   const id = `jf-${field}`;
   return (
     <div className="min-w-0">
-      <p className={`${micro} text-[#111820]`}>{label}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className={`${micro} text-[#111820]`}>{label}</p>
+        {tag ? <Tag>{tag}</Tag> : null}
+      </div>
       <label
-        className={`group relative mt-2 flex aspect-[1.585] w-full cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden border bg-[#f7f9fa] px-4 text-center transition-colors focus-within:border-[#0879b8] focus-within:shadow-[inset_0_0_0_1px_#0879b8] ${
+        className={`group relative mt-2 flex ${portrait ? "aspect-[3/4] max-w-[220px]" : "aspect-[1.585]"} w-full cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden border bg-[#f7f9fa] px-4 text-center transition-colors focus-within:border-[#0879b8] focus-within:shadow-[inset_0_0_0_1px_#0879b8] ${
           error ? "border-[#b91c1c]" : photo ? "border-[#111820]" : "border-[#cdd6dc] hover:border-[#0879b8]"
         }`}
         htmlFor={id}
@@ -630,11 +643,19 @@ function IdPhotoTile({
         ) : (
           <>
             <FrameTicks inset tone={error ? "ink" : "brand"} />
-            <svg aria-hidden className="h-9 w-12 text-[#0879b8]" fill="none" viewBox="0 0 48 36">
-              <rect height="34" stroke="currentColor" strokeWidth="2" width="46" x="1" y="1" />
-              <rect height="14" stroke="currentColor" strokeWidth="2" width="11" x="7" y="9" />
-              <path d="M24 11h17M24 17h17M24 23h11" stroke="currentColor" strokeWidth="2" />
-            </svg>
+            {portrait ? (
+              <svg aria-hidden className="h-12 w-10 text-[#0879b8]" fill="none" viewBox="0 0 40 48">
+                <rect height="46" stroke="currentColor" strokeWidth="2" width="38" x="1" y="1" />
+                <rect height="13" stroke="currentColor" strokeWidth="2" width="12" x="14" y="10" />
+                <path d="M7 43v-6l6-6h14l6 6v6" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            ) : (
+              <svg aria-hidden className="h-9 w-12 text-[#0879b8]" fill="none" viewBox="0 0 48 36">
+                <rect height="34" stroke="currentColor" strokeWidth="2" width="46" x="1" y="1" />
+                <rect height="14" stroke="currentColor" strokeWidth="2" width="11" x="7" y="9" />
+                <path d="M24 11h17M24 17h17M24 23h11" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            )}
             <span className="text-[13px] font-semibold leading-snug text-[#111820]">{busy ? t.photos.preparing : t.photos.choose}</span>
           </>
         )}
@@ -887,8 +908,8 @@ function JoiningForm({ token, view }: { token: string; view: OpenView }) {
     residenceAreaOther: "",
     residenceCity: residence.defaultCity ?? "",
   });
-  const [photos, setPhotos] = useState<Record<JoiningFormPhotoField, Photo | null>>({ idBack: null, idFront: null });
-  const [preparing, setPreparing] = useState<Partial<Record<JoiningFormPhotoField, boolean>>>({});
+  const [photos, setPhotos] = useState<Record<JoiningFormUploadField, Photo | null>>({ idBack: null, idFront: null, photo: null });
+  const [preparing, setPreparing] = useState<Partial<Record<JoiningFormUploadField, boolean>>>({});
   const [serverErrors, setServerErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>({});
   const [fromId, setFromId] = useState<{ birthDate: boolean; gender: boolean }>({ birthDate: false, gender: false });
@@ -906,11 +927,14 @@ function JoiningForm({ token, view }: { token: string; view: OpenView }) {
       idBack: photos.idBack ? { contentType: photos.idBack.file.type, size: photos.idBack.file.size } : null,
       idFront: photos.idFront ? { contentType: photos.idFront.file.type, size: photos.idFront.file.size } : null,
     });
-    return { ...answerErrors, ...photoErrors } as Partial<Record<FieldKey, string>>;
+    const facePhotoError = validateJoiningFacePhoto(photos.photo ? { contentType: photos.photo.file.type, size: photos.photo.file.size } : null);
+    return { ...answerErrors, ...photoErrors, ...(facePhotoError ? { photo: facePhotoError } : {}) } as Partial<Record<FieldKey, string>>;
   }, [answers, photos, residence.areaOptions, today]);
   const required = requiredFields(answers, hasAreaList);
   const filled = (field: FieldKey) =>
-    field === "idFront" || field === "idBack" ? Boolean(photos[field]) : Boolean(String(answers[field] ?? "").trim());
+    field === "idFront" || field === "idBack" || field === JOINING_FORM_FACE_PHOTO_FIELD
+      ? Boolean(photos[field])
+      : Boolean(String(answers[field] ?? "").trim());
   const complete = required.filter((field) => filled(field) && !live[field]).length;
   const percent = Math.round((complete / required.length) * 100);
   const recognised = readEgyptianNationalId(answers.nationalId);
@@ -954,9 +978,9 @@ function JoiningForm({ token, view }: { token: string; view: OpenView }) {
     if (city) setAnswers((current) => ({ ...current, residenceArea: value, residenceCity: city }));
   }
 
-  async function pickPhoto(field: JoiningFormPhotoField, file: File) {
+  async function pickPhoto(field: JoiningFormUploadField, file: File) {
     setPreparing((current) => ({ ...current, [field]: true }));
-    const prepared = await preparePhoto(file, field === "idFront" ? "national-id-front" : "national-id-back");
+    const prepared = await preparePhoto(file, field === "idFront" ? "national-id-front" : field === "idBack" ? "national-id-back" : "photo");
     const url = URL.createObjectURL(prepared);
     setPhotos((current) => {
       const previous = current[field];
@@ -971,21 +995,24 @@ function JoiningForm({ token, view }: { token: string; view: OpenView }) {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setFailure(null);
-    if (required.some((field) => live[field] || !filled(field))) {
-      setTouched(Object.fromEntries(required.map((field) => [field, true])));
-      const first = required.find((field) => live[field] || !filled(field));
+    // The optional photo never blocks by being absent — only by being the wrong kind of file.
+    const checked: FieldKey[] = live.photo ? [JOINING_FORM_FACE_PHOTO_FIELD, ...required] : required;
+    if (checked.some((field) => live[field] || (field !== JOINING_FORM_FACE_PHOTO_FIELD && !filled(field)))) {
+      setTouched(Object.fromEntries(checked.map((field) => [field, true])));
+      const first = checked.find((field) => live[field] || (field !== JOINING_FORM_FACE_PHOTO_FIELD && !filled(field)));
       if (first) document.getElementById(`jf-${first}`)?.focus();
       setFailure(t.failure.attention);
       return;
     }
     setBusy(true);
     try {
-      // Multipart: the answers as one JSON field, and the two photos beside them. No content-type
+      // Multipart: the answers as one JSON field, and the photos beside them. No content-type
       // header — the browser writes the multipart boundary itself.
       const body = new FormData();
       body.append("answers", JSON.stringify(answers));
       if (photos.idFront) body.append("idFront", photos.idFront.file);
       if (photos.idBack) body.append("idBack", photos.idBack.file);
+      if (photos.photo) body.append("photo", photos.photo.file);
       const response = await fetch(`/api/public/offer-acceptance/${encodeURIComponent(token)}`, { body, method: "POST" });
       const payload = (await response.json().catch(() => ({}))) as {
         errors?: Partial<Record<FieldKey, string>>;
@@ -1224,6 +1251,21 @@ function JoiningForm({ token, view }: { token: string; view: OpenView }) {
                           <input className={controlClass(Boolean(errorFor("birthDate")), LTR_INPUT)} dir="ltr" max={today} onChange={(e) => set("birthDate", e.target.value)} type="date" value={answers.birthDate} {...aria("birthDate", Boolean(errorFor("birthDate")))} />
                         </Field>
                       </div>
+                    </div>
+
+                    <div className="space-y-5">
+                      <GroupLabel>{t.details.groups.photo}</GroupLabel>
+                      <p className="-mt-1 text-[13px] leading-relaxed text-[#69757e]">{t.facePhoto.hint}</p>
+                      <IdPhotoTile
+                        busy={Boolean(preparing[JOINING_FORM_FACE_PHOTO_FIELD])}
+                        error={errorFor(JOINING_FORM_FACE_PHOTO_FIELD)}
+                        field={JOINING_FORM_FACE_PHOTO_FIELD}
+                        label={t.facePhoto.label}
+                        onPick={(file) => void pickPhoto(JOINING_FORM_FACE_PHOTO_FIELD, file)}
+                        photo={photos[JOINING_FORM_FACE_PHOTO_FIELD]}
+                        portrait
+                        tag={t.facePhoto.optional}
+                      />
                     </div>
 
                     <div className="space-y-5">
