@@ -54,6 +54,29 @@ export const PRODUCTION_PLANNING_FONT_STACK =
  */
 export const PRODUCTION_PLANNING_WORKBOOK_FONT = "Tahoma";
 
+/**
+ * The packaging material (code `CARTON`) is stored as `Box` / `علبة`, and the same documents also say
+ * "boxes" for the product count — so wherever a DOCUMENT names the packaging row (the Excel export,
+ * the reorder email) it is spelled out with these. The screen and the stored name stay `Box`.
+ */
+export const PACKAGING_BOX_CODE = "CARTON";
+export const PACKAGING_BOX_NAME_AR = "علبة التغليف";
+export const PACKAGING_BOX_NAME_EN = "Packaging box";
+
+/** The packaging row's name in a document, in the document's language. */
+export function packagingBoxName(lang: "ar" | "en"): string {
+  return lang === "ar" ? PACKAGING_BOX_NAME_AR : PACKAGING_BOX_NAME_EN;
+}
+
+/**
+ * The material label a row of the reorder email carries. The email is Arabic whichever way the toggle
+ * is set, so this is the Arabic name — with the packaging row spelled out. A function of its own
+ * (not inline in the sweep) because the sweep imports the email service and a test cannot load it.
+ */
+export function reorderEmailMaterialLabel(code: string, storedNameAr: string): string {
+  return code === PACKAGING_BOX_CODE ? packagingBoxName("ar") : storedNameAr;
+}
+
 export type ProductionPlanningTabKey = "planner" | "stock" | "cost" | "run" | "settings";
 
 /**
