@@ -300,6 +300,34 @@ export const PP = {
   settingsRetiredNone: "لا توجد مواد موقوفة",
   settingsRestore: "إرجاع المادة",
   settingsRestoreHint: "الإرجاع يُعيد المادة وروابط المنتجات، ولا يُعيد سطر التركيبة — تعود المادة بدون تركيبة",
+  // ── The composition editor ──────────────────────────────────────────────────────────────────────
+  // Verbal nouns and impersonal outcomes, no imperative and no second person: both primary users
+  // are women and Arabic marks gender on both, so `production-planning-strings.test.ts` scans every
+  // one of these against its deny-list.
+  settingsCompositionHint:
+    "التركيبة مؤرشفة: أي تعديل يُغلق السطر الساري في تاريخه ويفتح سطراً جديداً، فتبقى الخطة السابقة قابلة لإعادة الإنتاج بتركيبتها",
+  compositionColMaterial: "المادة",
+  compositionColQty: "الكمية",
+  compositionColBasis: "الأساس",
+  compositionColSupplier: "التوريد",
+  compositionEdit: "تعديل السطر",
+  compositionEnter: "إدخال السطر",
+  compositionCancel: "إلغاء",
+  compositionEditorFor: "سطر التركيبة لمادة",
+  compositionQty: "الكمية",
+  compositionQtyTypedIn: "تُكتب بوحدة",
+  compositionQtyStoredAs: "وتُخزَّن بوحدة",
+  compositionQtyStoredPreview: "ستُخزَّن كـ",
+  compositionQtyRequired: "الكمية مطلوبة وأكبر من صفر",
+  compositionBasis: "الأساس",
+  compositionSupplier: "جهة التوريد",
+  compositionOverage: "نسبة الهالك %",
+  compositionOverageHint: "الفراغ يعني اتباع النسبة العامة للوحدة",
+  compositionEffectiveFrom: "ساري من",
+  compositionEffectiveFromHint: "السطر السابق يُغلق في هذا التاريخ، والفراغ يعني اليوم",
+  compositionUnsettledWarning:
+    "التوريد غير المحسوم يُظهر الاحتياج ولا يضيف إلى قائمة الشراء، ويمنع اعتماد أي خطة حتى يُحسم",
+  compositionNoRemoval: "تصفير السطر مرفوض — إيقاف المادة هو طريق إخراجها",
   settingsGeometry: "حجم التشغيلة والعبوات",
   settingsAccess: "الصلاحيات",
   settingsAccessHint: "الأشخاص الذين سمّاهم المالك مُثبتون في الكود — هنا تُضاف صلاحية إضافية بالاسم",
@@ -601,6 +629,30 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   // promised a place to type the line would be the screen claiming something only a migration can do.
   settingsRestoreHint:
     "Restoring brings the material and its product links back; the formula line is not restored, so the material comes back with no composition",
+  settingsCompositionHint:
+    "The formula is versioned: a change closes the line in force on its own date and opens a new one, so a plan committed earlier still reproduces under the formula it was committed with",
+  compositionColMaterial: "Material",
+  compositionColQty: "Quantity",
+  compositionColBasis: "Basis",
+  compositionColSupplier: "Supplied by",
+  compositionEdit: "Edit the line",
+  compositionEnter: "Enter the line",
+  compositionCancel: "Cancel",
+  compositionEditorFor: "Formula line for",
+  compositionQty: "Quantity",
+  compositionQtyTypedIn: "Typed in",
+  compositionQtyStoredAs: "stored in",
+  compositionQtyStoredPreview: "Will be stored as",
+  compositionQtyRequired: "A quantity above zero is required",
+  compositionBasis: "Basis",
+  compositionSupplier: "Supplied by",
+  compositionOverage: "Overage %",
+  compositionOverageHint: "Blank follows the module's own default",
+  compositionEffectiveFrom: "In force from",
+  compositionEffectiveFromHint: "The previous line closes on this date; blank means today",
+  compositionUnsettledWarning:
+    "An unsettled supplier shows the requirement, adds nothing to the buy list, and blocks a committed plan until it is settled",
+  compositionNoRemoval: "A line cannot be zeroed — retiring the material is how it comes off",
   settingsGeometry: "Run volume and packaging",
   settingsAccess: "Access",
   settingsAccessHint:

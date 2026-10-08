@@ -83,6 +83,11 @@ import {
   pageHeaderTitleClassName,
 } from "@/components/admin/admin-design-tokens";
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
+// The three enums from the module's own pure kernel — it declares no imports at all and is
+// explicitly client-safe, so the editor's selects offer exactly the values the service accepts.
+// Retyping them here is how a select and a server-side CHECK start to disagree.
+import { fromBaseUnits, toBaseUnits } from "@/lib/production-planning/display-units";
+import { COMPOSITION_BASES, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
 import {
   coerceProductionPlanningLanguage,
   formatNumberLatin,
@@ -95,6 +100,7 @@ import {
   type ProductMeasure,
 } from "@/lib/production-planning/strings";
 import type {
+  WireBasis,
   WireExpiryVerdict,
   WireGrant,
   WireMaterial,
@@ -102,6 +108,7 @@ import type {
   WirePlanRow,
   WireProduct,
   WireRequestMode,
+  WireSupplier,
   WireWorkspace,
 } from "@/lib/production-planning/wire";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
@@ -1563,30 +1570,6 @@ function ExpiryBanner({ rows }: { rows: WireExpiryVerdict[] }) {
   );
 }
 
-/**
- * A figure typed in the display unit, into the base unit the service stores.
- *
- * Done as STRING arithmetic on purpose: `Number("4284.8") * 1000` is 4284799.999999999 in binary
- * floating point, and this module exists so the screen, the stored row and the Excel formula all
- * carry the same digits.
- */
-function toBaseUnits(typed: string, material: WireMaterial | undefined): string {
-  const text = typed.trim();
-  if (!material || text === "" || !/^\d+(?:\.\d+)?$/.test(text)) return text;
-  const factor = material.basePerDisplay;
-  if (!/^\d+$/.test(factor) || factor === "1") return text;
-  const zeros = factor.length - 1;
-  if (factor !== `1${"0".repeat(zeros)}`) return text;
-  const dot = text.indexOf(".");
-  const whole = dot < 0 ? text : text.slice(0, dot);
-  const fraction = dot < 0 ? "" : text.slice(dot + 1);
-  if (fraction.length <= zeros) {
-    return `${whole}${fraction.padEnd(zeros, "0")}`.replace(/^0+(?=\d)/, "");
-  }
-  const shifted = `${whole}${fraction.slice(0, zeros)}.${fraction.slice(zeros)}`;
-  return shifted.replace(/^0+(?=\d)/, "");
-}
-
 // ── The cost tab ─────────────────────────────────────────────────────────────────────────────────
 
 /** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
@@ -2121,6 +2104,20 @@ export function SettingsTab({
   const [grantLevel, setGrantLevel] = useState<"read" | "full">("read");
   const [grants, setGrants] = useState<WireGrant[]>([]);
 
+  // ── The composition editor ──────────────────────────────────────────────────────────────────────
+  //
+  // ONE line open at a time, in a panel under the table rather than inside a row. The table is
+  // `table-fixed` on a four-column colgroup because a fifth column takes the whole thing below its
+  // natural width in the admin shell's 669px box — so five editable fields cannot live in a row, and
+  // squeezing them in is the fits-the-screen rule's own named failure.
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
+  const [lineQty, setLineQty] = useState("");
+  const [lineBasis, setLineBasis] = useState<WireBasis>("per_dose");
+  const [lineSupplier, setLineSupplier] = useState<WireSupplier>("factory");
+  const [lineOverage, setLineOverage] = useState("");
+  const [lineFrom, setLineFrom] = useState("");
+  const [lineError, setLineError] = useState<string | null>(null);
+
   const loadGrants = useCallback(async () => {
     if (!canWrite) return;
     try {
@@ -2144,8 +2141,366 @@ export function SettingsTab({
   // Built once, not per row: the per-dose label states this product's own dose and unit.
   const basisLabels = S.basisLabels(measureOf(selectedProductOf(data)));
 
+  const editingMaterial = editingMaterialId
+    ? (data.materials.find((material) => material.id === editingMaterialId) ?? null)
+    : null;
+
+  /**
+   * Open the editor on one material, seeded from the line IN FORCE.
+   *
+   * 🔴 The quantity is converted OUT of base units for the field. The row stores 18 g of aluminium
+   * film; DBK's own table says 0.018 kg per box; the field is labelled in kilograms. Seeding it with
+   * the stored 18 and saving that back through `toBaseUnits` would store 18,000 g.
+   *
+   * A material with NO line opens on empty-and-sensible rather than on nothing: `per_dose` is the
+   * basis thirteen of Ivyronc's fourteen lines carry, and `factory` is the supplier for everything
+   * except the four the owner supplies — so the common case is two fields, not five.
+   */
+  const openLine = (material: WireMaterial) => {
+    const line = material.composition;
+    setEditingMaterialId(material.id);
+    setLineError(null);
+    setLineQty(line ? fromBaseUnits(line.qtyPerBasis, material) : "");
+    setLineBasis(line?.basis ?? "per_dose");
+    setLineSupplier(line?.supplier ?? "factory");
+    setLineOverage(line?.overagePct ?? "");
+    setLineFrom("");
+  };
+
+  const closeLine = () => {
+    setEditingMaterialId(null);
+    setLineError(null);
+  };
+
+  // What the typed figure will actually become in the database, shown back before the save. This is
+  // the whole defence against the thousandfold slip: he reads the stored figure, in its own unit,
+  // next to the one he typed.
+  const storedPreview = editingMaterial ? toBaseUnits(lineQty.trim(), editingMaterial) : "";
+
+  const saveLine = async () => {
+    if (!editingMaterial || !data.productId) return;
+    const typed = lineQty.trim();
+    // Zero is refused HERE as well as in the service, with the sentence that says what to do
+    // instead: a line cannot be removed, the material is retired. The service's own refusal is the
+    // gate; this one is so the answer arrives before the round trip.
+    if (typed === "" || !/^\d+(?:\.\d+)?$/.test(typed) || Number(typed) <= 0) {
+      setLineError(typed !== "" && Number(typed) === 0 ? t.compositionNoRemoval : t.compositionQtyRequired);
+      return;
+    }
+    setLineError(null);
+    await onSave("/materials", {
+      materialId: editingMaterial.id,
+      productId: data.productId,
+      qtyPerBasis: toBaseUnits(typed, editingMaterial),
+      basis: lineBasis,
+      supplier: lineSupplier,
+      // Blank means INHERIT the module default, which is why it is null and not "0" — Guamusin's
+      // explicit 0 is a Guamusin decision and must not become every material's.
+      overagePct: lineOverage.trim() === "" ? null : lineOverage.trim(),
+      ...(lineFrom.trim() === "" ? {} : { effectiveFrom: lineFrom.trim() }),
+    });
+    closeLine();
+  };
+
   return (
     <>
+      {/* The formula, and the only screen that can change it.
+          FIRST in the tab deliberately: it is the thing he opens this tab to read, and it used to
+          sit under the numbers, both alarms and the access list. */}
+      <section className={PANEL}>
+        <SectionTitle subtitle={t.settingsCompositionHint} title={t.settingsComposition} />
+
+        {/* 37/21/21/21 — the material column carries a wrapping Arabic name, a Latin code and the
+            shared-product line, so it takes the largest share. FOUR columns, with the two row
+            actions MERGED under the supplier rather than given a fifth: a fifth column takes this
+            table below its natural width in the admin shell's 669px box, which is the
+            fits-the-screen rule's own named remedy (AGENTS.md §4). */}
+        <table className="hidden w-full table-fixed border border-slate-300 bg-white lg:table">
+          <colgroup>
+            <col className="w-[37%]" />
+            <col className="w-[21%]" />
+            <col className="w-[21%]" />
+            <col className="w-[21%]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-slate-300 bg-slate-50">
+              {[t.compositionColMaterial, t.compositionColQty, t.compositionColBasis, t.compositionColSupplier].map((heading) => (
+                <th className={TH} key={heading} scope="col">
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.materials.map((material) => (
+              <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
+                <td className={TD}>
+                  <p className="font-bold break-words text-slate-900">{S.name(material)}</p>
+                  <p className="mt-0.5 break-words text-[11px] text-slate-500">
+                    <Num>{material.code}</Num>
+                  </p>
+                  {/* 🔴 Named BEFORE the retire click, never after it. Retiring is a MATERIAL-level
+                      switch, so a material both products use leaves the other product's buy list
+                      short — and the citric acid anhydrous and the lemon flavour genuinely are
+                      shared. The ids come from the server and the names resolve through `S.name`,
+                      so an English reader never reads an Arabic product name. */}
+                  {material.alsoUsedByProductIds.length > 0 ? (
+                    <p className="mt-1 break-words text-[11px] font-bold text-slate-900">
+                      {t.settingsRetireAlsoUsedBy}:{" "}
+                      {material.alsoUsedByProductIds
+                        .map((id) => {
+                          const product = data.products.find((candidate) => candidate.id === id);
+                          return product ? S.name(product) : id;
+                        })
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                </td>
+                <td className={TD}>
+                  {material.composition ? (
+                    <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />
+                  ) : (
+                    <span className="text-[11px] text-slate-500">{t.excludedNoComposition}</span>
+                  )}
+                </td>
+                <td className={TD}>
+                  {material.composition ? (
+                    <span className="break-words">{basisLabels[material.composition.basis]}</span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
+                <td className={TD}>
+                  {material.composition ? (
+                    <span className="break-words">{S.supplierLabels[material.composition.supplier]}</span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                  {canWrite ? (
+                    <span className="mt-1.5 flex flex-wrap gap-1.5">
+                      {data.productId ? (
+                        <button
+                          className={BUTTON_QUIET}
+                          disabled={busy}
+                          onClick={() => openLine(material)}
+                          type="button"
+                        >
+                          {material.composition ? t.compositionEdit : t.compositionEnter}
+                        </button>
+                      ) : null}
+                      <button
+                        className={BUTTON_QUIET}
+                        disabled={busy}
+                        onClick={() => void onSave("/materials", { materialId: material.id, active: false })}
+                        type="button"
+                      >
+                        {t.settingsRetire}
+                      </button>
+                    </span>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* The phone half of the same rows. The owner's standing rule: desktop gets the table,
+            mobile never does. */}
+        <div className="space-y-2 lg:hidden">
+          {data.materials.map((material) => (
+            <div className={CARD} key={material.id}>
+              <p className="font-bold break-words text-slate-900">{S.name(material)}</p>
+              <p className="mt-0.5 break-words text-[11px] text-slate-500">
+                <Num>{material.code}</Num>
+              </p>
+              <p className="mt-1.5 text-[12px] text-slate-800">
+                {material.composition ? (
+                  <>
+                    <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />{" "}
+                    {basisLabels[material.composition.basis]} —{" "}
+                    {S.supplierLabels[material.composition.supplier]}
+                  </>
+                ) : (
+                  <span className="text-slate-500">{t.excludedNoComposition}</span>
+                )}
+              </p>
+              {material.alsoUsedByProductIds.length > 0 ? (
+                <p className="mt-1 break-words text-[11px] font-bold text-slate-900">
+                  {t.settingsRetireAlsoUsedBy}:{" "}
+                  {material.alsoUsedByProductIds
+                    .map((id) => {
+                      const product = data.products.find((candidate) => candidate.id === id);
+                      return product ? S.name(product) : id;
+                    })
+                    .join(" · ")}
+                </p>
+              ) : null}
+              {canWrite ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {data.productId ? (
+                    <button className={BUTTON_QUIET} disabled={busy} onClick={() => openLine(material)} type="button">
+                      {material.composition ? t.compositionEdit : t.compositionEnter}
+                    </button>
+                  ) : null}
+                  <button
+                    className={BUTTON_QUIET}
+                    disabled={busy}
+                    onClick={() => void onSave("/materials", { materialId: material.id, active: false })}
+                    type="button"
+                  >
+                    {t.settingsRetire}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+
+        {/* ── The editor ──────────────────────────────────────────────────────────────────────────
+            One line at a time, under the rows. Before this existed the formula could only be
+            changed by a migration: `saveMaterialAndComposition` and its route were correct, tested
+            and reached by no control at all — this tab posted to /stock, /fx, /prices, /runs,
+            /settings, /access-grants and /materials-with-an-active-flag, and never to the field
+            save. */}
+        {canWrite && editingMaterial ? (
+          <div className="mt-4 border border-slate-900 bg-slate-50 px-3 py-3">
+            <p className="text-[10px] font-black tracking-[0.14em] text-slate-500 uppercase">
+              {t.compositionEditorFor}
+            </p>
+            <p className="mt-0.5 font-bold break-words text-slate-900">{S.name(editingMaterial)}</p>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field
+                hint={`${t.compositionQtyTypedIn} ${S.unitLabel(editingMaterial.displayUnit)} ${t.compositionQtyStoredAs} ${S.unitLabel(editingMaterial.baseUnit)}`}
+                label={t.compositionQty}
+              >
+                <input
+                  className={INPUT}
+                  dir="ltr"
+                  inputMode="decimal"
+                  onChange={(event) => setLineQty(event.target.value)}
+                  value={lineQty}
+                />
+              </Field>
+              <Field hint={t.compositionEffectiveFromHint} label={t.compositionEffectiveFrom}>
+                <input
+                  className={INPUT}
+                  dir="ltr"
+                  onChange={(event) => setLineFrom(event.target.value)}
+                  placeholder="YYYY-MM-DD"
+                  type="date"
+                  value={lineFrom}
+                />
+              </Field>
+              <Field label={t.compositionBasis}>
+                <select
+                  className={INPUT}
+                  onChange={(event) => setLineBasis(event.target.value as WireBasis)}
+                  value={lineBasis}
+                >
+                  {COMPOSITION_BASES.map((basis) => (
+                    <option key={basis} value={basis}>
+                      {basisLabels[basis]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={t.compositionSupplier}>
+                <select
+                  className={INPUT}
+                  onChange={(event) => setLineSupplier(event.target.value as WireSupplier)}
+                  value={lineSupplier}
+                >
+                  {MATERIAL_SUPPLIERS.map((supplier) => (
+                    <option key={supplier} value={supplier}>
+                      {S.supplierLabels[supplier]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field hint={t.compositionOverageHint} label={t.compositionOverage}>
+                <input
+                  className={INPUT}
+                  dir="ltr"
+                  inputMode="decimal"
+                  onChange={(event) => setLineOverage(event.target.value)}
+                  placeholder={settings.defaultOveragePct}
+                  value={lineOverage}
+                />
+              </Field>
+            </div>
+
+            {/* 🔴 The stored figure, echoed back in its own unit before the save. The aluminium film
+                is 0.018 kg a box and 18 g in the row; a thousandfold slip in either direction reads
+                as a perfectly ordinary number, and this line is where it becomes visible. */}
+            {storedPreview !== "" && storedPreview !== lineQty.trim() ? (
+              <p className="mt-2 text-[12px] font-bold text-slate-900">
+                {t.compositionQtyStoredPreview} <Qty unit={editingMaterial.baseUnit} value={storedPreview} />
+              </p>
+            ) : null}
+
+            {/* An unsettled supplier is a real state and not a mistake — the owner supplies the
+                lemon flavour sometimes and the factory the rest of the time — but a plan cannot be
+                COMMITTED while a line carries it, because prodplan_plan_lines refuses that
+                supplier. Said here rather than discovered at the commit. */}
+            {!SETTLED_SUPPLIERS.includes(lineSupplier) ? (
+              <p className="mt-2 border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-bold break-words text-amber-900">
+                {t.compositionUnsettledWarning}
+              </p>
+            ) : null}
+
+            {lineError ? (
+              <p className="mt-2 text-[12px] font-bold break-words text-rose-700">{lineError}</p>
+            ) : null}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className={BUTTON} disabled={busy} onClick={() => void saveLine()} type="button">
+                {t.save}
+              </button>
+              <button className={BUTTON_QUIET} disabled={busy} onClick={closeLine} type="button">
+                {t.compositionCancel}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {/* The way back. Without it the control above would be a one-way door: the workspace reads
+          materials with `is_active = true`, so a retired material leaves every tab and only a
+          database write could return it — the very hole the retire control closes, reversed. The
+          list is GLOBAL rather than per product, because retiring switches the product links off
+          too, so a product-scoped list would always be empty. */}
+      {canWrite ? (
+        <section className={PANEL}>
+          <SectionTitle subtitle={t.settingsRestoreHint} title={t.settingsRetired} />
+          {data.retiredMaterials.length === 0 ? (
+            <p className="text-[12px] text-slate-500">{t.settingsRetiredNone}</p>
+          ) : (
+            <ul className="space-y-1">
+              {data.retiredMaterials.map((material) => (
+                <li
+                  className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 px-3 py-2 text-[12px]"
+                  key={material.id}
+                >
+                  <span className="min-w-0 break-words">
+                    <span className="font-bold">{S.name(material)}</span>{" "}
+                    <Num className="text-slate-500">{material.code}</Num>
+                  </span>
+                  <button
+                    className={BUTTON_QUIET}
+                    disabled={busy}
+                    onClick={() => void onSave("/materials", { materialId: material.id, active: true })}
+                    type="button"
+                  >
+                    {t.settingsRestore}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+
       <section className={PANEL}>
         <SectionTitle title={t.settingsTitle} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2367,8 +2722,15 @@ export function SettingsTab({
                     className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 px-3 py-2 text-[12px]"
                     key={grant.hrId}
                   >
+                    {/* 🔴 The NAME, not the id — the owner's standing "names, never codes or ids"
+                        rule, and this list showed a bare HR id until now. The id stays beside it as
+                        the secondary identifier, because he types ids into the field above. A person
+                        the lookup could not name falls back to the id rather than to a blank. */}
                     <span className="min-w-0 break-words">
-                      <Num className="font-bold">{grant.hrId}</Num>{" "}
+                      <span className="font-bold">{grant.personName ?? grant.hrId}</span>{" "}
+                      {grant.personName ? (
+                        <Num className="text-[11px] text-slate-500">{grant.hrId}</Num>
+                      ) : null}{" "}
                       {grant.level === "full" ? t.accessLevelFull : t.accessLevelRead}
                       {grant.note ? <span className="text-slate-500"> — {grant.note}</span> : null}
                     </span>
@@ -2392,93 +2754,6 @@ export function SettingsTab({
           <p className="text-[12px] text-slate-500">{t.readOnlyNotice}</p>
         )}
       </section>
-
-      <section className={PANEL}>
-        <SectionTitle subtitle={canWrite ? t.settingsRetireHint : undefined} title={t.settingsComposition} />
-        <ul className="space-y-1 text-[12px] text-slate-700">
-          {data.materials.map((material) => (
-            <li
-              className="flex flex-wrap items-center justify-between gap-2 break-words"
-              key={material.id}
-            >
-              <span className="min-w-0 break-words">
-                <span className="font-bold">{S.name(material)}</span>{" "}
-                {material.composition ? (
-                  <>
-                    <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />{" "}
-                    {basisLabels[material.composition.basis]} —{" "}
-                    {S.supplierLabels[material.composition.supplier]}
-                  </>
-                ) : (
-                  <span className="text-slate-500">{t.excludedNoComposition}</span>
-                )}
-                {/* 🔴 Named BEFORE the click, never after. Retiring is a material-level switch, so a
-                    material both products use leaves the other product's buy list short — and the
-                    citric acid anhydrous and the lemon flavour genuinely are shared. The ids come
-                    from the server and the names are resolved here, so an English reader never
-                    reads an Arabic product name (the owner's 2026-10-08 ruling). */}
-                {material.alsoUsedByProductIds.length > 0 ? (
-                  <span className="block text-[11px] font-bold text-slate-900">
-                    {t.settingsRetireAlsoUsedBy}:{" "}
-                    {material.alsoUsedByProductIds
-                      .map((id) => {
-                        const product = data.products.find((candidate) => candidate.id === id);
-                        return product ? S.name(product) : id;
-                      })
-                      .join(" · ")}
-                  </span>
-                ) : null}
-              </span>
-              {canWrite ? (
-                <button
-                  className={BUTTON_QUIET}
-                  disabled={busy}
-                  onClick={() => void onSave("/materials", { materialId: material.id, active: false })}
-                  type="button"
-                >
-                  {t.settingsRetire}
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* The way back. Without it the control above would be a one-way door: the workspace reads
-          materials with `is_active = true`, so a retired material leaves every tab and only a
-          database write could return it — the very hole the retire control closes, reversed. The
-          list is GLOBAL rather than per product, because retiring switches the product links off
-          too, so a product-scoped list would always be empty. */}
-      {canWrite ? (
-        <section className={PANEL}>
-          <SectionTitle subtitle={t.settingsRestoreHint} title={t.settingsRetired} />
-          {data.retiredMaterials.length === 0 ? (
-            <p className="text-[12px] text-slate-500">{t.settingsRetiredNone}</p>
-          ) : (
-            <ul className="space-y-1">
-              {data.retiredMaterials.map((material) => (
-                <li
-                  className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 px-3 py-2 text-[12px]"
-                  key={material.id}
-                >
-                  <span className="min-w-0 break-words">
-                    <span className="font-bold">{S.name(material)}</span>{" "}
-                    <Num className="text-slate-500">{material.code}</Num>
-                  </span>
-                  <button
-                    className={BUTTON_QUIET}
-                    disabled={busy}
-                    onClick={() => void onSave("/materials", { materialId: material.id, active: true })}
-                    type="button"
-                  >
-                    {t.settingsRestore}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : null}
     </>
   );
 }

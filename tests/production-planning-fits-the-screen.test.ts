@@ -139,9 +139,12 @@ export function runProductionPlanningFitsTheScreenTests() {
   const tables = [...source.matchAll(/<table className="([^"]*)"/g)].map((match) => match[1]);
   assert.equal(
     tables.length,
-    4,
-    `${WORKSPACE}: found ${tables.length} tables, expected 4 (planner result, stock, cost, run ` +
-      `entry). A new table needs its own colgroup and its own card list, so this count is pinned.`,
+    5,
+    `${WORKSPACE}: found ${tables.length} tables, expected 5 (planner result, stock, cost, run ` +
+      `entry, composition). A new table needs its own colgroup and its own card list, so this count ` +
+      `is pinned. It went from 4 to 5 on 2026-10-09, when the Settings tab's formula list became a ` +
+      `table with an editor under it — raised deliberately, with the colgroup and the card list in ` +
+      `the same change, never to quiet a failure.`,
   );
   for (const [index, table] of tables.entries()) {
     const tokens = table.split(/\s+/);
@@ -198,6 +201,18 @@ export function runProductionPlanningFitsTheScreenTests() {
     `${WORKSPACE}: the planner table's colgroup is ${JSON.stringify(colgroups[0])}, not ` +
       `[31,23,23,23]. The material column needs the largest share — it holds a wrapping Arabic ` +
       `name, the code and the owner chip — and the other three each hold stacked figures.`,
+  );
+
+  // 6b. The composition table is the LAST one in the file, because SettingsTab is the last component
+  //     in it, and its first column is wider still: it carries the wrapping name, the code AND the
+  //     "also used by" line that has to be read before a retire.
+  assert.deepEqual(
+    colgroups[4],
+    [37, 21, 21, 21],
+    `${WORKSPACE}: the composition table's colgroup is ${JSON.stringify(colgroups[4])}, not ` +
+      `[37,21,21,21]. Its material column holds the name, the code and the shared-product warning, ` +
+      `and the two row actions are MERGED under the supplier rather than given a fifth column — a ` +
+      `fifth takes the table under its natural width in the admin shell's 669px box.`,
   );
 
   // 7. One <col> per heading, in every table. They must agree, or every column after a mismatch is
