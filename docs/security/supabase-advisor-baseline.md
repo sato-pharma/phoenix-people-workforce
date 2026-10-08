@@ -91,13 +91,26 @@ revoke them.** `current_access_can_see_employee` is called by policies that
 authenticated` at smoke time, which is exactly why a `pg_policy` scan reads 0 for it — the
 policy DDL lives in a script, not in a migration.
 
-**Why the count fell 14 → 11.** `supabase/phoenix-security-definer-execute-lockdown.sql`
-revokes EXECUTE from `public, anon, authenticated` and grants `service_role` on three of the
-fourteen — `current_access_is_admin()`, `current_access_line()`,
-`current_access_manager_hr_id()` — and production now matches that. No live policy references
-any of the three, so nothing broke. That file is a hand-run script rather than a migration, so
-**the database cannot date the revoke and neither can this page**; only the end state is
-measured.
+**Why the count fell 14 → 11.** PR
+[#5489](https://github.com/Gawish-1997/phoenix-people-workforce/pull/5489), merged **2026-10-08
+at 10:14:50 Cairo**. Its migration
+`20261008032000_revoke_authenticated_execute_on_unreferenced_access_helpers.sql` takes
+`authenticated`'s EXECUTE off three of the fourteen — `current_access_is_admin()`,
+`current_access_line()`, `current_access_manager_hr_id()` — keeps `service_role`, and **guards
+itself**: it re-asks `has_function_privilege` for each one afterwards and raises if the revoke
+did not take, or if `service_role` lost EXECUTE, *"because every server-side read uses that
+role"*. No live policy references any of the three, so nothing broke.
+
+🔴 **CORRECTED 2026-10-08, the same day.** The first version of this section credited the
+hand-run script `supabase/phoenix-security-definer-execute-lockdown.sql`, which revokes the
+same three from `public, anon, authenticated` and was the only thing in the repository that
+appeared to explain the fall — and, being a script rather than a migration, it carried the
+tidy conclusion that *"the database cannot date the revoke"*. That conclusion was wrong, and
+wrong in the direction that stops you looking: a dated, reviewed, guarded migration existed,
+in another worktree's branch, merged three hours before the audit ran. **A revoke with no
+migration you can find is a reason to look harder at `git log` and the open branches, never a
+reason to conclude the change is undateable.** The end state is identical either way; the
+provenance is not.
 
 **Related, and NOT what this advisor counts.** 15 of the 20 `private.*` functions still carry
 a PUBLIC EXECUTE grant (`=X/postgres` in `proacl`), including `private.phx_current_role()`.

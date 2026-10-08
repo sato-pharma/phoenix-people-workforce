@@ -58,11 +58,14 @@ const PRODUCTION_2026_09_29: AdvisorCount[] = [
  * one finding until its owner retires it.
  *
  * 🔴 `authenticated_security_definer_function_executable` is 11, LOWERED from 14 on 2026-10-08
- * after a per-function audit against live production. The three that left are the three
- * `supabase/phoenix-security-definer-execute-lockdown.sql` revokes from `public, anon,
- * authenticated` — `current_access_is_admin()`, `current_access_line()`,
- * `current_access_manager_hr_id()` — and no live policy references any of them, so nothing
- * broke. This is the one direction that is safe to follow down: `evaluateAdvisorCounts` treats
+ * after a per-function audit against live production. The three that left are the three PR #5489
+ * revoked on 2026-10-08 at 10:14:50 Cairo, in
+ * `20261008032000_revoke_authenticated_execute_on_unreferenced_access_helpers.sql` —
+ * `current_access_is_admin()`, `current_access_line()`, `current_access_manager_hr_id()` — and
+ * no live policy references any of them, so nothing broke. (Corrected the same day: this first
+ * credited the hand-run `phoenix-security-definer-execute-lockdown.sql`, which revokes the same
+ * three; the real cause is that dated, self-guarding migration.)
+ * This is the one direction that is safe to follow down: `evaluateAdvisorCounts` treats
  * a FALL as news rather than an error, so the baseline must come down with it or the gate keeps
  * 3 functions' worth of headroom it is not entitled to. The 11 that remain are each accounted
  * for in docs/security/supabase-advisor-baseline.md — 5 load-bearing in live RLS (81 policies
