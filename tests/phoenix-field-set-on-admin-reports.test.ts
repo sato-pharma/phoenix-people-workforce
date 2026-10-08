@@ -284,7 +284,7 @@ const AUDIT_DATA: DoubleVisitAuditData = {
   role: "ALL",
   scopeLabel: "All lines and areas (company-wide)",
   generatedAt: "2026-10-08",
-  weeks: [{ index: 0, from: "2026-09-01", to: "2026-09-07", rangeLabel: "Sep 1-7" }],
+  weeks: [{ index: 1, label: "W1 (Sep 1-7)", rangeLabel: "Sep 1-7", start: "2026-09-01", end: "2026-09-07" }],
   phoenixHeaders: [],
   coaches: [
     {

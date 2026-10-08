@@ -447,7 +447,17 @@ function buildCoach(input: {
   summary: ReturnType<typeof buildManagerSummariesDetailed>["summaries"][number];
   rows: DoubleVisitDbRow[];
   weeks: DoubleVisitAuditWeek[];
-  mirrorById: Map<string, { agentCrmId: number | null; contactCrmId: number | null; customer: string | null }>;
+  mirrorById: Map<
+    string,
+    {
+      agentCrmId: number | null;
+      contactCrmId: number | null;
+      customer: string | null;
+      /** A chain visit's second coach, and the field set already shaped to this reader's tier. */
+      partner2: string | null;
+      phoenixColumns: Record<string, string | number | null> | null;
+    }
+  >;
   checkInTimesByKey: Map<string, string[]>;
   employeeByHrKey: Map<string, EmployeeDirectoryRow>;
 }): DoubleVisitAuditCoach {

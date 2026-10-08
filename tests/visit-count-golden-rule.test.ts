@@ -277,7 +277,10 @@ export function runVisitCountGoldenRuleTests() {
       "Employee 360 counts a pharmacy under Pharmacies whatever period it carries, and an unmarked doctor visit stays unmarked",
     );
     const e360Service = readFileSync("src/lib/employee-360/service.ts", "utf8");
-    assert.match(e360Service, /comment,source,speciality",/, "the Employee 360 read carries the contact speciality that marks a pharmacy");
+    // `speciality` was the LAST select item until the Phoenix field set was appended on 2026-10-07 and
+    // the list became several concatenated literals. It pins the ITEM now: the guarantee is that the
+    // speciality is read, not that nothing is read after it.
+    assert.match(e360Service, /,source,speciality,/, "the Employee 360 read carries the contact speciality that marks a pharmacy");
     const e360View = readFileSync("src/components/employee-360/employee-360-view.tsx", "utf8");
     assert.match(
       e360View,
