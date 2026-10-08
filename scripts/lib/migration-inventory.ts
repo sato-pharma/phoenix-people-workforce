@@ -514,6 +514,59 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   "20260918120027_notification_role_policies_new_hire_mailbox_key.sql",
   "20260922180258_phoenix_crm_pending_customers.sql",
   "20260922220000_territory_area_pharmacies_effective_units.sql",
+  // ── Added 2026-10-08, on the owner's instruction to reconcile the ten PRODUCTION misses. Same
+  // shape as the 2026-09-26 block above: a 2026-10-02/10-04/10-06 batch went onto production
+  // through a path that writes no schema_migrations row, so the ledger has nothing for any of
+  // these under any version OR name, while the effect of each is live.
+  //
+  // 🔴 NOT taken on trust, and NOT from existence either — a `create or replace` is satisfied by
+  // an OLDER body, which is the trap this whole list exists for. Each function below was verified
+  // by comparing md5(pg_proc.prosrc) on ozucdzovmcqvepbozvqf against the md5 of the file's own
+  // dollar-quoted body, and each table/constraint/view against pg_catalog. Reproduce it with
+  // `select md5(prosrc) from pg_proc …`; the digests are in the PR that added this block.
+  //
+  // 🔴 Note on length: prosrc_len can differ from the file body's JS .length by a few characters
+  // with the md5 IDENTICAL. That is not drift — JS counts UTF-16 units and Postgres counts
+  // characters, so every emoji in a comment costs one extra. Trust the digest, not the length.
+  //
+  // Proven applied, body-for-body:
+  //   - 20261002123958: public.phoenix_crm_team_starts (10 cols) + its one-running unique index,
+  //     and phoenix_crm_set_team_start / _started_team_seats / _started_team_reps all md5-equal.
+  //   - 20261002135638: public.phoenix_crm_visit_asks (19 cols, 6 indexes, the service_role
+  //     policy), and raise_ / answer_ / cancel_visit_ask all md5-equal.
+  //   - 20261002142118: phoenix_crm_plan_day_status md5-equal, and both views exist with
+  //     crm_plan_entries_unified's definition calling it.
+  //   - 20261002142625: phoenix_crm_save_plan md5-equal.
+  //   - 20261002205435: both widened CHECKs carry 'Pharmacy', and plan_items' CHECK deliberately
+  //     does NOT — that asymmetry IS the owner's rule, so a "tidy-up" that widens it is a defect.
+  //   - 20261004141055: au.monthly_targets_dropped (14 cols) + its period index, and
+  //     phx_drop_monthly_targets md5-equal.
+  //   - 20261006002000: phoenix_crm_fold_name and phoenix_crm_load_list_customers md5-equal.
+  //
+  // 🔴 SUPERSEDED — re-applying either of these two would REVERT production to an older function:
+  //   - 20261002150353 (phoenix_crm_seat_reference): production's body is code-identical to the
+  //     LATER 20261002224250_phoenix_crm_seat_reference_and_place_removal.sql once `--` comments
+  //     and whitespace are stripped (6b12054c9d9b1cf0e323b0e442d7dabe, 2,830 chars both). The raw
+  //     bodies differ by 669 bytes of COMMENT ONLY, because that file kept being annotated after
+  //     it was applied — its ledger row is 20261002205554, stamped BEFORE the filename's own
+  //     timestamp. This file's own change is live inside it: list_type in ('AM','PM','Pharmacy').
+  //   - 20261002205436 (phoenix_crm_save_visit): its column product_manager_hr_id and all three
+  //     rewritten CHECKs are live, and the function has since been replaced by
+  //     20261006234611_phoenix_crm_visit_company_and_admin_edit.sql, whose body md5 IS what
+  //     production carries (3e9032ede88b89857d22ffb61ddac52c).
+  //
+  // The tenth of the ten is NOT here: 20261002184148_luxor_separate_from_qena2_no_rep_seat.sql was
+  // genuinely unapplied and was applied on 2026-10-08 (ledger 20261008115526) rather than excused.
+  // See docs/security/migration-ledger-reconciliation-2026-10-08.md for why that one was different.
+  "20261002123958_phoenix_crm_visits_everywhere.sql",
+  "20261002135638_phoenix_crm_visit_asks.sql",
+  "20261002142118_phoenix_crm_plans_everywhere.sql",
+  "20261002142625_phoenix_crm_saved_event_keeps_the_returned_day.sql",
+  "20261002150353_phoenix_crm_pharmacy_reference.sql",
+  "20261002205435_phoenix_crm_pharmacy_list_type.sql",
+  "20261002205436_phoenix_crm_visit_product_manager.sql",
+  "20261004141055_drop_line_month_targets_with_archive.sql",
+  "20261006002000_phoenix_crm_customer_name_fold.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
