@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 
 import { normalizeVacationRequestStatus } from "../src/lib/vacation/calculations.ts";
-import { buildVacationSlaStatus } from "../src/lib/vacation/service.ts";
+import {
+  adminDecisionPayload,
+  buildVacationSlaStatus,
+  normalizeAdminVacationStatus,
+} from "../src/lib/vacation/service.ts";
 import { VACATION_STATUSES } from "../src/lib/vacation/types.ts";
 
 /**
@@ -40,4 +44,26 @@ export async function runVacationReturnedStatusTests() {
   assert.equal(sla.isOverdue, false, "a returned request must never show SLA overdue");
   assert.equal(sla.stage, "returned");
   assert.equal(sla.dueAt, null);
+
+  // 5 ── THE ADMIN CONTROLS PANEL. It offers every status; it used to save "Returned to Employee"
+  // and "Needs HR Assignment" as Pending Manager without a word.
+  assert.equal(
+    normalizeAdminVacationStatus("returned"),
+    "returned",
+    "Admin controls must save Returned to Employee as returned, not Pending Manager",
+  );
+  for (const option of VACATION_STATUSES) {
+    assert.equal(normalizeAdminVacationStatus(option.value), option.value, `Admin controls must save ${option.value} as chosen`);
+  }
+  assert.equal(normalizeAdminVacationStatus(""), "pending_manager", "a blank status keeps the old default");
+  assert.throws(() => normalizeAdminVacationStatus("something_else"), /invalid/, "an unknown status is refused, never guessed");
+
+  // 6 ── Saving a returned request clears any HR decision (the database allows only approved or
+  // rejected there) and leaves the manager's decision exactly as it was.
+  const returnedPayload = adminDecisionPayload({ actorHrId: "B-10", status: "returned" });
+  assert.equal(returnedPayload.hr_decision, null, "a returned save must clear the HR decision — the database accepts only approved or rejected there");
+  assert.ok(!("manager_decision" in returnedPayload), "a returned save must not touch the manager's decision");
+  const needsAssignmentPayload: Record<string, unknown> = adminDecisionPayload({ actorHrId: "B-10", status: "needs_assignment" });
+  assert.equal(needsAssignmentPayload.manager_decision, null);
+  assert.equal(needsAssignmentPayload.hr_decision, null);
 }
