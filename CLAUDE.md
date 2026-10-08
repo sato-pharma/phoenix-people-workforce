@@ -60,7 +60,7 @@ single-lane 7-9 minute box pass in front of a ~3 minute hosted CI). Commit, push
 its `validate` + `checks` decide. When an earlier answer is worth it, run `remote-check` **once with
 `run_in_background: true` and act on the notification** — exit 0 PASS, 1 FAIL, 2-9 NO VERDICT, and
 only `remote-check: PASS|FAIL — <sha9>` for the sha you pushed counts. Never a poll loop (bash-guard
-**C14**). The push guard only reads a recorded verdict for the exact sha and starts nothing. Rule and
+**C14**), never a foreground run (**C15**), never a sleep on a task output file (**C16**). The push guard only reads a recorded verdict for the exact sha and starts nothing. Rule and
 account: `.claude/rules/engineering.md` (Validation), `docs/testing.md`.
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck

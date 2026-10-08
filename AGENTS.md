@@ -439,7 +439,7 @@ reintroduce them or invent a replacement — no "quick subset" of lint + typeche
 `pnpm run ci` as a pre-push ritual. 🔴 **No step stands in front of the push any more: commit, push,
 open the PR, and its checks are the verdict** (owner, 2026-10-08, retiring the 2026-10-04 "remote-check
 test before every push"). `node scripts/remote-check.mjs <check>` is optional — once, with
-`run_in_background: true`, acting on the notification, never a poll loop (bash-guard C14) — and
+`run_in_background: true`, acting on the notification, never a poll loop or a foreground run (bash-guard C14, C15) — and
 `.claude/hooks/push-typecheck-guard.mjs` only reads a recorded verdict for the exact sha, refusing
 solely on a recorded typecheck FAIL (`docs/testing.md`, "Before every push"). The two
 **required** checks — `validate` (the `check:*` contracts, **the unit suite**, the build on a PR whose
