@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
+import {
+  ADMINISTRATOR_REVERSAL_DAYS,
+  ADMINISTRATOR_REVERSAL_KINDS,
+  isAdministratorReversalKind,
+} from "../src/lib/phoenix-crm/administrator-reversal-rules.ts";
+
 /**
  * Phoenix CRM — the Administrator is not a step (owner, 2026-10-08).
  *
@@ -12,7 +18,9 @@ import { stripComments } from "./support/comment-strip.ts";
  *   1. every approval engine lets him DECLINE and nothing else — the approve path refuses him;
  *   2. nothing is COUNTED as waiting for him, and no screen names him HR or an override;
  *   3. his decline tells the rep, the district manager and SFE, naming him by his title;
- *   4. the database: no `hr_pending`, SFE's yes reopens the week, and a decline needs a comment.
+ *   4. the database: no `hr_pending`, SFE's yes reopens the week, and a decline needs a comment;
+ *   5. he can also take back what was already decided (a reopened week, an approved visit, an approved
+ *      list request) - only him, only on a real entry, with a comment, and only what can be put back.
  */
 
 function source(path: string): string {
@@ -72,6 +80,37 @@ export function runPhoenixCrmAdministratorTests(): void {
     assert.match(sql, /add column if not exists admin_note text/, "his comment has a column");
     assert.match(sql, /'administrator'/, "the events accept his stage");
     assert.match(sql, /if v_decision = 'refuse' and v_note is null then/, "a decline needs a comment the rep reads");
+  }
+
+  // ── 5. Reversing what was already decided ───────────────────────────────────────────────────────
+  {
+    assert.deepEqual([...ADMINISTRATOR_REVERSAL_KINDS], ["plan_edit", "visit", "request"], "three kinds of decided item");
+    assert.equal(isAdministratorReversalKind("plan_edit"), true);
+    assert.equal(isAdministratorReversalKind("plan"), false, "a weekly plan is returned, not reversed");
+    assert.equal(ADMINISTRATOR_REVERSAL_DAYS, 14);
+
+    const service = source("src/lib/phoenix-crm/server/administrator-reversals.ts");
+    assert.match(service, /if \(!canOverrideDecision\(viewer, isTest\)\) return null;/, "no other viewer's payload carries the list");
+    assert.match(service, /function assertAdministrator\(viewer: PhoenixCrmViewer, isTest: boolean\): void \{\s+if \(!canOverrideDecision\(viewer, isTest\)\) throw forbiddenError\(/, "only the Administrator, only on a real entry");
+    assert.match(service, /if \(!note\) throw validationError\(/, "a comment is required");
+    assert.equal((service.match(/assertAdministrator\(viewer, row\.is_test === true\)/g) ?? []).length, 3, "every kind checks WHO before it writes");
+    assert.equal((service.match(/reversed: true,/g) ?? []).length, 3, "every kind tells the rep, the district manager and SFE it was a reversal");
+
+    const sql = readFileSync(new URL("../supabase/migrations/20261008190000_phoenix_crm_administrator_reverses.sql", import.meta.url), "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "");
+    assert.equal((sql.match(/raise exception 'phoenix_crm:note_required';/g) ?? []).length, 3, "each function needs the comment");
+    assert.match(sql, /if v_request\.status <> 'reopened' then/, "only a reopened week closes again");
+    assert.match(sql, /or v_plan\.status <> 'draft'\s+or v_plan\.version is distinct from v_request\.reopened_plan_version/, "and only while the rep has not touched it");
+    assert.match(sql, /if v_row\.status <> 'approved' then/, "only an approved visit");
+    assert.match(sql, /if v_request\.status <> 'approved' or v_request\.customer_id is null then/, "only an approved list request");
+    assert.match(sql, /and ev\.created_at > v_request\.decided_at/, "and not once anything else touched that customer");
+    assert.equal((sql.match(/grant execute on function public\.phoenix_crm_reverse_/g) ?? []).length, 3, "service role only");
+
+    const panel = source("src/components/phoenix-crm/administrator-reversals-panel.tsx");
+    assert.doesNotMatch(panel, /\bHR\b|overrid/i, "the panel never calls him HR or an override");
+    const team = source("src/lib/phoenix-crm/server/team.ts");
+    assert.match(team, /reversible,\s+summary: \{/, "the Team payload carries the list beside the summary - never counted in it");
+    const notify = source("src/lib/phoenix-crm/server/notifications.ts");
+    assert.ok((notify.match(/reversed the approval/g) ?? []).length >= 6, "all three kinds word a reversal as a reversal, to the rep and to the managers");
   }
 
   console.log("phoenix-crm administrator: OK");

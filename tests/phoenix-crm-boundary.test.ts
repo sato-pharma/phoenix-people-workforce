@@ -187,6 +187,8 @@ const ROUTE_GATES: RouteGate[] = [
   // whose STEP it is — read from the row, never the body).
   post("plans/edit-requests", "create"),
   post("plans/edit-requests/decide", "approve"),
+  // The Administrator takes back a decision already taken (owner, 2026-10-08).
+  post("administrator/reverse", "approve"),
   get("plans/reviews"),
   // Last month's iReports360 plan, read-only, as the "Copy last month" reference (server/plan-history).
   get("plans/history"),
@@ -734,6 +736,10 @@ const LATER_MIGRATIONS = [
   // It also widens one CHECK of its own, adds ONE table (the copy of what each correction replaced)
   // and ONE brand-new function.
   "supabase/migrations/20261006234611_phoenix_crm_visit_company_and_admin_edit.sql",
+  // The Administrator takes back a decision already taken (owner, 2026-10-08): three brand-new
+  // functions and three columns on each of two existing tables; it replaces no save_visit and
+  // creates no table, so it appends safely at the end.
+  "supabase/migrations/20261008190000_phoenix_crm_administrator_reverses.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -1082,9 +1088,11 @@ function runMigrationReviewFixTests(sql: string) {
   // weekly plan event: the save's own two ('created', 'saved'), the weekly transition's one (submit,
   // reopen and decide), the monthly plan's transition, which cascades the month's field weeks and
   // records each week's own event, and HR's acknowledgement of a request to edit a sent week, which
-  // reopens it (owner, 2026-10-01). Each carries its to_status — a reopened week reads 'draft'.
+  // reopens it (owner, 2026-10-01). Each carries its to_status — a reopened week reads 'draft'. Two more
+  // since 2026-10-08: the Administrator closing a reopened week back to how it was sent writes the
+  // status it went back to - 'approved' (with the original approver) or 'submitted'.
   const eventInserts = [...sql.matchAll(/insert into public\.phoenix_crm_plan_events \(([^)]*)\)/g)];
-  assert.equal(eventInserts.length, 5, "plans write their events in five places");
+  assert.equal(eventInserts.length, 7, "plans write their events in seven places");
   for (const insert of eventInserts) {
     assert.ok(insert[1].split(",").map((column) => column.trim()).includes("to_status"), `a plan event is written without its status: (${insert[1]})`);
   }

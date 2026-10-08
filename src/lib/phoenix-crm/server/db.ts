@@ -78,6 +78,18 @@ const REFUSALS: Record<string, Refusal> = {
   plan_edit_not_found: { status: 404, message: "This request is no longer there. Reload the page." },
   plan_edit_decided: { status: 409, message: "This request was already decided. Reload the page." },
   plan_edit_wrong_stage: { status: 409, message: "This request has moved on to the next step. Reload the page." },
+  // The Administrator taking back a decision (owner, 2026-10-08): each refusal says what is in the way.
+  plan_edit_not_reopened: { status: 409, message: "This week is not reopened any more. Reload the page." },
+  plan_edit_cannot_reverse: {
+    status: 409,
+    message: "This week was already changed or sent again, or its week has passed, so it cannot be closed again. Return the week with a comment instead.",
+  },
+  unplanned_not_approved: { status: 409, message: "This visit is not approved any more. Reload the page." },
+  request_not_approved: { status: 409, message: "This request is not approved any more. Reload the page." },
+  reverse_customer_moved_on: {
+    status: 409,
+    message: "Something else has changed for this customer since the decision, so it cannot be undone safely.",
+  },
   bad_participants: { status: 400, message: "Choose who was on the visit." },
   id_conflict: { status: 409, message: "This visit could not be saved. Start the visit again." },
   photo_not_issued: { status: 400, message: "This photo was not taken in Phoenix CRM. Take the photo again." },
