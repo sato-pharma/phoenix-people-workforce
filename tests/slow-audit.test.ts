@@ -44,6 +44,7 @@ import {
   HOOKS,
   MACHINE_COUNTERS,
   THRESHOLDS,
+  hookCost,
   spanSeconds,
   summarizeRun,
 } from "../scripts/slow-audit.mjs";
@@ -271,10 +272,37 @@ function importingIsSideEffectFree(): void {
   );
 }
 
+/**
+ * Claude Code starts every matching PreToolUse hook at once, so a tool call waits for the SLOWEST
+ * one. The audit used to sum them and print the sum as the per-call cost — 1,008ms "per Bash call"
+ * on 2026-10-08 was CPU across ten processes, not time the call stood still.
+ */
+function hookWaitIsTheSlowestNotTheSum(): void {
+  const c = hookCost([
+    { label: "bash-guard", ms: 120, fires: ["bash"] },
+    { label: "trap-injector", ms: 300, fires: ["bash", "edit"] },
+    { label: "session-lock beat", ms: 80, fires: ["bash", "edit"] },
+    { label: "primary-write-guard", ms: 500, fires: ["edit"] },
+  ]);
+  assert.equal(c.waitPerBashCallMs, 300, "the Bash wait must be the slowest Bash hook, not the sum of all of them");
+  assert.equal(c.slowestBashHook, "trap-injector", "the report must name the hook that sets the wait");
+  assert.equal(c.cpuPerBashCallMs, 500, "the sum is still reported — as CPU, under its own name");
+  assert.equal(c.waitPerEditCallMs, 500, "an Edit-only hook sets the Edit wait and never the Bash one");
+  assert.equal(c.cpuPerEditCallMs, 880, "Edit CPU sums only the hooks registered for Edit");
+  assert.equal(c.waitPerReadCallMs, 0, "a tool kind with no hook waits for nothing");
+  assert.equal(c.spawnsPerBashCall, 3);
+  assert.ok(!("perBashCallMs" in c), "the old summed field must not come back under the name that read as a wait");
+  assert.ok(
+    THRESHOLDS.hookBudgetMs < 1000 && /SLOWEST/.test(source.match(/hookBudgetMs:.*/)?.[0] ?? ""),
+    "the hook budget must be documented as a limit on the slowest hook",
+  );
+}
+
 export async function runSlowAuditTests(): Promise<void> {
   counterChoiceIsPinned();
   thresholdsAreCoherent();
   skippedStepsAreNeverCountedAsWork();
   theAuditOnlyEverObserves();
   importingIsSideEffectFree();
+  hookWaitIsTheSlowestNotTheSum();
 }
