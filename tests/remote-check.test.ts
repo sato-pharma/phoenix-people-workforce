@@ -800,6 +800,48 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.match(prFinder, /\.event == "pull_request"/, "it must filter to the PR run, not a dispatch on the same sha");
     assert.doesNotMatch(prFinder, /"run", "list"/, "findPullRequestRun is scanning the run list again");
 
+    // 🔴 AND THE DISPATCHED RUN IS ASKED FOR BY SHA TOO — THE ROUTE THAT HAS ALREADY SPENT THE MONEY
+    // MUST NOT USE THE READER THAT CAN FAIL TO SEE ITS OWN RUN. Until 2026-10-08 only the PR finder
+    // above had been moved off `gh run list`; the dispatch finder still scanned it by branch, which
+    // is the same eventually-consistent list, on the one route where ~14 billable Actions minutes are
+    // already committed before the finder runs. `sawRun` latches only on a run the finder returned, so
+    // a list omitting the brand-new run for three minutes of polling makes the watcher exit 6 saying
+    // "no run exists … and a run is registered the moment it is created, queued or not" — a sentence
+    // true of the runs API and never of `gh run list`, while the dispatched run completes unread.
+    // 🔴 BOUNDED TO THIS FUNCTION, NOT SLICED TO END OF FILE. `findPullRequestRun` sits BELOW this one
+    // and legitimately contains `actions/runs?head_sha=` and the ci.yml path, so an unbounded slice
+    // makes both assertions below pass on the SIBLING's text — measured here: with the pre-fix
+    // `gh run list` reader restored, the head_sha assertion passed and only the event filter fired.
+    // A test that reads the neighbouring function is not testing this one.
+    const dispatchStart = CODE.indexOf("function findDispatchedRun");
+    assert.notEqual(dispatchStart, -1, "findDispatchedRun must exist");
+    const dispatchFinder = CODE.slice(dispatchStart, CODE.indexOf("\n}", dispatchStart) + 2);
+    assert.match(dispatchFinder, /^function findDispatchedRun/, "the slice must start at the function");
+    assert.doesNotMatch(
+      dispatchFinder,
+      /function findPullRequestRun/,
+      "the slice must stop before the sibling finder, or these assertions read ITS text",
+    );
+    assert.match(dispatchFinder, /actions\/runs\?head_sha=/, "the dispatched run must be asked for by head sha");
+    assert.match(dispatchFinder, /\.github\/workflows\/ci\.yml/, "it must filter to ci.yml");
+    // Measured 2026-10-08 on `15bacd57a`: ONE sha carried both a pull_request run and a
+    // workflow_dispatch run of ci.yml, and `stageJobsFor` grades the two by DIFFERENT maps — so
+    // dropping this filter would let the dispatch route be answered by the PR's run, graded as a
+    // dispatch, which is exactly the no-verdict-on-green defect #5475 closed in the other direction.
+    assert.match(
+      dispatchFinder,
+      /\.event == "workflow_dispatch"/,
+      "it must filter to the dispatched run, not a PR run on the same sha",
+    );
+    assert.doesNotMatch(dispatchFinder, /"run", "list"/, "findDispatchedRun is scanning the run list again");
+    // The createdAt gate stays: it is what stops an EARLIER dispatch of this same sha being read as
+    // the run this invocation just started. By-sha alone would happily return last week's.
+    assert.match(
+      dispatchFinder,
+      /createdAt >= dispatchedAfter/,
+      "it must still gate on this invocation's own dispatch, not merely on the sha",
+    );
+
     // 🔴 AND BOTH ROUTES SETTLE THROUGH ONE WATCHER, so there is a single allow-list of what counts as
     // a verdict. Two copies is how one of them rots: the measured failure this allow-list exists for
     // (a-padded-short-sha-422s-and-a-fallthrough-watcher-calls-it-green) was a watcher that fell out of
@@ -816,8 +858,9 @@ export async function runRemoteCheckTests(): Promise<void> {
     );
     assert.match(
       CODE,
-      /settleActionsRun\(\{\s*\n\s*find: \(\) => findDispatchedRun\(branch, dispatchedAfter\),/,
-      "the dispatch must go through the one watcher",
+      /settleActionsRun\(\{\s*\n\s*find: \(\) => findDispatchedRun\(sha, dispatchedAfter\),/,
+      "the dispatch must go through the one watcher, and hand it the SHA — not the branch, which is "
+        + "what the dropped-run reader keyed on",
     );
 
     // 10f — AND IT NEVER DISPATCHES ON `main`. ci.yml groups a non-PR run by SHA and never cancels

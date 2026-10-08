@@ -428,7 +428,7 @@ function runOnActions({ branch, sha, names, waitedSeconds, reason = "busy" }) {
   console.log("remote-check: dispatched ci.yml on " + branch + " @ " + sha.slice(0, 9) + " — watching for its verdict");
 
   settleActionsRun({
-    find: () => findDispatchedRun(branch, dispatchedAfter),
+    find: () => findDispatchedRun(sha, dispatchedAfter),
     sha,
     names,
     label: "the dispatched run",
@@ -564,20 +564,41 @@ function settleActionsRun({ find, sha, names, label, source, hint }) {
 }
 
 /**
- * The newest `workflow_dispatch` run of ci.yml on this branch that started after the dispatch.
+ * The newest `workflow_dispatch` run of ci.yml ON THIS EXACT COMMIT that started after the dispatch.
+ *
+ * 🔴 ASKED BY SHA, NEVER SCANNED FROM `gh run list` — THE SAME RULE AS `findPullRequestRun`, AND IT
+ * MATTERS MORE HERE, BECAUSE THIS IS THE ROUTE THAT HAS ALREADY SPENT THE MONEY. Until 2026-10-08
+ * this one function still used `gh run list --branch`, the command the sibling below is explicitly
+ * written against: that list is eventually consistent and has dropped a run that existed (AGENTS.md
+ * §2.1, and the ship skill's phase 8). On the PR route a dropped run costs a wasted read. Here the
+ * ~14 billable Actions minutes are ALREADY committed by the time the finder runs, and `sawRun` only
+ * ever latches on a run the finder returned — so a list that omits the brand-new run for the first
+ * three minutes of polling makes `settleActionsRun` exit 6 with the words *"no run exists for
+ * <sha> after 3 minutes, and a run is registered the moment it is created, queued or not"*. That
+ * sentence is true of the runs API and is what this now asks; it was never true of `gh run list`,
+ * so the one message asserting the run cannot exist was produced by the one reader that can fail to
+ * see it — and the dispatched run then completes, billed and unread.
+ *
+ * The `event` filter is load-bearing and is why this cannot simply reuse the PR finder: measured
+ * 2026-10-08 on `15bacd57a`, ONE sha carried both a `pull_request` run and a `workflow_dispatch`
+ * run of ci.yml, and the two are graded by different maps (`stageJobsFor`). `createdAt` still gates
+ * on this invocation's own dispatch, so an EARLIER dispatch of the same sha is not mistaken for the
+ * run we just started.
  *
  * `{ ok: false }` is a read that failed; `{ ok: true, run: undefined }` is "no run yet".
  */
-function findDispatchedRun(branch, dispatchedAfter) {
+function findDispatchedRun(sha, dispatchedAfter) {
   try {
     const json = execFileSync(
       "gh",
-      ["run", "list", "--workflow", "ci.yml", "--branch", branch, "--event", "workflow_dispatch",
-        "--limit", "10", "--json", "databaseId,headSha,status,conclusion,url,createdAt,event"],
+      ["api", "repos/{owner}/{repo}/actions/runs?head_sha=" + sha + "&per_page=30", "--jq",
+        '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .event == "workflow_dispatch") ' +
+          '| {databaseId: .id, headSha: .head_sha, status: .status, conclusion: .conclusion, ' +
+          'url: .html_url, event: .event, createdAt: .created_at}]'],
       { encoding: "utf8" },
     );
-    const runs = JSON.parse(json);
-    const run = runs
+    const runs = JSON.parse(json || "[]");
+    const run = (Array.isArray(runs) ? runs : [])
       .filter((r) => r.createdAt >= dispatchedAfter)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
     return { ok: true, run };
