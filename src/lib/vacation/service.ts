@@ -1282,15 +1282,21 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
   };
 }
 
-function normalizeAdminVacationStatus(value: unknown): VacationRequestStatus {
+/**
+ * The status the Admin controls panel saves. It offers every status in VACATION_STATUSES, and this
+ * used to accept only four of them, so "Returned to Employee" and "Needs assignment" were saved as
+ * Pending Manager without a word. Every defined status now saves as chosen; a blank one keeps the
+ * old Pending Manager default, and an unknown one is refused rather than guessed.
+ */
+export function normalizeAdminVacationStatus(value: unknown): VacationRequestStatus {
   const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "pending_manager" || normalized === "pending_hr" || normalized === "approved" || normalized === "rejected") {
-    return normalized;
-  }
-  return "pending_manager";
+  if (!normalized) return "pending_manager";
+  const status = normalizeVacationRequestStatus(normalized);
+  if (status !== normalized) throw new Error("Vacation status is invalid.");
+  return status;
 }
 
-function adminDecisionPayload(input: {
+export function adminDecisionPayload(input: {
   actorHrId: string | null;
   actorLoginId?: string | null;
   status: VacationRequestStatus;
@@ -1307,7 +1313,18 @@ function adminDecisionPayload(input: {
     manager_decision_comment: null,
   };
 
-  if (input.status === "pending_manager") return reset;
+  if (input.status === "pending_manager" || input.status === "needs_assignment") return reset;
+
+  // Returned to the employee: no HR decision stands, and the manager's decision is left exactly as
+  // it was — a request can be returned before or after its manager approved it.
+  if (input.status === "returned") {
+    return {
+      hr_decision: null,
+      hr_decision_at: null,
+      hr_decision_by_hr_id: null,
+      hr_decision_comment: null,
+    };
+  }
 
   if (input.status === "pending_hr") {
     return {
