@@ -11,6 +11,7 @@ import {
   renderSummaryPage,
   restDayPhrase,
   stampOf,
+  assertPapersFit,
   supersedeLabel,
   supersedePaper,
   verifyPaper,
@@ -332,27 +333,75 @@ export function runFieldDayReportTests() {
   assertFetchRetriesALostLock(stripComments(readFileSync("scripts/field-day/run-nightly.mjs", "utf8")), "scripts/field-day/run-nightly.mjs");
 
   // ── 🔴 THE CLI NEVER LOGS A PAPER IT HAS NOT STAT-CHECKED ──
-  // 2026-10-08, measured twice: the loop printed all FOUR paths and exited 0 with only THREE PDFs on
-  // disk, and the missing one was always the last — `Summary-for-the-CEO`, the Chief Executive's page.
-  // Chrome had raced the previous invocation's shutdown over the shared default profile and exited 0
-  // without writing, and `console.log(pdfPath)` ran regardless. Nobody watches the 21:00 job, so the
-  // log claiming a paper that does not exist is the whole defect.
+  // 2026-10-08/09: the loop printed all FOUR paths and exited 0 with only THREE PDFs on disk, and the
+  // missing one was always Summary-for-the-CEO. The cause is Windows MAX_PATH, not a Chrome race —
+  // proved by running the UNFIXED printer twice: a short FIELD_DAY_OUT wrote all four papers, a
+  // 205-char one wrote three. Summary-for-the-CEO is simply the longest of the four names, so it is
+  // the only path that crosses 260, which reads as "always the last paper". Chrome says "Failed to
+  // write file … (0x3)" on the stderr the printer discarded, and exits 0; `console.log(pdfPath)` then
+  // ran unconditionally, so the printer reported a paper it had not written.
   const cli = printer.slice(printer.indexOf("if (process.argv[1] &&"));
   assert.ok(cli.includes("printPaper({"), "the CLI prints each paper through the verifying printer");
   assert.ok(
     cli.indexOf("printPaper({") < cli.indexOf("console.log(pdfPath)"),
     "🔴 the path is logged only AFTER the file on disk has been stat-checked, never before",
   );
+  assert.ok(cli.includes("assertPapersFit("), "and a FIELD_DAY_OUT too deep is refused BEFORE anything is printed");
   assert.doesNotMatch(cli, /execFileSync/, "Chrome is no longer launched bare from the loop");
-  assert.ok(!cli.includes('stdio: "pipe"'), "🔴 and its stderr — where the “bytes written” line rides — is no longer discarded");
+  assert.ok(!cli.includes('stdio: "pipe"'), "🔴 and its stderr — where “Failed to write file … (0x3)” rides — is no longer discarded");
 
-  const printPaperSource = printer.slice(printer.indexOf("export function printPaper"), printer.indexOf("function cleanProfile"));
-  assert.ok(printPaperSource.includes("--user-data-dir="), "🔴 each Chrome gets its own profile, so sequential invocations cannot race one");
-  assert.ok(printPaperSource.includes("verifyPaper("), "every attempt is verified against the file on disk");
-  assert.ok(printPaperSource.includes("PAPER_ATTEMPTS"), "a lost paper is retried a BOUNDED number of times");
-  assert.ok(printPaperSource.includes("run.stderr"), "Chrome's own stderr is captured and reported when every attempt failed");
+  const printPaperSource = printer.slice(printer.indexOf("export function printPaper"), printer.indexOf("// `pathToFileURL`, never"));
+  assert.ok(printPaperSource.includes("spawnSync("), "Chrome runs under spawnSync so both streams are readable");
+  assert.ok(printPaperSource.includes("Failed to write"), "the line that names the real cause is the one kept for the log");
+  assert.ok(printPaperSource.includes("verifyPaper("), "every print is verified against the file on disk");
   assert.ok(printPaperSource.includes("throw new Error("), "🔴 and the failure is LOUD — run-nightly.mjs writes it into xlsx/field-day-task.log");
-  assert.match(printer, /const PAPER_ATTEMPTS = [23]/, "two or three attempts — enough for a profile race, short of hanging the nightly job");
+  // 🔴 No retry: the failure guarded here is a DETERMINISTIC path error, so a second attempt fails
+  // identically. The earlier cut of this fix retried three times on a race that does not exist.
+  assert.ok(!printer.includes("PAPER_ATTEMPTS"), "no retry loop — the guarded failure is deterministic");
+  assert.ok(!printer.includes("--user-data-dir"), "🔴 and no per-invocation Chrome profile: there is no profile race to fix");
+
+  // The path guard. 🔴 PLATFORM-NEUTRAL: the printer only ever runs on Windows, but this suite runs on
+  // a LINUX runner, where `path.resolve("C:/fdshort", …)` resolves under the workspace instead and the
+  // character count is different. An earlier cut hard-coded 67 and passed here while failing in CI.
+  const fourPapers = papersOf(fixture()).map(({ file }) => ({ file }));
+  assert.equal(fourPapers.length, 4, "three lines and the Chief Executive's summary");
+  const root = path.sep === "\\" ? "C:/" : "/";
+  const shortOut = path.resolve(root, "fdshort");
+  const ceoPaper = path.resolve(shortOut, "Phoenix-CRM-Field-Day-2026-10-07-Summary-for-the-CEO.pdf");
+  assert.equal(
+    assertPapersFit(shortOut, fourPapers, { day: "2026-10-07" }),
+    ceoPaper.length,
+    "a shallow output folder fits, and the FULL path of the longest paper is what gets reported",
+  );
+  assert.ok(ceoPaper.length < 260, "and that folder is genuinely under the limit on this platform");
+  // 240 characters of folder puts the CEO page past 260 on Windows and on Linux alike.
+  const deepOut = path.resolve(root, "x".repeat(240));
+  assert.throws(
+    () => assertPapersFit(deepOut, fourPapers, { day: "2026-10-07" }),
+    /too deep: the longest paper path is \d{3} characters and Windows stops at 260/,
+    "🔴 a FIELD_DAY_OUT that cannot hold Summary-for-the-CEO is refused, naming the character count",
+  );
+  // 🔴 It is the LONGEST name that decides, not the LAST in the list. Summary-for-the-CEO happens to
+  // be both, so this reverses the list: a guard that just took the last entry would measure CNS here.
+  assert.equal(
+    assertPapersFit(shortOut, [...fourPapers].reverse(), { day: "2026-10-07" }),
+    ceoPaper.length,
+    "🔴 the guard measures every name — reversing the papers gives the same longest path",
+  );
+  // 🔴 It is the LONGEST name that decides, not the last in the list: the guard must measure them all.
+  let tooDeep = "";
+  try {
+    assertPapersFit(deepOut, fourPapers, { day: "2026-10-07" });
+  } catch (error) {
+    tooDeep = String((error as Error).message);
+  }
+  assert.match(tooDeep, /Summary-for-the-CEO/, "and it names Summary-for-the-CEO, the longest of the four");
+  // The measured Windows geometry that produced the defect, as ARITHMETIC on the folder length: no
+  // Windows path is resolved here, because this suite runs on Linux and would resolve it elsewhere.
+  const winLen = (folderChars: number, file: string) => folderChars + `Phoenix-CRM-Field-Day-2026-10-07-${file}.pdf`.length;
+  assert.equal(winLen(11, "Summary-for-the-CEO"), 67, "the 11-character folder of the short run that wrote all four papers");
+  assert.ok(winLen(205, "Summary-for-the-CEO") > 260, "the 205-character folder that lost the CEO page");
+  assert.ok(winLen(205, "Anti-Infective") <= 260, "while Anti-Infective still fitted, which is why it looked like the last paper");
 
   // The verifier itself, against real bytes. 🔴 The fixtures are `.bin`, never `.pdf`: a test must not
   // leave protected document types in a temp folder it then has to clear.
@@ -429,8 +478,8 @@ export function runFieldDayReportTests() {
     assert.equal((printer.match(/unlinkSync/g) ?? []).length, 0, "the printer never unlinks anything");
     assert.equal(
       (printer.match(/rmSync\(/g) ?? []).length,
-      1,
-      "the only removal in the printer is cleanProfile's Chrome profile — nothing in the output folder",
+      0,
+      "the printer removes NOTHING: it once deleted its own per-run Chrome profile, and that profile went with the race that never existed",
     );
   } finally {
     rmSync(archiving, { recursive: true, force: true });

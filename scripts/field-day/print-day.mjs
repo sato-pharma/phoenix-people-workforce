@@ -22,9 +22,8 @@
 // Printed by headless Chrome, which is how the approved specimen itself is built: a PDF library
 // cannot shape Arabic (render-shared.ts).
 
-import { readFileSync, writeFileSync, mkdirSync, statSync, openSync, readSync, closeSync, rmSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync, openSync, readSync, closeSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -50,10 +49,8 @@ function primaryXlsx() {
 const OUT = process.env.FIELD_DAY_OUT || primaryXlsx();
 const CHROME = process.env.FIELD_DAY_CHROME || "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
-/** The smallest real paper measured is ~150 KB; the Chief Executive summary is 227 KB. */
+/** The smallest real paper measured is 223 KB; Chrome also leaves 0-byte stubs when it dies. */
 const MIN_PAPER_BYTES = 100_000;
-/** One paper, three tries — enough for a profile race, short of hanging the 21:00 job. */
-const PAPER_ATTEMPTS = 3;
 
 /** Sampled from the company mark, never chosen — src/lib/hiring-pack/house-identity.ts. */
 const C = {
@@ -470,16 +467,57 @@ export function papersOf(dayData) {
 }
 
 /**
- * 🔴 CHROME EXITS 0 HAVING WRITTEN NOTHING, AND IT IS ALWAYS THE LAST PAPER.
+ * 🔴 CHROME EXITS 0 HAVING WRITTEN NOTHING, AND THE PRINTER SAID IT HAD.
  *
- * Measured twice on 2026-10-08: the loop below printed all four paths and exited 0, and only three
- * PDFs were on disk — the missing one each time was `Summary-for-the-CEO`, the Chief Executive's own
- * page. The HTML was sound (the same Chrome command run by hand wrote 227,229 bytes), so nothing was
- * throwing: the 4th invocation raced the 3rd's shutdown over the SHARED DEFAULT PROFILE and gave up
- * silently. `--user-data-dir` per invocation is the fix; this verifier is the proof, because a
- * nightly job nobody watches must never log a paper it did not write.
+ * Measured 2026-10-08/09: the loop below printed all four paths and exited 0 with only three PDFs on
+ * disk, and the missing one was always `Summary-for-the-CEO`. That looked like a race between
+ * sequential Chromes and is NOT. The cause is Windows MAX_PATH, and the proof is two runs of the
+ * printer as #5578 left it:
  *
- * Returns the size in bytes. Throws, naming the paper, on anything else.
+ *   short FIELD_DAY_OUT (C:/fdshort, 67-char target)  -> all FOUR papers written
+ *   long  FIELD_DAY_OUT (205-char prefix)             -> three written, the CEO page missing
+ *
+ * `Summary-for-the-CEO` is simply the LONGEST of the four names, so under a long `FIELD_DAY_OUT` it
+ * is the only one whose full path crosses 260 characters, which reads as "always the last paper".
+ * Chrome then says, on the stderr this script used to discard:
+ *
+ *   ERROR:headless_command_handler.cc:266] Failed to write file ...Summary-for-the-CEO.pdf:
+ *   The system cannot find the path specified. (0x3)
+ *
+ * and exits 0 anyway. `console.log(pdfPath)` ran regardless, so the printer reported a paper it had
+ * not written and `run-nightly.mjs` logged that as a success.
+ *
+ * 🔴 THE NIGHTLY WAS NEVER AFFECTED: its target is the primary's `xlsx/`, where the CEO page's full
+ * path is 100 characters. This is a defect in what the printer REPORTS, and it bites a long
+ * `FIELD_DAY_OUT`, which is how the papers get tested.
+ */
+
+/** Windows refuses a longer path without the extended prefix, and Chrome reports 0x3. */
+const MAX_PATH = 260;
+
+/**
+ * Fail BEFORE printing anything if the output folder cannot hold the longest paper name.
+ *
+ * A deterministic path error is not worth discovering one paper at a time: this names the longest
+ * paper and the exact character count, so the fix is obvious from the log alone.
+ */
+export function assertPapersFit(out, papers, { day = "0000-00-00", limit = MAX_PATH } = {}) {
+  const longest = papers
+    .map((paper) => path.resolve(out, `Phoenix-CRM-Field-Day-${day}-${paper.file}.pdf`))
+    .sort((a, b) => b.length - a.length)[0];
+  if (longest && longest.length > limit) {
+    throw new Error(
+      `FIELD_DAY_OUT is too deep: the longest paper path is ${longest.length} characters and Windows ` +
+        `stops at ${limit}. Chrome would exit 0 without writing it. Print somewhere shorter.
+  ${longest}`,
+    );
+  }
+  return longest ? longest.length : 0;
+}
+
+/**
+ * Verify a paper actually landed. Returns its size in bytes; throws, naming the paper, on anything
+ * else, because a nightly job nobody watches must never log a paper it did not write.
  */
 export function verifyPaper(pdfPath, { writtenAfter = 0 } = {}) {
   const name = path.basename(pdfPath);
@@ -568,56 +606,50 @@ export function supersedePaper(pdfPath, { label }) {
 }
 
 /**
- * Print one paper and PROVE it landed, retrying that one paper before giving up.
+ * Print one paper and PROVE it landed.
  *
- * Each attempt gets its own `--user-data-dir`, so no two Chromes ever share a profile — not the
- * sequential ones in the loop below, and not two sessions printing the same day at once. Chrome's own
- * "N bytes written to file" line rides on stderr, which the old `{ stdio: "pipe" }` swallowed, so it
- * is captured here and goes into the message when every attempt has failed.
+ * 🔴 `spawnSync`, not `execFileSync` with `{ stdio: "pipe" }`: Chrome's own "Failed to write file …
+ * (0x3)" and "N bytes written to file" both ride on stderr, and discarding them is what hid the cause
+ * of the lost CEO page for several steps. There is no retry — the failure this guards is a
+ * deterministic path error, so a second attempt fails identically and only delays the message.
  */
-export function printPaper({ htmlPath, pdfPath, work }) {
+export function printPaper({ htmlPath, pdfPath }) {
   const name = path.basename(pdfPath);
-  const failures = [];
-  for (let attempt = 1; attempt <= PAPER_ATTEMPTS; attempt += 1) {
-    const writtenAfter = Date.now() - 2000; // filesystem timestamp granularity and clock skew
-    const profile = path.join(work, `field-day-chrome-${process.pid}-${attempt}-${randomUUID().slice(0, 8)}`);
-    const run = spawnSync(
-      CHROME,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-pdf-header-footer",
-        "--run-all-compositor-stages-before-draw",
-        "--virtual-time-budget=4000",
-        `--user-data-dir=${profile}`,
-        `--print-to-pdf=${pdfPath}`,
-        `file:///${htmlPath.replace(/\\/g, "/")}`,
-      ],
-      { encoding: "utf8", windowsHide: true },
-    );
-    const chatter = `${run.stdout ?? ""}\n${run.stderr ?? ""}`.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(" | ");
-    try {
-      if (run.error) throw run.error;
-      if (run.status !== 0) throw new Error(`Chrome exited ${run.status}${run.signal ? ` on ${run.signal}` : ""}`);
-      const size = verifyPaper(pdfPath, { writtenAfter });
-      cleanProfile(profile);
-      return { size, attempt };
-    } catch (error) {
-      cleanProfile(profile);
-      failures.push(`attempt ${attempt}: ${error?.message ?? error}${chatter ? ` — chrome said: ${chatter}` : ""}`);
-    }
-  }
-  // 🔴 LOUD, and naming the paper: `run-nightly.mjs` puts a thrown message into
-  // `xlsx/field-day-task.log`, which is the only thing anyone will ever read about a 21:00 run.
-  throw new Error(`${name} could not be printed in ${PAPER_ATTEMPTS} attempts.\n  ${failures.join("\n  ")}`);
-}
-
-/** A Chrome profile this run made, under FIELD_DAY_TMP — JSON and caches, no document types. */
-function cleanProfile(profile) {
+  const writtenAfter = Date.now() - 2000; // filesystem timestamp granularity and clock skew
+  const run = spawnSync(
+    CHROME,
+    [
+      "--headless=new",
+      "--disable-gpu",
+      "--no-pdf-header-footer",
+      "--run-all-compositor-stages-before-draw",
+      "--virtual-time-budget=4000",
+      `--print-to-pdf=${pdfPath}`,
+      pathToFileURL(htmlPath).href,
+    ],
+    { encoding: "utf8", windowsHide: true },
+  );
+  // Chrome is chatty about registry keys and the GPU on every start; only the lines that say
+  // something about THIS print are worth putting in front of whoever reads the nightly log.
+  const chatter = `${run.stdout ?? ""}
+${run.stderr ?? ""}`
+    .split(/\r?\n/)
+    .filter((line) => /Failed to write|bytes written/i.test(line))
+    .map((line) => line.trim())
+    .slice(-3)
+    .join(" | ");
   try {
-    rmSync(profile, { recursive: true, force: true, maxRetries: 2 });
-  } catch {
-    /* Chrome may still hold a lock; the temp folder is swept by Storage Sense anyway. */
+    if (run.error) throw run.error;
+    if (run.status !== 0) throw new Error(`Chrome exited ${run.status}${run.signal ? ` on ${run.signal}` : ""}`);
+    return verifyPaper(pdfPath, { writtenAfter });
+  } catch (error) {
+    // 🔴 LOUD, and naming the paper: `run-nightly.mjs` puts a thrown message into
+    // `xlsx/field-day-task.log`, which is the only thing anyone will ever read about a 21:00 run.
+    const detail = String(error?.message ?? error);
+    throw new Error(
+      `${detail.startsWith(name) ? detail : `${name}: ${detail}`}${chatter ? `
+  chrome said: ${chatter}` : ""}`,
+    );
   }
 }
 
@@ -628,8 +660,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const dayData = await readDay(process.argv[2]);
   mkdirSync(OUT, { recursive: true });
   const work = process.env.FIELD_DAY_TMP || tmpdir();
+  const papers = papersOf(dayData);
+  // 🔴 Before anything is printed OR superseded: a FIELD_DAY_OUT too deep for the longest paper is a
+  // loud error naming the character count, not three papers and a silent hole where the CEO page should be.
+  assertPapersFit(OUT, papers, { day: dayData.day });
   const label = supersedeLabel();
-  for (const paper of papersOf(dayData)) {
+  for (const paper of papers) {
     const htmlPath = path.join(work, `field-day-${dayData.day}-${paper.file}.html`);
     const pdfPath = path.join(OUT, `Phoenix-CRM-Field-Day-${dayData.day}-${paper.file}.pdf`);
     writeFileSync(htmlPath, paper.html, "utf8");
@@ -641,7 +677,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 `);
     // 🔴 `printPaper` THROWS rather than returning — the path is logged only once the file on disk
     // has been stat-checked, so this log can never again claim a paper that does not exist.
-    printPaper({ htmlPath, pdfPath, work });
+    printPaper({ htmlPath, pdfPath });
     console.log(pdfPath);
   }
 }
