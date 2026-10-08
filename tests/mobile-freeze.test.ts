@@ -27,9 +27,9 @@ import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { wiredHookGroups } from "./support/hook-wiring.ts";
 
 const guardPath = resolve(".claude/hooks/mobile-freeze-guard.mjs");
-const settingsPath = resolve(".claude/settings.json");
 
 type Decision = { decision: "allow" | "deny"; reason: string };
 
@@ -132,13 +132,10 @@ export function runMobileFreezeTests() {
   assert.equal(stoodDown.trim(), "", "PHX_MOBILE_FREEZE_OFF=1 must stand the guard down for one command");
 
   // 2. The wiring. A hook nothing runs is a comment.
-  const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
-    hooks?: { PreToolUse?: Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> };
-  };
-  const entries = (settings.hooks?.PreToolUse ?? []).filter((entry) =>
+  const entries = wiredHookGroups("PreToolUse").filter((entry) =>
     (entry.hooks ?? []).some((hook) => (hook.command ?? "").includes("mobile-freeze-guard.mjs")),
   );
-  assert.ok(entries.length > 0, "the mobile-freeze guard must be registered in .claude/settings.json");
+  assert.ok(entries.length > 0, "the mobile-freeze guard must be registered (settings.json or the dispatch table)");
   const matchers = entries.map((entry) => entry.matcher ?? "").join("|");
   for (const tool of ["Write", "Edit", "Bash"]) {
     assert.ok(

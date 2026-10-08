@@ -335,7 +335,8 @@ function main() {
   // Nothing new to send: origin already holds this commit, so there is nothing to stop.
   try {
     if (gitOut(root, ['rev-parse', '--verify', '-q', `refs/remotes/${read.remote}/${pushed.branch}`]) === sha) return allow();
-  } catch {
+  } catch (e) {
+    if (e?.[Symbol.for('phx.hook-exit')]) throw e; // the allow above ended this hook (hook-dispatch.mjs)
     // no remote-tracking ref yet — a first push of the branch
   }
 
