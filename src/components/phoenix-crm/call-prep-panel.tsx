@@ -9,7 +9,7 @@
  *
  * 🔴 READ ONLY, AND OFF THE PLAN-CHANGE PATH. There is no tick, no "move this stop", no link into the
  * planner and no mention of "Ask to edit this week": the plan is weekly and a SENT week changes only
- * through that one request — the district manager, then SFE, then HR (owner, 2026-10-01) — and a
+ * through that one request — the district manager, then SFE (owner, 2026-10-01; 2026-10-08) — and a
  * read-only prep list is exactly where a second door into it would get built by accident.
  *
  * 🔴 NO FIGURE. No count of stops, no coverage, no call rate, no "x of y planned". His own plan and

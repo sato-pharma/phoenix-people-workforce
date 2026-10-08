@@ -194,7 +194,6 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null, surf
     if (tabs.team) return "team";
     if (tabs.reports) return "reports";
   }
-  // HR's acknowledgements are real entries even for the Super Admin, so they count in either world.
   // The off-plan visits are one of the decisions since 2026-10-02 — a manager with one waiting and
   // nothing else lands on Team now, instead of on the tab he happened to be given first.
   const decisions =
@@ -204,7 +203,7 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null, surf
         waitingForYou.requests +
         waitingForYou.planEdits +
         waitingForYou.offPlanVisits +
-        waitingForYou.visitAsks) + waitingForYou.hrAcknowledgements;
+        waitingForYou.visitAsks);
   if (tabs.team && !viewer.isRep && decisions > 0) return "team";
   if (tabs.team && !viewer.isSuperAdmin && visitSeatIds.length === 0) return "team";
   // A2 (owner, 2026-09-26): he opens the app onto his DAY, not onto a tab bar. A manager with a real
@@ -431,7 +430,7 @@ export function PhoenixCrmApp({
       ? { seatId: seats.list ?? "", test, contactCrmId: Number(validateParam), customerName: customerNameParam ?? "" }
       : null;
   // A test login's counts are its own world's; everyone else's — the Super Admin's included since his
-  // test mode was retired — are the real ones, and HR's acknowledgements were always real.
+  // test mode was retired — are the real ones.
   const { waitingForYou } = overview;
   // A rep's asks for a visit waiting for this viewer's answer (owner, 2026-10-02): counted on Team for a
   // manager, and on Reports for a product manager, who has no Team tab.
@@ -440,8 +439,7 @@ export function PhoenixCrmApp({
     (waitingForYou.isTest === test
       ? waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits + waitingForYou.offPlanVisits
       : 0) +
-    visitAskCount +
-    (test ? 0 : waitingForYou.hrAcknowledgements);
+    visitAskCount;
   const tabId = (key: TabKey) => `${idPrefix}-tab-${key}`;
   const panelId = (key: TabKey) => `${idPrefix}-panel-${key}`;
   /** A tab kept behind the others because it holds work (and is still one of the viewer's tabs). */

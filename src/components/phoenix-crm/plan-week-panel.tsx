@@ -10,8 +10,8 @@
  * Send asks once more before it goes.
  *
  * 🔴 Owner, 2026-10-01: a rep no longer takes a sent week back himself. "Ask to edit this week" — one
- * button, no reason — sends a request to his district manager, then SFE, then HR, and only HR's
- * acknowledgement opens the week again (plan-edits.ts). Where the request stands is said on the week.
+ * button, no reason — sends a request to his district manager, then SFE, and SFE's approval
+ * opens the week again (plan-edits.ts). Where the request stands is said on the week.
  *
  * Its six days sit under it as tabs; the day on screen is PlanDayPanel.
  *
@@ -81,7 +81,6 @@ export type WeekBusy = "send" | "ask" | PlanDecisionAction;
 const EDIT_TONE: Record<PlanEditStatus, NoteTone> = {
   manager_pending: "info",
   sfe_pending: "info",
-  hr_pending: "info",
   reopened: "good",
   refused: "bad",
   expired: "warn",
@@ -286,7 +285,7 @@ export function PlanWeekPanel({
   items: ReadonlyArray<PlanItemDraft>;
   locked: boolean;
   onActivity: (date: string, activityType: PhoenixCrmDayActivity, next: Pick<PlannedActivity, "halfDay" | "note"> | null) => void;
-  /** "Ask to edit this week" — the request to the district manager, then SFE, then HR. */
+  /** "Ask to edit this week" — the request to the district manager, then SFE. */
   onAskToEdit: () => void;
   onCopied: (placements: CopiedPlacements) => void;
   onDay: (date: string) => void;
@@ -491,7 +490,7 @@ export function PlanWeekPanel({
               <p className="text-sm font-black text-slate-950">Send this week for review?</p>
               <p className="break-words text-sm font-medium leading-6 text-slate-600">
                 {countText(totals.AM)} AM · {countText(totals.PM)} PM across the week.{dirty ? " Your changes are saved first." : ""} {reviewerSentence} Once
-                it is sent, changing it needs your manager, SFE and HR.
+                it is sent, changing it needs your manager and SFE.
               </p>
               <EmptyDaysNote dates={emptyDays} />
               {problems.length > 0 ? (
@@ -545,7 +544,7 @@ export function PlanWeekPanel({
             <div className="mt-3 grid min-w-0 gap-2 border border-slate-200 bg-slate-50 px-3.5 py-3">
               <p className="text-sm font-black text-slate-950">Ask to edit this week?</p>
               <p className="break-words text-sm font-medium leading-6 text-slate-600">
-                Your district manager decides first, then SFE, then HR. The week opens again once HR acknowledges it, and until you send it
+                Your district manager decides first, then SFE. The week opens again once SFE approves it, and until you send it
                 again your visits this week count as off-plan.
               </p>
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">

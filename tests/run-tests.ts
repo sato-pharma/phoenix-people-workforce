@@ -1796,6 +1796,7 @@ import { runPhoenixCrmPlanCapOnSendTests } from "./phoenix-crm-plan-cap-on-send.
 import { runPhoenixCrmPlanReminderTests } from "./phoenix-crm-plan-reminder.test.ts";
 import { runPhoenixCrmPlanScreenExtrasTests } from "./phoenix-crm-plan-screen-extras.test.ts";
 import { runPhoenixCrmStepFormTests } from "./phoenix-crm-step-form.test.ts";
+import { runPhoenixCrmAdministratorTests } from "./phoenix-crm-administrator.test.ts";
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
 import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
@@ -6691,6 +6692,11 @@ await runTest(
 await runTest(
   "Phoenix CRM changes a sent week only through a request (owner, 2026-10-01): the district manager approves, then SFE, then HR — Omar Gawish alone, on a real request — acknowledges, and only that reopens the week, inside the same transaction and under the plan's own lock; a vacant chain starts at SFE, a refusal needs a note, no step is skipped or taken twice, a passed week's request is closed as expired rather than raised, the step is read from the row and never the body, and every step tells the next person, the rep, the district manager and SFE",
   runPhoenixCrmPlanEditRequestTests,
+);
+
+await runTest(
+  "Phoenix CRM: the Administrator is no approval step - he declines or returns with a comment, nothing waits for him, and he is never called HR",
+  runPhoenixCrmAdministratorTests,
 );
 
 await runTest(

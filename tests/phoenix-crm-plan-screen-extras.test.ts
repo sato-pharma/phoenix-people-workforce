@@ -309,7 +309,7 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
     assert.ok(panel.includes("const emptyDays = editable ? emptyPlanDays(week, items, activities, byId) : [];"), "the panel reads the empty days off the draft");
     assert.match(
       panel,
-      /it is sent, changing it needs your manager, SFE and HR\.\s*<\/p>\s*<EmptyDaysNote dates=\{emptyDays\} \/>/,
+      /it is sent, changing it needs your manager and SFE\.\s*<\/p>\s*<EmptyDaysNote dates=\{emptyDays\} \/>/,
       "the Send confirmation names them, before its buttons",
     );
     assert.ok(panel.includes('{placed > 0 ? <EmptyDaysNote className="mt-3" dates={emptyDays} /> : null}'), "and so does step 4 under Send this week");

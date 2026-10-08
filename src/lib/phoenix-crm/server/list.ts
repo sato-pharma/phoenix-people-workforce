@@ -75,6 +75,7 @@ import {
   canCurateList,
   canDecideListRequest,
   canMovePlaces,
+  canOverrideDecision,
   canReviewTerritory,
   canWriteAsRep,
   readTestFlag,
@@ -2267,7 +2268,12 @@ export async function decideListRequest(
   if (!seat) throw notFoundError("This territory is no longer in the organogram. Reload the page.");
   const isTest = request.is_test === true;
   const rowStage = isRequestStage(request.stage) ? request.stage : null;
-  assertListRequestApprover(viewer, seat, isTest, rowStage);
+  // The Administrator declines at whichever step it waits at; he never approves (owner, 2026-10-08).
+  if (canOverrideDecision(viewer, isTest)) {
+    if (decision !== "refuse") throw validationError("The Administrator can only decline a request.");
+  } else {
+    assertListRequestApprover(viewer, seat, isTest, rowStage);
+  }
 
   const kind = requestKindOf(request.kind);
   const approvedGrade = kind === "add" ? parseGrade(body.approvedGrade) : null;

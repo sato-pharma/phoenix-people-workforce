@@ -803,8 +803,8 @@ export async function transitionPlan(
   const isTest = planRow.is_test === true;
   const today = viewer.cairoToday;
 
-  let actorRole: "rep" | "reviewer" | "sfe_manager";
-  let decidedAs: "reviewer" | "sfe" = "reviewer";
+  let actorRole: "rep" | "reviewer" | "sfe_manager" | "administrator";
+  let decidedAs: "reviewer" | "sfe" | "administrator" = "reviewer";
   if (action === "submit" || action === "reopen") {
     // The gate ANSWERS with the world this viewer writes in, and the plan found by id must be in it. A
     // test login always writes the test world, so a REAL plan reached by its id is not his to submit or
@@ -855,7 +855,7 @@ export async function transitionPlan(
     actorRole = "reviewer";
   } else {
     decidedAs = assertCanReturnPlan(viewer, seat, isTest);
-    actorRole = decidedAs === "sfe" ? "sfe_manager" : "reviewer";
+    actorRole = decidedAs === "sfe" ? "sfe_manager" : decidedAs === "administrator" ? "administrator" : "reviewer";
     // A plan returned after its week could never be changed by the rep; the database refuses it too.
     if (editablePlanDays(String(planRow.week_start), today).length === 0) {
       throw conflictError("This week is over, so its plan can no longer be returned. Reload the page.");

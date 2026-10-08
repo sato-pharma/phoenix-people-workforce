@@ -65,8 +65,7 @@ export function PhoenixCrmModuleChooser({
     overview.waitingForYou.requests +
     overview.waitingForYou.planEdits +
     overview.waitingForYou.offPlanVisits +
-    overview.waitingForYou.visitAsks +
-    overview.waitingForYou.hrAcknowledgements;
+    overview.waitingForYou.visitAsks;
   // A product manager has no Team module: the visits his line's reps ask of him wait on Reports
   // (owner, 2026-10-02), so that card carries the count instead.
   const reportsWaiting = overview.tabs.team ? 0 : overview.waitingForYou.visitAsks;

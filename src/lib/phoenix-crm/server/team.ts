@@ -29,6 +29,7 @@ import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   canDecideListRequest,
+  canOverrideDecision,
   canReviewTerritory,
   isLocationBlind,
   locationSight,
@@ -184,11 +185,13 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
   return summarizeTeamToday({ seatIds, seatsWithPlan, planned, visits });
 }
 
-export type TeamRequest = ListRequest & { seatId: string; territoryName: string; canDecide: boolean };
+/** `canOverride` on each of the three: the Administrator may decline it — he is no step and is never counted. */
+export type TeamRequest = ListRequest & { seatId: string; territoryName: string; canDecide: boolean; canOverride: boolean };
 
 export type TeamUnplannedVisit = UnplannedVisitView & {
   territoryName: string;
   canDecide: boolean;
+  canOverride: boolean;
   /**
    * The other days of the visit's field week its customer stood on the rep's SENT plan, as the plan
    * stood when he logged the visit (owner, 2026-10-02: "the approver sees the original day"). Read by
@@ -199,7 +202,8 @@ export type TeamUnplannedVisit = UnplannedVisitView & {
 };
 
 /** A rep's request to edit a sent week (owner, 2026-10-01), with whether THIS viewer acts at its step. */
-export type TeamPlanEdit = PlanEditRequestView & { territoryName: string; canDecide: boolean };
+/** `canOverride`: the Administrator may decline it (never counted as waiting for him — he is no step). */
+export type TeamPlanEdit = PlanEditRequestView & { territoryName: string; canDecide: boolean; canOverride: boolean };
 
 export type TeamView = {
   isTest: boolean;
@@ -358,6 +362,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
         // first step of a drop, an add or a bring-back are the territory's reviewer's; the second step
         // is the SFE Manager's. Everyone else in scope reads it and no more.
         canDecide: canDecideListRequest(viewer, seat, isTest, request.stage),
+        canOverride: canOverrideDecision(viewer, isTest),
       };
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.requestedAt.localeCompare(right.requestedAt));
@@ -380,6 +385,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
         // The step it is ON decides who may press the button: the manager's step is the territory's
         // reviewer, the SFE's step is the SFE Manager. Everyone else in scope reads it and no more.
         canDecide: seat ? canDecideUnplannedRow(viewer, seat, isTest, view.status) : false,
+        canOverride: canOverrideDecision(viewer, isTest),
         plannedFor: movedFrom.get(view.visitId) ?? [],
       };
     })
@@ -392,8 +398,9 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       return {
         ...view,
         territoryName: summaries.get(view.seatId)?.name ?? "Territory",
-        // The step it is ON decides who may press the button: the district manager's, SFE's, or HR's.
+        // The step it is ON decides who may press the button: the district manager's or SFE's.
         canDecide: seat ? canDecidePlanEditRow(viewer, seat, isTest, view.status) : false,
+        canOverride: canOverrideDecision(viewer, isTest),
       };
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));

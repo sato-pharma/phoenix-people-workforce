@@ -37,7 +37,7 @@ import {
 } from "@/lib/phoenix-crm/plan-edit-rules";
 import { isUuid, planStatusLine, repChangeableDays, repWeekState, standingReturnedDay, type RepWeekState } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { assertPlanEditApprover, canDecidePlanEdit, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { assertPlanEditApprover, canDecidePlanEdit, canOverrideDecision, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -57,7 +57,7 @@ function planStatusOf(value: unknown): PhoenixCrmPlanStatus | null {
 const REQUEST_COLUMNS =
   "id, plan_id, seat_id, week_start, rep_hr_id, status, version, created_at, decided_at, " +
   "manager_decided_by_hr_id, manager_decided_at, manager_note, sfe_decided_by_hr_id, sfe_decided_at, sfe_note, " +
-  "hr_acknowledged_by_hr_id, hr_acknowledged_at, is_test, plan:phoenix_crm_plans!plan_id(status, version)";
+  "hr_acknowledged_by_hr_id, hr_acknowledged_at, admin_decided_by_hr_id, admin_decided_at, admin_note, is_test, plan:phoenix_crm_plans!plan_id(status, version)";
 
 /** One request to edit a week, as a screen shows it. */
 export type PlanEditRequestView = {
@@ -80,7 +80,10 @@ export type PlanEditRequestView = {
   sfeDecidedByName: string | null;
   sfeNote: string | null;
   hrAcknowledgedByName: string | null;
-  /** When HR acknowledged it — what tells an edit that opened the week from a one-day return after it. */
+  /** The Administrator's decline, when it was he who ended the request: his note (his name is never shown). */
+  administratorNote: string | null;
+  administratorDeclined: boolean;
+  /** When the week was opened (SFE's approval) — what tells an edit that opened the week from a one-day return after it. */
   hrAcknowledgedAt: string | null;
 };
 
@@ -91,6 +94,7 @@ export function planEditPeople(rows: ReadonlyArray<Row>): Array<string | null> {
     textOrNull(row.manager_decided_by_hr_id),
     textOrNull(row.sfe_decided_by_hr_id),
     textOrNull(row.hr_acknowledged_by_hr_id),
+    textOrNull(row.admin_decided_by_hr_id),
   ]);
 }
 
@@ -123,6 +127,8 @@ export function mapPlanEditRow(row: Row, names: PeopleNames): PlanEditRequestVie
     sfeDecidedByName: person(row.sfe_decided_by_hr_id),
     sfeNote: textOrNull(row.sfe_note),
     hrAcknowledgedByName: person(row.hr_acknowledged_by_hr_id),
+    administratorNote: textOrNull(row.admin_note),
+    administratorDeclined: textOrNull(row.admin_decided_by_hr_id) !== null,
     hrAcknowledgedAt: textOrNull(row.hr_acknowledged_at),
   };
 }
@@ -322,14 +328,15 @@ export async function raisePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
 // ── Each step decides ───────────────────────────────────────────────────────────────────────────
 
 /**
- * The district manager approves or refuses, then SFE does, then HR acknowledges — which reopens the
- * week. The STEP is read from the row, never from the request.
+ * The district manager approves or refuses, then SFE does — and SFE's approval reopens the week. The
+ * STEP is read from the row, never from the request. The Administrator is no step: he may only DECLINE
+ * a request waiting at either one, with a note the rep reads (owner, 2026-10-08).
  */
 export async function decidePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Promise<PlanEditResult> {
   const body = record(raw);
   if (!isUuid(body.requestId)) throw validationError("Choose the request. Reload the page.");
   const requestId = String(body.requestId).toLowerCase();
-  const decision = body.decision === "approve" || body.decision === "refuse" || body.decision === "acknowledge" ? body.decision : null;
+  const decision = body.decision === "approve" || body.decision === "refuse" ? body.decision : null;
   if (!decision) throw validationError("Choose what to do with the request.");
   const note = String(body.note ?? "").trim().replace(/\s+/g, " ") || null;
   if (note !== null && note.length > PLAN_EDIT_NOTE_MAX) throw validationError(`Keep the note under ${PLAN_EDIT_NOTE_MAX} characters.`);
@@ -351,18 +358,23 @@ export async function decidePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pr
   const status: PlanEditStatus = isPlanEditStatus(row.status) ? row.status : "refused";
   const stage = planEditStageOf(status);
   if (stage === null) throw conflictError("This request was already decided. Reload the page.");
-  assertPlanEditApprover(viewer, seat, isTest, stage);
-  if (!planEditDecisionsFor(stage).includes(decision)) {
-    throw validationError(stage === "hr" ? "HR acknowledges this step." : "Approve or refuse this step.");
+  // The Administrator declines at whichever step it waits at; he never approves, and the database
+  // records the act as his own stage rather than as the manager's or SFE's.
+  const asAdministrator = canOverrideDecision(viewer, isTest);
+  if (asAdministrator) {
+    if (decision !== "refuse") throw validationError("The Administrator can only decline a request.");
+  } else {
+    assertPlanEditApprover(viewer, seat, isTest, stage);
+    if (!planEditDecisionsFor(stage).includes(decision)) throw validationError("Approve or refuse this step.");
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_plan_edit_request", {
     p: {
       request_id: requestId,
-      stage,
+      stage: asAdministrator ? "administrator" : stage,
       decision,
       actor_hr_id: viewer.hrId,
-      actor_role: viewer.role,
+      actor_role: asAdministrator ? "administrator" : viewer.role,
       note,
       expected_version: expectedVersion,
       is_test: isTest,

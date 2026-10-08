@@ -702,14 +702,14 @@ export async function decideMonthlyPlan(viewer: PhoenixCrmViewer, raw: unknown):
   const monthStart = String(headerRow.month_start);
   const today = viewer.cairoToday;
 
-  let actorRole: "reviewer" | "sfe_manager";
-  let decidedAs: "reviewer" | "sfe" = "reviewer";
+  let actorRole: "reviewer" | "sfe_manager" | "administrator";
+  let decidedAs: "reviewer" | "sfe" | "administrator" = "reviewer";
   if (action === "approve") {
     assertReviewer(viewer, seat, isTest);
     actorRole = "reviewer";
   } else {
     decidedAs = assertCanReturnPlan(viewer, seat, isTest);
-    actorRole = decidedAs === "sfe" ? "sfe_manager" : "reviewer";
+    actorRole = decidedAs === "sfe" ? "sfe_manager" : decidedAs === "administrator" ? "administrator" : "reviewer";
     if (monthEndOf(monthStart) < today) throw conflictError("This month is over, so its plan can no longer be returned. Reload the page.");
     if (!note) throw validationError("Write a note for the rep on what to change.");
   }

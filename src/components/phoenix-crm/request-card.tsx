@@ -22,6 +22,7 @@ import { useId, useState } from "react";
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
+import { AdministratorDecline } from "@/components/phoenix-crm/administrator-decline";
 import { CrmButton, CrmCard, CrmChoice, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { DROP_REASON_MAX, POTENTIAL_GRADES, type PotentialGrade } from "@/lib/phoenix-crm/entry-rules";
 import { isTwoStepKind, requestStageLabel, setsAdmissionGrades } from "@/lib/phoenix-crm/list-request-rules";
@@ -112,6 +113,7 @@ function admissionLine(request: ListRequest): string | null {
 
 export function RequestCard({
   canDecide,
+  canOverride = false,
   canWithdraw,
   onChanged,
   request,
@@ -121,6 +123,8 @@ export function RequestCard({
 }: {
   /** The surface allows deciding here; the card still decides only where `request.canDecide` is true. */
   canDecide: boolean;
+  /** The Administrator may decline it (never counted as waiting for him). Only the Team tab passes it. */
+  canOverride?: boolean;
   /** The viewer is the territory's rep: withdraw a waiting request. */
   canWithdraw: boolean;
   /** A decision or a withdrawal saved; the owner of the list reloads it. */
@@ -330,6 +334,21 @@ export function RequestCard({
             </CrmButton>
           </div>
         </div>
+      ) : null}
+
+      {pending && canOverride ? (
+        <AdministratorDecline
+          hint="The rep reads it."
+          onSubmit={async (comment) => {
+            await crmPost<DecideResult>(
+              "/api/phoenix-crm/list/requests/decide",
+              { requestId: request.requestId, decision: "refuse", note: comment, stage: request.stage },
+              "request",
+            );
+            onChanged(`Declined by the Administrator: ${request.customerName}.`);
+          }}
+          verb="Decline"
+        />
       ) : null}
 
       {pending && canWithdraw ? (

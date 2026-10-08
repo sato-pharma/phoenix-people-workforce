@@ -988,7 +988,7 @@ function MonthsSection({
 
 /**
  * A rep's requests to edit a week he already sent (owner, 2026-10-01): the district manager decides
- * first, then SFE, then HR acknowledges — and only then does the week open again for him.
+ * first, then SFE — and SFE's approval opens the week again for him. The Administrator may decline.
  */
 function PlanEditsSection({
   idPrefix,
@@ -1014,7 +1014,7 @@ function PlanEditsSection({
           message={
             test
               ? "Test requests to edit a sent week show here while they wait."
-              : "When a rep asks to change a week they already sent, the request shows here until the district manager, SFE and HR have each taken their step."
+              : "When a rep asks to change a week they already sent, the request shows here until the district manager and SFE have each taken their step."
           }
           title="No request to edit a plan waiting"
         />
@@ -1072,7 +1072,7 @@ function PlanEditsSection({
           <CrmBlock className="border-t border-slate-100" title={`Waiting for somebody else · ${countText(others.length)}`}>
             <p className="break-words text-sm font-medium leading-6 text-slate-600">
               {forYou.length === 0 && edits.length === team.planEdits.length ? "Nothing waits for your step. " : ""}
-              A request sits with the district manager first, then with SFE, then with HR.
+              A request sits with the district manager first, then with SFE.
             </p>
           </CrmBlock>
           <div className="divide-y divide-slate-100 border-t border-slate-100">{others.slice(0, othersLimit).map(card)}</div>
@@ -1241,6 +1241,7 @@ function RequestsSection({
     return (
       <RequestCard
         canDecide={request.canDecide}
+        canOverride={request.canOverride}
         canWithdraw={false}
         key={request.requestId}
         onChanged={onChanged}

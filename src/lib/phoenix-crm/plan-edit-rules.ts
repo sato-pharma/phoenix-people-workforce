@@ -4,11 +4,13 @@
  * Owner, 2026-10-01: a rep no longer takes a sent week back himself. He presses "Ask to edit this
  * week" (one button — no reason asked, his ruling), and the request runs:
  *
- *   the territory's district manager APPROVES → the SFE Manager APPROVES → HR ACKNOWLEDGES
+ *   the territory's district manager APPROVES → the SFE Manager APPROVES
  *
- * and only after the acknowledgement does the week open again for him to change the days from today
- * on and send it again. HR is Omar Gawish himself (`PLAN_EDIT_ACKNOWLEDGER_HR_ID`, his own ruling).
- * One refusal, at the manager's step or SFE's, ends it. A territory whose manager chain is vacant
+ * and SFE's approval opens the week again for him to change the days from today on and send it again.
+ * 🔴 NOTHING WAITS FOR THE ADMINISTRATOR (owner, 2026-10-08: HR was taken out of the approvals). He is
+ * Omar Gawish himself (`PHOENIX_CRM_ADMINISTRATOR_HR_ID`) and may DECLINE a request waiting at either
+ * step, with a note the rep reads — never "HR", never an "override". One refusal, at the manager's step,
+ * SFE's or the Administrator's, ends it. A territory whose manager chain is vacant
  * starts at SFE, exactly as an off-plan visit does (unplanned-rules.ts). A request whose week has
  * passed before it is settled expires: there is nothing left to change.
  *
@@ -18,13 +20,13 @@
  */
 
 /** Where a request to edit a week has got to. */
-export type PlanEditStatus = "manager_pending" | "sfe_pending" | "hr_pending" | "reopened" | "refused" | "expired";
+export type PlanEditStatus = "manager_pending" | "sfe_pending" | "reopened" | "refused" | "expired";
 
-/** Which of the three steps a viewer acts at. */
-export type PlanEditStage = "manager" | "sfe" | "hr";
+/** Which of the two steps a request waits at. */
+export type PlanEditStage = "manager" | "sfe";
 
-/** HR's step is Omar Gawish's own (owner, 2026-10-01). */
-export const PLAN_EDIT_ACKNOWLEDGER_HR_ID = "B-10";
+/** The Administrator is Omar Gawish (owner, 2026-10-01; no longer a step since 2026-10-08). */
+export const PHOENIX_CRM_ADMINISTRATOR_HR_ID = "B-10";
 
 /**
  * Who the daily expiry pass records as the actor: nobody. A request whose week has passed is closed
@@ -38,13 +40,12 @@ export const PLAN_EDIT_EXPIRY_ACTOR_HR_ID = "SYSTEM";
 
 export const PLAN_EDIT_NOTE_MAX = 500;
 
-export const PLAN_EDIT_WAITING_STATUSES = ["manager_pending", "sfe_pending", "hr_pending"] as const;
+export const PLAN_EDIT_WAITING_STATUSES = ["manager_pending", "sfe_pending"] as const;
 
 export function isPlanEditStatus(value: unknown): value is PlanEditStatus {
   return (
     value === "manager_pending" ||
     value === "sfe_pending" ||
-    value === "hr_pending" ||
     value === "reopened" ||
     value === "refused" ||
     value === "expired"
@@ -53,14 +54,13 @@ export function isPlanEditStatus(value: unknown): value is PlanEditStatus {
 
 /** Still waiting on somebody. */
 export function isPlanEditWaiting(status: PlanEditStatus): boolean {
-  return status === "manager_pending" || status === "sfe_pending" || status === "hr_pending";
+  return status === "manager_pending" || status === "sfe_pending";
 }
 
 /** The step a status is waiting on, or null once it is settled. */
 export function planEditStageOf(status: PlanEditStatus): PlanEditStage | null {
   if (status === "manager_pending") return "manager";
   if (status === "sfe_pending") return "sfe";
-  if (status === "hr_pending") return "hr";
   return null;
 }
 
@@ -69,22 +69,19 @@ export function planEditFirstStatus(hasReviewer: boolean): Extract<PlanEditStatu
   return hasReviewer ? "manager_pending" : "sfe_pending";
 }
 
-/** Where one step's yes moves the request: manager → SFE → HR → the week reopens. */
-export function nextPlanEditStatus(stage: PlanEditStage): Extract<PlanEditStatus, "sfe_pending" | "hr_pending" | "reopened"> {
-  if (stage === "manager") return "sfe_pending";
-  if (stage === "sfe") return "hr_pending";
-  return "reopened";
+/** Where one step's yes moves the request: manager → SFE → the week reopens. */
+export function nextPlanEditStatus(stage: PlanEditStage): Extract<PlanEditStatus, "sfe_pending" | "reopened"> {
+  return stage === "manager" ? "sfe_pending" : "reopened";
 }
 
-/** What a step's decision is called on its button. HR acknowledges; it never approves or refuses. */
-export function planEditDecisionsFor(stage: PlanEditStage): ReadonlyArray<"approve" | "refuse" | "acknowledge"> {
-  return stage === "hr" ? ["acknowledge"] : ["approve", "refuse"];
+/** What a step may decide. The Administrator's only act is a decline (see `canAdminister`). */
+export function planEditDecisionsFor(_stage: PlanEditStage): ReadonlyArray<"approve" | "refuse"> {
+  return ["approve", "refuse"];
 }
 
 export function planEditStatusLabel(status: PlanEditStatus): string {
   if (status === "manager_pending") return "Waiting for the district manager";
   if (status === "sfe_pending") return "Waiting for SFE";
-  if (status === "hr_pending") return "Waiting for HR";
   if (status === "reopened") return "Open again to edit";
   if (status === "refused") return "Refused";
   return "Expired — the week passed";
@@ -92,9 +89,8 @@ export function planEditStatusLabel(status: PlanEditStatus): string {
 
 /** What the rep reads on his week. The same words wherever he meets it. */
 export function planEditRepNote(status: PlanEditStatus): string {
-  if (status === "manager_pending") return "You asked to edit this week. Your district manager decides first, then SFE, then HR.";
-  if (status === "sfe_pending") return "Your district manager approved. SFE decides next, then HR.";
-  if (status === "hr_pending") return "Your district manager and SFE approved. The week opens once HR acknowledges it.";
+  if (status === "manager_pending") return "You asked to edit this week. Your district manager decides first, then SFE.";
+  if (status === "sfe_pending") return "Your district manager approved. SFE decides next, and the week opens once SFE approves.";
   if (status === "reopened") {
     return "The week is open again. Change the days from today on and send it again. Until you send it, your visits this week count as off-plan.";
   }
