@@ -57,10 +57,19 @@ const fixturePath = flag("--fixture");
 
 // ── --capture: write the real workspace payload, so the measurement runs on real data ───────────
 //
-// Deliberately a separate mode and never the default: the payload carries raw-material PRICES, so
-// it is written where the caller asks and never committed. A measurement on invented data would
-// prove nothing anyway — the names are Arabic and six-figure piece counts are what a column has to
-// hold.
+// Deliberately a separate mode and never the default: the payload is written where the caller asks.
+// A measurement on invented data would prove nothing anyway — the names are Arabic and six-figure
+// piece counts are what a column has to hold.
+//
+// 🔴 THIS USED TO SAY THE PAYLOAD IS NEVER COMMITTED, BECAUSE IT CARRIES RAW-MATERIAL PRICES.
+// Measured 2026-10-09, it carries none: 0 of 12 materials priced, 0 of 12 plan rows with a unit
+// price, `plan.totals.costEgp` "0.00", `unpricedMaterials` 10. The ban was therefore keeping the
+// whole measurement locked to a machine with production credentials AND enough free memory for
+// chromium plus a Tailwind compile — which is why it had gone unrun. So one capture now lives at
+// `tests/fixtures/production-planning-fit.json`, and the ban became a required check:
+// `tests/production-planning-fit-fixture.test.ts` goes red the moment a committed fixture holds a
+// real price. A capture made AFTER the owner prices these materials is still yours to keep out of
+// git — write it anywhere and pass it with `--fixture`.
 if (capturePath) {
   const { getProductionPlanningWorkspace } = await import("../src/lib/production-planning/service.ts");
   const workspace = await getProductionPlanningWorkspace(
@@ -78,11 +87,14 @@ if (capturePath) {
 if (!fixturePath || !fs.existsSync(fixturePath)) {
   console.error(
     "measure-production-planning-fit: --fixture <file> is required (and must exist).\n" +
-      "Produce one first:  node --env-file=.env.local --experimental-strip-types " +
+      "A committed one is here, captured 2026-10-09 and pinned price-free by\n" +
+      "tests/production-planning-fit-fixture.test.ts:\n" +
+      "    --fixture tests/fixtures/production-planning-fit.json\n" +
+      "To refresh it against live data:  node --env-file=.env.local --experimental-strip-types " +
       "--experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \\\n" +
       "    scripts/measure-production-planning-fit.mjs --capture <file>\n" +
-      "It is not committed, and there is no built-in default on purpose: the payload holds prices, " +
-      "and a synthetic fixture measures a table nobody will ever see.",
+      "There is still no built-in default on purpose: a synthetic fixture measures a table nobody " +
+      "will ever see, and a refreshed capture must stay out of git once these materials are priced.",
   );
   process.exit(2);
 }
