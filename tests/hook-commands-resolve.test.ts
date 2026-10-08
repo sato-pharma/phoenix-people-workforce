@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { dispatchedHookGroups, settingsHookGroups, wiredHookEvents } from "./support/hook-wiring.ts";
 
 /**
  * Every hook command in `.claude/settings.json` must point at a file that EXISTS, must parse in
@@ -69,12 +70,12 @@ const SHELL_SYNTAX = [/\$\{/, /\$\(/, /\|\|/, /&&/, /;/, /\d?>/, /\[\s/];
 
 type HookEntry = { type?: string; command?: string; shell?: string };
 
+/** Every hook command a session runs: settings.json's own (the dispatcher included) and the dispatch table's. */
 function hookEntries(): Array<{ event: string; entry: HookEntry }> {
-  const settings = JSON.parse(readFileSync(SETTINGS, "utf8")) as {
-    hooks?: Record<string, Array<{ hooks?: HookEntry[] }>>;
-  };
-  return Object.entries(settings.hooks ?? {}).flatMap(([event, groups]) =>
-    (groups ?? []).flatMap((group) => (group.hooks ?? []).map((entry) => ({ event, entry }))),
+  return wiredHookEvents().flatMap((event) =>
+    [...settingsHookGroups(event), ...dispatchedHookGroups(event)].flatMap((group) =>
+      (group.hooks ?? []).map((entry) => ({ event, entry })),
+    ),
   );
 }
 

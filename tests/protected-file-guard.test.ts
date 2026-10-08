@@ -23,9 +23,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { wiredHookGroups } from "./support/hook-wiring.ts";
 
 const guardPath = resolve(".claude/hooks/protected-file-guard.mjs");
-const settingsPath = resolve(".claude/settings.json");
 
 type Decision = { decision: "ask" | "allow" | "silent" | "deny"; reason: string; context: string };
 
@@ -148,13 +148,10 @@ export function runProtectedFileGuardTests() {
   }
 
   // 3. The wiring. A hook nothing runs is a comment.
-  const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
-    hooks?: { PreToolUse?: Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> };
-  };
-  const entries = (settings.hooks?.PreToolUse ?? []).filter((entry) =>
+  const entries = wiredHookGroups("PreToolUse").filter((entry) =>
     (entry.hooks ?? []).some((hook) => (hook.command ?? "").includes("protected-file-guard.mjs")),
   );
-  assert.ok(entries.length > 0, "the protected-file guard must be registered in .claude/settings.json");
+  assert.ok(entries.length > 0, "the protected-file guard must be registered (settings.json or the dispatch table)");
   const matchers = entries.flatMap((entry) => (entry.matcher ?? "").split("|"));
   for (const tool of ["Write", "Edit", "NotebookEdit", "Bash", "PowerShell"]) {
     assert.ok(

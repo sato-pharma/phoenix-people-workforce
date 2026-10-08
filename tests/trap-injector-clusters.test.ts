@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { wiredHookEvents, wiredHookGroups } from "./support/hook-wiring.ts";
 
 /**
  * Every trap cluster must be REACHABLE — some command a session really runs has to deliver it.
@@ -224,11 +225,8 @@ function testItStandsDownForARegisteredMachineCopy(root: string) {
 }
 
 function testItIsRegisteredWithATimeout() {
-  const settings = JSON.parse(readFileSync(".claude/settings.json", "utf8")) as {
-    hooks?: Record<string, Array<{ matcher?: string; hooks?: Array<{ command?: string; timeout?: number }> }>>;
-  };
-  const registered = Object.entries(settings.hooks ?? {}).flatMap(([event, groups]) =>
-    groups.flatMap((group) =>
+  const registered = wiredHookEvents().flatMap((event) =>
+    wiredHookGroups(event).flatMap((group) =>
       (group.hooks ?? [])
         .filter((h) => (h.command ?? "").includes("trap-injector.mjs"))
         .map((h) => ({ event, matcher: group.matcher ?? "", ...h })),

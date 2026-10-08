@@ -225,7 +225,8 @@ try {
       },
     }),
   );
-} catch {
+} catch (e) {
+  if (e?.[Symbol.for('phx.hook-exit')]) throw e; // an exit above ended this hook (hook-dispatch.mjs)
   /* never break a tool call over this */
 }
 

@@ -2241,6 +2241,7 @@ import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
 import { runRemoteCheckPollGuardTests } from "./remote-check-poll-guard.test.ts";
+import { runHookDispatchTests } from "./hook-dispatch.test.ts";
 import { runSlowAuditTests } from "./slow-audit.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
@@ -8615,6 +8616,11 @@ await runTest(
 await runTest(
   "bash-guard C14 refuses a FOREGROUND until/while/for … sleep loop polling remote-check, in bash and PowerShell (4-8 Oct 2026: 17.6 session-hours, each pinned at the 600s Bash ceiling), naming the run_in_background-plus-notification way and the 0/1/2-9 exit codes with a stand-down in the tool's dialect — while the same loop in the background, a plain remote-check call, an unrelated sleep loop, a mention with no loop, a heredoc documenting the loop and both stand-downs all pass",
   runRemoteCheckPollGuardTests,
+);
+
+await runTest(
+  "every PreToolUse hook runs in ONE node process through .claude/hooks/hook-dispatch.mjs (2026-10-08: seven processes cost ~850 ms CPU and ~400 MB per Bash call, one isolate ~100 ms and ~60 MB) — the merge is Claude Code's own (exit 2 blocks, deny > ask > allow, every reason and additionalContext kept, a crash reported and never blocking), settings.json's PreToolUse is the dispatcher alone and its matcher covers every tool a dispatched hook matches, every in-process hook keeps the contract (no floating async main, no catch swallowing an exit — the checker proven on both defects), and over a corpus of real tool calls the dispatcher's answer is byte-identical to the same hooks run one process each",
+  runHookDispatchTests,
 );
 
 await runTest(
