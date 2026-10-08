@@ -372,6 +372,9 @@ export const AR_MESSAGES: Record<string, string> = {
   "Your position is being confirmed": "جارٍ تأكيد الوظيفة",
   "Our HR team needs to confirm your position before you can complete this form. They will contact you shortly — you can also reply to the offer email.":
     "يحتاج فريق الموارد البشرية إلى تأكيد الوظيفة قبل استكمال هذا النموذج، وسيتواصل معك قريباً — ويمكنك أيضاً الرد على بريد العرض.",
+  "Your start date is being confirmed": "جارٍ تأكيد تاريخ بدء العمل",
+  "Our HR team needs to confirm your start date before you can complete this form. They will contact you shortly — you can also reply to the offer email.":
+    "يحتاج فريق الموارد البشرية إلى تأكيد تاريخ بدء العمل قبل استكمال هذا النموذج، وسيتواصل معك قريباً — ويمكنك أيضاً الرد على بريد العرض.",
   "You have already completed this form": "تم استكمال هذا النموذج من قبل",
   "Your joining form has been received and your employee record is ready. Our HR team will be in touch before your first day.":
     "تم استلام نموذج الالتحاق وأصبح ملفك الوظيفي جاهزاً. سيتواصل معك فريق الموارد البشرية قبل يوم عملك الأول.",

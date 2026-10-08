@@ -2,7 +2,8 @@ import { defaultOfferTemplate, getOffer, getOfferTemplate, markOfferSent, setOff
 import { isOfferPdfAvailable, offerPdfFilename, renderOfferPdf } from "@/lib/offers/pdf";
 import { renderOfferEmail } from "@/lib/offers/render-email";
 import { issueOfferAcceptToken, offerAcceptUrl } from "@/lib/offers/accept-token";
-import { OFFER_SEAT_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
+import { OFFER_SEAT_REQUIRED_MESSAGE, OFFER_START_DATE_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
+import { offerHireDate } from "@/lib/offers/hire-draft";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers/brand";
 import { planOfferCopies, type OfferCopyPlan } from "@/lib/offers/copy-recipients";
@@ -112,6 +113,12 @@ export async function sendOfferEmail(
   // no seat would produce a record with no line, area, region or manager.
   if (offerRequiresSeat(offer.title) && !offer.vacancyId) {
     throw new Error(OFFER_SEAT_REQUIRED_MESSAGE);
+  }
+  // Every offer names its start date before it leaves (owner, 2026-10-08): the joining form records
+  // it as the first day and makes no record without one, so a dateless letter's button could only
+  // ever answer "your start date is being confirmed". Read the way the form reads it.
+  if (!offerHireDate(offer.startDate)) {
+    throw new Error(OFFER_START_DATE_REQUIRED_MESSAGE);
   }
 
   // Judged again here, whatever the screen showed: this is the last point before mail leaves, and

@@ -210,7 +210,17 @@ async function run() {
   );
 
   // 9. 🔴 NO RECORD WITHOUT A START DATE — an offer with no readable hire date neither opens nor submits.
-  assert.match(flatService, /if \(!draft\.hireDate\) return \{ \.\.\.JOINING_FORM_STATE_MESSAGE\.seat_unavailable/, "the page closes");
+  assert.match(flatService, /if \(!draft\.hireDate\) return \{ \.\.\.JOINING_FORM_STATE_MESSAGE\.start_date_pending/, "the page closes, naming the start date");
+  assert.match(form.JOINING_FORM_STATE_MESSAGE.start_date_pending.title, /start date/, "and says so — never \"your position is being confirmed\"");
+  //    🔴 AND NO OFFER LEAVES WITHOUT ONE (owner, 2026-10-08): one did, and its button could never work.
+  const sendSource = flat("src/lib/offers/send.ts");
+  assert.match(sendSource, /if \(!offerHireDate\(offer\.startDate\)\) \{ throw new Error\(OFFER_START_DATE_REQUIRED_MESSAGE\)/, "the send refuses a dateless offer");
+  assert.ok(sendSource.indexOf("OFFER_START_DATE_REQUIRED_MESSAGE)") < sendSource.indexOf("sendPhoenixEmail("), "before any mail leaves");
+  assert.match(
+    flat("src/components/offers/offer-composer.tsx"),
+    /if \(!draft\.startDate\) \{ onReport\(OFFER_START_DATE_REQUIRED_MESSAGE, "error"\); return; \}/,
+    "and the composer says why before saving",
+  );
   assert.match(flatService, /if \(!draft\.hireDate\) \{ await announceJoiningFormBlocked\(/, "the submit refuses and tells HR");
 
   // 10. 🔴 A JOINER HR ALREADY HIRED IS NOT HIRED TWICE — Add Employee never stamps the offer, so the
