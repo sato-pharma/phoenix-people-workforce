@@ -528,8 +528,9 @@ design's 40px.
    `interview-calendar/org-fields.tsx` has nothing above the directive. `remote-check all` reported
    `lint PASS`, `typecheck PASS`, the whole unit suite green, and then
    `Ecmascript file had an error … org-fields.tsx:2:1` — so two of the three cheap gates said the
-   change was fine. **Only the build catches it, which is why the standing step is `remote-check
-   all` and not `test` whenever a sweep adds a file or an import.**
+   change was fine. **Only the build catches it, which is why such a sweep must BUILD before it
+   merges** — since 2026-10-08 the PR builds by itself when its diff touches code
+   (`scripts/ci-build-risk.mjs`), and `remote-check all` gives the same answer earlier when wanted.
 6. 🔴 **A chromeless control must not be GIVEN the token.** 24 controls paint no box by design —
    `border-0`/`bg-transparent` inside a wrapper that carries the border and the `focus-within`
    ring. The sweep's keep-list held `bg-transparent` but still *prepended* the token, which paints

@@ -1433,9 +1433,11 @@ import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
+import { runRemoteCheckLintCacheTests } from "./remote-check-lint-cache.test.ts";
 import { runSelectCensusTests } from "./select-census.test.ts";
 import { runCiTypecheckLockTests } from "./ci-typecheck-lock.test.ts";
 import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
+import { runCiBuildRiskTests } from "./ci-build-risk.test.ts";
 import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runPasswordResetCodeEmailCarriesTheCodeTests } from "./password-reset-code-email-carries-the-code.test.ts";
@@ -2238,6 +2240,7 @@ import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
+import { runRemoteCheckPollGuardTests } from "./remote-check-poll-guard.test.ts";
 import { runSlowAuditTests } from "./slow-audit.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
@@ -5165,8 +5168,12 @@ await runTest(
   runCiTypecheckLockTests,
 );
 await runTest(
-  "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, the remote exit code, and a private tree per invocation (own ref, own git worktree, removed on exit) re-verified after every check so a tree swapped mid-run exits 3 with NO VERDICT, proven by running two overlapping invocations on two commits; and one run owns the whole box, because a per-stage lock left lint and test unguarded and that contention OOM-killed a build - the run takes its own lock around every stage and falls through to a warning rather than hanging, exit 137 is reported as NO VERDICT rather than a failure, `all` includes the build, and before anything is pushed the box itself is asked whether another run is already live, a probe that fails CLOSED so an unreadable answer can never read as an idle box - it escalates to GitHub Actions, which does not touch the box at all, and refuses only under --no-actions - a branch that already has an open PR has that PR's own run READ by head sha rather than a second one dispatched beside it, graded by the pull_request job map because ci.yml runs the suite in validate there and never builds at all, both routes settling through one allow-list whose whole-run success is a pass only when that run ran every stage asked for - and a dropped ssh connection (255) is NO VERDICT rather than FAIL with keepalives to stop the silent-stage drop that caused it",
+  "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, the remote exit code, and a private tree per invocation (own ref, own git worktree, removed on exit) re-verified after every check so a tree swapped mid-run exits 3 with NO VERDICT, proven by running two overlapping invocations on two commits; and one run owns the whole box, because a per-stage lock left lint and test unguarded and that contention OOM-killed a build - the run takes its own lock around every stage and, if it cannot get it within 120s, runs NOTHING and exits 9 as NO VERDICT (FUP-010, 2026-10-08 — never 'running anyway'), exit 137 is reported as NO VERDICT rather than a failure, `all` includes the build, and before anything is pushed the box itself is asked whether another run is already live, a probe that fails CLOSED so an unreadable answer can never read as an idle box - a busy box with no open PR is NO VERDICT (exit 6) and dispatches GitHub Actions only on --actions/--urgent (2026-10-08) - a branch that already has an open PR has that PR's own run READ by head sha rather than a second one dispatched beside it, graded by the pull_request job map because ci.yml runs the suite in validate there and never builds at all, both routes settling through one allow-list whose whole-run success is a pass only when that run ran every stage asked for - and a dropped ssh connection (255) is NO VERDICT rather than FAIL with keepalives to stop the silent-stage drop that caused it",
   runRemoteCheckTests,
+);
+await runTest(
+  "remote-check's persistent ESLint cache only ever changes how long lint takes (2026-10-08, box lint 182s cold): the store sits outside the per-run tree with the run's path swapped for a placeholder, seeded back with THIS tree's path, keyed by the lockfile, manifests, eslint config, tsconfig and node version so a config or dependency change starts cold in a new store, a corrupt store is a cold run, lint's exit code passes through untouched, and unsafe paths are refused; the run sits under the box's own `timeout` ceiling sized from its stages (under 45 min for `all`) with a later local deadline that TERMs then KILLs ssh, and a ceiling, SIGKILL, lost status or unprinted verdict is NO VERDICT; the per-sha verdict record stores only PASS/FAIL stages and never merges another sha's",
+  runRemoteCheckLintCacheTests,
 );
 await runTest(
   "the select census finds every PostgREST read and write of a table and the columns each names: an embedded relation does not swallow the columns after it, aliases/casts/JSON paths reduce to the real column, a constant select is resolved in the same file or one import away, a template with ${CONST} is resolved, .or()/.eq()/.order() filters and write keys are listed, a run-time select is UNRESOLVED rather than clean, another table or schema is not counted, and on the real tree it finds every .from(\"employees\") a raw count finds",
@@ -8558,6 +8565,11 @@ await runTest(
 );
 
 await runTest(
+  "a pull request also BUILDS when its diff can change the build (2026-10-08): scripts/ci-build-risk.mjs answers build=true unless every changed path is build-inert — a src/lib change, a deleted route, both halves of a rename, the lockfile, next.config, .env.example, public/ and assets/ all build; an empty or unreadable diff, an escaping path or a classifier crash all build; a real git rename into docs/ builds; nothing the build compiles imports scripts/; the Build's if: is `not a PR || build risk` so main always builds; the canvas, standalone and smoke steps stay main-only; and STAGE_JOBS_PR.build stays null",
+  runCiBuildRiskTests,
+);
+
+await runTest(
   "bash-guard C10 refuses merging a PR too small to be worth its own two CI runs (measured 2026-09-29: 110 merges in a day, 41% of the week touching <=3 files) and refuses SIZE ONLY — two merges back to back are both allowed, because the owner cut the cooldown the same evening — while an ALREADY-OPEN, ALREADY-GREEN small PR now merges SILENTLY with no stand-down (owner, 2026-10-01: its PR run is paid, and the stand-down is the very flag the auto-mode classifier refuses as a bypass, which deadlocked #4988 until he pressed Squash and merge himself), OPEN/BLOCKED and OPEN/UNSTABLE and MERGED/CLEAN are all still refused, an UNREADABLE merge state keeps the refusal rather than failing open, and a 4-file PR, a large PR, both stand-down spellings, a merge with no PR number, an unreachable gh, gh pr view/list/checks, a git merge, a commit message and a heredoc that only quote the command all stay allowed",
   runMergeCooldownGuardTests,
 );
@@ -8593,8 +8605,13 @@ await runTest(
 );
 
 await runTest(
-  "push-typecheck-guard runs the typecheck on the CI box before a `git push` of the checked-out commit and refuses it only on a FAILED verdict (carrying every tsc error and a stand-down in the dialect that asked): every push spelling runs it including cd and -C from another folder, a chained commit-then-push is refused because HEAD is stale, and a delete, dry run, tag, --all, another ref, a refs/backups push, an up-to-date branch, a docs- or migration-only push, a remembered PASS and a box that could not give a verdict are never held up; it is wired in settings.json with a timeout past its own wait",
+  "push-typecheck-guard starts NO remote check (owner, 2026-10-08): it only READS remote-check's per-sha verdict record and refuses a push solely when that record holds a typecheck FAIL for the exact commit being pushed (carrying the tsc errors and a stand-down in the dialect that asked) — no record allows at once, a parent's or another sha's FAIL never blocks, a malformed record allows, a PASS is reported as reused, a test FAIL is reported but not blocked, a chained HEAD-moving command and a non-push command are let through, the fake remote-check is never called, and settings.json gives it a short timeout",
   runPushTypecheckGuardTests,
+);
+
+await runTest(
+  "bash-guard C14 refuses a FOREGROUND until/while/for … sleep loop polling remote-check, in bash and PowerShell (4-8 Oct 2026: 17.6 session-hours, each pinned at the 600s Bash ceiling), naming the run_in_background-plus-notification way and the 0/1/2-9 exit codes with a stand-down in the tool's dialect — while the same loop in the background, a plain remote-check call, an unrelated sleep loop, a mention with no loop, a heredoc documenting the loop and both stand-downs all pass",
+  runRemoteCheckPollGuardTests,
 );
 
 await runTest(

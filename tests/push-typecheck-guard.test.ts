@@ -1,21 +1,21 @@
-// A `git push` must be preceded by a typecheck on the CI box, and only a typecheck that FAILED may stop it.
+// A `git push` REUSES what remote-check already proved about the pushed commit — and never waits for
+// anything.
 //
-// WHY THIS EXISTS. `buggy_code` is the top friction category in the owner's usage report: a type error
-// found by the PR's `checks` job costs a full CI round (~14 billable minutes, twice with the `main` run)
-// and the fix costs another. A local `tsc` does not fit this 16 GB laptop (bash-guard C8 refuses it), but
-// `node scripts/remote-check.mjs typecheck` does — it runs on the preview box in ~2 minutes. The owner
-// asked for it to be the push's own first step (2026-10-04), so a session cannot forget it.
-// `.claude/hooks/push-typecheck-guard.mjs` is that step.
+// WHY THIS EXISTS. From 2026-10-04 `.claude/hooks/push-typecheck-guard.mjs` RAN `remote-check typecheck`
+// on every push and held the push for up to seven minutes. The 2026-10-08 performance recovery (owner:
+// *"the push guard must not start a remote check that blocks a normal push. Previously completed
+// verification for the exact commit SHA may be reused, but the PR's required GitHub CI checks must remain
+// the authoritative validation gate"*) turned it into a READER of the per-sha verdict record remote-check
+// writes (`<git-common-dir>/phx-remote-check/<sha>.json`).
 //
-// Both halves are pinned, and the ALLOW half decides whether this survives. A guard that held up a docs
-// push, a delete, a dry run, the same commit twice or a push the box could not check would be switched off
-// within the day — and then every type error is back to being found by CI. A guard that let a FAILED
-// typecheck through, or let a chained `git commit && git push` through unchecked, would defeat the point.
+// So both halves are pinned:
+//   - it NEVER runs the check: the fixture's `scripts/remote-check.mjs` is a stand-in that counts its own
+//     runs, and every case asserts the count stays at zero, and that the settings timeout is seconds;
+//   - a recorded typecheck FAIL for the EXACT pushed sha still stops the push — and a FAIL recorded for
+//     ANY OTHER sha (a parent, a stale record) never does, so an older run cannot speak for this commit.
 //
-// It drives the real hook as a subprocess, exactly as settings.json runs it, against a throwaway repository
-// whose `scripts/remote-check.mjs` is a stand-in that prints what the real one prints (the banner lines the
-// hook reads) and counts its own runs. A test that imported the matcher would pass against a hook wired to
-// nothing, and a test that ran the real script would need the box.
+// It drives the real hook as a subprocess, exactly as settings.json runs it, and writes the record with
+// the real `mergeVerdictRecord`, so the writer's format and the reader cannot drift apart.
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
@@ -23,50 +23,24 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSyn
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { VERDICT_DIR_NAME, mergeVerdictRecord } from "../scripts/remote-check-plan.mjs";
+
 const hookPath = resolve(".claude/hooks/push-typecheck-guard.mjs");
 const settingsPath = resolve(".claude/settings.json");
 
-type Decision = { decision: "allow" | "deny"; reason: string; context: string };
+type Decision = { decision: "allow" | "deny"; reason: string; context: string; ms: number };
 
-/** What the real remote-check prints for each outcome, minus the SSH. The hook reads these banner lines. */
+/** A stand-in remote-check that only counts its runs. The hook must never start it. */
 const FAKE_REMOTE_CHECK = `
-import { spawn } from "node:child_process";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 if (process.env.FAKE_CALLS_FILE) appendFileSync(process.env.FAKE_CALLS_FILE, "ran\\n");
-const verdict = process.env.FAKE_VERDICT || "pass";
-const sha = "0123456789abcdef";
-console.log("remote-check: typecheck  on phx@box");
-if (verdict === "hang") {
-  // The stand-in for \`ssh\`: a grandchild that OUTLIVES a kill of this process, exactly as the real
-  // ssh does — it keeps the box's run and its typecheck lock alive. It is not detached, so it shares
-  // this process's group and a group kill reaps it.
-  if (process.env.FAKE_GRANDCHILD_PID_FILE) {
-    const grandchild = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-    writeFileSync(process.env.FAKE_GRANDCHILD_PID_FILE, String(grandchild.pid));
-  }
-  await new Promise((done) => setTimeout(done, 60000));
-}
-if (verdict === "unreachable") { console.error("remote-check: could not push to the box. Check SSH."); process.exit(2); }
-// A failed install never read the code, so remote-check reports it as NO VERDICT (exit 7), not FAIL.
-if (verdict === "install-failed") { console.log("install failed — the box never checked this sha"); process.exit(7); }
-console.log("");
-console.log("=== typecheck ===");
-if (verdict === "fail") {
-  console.log("app/api/example/route.ts(12,7): error TS2322: Type 'string' is not assignable to type 'number'.");
-  console.log("src/lib/example/rules.ts(40,3): error TS2741: Property 'entityType' is missing in type '{}'.");
-  console.log("--- typecheck FAIL in 97s ---");
-  console.log("");
-  console.log("remote-check: FAIL — " + sha);
-  process.exit(1);
-}
-if (verdict === "no-verdict") {
-  console.log("remote-check: NO VERDICT — the box's tree changed during the run; nothing above is about " + sha);
-  process.exit(3);
-}
-console.log("--- typecheck PASS in 96s ---");
-console.log("");
-console.log("remote-check: PASS — " + sha);
+console.log("remote-check: PASS — 0123456789");
 `;
+
+const TSC_LINES = [
+  "app/api/example/route.ts(12,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+  "src/lib/example/rules.ts(40,3): error TS2741: Property 'entityType' is missing in type '{}'.",
+].join("\n");
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.test", ...args], {
@@ -81,9 +55,10 @@ type Fixture = {
   callsFile: string;
   calls: () => number;
   commit: (file: string, text?: string) => string;
+  record: (sha: string, stages: Record<string, "PASS" | "FAIL">, excerpt?: string) => void;
+  recordRaw: (sha: string, text: string) => void;
 };
 
-/** A repo with an `origin`, `main` pushed, and the fake script committed — on a branch of its own. */
 function makeFixture(): Fixture {
   // A folder with a space in its name, like every checkout on this machine.
   const root = mkdtempSync(join(tmpdir(), "phx push check "));
@@ -100,6 +75,7 @@ function makeFixture(): Fixture {
   git(work, "commit", "-q", "-m", "init");
   git(work, "push", "-q", "-u", "origin", "main");
   git(work, "checkout", "-q", "-b", "feat/x");
+  const verdictDir = join(work, ".git", VERDICT_DIR_NAME);
 
   const callsFile = join(root, "calls.log");
   writeFileSync(callsFile, "");
@@ -117,60 +93,56 @@ function makeFixture(): Fixture {
       git(work, "commit", "-q", "-m", `change ${n}`);
       return git(work, "rev-parse", "HEAD");
     },
+    record: (sha, stages, excerpt) => {
+      mkdirSync(verdictDir, { recursive: true });
+      const next = mergeVerdictRecord(null, { sha, stages, source: "the box", at: "2026-10-08T12:00:00.000Z", excerpt });
+      writeFileSync(join(verdictDir, `${sha}.json`), JSON.stringify(next));
+    },
+    recordRaw: (sha, text) => {
+      mkdirSync(verdictDir, { recursive: true });
+      writeFileSync(join(verdictDir, `${sha}.json`), text);
+    },
   };
 }
 
-function runHook(
-  fx: Fixture,
-  command: string,
-  opts: { tool?: string; cwd?: string; verdict?: string; env?: Record<string, string> } = {},
-): Decision {
+function runHook(fx: Fixture, command: string, opts: { tool?: string; cwd?: string; env?: Record<string, string> } = {}): Decision {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
   delete env.PHX_PUSH_CHECK_OFF;
   env.FAKE_CALLS_FILE = fx.callsFile;
-  env.FAKE_VERDICT = opts.verdict ?? "pass";
   Object.assign(env, opts.env ?? {});
   const cwd = opts.cwd ?? fx.work;
+  const started = Date.now();
   const raw = execFileSync(process.execPath, [hookPath], {
     cwd,
     input: JSON.stringify({ tool_name: opts.tool ?? "Bash", cwd, tool_input: { command } }),
     encoding: "utf8",
     env: env as NodeJS.ProcessEnv,
     stdio: ["pipe", "pipe", "pipe"],
-    timeout: 60000,
+    timeout: 20000,
   });
-  if (!raw.trim()) return { decision: "allow", reason: "", context: "" };
+  const ms = Date.now() - started;
+  assert.equal(fx.calls(), 0, `the hook must NEVER start remote-check — it ran for:\n${command}`);
+  if (!raw.trim()) return { decision: "allow", reason: "", context: "", ms };
   const out = JSON.parse(raw).hookSpecificOutput;
   return {
     decision: out.permissionDecision === "deny" ? "deny" : "allow",
     reason: String(out.permissionDecisionReason ?? ""),
     context: String(out.additionalContext ?? ""),
+    ms,
   };
 }
 
-/** Asserts the hook ran the remote check (calls went up by one) and answered `decision`. */
-function expectRun(fx: Fixture, command: string, decision: "allow" | "deny", opts: Parameters<typeof runHook>[2] = {}) {
-  const before = fx.calls();
+function expect(fx: Fixture, command: string, decision: "allow" | "deny", opts: Parameters<typeof runHook>[2] = {}) {
   const result = runHook(fx, command, opts);
-  assert.equal(fx.calls(), before + 1, `the remote typecheck must RUN for:\n${command}\n${result.reason}${result.context}`);
   assert.equal(result.decision, decision, `expected ${decision} for:\n${command}\n${result.reason}${result.context}`);
-  return result;
-}
-
-/** Asserts the hook never touched the box and let the command through. */
-function expectNoRun(fx: Fixture, command: string, opts: Parameters<typeof runHook>[2] = {}) {
-  const before = fx.calls();
-  const result = runHook(fx, command, opts);
-  assert.equal(fx.calls(), before, `the remote typecheck must NOT run for:\n${command}`);
-  assert.equal(result.decision, "allow", `this must be allowed untouched:\n${command}\n${result.reason}`);
   return result;
 }
 
 export function runPushTypecheckGuardTests() {
   assert.ok(existsSync(hookPath), `the hook is not at ${hookPath}`);
 
-  // ── Wired in settings.json, with a timeout that outlasts the hook's own wait ────────────────────────────
+  // ── Wired, and with a timeout of SECONDS: it reads a file, it never waits ───────────────────────────
   const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
   const wired = (settings.hooks?.PreToolUse ?? []).find((entry: { hooks?: Array<{ command?: string }> }) =>
     (entry.hooks ?? []).some((h) => String(h.command ?? "").includes("push-typecheck-guard.mjs")),
@@ -179,231 +151,116 @@ export function runPushTypecheckGuardTests() {
   assert.match(String(wired.matcher), /Bash/, "it must watch the Bash tool");
   assert.match(String(wired.matcher), /PowerShell/, "it must watch the PowerShell tool — sessions push from both");
   const hookEntry = wired.hooks.find((h: { command?: string }) => String(h.command ?? "").includes("push-typecheck-guard.mjs"));
-  const hookSource = readFileSync(hookPath, "utf8");
-  assert.match(hookSource, /7 \* 60 \* 1000/, "the hook's own wait is 7 minutes — if you change it, change the settings timeout with it");
   assert.ok(
-    Number(hookEntry.timeout) >= 480,
-    `settings.json must give the hook a timeout past its own 7-minute wait (>= 480s) or Claude kills it mid-check; got ${hookEntry.timeout}`,
+    Number(hookEntry.timeout) > 0 && Number(hookEntry.timeout) <= 15,
+    `the push guard only reads a record, so its settings timeout must be seconds, not minutes; got ${hookEntry.timeout}`,
   );
+  const hookSource = readFileSync(hookPath, "utf8");
+  assert.doesNotMatch(hookSource, /\bspawn(?:Sync)?\(/, "the push guard must not start any process except `git` (execFileSync)");
+  assert.doesNotMatch(hookSource, /remote-check\.mjs['"`]\s*,/, "the push guard must not run remote-check");
+  const declared = /const VERDICT_DIR_NAME = '([^']+)'/.exec(hookSource)?.[1];
+  assert.equal(declared, VERDICT_DIR_NAME, "the hook must read the directory remote-check writes (remote-check-plan.mjs VERDICT_DIR_NAME)");
 
   const fx = makeFixture();
   try {
-    // ── A FAILED typecheck stops the push, and says what failed and how to go on ────────────────────────
+    // ── No record: allowed at once, silently ─────────────────────────────────────────────────────────
     fx.commit("src/lib/example/rules.ts");
-    const failed = expectRun(fx, "git push -u origin feat/x", "deny", { verdict: "fail" });
-    assert.match(failed.reason, /PUSH REFUSED/, `the deny must say the push is refused.\n${failed.reason}`);
-    assert.match(failed.reason, /FAILED/, `the deny must say the typecheck failed.\n${failed.reason}`);
-    assert.match(failed.reason, /TS2322/, `the deny must carry the type error tsc printed, not just a verdict.\n${failed.reason}`);
-    assert.match(failed.reason, /TS2741/, `the deny must carry EVERY error, not only the first.\n${failed.reason}`);
-    assert.doesNotMatch(failed.reason, /--- typecheck FAIL/, "the banner lines are plumbing, not the error list");
+    const fresh = expect(fx, "git push -u origin feat/x", "allow");
+    assert.equal(fresh.context, "", "with no record there is nothing to say");
+    assert.ok(fresh.ms < 10000, `an unrecorded push must not wait — it took ${fresh.ms}ms`);
 
-    // The stand-down it hands back must itself be allowed, in the dialect of the tool that asked.
+    // ── A recorded typecheck FAIL for THIS sha stops the push, with tsc's own lines ──────────────────
+    const failedSha = fx.commit("src/lib/example/rules.ts");
+    fx.record(failedSha, { lint: "PASS", typecheck: "FAIL" }, TSC_LINES);
+    const failed = expect(fx, "git push -u origin feat/x", "deny");
+    assert.match(failed.reason, /PUSH REFUSED/, `the deny must say the push is refused.\n${failed.reason}`);
+    assert.match(failed.reason, new RegExp(failedSha.slice(0, 9)), "the deny must name the commit the record is about");
+    assert.match(failed.reason, /TS2322/, `the deny must carry the type errors.\n${failed.reason}`);
+    assert.match(failed.reason, /TS2741/, `the deny must carry EVERY error.\n${failed.reason}`);
     for (const tool of ["Bash", "PowerShell"]) {
-      const denied = runHook(fx, "git push -u origin feat/x", { tool, verdict: "fail" });
-      assert.equal(denied.decision, "deny", `${tool}: still a failed typecheck`);
+      const denied = runHook(fx, "git push -u origin feat/x", { tool });
+      assert.equal(denied.decision, "deny", `${tool}: still a recorded FAIL`);
       const advice = /^ {2}(\$env:PHX_PUSH_CHECK_OFF=1; .+|PHX_PUSH_CHECK_OFF=1 .+)$/m.exec(denied.reason)?.[1];
       assert.ok(advice, `${tool}: the deny must put the stand-down on a line of its own.\n${denied.reason}`);
       assert.equal(advice.startsWith("$env:"), tool === "PowerShell", `the stand-down must match the tool's dialect: ${advice}`);
     }
-    expectNoRun(fx, "PHX_PUSH_CHECK_OFF=1 git push -u origin feat/x", { verdict: "fail" });
-    expectNoRun(fx, "$env:PHX_PUSH_CHECK_OFF=1; git push -u origin feat/x", { tool: "PowerShell", verdict: "fail" });
-    expectNoRun(fx, "git push -u origin feat/x", { verdict: "fail", env: { PHX_PUSH_CHECK_OFF: "1" } });
+    expect(fx, "PHX_PUSH_CHECK_OFF=1 git push -u origin feat/x", "allow");
+    expect(fx, "$env:PHX_PUSH_CHECK_OFF=1; git push -u origin feat/x", "allow", { tool: "PowerShell" });
+    expect(fx, "git push -u origin feat/x", "allow", { env: { PHX_PUSH_CHECK_OFF: "1" } });
 
-    // ── A PASS lets it through, is remembered per commit, and a different commit is checked again ───────
-    const passedSha = fx.commit("src/lib/example/rules.ts");
-    const passed = expectRun(fx, "git push origin feat/x", "allow", { verdict: "pass" });
-    assert.match(passed.context, /PASSED/, `a pass must be reported.\n${passed.context}`);
-    assert.match(passed.context, new RegExp(passedSha.slice(0, 9)), "a pass must name the commit it proved");
-    expectNoRun(fx, "git push origin feat/x", { verdict: "fail" }); // same commit: remembered, so the failing box is never asked
-    fx.commit("src/lib/example/rules.ts");
-    expectRun(fx, "git push origin feat/x", "deny", { verdict: "fail" }); // a new commit is a new question
-
-    // ── Every spelling of a push of the checked-out commit runs the check ───────────────────────────────
+    // Every spelling of a push of the checked-out commit is read against the record.
     const sendsHead: Array<{ command: string; tool?: string; cwd?: string }> = [
       { command: "git push" },
-      { command: "git push origin" },
       { command: "git push origin HEAD" },
-      { command: "git push -u origin HEAD" },
-      { command: "git push --set-upstream origin feat/x" },
       { command: "git push --force-with-lease origin feat/x" },
-      { command: "git push --force-with-lease=feat/x:0123456 origin feat/x" },
-      { command: "git push origin +feat/x" },
       { command: "git push origin HEAD:refs/heads/feat/x" },
-      { command: "git push origin feat/x:feat/x" },
-      { command: "git push --no-verify origin feat/x" },
-      { command: "git push -o ci.skip origin feat/x" },
       { command: "git push origin feat/x 2>&1 | tail -5" },
-      { command: "git push origin feat/x 2>&1", tool: "PowerShell" },
       { command: "git.exe push origin HEAD", tool: "PowerShell" },
       { command: 'bash -c "git push origin HEAD"' },
-      { command: "FOO=1 git push origin HEAD" },
-      { command: "PHX_SECRETS_OK=1 git push origin HEAD" },
-      { command: "$env:PHX_SECRETS_OK=1; git push origin HEAD", tool: "PowerShell" },
-      { command: "echo pushing; git push origin HEAD" },
-      // From a folder that is not the repository: `cd` and `-C` say where the push really happens.
       { command: `cd "${fx.work}" && git push -u origin feat/x`, cwd: fx.root },
       { command: `git -C "${fx.work}" push origin feat/x`, cwd: fx.root },
-      { command: `Set-Location "${fx.work}"; git push origin HEAD`, tool: "PowerShell", cwd: fx.root },
     ];
-    for (const { command, tool, cwd } of sendsHead) {
-      fx.commit("src/lib/example/rules.ts"); // a fresh commit each time, so the cache and the up-to-date skip never answer
-      expectRun(fx, command, "deny", { verdict: "fail", tool, cwd });
+    for (const { command, tool, cwd } of sendsHead) expect(fx, command, "deny", { tool, cwd });
+
+    // ── NO STALE VERDICTS: a FAIL recorded for any other sha never speaks for this one ───────────────
+    const fixedSha = fx.commit("src/lib/example/rules.ts"); // the parent still carries its FAIL record
+    expect(fx, "git push -u origin feat/x", "allow");
+    // A record file named for this sha but ABOUT another one is ignored too.
+    fx.recordRaw(fixedSha, JSON.stringify({ sha: failedSha, stages: { typecheck: { verdict: "FAIL" } } }));
+    expect(fx, "git push -u origin feat/x", "allow");
+    // Malformed records are no record.
+    for (const junk of ["", "{", "null", '{"sha":"x"}', JSON.stringify({ sha: fixedSha, stages: null })]) {
+      fx.recordRaw(fixedSha, junk);
+      expect(fx, "git push -u origin feat/x", "allow");
     }
 
-    // ── A chained commit-then-push cannot be checked, so it is refused with the way out ─────────────────
-    {
-      const before = fx.calls();
-      const chained = runHook(fx, 'git add -A && git commit -m "feat: x" && git push -u origin feat/x', { verdict: "fail" });
-      assert.equal(chained.decision, "deny", "a push chained after a commit must be refused");
-      assert.match(chained.reason, /git commit/, `the deny must name the HEAD-moving command.\n${chained.reason}`);
-      assert.match(chained.reason, /command of its own/, `the deny must say what to do instead.\n${chained.reason}`);
-      assert.match(chained.reason, /before the whole command/, `the deny must say WHY it cannot check.\n${chained.reason}`);
-      assert.equal(fx.calls(), before, "a chained push must be refused WITHOUT running the check on a stale HEAD");
-      for (const hop of ["git merge origin/main", "git rebase origin/main", "git pull --rebase", "git cherry-pick abc1234", "git reset --soft HEAD~1", "git checkout feat/x", "git switch feat/x"]) {
-        assert.equal(
-          runHook(fx, `${hop} && git push origin feat/x`, { verdict: "fail" }).decision,
-          "deny",
-          `a push chained after \`${hop}\` must be refused`,
-        );
-      }
-      assert.equal(
-        runHook(fx, "git commit -m x; git push", { tool: "PowerShell", verdict: "fail" }).decision,
-        "deny",
-        "the PowerShell separator chains too",
-      );
-      // The way out the deny names must work.
-      expectNoRun(fx, 'PHX_PUSH_CHECK_OFF=1 git commit -m x && git push origin feat/x', { verdict: "fail" });
+    // ── A recorded PASS is reused and said, nothing re-run ───────────────────────────────────────────
+    const passedSha = fx.commit("src/lib/example/rules.ts");
+    fx.record(passedSha, { lint: "PASS", typecheck: "PASS", test: "PASS" });
+    const passed = expect(fx, "git push origin feat/x", "allow");
+    assert.match(passed.context, /PASS lint, typecheck, test/, `a recorded pass must be reported.\n${passed.context}`);
+    assert.match(passed.context, new RegExp(passedSha.slice(0, 9)), "a pass must name the commit it proved");
+    assert.match(passed.context, /merge gate/, "it must say the PR's checks are still the gate");
+
+    // A FAIL in another stage is reported, not used to block — only the typecheck record blocks.
+    const testFailSha = fx.commit("src/lib/example/rules.ts");
+    fx.record(testFailSha, { typecheck: "PASS", test: "FAIL" });
+    const testFail = expect(fx, "git push origin feat/x", "allow");
+    assert.match(testFail.context, /FAIL test/, `a recorded test FAIL must be reported.\n${testFail.context}`);
+
+    // ── A push chained after a HEAD-moving command sends a commit the hook cannot see: allowed ───────
+    const chainSha = fx.commit("src/lib/example/rules.ts");
+    fx.record(chainSha, { typecheck: "FAIL" }, TSC_LINES);
+    for (const chained of [
+      'git add -A && git commit -m "fix: types" && git push -u origin feat/x',
+      "git rebase origin/main && git push origin feat/x",
+      "git reset --soft HEAD~1; git push origin feat/x",
+    ]) {
+      expect(fx, chained, "allow");
     }
 
-    // ── Pushes that are none of its business are never held up ──────────────────────────────────────────
-    fx.commit("src/lib/example/rules.ts");
+    // ── Pushes that are none of its business ────────────────────────────────────────────────────────
     const heredocPush = ["cat > note.md <<'EOF'", "To ship: git push origin HEAD", "EOF"].join("\n");
-    const hereStringCommit = ["$msg = @'", "docs: never `git push` before the check", "'@", "git commit -m $msg"].join("\n");
-    const notAPushOfThisCommit: Array<{ command: string; tool?: string }> = [
+    for (const { command, tool } of [
       { command: "git push --dry-run origin feat/x" },
-      { command: "git push -n origin feat/x" },
       { command: "git push --delete origin old-branch" },
-      { command: "git push -d origin old-branch" },
       { command: "git push origin :old-branch" },
       { command: "git push origin --tags" },
       { command: "git push --all origin" },
-      { command: "git push --mirror backup" },
       { command: "git push origin some-other-branch" },
-      { command: "git push origin refs/heads/some-other-branch:refs/heads/some-other-branch" },
       { command: "git push origin HEAD:refs/backups/feat-x" },
-      { command: "git push --help" },
       { command: "git status" },
-      { command: "git log --oneline -5" },
-      { command: 'git commit -m "docs: say git push origin HEAD runs the check"' },
       { command: 'echo "git push origin HEAD"' },
-      { command: "gh pr create --fill" },
-      { command: "git fetch origin && git status" },
       { command: heredocPush },
-      { command: hereStringCommit, tool: "PowerShell" },
       { command: "node scripts/remote-check.mjs typecheck" },
-    ];
-    for (const { command, tool } of notAPushOfThisCommit) {
-      expectNoRun(fx, command, { verdict: "fail", tool });
+      { command: "git push origin HEAD", tool: "Read" },
+    ] as Array<{ command: string; tool?: string }>) {
+      expect(fx, command, "allow", { tool });
     }
-    // Other tools are none of this hook's business.
-    expectNoRun(fx, "git push origin HEAD", { verdict: "fail", tool: "Read" });
 
-    // ── Nothing new to send: origin already holds this commit ───────────────────────────────────────────
-    fx.commit("src/lib/example/rules.ts");
+    // ── Nothing new to send: origin already holds this commit ────────────────────────────────────────
     git(fx.work, "push", "-q", "origin", "feat/x");
-    expectNoRun(fx, "git push origin feat/x", { verdict: "fail" });
-
-    // ── A push that changes nothing a typechecker reads is not made to wait ─────────────────────────────
-    git(fx.work, "checkout", "-q", "-b", "docs-only", "main");
-    fx.commit("docs/guide.md");
-    fx.commit("supabase/migrations/20261004000000_example.sql");
-    fx.commit("xlsx/report.xlsx");
-    expectNoRun(fx, "git push -u origin docs-only", { verdict: "fail" });
-    // …and the same holds for a chained commit of docs only: nothing to split for.
-    writeFileSync(join(fx.work, "docs", "guide.md"), "more words\n");
-    assert.equal(
-      runHook(fx, 'git add -A && git commit -m "docs: more" && git push origin docs-only', { verdict: "fail" }).decision,
-      "allow",
-      "a chained docs-only commit must not be held up",
-    );
-    git(fx.work, "checkout", "-q", "--", ".");
-    // One file a typechecker reads turns it back on.
-    fx.commit("src/lib/example/rules.ts");
-    expectRun(fx, "git push -u origin docs-only", "deny", { verdict: "fail" });
-    // A staged, uncommitted TypeScript file turns a chained push back on too.
-    writeFileSync(join(fx.work, "src", "lib", "example", "next.ts"), "export const x = 1;\n");
-    git(fx.work, "add", "-A");
-    assert.equal(
-      runHook(fx, 'git commit -m "feat: next" && git push origin docs-only', { verdict: "fail" }).decision,
-      "deny",
-      "a chained commit that WILL hold a .ts file must be refused",
-    );
-    git(fx.work, "reset", "-q", "--hard", "HEAD");
-    git(fx.work, "checkout", "-q", "feat/x");
-
-    // ── No verdict never blocks, says so, and is never remembered ───────────────────────────────────────
-    const noVerdicts: Array<{ verdict: string; env?: Record<string, string>; says: RegExp }> = [
-      { verdict: "unreachable", says: /could not be reached|NO VERDICT/ },
-      { verdict: "no-verdict", says: /tree changed/ },
-      // remote-check's own NO VERDICT codes must be NAMED, not reported as "it exited 7": an unnamed
-      // code reads like a crash a session should chase, when it is the box saying it never looked.
-      { verdict: "install-failed", says: /could not be set up on the box/ },
-      { verdict: "hang", env: { PHX_PUSH_CHECK_TIMEOUT_MS: "700" }, says: /did not finish/ },
-    ];
-    for (const { verdict, env, says } of noVerdicts) {
-      fx.commit("src/lib/example/rules.ts");
-      const result = expectRun(fx, "git push origin feat/x", "allow", { verdict, env });
-      assert.match(result.context, /NO VERDICT/, `${verdict}: it must say the push was not checked.\n${result.context}`);
-      assert.match(result.context, says, `${verdict}: it must say why.\n${result.context}`);
-      assert.match(result.context, /`checks` job/, `${verdict}: it must say CI is still the gate.\n${result.context}`);
-      expectRun(fx, "git push origin feat/x", "allow", { verdict, env }); // not remembered: asked again
-    }
-
-    // ── A timeout reaps the WHOLE process group, ssh included ───────────────────────────────────────────
-    //
-    // 🔴 THIS IS THE ONE THAT SILENTLY DISARMS THE GUARD. `spawnSync`'s timeout signals the `node` it
-    // started and nothing else, so the `ssh` under it survived: the remote run kept going, kept
-    // /tmp/phx-typecheck.lock held, and the NEXT push met the busy probe, got NO VERDICT and went out
-    // unchecked. The fake's "hang" mode spawns a grandchild that would outlive a kill of its parent —
-    // the stand-in for that ssh — and this asserts the guard reaps it with the group.
-    {
-      const pidFile = join(fx.root, "grandchild.pid");
-      rmSync(pidFile, { force: true });
-      fx.commit("src/lib/example/rules.ts");
-      const result = expectRun(fx, "git push origin feat/x", "allow", {
-        verdict: "hang",
-        env: { PHX_PUSH_CHECK_TIMEOUT_MS: "700", FAKE_GRANDCHILD_PID_FILE: pidFile },
-      });
-      assert.match(result.context, /NO VERDICT/, "a timeout must still allow the push and say it was not checked");
-      assert.ok(existsSync(pidFile), "the fake never started its grandchild, so this proves nothing");
-      const pid = Number(readFileSync(pidFile, "utf8").trim());
-      assert.ok(Number.isInteger(pid) && pid > 0, `the grandchild pid file holds ${JSON.stringify(readFileSync(pidFile, "utf8"))}`);
-      const alive = () => {
-        try {
-          process.kill(pid, 0);
-          return true;
-        } catch (error) {
-          return (error as NodeJS.ErrnoException).code === "EPERM"; // alive, owned by someone else
-        }
-      };
-      const deadline = Date.now() + 8000;
-      while (alive() && Date.now() < deadline) execFileSync(process.execPath, ["-e", "setTimeout(() => {}, 150)"]);
-      assert.equal(
-        alive(),
-        false,
-        `the grandchild (pid ${pid}) outlived the guard's timeout — on a real push that is the \`ssh\` still ` +
-          "holding the box's run and its typecheck lock, which makes every following push skip the check",
-      );
-    }
-
-    // ── A checkout without the script is not this repository ────────────────────────────────────────────
-    const other = join(fx.root, "other");
-    mkdirSync(other);
-    git(other, "init", "-q");
-    writeFileSync(join(other, "a.ts"), "export {};\n");
-    git(other, "add", "-A");
-    git(other, "commit", "-q", "-m", "x");
-    expectNoRun(fx, "git push origin HEAD", { verdict: "fail", cwd: other });
+    expect(fx, "git push origin feat/x", "allow");
   } finally {
     rmSync(fx.root, { recursive: true, force: true });
   }

@@ -35,6 +35,10 @@
 //       bills 3 minutes a run and its 6/day cadence is a cost decision already taken; on
 //       2026-09-29 it was dispatched BY HAND 19 times against 2 scheduled. Machine-wide and
 //       per day, because C9 counts per session and exempts main. PHX_SMOKE_OK=1 stands it down.
+//   C14 a FOREGROUND `until|while … sleep` loop polling remote-check — 17.6 session-hours of them
+//       on 4-8 Oct 2026, each pinned at the 600s Bash ceiling. Run remote-check once with
+//       run_in_background and act on the notification; its exit code is the verdict. A background
+//       loop is allowed. PHX_POLL_OK=1 stands it down.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -467,6 +471,39 @@ try {
         'Use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
         '(`rg`/`gg` are not reliably on the shell PATH here. Never `alias grep=rg`.)',
     );
+  }
+
+  // C14 — a FOREGROUND loop polling remote-check's output (2026-10-08 performance recovery, P0-3).
+  // Measured 4-8 Oct 2026: 1,125 calls and 17.6 session-hours of `until grep -q "remote-check: PASS"
+  // …; do sleep N; done`, each one pinned at the 600s Bash ceiling and then re-issued. The harness
+  // already notifies a session when a background command ends, and remote-check's exit code IS the
+  // verdict, so a poll loop buys nothing but a blocked session. A loop launched with
+  // run_in_background blocks nothing and is let through; heredoc bodies are data (a doc may quote
+  // the loop). PHX_POLL_OK=1 (or $env:PHX_POLL_OK=1) stands it down for one command.
+  const POLL_STAND_DOWN = /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_POLL_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  if (
+    input?.tool_input?.run_in_background !== true &&
+    !POLL_STAND_DOWN.test(cmd) &&
+    process.env.PHX_POLL_OK !== '1'
+  ) {
+    const body = withoutHereStringBodies(withoutHeredocBodies(cmd));
+    const loops =
+      /(?:^|[\n;&|(])\s*(?:until|while|for)\b/.test(body) || /\b(?:while|until|for|foreach)\s*\(|\bdo\s*\{/i.test(body);
+    const sleeps = /(?:^|[\s;&|(])(?:sleep|Start-Sleep)\b/i.test(body);
+    if (loops && sleeps && /remote-check/i.test(body)) {
+      deny(
+        'C14 — a foreground loop polling remote-check is refused: it blocks this session for up to ' +
+          '10 minutes per call and re-issues, and 4-8 Oct 2026 spent 17.6 session-hours that way.\n\n' +
+          'Run it ONCE, in the background, and act on the completion notification:\n' +
+          '  node scripts/remote-check.mjs <check>      (Bash tool with run_in_background: true)\n' +
+          'Its exit code is the verdict: 0 PASS, 1 FAIL, 2-9 NO VERDICT. Only a final line ' +
+          '`remote-check: PASS|FAIL — <sha9>` naming the commit you pushed counts. If the branch has an ' +
+          "open PR, that PR's own `validate` + `checks` are the verdict — read them once with " +
+          '`gh pr checks <number>` when the notification arrives.\n\n' +
+          'If the owner asked for this loop, stand it down for one command: ' +
+          (input.tool_name === 'PowerShell' ? '$env:PHX_POLL_OK=1; <the same command>' : 'PHX_POLL_OK=1 <the same command>'),
+      );
+    }
   }
 
   // C7 — a raw `next dev`, anywhere: primary and worktrees alike. Checked BEFORE C6 so that

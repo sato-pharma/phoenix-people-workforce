@@ -581,6 +581,35 @@ number.
 for three. That is spend producing nothing, and parking them at 0 is a dashboard decision.
 
 ## 🔴 When the box is busy: pay for Actions — owner's policy, 2026-10-06, sharpened 2026-10-08
+### 🔴 SUPERSEDED THE SAME AFTERNOON: a busy box no longer dispatches by default — 2026-10-08
+
+The owner's performance-recovery plan (approved 2026-10-08, branch `codex/perf-recovery`) changed the
+default this section describes: **a busy or unreachable box with no open PR now ends NO VERDICT
+(exit 6) and dispatches nothing.** Only an explicit `--actions` or `--urgent` starts a billed
+`ci.yml` run. With an open PR the PR's own run is still read by sha, for free, exactly as below.
+The reason is the measurement behind the plan: ≥165 BUSY answers in 4-8 Oct, each of which would have
+billed ~14 Actions minutes under dispatch-at-once, for a verdict the branch's PR produces on the same
+commit a minute later. `parseEscalation` returns `dispatch` (true only on `--actions`/`--urgent`), and
+`tests/remote-check.test.ts` §10 and §10e pin both halves.
+
+Three more changes landed with it, each pinned:
+
+- **No heavy work without its lock (FUP-010).** The run used to wait 30 minutes for the box lock and
+  then print "running anyway" and start every stage beside the holder — the overlap the lock exists
+  to stop, on a box that OOM-killed 7 processes in its first 8 days of uptime. It now waits 120s
+  (only the race between the probe and the lock) and then runs NOTHING, exit 9, NO VERDICT. ci.yml's
+  typecheck lock fails its step red on timeout instead of running unlocked.
+- **A ceiling on every run.** The box runs the script as `timeout --kill-after=30 <N> bash -s`, with
+  N summed from per-stage budgets (lint 240s, typecheck 300s, test 720s, build 480s, plus 300s of
+  setup); the run's TERM trap removes its tree. The local side gives ssh 90s more, then TERMs and
+  KILLs it. Every such ending is NO VERDICT, and PASS needs exit 0 plus a printed PASS line for every
+  stage asked for (`tests/remote-check-lint-cache.test.ts`).
+- **A persistent ESLint cache.** Box lint took 182s on every run from 2 Oct, because each run's fresh
+  tree threw its `.eslintcache` away and file-entry-cache keys entries by absolute path. The cache now
+  lives in `<remoteRoot>/eslint-cache/<key>.json` with the run path swapped for a placeholder, keyed
+  by the lockfile, manifests, eslint config, tsconfig and node version. Correctness rests on eslint's
+  `--cache-strategy content` and its per-entry config hash, not on the rewrite.
+
 ### The dispatch route was reading its own run from the list that drops runs — 2026-10-08
 
 `findPullRequestRun` was deliberately written against `gh run list`: that list is eventually
@@ -1312,6 +1341,17 @@ eslint cache per run. `~/remote-check/work` is no longer used. The bash lives in
 bare repo with two overlapping invocations on two commits.
 
 ### The remote typecheck before every push — owner, 2026-10-04
+
+🔴 **SUPERSEDED 2026-10-08: the guard no longer runs anything.** The owner's performance-recovery
+ruling: *"the push guard must not start a remote check that blocks a normal push. Previously completed
+verification for the exact commit SHA may be reused."* `push-typecheck-guard.mjs` now only READS
+`<git-common-dir>/phx-remote-check/<sha>.json`, which `remote-check.mjs` writes when a run ends in a
+printed PASS or FAIL. It refuses a push solely when that record holds a typecheck FAIL for the exact
+commit being pushed, notes a reused PASS, and otherwise allows at once — no ssh, no wait, a 10s
+settings timeout. A chained `git commit && git push` now passes, because the new commit has no record.
+Measured before: push p75 48s and p90 68s on 7-8 Oct, 146s p75 on 4-6 Oct, capped at 7 minutes.
+Pinned by `tests/push-typecheck-guard.test.ts`, which also asserts the fake remote-check is never
+called. The account below is kept for its history.
 
 *"add a remote typecheck before every push, in a worktree."* `buggy_code` is the top friction
 category in his own usage report, and the costly shape is a type error that only the PR's `checks` job

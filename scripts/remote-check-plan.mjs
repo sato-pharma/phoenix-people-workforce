@@ -23,8 +23,8 @@
 // and exits 3 if it is not the sha the run announced. A run whose tree moved has no verdict, and must
 // never print one: that is the exact failure above, and isolation alone would only make it unlikely.
 //
-// The cost of a fresh tree is a fresh `pnpm install` (hard links from the box's store) and a cold
-// eslint cache. Both are the price of an answer that is about the commit it names.
+// The cost of a fresh tree is a fresh `pnpm install` (hard links from the box's store). The eslint
+// cache no longer has to be cold: `lintCacheFunction` below carries it between trees (2026-10-08).
 
 const SHA_RE = /^[0-9a-f]{40}$/;
 const RUN_ID_RE = /^[0-9a-z][0-9a-z-]{7,80}$/;
@@ -170,8 +170,13 @@ function privateTree({ remoteRoot, runId, sha, prelude }) {
   ];
 }
 
-// How long a run waits for exclusive use of the box before giving up and running anyway.
-export const BOX_LOCK_WAIT_SECONDS = 1800;
+// How long a run waits for exclusive use of the box before giving up — with NO VERDICT, never by
+// running anyway (owner, 2026-10-08, FUP-010: *"a heavy workload must NEVER proceed without
+// successfully acquiring its required exclusive lock"*). It is short on purpose: the busy probe in
+// remote-check.mjs has already refused a box with a live run, so this only has to cover the race
+// between that probe and this lock. A longer wait would be a hidden queue, which is what the
+// 2026-10-08 performance recovery removed.
+export const BOX_LOCK_WAIT_SECONDS = 120;
 
 // `steps` is [{ name, command }]; `install` is the bash that installs dependencies.
 // 🔴 THE LOCK PATH IS AN ARGUMENT, BECAUSE A RUN CAN CONTAIN ANOTHER RUN. The unit suite's own
@@ -202,13 +207,16 @@ export function buildRunScript({ remoteRoot, runId, sha, steps, install, prelude
   // one on purpose: flock(2) locks an open file DESCRIPTION, so taking /tmp/phx-typecheck.lock
   // here and again inside the typecheck would deadlock this run against itself.
   //
-  // It never fails the run. If the wait elapses it says so and proceeds, exactly as ci.yml's
-  // Typecheck step does — a lock that can turn a check red teaches people to skip the check.
+  // 🔴 AND A RUN THAT CANNOT TAKE THE LOCK DOES NOT RUN (owner, 2026-10-08, FUP-010). Until then an
+  // expired wait printed "running anyway" and started every stage beside whatever held the box — the
+  // exact overlap this lock exists to prevent, and the shape that OOM-kills a build. Now it exits
+  // EXIT_LOCK_TIMEOUT before the install: no stage ran, so it is NO VERDICT (never PASS, never FAIL),
+  // and remote-check.mjs points the caller at the PR's own CI, which is the authoritative gate anyway.
   lines.push("exec 9>>" + lockFile);
   lines.push(
-    "flock -w " + BOX_LOCK_WAIT_SECONDS + " 9 || " +
-      'echo "remote-check: waited ' + BOX_LOCK_WAIT_SECONDS / 60 +
-      ' minutes for the box lock — running anyway, so a slow stage here may be contention" >&2',
+    "flock -w " + BOX_LOCK_WAIT_SECONDS + " 9 || { " +
+      'echo "remote-check: could not take the box lock within ' + BOX_LOCK_WAIT_SECONDS +
+      's — another run holds the box, so NOTHING was run here (no verdict)" >&2; exit ' + EXIT_LOCK_TIMEOUT + "; }",
   );
 
   lines.push("FAILED=0");
@@ -290,6 +298,166 @@ export function buildLockfileScript({ remoteRoot, runId, sha, prelude = [] }) {
     "echo REGENERATED",
   );
   return lines.join("\n") + "\n";
+}
+
+// ---------------------------------------------------------------------------------------------
+// THE PERSISTENT ESLINT CACHE (2026-10-08 performance recovery, P0-2)
+// ---------------------------------------------------------------------------------------------
+// 🔴 WHY LINT TOOK 182s HERE AND 4-9s ON GITHUB. Every run lints in a FRESH private tree (see the
+// header), and eslint's `.eslintcache` lives inside that tree, so the EXIT trap deleted it every time.
+// Worse, a cache COPIED into the next tree would still miss: file-entry-cache keys every entry by the
+// file's ABSOLUTE path and drops entries whose path does not exist, and each run's path is new
+// (`runs/<runId>`). Measured on the box: lint PASS 8-9s on 30 Sep-1 Oct, 177-195s every day after
+// #5062 gave each run its own tree.
+//
+// So the cache is stored OUTSIDE the tree with the run's own path replaced by a placeholder, and put
+// back with this run's path before eslint starts. Correctness does not depend on the rewrite at all:
+//   - `--cache-strategy content` (package.json's `lint` script) re-hashes every file's CONTENT, so an
+//     edited file is re-linted whatever the cache says, and a deleted file is dropped by eslint itself;
+//   - eslint stores a hash of the resolved config (and its own and node's version) per entry, so a
+//     config change re-lints everything;
+//   - the store's KEY hashes the lockfile, the manifests, the eslint config and tsconfig, so a
+//     dependency or plugin change starts from an EMPTY cache rather than trusting entries made by
+//     other plugin versions;
+//   - a missing, unreadable or corrupt store means a cold run — never a skipped file.
+// Two runs saving at once is last-wins through an atomic `mv`; either file is a valid cache for its
+// key. The store is app data in remote-check's own folder, not a box setting, and stores untouched
+// for LINT_CACHE_KEEP_DAYS are pruned.
+export const LINT_CACHE_VERSION = 1;
+export const LINT_CACHE_KEEP_DAYS = 14;
+export const LINT_RUN_PLACEHOLDER = "@@PHX_RUN_TREE@@";
+export const LINT_CACHE_FUNCTION_NAME = "phx_lint_cached";
+
+/**
+ * The bash function that runs `corepack pnpm run lint` with the persistent cache around it. It
+ * returns eslint's own exit code, untouched — the cache can only ever change how long lint takes.
+ *
+ * @param {{ remoteRoot: string, runDir: string }} input the run's own tree, from `runPaths`.
+ */
+export function lintCacheFunction({ remoteRoot, runDir }) {
+  for (const value of [remoteRoot, runDir]) {
+    if (typeof value !== "string" || !/^\/[A-Za-z0-9._\/-]+$/.test(value)) {
+      throw new Error("remote-check: unsafe lint cache path: " + String(value));
+    }
+  }
+  const store = remoteRoot + "/eslint-cache";
+  // A regex for the run's path: the validated alphabet above leaves `.` as the only metacharacter.
+  const runRe = runDir.replace(/\./g, "\\.");
+  return [
+    LINT_CACHE_FUNCTION_NAME + "() {",
+    "  local dir='" + store + "' key='' store='' tmp='' rc=0",
+    "  key=$( { echo v" + LINT_CACHE_VERSION + "; node --version 2>/dev/null; " +
+      "sha256sum pnpm-lock.yaml pnpm-workspace.yaml package.json eslint.config.mjs tsconfig.json 2>/dev/null; } " +
+      "| sha256sum | cut -c1-16 )",
+    '  rm -f .eslintcache',
+    '  if [ -n "$key" ] && mkdir -p "$dir" 2>/dev/null; then store="$dir/$key.json"; fi',
+    '  if [ -n "$store" ] && [ -s "$store" ]; then',
+    "    sed 's|" + LINT_RUN_PLACEHOLDER + "|" + runDir + "|g' \"$store\" > .eslintcache 2>/dev/null || rm -f .eslintcache",
+    '    echo "lint cache: warm ($key)"',
+    "  else",
+    '    echo "lint cache: cold${key:+ ($key)}"',
+    "  fi",
+    "  corepack pnpm run lint",
+    "  rc=$?",
+    '  if [ -n "$store" ] && [ -s .eslintcache ]; then',
+    '    tmp="$store.$$.tmp"',
+    "    if sed 's|" + runRe + "|" + LINT_RUN_PLACEHOLDER + "|g' .eslintcache > \"$tmp\" 2>/dev/null; then " +
+      'mv -f "$tmp" "$store"; else rm -f "$tmp"; fi',
+    "  fi",
+    '  find "$dir" -maxdepth 1 -type f -mtime +' + LINT_CACHE_KEEP_DAYS + " -delete 2>/dev/null",
+    "  return $rc",
+    "}",
+  ];
+}
+
+// ---------------------------------------------------------------------------------------------
+// THE RUN'S OWN CEILING (2026-10-08 performance recovery, P0-3)
+// ---------------------------------------------------------------------------------------------
+// 🔴 A RUN THAT HANGS MUST END, AND END AS NO VERDICT. The box script runs under coreutils
+// `timeout`, so the BOX itself signals the run's whole process group when the ceiling passes: the
+// run's TERM trap fires (exit EXIT_INTERRUPTED), its EXIT trap removes the private tree, and
+// `timeout` reports 124 — which remote-check.mjs reads as NO VERDICT, never PASS and never FAIL.
+// `--kill-after` follows with SIGKILL for anything that ignores TERM; a tree that survives that is
+// what STALE_RUN_MINUTES sweeps.
+//
+// It is a CEILING, not a wait: a healthy run ends in its own time (measured 2026-10-07/08: typecheck
+// ~33s, the suite 113-205s, the build ~120s, setup ~60s). Each budget is roughly 3x the slowest
+// healthy run seen, so only a genuinely stuck run ever meets it.
+export const RUN_BASE_CEILING_SECONDS = 300; // private tree + install + the box lock (120s)
+export const STAGE_CEILING_SECONDS = { lint: 240, typecheck: 300, test: 720, build: 480 };
+export const EXIT_CEILING = 124; // coreutils `timeout`'s own code for "the ceiling passed"
+export const CEILING_KILL_AFTER_SECONDS = 30;
+
+/** The whole run's ceiling in seconds, for the stages asked for. An unknown stage gets the largest budget. */
+export function runCeilingSeconds(names) {
+  const largest = Math.max(...Object.values(STAGE_CEILING_SECONDS));
+  return (Array.isArray(names) ? names : []).reduce(
+    (total, name) => total + (STAGE_CEILING_SECONDS[name] ?? largest),
+    RUN_BASE_CEILING_SECONDS,
+  );
+}
+
+/** The remote command the run script is fed to — bash under the box's own `timeout`. */
+export function ceilingCommand(names) {
+  return "timeout --kill-after=" + CEILING_KILL_AFTER_SECONDS + " " + runCeilingSeconds(names) + " bash -s";
+}
+
+// ---------------------------------------------------------------------------------------------
+// THE VERDICT RECORD — what a finished run proved, per commit and per stage
+// ---------------------------------------------------------------------------------------------
+// 🔴 ONE AUTHORITATIVE RESULT PER SHA, READ BY THE PUSH GUARD INSTEAD OF A SECOND RUN (owner,
+// 2026-10-08: *"the push guard must not start a remote check that blocks a normal push. Previously
+// completed verification for the exact commit SHA may be reused"*). remote-check writes
+// `<git-common-dir>/phx-remote-check/<sha>.json` — shared by every worktree, never tracked — and
+// `.claude/hooks/push-typecheck-guard.mjs` only reads it. Only a run that ENDED IN A VERDICT (exit 0
+// or 1) is recorded, and only the stages that printed PASS or FAIL: a lock timeout, an OOM kill, a
+// moved tree, a dropped ssh, a ceiling or an unknown code records nothing, so silence is never
+// stored as a pass. The PR's `validate` + `checks` remain the merge gate whatever this file says.
+export const VERDICT_DIR_NAME = "phx-remote-check";
+export const VERDICT_KEEP_DAYS = 14;
+
+const STAGE_LINE_RE = /^--- ([a-z][a-z0-9-]*) (PASS|FAIL|OOM-KILLED|LOCK-TIMEOUT) in (\d+)s ---$/;
+
+/**
+ * The per-stage verdicts a box run printed: `{ lint: "PASS", typecheck: "FAIL" }`. OOM-KILLED and
+ * LOCK-TIMEOUT stages are left out — neither ran to a verdict.
+ */
+export function stageVerdictsFromOutput(text) {
+  const out = {};
+  for (const raw of String(text ?? "").replace(/\u001b\[[0-9;]*m/g, "").split(/\r?\n/)) {
+    const m = STAGE_LINE_RE.exec(raw.trim());
+    if (m && (m[2] === "PASS" || m[2] === "FAIL")) out[m[1]] = m[2];
+  }
+  return out;
+}
+
+/** The lines tsc printed between the typecheck banners — what the push guard shows on a recorded FAIL. */
+export function typecheckExcerpt(text) {
+  const lines = String(text ?? "").replace(/\u001b\[[0-9;]*m/g, "").split(/\r?\n/);
+  const start = lines.findIndex((line) => /^=== typecheck ===/.test(line));
+  if (start < 0) return "";
+  const end = lines.findIndex((line, i) => i > start && /^--- typecheck (?:PASS|FAIL) in /.test(line));
+  return lines.slice(start + 1, end >= 0 ? end : undefined).filter((l) => l.trim()).slice(-60).join("\n");
+}
+
+/**
+ * Merge one finished run's stage verdicts into the record for its sha. Pure: the caller does the IO.
+ * A later verdict for the same stage replaces an earlier one (a re-run is newer evidence).
+ *
+ * @param {any} previous the parsed record already on disk, or null.
+ * @param {{ sha: string, stages: Record<string, "PASS"|"FAIL">, source: string, at: string, excerpt?: string }} run
+ */
+export function mergeVerdictRecord(previous, { sha, stages, source, at, excerpt }) {
+  if (!SHA_RE.test(String(sha))) throw new Error("remote-check: not a full 40-character sha: " + sha);
+  const base = previous && previous.sha === sha && previous.stages && typeof previous.stages === "object"
+    ? previous
+    : { sha, stages: {} };
+  const next = { sha, stages: { ...base.stages } };
+  for (const [name, verdict] of Object.entries(stages ?? {})) {
+    if (verdict !== "PASS" && verdict !== "FAIL") continue;
+    next.stages[name] = { verdict, at, source, ...(name === "typecheck" && verdict === "FAIL" && excerpt ? { excerpt } : {}) };
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -390,7 +558,9 @@ export const WAIT_MINUTES_ENV = "PHX_CHECK_WAIT_MINUTES";
  * @param {Record<string, string | undefined>} env the environment, so `PHX_CHECK_WAIT_MINUTES` is
  * testable without mutating `process.env` — this stays a pure function of its two arguments.
  *
- * @returns {{ positional: string[], waitMinutes: number, actions: boolean, unknown: string[], urgent: boolean }}
+ * @returns {{ positional: string[], waitMinutes: number, actions: boolean, dispatch: boolean, unknown: string[], urgent: boolean }}
+ *   `actions` — a blocked box may go to GitHub at all (read the open PR's run); `dispatch` — it may also
+ *   START a billed ci.yml run when no PR exists, which only `--actions`/`--urgent` arm.
  */
 export function parseEscalation(argv, env = process.env) {
   // null means "the caller did not say", which is what the defaults below fill in. A plain `0`/`false`
@@ -443,6 +613,13 @@ export function parseEscalation(argv, env = process.env) {
     unknown.push(arg);
   }
   const armed = actions === null ? true : actions;
+  // 🔴 AND ONLY AN EXPLICIT `--actions`/`--urgent` MAY BILL A DISPATCH (owner, 2026-10-08 performance
+  // recovery: *"do not dispatch paid Actions runs when the PR's own CI gives the same verdict"*). The
+  // default still escalates a busy or unreachable box to GitHub — but to READ the branch's open PR run,
+  // which is already billed; with no PR it stops at NO VERDICT and says to open one. That replaces the
+  // same morning's dispatch-at-once default, which billed ~14 minutes for an answer the PR was about to
+  // produce on the same commit.
+  const dispatch = actions === true;
   // 🔴 THE DEFAULT DEPENDS ON WHETHER THE ESCALATION IS ARMED, WHICH IS THE WHOLE 2026-10-08 RULING:
   // with Actions available a busy box is PAID FOR AT ONCE (zero), and with `--no-actions` the poll is
   // the only route to a verdict, so it keeps the ten minutes. One shared default could only be wrong
@@ -462,6 +639,7 @@ export function parseEscalation(argv, env = process.env) {
     positional,
     waitMinutes: waitMinutes === null ? fallback : waitMinutes,
     actions: armed,
+    dispatch,
     unknown,
     urgent,
   };
@@ -623,11 +801,11 @@ function gradeConclusion(conclusion) {
  * @param {string[]} names the stages the caller asked for (`lint`, `typecheck`, `test`, `build`).
  * @param {Array<{ name?: string, status?: string, conclusion?: string | null, steps?: Array<{ name?: string, conclusion?: string | null }> }> | null | undefined} jobs
  * @param {Record<string, { job: string, step: string } | null>} stageJobs `STAGE_JOBS` or `STAGE_JOBS_PR`, from `stageJobsFor(run.event)`.
- * @returns {{ verdict: "pass"|"fail"|"no-verdict", why: string, otherRed: string[], passed: string[] }}
+ * @returns {{ verdict: "pass"|"fail"|"no-verdict", why: string, otherRed: string[], passed: string[], stages: Record<string, "PASS"|"FAIL"> }}
  */
 export function gradeActionsStages(names, jobs, stageJobs = STAGE_JOBS) {
   if (!Array.isArray(jobs) || jobs.length === 0) {
-    return { verdict: "no-verdict", why: "the run's job list could not be read", otherRed: [], passed: [] };
+    return { verdict: "no-verdict", why: "the run's job list could not be read", otherRed: [], passed: [], stages: {} };
   }
   const wanted = Array.isArray(names) && names.length > 0 ? names : Object.keys(STAGE_JOBS);
   const graded = [];
@@ -675,15 +853,19 @@ export function gradeActionsStages(names, jobs, stageJobs = STAGE_JOBS) {
   // The stages that really did pass, so a partial answer can SAY which half it has. Reading a PR gives
   // three of `all`'s four stages, and a bare NO VERDICT about the build throws the other three away.
   const passed = graded.filter((g) => g.verdict === "pass").map((g) => g.name);
+  // Per-stage PASS/FAIL for the verdict record; a no-verdict stage is left out, never stored as either.
+  const stages = Object.fromEntries(
+    graded.filter((g) => g.verdict !== "no-verdict").map((g) => [g.name, g.verdict === "pass" ? "PASS" : "FAIL"]),
+  );
   const failed = graded.filter((g) => g.verdict === "fail");
   if (failed.length > 0) {
-    return { verdict: "fail", why: failed.map((g) => g.why).join("; "), otherRed, passed };
+    return { verdict: "fail", why: failed.map((g) => g.why).join("; "), otherRed, passed, stages };
   }
   const unknown = graded.filter((g) => g.verdict === "no-verdict");
   if (unknown.length > 0) {
-    return { verdict: "no-verdict", why: unknown.map((g) => g.why).join("; "), otherRed, passed };
+    return { verdict: "no-verdict", why: unknown.map((g) => g.why).join("; "), otherRed, passed, stages };
   }
-  return { verdict: "pass", why: graded.map((g) => g.why).join("; "), otherRed, passed };
+  return { verdict: "pass", why: graded.map((g) => g.why).join("; "), otherRed, passed, stages };
 }
 
 /**

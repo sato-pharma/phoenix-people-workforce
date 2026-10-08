@@ -39,7 +39,13 @@ name: CI
 # 🔴 THERE IS NO DOCS-ONLY FAST PATH ANY MORE, AND RE-ADDING ONE IS THE 2026-10-02 INCIDENT.
 # Removed 2026-10-06. Every job runs every step on every PR; the only conditional work left is the
 # build and the Playwright smoke, which are gated on the EVENT (`github.event_name`), never on what
-# the diff touched.
+# the diff touched to SKIP anything.
+#
+# The one diff-driven step since 2026-10-08 runs the other way: `Build risk` in `validate` can only
+# ADD the Build to a pull request (which otherwise never builds), never remove a step. `main` builds
+# every commit whatever it says, it answers `build=true` on any error or path it does not know, and
+# a rename is read as both of its paths. Script: scripts/ci-build-risk.mjs; pinned by
+# tests/ci-build-risk.test.ts and tests/ci-gate-parity.test.ts.
 #
 # It existed in two forms and both failed the same way. First as `paths-ignore` here plus a
 # ci-docs-fallback.yml stub, which double-reported `validate`/`lint`/`typecheck` on any PR touching
@@ -437,11 +443,26 @@ jobs:
       # setting is to keep the build on PRs that touch `app/`, `src/` or `next.config.ts` and
       # skip it elsewhere — not a return to building on every PR.
       #
+      # 🔴 THAT MIDDLE SETTING IS NOW LIVE (2026-10-08, the performance-recovery PR), DEFINED BY
+      # EXCLUSION SO IT CAN ONLY ERR TOWARDS BUILDING. A PR builds unless EVERY changed path is one
+      # a Next build never reads (docs, markdown, tests, .claude, other workflows, mobile,
+      # migrations, xlsx, scripts nothing imports). Deleted and renamed paths count (--no-renames
+      # lists both halves), and an unreadable diff or any classifier error answers build=true.
+      # Only the Build is added: the canvas check, the standalone assembly and the login smoke stay
+      # `main`-only. `main` itself is unchanged — the left half of the Build's `if:` is the event,
+      # which cannot be empty, so a mis-emitted output never gates the main build off.
+      - name: Build risk
+        id: buildrisk
+        if: github.event_name == 'pull_request'
+        run: |
+          files="$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null)" || files=""
+          printf '%s\n' "$files" | node scripts/ci-build-risk.mjs >> "$GITHUB_OUTPUT" || echo "build=true" >> "$GITHUB_OUTPUT"
+
       # Do NOT re-add a `.next` cache to soften this: tried 2026-08-29, measured from both
       # directions, 37KB cache and 148s warm against 143s cold. The note on the deleted cache
       # step above records the evidence.
       - name: Build
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || steps.buildrisk.outputs.build == 'true'
         env:
           # 🔴 ONLY on a self-hosted runner, and only because a container lies about its CPUs.
           # `next build` sizes its page-data worker pool from the CPUs it can SEE — the HOST's count
@@ -736,15 +757,20 @@ jobs:
       # typecheck here climbs past 4 GB. A kernel lock on a shared file makes the second one WAIT for
       # the first instead, while lint and the unit suite keep running in parallel.
       # scripts/remote-check.mjs takes the SAME lock, so a hand-run check queues too. On a
-      # GitHub-hosted runner the lock is always free. If the wait ever passes 20 minutes it warns and
-      # runs anyway, so a stuck holder can never fail a PR by itself.
+      # GitHub-hosted runner the lock is always free.
+      #
+      # 🔴 A TIMED-OUT WAIT FAILS THE STEP — IT NEVER RUNS WITHOUT THE LOCK (2026-10-08, FUP-010).
+      # It used to warn and run anyway after 20 minutes, which is exactly the two-typechecks-at-once
+      # overlap the lock exists to prevent, on a box that has OOM-killed 7 processes in 8 days. A red
+      # step is the honest answer — re-run the job — and it is never a false green. Only reachable
+      # self-hosted; a hosted runner's lock is always free.
       - name: Typecheck
         run: |
           exec 9>/tmp/phx-typecheck.lock
           if ! flock -n 9; then
             echo "Another typecheck is running on this box — waiting for it to finish (at most 20 minutes)."
             SECONDS=0
-            flock -w 1200 9 || echo "::warning::Waited 20 minutes for the box's typecheck lock; running without it."
+            flock -w 1200 9 || { echo "::error::Waited 20 minutes for the box's typecheck lock and did NOT run without it — re-run this job once the box is free."; exit 1; }
             echo "Waited ${SECONDS}s for the typecheck lock."
           fi
           pnpm run typecheck

@@ -200,10 +200,24 @@ export async function runRemoteCheckTests(): Promise<void> {
 
   // 6 — the exit code must be the check's own, or a script wrapper turns every failure green. This
   // repo has been bitten by exactly that shape before (a pipeline reporting its last stage's 0).
-  assert.ok(
-    /process\.exit\(status\)/.test(SRC),
-    "remote-check.mjs no longer exits with the remote status. A wrapper that always exits 0 makes " +
-      "a failing typecheck read as a pass.",
+  // 🔴 SINCE 2026-10-08 THE VERDICT IS ALLOW-LISTED, NOT PASSED THROUGH: PASS only for status 0 with
+  // every asked stage's own PASS line, FAIL only for status 1 with a stage's FAIL line, and anything
+  // else NO VERDICT. `process.exit(status)` used to turn an unmapped 124/137 into the FAIL line.
+  assert.match(
+    SRC,
+    /status === 0 && names\.every\(\(name\) => stageVerdicts\[name\] === "PASS"\)[\s\S]{0,200}?remote-check: PASS — [\s\S]{0,60}?process\.exit\(0\)/,
+    "remote-check.mjs no longer requires exit 0 AND every stage's PASS line before printing PASS.",
+  );
+  assert.match(
+    SRC,
+    /status === 1 && Object\.values\(stageVerdicts\)\.includes\("FAIL"\)[\s\S]{0,240}?remote-check: FAIL — [\s\S]{0,60}?process\.exit\(1\)/,
+    "remote-check.mjs no longer exits 1 on a real stage FAIL — a failing typecheck would not stop anything.",
+  );
+  assert.doesNotMatch(
+    SRC,
+    /process\.exit\(status\)/,
+    "remote-check.mjs passes an unmapped box status straight through again — a ceiling (124) or a SIGKILL " +
+      "(137) would read as FAIL, and an odd 0 as PASS.",
   );
 
   // 7 — every invocation gets a tree of its own. Until 2026-10-01 they all shared
@@ -388,10 +402,22 @@ export async function runRemoteCheckTests(): Promise<void> {
     /exec 9>>\/tmp\/phx-remote-check\.lock/,
     "the generated box script no longer takes a run-level lock, so two sessions' checks can collide on a 7.7 GB box",
   );
+  // 🔴 REVERSED 2026-10-08 (owner, FUP-010): *"a heavy workload must NEVER proceed without successfully
+  // acquiring its required exclusive lock"*. The run used to "fall through to a warning" and start every
+  // stage beside the lock's holder. Now a missed lock exits 9 — NO VERDICT, never PASS or FAIL — before
+  // the install, and the wait is short (the busy probe already refused a live run).
   assert.match(
     script,
-    /flock -w \d+ 9 \|\| echo/,
-    "the run-level lock must fall through to a warning: a lock that can fail the run teaches people to skip the check",
+    /flock -w 120 9 \|\| \{ [^}]*NOTHING was run[^}]*; exit 9; \}/,
+    "a run that cannot take the box lock must exit 9 (NO VERDICT) without running anything — never 'running anyway'",
+  );
+  assert.ok(
+    !/running anyway/.test(script),
+    "the run-level lock falls through to running anyway again — that is the overlap that OOM-kills a build",
+  );
+  assert.ok(
+    script.indexOf("flock -w 120 9") >= 0 && script.indexOf("flock -w 120 9") < script.indexOf("install failed"),
+    "the box lock must be taken before the install, so a run that misses it touches nothing",
   );
   assert.ok(
     !/exec 9>>\/tmp\/phx-typecheck\.lock/.test(script),
@@ -458,7 +484,11 @@ export async function runRemoteCheckTests(): Promise<void> {
   // 🔴 AND A NO-VERDICT RUN MUST PRINT NOTHING THAT PARSES AS A VERDICT FOR THIS SHA. Other tools
   // grep `^remote-check: (PASS|FAIL) — <sha>` out of an append-only log
   // (`a-verdict-line-without-its-sha-matches-an-older-run`), so the arms must not print that line.
-  for (const arm of SRC.split(/\nif \(status === /).slice(1, -1)) {
+  // The two allow-listed verdict arms (`status === 0 && …`, `status === 1 && …`) are the only ones
+  // that may print it; every other `if (status === …` arm is a NO VERDICT arm.
+  const noVerdictArms = SRC.split(/\nif \(status === /).slice(1).filter((arm) => !/^[01] && /.test(arm));
+  assert.ok(noVerdictArms.length >= 5, "the NO VERDICT arms could not be found — this check would pass vacuously");
+  for (const arm of noVerdictArms) {
     assert.ok(
       !/remote-check: (?:PASS|FAIL) — /.test(arm.split("\n}")[0]),
       "a NO VERDICT arm prints a line that parses as a verdict for this sha:\n" + arm.split("\n}")[0],
@@ -707,11 +737,21 @@ export async function runRemoteCheckTests(): Promise<void> {
     const GUARD = stripComments(
       readFileSync(path.join(ROOT, ".claude", "hooks", "push-typecheck-guard.mjs"), "utf8"),
     );
-    assert.match(
-      GUARD,
-      /spawn(?:Sync)?\([\s\S]{0,120}?'typecheck',\s*'--no-wait',\s*'--no-actions'/,
-      "push-typecheck-guard must pass --no-wait --no-actions: a busy box now bills IMMEDIATELY, on EVERY push",
-    );
+    // 🔴 SINCE 2026-10-08 THE PUSH GUARD RUNS NOTHING AT ALL (owner: *"the push guard must not start a
+    // remote check that blocks a normal push"*) — it reads the verdict record remote-check writes.
+    // tests/push-typecheck-guard.test.ts drives it; this pins that no run can creep back in here.
+    assert.doesNotMatch(GUARD, /\bspawn(?:Sync)?\(/, "push-typecheck-guard is starting a process again — it must only read the record");
+    assert.doesNotMatch(GUARD, /'typecheck',\s*'--no-wait'/, "push-typecheck-guard is invoking remote-check again");
+
+    // 🔴 10b-iii — NOTHING IS DISPATCHED UNLESS ASKED (owner, 2026-10-08 performance recovery: *"do not
+    // dispatch paid Actions runs when the PR's own CI gives the same verdict"*). A bare call on a busy or
+    // unreachable box still goes to GitHub — to READ the open PR's run — but may not START a billed run.
+    assert.equal(parseEscalation(["all"], {}).dispatch, false, "a bare invocation must never bill a dispatch");
+    assert.equal(parseEscalation(["all"], {}).actions, true, "a bare invocation still reads an open PR's run");
+    assert.equal(parseEscalation(["all", "--actions"], {}).dispatch, true, "--actions must still be able to dispatch");
+    assert.equal(parseEscalation(["all", "--urgent"], {}).dispatch, true, "--urgent must still be able to dispatch");
+    assert.equal(parseEscalation(["all", "--free"], {}).dispatch, false, "--free never bills");
+    assert.equal(parseEscalation(["all"], { [WAIT_MINUTES_ENV]: "10" }).dispatch, false, "the house wait knob never arms a dispatch");
 
     const busy = { busyRuns: ["run-a"] };
     assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 0, actions: false }).action, "refuse");
@@ -782,7 +822,20 @@ export async function runRemoteCheckTests(): Promise<void> {
     // once the same day's ruling made a busy box escalate at once: this arm is now reached immediately,
     // and by the time anything is pushed most branches HAVE a PR, so a session left with nothing while a
     // free, already-billed answer sat on that very commit.
-    const prArm = fallback.slice(prGate, dispatch);
+    // The no-dispatch stop (2026-10-08) sits between the PR read and the dispatch, and it MUST: with no
+    // PR and no --actions there is nothing to read and nothing may be billed.
+    const noDispatchStop = fallback.indexOf("if (!dispatch) {");
+    assert.ok(
+      noDispatchStop > prGate && noDispatchStop < dispatch,
+      "the no-PR, no-`--actions` stop must sit after the PR read and before the dispatch",
+    );
+    assert.match(
+      fallback.slice(noDispatchStop, dispatch),
+      /NO VERDICT[\s\S]{0,200}?process\.exit\(6\)/,
+      "with no PR and no --actions it must stop at NO VERDICT, billing nothing",
+    );
+    assert.match(CODE, /runOnActions\(\{[^}]*dispatch: escalation\.dispatch/, "the caller must hand runOnActions the parsed dispatch flag");
+    const prArm = fallback.slice(prGate, noDispatchStop);
     assert.match(prArm, /settleActionsRun\(/, "the open-PR arm must settle that PR's run, not exit with no verdict");
     assert.doesNotMatch(
       prArm,

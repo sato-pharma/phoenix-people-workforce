@@ -436,14 +436,14 @@ actually is" and "A feature arriving in instalments is still ONE feature".
 
 `check:harden` and the `ask-before-validation` hook are retired at the owner's instruction. Do not
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
-`pnpm run ci` as a pre-push ritual. 🔴 **The one standing step is NOT local: `node scripts/remote-check.mjs
-test` on the committed sha before EVERY push that opens or updates a PR** (owner, 2026-10-04; `all` when
-the change adds a route, a file or a closed-union member) — `docs/testing.md`, "Before every push".
-Its typecheck half runs by itself: `.claude/hooks/push-typecheck-guard.mjs` refuses a push whose
-typecheck FAILED on the box — commit and push in separate commands (`docs/ci-self-hosted-runner.md`,
-"The remote typecheck before every push"). **Then push the branch and let the PR's checks answer.** The two
-**required** checks — `validate` (the `check:*` contracts, **the unit suite**, and on non-PR events
-the build and login smoke) and `checks` (lint, `next typegen`, typecheck) — run on the PR head commit
+`pnpm run ci` as a pre-push ritual. 🔴 **No step stands in front of the push any more: commit, push,
+open the PR, and its checks are the verdict** (owner, 2026-10-08, retiring the 2026-10-04 "remote-check
+test before every push"). `node scripts/remote-check.mjs <check>` is optional — once, with
+`run_in_background: true`, acting on the notification, never a poll loop (bash-guard C14) — and
+`.claude/hooks/push-typecheck-guard.mjs` only reads a recorded verdict for the exact sha, refusing
+solely on a recorded typecheck FAIL (`docs/testing.md`, "Before every push"). The two
+**required** checks — `validate` (the `check:*` contracts, **the unit suite**, the build on a PR whose
+diff can change it, and on non-PR events the build and login smoke) and `checks` (lint, `next typegen`, typecheck) — run on the PR head commit
 and block the merge if either is red. 🔴 **THE UNIT SUITE MOVED BACK INTO `validate` ON 2026-09-30, FOR
 WALL CLOCK, AND IT IS STILL INSIDE A REQUIRED CHECK.** `checks` ran typecheck (111s) then the suite
 (97s) in SERIES on one runner — 80% of a PR's ~260s wait — while `validate` sat on ~37s of work since
