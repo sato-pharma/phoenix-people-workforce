@@ -3129,3 +3129,35 @@ AGENTS.md loads on every request and again after every compaction, so on 2026-10
 **Each line there is a cue, not the fact.** The account of every one is in [docs/agents-session-traps.md](docs/agents-session-traps.md); which memory backs which hook is in [docs/agents-memory-map.md](docs/agents-memory-map.md).
 
 **Memory slugs that this section was the only pointer for.** `scripts/memory-index-reachability.mjs` scans **this file** and matches the **backticked** form, so these stay here whatever happens to the prose above — deleting one orphans that memory unless `MEMORY.md` also links it. They are a reachability roster, not a reading list; the hook each belongs to travels with its cluster.
+
+## A background `cat` with nothing feeding it held a worktree for over an hour — 2026-10-08
+
+At 22:49 Cairo a session ran one background Bash command that began
+`cd "/f/Phoenix Workforce/_wt-field-day-holidays" && cat > "$TMPDIR/q.mjs" 2>/dev/null; …` and went
+on, several statements later, to `cat > scripts/field-day/_probe.tmp.mjs <<'EOF' … EOF` and a node
+probe that read production through the folder's `.env.local`. The heredoc belonged to the SECOND
+`cat`. The first had no file, no heredoc, no `<` and no pipe, so it read its standard input — and a
+background command's standard input is a pipe that nothing ever writes to or closes. It waited.
+
+Found past midnight while retiring finished worktrees, it had held the folder for over an hour:
+
+- the repo doctor reported a live process in `_wt-field-day-holidays`, so the folder could not be
+  removed from under it;
+- the desktop app refused to archive its session ("it still has live work"), and its 7-day
+  auto-archive would have skipped it for as long as the shell lived;
+- the worktree was still clean and the probe file did not exist, so nothing after the stuck `cat` had
+  run — but the production read was still queued behind it, armed. Stopping the `cat` alone would
+  have released it, so the two shells were stopped first and the `cat` last.
+
+**The foreground differs, measured the same night:** `timeout 8 cat > probe.txt` in a foreground
+Bash call exited 0 in 0 s. Its input is closed, so it does not hang — it silently writes an EMPTY
+file instead, which is a quieter bug of its own and not what C17 refuses.
+
+**The guard.** `bash-guard.mjs` **C17** refuses a background Bash command holding a `cat` with
+nothing to read: no file operand, no `<`, `<<` or `<<<`, and no pipe into it (`||` is not a pipe;
+`-` is standard input, not a file). It quotes the idle `cat` back, shows the heredoc on the cat
+itself, and names `PHX_STDIN_OK=1` as the stand-down. Pinned by
+`tests/background-cat-guard.test.ts`, which replays the 8 Oct command and seventeen shapes that must
+still pass — among them the commit-message `$(cat <<'EOF' … )` idiom, `|&`, process substitution,
+the foreground and the PowerShell tool. Breaking the rule turns that test red on the 8 Oct command;
+dropping the pipe check turns it red on "a pipe into it".

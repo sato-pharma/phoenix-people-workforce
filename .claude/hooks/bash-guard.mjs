@@ -47,6 +47,11 @@
 //   C16 a FOREGROUND sleep that waits on a BACKGROUND TASK's output file (`…/tasks/<id>.output`) —
 //       50 session-minutes in 6 h on 8 Oct 2026. The harness notifies the session when that task
 //       ends; read the file once then. PHX_POLL_OK=1 stands it down.
+//   C17 a BACKGROUND `cat` with nothing feeding it — no file, no heredoc, no `<`, no pipe. A
+//       background command's input is a pipe nothing ever writes to or closes, so it waits forever:
+//       on 8 Oct 2026 one held a worktree for over an hour and kept its session from being archived.
+//       A foreground one is let through (its input is closed, so it exits at once).
+//       PHX_STDIN_OK=1 stands it down.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -181,6 +186,85 @@ function commandSegments(text) {
  */
 function withoutHereStringBodies(text) {
   return text.replace(/@(["'])[ \t]*\r?\n[\s\S]*?\r?\n\1@/g, "''");
+}
+
+/**
+ * C17's reading of a command: each segment, and whether a PIPE fed it. `commandSegments` above drops
+ * the separator, but here a `|` is the difference between a `cat` with input and one without — while
+ * `||` is not a pipe, and the `&` of a redirect (`2>&1`, `&>f`, `>&2`) is not a separator at all.
+ */
+function pipedSegments(text) {
+  const segments = [];
+  let current = '';
+  let quote = null;
+  let piped = false;
+  const chars = [...text];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') {
+        current += ch + (chars[i + 1] ?? '');
+        i++;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      current += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      current += ch;
+    } else if (ch === '\\') {
+      current += ch + (chars[i + 1] ?? '');
+      i++;
+    } else if (ch === '|') {
+      segments.push({ text: current, piped });
+      current = '';
+      piped = chars[i + 1] !== '|';
+      if (chars[i + 1] === '|' || chars[i + 1] === '&') i++;
+    } else if (ch === '&' && (/[<>]/.test(chars[i - 1] ?? '') || chars[i + 1] === '>')) {
+      current += ch;
+    } else if ('\n;&()'.includes(ch)) {
+      segments.push({ text: current, piped });
+      current = '';
+      piped = false;
+      if (ch === '&' && chars[i + 1] === '&') i++;
+    } else {
+      current += ch;
+    }
+  }
+  segments.push({ text: current, piped });
+  return segments;
+}
+
+/** Words that can stand in front of a command in one segment without being the command. */
+const SEGMENT_LEAD = /^(?:(?:then|do|else|elif|time|exec|command|nohup|!|\{)\s+|[A-Za-z_][A-Za-z0-9_]*=\S*\s+)/;
+
+/**
+ * The first `cat` in a command that has nothing to read, or null: no file operand, no `<`, `<<` or
+ * `<<<`, and no pipe into it. Heredoc BODIES are swapped for a marker rather than stripped as
+ * `withoutHeredocBodies` does, because here the `<<` itself is the evidence that the cat is fed.
+ * `-` is stdin, so it is not a file; `--help` and `--version` read nothing and exit.
+ */
+function idleCat(command) {
+  const text = command.replace(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^[ \t]*\2[ \t]*\r?$/gm, ' <<HEREDOC ');
+  for (const segment of pipedSegments(text)) {
+    let body = segment.text.trim();
+    for (let pass = 0; pass < 8 && SEGMENT_LEAD.test(body); pass++) body = body.replace(SEGMENT_LEAD, '');
+    const tokens = argvTokens(body);
+    if (!/^cat(?:\.exe)?$/i.test(binName(tokens[0]))) continue;
+    let fed = segment.piped;
+    for (let i = 1; i < tokens.length && !fed; i++) {
+      const token = tokens[i];
+      if (/^\d*</.test(token)) fed = true;
+      else if (/^(?:\d*|&)>/.test(token)) {
+        // `>` / `2>` / `&>>` alone take the NEXT token as their target; `>f`, `2>/dev/null` and
+        // `2>&1` carry their own.
+        if (/^(?:\d*|&)>>?$/.test(token)) i++;
+      } else if (token === '--help' || token === '--version') fed = true;
+      else if (token !== '-' && !/^-[A-Za-z]+$/.test(token)) fed = true;
+    }
+    if (!fed) return body;
+  }
+  return null;
 }
 
 /** Wrappers that still run what they carry: `cmd /c`, a shell's `-c`, `start`, `VAR=value`, a quote. */
@@ -568,6 +652,36 @@ try {
           'the output file once. To wait on something that is NOT a background task, use the Monitor tool.\n\n' +
           'If the owner asked for this wait, stand it down for one command: ' +
           (input.tool_name === 'PowerShell' ? '$env:PHX_POLL_OK=1; <the same command>' : 'PHX_POLL_OK=1 <the same command>'),
+      );
+    }
+  }
+
+  // C17 — a BACKGROUND `cat` with nothing feeding it (2026-10-08). A background command's input is
+  // a pipe that nothing ever writes to or closes, so a `cat` with no file, no heredoc, no `<` and no
+  // pipe into it waits on it for ever — and so does everything after it in the command. Measured that
+  // night: `cd <worktree> && cat > "$TMPDIR/q.mjs" 2>/dev/null; …; cat > probe.mjs <<'EOF' … EOF`,
+  // whose heredoc sat on the SECOND cat, hung for over an hour. It held the worktree folder, kept its
+  // session from being archived, and the production read queued behind it stayed armed until the
+  // process was killed. A FOREGROUND cat is let through: there the input is closed and it exits at
+  // once (measured the same night: exit 0 in 0s).
+  const STDIN_STAND_DOWN = /(?:^|[\s;&|(])\s*PHX_STDIN_OK\s*=\s*['"]?1['"]?(?![\w.])/;
+  if (
+    input.tool_name === 'Bash' &&
+    input?.tool_input?.run_in_background === true &&
+    !STDIN_STAND_DOWN.test(cmd) &&
+    process.env.PHX_STDIN_OK !== '1'
+  ) {
+    const idle = idleCat(cmd);
+    if (idle) {
+      deny(
+        "C17 — a background `cat` with nothing feeding it is refused: a background command's input is a " +
+          'pipe that nothing ever writes to or closes, so this waits for ever, and so does everything after it:\n' +
+          `  ${idle.length > 160 ? idle.slice(0, 160) + ' …' : idle}\n` +
+          'On 8 Oct 2026 one hung for over an hour, held its worktree and kept its session from being archived.\n\n' +
+          "Give it something to read — the heredoc goes on THIS cat (in that command it sat on a later one):\n" +
+          "  cat > file <<'EOF'\n  …\n  EOF\n" +
+          "or `cat source > file`, `printf '%s\\n' \"…\" > file`, or `: > file` for an empty file.\n\n" +
+          'If the owner asked for this, stand it down for one command: PHX_STDIN_OK=1 <the same command>',
       );
     }
   }
