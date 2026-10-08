@@ -21,6 +21,8 @@ import type { VacationRequestAttachment } from "@/lib/vacation/types";
 const MAX_FILES_PER_UPLOAD = 10;
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_LABEL = "20MB";
+// A request with a dozen files made one table row thousands of pixels tall, so the list shows this many and expands on demand.
+const COLLAPSED_ATTACHMENT_COUNT = 3;
 
 function formatUploadedAt(value: string | null | undefined) {
   if (!value) return "-";
@@ -82,6 +84,9 @@ export function VacationAttachmentHistory({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addedCount, setAddedCount] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const visibleAttachments = expanded ? attachments : attachments.slice(0, COLLAPSED_ATTACHMENT_COUNT);
+  const hiddenCount = attachments.length - visibleAttachments.length;
 
   async function uploadFiles(files: File[]) {
     if (files.length === 0) return;
@@ -127,10 +132,10 @@ export function VacationAttachmentHistory({
     <div className="space-y-1.5">
       {attachments.length > 0 ? (
         <ul className="space-y-1">
-          {attachments.map((attachment) => (
+          {visibleAttachments.map((attachment) => (
             <li key={attachment.id}>
               <a
-                className="flex items-start justify-between gap-2 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1.5 transition hover:border-sky-300 hover:bg-sky-100"
+                className="flex flex-col gap-0.5 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1.5 transition hover:border-sky-300 hover:bg-sky-100"
                 href={`/api/vacations/requests/${encodeURIComponent(requestId)}/attachments/file/${encodeURIComponent(attachment.id)}`}
                 rel="noreferrer"
                 target="_blank"
@@ -139,13 +144,24 @@ export function VacationAttachmentHistory({
                   <FileText className="mt-0.5 h-3 w-3 shrink-0" />
                   <span className="break-words">{fileLabel(attachment)}</span>
                 </span>
-                <span className="shrink-0 text-phx-2xs font-semibold text-slate-500">
+                <span className="pl-[18px] text-phx-2xs font-semibold text-slate-500">
                   {formatUploadedAt(attachment.uploadedAt)}
                   {sizeLabel(attachment.sizeBytes) ? ` · ${sizeLabel(attachment.sizeBytes)}` : ""}
                 </span>
               </a>
             </li>
           ))}
+          {attachments.length > COLLAPSED_ATTACHMENT_COUNT ? (
+            <li>
+              <button
+                className="w-full rounded-sm border border-sky-200 bg-white px-2 py-1 text-left text-phx-2xs font-bold text-sky-700 transition hover:bg-sky-50"
+                onClick={() => setExpanded((open) => !open)}
+                type="button"
+              >
+                {expanded ? "Show fewer documents" : `Show all ${attachments.length} documents (${hiddenCount} more)`}
+              </button>
+            </li>
+          ) : null}
         </ul>
       ) : (
         <p className="text-phx-2xs font-semibold text-slate-500">No documents uploaded yet.</p>
