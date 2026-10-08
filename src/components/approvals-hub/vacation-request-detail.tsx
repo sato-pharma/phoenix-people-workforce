@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import type { VacationApprovalDetail } from "@/lib/approvals-hub/service";
 import { RequestTracker } from "@/components/approvals-hub/request-tracker";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
+import { VacationAdminControls } from "@/components/approvals-hub/vacation-admin-controls";
 import { VacationAttachmentLinks } from "@/components/approvals-hub/vacation-attachment-links";
 import { VacationAttachmentHistory } from "@/components/vacation/vacation-attachment-history";
 import { VacationEvidenceReviewActions } from "@/components/approvals-hub/vacation-evidence-review";
@@ -147,6 +148,7 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
               }
             />
           ) : null}
+          {detail.canAdminManage ? <VacationAdminControls backHref={backHref} row={r} /> : null}
           {detail.adminOverride && !detail.adminOverride.available && detail.adminOverride.reason && detail.adminOverride.availableAt ? (
             // The wait, visible before it unlocks. Without this the button simply is not there and
             // HR cannot tell a request that is merely young from one the rule refuses to touch.
