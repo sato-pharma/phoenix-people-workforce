@@ -34,7 +34,9 @@ import {
   type WaitingApproval,
 } from "@/lib/phoenix-crm/approval-nudge-rules";
 import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
+import { seatIdIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
+import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import {
   PHOENIX_CRM_NOTIFICATION_CATEGORY,
   PHOENIX_CRM_NOTIFICATION_MODULE,
@@ -172,7 +174,14 @@ export async function runPhoenixCrmApprovalNudge(
 ): Promise<ApprovalNudgeRun> {
   const cairoToday = currentCairoDateOnlyIso(now);
   const raisedBefore = new Date(now.getTime() - APPROVAL_NUDGE_AFTER_MS).toISOString();
-  const [org, config, items] = await Promise.all([loadPhoenixCrmOrg(), loadPhoenixCrmConfig(), loadWaitingApprovals(raisedBefore, cairoToday)]);
+  const [org, config, allItems, live] = await Promise.all([
+    loadPhoenixCrmOrg(),
+    loadPhoenixCrmConfig(),
+    loadWaitingApprovals(raisedBefore, cairoToday),
+    loadLiveTeamSeatIds(cairoToday),
+  ]);
+  // Only a LIVE team's approvals are chased (owner, 2026-10-08); an unreadable gate fails open.
+  const items = live ? allItems.filter((item) => seatIdIsInLiveTeam(org.seats, item.seatId, live)) : allItems;
   // The SFE Managers are read only when an item is waiting at their step — most mornings none is.
   const sfeHrIds = items.some((item) => item.stage === "sfe") ? await sfeManagerHrIds() : [];
   const plan = composeApprovalNudges({ org, items, sfeHrIds, openLines: openLineCodes(config.lineRollout, cairoToday), now, cairoToday });

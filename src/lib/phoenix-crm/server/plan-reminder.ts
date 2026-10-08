@@ -32,10 +32,12 @@ import {
   type PlanReminderNotice,
   type PlanReminderTick,
 } from "@/lib/phoenix-crm/plan-reminder-rules";
+import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import { territoryReviewer } from "@/lib/phoenix-crm/scope";
 import { seatsWithRealActivity } from "@/lib/phoenix-crm/server/daily-digest";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadSeatsDaysOff } from "@/lib/phoenix-crm/server/leave-days";
+import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import {
   PHOENIX_CRM_NOTIFICATION_CATEGORY,
@@ -145,7 +147,10 @@ export async function runPhoenixCrmPlanReminder(
   // A vacant territory has nobody to plan it, and a vacancy is never raised as a finding.
   const staffed = org.territories.filter((seat) => Boolean(seat.lineCode && openLines.has(seat.lineCode) && seat.occupantHrId));
   const started = await seatsWithRealActivity(staffed.map((seat) => seat.seatId));
-  const seats = territoriesOfStartedTeams(org, staffed, started);
+  // Only a LIVE team is reminded (owner, 2026-10-08): activity alone — a Super Admin's try-out, a rep who
+  // opened the app early — is not a start. An unreadable gate fails open (live-teams.ts).
+  const live = await loadLiveTeamSeatIds(cairoToday);
+  const seats = territoriesOfStartedTeams(org, staffed, started).filter((seat) => !live || seatIsInLiveTeam(seat, live));
   const statuses = await loadWeekStatuses(
     seats.map((seat) => seat.seatId),
     day.weekStart,

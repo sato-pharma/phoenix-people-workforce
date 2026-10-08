@@ -13,7 +13,10 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
 import { listUnreadModuleNotices, markNoticesReadForViewer } from "@/lib/notifications/unread";
+import { seatIdIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import type { PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
+import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
+import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import {
   groupUnreadByModule,
   phoenixCrmModuleOfNotice,
@@ -35,7 +38,13 @@ async function loadUnread(access: AccessContext): Promise<PhoenixCrmUnreadNotice
     module: PHOENIX_CRM_NOTIFICATION_MODULE,
     sinceDays: PHOENIX_CRM_BADGE_WINDOW_DAYS,
   });
-  return rows.filter((row) => phoenixCrmNoticePulses(row.eventType));
+  const pulsing = rows.filter((row) => phoenixCrmNoticePulses(row.eventType));
+  // A notice about a team that is not live never pulses (owner, 2026-10-08) — including one written
+  // before the team was held back. Read only when something is unread; an unreadable gate fails open.
+  if (!pulsing.some((row) => row.seatId)) return pulsing;
+  const [live, org] = await Promise.all([loadLiveTeamSeatIds(), loadPhoenixCrmOrg()]);
+  if (!live) return pulsing;
+  return pulsing.filter((row) => !row.seatId || seatIdIsInLiveTeam(org.seats, row.seatId, live));
 }
 
 /**

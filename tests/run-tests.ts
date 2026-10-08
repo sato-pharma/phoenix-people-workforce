@@ -1694,6 +1694,7 @@ import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
 import { runPhoenixCrmNoticeBadgeTests } from "./phoenix-crm-notice-badges.test.ts";
+import { runPhoenixCrmLiveTeamTests } from "./phoenix-crm-live-teams.test.ts";
 import { runPhoenixCrmDayStartTests } from "./phoenix-crm-day-start.test.ts";
 import { runPhoenixCrmFirstVisitTests } from "./phoenix-crm-first-visit.test.ts";
 import { runPhoenixCrmActivityMirrorTests } from "./phoenix-crm-activity-mirror.test.ts";
@@ -6096,6 +6097,11 @@ await runTest(
 await runTest(
   "Phoenix CRM pulsing badges: an unread notice marks the module it opens, the feeds never pulse, the number caps at 99+, the chooser and the module page draw it, and it clears from a mounted page, never a server render",
   runPhoenixCrmNoticeBadgeTests,
+);
+
+await runTest(
+  "Phoenix CRM live teams: only a team the Super Admin has started is told anything — the rule, the notifier, the reminder, the nudge, the digest, the roll-up and the badges all ask, and an unreadable gate fails open",
+  runPhoenixCrmLiveTeamTests,
 );
 
 await runTest(

@@ -7076,3 +7076,13 @@ page opens with a "New for you" strip. The feeds never pulse. A failed read draw
 new". **It clears from a mounted page** (`POST /api/phoenix-crm/notices/seen`), never a server render,
 because the chooser cards prefetch the page on hover and a prefetch renders it with nobody looking.
 Pinned by `tests/phoenix-crm-notice-badges.test.ts` and `tests/phoenix-crm-email-block.test.ts`.
+
+## Only a live team is told anything — owner, 2026-10-08
+
+He had just been given email, Telegram, in-app and pulsing badges for every Phoenix CRM step (see "Phoenix CRM emails every step and pulses what is new"), and said: "bump notifications to people who didn't go live yet. The only ones who go live are Cairo and Giza, and Delta One — don't pump to all the people." Asked who the notices should reach, he chose **started teams only**.
+
+- **Live = the Super Admin pressed Start**: a `phoenix_crm_team_starts` row for the team's district-manager seat with no stop, or a stop still in the future. Delta (1) started 3 Oct; Cairo and Giza hold rows dated 10 Oct but are already planning that week, so the gate does NOT wait for `starts_on`.
+- **Everyone around a non-live team is silent** — its reps, district manager, SFE Managers and national sales manager — on every channel, and its old unread notices stop pulsing too (the badge reader filters by the notice's `metadata.seatId`).
+- **Where it is asked**: `notifyPhoenixCrm` (real world only; the test world keeps its in-app copies), the plan reminder, the approval nudge, the 06:55 digest (on top of its real-activity test), the hourly visit roll-up, and `unread-notices.ts`. Fraud scan and validation-review notices go to Super Admins and SFE and are not team notices.
+- **A failed read of the starts fails OPEN** (and is logged as `phoenix_crm_live_teams_unreadable`): an empty answer would silence a live team's approvals on a database hiccup.
+- Pinned by `tests/phoenix-crm-live-teams.test.ts`. Rule: `src/lib/phoenix-crm/live-team-rules.ts`; read: `src/lib/phoenix-crm/server/live-teams.ts`.

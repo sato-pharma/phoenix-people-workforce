@@ -21,6 +21,8 @@ export type UnreadModuleNotice = {
   createdAt: string;
   eventType: string;
   id: string;
+  /** The seat the notice was raised about (`metadata.seatId`), when its module records one. */
+  seatId: string | null;
   title: string;
 };
 
@@ -37,6 +39,12 @@ type EventRow = {
 };
 
 type StateRow = { archived_at?: string | null; notification_event_id?: string | null; read_at?: string | null };
+
+function seatIdOf(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const seatId = (metadata as { seatId?: unknown }).seatId;
+  return typeof seatId === "string" && seatId.length > 0 ? seatId : null;
+}
 
 export async function listUnreadModuleNotices(
   access: AccessContext,
@@ -86,6 +94,7 @@ export async function listUnreadModuleNotices(
       createdAt: String(row.created_at ?? ""),
       eventType: String(row.event_type ?? ""),
       id: String(row.id ?? ""),
+      seatId: seatIdOf(row.metadata),
       title: String(row.subject ?? "").trim() || "New notice",
     }));
 }

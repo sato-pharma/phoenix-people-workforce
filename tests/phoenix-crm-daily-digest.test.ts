@@ -244,8 +244,8 @@ export function runPhoenixCrmDailyDigestTests(): void {
     // The filter is applied BEFORE the board is gathered, and the gathered set is the filtered one.
     assert.match(
       digest,
-      /const started = await seatsWithRealActivity\(openSeats\.map\(\(seat\) => seat\.seatId\)\);\s*const seats = openSeats\.filter\(\(seat\) => started\.has\(seat\.seatId\)\);/,
-      "the digest reads only the territories that have started — the open-line list alone is what flooded 24 managers",
+      /seatsWithRealActivity\(openSeats\.map\(\(seat\) => seat\.seatId\)\)[\s\S]*?const seats = openSeats\.filter\(\(seat\) => started\.has\(seat\.seatId\) && \(!live \|\| seatIsInLiveTeam\(seat, live\)\)\);/,
+      "the digest reads only the territories that have started AND whose team is live — the open-line list alone is what flooded 24 managers",
     );
 
     // 🔴 THE QUESTION MOVED INTO THE DATABASE ON 2026-10-02, and the two guarantees moved with it.

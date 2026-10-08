@@ -75,6 +75,8 @@ import { minuteClock } from "@/lib/phoenix-crm/day-start-rules";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_NOT_CONFIRMED_TEXT, LOCATION_NOT_CONFIRMED_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { PLAN_EDIT_ACKNOWLEDGER_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
+import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
+import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { managerChain, personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -1405,6 +1407,13 @@ async function activityMirrorDelivery(notice: PhoenixCrmNotice, nativeDeliveries
 
 export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean): Promise<void> {
   try {
+    // Only a LIVE team is told anything (owner, 2026-10-08): a notice about a territory whose team the
+    // Super Admin has not started tells nobody — rep, district manager, SFE or NSM. The test world keeps
+    // its in-app copies, and an unreadable gate fails open (live-teams.ts).
+    if (!isTest) {
+      const live = await loadLiveTeamSeatIds();
+      if (live && !seatIsInLiveTeam(notice.seat, live)) return;
+    }
     const described = await describe(notice);
     const deliveries = described === null ? [] : Array.isArray(described) ? described : [described];
     // Mirror the action to the NSM and SFE in scope (owner, 2026-10-05), as a parallel delivery deduped
