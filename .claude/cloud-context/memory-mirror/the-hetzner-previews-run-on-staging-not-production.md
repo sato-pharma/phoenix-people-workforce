@@ -1,11 +1,11 @@
 ---
 name: the-hetzner-previews-run-on-staging-not-production
-description: "Since 2026-10-08 14:30 Cairo the Hetzner box previews (`~/preview` :3000, `~/preview-b` :3001) read STAGING `cifwmndunmlxjhyjugxa` with APP_ENV=staging and PHOENIX_EMAIL_FORCE_TESTING=true (owner-approved) — never put production keys back in `~phx/secure/.env.local`; a preview showing staging data is correct."
+description: "Since 2026-10-08 14:30 Cairo the Hetzner box previews (`~/preview` :3000, `~/preview-b` :3001) read STAGING `cifwmndunmlxjhyjugxa` with APP_ENV=staging and PHOENIX_EMAIL_FORCE_TESTING=true (owner-approved) — never put production keys back in `~phx/secure/.env.local`; a preview showing staging data is correct. Since 2026-10-08 ~17:50 Cairo they also RUN AS `phxpreview` (no sudo) from /home/phxpreview checkouts and a read-only mirror — never run a preview or its install as phx again."
 metadata:
   node_type: memory
   type: project
   originSessionId: ddbd6fd7-8a24-45e4-b9cc-5c709ace3bd5
-  modified: 2026-10-08T13:44:35.798Z
+  modified: 2026-10-08T14:56:38.433Z
 ---
 
 On 2026-10-08 the owner approved "move the box previews to staging and restart preview-b" (security
@@ -51,7 +51,29 @@ a file from code running as its owner, so any remote-check run could read a prod
 - Backups: `~/preview-*.sh.pre-caps` on the box and `~/.claude/scripts/phx-preview.ps1.pre-caps` on the
   laptop.
 
+**The previews run as `phxpreview`, a user with NO sudo, since 2026-10-08 ~17:50 Cairo** (owner: "run
+the box previews as their own user without sudo"):
+- `phx` keeps the GitHub deploy key and fetches into `/srv/phx-preview-mirror.git` (owner phx, group
+  phxpreview READ-only, `core.sharedRepository=0640` — never make it group-writable: a planted
+  reference-transaction hook would run as phx on the next fetch).
+- `phxpreview` owns `/home/phxpreview/preview` (3000) and `/home/phxpreview/preview-b` (3001), clones and
+  installs from that mirror (`~/preview-sync.sh`, fed on stdin), and reads its own env copy
+  `/home/phxpreview/secure/.env.local`, refreshed from `~phx/secure/.env.local` at every start.
+- Each preview is now a SYSTEM scope `phx-preview-<port>.scope` in `/etc/systemd/system/phx-previews.slice`
+  (same caps), started with `sudo systemd-run --scope --uid=phxpreview`; the reaper (still a phx user
+  timer, still in trial until the 9 Oct 14:41 `at` job) lists the system manager and stops through sudo.
+- Proven live: the listener runs as phxpreview; from it sudo, `/home/phx` (secret, deploy key, runner
+  credentials), `/home/phxci` and the mirror are all refused; DIRTY_TREE refusal, the laptop's start
+  and -Stop paths and a live reaper stop all worked.
+- The OLD checkouts `/home/phx/preview` (+ `-b`, 15 GB) were REMOVED 2026-10-08 ~18:05 Cairo on the
+  owner's word. Their 634 document-type files (all git copies or package/build output) were moved aside
+  first, with the old main checkout's 20 uncommitted rep-ranks edits (an earlier draft of #5351: 12 files
+  identical to it, 8 smaller) as `preview-uncommitted.patch` + `preview-untracked.tar.gz` — all in
+  `/home/phx/_old-preview-docs-20261008` (26 MB). Script rollback: `~/preview-*.sh.pre-phxpreview-20261008`
+  (those expect the old checkouts, so a rollback would re-clone into `/home/phx/preview`).
+
 **How to apply:**
+- Never run a preview, its `pnpm install` or any branch code as `phx` again.
 - Never "fix" a preview back to production data. Production previews are not offered, because the app
   reads through the service-role client and has no safe read-only mode.
 - Still open (each needs the owner's approval):

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 3a2cba8e-a064-42bb-bb4c-93a119e40088
-  modified: 2026-10-08T14:22:07.614Z
+  modified: 2026-10-08T14:29:03.201Z
 ---
 
 Changed 2026-10-08, at the owner's choice from three options: "first, every 10th, compaction".
@@ -34,6 +34,12 @@ Measured over 467 Phoenix sessions in the 3 days to 8 Oct:
 - To change the rules' wording, edit `task-rules.txt`.
 - Do not put the echo back.
 - If replies start drifting from the rules, the escape hatch `PHX_TASK_RULES_EVERY_PROMPT=1` restores every-prompt sending without an edit.
+
+**The effort-router note went the same way, also on 2026-10-08.**
+- `~/.claude/hooks/effort-advisor.mjs` now speaks once per session for the same advice: same model, effort and suggested level. It speaks again only when one of those changes.
+- The last advice shown is recorded in `~/.claude/relay/advice-shown/<session>.json`.
+- It had repeated on every matching prompt: 1.8 MB over the same 467 sessions, 89% of it repeats.
+- Backup: `hook-backups/effort-advisor.mjs.pre-once-2026-10-08`.
 
 **Left alone on purpose:**
 - Module memory. It is about 2.5 MB across all those sessions, and the owner's golden rule says it always loads.
