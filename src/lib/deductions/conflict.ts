@@ -146,6 +146,45 @@ export type LedgerClaimRow = {
  * `ledgerRowStillClaimsItsDays` so a run does not block itself out of re-producing its own rows.
  * Pure, so the three reads can be unit-tested without the database.
  */
+/**
+ * The source-scoped twin of `connectors/vacation.ts`'s `ledgerRowStillClaimsItsDays`, for a
+ * collector registered with `reconcilesSourceScope` instead of `reconcilesWholeCategory`.
+ *
+ * Same defect, same shape, different key. A collector whose re-run retires its own stale rows must
+ * not read those rows as "this day is already charged": the fresh scan then emits nothing for the
+ * day, and reconcile supersedes the row for being absent from the scan — so every other run flips
+ * the set, and the owner's decision on each retired row goes with it. Measured on production for
+ * `dsm_no_record` / 2026-09: rows created 2026-10-03 20:01 and 2026-10-06 03:40, 04:55, 23:35 and
+ * 23:40 UTC alternate, three managers re-created and superseded on alternate runs while a fourth
+ * flips the opposite way.
+ *
+ * The key is the SOURCE SYSTEM, never the category, because both of these collectors share their
+ * category with another writer — `dsm_no_record` shares `crm` with `crm_visits_mirror`, and
+ * `holiday_bridge` shares `other` with `manual_hr`. A sibling writer's row survives this run, so
+ * its day is genuinely taken and must still claim; only the rows this run is itself about to
+ * replace are excluded.
+ *
+ * 🔴 A LOCKED ROW IS THE EXCEPTION AND STILL CLAIMS ITS DAY. Reconcile refuses to supersede a
+ * candidate with `locked_at` — published money is never retracted automatically — so that row is
+ * still live after the run. Re-charging its day would put two live candidates on one employee-day,
+ * which `findDayCollisions` cannot see (it reports only a day claimed by more than one CATEGORY)
+ * and which surfaces as a raw unique_violation mid-publish from
+ * `deductions_publication_lines_guard_day_overlap`.
+ *
+ * Fails CLOSED: a row whose `source_system` is missing or unrecognised keeps claiming its day. The
+ * expensive mistake here is retiring a decided row, so an unknown row is left alone.
+ */
+export function ledgerRowStillClaimsItsDaysBySource(
+  row: { sourceSystem: string | null; lockedAt: string | null },
+  reconciledSourceSystems: readonly string[],
+): boolean {
+  const sourceSystem = String(row.sourceSystem ?? "").trim();
+  // Not one of the sources this run reconciles — it survives the run, so the day is taken.
+  if (!sourceSystem || !reconciledSourceSystems.includes(sourceSystem)) return true;
+  // This run's own row. Only a published one survives; the rest are ours to replace.
+  return Boolean(row.lockedAt);
+}
+
 export function collectClaimedLedgerDays(
   rows: ReadonlyArray<LedgerClaimRow>,
   keepRow?: (row: LedgerClaimRow) => boolean,
