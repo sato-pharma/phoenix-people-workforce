@@ -428,7 +428,10 @@ export async function runProductionPlanningWorkbookTests() {
     const text = row.getCell(1).value;
     if (typeof text !== "string") return;
     for (const planRow of plan.rows) {
-      if (text.startsWith(planRow.nameAr) && !materialRowOf.has(planRow.materialId)) {
+      // The packaging row is spelled out on the sheet (see the language section below), so it is found
+      // by that label; every other row by its stored name.
+      const sheetName = planRow.code === "CARTON" ? "علبة التغليف" : planRow.nameAr;
+      if (text.startsWith(sheetName) && !materialRowOf.has(planRow.materialId)) {
         materialRowOf.set(planRow.materialId, row.number);
       }
     }
@@ -545,6 +548,31 @@ export async function runProductionPlanningWorkbookTests() {
     `the English sheet still carries Arabic: ${JSON.stringify(arabicInEnglish)}`,
   );
   assert.ok(englishText.includes("Ivyronc"), "the English sheet names the product by its English name");
+  // The owner, 2026-10-08: the packaging material is `Box`, and the sheet also says "Total boxes" for
+  // the product count — so the packaging ROW is spelled out in the export, in both languages, and the
+  // bare stored name never stands in for it. Asserted on the row's own text, not a substring of the
+  // sheet, so the product-count labels cannot satisfy it.
+  assert.ok(
+    englishText.split("\n").some((line) => line.startsWith("Packaging box (")),
+    "the English sheet should name the packaging row 'Packaging box', not the bare 'Box' that the product count also uses",
+  );
+  assert.ok(
+    !englishText.split("\n").some((line) => line.startsWith("Box (")),
+    "no English material row may be the bare 'Box'",
+  );
+  const arabicRows: string[] = [];
+  sheet!.eachRow({ includeEmpty: false }, (row) => {
+    const text = row.getCell(1).value;
+    if (typeof text === "string") arabicRows.push(text);
+  });
+  assert.ok(
+    arabicRows.some((line) => line.startsWith("علبة التغليف (")),
+    "the Arabic sheet should name the packaging row 'علبة التغليف' (packaging box), not the bare stored name",
+  );
+  assert.ok(
+    !arabicRows.some((line) => line.startsWith("علبة (") || line.startsWith("كرتونة (")),
+    "no Arabic material row may be the bare stored packaging name",
+  );
   assert.ok(
     !/[^ -~]/.test(productionPlanningWorkbookFilename(plan)),
     "the download's filename is plain ASCII whichever language asked for the sheet",
