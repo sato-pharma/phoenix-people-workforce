@@ -71,10 +71,11 @@ export type VacationTimelineEventType =
 // Sequential approval workflow (Annual / Other / Compensatory). Backend keeps the generic step
 // keys below; the conceptual generic identity + dynamic display labels are derived in
 // src/lib/vacation/approval-flow.ts. Emergency + Sick keep the legacy parallel flow.
-export type VacationWorkflowStepKey = "direct_manager" | "manager_of_manager" | "hr";
+export type VacationWorkflowStepKey = "direct_manager" | "manager_of_manager" | "manager_level_3" | "hr";
 export type VacationGenericStepName =
   | "management_approval_1"
   | "management_approval_2"
+  | "management_approval_3"
   | "hr_acknowledgement";
 export type VacationApprovalStepStatus = "pending" | "approved" | "rejected";
 

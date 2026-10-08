@@ -285,6 +285,13 @@ export function runVacationModuleTests() {
     3,
     "the submit chain, the request row and the submission preview must all resolve the second approver through the shared shouldIncludeManagerOfManagerStep gate",
   );
+  // Owner rule 2026-10-08: Medical Rep -> DSM -> Regional Manager -> NSM -> HR. The third management
+  // step is resolved through ONE gate, by the submit chain and by the submission preview alike.
+  assert.equal(
+    (serviceSource.match(/shouldIncludeThirdManagementStep\(\{/g) ?? []).length,
+    2,
+    "the submit chain and the submission preview must both resolve the NSM third step through the shared shouldIncludeThirdManagementStep gate",
+  );
   assert.doesNotMatch(
     serviceSource,
     /(includeManagerOfManager|includesManagerOfManagerStep)\s*=\s*[^;]*requesterRole !== "District Manager"/,

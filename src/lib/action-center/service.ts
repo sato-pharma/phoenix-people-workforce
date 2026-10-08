@@ -981,7 +981,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
           .not("approved_at", "is", null)
           .order("approved_at", { ascending: false })
           .order("id", { ascending: false })),
-      // manager_of_manager decisions are never written to the main request's
+      // manager_of_manager and manager_level_3 decisions are never written to the main request's
       // manager_decision_by_hr_id column (only direct_manager is). Query the
       // steps table directly so the secondary manager sees their history too.
       // `id` is selected for the same reason as the marketing steps above.
@@ -989,7 +989,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         db
           .from("v2_vacation_approval_steps")
           .select("id,request_id,step_key,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
-          .eq("step_key", "manager_of_manager")
+          .in("step_key", ["manager_of_manager", "manager_level_3"])
           .or(decidedByAnyOfMine("approver_hr_id"))
           .neq("status", "pending")
           .not("decided_at", "is", null)
