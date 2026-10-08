@@ -266,15 +266,77 @@ export type DeductionsComment = {
   createdAt: string;
 };
 
+/** One labelled fact from a deduction's evidence — already in words, never a code or an HR id. */
+export type DeductionDisputeFact = { label: string; value: string };
+
+/** The decision recorded on a deduction, as the Disputes inbox shows it. */
+export type DeductionDisputeDecision = {
+  status: string;
+  reason: string;
+  hrNote: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  appliedValue: number | null;
+  appliedAmount: number | null;
+  /** null = never narrowed (every detected day charges); [] = every day cleared. */
+  appliedDates: string[] | null;
+};
+
+/**
+ * Everything the person answering a dispute needs to see WITHOUT leaving the Disputes tab (owner,
+ * 2026-10-08): what raised the deduction, the rule it was measured against, the days and the
+ * arithmetic, the evidence the check recorded, and the decision that put it on the payslip.
+ * Built by `buildDisputeBasis` (dispute-basis.ts) from rows the inbox read already loaded.
+ */
+export type DeductionDisputeBasis = {
+  detectedBy: string;
+  explanation: string;
+  reason: string | null;
+  severity: DeductionsSeverity | null;
+  needsReview: boolean;
+  unit: DeductionsUnit;
+  detectedValue: number;
+  detectedDates: string[];
+  estimatedAmount: number | null;
+  ratePerUnit: number | null;
+  rateBasis: string | null;
+  facts: DeductionDisputeFact[];
+  decision: DeductionDisputeDecision | null;
+  chargedAmount: number;
+  chargedValue: number;
+  publishedAt: string;
+  pushedAt: string | null;
+  pushedByName: string | null;
+};
+
+/** One person a reply is addressed to, by name — the Disputes inbox never shows an HR code. */
+export type DeductionDisputeRecipient = { name: string; title: string | null };
+
+/** Who a reply to this dispute reaches: the employee (To) and their managers (CC). */
+export type DeductionDisputeAudience = {
+  to: DeductionDisputeRecipient;
+  managers: DeductionDisputeRecipient[];
+};
+
+/** What happened to a reply once it was sent — shown under the composer so the sender can see it. */
+export type DeductionDisputeDelivery = {
+  to: DeductionDisputeRecipient & { telegramLinked: boolean };
+  cc: Array<DeductionDisputeRecipient & { telegramLinked: boolean; relation: "manager" | "sender" }>;
+};
+
 // One employee's dispute thread on a published deduction, as the ADMIN Deductions
 // screen reads it — the counterpart to the portal's per-line thread. A comment
 // mails HR with a link to /admin/deductions, so there has to be a place there that
-// actually shows it; this is the row that place renders. `line` is null when the
-// published line has since been withdrawn (the comment is still reachable — the
-// employee disputed something, and the fact it was later pulled is itself the answer).
+// actually shows it; this is the row that place renders. Only a deduction that is still
+// ACTIVE on the payslip is listed (owner, 2026-10-08), so `line` and `basis` are present for
+// every thread the inbox returns; they stay nullable for the pure grouping function's callers.
 export type AdminDeductionCommentThread = {
   candidateId: string;
   line: DeductionsPortalLine | null;
+  /** Why the deduction was made, in words — null only when the candidate row could not be read. */
+  basis?: DeductionDisputeBasis | null;
+  /** Who a reply reaches, so the sender sees the To and CC before pressing Reply. */
+  replyAudience?: DeductionDisputeAudience | null;
   comments: DeductionsComment[];
   /** The newest comment's createdAt — threads sort by this, most recent first. */
   latestCommentAt: string;

@@ -17,11 +17,19 @@
 // legacy pair it replaced.
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { salaryRecordsColumnForCategory } from "./calculations.ts";
 import { listDeductionsComments, listRecentDeductionsComments } from "./comments.ts";
 import { compactDeductionsHrId, normalizeMonthKey } from "./candidate-key.ts";
+import { resolveDisputeAudience, toDisputeAudience } from "./dispute-audience.ts";
+import {
+  buildDisputeBasis,
+  type DisputeCandidateRow,
+  type DisputeDecisionRow,
+  type DisputeLineExtraRow,
+} from "./dispute-basis.ts";
 import type {
   AdminDeductionCommentThread,
   DeductionsCategory,
@@ -270,5 +278,95 @@ export async function listPublishedDeductionCommentThreads(input?: {
 
   const candidateIds = Array.from(new Set(comments.map((comment) => comment.candidateId)));
   const linesByCandidate = await loadPublishedLinesByCandidate(candidateIds);
-  return groupDeductionCommentThreads(comments, linesByCandidate);
+  const threads = groupDeductionCommentThreads(comments, linesByCandidate);
+  return attachDisputeDetail(threads);
+}
+
+/** Names for a set of HR ids (the people who decided and pushed), keyed by canonical id. */
+async function loadEmployeeNames(hrIds: Array<string | null | undefined>): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const lookups = Array.from(new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId))));
+  if (lookups.length === 0) return names;
+  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, full_name").in("hr_id", lookups);
+  if (error) return names;
+  for (const row of (data ?? []) as Array<{ hr_id?: string | null; full_name?: string | null }>) {
+    const key = canonicalHrIdKey(row.hr_id);
+    const name = String(row.full_name ?? "").trim();
+    if (key && name) names.set(key, name);
+  }
+  return names;
+}
+
+/**
+ * Give every thread the two things the person answering needs beside the conversation (owner,
+ * 2026-10-08): WHY the deduction was made — the candidate row, its evidence and the decision that
+ * put it on the payslip — and WHO a reply reaches, the employee and their managers. Best-effort per
+ * part: a failed read leaves that part null and the thread still renders, because the conversation
+ * is the thing that must never be lost to a detail panel.
+ */
+async function attachDisputeDetail(threads: AdminDeductionCommentThread[]): Promise<AdminDeductionCommentThread[]> {
+  if (threads.length === 0) return threads;
+  const supabase = getSupabaseAdmin();
+  const candidateIds = threads.map((thread) => thread.candidateId);
+
+  const [candidatesResult, decisionsResult, extrasResult] = await Promise.all([
+    supabase
+      .from("deductions_candidates")
+      .select("id, category, source_system, unit, raw_value, estimated_amount, calculation_status, severity, reason, evidence, dates")
+      .in("id", candidateIds),
+    supabase
+      .from("deductions_decisions")
+      .select("candidate_id, decision_status, decision_reason, hr_note, applied_value, applied_amount, applied_dates, decided_by, decided_at, updated_at")
+      .in("candidate_id", candidateIds)
+      .order("updated_at", { ascending: false }),
+    supabase
+      .from("deductions_publication_lines")
+      .select("candidate_id, pushed_at, pushed_by")
+      .in("candidate_id", candidateIds)
+      .eq("line_status", "active"),
+  ]);
+
+  const candidates = new Map<string, DisputeCandidateRow>();
+  for (const row of (candidatesResult.data ?? []) as DisputeCandidateRow[]) candidates.set(row.id, row);
+  const decisions = new Map<string, DisputeDecisionRow>();
+  for (const row of (decisionsResult.data ?? []) as DisputeDecisionRow[]) {
+    // Newest first: the first row seen for a candidate is its current decision.
+    if (!decisions.has(row.candidate_id)) decisions.set(row.candidate_id, row);
+  }
+  const extras = new Map<string, DisputeLineExtraRow>();
+  for (const row of (extrasResult.data ?? []) as DisputeLineExtraRow[]) {
+    if (!extras.has(row.candidate_id)) extras.set(row.candidate_id, row);
+  }
+
+  const names = await loadEmployeeNames([
+    ...Array.from(decisions.values()).map((row) => row.decided_by),
+    ...Array.from(extras.values()).map((row) => row.pushed_by),
+  ]);
+  const nameFor = (hrId: string | null | undefined) => {
+    const key = canonicalHrIdKey(hrId);
+    return key ? names.get(key) ?? null : null;
+  };
+
+  return Promise.all(
+    threads.map(async (thread) => {
+      const candidate = candidates.get(thread.candidateId);
+      const basis =
+        candidate && thread.line
+          ? buildDisputeBasis({
+              candidate,
+              decision: decisions.get(thread.candidateId) ?? null,
+              line: thread.line,
+              lineExtra: extras.get(thread.candidateId) ?? null,
+              nameFor,
+            })
+          : null;
+      let replyAudience = null;
+      try {
+        replyAudience = thread.line ? toDisputeAudience(await resolveDisputeAudience(thread.line.employeeCode)) : null;
+      } catch {
+        replyAudience = null;
+      }
+      return { ...thread, basis, replyAudience };
+    }),
+  );
 }
