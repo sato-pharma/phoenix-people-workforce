@@ -1238,7 +1238,8 @@ try {
                 'body. Check it by hand if you built it.\n',
             );
           }
-        } catch {
+        } catch (e) {
+          if (e?.[Symbol.for('phx.hook-exit')]) throw e; // a deny above ended this hook (hook-dispatch.mjs)
           // Unreachable gh, unparseable JSON, modules absent — allow. Never block on a blind spot.
         }
 

@@ -21,11 +21,11 @@
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { wiredHookGroups } from "./support/hook-wiring.ts";
 
 const guardPath = resolve(".claude/hooks/risky-allow-guard.mjs");
-const settingsPath = resolve(".claude/settings.json");
 
 type Decision = { decision: "deny" | "silent"; reason: string };
 
@@ -184,13 +184,10 @@ export function runRiskyAllowGuardTests() {
 
   // 5. The wiring. A hook nothing runs is a comment — and a matcher missing a tool lets that route
   //    through while looking installed.
-  const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
-    hooks?: { PreToolUse?: Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> };
-  };
-  const entries = (settings.hooks?.PreToolUse ?? []).filter((entry) =>
+  const entries = wiredHookGroups("PreToolUse").filter((entry) =>
     (entry.hooks ?? []).some((hook) => (hook.command ?? "").includes("risky-allow-guard.mjs")),
   );
-  assert.ok(entries.length > 0, "the risky-allow guard must be registered in .claude/settings.json");
+  assert.ok(entries.length > 0, "the risky-allow guard must be registered (settings.json or the dispatch table)");
   const matchers = entries.flatMap((entry) => (entry.matcher ?? "").split("|"));
   for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit"]) {
     assert.ok(

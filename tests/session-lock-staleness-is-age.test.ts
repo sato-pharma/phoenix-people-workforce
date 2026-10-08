@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { wiredHookGroups } from "./support/hook-wiring.ts";
 
 /**
  * A session lock is stale by AGE alone. Nothing may teach a reader to judge one by its PID.
@@ -217,14 +218,11 @@ function testTheLockIsPerFolder(root: string) {
 }
 
 function testTheHeartbeatIsWired() {
-  const settings = JSON.parse(readFileSync(".claude/settings.json", "utf8")) as {
-    hooks?: Record<string, Array<{ matcher?: string; hooks?: Array<{ command?: string; timeout?: number }> }>>;
-  };
   // The mode is the first argument AFTER the script path, and the path is quoted because it is
   // built from ${CLAUDE_PROJECT_DIR} (which can hold spaces — it does on this machine). So match
   // across the closing quote rather than assuming `…session-lock.mjs <mode>` sits adjacent.
   const entries = (event: string, mode: string) =>
-    (settings.hooks?.[event] ?? []).flatMap((group) =>
+    wiredHookGroups(event).flatMap((group) =>
       (group.hooks ?? [])
         .filter((h) => new RegExp(String.raw`session-lock\.mjs"?\s+${mode}\b`).test(h.command ?? ""))
         .map((h) => ({ ...h, matcher: group.matcher ?? "" })),

@@ -231,5 +231,8 @@ async function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(() => {}).finally(() => process.exit(0));
+  // Awaited at top level, so the work is finished when this module finishes loading — the contract
+  // .claude/hooks/hook-dispatch.mjs needs to run it in-process.
+  await main().catch(() => {});
+  process.exit(0);
 }

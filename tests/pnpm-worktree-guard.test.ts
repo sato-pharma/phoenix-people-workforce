@@ -27,12 +27,12 @@
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { wiredHookGroups } from "./support/hook-wiring.ts";
 
 const guardPath = resolve(".claude/hooks/bash-guard.mjs");
-const settingsPath = resolve(".claude/settings.json");
 
 type Decision = { decision: "allow" | "deny"; reason: string };
 
@@ -157,8 +157,7 @@ export function runPnpmWorktreeGuardTests() {
   // grant in ~/.claude/settings.json — completely ungated. bash-guard's own matcher was `Bash`
   // alone until 2026-09-12, which is exactly how its worktree-removal branch sat dead for weeks.
   {
-    const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-    const entries = (settings?.hooks?.PreToolUse ?? []).filter((entry: { hooks?: { command?: string }[] }) =>
+    const entries = wiredHookGroups("PreToolUse").filter((entry) =>
       (entry.hooks ?? []).some((hook) => String(hook.command ?? "").includes("bash-guard.mjs")),
     );
     assert.equal(entries.length, 1, "bash-guard.mjs must be registered exactly once as a PreToolUse hook");

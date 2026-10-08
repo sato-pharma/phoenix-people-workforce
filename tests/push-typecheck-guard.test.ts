@@ -24,9 +24,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import { VERDICT_DIR_NAME, mergeVerdictRecord } from "../scripts/remote-check-plan.mjs";
+import { wiredHookGroups } from "./support/hook-wiring.ts";
 
 const hookPath = resolve(".claude/hooks/push-typecheck-guard.mjs");
-const settingsPath = resolve(".claude/settings.json");
 
 type Decision = { decision: "allow" | "deny"; reason: string; context: string; ms: number };
 
@@ -143,17 +143,16 @@ export function runPushTypecheckGuardTests() {
   assert.ok(existsSync(hookPath), `the hook is not at ${hookPath}`);
 
   // ── Wired, and with a timeout of SECONDS: it reads a file, it never waits ───────────────────────────
-  const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-  const wired = (settings.hooks?.PreToolUse ?? []).find((entry: { hooks?: Array<{ command?: string }> }) =>
+  const wired = wiredHookGroups("PreToolUse").find((entry) =>
     (entry.hooks ?? []).some((h) => String(h.command ?? "").includes("push-typecheck-guard.mjs")),
   );
-  assert.ok(wired, "push-typecheck-guard.mjs must be registered under PreToolUse in .claude/settings.json");
+  assert.ok(wired, "push-typecheck-guard.mjs must be registered under PreToolUse (settings.json or the dispatch table)");
   assert.match(String(wired.matcher), /Bash/, "it must watch the Bash tool");
   assert.match(String(wired.matcher), /PowerShell/, "it must watch the PowerShell tool — sessions push from both");
-  const hookEntry = wired.hooks.find((h: { command?: string }) => String(h.command ?? "").includes("push-typecheck-guard.mjs"));
+  const hookEntry = (wired.hooks ?? []).find((h) => String(h.command ?? "").includes("push-typecheck-guard.mjs"));
   assert.ok(
-    Number(hookEntry.timeout) > 0 && Number(hookEntry.timeout) <= 15,
-    `the push guard only reads a record, so its settings timeout must be seconds, not minutes; got ${hookEntry.timeout}`,
+    Number(hookEntry?.timeout) > 0 && Number(hookEntry?.timeout) <= 15,
+    `the push guard only reads a record, so its settings timeout must be seconds, not minutes; got ${hookEntry?.timeout}`,
   );
   const hookSource = readFileSync(hookPath, "utf8");
   assert.doesNotMatch(hookSource, /\bspawn(?:Sync)?\(/, "the push guard must not start any process except `git` (execFileSync)");
