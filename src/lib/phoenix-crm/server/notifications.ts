@@ -1,10 +1,12 @@
 /**
  * Phoenix CRM — who is told what.
  *
- * Owner rules: in-app and Telegram, never email (the module's email is hard-blocked in
- * src/lib/notifications/phoenix-crm-channel-guard.ts; the policy row is the intent, the guard the
- * enforcement) — with ONE exception the owner ordered on 2026-10-01: a rep's request to edit a week he
- * already sent goes by email too, at every step (`phoenixCrmChannels` names the five event types).
+ * Owner rules: in-app, Telegram and the phone; email ONLY for the event types the module's guard lists
+ * (src/lib/notifications/phoenix-crm-channel-guard.ts — the policy row is the intent, the guard the
+ * enforcement). Since 2026-10-08 (owner: "email for every action on CRM to the person responsible") that is
+ * every person-to-person step: a plan sent / approved / returned, a request waiting / decided, an off-plan
+ * visit waiting / moving, a visit ask and its answer, and each step of a plan edit. `phoenixCrmChannels`
+ * answers for each event type; this file never names a channel.
  *
  * 🔴 THE TEST WORLD TELLS THE TEST ACCOUNTS, AND ONLY THEM (owner, 2026-09-28). A test-world notice
  * is addressed to the employee it mirrors — that is the id the bell queries by — and carries the

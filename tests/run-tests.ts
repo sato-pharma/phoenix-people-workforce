@@ -1693,6 +1693,7 @@ import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
+import { runPhoenixCrmNoticeBadgeTests } from "./phoenix-crm-notice-badges.test.ts";
 import { runPhoenixCrmDayStartTests } from "./phoenix-crm-day-start.test.ts";
 import { runPhoenixCrmFirstVisitTests } from "./phoenix-crm-first-visit.test.ts";
 import { runPhoenixCrmActivityMirrorTests } from "./phoenix-crm-activity-mirror.test.ts";
@@ -6087,8 +6088,13 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM notices are in-app + Telegram only, never email, and a Super Admin test entry tells nobody",
+  "Phoenix CRM notices go in-app, by Telegram and to the phone, and by email for every person-to-person step (plan, request, off-plan visit, visit ask, plan edit) but never for the feeds, the forecast alert or the validate-again notice; a Super Admin test entry tells nobody",
   runPhoenixCrmEmailBlockTests,
+);
+
+await runTest(
+  "Phoenix CRM pulsing badges: an unread notice marks the module it opens, the feeds never pulse, the number caps at 99+, the chooser and the module page draw it, and it clears from a mounted page, never a server render",
+  runPhoenixCrmNoticeBadgeTests,
 );
 
 await runTest(

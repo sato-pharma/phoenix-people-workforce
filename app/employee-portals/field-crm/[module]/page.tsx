@@ -2,11 +2,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { PhoenixCrmNewNotices } from "@/components/phoenix-crm/new-badge";
+import { PhoenixCrmNoticesSeen } from "@/components/phoenix-crm/notices-seen";
 import { PhoenixCrmApp } from "@/components/phoenix-crm/phoenix-crm-app";
 import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { loadPhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/server/unread-notices";
 import { phoenixCrmModuleForSlug } from "@/lib/phoenix-crm/modules";
 import {
   loadPhoenixCrmPage,
@@ -51,7 +54,7 @@ export default async function PhoenixCrmModulePage({
   }
 
   const label = entry.label;
-  const load = await loadPhoenixCrmPage(access);
+  const [load, unread] = await Promise.all([loadPhoenixCrmPage(access), loadPhoenixCrmUnreadByModule(access)]);
   // `?add=visit` / `?add=week` still arrive here from the portal's "+", and the shell reads them.
   void (await searchParams);
 
@@ -74,6 +77,9 @@ export default async function PhoenixCrmModulePage({
               ← All of Phoenix CRM
             </Link>
           </p>
+          {/* What is new for him here (owner, 2026-10-08), cleared once this page is really on his screen. */}
+          <PhoenixCrmNewNotices entry={unread?.[moduleKey]} />
+          <PhoenixCrmNoticesSeen moduleKey={moduleKey} pending={(unread?.[moduleKey]?.count ?? 0) > 0} />
           <PhoenixCrmApp initialOverview={load.overview} initialTab={moduleKey} single surface="portal" />
         </div>
       </EmployeePortalPageShell>

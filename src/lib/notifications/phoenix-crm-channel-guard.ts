@@ -4,8 +4,10 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // request waiting for the district manager, a request decided, a weekly plan sent for review, a
 // plan approved or returned. Email is blocked for the whole module.
 //
-// FOUR exceptions, each by the owner's own order. Those event types — and only those — keep their
-// email. Every other Phoenix CRM notice, the 06:55 digest included, stays email-free.
+// FIVE exceptions, each by the owner's own order. Those event types — and only those — keep their
+// email. Every other Phoenix CRM notice, the 06:55 digest included, stays email-free. The fifth
+// (2026-10-08) is every person-to-person step of a plan, a request, an off-plan visit and a visit ask;
+// see the note at the end of the list below.
 //
 // (1) 2026-10-01: a rep's request to edit a week he already sent runs the district manager → SFE → HR,
 // and "every step" goes by email, in-app and Telegram to the next person to act, the rep, the district
@@ -71,6 +73,34 @@ export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
   // narrowed `day_start_confirmed` does not arise: one address, and only while a decision is waiting.
   // The rep's side is untouched — he still reads only "the system is checking" (Golden Rule #1).
   "validation_review_waiting",
+  // (5) 2026-10-08: "I need Telegram, in app, email for every action on CRM to the person responsible".
+  // Every notice that tells ONE named person something about his own work or a decision waiting on him
+  // now emails too: a weekly or monthly plan sent for review and its approval or return, a grade / drop /
+  // add / restore request waiting and its decision, an off-plan visit waiting and each time it moves, and
+  // a rep's ask for a visit and its answer. They are all person-to-person steps, a handful a day each —
+  // not feeds. What stays OFF this list is what he has ruled in-app (and Telegram) only, by name: the
+  // daily forecast alert, the courtesy copy of a visit ask, the SFE's day-start and re-send copies, the
+  // plan-edit expiry, the rep's validate-again notice, the activity mirror, the hourly rollup, the 06:55
+  // digest, the fraud scan and the plan reminders. A feed to the widest readers is a burial, not a notice.
+  "plan_waiting",
+  "plan_approved",
+  "plan_returned",
+  "monthly_plan_waiting",
+  "monthly_plan_approved",
+  "monthly_plan_returned",
+  "grade_request_waiting",
+  "drop_request_waiting",
+  "add_request_waiting",
+  "restore_request_waiting",
+  "request_approved",
+  "request_refused",
+  "unplanned_visit_waiting",
+  "unplanned_visit_approved",
+  "unplanned_visit_refused",
+  "unplanned_visit_moved_on",
+  "visit_ask_waiting",
+  "visit_ask_accepted",
+  "visit_ask_declined",
 ];
 
 /**
