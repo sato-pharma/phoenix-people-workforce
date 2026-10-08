@@ -1018,8 +1018,10 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       const isHrDecider = decidedByMe(row.hr_decision_by_hr_id);
       const decisionRaw = isHrDecider && row.hr_decision ? row.hr_decision : row.manager_decision;
       const decidedAt = isHrDecider && row.hr_decision_at ? row.hr_decision_at : row.manager_decision_at;
-      // Returned requests set manager_decision_at but leave manager_decision NULL — detect via status.
-      const decision = decodeDecision(decisionRaw) ?? (row.status === "returned" ? ("returned" as const) : null);
+      // A return stamps manager_decision_at/_by but cannot touch manager_decision (its check allows only
+      // approved/rejected), so it is NULL on a first-stage return and still "approved" when HR returns
+      // after the direct manager approved. The request's current status is the truth, so it wins.
+      const decision = row.status === "returned" ? ("returned" as const) : decodeDecision(decisionRaw);
       if (!decision || (!isMgrDecider && !isHrDecider)) continue;
       items.push({
         id: `history:leave:${row.id}`,
