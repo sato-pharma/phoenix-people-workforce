@@ -572,6 +572,19 @@ export function runProductionPlanningStringsTests() {
     );
   }
 
+  // The language switch names the Arabic option in the language being read, and the workspace file
+  // holds NO Arabic character in code at all: every word on screen comes from a catalogue, so an
+  // Arabic literal in the component is a word the English view cannot translate.
+  assert.equal(PP.languageArabic, "العربية", "the Arabic screen labels the option in Arabic script");
+  assert.equal(PP_EN.languageArabic, "Arabic", "the English screen labels it with the word Arabic");
+  const arabicLetter = new RegExp(`[${String.fromCharCode(0x600)}-${String.fromCharCode(0x6ff)}]`);
+  assert.ok(
+    !arabicLetter.test(
+      stripComments(readFileSync("src/components/production-planning/production-planning-workspace.tsx", "utf8")),
+    ),
+    "the workspace component holds an Arabic literal - route it through the string catalogue",
+  );
+
   // ── The reorder EMAIL stays Arabic, whichever way the toggle is set ───────────────────────────
   //
   // Deliberate, and not an oversight the toggle forgot: four named people were given an Arabic

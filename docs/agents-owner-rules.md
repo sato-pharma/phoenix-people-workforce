@@ -6647,6 +6647,10 @@ per-reader choice over it.
   carries `S.name(item)` (Arabic reads `nameAr`; English reads `nameEn`, falling back to Arabic only if
   the English name is blank) and neither the workspace nor the workbook may read `.nameAr` again. The
   Excel filename now comes from `productNameEn` in plain ASCII, since it travels in a header.
+  The language switch follows the same rule (`languageArabic`: Arabic script on the Arabic screen, the
+  word "Arabic" on the English one), so the English screen holds no Arabic character at all. Measured
+  2026-10-08 by server-rendering all five tabs plus the header from the real production payload:
+  0 Arabic runs in English against 807 in Arabic (the positive control).
 
 **The two things the toggle cannot reach**, both deliberate: the portal shell's `title` and
 `errorBoundaryTitle` are server props on a server component, so the client context cannot see them —
