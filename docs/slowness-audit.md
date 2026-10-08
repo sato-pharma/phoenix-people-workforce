@@ -72,11 +72,22 @@ this repo (`bash-guard`, `push-typecheck-guard`, `module-memory-injector`, `trap
 cheap — **process creation is the entire cost**, paid once per hook per call, and it inflates with
 memory pressure.
 
+🔴 **Both rows above are CPU, not wait — corrected 2026-10-08, later the same day.** Claude Code
+starts every matching hook at once, so a tool call is held for the SLOWEST hook, not the sum: the
+1,008ms was ten processes' CPU, while the call itself stood still for roughly one hook's time. The
+audit now prints the two apart, like its CI layer — **wait** (the slowest hook, named) and **CPU**
+(the sum, over N processes). First reading after the fix, at 3.3 GB free: wait **132ms** per Bash
+call (`trap-injector`), CPU **918ms** over 9 processes. The slowest hook timed alone is a FLOOR on
+the wait — ten spawns at once contend for the same cores and RAM, so a starved box waits longer than
+any one of them. Pinned by `hookWaitIsTheSlowestNotTheSum` in `tests/slow-audit.test.ts`. A
+`--history` record from before the fix holds only the sum and is labelled so; the delta skips it
+rather than print a fall that never happened.
+
 So the hook total rises and falls with free RAM. Quoting it as an independent cause would send
 someone to delete guards that each exist because of a real incident, and would not fix the thing
 actually making the box slow. **One dispatcher process in place of nine would return most of it**
-and is worth doing on its own merits — roughly 600ms per Bash call at healthy RAM — but it is a
-second-order win and it is not why the box is slow.
+and is worth doing on its own merits — roughly 600ms of CPU per Bash call at healthy RAM, which
+is spawn churn on a RAM-tight box rather than time each call waits — but it is a second-order win and it is not why the box is slow.
 
 ## CI is not the problem
 
@@ -145,7 +156,7 @@ checked, so renaming an entry cannot smuggle one in.
 | `availableFloorMB` | 1,800 MB | `mem-watchdog.ps1`'s own reap floor — kept in sync deliberately |
 | `availableFreezeMB` | 1,000 MB | This box has bluescreened below it, with no dump |
 | `rendererHotCorePct` | 50% | One Claude process burning half a core or more |
-| `hookBudgetMs` | 400ms | Per tool call, summed across blocking PreToolUse hooks |
+| `hookBudgetMs` | 400ms | Per tool call: the SLOWEST blocking PreToolUse hook — they run in parallel |
 
 ## Related
 

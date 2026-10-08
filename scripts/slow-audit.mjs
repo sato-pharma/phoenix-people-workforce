@@ -218,8 +218,12 @@ function transcripts() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Layer 4 — hooks. Every PreToolUse hook is a separate node process, and they
-// block the tool call. The number that matters is not any one hook's time but
-// the SUM per tool call, because that is what is paid on every single call.
+// block the tool call — but Claude Code starts every matching hook AT ONCE, so the
+// call waits for the SLOWEST one, not for the sum. The sum is CPU the box pays.
+// Same split as the CI layer below: the wait and the cost are reported apart,
+// and quoting one as the other is how a ~250ms wait got read as a 1,008ms one.
+// The slowest hook timed ALONE is a floor on the wait: ten spawns at once contend
+// for the same cores and RAM, so a starved box waits longer than any one of them.
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * The DECLARED probe list, before any existence filter.
@@ -266,6 +270,34 @@ export const HOOK_PROBES = (projectDir) => {
  */
 export const HOOKS = (projectDir) => HOOK_PROBES(projectDir).filter(([, script]) => existsSync(script));
 
+/**
+ * The per-tool-call cost of a set of timed hooks, split the way they are paid.
+ *
+ * `wait*` is the SLOWEST hook registered for that tool kind — matching hooks run in parallel, so
+ * that is how long the call is held. `cpu*` is the SUM — every one of them is still a process the
+ * box has to create. Never report the sum as the wait (the 2026-10-08 audit did: 1,008ms "per Bash
+ * call" was CPU across ten processes, not time the call stood still).
+ *
+ * @param {{label: string, ms: number, fires: string[]}[]} rows
+ */
+export function hookCost(rows) {
+  const of = (kind) => rows.filter((r) => r.fires.includes(kind));
+  const wait = (kind) => (of(kind).length ? num(Math.max(...of(kind).map((r) => r.ms)), 0) : 0);
+  const cpu = (kind) => num(of(kind).reduce((a, r) => a + r.ms, 0), 0);
+  const slowest = (kind) => of(kind).reduce((best, r) => (best === null || r.ms > best.ms ? r : best), null)?.label ?? null;
+  return {
+    rows: [...rows].sort((a, b) => b.ms - a.ms),
+    waitPerBashCallMs: wait('bash'),
+    waitPerEditCallMs: wait('edit'),
+    waitPerGrepCallMs: wait('grep'),
+    waitPerReadCallMs: wait('read'),
+    slowestBashHook: slowest('bash'),
+    cpuPerBashCallMs: cpu('bash'),
+    cpuPerEditCallMs: cpu('edit'),
+    spawnsPerBashCall: of('bash').length,
+  };
+}
+
 async function hooks(projectDir) {
   const payload = JSON.stringify({
     session_id: 'slow-audit-probe',
@@ -292,16 +324,7 @@ async function hooks(projectDir) {
     }
     rows.push({ label, ms: num(Math.min(...times), 0), fires });
   }
-  const perCall = (kind) => num(rows.filter((r) => r.fires.includes(kind)).reduce((a, r) => a + r.ms, 0), 0);
-  return {
-    baselineMs: baseline,
-    rows: rows.sort((a, b) => b.ms - a.ms),
-    perBashCallMs: perCall('bash'),
-    perEditCallMs: perCall('edit'),
-    perGrepCallMs: perCall('grep'),
-    perReadCallMs: perCall('read'),
-    spawnsPerBashCall: rows.filter((r) => r.fires.includes('bash')).length,
-  };
+  return { baselineMs: baseline, ...hookCost(rows) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -412,7 +435,7 @@ export const THRESHOLDS = {
   availableFreezeMB: 1000,  // below this, this box has bluescreened with no dump
   availableFloorMB: 1800,   // mem-watchdog.ps1's reap floor
   rendererHotCorePct: 50,   // one Claude process burning half a core or more
-  hookBudgetMs: 400,        // per tool call, summed across blocking PreToolUse hooks
+  hookBudgetMs: 400,        // per tool call: the SLOWEST blocking PreToolUse hook (they run in parallel)
 };
 
 function verdict(m, a, h) {
@@ -440,11 +463,11 @@ function verdict(m, a, h) {
       lever: 'Archiving finished sessions releases it. Never stop or restart the app from a session.',
     });
   }
-  if (h && h.perBashCallMs !== null && h.perBashCallMs > THRESHOLDS.hookBudgetMs) {
+  if (h && h.waitPerBashCallMs !== null && h.waitPerBashCallMs > THRESHOLDS.hookBudgetMs) {
     found.push({
       rank: found.length + 1, layer: 'settings', severity: 'note',
-      what: `PreToolUse hooks cost ${h.perBashCallMs}ms per Bash call and ${h.perEditCallMs}ms per Edit — ${h.spawnsPerBashCall} separate node processes per Bash call, against a ${h.baselineMs}ms floor for one.`,
-      why: 'Each hook is its own process and each blocks the tool call. The guards themselves are cheap; process creation is the cost, paid once per hook per call.',
+      what: `PreToolUse hooks hold each Bash call at least ${h.waitPerBashCallMs}ms (the slowest, ${h.slowestBashHook}) and each Edit ${h.waitPerEditCallMs}ms; together the ${h.spawnsPerBashCall} processes per Bash call cost ${h.cpuPerBashCallMs}ms of CPU, against a ${h.baselineMs}ms floor for one.`,
+      why: 'Matching hooks start together, so the call waits for the slowest one; the rest is CPU, and on a starved box ten spawns at once contend and stretch that wait. The guards themselves are cheap; process creation is the cost.',
       lever: 'One dispatcher process instead of N would return most of it. Do not simply delete guards — each was built after a real incident.',
     });
   }
@@ -490,7 +513,9 @@ function delta(prev, now) {
     availableMB: f(prev.machine?.availableMB, now.machine.availableMB),
     engines: f(prev.app?.engines, now.app.engines),
     totalWsMB: f(prev.app?.totalWsMB, now.app.totalWsMB),
-    perBashCallMs: f(prev.hooks?.perBashCallMs, now.hooks?.perBashCallMs),
+    // A record from before 2026-10-08's fix holds only the old SUM (perBashCallMs). Comparing it
+    // with the new wait would print a fall that never happened, so an old record yields no delta.
+    waitPerBashCallMs: f(prev.hooks?.waitPerBashCallMs, now.hooks?.waitPerBashCallMs),
   };
 }
 
@@ -525,8 +550,9 @@ function table(s) {
   }
   L.push('');
   if (s.hooks) {
-    L.push('HOOKS  (per tool call, summed across blocking PreToolUse hooks)');
-    L.push(`  Bash ${s.hooks.perBashCallMs}ms over ${s.hooks.spawnsPerBashCall} processes   Edit ${s.hooks.perEditCallMs}ms   Grep ${s.hooks.perGrepCallMs}ms   Read ${s.hooks.perReadCallMs}ms`);
+    L.push('HOOKS  (wait = the slowest hook, they run in parallel; CPU = the sum; never quote one as the other)');
+    L.push(`  wait  Bash ${s.hooks.waitPerBashCallMs}ms (${s.hooks.slowestBashHook})   Edit ${s.hooks.waitPerEditCallMs}ms   Grep ${s.hooks.waitPerGrepCallMs}ms   Read ${s.hooks.waitPerReadCallMs}ms`);
+    L.push(`  CPU   Bash ${s.hooks.cpuPerBashCallMs}ms over ${s.hooks.spawnsPerBashCall} processes   Edit ${s.hooks.cpuPerEditCallMs}ms`);
     L.push(`  one bare node spawn on this box: ${s.hooks.baselineMs}ms  <- the floor each hook pays before running a line`);
     for (const r of s.hooks.rows.slice(0, 4)) L.push(`    ${String(r.ms).padStart(5)}ms  ${r.label}`);
     L.push('');
@@ -552,7 +578,7 @@ function table(s) {
   L.push('');
   if (s.delta) {
     L.push(`SINCE THE LAST AUDIT (${s.delta.since} Cairo)`);
-    L.push(`  faults/sec ${sign(s.delta.pagesInPerSec)}   available RAM ${sign(s.delta.availableMB, ' MB')}   engines ${sign(s.delta.engines)}   app resident ${sign(s.delta.totalWsMB, ' MB')}   hooks/Bash ${sign(s.delta.perBashCallMs, 'ms')}`);
+    L.push(`  faults/sec ${sign(s.delta.pagesInPerSec)}   available RAM ${sign(s.delta.availableMB, ' MB')}   engines ${sign(s.delta.engines)}   app resident ${sign(s.delta.totalWsMB, ' MB')}   hook wait/Bash ${s.delta.waitPerBashCallMs === null ? 'n/a' : sign(s.delta.waitPerBashCallMs, 'ms')}`);
   } else {
     L.push('SINCE THE LAST AUDIT   no previous record — this one is the baseline.');
   }
@@ -569,7 +595,7 @@ async function main() {
     const h = history();
     if (!h.length) { console.log('no records yet'); return; }
     for (const r of h) {
-      console.log(`${r.at}  faults/sec ${String(r.machine?.pagesInPerSec).padStart(6)}  freeMB ${String(r.machine?.availableMB).padStart(6)}  engines ${String(r.app?.engines).padStart(3)}  appMB ${String(r.app?.totalWsMB).padStart(6)}  hooks/Bash ${String(r.hooks?.perBashCallMs ?? '-').padStart(5)}ms`);
+      console.log(`${r.at}  faults/sec ${String(r.machine?.pagesInPerSec).padStart(6)}  freeMB ${String(r.machine?.availableMB).padStart(6)}  engines ${String(r.app?.engines).padStart(3)}  appMB ${String(r.app?.totalWsMB).padStart(6)}  ${!r.hooks ? 'hook wait/Bash     -' : r.hooks.waitPerBashCallMs !== undefined ? `hook wait/Bash ${String(r.hooks.waitPerBashCallMs).padStart(5)}ms` : `hook CPU/Bash ${String(r.hooks.perBashCallMs ?? '-').padStart(5)}ms (old record: sum only)`}`);
     }
     return;
   }
