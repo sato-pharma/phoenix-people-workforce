@@ -26,14 +26,17 @@ export type BrevoKeepaliveResult =
   // Key rejected, or Brevo unreachable. The caller escalates this; see the route.
   | { status: "failed"; reason: string };
 
+/** Every Brevo account in the failover chain: the first, then the extra one (BREVO_API_KEY_2). */
+export const brevoKeepaliveKeyEnvs = ["BREVO_API_KEY", "BREVO_API_KEY_2"] as const;
+
 /**
- * Authenticates BREVO_API_KEY against Brevo. Never throws — the caller decides what a failure
- * means, so this stays usable from contexts (like a digest) where a dead backup must not abort
- * the surrounding work.
+ * Authenticates one Brevo key (BREVO_API_KEY by default) against Brevo. Never throws — the caller
+ * decides what a failure means, so this stays usable from contexts (like a digest) where a dead
+ * backup must not abort the surrounding work.
  */
-export async function pingBrevoApiKey(): Promise<BrevoKeepaliveResult> {
-  const apiKey = process.env.BREVO_API_KEY?.trim();
-  if (!apiKey) return { status: "skipped", reason: "BREVO_API_KEY is not configured — no email failover to keep alive." };
+export async function pingBrevoApiKey(keyEnv: string = "BREVO_API_KEY"): Promise<BrevoKeepaliveResult> {
+  const apiKey = process.env[keyEnv]?.trim();
+  if (!apiKey) return { status: "skipped", reason: `${keyEnv} is not configured — no email failover to keep alive.` };
 
   let response: Response;
   try {

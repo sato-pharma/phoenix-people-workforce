@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
-import { pingBrevoApiKey } from "@/lib/email/brevo-keepalive";
+import { brevoKeepaliveKeyEnvs, pingBrevoApiKey } from "@/lib/email/brevo-keepalive";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -30,9 +30,15 @@ export async function GET(request: Request) {
 
   try {
     const result = await withDeadMansSwitch("phoenix-brevo-keepalive", async () => {
-      const outcome = await pingBrevoApiKey();
-      if (outcome.status === "failed") throw new Error(outcome.reason);
-      return outcome;
+      // Every Brevo account in the chain dies the same way, so each configured key is pinged; the
+      // first account's outcome stays at the top level, the rest are listed beside it.
+      const outcomes = await Promise.all(brevoKeepaliveKeyEnvs.map((keyEnv) => pingBrevoApiKey(keyEnv)));
+      const failures = outcomes.flatMap((outcome, index) =>
+        outcome.status === "failed" ? [`${brevoKeepaliveKeyEnvs[index]}: ${outcome.reason}`] : [],
+      );
+      if (failures.length > 0) throw new Error(failures.join(" "));
+      const [first, ...others] = outcomes;
+      return { ...first, otherAccounts: others.map((outcome, index) => ({ keyEnv: brevoKeepaliveKeyEnvs[index + 1], ...outcome })) };
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
