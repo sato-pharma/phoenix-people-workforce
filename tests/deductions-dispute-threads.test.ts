@@ -11,8 +11,8 @@ import type { DeductionsComment, DeductionsPortalLine } from "../src/lib/deducti
  * dispute was unreachable in-app. This pins the two load-bearing facts behind the fix:
  *
  *   1. groupDeductionCommentThreads turns newest-first comments into per-candidate threads,
- *      ordered by their newest comment, attaching each candidate's published line (null when the
- *      line was later withdrawn — the comment must still be reachable).
+ *      ordered by their newest comment, attaching each candidate's published line (a candidate with
+ *      no ACTIVE line — withdrawn, "Do Not Take Action" — is dropped, owner 2026-10-08).
  *   2. the comment notification deep-links to the Disputes tab on the exact candidate, so the
  *      link opens on the dispute rather than the bare month workspace it used to.
  */
@@ -79,13 +79,29 @@ export function runDeductionsDisputeThreadsTests() {
     assert.equal(threads[1].candidateId, "cand-B");
   }
 
-  // 2. A comment on a since-withdrawn deduction still produces a reachable thread, line = null.
+  // 2. A comment on a deduction with no ACTIVE line (set to "Do Not Take Action" and withdrawn, owner
+  //    2026-10-08) is not a dispute to work: it is dropped, and the other threads are untouched.
   {
-    const comments = [comment({ id: "c-x", candidateId: "cand-gone", createdAt: "2026-10-02T00:00:00.000Z" })];
-    const threads = groupDeductionCommentThreads(comments, new Map());
-    assert.equal(threads.length, 1, "a withdrawn-line comment is still shown");
-    assert.equal(threads[0].line, null, "line is null when no active published line exists");
-    assert.equal(threads[0].comments[0].id, "c-x");
+    const comments = [
+      comment({ id: "c-x", candidateId: "cand-gone", createdAt: "2026-10-02T00:00:00.000Z" }),
+      comment({ id: "c-live", candidateId: "cand-live", createdAt: "2026-10-01T00:00:00.000Z" }),
+    ];
+    const threads = groupDeductionCommentThreads(comments, new Map([["cand-live", line("cand-live", "Live One")]]));
+    assert.equal(threads.length, 1, "a comment on a withdrawn deduction is not listed");
+    assert.equal(threads[0].candidateId, "cand-live", "the active deduction's thread stays");
+  }
+
+  // 2b. The badge counts the same set as the tab: it asks for the ACTIVE line of each candidate
+  //     awaiting HR, so a withdrawn deduction cannot hold it up.
+  {
+    const source = readFileSync(new URL("../src/lib/deductions/comments.ts", import.meta.url), "utf8");
+    const start = source.indexOf("export async function countOpenDeductionsDisputes(");
+    assert.ok(start > -1, "countOpenDeductionsDisputes must exist");
+    assert.match(
+      source.slice(start),
+      /deductions_publication_lines[\s\S]*?\.eq\("line_status", "active"\)/,
+      "the badge must count only disputes whose deduction still has an active line",
+    );
   }
 
   // 3. The notification deep-links to the Disputes tab on the exact candidate — the whole point of
