@@ -359,6 +359,7 @@ export async function runEmailProviderFailoverTests() {
       "RESEND_API_KEY",
       "RESEND_API_KEY_2",
       "RESEND_EMAIL_FROM_2",
+      "RESEND_API_KEY_3",
       "BREVO_API_KEY",
       "BREVO_API_KEY_2",
       "BREVO_EMAIL_FROM",
@@ -377,6 +378,14 @@ export async function runEmailProviderFailoverTests() {
       process.env.BREVO_API_KEY_2 = "brevo_two";
       const chain = resolveEmailProviders();
       assert.deepEqual(chain.map((p) => p.name), ["resend", "resend-2", "brevo", "brevo-2"], "both Resend accounts before both Brevo accounts");
+
+      process.env.RESEND_API_KEY_3 = "re_three";
+      assert.deepEqual(
+        resolveEmailProviders().map((p) => p.name),
+        ["resend", "resend-2", "resend-3", "brevo", "brevo-2"],
+        "the third Resend account comes after the second and before any Brevo account",
+      );
+      delete process.env.RESEND_API_KEY_3;
 
       process.env.EMAIL_FAILOVER_ENABLED = "false";
       assert.deepEqual(resolveEmailProviders().map((p) => p.name), ["resend"], "the kill switch drops every backup account");

@@ -15,11 +15,12 @@
 // behaves exactly as before — a 429 becomes a RetryableEmailError the outbox retries later.
 //
 // EXTRA ACCOUNTS (owner, 2026-10-08 — Resend's daily quota runs out every day): a second Resend
-// account and a second Brevo account join the chain the moment their key is set, in this order:
+// account, a third Resend account and a second Brevo account join the chain the moment their key
+// is set, in this order:
 //
-//   resend (RESEND_API_KEY) → resend-2 (RESEND_API_KEY_2) → brevo (BREVO_API_KEY) → brevo-2 (BREVO_API_KEY_2)
+//   resend → resend-2 (RESEND_API_KEY_2) → resend-3 (RESEND_API_KEY_3) → brevo (BREVO_API_KEY) → brevo-2 (BREVO_API_KEY_2)
 //
-// Each extra account may send from its own verified address (RESEND_EMAIL_FROM_2 /
+// Each extra account may send from its own verified address (RESEND_EMAIL_FROM_<n> /
 // BREVO_EMAIL_FROM_2), because one sending domain can be verified in only one Resend account. Every
 // hand-off between them obeys the same duplicate-safe rules above — a quota refusal or an
 // accepted-then-failed message moves on, an ambiguous failure never does.
@@ -232,8 +233,9 @@ export function applySenderOverride(from: string, override: string | undefined):
   return name ? `${name} <${value}>` : value;
 }
 
-/** Extra accounts beyond the first, by env suffix: RESEND_API_KEY_2, BREVO_API_KEY_2. */
-export const extraEmailAccountSuffixes = ["2"] as const;
+/** Extra accounts beyond the first, by env suffix: RESEND_API_KEY_2 and _3, BREVO_API_KEY_2. */
+export const extraResendAccountSuffixes = ["2", "3"] as const;
+export const extraBrevoAccountSuffixes = ["2"] as const;
 
 type AccountLabel = { keyEnv: string; label: string };
 
@@ -404,8 +406,8 @@ async function sendViaBrevo(
 
 export const brevoProvider: EmailProvider = createBrevoProvider();
 
-const extraResendProviders = extraEmailAccountSuffixes.map((suffix) => createResendProvider(suffix));
-const extraBrevoProviders = extraEmailAccountSuffixes.map((suffix) => createBrevoProvider(suffix));
+const extraResendProviders = extraResendAccountSuffixes.map((suffix) => createResendProvider(suffix));
+const extraBrevoProviders = extraBrevoAccountSuffixes.map((suffix) => createBrevoProvider(suffix));
 
 // Ordered provider list: Resend primary, then every configured backup — the other Resend accounts
 // first, then the Brevo accounts. A backup is skipped unless it is configured AND failover is not
