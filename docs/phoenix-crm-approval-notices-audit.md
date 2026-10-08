@@ -249,6 +249,53 @@ PRE-transition plan row, because `submit` clears `decided_by_*`.
 returns a week and approves none, so counting his scope — in the nudge, the badge or the board — would
 put a number in front of him for a decision he cannot take.
 
+## 2026-10-08 — the status names its person
+
+He asked for it in one line: *"make the plan status be appearing ex drafted by Mostafa Galal, waiting
+Dr Taha approval, waiting Mostafa to edit and resend and so on."*
+
+**What the pill used to say.** The four words came from `planStatusLabel` — "Draft", "Waiting for
+review", "Returned for changes", "Approved" — and they describe a STATE, not a person. On a district
+manager's Team tab that reads as nine territories all "Waiting for review" with three different
+managers above them; on the rep's own board, "Returned for changes" with no hint that HE is the one who
+has to act. The information was already loaded on every one of those screens — `describeTerritory`
+resolves the seat's rep and its reviewing manager by name for the row beside the pill — so the pill was
+the only part of the screen that knew who, and did not say.
+
+**What it says now.** `planStatusLine` in `src/lib/phoenix-crm/plan-rules.ts` is a pure composer over
+the same statuses:
+
+| Status | Sentence |
+| --- | --- |
+| `draft` | Drafted by Mostafa Galal |
+| `submitted` | Waiting for Dr Taha to approve |
+| `returned` | Waiting for Mostafa Galal to edit and resend |
+| `approved` | Approved by Dr Taha |
+| no row yet | Not started — Mostafa Galal drafts it |
+
+`planStatusLabel` is kept, and is now only the fallback: with no name to use — a vacant seat, an empty
+manager chain, a blank string — the line is the old bare word. **The one thing it must never print is
+"waiting for null"**, so every name goes through `nameOrNull` (trimmed, empty is no name) and nothing is
+guessed from another field.
+
+**Who approved it is who the week says approved it.** On an approved week the line reads the row's own
+`decided_by_hr_id`, not whoever reviews that territory today — a manager can change, and the week was
+still approved by the person who approved it. The reviewer is the fallback when no decider was recorded.
+
+**Every surface composes it with the territory's people.** `mapPlan` (`server/plans.ts`) and
+`mapMonthlyPlan` (`server/monthly-plans.ts`) take an optional `people` argument and are called with the
+`describeTerritory` result the caller already had; the week picker, the month picker, the monthly review
+rows and `server/plan-edits.ts` compose the same way. **A mapper called WITHOUT it is the silent half of
+this defect** — it returns a perfectly valid bare word, so nothing looks broken — which is why
+`tests/phoenix-crm-plan-review.test.ts` §7 asserts that no caller is left on the nameless form and that
+neither server file holds a second copy of the status words. A territory with no plan row has no
+server-composed label at all, so `team-tab.tsx` names its rep in all three places it renders one (card,
+table row, monthly card) rather than printing a bare "Not started" beside eight named ones.
+
+**Tone, order and colour are untouched.** Only the words changed; the statuses, the pill styling and
+every decision rule are exactly as they were — this is not a second place where a plan's state is
+decided.
+
 ## The questions left open, not to be built without his word
 
 Raised by the audit and deliberately not built: whether the digest should go to district managers only

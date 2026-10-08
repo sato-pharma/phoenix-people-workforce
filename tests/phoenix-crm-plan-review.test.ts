@@ -26,6 +26,8 @@ import {
   onlyReturnedDayEditable,
   planDayLabel,
   planDayStatus,
+  planStatusLine,
+  planStatusLabel,
   planTurnSentence,
   repChangeableDays,
   repWeekState,
@@ -621,6 +623,8 @@ export function runPhoenixCrmPlanReviewTests(): void {
 
   runWhoseTurnTests();
 
+  runNamedStatusTests();
+
   runStillPlannedTests();
 
   console.log("phoenix-crm plan review: OK");
@@ -690,6 +694,69 @@ function runWhoseTurnTests(): void {
   assert.match(board, /turnSentence=\{repBoard \? null : turnSentence\}/, "his own board is left alone");
   assert.match(board, /status: selected\.week\.status,\s*returnedDay: selected\.week\.returnedDay,/, "the sentence reads the week's STANDING returned day");
   assert.match(board, /decidedStamp: selected\.week\.plan\?\.decidedAt \? cairoStamp\(selected\.week\.plan\.decidedAt\) : null,/, "the stamp is Cairo local, like every other stamp on the board");
+}
+
+// ── 7. THE STATUS NAMES ITS PERSON (owner ruling, 2026-10-08) ───────────────────────────────────────
+//
+// "Make the plan status be appearing ex drafted by Mostafa Galal, waiting Dr Taha approval, waiting
+// Mostafa to edit and resend and so on." The pill used to say what STATE the row was in — "Waiting for
+// review" on nine territories at once, with three different managers above them, and "Returned for
+// changes" with no hint of who had to act. It now says WHOSE it is, in the same four states and the
+// same tones: only the words changed.
+function runNamedStatusTests(): void {
+  const people = { repName: "Mostafa Galal", reviewerName: "Dr Taha", deciderName: "Dr Taha" };
+
+  assert.equal(planStatusLine({ ...people, status: "draft" }), "Drafted by Mostafa Galal");
+  assert.equal(planStatusLine({ ...people, status: "submitted" }), "Waiting for Dr Taha to approve");
+  assert.equal(planStatusLine({ ...people, status: "returned" }), "Waiting for Mostafa Galal to edit and resend");
+  assert.equal(planStatusLine({ ...people, status: "approved" }), "Approved by Dr Taha");
+  assert.equal(planStatusLine({ ...people, status: null }), "Not started — Mostafa Galal drafts it");
+
+  // Who APPROVED it is who the approved week names — not whoever reviews the territory today, because a
+  // manager can change and the week was still approved by the person who approved it.
+  assert.equal(planStatusLine({ ...people, deciderName: "Ahmed Samir", status: "approved" }), "Approved by Ahmed Samir");
+  // With no decider recorded it falls back to the reviewer rather than to the bare word.
+  assert.equal(planStatusLine({ ...people, deciderName: null, status: "approved" }), "Approved by Dr Taha");
+
+  // 🔴 NO NAME, NO INVENTION. A vacant seat, an empty manager chain and a blank string each fall back to
+  // `planStatusLabel`'s own word — the one thing this must never print is "waiting for null", and a name
+  // is never guessed from another field.
+  assert.equal(planStatusLine({ status: "draft" }), planStatusLabel("draft"));
+  assert.equal(planStatusLine({ status: "submitted", reviewerName: null }), planStatusLabel("submitted"));
+  assert.equal(planStatusLine({ status: "returned", repName: "   " }), planStatusLabel("returned"));
+  assert.equal(planStatusLine({ status: "approved", deciderName: "", reviewerName: "" }), planStatusLabel("approved"));
+  assert.equal(planStatusLine({ status: null }), planStatusLabel(null));
+  for (const status of ["draft", "submitted", "returned", "approved", null] as const) {
+    assert.doesNotMatch(planStatusLine({ status }), /null|undefined|\bNaN\b/, `a nameless ${status ?? "never sent"} week prints no placeholder`);
+  }
+
+  // It is ONE composer: the month wears the same words as its weeks, and nothing re-implements them.
+  const plans = source("src/lib/phoenix-crm/server/plans.ts");
+  const monthly = source("src/lib/phoenix-crm/server/monthly-plans.ts");
+  for (const [name, body] of [["plans.ts", plans], ["monthly-plans.ts", monthly]] as const) {
+    assert.ok(body.includes("planStatusLine({"), `${name} composes the status through the shared rule`);
+    assert.equal(/\bplanStatusLabel\(/.test(body), false, `${name} holds no second copy of the status words`);
+  }
+  assert.equal(/\bmonthlyPlanStatusLabel\(/.test(monthly), false, "the month no longer has its own status words either");
+
+  // Every status a screen reads is composed WITH the territory's people — a mapper called without them
+  // is the silent half of this defect, because it still returns a perfectly valid bare word.
+  assert.match(plans, /export function mapPlan\(row: Row, names: PeopleNames, people\?: \{ repName: string \| null; reviewerName: string \| null \}\)/);
+  assert.match(plans, /const plan = planRow \? mapPlan\(planRow, names, territory\) : null;/, "the board's own week");
+  assert.match(plans, /const plan = planRow \? mapPlan\(planRow, names, territory\) : null;[\s\S]*?territory,/, "and every row of the Team tab");
+  assert.equal(/mapPlan\(planRow, names\)/.test(plans), false, "no caller is left on the nameless mapper");
+  assert.equal(/mapPlan\(planRow, names\)/.test(monthly), false);
+  assert.match(monthly, /mapMonthlyPlan\(headerRow, names, rowTerritory\)/, "the monthly review rows too");
+
+  // The week and month PICKERS read the same words as the pill they open: one status, one voice.
+  assert.match(plans, /statusLabel: planStatusLine\(\{\s*status: weekStatus,\s*repName: territory\.repName,\s*reviewerName: territory\.reviewerName,/);
+  assert.match(monthly, /statusLabel: planStatusLine\(\{ status: monthStatus, repName: territory\.repName, reviewerName: territory\.reviewerName \}\)/);
+
+  // A territory with NO plan row has no server-composed label at all, so the Team tab names its rep
+  // itself rather than printing a bare "Not started" beside eight named ones.
+  const team = source("src/components/phoenix-crm/team-tab.tsx");
+  assert.equal((team.match(/planStatusLine\(\{ status: null, repName: row\.territory\.repName \}\)/g) ?? []).length, 3, "the card, the table row and the monthly card");
+  assert.equal(team.includes('statusLabel ?? "Not started"'), false, "and the bare fallback is gone from all three");
 }
 
 // ── 5. STILL PLANNED (owner ruling, 2026-10-02) ─────────────────────────────────────────────────────
