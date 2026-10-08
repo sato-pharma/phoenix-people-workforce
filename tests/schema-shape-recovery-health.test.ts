@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   evaluateSchemaShape,
@@ -25,11 +26,15 @@ import {
 // Production on the same day, for contrast, is the healthy shape below: `phoenix-recovery-snapshot`
 // at `5 * * * *`, 206 cron runs, every one `succeeded`, all 7 tables captured.
 //
-// 🔴 The schedule itself is hand-made state. Nothing in supabase/migrations/ creates it — the
-// retention job next to it IS created by a migration (20261004041000) — so a restored or
-// recreated database comes back with the store deployed and never running. That is precisely
-// the "looks like protection" state the gate exists for, which is why the message has to name
-// pg_cron and cron.job rather than snapshot_runs.
+// 🔴 The schedule WAS hand-made state — nothing in supabase/migrations/ created it, so a restored
+// or recreated database came back with the store deployed and never running. That is precisely the
+// "looks like protection" state the gate exists for, which is why the message has to name pg_cron
+// and cron.job rather than snapshot_runs. 20261008140000_schedule_recovery_snapshot_cron closed
+// that hole on the owner's instruction (2026-10-08) and the last section here pins it: scheduling
+// BY NAME, so re-applying updates the one job instead of stacking a second hourly caller, and
+// guarded on pg_extension, so it warns instead of failing where pg_cron is absent — which is the
+// one remaining way to reach `recovery_never_ran`, and why that message now says to install
+// pg_cron and re-apply rather than to schedule by hand.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const HOUR = 3_600_000;
@@ -194,5 +199,52 @@ export function runSchemaShapeRecoveryHealthTests() {
   assert.ok(
     !codes(healthyShape()).includes("recovery_snapshot_stale"),
     "one recent capture must clear staleness even when six tables are 40 hours old, or the gate cries wolf on a normal week",
+  );
+
+  // ── the SCHEDULE is in a migration, and stays idempotent and guarded ─────
+  // This is the half the gate cannot see: it reads whether snapshots exist, never whether anything
+  // is scheduled to take them. The migration is the only thing that brings the schedule back on a
+  // restored database, so its two safety properties are pinned here by source.
+  const migration = readFileSync(
+    new URL(
+      "../supabase/migrations/20261008140000_schedule_recovery_snapshot_cron.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(
+    migration,
+    /cron\.schedule\(\s*'phoenix-recovery-snapshot'/,
+    "the migration must schedule BY NAME — cron.schedule updates the job of that name instead of creating a second hourly caller, and that is the whole reason re-applying it is safe on a live production",
+  );
+  assert.match(
+    migration,
+    /select recovery\.take_snapshots\(\);/,
+    "it must schedule the real entry point, or it restores a schedule that calls nothing",
+  );
+  assert.match(
+    migration,
+    /'5 \* \* \* \*'/,
+    "the schedule must stay hourly at :05, matching production's live job — a different cadence here would silently re-point it on the next apply",
+  );
+  assert.match(
+    migration,
+    /pg_extension\s+where\s+extname\s*=\s*'pg_cron'/,
+    "it must be guarded on pg_extension: staging has no pg_cron, and an unguarded cron.schedule there fails the staging migrate, which withholds the production deploy",
+  );
+  assert.ok(
+    /raise\s+warning/i.test(migration) && !/create\s+extension/i.test(migration),
+    "where pg_cron is absent it must WARN and move on — never install the extension itself, which on staging is a decision the owner has not made",
+  );
+  assert.match(
+    migration,
+    /raise exception 'found % jobs named phoenix-recovery-snapshot/,
+    "two jobs of that name would be two hourly callers, so the migration must refuse rather than add a third",
+  );
+  assert.ok(
+    /if v_live is null then/.test(migration) &&
+      /did not take/.test(migration),
+    "it must re-ask cron.job after scheduling, so a schedule that did not take fails the migration instead of passing quietly",
   );
 }
