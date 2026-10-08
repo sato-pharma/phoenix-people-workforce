@@ -203,7 +203,7 @@ export type VacationSlaStatus = {
   isOverdue: boolean;
   lastEscalatedAt: string | null;
   lastRemindedAt: string | null;
-  stage: "approved" | "manager" | "hr" | "rejected";
+  stage: "approved" | "manager" | "hr" | "rejected" | "returned";
 };
 
 export type VacationTimelineEvent = {

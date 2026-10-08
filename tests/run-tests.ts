@@ -2254,6 +2254,7 @@ import { runBackgroundCatGuardTests } from "./background-cat-guard.test.ts";
 import { runBatchNudgeTests } from "./batch-nudge.test.ts";
 import { runHookDispatchTests } from "./hook-dispatch.test.ts";
 import { runSlowAuditTests } from "./slow-audit.test.ts";
+import { runVacationReturnedStatusTests } from "./vacation-returned-status.test.ts";
 import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
@@ -9455,6 +9456,10 @@ await runTest(
 await runTest(
   "the slowness audit keeps reading `Memory\\Pages Input/sec` FIRST and never reasons from the disk figure (a 95%-idle NVMe was serving 9,447 hard faults/sec on 2026-10-08, which is why the 2026-09-17 \"disk idle, so not paging\" inference was wrong), it never reports a step that did not run as the step that dominated a job — GitHub spells a skipped step `0001-01-01T00:00:00Z`, not null, and subtracting that named main's skipped `Test` as 719s when it had built for 246s — it keeps the critical path (the wait) and the per-job-rounded billed minutes (the bill) as separate figures, and it may spawn only PowerShell, gh and node, never a build, typecheck, test run, dev server, dev-server-reaper or scratchpad-guard sweep",
   runSlowAuditTests,
+);
+await runTest(
+  "a leave request the approver RETURNED to the employee reads as returned everywhere — the row reader listed statuses by hand and left \"returned\" out, so VAC-0653 showed Pending Manager, sat in the approvers' queue and could not be resubmitted; every defined status now passes through, only an unknown one falls back, and a returned request never shows SLA overdue",
+  runVacationReturnedStatusTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

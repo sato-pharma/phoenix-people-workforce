@@ -50,6 +50,7 @@ import {
   getVacationBalancePeriod,
   normalizeVacationDayPart,
   normalizeVacationPaymentStatus,
+  normalizeVacationRequestStatus,
   normalizeVacationType,
   vacationTypeLabel,
 } from "@/lib/vacation/calculations";
@@ -1144,14 +1145,15 @@ function businessDaysBetween(start: Date, end: Date) {
   return days;
 }
 
-function buildVacationSlaStatus(input: {
+export function buildVacationSlaStatus(input: {
   events?: VacationTimelineEvent[];
   now: Date;
   request: Pick<VacationRequestDbRow, "created_at" | "manager_decision_at" | "status">;
   settings: ReturnType<typeof defaultVacationSlaSettings>;
 }): VacationSlaStatus {
   const status = input.request.status;
-  if (status === "approved" || status === "rejected") {
+  // A returned request waits on the employee, not an approver, so no approver's clock runs on it.
+  if (status === "approved" || status === "rejected" || status === "returned") {
     return {
       businessDaysPending: 0,
       dueAt: null,
@@ -1256,14 +1258,7 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
     periodEnd: row.period_end,
     periodStart: row.period_start,
     startDate: text(row.start_date),
-    status:
-      row.status === "approved" ||
-      row.status === "rejected" ||
-      row.status === "pending_manager" ||
-      row.status === "pending_hr" ||
-      row.status === "needs_assignment"
-        ? row.status
-        : "pending_manager",
+    status: normalizeVacationRequestStatus(row.status),
     submittedByHrId: row.submitted_by_hr_id,
     unpaidReason:
       row.unpaid_reason === "first_six_months" ||
