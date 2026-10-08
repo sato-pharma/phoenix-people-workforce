@@ -75,6 +75,7 @@ export async function runDeductionsModulePublishTests(): Promise<void> {
   {
     const nonMandatory: DeductionsCandidateWithDecision["category"][] = [
       "fingerprint",
+      "crm_half_day",
       "no_records_activity",
       "unpaid_vacation",
       "insufficient_balance_vacation",

@@ -33,7 +33,7 @@ import { currentCairoDateParts } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { compactDeductionsHrId } from "./candidate-key.ts";
-import { DEDUCTION_COLLECTORS, type DeductionCollectorKey } from "./collect.ts";
+import { DEDUCTION_COLLECTORS, collectorOutputParts, type DeductionCollectorKey } from "./collect.ts";
 import { insertCandidateDrafts, type CandidateDraftInsertResult } from "./service.ts";
 
 export type LastWorkingDateParts = { year: number; month: number; day: number };
@@ -188,11 +188,14 @@ export async function collectSettlementForLeaver(input: {
   }
 
   try {
-    const scanned = await collector.run({
-      month: input.month,
-      year: input.year,
-      createdBy: input.createdBy,
-    });
+    // Only the drafts: a connector's notes describe the whole company, not this leaver.
+    const { drafts: scanned } = collectorOutputParts(
+      await collector.run({
+        month: input.month,
+        year: input.year,
+        createdBy: input.createdBy,
+      }),
+    );
     const mine = scanned.filter((draft) => compactDeductionsHrId(draft.employeeHrId) === wanted);
     if (mine.length === 0) {
       return { created: 0, skippedExisting: 0, warnings: [] };

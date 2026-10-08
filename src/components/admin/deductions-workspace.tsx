@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, Clock3, Download, MessageSquare, PlayCircl
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
+  daysForTickedDates,
   deductionsCategoryLabel,
   resolveAppliedDeductionDates,
   scaleDeductionAmountToDays,
@@ -180,11 +181,16 @@ function DayList({ row }: { row: CandidateApiRow }) {
   );
 }
 
+/** The days a set of ticked dates charges on this candidate — a half-day date is 0.5, not 1. */
+function tickedDays(row: CandidateApiRow, tickedDates: number): number {
+  return daysForTickedDates({ rawValue: row.rawValue, detectedDates: sortedDates(row.dates).length, tickedDates });
+}
+
 /** The day count a candidate currently charges. */
 function appliedDaysOf(row: CandidateApiRow): number {
   if (row.unit !== "days") return 0;
   if (row.decision?.appliedValue != null) return row.decision.appliedValue;
-  return row.decision?.appliedDates != null ? row.decision.appliedDates.length : row.rawValue;
+  return row.decision?.appliedDates != null ? tickedDays(row, row.decision.appliedDates.length) : row.rawValue;
 }
 
 /** What this candidate currently costs — the same scaling rule the server re-derives on save. */
@@ -228,7 +234,7 @@ function DeductionDaysEditor({
     String(row.unit === "days" ? appliedDaysOf(row) : (row.decision?.appliedValue ?? row.rawValue)),
   );
   const [manualQuantity, setManualQuantity] = useState(
-    () => row.unit === "days" && row.decision?.appliedValue != null && row.decision.appliedValue !== appliedDatesOf(row).length,
+    () => row.unit === "days" && row.decision?.appliedValue != null && row.decision.appliedValue !== tickedDays(row, appliedDatesOf(row).length),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -258,18 +264,18 @@ function DeductionDaysEditor({
     setSelected(next);
     // The point of the checkboxes: the quantity auto-populates from them. It
     // stops following only once the reviewer has typed a number of their own.
-    if (!manualQuantity) setQuantity(String(next.length));
+    if (!manualQuantity) setQuantity(String(tickedDays(row, next.length)));
   }
 
   function setAll(checked: boolean) {
     const next = checked ? [...detected] : [];
     setSelected(next);
-    if (!manualQuantity) setQuantity(String(next.length));
+    if (!manualQuantity) setQuantity(String(tickedDays(row, next.length)));
   }
 
   function resetQuantityToTicks() {
     setManualQuantity(false);
-    setQuantity(String(selected.length));
+    setQuantity(String(tickedDays(row, selected.length)));
   }
 
   async function save() {
@@ -463,10 +469,10 @@ function DeductionDaysEditor({
         </div>
       </div>
 
-      {manualQuantity && row.unit === "days" && parsedQuantity !== selected.length ? (
+      {manualQuantity && row.unit === "days" && parsedQuantity !== tickedDays(row, selected.length) ? (
         <p className="flex flex-wrap items-center gap-2 text-phx-xs font-bold text-amber-800">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          You typed {quantity} but {selected.length} day(s) are ticked — the typed number is what gets deducted.
+          You typed {quantity} but the ticked dates come to {tickedDays(row, selected.length)} day(s) — the typed number is what gets deducted.
           <button
             className="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.08em] underline transition hover:text-orange-600"
             onClick={resetQuantityToTicks}

@@ -285,9 +285,9 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
     // population — field workforce belongs to `crm`, Head Office has no CRM
     // obligation, and between them that is everybody — so a registered step would
     // report created=0 forever and be indistinguishable from a broken connector.
-    // holiday_bridge was then added, taking it back to 5. The exact keys are
-    // pinned just below.
-    assert.equal(DEDUCTION_COLLECTORS.length, 6, "the six live automated connectors must stay registered");
+    // holiday_bridge was then added, taking it back to 5, dsm_no_record to 6, and
+    // crm_half_day (owner, 2026-10-08) to 7. The exact keys are pinned just below.
+    assert.equal(DEDUCTION_COLLECTORS.length, 7, "the seven live automated connectors must stay registered");
     assert.deepEqual(
       DEDUCTION_COLLECTORS.map((collector) => collector.key),
       [
@@ -296,6 +296,7 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
         "unpaid_vacation",
         "insufficient_balance_vacation",
         "dsm_no_record",
+        "crm_half_day",
         "holiday_bridge",
       ],
       "connector order is the documented run order; changing it changes what an interrupted run leaves behind",
@@ -312,6 +313,16 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
       assert.ok(
         order.indexOf("holiday_bridge") > order.indexOf("dsm_no_record"),
         "holiday_bridge must run after dsm_no_record for the same reason",
+      );
+      // The half-day scan reports a date another category already charges instead of raising it,
+      // so it must see every full-day finding first — and holiday_bridge must see the half days.
+      assert.ok(
+        order.indexOf("crm_half_day") > order.indexOf("dsm_no_record"),
+        "crm_half_day must run after every full-day connector — it skips days they already charge",
+      );
+      assert.ok(
+        order.indexOf("holiday_bridge") > order.indexOf("crm_half_day"),
+        "holiday_bridge must run after crm_half_day so a half-day date is never charged twice",
       );
     }
     assert.equal(

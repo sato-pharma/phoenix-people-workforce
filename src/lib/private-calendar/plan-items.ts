@@ -237,3 +237,61 @@ export async function loadPlanPrivateCalendarItems(
     throw error;
   }
 }
+
+/** One approved weekly plan item whose activity type is itself the day's proof of work. */
+export type ApprovedCoveringPlanItem = {
+  employeeHrId: string;
+  activityDate: string;
+  activityType: string;
+  startTime: string | null;
+  endTime: string | null;
+};
+
+/**
+ * Every approved WEEKLY plan item inside [start, end] whose type Phoenix records nowhere else
+ * (PLAN_ACTIVITY_TYPES_RECORDED_NOWHERE_ELSE), company-wide, with its clock times.
+ *
+ * The Deductions module's Half Day (CRM) connector reads this to tell WHICH half of a day an
+ * approved Meeting or Training stands in for — the calendar shape above flattens the times into a
+ * display string. Same statuses, same weekly-only rule and the same covering-type test as
+ * loadPlanPrivateCalendarItems, so the two can never disagree about what a plan excuses.
+ *
+ * Throws on a read error rather than returning nothing: a half day charged because the plan that
+ * excused it could not be read is the failure this exists to prevent. A missing plan table (a
+ * fresh database) is the one empty answer, because then no plan can exist either.
+ */
+export async function loadApprovedCoveringPlanItems(start: string, end: string): Promise<ApprovedCoveringPlanItem[]> {
+  try {
+    const headers = await readAllPrivateCalendarRows<PlanHeaderRow>((from, to) => getSupabaseAdmin()
+      .from("employee_plan_headers")
+      .select(PLAN_SELECT)
+      .eq("plan_kind", "weekly")
+      .in("status", APPROVED_PLAN_STATUSES)
+      .lte("period_start_date", end)
+      .gte("period_end_date", start)
+      .order("period_start_date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to));
+    const items: ApprovedCoveringPlanItem[] = [];
+    for (const header of headers) {
+      const employeeHrId = cleanText(header.employee_hr_id);
+      if (!employeeHrId) continue;
+      for (const item of header.employee_plan_items ?? []) {
+        const date = cleanText(item.activity_date).slice(0, 10);
+        if (!date || date < start || date > end) continue;
+        if (!plannedActivityCoversTheDay(item.activity_type)) continue;
+        items.push({
+          employeeHrId,
+          activityDate: date,
+          activityType: cleanText(item.activity_type),
+          startTime: nullableText(item.start_time),
+          endTime: nullableText(item.end_time),
+        });
+      }
+    }
+    return items;
+  } catch (error) {
+    if (schemaMissing(error)) return [];
+    throw error;
+  }
+}

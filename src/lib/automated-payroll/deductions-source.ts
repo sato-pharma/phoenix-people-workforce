@@ -190,7 +190,9 @@ function bucketFor(category: DeductionsCategory): keyof DeductionBuckets {
   switch (category) {
     case "fingerprint":
       return "fingerprint";
+    // A CRM half day lands in the CRM column (owner, 2026-10-08).
     case "crm":
+    case "crm_half_day":
       return "crm";
     case "unpaid_vacation":
     case "insufficient_balance_vacation":
@@ -265,7 +267,8 @@ export function chargedDeductionDays(candidate: DeductionsCandidateWithDecision)
  * whole difficulty, and the Deductions module's own review screen answers it: the day box is
  * PRE-FILLED with the count of ticked dates and sent on every save, so a value EQUAL to that count
  * is the default coming back, not a correction. `deductions-workspace.tsx` draws the same
- * distinction for its own "manual quantity" flag — `appliedValue !== appliedDates.length`.
+ * distinction for its own "manual quantity" flag — `appliedValue !== tickedDays(...)`, which is the
+ * tick count for every multi-date row (`daysForTickedDates`) and so for every CRM row.
  *
  * Without that test the weighting was thrown away the moment anybody opened a CRM candidate and
  * saved it, changed or not: `applied_value` was stamped with the raw date count and this function

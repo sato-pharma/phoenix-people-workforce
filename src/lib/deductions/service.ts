@@ -13,6 +13,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   carriedAppliedFigures,
+  daysForTickedDates,
   isEligibleForPublish,
   normalizeAppliedDeductionDates,
   resolveAppliedDeductionDates,
@@ -1359,7 +1360,16 @@ export function resolveDecisionCharge(input: {
     return { appliedDates: null, appliedValue: value, appliedAmount: value };
   }
 
-  const appliedValue = input.appliedValue ?? (appliedDates == null ? null : appliedDates.length);
+  // Ticked dates weigh what the candidate's own dates weigh — a half-day date is 0.5, never 1.
+  const appliedValue =
+    input.appliedValue ??
+    (appliedDates == null
+      ? null
+      : daysForTickedDates({
+          rawValue: candidate.rawValue,
+          detectedDates: candidate.dates.length,
+          tickedDates: appliedDates.length,
+        }));
   if (appliedValue != null) {
     if (!Number.isFinite(appliedValue) || appliedValue < 0) {
       throw new Error("Validation: the number of deducted days must be a non-negative number.");

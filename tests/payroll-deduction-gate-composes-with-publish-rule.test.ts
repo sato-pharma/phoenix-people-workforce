@@ -55,6 +55,7 @@ const ALL_STATUSES = [
 const ALL_CATEGORIES: DeductionsCategory[] = [
   "fingerprint",
   "crm",
+  "crm_half_day",
   "no_records_activity",
   "unpaid_vacation",
   "insufficient_balance_vacation",
@@ -71,6 +72,7 @@ const ALL_SOURCE_SYSTEMS = [
   "manual_hr",
   "dsm_no_record",
   "holiday_bridge",
+  "crm_half_day",
   "some_future_connector",
 ] as const;
 

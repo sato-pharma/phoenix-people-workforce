@@ -30,7 +30,7 @@ export type DailyDeductionCategory = (typeof dailyDeductionCategories)[number];
 
 /** The connectors the daily tally drives, in run order. Mirrors DEDUCTION_COLLECTORS
  * minus the manual-only categories (loan/other are one-at-a-time HR entries, never a
- * day-by-day scan) and minus dsm_no_record / holiday_bridge, whose whole point is a
+ * day-by-day scan) and minus dsm_no_record / crm_half_day / holiday_bridge, whose whole point is a
  * ledger-relative dedup against the MONTH module's candidate rows — a dedup that has no
  * meaning for a stateless range tally. Fingerprint, CRM and the two vacation engines are
  * the day-granular no-activity/absence sources the owner counts toward his sheet. */

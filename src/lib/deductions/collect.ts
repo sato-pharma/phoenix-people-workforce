@@ -1,9 +1,9 @@
-// Unified Deductions module: orchestrates all 5 automated connectors for one
+// Unified Deductions module: orchestrates every automated connector for one
 // month into the candidate ledger. Loan/Other are excluded here — those are
 // one-at-a-time HR entries (see connectors/manual.ts + service.ts's
 // insertCandidateDrafts with autoDecideStatus), not a company-wide scan.
 //
-// Work is exposed one connector at a time on purpose. Running all five inside a
+// Work is exposed one connector at a time on purpose. Running all of them inside a
 // single HTTP request is what got the first cut of this module reverted (#1377):
 // each connector is a company-wide scan, nothing bounded how slow they were
 // together, and the request burned the full 300s Cloud Run limit and was killed.
@@ -15,6 +15,7 @@ import { crmCutoverMonthDeductionNote, isCrmCutoverMonth, readCrmCutoverSetting 
 
 import { collectFingerprintCandidates } from "./connectors/fingerprint.ts";
 import { collectDsmNoRecordCandidates } from "./connectors/dsm-no-record.ts";
+import { collectHalfDayCandidates } from "./connectors/half-day.ts";
 import { collectHolidayBridgeCandidates } from "./connectors/holiday-bridge.ts";
 import { collectCrmCandidates } from "./connectors/crm.ts";
 import {
@@ -22,7 +23,7 @@ import {
   collectUnpaidVacationCandidates,
 } from "./connectors/vacation.ts";
 import { insertCandidateDrafts, reconcileCandidateDrafts, type CandidateDraftInsertResult } from "./service.ts";
-import type { DeductionsCategory } from "./types.ts";
+import type { DeductionsCandidateDraft, DeductionsCategory } from "./types.ts";
 
 export type DeductionCollectorKey =
   | "fingerprint"
@@ -31,6 +32,7 @@ export type DeductionCollectorKey =
   | "unpaid_vacation"
   | "insufficient_balance_vacation"
   | "dsm_no_record"
+  | "crm_half_day"
   | "holiday_bridge";
 
 export type MonthlyCollectionResult = Record<DeductionCollectorKey, CandidateDraftInsertResult>;
@@ -55,10 +57,22 @@ async function withCrmCutoverMonthNote(
   return { ...result, warnings: [...result.warnings, crmCutoverMonthDeductionNote(period)] };
 }
 
+/**
+ * What a connector hands back: its drafts, or its drafts plus NOTES — the findings it detected but
+ * could not raise (a day another category already charges, an employee with no salary on file).
+ * The notes ride out on the collection result's warnings, so a finding is never dropped in silence.
+ */
+export type CollectorOutput = DeductionsCandidateDraft[] | { drafts: DeductionsCandidateDraft[]; notes: string[] };
+
+/** Splits a connector's output into its drafts and its notes, whichever shape it returned. */
+export function collectorOutputParts(output: CollectorOutput): { drafts: DeductionsCandidateDraft[]; notes: string[] } {
+  return Array.isArray(output) ? { drafts: output, notes: [] } : output;
+}
+
 type Collector = {
   key: DeductionCollectorKey;
   label: string;
-  run: (input: CollectorInput) => Promise<Awaited<ReturnType<typeof collectFingerprintCandidates>>>;
+  run: (input: CollectorInput) => Promise<CollectorOutput>;
   /**
    * Set only when this collector is the ONLY writer of that category, and its
    * run covers the whole company for the whole month. Then a re-run is a
@@ -135,6 +149,15 @@ export const DEDUCTION_COLLECTORS: readonly Collector[] = [
     label: "District manager CRM no-record days",
     reconcilesSourceScope: { category: "crm", sourceSystems: ["dsm_no_record"] },
     run: collectDsmNoRecordCandidates,
+  },
+  // The half days (owner, 2026-10-08). After every connector whose days it must not double-charge
+  // — it skips a date another live row already claims, and reports it — and before holiday_bridge,
+  // which must stay last. Sole writer of its category, so a re-run replaces its own rows.
+  {
+    key: "crm_half_day",
+    label: "Half Day (CRM)",
+    reconcilesWholeCategory: "crm_half_day",
+    run: collectHalfDayCandidates,
   },
   // LAST on purpose. Its dedup reads the live ledger to skip any employee-day
   // another category already charges, so it must run after those categories
@@ -219,9 +242,12 @@ export async function collectOneConnectorForMonth(
 
   const { month, year, createdBy } = input;
   try {
-    const drafts = await collector.run({ month, year, createdBy });
+    const output = await collector.run({ month, year, createdBy });
+    const { drafts, notes } = collectorOutputParts(output);
+    const withNotes = (result: CandidateDraftInsertResult): CandidateDraftInsertResult =>
+      notes.length === 0 ? result : { ...result, warnings: [...result.warnings, ...notes] };
     if (collector.reconcilesWholeCategory) {
-      return await reconcileCandidateDrafts({
+      return withNotes(await reconcileCandidateDrafts({
         createdBy,
         drafts,
         scope: {
@@ -229,7 +255,7 @@ export async function collectOneConnectorForMonth(
           monthKey: `${year}-${String(month).padStart(2, "0")}`,
         },
         sourceLabel: collector.label,
-      });
+      }));
     }
     if (collector.reconcilesSourceScope) {
       const reconciled = await reconcileCandidateDrafts({
@@ -242,9 +268,9 @@ export async function collectOneConnectorForMonth(
         },
         sourceLabel: collector.label,
       });
-      return collector.key === "crm" ? await withCrmCutoverMonthNote(reconciled, { month, year }) : reconciled;
+      return withNotes(collector.key === "crm" ? await withCrmCutoverMonthNote(reconciled, { month, year }) : reconciled);
     }
-    return await insertCandidateDrafts({ createdBy, drafts, sourceLabel: collector.label });
+    return withNotes(await insertCandidateDrafts({ createdBy, drafts, sourceLabel: collector.label }));
   } catch (error) {
     return {
       created: 0,

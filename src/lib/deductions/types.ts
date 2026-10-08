@@ -16,6 +16,9 @@
 export const visibleDeductionsCategories = [
   "fingerprint",
   "crm",
+  // Its own tab beside CRM: the morning or afternoon a district manager or rep left unaccounted
+  // for (owner, 2026-10-08). Approval-required, paid through the CRM column.
+  "crm_half_day",
   "unpaid_vacation",
   "insufficient_balance_vacation",
   "loan",
@@ -25,6 +28,7 @@ export const visibleDeductionsCategories = [
 export const deductionsCategories = [
   "fingerprint",
   "crm",
+  "crm_half_day",
   "no_records_activity",
   "unpaid_vacation",
   "insufficient_balance_vacation",
