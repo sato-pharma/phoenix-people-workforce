@@ -1219,3 +1219,44 @@ dev-auth role sweep, or anything needing local files — and is stopped as soon 
 The box is 4 vCPU / 7.7 GB, idle ~97% of the day, loopback-bound behind `ufw` with only SSH open,
 holding 13 Supabase/auth/Maps keys and never `SUPABASE_DB_URL`, the mailbox password, Resend,
 Telegram or OpenAI.
+
+## `AGENTS.md` — the full wording condensed out on 2026-10-08
+
+AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.
+
+### §5 — One working tree per session, and the session lock
+
+- Use one working tree per active session. **Never two interactive sessions in one folder** — the SessionStart lock warning stops you editing that folder. 🔴 **It is no longer stop-and-ask when the holder is PROVABLY LIVE** (lock refreshed inside 15 minutes, i.e. 3 heartbeats): the hook then tells you to isolate with `node scripts/new-session.mjs <task>` and **carry on without stopping** — never ask him to confirm what the lock already proves. Measured 2026-09-21: the old single warning fired on **170 of 198** sessions here and spent a turn on that question every time. Only an OLDER non-stale lock (15 min – 2 h) may belong to a session that crashed mid-task, and that one still asks. Both halves keep every commit/push/edit ban. (A live session refreshes its lock on every Bash, PowerShell, Edit or Write call; a crashed one's self-expires 2 hours after its last refresh, and that AGE is the ONLY staleness test — the lock's `pid` is the hook's own parent shell, so EVERY lock names a dead PID.) Pinned by `tests/session-lock-staleness-is-age.test.ts` in the required `checks` job.
+
+### §5 — The primary-write guard, pnpm in a worktree, the preview box, stopping a dev server
+
+- **A worktree session WRITING into the primary checkout is now denied mechanically** - `.claude/hooks/primary-write-guard.mjs`, PreToolUse on Write/Edit/NotebookEdit, live 2026-09-17. It refuses an edit into the primary or another session's worktree, never a READ; before it, that write SUCCEEDED silently and stranded the change in the shared primary. **A `_wt-<task>` this session made with `new-session.mjs` is its OWN** - edit it with Edit/Write, never a Bash write. `PHX_PRIMARY_GUARD_OFF=1` stands it down; a session in the primary never sees it.
+- **Never `pnpm install`, `pnpm run` or `pnpm exec` inside a worktree** — they purge the `node_modules` junction, and `pnpm exec` fails silent-shaped. Invoke `node scripts/…`; dev server: `node scripts/dev-server.mjs --port 3000` — it caps the server's heap at 4 GB where a raw `next dev` takes half of RAM, and refuses a second server; `bash-guard.mjs` C7 DENIES a raw `next dev` everywhere (2026-09-21). **Mechanical since 2026-09-16:** `bash-guard.mjs` C6 DENIES every pnpm form here and names the node equivalent — a deny because `Bash(pnpm run *)` and `Bash(pnpm exec *)` auto-approve it, so no prompt was ever coming.
+- 🔴 **A BROWSER LOOK AT PUSHED CODE GOES ON THE HETZNER PREVIEW BOX, NOT A LOCAL DEV SERVER** — a local `next dev` costs ~4 GB and half the CPU (measured 2026-09-30), the box costs this laptop an ssh tunnel. The owner runs `phx-preview [branch]`; a session ASKS HIM rather than starting a local server. **It serves PUSHED branches only** — read `git status --porcelain` and `git rev-list --count origin/<branch>..HEAD` FIRST and say whether the preview would show the work; a local server stays right only for uncommitted edits, a dev-auth role sweep, or local files, and is stopped as soon as the look is done. Account: `docs/agents-worktree-and-machine-limits.md`, "A browser look at pushed code goes on the Hetzner preview box".
+- **A dev server a SESSION opened dies with it** (`dev-server-reaper.mjs`, that one only); one you started yourself is nobody's child — **stop it by PORT, not by task:** `Get-NetTCPConnection -LocalPort 3000 -State Listen`, then `Stop-Process -Id <OwningProcess> -Force`. Only a curl of `000` proves the port is free. 🔴 **"NEVER CLOSE THE DEV UNTIL I TELL U" is now SCOPED, not repealed** (owner, 2026-09-28 — *"allow me to stop dev servers I start myself"*): one YOUR session started is yours to stop; one HE or another session started still waits for his word. **`TaskStop` does NOT free the memory** — it kills the wrapper and leaves the child holding the port. Check the PID's start time matches when you started it, and read free RAM TWICE: a compile spiked 3,056 MB → 134 MB and recovered to 1,675 MB by itself. `i-may-stop-a-dev-server-i-started-myself`
+
+### §5 — Worktree payload, and the machine limits
+
+- **Worktree payload slows TREE-WALKING TOOL CALLS and nothing else — it is NOT why the machine or the app feels slow.** A recursive `grep`, `dir /s` or naive watcher pays ~346k path entries here (10–40 s), while `.gitignore`-honouring tools never see one: retire merged worktrees and clear husks for your own command speed, **never on machine-performance grounds**. Corrected 2026-09-17 — disk sat 99.6–99.9% idle with a 0.00 queue while the box was slow, and the desktop app's own UI outweighs every session on CPU. **FREE RAM is what binds, and fewer open SESSIONS is the only lever — his call alone.** Do not tune `tsconfig`/`eslint`.
+
+**Machine limits.** RAM is 16 GB. One dev server at a time, ever; one typecheck/build at a time
+locally — parallel validation belongs to CI. 🔴 **FREE RAM is what binds, not the commit charge** — the
+pagefile is FIXED at 64 GB (commit limit ~80 GB), so commit headroom stays GREEN while physical RAM
+runs out. Read free RAM live, never a remembered figure or the session count. 🔴 **NOTHING GATES A
+HEAVY JOB ANY MORE — the heavy-job gate and its queue were RETIRED on 2026-09-17 at the owner's
+instruction, and are never to be rebuilt** (`docs/agents-worktree-and-machine-limits.md`); a
+typecheck, build or dev server is now YOUR judgement from live free RAM. 🔴 **`mem-watchdog.ps1`
+reaps NODE JOBS, and a dev server only as a RUNAWAY (8 GB+ of commit) or after 25 minutes with NO
+WORK** (owner's choice, 2026-09-21) — one in use under 8 GB is never touched. Under **1,800 MB** it
+reaps a typecheck, build or test run, under **500 MB** any node job.
+
+### §5 — A cloud session is Phoenix-blind by default
+
+🔴 **A CLOUD SESSION IS PHOENIX-BLIND BY DEFAULT — it gets the git repo and your prompt, and NOTHING
+ELSE.** The two layers that make a LOCAL session wake up knowing Phoenix — the global standing rules
+(`~/.claude/CLAUDE.md`) and the ENTIRE auto-memory (`MEMORY.md` + every memory file) — live on the
+laptop, are not in git, and never reach cloud. Cloud knows only the committed files (`AGENTS.md`, the
+project `CLAUDE.md`, `docs/`, the code) plus what the task prompt spells out. **So never send cloud a
+judgment call or an open question that leans on tribal knowledge — send it a SPECIFIED change whose
+context is in the repo or the prompt. A generic answer from cloud is this gap, not a broken session.**
+Account: `docs/agents-worktree-and-machine-limits.md`.

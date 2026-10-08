@@ -45,7 +45,12 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs\" start"
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
           {
             "type": "command",
             "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; if [ -f \"$DIR/scripts/sync-worktree-env.mjs\" ]; then node \"$DIR/scripts/sync-worktree-env.mjs\" --all 2>/dev/null || true; fi",

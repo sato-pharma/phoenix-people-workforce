@@ -643,3 +643,23 @@ staging app (§3) to smoke-test before a risky production deploy when there is t
 runtime-impacting production deploy, verify the public domain, smoke-test the changed workflow, and
 inspect production logs (`railway logs`). When a page fails, capture the visible error, browser
 console, network/API response, deployment logs, and database/RLS evidence before proposing a fix.
+
+## `AGENTS.md` — the full wording condensed out on 2026-10-08
+
+AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.
+
+### §2 — Never use `gh pr merge --auto`
+
+- **Never use `gh pr merge --auto`.** `main` is branch-protected with **2 required checks** — `validate`, `checks`; `allow_auto_merge: false`. Merge only with a plain `gh pr merge` after separate owner approval. 🔴 **THAT LIST HAS ROTTED FIVE TIMES, AND `lint`, `typecheck` and `test` ARE NOT CHECK NAMES.** Never quote this line, or any doc, as the source: read `branches/main/protection/required_status_checks` live and count passes against what it returns, because a gate counting to a number a doc gave you waits forever for checks that are gone. `node scripts/check-required-checks.mjs` compares this line against the live gate and is the ONE thing that catches the next rotation. Account: `docs/agents-incident-history.md`.
+
+### §6 — A classifier denial on a merge
+
+🔴 **A CLASSIFIER DENIAL ON A MERGE IS USUALLY STALE AUTHORIZATION, NOT A STANDING BLOCK — AND THE
+FIX IS A FRESH WORD FROM HIM, NEVER A SETTINGS CHANGE.** Auto mode judges from what it can
+currently SEE, so his approval going out of view across a context compaction reads exactly like a
+permission he never gave: same `[Production Deploy]` refusal, same wording. Measured 2026-09-29 —
+six merges went through on his approval, then #4776 was refused hours later on the *same* standing
+approval; he retyped `merge 4776` and it passed on the next attempt, head sha unchanged. **Never
+route around it, never ask a peer session to merge for you** (that launders a permission decision
+made in your window), and never propose editing `permissions` to clear it. Put it back to him and
+quote the merge. A denial is about what the classifier can see, not about what is permitted.

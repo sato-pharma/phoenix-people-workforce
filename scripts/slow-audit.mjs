@@ -42,18 +42,29 @@
 //   node scripts/slow-audit.mjs --quick      skip hook timing and CI (machine layer only)
 //   node scripts/slow-audit.mjs --json       machine-readable, no table
 //   node scripts/slow-audit.mjs --history    print the log and exit
+//   node scripts/slow-audit.mjs --transcripts [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+//                                            what sessions actually waited for, from their own
+//                                            transcripts (Layer 6); --until is exclusive, Cairo days
 
 import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 const ARGS = new Set(process.argv.slice(2));
 const QUICK = ARGS.has('--quick');
 const AS_JSON = ARGS.has('--json');
 const LOG = path.join(homedir(), '.claude', 'logs', 'slow-audit.jsonl');
+// Layer 6 keeps its own log, so a machine snapshot's delta is never computed against a
+// transcript record (they share no fields) and --history stays one kind of row.
+const TRANSCRIPT_LOG = path.join(homedir(), '.claude', 'logs', 'slow-audit-transcripts.jsonl');
+const argValue = (name) => {
+  const i = process.argv.indexOf(name);
+  return i > -1 ? process.argv[i + 1] ?? null : null;
+};
 
 // Cairo, via Intl. Never `TZ=Africa/Cairo` in a shell here: it silently returns UTC under MSYS.
 const cairo = (d = new Date()) =>
@@ -426,6 +437,337 @@ async function ci(projectDir) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Layer 6 — what the sessions actually WAITED for, read back from their own
+// transcripts. Layers 1-4 are a snapshot of this minute; this is the record of
+// every turn, for EVERY account on this laptop — all of them write to the same
+// ~/.claude/projects, keyed by folder, never by account.
+// ─────────────────────────────────────────────────────────────────────────────
+// WHY (measured 2026-10-08). A snapshot cannot see the two costs that dominated that day: 77
+// auto-compactions at a median 131s each (2.5 hours of frozen sessions), and every compaction
+// re-running ALL SessionStart hooks — 1,520 `SessionStart:compact` hook runs against 743 at startup
+// since 5 Oct, the worktree provisioning sweep among them (worst 17.5s). Both live only in the
+// transcripts, and a before/after comparison needs the same numbers computed the same way on both
+// sides, so the arithmetic is a pure fold that tests/slow-audit.test.ts feeds a fixture.
+// It reads files only; it starts no process.
+
+/**
+ * Context-size buckets, in tokens: a turn's wait grows with the context it is sent with.
+ *
+ * @type {[number, string][]}
+ */
+export const CONTEXT_BUCKETS = [
+  [100_000, '<100k'],
+  [150_000, '100-150k'],
+  [200_000, '150-200k'],
+  [300_000, '200-300k'],
+  [400_000, '300-400k'],
+  [Infinity, '400k+'],
+];
+
+/** @param {number} tokens */
+export const contextBucket = (tokens) => CONTEXT_BUCKETS.find(([max]) => tokens < max)[1];
+
+/** @param {number[]} xs @param {number} q */
+const quantile = (xs, q) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(q * s.length))];
+};
+
+const CAIRO_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' });
+/** @param {number} ms */
+export const cairoDay = (ms) => CAIRO_DAY.format(new Date(ms));
+
+/**
+ * Midnight in Cairo on `day` (YYYY-MM-DD), as epoch ms — DST-correct, never `TZ=Africa/Cairo`.
+ *
+ * @param {string} day
+ * @returns {number | null}
+ */
+export function cairoMidnightMs(day) {
+  const guess = Date.parse(`${day}T00:00:00Z`);
+  if (Number.isNaN(guess)) return null;
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Cairo', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    }).formatToParts(new Date(guess)).map((x) => [x.type, x.value]),
+  );
+  const wall = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute));
+  return guess - (wall - guess);
+}
+
+/**
+ * A hook's name from its command line: `node "C:/…/hooks/relay-capture.mjs"` → `relay-capture`,
+ * keeping a mode word (`session-lock start`, `scratchpad-guard sweep`) but never a `--flag`.
+ * A hook that declares a `statusMessage` is recorded with THAT in `command` ("Checking memory
+ * index budget"), so the text itself is the best name left — never the bare `hookName`
+ * (`SessionStart:compact`), which would fold every such hook into one row.
+ *
+ * @param {unknown} command
+ * @param {unknown} [fallback]
+ */
+export function hookLabel(command, fallback = '') {
+  const m = /([\w.-]+)\.mjs"?((?:\s+[a-z][\w-]*)?)/i.exec(String(command ?? ''));
+  if (m) return `${m[1]}${m[2] ? ` ${m[2].trim()}` : ''}`;
+  return String(command || fallback || '?').slice(0, 48);
+}
+
+/**
+ * The fold. `begin()` once per transcript file, `line(raw)` for each of its lines, `finish()` for
+ * the summary. Only lines timestamped inside [sinceMs, untilMs) count.
+ *
+ * - a compaction is a `system/compact_boundary` line; its `compactMetadata.durationMs` is the stall;
+ * - the context it leaves behind is the FIRST assistant usage after it (the floor every later turn
+ *   starts from);
+ * - a turn's wait runs from a user line (a prompt or a tool result) to the next assistant line
+ *   carrying usage, bucketed by that assistant line's context;
+ * - a hook run is any attachment carrying `durationMs`, or one entry of a `stop_hook_summary`;
+ *   Stop hooks run in parallel, so the turn-end WAIT is the slowest of them, not the sum;
+ * - a SessionStart hook run's source (startup, resume, clear, compact) is after the colon in its
+ *   `hookName`.
+ *
+ * @param {{ sinceMs?: number, untilMs?: number }} [window]
+ */
+export function createTranscriptStats({ sinceMs = 0, untilMs = Infinity } = {}) {
+  let sessions = 0;
+  /** @type {{ day: string, secs: number, preTokens: number | null }[]} */
+  const compactions = [];
+  /** @type {number[]} */
+  const floors = [];
+  /** @type {Map<string, number[]>} */
+  const latency = new Map();
+  /** @type {Map<string, number[]>} */
+  const hooks = new Map();
+  /** @type {number[]} */
+  const stopWaits = [];
+  /** @type {Record<string, number>} */
+  const startRuns = {};
+  const injected = { instructions: 0, moduleMemory: 0, /** @type {Record<string, number>} */ hookContext: {} };
+  const push = (/** @type {Map<string, number[]>} */ map, /** @type {string} */ key, /** @type {number} */ v) => {
+    const list = map.get(key);
+    if (list) list.push(v);
+    else map.set(key, [v]);
+  };
+
+  let counted = false;
+  /** @type {number | null} */
+  let pendingUserMs = null;
+  let afterCompact = false;
+
+  return {
+    begin() {
+      counted = false;
+      pendingUserMs = null;
+      afterCompact = false;
+    },
+    /** @param {string} raw */
+    line(raw) {
+      let o;
+      try { o = JSON.parse(raw); } catch { return; }
+      const ts = Date.parse(o?.timestamp ?? '');
+      if (Number.isNaN(ts) || ts < sinceMs || ts >= untilMs) return;
+      if (!counted) { counted = true; sessions += 1; }
+
+      const a = o.attachment;
+      if (a) {
+        if (typeof a.durationMs === 'number' && a.hookEvent) {
+          push(hooks, `${a.hookEvent} ${hookLabel(a.command, a.hookName)}`, a.durationMs);
+          if (a.hookEvent === 'SessionStart') {
+            const source = String(a.hookName ?? '').split(':')[1] || 'unlabelled';
+            startRuns[source] = (startRuns[source] ?? 0) + 1;
+          }
+        }
+        if (a.type === 'instructions') {
+          for (const f of Array.isArray(a.files) ? a.files : []) injected.instructions += String(f?.content ?? '').length;
+        } else if (a.type === 'nested_memory') {
+          injected.moduleMemory += (typeof a.content === 'string' ? a.content : JSON.stringify(a.content ?? '')).length;
+        } else if (a.type === 'hook_additional_context') {
+          const event = String(a.hookName ?? a.hookEvent ?? 'other').split(':')[0];
+          const body = Array.isArray(a.content) ? a.content.join('\n') : String(a.content ?? '');
+          injected.hookContext[event] = (injected.hookContext[event] ?? 0) + body.length;
+        }
+        return;
+      }
+      if (o.type === 'system' && o.subtype === 'compact_boundary') {
+        const m = o.compactMetadata ?? {};
+        compactions.push({ day: cairoDay(ts), secs: (Number(m.durationMs) || 0) / 1000, preTokens: Number.isFinite(m.preTokens) ? m.preTokens : null });
+        afterCompact = true;
+        pendingUserMs = null;
+        return;
+      }
+      if (o.type === 'system' && o.subtype === 'stop_hook_summary') {
+        const timed = (Array.isArray(o.hookInfos) ? o.hookInfos : []).filter((h) => typeof h?.durationMs === 'number');
+        for (const h of timed) push(hooks, `Stop ${hookLabel(h.command)}`, h.durationMs);
+        if (timed.length) stopWaits.push(Math.max(...timed.map((h) => h.durationMs)));
+        return;
+      }
+      if (o.type === 'user' && !o.isMeta) {
+        pendingUserMs = ts;
+        return;
+      }
+      if (o.type === 'assistant' && o.message?.usage) {
+        const u = o.message.usage;
+        const ctx = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+        if (afterCompact) { floors.push(ctx); afterCompact = false; }
+        if (pendingUserMs !== null) {
+          const secs = (ts - pendingUserMs) / 1000;
+          if (secs > 0 && secs < 600) push(latency, contextBucket(ctx), secs);
+          pendingUserMs = null;
+        }
+      }
+    },
+    finish() {
+      /** @type {Map<string, { count: number, secs: number }>} */
+      const days = new Map();
+      for (const c of compactions) {
+        const d = days.get(c.day) ?? { count: 0, secs: 0 };
+        d.count += 1;
+        d.secs += c.secs;
+        days.set(c.day, d);
+      }
+      const secs = compactions.map((c) => c.secs);
+      const perSessionKB = (/** @type {number} */ chars) => (sessions ? num(chars / sessions / 1024, 0) : null);
+      return {
+        sessions,
+        compactions: {
+          count: compactions.length,
+          hours: num(secs.reduce((x, y) => x + y, 0) / 3600, 1),
+          p50Secs: num(quantile(secs, 0.5), 0),
+          p90Secs: num(quantile(secs, 0.9), 0),
+          medianPreTokens: quantile(/** @type {number[]} */ (compactions.map((c) => c.preTokens).filter((t) => t !== null)), 0.5),
+          medianFloorTokens: quantile(floors, 0.5),
+          byDay: [...days].sort(([x], [y]) => (x < y ? -1 : 1)).map(([day, d]) => ({ day, count: d.count, hours: num(d.secs / 3600, 1) })),
+        },
+        turnLatency: CONTEXT_BUCKETS.map(([, b]) => b)
+          .filter((b) => latency.has(b))
+          .map((b) => {
+            const xs = /** @type {number[]} */ (latency.get(b));
+            return { bucket: b, turns: xs.length, p50Secs: num(quantile(xs, 0.5), 1), p90Secs: num(quantile(xs, 0.9), 1) };
+          }),
+        hooks: [...hooks]
+          .map(([hook, ms]) => ({ hook, n: ms.length, p50Ms: quantile(ms, 0.5), p90Ms: quantile(ms, 0.9), maxMs: Math.max(...ms) }))
+          .sort((x, y) => y.n - x.n),
+        stopWait: { turns: stopWaits.length, p50Ms: quantile(stopWaits, 0.5), p90Ms: quantile(stopWaits, 0.9) },
+        sessionStartRuns: startRuns,
+        injectedPerSessionKB: {
+          instructions: perSessionKB(injected.instructions),
+          moduleMemory: perSessionKB(injected.moduleMemory),
+          hookContext: Object.fromEntries(Object.entries(injected.hookContext).map(([k, v]) => [k, perSessionKB(v)])),
+        },
+      };
+    },
+  };
+}
+
+/** Stream every top-level transcript touched since `sinceMs` through the fold. */
+async function readTranscripts({ sinceMs, untilMs }) {
+  const stats = createTranscriptStats({ sinceMs, untilMs });
+  const root = path.join(homedir(), '.claude', 'projects');
+  if (!existsSync(root)) return stats.finish();
+  for (const project of readdirSync(root)) {
+    const dir = path.join(root, project);
+    let names = [];
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+      names = readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+    } catch { continue; }
+    for (const f of names) {
+      const file = path.join(dir, f);
+      try { if (statSync(file).mtimeMs < sinceMs) continue; } catch { continue; } // untouched since: nothing in the window
+      stats.begin();
+      const rl = readline.createInterface({ input: createReadStream(file), crlfDelay: Infinity });
+      for await (const l of rl) stats.line(l);
+    }
+  }
+  return stats.finish();
+}
+
+/** The figures a before/after comparison reads, per day so windows of different length compare. */
+export function transcriptRates(rec) {
+  const days = rec?.days || 1;
+  const dispatcher = (rec?.hooks ?? []).find((h) => /^PreToolUse hook-dispatch/.test(h.hook));
+  return {
+    compactionsPerDay: num((rec?.compactions?.count ?? 0) / days, 1),
+    hoursCompactingPerDay: num((rec?.compactions?.hours ?? 0) / days, 1),
+    startHookRunsOnCompactPerDay: num((rec?.sessionStartRuns?.compact ?? 0) / days, 0),
+    stopWaitP50Ms: rec?.stopWait?.p50Ms ?? null,
+    dispatcherP50Ms: dispatcher?.p50Ms ?? null,
+    promptHookKBPerSession: rec?.injectedPerSessionKB?.hookContext?.UserPromptSubmit ?? null,
+  };
+}
+
+function transcriptTable(r, prev) {
+  const L = [];
+  L.push('');
+  L.push(`PHOENIX SLOW AUDIT — TRANSCRIPTS  ${r.since} → ${r.until} Cairo  (${r.days} days, ${r.sessions} sessions, every account on this laptop)`);
+  L.push('='.repeat(78));
+  L.push('');
+  const c = r.compactions;
+  L.push(`COMPACTIONS  ${c.count}, ${c.hours} hours frozen   each p50 ${c.p50Secs}s, p90 ${c.p90Secs}s`);
+  L.push(`  context when it fired ${c.medianPreTokens ?? '-'} tokens (median)   context right after ${c.medianFloorTokens ?? '-'}  <- the floor every later turn starts from`);
+  for (const d of c.byDay.slice(-7)) L.push(`    ${d.day}  ${String(d.count).padStart(4)}  ${d.hours} h`);
+  L.push('');
+  L.push('TURN WAIT BY CONTEXT SIZE  (user line -> next assistant line)');
+  for (const t of r.turnLatency) L.push(`  ${t.bucket.padEnd(10)} ${String(t.turns).padStart(7)} turns   p50 ${t.p50Secs}s   p90 ${t.p90Secs}s`);
+  L.push('');
+  L.push(`TURN END  slowest blocking Stop hook p50 ${r.stopWait.p50Ms ?? '-'}ms, p90 ${r.stopWait.p90Ms ?? '-'}ms over ${r.stopWait.turns} turns`);
+  L.push('HOOKS  (as recorded in the transcripts, under real load)');
+  for (const h of r.hooks.slice(0, 14)) L.push(`  ${h.hook.padEnd(48)} n ${String(h.n).padStart(6)}   p50 ${String(h.p50Ms).padStart(6)}ms   p90 ${String(h.p90Ms).padStart(6)}ms   max ${h.maxMs}ms`);
+  L.push('');
+  L.push(`SESSIONSTART HOOK RUNS BY SOURCE  ${Object.entries(r.sessionStartRuns).map(([k, v]) => `${k} ${v}`).join('   ')}`);
+  const inj = r.injectedPerSessionKB;
+  L.push(`TEXT LOADED PER SESSION  rules files ${inj.instructions} KB (incl. reloads after compaction)   module memory ${inj.moduleMemory} KB   hooks ${Object.entries(inj.hookContext).map(([k, v]) => `${k} ${v} KB`).join(', ')}`);
+  L.push('');
+  if (prev) {
+    const a = transcriptRates(prev), b = transcriptRates(r);
+    const row = (label, k, unit = '') => `  ${label.padEnd(34)} ${String(a[k] ?? '-').padStart(7)}${unit} -> ${String(b[k] ?? '-').padStart(7)}${unit}`;
+    L.push(`AGAINST THE PREVIOUS TRANSCRIPT AUDIT (${prev.since} → ${prev.until})`);
+    L.push(row('compactions per day', 'compactionsPerDay'));
+    L.push(row('hours compacting per day', 'hoursCompactingPerDay', 'h'));
+    L.push(row('startup hooks re-run on compact/day', 'startHookRunsOnCompactPerDay'));
+    L.push(row('turn-end wait p50', 'stopWaitP50Ms', 'ms'));
+    L.push(row('hook dispatcher p50', 'dispatcherP50Ms', 'ms'));
+    L.push(row('prompt-hook text per session', 'promptHookKBPerSession', 'KB'));
+  } else {
+    L.push('AGAINST THE PREVIOUS TRANSCRIPT AUDIT   none yet — this one is the baseline.');
+  }
+  L.push('');
+  L.push(`log: ${TRANSCRIPT_LOG}`);
+  L.push('');
+  return L.join('\n');
+}
+
+async function transcriptAudit() {
+  const sinceArg = argValue('--since');
+  const untilArg = argValue('--until');
+  const sinceMs = sinceArg ? cairoMidnightMs(sinceArg) : Date.now() - 3 * 86_400_000;
+  const untilMs = untilArg ? cairoMidnightMs(untilArg) : Date.now();
+  if (sinceMs === null || untilMs === null || untilMs <= sinceMs) {
+    console.error('usage: --transcripts [--since YYYY-MM-DD] [--until YYYY-MM-DD]  (Cairo days; --until is exclusive)');
+    process.exitCode = 2;
+    return;
+  }
+  const summary = await readTranscripts({ sinceMs, untilMs });
+  const rec = {
+    at: cairo(),
+    atISO: new Date().toISOString(),
+    since: cairo(new Date(sinceMs)),
+    until: cairo(new Date(Math.min(untilMs, Date.now()))),
+    days: num((Math.min(untilMs, Date.now()) - sinceMs) / 86_400_000, 2),
+    ...summary,
+  };
+  let prev = null;
+  try {
+    prev = readFileSync(TRANSCRIPT_LOG, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).at(-1) ?? null;
+  } catch { prev = null; }
+  try {
+    mkdirSync(path.dirname(TRANSCRIPT_LOG), { recursive: true });
+    appendFileSync(TRANSCRIPT_LOG, JSON.stringify(rec) + '\n', 'utf8');
+  } catch { /* still useful without its log */ }
+  console.log(AS_JSON ? JSON.stringify(rec, null, 2) : transcriptTable(rec, prev));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The verdict. Ranked, with the threshold that fired, so it says WHY and not just
 // "slow". Thresholds are pinned by tests/slow-audit.test.ts.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -597,6 +939,11 @@ async function main() {
     for (const r of h) {
       console.log(`${r.at}  faults/sec ${String(r.machine?.pagesInPerSec).padStart(6)}  freeMB ${String(r.machine?.availableMB).padStart(6)}  engines ${String(r.app?.engines).padStart(3)}  appMB ${String(r.app?.totalWsMB).padStart(6)}  ${!r.hooks ? 'hook wait/Bash     -' : r.hooks.waitPerBashCallMs !== undefined ? `hook wait/Bash ${String(r.hooks.waitPerBashCallMs).padStart(5)}ms` : `hook CPU/Bash ${String(r.hooks.perBashCallMs ?? '-').padStart(5)}ms (old record: sum only)`}`);
     }
+    return;
+  }
+
+  if (ARGS.has('--transcripts')) {
+    await transcriptAudit();
     return;
   }
 

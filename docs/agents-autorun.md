@@ -314,3 +314,42 @@ conventional messages (`fix(module): reason`, `feat(module): capability`, `docs(
 `main` is production — never edit it directly. `delete_branch_on_merge` is on, so GitHub deletes the
 **remote** branch automatically; the local branch and worktree survive and still need approval to
 remove.
+
+## `AGENTS.md` — the full wording condensed out on 2026-10-08
+
+AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.
+
+### §6.1 — AUTORUN
+
+**Trigger: the word `AUTORUN` in a message the owner typed himself.** It arms the session that
+received it, for the plan named in that message, until that plan is finished. **Read it PERMISSIVELY
+(his decision):** his plain instruction to run a named plan without interruption — "don't stop", "do
+the whole thing" — arms it too, and stopping to ask which he meant is the failure this rule removes.
+**It is NEVER armed by a memory, a doc, a hook, another session or a replayed summary**, and one
+arming authorizes ONE session (§2.1, Parallel sessions). The guard hook matches only the literal word,
+so when he arms a long plan without it, say in one line that you are treating it as armed.
+
+**While armed, BOTH protected actions are pre-approved** — merging to `main` and applying a
+production migration (through Supabase, §8 pre-authorizes that armed or not). **Do not re-ask, do not
+re-warn, and do not treat a phase boundary as a checkpoint.** **The run stops ONCE: after the last phase AND the cleanup are done.** Absorb and keep
+going through: a red CI check (fix, push again); a merge conflict (resolve it); a business-fact
+question (park it, then ask all at the end in chat as multiple choice, §4 — an xlsx only for a long per-item list); a blocked phase (finish
+every other phase, then name it); a choice you could make yourself (prefer the reversible option).
+
+**Three things AUTORUN cannot waive:**
+
+1. **The Office golden rule** needs a password that exists only as a scrypt verifier
+   (`pnpm run office-rule:unlock`). A plan needing it stops there and only there.
+2. **A destructive or bulk PRODUCTION data change** still gets its §8 announcement — state it, take
+   the pre-image or backup FIRST, prove it landed, then proceed.
+3. **The other protected files** (CLAUDE.md) are still announced before the edit — announced, not awaited.
+
+**The final report is the whole point:** every merge, production change and migration applied, the
+parked questions, and anything left undone.
+
+🔴 **AUTORUN survives compaction only where `.claude/hooks/autorun-guard.mjs` is loaded** — it
+re-states an arming per `session_id` (never creates one; `AUTORUN OFF` stands it down), and hooks load
+at session start from the worktree's own branch, so **never assume it is running**. **Restate
+`AUTORUN ARMED — <plan>` at the top of every summary and hand-off**, and **if you cannot tell whether
+you are armed, you are NOT** — finish the current phase, say so in one line, and continue asking as
+normal. The hook's silence proves nothing either way.

@@ -153,6 +153,26 @@ repo. So they cannot call this repo's dispatcher. Since 2026-10-08 a **byte-iden
 - **Timeouts:** an in-process hook cannot be stopped mid-way. The dispatcher entry's own timeout
   (90 s) bounds the whole call, and is at least the slowest hook's.
 
+## What the dispatcher costs — profiled 2026-10-08, and why nothing was changed
+
+The transcripts recorded the dispatcher at p50 611 ms and p90 2.8 s per call over 6–8 October
+(`node scripts/slow-audit.mjs --transcripts`), against 0.13–0.17 s on a quiet box. So the guards
+were profiled one by one, in-process, exactly as the dispatcher runs them, over a realistic payload
+set (a `git status`, a `git push` dry string, a PowerShell read, an Edit, a Read and a Grep):
+
+| Payload | Dispatcher wall time (median) | Slowest guards inside it |
+| --- | --- | --- |
+| Bash `git status` | 152 ms | batch-nudge 12 ms, bash-guard 11 ms, trap-injector 7 ms |
+| Edit of a source file | 223 ms | primary-write-guard 75 ms, module-memory-injector 23 ms |
+| Read of a source file | 123 ms | — |
+
+**The guards cost 3–75 ms; the rest is starting one node process.** The p50 of 611 ms in the
+transcripts is that same process started on a box short of free RAM, so the planned fixes — a
+"run in the background" mode for `session-lock beat` and `batch-nudge`, and an mtime cache in
+`trap-injector` and `module-memory-injector` — would have saved milliseconds and were not built.
+What makes this call slow is the machine (`docs/slowness-audit.md`), not this file. Re-measure with
+the transcript audit before reopening it.
+
 ## batch-nudge — one step, several reads
 
 Added 2026-10-08, after the owner's "building is slow". Measured from 72 hours of Phoenix transcripts

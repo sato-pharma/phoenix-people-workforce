@@ -264,3 +264,30 @@ and never ask him to free space in `MEMORY.md`.
   clause "what a session sees in the pointer"; the pointer was in fact the bullet's opening headline
   all along, and a peer session caught it by running `ruleHeadlines()` over `origin/main`. The
   imperative it supported was right, the mechanism cited for it was not.
+
+## `AGENTS.md` — the full wording condensed out on 2026-10-08
+
+AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.
+
+### Preamble — what this file holds
+
+**This file auto-loads in full on every request, so it holds hooks only** — a hook is the rule plus
+the one detail needed to obey it, never the evidence. **Adding a rule? If it belongs to ONE module,
+it goes in that module's memory (`.claude/rules/<module>.md`, §2.2) — only a rule true everywhere
+goes here — and the account goes in `docs/`, never here.** A section is the half that regrows and nothing gates
+one: measure it before you add to it (`docs/memory-index-budget.md`). 🔴 **A session-level trap now
+goes in [docs/agents-session-traps-clusters.md](docs/agents-session-traps-clusters.md), under its
+cluster — never back into §2.1**, which the 2026-09-12 trim reduced to a pointer and a slug roster;
+writing one here re-charges every request for it and the hook will never deliver it.
+
+### §2.2 — A module-memory limit is never put to the owner
+
+- 🔴 **A MODULE-MEMORY LIMIT IS NEVER PUT TO THE OWNER — IT IS THE SESSION'S TO FIX AND SHIP** (owner, 2026-10-03, after a session put "the Phoenix CRM notes file is full at 4,478 of 4,500 characters, so your next CRM ruling cannot be recorded until it's split" into his input box: *"didn't you tell me no session will mention memory issue again"*). Module memory exists so he never thinks about memory capacity again, and that promise covers the plumbing too. A pointer over its margin, a module file near its cap, an orphan note, a dead glob, a stale generated block, an inbox that will not settle: **split it, file it, rebuild it, and ship it inside the PR you are already opening** — never as a question, never in a `Next step:` line, never as a sentence in a summary, and **never as a request to free space in `MEMORY.md`**, which is not trimmed any more. Every one of those limits already fails the required `validate` job, so the SESSION is told and he is not. Account: `docs/module-memory.md`, "Limits".
+
+### §2.2 — Module memory holds each module's rules and notes
+
+- 🔒 **MODULE MEMORY HOLDS EACH MODULE'S RULES AND NOTES — `.claude/rules/<module>.md`, loaded BY CLAUDE CODE the moment a session reads a file of that module** (owner, 2026-10-02 — it ended the trim-and-forget cycle; proven: no file read → not loaded, another module's file → not loaded, this module's file → loaded). None of it costs a startup byte. Work that opens no file (a question, SQL, a shell `cat`) gets it from `.claude/hooks/module-memory-injector.mjs`, which matches the prompt, the command and table names. 🔴 **About to change a module and its memory has not appeared? Open `.claude/rules/<module>.md` yourself** — the hook fails open and silent.
+
+### §2.2 — A new memory note and the fold
+
+- **A new memory note still lands in the laptop index (`MEMORY.md`, under `## Inbox`), so every session sees it at once; the fold (`node scripts/module-memory/fold.mjs --apply`) files each note under its module in ONE PR and the inbox empties once that merges.** The note's `description` becomes its line in the module file — write it as the cue, and correct a wrong note at its `description` first. 🔴 **IT RUNS THREE TIMES A DAY — 09:00, 15:00 and 21:00 Cairo, not weekly** (owner, 2026-10-03). A run with nothing new opens NO PR, and only one fold PR is ever open at once, so the cadence costs no extra CI — it only shortens the wait before a note reaches its module.

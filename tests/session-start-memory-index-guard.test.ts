@@ -70,9 +70,34 @@ function git(at: string, args: string[]): string {
 export function runSessionStartMemoryIndexGuardTests() {
   // 1. THE WIRING. A hook nobody invokes is a file, not a guard.
   const settings = JSON.parse(readFileSync(".claude/settings.json", "utf8")) as {
-    hooks?: { SessionStart?: Array<{ hooks?: Array<{ command?: string }> }> };
+    hooks?: { SessionStart?: Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> };
   };
-  const startEntries = (settings.hooks?.SessionStart ?? []).flatMap((group) => group.hooks ?? []);
+  const startGroups = settings.hooks?.SessionStart ?? [];
+  const startEntries = startGroups.flatMap((group) => group.hooks ?? []);
+
+  // 1a. A COMPACTION IS A SessionStart TOO (source `compact`), and it re-runs every entry with no
+  // matcher. Measured 2026-10-08 from three days of transcripts: 1,087 SessionStart runs on compact
+  // against 514 at startup, inside 176 compactions that each already froze the session for a median
+  // 132s. The two heavy entries — the all-worktrees provisioning sweep (worst 17.5s) and this
+  // guard (worst 11s) — add to that freeze and answer nothing a compaction changed, so they fire on
+  // startup, resume and clear only. The lock keeps firing on every source: it is what re-states
+  // "another session holds this folder" after the summary has dropped it.
+  const firesOn = (group: { matcher?: string } | undefined, source: string): boolean =>
+    !!group && (!group.matcher || group.matcher === "*" || new RegExp(group.matcher).test(source));
+  const groupOf = (needle: string) =>
+    startGroups.find((g) => (g.hooks ?? []).some((h) => (h.command ?? "").includes(needle)));
+  for (const heavy of ["sync-worktree-env.mjs", "memory-index-guard.mjs"]) {
+    for (const source of ["startup", "resume", "clear"]) {
+      assert.ok(firesOn(groupOf(heavy), source), `${heavy} must still run on SessionStart source "${source}"`);
+    }
+    assert.ok(
+      !firesOn(groupOf(heavy), "compact"),
+      `${heavy} must NOT re-run on every compaction — give its SessionStart group "matcher": "startup|resume|clear"`,
+    );
+  }
+  for (const source of ["startup", "resume", "clear", "compact"]) {
+    assert.ok(firesOn(groupOf("session-lock.mjs"), source), `session-lock start must fire on "${source}" as well`);
+  }
   const guardEntries = startEntries.filter((h) => (h.command ?? "").includes("memory-index-guard.mjs"));
   assert.equal(
     guardEntries.length,
