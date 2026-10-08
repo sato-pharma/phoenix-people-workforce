@@ -73,6 +73,16 @@ function pctFraction(text: string | null | undefined): number {
   return num(text) / 100;
 }
 
+/**
+ * A material's name on the sheet. The packaging material is stored as `Box`, and this sheet also says
+ * `Total boxes` for the product count, so two different things would share one word — the packaging
+ * row is spelled out here, in the export only. The stored name (and the screen) stay `Box`.
+ */
+function sheetMaterialName(S: ReturnType<typeof productionPlanningStrings>, planRow: WirePlanRow): string {
+  if (planRow.code === "CARTON") return S.lang === "ar" ? "علبة التغليف" : "Packaging box";
+  return S.name(planRow);
+}
+
 function labelCell(sheet: ExcelJS.Worksheet, row: number, text: string) {
   const cell = sheet.getCell(row, 1);
   cell.value = text;
@@ -380,7 +390,7 @@ export async function buildProductionPlanningWorkbook(
       : PPL.chipNoComposition;
 
     return [
-      `${S.name(planRow)} (${S.unitLabel(planRow.displayUnit)})`,
+      `${sheetMaterialName(S, planRow)} (${S.unitLabel(planRow.displayUnit)})`,
       planRow.supplier ? S.supplierLabels[planRow.supplier] : PPL.chipNoComposition,
       basisText,
       qtyPerBasis,
@@ -460,7 +470,7 @@ export async function buildProductionPlanningWorkbook(
     const egpFormula =
       currency === "EGP" ? `B${excelRow}*C${excelRow}` : `B${excelRow}*C${excelRow}*${FX}`;
     return [
-      `${S.name(entry.planRow)} (${S.unitLabel(entry.planRow.displayUnit)})`,
+      `${sheetMaterialName(S, entry.planRow)} (${S.unitLabel(entry.planRow.displayUnit)})`,
       F(`K${entry.excelRow}`, num(entry.planRow.toBuy)),
       price,
       currency === "EGP" ? PPL.currencyEgp : currency === "USD" ? PPL.currencyUsd : "—",
