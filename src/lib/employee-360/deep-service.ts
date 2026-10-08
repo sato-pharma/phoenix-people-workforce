@@ -18,6 +18,13 @@ import { getRepContactList } from "@/lib/crm/contact-lists";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import {
+  phoenixDetailViewer,
+  phoenixRowSight,
+  phoenixVisitDetail,
+  type PhoenixDetailSight,
+  type PhoenixVisitDetail,
+} from "@/lib/crm/phoenix-visit-detail";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 import { currentCairoDateParts } from "@/lib/i18n/format";
@@ -523,10 +530,15 @@ export type DoubleVisitEvent = {
   date: string;
   doubleHrId: string;
   doubleName: string | null;
+  /** A chain visit's SECOND manager. The vendor had one partner column, so this is Phoenix-only; it
+   * names a person and moves no figure — `totalReceived` still counts one per visit. */
+  double2Name: string | null;
   isTrainingManager: boolean;
   kind: "Regular" | "Campaign" | "Other";
   ampm: string | null;
   customerName: string | null;
+  /** The Phoenix field set, shaped to THIS reader's tier. Null on a vendor row. */
+  phoenix: PhoenixVisitDetail | null;
 };
 export type DoubleVisitor = { hrId: string; name: string | null; count: number; isTrainingManager: boolean };
 export type DoubleVisitHistory = {
@@ -537,7 +549,12 @@ export type DoubleVisitHistory = {
   events: DoubleVisitEvent[];
 };
 
-function buildDoubleVisitHistory(visits: VisitRow[], tmIds: Set<string>, nameByHrId: Map<string, string>): DoubleVisitHistory {
+function buildDoubleVisitHistory(
+  visits: VisitRow[],
+  tmIds: Set<string>,
+  nameByHrId: Map<string, string>,
+  sight: PhoenixDetailSight,
+): DoubleVisitHistory {
   const events: DoubleVisitEvent[] = [];
   const byVisitor = new Map<string, { name: string | null; count: number; isTm: boolean }>();
   for (const v of visits) {
@@ -555,10 +572,12 @@ function buildDoubleVisitHistory(visits: VisitRow[], tmIds: Set<string>, nameByH
       date: v.visit_date,
       doubleHrId: v.double_hr_id,
       doubleName: name,
+      double2Name: v.double2_name?.trim() || null,
       isTrainingManager: isTm,
       kind,
       ampm: v.ampm,
       customerName: v.contact_name ?? v.customer_name ?? null,
+      phoenix: v.visit_kind ? phoenixVisitDetail(v, sight) : null,
     });
     const agg = byVisitor.get(key) ?? { name, count: 0, isTm };
     agg.count += 1;
@@ -1432,6 +1451,10 @@ export async function getEmployee360Profile(
   includeExpenses: boolean = true,
   viewerRole: PhoenixRole = "Employee",
   roleCategory: Employee360RoleCategory | null = null,
+  /** The READER's own hr id. It decides nothing but one thing: a reader opening his OWN profile reads
+   * his Phoenix rows at the `none` tier (owner, 2026-09-29, absolute). Null means "not the subject",
+   * which is the safe default for a caller that has no reader to name. */
+  viewerHrId: string | null = null,
 ): Promise<Employee360Profile> {
   const salesTeam = teamHrIds.length ? teamHrIds : [hrId];
   const isLeader = isFieldLeaderCategory(roleCategory);
@@ -1466,7 +1489,15 @@ export async function getEmployee360Profile(
 
   const visitSummary = summarizeVisits(visits, window, listsByContact);
   const checkinSummary = summarizeCheckins(checkins, visits, visitSummary);
-  const doubleVisits = buildDoubleVisitHistory(visits, tmIds, nameByHrId);
+  // ONE sight for the whole profile: this page has a single subject, so every Phoenix row on it belongs
+  // to the same rep. `phoenixRowSight` still resolves it per row, which is what makes a rep opening his
+  // own 360 read `none` while his manager reads the distance.
+  const doubleVisits = buildDoubleVisitHistory(
+    visits,
+    tmIds,
+    nameByHrId,
+    phoenixRowSight(phoenixDetailViewer(viewerRole, viewerHrId), hrId),
+  );
 
   // Period-matched sales: only the months the visit window touches, never `sales.totalSales`
   // (every month since the history floor). The two efficiency ratios and the expense ratio below

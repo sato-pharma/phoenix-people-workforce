@@ -9,6 +9,34 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 /* ─── Helpers ──────────────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
+/**
+ * The Phoenix field set on one visit, as one line — the work first, then the proof.
+ *
+ * A vendor visit returns null and the row reads exactly as it did. What this reader may see was decided
+ * on the server (`phoenix-visit-detail.ts`): a `distance` reader simply has no accuracy to print, so
+ * there is nothing to hide here.
+ */
+function phoenixVisitLine(visit: CompanyActivityDayRow["crmVisits"][number]): string | null {
+  const detail = visit.phoenix;
+  if (!detail) return null;
+  const parts = [
+    detail.kindLabel,
+    detail.products.length > 0 ? detail.products.join(", ") : null,
+    detail.samples,
+    detail.availability,
+    detail.objection,
+    detail.nextStep,
+    detail.pharmacyFeedback,
+    detail.offPlan,
+    detail.location,
+    detail.evidence,
+    detail.capture,
+  ]
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 function minutesToClock(minutes: number | null): string {
   if (minutes == null) return "—";
   const hours = Math.floor(minutes / 60) % 24;
@@ -175,7 +203,14 @@ function DayRow({ day, hrId }: { day: CompanyActivityDayRow; hrId: string }) {
               {visit.attributionUncertain ? (
                 <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-[0.06em] text-amber-600">unmapped identity</span>
               ) : null}
+              {visit.partner2Name ? <span className="font-medium text-slate-600">and {visit.partner2Name}</span> : null}
               {visit.comment ? <span className="basis-full text-phx-xs font-medium leading-4 text-slate-500">{visit.comment}</span> : null}
+              {/* The Phoenix field set, on its own full-width line under the visit. `basis-full` is why
+                  it needs no column of its own: the list already wraps, so the fits-the-screen rule is
+                  satisfied by the flex it is already in. Nothing here is printed for a vendor visit. */}
+              {phoenixVisitLine(visit) ? (
+                <span className="basis-full text-phx-2xs font-semibold leading-4 text-slate-500">{phoenixVisitLine(visit)}</span>
+              ) : null}
             </li>
           ))}
         </ul>

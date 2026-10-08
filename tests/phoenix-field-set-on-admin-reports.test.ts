@@ -32,6 +32,7 @@ import {
   type DoubleVisitAuditData,
   type DoubleVisitAuditSection,
 } from "../src/lib/double-visit-analytics/audit-export.ts";
+import { buildVisitDetail, type CrmDetailRow } from "../src/lib/company-activity-report/crm-detail.ts";
 
 /** A Phoenix visit carrying every measurement the app records, so each tier can be read off one row. */
 const FULL_ROW: PhoenixVisitDetailRow = {
@@ -328,6 +329,8 @@ const REPORT_SELECTS: readonly { file: string; what: string }[] = [
   { file: "src/lib/field-activity/report.ts", what: "Field Activity" },
   { file: "src/lib/double-visit-analytics/service.ts", what: "Double Visit Analytics" },
   { file: "src/lib/double-visit-analytics/audit-export.ts", what: "the double-visit audit export" },
+  { file: "src/lib/employee-360/service.ts", what: "Employee 360" },
+  { file: "src/lib/company-activity-report/crm-detail.ts", what: "Company Activity" },
 ];
 
 function runReportCarryTests(): void {
@@ -377,6 +380,52 @@ async function runAuditSheetTests(): Promise<void> {
   );
 }
 
+
+function runCompanyActivityTests(): void {
+  const phoenixRow: CrmDetailRow = {
+    id: "1",
+    crm_visit_id: -9001,
+    visit_date: "2026-10-07",
+    visit_type: 0,
+    visit_type_description: "Regular Visit",
+    comment: null,
+    customer_name: null,
+    contact_name: "Dr A",
+    ampm: "PM",
+    agent_hr_id: "B-100",
+    double_hr_id: "B-900",
+    double2_hr_id: "B-155",
+    double2_name: "A Product Manager",
+    agent_crm_id: 1397,
+    contact_crm_id: 500,
+    double_crm_id: null,
+    crm_save_date: "2026-10-07 11:00:00+00",
+    ...FULL_ROW,
+  };
+
+  // 🔴 NO READER NAMED MEANS NO PHOENIX DETAIL, which is NOT the `none` tier. `none` still shows the
+  // work half — it blinds the integrity signals only — so defaulting an unnamed caller to it would print
+  // a rep's products and objections to code that never said who was reading.
+  assert.equal(buildVisitDetail(phoenixRow, null).phoenix, null, "no reader named: the cell reads as it always did");
+  assert.equal(buildVisitDetail(phoenixRow, null).partner2Name, "A Product Manager", "but the second manager is still named");
+
+  // 🔴 THE `rows.map(buildVisitDetail)` TRAP. `map` passes the INDEX second, so a bare function reference
+  // would hand the sight parameter a number — and `0` is not a tier, so the shaper would fall through to
+  // its widest reading for every row. These two assertions are what a reintroduced bare reference breaks.
+  const distance = buildVisitDetail(phoenixRow, "distance");
+  assert.equal(distance.phoenix?.products.join(", "), "Ivyronc, Guamusin", "the work half is whole at the distance tier");
+  assert.ok(distance.phoenix?.location, "and the distance itself is read");
+  assert.equal(distance.phoenix?.capture, null, "but never the capture timing — that is the Super Admin's and the SFE Manager's");
+
+  const own = buildVisitDetail(phoenixRow, "none");
+  assert.equal(own.phoenix?.products.join(", "), "Ivyronc, Guamusin", "his own row still shows his own work");
+  assert.equal(own.phoenix?.location, null, "and no location at all");
+
+  // A vendor visit carries no `visit_kind`, so it carries nothing — at EVERY tier, the Super Admin's too.
+  const vendor: CrmDetailRow = { ...phoenixRow, ...Object.fromEntries(Object.keys(FULL_ROW).map((key) => [key, null])) };
+  assert.equal(buildVisitDetail(vendor, "full").phoenix, null, "a vendor visit prints nothing rather than a row of blanks");
+}
+
 export async function runPhoenixFieldSetOnAdminReportsTests(): Promise<void> {
   runTierTests();
   runViewerTests();
@@ -384,5 +433,6 @@ export async function runPhoenixFieldSetOnAdminReportsTests(): Promise<void> {
   runSelectListTests();
   runDrilldownTests();
   runReportCarryTests();
+  runCompanyActivityTests();
   await runAuditSheetTests();
 }
