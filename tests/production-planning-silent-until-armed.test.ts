@@ -104,6 +104,96 @@ export function runProductionPlanningSilentUntilArmedTests() {
       "a code change cannot talk its way past",
   );
 
+  // --- The EXPIRY sweep, same four switches, its own independent pair ------------------
+  //
+  // A second alarm with its own arming is a second chance to ship something that emails four people
+  // on merge. Every gate the reorder sweep is held to is asserted again here, against the expiry
+  // sweep's own source — never by reading the reorder assertions and assuming they generalise.
+  const expirySweep = readFileSync("src/lib/production-planning/expiry-sweep.ts", "utf8");
+  const expiryMigration = readFileSync(
+    "supabase/migrations/20261008210000_production_planning_guamusin.sql",
+    "utf8",
+  );
+
+  const expiryTemplateStart = emailService.indexOf("\n  production_planning_expiry: {\n    bodyHtml");
+  assert.notEqual(
+    expiryTemplateStart,
+    -1,
+    "templateDefaults is missing the production_planning_expiry entry — and it must carry EVERY content " +
+      "column, because activating a minimal row blanks the body to \"Body content is not configured yet.\"",
+  );
+  const expiryTemplateBlock = emailService.slice(
+    expiryTemplateStart,
+    emailService.indexOf("\n  },\n", expiryTemplateStart),
+  );
+  assert.match(
+    expiryTemplateBlock,
+    /isActive: false,/,
+    "the production_planning_expiry template must ship INACTIVE — arming it is the owner's click, not a deployment",
+  );
+  for (const column of ["bodyHtml:", "bodyText:", "closingText:", "greeting:", "previewText:", "subject:"]) {
+    assert.ok(
+      expiryTemplateBlock.includes(column),
+      `the expiry template must write ${column} — a minimal row activates to a blank body`,
+    );
+  }
+
+  const expiryRulesStart = emailService.indexOf("\n  production_planning_expiry: {\n    bccRoles:");
+  assert.notEqual(expiryRulesStart, -1, "defaultRules is missing the production_planning_expiry entry");
+  const expiryRulesBlock = emailService.slice(
+    expiryRulesStart,
+    emailService.indexOf("\n  },\n", expiryRulesStart),
+  );
+  for (const address of [
+    "sahar.khalil@satopharma.com",
+    "anwar.gaweesh@satopharma.com",
+    "ahmed.elmaraghy@satopharma.com",
+    "omar.anwar@satopharma.com",
+  ]) {
+    assert.ok(
+      expiryRulesBlock.includes(address),
+      `the expiry email must reach the same four people the owner named: ${address}`,
+    );
+  }
+  for (const roleField of ["toRoles: []", "ccRoles: []", "bccRoles: []"]) {
+    assert.ok(
+      expiryRulesBlock.includes(roleField),
+      `the expiry email must route by address only (${roleField}) — a role would reach the whole of that role`,
+    );
+  }
+
+  assert.match(
+    expirySweep,
+    /if \(!data\.settings\.expiryAlarmEnabled\) return \{ \.\.\.base, skipped: "disabled" \};/,
+    'the expiry sweep must return skipped: "disabled" when it is not armed, and write nothing',
+  );
+  const expiryDryRunGate = expirySweep.indexOf("  if (dryRun) {");
+  const expirySendCall = expirySweep.indexOf("await sendTemplatedEmail(");
+  assert.notEqual(expiryDryRunGate, -1, "the expiry sweep must have a dry-run gate");
+  assert.notEqual(expirySendCall, -1, "the expiry sweep must be the thing that sends its email");
+  assert.ok(
+    expiryDryRunGate < expirySendCall,
+    "the expiry dry-run gate must come BEFORE sendTemplatedEmail — a dry run that reaches the send is not one",
+  );
+  assert.match(expirySweep, /dry_run: dryRun,/, "every expiry row must record which mode produced it");
+  assert.match(expirySweep, /\.eq\("dry_run", false\)/, "only real expiry rows may ever be marked as sent");
+  assert.match(
+    expiryMigration,
+    /check \(dry_run = false or email_sent = false\)/,
+    "prodplan_expiry_events must carry the same CHECK: a dry run cannot be marked as sent",
+  );
+
+  // Both sweeps on ONE cron, and the expiry one caught separately so neither can silence the other.
+  assert.ok(
+    reorderRoute.includes("runProductionPlanningExpirySweep()"),
+    "the reorder cron must also run the expiry sweep — it is deliberately not a second cron-job.org schedule",
+  );
+  assert.ok(
+    reorderRoute.includes("expiry = { error:"),
+    "a failing expiry sweep must be reported, not thrown — a reorder email that already went out must not " +
+      "become a 500 the scheduler retries",
+  );
+
   // --- Both crons are authorised, watched, and declared --------------------------------
   for (const [name, source, slug, job] of [
     ["reorder", reorderRoute, "phoenix-production-planning-reorder", "cron/production-planning-reorder"],

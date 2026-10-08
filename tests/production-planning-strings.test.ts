@@ -6,9 +6,13 @@ import {
   ALARM_SEVERITY_LABELS_EN,
   BASIS_LABELS,
   BASIS_LABELS_EN,
+  basisLabelsAr,
+  basisLabelsEn,
   buildAlarmEmailSummary,
   buildPlannerSentence,
   buildPlannerSentenceEn,
+  buildSampleUnitsHintAr,
+  buildSampleUnitsHintEn,
   coerceProductionPlanningLanguage,
   formatNumberLatin,
   packagingBoxName,
@@ -22,6 +26,7 @@ import {
   PRODUCTION_PLANNING_REFUSALS_EN,
   PRODUCTION_PLANNING_TABS,
   PRODUCTION_PLANNING_TABS_EN,
+  type ProductMeasure,
   productionPlanningStrings,
   reorderEmailMaterialLabel,
   storedPlanTitle,
@@ -170,11 +175,51 @@ export function runProductionPlanningStringsTests() {
       `${key} must not hard-code Arabic-Indic digits: the owner chose Latin digits — ${JSON.stringify(value)}`,
     );
   }
+  // The sample hint and the per-dose basis still STATE their sizes, and still in Latin digits — but
+  // the sizes now come from the product instead of sitting in the sentence as literals. They had to:
+  // 40 ml, 100 ml and 5 ml are Ivyronc's, and Guamusin is a powder in 5 g sachets, so the old flat
+  // strings printed "مل" on a screen measuring grams. Pinned for BOTH products, so neither the Latin
+  // digits nor the unit can drift back.
+  const ivyronc: ProductMeasure = { dose: "5", goodUnit: "100", measureUnit: "ml", sampleUnit: "40" };
+  const guamusin: ProductMeasure = { dose: "5", goodUnit: "5", measureUnit: "g", sampleUnit: "5" };
+
+  const ivyHint = buildSampleUnitsHintAr(ivyronc);
   assert.ok(
-    PP.sampleUnitsHint.includes("40") && PP.sampleUnitsHint.includes("100"),
-    "the sample hint states its sizes in Latin digits, beside the Latin figures the engine prints",
+    ivyHint.includes("40 مل") && ivyHint.includes("100 مل"),
+    `the sample hint states its sizes in Latin digits, beside the Latin figures the engine prints — ${JSON.stringify(ivyHint)}`,
   );
-  assert.ok(BASIS_LABELS.per_dose.includes("5"), "and so does the per-dose basis label");
+  const ivyDose = basisLabelsAr(ivyronc).per_dose;
+  assert.equal(ivyDose, "لكل جرعة 5 مل", "and so does the per-dose basis label");
+
+  // The unit is matched WITH its figure — "5 جم", never a bare "مل" — because this file's own
+  // deny-list header is a warning about exactly that: "لك" hides inside "لكل", and "مل" hides inside
+  // "كاملة", which every one of these sentences ends with. A bare substring test here passes on the
+  // Arabic and fails on the comment.
+  const gramHint = buildSampleUnitsHintAr(guamusin);
+  assert.ok(
+    gramHint.includes("5 جم") && !gramHint.includes("5 مل"),
+    `a product measured by weight states grams, never millilitres — ${JSON.stringify(gramHint)}`,
+  );
+  const gramDose = basisLabelsAr(guamusin).per_dose;
+  assert.ok(
+    gramDose.includes("5 جم") && !gramDose.includes("5 مل"),
+    `and the per-dose label follows the product's own measure unit — ${gramDose}`,
+  );
+
+  // Both facts again on the English side, which has its own pair of builders.
+  const ivyHintEn = buildSampleUnitsHintEn(ivyronc);
+  assert.ok(
+    ivyHintEn.includes("40 ml") && ivyHintEn.includes("100 ml"),
+    `the English sample hint states the same two sizes — ${JSON.stringify(ivyHintEn)}`,
+  );
+  assert.equal(basisLabelsEn(ivyronc).per_dose, "per 5 ml dose");
+  assert.equal(basisLabelsEn(guamusin).per_dose, "per 5 g dose");
+
+  // The generic halves carry no measurement at all, which is what makes them product-agnostic — and
+  // is why the Arabic-digit sweep above can read them without a carve-out.
+  assert.equal(BASIS_LABELS.per_dose, "لكل جرعة");
+  assert.ok(!/\d/.test(BASIS_LABELS.per_dose), "the generic per-dose label states no size of its own");
+  assert.ok(!/\d/.test(PP.sampleUnitsHint), "nor does the generic sample hint");
 
   // ── The number formatter ──────────────────────────────────────────────────────────────────────
   assert.equal(formatNumberLatin("109180"), "109,180");
@@ -252,14 +297,25 @@ export function runProductionPlanningStringsTests() {
   }
 
   // ── The owner's three rules are visible IN THE WORDS, not only in the engine ──────────────────
+  // His 2026-10-05 correction was about the MEANING — that samples come out of the run and so REDUCE
+  // what can be sold — and that is pinned on the generic sentence. What the reduced thing is CALLED
+  // follows the product: "العلب" was a bottle count, and Guamusin's saleable unit is a sachet, so the
+  // noun is "الوحدات" and the size beside it is the product's own.
   assert.ok(
-    PP.sampleUnitsHint.includes("تقلل عدد العلب"),
-    "the hint beside the sample field must say that samples REDUCE the bottle count — the correction he had to make on 2026-10-05",
+    PP.sampleUnitsHint.includes("تقلل عدد الوحدات"),
+    "the hint beside the sample field must say that samples REDUCE the saleable-unit count — the correction he had to make on 2026-10-05",
   );
   assert.ok(
     PP.sampleUnitsHint.includes("عبوة كاملة"),
     "and that a sample still consumes a FULL packaging set",
   );
+  for (const measure of [ivyronc, guamusin]) {
+    assert.ok(
+      buildSampleUnitsHintAr(measure).includes("تقلل عدد الوحدات"),
+      "and the built sentence keeps it for every product, not only the one the string was written for",
+    );
+    assert.ok(buildSampleUnitsHintEn(measure).includes("reduces the"), "the English sentence says the same thing");
+  }
   assert.ok(PP.roundedUpNote.includes("التقريب لأعلى"), "and that whole runs round UP");
   assert.equal(
     PP.excludedUnsettled,

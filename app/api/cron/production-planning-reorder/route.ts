@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
+import { runProductionPlanningExpirySweep } from "@/lib/production-planning/expiry-sweep";
 import { runProductionPlanningReorderSweep } from "@/lib/production-planning/reorder-sweep";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -28,6 +29,14 @@ export const maxDuration = 120;
  *
  * 06:10 Cairo, a minute nothing else in the account uses, so a red execution here is unambiguous
  * about which job produced it — and early enough that the answer is waiting before the office opens.
+ *
+ * ── TWO sweeps on one schedule since Guamusin ───────────────────────────────────────────────────
+ *
+ * The EXPIRY sweep runs here too, with its own independent pair of arming flags. It is not a second
+ * cron-job.org job because adding one is the owner's own click in a console, and this pass already
+ * happens; the two verdicts also belong together — "order more of this" and "use THIS batch first"
+ * are different answers about the same morning's stock. Each reports separately below, and a
+ * failure in either is caught on its own so one cannot silence the other.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/production-planning-reorder");
@@ -36,6 +45,18 @@ export async function GET(request: Request) {
     const result = await withDeadMansSwitch("phoenix-production-planning-reorder", () =>
       runProductionPlanningReorderSweep(),
     );
+    // Separately caught: a red reorder sweep must not hide the expiry verdict, and an expiry failure
+    // must not turn a reorder email that already went out into a 500 the scheduler will retry.
+    let expiry: Awaited<ReturnType<typeof runProductionPlanningExpirySweep>> | { error: string };
+    try {
+      expiry = await runProductionPlanningExpirySweep();
+    } catch (error) {
+      logError("Production planner expiry sweep failed", {
+        labels: { event: "cron_partial_failed", job: "production-planning-reorder" },
+        error,
+      });
+      expiry = { error: clientSafeErrorMessage(error, "Production planner expiry sweep failed.") };
+    }
     return NextResponse.json({
       success: true,
       alarms: result.alarms,
@@ -46,6 +67,7 @@ export async function GET(request: Request) {
       recorded: result.recorded,
       skipped: result.skipped,
       warnings: result.warnings,
+      expiry,
     });
   } catch (error) {
     logError("Production planner reorder sweep failed", {

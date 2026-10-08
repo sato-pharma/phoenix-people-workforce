@@ -39,8 +39,29 @@ export const FRACTION_SCALE = PCT_SCALE * BigInt(100);
 /** Base units carried in a mass, and in a count. The migration's `base_unit` CHECK spells these. */
 export type UnitKind = "mass" | "count";
 
+/**
+ * The unit a product's run volume, dose, saleable unit and sample are counted in.
+ *
+ * The arithmetic is unit-agnostic — a run of 1,250,000 divided by a dose of 5 is 250,000 doses
+ * whether those are millilitres of syrup or grams of powder. This exists so the SCREEN and the
+ * Excel sheet can say the right word: Ivyronc is `ml`, Guamusin is `g`. The product columns are
+ * still named `_ml` for the one product that existed when they were created, which is why the
+ * migration carries a `comment on column` on each of them.
+ */
+export type MeasureUnit = "ml" | "g";
+
 /** What a composition's `qty_per_basis` is measured against. Matches the migration's CHECK. */
-export type CompositionBasis = "per_dose" | "per_packaging_set" | "per_good_unit" | "per_sample_unit";
+export type CompositionBasis =
+  | "per_dose"
+  | "per_packaging_set"
+  | "per_good_unit"
+  | "per_sample_unit"
+  /**
+   * Per BOX as the owner counts boxes — `packagingSets / unitsPerBox`. A Guamusin carton holds 12
+   * sachets, so it is consumed once per box and not once per sachet. For Ivyronc `unitsPerBox` is 1,
+   * which makes this identical to `per_packaging_set`, so adding it moved none of his figures.
+   */
+  | "per_box";
 
 /**
  * Who brings a material. `shared_unsettled` is not an oversight — it is the honest answer for the
@@ -59,7 +80,20 @@ export const COMPOSITION_BASES: readonly CompositionBasis[] = [
   "per_packaging_set",
   "per_good_unit",
   "per_sample_unit",
+  "per_box",
 ] as const;
+
+export const MEASURE_UNITS: readonly MeasureUnit[] = ["ml", "g"] as const;
+
+/**
+ * A measure unit read FAIL-SAFE off a database row.
+ *
+ * Unrecognised or missing falls back to `ml`, which is what every row held before the column
+ * existed — so a half-failed read mislabels nothing it did not already label that way.
+ */
+export function coerceMeasureUnit(value: unknown): MeasureUnit {
+  return MEASURE_UNITS.find((candidate) => candidate === value) ?? "ml";
+}
 
 export const MATERIAL_SUPPLIERS: readonly MaterialSupplier[] = ["sato", "factory", "shared_unsettled"] as const;
 

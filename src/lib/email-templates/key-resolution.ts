@@ -57,6 +57,7 @@ export const emailTemplateKeys = [
   "telegram_connect",
   "weekly_sales_uploaded",
   "production_planning_reorder",
+  "production_planning_expiry",
 ] as const;
 
 export type EmailTemplateKey = (typeof emailTemplateKeys)[number];
