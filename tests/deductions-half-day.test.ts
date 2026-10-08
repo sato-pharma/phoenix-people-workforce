@@ -20,6 +20,7 @@ import {
   countGpsTracesByDate,
   halfDayReason,
   halfDaySlotOfRow,
+  isUnlocatedPhoenixVisit,
   judgeHalfDay,
   planItemHalves,
   type HalfDayCheckinRow,
@@ -202,12 +203,12 @@ export async function runDeductionsHalfDayTests(): Promise<void> {
   // A started team logs no iReports360 check-in, and its `ampm` is the customer LIST, not the hour.
   {
     assert.equal(
-      verdictFor({ visits: [visit({ source: "phoenix", ampm: "PM", crm_save_date: `${SUNDAY}T14:10:00Z` })] }).kind,
+      verdictFor({ visits: [visit({ source: "phoenix", lat: 30.05, lon: 31.24, ampm: "PM", crm_save_date: `${SUNDAY}T14:10:00Z` })] }).kind,
       "cleared",
       "a Phoenix PM-list visit captured at 14:10 is a trace in the morning band, exactly like a 14:10 check-in",
     );
     assert.equal(
-      verdictFor({ visits: [visit({ source: "phoenix", ampm: "AM", crm_save_date: `${SUNDAY}T15:40:00Z` })] }).kind,
+      verdictFor({ visits: [visit({ source: "phoenix", lat: 30.05, lon: 31.24, ampm: "AM", crm_save_date: `${SUNDAY}T15:40:00Z` })] }).kind,
       "cleared",
       "a Phoenix AM-list visit captured at 15:40 clears the afternoon",
     );
@@ -217,9 +218,33 @@ export async function runDeductionsHalfDayTests(): Promise<void> {
       "an iReports360 SAVE time is not a check-in — 15:40 clears nothing there",
     );
     assert.equal(
-      verdictFor({ visits: [visit({ source: "phoenix", ampm: "AM", crm_save_date: `${SUNDAY}T11:00:00Z` })] }).kind,
+      verdictFor({ visits: [visit({ source: "phoenix", lat: 30.05, lon: 31.24, ampm: "AM", crm_save_date: `${SUNDAY}T11:00:00Z` })] }).kind,
       "half_day",
       "a Phoenix capture still proves only the half it falls in",
+    );
+  }
+
+  // ── A Phoenix visit must have a location and a time — "no negotiation" ────
+  // 18 of 726 in the first week were typed in by an admin for the rep (capture_source admin,
+  // location_flag no_place): no position, so not field evidence.
+  {
+    const located = visit({ source: "phoenix", lat: 30.05, lon: 31.24, ampm: "AM", crm_save_date: `${SUNDAY}T10:00:00Z` });
+    const unlocatedAfternoon = visit({ source: "phoenix", lat: null, lon: null, ampm: "PM", crm_save_date: `${SUNDAY}T18:30:00Z` });
+    assert.deepEqual(
+      verdictFor({ visits: [located, unlocatedAfternoon] }),
+      { kind: "half_day", missing: "PM", coveredBy: ["crm"] },
+      "a Phoenix visit with no location neither fills the afternoon nor proves it by its 18:30 time",
+    );
+    const { byPersonDay, firstSignalByPerson } = buildHalfDayEvidence({ visits: [unlocatedAfternoon], checkins: [], identity });
+    assert.equal(byPersonDay.get(`${compactHalfDayHrId(REP)}:${SUNDAY}`)?.visitsWithoutLocation, 1, "it is counted so the reviewer sees it was there");
+    assert.equal(firstSignalByPerson.has(compactHalfDayHrId(REP) ?? ""), false, "and it starts no one's month");
+    assert.equal(isUnlocatedPhoenixVisit(unlocatedAfternoon), true);
+    assert.equal(isUnlocatedPhoenixVisit(visit({ source: "phoenix", visit_type: -11, lat: null, lon: null })), false, "a Phoenix meeting is not a visit and carries no position by design");
+    assert.equal(isUnlocatedPhoenixVisit(visit({ source: "ireports360", lat: null, lon: null })), false, "an iReports360 visit's position is its check-in, not the row");
+    assert.equal(
+      verdictFor({ visits: [visit({ ampm: "AM", crm_save_date: `${SUNDAY}T10:00:00Z` }), visit({ ampm: "PM", crm_save_date: `${SUNDAY}T18:30:00Z` })] }).kind,
+      "not_a_half_day",
+      "the location rule is Phoenix's — an iReports360 visit still counts by its tag",
     );
   }
 
@@ -351,19 +376,20 @@ export async function runDeductionsHalfDayTests(): Promise<void> {
     assert.match(connector, /deductionDays: 0\.5/, "and priced at Base ÷ the month's days × 0.5");
     assert.match(connector, /DeductionsConnectorDegradedError\(CONNECTOR, `the CRM visit feed returned no rows/, "an empty feed fails closed");
     assert.match(connector, /gpsTraceTotal === 0/, "a dense month with no GPS traces at all fails closed");
-    assert.match(connector, /contact_crm_id, source"/, "the visit read carries the source, or a Phoenix capture cannot be told apart");
+    assert.match(connector, /contact_crm_id, source, lat, lon"/, "the visit read carries the source and the position, or a Phoenix capture cannot be told apart");
 
     // The GPS trace count: iReports360 check-ins plus Phoenix captures on the visit's own day.
     const counts = countGpsTracesByDate({
       days: [SUNDAY, MONDAY],
       checkins: [{ check_date: `${SUNDAY}T09:00:00Z` }, { check_date: `${MONDAY}T10:00:00Z` }, { check_date: "2026-08-31T10:00:00Z" }],
       visits: [
-        { visit_date: SUNDAY, crm_save_date: `${SUNDAY}T11:00:00Z`, source: "phoenix" },
-        { visit_date: SUNDAY, crm_save_date: `${MONDAY}T11:00:00Z`, source: "phoenix" },
-        { visit_date: SUNDAY, crm_save_date: `${SUNDAY}T11:00:00Z`, source: "ireports360" },
+        { visit_date: SUNDAY, visit_type: 0, crm_save_date: `${SUNDAY}T11:00:00Z`, source: "phoenix", lat: 30.05, lon: 31.24 },
+        { visit_date: SUNDAY, visit_type: 0, crm_save_date: `${SUNDAY}T12:00:00Z`, source: "phoenix", lat: null, lon: null },
+        { visit_date: SUNDAY, visit_type: 0, crm_save_date: `${MONDAY}T11:00:00Z`, source: "phoenix", lat: 30.05, lon: 31.24 },
+        { visit_date: SUNDAY, visit_type: 0, crm_save_date: `${SUNDAY}T11:00:00Z`, source: "ireports360" },
       ],
     });
-    assert.deepEqual([...counts], [[SUNDAY, 2], [MONDAY, 1]], "a vendor visit is not a GPS trace, and a capture on another day is not this day's");
+    assert.deepEqual([...counts], [[SUNDAY, 2], [MONDAY, 1]], "a vendor visit is not a GPS trace, nor is a Phoenix visit with no location, and a capture on another day is not this day's");
     // A working day whose GPS arrived at a tenth of normal is a gap, not a company that stayed home.
     const month = new Map<string, number>();
     for (let day = 1; day <= 30; day += 1) {

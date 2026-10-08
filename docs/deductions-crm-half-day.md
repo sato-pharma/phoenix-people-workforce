@@ -54,10 +54,21 @@ mornings. So before a half is charged, each of these clears it:
 3. **The save time.** Saved 06:00–12:59 on the day clears the morning. Saved from 17:00, or before
    04:00 the next day, clears the afternoon.
 4. **A Phoenix CRM visit's capture time, read exactly like a check-in.** A started Phoenix team
-   logs no iReports360 check-in, and a Phoenix row's `ampm` is the customer list (AM or PM list),
-   not the hour. Without this, a Phoenix rep's 14:10 visit cleared nothing, while an iReports360
-   rep's 14:10 check-in cleared both halves. It only ever clears a half; it never shows a rep a
-   check-in.
+   logs no iReports360 check-in; the phone captures each visit's location and time instead (owner,
+   2026-10-08: "when they log a visit the location and time is captured, you can use it"). A
+   Phoenix row's `ampm` is the customer list (AM or PM list), not the hour. In the database the
+   row's `crm_save_date` is `captured_at`, the same value the check-in view serves as that
+   team's `check_date`. It only ever clears a half; it never shows a rep a check-in.
+
+**A Phoenix visit must have a location and a time — "no negotiation"** (owner, 2026-10-08). A
+Phoenix customer visit with no captured location is not field evidence: it fills no half, clears
+none, and does not start the person's month. Its count is written on the row's evidence and
+reason, so the reviewer sees it was there. In the first week (3–7 October) this was 18 of 726
+visits, all typed in by an admin for the rep (`capture_source` admin, `location_flag` no_place),
+each on a day the rep also logged 5–18 located visits. Phoenix day activities (meeting,
+training…) are not visits and carry no position by design. iReports360 visits keep counting by
+their tag, because their location is their check-in. The check-in view already applies the same
+condition to a Phoenix check-in (`lat` and `lon` not null).
 
 Applied to June–October 2026, this is the difference between **862 apparent half days and 308
 confirmed ones**.
