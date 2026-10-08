@@ -47,6 +47,33 @@ export async function runNewHireMailboxTests() {
   assert.equal(address.isCompanyAddress(null), false);
   assert.equal(address.COMPANY_MAIL_DOMAIN, "satopharma.com");
 
+  //    🔴 THE ONE DOOR THAT GENERATES — the candidate's joining form (owner, 2026-10-08: "generate it
+  //    automatically but if it couldn't, it tell it couldn't … and HR can address manual"). It builds
+  //    only the unambiguous case and REFUSES everything else, so the El Sayed defect cannot return.
+  const none = new Set<string>();
+  assert.deepEqual(
+    address.joiningFormMailboxAddress("Mona Adel Hassan", none),
+    { address: "mona.adel@satopharma.com", reason: null },
+    "the house shape first: first.second",
+  );
+  assert.deepEqual(
+    address.joiningFormMailboxAddress("Mona Adel Hassan", new Set(["mona.adel@satopharma.com"])),
+    { address: "mona.hassan@satopharma.com", reason: null },
+    "first.last when first.second is taken",
+  );
+  assert.equal(
+    address.joiningFormMailboxAddress("Mona Adel", new Set(["mona.adel@satopharma.com"])).address, null,
+    "a two-word name whose only shape is taken goes to HR — never a numbered guess",
+  );
+  for (const compound of ["El Sayed Rady", "Ahmed Abdel Rahman", "Abu Bakr Ali", "Mohamed El Shafei"]) {
+    const result = address.joiningFormMailboxAddress(compound, none);
+    assert.equal(result.address, null, `${compound} is a compound name — the generator must refuse it`);
+    assert.ok(result.reason, "and say why, so the page can tell him HR will send it");
+  }
+  assert.equal(address.joiningFormMailboxAddress("محمد أحمد", none).address, null, "an Arabic name is never transliterated");
+  assert.equal(address.joiningFormMailboxAddress("Mona", none).address, null, "one word is not enough");
+  assert.equal(address.joiningFormMailboxAddress("", none).address, null);
+
   // 2. 🔴 AND THE TWO PLACES THAT USED IT NOW TAKE THE TYPED VALUE OR WAIT. Source-pinned, because
   //    the whole defect was an address appearing that no human typed.
   const openSource = readFileSync(

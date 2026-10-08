@@ -74,9 +74,11 @@ export function runAcceptedOfferAlertTests() {
   const alert = readFileSync("src/lib/offers/accepted-offer-alert.ts", "utf8");
   assert.ok(/logNotificationSendFailure/.test(alert), "the announce helper swallows its own send failures");
   assert.ok(
-    /idempotencyKey: `accepted-offer:\$\{offerId\}`/.test(alert),
+    /idempotencyKey: hire \? `accepted-offer-joined:\$\{offerId\}` : `accepted-offer:\$\{offerId\}`/.test(alert),
     "one alert per offer — the idempotency key carries no date, so a re-save is not a second alert",
   );
+  //    The joining form (owner, 2026-10-08) has its OWN once-per-offer key: an offer HR already marked
+  //    accepted by hand still announces the record the candidate's Submit created — once.
 
   // 5 · The migration that makes the policy editable lists the new key and seeds the recipients.
   const migration = readFileSync(

@@ -1,0 +1,233 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+import { stripComments } from "./support/comment-strip.ts";
+
+/**
+ * The offer joining form (owner, 2026-10-08).
+ *
+ * The offer email carries ONE button — "Accept the offer — complete your joining form" — and one
+ * line telling him to reply to decline. The button opens /join/[token], a Sato-branded public page
+ * with no login: he sees his position and pay, types his own personal details, and Submit IS his
+ * acceptance — it creates his Employee Master record, seated in the AU organogram, through the same
+ * chain HR's Add Employee runs.
+ *
+ * PURE: the suite runs with production credentials, so this file calls only modules that do no I/O
+ * and reads the rest as source. Each section names the failure it stops.
+ */
+
+const root = process.cwd();
+const code = (relative: string) => stripComments(readFileSync(path.join(root, relative), "utf8"));
+const flat = (relative: string) => code(relative).replace(/\s+/g, " ");
+
+export async function runOfferJoiningFormTests() {
+  const previousSecret = process.env.PHOENIX_AUTH_SECRET;
+  if (!previousSecret) process.env.PHOENIX_AUTH_SECRET = "offer-joining-form-test-secret";
+  try {
+    await run();
+  } finally {
+    if (!previousSecret) delete process.env.PHOENIX_AUTH_SECRET;
+  }
+}
+
+async function run() {
+  const token = await import("../src/lib/offers/accept-token.ts");
+  const form = await import("../src/lib/offers/joining-form.ts");
+  const email = await import("../src/lib/offers/render-email.ts");
+  const { OFFER_BUILTIN_TEMPLATES } = await import("../src/lib/offers/builtin-templates.ts");
+
+  // 1. 🔴 THE LINK IS A CAPABILITY — a forged, edited, expired or re-shaped token opens nothing.
+  const now = Math.floor(Date.parse("2026-10-08T10:00:00Z") / 1000);
+  const issued = token.issueOfferAcceptToken({ nowSeconds: now, offerId: "offer-1", validUntil: "15 October 2026" });
+  assert.equal(token.readOfferAcceptToken(issued, now), "offer-1", "a genuine link names its offer");
+  const [encoded, signature] = issued.split(".");
+  const forged = Buffer.from(JSON.stringify({ exp: now + 999_999, o: "offer-2", v: 1 }), "utf8").toString("base64url");
+  assert.equal(token.readOfferAcceptToken(`${forged}.${signature}`, now), null, "another offer's id under this signature is refused");
+  assert.equal(token.readOfferAcceptToken(`${encoded}.${signature.slice(0, -2)}xx`, now), null, "an edited signature is refused");
+  assert.equal(token.readOfferAcceptToken(`${issued}.extra`, now), null, "a three-part token is refused");
+  assert.equal(token.readOfferAcceptToken("", now), null);
+  //    Expiry: the letter's own validity date plus the grace, never forever.
+  const validEnd = Math.floor(Date.parse("2026-10-15T23:59:59Z") / 1000);
+  assert.equal(token.offerAcceptExpiry("15 October 2026", now), validEnd + token.OFFER_ACCEPT_GRACE_DAYS * 86_400);
+  assert.equal(token.readOfferAcceptToken(issued, validEnd + token.OFFER_ACCEPT_GRACE_DAYS * 86_400 + 1), null, "past the grace the link is dead");
+  assert.equal(token.offerAcceptExpiry("not a date", now), now + token.OFFER_ACCEPT_FALLBACK_DAYS * 86_400, "an unreadable date falls back, never to no expiry");
+  assert.match(token.offerAcceptUrl(issued), /^https:\/\/[^/]+\/join\//, "the button opens the public /join page over https");
+
+  // 2. 🔴 THE OFFER ROW, NOT THE TOKEN, DECIDES WHETHER THE FORM OPENS.
+  const state = (over: Partial<Parameters<typeof form.joiningFormState>[0]>) =>
+    form.joiningFormState({ employeeHrId: null, requiresSeat: false, seatOpen: false, status: "sent", ...over });
+  assert.equal(state({}), "open");
+  assert.equal(state({ status: "accepted" }), "open", "HR marking it accepted by hand still lets him fill the form");
+  assert.equal(state({ employeeHrId: "B-99" }), "submitted", "once a record exists the form never opens again — no second employee");
+  assert.equal(state({ status: "withdrawn" }), "withdrawn");
+  assert.equal(state({ status: "declined" }), "declined");
+  assert.equal(state({ status: "draft" }), "not_sent");
+  assert.equal(state({ requiresSeat: true, seatOpen: false }), "seat_unavailable", "a sales offer whose seat filled since cannot seat him");
+  assert.equal(state({ requiresSeat: true, seatOpen: true }), "open");
+
+  // 3. 🔴 A SEAT IS REQUIRED FOR SALES OFFERS ONLY (owner: "only for sales team, medical reps or district managers").
+  assert.equal(form.offerRequiresSeat("Medical Representative"), true);
+  assert.equal(form.offerRequiresSeat("District Sales Manager"), true);
+  assert.equal(form.offerRequiresSeat("District Manager"), true);
+  assert.equal(form.offerRequiresSeat("HR Specialist"), false);
+  assert.equal(form.offerRequiresSeat("Accountant"), false);
+  assert.equal(form.offerRequiresSeat(""), false);
+  const send = flat("src/lib/offers/send.ts");
+  assert.match(send, /if \(offerRequiresSeat\(offer\.title\) && !offer\.vacancyId\) \{? ?throw new Error\(OFFER_SEAT_REQUIRED_MESSAGE\)/, "Send refuses a sales offer with no seat");
+
+  // 4. THE NATIONAL ID FILLS AND CHECKS DATE OF BIRTH AND GENDER.
+  assert.deepEqual(form.readEgyptianNationalId("29501150101234"), { birthDate: "1995-01-15", gender: "male" });
+  assert.deepEqual(form.readEgyptianNationalId("30302280101222"), { birthDate: "2003-02-28", gender: "female" });
+  assert.deepEqual(form.readEgyptianNationalId("٢٩٥٠١١٥٠١٠١٢٣٤"), { birthDate: "1995-01-15", gender: "male" }, "Arabic digits read");
+  assert.equal(form.readEgyptianNationalId("29502300101234"), null, "30 February is not a date");
+  assert.equal(form.readEgyptianNationalId("1950115010123"), null, "13 digits is not an ID");
+  assert.equal(form.normalizeEgyptianMobile("+20 100 123 4567"), "01001234567");
+  assert.equal(form.normalizeEgyptianMobile("٠١١٢٣٤٥٦٧٨٩"), "01123456789");
+  assert.equal(form.normalizeEgyptianMobile("0131234567"), null, "013 is not a mobile prefix");
+
+  const good = {
+    birthDate: "1995-01-15",
+    education: "Pharmacy",
+    educationOther: "",
+    fullName: "Mona Adel Hassan",
+    gender: "male",
+    mobileNumber: "01001234567",
+    nationalId: "29501150101234",
+    personalEmail: "Mona@Example.com",
+    residenceAddress: "12 Tahrir Street",
+    residenceArea: "المعادي",
+    residenceAreaOther: "",
+    residenceCity: form.JOINING_FORM_GOVERNORATES[0].value,
+  };
+  const context = { residenceAreaOptions: ["المعادي"], todayIso: "2026-10-08" };
+  const ok = form.validateJoiningForm(good, context);
+  assert.deepEqual(ok.errors, {});
+  assert.equal(ok.value?.personalEmail, "mona@example.com");
+  assert.equal(ok.value?.residenceArea, "المعادي");
+  const wrongGender = form.validateJoiningForm({ ...good, gender: "female" }, context);
+  assert.ok(wrongGender.errors.gender, "a gender that contradicts the national ID is refused");
+  assert.ok(form.validateJoiningForm({ ...good, birthDate: "1995-01-16" }, context).errors.birthDate, "so is a birth date");
+  assert.ok(form.validateJoiningForm({ ...good, personalEmail: "mona.adel@satopharma.com" }, context).errors.personalEmail, "a company address is not his private email");
+  assert.ok(form.validateJoiningForm({ ...good, residenceArea: "Somewhere" }, context).errors.residenceArea, "the area must be one of the seat's own");
+  const other = form.validateJoiningForm({ ...good, residenceArea: form.JOINING_FORM_OTHER_AREA, residenceAreaOther: "Zahraa El Maadi" }, context);
+  assert.equal(other.value?.residenceArea, "Zahraa El Maadi", "or typed, when he chose 'not listed'");
+  const noBricks = form.validateJoiningForm({ ...good, residenceArea: "Nasr City" }, { ...context, residenceAreaOptions: [] });
+  assert.equal(noBricks.value?.residenceArea, "Nasr City", "a seat with no bricks (a district manager's) takes a typed area");
+  assert.ok(form.validateJoiningForm({ ...good, residenceCity: "Atlantis" }, context).errors.residenceCity, "the city must be a governorate");
+  assert.ok(form.validateJoiningForm({ ...good, education: "Other" }, context).errors.educationOther, "Other needs the faculty written");
+
+  // 5. 🔴 THE EMAIL: ONE ACCEPT BUTTON, A REPLY TO DECLINE — and the frozen design keeps its rules.
+  const SAMPLE = {
+    candidateEmail: "samaa@example.com",
+    candidateName: "SAMAA SHALABY",
+    contractTerm: "One year, renewable",
+    costOfLiving: 3500,
+    dateOfIssue: "27-Aug-26",
+    reference: "SP-HR-DSM-2026-019",
+    reportsTo: "National Sales Manager",
+    roleSummary: "",
+    salutationName: "Dr SAMAA SHALABY",
+    startDate: "1 September 2026",
+    territory: "Delta (3)",
+    title: "District Sales Manager",
+    totalMonthly: 30000,
+    validUntil: "1 September 2026",
+  };
+  const acceptUrl = "https://phoenix-hr.satopharma.com/join/abc.def";
+  for (const builtin of OFFER_BUILTIN_TEMPLATES) {
+    const withButton = email.renderOfferEmail({ blocks: builtin.blocks(), theme: builtin.theme }, SAMPLE, { acceptUrl });
+    assert.ok(withButton.html.includes(`href="${acceptUrl}"`), `${builtin.name}: the Accept button links to the joining form`);
+    assert.ok(withButton.html.includes(email.OFFER_ACCEPT_BUTTON_LABEL), `${builtin.name}: with its words`);
+    assert.ok(withButton.html.includes(email.OFFER_DECLINE_LINE), `${builtin.name}: and the reply-to-decline line`);
+    assert.ok(!/decline[^<]{0,40}<\/a>/i.test(withButton.html), `${builtin.name}: there is NO decline button`);
+    assert.ok(withButton.text.includes(acceptUrl) && withButton.text.includes(email.OFFER_DECLINE_LINE), `${builtin.name}: the plain-text part says the same`);
+    const presentation = (withButton.html.match(/role="presentation"/g) ?? []).length;
+    const tables = (withButton.html.match(/<table/g) ?? []).length;
+    assert.equal(presentation, tables, `${builtin.name}: the answer block keeps every table role="presentation"`);
+    assert.ok(!/\d\s*pt\b/i.test(withButton.html), `${builtin.name}: no pt units`);
+
+    //    ONE way to accept (owner, 2026-10-08, "button only"): the email no longer also asks him to
+    //    sign and return the letter. The PDF keeps its signature page — only the email changes.
+    for (const part of [withButton.html, withButton.text]) {
+      assert.ok(!/signing below/i.test(part), `${builtin.name}: the email no longer asks him to sign and return`);
+      assert.ok(!/Print it, sign it/i.test(part), `${builtin.name}: nor to print and scan the signature page`);
+    }
+
+    const without = email.renderOfferEmail({ blocks: builtin.blocks(), theme: builtin.theme }, SAMPLE);
+    assert.ok(!without.html.includes(email.OFFER_ACCEPT_BUTTON_LABEL), `${builtin.name}: no link, no button — a send that could not mint one still goes out`);
+    assert.ok(
+      !/signing below/i.test(builtin.blocks().map((b: { props?: { html?: unknown } }) => String(b.props?.html ?? "")).join(" ")) ||
+        /signing below/i.test(without.html),
+      `${builtin.name}: with no button, the letter's own sign-and-return wording stands`,
+    );
+  }
+  const deliver = flat("src/lib/offers/send.ts");
+  assert.match(deliver, /issueOfferAcceptToken\(/, "the send mints the link");
+  assert.match(deliver, /renderOfferEmail\([^)]*\{[^}]*acceptUrl/, "and hands it to the email renderer");
+
+  // 6. 🔴 OPENING THE LINK CHANGES NOTHING — a mail scanner follows every link. Only POST accepts.
+  const page = code("app/join/[token]/page.tsx");
+  assert.ok(!/submitJoiningForm|upsertEmployee|\.insert\(|\.update\(/.test(page), "the page only reads");
+  const route = code("app/api/public/offer-acceptance/[token]/route.ts");
+  assert.ok(/export async function POST/.test(route) && !/export async function GET/.test(route), "the accepting route is POST only");
+  assert.match(route, /assertApiRateLimit\(/, "and rate-limited");
+  const registry = flat("src/lib/security/access-registry.ts");
+  assert.match(registry, /tokenApi\(\{ authMode: "public-token", methods: \["POST"\], pattern: "\/api\/public\/offer-acceptance\/:token"/, "registered as a public-token POST");
+
+  // 7. 🔴 THE HIRE GOES THROUGH HR'S OWN CHAIN, IN ITS ORDER — so a joiner lands exactly where HR's
+  //    Add Employee would have put him (HR ID, seat, vacancy closed, login, CRM, mailbox).
+  const service = code("src/lib/offers/joining-form-service.ts");
+  const hr = code("app/api/employees/route.ts");
+  const chain = ["upsertEmployee(", "provisionNewHireAccess(", "openAndAnnounceCrmAccountSetup(", "openAndAnnounceNewHireMailboxes("];
+  for (const call of chain) {
+    assert.ok(hr.includes(call), `HR's Add Employee still calls ${call}`);
+    assert.ok(service.includes(call), `the joining form calls ${call} too`);
+  }
+  const at = chain.map((call) => service.indexOf(call));
+  assert.deepEqual([...at].sort((a, b) => a - b), at, "in the same order");
+  //    The claim comes BEFORE the record, so two presses of Submit make one employee.
+  assert.ok(service.indexOf("claimOfferForJoiningForm(") < service.indexOf("upsertEmployee("), "claim before create");
+  const claim = flat("src/lib/offers/service.ts");
+  assert.match(claim, /\.is\("employee_hr_id", null\) \.in\("status", \["sent", "accepted"\]\)/, "the claim is conditional on no record yet");
+  //    Only HIS fields come from the body — job, seat and pay come from the offer.
+  assert.ok(!/answers\.(jobTitle|lineId|areaId|managerHrId|netSalary|hireDate)/.test(service), "the body never sets the job, seat or pay");
+  //    🔴 Pay is the Employee Master's chain from the offer's net, fed PAYROLL's allowances — the
+  //    title table falls back to 1,500 and would have paid a District Manager over the agreed net.
+  const flatService = flat("src/lib/offers/joining-form-service.ts");
+  assert.match(flatService, /const payroll = resolveStandardSalaryAllowances\(\{/, "payroll's own allowance resolver sets the allowances");
+  assert.match(
+    flatService,
+    /deriveSalaryFromNet\(\{ extraCostOfLiving: payroll\.extraCostOfLiving, fuelAllowance: payroll\.fuelAllowance, jobTitle, netSalary: offer\.totalMonthly, \}\)/,
+    "and they feed the Employee Master's chain from the offer's net",
+  );
+
+  // 8. 🔴 HR EDITS NEVER WIPE THE PERSONAL EMAIL — the field is written only when it is sent.
+  assert.match(
+    flat("src/lib/employees/employee-directory.ts"),
+    /\.\.\.\(input\.personalEmail !== undefined \? \{ personal_email:/,
+    "personal_email is an optional field written only when present",
+  );
+
+  // 9. 🔴 NO RECORD WITHOUT A START DATE — an offer with no readable hire date neither opens nor submits.
+  assert.match(flatService, /if \(!draft\.hireDate\) return \{ \.\.\.JOINING_FORM_STATE_MESSAGE\.seat_unavailable/, "the page closes");
+  assert.match(flatService, /if \(!draft\.hireDate\) \{ await announceJoiningFormBlocked\(/, "the submit refuses and tells HR");
+
+  // 10. 🔴 A JOINER HR ALREADY HIRED IS NOT HIRED TWICE — Add Employee never stamps the offer, so the
+  //     check is the national ID or mobile on any record, or the name on a record made since sending.
+  assert.match(flatService, /\.or\(`national_id\.eq\.\$\{answers\.nationalId\},mobile_number\.eq\.\$\{answers\.mobileNumber\}`\)/, "ID or mobile on file");
+  assert.match(flatService, /\.gte\("created_at", since\)/, "records made since the offer went out");
+  assert.match(flatService, /if \(existing\.kind === "unknown"\) \{ return \{ message: "We could not complete/, "a failed read blocks, never passes");
+  assert.ok(flatService.indexOf("findExistingHire(offer, value)") < flatService.indexOf("claimOfferForJoiningForm(offer.id)"), "checked before the claim");
+  assert.equal(form.sameJoinerName("Mona Ahmed Hassan", "mona ahmed hassan ali"), true, "a fuller name is the same person");
+  assert.equal(form.sameJoinerName("منى أحمد حسن", "منى أحمد"), true, "Arabic names match too");
+  assert.equal(form.sameJoinerName("Mona Ahmed", "Mona Hassan"), false, "a different second name is someone else");
+  assert.equal(form.sameJoinerName("Mona", "Mona Ahmed"), false, "one word is never enough");
+
+  // 11. 🔴 HR IS TOLD WHEN THE RECORD HAS NO SEAT — a non-sales offer sent without one.
+  const alert = await import("../src/lib/offers/accepted-offer-alert.ts");
+  const joiner = { candidateName: "Mona Ahmed", startDate: "2026-11-01", title: "Accountant" };
+  assert.match(alert.joinedOfferMessage(joiner, { hrId: "A-1", seated: false, workEmail: null }), /WITHOUT a seat — set the department, line and manager/);
+  assert.match(alert.joinedOfferMessage(joiner, { hrId: "A-1", seated: true, workEmail: null }), /is created and seated\./);
+  assert.match(flatService, /seated: Boolean\(seat\?\.lineId \|\| seat\?\.departmentId\)/, "the service says which");
+}

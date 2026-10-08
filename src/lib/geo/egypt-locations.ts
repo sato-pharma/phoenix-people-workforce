@@ -89,6 +89,13 @@ const GOVERNORATE_KEYS: [string, string[]][] = [
   ["Matrouh", ["مطروح", "matrouh", "matruh", "مرسى مطروح", "marsa matruh", "العلمين", "alamein", "الضبعه", "dabaa", "سيوه", "siwa", "سيدي براني", "الحمام", "hammam", "النجيله"]],
 ];
 
+/** The 27 governorates as a picker lists them — the canonical English name, and the Arabic spelling
+ *  the Employee Master already stores in `residence_city` (its live values are Arabic governorates). */
+export const EGYPT_GOVERNORATES: ReadonlyArray<{ arabic: string; name: string }> = GOVERNORATE_KEYS.map(([name, keys]) => ({
+  arabic: keys.find((key) => containsArabic(key)) ?? name,
+  name,
+}));
+
 const NORMALIZED_GOVERNORATES: [string, string[]][] = GOVERNORATE_KEYS.map(([canonical, keys]) => [
   canonical,
   keys.map((k) => normalize(k)).filter(Boolean),

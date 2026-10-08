@@ -70,11 +70,89 @@ export type AcceptedOfferAnnounceResult = {
   warnings: string[];
 };
 
+/** The Employee Master, where the new record now sits (the notice names its HR ID to search for). */
+export const JOINED_EMPLOYEE_PATH = "/employees" as const;
+
+/**
+ * The joining-form version of the alert (owner, 2026-10-08). The candidate pressed Submit, so the
+ * record is ALREADY made and seated — "open the organogram to seat them" would send HR to do work
+ * that is done. It says what is left instead: check the record and finish what only HR can.
+ */
+export function joinedOfferTitle(offer: Pick<OfferRecord, "candidateName">): string {
+  return `Offer accepted — joining form completed: ${stated(offer.candidateName)}`;
+}
+
+export function joinedOfferMessage(
+  offer: Pick<OfferRecord, "candidateName" | "title" | "startDate">,
+  hire: { hrId: string; seated?: boolean; workEmail: string | null },
+): string {
+  const start = String(offer.startDate ?? "").trim();
+  const starts = start ? `, starting ${start}` : "";
+  const email = hire.workEmail
+    ? ` The Sato email ${hire.workEmail} is queued on New Hire Mailboxes.`
+    : " No Sato email could be generated — type it on New Hire Mailboxes.";
+  // Only a record that got its seat is called seated: a non-sales offer sent with no seat is
+  // created with no department, line or manager, and HR must be told to set them.
+  const seat = hire.seated === false
+    ? " is created WITHOUT a seat — set the department, line and manager on the Employee Master."
+    : " is created and seated.";
+  return `${stated(offer.candidateName)} accepted the offer for ${stated(offer.title)}${starts} and completed the joining form. Their employee record ${hire.hrId}${seat}${email} Bank, insurance and payment-mode details are still HR's to add.`;
+}
+
+/**
+ * A candidate tried to submit the joining form and it could not make his record — the seat was
+ * filled meanwhile, or his national ID is already on the Employee Master. The page told HIM that HR
+ * will contact him; this is what makes that true. Same audience and channels, never email, once per
+ * offer and reason. Swallows every failure.
+ */
+export async function announceJoiningFormBlocked(
+  offer: Pick<OfferRecord, "candidateName" | "id" | "reference" | "startDate" | "title">,
+  reason: string,
+): Promise<void> {
+  const offerId = String(offer?.id ?? "").trim();
+  if (!offerId) return;
+  try {
+    const audience = await resolveNotificationPersonRecipients(ACCEPTED_OFFER_AUDIENCE, "Joining form blocked — recipients");
+    if (audience.recipients.length === 0) {
+      logError("A joining form was blocked but the accepted-offer alert audience resolved to nobody", {
+        error: new Error(`offer ${offerId}: ${reason}`),
+        labels: { event: "joining_form_blocked_no_recipient" },
+      });
+      return;
+    }
+    await createSystemNotificationForRecipients(
+      {
+        actionUrl: "/offers",
+        actorId: null,
+        channels: [...ACCEPTED_OFFER_CHANNELS],
+        eventType: "offer_joining_form_blocked",
+        message: `${stated(offer.candidateName)} tried to accept the offer for ${stated(offer.title)} on the joining form, but it could not be completed: ${reason} Please contact them.`,
+        metadata: {
+          authorizedRecipient: true,
+          details: [...acceptedOfferDetails(offer), { label: "What stopped it", value: reason }],
+          idempotencyKey: `joining-form-blocked:${offerId}:${reason.slice(0, 40)}`,
+        },
+        module: ACCEPTED_OFFER_MODULE,
+        priority: "high",
+        title: `Joining form needs HR: ${stated(offer.candidateName)}`,
+      },
+      audience.recipients.map((recipient) => recipient.hrId),
+    );
+  } catch (error) {
+    logNotificationSendFailure("acceptedOffer.announceJoiningFormBlocked", error);
+  }
+}
+
 /**
  * Announce one accepted offer to the audience. Idempotent per offer id, so re-marking an offer
  * accepted (a correction, a double-save) never fires a second alert. Swallows every failure.
+ *
+ * `hire` is passed by the joining form only: the record exists, so the notice names it and opens it.
  */
-export async function announceAcceptedOffer(offer: OfferRecord): Promise<AcceptedOfferAnnounceResult> {
+export async function announceAcceptedOffer(
+  offer: OfferRecord,
+  hire?: { hrId: string; seated?: boolean; workEmail: string | null },
+): Promise<AcceptedOfferAnnounceResult> {
   const warnings: string[] = [];
   const offerId = String(offer?.id ?? "").trim();
   if (!offerId) return { announced: false, recipients: 0, warnings: ["the accepted offer carried no id"] };
@@ -96,21 +174,25 @@ export async function announceAcceptedOffer(offer: OfferRecord): Promise<Accepte
     // ForRecipients, never a loop of single sends: it suffixes the idempotency key per recipient.
     await createSystemNotificationForRecipients(
       {
-        actionUrl: ACCEPTED_OFFER_PATH,
+        actionUrl: hire ? JOINED_EMPLOYEE_PATH : ACCEPTED_OFFER_PATH,
         actorId: null,
         channels: [...ACCEPTED_OFFER_CHANNELS],
         eventType: ACCEPTED_OFFER_EVENT_TYPE,
-        message: acceptedOfferMessage(offer),
+        message: hire ? joinedOfferMessage(offer, hire) : acceptedOfferMessage(offer),
         metadata: {
           // Resolved from the admin-editable role policy, never from a request.
           authorizedRecipient: true,
-          details: acceptedOfferDetails(offer),
+          details: hire
+            ? [...acceptedOfferDetails(offer), { label: "Employee record", value: hire.hrId }]
+            : acceptedOfferDetails(offer),
           // No date in the key: one alert per offer, and a later re-save is not a new acceptance.
-          idempotencyKey: `accepted-offer:${offerId}`,
+          // The joining form has its OWN key: HR may already have marked a "yes" reply accepted by
+          // hand, and the record being made afterwards is news that alert did not carry.
+          idempotencyKey: hire ? `accepted-offer-joined:${offerId}` : `accepted-offer:${offerId}`,
         },
         module: ACCEPTED_OFFER_MODULE,
         priority: "high",
-        title: acceptedOfferTitle(offer),
+        title: hire ? joinedOfferTitle(offer) : acceptedOfferTitle(offer),
       },
       audience.recipients.map((recipient) => recipient.hrId),
     );

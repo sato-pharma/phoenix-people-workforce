@@ -1,6 +1,8 @@
 import { defaultOfferTemplate, getOffer, getOfferTemplate, markOfferSent, setOfferStatus } from "@/lib/offers/service";
 import { isOfferPdfAvailable, offerPdfFilename, renderOfferPdf } from "@/lib/offers/pdf";
 import { renderOfferEmail } from "@/lib/offers/render-email";
+import { issueOfferAcceptToken, offerAcceptUrl } from "@/lib/offers/accept-token";
+import { OFFER_SEAT_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers/brand";
 import { planOfferCopies, type OfferCopyPlan } from "@/lib/offers/copy-recipients";
@@ -105,6 +107,12 @@ export async function sendOfferEmail(
   if (!offer.candidateEmail.trim()) {
     throw new Error("This offer has no candidate email address, so it cannot be sent.");
   }
+  // A sales offer names its organogram seat before it leaves (owner, 2026-10-08), because the
+  // candidate's joining form places him in that seat — a Medical Rep or District Manager letter with
+  // no seat would produce a record with no line, area, region or manager.
+  if (offerRequiresSeat(offer.title) && !offer.vacancyId) {
+    throw new Error(OFFER_SEAT_REQUIRED_MESSAGE);
+  }
 
   // Judged again here, whatever the screen showed: this is the last point before mail leaves, and
   // a bad address refuses the WHOLE send rather than going out to everyone else without it.
@@ -202,10 +210,30 @@ async function deliverOfferLetter(
   // (and for Brevo, which has no Content-ID field — see `brevoInlineFallback`). The production
   // host is correct even when sending from staging: the asset is public.
   const mark = satoLogoAttachment(systemDeployment.productionUrl);
+
+  // ── The Accept button (owner, 2026-10-08) ──
+  // A signed link to this offer's joining form. A send and a resend each mint their own, and every
+  // one of them opens the same form, because the offer row — not the token — decides whether it may
+  // still be filled. Without a signing secret the letter still goes, just without the button: the
+  // candidate can always reply, and a missing button must never stop an offer.
+  let acceptUrl: string | undefined;
+  try {
+    acceptUrl = offerAcceptUrl(issueOfferAcceptToken({ offerId: offer.id, validUntil: offer.validUntil }));
+  } catch (error) {
+    console.log("Offer accept link could not be minted; sending without the button", {
+      level: "warning",
+      tags: { component: "offers" },
+      extra: { offerId: offer.id, message: error instanceof Error ? error.message : String(error) },
+    });
+  }
+
   const { html, text } = renderOfferEmail(
     { blocks: template.blocks, theme: template.theme },
     fields,
-    { logoUrl: options.logoUrl ?? (mark ? SATO_LOGO_CID_SRC : satoLogoUrl(systemDeployment.productionUrl)) },
+    {
+      acceptUrl,
+      logoUrl: options.logoUrl ?? (mark ? SATO_LOGO_CID_SRC : satoLogoUrl(systemDeployment.productionUrl)),
+    },
   );
 
   // The letterhead part rides along only when the body actually points at it — an override in

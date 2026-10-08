@@ -156,11 +156,24 @@ function grid(cells: string[], perRow: number): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;margin-top:10px">${rows.join("")}</table>`;
 }
 
+/**
+ * With the Accept button, the email asks for ONE way to accept (owner, 2026-10-08, "button only").
+ * The built-in letters close with "confirm your acceptance by signing below and returning a copy";
+ * in the EMAIL that sentence becomes the button's, while the attached PDF keeps its signature page
+ * untouched. A closing HR rewrote in a template does not match and is left exactly as written.
+ */
+const SIGN_AND_RETURN_SENTENCE = /Please confirm your acceptance of this offer by signing below and\s+returning a copy of this letter\./i;
+export const OFFER_ACCEPT_BY_BUTTON_SENTENCE = "To accept this offer, press the Accept button below.";
+
+function acceptByButton(text: string, acceptUrl: string | undefined): string {
+  return acceptUrl ? text.replace(SIGN_AND_RETURN_SENTENCE, OFFER_ACCEPT_BY_BUTTON_SENTENCE) : text;
+}
+
 function renderEmailBlock(
   block: OfferBlock,
   tokens: Record<string, string>,
   theme: Required<OfferTheme>,
-  options: { logoUrl?: string },
+  options: { acceptUrl?: string; logoUrl?: string },
 ): string {
   const p = block.props ?? {};
   const f = (value: unknown) => fillOfferTokens(value, tokens);
@@ -214,7 +227,7 @@ function renderEmailBlock(
     }
 
     case "text": {
-      const paragraphs = safeRichText(f(p.html), theme);
+      const paragraphs = safeRichText(acceptByButton(f(p.html), options.acceptUrl), theme);
       const avatar = f(p.avatar);
       if (!avatar) return paragraphs;
       // A two-cell table rather than a flex row: the initials disc has to sit beside the greeting
@@ -344,7 +357,9 @@ function renderEmailBlock(
         `<div style="margin-top:4px;font-size:14px;font-weight:bold;color:${theme.ink}">${f(p.leftName)}</div>` +
         `<div style="font-size:12px;color:${theme.soft}">${f(p.leftSub)}</div>` +
         `<div style="margin-top:12px;font-size:13px;line-height:1.6;color:${theme.body}">` +
-        "The signature page is in the attached PDF. Print it, sign it, and return a scanned copy.</div>" +
+        (options.acceptUrl
+          ? "Your copy of this letter is attached as a PDF.</div>"
+          : "The signature page is in the attached PDF. Print it, sign it, and return a scanned copy.</div>") +
         "</td></tr></table>"
       );
 
@@ -377,17 +392,64 @@ function renderEmailBlock(
 
 export type RenderedOfferEmail = { html: string; text: string };
 
+/** The button's words and the decline sentence — one place, so the HTML and the text part agree. */
+export const OFFER_ACCEPT_BUTTON_LABEL = "Accept the offer — complete your joining form";
+export const OFFER_ACCEPT_LEAD = "To accept this offer, press the button below and complete your joining form.";
+export const OFFER_DECLINE_LINE = "If you wish to decline the offer, simply reply to this email.";
+
+/**
+ * The answer block (owner, 2026-10-08: "if you accept the offer, press here; and if you decline the
+ * offer, reply on the email"). ONE button — there is deliberately no decline button: a mail scanner
+ * opens every link in a message, and declining stays a reply a person reads.
+ *
+ * A bulletproof button — a table cell with its own background, not a styled link — because Outlook's
+ * Word renderer ignores padding and background on an `<a>`. Square, in the letter's own brand blue,
+ * so the frozen design gains a control and loses nothing.
+ */
+function renderAcceptBlock(acceptUrl: string, theme: Required<OfferTheme>): string {
+  const href = escapeHtml(acceptUrl);
+  return (
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;margin-top:20px;border:1px solid ${theme.frame}">` +
+    `<tr><td style="padding:11px 16px;background:${theme.ink}">` +
+    `<div style="font-size:10px;letter-spacing:1.7px;text-transform:uppercase;font-weight:bold;color:#ffffff">Your answer</div></td></tr>` +
+    `<tr><td style="padding:16px 16px 18px;background:#ffffff">` +
+    `<div style="font-size:14px;line-height:1.6;color:${theme.body}">${escapeHtml(OFFER_ACCEPT_LEAD)}</div>` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:12px"><tr>` +
+    // The padding sits on the CELL: Word ignores it on the link and would draw a text-high strip.
+    `<td bgcolor="${theme.brand}" style="background:${theme.brand};padding:13px 22px">` +
+    `<a href="${href}" target="_blank" style="display:block;font-size:14px;font-weight:bold;color:#ffffff;text-decoration:none">${escapeHtml(OFFER_ACCEPT_BUTTON_LABEL)}</a>` +
+    `</td></tr></table>` +
+    `<div style="margin-top:12px;font-size:13px;line-height:1.6;color:${theme.body}">${escapeHtml(OFFER_DECLINE_LINE)}</div>` +
+    // A short linked phrase, never the raw ~175-character URL: Word ignores word-break and would
+    // widen the letter to fit it. The plain-text part still carries the full address.
+    `<div style="margin-top:6px;font-size:11px;line-height:1.5;color:${theme.soft}">If the button does not open, <a href="${href}" target="_blank" style="color:${theme.brand};text-decoration:underline">use this link to your joining form</a>.</div>` +
+    `</td></tr></table>`
+  );
+}
+
 /** Blocks → an email body that survives Outlook, plus the plain-text alternative. */
 export function renderOfferEmail(
   template: { blocks: OfferBlock[]; theme?: OfferTheme },
   fields: OfferFields,
-  options: { logoUrl?: string } = {},
+  options: { acceptUrl?: string; logoUrl?: string } = {},
 ): RenderedOfferEmail {
   const tokens = buildOfferTokens(fields);
   const theme = { ...OFFER_DEFAULT_THEME, ...(template.theme ?? {}) } as Required<OfferTheme>;
 
-  const body = template.blocks
-    .map((block) => renderEmailBlock(block, tokens, theme, options))
+  const rendered: Array<{ html: string; type: string }> = template.blocks.map((block) => ({
+    html: renderEmailBlock(block, tokens, theme, options),
+    type: String(block.type),
+  }));
+  // The answer sits just above the signature card — where the letter asks for an answer — or above
+  // the footer when a design has no signature, or last of all.
+  if (options.acceptUrl) {
+    const at = rendered.findIndex((part) => part.type === "signature");
+    const beforeFooter = rendered.findIndex((part) => part.type === "footer");
+    const index = at >= 0 ? at : beforeFooter >= 0 ? beforeFooter : rendered.length;
+    rendered.splice(index, 0, { html: renderAcceptBlock(options.acceptUrl, theme), type: "accept" });
+  }
+  const body = rendered
+    .map((part) => part.html)
     .filter(Boolean)
     .join("");
 
@@ -404,7 +466,7 @@ export function renderOfferEmail(
     `<tr><td style="padding:0 24px 28px">${body}</td></tr>` +
     "</table></td></tr></table></body></html>";
 
-  return { html, text: buildPlainText(template.blocks, tokens) };
+  return { html, text: buildPlainText(template.blocks, tokens, options.acceptUrl) };
 }
 
 /**
@@ -413,7 +475,7 @@ export function renderOfferEmail(
  * Not optional: a multipart email with no text part scores worse with spam filters, and an offer
  * that lands in a candidate's junk folder is an offer that was never made.
  */
-function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>): string {
+function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>, acceptUrl?: string): string {
   const lines: string[] = [];
   const f = (value: unknown) => textOf(fillOfferTokens(value, tokens));
 
@@ -429,7 +491,7 @@ function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>): s
         lines.push("", f(p.text).toUpperCase(), "");
         break;
       case "text":
-        lines.push(f(p.html), "");
+        lines.push(acceptByButton(f(p.html), acceptUrl), "");
         break;
       case "control":
       case "scope":
@@ -469,6 +531,9 @@ function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>): s
     }
   }
 
+  if (acceptUrl) {
+    lines.push("", "YOUR ANSWER", OFFER_ACCEPT_LEAD, `${OFFER_ACCEPT_BUTTON_LABEL}: ${acceptUrl}`, OFFER_DECLINE_LINE);
+  }
   lines.push("", "The signed offer letter is attached as a PDF.");
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }

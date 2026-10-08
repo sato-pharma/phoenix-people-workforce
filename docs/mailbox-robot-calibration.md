@@ -210,6 +210,16 @@ What it is now, in three places that have to agree:
 `tests/new-hire-mailbox.test.ts` asserts both names are absent from the module — a generator
 reintroduced "as a suggestion the person can edit" is exactly the shape the old one had.
 
+**One door generates since 2026-10-08: the offer joining form.** The owner ruled that a candidate
+who accepts through the offer email's button gets his address made for him — *"generate it
+automatically but if it couldn't, it tell it couldn't … and if couldn't the HR can address
+manual"*. `joiningFormMailboxAddress` is deliberately not the old generator: it builds only two
+plain Latin words neither of which is a particle (so "El Sayed Rady" is refused, not split),
+tries `first.second` then `first.last` against every address in use or queued, and otherwise
+returns a reason. The address reaches the register as the hire's `work_email`, so
+`openNewHireMailboxTasks` stores it through the same typed-address line above; a refused name
+opens the task with no address and the robot waits, exactly as for a hire HR left blank.
+
 🔴 **The guard assertion is scoped to the candidate loop on purpose.** An unrelated
 `if (!address) continue;` already guards the holder map higher in `sweep-deps.ts`, so an unscoped
 source match passed with the real guard deleted. Break-and-watch caught it; that is the only reason

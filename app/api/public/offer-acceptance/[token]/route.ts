@@ -1,0 +1,66 @@
+import { NextResponse } from "next/server";
+
+import { logError } from "@/lib/observability/log";
+import { submitJoiningForm } from "@/lib/offers/joining-form-service";
+import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const HOUR = 60 * 60 * 1000;
+
+function json(body: unknown, status = 200): NextResponse {
+  return NextResponse.json(body, {
+    headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" },
+    status,
+  });
+}
+
+/**
+ * POST /api/public/offer-acceptance/[token] — the joining form's Submit, which IS the candidate's
+ * acceptance of the offer (owner, 2026-10-08). No session: the signed token is the credential, and
+ * `submitJoiningForm` re-reads the offer, validates every answer server-side and claims the offer
+ * row before it writes anything, so a replay or a double click cannot create a second employee.
+ *
+ * Rate-limited twice — per link and per address — so a leaked link cannot be hammered.
+ */
+export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }): Promise<NextResponse> {
+  const { token } = await params;
+
+  try {
+    await assertApiRateLimit({ identifier: rateLimitIdentity({ request, token }), limit: 10, scope: "offer_joining_form_link", windowMs: HOUR });
+    await assertApiRateLimit({ identifier: rateLimitIdentity({ request }), limit: 30, scope: "offer_joining_form_ip", windowMs: HOUR });
+  } catch (error) {
+    if (error instanceof ApiRateLimitError) {
+      return json({ message: "Too many attempts. Please wait a few minutes and try again.", ok: false }, 429);
+    }
+    throw error;
+  }
+
+  let answers: Record<string, unknown>;
+  try {
+    const body = (await request.json()) as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("not an object");
+    answers = body as Record<string, unknown>;
+  } catch {
+    return json({ message: "The form could not be read. Please try again.", ok: false }, 400);
+  }
+
+  try {
+    const result = await submitJoiningForm(token, answers, {
+      ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim() || null,
+      userAgent: request.headers.get("user-agent"),
+    });
+    if (result.ok) return json(result);
+    if ("errors" in result) {
+      return json({ errors: result.errors, message: "Please check the highlighted fields and try again.", ok: false }, result.status);
+    }
+    return json({ message: result.message, ok: false }, result.status);
+  } catch (error) {
+    logError("The joining form submit failed unexpectedly", {
+      error: error instanceof Error ? error : new Error(String(error)),
+      labels: { event: "offer_joining_form_unexpected" },
+    });
+    return json({ message: "We could not complete your joining form right now. Please try again shortly, or reply to the offer email.", ok: false }, 500);
+  }
+}

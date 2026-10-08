@@ -196,6 +196,12 @@ export type OfferFields = {
 };
 
 export type OfferRecord = OfferFields & {
+  /** When the candidate submitted the joining form (his acceptance). Null otherwise. */
+  acceptedAt?: string | null;
+  /** "candidate_form" — he pressed Submit on the joining form; "hr" — HR recorded his reply by hand. */
+  acceptedVia?: "candidate_form" | "hr" | null;
+  /** The employee record the joining form created. Null until he submits, and for a hand-recorded acceptance. */
+  employeeHrId?: string | null;
   /** Who was secretly copied (BCC) when it was sent. Empty for a draft, and for an offer sent to the candidate alone. */
   bccRecipients: string[];
   /** Who was openly copied (CC) when it was sent. Empty for a draft, and for an offer sent to the candidate alone. */
