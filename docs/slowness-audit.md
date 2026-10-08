@@ -8,7 +8,9 @@ node scripts/slow-audit.mjs
 ```
 
 `--quick` skips the hook and CI probes (machine layer only, ~10s). `--json` is machine-readable.
-`--history` prints every past run. Every run appends one record to
+`--history` prints every past run. `--transcripts [--since YYYY-MM-DD] [--until YYYY-MM-DD]` reads
+what the sessions actually waited for, from their own transcripts (Layer 6, below; Cairo days,
+`--until` exclusive, its own log `~/.claude/logs/slow-audit-transcripts.jsonl`). Every run appends one record to
 `~/.claude/logs/slow-audit.jsonl` and prints the delta against the previous one, because **a single
 reading proves nothing** — it attributes itself to whatever happened to be open at the time. A
 slowness claim needs a before and an after.
@@ -157,6 +159,71 @@ checked, so renaming an entry cannot smuggle one in.
 | `availableFreezeMB` | 1,000 MB | This box has bluescreened below it, with no dump |
 | `rendererHotCorePct` | 50% | One Claude process burning half a core or more |
 | `hookBudgetMs` | 400ms | Per tool call: the SLOWEST blocking PreToolUse hook — they run in parallel |
+
+## Layer 6 — the second audit, 2026-10-08 evening: compaction and the app's window process
+
+He came back the same evening — *"the slowness of the Claude Code desktop … I will not work like
+this"* — and suspected the memory, on a laptop that runs two accounts (sometimes three). Every
+account shares the one `~/.claude` folder (transcripts, memory, hooks, settings), so every figure
+here covers all of them; only the app's own session-record store
+(`%APPDATA%\Claude\claude-code-sessions\<account>\`) is kept per account, and it was reported, not
+pruned (his 2026-09-21 ruling keeps all three).
+
+`node scripts/slow-audit.mjs --transcripts --since 2026-10-06`, the baseline for every later run:
+
+| What | 6–8 Oct, 97 sessions | Who can fix it |
+| --- | --- | --- |
+| **Auto-compactions** | **177, 6.4 hours of frozen sessions** (2.8 h on 8 Oct alone); each p50 **132 s**, p90 194 s; fired at a median 368k tokens and left 130k behind | Mostly how sessions are used — a fresh session costs ~10 s |
+| **SessionStart hooks re-run by a compaction** | **1,093** runs on `compact` against 522 at startup; the worktree provisioning sweep p50 1.7 s (worst 17.6 s), the memory index guard p50 2.0 s (worst 11.1 s) | Fixed in this PR (below) |
+| **The app's window process** (the Electron renderer) | 1.4–1.6 GB, 80% of a core on average and 127% at peak while sessions work, 3.6% at 2 a.m.; it grows ~120 MB an hour (1.0 GB after 5 h, 1.6 GB after 11 h) | A restart of the app, his click — nothing else returns it |
+| **Turn wait by context size** | p50 4.7 s at 100–150k → 5.3 s at 300–400k; p90 ~17–18 s throughout | Smaller fixed load, fresh sessions |
+| **Turn-end wait** | slowest blocking Stop hook p50 524 ms, p90 1.0 s — `relay-capture`, which only records | Fixed (below) |
+| **The push typecheck wait** | `push-typecheck-guard` p50 4.8 s, p90 146 s, worst 7 min | Already retired on `main` the same day |
+| **Text loaded per session** | rules files 316 KB including reloads after each compaction, module memory 54 KB, hook text 116 KB (prompt hooks 54 KB) | Trimmed (below) |
+
+**Was it the memory? Partly.** The memory folder itself (1,307 files, 9 MB) costs nothing per turn —
+only `MEMORY.md` (4.7 KB) loads. The rules layer is real: "Memory files" were 32.9k tokens on every
+request (global `CLAUDE.md` 18.8 KB, project `CLAUDE.md` 11 KB, `AGENTS.md` 64 KB, `MEMORY.md`
+4.8 KB), reloaded after every compaction. But tool output (~50%) and the replies (~25%) fill most of
+the window, so the memory layer explains about a fifth of the compactions — not the slowness by
+itself.
+
+**What changed, and where it lives:**
+
+- **A compaction no longer re-runs the heavy startup hooks.** `.claude/settings.json` puts the
+  provisioning sweep, the memory index guard and the cloud bootstrap under `"matcher":
+  "startup|resume|clear"`; `session-lock start` still fires on every source. The same split was made
+  in `~/.claude/settings.json` for memory-guard, session-census, the scratchpad sweep, the dev-server
+  reaper and needs-you-status; `relay-inject`, `suggestion-context` and the task-rules reminder keep
+  firing on compact because the summary drops what they say. Pinned by
+  `tests/session-start-memory-index-guard.test.ts`.
+- **`relay-capture` no longer holds the end of every turn** — it is `"async": true` in the user
+  settings; it writes the baton and prints nothing. `next-step-capture` stays blocking: it enforces.
+- **`AGENTS.md` went from 65.4 KB to 51.4 KB.** Every rule kept its line; the evidence moved, word
+  for word, into the `docs/` account each one already cited, under "the full wording condensed out on
+  2026-10-08".
+- **The Claude Docs connector is off in Code** — denied by its bare server name in
+  `~/.claude/settings.json` and switched off with the app's own connector switch, which is the one
+  that removes its tools from the listing (a permission deny only blocks the calls).
+- **The app's window process is watched.** `~/.claude/scripts/ram-meter` now samples it every 30 s;
+  above 1.5 GB, or above half a core for 10 minutes, `claude-app-watch.txt` and the tray menu say
+  "restart the Claude app" and one notification fires per run of the app. The restart is his click.
+
+**Two things that did not work, recorded so they are not retried:**
+
+- **`skillOverrides` cannot hide the `anthropic-skills:*` skills.** Those are synced from the
+  claude.ai account; the setting matches local skill names only (`relay` and `next-step` are hidden,
+  the synced ones were still listed in a session started after the change). The only Claude Code
+  switch, `syncClaudeAiSkills: false`, drops every synced skill at once — `pptx`, `xlsx` and `pdf`
+  with them, which he uses. Turning an unused one off is a per-skill switch on claude.ai.
+- **The hook dispatcher was not changed.** Profiled guard by guard, the guards cost 3–75 ms; the
+  dispatcher's p50 under load is a node start on a box short of RAM (`docs/hook-dispatcher.md`).
+
+**Compare after the fix** with a window that starts after the merge, e.g.
+`node scripts/slow-audit.mjs --transcripts --since 2026-10-09 --until 2026-10-10`. It prints the
+change per day against the previous transcript record: compactions and hours, startup hooks re-run
+on compact (expected ~0 for the heavy ones), the turn-end wait (expected well under 524 ms) and the
+prompt-hook text per session.
 
 ## Related
 

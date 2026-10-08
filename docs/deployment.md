@@ -794,3 +794,11 @@ project's resources roughly 30 days after closure, so that target may no longer 
 
 See docs/disaster-recovery-runbook.md for the full incident-response procedure. For database
 rollbacks, see docs/migrations.md.
+
+## `AGENTS.md` — the full wording condensed out on 2026-10-08
+
+AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.
+
+### §2 — The deploy is gated on CI
+
+- 🔴 **THE DEPLOY IS GATED ON CI, AND THE GATE FAILS BY NOT SHIPPING — SILENTLY.** Railway "Wait for CI" holds the deploy until every check suite on the pushed commit finishes; **red, cancelled, or still queued = no deploy, and after 2 hours Railway SKIPS it with nothing turning red.** So a merge that never shipped now looks exactly like one that did — read `/api/healthz` `revision`, never the merge. Any workflow on that commit can hold it, not just `ci.yml` (a failed `staging-migrate` blocks production), and `railway variables --set` **bypasses the gate entirely**. Never remove `push: main` from `ci.yml` to save minutes — that silently un-gates production. 🔴 **And never cancel a stuck `main` run and walk away** — a commit whose ONLY run is `cancelled` is exactly this failure (it happened on `88f86ee57`, saved only by a dispatch 5 seconds later): fix the cause and `gh run rerun <id>` on the push run, or produce a succeeding run on that same SHA. Account: `docs/deployment.md`, "The deploy gate".

@@ -1819,3 +1819,69 @@ That grandchild is pinned by `tests/push-typecheck-guard.test.ts`, which fails a
 with the headline *"the grandchild outlived the guard's timeout"*. The guard still DENIES only on a
 real typecheck FAIL; every NO VERDICT code above is now named in the note it leaves instead of
 reading as "it exited 7".
+
+## `AGENTS.md` — the full wording condensed out on 2026-10-08
+
+AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.
+
+### §6 — One wide PR, roll-ups, and measuring CI
+
+🔴 **ONE WIDE PR, NOT FIVE NARROW ONES — EVERY MERGE COSTS ~28 BILLABLE CI MINUTES** (owner,
+2026-09-27: "you make many prs and many merges you can wider the contact of the pr to make less
+merges"). A merge pays a full CI run on the PR **and** another on `main`, ~14 billable minutes each,
+because GitHub rounds every job up to a whole minute. That VOLUME, not the pipeline, is the whole
+bill. 🔴 **THE ONLY AUTHORITY ON WHAT THIS COSTS IS THE INVOICE — $300.88 for September, the highest
+he has ever paid** (his own statement, 2026-09-27, correcting a session that had derived nearly twice
+that from measured job minutes). **Never convert measured minutes into a monthly bill**: the billing
+API needs a token scope no session here has, so a session cannot check its own arithmetic. Measure
+minutes, report minutes, anchor money to the invoice he can read. **So batch related work into ONE
+branch and ONE PR**: finish the whole task — the fix, its test, its doc, the follow-ups you can
+already see — before opening it, and push fixups in fewer, larger commits (concurrency cancels
+superseded PR runs, so two pushes a minute apart bill twice and verify once). Splitting is still
+right when the parts need SEPARATE approval (a migration, a locked file, a protected rule) or when
+one part is urgent and the rest is not — never merely because the change feels tidier in pieces.
+🔴 **AND A FEATURE ARRIVING IN INSTALMENTS IS STILL ONE FEATURE — HOLD THE PARTS** (owner,
+2026-09-29: *"batch the next feature into one PR, not six"*, after one shipped as six PRs in a
+morning because he asked for the surfaces one at a time). When the next instruction is plainly the
+same mechanism on another surface, a follow-up named in the same breath, or a pin of a ruling just
+given, **hold it and open ONE PR when the feature is whole**, saying in one line that you are holding
+so he can override. Widening a PR his approval already sits on is allowed — say so plainly and let
+him re-confirm; it is no longer a reason to open a second.
+`hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
+🔴 **NEVER HAND HIM MORE THAN ONE MERGE AT A TIME — TRIAGING OPEN PRs IS NEVER HIS JOB, AND
+CONSOLIDATING THEM IS YOURS** (owner, 2026-09-30: *"i till now donot know what to do with small open
+prs"*). He does nothing: he never decides which to merge, which to close, or what counts as small.
+**Before asking him to merge anything, run `node scripts/rollup-prs.mjs`** — it groups every open PR
+whose file set is DISJOINT from the others into one branch, reports which are SUPERSEDED and which
+must stay SEPARATE (a migration, a protected file, a frozen path), and `--apply` opens ONE PR. It
+never merges; `--settle` closes only a PR already byte-identical on `main`. 🔴 **A ROLL-UP'S MEMBERS
+ARE NOW REFUSED MECHANICALLY — `bash-guard.mjs` C13 denies `gh pr merge` of any PR an open roll-up's
+body lists**, because **a comment on a PR is not enforcement**: the ~3-minute window was lost at
+least four times with this rule loaded. It reads the roll-up's own body, so nothing extra is marked;
+the roll-up itself and an unreadable body both pass, and `PHX_MERGE_OK=1` stands it down. Pinned by
+`tests/rollup-member-guard.test.ts`.
+🔴 **`--apply` WAITS for the members' required checks and builds ONLY from the ones that finish GREEN** —
+up to 25 min (`--wait <minutes>` or `PHX_ROLLUP_WAIT_MINUTES`; `--no-wait` takes whatever is green now).
+**A quiet run is working, not hung.** A member that is red, unfinished at the deadline, pushed mid-wait,
+or carrying checks older than its own head commit is LEFT OUT, not refused — it rolls up next run. **An
+unknown flag is REFUSED**, because an ignored one runs an older worktree's behaviour while reporting
+success. Account: the script's own header.
+🔴 **THE WINDOW IS ABOUT THREE MINUTES, SO A ROLL-UP MUST BE MERGED BEFORE ITS MEMBERS, NOT MERELY
+BUILT BEFORE THEM** (measured 2026-09-30). One opened at 13:16 lost both members by 13:18:55 — the
+first 90 seconds after being commented on — which with the morning's #4814 makes **three members lost
+in one day: the comment is a courtesy, never a guard.** So build it the moment `rollup-prs.mjs` names
+one and put it to him in the SAME turn; never hold it until the members go green, which is what
+`--apply`'s own 25-minute checks wait already covers. 🔴 **And if they land first, CLOSE it — never
+merge it:** it then replaces no merges, its files are byte-identical on `main` (the `carried`
+verdict), and merging is an empty squash paying a full `main` run. Account:
+`docs/ci-self-hosted-runner.md`, "A roll-up must be merged before its members".
+🔴 **MEASURE IN MINUTES, NEVER IN RUNS, AND NEVER FROM A SAMPLE — both lie**, and two sampled dollar
+figures were published and corrected before this was re-measured from every run of the month.
+`ci.yml` is ~89% of the bill, so nothing outside it is worth touching, and `main` already runs
+exactly once per commit. **`main`'s ~40% is NOT reclaimable — it is the production deploy gate**
+(§2), so the only lever left that costs no safety is the self-hosted runner. 🔴 **The Actions runs
+API caps at 1,000 rows and truncates the OLDEST silently** — a wide query returning *exactly* 1,000
+is truncated data wearing the shape of a complete month; count the rows and disbelieve that number.
+Account for all three — the measured arc, why the run COUNT lies, and why 54 billable minutes went on
+one 5-file PR: `docs/ci-self-hosted-runner.md`, "Why the volume is what it is", "Where the money
+actually is" and "A feature arriving in instalments is still ONE feature".

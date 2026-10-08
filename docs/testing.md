@@ -233,3 +233,52 @@ is failing, so a wrapper that treats a non-zero exit as an error will throw on t
 watching for — capture the output and branch on the states, not on the exit code. And a check that
 protection does not require (`mobile`, `full-e2e`) reading `skipping` is not a failure and not a
 gate; only the required contexts decide.
+
+## `AGENTS.md` — the full wording condensed out on 2026-10-08
+
+AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.
+
+### §7 — What gates a change
+
+`check:harden` and the `ask-before-validation` hook are retired at the owner's instruction. Do not
+reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
+`pnpm run ci` as a pre-push ritual. 🔴 **No step stands in front of the push any more: commit, push,
+open the PR, and its checks are the verdict** (owner, 2026-10-08, retiring the 2026-10-04 "remote-check
+test before every push"). `node scripts/remote-check.mjs <check>` is optional — once, with
+`run_in_background: true`, acting on the notification, never a poll loop or a foreground run (bash-guard C14, C15) — and
+`.claude/hooks/push-typecheck-guard.mjs` only reads a recorded verdict for the exact sha, refusing
+solely on a recorded typecheck FAIL (`docs/testing.md`, "Before every push"). The two
+**required** checks — `validate` (the `check:*` contracts, **the unit suite**, the build on a PR whose
+diff can change it, and on non-PR events the build and login smoke) and `checks` (lint, `next typegen`, typecheck) — run on the PR head commit
+and block the merge if either is red. 🔴 **THE UNIT SUITE MOVED BACK INTO `validate` ON 2026-09-30, FOR
+WALL CLOCK, AND IT IS STILL INSIDE A REQUIRED CHECK.** `checks` ran typecheck (111s) then the suite
+(97s) in SERIES on one runner — 80% of a PR's ~260s wait — while `validate` sat on ~37s of work since
+the build was gated off pull requests. Beside the typecheck instead of behind it, a PR is ~163s.
+🔴 **It is NOT a job called `test`, and must not become one:** that is a retired check name, and a job
+protection does not require reads on a PR exactly like one that gates (#3950). `lint`, `typecheck` and
+`test` still do not exist as check names. A doc naming any of them as a job or a check name is stale —
+but **a pinned test now belongs in `validate`, not `checks`**.
+
+### §7 — Never take "pinned by a required check" on trust; the local typecheck deny
+
+🔴 **NEVER TAKE "PINNED BY A REQUIRED CHECK" ON TRUST, AND NEVER COUNT TO A NUMBER A DOC GAVE YOU —
+read the protection API.** Both halves cost real incidents: the 2026-09-17 split left `test` OUT of
+protection until 09-18, so every locked-rule test went red without blocking a merge; and the
+2026-09-27 rename left 19 places in this repo telling sessions to wait for six checks that can never
+all report again. 🔴 **The 2026-09-29 drop was DELIBERATE, not rot** — `mobile` and `secret-scan`
+left protection minutes before #4800 took them off the pull request, and the two HAD to move
+together: **a required check whose job no longer reports leaves every PR on "Expected — waiting for
+status" and nothing can ever merge.** So demoting a check and un-wiring its job are ONE change in
+one window, never two — either half alone is a permanent block or the 2026-09-17 shape. Only this
+doc lagged, and `node scripts/check-required-checks.mjs` is what catches that lag. `pnpm run ci` is
+opt-in: run it **only when the owner names it**.
+
+🔴 **A LOCAL TYPECHECK IS NOW DENIED MECHANICALLY — `bash-guard.mjs` C8, live 2026-09-25 — in every
+spelling**, including `pnpm/npm/yarn run typecheck`, `npx`/`pnpm exec tsc --noEmit`,
+`node …/typescript/bin/tsc`, `lib/tsc.js`, `.bin/tsc`, a quoted node path, and any script whose body
+resolves to one. It had to become a hook because the rule above did not hold on its own: a reaped
+typecheck prints **nothing** and exits non-zero, which a session cannot tell from a typo, so it tries
+another spelling — **23 of 23 node jobs the memory watchdog killed in its surviving log window were a
+typecheck**, six of them inside ten minutes. `PHX_TYPECHECK_OK=1 <cmd>` (`$env:PHX_TYPECHECK_OK=1;`
+in PowerShell) stands it down for one command you will sit and watch. Pinned by
+`tests/local-typecheck-guard.test.ts`.

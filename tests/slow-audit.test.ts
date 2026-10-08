@@ -44,9 +44,14 @@ import {
   HOOKS,
   MACHINE_COUNTERS,
   THRESHOLDS,
+  cairoMidnightMs,
+  contextBucket,
+  createTranscriptStats,
   hookCost,
+  hookLabel,
   spanSeconds,
   summarizeRun,
+  transcriptRates,
 } from "../scripts/slow-audit.mjs";
 
 const source = readFileSync("scripts/slow-audit.mjs", "utf8");
@@ -298,6 +303,131 @@ function hookWaitIsTheSlowestNotTheSum(): void {
   );
 }
 
+/**
+ * Layer 6 — the transcript fold. On 2026-10-08 the two costs that dominated were only visible in
+ * the transcripts: 176 auto-compactions in three days at a median 132s each, and every compaction
+ * re-running the SessionStart hooks (1,087 compact runs against 514 at startup). A before/after
+ * comparison of a fix is only honest if both sides are computed by the same arithmetic, so each
+ * rule of that arithmetic is pinned here against a fixture shaped like real transcript lines.
+ */
+function transcriptFoldMeasuresWhatSessionsWaitedFor(): void {
+  // Cairo midnight, not UTC midnight — and DST-correct on both sides of Egypt's October change.
+  assert.equal(cairoMidnightMs("2026-10-06"), Date.parse("2026-10-05T21:00:00Z"), "October is UTC+3 in Cairo");
+  assert.equal(cairoMidnightMs("2026-12-01"), Date.parse("2026-11-30T22:00:00Z"), "December is UTC+2 in Cairo");
+  assert.equal(cairoMidnightMs("not-a-day"), null, "an unreadable --since must be refused, not read as 1970");
+
+  assert.equal(contextBucket(99_999), "<100k");
+  assert.equal(contextBucket(100_000), "100-150k", "a bucket's lower edge belongs to it");
+  assert.equal(contextBucket(450_000), "400k+");
+
+  assert.equal(hookLabel('node "C:/x/.claude/hooks/scratchpad-guard.mjs" sweep'), "scratchpad-guard sweep", "a hook's mode word is part of its name");
+  assert.equal(hookLabel('node "$DIR/scripts/sync-worktree-env.mjs" --all'), "sync-worktree-env", "a --flag is not");
+  assert.equal(
+    hookLabel("Checking memory index budget", "SessionStart:compact"),
+    "Checking memory index budget",
+    "a hook with a statusMessage is recorded with that text as its command — naming it by hookName folds every such hook into one row",
+  );
+
+  const line = (o: Record<string, unknown>) => JSON.stringify(o);
+  const usage = (tokens: number) => ({ message: { usage: { input_tokens: 10, cache_read_input_tokens: tokens - 10, cache_creation_input_tokens: 0 } } });
+  const stats = createTranscriptStats({ sinceMs: cairoMidnightMs("2026-10-06")!, untilMs: cairoMidnightMs("2026-10-09")! });
+
+  stats.begin(); // session one
+  for (const raw of [
+    "not json — a torn last line must be skipped, never throw",
+    // 23:30 Cairo on 5 Oct: before the window, so this compaction must not count.
+    line({ type: "system", subtype: "compact_boundary", timestamp: "2026-10-05T20:30:00Z", compactMetadata: { durationMs: 999_000, preTokens: 1 } }),
+    line({ type: "attachment", timestamp: "2026-10-07T09:59:00Z", attachment: { type: "hook_success", hookName: "SessionStart:startup", hookEvent: "SessionStart", command: 'node "C:/u/.claude/hooks/session-lock.mjs" start', durationMs: 500 } }),
+    line({ type: "attachment", timestamp: "2026-10-07T09:59:00Z", attachment: { type: "hook_success", hookName: "SessionStart:startup", hookEvent: "SessionStart", command: "Checking memory index budget", durationMs: 2000 } }),
+    line({ type: "attachment", timestamp: "2026-10-07T09:59:01Z", attachment: { type: "instructions", files: [{ content: "x".repeat(2048) }] } }),
+    // nested_memory carries an OBJECT; measuring it as a string reads 0 bytes of module memory.
+    line({ type: "attachment", timestamp: "2026-10-07T09:59:02Z", attachment: { type: "nested_memory", content: { path: "a", content: "y".repeat(4071) } } }),
+    line({ type: "attachment", timestamp: "2026-10-07T09:59:03Z", attachment: { type: "hook_additional_context", hookName: "UserPromptSubmit", content: ["a".repeat(1024), "b".repeat(1024)] } }),
+    line({ type: "user", timestamp: "2026-10-07T10:00:00Z" }),
+    line({ type: "assistant", timestamp: "2026-10-07T10:00:05Z", ...usage(120_000) }), // 5s at 100-150k
+    line({ type: "user", isMeta: true, timestamp: "2026-10-07T10:00:06Z" }),
+    line({
+      type: "system", subtype: "stop_hook_summary", timestamp: "2026-10-07T10:00:07Z",
+      hookInfos: [
+        { command: 'node "C:/u/.claude/hooks/relay-capture.mjs"', durationMs: 600 },
+        { command: 'node "C:/u/.claude/hooks/next-step-capture.mjs"', durationMs: 200 },
+        { command: "callback" }, // an in-app callback carries no duration and is not a hook wait
+      ],
+    }),
+    line({ type: "system", subtype: "compact_boundary", timestamp: "2026-10-07T12:00:00Z", compactMetadata: { durationMs: 150_000, preTokens: 370_000 } }),
+    line({ type: "attachment", timestamp: "2026-10-07T12:00:01Z", attachment: { type: "hook_success", hookName: "SessionStart:compact", hookEvent: "SessionStart", command: "Provisioning node_modules + env in all worktrees", durationMs: 1500 } }),
+    line({ type: "user", timestamp: "2026-10-07T12:00:10Z" }),
+    line({ type: "assistant", timestamp: "2026-10-07T12:00:16Z", ...usage(130_000) }), // the floor, and 6s at 100-150k
+    line({ type: "user", timestamp: "2026-10-07T12:01:00Z" }),
+    line({ type: "assistant", timestamp: "2026-10-07T12:01:08Z", ...usage(350_000) }), // 8s at 300-400k
+    line({ type: "assistant", timestamp: "2026-10-07T12:01:09Z", ...usage(351_000) }), // no user line before it: not a wait
+  ]) stats.line(raw);
+
+  stats.begin(); // session two
+  for (const raw of [
+    // 01:30 Cairo on 8 Oct — still 7 Oct in UTC. The day must be Cairo's.
+    line({ type: "system", subtype: "compact_boundary", timestamp: "2026-10-07T22:30:00Z", compactMetadata: { durationMs: 210_000 } }),
+    // 00:30 Cairo on 9 Oct: --until is exclusive, so this must not count.
+    line({ type: "system", subtype: "compact_boundary", timestamp: "2026-10-08T21:30:00Z", compactMetadata: { durationMs: 999_000 } }),
+  ]) stats.line(raw);
+
+  const r = stats.finish();
+  assert.equal(r.sessions, 2);
+  assert.equal(r.compactions.count, 2, "compactions outside the Cairo-day window must not count");
+  assert.equal(r.compactions.hours, 0.1, "150s + 210s is 0.1 hours frozen");
+  assert.deepEqual(r.compactions.byDay, [{ day: "2026-10-07", count: 1, hours: 0 }, { day: "2026-10-08", count: 1, hours: 0.1 }], "compactions are grouped by CAIRO day");
+  assert.equal(r.compactions.medianPreTokens, 370_000, "a boundary with no preTokens is left out, not counted as zero");
+  assert.equal(r.compactions.medianFloorTokens, 130_000, "the floor is the FIRST assistant context after a compaction");
+
+  assert.deepEqual(
+    r.turnLatency.map((t) => [t.bucket, t.turns]),
+    [["100-150k", 2], ["300-400k", 1]],
+    "a turn's wait is bucketed by its own context, and an assistant line with no user line before it is not a wait",
+  );
+  assert.equal(r.turnLatency[0].p50Secs, 6);
+
+  assert.equal(r.stopWait.turns, 1);
+  assert.equal(
+    r.stopWait.p50Ms,
+    600,
+    "Stop hooks run in parallel: the turn-end wait is the SLOWEST timed hook (600ms), never the sum (800ms)",
+  );
+  const hook = (name: string) => r.hooks.find((h) => h.hook === name);
+  assert.equal(hook("Stop relay-capture")?.p50Ms, 600);
+  assert.ok(!r.hooks.some((h) => /callback|\?$/.test(h.hook)), "an untimed callback entry must not become a hook row");
+  assert.equal(hook("SessionStart session-lock start")?.n, 1);
+  assert.equal(hook("SessionStart Provisioning node_modules + env in all worktrees")?.p50Ms, 1500);
+
+  assert.deepEqual(r.sessionStartRuns, { startup: 2, compact: 1 }, "SessionStart runs are counted by their source");
+  assert.equal(r.injectedPerSessionKB.instructions, 1, "2 KB of rules over two sessions");
+  assert.equal(r.injectedPerSessionKB.moduleMemory, 2, "module memory is measured as the JSON of its object, 4 KB over two sessions");
+  assert.equal(r.injectedPerSessionKB.hookContext.UserPromptSubmit, 1);
+
+  // The before/after rates divide by the window's length, so a 3-day baseline compares with a 1-day after.
+  const rates = transcriptRates({
+    days: 2,
+    compactions: { count: 10, hours: 3 },
+    sessionStartRuns: { compact: 40 },
+    stopWait: { p50Ms: 500 },
+    hooks: [{ hook: "PreToolUse hook-dispatch PreToolUse", p50Ms: 611 }],
+    injectedPerSessionKB: { hookContext: { UserPromptSubmit: 55 } },
+  });
+  assert.deepEqual(rates, {
+    compactionsPerDay: 5,
+    hoursCompactingPerDay: 1.5,
+    startHookRunsOnCompactPerDay: 20,
+    stopWaitP50Ms: 500,
+    dispatcherP50Ms: 611,
+    promptHookKBPerSession: 55,
+  });
+
+  // Layer 6 reads files only. It must never start a process to do so.
+  const start = source.indexOf("export function createTranscriptStats(");
+  const end = source.indexOf("// The verdict.", start);
+  assert.ok(start > 0 && end > start, "the transcript layer must exist where this test expects it");
+  assert.ok(!/\b(run|ps|spawn)\(/.test(source.slice(start, end)), "the transcript layer must never spawn a process");
+}
+
 export async function runSlowAuditTests(): Promise<void> {
   counterChoiceIsPinned();
   thresholdsAreCoherent();
@@ -305,4 +435,5 @@ export async function runSlowAuditTests(): Promise<void> {
   theAuditOnlyEverObserves();
   importingIsSideEffectFree();
   hookWaitIsTheSlowestNotTheSum();
+  transcriptFoldMeasuresWhatSessionsWaitedFor();
 }
