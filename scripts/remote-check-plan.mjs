@@ -431,6 +431,17 @@ export function stageVerdictsFromOutput(text) {
   return out;
 }
 
+/**
+ * The closing line of a run that STOPPED on an error once the commit was known — a failed push to the
+ * box, an ssh error, a refused or failed dispatch. 🔴 Until 2026-10-08 those exits (`die()`, exit 2)
+ * printed only the error, so a session reading the output for a `PASS|FAIL|NO VERDICT — <sha9>` line
+ * found NONE and could not tell which commit, if any, the answer was about. Every terminal path now
+ * ends in exactly one such line.
+ */
+export function stoppedNoVerdictLine(sha) {
+  return "remote-check: NO VERDICT — stopped on the error above, so nothing here is a verdict on " + String(sha).slice(0, 9);
+}
+
 /** The lines tsc printed between the typecheck banners — what the push guard shows on a recorded FAIL. */
 export function typecheckExcerpt(text) {
   const lines = String(text ?? "").replace(/\u001b\[[0-9;]*m/g, "").split(/\r?\n/);

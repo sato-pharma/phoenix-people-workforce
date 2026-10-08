@@ -141,6 +141,7 @@ import {
   stageJobsFor,
   stageVerdictsFromOutput,
   stagesNotRunBy,
+  stoppedNoVerdictLine,
   typecheckExcerpt,
 } from "./remote-check-plan.mjs";
 
@@ -283,8 +284,15 @@ const GIT_SSH_COMMAND =
   KEY.replace(/\\/g, "/") +
   '"';
 
+// The commit this run answers for, once it is known — null before `git rev-parse` and in the lockfile
+// mode, which regenerates files and never claims a verdict. Set by the sha block below.
+let verdictSha = null;
+
 function die(message) {
   console.error("remote-check: " + message);
+  // Exit 2 is NO VERDICT, so say so — with the commit — rather than leave the output with no closing
+  // `PASS|FAIL|NO VERDICT — <sha9>` line at all. Pinned in tests/remote-check.test.ts.
+  if (verdictSha) console.error(stoppedNoVerdictLine(verdictSha));
   process.exit(2);
 }
 
@@ -832,6 +840,7 @@ try {
 } catch {
   die("not inside a git repository");
 }
+if (!LOCKFILE_MODE) verdictSha = sha;
 
 // Say plainly what is NOT being checked, rather than letting a clean result imply more than it means.
 const dirty = git("status", "--porcelain").split("\n").filter(Boolean);
