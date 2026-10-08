@@ -13,9 +13,11 @@ import {
   passwordResetCodeExpiryMs,
   passwordResetCodeLength,
   passwordResetCodeMaxAttempts,
+  passwordResetCodeMetricLabel,
   type ResetCodeRow,
 } from "@/lib/auth/password-reset-code";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
+import { EMAIL_TEMPLATE_KEYS } from "@/lib/email-templates/service";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -614,7 +616,7 @@ export async function requestPasswordResetCode(input: {
       ctaHref: "/password-reset",
       ctaLabel: "Open the password page",
       metrics: [
-        { label: "Your code", value: code },
+        { label: passwordResetCodeMetricLabel, value: code },
         {
           label: "Expires",
           value: `${expiresAt.toLocaleString("en-US", { timeZone: "Africa/Cairo" })} (Cairo)`,
@@ -624,6 +626,11 @@ export async function requestPasswordResetCode(input: {
       recipientMode: "candidate",
       recipients: [deliverableEmail],
       subject: systemAuthEmailText.passwordResetSubject,
+      // The code email has its OWN template, because the shared password_reset one is the
+      // admin-minted LINK email and its stored body renders no {{detailsTable}} — so the digits
+      // went nowhere. Explicit templateKey beats the notificationType mapping (see
+      // NotificationEmailInput.templateKey).
+      templateKey: EMAIL_TEMPLATE_KEYS.PASSWORD_RESET_CODE,
       summary:
         "Enter this 6-digit code on the Phoenix password page to set a new password. It expires in 15 minutes. If you did not ask for this, ignore this email — your password stays unchanged.",
       title: systemAuthEmailText.passwordResetTitle,
