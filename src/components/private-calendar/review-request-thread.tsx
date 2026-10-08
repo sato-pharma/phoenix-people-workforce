@@ -8,7 +8,7 @@ import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { PrivateCalendarReviewMessage, PrivateCalendarReviewRequest } from "@/lib/private-calendar/logic";
 
 // ONE thread component for both sides of a Private Calendar review request — the employee reads and
-// replies to it on his own calendar, the Super Admin on the Approvals Hub's Disputes Inbox. Shared
+// replies to it on his own calendar, the Super Admin in the Calendar Disputes inbox. Shared
 // rather than written twice because the two views must agree about who said what and in what order;
 // two copies of that would be two different answers within a year.
 //

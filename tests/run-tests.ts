@@ -2304,6 +2304,7 @@ import { runScreeningDecideGateTests } from "./screening-decide-gate.test.ts";
 import { runCandidateCommentLinksAndInAppTests } from "./candidate-comment-links-and-in-app.test.ts";
 import { runRecordConversationAnyStatusTests } from "./record-conversation-any-status.test.ts";
 import { runPrivateCalendarReviewRequestThreadTests } from "./private-calendar-review-request-thread.test.ts";
+import { runApprovalsHubSeparateInboxesTests } from "./approvals-hub-separate-inboxes.test.ts";
 import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy-redirect.test.ts";
 import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
@@ -8920,7 +8921,12 @@ await runTest(
 );
 
 await runTest(
-  "a Private Calendar review request is a two-way conversation: only the employee who raised it or a Super Admin may read or reply (attendance:read is not enough), every reply is delivered in-app, by email, on Telegram and by push through the one shared notifier with the message id as its per-message key, the opening claim is never copied into the replies table, and both the employee's calendar and the reviewer's Disputes Inbox mount the same thread",
+  "the three queues that left Other Approvals each have their own inbox and their own badge: expenses are out of the hub list AND out of its sidebar count, the Needs You board still carries a waiting expense claim but links it to the expense mailbox, ?tab=disputes bounces to the Calendar Disputes inbox every notification already points at, and that inbox renders each request with the employee's identity and the day's existing calendar record",
+  runApprovalsHubSeparateInboxesTests,
+);
+
+await runTest(
+  "a Private Calendar review request is a two-way conversation: only the employee who raised it or a Super Admin may read or reply (attendance:read is not enough), every reply is delivered in-app, by email, on Telegram and by push through the one shared notifier with the message id as its per-message key, the opening claim is never copied into the replies table, and both the employee's calendar and the reviewer's Calendar Disputes inbox mount the same thread",
   runPrivateCalendarReviewRequestThreadTests,
 );
 

@@ -188,6 +188,16 @@ export function ApprovalNavBadge({
       return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/direct-orders/unbooked-count" />;
     case "marketing-approvals-pending":
       return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/marketing-requests/pending-count" />;
+    // Calendar Disputes became its own inbox on 2026-10-08 (owner: "separate the disputes inbox into
+    // a separate dispute inbox"), so it needs its own slot too — the hub's count has never covered a
+    // review request, and now the hub does not render one either.
+    case "calendar-disputes-pending":
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/private-calendar/disputes/pending-count" />;
+    // Deduction Disputes — a published deduction an employee is contesting, waiting on an HR reply.
+    // Its own kind for the same reason as its neighbours: the consolidated hub has never counted a
+    // deduction comment, so "approvals-hub-pending" would count everything except this inbox.
+    case "deduction-disputes-pending":
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/deductions/disputes/pending-count" />;
     // Market Awareness keeps its own inbox for the same reason marketing does — the owner asked for
     // a separate queue — so the hub's count can never cover it.
     case "market-awareness-approvals-pending":

@@ -29,6 +29,7 @@ import {
   mapPrivateCalendarEmployee,
   mapVacationRowToPrivateCalendarItem,
   privateCalendarHrIdKey,
+  privateCalendarItemOccursOn,
   privateCalendarSources,
   readAllPrivateCalendarRows,
   resolvePrivateCalendarVisibleEmployees,
@@ -622,4 +623,110 @@ export async function getCompanyNoActivityDays(input: {
       employeeHrId: exception.employeeHrId as string,
       employeeName: exception.employeeName ?? exception.employeeHrId as string,
     }));
+}
+
+// ── What Phoenix already holds for one disputed day ──────────────────────────────────────────────
+
+export type PrivateCalendarDayEvidence = {
+  date: string;
+  employeeHrId: string;
+  /** Every calendar item Phoenix holds for that employee on that day, from the SAME seven sources the calendar reads. */
+  items: PrivateCalendarItem[];
+  /**
+   * Sources that could not be read at all. Load-bearing: without it an unreadable source would
+   * render as "Phoenix has nothing for this day", which is exactly the confident blank that makes a
+   * reviewer reject a true claim.
+   */
+  unreadableSources: PrivateCalendarSource[];
+};
+
+function dayEvidenceKey(employeeHrId: string, date: string) {
+  return `${privateCalendarHrIdKey(employeeHrId)}|${date}`;
+}
+
+/**
+ * The calendar record behind a handful of specific (employee, day) pairs — what the Calendar
+ * Disputes inbox puts in front of the reviewer so he can answer "what is she disputing about?"
+ * without opening her calendar and without asking her manager.
+ *
+ * Reads through the workspace's OWN loaders over a one-day window per pair, so the inbox and the
+ * employee's calendar can never disagree about what that day holds. Deliberately NOT
+ * getPrivateCalendarWorkspace: that one builds a whole month for one employee behind an
+ * `employee_profile` + `attendance` permission assertion, and this is called for a set of employees
+ * at once from a Super-Admin-only surface that has already gated itself.
+ *
+ * Returns nothing for a pair it could not resolve. Intended for small sets (the pending dispute
+ * queue); it is not a reporting path.
+ */
+export async function getPrivateCalendarDayEvidence(
+  days: ReadonlyArray<{ date: string; employeeHrId: string }>,
+): Promise<Map<string, PrivateCalendarDayEvidence>> {
+  const out = new Map<string, PrivateCalendarDayEvidence>();
+  const wanted = days.filter((day) => day.employeeHrId && /^\d{4}-\d{2}-\d{2}$/.test(day.date));
+  if (wanted.length === 0) return out;
+
+  const start = wanted.map((day) => day.date).sort()[0];
+  const end = wanted.map((day) => day.date).sort().at(-1) as string;
+  const wantedKeys = new Set(wanted.map((day) => privateCalendarHrIdKey(day.employeeHrId)).filter(Boolean));
+
+  const directory = await getEmployeeDirectoryRows();
+  const employees = directory.filter((employee) => wantedKeys.has(privateCalendarHrIdKey(employee.hrId)));
+  if (employees.length === 0) return out;
+  const hrIds = employees.map((employee) => employee.hrId);
+  const months = monthsTouchedByRange(start, end);
+
+  const [attendance, vacations, excuses, doubleVisits, fieldVisits, plans, ...holidaysByMonth] = await Promise.all([
+    loadAttendanceItems(hrIds, start, end),
+    loadVacationItems(hrIds, start, end),
+    loadExcuseItems(hrIds, start, end),
+    loadDoubleVisitPrivateCalendarItems(hrIds, start, end),
+    loadFieldVisitPrivateCalendarItems(hrIds, start, end, employees.map((employee) => employee.crmId)),
+    loadPlanPrivateCalendarItems(hrIds, start, end),
+    ...months.map(({ year, month }) => loadHolidayItems(year, month, start, end)),
+  ]);
+
+  const unreadableSources: PrivateCalendarSource[] = [];
+  if (!attendance.ready) unreadableSources.push("attendance");
+  if (!vacations.ready) unreadableSources.push("vacation");
+  if (!excuses.ready) unreadableSources.push("excuse");
+  if (!doubleVisits.ready) unreadableSources.push("double_visit");
+  if (!fieldVisits.ready) unreadableSources.push("field_visit");
+  if (!plans.ready) unreadableSources.push("plan");
+
+  // The same two passes the workspace runs: employee metadata on, then the field-visit suppression
+  // keyed on (employee, date). Skipping the suppression would show a "Late" or "Single punch" flag
+  // beside a CRM-verified visit and invite a rejection on a flag the calendar itself hides.
+  const items = suppressFieldVisitAttendanceProblems(
+    decorateItemsWithEmployeeMetadata(
+      [
+        ...attendance.items,
+        ...vacations.items,
+        ...excuses.items,
+        ...doubleVisits.items,
+        ...fieldVisits.items,
+        ...plans.items,
+      ],
+      directory,
+    ),
+  );
+  // Holidays carry no employee, so they are matched by date alone and appended per pair below.
+  const holidays = holidaysByMonth.flat();
+
+  for (const day of wanted) {
+    const key = dayEvidenceKey(day.employeeHrId, day.date);
+    if (out.has(key)) continue;
+    const employeeKey = privateCalendarHrIdKey(day.employeeHrId);
+    out.set(key, {
+      date: day.date,
+      employeeHrId: day.employeeHrId,
+      items: [
+        ...items.filter(
+          (item) => privateCalendarHrIdKey(item.employeeHrId) === employeeKey && privateCalendarItemOccursOn(item, day.date),
+        ),
+        ...holidays.filter((item) => privateCalendarItemOccursOn(item, day.date)),
+      ],
+      unreadableSources,
+    });
+  }
+  return out;
 }

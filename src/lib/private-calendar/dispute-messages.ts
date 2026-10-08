@@ -257,7 +257,7 @@ export async function addPrivateCalendarDisputeMessage(
     metadata: {
       disputeDate: dispute.dispute_date,
       disputeId: dispute.id,
-      roleHrefs: { "Super Admin": "/admin/approvals-hub?tab=disputes" },
+      roleHrefs: { "Super Admin": "/admin/private-calendar-disputes" },
     },
     module: "private_calendar",
     participantHrIds: [dispute.employee_hr_id, ...admins.map((admin) => admin.hrId)],

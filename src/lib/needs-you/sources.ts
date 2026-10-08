@@ -32,6 +32,7 @@ import { getSalaryFlags } from "@/lib/admin/service";
 import {
   getAwaitingMyActionItemsWithHealth,
   isForbiddenSourceError,
+  OTHER_APPROVALS_MOVED_OUT,
 } from "@/lib/action-center/service";
 import {
   findOrphanedRequests,
@@ -192,7 +193,11 @@ const actionInbox: NeedsYouAdapter = {
         count: bucket.length,
         // Names, never HR ids — the item type has no field for an id, so this is the only shape.
         people: [...new Set(bucket.map((item) => item.employeeName).filter(Boolean))],
-        href: needsYouDestinations["action-inbox"].href,
+        // A module that moved to its own mailbox (OTHER_APPROVALS_MOVED_OUT — outstation expense
+        // claims, 2026-10-08) is STILL counted here, because this board may never under-report. Only
+        // its destination changes: sending it to the hub it no longer appears in would be a click
+        // that lands on an inbox without the row.
+        href: OTHER_APPROVALS_MOVED_OUT[module] ?? needsYouDestinations["action-inbox"].href,
         externalUrl: null,
         oldestAt,
         // UPSTREAM's verdict on both counts: `slaIsOverdue` and `slaAgeDays` are the inbox's own SLA
@@ -1034,12 +1039,12 @@ const uncollectedLeaverDeductions: NeedsYouAdapter = {
  * they cannot see.
  *
  * 🔴 WHY IT IS ON THE BOARD AT ALL. The request already notifies him on submission — email, in-app and
- * push, plus the standing Telegram mirror — but that notice fires once, and the Disputes Inbox is a tab
- * he has to remember to open. One request sat pending for two days with nothing re-raising it. The
+ * push, plus the standing Telegram mirror — but that notice fires once, and the Calendar Disputes
+ * inbox is a screen he has to remember to open. One request sat pending for two days with nothing re-raising it. The
  * board is the only channel that still shows it tomorrow.
  *
- * It counts nothing itself: the one producer is the same function the hub's Disputes Inbox tab reads,
- * so the board and the tab can never disagree about how many are waiting.
+ * It counts nothing itself: the one producer is the same function the Calendar Disputes inbox reads,
+ * so the board and that inbox can never disagree about how many are waiting.
  */
 const calendarReviewRequests: NeedsYouAdapter = {
   id: "calendar-review-requests",

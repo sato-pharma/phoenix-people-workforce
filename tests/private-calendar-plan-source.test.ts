@@ -265,10 +265,16 @@ export function runPrivateCalendarPlanSourceTests() {
       /import \{ loadPlanPrivateCalendarItems \} from "@\/lib\/private-calendar\/plan-items";/,
       "the service reads the plan through the one shared loader",
     );
+    // THREE fan-outs since 2026-10-08, still an exact count rather than a floor: a dropped call
+    // site has to go red, and `>= 2` would let one of the three fall out silently. The third is
+    // getPrivateCalendarDayEvidence, which the Calendar Disputes inbox reads to show the reviewer
+    // what Phoenix already holds for the disputed day — the SAME plan the other two read,
+    // deliberately, because deciding a dispute against a different source than the calendar being
+    // disputed is deciding on other evidence than the one in front of the employee.
     assert.equal(
       [...service.matchAll(/loadPlanPrivateCalendarItems\(/g)].length,
-      2,
-      "the plan loads in BOTH fan-outs — the calendar workspace AND the company no-activity engine Deductions reads",
+      3,
+      "the plan loads in ALL THREE fan-outs — the calendar workspace, the company no-activity engine Deductions reads, and the dispute-day evidence the Calendar Disputes reviewer sees",
     );
     assert.match(service, /plan: plans\.ready,/, "a plan source that could not be read says so, rather than showing a confident empty month");
 
