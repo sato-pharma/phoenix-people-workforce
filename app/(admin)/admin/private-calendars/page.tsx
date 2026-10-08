@@ -6,7 +6,6 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { canUsePrivateCalendarAdminSurface, getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import {
   phxFieldClassName,
   phxSelectClassName,
@@ -14,18 +13,21 @@ import {
 
 export const dynamic = "force-dynamic";
 
+// The whole company lands in this list now, so it is capped for render cost and the cap is stated
+// on screen. Name, line, area, department, title and status all narrow it below this.
+const ROW_CAP = 100;
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
-const ELIGIBLE_ROLES = new Set([
-  "National Sales Manager",
-  "Product Manager",
-  "Group Product Manager",
-  "Training Manager",
-]);
-
+// Every employee is reachable from this desk (owner, 2026-10-08: "make me able to filter on any
+// emp here"). The surface is already gated to a private-calendar global viewer — Super Admin, CEO,
+// system scope or a configured HR id — and such a viewer may read ANY employee's calendar
+// (canReadPrivateCalendarEmployee), so the old NSM/PM/GPM/TM-or-head-office shortlist narrowed the
+// picker and nothing else. Do not reintroduce a role shortlist here: it hid field reps and district
+// managers whose calendars this desk is allowed to open.
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
@@ -47,43 +49,59 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
   const selectedHrId = getString("employee");
   const rawMonth = getString("month");
   const rawYear = getString("year");
-  const nameFilter = (getString("name") ?? "").toLowerCase();
+  const nameFilter = (getString("name") ?? "").trim().toLowerCase();
   const lineFilter = getString("line") ?? "";
   const regionFilter = getString("region") ?? "";
-  const titleFilter = (getString("title") ?? "").toLowerCase();
+  const departmentFilter = getString("department") ?? "";
+  const titleFilter = (getString("title") ?? "").trim().toLowerCase();
+  // Active-and-on-leave by default, because that is who somebody is normally looking for; "all"
+  // keeps a leaver reachable, since a past month's calendar is exactly when one is wanted.
+  const statusFilter = getString("status") === "all" ? "all" : "working";
 
   const month = rawMonth ? Math.max(1, Math.min(12, parseInt(rawMonth, 10))) : currentMonth;
   const year = rawYear ? parseInt(rawYear, 10) : currentYear;
 
-  // Load and filter to eligible employees (NSM/PM/GPM/TM or head-office = no area)
   const directory = await getEmployeeDirectory().catch(() => null);
   const allEmployees = directory?.employees ?? [];
 
-  const eligible = allEmployees.filter((emp) => {
+  const isWorking = (emp: (typeof allEmployees)[number]) => {
     const status = (emp.employmentStatus ?? "").toLowerCase();
-    if (status !== "active" && status !== "on_leave") return false;
-    const role = resolveJobFunctionRole(emp.jobTitle);
-    // Head-office: no area assigned + not a field Medical Rep / District Manager
-    const isHeadOffice = emp.areaName === null && role !== "Medical Rep" && role !== "District Manager" && role !== "Regional Manager";
-    return ELIGIBLE_ROLES.has(role) || isHeadOffice;
-  });
+    return status === "active" || status === "on_leave";
+  };
 
-  // Derive unique lines and regions for filter dropdowns
-  const lines = [...new Set(eligible.map((e) => e.lineName).filter(Boolean) as string[])].sort();
-  const regions = [...new Set(eligible.map((e) => e.areaName).filter(Boolean) as string[])].sort();
+  // The pool is the whole company. Only the employment-status choice narrows it, and the
+  // dropdowns below are derived from that same pool so a filter can never offer an empty result.
+  const pool = statusFilter === "all" ? allEmployees : allEmployees.filter(isWorking);
 
-  // Apply filters for the visible list
-  const filtered = eligible.filter((emp) => {
-    if (nameFilter && !emp.fullName.toLowerCase().includes(nameFilter)) return false;
-    if (lineFilter && emp.lineName !== lineFilter) return false;
-    if (regionFilter && emp.areaName !== regionFilter) return false;
-    if (titleFilter && !(emp.jobTitle ?? "").toLowerCase().includes(titleFilter)) return false;
-    return true;
-  });
+  // Derive unique lines, regions and departments for the filter dropdowns
+  const lines = [...new Set(pool.map((e) => e.lineName).filter(Boolean) as string[])].sort();
+  const regions = [...new Set(pool.map((e) => e.areaName).filter(Boolean) as string[])].sort();
+  const departments = [...new Set(pool.map((e) => e.departmentName).filter(Boolean) as string[])].sort();
 
-  // If an employee is selected, load their calendar
+  // Name search spans the display name, the legal name, the nickname and the HR id — he searches
+  // with whichever one he knows, and head-office people are often known by the nickname only.
+  const matchesName = (emp: (typeof allEmployees)[number]) =>
+    [emp.displayName, emp.fullName, emp.nickname, emp.hrId]
+      .some((value) => (value ?? "").toLowerCase().includes(nameFilter));
+
+  // Apply filters for the visible list. Sorted by name, because the directory query carries no
+  // ORDER BY of its own and the list below is capped — an unsorted cap would show an arbitrary
+  // slice of the company and look like the filter had lost people.
+  const filtered = pool
+    .filter((emp) => {
+      if (nameFilter && !matchesName(emp)) return false;
+      if (lineFilter && emp.lineName !== lineFilter) return false;
+      if (regionFilter && emp.areaName !== regionFilter) return false;
+      if (departmentFilter && emp.departmentName !== departmentFilter) return false;
+      if (titleFilter && !(emp.jobTitle ?? "").toLowerCase().includes(titleFilter)) return false;
+      return true;
+    })
+    .sort((left, right) => left.displayName.localeCompare(right.displayName, "en"));
+
+  // If an employee is selected, load their calendar. Resolve against the WHOLE directory, never the
+  // filtered list, so a link stays valid after the filters change and a leaver opens from status=all.
   let workspace = null;
-  const selectedEmployee = selectedHrId ? eligible.find((e) => e.hrId === selectedHrId) ?? null : null;
+  const selectedEmployee = selectedHrId ? allEmployees.find((e) => e.hrId === selectedHrId) ?? null : null;
   if (selectedHrId && selectedEmployee) {
     workspace = await getPrivateCalendarWorkspace({
       access,
@@ -94,28 +112,45 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
     }).catch(() => null);
   }
 
-  const hasFilters = nameFilter || lineFilter || regionFilter || titleFilter;
+  const hasFilters = Boolean(
+    nameFilter || lineFilter || regionFilter || departmentFilter || titleFilter || statusFilter === "all",
+  );
+
+  // Carried on every link so a chosen filter set survives opening a calendar and coming back.
+  const filterParams: Record<string, string> = {
+    ...(nameFilter ? { name: nameFilter } : {}),
+    ...(lineFilter ? { line: lineFilter } : {}),
+    ...(regionFilter ? { region: regionFilter } : {}),
+    ...(departmentFilter ? { department: departmentFilter } : {}),
+    ...(titleFilter ? { title: titleFilter } : {}),
+    ...(statusFilter === "all" ? { status: "all" } : {}),
+  };
+  const backToListHref = `/admin/private-calendars?${new URLSearchParams({
+    ...filterParams,
+    month: String(month),
+    year: String(year),
+  }).toString()}`;
 
   return (
     <div className="space-y-6">
       <PremiumHero
         kicker="Private Calendars"
         title="Employee Private Calendar"
-        subtitle="Select a head-office or senior field employee to view their private calendar."
+        subtitle="Filter the whole company by name, line, area, department, title or employment status, then open any employee's private calendar."
       />
 
       {/* Filter form */}
       <form className="border border-phx-line bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)]" method="get">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           <div>
             <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-              Name
+              Name or HR ID
             </label>
             <input
               className={phxFieldClassName}
               defaultValue={nameFilter}
               name="name"
-              placeholder="Search by name..."
+              placeholder="Search name, nickname or HR ID..."
               type="text"
             />
           </div>
@@ -151,6 +186,21 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
           </div>
           <div>
             <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+              Department
+            </label>
+            <select
+              className={phxSelectClassName}
+              defaultValue={departmentFilter}
+              name="department"
+            >
+              <option value="">All Departments</option>
+              {departments.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Title
             </label>
             <input
@@ -160,6 +210,19 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               placeholder="Filter by title..."
               type="text"
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+              Status
+            </label>
+            <select
+              className={phxSelectClassName}
+              defaultValue={statusFilter}
+              name="status"
+            >
+              <option value="working">Active &amp; On Leave</option>
+              <option value="all">Everyone, leavers included</option>
+            </select>
           </div>
         </div>
         <div className="mt-3 flex items-center gap-3">
@@ -214,7 +277,9 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
         <div className="border border-phx-line bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
           <div className="border-b border-phx-line bg-phx-ink px-5 py-3">
             <h2 className="text-xs font-black uppercase tracking-[0.14em] text-white">
-              {hasFilters ? `${filtered.length} employee${filtered.length !== 1 ? "s" : ""} found` : `Eligible employees — ${eligible.length} total`}
+              {hasFilters
+                ? `${filtered.length} employee${filtered.length !== 1 ? "s" : ""} found of ${pool.length}`
+                : `All employees — ${pool.length} total`}
             </h2>
           </div>
           {filtered.length === 0 ? (
@@ -223,40 +288,65 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               <p className="mt-1 text-sm text-phx-ink-soft">Try adjusting the filters above.</p>
             </div>
           ) : (
-            <table className="w-full border-collapse text-left">
+            /* table-fixed + colgroup, per the fits-the-screen golden rule: the whole company now
+               lands here, and a long job title or department used to widen the table instead of
+               wrapping inside its own cell. On a phone the three middle columns MERGE into the
+               employee cell (`w-0` + `hidden`) rather than squeezing five columns into 375px. */
+            <table className="w-full table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-[58%] sm:w-[26%]" />
+                <col className="w-0 sm:w-[22%]" />
+                <col className="w-0 sm:w-[16%]" />
+                <col className="w-0 sm:w-[20%]" />
+                <col className="w-[42%] sm:w-[16%]" />
+              </colgroup>
               <thead className="bg-phx-paper">
                 <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   <th className="px-5 py-3">Employee</th>
-                  <th className="px-5 py-3">Title</th>
-                  <th className="px-5 py-3">Line</th>
-                  <th className="px-5 py-3">Area</th>
+                  <th className="hidden px-5 py-3 sm:table-cell">Title</th>
+                  <th className="hidden px-5 py-3 sm:table-cell">Line</th>
+                  <th className="hidden px-5 py-3 sm:table-cell">Area / Department</th>
                   <th className="px-5 py-3">View Calendar</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.slice(0, 50).map((emp) => {
+                {filtered.slice(0, ROW_CAP).map((emp) => {
                   const params = new URLSearchParams({
+                    ...filterParams,
                     employee: emp.hrId,
                     month: String(month),
                     year: String(year),
-                    ...(nameFilter ? { name: nameFilter } : {}),
-                    ...(lineFilter ? { line: lineFilter } : {}),
-                    ...(regionFilter ? { region: regionFilter } : {}),
-                    ...(titleFilter ? { title: titleFilter } : {}),
                   });
+                  const working = isWorking(emp);
                   return (
                     <tr
                       className="border-b border-phx-line bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]"
                       key={emp.hrId}
                     >
-                      <td className="px-5 py-3">
-                        <div className="font-semibold text-phx-ink">{emp.fullName}</div>
+                      <td className="px-5 py-3 align-top">
+                        <div className="break-words font-semibold text-phx-ink">{emp.displayName}</div>
                         <div className="font-mono text-phx-xs text-phx-ink-faint">{emp.hrId}</div>
+                        {!working && (
+                          <div className="mt-1 inline-block border border-phx-line bg-phx-paper px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
+                            {emp.employmentStatus ? emp.employmentStatus.replace(/_/g, " ") : "Not active"}
+                          </div>
+                        )}
+                        {/* The merged phone view of the three columns hidden below sm. */}
+                        <div className="mt-1 break-words text-phx-xs text-phx-ink-soft sm:hidden">
+                          {[emp.jobTitle, emp.lineName, emp.areaName ?? "Head Office", emp.departmentName]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
                       </td>
-                      <td className="px-5 py-3 text-phx-ink-2">{emp.jobTitle ?? "—"}</td>
-                      <td className="px-5 py-3 text-phx-ink-2">{emp.lineName ?? "—"}</td>
-                      <td className="px-5 py-3 text-phx-ink-2">{emp.areaName ?? "Head Office"}</td>
-                      <td className="px-5 py-3">
+                      <td className="hidden break-words px-5 py-3 align-top text-phx-ink-2 sm:table-cell">{emp.jobTitle ?? "—"}</td>
+                      <td className="hidden break-words px-5 py-3 align-top text-phx-ink-2 sm:table-cell">{emp.lineName ?? "—"}</td>
+                      <td className="hidden break-words px-5 py-3 align-top text-phx-ink-2 sm:table-cell">
+                        <div>{emp.areaName ?? "Head Office"}</div>
+                        {emp.departmentName && (
+                          <div className="text-phx-xs text-phx-ink-faint">{emp.departmentName}</div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 align-top">
                         <a
                           className="inline-flex items-center gap-1.5 border border-phx-ink bg-phx-ink px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#1E293B]"
                           href={`/admin/private-calendars?${params.toString()}`}
@@ -270,9 +360,9 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               </tbody>
             </table>
           )}
-          {filtered.length > 50 && (
+          {filtered.length > ROW_CAP && (
             <div className="border-t border-phx-line px-5 py-3 text-sm text-phx-ink-soft">
-              Showing 50 of {filtered.length} — refine your filters to narrow down.
+              Showing the first {ROW_CAP} of {filtered.length}, sorted by name — narrow the filters to reach the rest.
             </div>
           )}
         </div>
@@ -286,7 +376,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               <span className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
                 Private Calendar
               </span>
-              <div className="mt-0.5 font-black text-white">{selectedEmployee.fullName}</div>
+              <div className="mt-0.5 font-black text-white">{selectedEmployee.displayName}</div>
               <div className="text-xs text-phx-ink-faint">
                 {selectedEmployee.jobTitle ?? "—"} &middot; {selectedEmployee.lineName ?? "Head Office"}
                 {selectedEmployee.areaName ? ` · ${selectedEmployee.areaName}` : ""}
@@ -294,7 +384,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             </div>
             <a
               className="border border-phx-ink-2 px-3 py-1.5 text-xs font-black text-phx-ink-faint transition hover:border-white hover:text-white"
-              href={`/admin/private-calendars?name=${nameFilter}&line=${lineFilter}&region=${regionFilter}&title=${titleFilter}&month=${month}&year=${year}`}
+              href={backToListHref}
             >
               &larr; Back to list
             </a>
@@ -312,7 +402,27 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
 
       {selectedHrId && !selectedEmployee && (
         <div className="border border-rose-200 bg-rose-50 p-6">
-          <p className="text-sm font-black text-rose-700">Employee not found or not eligible for private calendar access.</p>
+          <p className="text-sm font-black text-rose-700">
+            No employee on record with HR ID {selectedHrId}.
+          </p>
+          <p className="mt-1 text-sm text-rose-700">
+            Every employee is selectable from this desk, so this is a stale link rather than a permission limit.
+          </p>
+        </div>
+      )}
+
+      {/* A failed read says so, instead of dropping back to the list as if nothing had been asked. */}
+      {selectedEmployee && !workspace && (
+        <div className="border border-rose-200 bg-rose-50 p-6">
+          <p className="text-sm font-black text-rose-700">
+            The calendar for {selectedEmployee.displayName} could not be loaded for {MONTHS[month - 1]} {year}.
+          </p>
+          <p className="mt-1 text-sm text-rose-700">
+            The read failed rather than coming back empty — try the month again, and tell me if it keeps failing.
+          </p>
+          <a className="mt-3 inline-block text-sm text-rose-700 underline" href={backToListHref}>
+            Back to list
+          </a>
         </div>
       )}
     </div>
