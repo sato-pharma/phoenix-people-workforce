@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { derivedNotes, figuresOf, papersOf, renderLinePage, renderSummaryPage, stampOf } from "../scripts/field-day/print-day.mjs";
+import { stripComments } from "./support/comment-strip.ts";
+import { assertFetchRetriesALostLock } from "./support/launcher-fetch-retry.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The Phoenix CRM field day papers — three for the district managers, one for the Chief Executive.
@@ -179,4 +181,9 @@ export function runFieldDayReportTests() {
   const printer = readFileSync("scripts/field-day/print-day.mjs", "utf8");
   assert.match(printer, /pathToFileURL\(process\.argv\[1\]\)/, "the CLI guard survives the space in “Phoenix Workforce”");
   assert.match(printer, /--git-common-dir/, "the papers land in the PRIMARY checkout's xlsx, which is the folder that is backed up");
+
+  // ── 🔴 The 21:00 launcher shares its minute with the memory fold's: a lost fetch lock is retried ──
+  // 2026-10-08: both fetched origin/main into the same .git in the same second, the field day lost the
+  // lock and wrote no papers. The launcher must retry that, boundedly, and still fetch exactly once.
+  assertFetchRetriesALostLock(stripComments(readFileSync("scripts/field-day/run-nightly.mjs", "utf8")), "scripts/field-day/run-nightly.mjs");
 }

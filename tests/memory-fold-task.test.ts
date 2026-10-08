@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { stripComments, stripHashComments } from "./support/comment-strip.ts";
+import { assertFetchRetriesALostLock, LOST_LOCK_2026_10_08 } from "./support/launcher-fetch-retry.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
@@ -210,6 +211,11 @@ export function runMemoryFoldTaskTests() {
     "the launcher must prune after removing its worktree, or it leaves a husk three times a day",
   );
 
+  // 🔴 Measured 2026-10-08 21:00 Cairo: this launcher and the field day's both fetched origin/main into
+  // the same `.git` in the same second, and the loser died on the lock. The fetch must retry a lost
+  // lock — boundedly — and the run must go through that retry, not around it.
+  assertFetchRetriesALostLock(launcherCode, LAUNCHER);
+
   // ---- the installer's own remove path ----------------------------------------------------------
 
   assert.ok(
@@ -232,7 +238,7 @@ export function runMemoryFoldTaskTests() {
  * nothing else; a branch that was pushed but got no PR is deleted, unless the PR was in fact made.
  */
 export async function runMemoryFoldRetryTests() {
-  const { withRetry, TRANSIENT, RETRY_DELAYS_MS } = await import("../scripts/module-memory/fold.mjs");
+  const { withRetry, TRANSIENT, FETCH_RETRYABLE, RETRY_DELAYS_MS } = await import("../scripts/module-memory/fold.mjs");
   const fail = (stderr: string) => Object.assign(new Error("Command failed: git push"), { stderr });
   const quiet = { log: () => {}, sleep: async () => {} };
 
@@ -269,7 +275,25 @@ export async function runMemoryFoldRetryTests() {
   await assert.rejects(withRetry("git push", () => { calls += 1; throw fail("! [rejected] (non-fast-forward)"); }, quiet));
   assert.equal(calls, 1, "a non-network failure is not retried");
 
+  // 🔴 The fold's own fetch races the field day's at 21:00 (2026-10-08). A lost lock is retried on the
+  // FETCH; on a push it means the remote moved, which no retry fixes, so the push stays network-only.
+  assert.ok(FETCH_RETRYABLE instanceof RegExp, "fold.mjs must export FETCH_RETRYABLE, the fetch's lock-aware retry pattern");
+  assert.ok(FETCH_RETRYABLE.test(LOST_LOCK_2026_10_08), "a fetch that lost the ref lock must be retried");
+  assert.ok(!TRANSIENT.test(LOST_LOCK_2026_10_08), "the push's network-only pattern must not start retrying lock errors");
+  assert.ok(FETCH_RETRYABLE.test("fatal: unable to access 'https://github.com/x': Connection was reset"), "the fetch keeps every network retry too");
+  calls = 0;
+  const fetched = await withRetry("git fetch", () => {
+    calls += 1;
+    if (calls < 2) throw Object.assign(new Error(`Command failed: git fetch -q origin main\n${LOST_LOCK_2026_10_08}`), { stderr: LOST_LOCK_2026_10_08 });
+    return "";
+  }, { ...quiet, retryOn: FETCH_RETRYABLE });
+  assert.equal(fetched, "", "a fetch that lost the lock once succeeds on its second attempt");
+  assert.equal(calls, 2);
+
   const fold = stripComments(read("scripts/module-memory/fold.mjs"));
+  assert.ok(/withRetry\("git fetch", \(\) => git\(\["fetch", "-q", "origin", "main"\]\), \{ retryOn: FETCH_RETRYABLE \}\)/.test(fold),
+    "the fold's fetch must go through the retry, with the lock-aware pattern");
+  assert.equal([...fold.matchAll(/git\(\["fetch"/g)].length, 1, "and there is no second, unguarded fetch");
   assert.ok(/withRetry\("git push"/.test(fold) && /withRetry\("gh pr create"/.test(fold),
     "both the push and the PR create must go through the retry");
   assert.ok(/"pr", "list", "--head", branch/.test(fold),
