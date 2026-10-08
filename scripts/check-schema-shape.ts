@@ -557,10 +557,12 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
       // "something is failing inside take_snapshots()" here sends the reader to an empty table.
       // take_snapshots() writes a recovery.snapshot_runs row on every invocation, success or
       // failure, so if it had ever run, at least one table would have been captured — a store
-      // with nothing in it at all has never been CALLED. Measured on staging 2026-10-08: all 7
-      // registered and enabled, 0 snapshots, `recovery.snapshot_runs` EMPTY, and `cron.job` does
-      // not exist because pg_cron is not installed there. A session told to "read
-      // recovery.snapshot_runs.error" read zero rows and learned nothing.
+      // with nothing in it at all has never been CALLED. Measured on staging on the morning of
+      // 2026-10-08, which is the reading this code was written from: all 7 registered and enabled,
+      // 0 snapshots, `recovery.snapshot_runs` EMPTY, and `cron.job` absent because pg_cron was not
+      // installed there. A session told to "read recovery.snapshot_runs.error" read zero rows and
+      // learned nothing. (Staging got pg_cron and this schedule later the same day, so it is no
+      // longer an example of the state — the shape it taught is what matters.)
       //
       // The schedule used to be hand-made state, which is how a restored database came back with
       // the store deployed and never running. Since 20261008140000_schedule_recovery_snapshot_cron

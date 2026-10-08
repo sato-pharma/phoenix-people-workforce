@@ -16,10 +16,12 @@ import {
 // 2026-10-08 it fired on staging with: "They are registered and enabled, so something is
 // failing silently inside recovery.take_snapshots() — read recovery.snapshot_runs.error."
 //
-// Measured on staging that day: all 7 tables registered and enabled, 0 snapshots each,
-// `recovery.snapshot_runs` EMPTY (0 rows), and `cron.job` does not exist at all because pg_cron
-// is not installed there. So there was no error to read, and the advice sent the reader inside a
-// function that had never been called. take_snapshots() writes a snapshot_runs row on every
+// Measured on staging that morning: all 7 tables registered and enabled, 0 snapshots each,
+// `recovery.snapshot_runs` EMPTY (0 rows), and `cron.job` absent entirely because pg_cron was not
+// installed there. So there was no error to read, and the advice sent the reader inside a
+// function that had never been called. (Staging got pg_cron and the schedule later the same day,
+// on the owner's instruction, so it is no longer an example of this state — but it is the state
+// these verdicts are written from, and any fresh database is in it.) take_snapshots() writes a snapshot_runs row on every
 // invocation, so "nothing captured anywhere" and "these three tables failed" are different
 // faults with different fixes, and only the second one is about the function.
 //

@@ -55,16 +55,55 @@ properties make it safe to re-apply against a live production:
   (that table is keyed by jobid, so preserving the id is what preserves the history). The migration
   refuses outright if it ever finds two jobs of that name, and re-asks `cron.job` afterwards so a
   schedule that did not take fails the migration instead of passing quietly.
-- **It is guarded on `pg_extension`.** Staging has no `pg_cron`, so there it raises a warning and
-  moves on — which matters beyond tidiness, because a failing `staging-migrate` withholds the
-  production deploy. Applied to staging the same day: clean, and `pg_cron` still absent. It does
-  **not** install the extension; whether staging should run the store at all is a separate decision
-  the owner has not made.
+- **It is guarded on `pg_extension`.** Where `pg_cron` is absent it raises a warning and moves on —
+  which matters beyond tidiness, because a failing `staging-migrate` withholds the production
+  deploy. It does **not** install the extension, which is why staging needed the owner's word
+  below. On the day it shipped, staging had no `pg_cron` and the migration applied there cleanly
+  through this branch, scheduling nothing.
 
-Where `pg_cron` is absent the schedule is therefore still missing, which is now the one reachable
-way into `recovery_never_ran` — so that verdict's message says to install `pg_cron` and re-apply
-this migration, not to schedule anything by hand. Migration plus gate is the whole loop. Pinned by
+Where `pg_cron` is absent the schedule is therefore still missing, which is the one reachable way
+into `recovery_never_ran` — so that verdict's message says to install `pg_cron` and re-apply this
+migration, not to schedule anything by hand. Migration plus gate is the whole loop. Pinned by
 `tests/schema-shape-recovery-health.test.ts`.
+
+### Staging runs the store too, since 2026-10-08
+
+The owner's decision, taken the same day: *"enable pg_cron on staging and re-apply the recovery
+cron migration"*. Left alone, the gate would have reported `recovery_never_ran` against staging on
+every nightly run for ever — correctly and permanently, which is how a real alarm on production
+gets trained out of people.
+
+`create extension if not exists pg_cron` on staging installed **1.6.4** (extension namespace
+`pg_catalog`, Supabase's convention; `cron.job` is the same shape as production's). The migration's
+body was then re-run there — through `execute_sql`, deliberately **not** a second
+`apply_migration`, because staging's ledger already holds a `schedule_recovery_snapshot_cron` row
+from the run that skipped, and a second row for one migration buys nothing. Staging now holds
+exactly **one** `cron.job` row: jobid 1, `phoenix-recovery-snapshot`, `5 * * * *`,
+`select recovery.take_snapshots();`, `postgres`, active.
+
+🔴 **Retention is NOT scheduled on staging and must not be.** The retention job's own migration
+(`20261004041000`) is guarded the same way and skipped there when it was applied, so its ledger row
+is already present and nothing re-runs it — but a `supabase db push` that replays that file would
+now find `pg_cron` installed and start **pruning staging's rows** on a schedule nobody asked for.
+Enabling the extension changed the blast radius of every `pg_cron`-guarded migration in the repo,
+not only this one.
+
+The store was then proven against staging's real data shapes rather than assumed — the first call
+returned `checked 7 · changed 7 · purged 0 · error null`, 7.67 MB, and
+`public.phx_ci_recovery_health()` reads all 7 tables `ever_captured: true` with one snapshot each.
+`changed: 7` is a first capture, not churn; the hours after it cost nothing unless a table's
+contents move.
+
+🔴 **`create extension` succeeding does not prove the scheduler RUNS**, and that is the failure this
+whole page is about, one layer down: pg_cron needs its background worker, and an extension that
+installed while nothing fires is the same "deployed and never running" shape wearing a different
+hat. So it was measured rather than inferred — a throwaway `* * * * *` job (`select 1`) scheduled at
+11:27:14 UTC, which fired at **11:28:00.149 UTC, `status: succeeded`**, and was unscheduled again.
+Reading `cron.job_run_details` a few seconds after the minute turned returned **zero rows**, which
+is the trap: the empty read looks exactly like a dead worker. Give it the next whole minute before
+concluding anything.
+
+A manual call proves the function; only a fired job proves the schedule. Do both.
 
 ## What is protected
 
