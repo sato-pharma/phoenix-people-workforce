@@ -1,10 +1,20 @@
 ---
 name: git-ref-colon-path-is-mangled-by-msys-returns-empty
-description: "\"In Git-Bash on Windows, `git show REF:path` / `cat-file -e REF:path` is rewritten by MSYS path conversion — but ONLY when the path's FIRST character is a dot (`.github/…`, `.claude/…`, `.gitignore`, `.env*`); `mobile/.gitignore` and every ordinary path pass through untouched. It does NOT return empty: it fails LOUDLY on stderr with `fatal: ambiguous argument 'REF\path'`, and a pipe turns that into a confident `0` or the sha256 of nothing — so a 'did this content land on main?' check reports MISSING for a file that is plainly there. Fix with `MSYS_NO_PATHCONV=1`, a `./` in front of the path, or the PowerShell tool. The SAME conversion silently eats a git grep / rg SEARCH PATTERN containing a leading-slash path, returning ZERO matches for code that is plainly there.\""
+description: "In Git-Bash on Windows (the Bash tool here), `git show REF:path` / `cat-file -e REF:path` / `rev-parse REF:path` is rewritten by MSYS path conversion ONLY when BOTH halves hold: the REF contains a slash (`origin/main`, `refs/heads/main`) AND the path's first character is a dot (`.claude/...`, `.gitignore`) - each is necessary, neither is sufficient. Measured 2026-10-08: `origin/main:.claude/rules/engineering.md` mangles, while `HEAD:.claude/...`, `<sha>:.claude/...`, `main:.gitignore`, `origin/main:scripts/...` and `origin/main:mobile/.gitignore` all resolve. NODE IS NOT AFFECTED - execFileSync(git, [...]) resolves every one of those specs, so the repo scripts are clean and only what you type into Bash is exposed. It fails LOUDLY on stderr with fatal: ambiguous argument, and a pipe turns that into a confident 0 or git's empty-blob sha `e69de29bb2d1...`, so a did-this-land-on-main check reports MISSING, or IDENTICAL, for a file it never read. Fix with `MSYS_NO_PATHCONV=1`, a `./` before the path, or the PowerShell tool; test absence by the EXIT STATUS of `git cat-file -e`, never by inspecting a piped hash. The same conversion silently eats a git grep / rg SEARCH PATTERN containing a leading-slash path."
 metadata: 
   node_type: memory
   type: project
 ---
+
+🔴 **CORRECTED 2026-10-08 — THE RULE STATED HERE IS HALF THE TRIGGER.** It fires only when the ref
+ALSO contains a slash. Measured, same shell, no guards: `origin/main:.claude/rules/engineering.md`
+mangles, while `HEAD:.claude/rules/engineering.md` and `7702c9f35:.claude/rules/engineering.md` both
+resolve; and `origin/main:scripts/...` and `origin/main:mobile/.gitignore` resolve too. The whole
+argument must look like a POSIX `PATH` list (`a/b:.c/d`) before the conversion layer rewrites it.
+Full table, and the two other notes that each hold the other half:
+[[msys-mangles-a-git-ref-colon-path-into-a-false-verdict]]. Guard every `<ref>:<path>` regardless
+rather than reasoning about which half applies.
+
 
 **The failure.** Verifying that a merged worktree could be deleted (2026-08-19, `_wt-resend-nudge`,
 PR #2228) I compared each touched file against `origin/main` with

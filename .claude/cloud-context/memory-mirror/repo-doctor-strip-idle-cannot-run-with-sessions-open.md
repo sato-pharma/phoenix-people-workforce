@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 9bdd6297-a7c0-4136-9263-d285c7524d07
-  modified: 2026-09-26T05:51:59.901Z
+  modified: 2026-10-08T00:14:31.683Z
 ---
 
 Both mutating modes of `repo:doctor` (`--fix`, `--strip-idle`) refuse above ONE live Claude Code session
@@ -92,5 +92,15 @@ own output is internally consistent.
   files but NOT unpushed commits — check `git -C <wt> rev-list --count --not --remotes HEAD` yourself). **Never
   plan a mutating pass off an inventory printed earlier** — worktrees appear and vanish between runs minutes
   apart; act on an inventory read in the same invocation (which repo-doctor does internally).
+- 🔴 **AND THIS IS NOT A SLOW DRIFT — MEASURED 2026-10-08: `_wt-crm-switchover` read `git status --porcelain`
+  = 0 lines (clean, fully pushed, no open PR), and FIVE MINUTES LATER the same folder read **168** with 78
+  source files touched inside ten minutes** (a session had started `sync-cloud-context.mjs` in it), while a
+  worktree that did not exist at the first reading — `_wt-crm-own-contact-id-staging` — appeared in the second.
+  So a clean/pushed reading of ANOTHER session's worktree is evidence for seconds, not for a conversation: it
+  was used to recommend a strip to the owner, and only the tool's own re-read at deletion time refused it. Do
+  not lower `--strip-idle`'s threshold or add `--force` to get past a refusal like that — the refusal IS the
+  re-read, and the thing it protects is a live session's `node_modules` mid-task. The durable half of such a
+  worktree is its BRANCH: pushing it (by refspec from the primary, never `cd`-ing in) removes the single-disk
+  risk without touching the folder at all, and the cache can be reclaimed whenever that session finishes.
 
 Related: [[repo-doctor-no-origin-ref-is-usually-squash-residue]].
