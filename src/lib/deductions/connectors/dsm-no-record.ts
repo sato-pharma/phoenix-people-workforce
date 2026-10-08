@@ -49,6 +49,7 @@ import {
   ledgerRowStillClaimsItsDaysBySource,
   type LedgerClaimRow,
 } from "../conflict.ts";
+import { combineLeaveParts, fullDayCheckLeaveVerdict, leavePartOf, type LeavePart } from "../half-day-rule.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 // The rep pipeline's own company-wide CRM data-gap detector, reused here so both
@@ -127,6 +128,13 @@ async function holidayDates(monthKey: string): Promise<Set<string>> {
  * vacation connector already charges it separately (double-charging it is exactly what the owner's
  * never-the-same-day-twice rule forbids).
  *
+ * 🔴 A HALF-DAY REQUEST CLEARS ONLY ITS HALF (owner, 2026-10-08). Each day carries the part it
+ * covers, and `fullDayCheckLeaveVerdict` decides what that does to the day: a full day, or a
+ * Thursday morning off, clears it; a Saturday-to-Wednesday half leaves the other half owed, and that
+ * half goes to the Half Day (CRM) tab at 0.5, because this row's dates are weighed whole by payroll;
+ * a Thursday afternoon off covers no field hour, so the Thursday is judged as if it were not there.
+ * Before this, any approved request skipped the whole day, half-day or not.
+ *
  * NOT a substitute for recording long-term leave properly. Maternity leave has no representation
  * anywhere in this system — no vacation type, no employment status in use, no code path — so a
  * manager on maternity leave is invisible to this guard and is currently spared only by the
@@ -134,28 +142,32 @@ async function holidayDates(monthKey: string): Promise<Set<string>> {
  * visit after returning mid-month, which would charge her for the maternity days earlier in that
  * month. See the note in the loop below.
  */
-async function approvedLeaveDays(monthKey: string): Promise<Set<string>> {
+async function approvedLeaveDays(monthKey: string): Promise<Map<string, LeavePart>> {
   const [year, month] = monthKey.split("-").map(Number);
   const start = `${monthKey}-01`;
   const end = `${monthKey}-${String(new Date(Date.UTC(year!, month!, 0)).getUTCDate()).padStart(2, "0")}`;
 
   const { data, error } = await getSupabaseAdmin()
     .from("v2_vacation_requests")
-    .select("employee_hr_id, start_date, end_date")
+    .select("employee_hr_id, start_date, end_date, day_part")
     .eq("status", "approved")
     .lte("start_date", end)
     .gte("end_date", start);
   if (error) throw new Error(`Failed to load approved leave: ${error.message}`);
 
-  const days = new Set<string>();
-  for (const row of (data ?? []) as Array<{ employee_hr_id: string | null; start_date: string | null; end_date: string | null }>) {
+  const days = new Map<string, LeavePart>();
+  for (const row of (data ?? []) as Array<{ employee_hr_id: string | null; start_date: string | null; end_date: string | null; day_part: string | null }>) {
     const compact = compactDeductionsHrId(row.employee_hr_id ?? "");
     if (!compact || !row.start_date) continue;
+    const part = leavePartOf(row.day_part);
     // end_date is nullable; a request without one is a single day.
     const last = (row.end_date ?? row.start_date).slice(0, 10);
     let cursor = row.start_date.slice(0, 10);
     for (let guard = 0; guard < 400 && cursor <= last; guard += 1) {
-      if (cursor >= start && cursor <= end) days.add(`${compact}:${cursor}`);
+      if (cursor >= start && cursor <= end) {
+        const key = `${compact}:${cursor}`;
+        days.set(key, combineLeaveParts(days.get(key), part));
+      }
       cursor = addDaysIso(cursor, 1);
     }
   }
@@ -367,13 +379,21 @@ export async function collectDsmNoRecordCandidates(input: {
 
     const baseSalary = baseSalaryByCompact.get(compact) ?? null;
 
+    // Days a half-day vacation left half owed: the Half Day (CRM) tab charges that half at 0.5.
+    const halfDayLeaveDates: string[] = [];
     const missing = workingDays.filter((day) => {
       // Never charge a day before the person was hired.
       if (manager.hireDate && day < manager.hireDate) return false;
-      // Never charge a day the company itself approved them to be away.
-      if (leaveDays.has(`${compact}:${day}`)) return false;
       if (activity.has(`${compact}:${day}`)) return false;
       if (claimed.has(`${compact}:${day}`)) return false;
+      // Never charge a day the company itself approved them to be away — but a half-day vacation
+      // clears only its half (fullDayCheckLeaveVerdict).
+      const leave = fullDayCheckLeaveVerdict(leaveDays.get(`${compact}:${day}`), day);
+      if (leave === "cleared") return false;
+      if (leave === "half_day") {
+        halfDayLeaveDates.push(day);
+        return false;
+      }
       return true;
     });
     if (missing.length === 0) continue;
@@ -433,6 +453,9 @@ export async function collectDsmNoRecordCandidates(input: {
         // flagged days as 1. missingDays stays the real count of flagged days.
         deductionDaysWeighted: deductionDays,
         missingDays: missing,
+        // A half-day vacation with nothing in the other half: not on this row, which payroll weighs
+        // a whole day per date, but on the Half Day (CRM) tab at 0.5.
+        halfDayVacationDatesOnTheHalfDayTab: halfDayLeaveDates,
       },
       dates: missing,
     });

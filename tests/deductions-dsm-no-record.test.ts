@@ -5,6 +5,8 @@ import { stripComments } from "./support/comment-strip.ts";
 
 import { isEligibleForPublish } from "../src/lib/deductions/calculations.ts";
 import { DEDUCTION_COLLECTORS, isDeductionCollectorKey } from "../src/lib/deductions/collect.ts";
+import { combineLeaveParts, fullDayCheckLeaveVerdict, judgeHalfDay, leavePartOf } from "../src/lib/deductions/half-day-rule.ts";
+import { sumDetectedDeductionDayWeights } from "../src/lib/field-workforce-compliance/weekend-policy.ts";
 
 // The DSM no-record rule reverses a documented exclusion that once cost
 // 131,741.94 EGP in wrong deductions, so its guards are asserted as WIRING:
@@ -139,8 +141,54 @@ export async function runDeductionsDsmNoRecordTests(): Promise<void> {
     );
     assert.match(
       code,
-      /if \(leaveDays\.has\(`\$\{compact\}:\$\{day\}`\)\) return false;/,
+      /const leave = fullDayCheckLeaveVerdict\(leaveDays\.get\(`\$\{compact\}:\$\{day\}`\), day\);\s*if \(leave === "cleared"\) return false;/,
       "a day the company approved the manager to be away must never be charged as a no-record day",
+    );
+    // A half-day vacation clears only its half (owner, 2026-10-08). The other half is owed, and it
+    // is the Half Day (CRM) tab's: never on this row, whose dates payroll weighs as whole days.
+    assert.match(
+      code,
+      /\.select\("employee_hr_id, start_date, end_date, day_part"\)/,
+      "the leave read must carry the day part, or every half-day request reads as a whole day off",
+    );
+    assert.match(
+      code,
+      /if \(leave === "half_day"\) \{\s*halfDayLeaveDates\.push\(day\);\s*return false;\s*\}/,
+      "a Saturday-to-Wednesday half-day vacation must leave this row and go to the Half Day (CRM) tab — on this row payroll would bill the half as a whole day",
+    );
+    assert.match(code, /halfDayVacationDatesOnTheHalfDayTab: halfDayLeaveDates/, "the hand-off is written on the row's evidence");
+
+    const SAT = "2026-10-03";
+    const TUE = "2026-08-04";
+    const THU = "2026-09-17";
+    assert.equal(fullDayCheckLeaveVerdict(undefined, TUE), "judge", "no leave: the day is judged");
+    assert.equal(fullDayCheckLeaveVerdict("full_day", TUE), "cleared", "a full day off clears the day");
+    assert.equal(fullDayCheckLeaveVerdict("pm_only", TUE), "half_day", "an afternoon off on a Tuesday leaves the morning owed");
+    assert.equal(fullDayCheckLeaveVerdict("am_only", SAT), "half_day", "a morning off on a Saturday leaves the afternoon owed");
+    assert.equal(fullDayCheckLeaveVerdict("am_only", THU), "cleared", "a Thursday morning off clears the Thursday — it is a morning-only day");
+    assert.equal(fullDayCheckLeaveVerdict("pm_only", THU), "judge", "a Thursday afternoon off covers no field hour, so the Thursday is judged and its morning charged at the Thursday half");
+
+    assert.equal(leavePartOf("AM_ONLY "), "am_only");
+    assert.equal(leavePartOf("pm_only"), "pm_only");
+    assert.equal(leavePartOf(null), "full_day", "a request with no day part is a whole day — the vacation module's own default");
+    assert.equal(leavePartOf("half"), "full_day", "an unknown part is read as the whole day, never as no leave");
+    assert.equal(combineLeaveParts(undefined, "am_only"), "am_only");
+    assert.equal(combineLeaveParts("am_only", "am_only"), "am_only");
+    assert.equal(combineLeaveParts("am_only", "pm_only"), "full_day", "a morning off and an afternoon off on one day is the day off");
+    assert.equal(combineLeaveParts("full_day", "pm_only"), "full_day");
+
+    // Why the half cannot ride on this row: payroll weighs a CRM row's dates, and only a Thursday is half.
+    assert.equal(sumDetectedDeductionDayWeights([TUE]), 1, "on a CRM row a Tuesday weighs a whole day");
+    // And where it lands instead: the Half Day (CRM) rule charges exactly that half.
+    assert.deepEqual(
+      judgeHalfDay(undefined, { vacationPm: true }),
+      { kind: "half_day", missing: "AM", coveredBy: ["approved_vacation"] },
+      "an afternoon off with nothing in the morning is a Half Day (CRM) row for the morning",
+    );
+    assert.deepEqual(
+      judgeHalfDay(undefined, { vacationAm: true }),
+      { kind: "half_day", missing: "PM", coveredBy: ["approved_vacation"] },
+      "a morning off with nothing in the afternoon is a Half Day (CRM) row for the afternoon",
     );
     // Deliberately unfiltered by type/payment status: the question is whether the
     // company agreed the person was away, not whether it paid for it.
