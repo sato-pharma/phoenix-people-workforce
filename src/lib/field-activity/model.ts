@@ -444,6 +444,11 @@ export function buildFieldActivityReport(input: {
     const partners = new Map<string, { hrId: string | null; name: string }>();
 
     for (const visit of dayVisits) {
+      // Whose phone recorded the day: his own, or — when he rode along — the rep's. Read on its own
+      // because a chain visit has TWO ride-along slots, so "the subject is not the agent" can no
+      // longer be inferred from which partner column happens to be filled.
+      const subjectRodeAlong = !sameHrId(visit.agentHrId, subjectHrId);
+
       // Who he was out with: every OTHER person on the row. A chain visit carries three people, so
       // the old agent-or-partner pair named only one of the two he actually rode with.
       for (const person of [
@@ -491,7 +496,7 @@ export function buildFieldActivityReport(input: {
             lon: checkin.lon,
             address: checkin.address,
             legMetres: null,
-            viaName: partnerIsAgent ? visit.agentName : null,
+            viaName: subjectRodeAlong ? visit.agentName : null,
           });
           continue;
         }

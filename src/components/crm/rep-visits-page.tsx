@@ -25,6 +25,7 @@ import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
+import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { KPIS_CALL_RATE_TAB } from "@/lib/crm/kpis-call-rate-route";
 import { buildKpisQuery, parseKpiFilters } from "@/lib/crm/kpis-filters";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
@@ -187,6 +188,12 @@ export async function RepVisitsPageBody({
       // The directory names the double-visit partner, for the same reason it names the rep: the
       // CRM's `double_name` is a login handle.
       partnerNameByHrId: await loadRepNamesByHrId().catch(() => undefined),
+      // WHO IS READING. The Phoenix field set is on this page because the owner asked for it
+      // (2026-10-07, "everything, GPS and evidence included"), and WHICH half each reader sees is his
+      // own 2026-10-02 ruling: the Super Admin and the SFE Manager read the measurement behind a
+      // reading, every other admin seat reads the distance alone, and a reader looking at a row whose
+      // rep is himself reads neither.
+      viewer: phoenixDetailViewer(access.role, access.hrId),
     }),
     loadCrmMappingCoverage(),
   ]);

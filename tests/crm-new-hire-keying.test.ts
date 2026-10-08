@@ -196,6 +196,8 @@ function drilldownVisit(overrides: Partial<VisitForRepDrilldown> = {}): VisitFor
     crm_visit_id: -9001,
     customer_name: null,
     double_hr_id: null,
+    double2_hr_id: null,
+    double2_name: null,
     double_name: null,
     ...overrides,
   };

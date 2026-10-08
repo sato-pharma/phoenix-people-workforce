@@ -28,7 +28,10 @@
  * The door carries every measurement and decides none of this: hiding a column in the view would
  * blind the Super Admin too, which is not what he ruled.
  */
-import { visitLocationFor, type VisitLocationFlag } from "@/lib/phoenix-crm/server/visits";
+// 🔴 FROM THE CLIENT-SAFE MODULE, never `server/visits.ts`. That file reaches `getSupabaseAdmin`, and
+// this shaper is reachable from an admin report whose renderer is a client component — importing it
+// there would put the service-role client in a browser bundle. The wording is the same one copy.
+import { visitLocationFor, type VisitLocationFlag } from "@/lib/phoenix-crm/visit-location-words";
 import { isUnplannedKind, unplannedKindLabel } from "@/lib/phoenix-crm/unplanned-rules";
 import { phoenixVisitKindLabel } from "@/lib/phoenix-crm/visit-kind-labels";
 import { isVisitNextStep, isVisitObjection, visitNextStepLabel, visitObjectionLabel } from "@/lib/phoenix-crm/visit-outcome";
@@ -253,9 +256,14 @@ export function phoenixVisitDetail(row: PhoenixVisitDetailRow, sight: PhoenixDet
     .filter((part): part is string => Boolean(part));
 
   const flag = isLocationFlag(row.location_flag) ? row.location_flag : null;
-  const location = flag
-    ? visitLocationFor(sight, flag, count(row.distance_meters), count(row.accuracy_meters)).locationLabel
-    : null;
+  // 🔴 NULL AT `none`, NOT `BLIND_LOCATION`. The Phoenix CRM app's own visit card has a location field
+  // that must say something, so a blinded row there carries the words "Visit saved". A REPORT row has
+  // no such field: an empty cell is the honest answer, and printing "Visit saved" would spend a line
+  // of a merged cell saying nothing while reading, to anyone scanning the column, like a verdict.
+  const location =
+    flag && sight !== "none"
+      ? visitLocationFor(sight, flag, count(row.distance_meters), count(row.accuracy_meters)).locationLabel
+      : null;
 
   // The photo's own fix and the dwell are the Super Admin's and SFE's (golden rule #1, tier 2): a
   // District Manager reads that a photo exists, never where the phone thought it was taken.

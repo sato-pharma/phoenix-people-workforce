@@ -58,6 +58,78 @@ function standingText(standing: RepVisitStanding): string {
   return REP_VISIT_STANDING_LABELS.get(standing) ?? standing;
 }
 
+/**
+ * The Phoenix field set's lines, MERGED INTO THE FIVE CELLS THAT ALREADY EXIST.
+ *
+ * 🔴 NOT NEW COLUMNS, and this is the fits-the-screen golden rule deciding the shape rather than the
+ * count. The owner asked for the whole field set on the admin reports (2026-10-07, "everything, GPS
+ * and evidence included"); his older rule says fit by MERGING columns and never by shrinking type, and
+ * this very table was rebuilt on 2026-09-21 because nine unwrapped columns over a 1,500px minimum made
+ * every reader scroll right to find the proof of the row he was reading. Thirty-four columns would be
+ * that defect back, many times over.
+ *
+ * Where each half lands is not arbitrary:
+ *
+ *   - the WORK — products, samples, the shelf, the objection, the next step, a pharmacy named as
+ *     feedback, an off-plan reason — goes under the DOCTOR, because it is what happened in that call.
+ *   - the PEOPLE — the visit's kind, the second manager on a chain visit — go under VISIT TYPE.
+ *   - the LOCATION, the EVIDENCE and the CAPTURE go under PROOF, because a distance IS the proof of a
+ *     call: that column already answers "did this happen where it says it did".
+ *
+ * The XLSX export keeps them FLAT, one column each — a sheet has no viewport and nothing is lost.
+ */
+const PHOENIX_LINE = "block text-phx-2xs font-semibold leading-4 text-slate-500";
+
+function phoenixLines(values: ReadonlyArray<string | null>): React.ReactNode {
+  const lines = values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (lines.length === 0) return null;
+  return (
+    <>
+      {lines.map((line) => (
+        <span className={PHOENIX_LINE} key={line}>
+          {line}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Who he was out with, BOTH people on a chain visit.
+ *
+ * Slot 1 is `coalesce(manager, product_manager, senior)` and slot 2 holds whoever is left, so the two
+ * never name one person and joining them can never repeat a name.
+ */
+function partnerLine(row: RepVisitRow): string | null {
+  const names = [row.partnerName, row.partner2Name]
+    .map((name) => name?.trim() ?? "")
+    .filter((name) => name.length > 0);
+  if (names.length === 0) return null;
+  return `Double visit with ${names.join(" · ")}`;
+}
+
+/** The card fields a Phoenix row adds on mobile, in the same order the desktop cells read. */
+function phoenixCardFields(row: RepVisitRow): Array<{ label: string; value: React.ReactNode }> {
+  const detail = row.phoenix;
+  if (!detail) return [];
+  const pairs: Array<[string, string | null]> = [
+    ["Products", detail.products.length > 0 ? detail.products.join(" · ") : null],
+    ["Samples", detail.samples],
+    ["Availability", detail.availability],
+    ["Objection", detail.objection],
+    ["Next step", detail.nextStep],
+    ["Pharmacy feedback", detail.pharmacyFeedback],
+    ["Off plan", detail.offPlan],
+    ["Visit kind", detail.kindLabel],
+    ["Location", detail.location],
+    ["Evidence", detail.evidence],
+    ["Capture", detail.capture],
+  ];
+  return pairs
+    .filter((pair): pair is [string, string] => typeof pair[1] === "string" && pair[1].trim().length > 0)
+    .map(([label, value]) => ({ label, value: <span className="text-slate-600">{value}</span> }));
+}
+
 function sessionText(row: RepVisitRow): string {
   return REP_VISIT_SESSION_LABELS.get(row.session) ?? "—";
 }
@@ -212,7 +284,14 @@ export function RepVisitsDetail({
     ],
   });
 
+  // THE SHEET IS FLAT — one column per field, never the screen's merged cells. A sheet has no viewport,
+  // so the fits-the-screen rule does not reach it, and a manager filtering on "Objection" wants that
+  // objection in its own cell. The headers come from the FIRST row that carries any, because a column
+  // this reader may not read is absent from the map rather than present and empty.
+  const phoenixHeaders = Object.keys(table.rows.find((row) => row.phoenixColumns)?.phoenixColumns ?? {});
   const exportRows = table.rows.map((row) => ({
+    // Spread FIRST, so a named column below always wins over a same-named field-set cell.
+    ...Object.fromEntries(phoenixHeaders.map((header) => [header, row.phoenixColumns?.[header] ?? ""])),
     contact: contactText(row),
     // The id is exported beside the name because a spreadsheet is where someone reconciles against
     // the CRM, and a name alone cannot be matched back.
@@ -228,6 +307,7 @@ export function RepVisitsDetail({
     // The same words the row shows, blank when the call is in the rate.
     not_scored: unscoredLabel(row) ?? "",
     partner: row.partnerName ?? "",
+    partner2: row.partner2Name ?? "",
     session: sessionText(row),
     speciality: row.speciality ?? "",
     standing: standingText(row.standing),
@@ -299,7 +379,11 @@ export function RepVisitsDetail({
                 { key: "standing", label: "Proof" },
                 { key: "not_scored", label: "Not Scored" },
                 { key: "partner", label: "Double Visit With" },
+                // The chain visit's SECOND manager, in his own column: a sheet is where somebody
+                // reconciles who rode with whom, and two names in one cell cannot be filtered.
+                { key: "partner2", label: "And With" },
                 { key: "visit_crm_id", label: "CRM Visit ID" },
+                ...phoenixHeaders.map((header) => ({ key: header, label: header })),
               ]}
               rows={exportRows}
               sheetName="Visits"
@@ -370,9 +454,10 @@ export function RepVisitsDetail({
                           </span>
                         ),
                     },
-                    ...(row.partnerName
-                      ? [{ label: "Double with", value: <span className="text-slate-600">{row.partnerName}</span> }]
+                    ...(partnerLine(row)
+                      ? [{ label: "Double with", value: <span className="text-slate-600">{partnerLine(row)}</span> }]
                       : []),
+                    ...phoenixCardFields(row),
                   ]}
                 />
               </PortalRecordCard>
@@ -431,6 +516,14 @@ export function RepVisitsDetail({
                               </span>
                             ) : null}
                             {row.speciality ? <span className="block text-slate-500">{row.speciality}</span> : null}
+                            {phoenixLines([
+                              row.phoenix && row.phoenix.products.length > 0 ? row.phoenix.products.join(" · ") : null,
+                              row.phoenix?.samples ?? null,
+                              row.phoenix?.availability ?? null,
+                              row.phoenix?.objection ?? null,
+                              row.phoenix?.nextStep ?? null,
+                              row.phoenix?.pharmacyFeedback ?? null,
+                            ])}
                           </td>
                           {/* The clinic, then Brick · Area · Region once the CRM region is mapped.
                               Until then the region still NAMES itself and is marked — never blank,
@@ -446,11 +539,13 @@ export function RepVisitsDetail({
                           </td>
                           <td className="break-words border-l border-slate-100 px-3 py-2">
                             <span className="block text-slate-600">{row.visitTypeLabel}</span>
-                            {row.partnerName ? (
-                              <span className="block text-phx-2xs font-semibold text-slate-500">
-                                Double visit with {row.partnerName}
-                              </span>
-                            ) : null}
+                            {phoenixLines([
+                              // BOTH managers, not one. A chain visit carries two, the door has returned
+                              // both since #5477, and naming one is what made the other's day read empty.
+                              partnerLine(row),
+                              row.phoenix?.kindLabel ?? null,
+                              row.phoenix?.offPlan ?? null,
+                            ])}
                           </td>
                           {/* The proof, and — when the rate's own gate left this call out — why, on
                               the row itself. Before this a Thursday call carried a green "Proved" and
@@ -460,6 +555,11 @@ export function RepVisitsDetail({
                             {unscored ? (
                               <span className="mt-1 block text-phx-2xs font-semibold leading-4 text-slate-500">{unscored}</span>
                             ) : null}
+                            {phoenixLines([
+                              row.phoenix?.location ?? null,
+                              row.phoenix?.evidence ?? null,
+                              row.phoenix?.capture ?? null,
+                            ])}
                           </td>
                         </tr>
                       );

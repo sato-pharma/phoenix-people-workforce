@@ -2359,6 +2359,7 @@ import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-doubl
 import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-source.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywhere.test.ts";
+import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-admin-reports.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
@@ -9157,6 +9158,10 @@ await runTest(
 await runTest(
   "Phoenix CRM counts everywhere from each team's start (owner, 2026-10-02): Delta (1) from Saturday 3 October by his ruling, every other team only when the Super Admin presses Start (a Saturday, never before this Cairo month, a stop sticks, one audited writer, Super Admin only), and the first real plan on a team not started tells him once; the WHOLE team, its district manager too, leaves iReports360 for exactly the days it sat there, so nothing is counted twice; visits, recorded day activities, plans sent as of the day and positioned visits as check-ins on manager screens only, with no integrity field; AM, PM and Pharmacies apart; countable and real only; Early Birds and the SFE start times begin at the first Phoenix visit, never called GPS; a Phoenix visit is its own check-in and a customer not validated yet stays out of the rate",
   runPhoenixCrmVisitsEverywhereTests,
+);
+await runTest(
+  "The Phoenix field set on the old CRM's admin reports (owner, 2026-10-07: everything, GPS and evidence included) is shaped to the READER, in the three tiers he set on 2026-10-02: the Super Admin and the SFE Manager read the accuracy, the raw point, the photo's own fix, the dwell and the capture timing; every other admin seat, the CEO included, reads the DISTANCE ONLY and a weak reading as its plain distance; a reader on his own row as its rep reads none of it, resolved per ROW and not per page; the WORK half — products, samples, the shelf, the objection, the next step, an off-plan reason — is whole at every tier; a vendor row prints nothing rather than a zero; the sheet is flat and omits a column its reader may not read rather than leaving it empty; and the rep drill-down names BOTH managers on a chain visit",
+  runPhoenixFieldSetOnAdminReportsTests,
 );
 await runTest(
   "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",

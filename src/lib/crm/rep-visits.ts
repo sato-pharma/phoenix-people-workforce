@@ -32,6 +32,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
+  phoenixRowSight,
+  phoenixVisitDetail,
+  phoenixVisitDetailColumns,
+  type PhoenixDetailViewer,
+  type PhoenixVisitDetail,
+  type PhoenixVisitDetailRow,
+} from "@/lib/crm/phoenix-visit-detail";
+import {
   callRateExclusionOf,
   classifyCallProof,
   normalizeSession,
@@ -118,7 +126,26 @@ export type RepVisitRow = {
   unscored: CallRateExclusion | null;
   partnerHrId: string | null;
   partnerName: string | null;
+  /** The chain visit's second manager, named the same way the first is — directory, then CRM handle. */
+  partner2HrId: string | null;
+  partner2Name: string | null;
   comment: string | null;
+  /**
+   * The Phoenix field set, shaped for THIS reader's sight tier, or null on a vendor row.
+   *
+   * Null is the honest answer for iReports360: it recorded no products, no samples, no GPS and no
+   * evidence, and a zero there would read as a measurement that was taken and came back empty.
+   */
+  phoenix: PhoenixVisitDetail | null;
+  /**
+   * The same field set FLAT, one cell per column, for the XLSX — keyed by the sheet's own header.
+   *
+   * Shaped here rather than in the renderer because the renderer is a CLIENT component and the shaper
+   * reads a tier: a sheet built in the browser would need both the raw measurements and the sight rule
+   * in the bundle, which is the one thing golden rule #1 does not allow. A column this reader may not
+   * read is ABSENT rather than empty, so a blank cell never reads as "there was no reading".
+   */
+  phoenixColumns: Record<string, string | number | null> | null;
   /**
    * Set only on a campaign row whose named doctor turned out to be on the registered list already.
    *
@@ -131,17 +158,22 @@ export type RepVisitRow = {
 };
 
 /** The mirror columns this module needs, on top of the ones the rate already reads. */
-export type VisitForRepDrilldown = VisitForCallRate & {
-  crm_visit_id: number | null;
-  contact_name: string | null;
-  customer_name: string | null;
-  speciality: string | null;
-  crm_contact_grade: string | null;
-  crm_region_id: number | null;
-  crm_region_name: string | null;
-  double_hr_id: string | null;
-  double_name: string | null;
-};
+export type VisitForRepDrilldown = VisitForCallRate &
+  PhoenixVisitDetailRow & {
+    crm_visit_id: number | null;
+    contact_name: string | null;
+    customer_name: string | null;
+    speciality: string | null;
+    crm_contact_grade: string | null;
+    crm_region_id: number | null;
+    crm_region_name: string | null;
+    double_hr_id: string | null;
+    double_name: string | null;
+    /** A chain visit's SECOND manager. Slot 1 is `coalesce(manager, product_manager, senior)`, so a row
+     * carrying somebody here carries somebody there too — the slots never hold one person. */
+    double2_hr_id: string | null;
+    double2_name: string | null;
+  };
 
 /** A resolved CRM region, keyed by `crm_region_id`. Empty map = nothing mapped yet. */
 export type CrmRegionTerritoryIndex = ReadonlyMap<
@@ -255,9 +287,16 @@ export function toRepVisitRow<C extends CheckinForMatch>(
   assisted?: ReadonlyMap<string, CampaignAssistReading>,
   /** The national holidays the rate took out of its denominator. Omitted → the weekday rule only. */
   holidays?: CallRateHolidays,
+  /**
+   * Who is reading, so the Phoenix field set can be shaped to his sight tier (golden rule #1's three
+   * tiers, owner 2026-10-02). Omitted → no Phoenix half at all, which is what every caller that has
+   * not opted in gets and is exactly the behaviour before 2026-10-07.
+   */
+  viewer?: PhoenixDetailViewer,
 ): RepVisitRow {
   const { label, bucket } = classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description);
   const partnerHrId = text(visit.double_hr_id);
+  const partner2HrId = text(visit.double2_hr_id);
   // A CAMPAIGN row carries no contact, no speciality and no customer — the doctor exists only inside
   // the rep's own sentence. OWNER, 2026-08-28: *"in the campaign you must be able to separate the
   // doctor name, the specialty, and the clinic. The first one is not a doctor, it is a hospital, and
@@ -312,6 +351,17 @@ export function toRepVisitRow<C extends CheckinForMatch>(
     partnerName: partnerHrId
       ? (partnerNameByHrId?.get(partnerHrId.toLowerCase()) ?? text(visit.double_name))
       : text(visit.double_name),
+    partner2HrId,
+    // Same waterfall for the second manager, so a chain visit names both people it carried rather
+    // than one of them — the door has returned both since #5477.
+    partner2Name: partner2HrId
+      ? (partnerNameByHrId?.get(partner2HrId.toLowerCase()) ?? text(visit.double2_name))
+      : text(visit.double2_name),
+    // The field set, at the tier this reader's role earns — resolved PER ROW, because golden rule #1's
+    // own-row half is absolute: a reader looking at a visit whose AGENT is himself reads no distance,
+    // no flag and no capture timing. A visit he merely rode along on is the REP's row and keeps them.
+    phoenix: viewer ? phoenixVisitDetail(visit, phoenixRowSight(viewer, visit.agent_hr_id)) : null,
+    phoenixColumns: viewer ? phoenixVisitDetailColumns(visit, phoenixRowSight(viewer, visit.agent_hr_id)) : null,
     comment: text(visit.comment),
     // The doctor the rep named, looked up in his own registered list. Only a campaign row can carry
     // this — a regular visit already HAS its contact, and re-deriving one from prose beside a real
@@ -482,6 +532,8 @@ export function buildRepVisits<C extends CheckinForMatch>(
      * without this; it is only less complete.
      */
     assisted?: ReadonlyMap<string, CampaignAssistReading>;
+    /** Who is reading — see `toRepVisitRow`. Omitted → no Phoenix half on any row. */
+    viewer?: PhoenixDetailViewer;
   },
 ): { rows: RepVisitRow[]; summary: RepVisitsSummary } {
   const checkinIndex = indexCheckinsByAgentContactDay(checkins);
@@ -495,6 +547,7 @@ export function buildRepVisits<C extends CheckinForMatch>(
         options.contactDirectory,
         options.assisted,
         options.holidays,
+        options.viewer,
       ),
     ),
   );
