@@ -103,7 +103,7 @@
 //
 // Host, user and key are overridable for when the box is replaced:
 //   PHX_CHECK_HOST   default 46.225.184.142
-//   PHX_CHECK_USER   default phx
+//   PHX_CHECK_USER   default phxci (never `phx` — see USER below)
 //   PHX_CHECK_KEY    default ~/.ssh/railway_phoenix_ed25519
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -145,7 +145,15 @@ import {
 } from "./remote-check-plan.mjs";
 
 const HOST = process.env.PHX_CHECK_HOST || "46.225.184.142";
-const USER = process.env.PHX_CHECK_USER || "phx";
+// 🔴 BRANCH CODE RUNS AS `phxci`, A USER WITH NO SUDO, NEVER AS `phx` (owner, 2026-10-08). A check
+// executes whatever the pushed branch says — its tests, its build, its package scripts — and `phx`
+// has passwordless sudo and owns the preview env in /home/phx/secure, so any branch run as `phx`
+// could read or change anything on the box. `phxci` cannot read /home/phx (mode 750, not in the
+// group) and cannot sudo. It shares the box lock with `phx` through /var/lib/phx-locks: /tmp keeps
+// the historical lock names as ROOT-owned links (fs.protected_regular=2 refuses a cross-user open of
+// a plain /tmp file; a root-owned link is followable by everyone), recreated at boot by
+// /etc/tmpfiles.d/phx-locks.conf. Account: docs/ci-self-hosted-runner.md, "remote-check runs as phxci".
+const USER = process.env.PHX_CHECK_USER || "phxci";
 const KEY = process.env.PHX_CHECK_KEY || path.join(os.homedir(), ".ssh", "railway_phoenix_ed25519");
 const REMOTE_ROOT = "/home/" + USER + "/remote-check";
 const BARE = REMOTE_ROOT + "/repo.git";

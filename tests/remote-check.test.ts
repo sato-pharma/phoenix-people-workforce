@@ -220,6 +220,17 @@ export async function runRemoteCheckTests(): Promise<void> {
       "(137) would read as FAIL, and an odd 0 as PASS.",
   );
 
+  // 6b — branch code runs as `phxci`, never `phx` (owner, 2026-10-08). `phx` has passwordless sudo and
+  // owns the preview env, so a default of "phx" hands every pushed branch the whole box.
+  const userDefault = /const USER = process\.env\.PHX_CHECK_USER \|\| "([^"]+)";/.exec(SRC);
+  assert.ok(userDefault, "remote-check.mjs no longer declares its box user as `process.env.PHX_CHECK_USER || \"<user>\"`.");
+  assert.equal(
+    userDefault[1],
+    "phxci",
+    "remote-check.mjs must default to the box user `phxci` (no sudo). Running branch code as `phx` gives it " +
+      "passwordless sudo and the preview env in /home/phx/secure.",
+  );
+
   // 7 — every invocation gets a tree of its own. Until 2026-10-01 they all shared
   // ~/remote-check/work and one `remote-check` branch, so a second session's checkout swapped the tree
   // under a running check: 19442c382 printed its own `box head`, failed a typecheck with TS6053 on a
