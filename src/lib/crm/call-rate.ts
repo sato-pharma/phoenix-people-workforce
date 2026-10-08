@@ -107,7 +107,7 @@ import {
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { classifyVisit } from "@/lib/crm/visit-types";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 
 /** Two AM accounts every working day (owner's standard). */
 export const AM_CALL_RATE_TARGET = 2;
@@ -378,6 +378,14 @@ export type RepCallRate = {
   agentCrmId: number | null;
   agentHrId: string | null;
   agentName: string;
+  /**
+   * Which rule scored THIS row — his own team's, not the board's. The switch went per go-live team on
+   * 2026-10-07 (owner: "switched gradually based on the go live teams"), so one board legitimately
+   * holds both: a started rep's every submitted regular visit counts ("submitted"), while a rep still
+   * on iReports360 needs a matching GPS check-in ("verified"). Absent on a row nothing computed —
+   * readers fall back to the board's basis, which is what they did before per-team starts existed.
+   */
+  basis?: CallRateBasis;
   /** Sat–Wed calendar days in the period — the denominator for every rate below. */
   workingDays: number;
   am: CallRateSlice;
@@ -458,8 +466,14 @@ export function awaitingValidationNote(rep: Pick<RepCallRate, "awaitingValidatio
     : `${count} visits saved, waiting for their customers to be validated`;
 }
 
-export function hasNoGpsFeed(rep: RepCallRate, basis: CallRateBasis = "verified"): boolean {
-  if (basis !== "verified") return false;
+export function hasNoGpsFeed(rep: RepCallRate, basis?: CallRateBasis): boolean {
+  // WHICH BASIS DECIDES. `basis` is an explicit override for a caller holding rows it did not compute;
+  // otherwise the ROW's own basis answers, because since the switch went per team (owner, 2026-10-07)
+  // ONE board holds both rules at once and a single board-wide value is wrong for half of it. A rep on
+  // the Phoenix rules has nothing to excuse — a missing feed costs him no credit, so "No GPS feed"
+  // would excuse a penalty he never paid. A row with no stamped basis is read as "verified", the rule
+  // before the cutover, so a hand-built row behaves exactly as it did.
+  if ((basis ?? rep.basis ?? "verified") !== "verified") return false;
   if (rep.gpsCheckins !== 0) return false;
   const regularVisits =
     rep.am.verified + rep.am.unverified + rep.pm.verified + rep.pm.unverified + rep.pharmacy.verified + rep.pharmacy.unverified;
@@ -646,10 +660,26 @@ export function computeCallRate<C extends CheckinForMatch>(
     holidays?: CallRateHolidays;
     /** Omit for "verified". Only a caller that read the CRM cutover passes "submitted". */
     basis?: CallRateBasis;
+    /**
+     * Reps scored by the PHOENIX rules whatever `basis` says — their team went live before this period
+     * began. Keys in `normalizeHrIdForAccess` form, the form `loadStartedRepWindows` returns.
+     *
+     * This is what makes one board hold both rules at once (owner, 2026-10-07): the switch is per
+     * go-live team, and before it a started rep's submitted visits were judged against the vendor's
+     * GPS rule — a rule his own app does not follow.
+     */
+    phoenixBasisHrKeys?: ReadonlySet<string>;
   },
 ): CallRateReport {
   const { dateFrom, dateTo } = options;
   const basis: CallRateBasis = options.basis ?? "verified";
+  const phoenixKeys = options.phoenixBasisHrKeys;
+  /** His own team's rule, falling back to the board's. */
+  const basisForRep = (agentHrId: string | null): CallRateBasis => {
+    if (!phoenixKeys || phoenixKeys.size === 0) return basis;
+    const key = normalizeHrIdForAccess(agentHrId);
+    return key && phoenixKeys.has(key) ? "submitted" : basis;
+  };
   const campaignLimit = options.campaignLimit ?? DAILY_CAMPAIGN_LIMIT;
   const workingDays = countCallRateWorkingDays(dateFrom, dateTo, options.holidays);
   // Deliberately the DIFFERENCE between the two counts, not `options.holidays.size`. The caller's
@@ -776,14 +806,18 @@ export function computeCallRate<C extends CheckinForMatch>(
     // zero, which is what the match would find too.
     const agentKey = checkinAgentKey(rep.agentCrmId, rep.agentHrId);
 
+    // HIS team's rule, not the board's: a board spanning a go-live Saturday holds both.
+    const repBasis = basisForRep(rep.agentHrId);
+
     reps.push({
       agentCrmId: rep.agentCrmId,
       agentHrId: rep.agentHrId,
       agentName: rep.agentName,
+      basis: repBasis,
       workingDays,
-      am: finalizeSlice(rep.am, workingDays, basis),
-      pm: finalizeSlice(rep.pm, workingDays, basis),
-      pharmacy: finalizeSlice(rep.pharmacy, workingDays, basis),
+      am: finalizeSlice(rep.am, workingDays, repBasis),
+      pm: finalizeSlice(rep.pm, workingDays, repBasis),
+      pharmacy: finalizeSlice(rep.pharmacy, workingDays, repBasis),
       unspecified: rep.unspecified,
       awaitingValidation: rep.awaitingValidation,
       campaignShare: rep.fieldCalls > 0 ? rep.campaignCalls / rep.fieldCalls : 0,

@@ -277,8 +277,10 @@ type LeaverVisitRow = {
   visit_type: number | null;
   agent_hr_id: string | null;
   double_hr_id: string | null;
+  double2_hr_id: string | null;
   agent_crm_id: string | null;
   double_crm_id: string | null;
+  double2_crm_id: string | null;
 };
 
 /**
@@ -350,11 +352,15 @@ export function collectLeaverCrmCandidate(input: {
   for (const visit of input.monthVisits) {
     const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "") ?? "";
     const doubleKey = canonicalHrIdKey(visit.double_hr_id ?? "") ?? "";
+    // The chain's second manager is on this visit too; missing him here charges him for the day.
+    const double2Key = canonicalHrIdKey(visit.double2_hr_id ?? "") ?? "";
     const isMine =
       (agentKey && agentKey === hrKey) ||
       (doubleKey && doubleKey === hrKey) ||
+      (double2Key && double2Key === hrKey) ||
       (!agentKey && crmIdText && String(visit.agent_crm_id ?? "").trim() === crmIdText) ||
-      (!doubleKey && crmIdText && String(visit.double_crm_id ?? "").trim() === crmIdText);
+      (!doubleKey && crmIdText && String(visit.double_crm_id ?? "").trim() === crmIdText) ||
+      (!double2Key && crmIdText && String(visit.double2_crm_id ?? "").trim() === crmIdText);
     if (!isMine) continue;
     const dateIso = (visit.visit_date ?? "").slice(0, 10);
     if (!dateIso) continue;
@@ -463,12 +469,16 @@ export function computeZeroCrmSignalKeys(input: {
   for (const visit of input.visits) {
     const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "");
     const doubleKey = canonicalHrIdKey(visit.double_hr_id ?? "");
+    const double2Key = canonicalHrIdKey(visit.double2_hr_id ?? "");
     if (agentKey) activeHrKeys.add(agentKey);
     if (doubleKey) activeHrKeys.add(doubleKey);
+    if (double2Key) activeHrKeys.add(double2Key);
     const agentCrm = String(visit.agent_crm_id ?? "").trim();
     const doubleCrm = String(visit.double_crm_id ?? "").trim();
+    const double2Crm = String(visit.double2_crm_id ?? "").trim();
     if (agentCrm) activeCrmIds.add(agentCrm);
     if (doubleCrm) activeCrmIds.add(doubleCrm);
+    if (double2Crm) activeCrmIds.add(double2Crm);
   }
 
   for (const row of input.employeeRows) {
@@ -687,7 +697,8 @@ async function collectContinuingEmployeeCrmCandidates(input: {
 }
 
 /** The projection every `IncludingDeparted` read in this connector shares. */
-const LEAVER_VISIT_COLUMNS = "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id";
+const LEAVER_VISIT_COLUMNS =
+  "visit_date,visit_type,agent_hr_id,double_hr_id,double2_hr_id,agent_crm_id,double_crm_id,double2_crm_id";
 
 /**
  * The month's confirmed national-holiday dates, refusing a degraded calendar.

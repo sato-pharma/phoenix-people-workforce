@@ -37,8 +37,10 @@ type Visit = {
   visit_type: number | null;
   agent_hr_id: string | null;
   double_hr_id: string | null;
+  double2_hr_id: string | null;
   agent_crm_id: string | null;
   double_crm_id: string | null;
+  double2_crm_id: string | null;
 };
 
 function visit(overrides: { date: string; hrId?: string | null; crmId?: string | null }): Visit {
@@ -47,8 +49,10 @@ function visit(overrides: { date: string; hrId?: string | null; crmId?: string |
     visit_type: 1,
     agent_hr_id: overrides.hrId ?? null,
     double_hr_id: null,
+    double2_hr_id: null,
     agent_crm_id: overrides.crmId ?? null,
     double_crm_id: null,
+    double2_crm_id: null,
   };
 }
 
@@ -202,8 +206,8 @@ export function runDeductionsCrmSingleMonthScanTests() {
       { hr_id: "A-1", job_title: "Chief Executive Officer", crm_id: null }, // not FWC-eligible
     ],
     visits: [
-      { visit_date: "2026-07-02", visit_type: 1, agent_hr_id: null, double_hr_id: null, agent_crm_id: "11", double_crm_id: null },
-      { visit_date: "2026-07-03", visit_type: 1, agent_hr_id: "B-4", double_hr_id: null, agent_crm_id: null, double_crm_id: null },
+      { visit_date: "2026-07-02", visit_type: 1, agent_hr_id: null, double_hr_id: null, double2_hr_id: null, agent_crm_id: "11", double_crm_id: null, double2_crm_id: null },
+      { visit_date: "2026-07-03", visit_type: 1, agent_hr_id: "B-4", double_hr_id: null, double2_hr_id: null, agent_crm_id: null, double_crm_id: null, double2_crm_id: null },
     ],
   });
   // The set is keyed CANONICALLY (canonicalHrIdKey lowercases), so asserting on the
@@ -229,10 +233,35 @@ export function runDeductionsCrmSingleMonthScanTests() {
   const zeroDouble = computeZeroCrmSignalKeys({
     employeeRows: [{ hr_id: "B-9", job_title: "District Manager", crm_id: "99" }],
     visits: [
-      { visit_date: "2026-07-02", visit_type: 1, agent_hr_id: "B-1", double_hr_id: "B-9", agent_crm_id: "11", double_crm_id: "99" },
+      { visit_date: "2026-07-02", visit_type: 1, agent_hr_id: "B-1", double_hr_id: "B-9", double2_hr_id: null, agent_crm_id: "11", double_crm_id: "99", double2_crm_id: null },
     ],
   });
   assert.equal(zeroDouble.size, 0, "a double-visit partner logged real field work — counting only agent_hr_id would exclude every manager who rides along");
+
+  // And the chain's SECOND manager, who is just as present. Slot 2 exists because a chain visit
+  // carries a senior above the manager, or the product manager who came with him; before
+  // 2026-10-07 this read him as having produced no CRM signal all month, which is what makes this
+  // category charge someone.
+  const zeroSecondSlot = computeZeroCrmSignalKeys({
+    employeeRows: [{ hr_id: "B-9", job_title: "District Manager", crm_id: "99" }],
+    visits: [
+      {
+        visit_date: "2026-07-02",
+        visit_type: 1,
+        agent_hr_id: "B-1",
+        double_hr_id: "B-8",
+        double2_hr_id: "B-9",
+        agent_crm_id: "11",
+        double_crm_id: "98",
+        double2_crm_id: "99",
+      },
+    ],
+  });
+  assert.equal(
+    zeroSecondSlot.size,
+    0,
+    "the chain's second manager produced real field work too — reading only slot 1 charges him for a day he spent out",
+  );
 
   // ---- THE DEGRADED-CALENDAR GUARD MUST FAIL CLOSED ------------------------
   // The Google Egypt calendar is the ONLY source of moving Islamic/Coptic

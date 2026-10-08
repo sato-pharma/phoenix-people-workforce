@@ -19,9 +19,20 @@ export type VisitsReportRow = {
   crmSaveDate: string | null;
   crmVisitId: number;
   customerName: string | null;
+  /** SLOT 1 — the first person beside the rep: the manager who rode along, else the product manager,
+   * else the senior. A vendor row records one partner and this is it. */
   doubleCrmId: number | null;
   doubleHrId: string | null;
   doubleName: string | null;
+  /** SLOT 2 — the chain's OTHER person: the senior above the manager, or the product manager who came
+   * with him. Always null on a vendor row, which has one partner column; set only on a Phoenix CRM
+   * row. Slot 2 is never filled while slot 1 is empty, so "was anybody out with him" is still answered
+   * by slot 1 alone. Added 2026-10-07: before it a chain visit lost its second person and a
+   * product-manager visit carried nobody at all, which is why 18 of Ahmed SharafEldeen's visits read
+   * as a day he did not work. */
+  double2CrmId: number | null;
+  double2HrId: string | null;
+  double2Name: string | null;
   id: string;
   /** Nearest same-day, same-agent GPS check-in — a best-effort correlation, never a guaranteed match. */
   nearestCheckinAddress: string | null;

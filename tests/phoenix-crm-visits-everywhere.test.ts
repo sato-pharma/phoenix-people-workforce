@@ -4,6 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
+import { liveViewSql } from "./support/sql-definer.ts";
 
 import {
   callRateExclusionOf,
@@ -133,14 +134,33 @@ function itemsOf(branch: string, from: string): string[] {
   return selectItems(branch.slice(start + "select\n".length, end));
 }
 
-/** The output name of a vendor select item: `v.id` → `id`, `'x'::text as source` → `source`. */
+/**
+ * The output name of a vendor select item: `v.id` → `id`, `'x'::text as source` → `source`.
+ *
+ * Digits belong in both patterns: `double2_crm_id` is a real column name, and a name class of
+ * `[a-z_]` alone matched neither arm and read it as malformed SQL.
+ */
 function outputName(item: string): string {
-  const alias = /\sas\s+([a-z_]+)$/.exec(item);
+  const alias = /\sas\s+([a-z0-9_]+)$/.exec(item);
   if (alias) return alias[1];
-  const column = /^[a-z]+\.([a-z_]+)$/.exec(item);
+  const column = /^[a-z]+\.([a-z0-9_]+)$/.exec(item);
   assert.ok(column, `the vendor column "${item}" is a plain column or names itself`);
   return column[1];
 }
+
+/**
+ * The four doors as they stand — each read from whichever migration defined it LAST, by sort order,
+ * rather than from a path written here.
+ *
+ * A pin naming a migration file is how a check quietly starts reading DEAD SQL: the text is still in
+ * that file and the database stopped running it the day a later migration replaced it. These doors have
+ * been replaced four times already (20260914000000, 20260925150000, 20261002123958, 20261007193000), so
+ * asking the directory is the only form of this pin that cannot go green and wrong.
+ */
+const VISITS_DOOR = liveViewSql("crm_visits_unified");
+const FLAGS_VIEW = liveViewSql("crm_visits_checkin_flags");
+const PLANS_DOOR = liveViewSql("crm_plan_entries_unified");
+const CHECKINS_DOOR = liveViewSql("crm_checkins_unified");
 
 /** The items of a previous migration's view, flattened, as one list. */
 function previousItems(name: string, from: string): string[] {
@@ -669,7 +689,7 @@ function serve(input: {
 }
 
 function runNoDoubleCountTests(code: string): void {
-  const view = viewSql(code, "crm_visits_unified");
+  const view = viewSql(VISITS_DOOR, "crm_visits_unified");
   const [vendorBranch, visitBranch, activityBranch] = view.split("\nunion all\n");
   assert.ok(vendorBranch && visitBranch && activityBranch, "three branches: iReports360, Phoenix visits, Phoenix day activities");
 
@@ -806,7 +826,9 @@ function runNoDoubleCountTests(code: string): void {
   assert.deepEqual(systemsOn("A-1", "2026-10-08"), [], "and never a kind the view has not been given a worked-day code for");
 
   // One Phoenix row per visit: the people it joins are one row per person, whatever the casing.
-  for (const role of ["agent", "manager"]) {
+  // `partner1` and `partner2` since 2026-10-07 — the door carries BOTH people on a chain visit, and
+  // each lookup has to stay one-row-per-person or a second slot would double the visit outright.
+  for (const role of ["agent", "partner1", "partner2"]) {
     assert.ok(
       flat(visitBranch).includes(
         "left join ( select distinct on (upper(btrim(e.hr_id))) upper(btrim(e.hr_id)) as hr_key, e.crm_id, e.full_name " +
@@ -829,7 +851,13 @@ function runNoDoubleCountTests(code: string): void {
 // ── 3. The Phoenix row's shape: AM · PM · Pharmacies apart, countable and real only, worked days ────
 
 /** Every column the Phoenix visit branch may read off a visit. Anything else — location, accuracy, photo,
- * voice, dwell, capture source, offline sync — is golden rule #1's and never leaves Phoenix CRM. */
+ * voice, dwell, capture source, offline sync — is golden rule #1's and never leaves Phoenix CRM.
+ *
+ * `product_manager_hr_id` and `senior_hr_id` joined the list on 2026-10-07. They are not integrity
+ * columns: they are the OTHER PEOPLE WHO WERE THERE, which the vendor shape has always carried in its
+ * own partner slot (121 Product Managers, a Group Product Manager, an RSM, a Training Manager and a
+ * Marketing Manager since 1 September). Leaving them out is what made a product-manager visit carry
+ * nobody and a chain visit lose its second person. */
 const VISIT_COLUMNS_CARRIED = new Set([
   "captured_at",
   "comment",
@@ -840,8 +868,10 @@ const VISIT_COLUMNS_CARRIED = new Set([
   "is_test",
   "list_type",
   "manager_hr_id",
+  "product_manager_hr_id",
   "rep_hr_id",
   "seat_id",
+  "senior_hr_id",
   "visit_date",
 ]);
 const ACTIVITY_COLUMNS_CARRIED = new Set(["activity_date", "activity_type", "created_at", "id", "is_test", "note", "rep_hr_id", "seat_id", "updated_at"]);
@@ -858,7 +888,7 @@ const ACTIVITY_CODES: ReadonlyArray<{ kind: string; code: number; description: s
 ];
 
 function runRowShapeTests(code: string): void {
-  const view = viewSql(code, "crm_visits_unified");
+  const view = viewSql(VISITS_DOOR, "crm_visits_unified");
   const [vendorBranch, visitBranch, activityBranch] = view.split("\nunion all\n");
 
   // COUNTABLE AND REAL ONLY.
@@ -869,15 +899,30 @@ function runRowShapeTests(code: string): void {
 
   const vendorItems = itemsOf(vendorBranch, "from public.ireports360_visits v");
   const phoenixItems = itemsOf(visitBranch, "from public.phoenix_crm_countable_visits p");
-  assert.equal(vendorItems.length, 31, "the 30 columns, and the one appended");
+  assert.equal(vendorItems.length, 34, "the 30 columns, and the four appended");
   assert.equal(phoenixItems.length, vendorItems.length, "both branches carry the same columns, item for item");
   const names = vendorItems.map(outputName);
   const phoenix = new Map(names.map((name, index): [string, string] => [name, phoenixItems[index]]));
 
-  // The iReports360 branch is the previous view word for word, with one column appended.
+  // The iReports360 branch is the previous view word for word, with four columns APPENDED. Appended and
+  // never inserted, because a caller reading by position must keep reading the same column — and
+  // because `create or replace view` accepts a new column only at the end of the list.
   assert.deepEqual(vendorItems.slice(0, 30), previousItems("crm_visits_unified", "from public.ireports360_visits v"), "the first 30 columns keep their names, types and order");
-  assert.equal(names[30], "phoenix_customer_validated", "the one new column is appended, never inserted");
-  assert.equal(vendorItems[30], "null::boolean as phoenix_customer_validated", "and is null on every iReports360 row");
+  assert.deepEqual(
+    names.slice(30),
+    ["phoenix_customer_validated", "double2_crm_id", "double2_name", "double2_hr_id"],
+    "the appended columns, in the order they were added",
+  );
+  assert.deepEqual(
+    vendorItems.slice(30),
+    [
+      "null::boolean as phoenix_customer_validated",
+      "null::bigint as double2_crm_id",
+      "null::text as double2_name",
+      "null::text as double2_hr_id",
+    ],
+    "and every one of them is null on an iReports360 row — the vendor shape records ONE partner",
+  );
   assert.ok(
     flat(vendorBranch).includes("from public.ireports360_visits v where v.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) and not exists"),
     "the iReports360 branch keeps its source and its cutover clause, and gains its two clauses",
@@ -888,8 +933,13 @@ function runRowShapeTests(code: string): void {
     crm_visit_id: "-1 - ('x' || substr(md5(p.id::text), 1, 13))::bit(52)::bigint",
     visit_date: "p.visit_date",
     agent_hr_id: "coalesce(p.rep_hr_id, p.manager_hr_id)",
-    double_hr_id: "case when p.rep_hr_id is not null then p.manager_hr_id end",
-    contact_crm_id: "customer.reference_contact_crm_id",
+    // SLOT 1 — the manager who rode along, else the product manager, else the senior. Reading
+    // manager_hr_id alone is what made a 'product_manager' visit carry nobody: that column is null on
+    // all 18 live ones, so 18 of Ahmed SharafEldeen's visits read as a day he did not work.
+    double_hr_id: "case when p.rep_hr_id is not null then coalesce(p.manager_hr_id, p.product_manager_hr_id, p.senior_hr_id) end",
+    // A doctor born in Phoenix CRM has no vendor id and answers to his own, out of the reserved
+    // positive range — so no per-doctor report drops him. 923 of 12,574 customers, and growing daily.
+    contact_crm_id: "coalesce(customer.reference_contact_crm_id, customer.own_contact_crm_id)",
     contact_name: "customer.name",
     customer_name: "null::text",
     comment: "p.comment",
@@ -915,8 +965,25 @@ function runRowShapeTests(code: string): void {
     assert.equal(phoenix.get(column), expression, `a Phoenix visit's ${column} is ${expression}`);
   }
   assert.match(phoenix.get("agent_crm_id") ?? "", /^case when agent\.crm_id ~ '\^\[0-9\]\+\$' then agent\.crm_id::bigint end$/, "the agent's own CRM id, when he has one");
-  assert.match(phoenix.get("double_crm_id") ?? "", /^case when p\.rep_hr_id is not null and manager\.crm_id ~ /, "a partner only when a rep was there with his manager");
+  assert.match(phoenix.get("double_crm_id") ?? "", /^case when p\.rep_hr_id is not null and partner1\.crm_id ~ /, "a partner only when a rep was there with somebody");
   assert.match(phoenix.get("exclusion_crm_id") ?? "", /^coalesce\(case when agent\.crm_id ~ .+ then agent\.crm_id::bigint end, -1::bigint\)$/);
+
+  // SLOT 2 — the chain's other person, and the rule that keeps it from ever doubling a figure: it is
+  // filled only from a column slot 1 did not take, so one visit stays one row with at most two people
+  // beside the rep. Measured on production 2026-10-07 across all 743 real visits: no row sets all
+  // three columns, and `senior_hr_id` never appears without `manager_hr_id`.
+  assert.equal(
+    flat(phoenix.get("double2_hr_id") ?? ""),
+    "case when p.rep_hr_id is not null then case when p.manager_hr_id is not null then coalesce(p.senior_hr_id, p.product_manager_hr_id) when p.product_manager_hr_id is not null then p.senior_hr_id end end",
+    "slot 2 is the senior above the manager, or the product manager who came with him",
+  );
+  assert.match(phoenix.get("double2_crm_id") ?? "", /^case when p\.rep_hr_id is not null and partner2\.crm_id ~ /, "slot 2's CRM id, when that person has one");
+  assert.equal(phoenix.get("double2_name"), "case when p.rep_hr_id is not null then partner2.full_name end", "and his real name, never a CRM handle");
+  // A district manager's OWN visit (rep_hr_id null, manager_hr_id himself) still names nobody beside
+  // him: 4 live rows are that shape, and crediting himself as his own partner would invent a double.
+  for (const column of ["double_crm_id", "double_name", "double_hr_id", "double2_crm_id", "double2_name", "double2_hr_id"]) {
+    assert.match(phoenix.get(column) ?? "", /p\.rep_hr_id is not null/, `${column} is empty on a manager's own visit`);
+  }
 
   // DAY ACTIVITIES — recorded, real, each under the code the readers already treat as a WORKED day.
   const activity = flat(activityBranch);
@@ -990,7 +1057,7 @@ function runRowShapeTests(code: string): void {
   assert.equal(pharmacyRecordingOf({ am: 2, pm: 5, pharmacies: 0, phoenix: 7 }), "recorded", "a Phoenix-only split's 0 means nobody called a pharmacy, not that none was recorded");
 
   // The flags view: unchanged in shape, and a Phoenix row is its own check-in.
-  const flagsView = viewSql(code, "crm_visits_checkin_flags");
+  const flagsView = viewSql(FLAGS_VIEW, "crm_visits_checkin_flags");
   const flagsItems = itemsOf(flagsView, "from public.crm_visits_unified v");
   assert.deepEqual(
     flagsItems,
@@ -1091,7 +1158,7 @@ function runPlanDoorTests(plans: string): void {
   }
 
   // The view: an as-of-that-day inclusion, today's verification, the rep who sat there that day.
-  const view = viewSql(plans, "crm_plan_entries_unified");
+  const view = viewSql(PLANS_DOOR, "crm_plan_entries_unified");
   const [vendorBranch, phoenixBranch] = view.split("\nunion all\n");
   const vendorItems = itemsOf(vendorBranch, "from public.ireports360_plan_entries pe");
   assert.deepEqual(vendorItems, previousItems("crm_plan_entries_unified", "from public.ireports360_plan_entries pe"), "the 23 columns keep their names, types and order");
@@ -1114,7 +1181,8 @@ function runPlanDoorTests(plans: string): void {
     plan_frequency: "null::smallint",
     agent_crm_id: "r.agent_crm_id",
     agent_hr_id: "r.hr_id",
-    contact_crm_id: "customer.reference_contact_crm_id",
+    // The SAME expression as the visit door, to the character — see the cross-door pin below.
+    contact_crm_id: "coalesce(customer.reference_contact_crm_id, customer.own_contact_crm_id)",
     contact_name: "customer.name",
     contact_grade: "customer.grade",
     crm_region_name: "null::text",
@@ -1165,7 +1233,8 @@ function runPlanDoorTests(plans: string): void {
   assert.doesNotMatch(plans, /\b(insert into|update\s+public\.|delete from)\b/, "the plan migration writes no row at all");
   assert.match(plans, /revoke all on table public\.crm_plan_entries_unified from anon, authenticated;/);
   assert.match(plans, /revoke all on table public\.crm_checkins_unified from anon, authenticated;/);
-  for (const name of ["crm_plan_entries_unified", "crm_checkins_unified"]) assert.match(viewSql(plans, name), /with \(security_invoker = true\)/);
+  assert.match(viewSql(PLANS_DOOR, "crm_plan_entries_unified"), /with \(security_invoker = true\)/);
+  assert.match(viewSql(CHECKINS_DOOR, "crm_checkins_unified"), /with \(security_invoker = true\)/);
 }
 
 // ── 5. The check-in door ───────────────────────────────────────────────────────────────────────────
@@ -1216,7 +1285,7 @@ const REP_REACHABLE_CHECKIN_READERS = [
 ];
 
 function runCheckinDoorTests(plans: string): void {
-  const view = viewSql(plans, "crm_checkins_unified");
+  const view = viewSql(CHECKINS_DOOR, "crm_checkins_unified");
   const [vendorBranch, phoenixBranch] = view.split("\nunion all\n");
   assert.ok(vendorBranch && phoenixBranch, "two branches: iReports360 check-ins, and positioned Phoenix visits");
 
@@ -1240,7 +1309,8 @@ function runCheckinDoorTests(plans: string): void {
     id: "p.id",
     crm_checkin_id: "-1 - ('x' || substr(md5(p.id::text), 1, 13))::bit(52)::bigint",
     agent_hr_id: "coalesce(p.rep_hr_id, p.manager_hr_id)",
-    contact_crm_id: "customer.reference_contact_crm_id",
+    // The SAME expression as the visit door, to the character — see the cross-door pin below.
+    contact_crm_id: "coalesce(customer.reference_contact_crm_id, customer.own_contact_crm_id)",
     contact_name: "customer.name",
     lat: "p.lat",
     lon: "p.lon",
@@ -1603,9 +1673,62 @@ function runHygieneTests(code: string): void {
     assert.match(code, new RegExp(`grant execute on function public\\.${name}\\([^)]*\\) to service_role;`), `the service role runs ${name}`);
   }
 
-  for (const view of [viewSql(code, "crm_visits_unified"), viewSql(code, "crm_visits_checkin_flags")]) assert.match(view, /with \(security_invoker = true\)/);
+  for (const view of [viewSql(VISITS_DOOR, "crm_visits_unified"), viewSql(FLAGS_VIEW, "crm_visits_checkin_flags")]) assert.match(view, /with \(security_invoker = true\)/);
   assert.match(code, /revoke all on table public\.crm_visits_unified from anon, authenticated;/);
   assert.match(code, /revoke all on table public\.crm_visits_checkin_flags from anon, authenticated;/);
+}
+
+/**
+ * 🔴 THE THREE DOORS ANSWER THE SAME contact_crm_id FOR THE SAME CUSTOMER, or a report invents a miss.
+ *
+ * A visit carrying a doctor's id against a plan that does not read MISSED — worse than the blank it
+ * replaces, because a blank looks like missing data and a miss looks like a rep who did not go. So the
+ * expression is pinned EQUAL ACROSS THE DOORS rather than three times separately: a session widening
+ * one of them cannot leave the other two behind and stay green.
+ */
+function runContactIdAcrossDoorsTests(): void {
+  const expressions = [
+    { door: "crm_visits_unified", sql: VISITS_DOOR, from: "from public.phoenix_crm_countable_visits p" },
+    { door: "crm_plan_entries_unified", sql: PLANS_DOOR, from: "from public.phoenix_crm_plan_items i" },
+    { door: "crm_checkins_unified", sql: CHECKINS_DOOR, from: "from public.phoenix_crm_countable_visits p" },
+  ].map(({ door, sql, from }) => {
+    const branches = viewSql(sql, door).split("\nunion all\n");
+    const phoenixBranch = branches.find((branch) => branch.includes(from));
+    assert.ok(phoenixBranch, `${door} has a Phoenix branch`);
+    const item = itemsOf(phoenixBranch, from).find((line) => line.includes("reference_contact_crm_id"));
+    assert.ok(item, `${door}'s Phoenix branch carries a contact id`);
+    return { door, item };
+  });
+  const [first, ...rest] = expressions;
+  assert.equal(
+    first.item,
+    "coalesce(customer.reference_contact_crm_id, customer.own_contact_crm_id)",
+    "the vendor id when the doctor has one, else the id he owns in the reserved positive range",
+  );
+  for (const other of rest) {
+    assert.equal(other.item, first.item, `${other.door} answers the same contact id as ${first.door}, to the character`);
+  }
+
+  // POSITIVE, and inside the reserved range. A negative synthetic id breaks three live constraints —
+  // crm_contacts_real_contact, direct_order_pharmacies_crm_contact_id_positive — and cannot be inserted
+  // into ireports360_crm_customer_brick_resolutions.crm_contact_id at all, which is an INTEGER: it
+  // answers 22003 numeric field overflow, turning a permanent blank into a permanent error.
+  const column = liveViewSql("crm_visits_unified");
+  assert.match(
+    column,
+    /own_contact_crm_id bigint/,
+    "the id is a column on the customer, issued once and never recomputed",
+  );
+  assert.match(
+    column,
+    /check \(own_contact_crm_id between 1000000000 and 2000000000\)/,
+    "inside crm_contacts_phoenix_id_seq's reserved range, which 20260914020000 created for exactly this",
+  );
+  assert.match(
+    column,
+    /before update of reference_contact_crm_id on public\.phoenix_crm_customers/,
+    "and a customer who has carried his own id can never be re-pointed at a vendor id afterwards",
+  );
 }
 
 export function runPhoenixCrmVisitsEverywhereTests(): void {
@@ -1621,4 +1744,5 @@ export function runPhoenixCrmVisitsEverywhereTests(): void {
   runStartClockTests();
   runCallRateTests();
   runHygieneTests(code);
+  runContactIdAcrossDoorsTests();
 }

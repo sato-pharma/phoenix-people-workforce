@@ -31,6 +31,12 @@ type PairRow = {
   agent_hr_id: string | null;
   double_crm_id: number | null;
   double_hr_id: string | null;
+  /** The chain's OTHER person — the senior above the manager, or the product manager who came with
+   * him. Null on every vendor row, which records one partner. A chain is three people in one room, so
+   * every PAIR among them is recorded: without this a senior manager on a chain was invisible to his
+   * own trip rollup, and so was the rep he was actually standing beside. */
+  double2_crm_id: number | null;
+  double2_hr_id: string | null;
   visit_date: string | null;
 };
 
@@ -155,7 +161,7 @@ export async function getTripVisitPartnersByDate(input: {
       // double visit with a partner who has no CRM id carries a NULL `double_crm_id`, which
       // `requireDoubleCrmId` would drop. The `0` sentinel rows it also drops were discarded below anyway.
       const rows = await queryVisits<PairRow>({
-        columns: "agent_crm_id, agent_hr_id, double_crm_id, double_hr_id, visit_date",
+        columns: "agent_crm_id, agent_hr_id, double_crm_id, double_hr_id, double2_crm_id, double2_hr_id, visit_date",
         dateFrom: start,
         dateTo: end,
         includeResignedAgents: true,
@@ -173,20 +179,32 @@ export async function getTripVisitPartnersByDate(input: {
         const day = String(row.visit_date ?? "").slice(0, 10);
         if (!dates.includes(day)) continue;
 
-        const agent = personOnVisit(row.agent_crm_id, row.agent_hr_id, maps);
-        const partner = personOnVisit(row.double_crm_id, row.double_hr_id, maps);
-        if (!agent || !partner) continue;
-        // A row pairing someone with themselves carries no information and would make the
-        // rollup's cycle guard do the work instead.
-        if (agent.key === partner.key) continue;
+        // Everybody the row names, in the order the rep's own form puts them: him, the manager or
+        // product manager beside him, and on a chain the senior above that manager. A chain is three
+        // people standing together, so EVERY PAIR among them is a real pairing — not only each of
+        // them with the rep.
+        const onVisit = [
+          personOnVisit(row.agent_crm_id, row.agent_hr_id, maps),
+          personOnVisit(row.double_crm_id, row.double_hr_id, maps),
+          personOnVisit(row.double2_crm_id, row.double2_hr_id, maps),
+        ].filter((person): person is NonNullable<typeof person> => person != null);
+        // One partner at least: a solo visit pairs nobody. The same test the single-partner read made.
+        if (onVisit.length < 2) continue;
 
-        // Recorded BOTH ways: the rollup walks outward from a manager, and the manager is the
-        // one tagged as the double-visitor (`double_crm_id`) while the rep is the agent. A
-        // one-directional map would therefore never let a manager reach his rep.
-        addPartner(partners, agent.hrId, day, partner.hrId);
-        addPartner(partners, partner.hrId, day, agent.hrId);
+        for (let i = 0; i < onVisit.length; i += 1) {
+          for (let j = i + 1; j < onVisit.length; j += 1) {
+            // A pair of the same person carries no information and would make the rollup's cycle
+            // guard do the work instead.
+            if (onVisit[i].key === onVisit[j].key) continue;
+            // Recorded BOTH ways: the rollup walks outward from a manager, and the manager is the
+            // one tagged as the partner while the rep is the agent. A one-directional map would
+            // therefore never let a manager reach his rep.
+            addPartner(partners, onVisit[i].hrId, day, onVisit[j].hrId);
+            addPartner(partners, onVisit[j].hrId, day, onVisit[i].hrId);
+          }
+        }
 
-        for (const person of [agent, partner]) {
+        for (const person of onVisit) {
           if (person.crmId != null) discoveredCrm.add(person.crmId);
           else if (person.hrKey) discoveredHr.add(person.hrKey);
         }

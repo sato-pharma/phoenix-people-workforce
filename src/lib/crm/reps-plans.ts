@@ -432,6 +432,12 @@ export type RepsPlansRepRow = {
   agentHrId: string | null;
   agentCrmId: number | null;
   workingDays: number;
+  /**
+   * Which visits THIS rep's headline counts — "submitted" once his own team is counted from Phoenix
+   * CRM, "verified" while it is still iReports360's. Absent means the board's basis, the rule before
+   * the per-team switch. It is on the ROW because since 2026-10-07 one board holds both at once.
+   */
+  basis?: CallRateBasis;
   am: RepsPlansSession;
   pm: RepsPlansSession;
   /**
@@ -601,7 +607,8 @@ export function toRepsPlansRow(
   // Ruling A1: with no GPS feed there is no proved rate to state, so the proved half of each
   // session is blanked rather than printed as a zero he never had the means to beat. The reported
   // half is untouched.
-  const noGpsFeed = hasNoGpsFeed(rep, basis);
+  const rowBasis = rep.basis ?? basis;
+  const noGpsFeed = hasNoGpsFeed(rep, rowBasis);
   const unproved = <S extends { verifiedRate: number | null; attainmentPct: number | null }>(session: S): S =>
     noGpsFeed ? { ...session, verifiedRate: null, attainmentPct: null } : session;
   const am = unproved(toSession(rep.am));
@@ -617,6 +624,9 @@ export function toRepsPlansRow(
     agentHrId: rep.agentHrId,
     agentCrmId: rep.agentCrmId,
     workingDays: rep.workingDays,
+    // Carried onto the row so the TEAM totals can count this rep the way his own board row was
+    // counted — one board now holds both rules at once.
+    basis: rowBasis,
     am,
     pm,
     pharmacy,
@@ -686,8 +696,16 @@ export type RepsPlansTotals = {
 function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number, basis: CallRateBasis = "verified"): RepsPlansTotals {
   const denominator = workingDays * rows.length;
   // The same count the per-rep headline used — see CallRateBasis. Campaign stays out either way.
-  const headlineOf = (session: { verified: number; unverified: number }) =>
-    basis === "submitted" ? session.verified + session.unverified : session.verified;
+  //
+  // 🔴 COUNTED PER REP, NOT PER BOARD. Since the switch went per team (owner, 2026-10-07) one board
+  // holds both rules at once: a started team's calls count as SUBMITTED while the rest of the board
+  // still counts only the PROVED ones. A single board-wide basis would have charged the started reps'
+  // unproved calls to nobody and under-reported the team figure they are in.
+  const headlineOfRow = (session: { verified: number; unverified: number }, rowBasis: CallRateBasis) =>
+    rowBasis === "submitted" ? session.verified + session.unverified : session.verified;
+  let amHeadline = 0;
+  let pmHeadline = 0;
+  let pharmacyHeadline = 0;
   const blank = (target: number): RepsPlansSession => ({
     verified: 0,
     unverified: 0,
@@ -717,6 +735,10 @@ function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number, basis: 
   let repsOnTarget = 0;
 
   for (const row of rows) {
+    const rowBasis = row.basis ?? basis;
+    amHeadline += headlineOfRow(row.am, rowBasis);
+    pmHeadline += headlineOfRow(row.pm, rowBasis);
+    pharmacyHeadline += headlineOfRow(row.pharmacy, rowBasis);
     for (const [into, from] of [
       [am, row.am],
       [pm, row.pm],
@@ -737,19 +759,22 @@ function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number, basis: 
     if ((row.am.verifiedRate ?? 0) >= row.am.target && (row.pm.verifiedRate ?? 0) >= row.pm.target) repsOnTarget += 1;
   }
 
-  for (const session of [am, pm]) {
+  for (const [session, headline] of [
+    [am, amHeadline],
+    [pm, pmHeadline],
+  ] as const) {
     if (denominator > 0) {
-      session.verifiedRate = round2(headlineOf(session) / denominator);
+      session.verifiedRate = round2(headline / denominator);
       session.reportedRate = round2(session.reported / denominator);
-      session.attainmentPct = roundPct((headlineOf(session) / denominator / session.target) * 100);
+      session.attainmentPct = roundPct((headline / denominator / session.target) * 100);
     }
   }
   if (denominator > 0) {
-    pharmacy.verifiedRate = round2(headlineOf(pharmacy) / denominator);
+    pharmacy.verifiedRate = round2(pharmacyHeadline / denominator);
     pharmacy.reportedRate = round2(pharmacy.reported / denominator);
     // Null target -> null attainment, never a division. See PHARMACY_CALL_RATE_TARGET.
     pharmacy.attainmentPct =
-      pharmacy.target != null ? roundPct((headlineOf(pharmacy) / denominator / pharmacy.target) * 100) : null;
+      pharmacy.target != null ? roundPct((pharmacyHeadline / denominator / pharmacy.target) * 100) : null;
   }
 
   const reportedCalls = am.reported + pm.reported + unspecified;

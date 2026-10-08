@@ -75,7 +75,7 @@ import { periodMonthEnd } from "../period-format";
  */
 const VISIT_COLUMNS =
   "agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, crm_save_date, crm_visit_id, " +
-  "double_crm_id, double_hr_id, double_name, speciality, visit_date, visit_type";
+  "double_crm_id, double_hr_id, double_name, double2_hr_id, double2_name, speciality, visit_date, visit_type";
 
 /** Just enough to route the vendor's unlabelled field visit, keyed back by `crm_visit_id`. */
 const UNLABELLED_FIELD_VISIT_TYPE = -30;
@@ -92,6 +92,8 @@ type VisitRow = {
   double_crm_id: number | null;
   double_hr_id: string | null;
   double_name: string | null;
+  double2_hr_id: string | null;
+  double2_name: string | null;
   speciality: string | null;
   visit_date: string | null;
   visit_type: number | null;
@@ -355,34 +357,44 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
     if (!isCrmDoubleVisitRow(row)) continue;
     if (isField) agent.accompaniedVisits += 1;
 
-    const managerHrId = hrKey(row.double_hr_id);
-    if (!managerHrId) continue;
-    const managerKey = `${period}|${managerHrId}`;
-    let manager = managers.get(managerKey);
-    if (!manager) {
-      manager = {
-        period,
-        managerHrId,
-        managerName: row.double_name ?? null,
-        rides: 0,
-        ridesByRep: new Map<string, number>(),
-        customers: new Set<number>(),
-        customersAm: new Set<number>(),
-        customersPm: new Set<number>(),
-        customersPharmacy: new Set<number>(),
-        rideSplit: emptyVisitCountSplit(),
-      };
-      managers.set(managerKey, manager);
-    }
-    if (!manager.managerName && row.double_name) manager.managerName = row.double_name;
-    manager.rides += 1;
-    addBucketToSplit(manager.rideSplit, countBucket, 1, fromPhoenix);
-    if (agentHrId) manager.ridesByRep.set(agentHrId, (manager.ridesByRep.get(agentHrId) ?? 0) + 1);
-    if (contactId != null) {
-      manager.customers.add(contactId);
-      if (countBucket === "AM") manager.customersAm.add(contactId);
-      else if (countBucket === "PM") manager.customersPm.add(contactId);
-      else manager.customersPharmacy.add(contactId);
+    // BOTH partner slots. A chain visit carries two managers and each of them really made that ride,
+    // so crediting slot 1 alone lost the other one entirely — on production that is 10 visits, two
+    // people, 6-7 October 2026. The ride is counted once per manager, never twice for the same one:
+    // the view fills slot 1 from coalesce(manager, product_manager, senior), so the two slots never
+    // hold the same person.
+    for (const [rawManagerHrId, rawManagerName] of [
+      [row.double_hr_id, row.double_name],
+      [row.double2_hr_id, row.double2_name],
+    ] as const) {
+      const managerHrId = hrKey(rawManagerHrId);
+      if (!managerHrId) continue;
+      const managerKey = `${period}|${managerHrId}`;
+      let manager = managers.get(managerKey);
+      if (!manager) {
+        manager = {
+          period,
+          managerHrId,
+          managerName: rawManagerName ?? null,
+          rides: 0,
+          ridesByRep: new Map<string, number>(),
+          customers: new Set<number>(),
+          customersAm: new Set<number>(),
+          customersPm: new Set<number>(),
+          customersPharmacy: new Set<number>(),
+          rideSplit: emptyVisitCountSplit(),
+        };
+        managers.set(managerKey, manager);
+      }
+      if (!manager.managerName && rawManagerName) manager.managerName = rawManagerName;
+      manager.rides += 1;
+      addBucketToSplit(manager.rideSplit, countBucket, 1, fromPhoenix);
+      if (agentHrId) manager.ridesByRep.set(agentHrId, (manager.ridesByRep.get(agentHrId) ?? 0) + 1);
+      if (contactId != null) {
+        manager.customers.add(contactId);
+        if (countBucket === "AM") manager.customersAm.add(contactId);
+        else if (countBucket === "PM") manager.customersPm.add(contactId);
+        else manager.customersPharmacy.add(contactId);
+      }
     }
   }
 

@@ -27,6 +27,7 @@ import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config"
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { checkinAgentKey, indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import {
+  buildParticipantCrmIdOrFilter,
   buildParticipantHrIdOrFilter,
   collapseDuplicateVisitSubmissionsLiveShape,
   getEffectiveExcludedAgentCrmIds,
@@ -181,7 +182,16 @@ export function resolveRepDayCheckinOwnerKeys(
 type RepDaySelf = { crmId: number | null; hrId: string };
 
 /** The live client's shapes, plus the hr ids only the unified view carries (absent on a live row). */
-type RepDayVisitSource = IReports360Visit & { agentHrId?: string | null; doubleHrId?: string | null };
+type RepDayVisitSource = IReports360Visit & {
+  agentHrId?: string | null;
+  doubleHrId?: string | null;
+  // The chain visit's OTHER partner — the senior above the manager, or the product manager who came
+  // with him. Optional because the live vendor client has no such field and both vendor branches of
+  // the door emit NULL: only a Phoenix `chain` visit fills it.
+  double2HrId?: string | null;
+  double2ID?: number | null;
+  double2Name?: string | null;
+};
 type RepDayCheckinSource = IReports360Checkin & { agentHrId?: string | null };
 
 /** Readable partner name for display: strips the "( Area / Line )" annotation and dots, keeps case. */
@@ -224,6 +234,9 @@ type RepDayVisitMirrorRow = {
   double_crm_id: number | null;
   double_hr_id: string | null;
   double_name: string | null;
+  double2_crm_id: number | null;
+  double2_hr_id: string | null;
+  double2_name: string | null;
   speciality: string | null;
   visit_date: string;
   visit_type: number;
@@ -248,6 +261,9 @@ function visitFromMirrorRow(row: RepDayVisitMirrorRow): RepDayVisitSource {
     doubleHrId: row.double_hr_id,
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
+    double2HrId: row.double2_hr_id,
+    double2ID: row.double2_crm_id,
+    double2Name: row.double2_name,
     id: row.crm_visit_id,
     region: row.crm_region_name,
     regionID: row.crm_region_id,
@@ -364,7 +380,10 @@ async function buildRepDayResult(
     .filter(
       (visit) =>
         (repDayPersonKey(visit.agentID, visit.agentHrId) === selfKey ||
-          repDayPersonKey(visit.doubleID, visit.doubleHrId) === selfKey) &&
+          repDayPersonKey(visit.doubleID, visit.doubleHrId) === selfKey ||
+          // BOTH partner slots, or the widened read above achieves nothing: the row arrives and this
+          // filter drops it again, and the chain's other person still reads as not having worked.
+          repDayPersonKey(visit.double2ID, visit.double2HrId) === selfKey) &&
         (visit.visitDate ?? "").slice(0, 10) === day,
     );
   // Burst-duplicate collapse: every aggregate that links INTO this page (FWC day cells, portal
@@ -451,12 +470,18 @@ async function fetchRepDayFromMirror(
   self: RepDaySelf,
   day: string,
 ): Promise<IReports360RepDayResult> {
-  // By CRM id when he has one — the exact expression this read always used. A rep hired after the
-  // CRM cutover has none, so his day is found by hr id (agent or double partner, every casing variant).
-  const participantOr =
-    self.crmId != null
-      ? `agent_crm_id.eq.${self.crmId},double_crm_id.eq.${self.crmId}`
-      : buildParticipantHrIdOrFilter([self.hrId]);
+  // By CRM id when he has one; a rep hired after the CRM cutover has none, so his day is found by
+  // hr id (agent or either partner slot, every casing variant).
+  //
+  // THE SHARED BUILDER, never a hand-rolled expression. This read spelled its own equality pair
+  // out, naming the agent column and ONE partner column — so once the visits door grew a second
+  // slot (2026-10-07), a person who rode along as the chain's OTHER partner opened his own day and
+  // found it empty. That is the owner's reported defect seen from the other side: Hany Saad Omar's
+  // and Rasha Sabry Khalifa's October rows are all in slot 2.
+  const crmId = self.crmId != null ? Number(self.crmId) : Number.NaN;
+  const participantOr = Number.isFinite(crmId)
+    ? buildParticipantCrmIdOrFilter([crmId])
+    : buildParticipantHrIdOrFilter([self.hrId]);
   if (participantOr == null) return { checkins: [], rep, route: null, visits: [] };
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -464,7 +489,8 @@ async function fetchRepDayFromMirror(
     .select(
       "agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, contact_crm_id, contact_name, " +
         "crm_contact_grade, crm_region_id, crm_region_name, crm_save_date, crm_visit_id, customer_name, " +
-        "double_crm_id, double_hr_id, double_name, speciality, visit_date, visit_type, visit_type_description",
+        "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, " +
+        "speciality, visit_date, visit_type, visit_type_description",
     )
     .eq("visit_date", day)
     .or(participantOr);

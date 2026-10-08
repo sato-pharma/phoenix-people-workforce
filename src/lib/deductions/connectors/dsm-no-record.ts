@@ -247,18 +247,22 @@ export async function collectDsmNoRecordCandidates(input: {
   const rows = await scanVisitsForRangeCreditingPartners<{
     agent_hr_id: string | null;
     double_hr_id: string | null;
+    double2_hr_id: string | null;
     visit_date: string | null;
   }>({
     dateFrom: workingDays[0]!,
     dateTo: workingDays[workingDays.length - 1]!,
-    columns: "agent_hr_id, double_hr_id, visit_date",
+    columns: "agent_hr_id, double_hr_id, double2_hr_id, visit_date",
   });
   const activity = new Set<string>();
   const anySignal = new Set<string>();
   for (const row of rows) {
     const date = String(row.visit_date ?? "").slice(0, 10);
     if (!date) continue;
-    for (const raw of [row.agent_hr_id, row.double_hr_id]) {
+    // BOTH partner slots. A chain visit's second manager stands in slot 2, and a manager read as
+    // ABSENT here is a manager this category DEDUCTS FROM — the same reasoning as the comment above,
+    // one slot further along.
+    for (const raw of [row.agent_hr_id, row.double_hr_id, row.double2_hr_id]) {
       const compact = compactDeductionsHrId(String(raw ?? ""));
       if (!compact) continue;
       activity.add(`${compact}:${date}`);

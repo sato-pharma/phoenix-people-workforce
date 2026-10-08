@@ -75,7 +75,7 @@ import {
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
 import { resolveKpiBoardAgents } from "@/lib/crm/kpi-board-agents";
 import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
@@ -100,7 +100,8 @@ import {
 } from "@/lib/crm/call-rate";
 import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
 import { loadPhoenixRepKpis } from "@/lib/crm/phoenix-kpi-data";
-import { kpiRulesFor, type KpiRules, type PhoenixRepKpis } from "@/lib/crm/phoenix-kpi-rules";
+import { kpiRulesFor, phoenixRuleRepKeys, type KpiRules, type PhoenixRepKpis } from "@/lib/crm/phoenix-kpi-rules";
+import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
 import type { AccessContext } from "@/lib/auth/permissions";
 
 /** One option in the board's month or period picker. */
@@ -847,7 +848,9 @@ export function joinKpiRows(input: {
     // `attainmentPct` below returns null for him on the same flag. The reported rates stay: they
     // are what he logged, and the gap between the two is still worth seeing.
     row.awaitingValidation = rate.awaitingValidation;
-    row.noGpsFeed = hasNoGpsFeed(rate, basis);
+    // The ROW's own basis decides, with the board's as the fallback: a started team is on the Phoenix
+    // rules while the rest of this same board is still on iReports360's (owner, 2026-10-07).
+    row.noGpsFeed = hasNoGpsFeed(rate, rate.basis ?? basis);
     if (row.noGpsFeed) {
       row.amRate = null;
       row.pmRate = null;
@@ -1125,7 +1128,7 @@ export async function getKpisBoard(input: {
         from: callRange.dateFrom < range.dateFrom ? callRange.dateFrom : range.dateFrom,
         to: callRange.dateTo > range.windowEnd ? callRange.dateTo : range.windowEnd,
       });
-  const [callRate, docList, employees, windowHolidays, cutover] = await Promise.all([
+  const [callRate, docList, employees, windowHolidays, cutover, startedWindows] = await Promise.all([
     // Through YESTERDAY (ruling C1): its working days are the denominator every rate on this board
     // divides by, the rep KPI reports below included.
     agentsRead.then((agents) =>
@@ -1153,8 +1156,16 @@ export async function getKpisBoard(input: {
     // Phase 6's switch. An unreadable setting is "no cutover": the board then shows exactly what it
     // showed before phase 6, which is never a wrong number, only an old rule.
     getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER),
+    // THE SWITCH IS PER GO-LIVE TEAM (owner, 2026-10-07: "switched gradually based on the go live
+    // teams"). The global cutover above is still null on production and a team start never sets it, so
+    // this board scored Delta (1) by the OLD rules while its reps were logging in Phoenix CRM. Fails
+    // OPEN — an unreadable answer is "no started team" and the board shows what it showed before.
+    loadStartedRepWindows(),
   ]);
   const rules = kpiRulesFor(cutover, range.dateFrom, range.windowEnd);
+  // The reps whose own team had gone live before this period began. A board spanning a go-live
+  // Saturday therefore holds BOTH rules at once, each row scored by its own.
+  const phoenixRuleReps = phoenixRuleRepKeys(startedWindows, range.dateFrom);
 
   const workingDaysInWindow = range.notStarted
     ? 0
@@ -1190,9 +1201,11 @@ export async function getKpisBoard(input: {
   const scopedReps = keepMedicalRepsOnly(allInScope);
 
   // PHASE 6. Restamped BEFORE the facets, filters, podium and totals, so every one of them reads the
-  // Phoenix numbers and the page describes one set of rules. Never runs without a cutover date.
+  // Phoenix numbers. Loaded when the company-wide cutover has passed, OR when ANY team in scope went
+  // live before this period — the per-team switch (owner, 2026-10-07). Each row is then stamped only
+  // if ITS OWN rep is one of them, so a rep still on iReports360 keeps the old numbers beside him.
   const phoenix =
-    rules.rules === "phoenix"
+    rules.rules === "phoenix" || phoenixRuleReps.size > 0
       ? await loadPhoenixRepKpis({
           scope,
           // dateTo through today for the visits coverage and frequency read; callRateTo stops the
@@ -1209,7 +1222,14 @@ export async function getKpisBoard(input: {
         })
       : null;
   if (phoenix) {
-    for (const row of scopedReps) applyPhoenixKpis(row, phoenix.kpisFor(row.agentHrId));
+    for (const row of scopedReps) {
+      // PER REP. The company-wide cutover stamps everybody; a per-team start stamps only its own
+      // people. Stamping a rep still on the vendor would score him against a rule his app does not
+      // follow — the mirror image of the defect this change fixes.
+      const key = normalizeHrIdForAccess(row.agentHrId);
+      if (rules.rules !== "phoenix" && !(key && phoenixRuleReps.has(key))) continue;
+      applyPhoenixKpis(row, phoenix.kpisFor(row.agentHrId));
+    }
   }
 
   // Facets are built from the SCOPED rows and the filters applied after, in that order. Building

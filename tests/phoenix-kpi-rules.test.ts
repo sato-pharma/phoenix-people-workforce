@@ -4,11 +4,13 @@ import { readFileSync } from "node:fs";
 import { computeCallRate, countCallRateWorkingDays, type VisitForCallRate } from "../src/lib/crm/call-rate.ts";
 import { NO_CRM_CUTOVER } from "../src/lib/crm/cutover.ts";
 import { kpiFlagHint, kpiFlagLabel } from "../src/lib/crm/kpis-filters.ts";
+import { type StartedRepWindow } from "../src/lib/crm/phoenix-team-starts.ts";
 import {
   computePhoenixRepKpis,
   dailyFollowUp,
   employedWorkingDays,
   kpiRulesFor,
+  phoenixRuleRepKeys,
   type PhoenixPanelContact,
   type PhoenixPlanEntry,
   type PhoenixVisit,
@@ -287,14 +289,85 @@ function callRateBasisAndWording() {
   const repsPlans = read("src/lib/crm/reps-plans.ts");
   assert.match(
     repsPlans,
-    /basis === "submitted" \? session\.verified \+ session\.unverified : session\.verified/,
+    /rowBasis === "submitted" \? session\.verified \+ session\.unverified : session\.verified/,
     "the Reps Plans totals count the same visits the per-rep headline counts",
   );
+  assert.match(
+    repsPlans,
+    /const rowBasis = row\.basis \?\? basis;/,
+    "and they count it PER REP, because one board holds both rules at once since the switch went per team",
+  );
+  for (const bucket of ["am", "pm", "pharmacy"] as const) {
+    assert.ok(
+      repsPlans.includes(`${bucket}Headline += headlineOfRow(row.${bucket}, rowBasis)`),
+      `the ${bucket} total accumulates each row at that row's own basis`,
+    );
+  }
   assert.match(repsPlans, /totalsOf\([\s\S]{0,80}report\.workingDays, rateBasis\)/, "the totals are given the report's basis");
 
   assert.equal(kpiFlagLabel("perfect-frequency", "phoenix"), "Every graded doctor at their grade norm", "frequency passes at the grade norm, not exactly as planned");
   assert.notEqual(kpiFlagLabel("perfect-frequency"), kpiFlagLabel("perfect-frequency", "phoenix"), "before the cutover the old label stays");
   assert.match(kpiFlagHint("below-pm-target", "phoenix"), /Submitted/, "the PM hint names submitted visits under the Phoenix rules");
+}
+
+/**
+ * The per-team switch: WHO is scored by the Phoenix rules, when one board holds both rules at once.
+ *
+ * Owner, 2026-10-07: "I want everything to be switched gradually based on the go live teams" — Delta (1)
+ * from Saturday 3 October, Cairo and Giza from the 10th, everybody else still on the vendor. So the
+ * decision cannot be a board-level one: `kpiRulesFor` answers for the COMPANY and `phoenixRuleRepKeys`
+ * names the people, one row at a time.
+ */
+function perTeamRuleReps() {
+  const windows: StartedRepWindow[] = [
+    // Delta (1), live since 3 October and still live.
+    { hrIdKey: "b-155", agentCrmId: 1166, from: "2026-10-03", until: null },
+    // Cairo, live from the 10th.
+    { hrIdKey: "b-200", agentCrmId: 2001, from: "2026-10-10", until: null },
+    // A seat someone left on the 6th: his window is half-open, so the 6th itself is already out.
+    { hrIdKey: "b-300", agentCrmId: 3001, from: "2026-10-03", until: "2026-10-06" },
+    // A row the roster could not key — it must never reach a Set that is looked up by key.
+    { hrIdKey: null, agentCrmId: 4001, from: "2026-10-03", until: null },
+  ];
+
+  const october = phoenixRuleRepKeys(windows, "2026-10-01");
+  assert.equal(october.size, 0, "a period that STARTS before every team start is scored by the old rules, whole");
+
+  const fromTheFourth = phoenixRuleRepKeys(windows, "2026-10-04");
+  assert.deepEqual([...fromTheFourth].sort(), ["b-155", "b-300"], "only the teams already live on the period's first day");
+
+  const fromTheSixth = phoenixRuleRepKeys(windows, "2026-10-06");
+  assert.deepEqual([...fromTheSixth], ["b-155"], "the window is half-open: `until` is the first day NOT counted");
+
+  const fromTheTenth = phoenixRuleRepKeys(windows, "2026-10-10");
+  assert.deepEqual([...fromTheTenth].sort(), ["b-155", "b-200"], "Cairo joins on its own start Saturday");
+
+  assert.equal(phoenixRuleRepKeys(windows, "not-a-day").size, 0, "an unreadable period start names nobody, never everybody");
+  assert.ok(!fromTheTenth.has(""), "a row with no roster key is dropped, never keyed as empty");
+
+  // A team start must NOT reach the company-wide decision. Folding it in there would return "phoenix"
+  // for the whole board and score an unstarted rep by rules his own app does not follow yet.
+  assert.equal(kpiRulesFor.length, 3, "kpiRulesFor stays a company-wide question — no per-team argument");
+  assert.deepEqual(
+    kpiRulesFor(NO_CRM_CUTOVER, "2026-10-10", "2026-10-31"),
+    { rules: "legacy", note: null },
+    "with the company-wide cutover still unset, a team start does not flip the whole board",
+  );
+
+  // Both boards read the per-rep set, and each tests ONE row against it rather than switching wholesale.
+  const service = read("src/lib/crm/call-rate-service.ts");
+  assert.match(service, /phoenixRuleRepKeys\(startedWindows, input\.dateFrom\)/, "the call-rate service builds the per-rep set for its own period");
+  const board = read("src/lib/crm/kpis-board.ts");
+  assert.match(board, /phoenixRuleRepKeys\(startedWindows, range\.dateFrom\)/, "the KPIs board builds it for the window it is drawing");
+  assert.match(
+    board,
+    /hasNoGpsFeed\(rate, rate\.basis \?\? basis\)/,
+    "the no-GPS-feed note asks the ROW's own basis — under the Phoenix rules a rep with no GPS is not flagged",
+  );
+
+  // The per-rep basis is what the rate itself carries, so a mixed board cannot be read with one rule.
+  const callRate = read("src/lib/crm/call-rate.ts");
+  assert.match(callRate, /basis \?\? rep\.basis \?\? "verified"/, "an explicit basis wins, else the row's own stamp, else the old rules");
 }
 
 export function runPhoenixKpiRulesTests() {
@@ -305,4 +378,5 @@ export function runPhoenixKpiRulesTests() {
   oneRep();
   regularNoCheckinBucket();
   callRateBasisAndWording();
+  perTeamRuleReps();
 }
