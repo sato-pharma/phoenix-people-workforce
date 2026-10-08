@@ -757,11 +757,18 @@ const orphanedRequests: NeedsYouAdapter = {
         : `${orphanedRequestModuleLabels[group.module]}s`;
       const them = group.count === 1 ? "it" : "them";
       const screen = orphanedRequestModuleScreens[group.module];
+      // "the person who raised", not "the rep": a Medical Rep cannot raise a direct order at all
+      // (`DIRECT_ORDER_REQUESTER_ROLES` starts at District Manager), and the five found on
+      // 2026-10-04 were raised by two District Sales Managers.
       const label = group.actorRole === "requester"
-        ? `${group.count} ${noun} ${plural(group.count, "is", "are")} stuck — the rep who raised ${them} has left`
+        ? `${group.count} ${noun} ${plural(group.count, "is", "are")} stuck — the person who raised ${them} has left`
         : `${group.count} ${noun} ${plural(group.count, "is", "are")} stuck — the approver on ${them} has left`;
+      // The remedy VERB comes from the module's own screen mapping, never written in by hand here:
+      // only one person may answer a return, so a reassignment is not on offer, and until
+      // 2026-10-08 this line promised both verbs on a screen that had neither (see
+      // `orphanedRequestModuleScreens`).
       const note = group.actorRole === "requester"
-        ? `Handed back to edit, but the rep has resigned and can never resubmit ${them} — reassign or close ${them} on the ${screen.screen} screen.`
+        ? `Handed back to edit, but the person who raised ${them} has left and a return can only be answered by them — ${screen.requesterRemedy} ${them} on the ${screen.screen} screen.`
         : `The approver named on the current rung has left, so ${them} cannot advance — reassign the rung on the ${screen.screen} screen.`;
       return {
         key: `orphaned-requests:${group.module}:${group.actorRole}`,
