@@ -23,6 +23,7 @@ import {
 import { findDayCollisions } from "./conflict.ts";
 import { computeHolidayBridgeDays, isFieldForceWorkingDay, type HolidayBridgeDay } from "./holiday-bridge.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+import { effectiveSettlement } from "@/lib/attendance/digest-rules.ts";
 import { assertDeductionsDecisionActor } from "./permissions.ts";
 import {
   buildDeductionsCandidateKey,
@@ -1411,7 +1412,7 @@ async function assertDayNotPaidFromAnnualBalance(input: { employeeHrId: string |
   if (!hrId || !dates.length) return;
   const { data, error } = await getSupabaseAdmin()
     .from("attendance_annual_balance_charges")
-    .select("work_date")
+    .select("work_date, days")
     .ilike("employee_hr_id", hrId.replace(/[\\%_]/g, (char) => `\\${char}`))
     .in("work_date", dates);
   if (error) {
@@ -1420,7 +1421,17 @@ async function assertDayNotPaidFromAnnualBalance(input: { employeeHrId: string |
     if (code === "PGRST205" || code === "42P01" || /could not find the table/i.test(message)) return;
     throw new Error(`Failed to check the annual balance charges for this day: ${message}`);
   }
-  const charged = ((data ?? []) as Array<{ work_date: string }>).map((row) => String(row.work_date));
+  // NET per day (2026-10-09): leave given back by a revised dispute is a negative row on the same
+  // day (a reversing entry), and a day whose charge was reversed is no longer paid from leave.
+  const netByDay = new Map<string, number>();
+  for (const row of (data ?? []) as Array<{ work_date: string; days: number | string | null }>) {
+    const day = String(row.work_date);
+    netByDay.set(day, (netByDay.get(day) ?? 0) + (Number(row.days) || 0));
+  }
+  const charged = Array.from(netByDay.entries())
+    .filter(([, days]) => days > 0.0005)
+    .map(([day]) => day)
+    .sort();
   if (charged.length) {
     throw new Error(
       `Conflict: the employee already paid ${charged.join(", ")} from their annual vacation balance in the weekly attendance review. Approving this deduction would take the day twice — record it as Do Not Take Action instead.`,
@@ -1481,10 +1492,14 @@ async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: stri
     // the real deduction either.
     supabase
       .from("attendance_settlements")
-      .select("work_date,action,attendance_digest_lines!inner(attendance_weekly_digests!inner(dry_run))")
+      // The day's own action and method ride along: a reopened dispute re-decided since its settlement
+      // was written is judged as it stands NOW (effectiveSettlement), in both directions.
+      .select(
+        "work_date,action,method,attendance_digest_lines!inner(action,chosen_method,attendance_weekly_digests!inner(dry_run))",
+      )
       .ilike("employee_hr_id", hrPattern)
       .in("work_date", dates)
-      .in("action", ["removed", "dispute_upheld"])
+      .in("action", ["removed", "dispute_upheld", "dispute_rejected"])
       .eq("attendance_digest_lines.attendance_weekly_digests.dry_run", false),
     supabase
       .from("attendance_digest_lines")
@@ -1510,7 +1525,26 @@ async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: stri
     }
   }
 
-  const clearedRows = (cleared.error ? [] : (cleared.data ?? [])) as Array<{ work_date: string; action: string }>;
+  const clearedRows = ((cleared.error ? [] : (cleared.data ?? [])) as Array<{
+    work_date: string;
+    action: string;
+    method: string | null;
+    attendance_digest_lines?: unknown;
+  }>)
+    .map((row) => {
+      const nested = row.attendance_digest_lines as
+        | { action?: string | null; chosen_method?: string | null }
+        | Array<{ action?: string | null; chosen_method?: string | null }>
+        | null
+        | undefined;
+      const line = Array.isArray(nested) ? nested[0] : nested;
+      const now = effectiveSettlement(
+        { action: row.action, method: row.method },
+        line ? { action: line.action ?? null, chosenMethod: line.chosen_method ?? null } : null,
+      );
+      return { work_date: row.work_date, action: now.action };
+    })
+    .filter((row) => row.action === "removed" || row.action === "dispute_upheld");
   if (clearedRows.length) {
     const days = clearedRows.map((row) => `${row.work_date} (${row.action === "removed" ? "removed before release" : "dispute upheld"})`);
     throw new Error(

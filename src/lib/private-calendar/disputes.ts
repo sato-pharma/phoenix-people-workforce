@@ -7,6 +7,10 @@ import {
 import { writeAuditLog } from "@/lib/admin/audit";
 import { conflictError } from "@/lib/http/api-errors";
 import { createSystemNotification } from "@/lib/notifications/system";
+import type { CheckedDisputeImage } from "@/lib/dispute-center/attachment-rules.ts";
+import { storeDisputeCenterAttachments } from "@/lib/dispute-center/attachment-store.ts";
+import { recordCaseEvent } from "@/lib/dispute-center/events.ts";
+import { tidyDisputeText } from "@/lib/dispute-center/text.ts";
 import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin";
 import type { PrivateCalendarSource } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -93,6 +97,8 @@ export async function submitPrivateCalendarDataDispute(
     disputeDate: string;
     displayedSummary: string;
     employeeName?: string | null;
+    /** Pictures the employee attached to the request itself (owner, 2026-10-09). */
+    images?: CheckedDisputeImage[];
     itemSource?: PrivateCalendarSource | null;
     itemSourceRecordId?: string | null;
   },
@@ -101,8 +107,9 @@ export async function submitPrivateCalendarDataDispute(
   const employeeHrId = resolveEmployeeIdentityId(access);
   if (!employeeHrId) throw new Error("Your employee profile is not linked. Contact HR.");
 
-  const claimText = input.claimText.trim();
-  const claimSourceText = input.claimSourceText.trim();
+  // Line breaks kept: a claim is often a list of times and places.
+  const claimText = tidyDisputeText(input.claimText);
+  const claimSourceText = tidyDisputeText(input.claimSourceText);
   if (!claimText) throw new Error("Tell us what actually happened on this day.");
   if (!claimSourceText) throw new Error("Tell us where an admin can verify this.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.disputeDate)) throw new Error("Invalid date.");
@@ -132,11 +139,30 @@ export async function submitPrivateCalendarDataDispute(
 
   const dispute = mapDisputeRow(data as DisputeRow);
 
+  // The pictures hang off the request's id, so they are stored after it exists. If they cannot be
+  // stored the request is removed again: nobody reviews, or is notified of, half a claim.
+  let pictureCount = 0;
+  if ((input.images?.length ?? 0) > 0) {
+    try {
+      const stored = await storeDisputeCenterAttachments({
+        images: input.images ?? [],
+        kind: "calendar",
+        messageId: null,
+        ref: dispute.id,
+        uploadedByHrId: employeeHrId,
+      });
+      pictureCount = stored.length;
+    } catch (storeError) {
+      await getSupabaseAdmin().from("private_calendar_data_disputes").delete().eq("id", dispute.id);
+      throw storeError;
+    }
+  }
+
   await writeAuditLog({
     actorLoginId: access.loginId ?? employeeHrId,
     entityId: dispute.id,
     entityType: "private_calendar_data_dispute",
-    newValues: { claimSourceText, claimText, disputeDate: dispute.disputeDate, status: dispute.status },
+    newValues: { claimSourceText, claimText, disputeDate: dispute.disputeDate, pictureCount, status: dispute.status },
     summary: `Private calendar data dispute submitted for ${dispute.disputeDate}`,
   });
 
@@ -245,6 +271,18 @@ export async function decidePrivateCalendarDataDispute(
     summary: `Private calendar data dispute ${nextStatus} by Super Admin`,
   });
 
+  // Every decision is kept in the case history, so a reopened dispute still shows what was ruled
+  // before (the module's own row is overwritten by the next decision; this row never is).
+  await recordCaseEvent({
+    actorHrId: adminHrId,
+    actorRole: access.role,
+    details: { decision: nextStatus, disputeDate: dispute.disputeDate },
+    eventType: "decided",
+    kind: "calendar",
+    note,
+    ref: dispute.id,
+  }).catch(() => undefined);
+
   await createSystemNotification({
     actorId: adminHrId,
     channels: ["email", "in_app", "push"],
@@ -252,7 +290,7 @@ export async function decidePrivateCalendarDataDispute(
     message: nextStatus === "accepted"
       ? `Your dispute for ${dispute.disputeDate} was accepted. The calendar now shows the verified correction. Note: ${note}`
       : `Your dispute for ${dispute.disputeDate} was reviewed and rejected. Note: ${note}`,
-    metadata: { disputeId: dispute.id, employeeHrId: dispute.employeeHrId, idempotencyKey: `private-calendar-dispute:${dispute.id}:decided` },
+    metadata: { disputeId: dispute.id, employeeHrId: dispute.employeeHrId, idempotencyKey: `private-calendar-dispute:${dispute.id}:decided:${now}` },
     module: "private_calendar",
     priority: "normal",
     recipientHrId: dispute.employeeHrId,

@@ -620,6 +620,16 @@ export const adminNavigationSectionSeeds = [
       // is why this row is Super-Admin-only rather than permission-gated. `roles` alone is the right
       // gate here: Super Admin's system-administrator waiver in navigationItemVisible lets him past
       // it anyway, and no other role may reach the page (it redirects them to Other Approvals).
+      // THE DISPUTE CENTER — every dispute from all three modules, open and decided, in one place
+      // (owner, 2026-10-09: *"dispute closed dispute open but never disappeared from me or the
+      // employee side"*). The three rows below it stay: each is that module's own live queue, and a
+      // notification link already in the wild still lands on it. This row is the only place a
+      // DECIDED dispute can be read again, and the only one that holds all three kinds at once.
+      //
+      // Gated on attendance:read because that is what the routes assert; WHICH cases a reader sees
+      // is then each module's own audience rule, applied per case inside the domain helpers — a
+      // manager holding attendance:read opens this page and sees only what that rule allows.
+      { href: "/admin/disputes", icon: Scale, label: "Dispute Center", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/admin/private-calendar-disputes", icon: FileSearch, label: "Calendar Disputes", roles: ["Super Admin"], navBadge: "calendar-disputes-pending" },
       // DEDUCTION DISPUTES — the owner, 2026-10-08, in the same breath as the Approvals tab itself:
       // *"don't forget the deduction disputes"*, *"make every approval inbox its own row under the
@@ -2065,6 +2075,9 @@ const employeePortalNavigationSectionSeeds = [
       // viewer's OWN released weeks and nothing else (the 2026-09-08 removal was the holding
       // position while those rules were settled).
       { href: "/employee-portals/attendance/digests", icon: CalendarCheck, label: "Weekly Attendance", permissions: [{ resource: "attendance", action: "read" }] },
+      // MY DISPUTES — the employee's own half of the Dispute Center: a calendar day, a deduction or
+      // a flagged attendance day, each with its whole conversation and the reason for the decision.
+      { href: "/employee-portals/disputes", icon: Scale, label: "My Disputes", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/employee-portals/visits", icon: MapPinned, label: "My Visits", permissions: [{ resource: "crm_visits", action: "read" }] },
       // Phoenix CRM's portal address, beside My Visits because that page held its only door until
       // 2026-09-23. This catalog does not drive the sidebar — employee-portal-layout.tsx does — but

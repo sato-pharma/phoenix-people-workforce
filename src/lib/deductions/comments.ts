@@ -13,6 +13,7 @@ import { assertDeductionsDecisionActor, isDeductionsDecisionActor } from "./perm
 import type { CheckedDisputeImage } from "./comment-attachment-rules.ts";
 import { attachCommentAttachments, discardDisputeComment, storeDisputeAttachments } from "./comment-attachments.ts";
 import { loadTelegramReach, resolveDisputeAudience } from "./dispute-audience.ts";
+import { picturesNotice, picturesOnlyBody, tidyDisputeText } from "@/lib/dispute-center/text.ts";
 import type { DeductionDisputeDelivery, DeductionsComment } from "./types.ts";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { notifyConversationMessage, notifyHrConversationMessage } from "@/lib/conversations/notify";
@@ -147,10 +148,16 @@ export async function addDeductionsComment(input: {
   access: AccessContext;
   body: string;
   candidateId: string;
+  /** Pictures the employee attached — owner, 2026-10-09: "upload a picture in both". */
+  images?: CheckedDisputeImage[];
 }): Promise<DeductionsComment> {
   await assertEmployeeCanCommentOnCandidate(input.access, input.candidateId);
-  const body = String(input.body ?? "").replace(/\s+/g, " ").trim();
-  if (!body) throw new Error("Comment is required.");
+  const images = input.images ?? [];
+  // Line breaks are KEPT since 2026-10-09 (they were collapsed into one line before): a dispute is
+  // usually a list of times and places, and flattening it is what made one unreadable.
+  let body = tidyDisputeText(input.body);
+  if (!body && images.length === 0) throw new Error("Comment is required.");
+  if (!body) body = picturesOnlyBody(images.length);
   if (body.length > 2000) throw new Error("Comment cannot exceed 2000 characters.");
   const payload = {
     author_hr_id: hrIdForStorage(input.access.hrId),
@@ -170,19 +177,32 @@ export async function addDeductionsComment(input: {
     actorLoginId: payload.author_login_id,
     entityId: input.candidateId,
     entityType: "deductions_comment",
-    newValues: { bodyLength: body.length },
+    newValues: { bodyLength: body.length, pictureCount: images.length },
     summary: "Employee comment added to published deduction (unified module).",
   });
 
   const row = data as CommentRow;
+  // The same order as the reply path: the pictures hang off the comment's id, and a comment whose
+  // pictures could not be stored is removed again rather than reaching HR as half a message.
+  let attachments: Awaited<ReturnType<typeof storeDisputeAttachments>> = [];
+  if (images.length > 0) {
+    try {
+      attachments = await storeDisputeAttachments({ candidateId: input.candidateId, commentId: row.id, images });
+    } catch (storeError) {
+      await discardDisputeComment(row.id);
+      throw storeError;
+    }
+  }
+
   await notifyDeductionsComment({
     authorHrId: input.access.hrId ?? null,
     body,
     candidateId: input.candidateId,
     messageKey: row.id,
+    pictureCount: attachments.length,
   });
 
-  return mapCommentRow(row);
+  return { ...mapCommentRow(row), attachments };
 }
 
 /**
@@ -211,9 +231,9 @@ export async function addDeductionsReply(input: {
   await assertCandidatePublished(input.candidateId);
 
   const images = input.images ?? [];
-  let body = String(input.body ?? "").replace(/\s+/g, " ").trim();
+  let body = tidyDisputeText(input.body);
   if (!body && images.length === 0) throw new Error("Reply is required.");
-  if (!body) body = images.length === 1 ? "Picture attached." : "Pictures attached.";
+  if (!body) body = picturesOnlyBody(images.length);
   if (body.length > 2000) throw new Error("Reply cannot exceed 2000 characters.");
 
   const payload = {
@@ -324,10 +344,7 @@ async function notifyDeductionsReply(input: {
       actionUrl: "/employee-portals/deductions",
       authorHrId: input.authorHrId,
       authorName,
-      body:
-        pictureCount > 0
-          ? `${input.body}\n\n(${pictureCount === 1 ? "1 picture is" : `${pictureCount} pictures are`} attached - open your deductions page to see ${pictureCount === 1 ? "it" : "them"}.)`
-          : input.body,
+      body: pictureCount > 0 ? `${input.body}\n\n${picturesNotice(pictureCount)}` : input.body,
       eventType: "deductions_comment",
       // Per-message key, so a second reply on one deduction is its own notification rather than
       // collapsing onto the first — the same reason the employee→HR path carries one.
@@ -389,6 +406,8 @@ async function notifyDeductionsComment(input: {
   authorHrId: string | null;
   body: string;
   candidateId: string;
+  /** How many pictures rode with the comment — an email cannot show them. */
+  pictureCount?: number;
   /** The comment's own id — see `messageKey` on `ConversationNotificationInput`. Without it a
    *  second comment on the same published deduction collapses onto the first one's notification
    *  and HR is never told, because the thread's title and action url never change between messages. */
@@ -420,10 +439,10 @@ async function notifyDeductionsComment(input: {
       actionUrl: `/admin/deductions?tab=disputes&candidate=${encodeURIComponent(input.candidateId)}`,
       authorHrId: input.authorHrId,
       authorName,
-      body: input.body,
+      body: (input.pictureCount ?? 0) > 0 ? `${input.body}\n\n${picturesNotice(input.pictureCount ?? 0)}` : input.body,
       eventType: "deductions_comment",
       messageKey: input.messageKey,
-      metadata: { candidateId: input.candidateId },
+      metadata: { candidateId: input.candidateId, pictureCount: input.pictureCount ?? 0 },
       module: "deductions",
       recordId: input.candidateId,
       subjectLabel: authorName ?? "an employee",

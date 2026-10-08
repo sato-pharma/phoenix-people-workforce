@@ -125,7 +125,16 @@ export function runPrivateCalendarReviewRequestThreadTests() {
       "the request's own claim is never copied into the replies table",
     );
     assert.equal(PRIVATE_CALENDAR_DISPUTE_MESSAGE_MAX_LENGTH, 2000, "a reply is bounded before it reaches the database");
-    assert.match(service, /if \(!body\) throw new Error\("Write something before sending\."\);/, "an empty reply is refused before any DB call");
+    const emptyGuard = service.indexOf(
+      'if (!body && images.length === 0) throw new Error("Write something before sending.");',
+    );
+    assert.notEqual(emptyGuard, -1, "a reply with neither words nor pictures is refused");
+    assert.ok(emptyGuard < insertStart, "…and refused before any DB call");
+    assert.match(
+      service,
+      /body = picturesOnlyBody\(images\.length\)/,
+      "a picture-only reply is stored with a stand-in body, never an empty one",
+    );
   })();
 
   // ── 4 · Both surfaces mount the same thread ────────────────────────────────────────────────────

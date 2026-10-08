@@ -1930,6 +1930,26 @@ export const accessRegistry = [
   // audience test — the employee who raised it, or a Super Admin — is resolveDisputeThreadActor in
   // the domain helper, so a manager with attendance:read reaches the route and not the conversation.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/private-calendar/disputes/:id/messages", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // THE DISPUTE CENTER — one set of routes over the three dispute modules (owner, 2026-10-09).
+  //
+  // `attendance:read` is the matrix gate on every one of them, and it is deliberately the WIDEST
+  // thing here: who may actually read or write a case is decided per case by
+  // dispute-center/participants.ts, which applies each module's own long-standing rule (the employee
+  // it belongs to, the Super Admin, the named weekly-review reviewers, the company-wide deduction
+  // readers). A manager holding attendance:read reaches the route and not the dispute.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/dispute-center/cases", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/dispute-center/cases/:kind/:ref", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/dispute-center/cases/:kind/:ref/messages", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The decision. It can cancel or reduce a deduction and recommend money back into a later payroll,
+  // so it is audited as a mutation and the reviewer test is inside the domain helper.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/dispute-center/cases/:kind/:ref/decide", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/dispute-center/cases/:kind/:ref/reopen", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The case briefing. SUPER ADMIN ONLY (assertAssistActor — the owner's own answer, "only me"),
+  // which is a named-role test the matrix cannot express, so it lives in the domain helper.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/dispute-center/cases/:kind/:ref/assist", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // One picture from a dispute. Not audited: it is an image behind a conversation the reader already
+  // has open, fetched once per thumbnail, and the participant check runs before a byte is read.
+  sessionApi({ methods: ["GET"], pattern: "/api/dispute-center/attachments/:id", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/notification-confidence", permission: { resource: "communication", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/notification-confidence/pending", permission: { resource: "communication", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/notification-confidence/:id/approve", permission: { resource: "communication", action: "update" }, guard: "domain-helper", csrfRequired: true }),

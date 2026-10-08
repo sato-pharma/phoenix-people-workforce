@@ -41,12 +41,14 @@ export function normalizeAdditionsReason(value: string | null | undefined): stri
 export type AdditionsReasonCandidate = {
   hrId: string;
   fullName?: string | null;
-  /** Incentive + bonus + overtime, as the step is about to persist them. */
+  /** Incentive + bonus + overtime + other additions, as the step is about to persist them. */
   total: number;
   reason: string | null;
 };
 
-const MONEY_FIELDS = ["incentive", "bonus", "overtime"] as const;
+// Other additions too (2026-10-09): a dispute refund is money added to a payslip like any other, and
+// its recommended reason travels with it, so a confirmed refund never stands unexplained.
+const MONEY_FIELDS = ["incentive", "bonus", "overtime", "otherAdditions"] as const;
 
 /**
  * The candidates a confirmation is judged on: the rows it is about to persist, and only those.

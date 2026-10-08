@@ -20,6 +20,7 @@ export const DRAFT_COLUMN_LABELS: Record<string, string> = {
   incentive: "Incentive",
   bonus: "Bonus",
   overtime: "Overtime",
+  other_additions: "Other additions",
   unpaid_vacations: "Unpaid vacation deduction",
   resignation_crm_days: "Resignation CRM days",
   crm: "CRM deduction",

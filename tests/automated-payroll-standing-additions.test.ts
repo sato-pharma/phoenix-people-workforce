@@ -114,7 +114,7 @@ export async function runAutomatedPayrollStandingAdditionsTests() {
   const recommend = readFileSync("src/lib/automated-payroll/recommend.ts", "utf8");
   assert.match(
     recommend,
-    /case "p2_additions":\s*return recommendAdditions\(input\.members, drafts, await loadStandingAdditions\(input\.period\)\);/,
+    /case "p2_additions":\s*return recommendAdditions\(input\.members, drafts, await loadStandingAdditions\(input\.period\), await loadDisputeRefunds\(input\.period\)\);/,
     "without this the register exists and nothing ever reads it",
   );
 

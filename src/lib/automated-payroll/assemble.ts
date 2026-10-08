@@ -219,6 +219,7 @@ export function settlementBasisFor(input: {
       bonus: num(draft?.bonus),
       overtime: num(draft?.overtime),
       specialAdditionValue: specialAdditionAmount(draft),
+      otherAdditions: num(draft?.otherAdditions),
       // Taken off.
       fingerprintValue: num(draft?.fingerprintValue),
       crm: num(draft?.crm),
@@ -355,7 +356,9 @@ export function assembleRows(input: {
     const otherDeductionsTotal = roundCurrency(
       manualOtherDeductions + otherPart1Total + specialDeduction + carriedForwardApplied,
     );
-    const otherAdditionsTotal = specialAddition;
+    // The Additions step's Other additions cell (a dispute refund, 2026-10-09) is paid in the same
+    // column as the Special Situations addition, and like it counts once for the whole month.
+    const otherAdditionsTotal = roundCurrency(specialAddition + num(draft?.otherAdditions));
     const loans = 0;
 
     const parts = assembleParts({

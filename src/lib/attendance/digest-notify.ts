@@ -108,6 +108,60 @@ export async function notifyAttendanceWeekReleased(input: {
 }
 
 /**
+ * Tell the REVIEWERS that an employee has disputed a day.
+ *
+ * Until 2026-10-09 nothing was sent at all: the employee wrote a reason into the line and it waited
+ * for somebody to open the review page and notice. The recipients are passed in — the Super Admin
+ * plus whoever is named in the review's own dispute_reviewer_hr_ids — so this module stays free of
+ * digest-service, which would be a cycle. In-app and push only: the dispute itself is one tap away,
+ * and a reviewer's lock screen is not the place for somebody else's attendance.
+ *
+ * Never throws: the dispute is already saved, and a notice that cannot be delivered must not make
+ * the employee think their dispute was not filed.
+ */
+export async function notifyAttendanceDisputeFiled(input: {
+  lineId: number;
+  digestId: number;
+  employeeHrId: string;
+  employeeName: string | null;
+  workDate: string;
+  reason: string;
+  reviewerHrIds: string[];
+}): Promise<void> {
+  const recipients = input.reviewerHrIds.filter(Boolean);
+  if (recipients.length === 0) return;
+  try {
+    await createSystemNotificationForRecipients(
+      {
+        actionUrl: "/admin/disputes?kind=digest&case=" + encodeURIComponent(String(input.lineId)),
+        category: "attendance_digest",
+        channels: ["in_app", "push"],
+        eventType: "dispute_filed",
+        message: (input.employeeName ?? "An employee") + " disputed " + input.workDate + ': "' + input.reason + '"',
+        metadata: {
+          attendanceDigestId: input.digestId,
+          attendanceDigestLineId: input.lineId,
+          // A reviewer is not the data subject; the server addresses them deliberately.
+          authorizedRecipient: true,
+          employeeHrId: input.employeeHrId,
+          idempotencyKey: "attendance_digest:line:" + input.lineId + ":dispute_filed",
+        },
+        module: "attendance_digest",
+        priority: "normal",
+        subjectHrId: input.employeeHrId,
+        title: "Attendance dispute — " + input.workDate,
+      },
+      recipients,
+    );
+  } catch (error) {
+    logError("Attendance dispute filed notification failed", {
+      error,
+      labels: { event: "attendance_dispute_filed_notify_failed", lineId: String(input.lineId) },
+    });
+  }
+}
+
+/**
  * Tell the employee how their disputed day was decided (owner, 2026-09-15; by email too since
  * 2026-09-17). Never throws: the decision is already saved, and a notice that cannot be delivered
  * must not make the reviewer think it was not. Returns true only when the notice reached the
