@@ -342,17 +342,18 @@ function useProductionPlanningStrings(): ProductionPlanningStrings {
  * The toggle itself — two buttons, not a `<select>`, because the choice is binary and a reader
  * should see both options and which one is on without opening anything.
  *
- * The labels are each language's own name in its own script (`العربية` / `English`), so the one
- * being offered is legible to someone who cannot read the one currently showing — which is the
- * whole point of a language switch and the reason it is not translated.
+ * "English" is always the Latin word. The Arabic option reads in the language being read: the
+ * Arabic script on the Arabic screen and the word "Arabic" on the English one (owner, 2026-10-08:
+ * "every single Arabic word" - the English screen carries no Arabic character at all).
  */
 function ProductionPlanningLanguageToggle() {
   const { lang, setLang } = useContext(ProductionPlanningLanguageContext);
+  const S = productionPlanningStrings(lang);
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-1" dir="ltr" role="group">
       {(
         [
-          { key: "ar", label: "العربية" },
+          { key: "ar", label: S.t.languageArabic },
           { key: "en", label: "English" },
         ] as const
       ).map((option) => (

@@ -83,6 +83,9 @@ export const PP = {
   // ── The module itself ──────────────────────────────────────────────────────────────────────────
   moduleKicker: "إنتاج لدى الغير",
   moduleTitle: "تخطيط الإنتاج والمواد الخام",
+  // The language switch names the Arabic option in the language being READ: Arabic script on the
+  // Arabic screen, the word "Arabic" on the English one, so English carries no Arabic character.
+  languageArabic: "العربية",
   moduleSubtitle: "حساب احتياج المواد الخام لكل تشغيلة، وما هو متوفر، وما يلزم شراؤه وتسليمه",
   readOnlyNotice: "الصلاحية الحالية للقراءة فقط — لا يمكن حفظ أي تعديل",
 
@@ -336,6 +339,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   // ── The module itself ──────────────────────────────────────────────────────────────────────────
   moduleKicker: "Toll manufacturing",
   moduleTitle: "Production and raw-material planning",
+  languageArabic: "Arabic",
   moduleSubtitle:
     "What each run needs in raw materials, what is already held, and what to buy and deliver",
   readOnlyNotice: "This access is read-only — no change can be saved",
