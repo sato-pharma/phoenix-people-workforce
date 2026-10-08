@@ -22,7 +22,7 @@
 // Printed by headless Chrome, which is how the approved specimen itself is built: a PDF library
 // cannot shape Arabic (render-shared.ts).
 
-import { readFileSync, writeFileSync, mkdirSync, statSync, openSync, readSync, closeSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync, openSync, readSync, closeSync, rmSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -513,6 +513,61 @@ export function verifyPaper(pdfPath, { writtenAfter = 0 } = {}) {
 }
 
 /**
+ * The short sha this run prints from — the label an archived paper is keyed by.
+ *
+ * NOT a hardcoded `-pre-5573`. Every archive in `xlsx/` before tonight was renamed by hand, with the
+ * number of whichever PR the person happened to be thinking of, so two reprints a day apart could
+ * carry the same label and a reprint nobody wrote a number for carried none at all. The superseding
+ * commit is always knowable, always unique to what the papers actually say, and needs nobody to
+ * remember it.
+ */
+export function supersedeLabel(repoRoot = REPO_ROOT) {
+  try {
+    const sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
+    if (sha) return sha;
+  } catch {
+    /* A checkout without git, or git missing: fall through to the clock rather than lose the archive. */
+  }
+  return `nogit-${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12)}`;
+}
+
+/**
+ * 🔴 ARCHIVE A PAPER BEFORE REPLACING IT — THE PRINTER USED TO OVERWRITE IN PLACE.
+ *
+ * These four PDFs go to a district manager and are summarised for the Chief Executive, and any run
+ * of this printer replaced them silently: a session merely verifying a change overwrote the papers
+ * the owner had already sent. On 2026-10-08 three sessions printed into the same `xlsx/` within seven
+ * minutes, and it only ended well because the content happened to be right. Every
+ * `-superseded-pre-NNNN` file that exists was renamed by a person who remembered to.
+ *
+ * 🔴 BY COPY, NEVER A RENAME OR A DELETE. A rename would leave no paper at that path until Chrome
+ * succeeds, and Chrome here exits 0 having written nothing (see `verifyPaper`) — so a failed reprint
+ * would take the owner's only copy with it. A delete is refused outright: these are protected
+ * documents, and `scratchpad-guard.mjs` denies a delete command that names one.
+ *
+ * The OLDEST archive for a label wins: a second run from the same commit finds its archive already
+ * there and leaves it, because that first file is the one that went out.
+ *
+ * Returns the archive path, or null when there was nothing to supersede (the first print of a day).
+ */
+export function supersedePaper(pdfPath, { label }) {
+  if (!existsSync(pdfPath)) return null;
+  const ext = path.extname(pdfPath);
+  const archive = path.join(
+    path.dirname(pdfPath),
+    `${path.basename(pdfPath, ext)}-superseded-${label}${ext}`,
+  );
+  try {
+    copyFileSync(pdfPath, archive, fsConstants.COPYFILE_EXCL);
+  } catch (error) {
+    // EEXIST is the normal second-run case and is not a failure. Anything else is: a paper that
+    // cannot be archived must stop the run rather than be quietly overwritten.
+    if (error?.code !== "EEXIST") throw error;
+  }
+  return archive;
+}
+
+/**
  * Print one paper and PROVE it landed, retrying that one paper before giving up.
  *
  * Each attempt gets its own `--user-data-dir`, so no two Chromes ever share a profile — not the
@@ -612,10 +667,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   mkdirSync(OUT, { recursive: true });
   const work = process.env.FIELD_DAY_TMP || tmpdir();
+  const label = supersedeLabel();
   for (const paper of papersOf(dayData)) {
     const htmlPath = path.join(work, `field-day-${dayData.day}-${paper.file}.html`);
     const pdfPath = path.join(OUT, `Phoenix-CRM-Field-Day-${dayData.day}-${paper.file}.pdf`);
     writeFileSync(htmlPath, paper.html, "utf8");
+    // Before Chrome touches it: the paper already at this path is the one that went out.
+    const superseded = supersedePaper(pdfPath, { label });
+    // 🔴 STDERR, NEVER STDOUT. `run-nightly.mjs` turns EVERY non-empty stdout line into a
+    // "wrote <path>" entry in the task log, so a notice on stdout would be logged as a fifth paper.
+    if (superseded) process.stderr.write(`superseded ${path.basename(superseded)}
+`);
     // 🔴 `printPaper` THROWS rather than returning — the path is logged only once the file on disk
     // has been stat-checked, so this log can never again claim a paper that does not exist.
     printPaper({ htmlPath, pdfPath, work });

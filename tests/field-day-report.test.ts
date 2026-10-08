@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -14,6 +14,8 @@ import {
   renderSummaryPage,
   restDayPhrase,
   stampOf,
+  supersedeLabel,
+  supersedePaper,
   verifyPaper,
 } from "../scripts/field-day/print-day.mjs";
 import { holidayNameOf, restDayOf, weekdayOf } from "../scripts/field-day/read-day.mjs";
@@ -405,5 +407,59 @@ export function runFieldDayReportTests() {
     );
   } finally {
     rmSync(scratch, { recursive: true, force: true });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // THE PAPER ALREADY ON DISK IS THE ONE THAT WENT OUT — it is archived before it is replaced.
+  //
+  // The printer used to overwrite in place, so any session verifying a change silently replaced the
+  // PDFs a district manager and the Chief Executive had already been sent. On 2026-10-08 three
+  // sessions printed into the same `xlsx/` within seven minutes and it only ended well because the
+  // content happened to be right. Fixtures are `.bin`, like the ones above: a real `.pdf` here would
+  // be a protected document the archive hooks would then copy off to F:.
+  const archiving = mkdtempSync(path.join(tmpdir(), "field-day-supersede-"));
+  try {
+    const paper = path.join(archiving, "Phoenix-CRM-Field-Day-2026-10-08-CNS.bin");
+
+    assert.equal(supersedePaper(paper, { label: "abc1234" }), null, "the first print of a day supersedes nothing");
+    assert.equal(readdirSync(archiving).length, 0, "and leaves no archive behind");
+
+    writeFileSync(paper, "%PDF-1.4 the paper that went out", "utf8");
+    const archive = supersedePaper(paper, { label: "abc1234" });
+    assert.ok(
+      archive?.endsWith("Phoenix-CRM-Field-Day-2026-10-08-CNS-superseded-abc1234.bin"),
+      `the archive is keyed by the superseding commit, not a hand-typed PR number — got ${archive}`,
+    );
+    assert.ok(
+      existsSync(paper),
+      "🔴 BY COPY: the live paper must still be there. A rename would leave that path empty, and Chrome here exits 0 having written nothing, so a failed reprint would take the owner's only copy with it",
+    );
+    assert.equal(readFileSync(archive!, "utf8"), "%PDF-1.4 the paper that went out", "the archive is a faithful copy");
+
+    writeFileSync(paper, "%PDF-1.4 a later reprint", "utf8");
+    assert.equal(supersedePaper(paper, { label: "abc1234" }), archive, "a second run from the same commit reuses the name");
+    assert.equal(
+      readFileSync(archive!, "utf8"),
+      "%PDF-1.4 the paper that went out",
+      "🔴 the OLDEST archive wins — the first one is the paper that was actually sent, so a re-run must not overwrite it",
+    );
+
+    assert.match(
+      supersedeLabel(),
+      /^[0-9a-f]{7,}$|^nogit-\d{12}$/,
+      "the label is the short sha this run prints from, falling back to the clock rather than losing the archive",
+    );
+
+    // The archive step must never be "simplified" later into a delete-then-write: these are
+    // protected documents, and `scratchpad-guard.mjs` refuses a delete command that names one.
+    const printer = readFileSync(new URL("../scripts/field-day/print-day.mjs", import.meta.url), "utf8");
+    assert.equal((printer.match(/unlinkSync/g) ?? []).length, 0, "the printer never unlinks anything");
+    assert.equal(
+      (printer.match(/rmSync\(/g) ?? []).length,
+      1,
+      "the only removal in the printer is cleanProfile's Chrome profile — nothing in the output folder",
+    );
+  } finally {
+    rmSync(archiving, { recursive: true, force: true });
   }
 }
