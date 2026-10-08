@@ -56,12 +56,24 @@ const PRODUCTION_2026_09_29: AdvisorCount[] = [
  * number to go green is the exact drift this whole mechanism exists to stop, and the table is
  * not this session's to move (AGENTS.md section 5). The gate is therefore knowingly red on that
  * one finding until its owner retires it.
+ *
+ * 🔴 `authenticated_security_definer_function_executable` is 11, LOWERED from 14 on 2026-10-08
+ * after a per-function audit against live production. The three that left are the three
+ * `supabase/phoenix-security-definer-execute-lockdown.sql` revokes from `public, anon,
+ * authenticated` — `current_access_is_admin()`, `current_access_line()`,
+ * `current_access_manager_hr_id()` — and no live policy references any of them, so nothing
+ * broke. This is the one direction that is safe to follow down: `evaluateAdvisorCounts` treats
+ * a FALL as news rather than an error, so the baseline must come down with it or the gate keeps
+ * 3 functions' worth of headroom it is not entitled to. The 11 that remain are each accounted
+ * for in docs/security/supabase-advisor-baseline.md — 5 load-bearing in live RLS (81 policies
+ * across 23 payroll/deductions/sales tables hang off `current_access_can_manage_employees()`
+ * alone), 6 referenced by no live policy. `PRODUCTION_2026_09_29` above keeps the historical 14.
  */
 const PRODUCTION_TODAY: AdvisorCount[] = [
   { category: "rls_enabled_no_policy", current_count: 176 },
   { category: "function_search_path_mutable", current_count: 0 },
   { category: "extension_in_public", current_count: 1 },
-  { category: "authenticated_security_definer_function_executable", current_count: 14 },
+  { category: "authenticated_security_definer_function_executable", current_count: 11 },
   { category: "unused_index", current_count: 615 },
   { category: "stats_age_hours", current_count: -1 },
 ];
