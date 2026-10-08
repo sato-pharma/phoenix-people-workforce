@@ -1,15 +1,26 @@
 ---
 name: a-returned-direct-order-has-no-reassign-and-no-close-button
-description: "The Needs You board tells you to \"reassign or close them on the Direct Orders screen\" — but NO such control exists anywhere in Phoenix. Stuck Approvals covers weekly plans and excuses only, and cancelHeldDirectOrder refuses anything that is not `held`. A returned order stranded on a resigned requester can only be cleared by a database write."
+description: "A `returned` direct order stranded on a resigned requester is CLOSED, never reassigned — `closeOrphanedDirectOrder`, Super Admin only, on /admin/approvals/stuck (shipped 2026-10-08). Before that no such control existed anywhere: the board named a remedy the product could not perform, and five orders had to be cleared by hand-written SQL. Reassigning is the WRONG verb — a resubmit reprices on today basis and resumes at the rung that returned it."
 metadata:
   node_type: memory
   type: project
   originSessionId: b22fdc48-d234-4df2-8367-211d96bc39ea
-  modified: 2026-10-08T00:55:41.449Z
+  modified: 2026-10-08T01:42:20.973Z
 ---
 
-`orphanedRequestModuleScreens` sends the board's row to `/admin/direct-orders` and the adapter's
-copy reads "reassign or close them on the Direct Orders screen". **Neither verb has a control
+🔴 **THE CONTROL NOW EXISTS — `closeOrphanedDirectOrder`, Super Admin only, on
+`/admin/approvals/stuck` ("Direct orders — nobody can answer the return"), via
+`POST /api/direct-orders/[id]/close-orphaned` and registry action `close_orphaned`
+(`returned` → `cancelled`, `requiresReason`).** It refuses while the requester can still log in, and
+refuses an HR_ID the employee master does not hold at all as a *directory* problem rather than a
+departure. `orphanedRequestModuleScreens` carries `requesterRemedy` as a FIELD now, and
+`tests/direct-orders-close-orphaned.test.ts` fails if a verb on the board has no function behind it.
+Everything below is why it had to be built — read it before touching the rule.
+
+## What it looked like before (the defect)
+
+`orphanedRequestModuleScreens` sent the board's row to `/admin/direct-orders` and the adapter's
+copy read "reassign or close them on the Direct Orders screen". **Neither verb had a control
 there.** Measured 2026-10-08, hunting for one before writing any SQL:
 
 - **Reassign:** `/admin/approvals/stuck` ("Stuck Approvals — Needs Reassignment") covers **weekly
