@@ -21,7 +21,7 @@ It was last reviewed **2026-07-19**. Re-measured against production on **2026-09
 | `unused_index` | INFO x326 | **615** |
 | `function_search_path_mutable` | REMEDIATED | **10 functions** |
 | `extension_in_public` | *absent from this page* | 1 (`pg_trgm`) |
-| `authenticated_security_definer_function_executable` | WARN x14 | 14 - unchanged, correctly accepted |
+| `authenticated_security_definer_function_executable` | WARN x14 | **11** as of 2026-10-08 - correctly accepted, baseline lowered |
 
 The third row is the one that matters. This page states below, in its own words, that if
 `function_search_path_mutable` reappears **"it's a regression"**. It had reappeared - for ten
@@ -57,18 +57,55 @@ Three things to know before trusting it:
 
 ## Security advisors
 
-### ACCEPTED — `authenticated_security_definer_function_executable` (WARN ×14)
+### ACCEPTED — `authenticated_security_definer_function_executable` (WARN ×11 since 2026-10-08)
 The `current_access_*` / `current_phoenix_role` helper functions are `SECURITY DEFINER`
 and callable by the `authenticated` role **by design**: they are the primitives RLS
 policies call to resolve the caller's identity/scope, so `authenticated` *must* be able
 to execute them. Revoking execute or switching to `SECURITY INVOKER` would break RLS.
 
-Functions (all `public.`): `current_access_can_manage_employees()`,
-`current_access_can_manage_payroll()`, `current_access_can_see_employee(text,text)`,
-`current_access_hr_id()`, `current_access_is_admin()`, `current_access_is_company_reader()`,
-`current_access_is_finance()`, `current_access_is_hr()`, `current_access_is_super_admin()`,
-`current_access_line()`, `current_access_manager_hr_id()`, `current_access_role()`,
-`current_access_scope()`, `current_phoenix_role()`.
+**Audited per function on 2026-10-08** against live production (`ozucdzovmcqvepbozvqf`).
+All 11 are `STABLE`, `sql`, `search_path=public` pinned, owned by `postgres`, with no write
+and no dynamic SQL; every one resolves the caller through `auth.uid()` and none reads a row
+for a target it was handed. `anon` holds EXECUTE on **none** of them. So the warning is a
+statement about who may ask "who am I?", not an exposure of anybody else's data.
+
+**Load-bearing in live RLS — revoking any of these breaks payroll (5):**
+
+| Function (all `public.`) | Live policies | Tables |
+| --- | --- | --- |
+| `current_access_can_manage_employees()` | 81 | 23 — `automated_payroll_*`, `payroll_copilot_*`, `deductions_*`, `daily_deductions_*`, `sales_records` |
+| `current_access_is_hr()` | 4 | 1 |
+| `current_access_is_super_admin()` | 4 | 1 |
+| `current_access_hr_id()` | 1 | 1 |
+| `current_access_is_company_reader()` | 1 | 1 |
+
+**No live production policy references these (6):** `current_access_can_manage_payroll()`,
+`current_access_can_see_employee(text,text)`, `current_access_is_finance()`,
+`current_access_role()`, `current_access_scope()`, `current_phoenix_role()`. Three of them are
+reached only as *nested* callees (`scope` and `current_phoenix_role` from siblings, and the
+whole chain bottoms out in `private.phx_current_role()`), and a `SECURITY DEFINER` function
+runs its own body as the **owner** — so a nested callee never needs the caller's grant and
+these grants are spare rather than load-bearing. 🔴 **That is not on its own a reason to
+revoke them.** `current_access_can_see_employee` is called by policies that
+`scripts/phase25-staging-rls-mutation-smoke.ts` and `scripts/phase26-*` create `to
+authenticated` at smoke time, which is exactly why a `pg_policy` scan reads 0 for it — the
+policy DDL lives in a script, not in a migration.
+
+**Why the count fell 14 → 11.** `supabase/phoenix-security-definer-execute-lockdown.sql`
+revokes EXECUTE from `public, anon, authenticated` and grants `service_role` on three of the
+fourteen — `current_access_is_admin()`, `current_access_line()`,
+`current_access_manager_hr_id()` — and production now matches that. No live policy references
+any of the three, so nothing broke. That file is a hand-run script rather than a migration, so
+**the database cannot date the revoke and neither can this page**; only the end state is
+measured.
+
+**Related, and NOT what this advisor counts.** 15 of the 20 `private.*` functions still carry
+a PUBLIC EXECUTE grant (`=X/postgres` in `proacl`), including `private.phx_current_role()`.
+The advisor does not see them because it only looks at `public`. They are not reachable by a
+browser role — `anon` has no `USAGE` on schema `private` — and PUBLIC's only extra reach there
+is `supabase_etl_admin` / `supabase_read_only_user`, which bypass RLS and can read the tables
+directly anyway. PR #5482 narrowed two of them (`phx_visible_hr_ids`, `phx_resigned_hr_ids`)
+to named callers; the remaining 15 are consistency, not a hole.
 
 ### ACCEPTED (N/A) — `auth_leaked_password_protection` disabled (WARN ×1)
 Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + an
