@@ -25,7 +25,15 @@
  *   - a customer the rep has already asked to drop. The request is with the district manager and SFE;
  *     telling him to go and validate the same customer would contradict his own request;
  *   - a customer with no iReports360 entry. The Validate screen opens on that entry, so a pick without
- *     one would carry a button that opens nothing (`rowActionFor` offers Open there instead).
+ *     one would carry a button that opens nothing (`rowActionFor` offers Open there instead) — UNLESS
+ *     he is waiting to be captured again (`needsCaptureAgain`). A refused place sends a customer back
+ *     here whatever list he came from, and leaving him out would hide exactly the one the system has
+ *     already asked the rep to redo (owner, 2026-10-08).
+ *
+ * 🔴 NOTHING ON A SCREEN CALLS `rankValidateNext` OR `validateNextTop` ANY MORE — the strip of three
+ * was deleted (`tests/phoenix-crm-validate-next.test.ts` keeps it deleted). The board orders its rows
+ * through `validateFirstIn` below. The ranking stays as a pure, tested answer, and it ranks a customer
+ * waiting to be captured again FIRST, with its own reason, so it can never disagree with the board.
  *
  * THE REASONS are plain facts about his own work — visits saved, a grade, how many wait in the same
  * brick. Never a distance, a reading or a check (Golden rule #1): nothing here judges the rep, and no
@@ -64,7 +72,7 @@ function gradeRank(customer: ListCustomer): number {
 /** Waiting to be validated, not asked to drop, and with an entry the Validate screen opens on. */
 export function isValidateNextCandidate(customer: ListCustomer): boolean {
   if (customer.section !== "to_validate") return false;
-  if (customer.referenceContactCrmId === null) return false;
+  if (customer.referenceContactCrmId === null && !needsCaptureAgain(customer)) return false;
   if (customer.pendingDropRequestId !== null) return false;
   return !customer.waiting.some((entry) => entry.kind === "drop");
 }
@@ -92,9 +100,28 @@ function gradeReason(target: number | null): string {
   return `Grade A — ${target === 1 ? "1 visit" : `${target} visits`} a month`;
 }
 
+/**
+ * The words for a customer waiting to be captured again. About the PHOTO and the system, never about a
+ * person (owner, 2026-10-08: tell the rep why, worded about his photo, never naming a person).
+ */
+export const VALIDATE_AGAIN_REASON = "Take the signboard photo again — this one could not be confirmed";
+
+/**
+ * 🔴 A CUSTOMER WHOSE PLACE WAS REFUSED, OR IS HELD AS NOT CONFIRMED, IS THE FIRST THING TO REDO.
+ *
+ * `reopenedAt` is stamped by `phoenix_crm_decide_validation_review` when a Super Admin refuses, and the
+ * list only carries it while the customer is pending; `locationCheck === "not_confirmed"` covers the
+ * same customer from the review side. Measured 2026-10-08: 0 of 22 reopened customers had been
+ * validated again, the oldest 76.7 hours later, because nothing put them anywhere but in name order.
+ */
+export function needsCaptureAgain(customer: ListCustomer): boolean {
+  return customer.reopenedAt !== null || customer.locationCheck === "not_confirmed";
+}
+
 /** The plain reasons for one pick, in the ranking's own order. */
 export function validateNextReasons(pick: Pick<ValidateNextPick, "customer" | "visitsSaved" | "othersInBrick">): string[] {
   const reasons: string[] = [];
+  if (needsCaptureAgain(pick.customer)) reasons.push(VALIDATE_AGAIN_REASON);
   if (pick.visitsSaved > 0) reasons.push(visitsReason(pick.visitsSaved));
   if (pick.customer.grade === "A") reasons.push(gradeReason(pick.customer.target));
   if (pick.othersInBrick > 0) reasons.push(`${pick.othersInBrick} more waiting in this brick`);
@@ -122,6 +149,7 @@ export function rankValidateNext(customers: readonly ListCustomer[]): ValidateNe
 
   picks.sort(
     (left, right) =>
+      Number(needsCaptureAgain(right.customer)) - Number(needsCaptureAgain(left.customer)) ||
       Number(right.visitsSaved > 0) - Number(left.visitsSaved > 0) ||
       gradeRank(left.customer) - gradeRank(right.customer) ||
       right.othersInBrick - left.othersInBrick ||
@@ -190,4 +218,37 @@ export function visitsWaitingFirst(rows: readonly ListCustomer[]): VisitsWaiting
   const top = ranked.slice(0, VALIDATE_FIRST_PER_BRICK);
   const marked = new Set(top.map((customer) => customer.customerId));
   return { marked, rows: [...top, ...rows.filter((customer) => !marked.has(customer.customerId))] };
+}
+
+/** One brick's rows for To validate: `marked` carries the amber or rose mark, `again` the rose one alone. */
+export type ValidateFirstOrder = VisitsWaitingOrder & { again: ReadonlySet<string> };
+
+/** Oldest wait first; a customer with no stamp (held, not yet refused) after them; then name, then id. */
+function againOrder(left: ListCustomer, right: ListCustomer): number {
+  const leftAt = left.reopenedAt ? Date.parse(left.reopenedAt) : Number.POSITIVE_INFINITY;
+  const rightAt = right.reopenedAt ? Date.parse(right.reopenedAt) : Number.POSITIVE_INFINITY;
+  if (leftAt !== rightAt) return leftAt < rightAt ? -1 : 1;
+  return left.name.localeCompare(right.name) || left.customerId.localeCompare(right.customerId);
+}
+
+/**
+ * The order To validate draws ONE brick's rows in (owner, 2026-10-08).
+ *
+ *   Tier 1 — every customer waiting to be captured again (`needsCaptureAgain`), oldest wait first, ALL
+ *            of them marked. Unlike the visits mark there is no "only the most" here: each one is a
+ *            place the system already asked the rep to redo, and there are few of them.
+ *   Tier 2 — `visitsWaitingFirst` over everyone else, unchanged, so its refuse-to-mark-a-tie guard still
+ *            holds for the visits mark.
+ *
+ * Still per brick, after the neighbourhood pass — it never lifts a row out from under its heading.
+ */
+export function validateFirstIn(rows: readonly ListCustomer[]): ValidateFirstOrder {
+  const againRows = rows.filter((customer) => needsCaptureAgain(customer)).sort(againOrder);
+  const again = new Set(againRows.map((customer) => customer.customerId));
+  const rest = visitsWaitingFirst(rows.filter((customer) => !again.has(customer.customerId)));
+  return {
+    again,
+    marked: new Set([...again, ...rest.marked]),
+    rows: [...againRows, ...rest.rows],
+  };
 }

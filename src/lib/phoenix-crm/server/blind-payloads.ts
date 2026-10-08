@@ -93,7 +93,11 @@ export function blindVisitsReport<Row extends RepVisitGroup, View extends { rows
  * SFE Manager may have.
  *
  * Withheld: `clockOff` (the phone-clock verdict), `accuracyMeters`, `pinReading`, `photoReading`,
- * `pointSource`, `moved` (with the SFE's or the Super Admin's written reason) and `brickDistanceKm`.
+ * `pointSource`, `moved` (with the SFE's or the Super Admin's written reason), `brickDistanceKm` and
+ * `brickLookup` (2026-10-08 — whether anybody looked for the brick, which explains `brickDistanceKm`).
+ *
+ * NOT withheld, deliberately, because they are on the CUSTOMER and are his own: `reopenedAt` and
+ * `validateAgainReason` — the one sentence about his photo is the thing he must read to fix it.
  */
 export function placeWithoutMeasurements(place: ListPlace): ListPlace {
   return {

@@ -30,6 +30,10 @@ export type AiCallComponent =
   | "groq_transcription"
   | "needs_you_summary"
   | "openai_client"
+  // Its own entry rather than the shared choke point, because it is its own feature with its own cost
+  // question: one call per place validation, ~128 a day in the field. Measured at roughly $3 a month
+  // on the nano tier, and the board is where that is checked rather than assumed.
+  | "phoenix_crm_signboard"
   | "sales_ai_provider"
   | "sales_normalizer_ai_suggest"
   | "sales_weekly_ai_verify";
@@ -53,6 +57,7 @@ const COMPONENT_LABELS: Record<AiCallComponent, string> = {
   groq_transcription: "CRM spoken comment — Groq speech to text",
   needs_you_summary: "What needs you — the written summary on the daily board",
   openai_client: "Shared OpenAI client",
+  phoenix_crm_signboard: "Phoenix CRM — reading the signboard in a place photo",
   sales_ai_provider: "Sales AI provider",
   sales_normalizer_ai_suggest: "Sales normalizer — AI suggest",
   sales_weekly_ai_verify: "Weekly sales — AI verify",

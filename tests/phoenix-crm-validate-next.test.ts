@@ -11,6 +11,9 @@ import {
   VALIDATE_FIRST_PER_BRICK,
   validateNextTop,
   visitsWaitingFirst,
+  needsCaptureAgain,
+  VALIDATE_AGAIN_REASON,
+  validateFirstIn,
 } from "../src/lib/phoenix-crm/validate-next.ts";
 import type { ListCustomer, ListCustomerReference } from "../src/lib/phoenix-crm/server/list.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -337,10 +340,51 @@ function checkVisitsWaitingFirst(): void {
   assert.deepEqual(ids(visitsWaitingFirst(out.rows).rows), ids(out.rows), "a re-read never churns the list");
 }
 
+/**
+ * 🔴 A CUSTOMER WAITING TO BE CAPTURED AGAIN COMES FIRST, OLDEST WAIT FIRST, ALL OF THEM MARKED
+ * (owner, 2026-10-08). Measured that day: 0 of 22 reopened customers had been validated again, the
+ * oldest 76.7 hours later, because To validate listed them in name order with everyone else.
+ */
+function checkValidateFirstIn(): void {
+  const ids = (rows: readonly ListCustomer[]): string[] => rows.map((row) => row.customerId);
+  const ready = (id: string, visits: number): ListCustomer =>
+    listCustomer({ customerId: id, name: id, referenceHistory: { visits, lastVisitedOn: "2026-09-29" } });
+  const plain = (id: string): ListCustomer => listCustomer({ customerId: id, name: id });
+  const reopened = (id: string, at: string): ListCustomer =>
+    listCustomer({ customerId: id, name: id, reopenedAt: at, locationCheck: "not_confirmed" });
+  const held = (id: string): ListCustomer => listCustomer({ customerId: id, name: id, locationCheck: "not_confirmed" });
+
+  assert.equal(needsCaptureAgain(plain("p")), false, "an ordinary customer is not waiting to be captured again");
+  assert.equal(needsCaptureAgain(reopened("o", "2026-10-06T08:00:00Z")), true, "a refused one is");
+  assert.equal(needsCaptureAgain(held("h")), true, "and so is one the review still reads as not confirmed");
+
+  const brick = [plain("p1"), ready("r9", 9), reopened("new", "2026-10-07T08:00:00Z"), ready("r2", 2), held("held"), reopened("old", "2026-10-05T08:00:00Z")];
+  const out = validateFirstIn(brick);
+  assert.deepEqual(ids(out.rows).slice(0, 3), ["old", "new", "held"], "every capture-again customer leads, the oldest wait first");
+  assert.deepEqual([...out.again].sort(), ["held", "new", "old"], "and ALL of them carry the rose mark — no only-the-most here");
+  assert.deepEqual(ids(out.rows).slice(3), ids(visitsWaitingFirst([plain("p1"), ready("r9", 9), ready("r2", 2)]).rows), "everyone else keeps the visits order, unchanged");
+  assert.ok(out.marked.has("r9") && out.marked.has("old"), "the visits mark and the capture-again mark both survive");
+  assert.deepEqual(ids(validateFirstIn(out.rows).rows), ids(out.rows), "a re-read never churns the list");
+
+  // The ranking agrees with the board: a capture-again customer outranks visits saved, and says why.
+  const noEntry = { ...reopened("again", "2026-10-06T08:00:00Z"), referenceContactCrmId: null, section: "to_validate" as const };
+  assert.equal(isValidateNextCandidate(noEntry), true, "a refused customer is a candidate even without an iReports360 entry");
+  const ranked = rankValidateNext([{ ...plain("busy"), visitsThisMonth: 30, referenceContactCrmId: 77, section: "to_validate" as const }, noEntry]);
+  assert.equal(ranked[0]?.customer.customerId, "again", "and he ranks above visits saved");
+  assert.equal(ranked[0]?.reasons[0], VALIDATE_AGAIN_REASON, "with the photo reason first");
+  assert.doesNotMatch(VALIDATE_AGAIN_REASON, JUDGING_WORDS, "worded about the photo, never judging the rep");
+
+  // The board draws through it, and paints the capture-again rows rose.
+  const board = stripComments(readFileSync("src/components/phoenix-crm/customer-list-board.tsx", "utf8"));
+  assert.match(board, /variant === "pending" \? validateFirstIn\(neighbourhoods\.rows\)/, "To validate orders each brick through validateFirstIn");
+  assert.match(board, /border-l-rose-500/, "and a capture-again row carries the rose rail");
+}
+
 export function runPhoenixCrmValidateNextTests(): void {
   checkRanking();
   checkReasons();
   checkScreens();
   checkVisitsWaitingFirst();
+  checkValidateFirstIn();
   console.log("phoenix-crm validate next: OK");
 }

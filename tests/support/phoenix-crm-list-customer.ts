@@ -54,6 +54,8 @@ export const LIST_CUSTOMER_BASE: ListCustomer = {
   pendingDropRequestId: null,
   waiting: [],
   locationCheck: null,
+  reopenedAt: null,
+  validateAgainReason: null,
   primaryPharmacyName: null,
   phone: null,
   pharmacies: [],
