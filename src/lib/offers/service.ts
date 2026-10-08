@@ -557,6 +557,11 @@ export async function lookupOfferTemplateIdForTitle(title: string): Promise<stri
 // ────────────────────────────────────────────────────────────────────── offers ──
 
 type OfferRow = {
+  // Optional, like every column added after the module shipped: a database without the joining-form
+  // migration returns no such keys, and that must read as "not answered through the form".
+  accepted_at?: string | null;
+  accepted_via?: string | null;
+  employee_hr_id?: string | null;
   // Optional: `select("*")` against a database that has not had 20260928225001 applied returns no
   // such key, and that must read as "nobody copied", not throw.
   bcc_recipients?: string[] | null;
@@ -596,6 +601,8 @@ function toOffer(row: OfferRow): OfferRecord {
     | null;
 
   return {
+    acceptedAt: row.accepted_at ?? null,
+    acceptedVia: row.accepted_via === "candidate_form" || row.accepted_via === "hr" ? row.accepted_via : null,
     bccRecipients: Array.isArray(row.bcc_recipients) ? row.bcc_recipients : [],
     candidateEmail: row.candidate_email,
     candidateName: row.candidate_name,
@@ -605,6 +612,7 @@ function toOffer(row: OfferRow): OfferRecord {
     createdAt: row.created_at,
     createdBy: row.created_by,
     dateOfIssue: row.date_of_issue ?? "",
+    employeeHrId: row.employee_hr_id?.trim() || null,
     id: row.id,
     reference: row.reference ?? "",
     reportsTo: row.reports_to ?? "",
@@ -846,6 +854,68 @@ export async function setOfferStatus(id: string, status: OfferStatus): Promise<O
   if (offer.status === "accepted") {
     await announceAcceptedOffer(offer);
   }
+  return offer;
+}
+
+// ─────────────────────────────────────────────────────────── the joining form ──
+
+/** How long a submit holds the offer before another may try — far longer than a hire takes to write. */
+const JOINING_CLAIM_MINUTES = 10;
+
+/**
+ * Take the offer for ONE joining-form submit, or return false when another submit holds it or has
+ * already finished. A conditional UPDATE is the lock: two presses of Submit a second apart race on
+ * this row, exactly one wins, and the loser never reaches the employee insert — so a double-tap can
+ * never make two employee records for one person.
+ */
+export async function claimOfferForJoiningForm(id: string): Promise<boolean> {
+  const db = getSupabaseAdmin();
+  const staleBefore = new Date(Date.now() - JOINING_CLAIM_MINUTES * 60_000).toISOString();
+  const { data, error } = await db
+    .from("offers")
+    .update({ joining_claimed_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("employee_hr_id", null)
+    .in("status", ["sent", "accepted"])
+    .or(`joining_claimed_at.is.null,joining_claimed_at.lt."${staleBefore}"`)
+    .select("id")
+    .maybeSingle();
+  assertReadable(error, "offers");
+  return Boolean(data);
+}
+
+/** Give the claim back after a submit that failed before any record was written, so he can try again. */
+export async function releaseOfferJoiningClaim(id: string): Promise<void> {
+  const db = getSupabaseAdmin();
+  await db.from("offers").update({ joining_claimed_at: null }).eq("id", id).is("employee_hr_id", null);
+}
+
+/**
+ * The acceptance, written once the employee record exists: the offer is accepted, by the form, at
+ * this moment, and points at the record it produced. Then the same alert HR's own "Accepted" button
+ * fires (`announceAcceptedOffer`, in-app + push + Telegram, never email, idempotent per offer).
+ */
+export async function stampOfferAcceptedByJoiningForm(
+  id: string,
+  hire: { hrId: string; seated?: boolean; workEmail: string | null },
+): Promise<OfferRecord> {
+  const employeeHrId = hire.hrId;
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from("offers")
+    .update({
+      accepted_at: new Date().toISOString(),
+      accepted_via: "candidate_form",
+      employee_hr_id: employeeHrId,
+      status: "accepted",
+    })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  assertReadable(error, "offers");
+  if (!data) throw new OfferNotFoundError("That offer does not exist.");
+  const offer = toOffer(data as OfferRow);
+  await announceAcceptedOffer(offer, hire);
   return offer;
 }
 

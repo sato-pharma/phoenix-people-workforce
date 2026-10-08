@@ -354,6 +354,11 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // workbook can only ever describe access the matrix has already decided.
   "src/lib/hr/job-workbook.ts",
   "src/lib/notifications/role-recipients.ts",
+  // The offer joining form (owner, 2026-10-08). It names HR Operations only as the ACTOR of
+  // provisionNewHireAccess, to take that seat's create-only, rank-bounded door: it can make one NEW
+  // default-rank login for the hr id the form just wrote and never change an existing account. It
+  // grants the seat nothing and gates nothing on it.
+  "src/lib/offers/joining-form-service.ts",
   // src/lib/probation/feedback-service.ts sat here until 2026-09-01. It named both seats in
   // resolveSubmitterRole, mapping them to the "ta" submitter role. The file was deleted with the
   // rest of the legacy probation feedback path — see tests/probation-legacy-feedback-retired.test.ts.

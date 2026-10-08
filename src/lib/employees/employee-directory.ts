@@ -251,6 +251,11 @@ export type EmployeeMutationInput = {
   medicalInsuranceStatus?: string | null;
   medicalInsuranceNumber?: string | null;
   originalHrId?: string | null;
+  /**
+   * The joiner's own private email, typed by him on the offer joining form (2026-10-08). Only a
+   * caller that SENDS it writes it: HR's form does not carry it, so an edit there leaves it alone.
+   */
+  personalEmail?: string | null;
   payrollEligible?: boolean | null;
   positionId?: number | null;
   residenceAddress?: string | null;
@@ -2159,6 +2164,10 @@ async function employeePayload(
     team_id: numberOrNull(input.teamId),
     updated_at: new Date().toISOString(),
     work_email: workEmail,
+    // Written only when the caller sent it. Every other save path (HR's form, the import, the
+    // resignation and offer flows) has no such field, and writing `null` for it would wipe the
+    // address the joiner gave on every unrelated edit of his record.
+    ...(input.personalEmail !== undefined ? { personal_email: compact(input.personalEmail)?.toLowerCase() ?? null } : {}),
   };
 }
 

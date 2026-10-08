@@ -59,6 +59,7 @@ import {
 } from "@/lib/offers/template-choice";
 import { cn } from "@/lib/utils";
 import { formatOfferVacancyLabel } from "@/lib/offers/vacancy-label";
+import { offerRequiresSeat } from "@/lib/offers/joining-form";
 import type {
   OfferFields,
   OfferJobTitle,
@@ -67,6 +68,15 @@ import type {
   OfferTemplate,
   OfferVacancyOption,
 } from "@/lib/offers/types";
+
+/**
+ * An offer the candidate answered through the joining form (2026-10-08): the record is already made,
+ * so the row says so instead of offering "Add employee" a second time.
+ */
+function joinedLabel(offer: OfferRecord): string {
+  const when = offer.acceptedAt ? ` · ${offerWhen(offer.acceptedAt)}` : "";
+  return `Accepted via joining form — on the Employee Master${when}`;
+}
 
 /**
  * The three date fields hold ISO `yyyy-mm-dd` here, not the English form the letter carries.
@@ -1035,11 +1045,13 @@ export function OfferComposer({
               ))}
             </select>
             <p className={offerHintClassName}>
-              {vacancies.length === 0
-                ? "No open seats are on file. The letter can still be written; the seat is then chosen on Add Employee."
-                : draft.vacancyId
-                  ? "Carried into Add Employee when this offer is accepted. The seat is closed by the hire, not by this offer."
-                  : "Optional. Choosing it now means the accepted offer opens Add Employee with the seat already filled in."}
+              {offerRequiresSeat(draft.title) && !draft.vacancyId
+                ? "Required for a Medical Representative or District Manager offer — the candidate's joining form places the new hire in this seat, so the offer cannot be sent without it."
+                : vacancies.length === 0
+                  ? "No open seats are on file. The letter can still be written; the seat is then chosen on Add Employee."
+                  : draft.vacancyId
+                    ? "The candidate's joining form places the new hire in this seat on acceptance. The seat is closed by the hire, not by this offer."
+                    : "Optional. Choosing it now means the joining form places the candidate in this seat on acceptance."}
             </p>
           </div>
 
@@ -1344,7 +1356,9 @@ export function OfferComposer({
                           <Eye className="h-3.5 w-3.5" /> Open draft
                         </Button>
                       ) : null}
-                      {canManage && offer.status === "accepted" ? (
+                      {offer.employeeHrId ? (
+                        <span className="text-xs font-semibold text-emerald-700">{joinedLabel(offer)}</span>
+                      ) : canManage && offer.status === "accepted" ? (
                         <Button asChild size="sm" type="button">
                           <a href={`${addEmployeeHref}?fromOffer=${encodeURIComponent(offer.id)}`}>
                             <UserPlus className="h-3.5 w-3.5" /> Add employee
@@ -1476,7 +1490,9 @@ export function OfferComposer({
                     <Eye className="h-3.5 w-3.5" /> Open draft
                   </Button>
                 ) : null}
-                {canManage && offer.status === "accepted" ? (
+                {offer.employeeHrId ? (
+                  <span className="text-xs font-semibold text-emerald-700">{joinedLabel(offer)}</span>
+                ) : canManage && offer.status === "accepted" ? (
                   <Button asChild size="sm" type="button">
                     <a href={`${addEmployeeHref}?fromOffer=${encodeURIComponent(offer.id)}`}>
                       <UserPlus className="h-3.5 w-3.5" /> Add employee
