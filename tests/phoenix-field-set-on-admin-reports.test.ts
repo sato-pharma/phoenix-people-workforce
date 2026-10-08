@@ -27,6 +27,11 @@ import {
   type PhoenixVisitDetailRow,
 } from "../src/lib/crm/phoenix-visit-detail.ts";
 import { buildRepVisits, type VisitForRepDrilldown } from "../src/lib/crm/rep-visits.ts";
+import {
+  buildCombinedAuditWorkbook,
+  type DoubleVisitAuditData,
+  type DoubleVisitAuditSection,
+} from "../src/lib/double-visit-analytics/audit-export.ts";
 
 /** A Phoenix visit carrying every measurement the app records, so each tier can be read off one row. */
 const FULL_ROW: PhoenixVisitDetailRow = {
@@ -269,10 +274,115 @@ function runDrilldownTests(): void {
   );
 }
 
-export function runPhoenixFieldSetOnAdminReportsTests(): void {
+
+/** One coach, one dated visit — enough for the detail block's header row, which is what is at stake. */
+const AUDIT_DATA: DoubleVisitAuditData = {
+  dateFrom: "2026-09-01",
+  dateTo: "2026-10-31",
+  period: "ALL",
+  role: "ALL",
+  scopeLabel: "All lines and areas (company-wide)",
+  generatedAt: "2026-10-08",
+  weeks: [{ index: 0, from: "2026-09-01", to: "2026-09-07", rangeLabel: "Sep 1-7" }],
+  phoenixHeaders: [],
+  coaches: [
+    {
+      hrId: "B-900",
+      name: "A District Manager",
+      roleCode: "DSM",
+      roleLabel: "District Manager",
+      area: "Tanta",
+      line: "Pedia",
+      status: "",
+      totalDvs: 1,
+      activeDays: 1,
+      am: 0,
+      pm: 1,
+      pharmacies: 0,
+      distinctMrs: 1,
+      daysWithGps: 0,
+      reps: [],
+      perDay: [],
+      detail: [
+        {
+          date: "2026-09-02",
+          weekday: "Wed",
+          weekLabel: "Sep 1-7",
+          repName: "A Medical Rep",
+          repStatus: "",
+          customer: "Dr A",
+          speciality: "Pediatrics",
+          period: "PM",
+          visitType: "Regular",
+          partner2: "A Product Manager",
+          phoenixColumns: { "Visit kind": "Chain visit", Products: "Ivyronc", "Distance (m)": 1800 },
+        },
+      ],
+    },
+  ],
+};
+
+/** The five admin reports, and the constant each one must fold the field set into. */
+const REPORT_SELECTS: readonly { file: string; what: string }[] = [
+  { file: "src/lib/crm/rep-visits-data.ts", what: "the rep drill-down" },
+  { file: "src/lib/field-activity/report.ts", what: "Field Activity" },
+  { file: "src/lib/double-visit-analytics/service.ts", what: "Double Visit Analytics" },
+  { file: "src/lib/double-visit-analytics/audit-export.ts", what: "the double-visit audit export" },
+];
+
+function runReportCarryTests(): void {
+  // 🔴 EVERY REPORT MUST FOLD IN THE CONSTANT, NEVER RETYPE THE 29 NAMES. A report that lists them
+  // itself is a second place for one to go missing, and a missing column reads `undefined` and prints a
+  // blank — which on a report is indistinguishable from a visit that recorded nothing. This is the one
+  // guarantee a type cannot give, because a PostgREST select is a string.
+  for (const report of REPORT_SELECTS) {
+    // 🔴 COUNTED, NOT MERELY FOUND. A bare search for the name matches the `import` statement, so a
+    // report whose select list had been replaced by a hand-typed subset still read as carrying the field
+    // set — I replaced `field-activity/report.ts`'s list with two columns and this assertion stayed
+    // green. Two mentions means the import AND a use, and a select list is the only thing it is used in.
+    const source = readFileSync(report.file, "utf8");
+    const mentions = source.split("PHOENIX_VISIT_DETAIL_COLUMNS").length - 1;
+    assert.ok(
+      mentions >= 2,
+      `${report.what} must add PHOENIX_VISIT_DETAIL_COLUMNS to its select list, not name the columns again ` +
+        `(found ${mentions} mention(s) — one of them is the import, which proves nothing about the select list)`,
+    );
+  }
+}
+
+async function runAuditSheetTests(): Promise<void> {
+  // 🔴 ONE HEADER ROW PER SHEET, WHATEVER THE SECTIONS HOLD. A coach's combined tab stacks several
+  // months one under another under a SINGLE header. Sight is decided per row, so two months can produce
+  // different column sets — and a per-section header would put the same cell under two headings on one
+  // sheet, which is how a distance gets read as a dwell. The union, in first-appearance order, is the fix.
+  const sections: DoubleVisitAuditSection[] = [
+    { label: "Sep", data: { ...AUDIT_DATA, phoenixHeaders: ["Visit kind", "Products"] } },
+    { label: "Oct", data: { ...AUDIT_DATA, phoenixHeaders: ["Visit kind", "Distance (m)"] } },
+  ];
+  const workbook = await buildCombinedAuditWorkbook(sections);
+  const sheet = workbook.worksheets.find((candidate) => candidate.name.toLowerCase() !== "summary");
+  assert.ok(sheet, "the combined workbook has a coach tab");
+  const headerRows: string[][] = [];
+  sheet.eachRow((row) => {
+    const values = (row.values as unknown[]).slice(1).map((value) => String(value ?? ""));
+    // "Per day" above it starts with Date · Day · Week too — the 4th cell is what tells them apart.
+    if (values[0] === "Date" && values[1] === "Day" && values[3] === "Rep") headerRows.push(values);
+  });
+  assert.equal(headerRows.length, 2, "both months print the detail header");
+  assert.deepEqual(headerRows[0], headerRows[1], "and both print the SAME one — a shifted column is a misread cell");
+  assert.deepEqual(
+    headerRows[0].slice(9),
+    ["And With", "Visit kind", "Products", "Distance (m)"],
+    "the second coach is named and the union of both months' field-set columns follows, in order",
+  );
+}
+
+export async function runPhoenixFieldSetOnAdminReportsTests(): Promise<void> {
   runTierTests();
   runViewerTests();
   runSheetTests();
   runSelectListTests();
   runDrilldownTests();
+  runReportCarryTests();
+  await runAuditSheetTests();
 }

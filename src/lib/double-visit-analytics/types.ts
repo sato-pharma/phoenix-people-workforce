@@ -13,6 +13,7 @@
 // that helper — "not recorded in Phoenix", never 0. Optional everywhere: absent means none, and a
 // payload from before they existed reads exactly as it did.
 
+import type { PhoenixVisitDetail } from "@/lib/crm/phoenix-visit-detail";
 import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
 
 export type DoubleVisitSourceType = "excel" | "ireports360";
@@ -393,9 +394,18 @@ export type DoubleVisitReportRow = {
   fromPhoenix?: boolean;
   doubleVisitorHrId: string | null;
   doubleVisitorName: string | null;
+  /** A chain visit's SECOND double visitor, named so nobody's coaching disappears. It moves no count —
+   * `visitCount` on this row stays 1 (see the note on `double_visitor2_hr_id` in service.ts). */
+  doubleVisitor2Name?: string | null;
   /** The double-visitor's job title / role label (e.g. "District Manager"), resolved via
    * resolveDvRole. Null when the double-visitor can't be matched to a directory employee. */
   doubleVisitorRole: string | null;
+  /** The Phoenix field set, already shaped to THIS reader's tier and flattened one value per column —
+   * the sheet prints it as-is. Null on a vendor row, and on any payload built without a viewer. */
+  phoenixColumns?: Record<string, string | number | null> | null;
+  /** The same field set, grouped. The SCREEN reads this one: the fits-the-screen rule forbids a new
+   * column, so the groups merge into the cells the table already has, as thin lines under them. */
+  phoenix?: PhoenixVisitDetail | null;
   lineName: string | null;
   period: DoubleVisitPeriod;
   /** Region containing areaName, resolved from the employee directory's area→region mapping

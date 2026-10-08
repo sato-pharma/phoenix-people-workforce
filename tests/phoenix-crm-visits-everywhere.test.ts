@@ -1640,8 +1640,8 @@ function runStartClockTests(): void {
       [
         "2026-10-04",
         [
-          { agent_hr_id: "P-2", agent_crm_id: 2, contact_crm_id: 55, double_hr_id: null, crm_save_date: "2026-10-04T08:05:00+00:00", synced_at: null, visit_type: 0, visit_type_description: "Regular Visit", contact_name: "Dr B", customer_name: null, comment: null },
-          { agent_hr_id: "P-1", agent_crm_id: 1, contact_crm_id: 56, double_hr_id: null, crm_save_date: "2026-10-04T07:50:00+00:00", synced_at: null, visit_type: 0, visit_type_description: "Regular Visit", contact_name: "Dr A", customer_name: null, comment: null },
+          { agent_hr_id: "P-2", agent_crm_id: 2, contact_crm_id: 55, double_hr_id: null, double2_hr_id: null, crm_save_date: "2026-10-04T08:05:00+00:00", synced_at: null, visit_type: 0, visit_type_description: "Regular Visit", contact_name: "Dr B", customer_name: null, comment: null },
+          { agent_hr_id: "P-1", agent_crm_id: 1, contact_crm_id: 56, double_hr_id: null, double2_hr_id: null, crm_save_date: "2026-10-04T07:50:00+00:00", synced_at: null, visit_type: 0, visit_type_description: "Regular Visit", contact_name: "Dr A", customer_name: null, comment: null },
         ],
       ],
     ]),
@@ -1742,6 +1742,8 @@ function runCallRateTests(): void {
     customer_name: null,
     double_hr_id: null,
     double_name: null,
+    double2_hr_id: null,
+    double2_name: null,
     speciality: "Pediatrics",
     ...overrides,
   });

@@ -34,6 +34,15 @@ import {
 } from "@/lib/private-calendar/activity-kinds";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import {
+  PHOENIX_VISIT_DETAIL_COLUMNS,
+  phoenixDetailViewer,
+  phoenixRowSight,
+  phoenixVisitDetail,
+  phoenixVisitDetailColumns,
+  pickPhoenixVisitDetailRow,
+  type PhoenixVisitDetailRow,
+} from "@/lib/crm/phoenix-visit-detail";
+import {
   addBucketToSplit,
   emptyVisitCountSplit,
   formatVisitCountSplit,
@@ -129,6 +138,19 @@ export type DoubleVisitDbRow = {
   // visit, so every AM · PM · Pharmacies figure built from these rows says its pharmacy figure was
   // never recorded rather than print 0 (src/lib/crm/visit-count-buckets.ts). Absent on a vendor row.
   from_phoenix?: boolean;
+  // Slot 2 — a chain visit's SECOND double visitor, on the same row. The vendor split a chain into two
+  // rows and `resolveDoubleVisitChains` below reassembles them; Phoenix CRM saves one row carrying both
+  // people, so without these the second person did a double visit nobody can see.
+  //
+  // 🔴 NAMED HERE, NOT COUNTED HERE, AND THAT IS DELIBERATE. `visit_count` stays 1 on this row, so no
+  // rep's double-visit total and no manager's activity figure moves. Whether a chain visit is ONE double
+  // visit the rep received or TWO is a business fact only the owner can settle — the vendor's own split
+  // made it two, which is an argument, not a decision — so it is parked for him rather than guessed at.
+  double_visitor2_hr_id?: string | null;
+  double_visitor2_name?: string | null;
+  // The Phoenix field set, raw and unshaped. Sight is decided by the reader (phoenix-visit-detail.ts),
+  // and this row reaches readers at three different tiers plus the scoring engine, which prints nothing.
+  phoenix_detail?: PhoenixVisitDetailRow;
 };
 
 function text(value: unknown) {
@@ -434,7 +456,11 @@ function currentMonthBounds(referenceDate = todayIso()) {
 
 // ── Live loader: ireports360_visits -> DoubleVisitDbRow ─────────────────────────────
 
-export type MirrorVisitRow = {
+export type MirrorVisitRow = PhoenixVisitDetailRow & {
+  /** Slot 2 — a chain visit's second person. Absent on a vendor row, which has one partner column. */
+  double2_crm_id?: number | null;
+  double2_hr_id?: string | null;
+  double2_name?: string | null;
   agent_crm_id: number | null;
   agent_hr_id: string | null;
   agent_name: string | null;
@@ -498,7 +524,13 @@ async function paginateLiveMirrorVisits(
     visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
     columns:
       "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
-      "double_crm_id, double_hr_id, double_name, ampm, visit_type, visit_type_description, speciality",
+      "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, ampm, " +
+      "visit_type, visit_type_description, speciality, " +
+      // THE PHOENIX FIELD SET, raw. This loader has no reader — `getDoubleVisitReportData` holds the
+      // access context and shapes it to that reader's tier there. Selecting it here and deciding sight
+      // there is deliberate: this function also feeds the scoring engine and the private calendar,
+      // neither of which prints a column, so neither needs a viewer threaded into it.
+      PHOENIX_VISIT_DETAIL_COLUMNS,
   });
 }
 
@@ -538,6 +570,8 @@ function dbRowFromMirrorVisit(
   const visitedEmployee = visitedKey ? employeeByHrKey.get(visitedKey) ?? null : null;
   const doubleKey = canonicalHrIdKey(visit.double_hr_id);
   const doubleEmployee = doubleKey ? employeeByHrKey.get(doubleKey) ?? null : null;
+  const double2Key = canonicalHrIdKey(visit.double2_hr_id ?? null);
+  const double2Employee = double2Key ? employeeByHrKey.get(double2Key) ?? null : null;
   const label = extractNameAreaLine(
     (resolution ? resolution.mrName : visit.agent_name) ?? visit.contact_name ?? visit.customer_name,
   );
@@ -568,6 +602,9 @@ function dbRowFromMirrorVisit(
     area_name: preferRawLabel ? (label.areaName ?? visitedEmployee?.areaName ?? null) : (visitedEmployee?.areaName ?? label.areaName),
     double_visitor_hr_id: visit.double_hr_id ?? (visit.double_crm_id ? `CRM:${visit.double_crm_id}` : null),
     double_visitor_name: doubleEmployee?.displayName ?? visit.double_name ?? null,
+    double_visitor2_hr_id: visit.double2_hr_id ?? (visit.double2_crm_id ? `CRM:${visit.double2_crm_id}` : null),
+    double_visitor2_name: double2Employee?.displayName ?? visit.double2_name ?? null,
+    phoenix_detail: pickPhoenixVisitDetailRow(visit as unknown as Record<string, unknown>),
     id: visit.id,
     line_name: preferRawLabel ? (label.lineName ?? visitedEmployee?.lineName ?? null) : (visitedEmployee?.lineName ?? label.lineName),
     period: periodFromAmpm(visit.ampm),
@@ -2122,6 +2159,11 @@ export async function getDoubleVisitReportData(input: {
     }
   }
 
+  // 🔴 THE TIER IS DECIDED HERE, where the reader is known, and NOT in the loader — the same rows feed
+  // the scoring engine and the private calendar, which print no column and so need no viewer. A row the
+  // reader is himself the rep of reads `none` (phoenixRowSight), which is the owner's 2026-10-02 rule.
+  const detailViewer = phoenixDetailViewer(input.access.role, input.access.hrId);
+
   const rows: DoubleVisitReportRow[] = scopedRows
     .map((row) => {
       const visitedKey = canonicalHrIdKey(row.visited_employee_hr_id);
@@ -2138,7 +2180,14 @@ export async function getDoubleVisitReportData(input: {
         ...(row.from_phoenix ? { fromPhoenix: true } : {}),
         doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
         doubleVisitorName: nullableText(row.double_visitor_name),
+        doubleVisitor2Name: nullableText(row.double_visitor2_name ?? null),
         doubleVisitorRole: resolveDvRole(doubleVisitorEmployee)?.role ?? null,
+        phoenix: row.phoenix_detail
+          ? phoenixVisitDetail(row.phoenix_detail, phoenixRowSight(detailViewer, row.visited_employee_hr_id))
+          : null,
+        phoenixColumns: row.phoenix_detail
+          ? phoenixVisitDetailColumns(row.phoenix_detail, phoenixRowSight(detailViewer, row.visited_employee_hr_id))
+          : null,
         lineName: nullableText(row.line_name),
         period: row.period,
         regionName: areaKey ? regionByAreaKey.get(areaKey) ?? null : null,
@@ -2780,10 +2829,17 @@ export async function buildDoubleVisitReportExportWorkbook(
     ...buildReportSummaryMetrics(filtered),
   ]);
 
+  // THE PHOENIX FIELD SET IS FLAT HERE, one column each. The fits-the-screen rule governs a viewport
+  // and a sheet has none, so nothing is merged away and nothing is lost. The headers come off whichever
+  // row carries them, because the set was already shaped to this reader's tier — a `distance` reader's
+  // sheet simply has fewer columns than the Super Admin's, and never a column full of blanks.
+  const phoenixHeaders = Object.keys(filtered.logRows.find((row) => row.phoenixColumns)?.phoenixColumns ?? {});
+
   const log = workbook.addWorksheet("Visit Log");
   log.columns = [
     { header: "Date", key: "date", width: 14 },
     { header: "Double Visitor", key: "doubleVisitor", width: 26 },
+    { header: "And With", key: "doubleVisitor2", width: 26 },
     { header: "Job Title", key: "role", width: 22 },
     { header: "Visited MR", key: "visited", width: 26 },
     { header: "Area", key: "area", width: 18 },
@@ -2792,12 +2848,15 @@ export async function buildDoubleVisitReportExportWorkbook(
     { header: "Period", key: "period", width: 10 },
     { header: "Type", key: "kind", width: 12 },
     { header: "Visits", key: "visits", width: 10 },
+    ...phoenixHeaders.map((header) => ({ header, key: header, width: 22 })),
   ];
   log.addRows(
     filtered.logRows.map((row) => ({
+      ...Object.fromEntries(phoenixHeaders.map((header) => [header, row.phoenixColumns?.[header] ?? ""])),
       area: row.areaName ?? "—",
       date: row.activityDate,
       doubleVisitor: row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—",
+      doubleVisitor2: row.doubleVisitor2Name ?? "",
       kind: row.visitKind,
       line: row.lineName ?? "—",
       period: entryPeriodLabel(row),

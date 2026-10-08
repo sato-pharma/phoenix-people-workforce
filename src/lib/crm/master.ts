@@ -118,7 +118,7 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   // SLOT 2 — the chain visit's other person. Empty on every vendor row and on a plain double: the
   // vendor feed carried one partner column, and a chain is the only shape with two people beside
   // the rep. Named "Chain" rather than "Double 2" so the grid says what the row IS.
-  { key: "double2_crm_id", kind: "number", label: "Chain CRM ID", note: "The second person beside the rep on a CHAIN visit — the senior above the manager who rode along, or the product manager who came with him. Blank on an iReports360 row (the vendor feed had one partner column) and on a plain double visit." },
+  { key: "double2_crm_id", kind: "number", label: "Chain CRM ID", note: "The second person beside the rep on a CHAIN visit — the senior above the manager who rode along, or the product manager who came along. Blank on an iReports360 row (the vendor feed had one partner column) and on a plain double visit." },
   { key: "double2_hr_id", kind: "text", label: "Chain HR ID" },
   { key: "double2_name", kind: "text", label: "Chain Name" },
   { key: "contact_crm_id", kind: "number", label: "Contact CRM ID" },

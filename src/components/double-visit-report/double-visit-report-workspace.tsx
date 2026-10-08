@@ -224,6 +224,46 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
   );
 }
 
+/**
+ * The Phoenix field set on this table, under the cells it already has.
+ *
+ * 🔴 NOT AS NEW COLUMNS. The fits-the-screen golden rule says fit by MERGING, never by shrinking type,
+ * and this table is already ten columns across 100% — an eleventh would push it into the horizontal
+ * scroll the rule exists to forbid. So the work lines sit under the visited rep, the people line under
+ * the double visitor, and the proof line under the type badge. The XLSX keeps them flat, one each.
+ *
+ * What a reader may see is decided server-side (`phoenix-visit-detail.ts`): a `distance` reader's row
+ * simply arrives with no accuracy and no raw point, so there is nothing here to hide.
+ */
+const PHOENIX_LINE = "block text-phx-2xs font-semibold leading-4 text-slate-500";
+
+function phoenixLines(values: readonly (string | null | undefined)[]): string | null {
+  const parts = values.map((value) => (value ?? "").trim()).filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** The work half — his own work, read whole at every tier. */
+function phoenixWorkLine(row: DoubleVisitReportRow): string | null {
+  const detail = row.phoenix;
+  if (!detail) return null;
+  return phoenixLines([
+    detail.products.length > 0 ? detail.products.join(", ") : null,
+    detail.samples,
+    detail.availability,
+    detail.objection,
+    detail.nextStep,
+    detail.pharmacyFeedback,
+    detail.offPlan,
+  ]);
+}
+
+/** The proof half — the kind, where it was saved, and what came back with it. */
+function phoenixProofLine(row: DoubleVisitReportRow): string | null {
+  const detail = row.phoenix;
+  if (!detail) return null;
+  return phoenixLines([detail.kindLabel, detail.location, detail.evidence, detail.capture]);
+}
+
 // ── Mobile card views (< md) — one per tab, mirroring the desktop table's columns. ──────
 
 function LogVisitCard({ row }: { row: DoubleVisitReportRow }) {
@@ -241,11 +281,16 @@ function LogVisitCard({ row }: { row: DoubleVisitReportRow }) {
       <PortalRecordFields
         fields={[
           { label: "Visited MR", value: row.visitedName ?? row.visitedHrId ?? "—" },
+          ...(row.doubleVisitor2Name ? [{ label: "And With", value: row.doubleVisitor2Name }] : []),
           { label: "Area", value: row.areaName ?? "—" },
           { label: "Region", value: row.regionName ?? "—" },
           { label: "Line", value: row.lineName ?? "—" },
           { label: "Period", value: entryPeriodLabel(row) },
           { label: "Visits", value: row.visitCount },
+          // The card stacks, so the field set needs no merging here — one row each, and a Phoenix
+          // visit's extra rows simply are not there on a vendor one.
+          ...(phoenixWorkLine(row) ? [{ label: "Recorded", value: phoenixWorkLine(row) as string }] : []),
+          ...(phoenixProofLine(row) ? [{ label: "Proof", value: phoenixProofLine(row) as string }] : []),
         ]}
       />
     </PortalRecordCard>
@@ -644,15 +689,22 @@ export function DoubleVisitReportWorkspace({
                     {logPageRows.map((row, index) => (
                       <tr key={`${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
                         <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.activityDate)}</td>
-                        <td className="px-3 py-2.5">{row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}</td>
+                        <td className="px-3 py-2.5">
+                          {row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}
+                          {row.doubleVisitor2Name ? <span className={PHOENIX_LINE}>and {row.doubleVisitor2Name}</span> : null}
+                        </td>
                         <td className="px-3 py-2.5">{row.doubleVisitorRole ?? "—"}</td>
-                        <td className="px-3 py-2.5">{row.visitedName ?? row.visitedHrId ?? "—"}</td>
+                        <td className="px-3 py-2.5">
+                          {row.visitedName ?? row.visitedHrId ?? "—"}
+                          {phoenixWorkLine(row) ? <span className={PHOENIX_LINE}>{phoenixWorkLine(row)}</span> : null}
+                        </td>
                         <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
                         <td className="px-3 py-2.5">{row.regionName ?? "—"}</td>
                         <td className="px-3 py-2.5">{row.lineName ?? "—"}</td>
                         <td className="px-3 py-2.5">{entryPeriodLabel(row)}</td>
                         <td className="px-3 py-2.5">
                           <VisitKindBadge kind={row.visitKind} />
+                          {phoenixProofLine(row) ? <span className={PHOENIX_LINE}>{phoenixProofLine(row)}</span> : null}
                         </td>
                         <td className="px-3 py-2.5 text-right font-bold tabular-nums">{row.visitCount}</td>
                       </tr>
