@@ -897,7 +897,7 @@ export async function releaseOfferJoiningClaim(id: string): Promise<void> {
  */
 export async function stampOfferAcceptedByJoiningForm(
   id: string,
-  hire: { hrId: string; seated?: boolean; workEmail: string | null },
+  hire: { hrId: string; idPhotosFiled?: boolean; seated?: boolean; workEmail: string | null },
 ): Promise<OfferRecord> {
   const employeeHrId = hire.hrId;
   const db = getSupabaseAdmin();

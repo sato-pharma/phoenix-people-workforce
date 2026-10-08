@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
 
 import { logError } from "@/lib/observability/log";
-import { submitJoiningForm } from "@/lib/offers/joining-form-service";
+import type { JoiningFormPhotoField } from "@/lib/offers/joining-form";
+import { submitJoiningForm, type JoiningFormPhoto } from "@/lib/offers/joining-form-service";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const HOUR = 60 * 60 * 1000;
+const PROXY_BODY_LIMIT = 10 * 1024 * 1024;
+
+/** A photo part, or null when it is missing or empty — the service names which one is needed. */
+async function readPhoto(entry: FormDataEntryValue | null): Promise<JoiningFormPhoto | null> {
+  if (!(entry instanceof File) || entry.size <= 0) return null;
+  return { bytes: Buffer.from(await entry.arrayBuffer()), contentType: (entry.type || "application/octet-stream").toLowerCase() };
+}
 
 function json(body: unknown, status = 200): NextResponse {
   return NextResponse.json(body, {
@@ -37,17 +45,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     throw error;
   }
 
+  // Multipart: the answers as one JSON field, and the national ID photos as `idFront` and `idBack`.
+  // The proxy cuts any body at 10 MB (proxy.ts), so a bigger one is refused here by its declared size
+  // rather than arriving truncated and failing as an unreadable form.
+  if (Number(request.headers.get("content-length") ?? 0) > PROXY_BODY_LIMIT) {
+    return json({ message: "Your photos are too large to send. Please take them again, or choose smaller ones.", ok: false }, 413);
+  }
   let answers: Record<string, unknown>;
+  let photos: Record<JoiningFormPhotoField, JoiningFormPhoto | null>;
   try {
-    const body = (await request.json()) as unknown;
+    const form = await request.formData();
+    const raw = form.get("answers");
+    const body = JSON.parse(typeof raw === "string" ? raw : "") as unknown;
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("not an object");
     answers = body as Record<string, unknown>;
+    photos = { idBack: await readPhoto(form.get("idBack")), idFront: await readPhoto(form.get("idFront")) };
   } catch {
     return json({ message: "The form could not be read. Please try again.", ok: false }, 400);
   }
 
   try {
-    const result = await submitJoiningForm(token, answers, {
+    const result = await submitJoiningForm(token, answers, photos, {
       ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim() || null,
       userAgent: request.headers.get("user-agent"),
     });

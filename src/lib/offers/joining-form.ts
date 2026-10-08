@@ -308,3 +308,43 @@ export function sameJoinerName(a: string | null | undefined, b: string | null | 
   const pool = new Set(long);
   return short.every((word) => pool.has(word));
 }
+
+// ── The national ID photos (owner, 2026-10-08: "make in the form also required to upload a photo of
+// his national ID") ──────────────────────────────────────────────────────────────────────────────
+// Front AND back: the back carries the address, profession and marital status HR's copy is for, and
+// the Hiring Documents store already expects an ID to arrive as two photographs.
+//
+// THE LIMIT IS THE PROXY'S, NOT THE BUCKET'S. This public route stays behind the proxy, which cuts any
+// body at 10 MB (proxy.ts, `proxyClientMaxBodySize`). Two photos at 4.5 MB plus the answers stay under
+// it; the page shrinks each photo on the phone first, so a real one arrives well below. Images only —
+// the page asks for a photograph, and the bucket takes JPG, PNG and WEBP.
+
+export const JOINING_FORM_PHOTO_FIELDS = ["idFront", "idBack"] as const;
+
+export type JoiningFormPhotoField = (typeof JOINING_FORM_PHOTO_FIELDS)[number];
+
+export const JOINING_FORM_PHOTO_MAX_BYTES = Math.floor(4.5 * 1024 * 1024);
+
+export const JOINING_FORM_PHOTO_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
+
+const PHOTO_MISSING: Record<JoiningFormPhotoField, string> = {
+  idBack: "Please add a photo of the back of your national ID card.",
+  idFront: "Please add a photo of the front of your national ID card.",
+};
+
+/** Present, a photograph, and small enough to pass the proxy. Keyed by field, like the answers. */
+export function validateJoiningIdPhotos(
+  photos: Partial<Record<JoiningFormPhotoField, { contentType: string; size: number } | null | undefined>>,
+): Partial<Record<JoiningFormPhotoField, string>> {
+  const errors: Partial<Record<JoiningFormPhotoField, string>> = {};
+  for (const field of JOINING_FORM_PHOTO_FIELDS) {
+    const photo = photos[field];
+    if (!photo || photo.size <= 0) errors[field] = PHOTO_MISSING[field];
+    else if (!JOINING_FORM_PHOTO_TYPES.includes(photo.contentType.trim().toLowerCase())) {
+      errors[field] = "Please choose a photo — a JPG, PNG or WEBP image.";
+    } else if (photo.size > JOINING_FORM_PHOTO_MAX_BYTES) {
+      errors[field] = "This photo is too large. Please take it again, or choose a smaller one.";
+    }
+  }
+  return errors;
+}
