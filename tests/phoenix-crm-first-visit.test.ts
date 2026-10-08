@@ -243,7 +243,17 @@ export function runPhoenixCrmFirstVisitTests() {
     const notify = stripComments(readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8"));
     assert.doesNotMatch(notify, /bcc/i, "the notifier never builds a BCC of its own — the one send chokepoint owns that");
     const send = readFileSync("src/lib/email/send-phoenix-email.ts", "utf8");
-    assert.match(send, /const alwaysBcc = ADMIN_STANDING_EMAIL;/, "and that chokepoint is where the owner's copy comes from");
+    // The chokepoint moved on 2026-10-08 — it used to be three inline lines here, and is now
+    // `withStandingAdminBcc`, a function so that a test can execute the rule instead of reading it
+    // (the reset code was the first email ever exempted from the standing copy, and the exemption
+    // had to be provable). Both halves are pinned: the send path calls it, and the function is
+    // where ADMIN_STANDING_EMAIL enters an email.
+    assert.match(send, /bcc = withStandingAdminBcc\(\{/, "and that chokepoint is where the owner's copy comes from");
+    assert.match(
+      send,
+      /export function withStandingAdminBcc\([\s\S]{0,1200}ADMIN_STANDING_EMAIL/,
+      "withStandingAdminBcc is the one place the standing admin address is added to an email",
+    );
   }
 
   // ── 6 · the save-side gate ───────────────────────────────────────────────────────────────────

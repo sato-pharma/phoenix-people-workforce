@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code.ts";
 import { emailTemplateKeys } from "@/lib/email-templates/key-resolution.ts";
 import { contextVariables, htmlBlockTokens, interpolate } from "@/lib/email-templates/render-core.ts";
+import { ADMIN_STANDING_EMAIL } from "@/lib/email/admin-telegram-mirror.ts";
+import { withStandingAdminBcc } from "@/lib/email/send-phoenix-email.ts";
+import { isOneTimeCodeTemplateKey } from "@/lib/email/transactional-types.ts";
+import { migratedTemplateKeyForNotification } from "@/lib/notifications/email.ts";
 
 /**
  * THE SELF-SERVICE RESET EMAIL MUST CONTAIN THE SIX DIGITS.
@@ -26,6 +30,16 @@ import { contextVariables, htmlBlockTokens, interpolate } from "@/lib/email-temp
  *
  * Each assertion here pins one link of that single chain. Break any one and the email goes out
  * looking perfectly healthy with no code inside it.
+ *
+ * THEN IT HAPPENED A SECOND TIME, AND THIS FILE IS WHY. The fix above pinned the template key on
+ * the sender; sections 1-5 all passed; and the email STILL had no code — because the resolver
+ * vetoes an explicitly pinned AUTH key on purpose, and section 3 had just added the code key to
+ * that very auth set. Every assertion in the PR read SOURCE TEXT, so not one of them could see
+ * that the routing discarded the pin. Section 6 EXECUTES the resolver, which is the lesson:
+ * assert the behaviour, not the line of code that intends it.
+ *
+ * Section 7 pins the owner's 2026-10-08 instruction - this one email carries no standing admin
+ * BCC, because its body is a live credential rather than a record of a workflow.
  */
 
 const CODE_TEMPLATE_KEY = "password_reset_code";
@@ -119,5 +133,93 @@ export function runPasswordResetCodeEmailCarriesTheCodeTests() {
   assert.ok(
     renderedHtml.includes("<table>"),
     "the details table must render as real HTML in the code email",
+  );
+
+  // --- 6. THE SECOND HEADLINE: the real resolver, executed ----------------------------------
+  // Not the sender's source line — the function that decides. It vetoes every explicitly pinned
+  // auth key (so a wording override cannot move account-recovery mail onto another template's
+  // recipient expansion), and section 3 above put the code key INTO that auth set. So the pin was
+  // silently dropped and the send fell through to `password_reset`, the link body, exactly as
+  // before. The resolver reads the notification's own shape instead, which a template editor
+  // cannot change.
+  const codeNotification = {
+    metrics: [{ label: passwordResetCodeMetricLabel, value: "408913" }],
+    notificationType: "password_reset" as const,
+    recipients: ["employee@satopharma.com"],
+    subject: "Your Phoenix password reset code",
+    summary: "Enter this code.",
+    templateKey: CODE_TEMPLATE_KEY,
+    title: "Password reset",
+  };
+
+  assert.equal(
+    migratedTemplateKeyForNotification(codeNotification as never),
+    CODE_TEMPLATE_KEY,
+    `the resolver must route the self-service code notification to ${CODE_TEMPLATE_KEY} — it resolved to the shared link template instead, which renders no {{detailsTable}}, so the employee gets an email with no code (the 2026-10-08 repeat of the same defect)`,
+  );
+
+  // The metric alone is enough: the pin is intent, the shape is the fact.
+  assert.equal(
+    migratedTemplateKeyForNotification({ ...codeNotification, templateKey: undefined } as never),
+    CODE_TEMPLATE_KEY,
+    "a code notification must resolve by its own shape even with no templateKey pinned — the pin is discarded by the auth-key veto anyway",
+  );
+
+  // And the admin-minted reset LINK keeps the link template: it has no code metric, and its body
+  // is the {{ctaUrl}} one. Routing it to the code template would send a link email with an empty
+  // details table and no link.
+  assert.equal(
+    migratedTemplateKeyForNotification({
+      ctaHref: "/password-reset/token-abc",
+      metrics: [],
+      notificationType: "password_reset" as const,
+      recipients: ["employee@satopharma.com"],
+      subject: "Reset your password",
+      summary: "Click the link.",
+      title: "Password reset",
+    } as never),
+    "password_reset",
+    "the admin-minted reset LINK must stay on the password_reset template — it carries no code metric",
+  );
+
+  // --- 7. the code email carries NO standing admin BCC -------------------------------------
+  // Owner, 2026-10-08: "stop bcc-ing the reset code email to my mailbox". Every automated email
+  // is BCC'd to the standing admin address; a six-digit code usable for 15 minutes is the one
+  // body that must not sit in a second mailbox.
+  assert.ok(
+    isOneTimeCodeTemplateKey(CODE_TEMPLATE_KEY),
+    `${CODE_TEMPLATE_KEY} must be a no-standing-copy template key, or the live code is BCC'd to the admin mailbox`,
+  );
+  assert.ok(
+    !isOneTimeCodeTemplateKey("password_reset"),
+    "the admin-minted reset LINK keeps its standing copy — the owner scoped this to the code email only",
+  );
+  assert.ok(
+    !isOneTimeCodeTemplateKey("payroll_update"),
+    "no ordinary template may lose the standing admin copy",
+  );
+
+  assert.deepEqual(
+    withStandingAdminBcc({ bcc: undefined, suppress: true, testingRedirectActive: false }),
+    undefined,
+    "the code email must go out with no BCC at all when nothing else asked for one",
+  );
+  assert.deepEqual(
+    withStandingAdminBcc({ bcc: ["hr@satopharma.com"], suppress: true, testingRedirectActive: false }),
+    ["hr@satopharma.com"],
+    "suppressing the standing copy must not touch a BCC the caller asked for",
+  );
+  assert.deepEqual(
+    withStandingAdminBcc({ bcc: undefined, suppress: false, testingRedirectActive: false }),
+    [ADMIN_STANDING_EMAIL],
+    "every OTHER automated email still carries the standing admin BCC — this change removes one recipient from one template, not the standing copy",
+  );
+
+  // The wiring that connects the two: the resolved template key decides it inside
+  // sendTemplatedEmail, so an outbox row queued before this shipped is covered when it drains.
+  assert.match(
+    service,
+    /suppressAdminStandingBcc:\s*isOneTimeCodeTemplateKey\(key\)/,
+    "sendTemplatedEmail must decide the suppression from the RESOLVED template key — a flag threaded from domain code is lost in the outbox payload",
   );
 }

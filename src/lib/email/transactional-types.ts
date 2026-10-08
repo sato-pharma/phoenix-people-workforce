@@ -32,6 +32,30 @@ export function isTransactionalEmailType(type: string | null | undefined): boole
 }
 
 /**
+ * Template keys whose BODY IS a live credential, and which therefore take NO standing admin BCC.
+ *
+ * The owner's instruction, 2026-10-08: *"stop bcc-ing the reset code email to my mailbox"*. Every
+ * automated email is BCC'd to ADMIN_STANDING_EMAIL (send-phoenix-email.ts), which is a copy of
+ * outbound HR mail — but a self-service reset code is not a record of anything, it is the secret
+ * itself, usable by whoever reads it for the 15 minutes it lives. A standing copy turns one
+ * person's account recovery into a credential sitting in a second mailbox.
+ *
+ * Keyed on the TEMPLATE KEY, not the notification type: `password_reset` covers both this and the
+ * admin-minted reset LINK, and only the code email is scoped here. The owner has not asked for the
+ * link emails (`password_reset`, `password_setup`) to lose their copy, so they keep it.
+ *
+ * It is NOT a privacy flag in general — it removes exactly one recipient from exactly these
+ * templates. Every other template, and every other channel, is untouched.
+ */
+export const NO_STANDING_COPY_TEMPLATE_KEYS = new Set<string>([
+  "password_reset_code",
+]);
+
+export function isOneTimeCodeTemplateKey(templateKey: string | null | undefined): boolean {
+  return NO_STANDING_COPY_TEMPLATE_KEYS.has(String(templateKey ?? "").trim().toLowerCase());
+}
+
+/**
  * Suppression reasons that a recipient chose, as opposed to ones the mail system was told
  * about. Only these are overridden for transactional mail.
  */
