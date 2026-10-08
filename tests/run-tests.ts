@@ -1716,6 +1716,7 @@ import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts"
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
 import { runPhoenixCrmFraudScanTests } from "./phoenix-crm-fraud-scan.test.ts";
+import { runPrivateCalendarGapNoticeTests } from "./private-calendar-gap-notice.test.ts";
 import { runPhoenixCrmVisitRollupTests } from "./phoenix-crm-visit-rollup.test.ts";
 import { runCronAutoarmTests } from "./cron-autoarm.test.ts";
 import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
@@ -6149,6 +6150,11 @@ await runTest(
 await runTest(
   "Phoenix CRM runs a weekly visit-fraud scan (owner, 2026-10-07): Thursday 07:00 Cairo, the integrity board's GPS and photo flags for the completed Sat–Wed working week, to the Super Admin and the SFE Managers only and never the rep (Golden Rule #1); it judges nothing of its own, the GPS cases are the Super Admin's alone so the SFE copy is the photo cases only, a clean week is reported as clean, names and never HR codes, the line cap counts the rest with no ellipsis, and the five registration sites agree so the cron is watched, armed and cannot strand",
   runPhoenixCrmFraudScanTests,
+);
+
+await runTest(
+  "the Private Calendar tells an employee when their OWN calendar has an unexplained day (owner, 2026-10-08, after the measurement that Request review had been used ONCE since 22 July across 111 active employees because nothing ever told anyone to look): Saturday 08:09 Cairo for the completed Sat-Thu week, one notice per employee and not one per day, to the EMPLOYEE ALONE and never a manager or HR; it judges nothing of its own but calls the same getCompanyNoActivityDays the Deductions connector calls, so the day the notice names, the day the calendar shows and the day that can become a deduction candidate are one day; a day already carrying a review request of any status is named to nobody and that suppression read fails CLOSED; in-app and push with no email channel at all; the cap counts the rest with no ellipsis; and the five registration sites agree so the cron is watched, armed and cannot strand",
+  runPrivateCalendarGapNoticeTests,
 );
 
 await runTest(

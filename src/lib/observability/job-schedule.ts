@@ -154,6 +154,13 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // cron job (see the digest's note above). NO watchingSince: this is a NEW declaration, never a
   // restored one, so there is no stand-down window to exempt — only a restored job carries that date.
   { slug: "phoenix-crm-fraud-scan", kind: "cron", schedule: "0 7 * * 4", graceSeconds: 2 * HOUR },
+  // 08:09 Cairo on Saturday (owner, 2026-10-08): the employee's own unexplained-day notice for the
+  // completed Sat-Thu week. Weekly, so the heartbeat judges one fire a week. A week with no gap sends
+  // nothing, which is why the switch matters here more than usual: silence is the EXPECTED outcome of a
+  // healthy week, so without a heartbeat a stopped job and a clean week read identically. Must match
+  // scripts/cronjob-sync.mjs exactly. NO watchingSince: this is a NEW declaration, never a restored
+  // one, so there is no stand-down window to exempt.
+  { slug: "private-calendar-gap-notice", kind: "cron", schedule: "9 8 * * 6", graceSeconds: 2 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
   // so the 25th leaves several working days to check on someone before any money moves. The other
