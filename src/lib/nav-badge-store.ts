@@ -43,7 +43,9 @@ type BatchKey =
   | "directOrdersUnbooked"
   | "directOrdersNeedsAction"
   | "marketing"
-  | "marketAwareness";
+  | "marketAwareness"
+  | "calendarDisputes"
+  | "deductionDisputes";
 
 /** Maps each legacy per-src badge URL to its key in the batched response. */
 const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
@@ -69,6 +71,12 @@ const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
   // Market Awareness keeps its own approvals inbox for the same reason marketing does, so it needs
   // its own slot too — "hub" will never carry an awareness activity either.
   "/api/market-awareness/pending-count": "marketAwareness",
+  // Calendar Disputes, its own inbox since 2026-10-08. Its own slot for the same reason: "hub" has
+  // never counted a review request.
+  "/api/private-calendar/disputes/pending-count": "calendarDisputes",
+  // Deduction Disputes, its own inbox under the Approvals tab since 2026-10-08. Its own slot too:
+  // "hub" has never counted a deduction comment either.
+  "/api/deductions/disputes/pending-count": "deductionDisputes",
 };
 
 /** Shared polling infrastructure for every batched channel (one poll serves all). */

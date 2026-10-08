@@ -57,6 +57,7 @@ import {
   Megaphone,
   MessageCircle,
   MessageSquareText,
+  MessageSquareWarning,
   Network,
   PenLine,
   PlusCircle,
@@ -139,7 +140,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending" | "market-awareness-approvals-pending";
+  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending" | "market-awareness-approvals-pending" | "calendar-disputes-pending" | "deduction-disputes-pending";
 };
 
 export type NavigationSection = {
@@ -532,8 +533,14 @@ export const adminNavigationSectionSeeds = [
     label: "My Requests",
   },
   {
-    // Named "Approvals Hub" until 2026-08-30; ruling 10 calls this "Approvals" and the shorter
-    // label is the owner's own word for it. The four rows below deliberately do NOT collapse into
+    // "Approvals Hub" again since 2026-10-08, by the owner's own instruction — *"in the sidebar
+    // show Approvals Hub as a title and under it every tab in the approvals"*. It was shortened to
+    // "Approvals" on 2026-08-30 (ruling 10) when the band held four leave-shaped rows; it now holds
+    // every approval queue in the admin shell, which is the thing his word names. The heading in
+    // src/config/sidebar-domains.ts carries the same text and the two must move together: the
+    // domain layer prints the heading, this label is what the flat rail prints.
+    //
+    // The rows below deliberately do NOT collapse into
     // /admin/approvals-hub: that page is the "Other Approvals" inbox and it actively BOUNCES
     // ?module=leave|excuse|weekly_plan deep links back out to the three dedicated pages (see
     // MIGRATED_DEEPLINK_BASES in app/(admin)/admin/approvals-hub/page.tsx). Collapsing them would
@@ -550,6 +557,43 @@ export const adminNavigationSectionSeeds = [
       // and a pending badge. Shortened to match its siblings in this section (Leave Approvals /
       // Excuse Approvals / D.Orders Approval). The page keeps the full title.
       { href: "/admin/approvals/plan", icon: CalendarRange, label: "Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
+      // ── THE FOUR QUEUES THAT JOINED THIS BAND ON 2026-10-08 ────────────────
+      // Owner: *"in the sidebar show Approvals Hub as a title and under it every tab in the
+      // approvals — vacation approval, expense approval, plan approval, other approvals, any type
+      // of approval"*. Each of the four below was already a live approval queue; none of them was
+      // under this heading, so finding one meant knowing which module owned it.
+      //
+      // Each row MOVED rather than being copied. A second row for the same href is what this file
+      // keeps calling "the module lives in exactly one place", and it is not cosmetic here: two
+      // rows carrying the same pending badge print the same number twice in one rail, and a viewer
+      // learns to read neither.
+      //
+      // EXPENSE APPROVALS was a card on the Outstation Expenses hub (outstationExpensesPageItems,
+      // promoted into the "Expense Desk" band). This gate is that promotion's EXACT net effect and
+      // deliberately not a byte wider: the card carried `expenses` + Super Admin, the hub row
+      // above it carried Super Admin / CEO, and `getSections` ANDed the two — so Super Admin, with
+      // the CEO reaching the page by URL only. canReviewOutstationExpenseApprovals admits the CEO
+      // and always has; widening the rail to match it is a separate decision nobody has taken.
+      { href: "/admin/outstation/expense-approvals", icon: ClipboardCheck, label: "Expense Approvals", permissions: [{ resource: "expenses" }], roles: systemAdministratorNavigationRoles },
+      // DIRECT ORDERS is the one row here that is NOT a move: /admin/direct-orders is the module's
+      // whole workspace (every order, the tabs, Finance's booking queue) and it stays under "Order
+      // Desk". This row is the approval QUEUE inside it — ?view=needs-action — which is what the
+      // owner was looking at when he asked for it on 2026-10-08 (*"the direct orders, why do I see
+      // direct orders here? make a separate inbox for the direct orders"*).
+      //
+      // Its badge is "direct-orders-approvals-pending" (/api/approvals/direct-orders/pending-count:
+      // orders waiting on THIS caller's own approval rung), never the workspace row's
+      // "direct-orders-needs-action", which is that count PLUS Finance's unbooked-month queue. The
+      // unbooked half is a booking duty, not an approval, and it is the Finance Manager's only
+      // chaser — so it stays on the workspace row and does not follow the module name in here.
+      { href: "/admin/direct-orders?view=needs-action", icon: ReceiptText, label: "D.Orders Approvals", permissions: [{ resource: "direct_orders", action: "read" }], navBadge: "direct-orders-approvals-pending" },
+      // MARKETING INBOX and AWARENESS APPROVALS moved out of "Marketing Workspace" with their
+      // gates and badges unchanged — same roles, same permissions, same badge kinds, so nobody
+      // gains or loses a route. Both keep their measured labels: "Marketing Inbox" was shortened to
+      // fit a rail row that also carries a pending badge (150px against a 98px budget), and
+      // renaming it "Marketing Approvals" under this heading would put that clip straight back.
+      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Marketing Inbox", navBadge: "marketing-approvals-pending", roles: ["CEO", "District Manager", "Super Admin", "SFE Manager", "Finance Manager"] },
+      { href: "/admin/market-awareness/inbox", icon: Inbox, label: "Awareness Approvals", navBadge: "market-awareness-approvals-pending", permissions: [{ resource: "market_awareness", action: "read" }], roles: ["CEO", "Super Admin"] },
       // "Other Approvals" is not a heading, so the only way to take the phrase off his sidebar is
       // to drop the row. No loss: this inbox carries resignation / contract / outstation items
       // only (getAwaitingMyActionItems), and the SFE Manager holds none of those grants — it was
@@ -559,8 +603,35 @@ export const adminNavigationSectionSeeds = [
       // leave:read grant is load-bearing for the two rows ABOVE this one — he manages OF-0001 /
       // A-1 / A-4 and decides their vacations and excuses — so the row can only go by name.
       { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["SFE Manager", "Finance Manager"], navBadge: "approvals-hub-pending" },
+      // CALENDAR DISPUTES — its own row since 2026-10-08 (owner: "separate the disputes inbox into a
+      // separate dispute inbox"). It was the fifth tab of Other Approvals, which is the residual
+      // resignation/contract queue; a Private Calendar accuracy review is neither, and it is decided
+      // by ONE person — assertDisputeDecisionActor refuses anybody but Super Admin end to end, which
+      // is why this row is Super-Admin-only rather than permission-gated. `roles` alone is the right
+      // gate here: Super Admin's system-administrator waiver in navigationItemVisible lets him past
+      // it anyway, and no other role may reach the page (it redirects them to Other Approvals).
+      { href: "/admin/private-calendar-disputes", icon: FileSearch, label: "Calendar Disputes", roles: ["Super Admin"], navBadge: "calendar-disputes-pending" },
+      // DEDUCTION DISPUTES — the owner, 2026-10-08, in the same breath as the Approvals tab itself:
+      // *"don't forget the deduction disputes"*, *"make every approval inbox its own row under the
+      // orange Approvals tab"*. An employee contesting a published deduction is an approval queue by
+      // every test that matters — it waits, it is answered by one person, and the answer moves money
+      // already on a payslip — but it had no row anywhere: the only in-app route to it was the email
+      // notification's own deep link, and before that it had none at all (owner: "I receive a
+      // comment on a deduction and I can never reach it").
+      //
+      // The href carries ?tab=disputes deliberately. /admin/deductions lands on the CURRENT month's
+      // collection workspace, which shows no comment at all; the Disputes tab is company-wide and
+      // month-independent, which is the whole reason it exists. The "Deductions" row under Payroll
+      // Management keeps the bare address and the module.
+      //
+      // Roles are the deductions PAGE's own VIEW_ROLES, not isDeductionsReadActor: the Finance
+      // Manager passes that helper (his payroll surfaces are built on the reach) but the owner
+      // revoked his screen on 2026-08-11, so a row would redirect him straight back out. Replying is
+      // narrower still — Super Admin only — and that is deliberate: the CEO and HR Operations read
+      // the dispute on this screen without answering it.
+      { href: "/admin/deductions?tab=disputes", icon: MessageSquareWarning, label: "Deduction Disputes", permissions: [{ resource: "deductions", action: "read" }], roles: ["Super Admin", "CEO", "HR Operations"], navBadge: "deduction-disputes-pending" },
     ],
-    label: "Approvals",
+    label: "Approvals Hub",
   },
 
   // Finance-Manager-only consolidated Vacation + Excuse workspace (owner instruction, 2026-08-10).
@@ -679,60 +750,27 @@ export const adminNavigationSectionSeeds = [
       // Marketing & ROI and ROI Tracker off his sidebar. The page guard
       // (assertMarketingAdminPageAccess allowCompanyOversight) still admits him by URL — this is a
       // navigation decision, not a revocation — but nothing links him here any more. His remaining
-      // marketing duty is the Approval Inbox below, which is the rung he actually executes.
+      // marketing duty is the Approval Inbox, which is the rung he actually executes — under the
+      // "Approvals Hub" heading since 2026-10-08, not in this section.
       {
         href: "/admin/marketing-roi",
         icon: Megaphone,
         label: "Marketing & ROI",
         roles: ["Super Admin", "CEO", "SFE Manager", "District Manager", "Financial Advisor"],
       },
-      // Pulled OUT of the hub onto its own sidebar tab (2026-08-02). It is an inbox — work
-      // arrives in it and waits — so it needs to be visible at a glance with its pending badge,
-      // not one click inside a hub of reports. Removed from marketingRoiPageItems in the same
-      // change so the module lives in exactly one place. Roles mirror the card it replaces plus
-      // SFE Manager, which is what assertMarketingAdminPageAccess already admitted.
+      // MOVED TO THE "Approvals Hub" BAND ON 2026-10-08 — the Marketing Inbox and Awareness
+      // Approvals rows that stood here are now the two marketing queues under that heading
+      // (search "THE FOUR QUEUES THAT JOINED THIS BAND" above), gates and badges byte-identical.
+      // The owner asked for every approval queue under one title, and a row left here as well
+      // would print the same pending badge twice in one rail. This workspace keeps what it is
+      // actually for: the reports, and the bench where an approved request is executed.
       //
-      // CEO added 2026-08-04. They hold `ceo_approval`, the LAST required rung of the live chain,
-      // and this is the only shell they are ever shown (resolveNavigationMode pins CEO to "admin"),
-      // so without this link the final approver had no route to their own queue at all.
-      //
-      // Finance Manager added 2026-08-10 for exactly the same reason, one rung further down: the
-      // `finance_execution` step was activated and pointed at that role (owner: "Ahmed is the next
-      // step after CEO"), which makes HIM the last rung. He is admin-shell only, so this link and
-      // marketingAdminApprovalInboxRoles in src/lib/marketing-requests/admin-page-access.ts have to
-      // move together — the nav roles alone would render a button that redirects him back out.
-      {
-        href: "/admin/marketing-requests/inbox",
-        icon: Inbox,
-        // 150px against a 98px budget — the tightest context there is: a standalone hub row that
-        // ALSO carries a pending badge, so the label competes with both the ↗ and the count.
-        label: "Marketing Inbox",
-        // The pending badge the comment above promised. It needs its OWN kind: marketing is
-        // deliberately excluded from the consolidated approvals hub (see the comments in
-        // src/lib/action-center/service.ts and app/api/approvals-hub/hub-data/route.ts), so
-        // "approvals-hub-pending" would count everything EXCEPT this inbox.
-        navBadge: "marketing-approvals-pending",
-        roles: ["CEO", "District Manager", "Super Admin", "SFE Manager", "Finance Manager"],
-      },
-      // Market Awareness' own approvals queue, in the admin shell (2026-10-04). The CEO is the last
-      // rung of the awareness chain and Super Admin may answer any step, and BOTH live in this shell
-      // — resolveNavigationMode pins the CEO to it — so until this row existed the only Approve /
-      // Return / Reject buttons in the module sat behind /employee-portals/market-awareness/inbox,
-      // which bounced them to /overview. Four activities were waiting at the CEO step with no screen
-      // on which to answer them. The Marketing Manager, the Group Product Manager and the National
-      // Sales Managers are portal-shell roles and keep the portal row of the same name.
-      //
-      // Its own badge kind for the same reason as the Marketing Inbox above: market awareness is
-      // deliberately outside the consolidated approvals hub, so "approvals-hub-pending" would count
-      // everything except this queue.
-      {
-        href: "/admin/market-awareness/inbox",
-        icon: Inbox,
-        label: "Awareness Approvals",
-        navBadge: "market-awareness-approvals-pending",
-        permissions: [{ resource: "market_awareness", action: "read" }],
-        roles: ["CEO", "Super Admin"],
-      },
+      // Both rows' own history travelled with them — why the CEO, the SFE Manager and the
+      // Finance Manager are on the marketing row at all (each is a live rung of that chain), and
+      // why the awareness queue needed an admin-shell screen — so change that row and
+      // marketingAdminApprovalInboxRoles in src/lib/marketing-requests/admin-page-access.ts
+      // together, exactly as before: nav roles alone render a button that bounces the viewer out.
+
       // RE-OPENED 2026-08-30 on the owner's explicit instruction ("open the sidebar route"), after
       // #2713 gave the Finance Manager an overdue-invoice figure on his dashboard and a link to the
       // screen behind it. Read the history before removing this again, because it has been removed
@@ -3957,14 +3995,12 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
 // one link). Expense Requests / Add Manual Expense are query-string views of
 // the same Expense Command Center page, preserved exactly as before.
 export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
-  {
-    href: "/admin/outstation/expense-approvals",
-    icon: ClipboardCheck,
-    label: "Expense Approvals",
-    description: "Review and approve outstation expenses against real CRM field activity.",
-    permissions: [{ resource: "expenses" }],
-    roles: systemAdministratorNavigationRoles,
-  },
+  // EXPENSE APPROVALS LEFT THIS HUB ON 2026-10-08 for the "Approvals Hub" band in
+  // adminNavigationSectionSeeds (owner: every approval queue under one heading). It is a seed row
+  // there now, gated with this card's own net effect — `expenses` AND Super Admin — so nobody
+  // gained or lost the route; the card is gone from here rather than duplicated, because
+  // promoteHubRows would otherwise put a second "Expense Approvals" row on the same rail.
+  // Its href also left the "Expense Desk" split below, which would simply have stopped matching.
   {
     href: "/admin/outstation/expense-command",
     icon: Radar,
@@ -4875,7 +4911,6 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         heading: "Expense Desk",
         sectionId: "expenses-outstation",
         hrefs: [
-          "/admin/outstation/expense-approvals",
           "/admin/outstation/expense-command",
           "/admin/outstation/expense-command?tab=queue",
           "/admin/outstation/expense-command?tab=queue&action=create-manager-expense",

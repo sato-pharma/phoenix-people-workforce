@@ -480,6 +480,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/summary/employee", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/summary/company", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/comments", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
+  // The sidebar badge for the Deduction Disputes inbox (its own row under the Approvals tab since
+  // 2026-10-08). Counts the threads whose newest line came from the employee's side; no audit row,
+  // because every open tab polls it every 30 s and it reads nobody's figures, only how many are
+  // waiting. The route adds assertDeductionsReadActor on top of this matrix gate, which is what
+  // keeps a seat holding deductions:read for its own portal line out of the company-wide count.
+  sessionApi({ methods: ["GET"], pattern: "/api/deductions/disputes/pending-count", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/comments", permission: { resource: "deductions", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/collect", permission: { resource: "deductions", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/manual", permission: { resource: "deductions", action: "create" }, guard: "domain-helper", csrfRequired: true }),
@@ -1902,6 +1908,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/private-calendar", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/private-calendar/disputes", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/private-calendar/disputes/pending", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper" }),
+  // The sidebar badge for the Calendar Disputes inbox — the LENGTH of the list above, same gate, no
+  // audit row: it is polled every 30 s from every open tab and reads nobody's data but the count.
+  sessionApi({ methods: ["GET"], pattern: "/api/private-calendar/disputes/pending-count", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/private-calendar/disputes/:id/decide", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // The reply thread on one review request. `attendance:read` is only the matrix gate; the real
   // audience test — the employee who raised it, or a Super Admin — is resolveDisputeThreadActor in

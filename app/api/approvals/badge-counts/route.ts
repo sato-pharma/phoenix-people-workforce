@@ -8,6 +8,9 @@ import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
 import { getMarketAwarenessDecisionBadge } from "@/lib/market-awareness/service";
 import { getMarketingApproverBadge } from "@/lib/marketing-requests/service";
+import { countOpenDeductionsDisputes } from "@/lib/deductions/comments";
+import { assertDeductionsReadActor } from "@/lib/deductions/permissions";
+import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
 import {
   getExcuseAwaitingBadge,
   getPlanAwaitingBadge,
@@ -30,7 +33,7 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
   try {
     const access = await resolveAccessContext(request);
-    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing, marketAwareness] = await Promise.allSettled([
+    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing, marketAwareness, calendarDisputes, deductionDisputes] = await Promise.allSettled([
       (async () => {
         await assertPermission(access, "weekly_plans", "read");
         return getPlanAwaitingBadge(access);
@@ -75,6 +78,18 @@ export async function GET(request: Request) {
       // decisions that are actually the caller's, so every role that is not in an awareness chain
       // — which is most of them — settles at 0 without a refusal reaching this response.
       getMarketAwarenessDecisionBadge(access),
+      // Calendar Disputes, its own inbox since 2026-10-08. No assertPermission: the list asserts
+      // Super Admin for itself (assertDisputeDecisionActor), so every other role settles at 0
+      // without a refusal reaching this response — the same shape as marketing above.
+      (async () => ({ count: (await listPendingPrivateCalendarDataDisputes(access)).length }))(),
+      // Deduction Disputes, its own inbox since 2026-10-08. assertDeductionsReadActor on top of the
+      // matrix: `deductions:read` alone is held by seats that may see only their OWN line, and the
+      // count is a company-wide read like every other one that helper guards. Anyone else settles
+      // at 0 here without a refusal reaching the poll.
+      (async () => {
+        assertDeductionsReadActor(access);
+        return { count: await countOpenDeductionsDisputes() };
+      })(),
     ]);
     // Every open tab polls this every 30 s; its time goes into the per-minute process_health line.
     recordTiming("badge_counts", Date.now() - startedAt);
@@ -101,6 +116,8 @@ export async function GET(request: Request) {
         marketing: marketing.status === "fulfilled" ? marketing.value : { count: 0, overdue: false },
         marketAwareness:
           marketAwareness.status === "fulfilled" ? marketAwareness.value : { count: 0, overdue: false },
+        calendarDisputes: calendarDisputes.status === "fulfilled" ? calendarDisputes.value : { count: 0 },
+        deductionDisputes: deductionDisputes.status === "fulfilled" ? deductionDisputes.value : { count: 0 },
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -115,6 +132,8 @@ export async function GET(request: Request) {
       directOrdersNeedsAction: { count: 0, overdue: false },
       marketing: { count: 0, overdue: false },
       marketAwareness: { count: 0, overdue: false },
+      calendarDisputes: { count: 0 },
+      deductionDisputes: { count: 0 },
     });
   }
 }

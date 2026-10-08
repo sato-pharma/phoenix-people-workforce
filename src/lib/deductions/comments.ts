@@ -9,7 +9,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
-import { assertDeductionsDecisionActor } from "./permissions.ts";
+import { assertDeductionsDecisionActor, isDeductionsDecisionActor } from "./permissions.ts";
 import type { DeductionsComment } from "./types.ts";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { notifyConversationMessage, notifyHrConversationMessage } from "@/lib/conversations/notify";
@@ -368,4 +368,55 @@ async function notifyDeductionsComment(input: {
       error,
     });
   }
+}
+
+/**
+ * HOW MANY DISPUTES ARE WAITING ON HR — the Deduction Disputes sidebar badge.
+ *
+ * A dispute is a two-way thread (`addDeductionsReply`), so "open" cannot mean "has comments": a
+ * thread HR already answered is closed work, and a badge that kept counting it would never clear
+ * and would teach the reader to ignore it. What is waiting is a thread whose NEWEST line came from
+ * the employee's side — nobody has answered since.
+ *
+ * "The employee's side" is read off `author_role` rather than by matching the author against the
+ * candidate's owner, and that is the cheaper AND the more honest test. A reply is Super Admin only
+ * (`isDeductionsDecisionActor`, the owner's 2026-10-06 decision), so any other role on the newest
+ * line means the employee spoke last. It also stays correct for the one odd case a hr-id comparison
+ * gets wrong: the owner is himself B-10, and a thread where HE spoke last IS answered, whichever
+ * side of it he was writing from.
+ *
+ * ONE read, no hydration. The inbox read (`listPublishedDeductionCommentThreads`) also loads every
+ * publication line and resolves every author's name, which is right for a screen and far too much
+ * for a number polled every 30 seconds. The same 1,000-row cap applies for the same reason it does
+ * there: disputes run a few a month, so the cap is the whole history and exists only so the table
+ * can never stream without bound.
+ *
+ * Deliberately NOT gated in here. Every other badge domain in /api/approvals/badge-counts asserts
+ * at its own door and settles at 0 for a role that cannot see it; this one's door is
+ * assertDeductionsReadActor on the route.
+ */
+export async function countOpenDeductionsDisputes(): Promise<number> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("deductions_comments")
+    .select("candidate_id, author_role, created_at")
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+
+  const newestByCandidate = new Map<string, string | null>();
+  for (const row of (data ?? []) as Array<{ author_role?: string | null; candidate_id?: string | null }>) {
+    const candidateId = String(row.candidate_id ?? "");
+    // Rows arrive newest first, so the FIRST sighting of a candidate is its newest line.
+    if (!candidateId || newestByCandidate.has(candidateId)) continue;
+    newestByCandidate.set(candidateId, row.author_role ?? null);
+  }
+
+  let waiting = 0;
+  for (const authorRole of newestByCandidate.values()) {
+    // `?? ""` rather than a cast straight off `string | null`: a null does not overlap a role
+    // union, so `as` on the nullable type is a type error, and an empty string is simply not a
+    // decision actor — which is the right answer for a row whose author_role never got written.
+    if (!isDeductionsDecisionActor({ role: (authorRole ?? "") as AccessContext["role"] })) waiting += 1;
+  }
+  return waiting;
 }

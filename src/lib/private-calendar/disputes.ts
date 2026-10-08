@@ -142,7 +142,7 @@ export async function submitPrivateCalendarDataDispute(
 
   const recipients = await resolveSuperAdminRecipients();
   await Promise.all(recipients.map((recipient) => createSystemNotification({
-    actionUrl: "/admin/approvals-hub?tab=disputes",
+    actionUrl: "/admin/private-calendar-disputes",
     actorId: employeeHrId,
     channels: ["email", "in_app", "push"],
     eventType: "private_calendar_dispute_submitted",

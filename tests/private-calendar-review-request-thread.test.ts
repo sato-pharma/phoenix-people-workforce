@@ -82,8 +82,8 @@ export function runPrivateCalendarReviewRequestThreadTests() {
     assert.match(service, /actionUrl: "\/employee-portals\/private-calendar"/, "the employee's link lands on his calendar");
     assert.match(
       service,
-      /roleHrefs: \{ "Super Admin": "\/admin\/approvals-hub\?tab=disputes" \}/,
-      "the Super Admin's link lands on the Disputes Inbox",
+      /roleHrefs: \{ "Super Admin": "\/admin\/private-calendar-disputes" \}/,
+      "the Super Admin's link lands on the Calendar Disputes inbox",
     );
 
     // The addressing itself, asserted on the shared pure function: the owner is the To, the author is
@@ -140,7 +140,7 @@ export function runPrivateCalendarReviewRequestThreadTests() {
 
     for (const [surface, file] of [
       ["the employee's calendar", "src/components/employee-portal/private-calendar.tsx"],
-      ["the reviewer's Disputes Inbox", "src/components/admin/private-calendar-disputes-workspace.tsx"],
+      ["the reviewer's Calendar Disputes inbox", "src/components/admin/private-calendar-disputes-workspace.tsx"],
     ] as const) {
       const source = read(file);
       assert.match(

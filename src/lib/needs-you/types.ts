@@ -79,8 +79,8 @@ export const needsYouSourceIds = [
   "uncollected-leaver-deductions",
   // Added 2026-10-07. A Private Calendar review request an employee raised on one of his own days —
   // Super Admin only end to end, so nobody else can clear it for him. It reached him exactly once,
-  // on the day it was submitted, and then only in the notification: the Disputes Inbox is a tab he
-  // has to remember to open. One sat pending for two days before this row existed, which is the shape
+  // on the day it was submitted, and then only in the notification: the Calendar Disputes inbox is a
+  // screen he has to remember to open. One sat pending for two days before this row existed, which is the shape
   // this board exists to stop. Produced by `src/lib/private-calendar/disputes.ts`.
   "calendar-review-requests",
 ] as const;
@@ -159,9 +159,9 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // the only screen where a human can still net an uncollected leaver deduction in. The board links;
   // it never acts, and it never states the EGP, which lives on that screen.
   "uncollected-leaver-deductions": { href: "/admin/deductions", screen: "Deductions" },
-  // The hub's Disputes Inbox tab, deep-linked — the same destination the submitted-and-replied
-  // notifications carry, so the board and the notice land on the same screen.
-  "calendar-review-requests": { href: "/admin/approvals-hub?tab=disputes", screen: "Disputes Inbox" },
+  // The Calendar Disputes inbox — its own page since 2026-10-08, and the same destination the
+  // submitted-and-replied notifications carry, so the board and the notice land on one screen.
+  "calendar-review-requests": { href: "/admin/private-calendar-disputes", screen: "Calendar Disputes" },
 };
 
 /**

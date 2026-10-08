@@ -212,9 +212,17 @@ export function runMarketingApprovalInboxNavBadgeTests() {
     /navBadge\?:[^;]*"marketing-approvals-pending"/,
     "9: system-navigation must declare the marketing badge kind",
   );
+  // Bounded by the END OF ITS OWN ROW, not by the next marketing href. It was sliced to
+  // /admin/marketing-requests/all until 2026-10-08, when the owner moved this row out of the
+  // Marketing Workspace section into the "Approvals Hub" band — hundreds of lines earlier in the
+  // file. The old slice still passed, because the PORTAL row with the same badge had fallen inside
+  // it: the assertion read as though it covered the admin tab while covering nothing of the sort.
+  // A row is one object literal, so its own closing brace is the only end that cannot drift.
+  const adminInboxStart = navigation.indexOf('href: "/admin/marketing-requests/inbox"');
+  assert.ok(adminInboxStart >= 0, '9: the admin Marketing Inbox row must exist in the nav config');
   const adminInboxItem = navigation.slice(
-    navigation.indexOf('href: "/admin/marketing-requests/inbox"'),
-    navigation.indexOf('href: "/admin/marketing-requests/all"'),
+    adminInboxStart,
+    navigation.indexOf("},", adminInboxStart),
   );
   assert.match(
     adminInboxItem,

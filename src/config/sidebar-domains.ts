@@ -1,6 +1,7 @@
 import {
   CalendarClock,
   ChartColumnBig,
+  ClipboardCheck,
   ClipboardList,
   Database,
   Inbox,
@@ -108,14 +109,50 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       },
     ],
   },
+  // APPROVALS IS ITS OWN DOOR SINCE 2026-10-08, and that is the owner's instruction rather than a
+  // balancing decision: *"the Approvals Hub is the orange because it is the title and the separate
+  // sidebar tab, and under it all the approvals inboxes — so the Disputes inbox is a separate inbox
+  // like Marketing Inbox, like Deduction Disputes, like anything"*, then *"make every approval inbox
+  // its own row under the orange Approvals tab"*.
+  //
+  // It was a BAND INSIDE "Requests" until then, which put the queues waiting on his decision one
+  // accordion deeper than the requests he had submitted himself — and the two are not the same
+  // question. "Requests" is what I asked for; this is what is waiting on me. It is also the door he
+  // opens most, so it sits second, immediately after Overview.
+  //
+  // Second in this array, NOT merged with "requests": every section id belongs to exactly one group
+  // (tests/sidebar-domains.test.ts), so a band cannot be in two domains, and "requests" keeps
+  // "My Requests" on its own rather than being emptied.
+  {
+    id: "approvals",
+    // 🔴 THE NAME IS THE ORANGE TITLE, AND IT IS HIS WORDS. The domain name renders
+    // `text-phx-accent` at 13px bold (sidebar.tsx) and the group heading under it renders dim grey
+    // caps — so *"the Approvals Hub is the orange because it is the title and the separate sidebar
+    // tab"* is a statement about THIS field, not about the heading below. "Approvals" alone was
+    // wrong for one turn: it put his words in the grey line and a shorter word in the orange one.
+    name: "Approvals Hub",
+    desc: "Every approval inbox in one place — each queue its own row.",
+    icon: ClipboardCheck,
+    groups: [
+      // One group, holding the one section, and its heading deliberately does NOT repeat the orange
+      // title above it — "Approvals Hub" here would print the same words twice, in two colours, one
+      // line apart. ("Inboxes" is also his word for them: *"under it all the approvals inboxes"*.)
+      // groupAdminSections only blanks a heading that repeats a visible ROW label, so a repeat of
+      // the DOMAIN name is not caught for us; and assertion 3 of tests/sidebar-domains.test.ts
+      // refuses an empty heading, so a blank is not available either.
+      //
+      // The section's own label in system-navigation.ts stays "Approvals Hub" — that is what the
+      // FLAT rail prints, which draws no domain door at all.
+      { heading: "Inboxes", sectionIds: ["approvals-hub"] },
+    ],
+  },
   {
     id: "requests",
     name: "Requests",
-    desc: "What is waiting on a decision — yours, and everyone else's.",
+    desc: "What this seat has asked for — its own submissions, not anyone else's decisions.",
     icon: Inbox,
     groups: [
       { heading: "My Requests", sectionIds: ["my-requests"] },
-      { heading: "Approvals", sectionIds: ["approvals-hub"] },
     ],
   },
   {

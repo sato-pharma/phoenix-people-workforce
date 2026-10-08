@@ -1,6 +1,6 @@
 import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
-import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
+import type { ActionHubItem, ActionHubModule, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { logStructured } from "@/lib/observability/log";
 // The same pager the Approvals Hub uses (#4273). One implementation, not a second copy: both
@@ -596,6 +596,30 @@ function survivesAwaitingInbox(item: ActionHubItem, access: AccessContext): bool
   );
 }
 
+/**
+ * The modules that have LEFT the "Other Approvals" inbox for a mailbox of their own, and where each
+ * one lives now.
+ *
+ * Owner instruction, 2026-10-08: *"since I have the expense approvals outside in a separate mailbox,
+ * don't show any related expense approvals in the Other Approvals"*. Outstation expense claims have
+ * had their own desk at /admin/outstation/expense-approvals since 2026-08-08, so carrying them here
+ * as well put one claim in two queues and made "Other Approvals" read as a dumping ground.
+ *
+ * 🔴 APPLIED TO THE HUB SURFACES ONLY — deliberately NOT inside
+ * {@link getAwaitingMyActionItemsWithHealth}, which is also what `src/lib/needs-you/sources.ts`
+ * reads. The Needs You board must never under-report (docs/needs-you.md), and filtering there would
+ * make a waiting expense claim vanish from the one screen whose whole job is to say what is waiting.
+ * The board keeps the item and links it to the mailbox named here instead.
+ */
+export const OTHER_APPROVALS_MOVED_OUT: Partial<Record<ActionHubModule, `/${string}`>> = {
+  outstation: "/admin/outstation/expense-approvals",
+};
+
+/** True for an item that still belongs in the residual "Other Approvals" inbox. */
+export function belongsInOtherApprovalsInbox(item: Pick<ActionHubItem, "module">): boolean {
+  return !OTHER_APPROVALS_MOVED_OUT[item.module];
+}
+
 /** The items of the three sources whose items survive the inbox filter — shared so the count below can never drift from the list. */
 function residualActionItems(input: {
   resignations: Awaited<ReturnType<typeof getResignationsDashboardData>> | null;
@@ -635,8 +659,13 @@ export async function countAwaitingMyActionItems(
   access: AccessContext,
   audience: ActionInboxAudience,
 ): Promise<number> {
+  // Outstation left this inbox for its own mailbox (OTHER_APPROVALS_MOVED_OUT), so the badge no
+  // longer reads it either — a count that included it would put a number over an empty inbox, which
+  // is the "queue nobody could read" defect the hub's own comments warn about.
   const includeOutstationAdminSource =
-    audience === "admin" && canUseAdminOutstationWorkspace(access, "approve");
+    audience === "admin" &&
+    !OTHER_APPROVALS_MOVED_OUT.outstation &&
+    canUseAdminOutstationWorkspace(access, "approve");
   const [resignations, outstation, contract] = await Promise.allSettled([
     getResignationsDashboardData(access),
     includeOutstationAdminSource ? listOutstationRequests() : Promise.resolve(null),
@@ -647,7 +676,7 @@ export async function countAwaitingMyActionItems(
     outstation: outstation.status === "fulfilled" ? outstation.value : null,
     contract: contract.status === "fulfilled" ? contract.value : null,
     employees: [],
-  }).filter((item) => survivesAwaitingInbox(item, access)).length;
+  }).filter((item) => survivesAwaitingInbox(item, access) && belongsInOtherApprovalsInbox(item)).length;
 }
 
 /**
@@ -657,12 +686,16 @@ export async function countAwaitingMyActionItems(
  * have nowhere to put a source-health notice, so handing them one would be a change with no reader.
  * Callers that must not mistake a failure for an empty queue call
  * {@link getAwaitingMyActionItemsWithHealth} instead.
+ *
+ * This is also where the modules that moved to their own mailbox are dropped — see
+ * OTHER_APPROVALS_MOVED_OUT for why the filter lives here and not one level down.
  */
 export async function getAwaitingMyActionItems(
   access: AccessContext,
   audience: ActionInboxAudience,
 ): Promise<ActionHubItem[]> {
-  return (await getAwaitingMyActionItemsWithHealth(access, audience)).items;
+  const { items } = await getAwaitingMyActionItemsWithHealth(access, audience);
+  return items.filter(belongsInOtherApprovalsInbox);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
