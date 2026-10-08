@@ -83,6 +83,44 @@ confirmed ones**.
 **The day is left alone entirely** when there is an approved full-day vacation, any request still
 undecided or returned for edit, or a calendar review request that was not rejected.
 
+## A district manager's half-day vacation (owner, 2026-10-08)
+
+"A half-day vacation clears only its half." The district manager's full-day no-record check
+(`connectors/dsm-no-record.ts`) used to skip the whole day for any approved request. A manager
+with an afternoon off and nothing at all in the morning was charged nothing for that morning. It
+now reads each request's `day_part` and asks `fullDayCheckLeaveVerdict`:
+
+| Approved leave on the day | Saturday to Wednesday | Thursday (morning only) |
+| --- | --- | --- |
+| None | Judged as a full day | Judged at 0.5 |
+| Full day, or AM off plus PM off | Cleared | Cleared |
+| AM off | The afternoon goes to **this tab** | Cleared: the morning is the whole Thursday |
+| PM off | The morning goes to **this tab** | Judged at 0.5: an afternoon off covers no Thursday field hour |
+
+**Why the half comes here and not on the manager's no-record row.** That row is a `crm` row of
+dates, and payroll weighs each date whole; only a Thursday counts as half
+(`chargeableDeductionDays` → `sumDetectedDeductionDayWeights`). A Tuesday half on that row would be
+billed as a day. This tab charges it at 0.5 ("PM off approved — nothing recorded for the morning")
+through the same CRM column. The handed-over dates are listed on the manager's row evidence as
+`halfDayVacationDatesOnTheHalfDayTab`.
+
+Measured on production, 1 June to 7 October 2026: four district-manager days carried a half-day
+vacation and no visit at all.
+
+- Dina Hamdy Fadel Mohamed Bdair, Tuesday 4 August, PM off: the morning is owed. It is already
+  a live Half Day (CRM) row at 0.5 for that date, and she has no no-record row in August.
+- Momen Abdelhady Mohamed Shehata, Wednesday 9 September, AM off unpaid: the afternoon is owed.
+  The date already carries his unpaid-vacation row at 0.5, so this is the known limit below.
+- Amgad Ibrahim Tawfik Farag, Saturday 3 October, PM off: the morning is owed. October has not
+  been collected yet.
+- Amgad Ibrahim Tawfik Farag, Thursday 17 September, AM off: cleared, correctly.
+
+So on a Saturday-to-Wednesday the money already landed right once the Half Day (CRM) tab went live:
+the manager's row skipped the date and this tab charged the half. The fix makes that hand-off a
+stated, pinned rule rather than a side effect of "any leave skips the day", and corrects the one
+case this tab cannot see: a Thursday with an afternoon off and no record, whose morning is now
+charged. No such Thursday exists in that window.
+
 ## Identity, resigned partners and collisions
 
 - **Identity.** The hr id is used first. When a row has a blank hr id, the crm id is used instead;
@@ -144,5 +182,5 @@ Found along the way, and outside this tab:
 - **Half-day vacations charged as a full day.** Five CRM half-day vacation days were each charged
   a full day: two in August's published deductions and three approved for September. Decided on
   the Deductions screen, never in chat.
-- **`dsm_no_record`'s `approvedLeaveDays` ignores `day_part`.** A half-day vacation suppresses the
-  manager's whole day there.
+- **`dsm_no_record`'s `approvedLeaveDays` ignored `day_part`.** A half-day vacation suppressed the
+  manager's whole day there. Fixed 2026-10-08; see "A district manager's half-day vacation" above.

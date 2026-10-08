@@ -51,6 +51,7 @@
 
 import { PHOENIX_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts.ts";
 import { crmVisitTypeMeaningLenient } from "@/lib/crm/visit-type-meaning.ts";
+import { isFieldWorkforceThursday } from "@/lib/field-workforce-compliance/weekend-policy.ts";
 
 import { compactDeductionsHrId } from "./candidate-key.ts";
 
@@ -482,4 +483,48 @@ export function halfDayReason(verdict: Extract<HalfDayVerdict, { kind: "half_day
       ? `${worked === "morning" ? "AM" : "PM"} off approved`
       : `Approved plan covers the ${worked} only`;
   return `${cover} — nothing recorded for the ${missing}: no visit, check-in, approved vacation, approved plan or request`;
+}
+
+/**
+ * The part of a day an APPROVED leave covers. A request with no part, or one this code does not
+ * know, is a whole day: the vacation module's own default, and the reading the half-day collector
+ * above already gives an unknown part (it leaves the day alone).
+ */
+export type LeavePart = "full_day" | "am_only" | "pm_only";
+
+export function leavePartOf(value: unknown): LeavePart {
+  const part = String(value ?? "").trim().toLowerCase();
+  return part === "am_only" || part === "pm_only" ? part : "full_day";
+}
+
+/** Two approved requests on one day add up: the morning off and the afternoon off is the day off. */
+export function combineLeaveParts(known: LeavePart | undefined, next: LeavePart): LeavePart {
+  if (!known || known === next) return next;
+  return "full_day";
+}
+
+/**
+ * What approved leave does to one working day of a FULL-DAY no-record check — the district
+ * manager's (`connectors/dsm-no-record.ts`). Owner, 2026-10-08: "a half-day vacation clears only
+ * its half".
+ *
+ *   - `cleared`: the leave covers every field hour of the day — a full day, or a morning off on a
+ *     Thursday, which is a morning-only day.
+ *   - `half_day`: it covers one half of a Saturday-to-Wednesday day, so the other half is still
+ *     owed. That half belongs to THIS tab, never to the full-day row: payroll weighs every date on
+ *     a CRM row as a whole day (only a Thursday counts as half — `chargeableDeductionDays`), so the
+ *     full-day row would bill the half as a day. `judgeHalfDay` charges it at 0.5 instead ("AM off
+ *     approved — nothing recorded for the afternoon"), through the same CRM column.
+ *   - `judge`: it covers no field hour at all — an afternoon off on a Thursday, which has no field
+ *     afternoon — so the day is judged as if there were no leave, and a Thursday with no record
+ *     charges its morning, the Thursday half day.
+ *
+ * Before 2026-10-08 the check skipped the whole day for ANY approved request, so a manager with
+ * an afternoon off and nothing at all in the morning was charged nothing for that morning.
+ */
+export function fullDayCheckLeaveVerdict(part: LeavePart | undefined, date: string): "judge" | "cleared" | "half_day" {
+  if (!part) return "judge";
+  if (part === "full_day") return "cleared";
+  if (isFieldWorkforceThursday(date)) return part === "am_only" ? "cleared" : "judge";
+  return "half_day";
 }
