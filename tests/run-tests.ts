@@ -1762,6 +1762,7 @@ import { runPhoenixCrmPortalIntentTests } from "./phoenix-crm-portal-intent.test
 import { runPhoenixCrmTeamShorterTests } from "./phoenix-crm-team-shorter.test.ts";
 import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
+import { runPhoenixCrmPlanPendingVacationTests } from "./phoenix-crm-plan-pending-vacation.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
@@ -6569,6 +6570,11 @@ await runTest(
 await runTest(
   "Phoenix CRM plan never blocks on hours: a tick places a customer on any day and asks nothing, the day shows every day and hour he receives in its own column, the 'Day full' word is gone, and a customer not validated yet carries a small inline word with iReports360's brick and address (owner, 2026-09-30)",
   runPhoenixCrmPlanNeverBlockedTests,
+);
+
+await runTest(
+  "Phoenix CRM plan shows leave the rep asked for as pending approval (owner, 2026-10-08): a pending request is named on its days and never a day off, approved leave outranks it, and approved days read as approved vacations",
+  runPhoenixCrmPlanPendingVacationTests,
 );
 
 await runTest(

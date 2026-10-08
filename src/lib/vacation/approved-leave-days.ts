@@ -84,7 +84,11 @@ export function spreadApprovedLeave(rows: ReadonlyArray<Record<string, unknown>>
   return out;
 }
 
-export async function loadApprovedLeaveDays(
+/** Requests still waiting for a decision — the manager's, then HR's. A returned request waits on the employee, not on a decision. */
+export const PENDING_VACATION_STATUSES = ["pending_manager", "pending_hr"] as const;
+
+async function loadLeaveDays(
+  statuses: readonly string[],
   hrIds: Iterable<string | null | undefined>,
   range: { from: string; to: string },
 ): Promise<ApprovedLeaveDay[]> {
@@ -98,14 +102,35 @@ export async function loadApprovedLeaveDays(
       // Named columns, every one checked against the live table (2026-10-02): PostgREST answers a
       // missing column by failing the WHOLE read, not by nulling that field.
       .select("employee_hr_id, start_date, end_date, vacation_type, day_part")
-      .eq("status", "approved")
+      .in("status", [...statuses])
       // Overlapping the window, not contained by it: a vacation that began last month and ends in
       // this one covers days here, and `start_date >= from` would miss every one of them.
       .lte("start_date", range.to)
       .gte("end_date", range.from)
       .in("employee_hr_id", wanted.slice(at, at + CHUNK));
-    if (error) throw new Error(`approved leave: ${error.message}`);
+    if (error) throw new Error(`leave: ${error.message}`);
     out.push(...spreadApprovedLeave((data ?? []) as Array<Record<string, unknown>>, range));
   }
   return out;
+}
+
+export async function loadApprovedLeaveDays(
+  hrIds: Iterable<string | null | undefined>,
+  range: { from: string; to: string },
+): Promise<ApprovedLeaveDay[]> {
+  return loadLeaveDays(["approved"], hrIds, range);
+}
+
+/**
+ * The days of requests still WAITING for a decision, for the one reader that shows them as exactly
+ * that — the Phoenix CRM plan (owner, 2026-10-08: "if the employee submitted a vacation, show in his
+ * plan that it is pending approval"). Same shape as the approved days, and never to be mixed into
+ * them: a pending request is a request and not an absence (`on-vacation-today.ts`), so nothing that
+ * asks "was he away" may read this.
+ */
+export async function loadPendingLeaveDays(
+  hrIds: Iterable<string | null | undefined>,
+  range: { from: string; to: string },
+): Promise<ApprovedLeaveDay[]> {
+  return loadLeaveDays(PENDING_VACATION_STATUSES, hrIds, range);
 }

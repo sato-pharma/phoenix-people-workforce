@@ -662,7 +662,8 @@ export function PlanWeekPanel({
               return {
                 value: day.date,
                 label: <ChoiceLabel chosen={day.date === selectedDay.date}>{dayLabel(day.date)}</ChoiceLabel>,
-                note: `Day off · ${off.name}`,
+                // Approved leave says so (owner, 2026-10-08): the day is a vacation, not merely a day off.
+                note: off.kind === "leave" ? `${off.name} · approved` : `Day off · ${off.name}`,
                 disabled: counts.AM + counts.PM === 0,
               };
             }
@@ -674,6 +675,7 @@ export function PlanWeekPanel({
                   {day.date === today ? "Today · " : null}
                   <DayPair counts={counts} full={full} listTypes={day.listTypes} />
                   {activityTypes.length > 0 ? ` · ${activityTypes.map(dayActivityLabel).join(", ")}` : null}
+                  {day.pendingLeave ? " · Vacation pending approval" : null}
                   {asSent ? " · As sent" : null}
                   {changedDays?.has(day.date) ? " · Changed since the last send" : null}
                 </>

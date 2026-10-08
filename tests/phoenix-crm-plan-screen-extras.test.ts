@@ -268,11 +268,11 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
       month.includes("loadSeatDaysOff(seat, { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),"),
       "the month board reads his leave in its first wave, over the same days as the holidays",
     );
-    assert.ok(month.includes("isRamadan, activities, starts, holidays, leave });"), "and every week of it is built with it");
+    assert.ok(month.includes("isRamadan, activities, starts, holidays, leave, pendingLeave });"), "and every week of it is built with it, with the leave he has only asked for");
 
     const panel = source("src/components/phoenix-crm/plan-week-panel.tsx");
     assert.ok(panel.includes("const off = dayOffOf(day);"), "the day picker reads one day off");
-    assert.ok(panel.includes("note: `Day off · ${off.name}`,"), "and names it — \"Day off · Annual Vacation\"");
+    assert.ok(panel.includes("note: off.kind === \"leave\" ? `${off.name} · approved` : `Day off · ${off.name}`,"), "and names it — \"Annual Vacation · approved\", or \"Day off · Armed Forces Day\"");
     assert.ok(panel.includes("disabled: counts.AM + counts.PM === 0,"), "greyed, unless something is still on it to take off");
     const dayPanel = source("src/components/phoenix-crm/plan-day-panel.tsx");
     assert.ok(dayPanel.includes("const morning = !off && !day.listTypes.includes(\"PM\");"), "a day off is never read as a Thursday morning");

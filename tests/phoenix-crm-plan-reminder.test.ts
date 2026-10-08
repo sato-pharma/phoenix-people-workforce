@@ -216,12 +216,12 @@ export function runPhoenixCrmPlanReminderTests() {
     assert.equal((plans.match(/\bholidays,\n/g) ?? []).length >= 2, true, "and hand them to the day builder and the save check");
     const month = source("src/lib/phoenix-crm/server/monthly-plans.ts");
     assert.ok(month.includes("loadPlanHolidays(addDaysIso(monthStart, -14), addDaysIso(monthEndOf(monthStart), 14)),"), "the month board reads them in its first wave");
-    assert.ok(month.includes("isRamadan, activities, starts, holidays, leave });"), "and every week of it is built with them");
+    assert.ok(month.includes("isRamadan, activities, starts, holidays, leave, pendingLeave });"), "and every week of it is built with them");
     const holidaysReader = source("src/lib/phoenix-crm/server/plan-holidays.ts");
     assert.ok(holidaysReader.includes("getConfirmedNationalHolidays(period)"), "the company's confirmed calendar — the 6 → 8 October move included");
     assert.ok(holidaysReader.includes(".catch("), "and a calendar that cannot be read leaves the day plannable, never breaks the board");
     const panel = source("src/components/phoenix-crm/plan-week-panel.tsx");
-    assert.ok(panel.includes("const off = dayOffOf(day);") && panel.includes("note: `Day off · ${off.name}`,"), "the day picker names the holiday");
+    assert.ok(panel.includes("const off = dayOffOf(day);") && panel.includes("`Day off · ${off.name}`,"), "the day picker names the holiday");
     assert.ok(panel.includes("disabled: counts.AM + counts.PM === 0,"), "and greys it, unless something is still on it to take off");
     const board = source("src/components/phoenix-crm/plan-board.tsx");
     assert.ok(board.includes(".find((entry) => entry.listTypes.length > 0)"), "\"Next day\" steps over a holiday");
