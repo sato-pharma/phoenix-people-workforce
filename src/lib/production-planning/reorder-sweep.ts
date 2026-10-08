@@ -42,6 +42,7 @@ import {
   buildAlarmRowValue,
   formatNumberLatin,
   PP,
+  reorderEmailMaterialLabel,
 } from "./strings";
 
 export type ReorderSweepResult = {
@@ -68,7 +69,8 @@ function emailRows(verdicts: readonly AlarmVerdict[], data: ProductionPlanningDa
     // In the unit he buys in — kilograms, not the grams the engine counts in.
     const held = material ? toDisplayQty(verdict.heldQty, material.basePerDisplay).text : formatQty(verdict.heldQty);
     return {
-      label: material?.nameAr ?? verdict.nameAr,
+      // The packaging row is spelled out, because this email also says boxes for the product count.
+      label: reorderEmailMaterialLabel(verdict.code, material?.nameAr ?? verdict.nameAr),
       value: buildAlarmRowValue({
         coverRuns: formatNumberLatin(formatCoverRuns(verdict.coverRunsMicro)),
         displayUnit: material?.displayUnit ?? "",

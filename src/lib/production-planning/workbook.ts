@@ -19,6 +19,8 @@ import {
 import {
   coerceProductionPlanningLanguage,
   formatNumberLatin,
+  PACKAGING_BOX_CODE,
+  packagingBoxName,
   PRODUCTION_PLANNING_WORKBOOK_FONT,
   productionPlanningStrings,
 } from "./strings";
@@ -79,7 +81,7 @@ function pctFraction(text: string | null | undefined): number {
  * row is spelled out here, in the export only. The stored name (and the screen) stay `Box`.
  */
 function sheetMaterialName(S: ReturnType<typeof productionPlanningStrings>, planRow: WirePlanRow): string {
-  if (planRow.code === "CARTON") return S.lang === "ar" ? "علبة التغليف" : "Packaging box";
+  if (planRow.code === PACKAGING_BOX_CODE) return packagingBoxName(S.lang);
   return S.name(planRow);
 }
 
