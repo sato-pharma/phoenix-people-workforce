@@ -5,6 +5,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 import { VACATION_DAY_PARTS } from "@/lib/vacation/types";
 import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import type { DisputeAttachment } from "@/lib/dispute-center/types.ts";
 import {
   summarizePrivateCalendarVisits,
   type PrivateCalendarActivityKind,
@@ -119,6 +120,8 @@ export type PrivateCalendarTeamSummary = PrivateCalendarEmployeeOption & {
 
 /** One reply on a review request. The author's NAME, never his id — the owner's standing rule. */
 export type PrivateCalendarReviewMessage = {
+  /** Pictures riding on this reply (owner, 2026-10-09: "upload a picture in both"). */
+  attachments?: DisputeAttachment[];
   authorHrId: string;
   authorIsAdmin: boolean;
   authorName: string | null;
@@ -144,6 +147,8 @@ export type PrivateCalendarReviewRequest = {
   employeeName: string | null;
   id: string;
   messages: PrivateCalendarReviewMessage[];
+  /** Pictures the employee attached to the request itself. */
+  openingAttachments?: DisputeAttachment[];
   status: "accepted" | "pending_review" | "rejected";
 };
 

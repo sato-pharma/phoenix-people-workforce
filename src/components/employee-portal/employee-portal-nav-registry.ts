@@ -29,6 +29,7 @@ import {
   PackageCheck,
   PackageSearch,
   ReceiptText,
+  Scale,
   Send,
   Settings2,
   ShieldCheck,
@@ -109,6 +110,11 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Approvals", fullLabel: "Other Approvals", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"], navBadge: "approvals-hub-pending" },
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText, permission: { resource: "payslips", action: "read" } },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText, permission: { resource: "employee_profile", action: "read" } },
+  // MY DISPUTES — one place for everything the employee has disputed, in any of the three modules,
+  // decided or waiting (owner, 2026-10-09). Before this a dispute could only be read from inside
+  // the screen that raised it, and a decided one disappeared from both sides. Gated on
+  // attendance:read, the same permission the page and its routes assert; every list is self-scoped.
+  { label: "Disputes", fullLabel: "My Disputes", href: "/employee-portals/disputes", icon: Scale, permission: { resource: "attendance", action: "read" } },
   { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard, permission: { resource: "employee_profile", action: "read" } },
   // Every employee's own business card — view, correct name/number, request print from HR.
   { label: "Cards", fullLabel: "Business Cards", href: "/employee-portals/business-cards", icon: IdCard, permission: { resource: "business_card_requests", action: "create" } },

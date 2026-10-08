@@ -2178,6 +2178,11 @@ import { runNewHireMailboxTests } from "./new-hire-mailbox.test.ts";
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
 import { runAttendanceDigestNoticeChannelsTests } from "./attendance-digest-notice-channels.test.ts";
+import { runDisputeCenterStateTests } from "./dispute-center-state.test.ts";
+import { runDisputeCenterParticipantsTests } from "./dispute-center-participants.test.ts";
+import { runDisputeCenterAssistAccuracyTests } from "./dispute-center-assist-accuracy.test.ts";
+import { runDisputeCenterDigestRevisionTests } from "./dispute-center-digest-revision.test.ts";
+import { runDisputeCenterRefundsTests } from "./dispute-center-refunds.test.ts";
 import { runHolidayCalendarOutageGateTests } from "./holiday-calendar-outage-gates.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
@@ -8154,6 +8159,26 @@ await runTest(
 await runTest(
   "weekly attendance review notices go by email, Telegram and in-app, email before Telegram, and read as a letter on Telegram",
   runAttendanceDigestNoticeChannelsTests,
+);
+await runTest(
+  "the Dispute Center's state is derived, never stored (an opening waits on the reviewer, a reply hands it back, nothing expires, a decided case stays decided until the REVIEWER reopens it, and the employee's request only flags it)",
+  runDisputeCenterStateTests,
+);
+await runTest(
+  "a dispute is readable and decidable only by its own employee and its own module's reviewer — attendance:read opens the route and never a colleague's pay-affecting case, every decide and reopen asserts the participant inside the domain helper, and the case briefing is Super Admin only",
+  runDisputeCenterParticipantsTests,
+);
+await runTest(
+  "the case briefing cannot state a figure the records do not hold (every statement cites its facts, an uncited or unsupported one is dropped and counted, and a saved briefing is marked stale the moment the case moves)",
+  runDisputeCenterAssistAccuracyTests,
+);
+await runTest(
+  "a reopened weekly-review day is re-decided through the LINE, so month-end deductions, the leave ledger and the deductions guard all read the revised outcome instead of the immutable settlement",
+  runDisputeCenterDigestRevisionTests,
+);
+await runTest(
+  "a deduction overturned after its month was paid is refunded through the next payroll's Other Additions as a recommendation HR confirms — a published month is never rewritten, a cancelled refund is never due, and a dispute picture's storage key never carries its file name",
+  runDisputeCenterRefundsTests,
 );
 await runTest(
   "a Google Calendar outage is not 'no holidays' (every pay-affecting reader refuses while calendarReachable is false; display surfaces say so)",

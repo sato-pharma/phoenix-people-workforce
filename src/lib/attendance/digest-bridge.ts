@@ -21,7 +21,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recordDecision } from "@/lib/deductions/service.ts";
 import type { DeductionsDecisionStatus } from "@/lib/deductions/types.ts";
-import { decisionForSettlement, editedDaysApplyToCandidate, payrollDaysForSettledLine } from "@/lib/attendance/digest-rules.ts";
+import { decisionForSettlement, editedDaysApplyToCandidate, effectiveSettlement, payrollDaysForSettledLine } from "@/lib/attendance/digest-rules.ts";
 
 const SYSTEM_ACTOR = "system:weekly-attendance-digest";
 
@@ -117,17 +117,23 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
   // The days the Super Admin set on a day before releasing its week, when he changed them.
   const payrollDaysByLine = new Map<number, number>();
   const detectedDaysByLine = new Map<number, number>();
+  // The day's CURRENT outcome — a reopened dispute re-decided since its settlement was written.
+  const lineNowById = new Map<number, { action: string | null; chosenMethod: string | null }>();
   const lineIds = settlements.map((row) => row.digest_line_id);
   for (let index = 0; index < lineIds.length; index += 200) {
     const { data: dryData, error: dryError } = await supabase
       .from("attendance_digest_lines")
-      .select("id,deduction_days,detected_days,attendance_weekly_digests!inner(dry_run)")
+      .select("id,deduction_days,detected_days,action,chosen_method,attendance_weekly_digests!inner(dry_run)")
       .in("id", lineIds.slice(index, index + 200));
     if (dryError) throw dryError;
     for (const raw of (dryData ?? []) as Array<Record<string, unknown>>) {
       const nested = raw.attendance_weekly_digests as { dry_run?: boolean } | Array<{ dry_run?: boolean }> | null;
       const flag = Array.isArray(nested) ? nested[0]?.dry_run : nested?.dry_run;
       dryByLine.set(Number(raw.id), flag !== false);
+      lineNowById.set(Number(raw.id), {
+        action: raw.action == null ? null : String(raw.action),
+        chosenMethod: raw.chosen_method == null ? null : String(raw.chosen_method),
+      });
       const days = payrollDaysForSettledLine({
         deductionDays: Number(raw.deduction_days) || 0,
         detectedDays: raw.detected_days == null ? null : Number(raw.detected_days),
@@ -142,7 +148,9 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
       result.skippedDryRun += 1;
       continue;
     }
-    const decision = decisionFor(settlement.action, settlement.method);
+    // A reopened dispute re-decided since this settlement was written is applied as it stands NOW.
+    const effective = effectiveSettlement(settlement, lineNowById.get(settlement.digest_line_id));
+    const decision = decisionFor(effective.action, effective.method);
     if (!decision) {
       result.warnings.push(`Settlement ${settlement.id} has an unmapped action "${settlement.action}".`);
       continue;
@@ -178,7 +186,7 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
       .maybeSingle();
     if (decisionError) throw decisionError;
     const currentStatus = (existingDecision as { decision_status: string } | null)?.decision_status ?? "Pending";
-    const paidFromBalance = chargedAnnualBalance(settlement);
+    const paidFromBalance = chargedAnnualBalance(effective);
     if (currentStatus !== "Pending") {
       result.skippedAlreadyDecided += 1;
       // The review said this day is not charged to salary (paid from balance, removed before
@@ -188,7 +196,7 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
       if (decision.status === "Do Not Take Action" && currentStatus === "Approved for Payroll") {
         const why = paidFromBalance
           ? "paid from annual balance — the day is being taken twice"
-          : settlement.action === "removed"
+          : effective.action === "removed"
             ? "removed from the weekly review before release — the day should not be charged"
             : "dispute upheld — the day should not be charged";
         result.alerts.push(

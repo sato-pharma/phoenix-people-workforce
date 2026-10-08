@@ -262,6 +262,7 @@ export function runApprovalsHubSeparateInboxesTests() {
     "/admin/marketing-requests/inbox",
     "/admin/market-awareness/inbox",
     "/admin/approvals-hub",
+    "/admin/disputes",
     "/admin/private-calendar-disputes",
     "/admin/deductions?tab=disputes",
   ];

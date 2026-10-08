@@ -49,11 +49,27 @@ export function runAttendanceDigestNoticeChannelsTests() {
     // The manager's copy: the email system CCs the direct manager when the email names an employee
     // subject and that employee is the To recipient. Dropping the subject from either notice would
     // silently stop the copy the owner chose to keep.
+    // Scoped per notice since 2026-10-09, when a THIRD notice joined this file — the reviewers'
+    // "an employee disputed a day", which goes in-app and by push and sends no email at all. A count
+    // over the whole file held only while exactly two notices existed, and it is the EMAILING ones
+    // that must name a subject, because that is what the manager's copy rests on.
+    const notices = notify
+      .split(/(?=export async function notify)/)
+      .filter((block) => block.startsWith("export async function notify"));
+    const emailing = notices.filter((block) => /channels: \["in_app", "email", "telegram"\],/.test(block));
     assert.equal(
-      (notify.match(/subjectHrId: input\.employeeHrId,/g) ?? []).length,
+      emailing.length,
       2,
-      "both notices name the employee as the subject, which is what copies their direct manager on the email",
+      "the release notice and the dispute decision notice are the two that email the employee",
     );
+    for (const block of emailing) {
+      const name = /export async function (\w+)/.exec(block)?.[1] ?? "an unnamed notice";
+      assert.match(
+        block,
+        /subjectHrId: input\.employeeHrId,/,
+        `${name} must name the employee as the subject, which is what copies their direct manager on the email`,
+      );
+    }
     const email = readFileSync("src/lib/notifications/email.ts", "utf8");
     assert.match(
       email,

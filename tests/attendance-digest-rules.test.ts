@@ -1046,7 +1046,20 @@ export async function runAttendanceDigestRulesTests() {
     deductions.indexOf("async function assertDayNotClearedInAttendanceReview"),
     deductions.indexOf("export async function recordDecision"),
   );
-  assert.match(cleared, /\.in\("action", \["removed", "dispute_upheld"\]\)/, "a removed or upheld day must refuse approval");
+  // A REJECTED settlement is read too, since 2026-10-09: a decided dispute can be reopened and
+  // decided again, so the settlement is only the first draft of the answer. The row is then judged
+  // by the LINE it carries — a day whose settlement says rejected may be upheld today, and the
+  // reverse — which is why this read cannot stop at the two outcomes that were final before.
+  assert.match(
+    cleared,
+    /\.in\("action", \["removed", "dispute_upheld", "dispute_rejected"\]\)/,
+    "a removed or upheld day must refuse approval, and a rejected settlement is read so a revision cannot hide an upheld day",
+  );
+  assert.match(
+    cleared,
+    /effectiveSettlement\(/,
+    "…and each row is judged by the line it carries, never by the settlement alone",
+  );
   assert.match(cleared, /\.eq\("action", "disputed"\)/, "a day still under dispute must refuse approval");
   assert.match(
     cleared,

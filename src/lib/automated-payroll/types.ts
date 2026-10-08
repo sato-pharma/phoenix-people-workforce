@@ -167,6 +167,13 @@ export type DraftRow = {
   incentive: number | null;
   bonus: number | null;
   overtime: number | null;
+  /**
+   * Additions step -> Other additions. Recommended from a dispute refund falling due this month
+   * (dispute-refunds.ts — owner, 2026-10-09: a deduction a reopened dispute cancels after its month
+   * was paid is given back "in additions, other"). Paid in the Other Additions column beside the
+   * Special Situations addition. Optional so a row read before the column existed still types.
+   */
+  otherAdditions?: number | null;
   // Part 2 — deductions.
   unpaidVacations: number | null;
   crm: number | null;

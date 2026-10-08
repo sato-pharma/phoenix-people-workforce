@@ -142,6 +142,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   // ── Payroll ───────────────────────────────────────────────────────────────────────────────────
   "/employee-portals/payslips": { icon: "document-text-outline", section: "Payroll" },
   "/employee-portals/deductions": { icon: "receipt-outline", section: "Payroll" },
+  "/employee-portals/disputes": { icon: "chatbubble-ellipses-outline", section: "Payroll" },
   // ── Outstation Expenses ───────────────────────────────────────────────────────────────────────
   "/employee-portals/expenses": { icon: "car-outline", section: "Outstation Expenses" },
   "/employee-portals/expense-dashboard": { icon: "cash-outline", section: "Outstation Expenses" },

@@ -8,6 +8,10 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { notFoundError } from "@/lib/http/api-errors";
 import { notifyConversationMessage } from "@/lib/conversations/notify";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import type { CheckedDisputeImage } from "@/lib/dispute-center/attachment-rules.ts";
+import { listDisputeCenterAttachments, storeDisputeCenterAttachments } from "@/lib/dispute-center/attachment-store.ts";
+import { picturesNotice, picturesOnlyBody, tidyDisputeText } from "@/lib/dispute-center/text.ts";
+import type { DisputeAttachment } from "@/lib/dispute-center/types.ts";
 import type { PrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
 import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -24,6 +28,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // thread by whoever displays it, so there is exactly one stored copy of what the employee wrote.
 
 export type PrivateCalendarDisputeMessage = {
+  attachments: DisputeAttachment[];
   authorHrId: string;
   authorIsAdmin: boolean;
   authorName: string | null;
@@ -45,8 +50,9 @@ const MESSAGE_COLUMNS = "id,dispute_id,author_hr_id,author_is_admin,body,created
 
 export const PRIVATE_CALENDAR_DISPUTE_MESSAGE_MAX_LENGTH = 2000;
 
-function mapMessageRow(row: MessageRow, authorName: string | null): PrivateCalendarDisputeMessage {
+function mapMessageRow(row: MessageRow, authorName: string | null, attachments: DisputeAttachment[] = []): PrivateCalendarDisputeMessage {
   return {
+    attachments,
     authorHrId: row.author_hr_id,
     authorIsAdmin: row.author_is_admin,
     authorName,
@@ -146,11 +152,14 @@ export async function listMessagesForDisputes(
     .order("created_at", { ascending: true });
   if (error) throw error;
   const rows = (data ?? []) as MessageRow[];
-  const nameByKey = await resolveAuthorNames(rows.map((row) => row.author_hr_id));
+  const [nameByKey, pictures] = await Promise.all([
+    resolveAuthorNames(rows.map((row) => row.author_hr_id)),
+    listDisputeCenterAttachments("calendar", ids),
+  ]);
   for (const row of rows) {
     const key = canonicalHrIdKey(row.author_hr_id);
     const list = byDispute.get(row.dispute_id) ?? [];
-    list.push(mapMessageRow(row, (key && nameByKey.get(key)) || null));
+    list.push(mapMessageRow(row, (key && nameByKey.get(key)) || null, pictures.byMessage.get(row.id) ?? []));
     byDispute.set(row.dispute_id, list);
   }
   return byDispute;
@@ -203,11 +212,15 @@ export async function listPrivateCalendarDisputeMessages(
  */
 export async function addPrivateCalendarDisputeMessage(
   access: AccessContext,
-  input: { body: string; disputeId: string },
+  input: { body: string; disputeId: string; images?: CheckedDisputeImage[] },
 ): Promise<PrivateCalendarDisputeMessage> {
   await assertPermission(access, "attendance", "read");
-  const body = input.body.trim();
-  if (!body) throw new Error("Write something before sending.");
+  const images = input.images ?? [];
+  // Line breaks are kept (a reply written as a list stays a list); a reply of pictures alone reads
+  // "Picture attached.", because the row's body cannot be blank.
+  let body = tidyDisputeText(input.body);
+  if (!body && images.length === 0) throw new Error("Write something before sending.");
+  if (!body) body = picturesOnlyBody(images.length);
   if (body.length > PRIVATE_CALENDAR_DISPUTE_MESSAGE_MAX_LENGTH) {
     throw new Error(`Keep a reply under ${PRIVATE_CALENDAR_DISPUTE_MESSAGE_MAX_LENGTH} characters.`);
   }
@@ -231,15 +244,33 @@ export async function addPrivateCalendarDisputeMessage(
     .single();
   if (error) throw error;
 
+  // The pictures hang off the reply's id, so they are stored after it exists. If they cannot be
+  // stored the reply is removed again: nobody is shown, or notified of, half a message.
+  let attachments: DisputeAttachment[] = [];
+  if (images.length > 0) {
+    try {
+      attachments = await storeDisputeCenterAttachments({
+        images,
+        kind: "calendar",
+        messageId: (data as MessageRow).id,
+        ref: dispute.id,
+        uploadedByHrId: hrIdForStorage(actor.hrId) ?? actor.hrId,
+      });
+    } catch (storeError) {
+      await getSupabaseAdmin().from("private_calendar_dispute_messages").delete().eq("id", (data as MessageRow).id);
+      throw storeError;
+    }
+  }
+
   const nameByKey = await resolveAuthorNames([actor.hrId]);
   const authorName = nameByKey.get(canonicalHrIdKey(actor.hrId) ?? "") ?? null;
-  const message = mapMessageRow(data as MessageRow, authorName);
+  const message = mapMessageRow(data as MessageRow, authorName, attachments);
 
   await writeAuditLog({
     actorLoginId: access.loginId ?? actor.hrId,
     entityId: dispute.id,
     entityType: "private_calendar_data_dispute",
-    newValues: { messageId: message.id, replyFrom: actor.isAdmin ? "admin" : "employee" },
+    newValues: { messageId: message.id, pictureCount: attachments.length, replyFrom: actor.isAdmin ? "admin" : "employee" },
     summary: `Reply posted on the private calendar review request for ${dispute.dispute_date}`,
   });
 
@@ -251,7 +282,7 @@ export async function addPrivateCalendarDisputeMessage(
     actionUrl: "/employee-portals/private-calendar",
     authorHrId: actor.hrId,
     authorName,
-    body,
+    body: attachments.length > 0 ? `${body}\n\n${picturesNotice(attachments.length)}` : body,
     eventType: "private_calendar_dispute_message",
     messageKey: message.id,
     metadata: {

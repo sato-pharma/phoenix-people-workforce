@@ -39,6 +39,31 @@ export function isOpenLineAction(action: string): boolean {
 }
 
 /**
+ * What a settled day's answer IS NOW, after any revision.
+ *
+ * A settlement is written once per day and never changed (the settle function refuses a second).
+ * A disputed day can since be REOPENED and re-decided (owner, 2026-10-09: "Employee asks, reviewer
+ * reopens") — phx_attendance_revise_digest_dispute then moves the DAY's own action between
+ * dispute_upheld and dispute_rejected, and its chosen method with it. So for a dispute outcome the
+ * line is the truth and the settlement is its first draft; for every other answer the settlement
+ * stands exactly as it was written. Pure, pinned by tests/dispute-center-digest-revision.test.ts.
+ */
+export function effectiveSettlement(
+  settlement: { action: string; method: string | null | undefined },
+  line: { action: string | null | undefined; chosenMethod: string | null | undefined } | null | undefined,
+): { action: string; method: string | null; revised: boolean } {
+  const isOutcome = (value: string | null | undefined) => value === "dispute_upheld" || value === "dispute_rejected";
+  if (isOutcome(settlement.action) && line && isOutcome(line.action) && line.action !== settlement.action) {
+    return {
+      action: String(line.action),
+      method: line.action === "dispute_rejected" ? (isDeductionMethod(line.chosenMethod) ? line.chosenMethod : "salary") : settlement.method ?? null,
+      revised: true,
+    };
+  }
+  return { action: settlement.action, method: settlement.method ?? null, revised: false };
+}
+
+/**
  * What the month-end deductions queue should do with a settled day.
  *
  * A day paid from annual balance is NOT a payroll deduction: the leave ledger carries it

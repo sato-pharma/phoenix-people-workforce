@@ -81,7 +81,12 @@ import {
   type ReviewWeekStage,
   type SeenReleaseLine,
 } from "@/lib/attendance/digest-rules.ts";
-import { notifyAttendanceDisputeDecided, notifyAttendanceWeekReleased } from "@/lib/attendance/digest-notify.ts";
+import {
+  notifyAttendanceDisputeDecided,
+  notifyAttendanceDisputeFiled,
+  notifyAttendanceWeekReleased,
+} from "@/lib/attendance/digest-notify.ts";
+import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin";
 import { buildAttendanceCalendarContext, cairoTodayIso, getLeaveDayMap } from "@/lib/attendance/working-days.ts";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule.ts";
 import { normalizeAttendanceHrId, resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
@@ -754,6 +759,27 @@ function assertCanManageWeeklyReview(actorRole: string | null) {
   if (!canManageWeeklyReview({ role: actorRole })) {
     throw forbiddenError("Only the Super Admin can choose the days to deduct, build a week or release it.");
   }
+}
+
+/**
+ * Who answers a dispute, by HR id: every active Super Admin plus the named reviewers, never the
+ * employee whose own week it is (a named reviewer does not rule on their own pay; the Super Admin is
+ * exempt, since nobody is above him). Best-effort: a failed read returns the Super Admins alone.
+ */
+export async function resolveDisputeReviewerHrIds(employeeHrId: string): Promise<string[]> {
+  const admins = await resolveSuperAdminRecipients().catch(() => []);
+  const ids = admins.map((admin) => admin.hrId);
+  const settings = await getDigestSettings().catch(() => null);
+  for (const reviewer of settings?.disputeReviewerHrIds ?? []) {
+    if (reviewer && !hrIdsMatch(reviewer, employeeHrId)) ids.push(reviewer);
+  }
+  const seen = new Set<string>();
+  return ids.filter((id) => {
+    const key = String(id ?? "").trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -1601,6 +1627,18 @@ export async function answerDigestLine(input: {
       newValues: { workDate: line.workDate, method: input.method, dispute: true, reason },
       summary: `Employee chose ${input.method === "salary" ? "salary" : "annual balance"} and disputed ${line.workDate}`,
     });
+    // The reviewers are told now (owner, 2026-10-09). Nothing was sent before: a dispute waited for
+    // somebody to open the review page and spot it. Best-effort — the dispute is already saved.
+    const person = directoryRowFor(await loadDirectoryByKey().catch(() => new Map()), digest.employeeHrId);
+    await notifyAttendanceDisputeFiled({
+      digestId: digest.id,
+      employeeHrId: digest.employeeHrId,
+      employeeName: person?.displayName || person?.fullName || null,
+      lineId: line.id,
+      reason,
+      reviewerHrIds: await resolveDisputeReviewerHrIds(digest.employeeHrId),
+      workDate: line.workDate,
+    }).catch(() => undefined);
     return { outcome: "disputed" };
   }
 

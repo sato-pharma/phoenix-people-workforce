@@ -49,6 +49,9 @@ export const ADDITION_COMPONENT_KEYS = [
   // Special Situations' addition — `otherAdditions` in assembleParts. Counted
   // once for the month whichever installment HR routed it to.
   "specialAdditionValue",
+  // The Additions step's Other additions cell (a dispute refund, 2026-10-09) — also part of
+  // `otherAdditions` in assembleParts, beside the Special Situations addition.
+  "otherAdditions",
 ] as const;
 
 /**

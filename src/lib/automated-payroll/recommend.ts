@@ -65,6 +65,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { listPriorMonthHolds } from "./draft-store.ts";
 import { resolveHoldReason } from "./hold-reason.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
+import { loadDisputeRefunds, type DisputeRefundsForEmployee } from "./dispute-refunds.ts";
 import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./standing-additions.ts";
 import type {
   DraftRow,
@@ -1323,27 +1324,40 @@ function recommendCrm(
  * August because this step had no feeder). A value HR already saved on the draft row always wins,
  * and the standing reason is offered only while HR has not saved the row's additions themselves —
  * otherwise a figure HR changed would carry an explanation written for a different one.
+ *
+ * Other additions is pre-filled the same way from a DISPUTE REFUND falling due this month
+ * (dispute-refunds.ts — owner, 2026-10-09: a deduction a reopened dispute cancels after its own
+ * month was paid is given back "in additions, other"). Same two rules: HR's saved figure wins, and
+ * the refund's reason is offered only while HR has not saved Other additions themselves.
  */
 export function recommendAdditions(
   members: PopulationMember[],
   drafts: Map<string, DraftRow>,
   standing: Map<string, StandingAdditionsForEmployee> = new Map(),
+  refunds: Map<string, DisputeRefundsForEmployee> = new Map(),
 ): StepRow[] {
   return members.map((member) => {
     const draft = drafts.get(member.compact);
     const due = standing.get(member.compact);
+    const refund = refunds.get(member.compact);
     const row = baseRow(member);
     row.context = { "Hire Date": member.employee.hireDate ?? "" };
     const incentive = due?.incentive ?? 0;
     const bonus = due?.bonus ?? 0;
-    row.recommended = { incentive, bonus, overtime: 0 };
+    const otherAdditions = refund?.amount ?? 0;
+    row.recommended = { incentive, bonus, overtime: 0, otherAdditions };
     row.values = {
       incentive: pick(draft?.incentive, incentive),
       bonus: pick(draft?.bonus, bonus),
       overtime: pick(draft?.overtime, 0),
+      otherAdditions: pick(draft?.otherAdditions, otherAdditions),
     };
     const hrSavedAdditions = draft?.incentive != null || draft?.bonus != null;
-    row.reason = draft?.additionsReason ?? (hrSavedAdditions ? null : (due?.reason ?? null));
+    const hrSavedOther = draft?.otherAdditions != null;
+    const offered = [hrSavedAdditions ? null : (due?.reason ?? null), hrSavedOther ? null : (refund?.reason ?? null)].filter(
+      (reason): reason is string => Boolean(reason),
+    );
+    row.reason = draft?.additionsReason ?? (offered.length > 0 ? offered.join("; ") : null);
     return row;
   });
 }
@@ -2052,7 +2066,7 @@ async function recommendStepRows(
         drafts,
       );
     case "p2_additions":
-      return recommendAdditions(input.members, drafts, await loadStandingAdditions(input.period));
+      return recommendAdditions(input.members, drafts, await loadStandingAdditions(input.period), await loadDisputeRefunds(input.period));
     case "p2_manual_deductions":
       return recommendManualDeductions(
         input.members,

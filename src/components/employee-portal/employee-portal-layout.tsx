@@ -32,6 +32,7 @@ import {
   Activity,
   CircleDollarSign,
   ReceiptText,
+  Scale,
   Award,
   Trophy,
   X,
@@ -607,6 +608,10 @@ function buildEmployeePortalSections({
       items: [
         { href: "/employee-portals/payslips", label: "Payslips", icon: FileText },
         ...(showDeductionsTab ? [{ href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText }] : []),
+        // My Disputes — the employee's own side of every dispute he raised, whichever module it came
+        // from, with its conversation and its decision. Open to every portal role and self-scoped:
+        // resolveCaseParticipant hands a non-reviewer only the cases he is the employee on.
+        { href: "/employee-portals/disputes", label: "My Disputes", icon: Scale },
       ],
     },
     {

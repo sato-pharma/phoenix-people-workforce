@@ -27,6 +27,9 @@ import { logAppError } from "@/lib/error-monitor/service";
 // visit comment falls back to Groq's Whisper where the browser has no speech engine (Firefox), on the
 // owner's cost ruling of 2026-09-25. It shares this alarm because a dead key fails the same silent way.
 export type AiCallComponent =
+  // Its own entry: it reads a dispute's whole record and answers questions about it, so a cost or a
+  // failure question about the Case Briefing is answered per feature, not per shared helper.
+  | "dispute_case_briefing"
   | "groq_transcription"
   | "needs_you_summary"
   | "openai_client"
@@ -54,6 +57,7 @@ export type AiCallRecord = {
 
 // Owner rule: human-readable names, never raw codes. These reach a screen someone triages from.
 const COMPONENT_LABELS: Record<AiCallComponent, string> = {
+  dispute_case_briefing: "Disputes — the case briefing and its questions",
   groq_transcription: "CRM spoken comment — Groq speech to text",
   needs_you_summary: "What needs you — the written summary on the daily board",
   openai_client: "Shared OpenAI client",

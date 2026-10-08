@@ -536,15 +536,17 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p2_additions",
     phase: "part2",
     title: "Additions",
-    subtitle: "Incentive, bonus, and overtime per employee (paid in Part 2). Enter or confirm.",
+    subtitle:
+      "Incentive, bonus, overtime and other additions per employee (paid in Part 2). Other additions is pre-filled with any deduction a reopened dispute gave back after its own month was already paid, with its reason. Enter or confirm.",
     contextColumns: [{ key: "Hire Date", label: "Hire Date" }],
     fields: [
       { key: "incentive", label: "Incentive", kind: "money" },
       { key: "bonus", label: "Bonus", kind: "money" },
       { key: "overtime", label: "Overtime", kind: "money" },
+      { key: "otherAdditions", label: "Other additions", kind: "money" },
     ],
     // The only step that ADDS money, so the only one whose figures have no feeder behind them to
-    // explain themselves. Required whenever any of the three is non-zero — see confirmStep.
+    // explain themselves. Required whenever any of the four is non-zero — see confirmStep.
     hasReason: true,
     isHoldStep: false,
   },
