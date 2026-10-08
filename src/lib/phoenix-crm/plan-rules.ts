@@ -56,6 +56,46 @@ export function planStatusLabel(status: PhoenixCrmPlanStatus | null): string {
 }
 
 /**
+ * 🔴 THE STATUS NAMES THE PERSON IT IS WAITING ON (owner, 2026-10-08: *"make the plan status be
+ * appearing ex drafted by Mostafa Galal, waiting Dr Taha approval, waiting Mostafa to edit and resend
+ * and so on"*).
+ *
+ * `planStatusLabel` above says what STATE the row is in; this says WHOSE it is, which is the thing a
+ * manager and a rep both actually read the pill for. "Waiting for review" never answered "waiting for
+ * WHOM" on a board of nine territories with three different managers above them, and "Returned for
+ * changes" never answered "returned to whom, and what happens next" — the same gap that made a
+ * returned week read as lost (`planTurnSentence`).
+ *
+ * It is the SAME four states and the same tone, so nothing about the colour or the ordering moves —
+ * only the words. Every name arrives already resolved: this file prints no dates and reads no people.
+ * With no name to use it falls back to `planStatusLabel`'s own word, so a vacant seat or a territory
+ * whose manager chain is empty still reads correctly rather than saying "waiting for null".
+ */
+export function planStatusLine(input: {
+  status: PhoenixCrmPlanStatus | null;
+  /** The territory's rep, resolved to a name; null on a vacant seat. */
+  repName?: string | null;
+  /** The manager who approves this territory's weeks; null when the chain above it is vacant. */
+  reviewerName?: string | null;
+  /** Who decided it last, for an approved week; falls back to the reviewer, then to the bare word. */
+  deciderName?: string | null;
+}): string {
+  const rep = nameOrNull(input.repName);
+  const reviewer = nameOrNull(input.reviewerName);
+  const decider = nameOrNull(input.deciderName) ?? reviewer;
+  if (input.status === "draft") return rep ? `Drafted by ${rep}` : planStatusLabel("draft");
+  if (input.status === "submitted") return reviewer ? `Waiting for ${reviewer} to approve` : planStatusLabel("submitted");
+  if (input.status === "returned") return rep ? `Waiting for ${rep} to edit and resend` : planStatusLabel("returned");
+  if (input.status === "approved") return decider ? `Approved by ${decider}` : planStatusLabel("approved");
+  return rep ? `Not started — ${rep} drafts it` : planStatusLabel(null);
+}
+
+function nameOrNull(value: string | null | undefined): string | null {
+  const name = typeof value === "string" ? value.trim() : "";
+  return name.length > 0 ? name : null;
+}
+
+/**
  * When a plan is due, as a rep reads it: the date AND the hour (owner, 2026-10-02 — "the deadline to
  * submit the plan is thuersday 11:5pm and show themn this").
  *

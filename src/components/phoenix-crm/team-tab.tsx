@@ -52,7 +52,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { splitOffPlanDays, type OffPlanDay } from "@/lib/phoenix-crm/offplan-day";
-import { withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
+import { planStatusLine, withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
 import { teamTodayLine, teamTodayTone } from "@/lib/phoenix-crm/team-today";
 import { vendorLeftoverNote, VENDOR_LEFTOVER_TITLE } from "@/lib/phoenix-crm/vendor-leftovers";
 import { teamWaitingLine, teamWeeksToShow } from "@/lib/phoenix-crm/team-waiting";
@@ -785,7 +785,7 @@ function PlansSection({
                   actions={action(row)}
                   key={row.territory.seatId}
                   meta={metaText(row.territory, viewerHrId, test)}
-                  status={<CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? "Not started"}</CrmPill>}
+                  status={<CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? planStatusLine({ status: null, repName: row.territory.repName })}</CrmPill>}
                   title={row.territory.name}
                 >
                   {placed ? <p className="break-words text-sm font-black text-slate-800">{placed}</p> : null}
@@ -832,7 +832,7 @@ function PlansSection({
                       {reviewer ? <p className="text-xs text-slate-500">{reviewer}</p> : null}
                     </td>
                     <td className={crmTdClassName}>
-                      <CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? "Not started"}</CrmPill>
+                      <CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? planStatusLine({ status: null, repName: row.territory.repName })}</CrmPill>
                       {stamp ? <p className="mt-1 text-xs text-slate-500">{stamp}</p> : null}
                     </td>
                     <td className={crmTdClassName}>{placedText(row)}</td>
@@ -899,7 +899,7 @@ function MonthsSection({
         meta={[row.territory.name, repText(row.territory)].filter(Boolean).join(" · ")}
         status={
           <>
-            <CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? "Not started"}</CrmPill>
+            <CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? planStatusLine({ status: null, repName: row.territory.repName })}</CrmPill>
             {/* His ruling: a late month is accepted and STAMPED, never blocked. The stamp is the
                 whole enforcement, so it has to be visible where he reviews. */}
             {late ? <CrmPill tone="warn">Sent late</CrmPill> : null}

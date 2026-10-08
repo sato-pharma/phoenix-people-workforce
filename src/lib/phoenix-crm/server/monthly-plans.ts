@@ -59,7 +59,6 @@ import { cleanText, parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { checkDaySpread } from "@/lib/phoenix-crm/geo";
 import {
   monthlyCallRate,
-  monthlyPlanStatusLabel,
   summarizeMonthlyList,
   tallyDoctorMonth,
   type DoctorMonthTally,
@@ -73,7 +72,7 @@ import {
   onlyReturnedDayEditable,
   PLAN_DECISION_NOTE_MAX,
   planDueLabel,
-  planStatusLabel,
+  planStatusLine,
   standingReturnedDay,
   type RepWeekState,
 } from "@/lib/phoenix-crm/plan-rules";
@@ -174,7 +173,7 @@ export type MonthlyPlanSummary = {
   submittedLate: boolean;
 };
 
-function mapMonthlyPlan(row: Row, names: PeopleNames): MonthlyPlanSummary {
+function mapMonthlyPlan(row: Row, names: PeopleNames, people?: { repName: string | null; reviewerName: string | null }): MonthlyPlanSummary {
   const status = statusOf(row.status);
   const submittedBy = textOrNull(row.submitted_by_hr_id);
   const decidedBy = textOrNull(row.decided_by_hr_id);
@@ -182,7 +181,14 @@ function mapMonthlyPlan(row: Row, names: PeopleNames): MonthlyPlanSummary {
     monthlyPlanId: String(row.id),
     monthStart: String(row.month_start),
     status,
-    statusLabel: monthlyPlanStatusLabel(status),
+    // The month wears the same named status as its weeks (owner, 2026-10-08) — one composer for both,
+    // because the four states and their words are the same and a second copy would drift.
+    statusLabel: planStatusLine({
+      status,
+      repName: people?.repName ?? null,
+      reviewerName: people?.reviewerName ?? null,
+      deciderName: decidedBy ? nameOf(names, decidedBy) : null,
+    }),
     version: Number(row.version),
     submittedAt: textOrNull(row.submitted_at),
     submittedByName: submittedBy ? nameOf(names, submittedBy) : null,
@@ -498,6 +504,7 @@ export async function loadMonthlyPlanner(
     list.push(row);
     itemsByPlan.set(planId, list);
   }
+  const territory = describeTerritory(viewer.org, seat, names);
   const repForWeeks = canWriteAsRep(viewer, seat, isTest) && Boolean(seat.lineCode);
   const reviewerForWeeks = canReviewTerritory(viewer, seat, isTest);
   const returnerForWeeks = canReturnTerritoryPlan(viewer, seat, isTest);
@@ -505,7 +512,7 @@ export async function loadMonthlyPlanner(
   // its own plan row, its own editable window, its own Send. Only its name and its note differ.
   const toWeekView = (weekStart: string, planRow: Row | null, weekItems: Row[], leading: boolean): MonthlyWeekView => {
     const weekStatus = planRow ? statusOf(planRow.status) : null;
-    const weekPlan = planRow ? mapPlan(planRow, names) : null;
+    const weekPlan = planRow ? mapPlan(planRow, names, territory) : null;
     // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send.
     const edit: PlanEditState | null = planRow ? (editState.get(String(planRow.id)) ?? null) : null;
     // A week returned for ONE day (owner, 2026-10-02: "Only that day"): that day alone is the rep's to
@@ -542,7 +549,12 @@ export async function loadMonthlyPlanner(
           : `These are the first days of ${formatPhoenixMonth(monthStart)}, on the week of ${formatPhoenixLongDate(weekStart)} — which belongs to ${previousMonth}.`
         : null,
       status: weekStatus,
-      statusLabel: planStatusLabel(weekStatus),
+      statusLabel: planStatusLine({
+        status: weekStatus,
+        repName: territory.repName,
+        reviewerName: territory.reviewerName,
+        deciderName: weekPlan?.decidedByName ?? null,
+      }),
       days,
       plan: weekPlan,
       dueOn,
@@ -596,7 +608,7 @@ export async function loadMonthlyPlanner(
   }
 
   return {
-    territory: describeTerritory(viewer.org, seat, names),
+    territory,
     isTest,
     cairoToday: today,
     monthStart,
@@ -606,7 +618,12 @@ export async function loadMonthlyPlanner(
     overdue: planDeadlinePassed(dueOn, now) && (status === null || status === "draft" || status === "returned"),
     months: months.map((month) => {
       const monthStatus = monthStatusByStart.get(month) ?? null;
-      return { monthStart: month, label: formatPhoenixMonth(month), status: monthStatus, statusLabel: monthlyPlanStatusLabel(monthStatus) };
+      return {
+        monthStart: month,
+        label: formatPhoenixMonth(month),
+        status: monthStatus,
+        statusLabel: planStatusLine({ status: monthStatus, repName: territory.repName, reviewerName: territory.reviewerName }),
+      };
     }),
     readiness,
     pendingCount: plannerCustomers.filter((customer) => customer.pending).length,
@@ -856,9 +873,10 @@ export async function loadMonthlyPlanReviews(viewer: PhoenixCrmViewer, raw: { te
       .map(([day]) => day)
       .sort();
     const headerRow = headerBySeat.get(seat.seatId) ?? null;
-    const plan = headerRow ? mapMonthlyPlan(headerRow, names) : null;
+    const rowTerritory = describeTerritory(viewer.org, seat, names);
+    const plan = headerRow ? mapMonthlyPlan(headerRow, names, rowTerritory) : null;
     return {
-      territory: describeTerritory(viewer.org, seat, names),
+      territory: rowTerritory,
       plan,
       doctors,
       accounts,

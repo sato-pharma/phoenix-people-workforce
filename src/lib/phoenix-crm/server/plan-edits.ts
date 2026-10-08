@@ -35,7 +35,7 @@ import {
   type PlanEditStage,
   type PlanEditStatus,
 } from "@/lib/phoenix-crm/plan-edit-rules";
-import { isUuid, planStatusLabel, repChangeableDays, repWeekState, standingReturnedDay, type RepWeekState } from "@/lib/phoenix-crm/plan-rules";
+import { isUuid, planStatusLine, repChangeableDays, repWeekState, standingReturnedDay, type RepWeekState } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { assertPlanEditApprover, canDecidePlanEdit, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -114,7 +114,10 @@ export function mapPlanEditRow(row: Row, names: PeopleNames): PlanEditRequestVie
     stage: planEditStageOf(status),
     version: Number(row.version),
     raisedAt: String(row.created_at),
-    planStatusLabel: planStatusLabel(planStatusOf(plan.status)),
+    // "The week now:" on the edit-request card names the rep whose week it is (owner, 2026-10-08).
+    // This mapper has no org index, so the reviewer is not resolvable here and a submitted or approved
+    // week keeps its bare word — `planStatusLine` falls back on its own rather than inventing a name.
+    planStatusLabel: planStatusLine({ status: planStatusOf(plan.status), repName: nameOf(names, textOrNull(row.rep_hr_id)) }),
     managerDecidedByName: person(row.manager_decided_by_hr_id),
     managerNote: textOrNull(row.manager_note),
     sfeDecidedByName: person(row.sfe_decided_by_hr_id),

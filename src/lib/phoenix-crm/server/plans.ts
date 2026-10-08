@@ -61,7 +61,7 @@ import {
   planDayLabel,
   planDayOff,
   planSendCapRefusal,
-  planStatusLabel,
+  planStatusLine,
   resolvePlanItems,
   standingReturnedDay,
   type PlanDayOff,
@@ -177,7 +177,12 @@ export function planPeople(rows: ReadonlyArray<Row>): Array<string | null> {
   return rows.flatMap((row) => [textOrNull(row.submitted_by_hr_id), textOrNull(row.decided_by_hr_id)]);
 }
 
-export function mapPlan(row: Row, names: PeopleNames): PlanSummary {
+/**
+ * 🔴 `people` IS WHAT PUTS THE NAMES IN THE STATUS (owner, 2026-10-08) — the rep and the manager above
+ * the territory, which every caller already has from `describeTerritory`. Left out, the status falls
+ * back to the bare word, so an old caller is wrong-free rather than saying "waiting for null".
+ */
+export function mapPlan(row: Row, names: PeopleNames, people?: { repName: string | null; reviewerName: string | null }): PlanSummary {
   const status = statusOf(row.status);
   const submittedBy = textOrNull(row.submitted_by_hr_id);
   const decidedBy = textOrNull(row.decided_by_hr_id);
@@ -185,7 +190,12 @@ export function mapPlan(row: Row, names: PeopleNames): PlanSummary {
     planId: String(row.id),
     weekStart: String(row.week_start),
     status,
-    statusLabel: planStatusLabel(status),
+    statusLabel: planStatusLine({
+      status,
+      repName: people?.repName ?? null,
+      reviewerName: people?.reviewerName ?? null,
+      deciderName: decidedBy ? nameOf(names, decidedBy) : null,
+    }),
     version: Number(row.version),
     submittedAt: textOrNull(row.submitted_at),
     submittedByName: submittedBy ? nameOf(names, submittedBy) : null,
@@ -488,7 +498,8 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
-  const plan = planRow ? mapPlan(planRow, names) : null;
+  const territory = describeTerritory(viewer.org, seat, names);
+  const plan = planRow ? mapPlan(planRow, names, territory) : null;
   const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave });
 
   const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
@@ -549,14 +560,26 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const staleOnOpenDays = days.some((day) => day.editable && day.items.some((item) => item.stale));
 
   return {
-    territory: describeTerritory(viewer.org, seat, names),
+    territory,
     isTest,
     cairoToday: today,
     weekStart,
     weeks: weekList.map((week) => {
       const row = planRows.find((entry) => String(entry.week_start) === week);
       const weekStatus = row ? statusOf(row.status) : null;
-      return { weekStart: week, status: weekStatus, statusLabel: planStatusLabel(weekStatus) };
+      const decidedBy = row ? textOrNull(row.decided_by_hr_id) : null;
+      return {
+        weekStart: week,
+        status: weekStatus,
+        // The picker reads the same words as the pill it opens, names included — a week that said
+        // "Approved" there and "Approved by Dr Taha" once opened is one status in two voices.
+        statusLabel: planStatusLine({
+          status: weekStatus,
+          repName: territory.repName,
+          reviewerName: territory.reviewerName,
+          deciderName: decidedBy ? nameOf(names, decidedBy) : null,
+        }),
+      };
     }),
     readiness,
     pendingCount: plannerCustomers.filter((row) => row.pending).length,
@@ -1013,9 +1036,10 @@ export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unk
       .filter(([, points]) => checkDaySpread(points, farApartKm).spread)
       .map(([day]) => day)
       .sort();
-    const plan = planRow ? mapPlan(planRow, names) : null;
+    const territory = describeTerritory(viewer.org, seat, names);
+    const plan = planRow ? mapPlan(planRow, names, territory) : null;
     return {
-      territory: describeTerritory(viewer.org, seat, names),
+      territory,
       plan,
       doctors,
       accounts,
