@@ -26,6 +26,7 @@ import {
   runPaths,
   stageJobsFor,
   stagesNotRunBy,
+  stoppedNoVerdictLine,
 } from "../scripts/remote-check-plan.mjs";
 
 // scripts/remote-check.mjs runs the heavy checks on the self-hosted CI box instead of this laptop.
@@ -1170,6 +1171,24 @@ export async function runRemoteCheckTests(): Promise<void> {
       !/graded\.verdict === "fail"/.test(CODE),
       "the fallback still fails on the RUN's conclusion — that is the mobile/smoke misreport this replaced",
     );
+  }
+
+  // 8c — EVERY STOP ONCE THE COMMIT IS KNOWN ENDS IN A `NO VERDICT — <sha9>` LINE. `die()` exits 2
+  // (NO VERDICT) and used to print only the error, so the dispatch, push and ssh failures closed with no
+  // verdict line for any commit at all.
+  {
+    const line = stoppedNoVerdictLine("0123456789abcdef0123456789abcdef01234567");
+    assert.match(line, /^remote-check: NO VERDICT — .* 012345678$/, "the stop line must be a NO VERDICT line ending in the sha9");
+    assert.ok(!/PASS|FAIL/.test(line), "a stop must never print a word a session could grade as a verdict");
+    const dieStart = SRC.indexOf("function die(message) {");
+    const dieBody = dieStart < 0 ? "" : SRC.slice(dieStart, SRC.indexOf("\n}", dieStart));
+    const printAt = dieBody.indexOf("if (verdictSha) console.error(stoppedNoVerdictLine(verdictSha));");
+    assert.ok(printAt >= 0 && printAt < dieBody.indexOf("process.exit(2)"),
+      "die() must print the NO VERDICT line for the known commit before it exits 2");
+    assert.ok(
+      SRC.includes('die("not inside a git repository");\n}\nif (!LOCKFILE_MODE) verdictSha = sha;'),
+      "verdictSha must be set the moment the sha is read, and never in the lockfile mode, which claims no verdict");
+    assert.equal((SRC.match(/(?<!let )verdictSha = /g) ?? []).length, 1, "verdictSha is assigned in exactly one place, besides its null declaration");
   }
 
   // 9 — BEHAVIOUR: run the generated bash for real against a throwaway bare repo. It needs bash, git
