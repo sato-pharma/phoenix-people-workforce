@@ -28,27 +28,64 @@ import { isFieldWorkforceFridayOnlyTitle } from "@/lib/field-workforce-complianc
 
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
-import { collectClaimedLedgerDays, type LedgerClaimRow } from "../conflict.ts";
+import {
+  collectClaimedLedgerDays,
+  ledgerRowStillClaimsItsDaysBySource,
+  type LedgerClaimRow,
+} from "../conflict.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { getHolidayBridgeDaysForMonth } from "../service.ts";
 import type { DeductionsCandidateDraft } from "../types.ts";
 import type { HolidayBridgeDay } from "../holiday-bridge.ts";
 
 /**
+ * The one `source_system` this connector writes, and therefore the only one its re-run may retire.
+ *
+ * Exported so a test can assert it against `collect.ts`'s own `reconcilesSourceScope` registration,
+ * which is pinned there as a literal by `deductions-supersede-carries-decision.test.ts`. The two
+ * must stay equal: the already-claimed read below excludes exactly the rows reconcile is about to
+ * supersede, and either half drifting is silent — too narrow brings back the alternating flip, too
+ * wide retires the hand-entered `manual_hr` rows that share this category.
+ */
+export const HOLIDAY_BRIDGE_SOURCE_SYSTEM = "holiday_bridge";
+
+const HOLIDAY_BRIDGE_SOURCE_SYSTEMS: readonly string[] = [HOLIDAY_BRIDGE_SOURCE_SYSTEM];
+
+/**
  * Every employee-day the live ledger already charges for this month, as
  * `${compactHrId}:${date}`. Superseded candidates do not count — they were
  * withdrawn, so the day is free again.
+ *
+ * 🔴 THIS RUN'S OWN UNLOCKED ROWS ARE EXCLUDED, OR EVERY SECOND RUN FLIPS THE SET.
+ * `collect.ts` registers this collector with `reconcilesSourceScope`, so its own live
+ * `holiday_bridge` rows are this run's to keep or to retire: a day the fresh scan no longer produces
+ * IS superseded. Counting them as already-charged made the scan skip exactly those days, and
+ * reconcile then retired the rows for being absent from it — so a re-run emitted nothing and
+ * withdrew the previous run's work, taking the owner's decision on each row with it. The same defect
+ * is documented with its production evidence in `connectors/dsm-no-record.ts`, which shares this
+ * shape; the general rule and the locked-row exception live on
+ * `ledgerRowStillClaimsItsDaysBySource`.
+ *
+ * Keyed on SOURCE SYSTEM, never on category: `other` is shared with `manual_hr`, whose hand-entered
+ * rows survive this run. A LOCKED own row keeps claiming its day too — reconcile will not retract
+ * published money, so that row is still live afterwards and re-charging its day double-books it.
  */
 async function loadAlreadyDeductedDays(monthKey: string): Promise<Set<string>> {
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates, source_system")
+    .select("employee_hr_id_compact, dates, locked_at, source_system")
     .eq("month_key", monthKey)
     .is("superseded_at", null);
   if (error) throw new Error(`Failed to load already-deducted days: ${error.message}`);
   // Skips a manual_hr placeholder row — its date is `${monthKey}-01`, not a detected day, so treating
-  // it as claimed would drop a genuine bridge deduction that lands on the real 1st (conflict.ts).
-  return collectClaimedLedgerDays((data ?? []) as LedgerClaimRow[]);
+  // it as claimed would drop a genuine bridge deduction that lands on the real 1st (conflict.ts) —
+  // and this run's own replaceable rows, per the note above.
+  return collectClaimedLedgerDays((data ?? []) as LedgerClaimRow[], (row) =>
+    ledgerRowStillClaimsItsDaysBySource(
+      { sourceSystem: row.source_system ?? null, lockedAt: row.locked_at ?? null },
+      HOLIDAY_BRIDGE_SOURCE_SYSTEMS,
+    ),
+  );
 }
 
 /**
@@ -280,7 +317,7 @@ export async function collectHolidayBridgeCandidates(input: {
       const cause = hasLeave ? "vacation" : "no record";
       drafts.push({
         category: "other",
-        sourceSystem: "holiday_bridge",
+        sourceSystem: HOLIDAY_BRIDGE_SOURCE_SYSTEM,
         // Deterministic and clock-free, so re-running the collection skips what
         // already exists instead of duplicating it.
         sourceRecordId: `holiday-bridge:${canonicalHrIdKey(employee.hrId) ?? compact}:${bridge.date}`,

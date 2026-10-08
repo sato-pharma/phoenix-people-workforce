@@ -44,7 +44,11 @@ import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance
 
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
-import { collectClaimedLedgerDays, type LedgerClaimRow } from "../conflict.ts";
+import {
+  collectClaimedLedgerDays,
+  ledgerRowStillClaimsItsDaysBySource,
+  type LedgerClaimRow,
+} from "../conflict.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 // The rep pipeline's own company-wide CRM data-gap detector, reused here so both
@@ -55,6 +59,19 @@ import type { DeductionsCandidateDraft } from "../types.ts";
 
 /** District sales managers only — never a broader manager title. */
 const DSM_TITLE = /district\s+(sales\s+)?manager/i;
+
+/**
+ * The one `source_system` this connector writes, and therefore the only one its re-run may retire.
+ *
+ * Exported so a test can assert it against `collect.ts`'s own `reconcilesSourceScope` registration,
+ * which is pinned there as a literal by `deductions-supersede-carries-decision.test.ts`. The two
+ * must stay equal: the already-claimed read below excludes exactly the rows reconcile is about to
+ * supersede, and either half drifting is silent — too narrow brings back the alternating flip, too
+ * wide retires the sibling writer's rows.
+ */
+export const DSM_NO_RECORD_SOURCE_SYSTEM = "dsm_no_record";
+
+const DSM_NO_RECORD_SOURCE_SYSTEMS: readonly string[] = [DSM_NO_RECORD_SOURCE_SYSTEM];
 
 function monthDays(monthKey: string): string[] {
   const [year, month] = monthKey.split("-").map(Number);
@@ -270,18 +287,39 @@ export async function collectDsmNoRecordCandidates(input: {
     }
   }
 
-  // Employee-days another category already charges. The owner's rule: never the
+  // Employee-days another writer already charges. The owner's rule: never the
   // same day twice. Enforced here rather than at publish, where a collision
   // refuses the whole month instead of preventing the double charge.
+  //
+  // 🔴 THIS RUN'S OWN UNLOCKED ROWS ARE EXCLUDED, OR EVERY SECOND RUN FLIPS THE SET.
+  // `collect.ts` registers this collector with `reconcilesSourceScope`, so its own live
+  // `dsm_no_record` rows are this run's to keep or to retire: a day set the fresh scan no longer
+  // produces IS superseded. Reading those rows as already-charged made the scan omit exactly the
+  // days they cover, and reconcile then retired them for being absent from the scan — so a re-run
+  // emitted nothing and withdrew the previous run's work, decision and all. Measured on production
+  // for 2026-09: rows created 2026-10-03 20:01 and 2026-10-06 03:40, 04:55, 23:35 and 23:40 UTC
+  // alternate, with Dina Hamdy Fadel Mohamed Bdair, Mohamed Alaa Eleiwa Abozaid and Nermeen Salah
+  // Abdelaty Abohussien re-created and superseded on alternate runs while Sameh Shabaan El Hoseiny
+  // El Hoseiny flips the opposite way.
+  //
+  // Keyed on SOURCE SYSTEM, never on category: `crm` is shared with `crm_visits_mirror`, whose rows
+  // survive this run and so must keep claiming their days. A LOCKED own row keeps claiming too —
+  // reconcile will not retract published money, so that row is still live afterwards.
   const { data: existing, error: existingError } = await supabase
     .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates, source_system")
+    .select("employee_hr_id_compact, dates, locked_at, source_system")
     .eq("month_key", monthKey)
     .is("superseded_at", null);
   if (existingError) throw new Error(`Failed to load already-deducted days: ${existingError.message}`);
   // Skips a manual_hr placeholder row — its date is `${monthKey}-01`, not a detected day, so treating
-  // it as claimed would drop a genuine no-record deduction that lands on the real 1st (conflict.ts).
-  const claimed = collectClaimedLedgerDays((existing ?? []) as LedgerClaimRow[]);
+  // it as claimed would drop a genuine no-record deduction that lands on the real 1st (conflict.ts) —
+  // and this run's own replaceable rows, per the note above.
+  const claimed = collectClaimedLedgerDays((existing ?? []) as LedgerClaimRow[], (row) =>
+    ledgerRowStillClaimsItsDaysBySource(
+      { sourceSystem: row.source_system ?? null, lockedAt: row.locked_at ?? null },
+      DSM_NO_RECORD_SOURCE_SYSTEMS,
+    ),
+  );
 
   const drafts: DeductionsCandidateDraft[] = [];
   for (const [compact, manager] of roster) {
@@ -371,7 +409,7 @@ export async function collectDsmNoRecordCandidates(input: {
       // Filing them under `other` would have required an approval per row. The
       // owner chose the CRM tab knowing that.
       category: "crm",
-      sourceSystem: "dsm_no_record",
+      sourceSystem: DSM_NO_RECORD_SOURCE_SYSTEM,
       sourceRecordId: `dsm-no-record:${compact}:${monthKey}`,
       employeeHrId: manager.hrId,
       employeeName: manager.name,
