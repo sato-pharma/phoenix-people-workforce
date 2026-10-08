@@ -282,8 +282,14 @@ async function writeReport(folder: string, plans: GroupPlan[]): Promise<void> {
 
 async function verifyPreImage(schema: string, customerIds: string[]): Promise<void> {
   if (!/^phoenix_crm_merge_backup_\d{8}$/.test(schema)) throw new Error(`--pre-image must name a dated backup schema, not ${schema}`);
-  const url = process.env.PHOENIX_PRODUCTION_DATABASE_URL;
-  if (!url) throw new Error("PHOENIX_PRODUCTION_DATABASE_URL is needed to read the pre-image back");
+  const raw = process.env.PHOENIX_PRODUCTION_DATABASE_URL;
+  if (!raw) throw new Error("PHOENIX_PRODUCTION_DATABASE_URL is needed to read the pre-image back");
+  // The direct `db.<ref>.supabase.co` host does not resolve from this laptop (ENOTFOUND, 2026-10-08,
+  // on the first --apply — refused before any write). Rewrite it to the session pooler exactly as
+  // scripts/apply-sql-file.mjs does; a URL already in pooler form passes through untouched.
+  const direct = /^(\w+):\/\/([^:]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co:(\d+)\/(.+)$/.exec(raw);
+  const host = process.env.PHOENIX_POOLER_HOST?.trim() || "aws-0-eu-central-1.pooler.supabase.com";
+  const url = direct ? `${direct[1]}://${direct[2]}.${direct[4]}:${direct[3]}@${host}:5432/${direct[6]}` : raw;
   const sql = postgres(url, { max: 1, prepare: false });
   try {
     const [{ held }] = await sql.unsafe(
