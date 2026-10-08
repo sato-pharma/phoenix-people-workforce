@@ -928,6 +928,29 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
       });
     }
 
+    // Added 2026-10-08. A place he refused sends its customer back under To validate, and until that
+    // day nothing showed how long one had waited there (0 of 22 redone, the oldest 76.7 hours).
+    if (counts.reopenedWaiting > 0) {
+      items.push({
+        key: "phoenix-crm-decisions:reopened-waiting",
+        sourceId: "phoenix-crm-decisions",
+        kind: "flag",
+        // WORTH KNOWING, never `yours`: the rep validates him again; nothing waits on a decision.
+        lane: "worth-knowing",
+        label: `${counts.reopenedWaiting} refused ${plural(counts.reopenedWaiting, "place is", "places are")} still waiting to be captured again`,
+        count: counts.reopenedWaiting,
+        people: [],
+        // Its own page, where the "Waiting to be captured again" list names each one and its reason.
+        href: VALIDATION_REVIEWS_PATH,
+        externalUrl: null,
+        oldestAt: counts.oldestReopenedAt,
+        ageDays: ageDaysSince(counts.oldestReopenedAt, now),
+        // The module publishes no SLA for a redo, so this board invents no verdict.
+        overdue: false,
+        note: "The rep has been told why. Until the customer is validated again, a visit there scores nothing.",
+      });
+    }
+
     if (counts.awaitingValidation > 0) {
       items.push({
         key: "phoenix-crm-decisions:awaiting-validation",

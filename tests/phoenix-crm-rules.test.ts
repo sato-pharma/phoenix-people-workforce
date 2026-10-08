@@ -610,6 +610,9 @@ function runEntryRuleTests() {
       photoLon: null,
       label: "Clinic 2",
       photoPath: "seat/photo.jpg",
+      // When Capture location took ITS reading (2026-10-08): read only for the capture-trust check,
+      // never stored. This payload sends none, so the gap reads as unmeasured.
+      pinCapturedAt: null,
       timings: [{ weekday: 6, startMinute: 1080, endMinute: null, season: "normal" }],
     },
   );

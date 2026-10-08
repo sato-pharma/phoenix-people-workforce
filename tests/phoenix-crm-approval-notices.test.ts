@@ -191,8 +191,10 @@ export function runPhoenixCrmApprovalNoticeTests() {
       // `plan_resent` joined on 2026-10-08: the SFE Manager's own copy of a week he returned being sent
       // again. Informational — he approves no plan — so no phone, and the fallback is shut so a re-send
       // cannot mail him instead.
-      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "plan_edit_expired", "plan_resent"],
-      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, the weekly fraud scan, and the SFE's copy of a re-send",
+      // `validation_not_confirmed` joined on 2026-10-08: the rep told what is wrong with his photo after a
+      // refusal. A rep notice, but worded about the photo and never a person, so in-app and Telegram only.
+      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "plan_edit_expired", "plan_resent", "validation_not_confirmed"],
+      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, the weekly fraud scan, the SFE's copy of a re-send, and the rep's validate-again notice",
     );
     // Behaviour, not source: the re-send's own channel list, filtered.
     assert.deepEqual(

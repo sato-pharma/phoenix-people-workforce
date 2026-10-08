@@ -214,6 +214,27 @@ export const MODULES = [
     keywords: ["integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "touch trail", "refused readings", "mock-location", "mock location detection"],
     tables: ["phoenix_crm_location_integrity", "phoenix_crm_behaviour_integrity", "phoenix_crm_photo_fingerprints", "phoenix_crm_touch_trail"],
   },
+  // 🔴 SPLIT, 2026-10-08, BEFORE `phoenix-crm` OR `phoenix-crm-boards` COULD CROSS THE POINTER MARGIN: the
+  // photo-validation audit taught seven rules at once (the signboard check, the closed refusal reasons, the
+  // "Validate again" notice, the validate-first order, the Place checks reader, the same-seat merge and the
+  // brick lookup). They are one family — what makes a captured place a VALIDATED one, and what the rep is
+  // told when it is not — so they move together. `phoenix-crm` keeps every glob it had, so a file here loads
+  // the pair and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-validation",
+    title: "Phoenix CRM — validating a place: the signboard, the refusal, the merge",
+    scope: "What turns a captured place into a validated one — the signboard read, capture trust, the Place checks page, the closed refusal reasons the rep is told, the customers waiting to be captured again, the validate-first order, the brick lookup and the same-seat duplicate merge.",
+    globs: [
+      "src/lib/phoenix-crm/{signboard-rules,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts",
+      "src/lib/phoenix-crm/server/{signboard-check,signboard-sweep,validation-reviews}.ts",
+      "src/components/phoenix-crm/{refusal-reason-field,reopened-customer-list,validated-place-list,validation-review-queue,validation-reviews-board}.tsx",
+      "app/**/field-crm/validation-reviews/**",
+      "scripts/phoenix-crm-merge-same-seat-duplicates.ts",
+      "tests/phoenix-crm-{signboard-check,capture-trust-place,validation-feedback,place-brick-lookup,duplicate-merge,refuse-validation,validation-review-filters,place-checks-in-overflow}*",
+    ],
+    keywords: ["signboard", "refusal reason", "validate again", "duplicate merge", "place checks", "capture trust", "brick lookup"],
+    tables: [],
+  },
   {
     id: "crm",
     title: "Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans",

@@ -8,8 +8,10 @@
  * this list there was no way to take one back — it had to be undone in SQL.
  *
  * Refusing writes the same review the automatic check would have written and runs the same reject, so
- * the rep reads the system's own wording ("The system could not confirm this location") and never that
- * a person looked at him. The note is required and is kept on the record, never shown to him.
+ * the rep reads the system's own wording ("The system could not confirm this place") and never that
+ * a person looked at him. Since 2026-10-08 the Super Admin also picks WHAT IS WRONG WITH THE PHOTO from
+ * a closed list, and that one sentence is the only thing the rep is told; the note is still required
+ * and is still kept on the record, never shown to him.
  *
  * Desktop draws the module's `CrmTable` (`table-fixed` with a colgroup, never a min-width in a
  * scroller); a phone draws the same rows as cards. Square corners throughout.
@@ -20,6 +22,7 @@ import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import {
   CrmButton,
   CrmCardsOnPhone,
@@ -33,7 +36,16 @@ import {
   crmTextareaClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
+import { VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
+
+/** What the system read on the signboard, in the Super Admin's words. A verdict, never a decision. */
+const SIGNBOARD_TEXT: Record<NonNullable<ValidatedPlaceRow["signboard"]>["verdict"], string> = {
+  match: "The signboard names this customer",
+  other_name: "The signboard names somebody else",
+  no_name: "No name to judge on the signboard",
+  unjudged: "The signboard could not be read",
+};
 
 const PAGE = 25;
 
@@ -53,7 +65,10 @@ function Who({ row }: { row: ValidatedPlaceRow }) {
       <p className="break-words text-sm text-slate-700">{row.repName}</p>
       <p className="break-words text-xs text-slate-500">{row.territory}</p>
       <p className="break-words text-xs text-slate-500">Validated {row.validatedAtText}</p>
-      {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
+      <div className="flex min-w-0 flex-wrap gap-1">
+        {row.reviewed ? null : <CrmPill tone="info">Never looked at</CrmPill>}
+        {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
+      </div>
     </div>
   );
 }
@@ -77,6 +92,20 @@ function Place({ row }: { row: ValidatedPlaceRow }) {
       <a className="inline-block text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
         Open where they stood in Google Maps
       </a>
+      <div className="space-y-0.5 border-t border-slate-100 pt-1">
+        {row.signboard ? (
+          <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
+            {SIGNBOARD_TEXT[row.signboard.verdict]}
+          </CrmPill>
+        ) : (
+          <p className="text-xs text-slate-500">The signboard has not been read yet.</p>
+        )}
+        {row.signboard?.signText ? (
+          <p className="break-words text-xs text-slate-700" dir="auto">
+            {row.signboard.signText}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -103,6 +132,7 @@ function Cost({ row }: { row: ValidatedPlaceRow }) {
 function Refuse({ row }: { row: ValidatedPlaceRow }) {
   const router = useRouter();
   const [note, setNote] = useState("");
+  const [reason, setReason] = useState<ValidationRefusalReason | "">("");
   const [armed, setArmed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -112,7 +142,7 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
     setSaving(true);
     setProblem(null);
     try {
-      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: row.placeId, note }, "refused");
+      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: row.placeId, note, refusalReason: reason }, "refused");
       router.refresh();
     } catch (error) {
       setProblem(messageOf(error));
@@ -124,8 +154,17 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
   return (
     <div className="space-y-2">
       <Cost row={row} />
+      <RefusalReasonField
+        disabled={saving}
+        id={`refuse-reason-${row.placeId}`}
+        onChange={(next) => {
+          setReason(next);
+          setArmed(false);
+        }}
+        value={reason}
+      />
       <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`refuse-note-${row.placeId}`}>
-        Why (kept on the record, never shown to the rep)
+        {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
@@ -139,6 +178,7 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
         rows={2}
         value={note}
       />
+      <RefusalNoteHint />
       {armed ? (
         <div className="space-y-2">
           <CrmNote tone="warn">This retires the place and cannot be undone — they validate the customer again from their own list.</CrmNote>
@@ -152,11 +192,13 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
           </div>
         </div>
       ) : (
-        <CrmButton disabled={note.trim().length === 0} onClick={() => setArmed(true)} variant="danger">
+        <CrmButton disabled={reason === "" || note.trim().length === 0} onClick={() => setArmed(true)} variant="danger">
           Refuse this validation
         </CrmButton>
       )}
-      {note.trim().length === 0 && !armed ? <p className="text-xs text-slate-500">Write the reason first.</p> : null}
+      {(reason === "" || note.trim().length === 0) && !armed ? (
+        <p className="text-xs text-slate-500">Choose what is wrong with the photo and write the note first.</p>
+      ) : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

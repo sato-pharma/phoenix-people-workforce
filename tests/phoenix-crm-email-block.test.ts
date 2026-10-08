@@ -25,6 +25,8 @@ import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-gove
 //      category must reach the in-app bell (or the bell stays empty while the audit says "sent")
 
 const EVENT_TYPES = [
+  // The rep's "validate this customer again" (owner, 2026-10-08) — in-app only; see PUSH_BLOCKED below.
+  "validation_not_confirmed",
   "grade_request_waiting",
   "drop_request_waiting",
   // The rep's flow rebuilt (owner, 2026-09-29): adding a customer met outside the list, and bringing one
@@ -100,6 +102,10 @@ const PUSH_BLOCKED_EVENT_TYPES = [
   // Telegram-failure fallback would mail him one per re-send, and the module's emails are the four
   // person-taken plan-edit steps plus a rep's first visit and the held place, nothing else.
   "plan_resent",
+  // The rep's "validate this customer again" (2026-10-08): in-app only. It tells him what is wrong
+  // with his photo, and a push or an email fallback would carry the one sentence about his own work
+  // the owner allowed past golden rule #1 out of the app it was written for.
+  "validation_not_confirmed",
 ];
 
 /**
@@ -153,7 +159,7 @@ export function runPhoenixCrmEmailBlockTests() {
     // calls createSystemNotificationForRecipients directly, so none comes through the notifier and
     // none is harvested into EVENT_TYPES; all three are in-app and Telegram only.
     ["crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
-    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy, the activity mirror and the SFE's copy of a re-send",
+    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy, the activity mirror, the SFE's copy of a re-send and the rep's validate-again notice",
   );
   for (const eventType of EMAIL_EVENT_TYPES) {
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType });
@@ -208,11 +214,12 @@ export function runPhoenixCrmEmailBlockTests() {
       1,
       "every Phoenix CRM notice goes out through one send, its channels named by the guard's allowlist, and nothing else",
     );
-    // The in-app-only exceptions are TWO, and ONLY these two: the daily forecast's alert — the owner asked
-    // for an in-app alert, and some 26 reps send one every working day — and the courtesy a district
+    // The in-app-only exceptions are THREE, and ONLY these three: the daily forecast's alert — the owner
+    // asked for an in-app alert, and some 26 reps send one every working day — the courtesy a district
     // manager gets when one of his reps asks a product manager for a visit, which waits on nobody
-    // (owner's brief, 2026-10-02: "told (in-app)").
-    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 2, "exactly two notices are in-app only");
+    // (owner's brief, 2026-10-02: "told (in-app)"), and the rep's "validate this customer again"
+    // (owner, 2026-10-08: tell the rep why, worded about his photo).
+    assert.equal((notify.match(/inAppOnly: true,/g) ?? []).length, 3, "exactly three notices are in-app only");
     const forecastBranch = notify.slice(notify.indexOf('if (notice.kind === "forecast_sent")'), notify.indexOf('if (notice.kind === "unplanned_visit_raised")'));
     assert.match(forecastBranch, /inAppOnly: true,/, "one is the daily forecast's");
     const visitAskBranch = notify.slice(notify.indexOf("async function describeVisitAsk("), notify.indexOf("async function describe(notice"));

@@ -216,3 +216,52 @@ export async function downloadPhoto(path: string): Promise<Uint8Array | null> {
   if (error || !data) return null;
   return new Uint8Array(await data.arrayBuffer());
 }
+
+/**
+ * The bytes of one PLACE photo this person's own slot issued, for the server's own reading of it
+ * inside their request.
+ *
+ * 🔴 THE EXCEPTION TO `downloadPhoto`'s RULE IS DOCUMENTED HERE, AT THE NEW DOOR, AND NOT BY
+ * LOOSENING THE OLD ONE. `downloadPhoto` stays unsigned, unscoped and nightly-only, because its
+ * safety rests entirely on nobody choosing its argument. This one is reachable from a request, so it
+ * carries a scope STRONGER than `signPhotoPaths`': the path must parse as a `place` slot, its seat
+ * segment must be the seat doing the saving, its test flag must match, and a `phoenix_crm_photo_uploads`
+ * row must exist for that exact path issued to THIS hr id. A path the server did not hand this person
+ * for this territory never reaches the bucket, so there is nothing to probe with.
+ *
+ * Needed because the signboard reading happens while the rep is still at the clinic, before the place
+ * row exists — so there is no row to find the photo from, only the path he is saving.
+ *
+ * Null rather than throwing, every time: a photo that cannot be read is a fact to record, never a
+ * reason to refuse a rep standing at a doorway.
+ */
+export async function downloadIssuedPlacePhoto(input: {
+  path: string;
+  seatId: string;
+  hrId: string;
+  isTest: boolean;
+}): Promise<Uint8Array | null> {
+  const path = String(input.path ?? "").trim();
+  if (!path) return null;
+
+  // The path's own shape first, so a malformed one never reaches a query.
+  const owner = photoPathTerritory(path);
+  if (!owner || owner.isTest !== input.isTest) return null;
+  if (owner.seatSegment !== storageSegment(input.seatId)) return null;
+
+  // Then the slot row, which is the real authority: it holds the seat, the purpose, the test flag and
+  // who it was issued to as COLUMNS, so none of them has to be inferred from the path's text.
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_photo_uploads")
+    .select("path, issued_to_hr_id, seat_id, purpose, is_test")
+    .eq("path", path)
+    .eq("issued_to_hr_id", input.hrId)
+    .eq("seat_id", input.seatId)
+    .eq("purpose", "place")
+    .eq("is_test", input.isTest)
+    .maybeSingle();
+  throwIfError(error);
+  if (!data) return null;
+
+  return downloadPhoto(path);
+}
