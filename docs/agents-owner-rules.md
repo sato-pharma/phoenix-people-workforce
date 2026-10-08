@@ -6959,3 +6959,75 @@ function narrowed to those same two roles, over every rider and the whole week: 
 rows in either direction, `double_visits` 57 = 57.** No district manager's figure moved by one. A
 product manager is still never filed as a double visit; his own screen says "double" because that is
 the word the rep ticked, and only the stored kind and the counted figure keep them apart.
+
+## The weekly unexplained-day notice is the employee's own — owner, 2026-10-08
+
+**His instruction, in full:** *"add an employee notice when his own calendar has an unexplained day"*.
+It followed directly from the measurement he had just asked for — *"check whether reps can actually
+find the Request review control"* — and the answer that came back.
+
+### What the measurement actually found
+
+The control was not hidden, not wrongly gated, and not broken:
+
+- `/employee-portals/private-calendar` carries **no role restriction** in
+  `src/config/system-navigation.ts`, only `permissions: [{ resource: "employee_profile" }]`, so every
+  one of the **111 active employees** has the page in their portal nav.
+- The `Request review` button renders for any day of the viewer's **own** calendar, gated correctly by
+  `canActOnOwnDay` — `privateCalendarHrIdKey(viewerHrId) === privateCalendarHrIdKey(selectedEmployee.hrId)`
+  in `src/components/employee-portal/private-calendar.tsx`.
+- In the **two and a half months** since it went live on 22 July 2026 it had been used **once**:
+  Weaam Mahmoud's 4 October request, still `pending_review` at the time of the measurement.
+
+Three things explained the one request, and only the first was fixable:
+
+1. **Nothing in the system ever told an employee to look.** All three notifications in the module fire
+   the other way — the Super Admin on a new request, the employee on a *decision*, and thread replies.
+   Discovery depended on somebody opening a portal page unprompted and noticing a small button in a
+   section header.
+2. The red exceptions strip on the calendar is **navigational only**: its per-exception button does
+   `onClick={() => focusException(exception.date)}` and nothing else, so even an employee already
+   looking at the strip is not told what to do about it.
+3. Most reps' calendars are populated by CRM visits anyway, so a genuine gap is rare for them — the
+   people with unexplained days are disproportionately those the fingerprint devices do not cover.
+
+### The notice he asked for
+
+Saturday **08:09 Cairo**, for the completed **Sat–Thu** week. One notice **per employee**, not one per
+day: five separate notices about one week teach the bell to be ignored.
+
+- 🔴 **It judges nothing of its own.** The days come from `getCompanyNoActivityDays` — the *same*
+  engine call the Deductions module's No Records Activity connector makes, over the same
+  `derivePrivateCalendarExceptions` the employee's own calendar renders. No detector re-runs, no
+  threshold lives in it, and it reads no table the calendar does not. So **the day the notice names,
+  the day the calendar shows, and the day that can become a payroll deduction candidate are one day by
+  construction** — the same reasoning that put the approved-plan source into both engines on 2026-10-07
+  rather than one of them.
+- 🔴 **The audience is the EMPLOYEE ALONE** — never the manager, never HR, never an admin digest. A
+  recording gap is usually a day away from a fingerprint device or work that was never logged, not an
+  accusation, and nobody else is told before the employee has had the chance to answer.
+- 🔴 **Never email.** In-app and push only. Bulk outbound email from a business system is banned, and
+  every automated email in Phoenix also mirrors to the owner's Telegram — so a weekly sweep over the
+  roster on the email channel would both spam the staff and page him dozens of times a week about news
+  that is not his. Push is per-subscription and opt-in.
+- **A day already carrying a review request of ANY status is named to nobody.** A pending one must not
+  be nagged about; an accepted one is settled; and a rejected one was answered by a Super Admin in
+  person, so re-raising it weekly would argue with that decision through the bell.
+- 🔴 **That suppression read fails CLOSED.** If `private_calendar_data_disputes` cannot be read the run
+  throws rather than sending: a notice is unretractable and a retry is free, so the one thing it must
+  never do is nag an employee about the exact day they have already done the right thing on.
+- The idempotency key is **per employee per week**, keyed on the window end, so a retry or a double
+  fire reaches nobody twice — and it is independent of the message text, which a late-arriving punch
+  could still change.
+- The wording is **neutral** (the 2026-10-05 rule). His own instruction says "his"; the notice does
+  not, because 88 of the 206 active employees are women and 31 have no gender recorded.
+
+**Known limit, stated rather than worked around:** `app/employee-portals/private-calendar/page.tsx`
+takes no `searchParams` and always opens on the current Cairo month, so the notice cannot deep-link to
+the day. The dates travel in the message text and the body says to step the calendar back.
+
+**Where it lives:** `src/lib/private-calendar/gap-notice-rules.ts` (pure — window, composition, cap,
+suppression keys) and `gap-notice.ts` (the run), behind
+`app/api/cron/private-calendar-gap-notice/route.ts`. Pinned by
+`tests/private-calendar-gap-notice.test.ts`, which also holds the five registration sites to each
+other so the cron cannot strand. The hook: `.claude/rules/time-off.md`.

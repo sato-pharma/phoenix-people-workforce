@@ -202,6 +202,18 @@ const JOBS = {
     schedule: { hours: [7], minutes: [0], mdays: [-1], months: [-1], wdays: [4] },
     requestTimeout: 300,
   },
+  "private-calendar-gap-notice": {
+    title: "Phoenix — Private Calendar gap notice",
+    path: "/api/cron/private-calendar-gap-notice",
+    // 08:09 Cairo on Saturday (owner, 2026-10-08). Weekly, the first working morning after the Sat-Thu
+    // week it reports, so the week is closed and the employee has the new week to answer. On wday 6
+    // (Saturday — cron-job.org counts 0=Sunday, matching the `9 8 * * 6` in JOB_SCHEDULES and
+    // docs/observability.md) at minute 9, which nothing else in the account fires on, so a red
+    // execution names one job. One engine read over the week plus at most one notice per employee with
+    // a gap, so it stays well inside the platform cut.
+    schedule: { hours: [8], minutes: [9], mdays: [-1], months: [-1], wdays: [6] },
+    requestTimeout: 300,
+  },
   "job-heartbeat-sweep": {
     title: "Phoenix — job heartbeat sweep",
     path: "/api/cron/job-heartbeat-sweep",
