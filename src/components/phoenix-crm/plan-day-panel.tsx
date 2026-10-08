@@ -250,7 +250,8 @@ export function PlanDayPanel({
         <span className="flex max-w-full flex-wrap gap-1">
           {day.date === today ? <CrmPill tone="info">Today</CrmPill> : null}
           {!day.editable ? <CrmPill>Passed</CrmPill> : null}
-          {off ? <CrmPill tone="warn">Day off</CrmPill> : null}
+          {off ? <CrmPill tone="warn">{off.kind === "leave" ? "Vacation · approved" : "Day off"}</CrmPill> : null}
+          {day.pendingLeave ? <CrmPill tone="orange">Vacation · pending approval</CrmPill> : null}
           {day.ramadan ? <CrmPill tone="orange">Ramadan</CrmPill> : null}
           {morning ? <CrmPill>Morning · AM only</CrmPill> : null}
           {showSpread && !editing && day.farApart ? <CrmPill tone="warn">Far apart · {day.spanKm} km</CrmPill> : null}
@@ -268,10 +269,13 @@ export function PlanDayPanel({
       ) : startsText ? (
         <p className="mt-1 break-words text-sm font-bold text-slate-700">{startsText}</p>
       ) : null}
-      {!day.editable || off || morning || day.ramadan ? (
+      {!day.editable || off || day.pendingLeave || morning || day.ramadan ? (
         <div className="mt-3 grid min-w-0 gap-2">
           {!day.editable ? <CrmNote>This day has passed. It shows what was planned.</CrmNote> : null}
           {off ? <CrmNote tone="warn">{`${dayName} is ${dayOffPhrase(off)}: it holds no customer.`}</CrmNote> : null}
+          {day.pendingLeave ? (
+            <CrmNote tone="info">{`${day.pendingLeave} is requested for ${dayName} and waiting for approval. You can still plan this day; once it is approved the day holds no customer.`}</CrmNote>
+          ) : null}
           {morning ? <CrmNote>Thursday is a morning: it holds AM only.</CrmNote> : null}
           {day.ramadan ? <CrmNote tone="info">A Ramadan day: each customer&apos;s Ramadan hours are used.</CrmNote> : null}
         </div>

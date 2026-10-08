@@ -385,4 +385,72 @@ export function runVacationApprovalFlowTests() {
     decision: "approve",
   });
   assert.equal(hrEarly.allowed, false, "HR cannot acknowledge before the NSM has approved");
+
+  // ---- Return for edit: every approval, every type, manager or HR (owner, 2026-10-08) ----
+  // HR could not return at all ("HR cannot return requests to the employee"). It decides nothing
+  // when it returns, so the result is never final, and it is allowed at any stage like a rejection.
+  const hrReturn = evaluateStepAction({
+    steps: [step("direct_manager", "pending"), step("hr", "pending")],
+    actorStep: { stepKey: "hr", order: 3 },
+    decision: "return",
+  });
+  assert.equal(hrReturn.allowed, true, "HR may return a request for the employee to edit, even before management has approved");
+  assert.equal(hrReturn.nextStatus, "returned");
+  assert.equal(hrReturn.isFinal, false, "a return decides nothing, so it is never final");
+
+  const hrAvail = resolveActionAvailability({
+    status: "pending_hr",
+    steps: [step("direct_manager", "approved"), step("hr", "pending")],
+    actorStep: { stepKey: "hr", order: 3 },
+    isHrActor: true,
+  });
+  assert.equal(hrAvail.return.enabled, true, "the HR viewer is offered the return button");
+  const mgrAvail = resolveActionAvailability({
+    status: "pending_manager",
+    steps: [step("direct_manager", "pending"), step("hr", "pending")],
+    actorStep: { stepKey: "direct_manager", order: 1 },
+    isHrActor: false,
+  });
+  assert.equal(mgrAvail.return.enabled, true, "the manager keeps the return button");
+  const returnedAvail = resolveActionAvailability({
+    status: "returned",
+    steps: [step("direct_manager", "pending"), step("hr", "pending")],
+    actorStep: { stepKey: "direct_manager", order: 1 },
+    isHrActor: false,
+  });
+  assert.equal(returnedAvail.return.enabled, false, "nothing is actionable while the employee holds the request");
+
+  // Source guards for the parts that need a database to run.
+  const workflowSource = readFileSync(new URL("../src/lib/vacation/workflow.ts", import.meta.url), "utf8");
+  assert.match(workflowSource, /"hr_return"/, "HR's return is its own registry action, from pending_hr");
+  const returnHelper = serviceSource.slice(
+    serviceSource.indexOf("async function returnVacationToEmployee("),
+    serviceSource.indexOf("async function applyVacationDecision("),
+  );
+  assert.ok(returnHelper.length > 200, "the shared return helper exists");
+  assert.match(
+    legacyFunctionSource.slice(0, legacyFunctionSource.indexOf("const decisionValue")),
+    /input\.decision === "return"\) \{\s*return returnVacationToEmployee/,
+    "Sick leave has a return branch: without it a return fell through to the rejection path and REJECTED the request",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /A return reason is required\./,
+    "a plain Return for edit carries no comment, so the service must not demand one (the with-comment button demands it on screen)",
+  );
+  assert.match(serviceSource, /A rejection reason is required\./, "a rejection still needs its reason");
+  const resubmitSource = serviceSource.slice(serviceSource.indexOf("export async function resubmitVacationRequest("));
+  assert.match(resubmitSource, /edits\?: ResubmitVacationEdits/, "the employee can edit the request while resubmitting it");
+  assert.match(resubmitSource, /validateVacationSubmissionDates\(/, "an edit passes the same date rules as a new submission");
+  assert.match(resubmitSource, /vacationApprovalStepsTable\)\s*\.update\(\{[^}]*status: "pending"/, "changed dates start the approval chain again");
+
+  const hubSource = readFileSync(new URL("../src/components/action-center/action-center-hub.tsx", import.meta.url), "utf8");
+  assert.match(hubSource, /Return for Edit with Comment/, "Action Center offers the commented return");
+  assert.match(hubSource, /key: "return_plain", label: "Return for Edit"/, "Action Center offers the one-click return");
+  const detailSource = readFileSync(new URL("../src/components/approvals-hub/vacation-request-detail.tsx", import.meta.url), "utf8");
+  assert.match(detailSource, /returnWithoutComment/, "the vacation approval page offers both returns");
+  assert.match(decisionActions, /returnPlain: false/, "the one-click return needs no reason on screen");
+  const panelSource = readFileSync(new URL("../src/components/vacation/returned-request-panel.tsx", import.meta.url), "utf8");
+  assert.match(panelSource, /Edit and resubmit/, "the employee can edit a returned request");
+  assert.match(panelSource, /Resubmit without changes/, "the employee can resubmit a returned request as it stands");
 }

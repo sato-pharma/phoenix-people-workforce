@@ -96,7 +96,7 @@ import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
-import { loadSeatDaysOff } from "@/lib/phoenix-crm/server/leave-days";
+import { loadSeatDaysOff, loadSeatPendingLeave } from "@/lib/phoenix-crm/server/leave-days";
 import { editAcknowledgedAt, loadPlanEditState, repStateOf, type PlanEditRequestView, type PlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
@@ -418,6 +418,8 @@ export async function loadMonthlyPlanner(
     canWriteAsRep(viewer, seat, isTest) ? loadPlannerInsights(seat.seatId, isTest, today, customersRead) : Promise.resolve(new Map<string, PlannerInsight>()),
     // The rep's own full days of approved leave are days off too (owner, 2026-10-02), over the same days.
     loadSeatDaysOff(seat, { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),
+    // Leave he has asked for and nobody has decided: named on the plan, never a day off (owner, 2026-10-08).
+    loadSeatPendingLeave(seat, { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -430,6 +432,7 @@ export async function loadMonthlyPlanner(
     holidays,
     insights,
     leave,
+    pendingLeave,
   ] = await wave;
 
   const settings = viewer.config.settings;
@@ -523,7 +526,7 @@ export async function loadMonthlyPlanner(
       decidedAt: weekPlan?.decidedAt ?? null,
       editAcknowledgedAt: editAcknowledgedAt(edit),
     });
-    const builtDays = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave });
+    const builtDays = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave, pendingLeave });
     const days = onlyReturnedDayEditable(builtDays, returnedDay);
     const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
     const open = editablePlanDays(weekStart, today).length > 0;

@@ -1,7 +1,7 @@
 import { logError } from "@/lib/observability/log";
 import { leaveDayKey, type LeaveDays } from "@/lib/phoenix-crm/plan-leave";
 import { personKey, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
+import { loadApprovedLeaveDays, loadPendingLeaveDays } from "@/lib/vacation/approved-leave-days";
 
 /**
  * Phoenix CRM — the days HR approved leave for whoever holds these territories, for the reports that
@@ -70,6 +70,36 @@ export async function loadSeatLeaveDays(seats: readonly OrgSeat[], range: { from
  */
 export async function loadSeatDaysOff(seat: OrgSeat, range: { from: string; to: string }): Promise<Map<string, string>> {
   return (await loadSeatsDaysOff([seat], range)).get(seat.seatId) ?? new Map<string, string>();
+}
+
+/**
+ * Phoenix CRM — the days the rep has ASKED for leave and nobody has decided yet, on his plan (owner,
+ * 2026-10-08: "if the employee submitted a vacation, show in his plan that it is pending approval"), as
+ * `day → the leave's own name` ("Annual Vacation", or "Annual Vacation (half day)").
+ *
+ * 🔴 A PENDING DAY IS INFORMATION, NEVER A DAY OFF. The plan names it so the rep and his manager read the
+ * request beside the week, and that is all: the day stays plannable, no save is refused over it, no
+ * report excuses it, and a request is not an absence. It becomes a day off the moment HR approves it —
+ * `loadSeatDaysOff` above then takes it, with no step from him — and a rejected or returned request
+ * simply stops appearing. Leave is read through the vacation module's own door, never inferred.
+ *
+ * NEVER THROWS: a failed read shows no pending day, exactly as the plan was before this existed.
+ */
+export async function loadSeatPendingLeave(seat: OrgSeat, range: { from: string; to: string }): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const seatsByHrId = seatsByOccupant([seat]);
+  if (seatsByHrId.size === 0) return out;
+  try {
+    for (const row of await loadPendingLeaveDays(seatsByHrId.keys(), range)) {
+      if (!out.has(row.day)) out.set(row.day, row.fullDay ? row.typeLabel : `${row.typeLabel} (half day)`);
+    }
+  } catch (error) {
+    logError("Phoenix CRM plan could not read pending leave", {
+      error,
+      labels: { event: "phoenix_crm_plan_pending_leave_failed" },
+    });
+  }
+  return out;
 }
 
 /**
