@@ -12,6 +12,10 @@ import {
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
+// A form-token override goes through cn(), never a template literal: a template concatenates
+// without tailwind-merging, so the token's own h-10/px-3/w-* wins and the override renders as
+// nothing. Pinned by tests/form-design-system.test.ts.
+import { cn } from "@/lib/utils";
 
 type StuckApprovalsPanelProps = {
   weeklyPlans: WeeklyPlanManagerGapRecord[];
@@ -194,13 +198,13 @@ function CloseStrandedOrderRow(props: { order: StrandedDirectOrderRow }) {
             disabled={busy}
             placeholder="Why is this being closed?"
             aria-label={`Reason for closing the ${order.pharmacyName} order`}
-            className={`${phxFieldClassName} w-full sm:w-auto sm:min-w-[260px] sm:flex-1`}
+            className={cn(phxFieldClassName, "w-full sm:w-auto sm:min-w-[260px] sm:flex-1")}
           />
           <button
             type="button"
             onClick={close}
             disabled={busy}
-            className={`${phxButtonDangerClassName} w-full justify-center sm:w-auto`}
+            className={cn(phxButtonDangerClassName, "w-full justify-center sm:w-auto")}
           >
             {busy ? "Closing…" : "Close order"}
           </button>

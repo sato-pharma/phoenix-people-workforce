@@ -349,31 +349,33 @@ export function runDirectOrderCloseOrphanedTests() {
   assert.ok(laneStart > 0, "BACK_WITH_REQUESTER must exist — it is what makes a request the REQUESTER's to answer");
   const lanes = orphans.slice(laneStart, orphans.indexOf("};", laneStart) + 2);
 
-  for (const module of Object.keys(orphanedRequestModuleScreens) as OrphanedRequestModule[]) {
-    const screen = orphanedRequestModuleScreens[module];
-    const laneEmpty = new RegExp(`(?:"${module}"|${module}):\\s*\\[\\s*\\]`).test(lanes);
-    const control = requesterRemedyControls[module];
+  // `moduleKey`, not `module` — `@next/next/no-assign-module-variable` refuses the latter even as a
+  // loop binding, and it is a lint ERROR rather than a warning.
+  for (const moduleKey of Object.keys(orphanedRequestModuleScreens) as OrphanedRequestModule[]) {
+    const screen = orphanedRequestModuleScreens[moduleKey];
+    const laneEmpty = new RegExp(`(?:"${moduleKey}"|${moduleKey}):\\s*\\[\\s*\\]`).test(lanes);
+    const control = requesterRemedyControls[moduleKey];
 
     if (laneEmpty) {
       assert.ok(
         !control,
-        `${module} hands nothing back to its requester, so it must not claim a requester-remedy control here`,
+        `${moduleKey} hands nothing back to its requester, so it must not claim a requester-remedy control here`,
       );
       continue;
     }
 
     assert.ok(
       control,
-      `"${module}" HANDS REQUESTS BACK TO THE REQUESTER AND HAS NO REMEDY CONTROL IN THIS TEST. The board prints its requesterRemedy verb to the owner, so either name the function that performs it here, or do not offer a verb — printing one with nothing behind it is the 2026-10-08 defect exactly.`,
+      `"${moduleKey}" HANDS REQUESTS BACK TO THE REQUESTER AND HAS NO REMEDY CONTROL IN THIS TEST. The board prints its requesterRemedy verb to the owner, so either name the function that performs it here, or do not offer a verb — printing one with nothing behind it is the 2026-10-08 defect exactly.`,
     );
     assert.equal(
       screen.requesterRemedy,
       control.verb,
-      `${module}'s board verb must be "${control.verb}", the one the ${screen.screen} screen can actually perform`,
+      `${moduleKey}'s board verb must be "${control.verb}", the one the ${screen.screen} screen can actually perform`,
     );
     assert.ok(
       control.source.includes(control.fn),
-      `${control.fn} IS GONE FROM ${control.file}, but the board still tells the owner to ${screen.requesterRemedy} a stranded ${module} request on the ${screen.screen} screen. That promise with nothing behind it is the original bug.`,
+      `${control.fn} IS GONE FROM ${control.file}, but the board still tells the owner to ${screen.requesterRemedy} a stranded ${moduleKey} request on the ${screen.screen} screen. That promise with nothing behind it is the original bug.`,
     );
     assert.ok(
       control.acceptsReturned(),
