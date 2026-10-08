@@ -621,50 +621,11 @@ function cleanProfile(profile) {
   }
 }
 
-/**
- * The one line stdout carries when a run printed nothing on purpose.
- *
- * 🔴 IT IS PREFIXED, BECAUSE EVERY OTHER STDOUT LINE IS A PDF PATH THE LAUNCHER LOGS AS
- * `wrote <line>` — #5578 exists because the log claimed papers Chrome never wrote. An unprefixed
- * sentence here would come out as "wrote 2026-10-09 was Friday…", a written paper that is a
- * sentence. `run-nightly.mjs` recognises this prefix and nothing else.
- */
-export const SKIPPED = "SKIPPED — ";
-
-/** The skip line for a day off, or null for a working day — which always prints. */
-export const dayOffSkipNotice = (dayData) =>
-  dayData.restDay ? `${SKIPPED}${dayData.day} was ${restDayPhrase(dayData.restDay)}; no papers printed.` : null;
-
-/**
- * The printer's own arguments: the day to print, and whether a day off should print at all.
- *
- * 🔴 THE SKIP IS OPT-IN AND THE UNATTENDED RUN IS THE ONLY THING THAT ASKS FOR IT (owner,
- * 2026-10-09: "make the nightly skip a day off"). A day NAMED on the command line always prints,
- * whatever day of the week it was — that is a human asking for that day, and it is the path the
- * 8 October papers were reprinted by once the holiday fix landed. A printer that refused a day off
- * outright would have made that reprint impossible.
- */
-export function parsePrintArgs(argv) {
-  const rest = argv.slice(2);
-  return {
-    day: rest.find((value) => !value.startsWith("-")),
-    skipDayOff: rest.includes("--skip-day-off") || process.env.FIELD_DAY_SKIP_DAY_OFF === "1",
-  };
-}
-
 // `pathToFileURL`, never a hand-built `file:///` string: this repository lives under "Phoenix
 // Workforce", and the space arrives percent-encoded in `import.meta.url` but raw in `argv[1]`, so a
 // string comparison silently fails and the script prints nothing at all.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const args = parsePrintArgs(process.argv);
-  const dayData = await readDay(args.day);
-  const skip = args.skipDayOff ? dayOffSkipNotice(dayData) : null;
-  if (skip) {
-    // Exit 0, never a failure code: a day off printing nothing is the CORRECT outcome, and Task
-    // Scheduler shows a non-zero exit as a job that broke.
-    console.log(skip);
-    process.exit(0);
-  }
+  const dayData = await readDay(process.argv[2]);
   mkdirSync(OUT, { recursive: true });
   const work = process.env.FIELD_DAY_TMP || tmpdir();
   const label = supersedeLabel();

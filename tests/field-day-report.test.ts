@@ -4,12 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
-  SKIPPED,
-  dayOffSkipNotice,
   derivedNotes,
   figuresOf,
   papersOf,
-  parsePrintArgs,
   renderLinePage,
   renderSummaryPage,
   restDayPhrase,
@@ -277,27 +274,6 @@ export function runFieldDayReportTests() {
   assert.equal(restDayPhrase({ kind: "friday", name: "Friday" }), "Friday, the weekly day off");
   assert.equal(restDayPhrase(null), "");
 
-  // ── The nightly skips a day off; a day asked for BY NAME always prints ────────────────
-  //
-  // Owner, 2026-10-09: "make the nightly skip a day off". 🔴 THE SKIP IS OPT-IN, AND NOT FOR
-  // TIDINESS: the 8 October papers were reprinted BY NAMING THAT DAY the morning after the holiday
-  // fix landed. A printer that refused a day off outright would have refused that reprint too.
-  assert.equal(dayOffSkipNotice(holidayDay as never), SKIPPED + "2026-10-08 was Armed Forces Day, a public holiday; no papers printed.");
-  assert.equal(dayOffSkipNotice(fridayDay as never), SKIPPED + "2026-10-09 was Friday, the weekly day off; no papers printed.");
-  assert.equal(dayOffSkipNotice(day as never), null, "🔴 a WORKING day always prints — the skip can never swallow one");
-
-  // 🔴 The prefix is the whole reason the launcher can tell a sentence from a PDF path. #5578
-  // exists because the log claimed papers Chrome never wrote, and an unprefixed notice would be
-  // logged as `wrote 2026-10-09 was Friday…` — a written paper that is a sentence.
-  assert.ok(SKIPPED.startsWith("SKIPPED"), "the skip line is prefixed");
-  assert.ok(!SKIPPED.includes(".pdf"), "and can never be mistaken for a path");
-
-  assert.deepEqual(parsePrintArgs(["node", "print-day.mjs"]), { day: undefined, skipDayOff: false });
-  assert.deepEqual(parsePrintArgs(["node", "print-day.mjs", "2026-10-08"]), { day: "2026-10-08", skipDayOff: false }, "🔴 a named day carries NO skip — this is the reprint path");
-  assert.deepEqual(parsePrintArgs(["node", "print-day.mjs", "--skip-day-off"]), { day: undefined, skipDayOff: true }, "the nightly: today, skipped if it was a day off");
-  assert.deepEqual(parsePrintArgs(["node", "print-day.mjs", "2026-10-08", "--skip-day-off"]), { day: "2026-10-08", skipDayOff: true }, "a flag never eats the day beside it");
-  assert.deepEqual(parsePrintArgs(["node", "print-day.mjs", "--skip-day-off", "2026-10-08"]), { day: "2026-10-08", skipDayOff: true }, "nor in the other order");
-
   // 🔴 The task runs a COPY of the launcher in ~/.claude/scripts, so a rename here would leave the
   // installer copying a file that no longer exists — and only the PRINTER comes fresh from origin/main.
   const installer = readFileSync("scripts/field-day/install-task.ps1", "utf8");
@@ -305,9 +281,6 @@ export function runFieldDayReportTests() {
   assert.match(installer, /field-day-nightly\.mjs/, "to the stable name the scheduled task invokes");
 
   const launcher = readFileSync("scripts/field-day/run-nightly.mjs", "utf8");
-  assert.match(launcher, /\[printer, "--skip-day-off"\]/, "🔴 the UNATTENDED run asks for the skip");
-  assert.match(launcher, /day \? \[printer, day\]/, "🔴 and a day named on the command line still prints — the reprint path survives");
-  assert.match(launcher, /startsWith\("SKIPPED — "\)/, "the log tells a skip line from a PDF path, so it never claims an unwritten paper");
   assert.doesNotMatch(launcher, /supabase-js/, "the launcher stays node builtins only — it runs before node_modules exists");
 
   // ── The stamp says WHICH day and WHEN it was read — the day runs to 02:00, so a cut is a moment ──
