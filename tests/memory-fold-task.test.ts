@@ -224,3 +224,56 @@ export function runMemoryFoldTaskTests() {
     "the task name is what a session greps for when asking whether the fold is installed",
   );
 }
+
+/**
+ * 🔴 A NETWORK BLIP MUST NOT COST A WHOLE FOLD. The 15:00 run on 2026-10-08 died at 15:04 Cairo on
+ * one "Connection was reset" during `git push`, with no retry, and its notes waited six hours. The
+ * push and the PR create now retry a transient network failure three times (5 s / 15 s / 45 s), and
+ * nothing else; a branch that was pushed but got no PR is deleted, unless the PR was in fact made.
+ */
+export async function runMemoryFoldRetryTests() {
+  const { withRetry, TRANSIENT, RETRY_DELAYS_MS } = await import("../scripts/module-memory/fold.mjs");
+  const fail = (stderr: string) => Object.assign(new Error("Command failed: git push"), { stderr });
+  const quiet = { log: () => {}, sleep: async () => {} };
+
+  for (const text of [
+    "fatal: unable to access 'https://github.com/x/y.git/': Recv failure: Connection was reset",
+    "fatal: unable to access 'https://github.com/x/y.git/': Could not resolve host: github.com",
+    "error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502",
+    "Operation timed out after 30000 milliseconds",
+  ]) assert.ok(TRANSIENT.test(text), `a transient network failure must be retried: ${text}`);
+  for (const text of ["! [rejected] main -> main (non-fast-forward)", "a pull request for branch x already exists", "HTTP 404"]) {
+    assert.ok(!TRANSIENT.test(text), `a real failure must throw at once, never be retried: ${text}`);
+  }
+  assert.deepEqual(RETRY_DELAYS_MS, [5000, 15000, 45000]);
+
+  let calls = 0;
+  const waits: number[] = [];
+  const got = await withRetry("git push", () => {
+    calls += 1;
+    if (calls < 3) throw fail("fatal: unable to access 'https://github.com/x': Connection was reset");
+    return "pushed";
+  }, { log: () => {}, sleep: async (ms: number) => { waits.push(ms); } });
+  assert.equal(got, "pushed", "a push that succeeds on its third attempt succeeds");
+  assert.deepEqual(waits, [5000, 15000], "it waits 5 s, then 15 s, between attempts");
+
+  calls = 0;
+  await assert.rejects(
+    withRetry("git push", () => { calls += 1; throw fail("Connection was reset"); }, quiet),
+    /Command failed/,
+    "after three transient failures the error is thrown, not swallowed",
+  );
+  assert.equal(calls, 3, "three attempts, no more");
+
+  calls = 0;
+  await assert.rejects(withRetry("git push", () => { calls += 1; throw fail("! [rejected] (non-fast-forward)"); }, quiet));
+  assert.equal(calls, 1, "a non-network failure is not retried");
+
+  const fold = stripComments(read("scripts/module-memory/fold.mjs"));
+  assert.ok(/withRetry\("git push"/.test(fold) && /withRetry\("gh pr create"/.test(fold),
+    "both the push and the PR create must go through the retry");
+  assert.ok(/"pr", "list", "--head", branch/.test(fold),
+    "a failed create must first ask whether the PR was made anyway, or a live PR loses its branch");
+  assert.ok(/"push", "-q", "origin", "--delete", branch/.test(fold),
+    "a pushed branch that got no PR must be deleted, or the next run stacks a second branch beside it");
+}

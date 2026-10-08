@@ -2161,7 +2161,7 @@ import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-manageme
 
 import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.test.ts";
 import { runModuleMemoryTests } from "./module-memory.test.ts";
-import { runMemoryFoldTaskTests } from "./memory-fold-task.test.ts";
+import { runMemoryFoldRetryTests, runMemoryFoldTaskTests } from "./memory-fold-task.test.ts";
 
 import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
 
@@ -8066,6 +8066,10 @@ await runTest(
 await runTest(
   "the memory fold is actually SCHEDULED three times a day (09:00/15:00/21:00 Cairo, Monday-Saturday — never -Daily, which fires on the Sunday he excluded): the task executes node directly because a cmd wrapper returns 0x1 and writes no log, it names the launcher deployed OUTSIDE every checkout rather than a file in the shared primary, the launcher imports node builtins only and copies no .env.local, it fetches and runs origin/main's own fold.mjs from a throwaway worktree so a stale fold can never run, a failure lands in the log with its reason, and wake/catch-up/IgnoreNew keep a shut lid from being a silent miss and two folds from racing for the one fold PR",
   runMemoryFoldTaskTests,
+);
+await runTest(
+  "the memory fold retries a transient NETWORK failure on its push and its PR create (three attempts, 5 s / 15 s / 45 s) and nothing else, and a branch it pushed that got no PR is deleted unless the PR was in fact made — one connection reset on 2026-10-08 cost a whole run",
+  runMemoryFoldRetryTests,
 );
 await runTest(
   "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",

@@ -218,6 +218,35 @@ function testItDeliversEveryHeadlineAndNotTheWholeText(root: string) {
   );
 }
 
+/**
+ * 🔴 A SEARCH PATTERN OR A COMMIT MESSAGE IS NOT THE WORK (lib/harness-text.mjs, 2026-10-08). The
+ * hook matched raw command text, so `git grep "railway run"` was handed the production cluster, a
+ * Grep tool hunting for `run-tests` the validation one, and a commit message naming railway the
+ * production one — about a cluster per search in a session that touched none of them.
+ */
+function testQuotedTextAndSearchPatternsDeliverNothingOfTheirOwn(root: string) {
+  const worktree = makeWorktree(join(root, "quoted"));
+  let n = 0;
+  const run = (opts: Partial<Run>) => {
+    const home = join(root, `home-quoted-${++n}`);
+    mkdirSync(home);
+    return runInjector({ home, projectDir: worktree, sessionId: `quoted-${n}`, ...opts });
+  };
+  const production = "Probing, attributing and reporting production";
+  assert.equal(delivered(run({ command: 'git grep -n -i "railway run" -- docs/x.md' }), production), false,
+    "a quoted grep pattern must not deliver the production cluster");
+  assert.equal(delivered(run({ command: 'git commit -m "fix(railway): x"' }), production), false,
+    "a commit message must not deliver the production cluster");
+  assert.equal(
+    delivered(run({ toolName: "Grep", toolInput: { pattern: "run-tests", path: "tests" } }), "Validation"),
+    false,
+    "a Grep pattern must not deliver the validation cluster",
+  );
+  assert.ok(delivered(run({ command: "railway status" }), production), "a bare railway command still delivers it");
+  assert.ok(delivered(run({ command: 'cd "F:/Phoenix Workforce/_wt-x" && ls' }), "Worktrees"),
+    "a quoted PATH is real work and still delivers its cluster");
+}
+
 function testOncePerSession(root: string) {
   const home = join(root, "home-once");
   mkdirSync(home);
@@ -300,6 +329,7 @@ export function runTrapInjectorClustersTests() {
     testEveryClusterIsDelivered(root);
     testABrowserPaneCallIsShownTheBrowserTraps(root);
     testItDeliversEveryHeadlineAndNotTheWholeText(root);
+    testQuotedTextAndSearchPatternsDeliverNothingOfTheirOwn(root);
     testOncePerSession(root);
     testItFindsTheProjectFromTheWorkingDirectory(root);
     testItStandsDownForARegisteredMachineCopy(root);
