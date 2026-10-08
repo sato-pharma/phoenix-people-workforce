@@ -1,6 +1,6 @@
 ---
 name: the-ci-box-runs-three-remote-checks-at-once-and-swaps
-description: "remote-check.mjs serializes only the TYPECHECK (flock /tmp/phx-typecheck.lock, -w 1200) and the box is 7.7 GB — three sessions' checks at once left 250 MB available, load 10.4, and one eslint took 5+ min where it takes 4s warm; a run quiet for 20 minutes is CONTENDED, not hung, so read the box (ssh -i ~/.ssh/railway_phoenix_ed25519 phx@46.225.184.142 'uptime; ps --sort=-pcpu') before killing or re-running it."
+description: "remote-check.mjs serializes only the TYPECHECK (flock /tmp/phx-typecheck.lock, -w 1200) and the box is 7.7 GB — three sessions' checks at once left 250 MB available, load 10.4, and one eslint took 5+ min where it takes ~185s cold and 7-14s warm (box, 7-8 Oct 2026); a run quiet for 20 minutes is CONTENDED, not hung, so read the box (ssh -i ~/.ssh/railway_phoenix_ed25519 phx@46.225.184.142 'uptime; ps --sort=-pcpu') before killing or re-running it."
 metadata:
   node_type: memory
   type: project

@@ -47,8 +47,9 @@ All commands run from the repo root.
 
 🔴 **`scripts/remote-check.mjs` IS THE ANSWER TO "I NEED A TYPECHECK NOW AND I AM NOT READY FOR A
 PR".** It pushes the committed sha to the self-hosted box over SSH and runs the check there —
-measured: typecheck **~33s** on TypeScript 7, lint with its persistent cache (182s cold before
-2026-10-08), unit suite 113-205s, a full `next build` ~120s.
+measured on the box 7-8 Oct 2026 (median, range): typecheck **~34s** (32-35s) on TypeScript 7, lint
+**~185s cold, 7-14s warm** from its persistent cache, unit suite **~125s** (105-212s), a full
+`next build` **~120s** (114-200s).
 Nothing heavy touches the 16 GB laptop, no Actions minutes are billed, and no PR is opened. It sends
 the **commit**, so it prints any uncommitted files it is ignoring. Pinned by
 `tests/remote-check.test.ts`.
