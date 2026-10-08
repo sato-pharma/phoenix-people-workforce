@@ -17,6 +17,7 @@ import { EMPLOYEE_LINE_SELECT, resolveEmployeeLineName } from "@/lib/employees/e
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
+import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { logError } from "@/lib/observability/log";
@@ -1334,6 +1335,29 @@ function isProbationReminderNotification(input: NotificationEmailInput) {
   );
 }
 
+/**
+ * Is this the SELF-SERVICE six-digit code, as opposed to the admin-minted reset LINK?
+ *
+ * Both arrive as notificationType "password_reset" and they need different templates: the code
+ * rides in the metrics and reaches the employee only through {{detailsTable}}, while the link
+ * template renders {{ctaUrl}} and no table at all.
+ *
+ * WHY THIS IS A SHAPE TEST AND NOT THE SENDER'S PIN. requestPasswordResetCode does pin
+ * templateKey: PASSWORD_RESET_CODE, and that pin is DISCARDED a few lines below — the explicit
+ * branch vetoes every auth key on purpose, so a wording override can never move an account-recovery
+ * email onto another template's recipient expansion. Adding the code key to isAuthTemplateKey
+ * (#5484, so the email carries no List-Unsubscribe) therefore ALSO silenced that PR's own pin: the
+ * send fell through to PASSWORD_RESET, the link body, and the digits went nowhere a second time.
+ * Reading the notification's own content keeps both properties — the veto stands, and the code
+ * email cannot be routed onto the link template by anything a template editor can change.
+ */
+function isPasswordResetCodeNotification(input: NotificationEmailInput) {
+  return input.notificationType === "password_reset" && (
+    String(input.templateKey ?? "").trim().toLowerCase() === EMAIL_TEMPLATE_KEYS.PASSWORD_RESET_CODE ||
+    Boolean(metricValue(input, passwordResetCodeMetricLabel))
+  );
+}
+
 function isPasswordSetupNotification(input: NotificationEmailInput) {
   return input.notificationType === "user_created" && (
     input.ctaHref?.includes("/password-setup/") ||
@@ -1341,7 +1365,10 @@ function isPasswordSetupNotification(input: NotificationEmailInput) {
   );
 }
 
-function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
+// Exported for tests: #5484 pinned a template key, a guard inside this function dropped it, and
+// every assertion in that PR passed anyway because they all read SOURCE TEXT. The routing is the
+// behaviour, so the test executes this.
+export function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
   // A domain can pin its admin-editable template explicitly (the strongest form of the
   // one-source-of-truth contract): /admin/email-templates governs the wording, the
   // domain only declares WHICH template frames the event. Unknown keys are ignored so a
@@ -1397,7 +1424,11 @@ function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
     }
     return EMAIL_TEMPLATE_KEYS.GENERAL;
   }
-  if (input.notificationType === "password_reset") return EMAIL_TEMPLATE_KEYS.PASSWORD_RESET;
+  if (input.notificationType === "password_reset") {
+    return isPasswordResetCodeNotification(input)
+      ? EMAIL_TEMPLATE_KEYS.PASSWORD_RESET_CODE
+      : EMAIL_TEMPLATE_KEYS.PASSWORD_RESET;
+  }
   if (input.notificationType === "probation") {
     return isProbationReminderNotification(input)
       ? EMAIL_TEMPLATE_KEYS.PROBATION_REMINDER
