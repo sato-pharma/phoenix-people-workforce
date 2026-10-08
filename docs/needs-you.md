@@ -72,6 +72,10 @@ read so an unread chain is amber, never calm. It sits in `worth-knowing`, each i
 screen that owns the cleanup, and — like the payroll row — it never states the money a direct order
 carries.
 
+A returned VACATION is the employee's case too (fixed 2026-10-08), but no control in Phoenix can
+clear one — there is no cancel, close or withdraw for a vacation, and the registry refuses an admin
+delete of a `returned` one — so that item says no screen can clear it yet instead of naming a verb.
+
 `phoenix-crm-decisions` joined on 2026-10-03: Phoenix CRM's list requests and off-plan visits at the
 viewer's own step, plus the carried-over customers still waiting to be validated. **The sent weekly
 plans joined on 2026-10-08** — the module's own badge had always counted them while this board read 0,
@@ -233,6 +237,7 @@ file that is not registered never runs.
 | `needs-you-telegram-budget` | the 900-character fit, by construction rather than truncation |
 | `needs-you-fits-the-screen` · `needs-you-page-never-decides` | horizontal scroll, rounded corners, any write path |
 | `orphaned-requests` | flagging an active rep's returned request, a role rung, or an unknown actor; and the source not wired into the board |
+| `orphaned-requests-reader` | dropping a resigned employee's returned vacation; reporting a reversed, expired or draft direct order as stuck on a leftover rung; missing an actor whose HR_ID casing differs from the master; a calm empty board on a failed read |
 | `phoenix-crm-needs-you-source` | a second copy of the Phoenix CRM counts; a rep handed a row; an integrity signal reaching the board; the held-place row linked to a screen that cannot decide it, gated past the Super Admin, or counted in one world only |
 
 **A fixture has to be able to reach the limit it tests.** The budget assertion first used a 12-item
