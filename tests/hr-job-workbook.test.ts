@@ -51,13 +51,16 @@ import {
  * checked "no field is empty" would pass on a workbook containing one line.
  */
 
-/** The line count of each numbered section, straight off the two job descriptions. */
-const SECTION_LINE_COUNTS: Record<HrBundleName, readonly number[]> = {
+/**
+ * The line count of each numbered section, straight off the two job descriptions. Partial because
+ * a seat with no written job description (HR Resourcing, 2026-10-08) has no book to count.
+ */
+const SECTION_LINE_COUNTS: Partial<Record<HrBundleName, readonly number[]>> = {
   "HR Advisory": [6, 5, 4, 4, 5, 5],
   "HR Operations": [4, 4, 4, 4, 4, 4, 4, 5, 4],
 };
 
-const EXPECTED_TOTALS: Record<HrBundleName, number> = {
+const EXPECTED_TOTALS: Partial<Record<HrBundleName, number>> = {
   "HR Advisory": 29,
   "HR Operations": 37,
 };
@@ -325,11 +328,18 @@ export function runHrJobWorkbookTests() {
   // every authenticated page render and this module is ~1,300 lines of workbook prose, so the two
   // are separate copies of one fact and CAN drift. This is what stops them.
   for (const seat of Object.keys(HR_ROLE_BUNDLES) as HrBundleName[]) {
-    assert.equal(
-      HR_SEAT_JOB_TITLES[seat],
-      workbookForSeat(seat)?.jobTitle,
-      `${seat}: the title shown in the account must equal the seat workbook's jobTitle`,
-    );
+    // A seat whose job description was never supplied has NO seat workbook (the anti-fabrication pin
+    // above) — the Talent Acquisition seat, HR Resourcing, opened 2026-10-08. Its title is still
+    // pinned to the company catalogue below; only the per-line book is absent, and that on purpose.
+    if (seat === "HR Resourcing") {
+      assert.equal(workbookForSeat(seat), null, "no written job description, so no seat workbook");
+    } else {
+      assert.equal(
+        HR_SEAT_JOB_TITLES[seat],
+        workbookForSeat(seat)?.jobTitle,
+        `${seat}: the title shown in the account must equal the seat workbook's jobTitle`,
+      );
+    }
     assert.equal(
       HR_SEAT_JOB_TITLES[seat],
       COMPANY_ROLE_WORKBOOKS.find((entry) => entry.role === seat)?.jobTitle,
@@ -348,6 +358,7 @@ export function runHrJobWorkbookTests() {
   // on — this must not become a company-wide relabelling.
   assert.equal(displayTitleForRole("HR Advisory"), "HR Business Partner");
   assert.equal(displayTitleForRole("HR Operations"), "HR Operations Coordinator");
+  assert.equal(displayTitleForRole("HR Resourcing"), "Talent Acquisition");
   assert.equal(displayTitleForRole("Finance Manager"), "Finance Manager", "a non-HR role is unchanged");
   assert.equal(displayTitleForRole("Super Admin"), "Super Admin", "a non-HR role is unchanged");
   assert.equal(displayTitleForRole(null), "", "a null role must not render the word 'null'");

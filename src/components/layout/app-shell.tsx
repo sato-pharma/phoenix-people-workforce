@@ -11,6 +11,8 @@ import {
   type NavigationMode,
 } from "@/lib/auth/permissions";
 import { displayTitleForAccount } from "@/lib/auth/account-job-titles";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { isPageFencedForRole } from "@/lib/auth/seat-page-fences";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
@@ -78,6 +80,16 @@ export async function AppShell({
     if (requestedPath) {
       redirect(toHrNamespacePath(requestedPath));
     }
+  }
+
+  // ── Per-seat page fences ──────────────────────────────────────────────────────────────────
+  // A page the owner left out of a seat that one of its keys would otherwise open
+  // (src/lib/auth/seat-page-fences.ts — the Talent Acquisition seat today). The sidebar never
+  // offers it; this is what stops a typed address, a bookmark or a notification link. Sent to the
+  // seat's own landing page, which is never itself fenced.
+  const fencedPath = requestHeaders.get(PATH_HEADER);
+  if (fencedPath && isPageFencedForRole(access.role, fencedPath)) {
+    redirect(resolveLandingPathForRole(access.role));
   }
 
   // What this viewer's navigation renders from: their own saved arrangement if they have one,

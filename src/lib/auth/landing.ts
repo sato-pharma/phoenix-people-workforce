@@ -30,7 +30,9 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   //
   // Until 2026-08-28 this returned "/workspace" — the personal admin-shell workspace — as a
   // placeholder while the namespace was being built.
-  if (normalized === "hr advisory" || normalized === "hr operations") {
+  // The Talent Acquisition seat (HR Resourcing) joined them on 2026-10-08 — same namespace, same
+  // command centre, composed from her own bundle.
+  if (normalized === "hr advisory" || normalized === "hr operations" || normalized === "hr resourcing") {
     return "/hr/admin/hr-command-center";
   }
   if (normalized === "ceo") return "/admin/ceo-command-center";

@@ -640,12 +640,15 @@ export const accessRegistry = [
   // ── Business cards ─────────────────────────────────────────────────────────────────────────
   // POST only because the chosen people and their on-screen corrections travel in a body; it writes
   // nothing and returns a file, so the resource is read. The handler also requires an HR seat.
+  // Gated by canPrintBusinessCards (src/lib/business-cards/access.ts), hence domain-helper: HR Advisory
+  // and HR Operations print on employee_documents:read as declared, the Talent Acquisition seat on
+  // business_card_requests:update (2026-10-08).
   // The signed-in employee's OWN card, rendered as the print-ready PDF (front and back). Scoped to
   // the caller — there is no hrId in the request — so employee_profile:read is the whole gate. Listed
   // before the HR export below so the exact /mine path never falls to the employee_documents gate.
   sessionApi({ methods: ["POST"], pattern: "/api/business-cards/mine", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Every file hands over names, work emails and mobiles in bulk, so it is an audited export.
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/business-cards", permission: { resource: "employee_documents", action: "read" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/business-cards", permission: { resource: "employee_documents", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // ── Job Offers ─────────────────────────────────────────────────────────────────────────────
   // Registered route by route rather than under one `/api/offers/**` blanket, for the reason the
   // hiring pack above gives and one more: this module's three verbs are not variations of each

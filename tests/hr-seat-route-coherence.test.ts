@@ -214,7 +214,8 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "canViewManagerCvEngagement(access) — a ROLE SET, not a resource, so the row carries roles: " +
     '["HR Advisory"] beside its recruitment permission and the two must be read together. TRUE for ' +
     "Advisory by the owner's own amendment that day, FALSE for Operations. The report is read-only " +
-    "and holds no salary, personnel record or payroll figure",
+    "and holds no salary, personnel record or payroll figure" +
+    ". Since 2026-10-08 the row also names HR Resourcing, and the predicate is TRUE for her (called, not read)",
   // NO contact-review / intake-health entries. Both were listed here while the rail carried them;
   // the owner cut both rows on 2026-09-01 as intake plumbing that crowded the sidebar, so there
   // is no longer an HR row pointing at either page and nothing for this map to answer for. The
@@ -223,7 +224,8 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/recruitment/whatsapp-replies":
     "canViewWhatsAppOutboundLog(access) — true for Advisory, the only seat offered it. Verified by " +
     "CALLING the predicate for each seat, not by reading it: recruitmentManageRoles is [Super Admin, " +
-    "HR Advisory], and Operations holds no recruitment grant so the row is never offered to her",
+    "HR Advisory], and Operations holds no recruitment grant so the row is never offered to her" +
+    ". TRUE for HR Resourcing since 2026-10-08 through recruitmentWorkRoles (called, not read)",
   // Added 2026-09-08 with the HR-shell row. The owner asked to "show this tab to the HR Business
   // Partner" — which is the JOB TITLE for the "HR Advisory" key, so her gate never needed widening;
   // what she lacked was a row in the shell she actually works in.
@@ -234,7 +236,8 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "send=false/manage=false. The seat can SEND a message from a template but cannot rewrite what " +
     "the templates say — canManageWhatsAppTemplates admits the Super Admin and system scope only " +
     "(Advisory is scope=self and not the Super Admin), and the editor is hidden from her rather " +
-    "than merely failing server-side, so no row her sidebar offers 403s her halfway",
+    "than merely failing server-side, so no row her sidebar offers 403s her halfway" +
+    ". HR Resourcing (2026-10-08) reads the same as Advisory: send=true/manage=false, called rather than read",
   // Added 2026-09-18 with the Interview Calendar row. The owner's own ruling that day: "Only you +
   // people you share with" — so the gate is the calendar's own sharing, not a permission, and that
   // is why it cannot be parsed.
@@ -277,6 +280,28 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "canReadCompanyVacationReport(access) — true for Operations, false for Advisory; the row is " +
     "offered to Operations only. canApproveCompanyVacationReportRow is FALSE for her, so she reads " +
     "the report and approves nothing from it",
+  // ── The Talent Acquisition seat (HR Resourcing), 2026-10-08 ─────────────────────────────────
+  // Each row below is offered to HER ALONE (roles: ["HR Resourcing"], excludedRoles: ["Super
+  // Admin"]), and each verdict was taken by CALLING the predicate for all three seats on 2026-10-08.
+  "/hr/business-cards":
+    "canPrintBusinessCards(access) (src/lib/business-cards/access.ts) — an HR seat holding " +
+    "employee_documents:read, or HR Resourcing holding business_card_requests:update. TRUE for all " +
+    "three seats; Advisory and Operations pass on employee_documents exactly as before, HR " +
+    "Resourcing on the request desk — employee_documents is FALSE for her, so Hiring Documents and " +
+    "HR Forms stay shut. POST /api/business-cards calls the same predicate",
+  "/hr/admin/company-calendar":
+    "an inline const allowed = Finance Manager || HR Resourcing || canAccessSystemAdministratorWorkspace " +
+    "— TRUE for HR Resourcing, the only seat offered it, FALSE for Advisory and Operations. A read: " +
+    "she is not in CALENDAR_MANAGER_ROLES, so /api/calendar refuses her edits",
+  "/hr/admin/private-calendars":
+    "canUsePrivateCalendarAdminSurface(access) -> isPrivateCalendarGlobalViewer — TRUE for HR " +
+    "Resourcing, the only seat offered it, FALSE for Advisory and Operations",
+  "/hr/probation/analytics":
+    "canViewProbationAnalytics(access) — TRUE for all three seats through canReadAllProbation; offered " +
+    "to HR Resourcing only. Read-only outcomes; the export gate (canExportProbation) is not hers",
+  "/hr/recruitment/hiring-analytics":
+    "loadHiringAnalytics asserts candidates:read inside the domain module, behind the page's shell " +
+    "gate — TRUE for HR Resourcing (and Advisory), FALSE for Operations; offered to HR Resourcing only",
   "/hr/admin/company-activity-report":
     "canReadCompanyActivityReport(access) — true for Operations, false for Advisory; the row is " +
     "offered to Operations only. The page is read-only, with no write path to withhold",

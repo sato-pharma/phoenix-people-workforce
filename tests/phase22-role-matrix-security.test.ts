@@ -335,7 +335,9 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(ceo, "probation", "update"), false, "CEO must not update probation workflow");
   assert.equal(await canAccess(ceo, "probation", "approve"), false, "CEO must not approve probation decisions");
 
-  const hrAuthorityRoles = new Set<PhoenixRole>(["Super Admin", "HR Advisory", "HR Operations"]);
+  // HR Resourcing — the Talent Acquisition seat — reads the inbox since 2026-10-08: the owner ticked
+  // HR Support Requests for her on the access blueprint.
+  const hrAuthorityRoles = new Set<PhoenixRole>(["Super Admin", "HR Advisory", "HR Operations", "HR Resourcing"]);
   for (const role of phoenixRoles) {
     const context = createAccessContext({ hrId: `ROLE-${role}`, role });
     assert.equal(await canAccess(context, "support_requests", "create"), true, `${role} can submit HR support requests`);

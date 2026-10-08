@@ -965,6 +965,7 @@ import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
+import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runCvDatabaseRecruitingBoundaryTests } from "./cv-database-recruiting-boundary.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
@@ -4217,6 +4218,12 @@ await runTest(
   "HR seat route coherence (no HR seat holds PART of a route handler's permission set, so no page "
   + "its own sidebar offers can 403 it halfway)",
   runHrSeatRouteCoherenceTests,
+);
+await runTest(
+  "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "
+  + "no employee documents or payroll, every unticked page fenced in the sidebar, AppShell and the page APIs, "
+  + "probation read without export, no recruitment alert audience, and the role open in all three CHECK constraints)",
+  runHrResourcingSeatTests,
 );
 await runTest(
   "CV database recruiting boundary (HR Operations holds vacancies:read for the Vacancies Report and "

@@ -90,7 +90,11 @@ export async function runCvLookupTests() {
   );
 
   // ── 2 · READ, FOR HR AUTHORITY ROLES ONLY, AND NO OTHER ACTION FOR ANYBODY ─────────────────────
-  const allowedReaders = new Set<PhoenixRole>(["Super Admin", "HR Operations"]);
+  // HR Resourcing — the Talent Acquisition seat — joined 2026-10-08 on the owner's own tick of CV
+  // Lookup on the access blueprint. Section 1's "the pool stays shut" is about HR Operations ONLY:
+  // the Talent Acquisition seat already holds the recruiting pipeline, so a search box widens
+  // nothing for her. Still read and only read, like everyone below.
+  const allowedReaders = new Set<PhoenixRole>(["Super Admin", "HR Operations", "HR Resourcing"]);
   for (const role of phoenixRoles) {
     const canRead = await canAccess(context(role), "cv_lookup", "read");
     assert.equal(

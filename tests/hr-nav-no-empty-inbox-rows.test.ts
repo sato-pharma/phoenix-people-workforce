@@ -75,13 +75,14 @@ export function runHrNavNoEmptyInboxRowsTests() {
   const seats = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
   assert.deepEqual(
     seats,
-    ["HR Advisory", "HR Operations"],
-    "this file reasons about exactly two HR seats; a third bundle needs its own verdict here " +
+    ["HR Advisory", "HR Operations", "HR Resourcing"],
+    "this file reasons about exactly three HR seats; a fourth bundle needs its own verdict here " +
       "rather than being silently unchecked",
   );
 
   const advisory = offeredHrefs("HR Advisory");
   const operations = offeredHrefs("HR Operations");
+  const resourcing = offeredHrefs("HR Resourcing");
 
   // ── The headline ────────────────────────────────────────────────────────────
   assert.equal(
@@ -186,6 +187,43 @@ export function runHrNavNoEmptyInboxRowsTests() {
       + "on 2026-09-01, overruling the argument that the page calls itself Operational HR "
       + "Governance. Do not re-add it on that argument.",
   );
+
+  // ── The Talent Acquisition seat's verdict (2026-10-08) ──────────────────────
+  //
+  // HR Resourcing holds leave:read for the same reason every seat does — her own vacation — and the
+  // owner built her rail page by page on the access blueprint. He ticked neither Other Approvals nor
+  // any leave-administration page, and she holds no update or approve on resignations, contracts or
+  // outstation, so either row would be the empty inbox this file exists to keep off a rail. Her own
+  // Request Vacation is /hr/workspace/leave-management/vacation-request, which the prefix test below
+  // does not catch, exactly as for the Business Partner.
+  assert.equal(
+    resourcing.has(OTHER_APPROVALS_HREF),
+    false,
+    'the Talent Acquisition seat is offered "Other Approvals", an inbox of resignation, contract ' +
+      "and outstation decisions she can take none of — and the owner did not tick it for her",
+  );
+  assert.deepEqual(
+    leaveAdminRows(resourcing),
+    [],
+    "the Talent Acquisition seat is offered a leave-administration row. The owner did not tick " +
+      "leave administration for her; leave:read is her own vacation, not the company's",
+  );
+  assert.equal(
+    resourcing.has(LEAVE_MANAGEMENT_HREF),
+    false,
+    'the Talent Acquisition seat is offered the "Leave Management" hub, which would list nothing ' +
+      "she can act on",
+  );
+  const resourcingGrants = permissionMatrix["HR Resourcing" as PhoenixRole];
+  for (const resource of OTHER_APPROVALS_MODULES) {
+    const actions = resourcingGrants?.[resource] ?? [];
+    assert.deepEqual(
+      actions.filter((action) => action === "update" || action === "approve"),
+      [],
+      `HR Resourcing now holds ${resource}: ${JSON.stringify(actions)} — an ACTIONABLE grant. Re-decide ` +
+        'whether "Other Approvals" belongs on her rail rather than leaving the exclusion above stale',
+    );
+  }
 
   // ── Why the exclusion is correct, not merely current ────────────────────────
   // Tie the verdict to its cause, and RE-DECIDED on 2026-09-01 when she was granted contracts.

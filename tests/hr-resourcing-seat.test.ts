@@ -1,0 +1,240 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+import {
+  displayTitleForRole,
+  hrBundleGrants,
+  HR_ROLE_BUNDLES,
+  HR_SEAT_JOB_TITLES,
+} from "../src/lib/auth/hr-functions.ts";
+import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
+import {
+  hrAuthorityRoles,
+  hrNamespaceRoles,
+  phoenixRoles,
+  scopeForRole,
+  type AccessContext,
+  type PhoenixRole,
+} from "../src/lib/auth/permissions.ts";
+import {
+  assertPageOpenForRole,
+  hrefOutsideSeatFence,
+  isPageFencedForRole,
+  SEAT_PAGE_FENCES,
+} from "../src/lib/auth/seat-page-fences.ts";
+import { canPrintBusinessCards } from "../src/lib/business-cards/access.ts";
+import { navigationItemVisible, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import {
+  canExportProbation,
+  canReadAllProbation,
+  canViewAllProbation,
+  canViewProbationAnalytics,
+} from "../src/lib/probation/service.ts";
+import {
+  canReviewCandidateContacts,
+  canSendWhatsAppTemplate,
+  canViewInboundIntakeHealth,
+  canViewWhatsAppOutboundLog,
+  recruitmentManageRoles,
+} from "../src/lib/recruitment/access.ts";
+import { canViewOrganogramSensitiveFields } from "../src/lib/reports/organogram.ts";
+
+/**
+ * The Talent Acquisition seat — role key "HR Resourcing" — built 2026-10-08 from the owner's own
+ * ticks on the access blueprint. This pins what he chose, so a later edit cannot quietly hand her a
+ * page he left out or take away one he ticked:
+ *
+ *   1. what the seat is composed of, and what it must NOT hold (employment documents, payroll,
+ *      contracts, retention, the directory);
+ *   2. the page fences — every page one of her keys opens that he did not tick — and the places
+ *      that read them (the sidebar filter and AppShell), plus the API routes of fenced pages;
+ *   3. the narrow by-name widenings: probation READ without export, the recruitment screens without
+ *      the recruitment ALERT audience, Business Cards on the request desk rather than documents;
+ *   4. the migration that lets an account be given the role at all.
+ */
+
+const SEAT = "HR Resourcing" as PhoenixRole;
+const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+
+function accessFor(role: PhoenixRole): AccessContext {
+  return { role, scope: scopeForRole(role), hrId: "HR-SEAT-TEST", source: "session" } as AccessContext;
+}
+
+function source(relative: string): string {
+  return readFileSync(path.join(REPO_ROOT, relative), "utf8");
+}
+
+export async function runHrResourcingSeatTests() {
+  // ── 1. The composition and what it withholds ──────────────────────────────────────────────
+  assert.deepEqual(
+    [...HR_ROLE_BUNDLES["HR Resourcing"]],
+    ["recruiting", "cv_lookup", "employee_requests", "workforce_context"],
+    "the Talent Acquisition seat is the recruiting pipeline, CV lookup, the two request desks and read-only workforce context",
+  );
+  assert.equal(HR_SEAT_JOB_TITLES["HR Resourcing"], "Talent Acquisition");
+  assert.equal(displayTitleForRole("HR Resourcing"), "Talent Acquisition", "the key never reaches a person");
+  assert.equal(resolveLandingPathForRole("HR Resourcing"), "/hr/admin/hr-command-center");
+  assert.ok((phoenixRoles as readonly string[]).includes(SEAT), "HR Resourcing is a real role");
+  assert.ok(hrNamespaceRoles.has(SEAT), "HR Resourcing works in the /hr namespace");
+  assert.ok((hrAuthorityRoles as readonly string[]).includes(SEAT), "HR Resourcing is an HR authority role");
+
+  const grants = hrBundleGrants("HR Resourcing") as Record<string, readonly string[] | undefined>;
+  for (const withheld of [
+    // Contracts and salary letters — the owner left Hiring Documents and HR Forms out of her seat.
+    "employee_documents",
+    "account_activation",
+    "employees",
+    "payroll",
+    "deductions",
+    "contracts",
+    "retention",
+    "resignations",
+    "spotlight",
+  ]) {
+    assert.equal(grants[withheld], undefined, `the Talent Acquisition seat must not hold ${withheld}`);
+  }
+  assert.ok(grants.recruitment?.includes("approve"), "she may mark an application hired (owner: hire = yes)");
+  assert.ok(grants.offers?.includes("create") && grants.offers?.includes("update"), "she builds and sends offers");
+  assert.ok(!grants.offers?.includes("approve"), "she never approves an offer (owner: build, never approve)");
+  for (const readOnly of ["organogram", "weekly_plans", "hr_calendar", "early_birds", "probation"]) {
+    assert.deepEqual([...(grants[readOnly] ?? [])], ["read"], `${readOnly} is reference for her, read only`);
+  }
+
+  // The split that made this seat possible: employment paperwork left `recruiting` for its own
+  // function, and HR Advisory holds both — so moving recruiting to this seat later never drags
+  // contracts with it, and HR Advisory lost nothing in the split.
+  assert.ok((HR_ROLE_BUNDLES["HR Advisory"] as readonly string[]).includes("hiring_paperwork"));
+  const advisory = hrBundleGrants("HR Advisory") as Record<string, readonly string[] | undefined>;
+  assert.ok(advisory.employee_documents?.includes("read"), "HR Advisory keeps the hiring documents");
+  assert.ok(advisory.account_activation?.includes("update"), "HR Advisory keeps account activation");
+
+  // ── 2. The fences ─────────────────────────────────────────────────────────────────────────
+  const fenced = [
+    "/cv-database",
+    "/recruitment/returned-cvs",
+    "/recruitment/intake-health",
+    "/recruitment/contact-review",
+    "/recruitment/cv-lifecycle-sheet",
+    "/probation",
+    "/admin/weekly-plans",
+    "/admin/approvals/plan",
+    "/admin/field-workforce-compliance",
+    "/admin/pm-products",
+    "/attendance/analytics",
+    "/attendance/disputes",
+    "/attendance/employee-day-report",
+    "/attendance/exceptions",
+    "/attendance/fingerprint-report",
+    "/attendance/weekly-review",
+    "/leave-management/vacation-request",
+    "/admin/payslips-center",
+  ];
+  assert.deepEqual(
+    [...(SEAT_PAGE_FENCES["HR Resourcing"] ?? [])].sort(),
+    [...fenced].sort(),
+    "the fence list is exactly what the owner left out",
+  );
+  for (const page of fenced) {
+    assert.ok(isPageFencedForRole(SEAT, page), `${page} is fenced for her`);
+    assert.ok(isPageFencedForRole(SEAT, `/hr${page}`), `/hr${page} is fenced for her`);
+    assert.ok(isPageFencedForRole(SEAT, `/hr${page}/?tab=1`), `/hr${page} with a trailing slash and a query is fenced for her`);
+    for (const other of ["HR Advisory", "HR Operations", "Super Admin", "CEO"] as PhoenixRole[]) {
+      assert.ok(!isPageFencedForRole(other, page), `the fence is HER seat's only — ${other} keeps ${page}`);
+    }
+  }
+  assert.ok(isPageFencedForRole(SEAT, "/hr/admin/approvals/plan/abc"), "a detail page of a fenced list is fenced");
+  // Exact, not prefix: the pages he DID tick beside a fenced one stay open.
+  for (const open of [
+    "/probation/dashboard",
+    "/probation/analytics",
+    "/admin/weekly-plans/calendar",
+    "/workspace/fingerprint-report",
+    "/workspace/leave-management/vacation-request",
+    "/recruitment",
+    "/recruitment/screening",
+    "/business-cards",
+  ]) {
+    assert.ok(!isPageFencedForRole(SEAT, open), `${open} was ticked and stays open`);
+    assert.ok(!isPageFencedForRole(SEAT, `/hr${open}`), `/hr${open} was ticked and stays open`);
+  }
+  assert.ok(
+    !isPageFencedForRole(SEAT, resolveLandingPathForRole(SEAT)),
+    "her landing page is never fenced — AppShell redirects a fenced address there",
+  );
+
+  assert.equal(hrefOutsideSeatFence(SEAT, "/hr/cv-database?candidate=1"), "/hr/recruitment");
+  assert.equal(hrefOutsideSeatFence(SEAT, "/probation"), "/probation/dashboard");
+  assert.equal(hrefOutsideSeatFence(SEAT, "/hr/admin/weekly-plans"), "/hr/admin/weekly-plans/calendar");
+  assert.equal(hrefOutsideSeatFence(SEAT, "/hr/attendance/exceptions"), null, "a fenced page with no honest sibling is dropped");
+  assert.equal(hrefOutsideSeatFence("HR Advisory", "/hr/cv-database"), "/hr/cv-database");
+
+  const everyKey = new Proxy({}, { get: () => true }) as PermissionLookup;
+  const cvDatabaseRow = { href: "/hr/cv-database", icon: null, label: "CV Database" } as unknown as Parameters<
+    typeof navigationItemVisible
+  >[0];
+  assert.equal(navigationItemVisible(cvDatabaseRow, everyKey, SEAT), false, "the sidebar never offers her a fenced row");
+  assert.equal(navigationItemVisible(cvDatabaseRow, everyKey, "HR Advisory"), true, "the same row stays for HR Advisory");
+
+  assert.throws(() => assertPageOpenForRole(SEAT, "/hr/recruitment/returned-cvs"), /^Error: Forbidden:/);
+  assert.doesNotThrow(() => assertPageOpenForRole("HR Advisory", "/recruitment/returned-cvs"));
+
+  assert.match(
+    source("src/components/layout/app-shell.tsx"),
+    /isPageFencedForRole\(access\.role, fencedPath\)\)\s*\{\s*redirect\(resolveLandingPathForRole\(access\.role\)\)/,
+    "AppShell sends a typed or bookmarked fenced address to the seat's landing page",
+  );
+  for (const [route, page] of [
+    ["app/api/recruitment/district-returns/[id]/resolve/route.ts", "/recruitment/returned-cvs"],
+    ["app/api/cv-database/template/route.ts", "/cv-database"],
+    ["app/api/recruitment/cv-lifecycle/share-links/route.ts", "/recruitment/cv-lifecycle-sheet"],
+    ["app/api/recruitment/intake/analytics/route.ts", "/recruitment/intake-health"],
+    ["app/api/recruitment/intake/retry/route.ts", "/recruitment/intake-health"],
+  ] as const) {
+    const text = source(route);
+    const calls = text.split(`assertPageOpenForRole(access.role, "${page}")`).length - 1;
+    const handlers = (text.match(/export async function (GET|POST|PUT|PATCH|DELETE)\b/g) ?? []).length;
+    assert.ok(handlers > 0, `${route}: no handler found — the route moved`);
+    assert.equal(calls, handlers, `${route}: every handler refuses a seat fenced off ${page}`);
+  }
+
+  // ── 3. The by-name widenings stay narrow ──────────────────────────────────────────────────
+  const her = accessFor(SEAT);
+  assert.equal(canReadAllProbation(her), true, "she reads the probation dashboard and analytics");
+  assert.equal(canViewProbationAnalytics(her), true);
+  assert.equal(canViewAllProbation(her), false, "canViewAllProbation is the administrators' gate and was not widened");
+  assert.equal(canExportProbation(her), false, "she was not given the company-wide probation export");
+
+  assert.ok(
+    !(recruitmentManageRoles as readonly string[]).includes(SEAT),
+    "recruitment ALERTS keep their current audience until the owner decides who receives them",
+  );
+  assert.equal(canViewWhatsAppOutboundLog(her), true);
+  assert.equal(canSendWhatsAppTemplate(her), true);
+  assert.equal(canViewInboundIntakeHealth(her), false, "Inbound Intake Health was left out");
+  assert.equal(canReviewCandidateContacts(her), false, "Missing Contact Details was left out");
+
+  assert.equal(canViewOrganogramSensitiveFields(her), false, "the money on an organogram node stays with the payroll seats");
+
+  assert.equal(await canPrintBusinessCards(her), true, "she prints business cards from the request desk");
+  for (const seat of ["HR Advisory", "HR Operations"] as PhoenixRole[]) {
+    assert.equal(await canPrintBusinessCards(accessFor(seat)), true, `${seat} still prints business cards`);
+  }
+  assert.equal(await canPrintBusinessCards(accessFor("Medical Rep")), false, "printing stays with HR seats");
+
+  // ── 4. The migration that opens the role in the database ──────────────────────────────────
+  const migration = source("supabase/migrations/20261008193000_hr_resourcing_role_key.sql");
+  const arrays = [...migration.matchAll(/array\[([^\]]*)\]/g)].map((match) =>
+    [...match[1].matchAll(/'([^']+)'/g)].map((name) => name[1]),
+  );
+  assert.equal(arrays.length, 3, "the three role CHECK constraints are re-added");
+  for (const names of arrays) {
+    assert.deepEqual(names, [...phoenixRoles], "each constraint lists phoenixRoles exactly, in order");
+  }
+  assert.match(migration, /insert into public\.roles[\s\S]*'hr_resourcing',\s*'HR Resourcing'/);
+  assert.doesNotMatch(
+    migration,
+    /update\s+public\.notification_role_policies|insert\s+into\s+public\.notification_role_policies/i,
+    "no notification audience is changed",
+  );
+}

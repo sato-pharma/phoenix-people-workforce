@@ -54,8 +54,10 @@ import {
 import { hasMissingEmployeeRecordData } from "@/lib/employees/employee-record-health";
 import { getExcuseWorkspace } from "@/lib/excuses/service";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
+import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
 import { toHrNamespacePath } from "@/lib/navigation/shell-headers";
 import { listOffers } from "@/lib/offers/service";
+import type { OfferStatus } from "@/lib/offers/types";
 import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
 import {
   getRecruitmentDashboard,
@@ -312,6 +314,11 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // real by-name grant.
   time_attendance: ["attendanceExceptions", "vacationsToday"],
   workforce_insight: ["directory"],
+  // The Talent Acquisition seat's three non-recruiting functions (2026-10-08). The support desk is
+  // the one queue among them; documents and context reading have no backlog to show.
+  hiring_paperwork: [],
+  employee_requests: ["supportRequests"],
+  workforce_context: [],
 };
 
 /** The seat's functions, straight from the permission bundle. Never a second hand-kept list. */
@@ -420,6 +427,51 @@ function tile(
 }
 
 
+/** The offer statuses in the order an offer moves through them, in the owner's words. */
+const OFFER_STATUS_ORDER: ReadonlyArray<{ label: string; status: OfferStatus }> = [
+  { label: "Draft", status: "draft" },
+  { label: "Sent, awaiting reply", status: "sent" },
+  { label: "Accepted", status: "accepted" },
+  { label: "Declined", status: "declined" },
+  { label: "Withdrawn", status: "withdrawn" },
+];
+
+/**
+ * Every job offer on record, by where it stands — the end of the pipeline the chart beside it
+ * stops short of. Added 2026-10-08 with the Talent Acquisition seat, whose job includes building
+ * offers; it belongs to the recruiting function, so the seat that holds recruiting sees it.
+ */
+function offersByStatusChart(offers: NonNullable<HrCommandSources["offers"]>): HrCommandChart {
+  return {
+    caption:
+      "Every offer on record, by where it stands. An offer still awaiting a reply is a candidate still deciding; a long Declined column is a package worth looking at.",
+    emptyLabel: "No job offer has been drafted yet.",
+    href: "/hr/offers",
+    hrefLabel: "Open Job Offers",
+    key: "offers-by-status",
+    rows: OFFER_STATUS_ORDER.map(({ label, status }) => ({
+      label,
+      offers: offers.filter((offer) => offer.status === status).length,
+    })),
+    series: [{ color: CHART_COLORS.primary, key: "offers", name: "Offers" }],
+    title: "Job offers, by status",
+  };
+}
+
+/** The HR support desk's queue, shared by the two functions that work it. Null when it did not load. */
+function supportRequestTiles(loaded: HrCommandSources): HrCommandTile[] | null {
+  const rows = loaded.supportRequests;
+  if (!rows) return null;
+  const open = rows.filter((row) => row.status === "Pending" || row.status === "In Progress");
+  const untouched = rows.filter((row) => row.status === "Pending");
+  const oldest = untouched.reduce((max, row) => Math.max(max, daysSince(row.createdAt)), 0);
+  return [
+    tile("support-open", "Open Requests", open.length, "employees waiting", "/hr/admin/support-requests", queueTone(open.length, oldest)),
+    tile("support-untouched", "Not Yet Started", untouched.length, "still unanswered", "/hr/admin/support-requests", queueTone(untouched.length, oldest)),
+    tile("support-oldest", "Longest Wait", oldest, oldest === 1 ? "day" : "days", "/hr/admin/support-requests", oldest >= 5 ? "rose" : oldest > 0 ? "amber" : "emerald"),
+  ];
+}
+
 /**
  * The tiles each function contributes, given whatever loaded. Returns null when the function's
  * source is unavailable, which drops the group rather than rendering a row of zeroes that would
@@ -484,16 +536,8 @@ const TILES_BY_FUNCTION: Record<
   },
 
   engagement_retention: (loaded) => {
-    const rows = loaded.supportRequests;
-    if (!rows) return null;
-    const open = rows.filter((row) => row.status === "Pending" || row.status === "In Progress");
-    const untouched = rows.filter((row) => row.status === "Pending");
-    const oldest = untouched.reduce((max, row) => Math.max(max, daysSince(row.createdAt)), 0);
-    const tiles = [
-      tile("support-open", "Open Requests", open.length, "employees waiting", "/hr/admin/support-requests", queueTone(open.length, oldest)),
-      tile("support-untouched", "Not Yet Started", untouched.length, "still unanswered", "/hr/admin/support-requests", queueTone(untouched.length, oldest)),
-      tile("support-oldest", "Longest Wait", oldest, oldest === 1 ? "day" : "days", "/hr/admin/support-requests", oldest >= 5 ? "rose" : oldest > 0 ? "amber" : "emerald"),
-    ];
+    const tiles = supportRequestTiles(loaded);
+    if (!tiles) return null;
     if (loaded.retention) {
       const stats = loaded.retention.stats;
       tiles.push(
@@ -634,6 +678,15 @@ const TILES_BY_FUNCTION: Record<
    */
   hr_communication: () => [],
   hr_governance: () => [],
+  // The Talent Acquisition seat's support desk: the same three tiles engagement_retention opens
+  // with, without the retention half she was not given. No seat holds both functions, so the tiles
+  // never print twice.
+  employee_requests: (loaded) => supportRequestTiles(loaded),
+  // NONE, for the reason hr_governance has none: documents and a login switch are not a queue.
+  hiring_paperwork: () => [],
+  // NONE. Reading the chart, the calendars and the boards is context for her recruiting, not a
+  // backlog — a tile here could only be invented.
+  workforce_context: () => [],
   // NONE, and for `cv_lookup` this is the privacy decision recorded in SOURCES_BY_FUNCTION rather
   // than "nothing to count": any figure counting candidates would put the size of the pool on the
   // landing page of the one seat the pool is withheld from. Returning an empty array drops the group
@@ -827,6 +880,44 @@ const CHARTS_BY_FUNCTION: Record<
   // set with a chart of a number that means nothing.
   hr_communication: () => [],
   hr_governance: () => [],
+  // No chart for two of the Talent Acquisition seat's functions: neither has a population to plot,
+  // and neither contributes a tile, so neither has a group for a chart to sit in.
+  hiring_paperwork: () => [],
+  workforce_context: () => [],
+
+  /**
+   * The HR support desk as a fortnight rather than three totals — the Talent Acquisition seat's
+   * desk (2026-10-08). The tiles beside it say how much is open and how old the oldest is; neither
+   * can say whether requests arrive in a steady trickle or in bursts, which is the question staffing
+   * the desk turns on. Plotted by the day the request was RAISED, exactly like the attendance
+   * exception flow, and from the same loaded rows the tiles count.
+   */
+  employee_requests: (loaded) => {
+    const rows = loaded.supportRequests;
+    if (!rows) return [];
+    const series: HrCommandChartSeries[] = [
+      { color: CHART_COLORS.primary, key: "open", name: "Still open" },
+      { color: CHART_COLORS.decided, key: "closed", name: "Resolved or closed" },
+    ];
+    const chartRows = recentCairoDays(14).map((day) => {
+      const raised = rows.filter((row) => (row.createdAt ?? "").slice(0, 10) === day.iso);
+      const open = raised.filter((row) => row.status === "Pending" || row.status === "In Progress").length;
+      return { closed: raised.length - open, label: day.label, open };
+    });
+    return [
+      {
+        caption:
+          "Requests by the day an employee raised them. Orange is still waiting on the desk; grey has been answered. A tall orange run means the desk fell behind that week.",
+        emptyLabel: "No employee has raised an HR support request in the last fortnight.",
+        href: "/hr/admin/support-requests",
+        hrefLabel: "Open HR Support Requests",
+        key: "support-requests-flow",
+        rows: chartRows,
+        series,
+        title: "HR support requests raised, last 14 days",
+      },
+    ];
+  },
 
   /**
    * This month's detections, by category, split into what a publish would actually take and what
@@ -1044,6 +1135,8 @@ const CHARTS_BY_FUNCTION: Record<
         series,
         title: "Live candidates, by pipeline stage",
       },
+      // Offers load separately (see the recruiting tiles), so a failure there costs this one chart.
+      ...(loaded.offers ? [offersByStatusChart(loaded.offers)] : []),
     ];
   },
 
@@ -1365,7 +1458,7 @@ export async function getHrCommandCenterData(
     onVacationToday: loaded.vacationsToday ?? null,
     personal: await personalPromise,
     seat,
-    tasks: buildHrTodayTasks(loaded, seat),
+    tasks: tasksWithinSeatFence(seat, buildHrTodayTasks(loaded, seat)),
     unavailableSources: failures.map((key) => SOURCE_LABELS[key]).sort(),
   };
 }
@@ -1402,5 +1495,46 @@ export function buildHrCommandGroups(
       tiles,
     });
   }
-  return groups;
+  return withinSeatFence(seat, groups);
 }
+
+/**
+ * Re-point every tile link at a page the seat can actually open. A seat with page fences
+ * (src/lib/auth/seat-page-fences.ts) holds the key behind a tile's destination but was not given
+ * the page — the Talent Acquisition seat's "Active Candidates" figure links to the CV Database,
+ * which the owner left out of her seat. The figure stays; it opens the sibling page that shows the
+ * same people, and a tile whose page has no sibling loses the tile rather than offering a bounce.
+ */
+function withinSeatFence(seat: HrBundleName, groups: HrCommandGroup[]): HrCommandGroup[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      charts: group.charts.flatMap((chart) => {
+        const href = hrefOutsideSeatFence(seat, chart.href);
+        return href ? [{ ...chart, href }] : [];
+      }),
+      tiles: group.tiles.flatMap((entry) => {
+        const href = hrefOutsideSeatFence(seat, entry.href);
+        return href ? [{ ...entry, href }] : [];
+      }),
+    }))
+    // The tile builder governs whether a group exists (see buildHrCommandGroups) — so a group whose
+    // every tile was fenced away goes, charts and all.
+    .filter((group) => group.tiles.length > 0);
+}
+
+/** The same rule for the task list, which links to the same pages. */
+function tasksWithinSeatFence(seat: HrBundleName, tasks: HrTask[]): HrTask[] {
+  return tasks.flatMap((entry) => {
+    const href = hrefOutsideSeatFence(seat, entry.href);
+    if (!href) return [];
+    return [
+      {
+        ...entry,
+        href,
+        items: entry.items.map((item) => ({ ...item, href: hrefOutsideSeatFence(seat, item.href) ?? href })),
+      },
+    ];
+  });
+}
+

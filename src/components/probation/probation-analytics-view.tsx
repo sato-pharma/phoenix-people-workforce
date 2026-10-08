@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import type { OutcomesAnalytics, OutcomeGroup } from "@/lib/probation/intelligence/outcomes-analytics";
 
 // Historical outcomes analytics view (Enhancement E4). Read-only. Shows pass/terminate rates + average
@@ -27,43 +32,64 @@ function OutcomeTable({ title, groups, firstColLabel }: { title: string; groups:
         off the right edge behind a scroll.
 
         Every cell here is a short label or a number, so `table-fixed` + `<colgroup>` fits all
-        six columns at any width; the headers wrap on a narrow screen, which is the rule's
-        permitted answer. No column is dropped and no type is shrunk.
+        six columns at any width from `md` up. Below `md` it is cards — the HR shell's rule
+        (tests/hr-shell-mobile-tables.test.ts) since 2026-10-08, when this page became a row on the
+        Talent Acquisition seat's sidebar. Read-only, so PortalResponsiveDataList is the right pattern.
       */}
-      <div>
-        <table className="w-full table-fixed text-sm">
-          <colgroup>
-            <col className="w-[26%]" />
-            <col className="w-[13%]" />
-            <col className="w-[13%]" />
-            <col className="w-[17%]" />
-            <col className="w-[16%]" />
-            <col className="w-[15%]" />
-          </colgroup>
-          <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="break-words px-3 py-2">{firstColLabel}</th>
-              <th className="break-words px-3 py-2">Decided</th>
-              <th className="break-words px-3 py-2">Passed</th>
-              <th className="break-words px-3 py-2">Terminated</th>
-              <th className="break-words px-3 py-2">Pass rate</th>
-              <th className="break-words px-3 py-2">Avg score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((g) => (
-              <tr key={g.key} className="border-t border-slate-100">
-                <td className="break-words px-3 py-2 font-medium text-slate-800">{g.label}</td>
-                <td className="px-3 py-2 text-slate-700">{g.total}</td>
-                <td className="px-3 py-2 text-emerald-700">{g.passCount}</td>
-                <td className="px-3 py-2 text-rose-700">{g.terminateCount}</td>
-                <td className="px-3 py-2 text-slate-700">{pct(g.passRate)}</td>
-                <td className="px-3 py-2 text-slate-700">{g.avgScore ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PortalResponsiveDataList
+        empty={null}
+        getKey={(g) => g.key}
+        items={groups}
+        renderCard={(g) => (
+          <PortalRecordCard title={g.label}>
+            <PortalRecordFields
+              fields={[
+                { label: "Decided", value: g.total },
+                { label: "Passed", value: <span className="text-emerald-700">{g.passCount}</span> },
+                { label: "Terminated", value: <span className="text-rose-700">{g.terminateCount}</span> },
+                { label: "Pass rate", value: pct(g.passRate) },
+                { label: "Avg score", value: g.avgScore ?? "—" },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <div className="hidden md:block">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[26%]" />
+                <col className="w-[13%]" />
+                <col className="w-[13%]" />
+                <col className="w-[17%]" />
+                <col className="w-[16%]" />
+                <col className="w-[15%]" />
+              </colgroup>
+              <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="break-words px-3 py-2">{firstColLabel}</th>
+                  <th className="break-words px-3 py-2">Decided</th>
+                  <th className="break-words px-3 py-2">Passed</th>
+                  <th className="break-words px-3 py-2">Terminated</th>
+                  <th className="break-words px-3 py-2">Pass rate</th>
+                  <th className="break-words px-3 py-2">Avg score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g) => (
+                  <tr key={g.key} className="border-t border-slate-100">
+                    <td className="break-words px-3 py-2 font-medium text-slate-800">{g.label}</td>
+                    <td className="px-3 py-2 text-slate-700">{g.total}</td>
+                    <td className="px-3 py-2 text-emerald-700">{g.passCount}</td>
+                    <td className="px-3 py-2 text-rose-700">{g.terminateCount}</td>
+                    <td className="px-3 py-2 text-slate-700">{pct(g.passRate)}</td>
+                    <td className="px-3 py-2 text-slate-700">{g.avgScore ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      />
     </section>
   );
 }
@@ -108,38 +134,57 @@ export function ProbationAnalyticsView({ data }: { data: OutcomesAnalytics }) {
             how often a feedback recommendation matched the eventual decision
           </span>
         </h2>
-        {/* Same fix as the outcome table above: no floor, fixed columns, headers wrap. */}
-        <div>
-          <table className="w-full table-fixed text-sm">
-            <colgroup>
-              <col className="w-[30%]" />
-              <col className="w-[15%]" />
-              <col className="w-[17%]" />
-              <col className="w-[20%]" />
-              <col className="w-[18%]" />
-            </colgroup>
-            <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="break-words px-3 py-2">Recommendation</th>
-                <th className="break-words px-3 py-2">Feedbacks</th>
-                <th className="break-words px-3 py-2">→ Passed</th>
-                <th className="break-words px-3 py-2">→ Terminated</th>
-                <th className="break-words px-3 py-2">Alignment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.predictiveness.map((p) => (
-                <tr key={p.recommendation} className="border-t border-slate-100">
-                  <td className="break-words px-3 py-2 font-medium text-slate-800">{REC_LABEL[p.recommendation] ?? p.recommendation}</td>
-                  <td className="px-3 py-2 text-slate-700">{p.total}</td>
-                  <td className="px-3 py-2 text-emerald-700">{p.endedInPass}</td>
-                  <td className="px-3 py-2 text-rose-700">{p.endedInTerminate}</td>
-                  <td className="px-3 py-2 text-slate-700">{p.total > 0 ? pct(p.alignmentRate) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {/* Same fix as the outcome table above: cards below md, fixed columns from md up. */}
+        <PortalResponsiveDataList
+          empty={<p className="px-4 py-6 text-sm text-slate-500">No feedback recommendations recorded yet.</p>}
+          getKey={(p) => p.recommendation}
+          items={data.predictiveness}
+          renderCard={(p) => (
+            <PortalRecordCard title={REC_LABEL[p.recommendation] ?? p.recommendation}>
+              <PortalRecordFields
+                fields={[
+                  { label: "Feedbacks", value: p.total },
+                  { label: "→ Passed", value: <span className="text-emerald-700">{p.endedInPass}</span> },
+                  { label: "→ Terminated", value: <span className="text-rose-700">{p.endedInTerminate}</span> },
+                  { label: "Alignment", value: p.total > 0 ? pct(p.alignmentRate) : "—" },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden md:block">
+              <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[30%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[18%]" />
+                </colgroup>
+                <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="break-words px-3 py-2">Recommendation</th>
+                    <th className="break-words px-3 py-2">Feedbacks</th>
+                    <th className="break-words px-3 py-2">→ Passed</th>
+                    <th className="break-words px-3 py-2">→ Terminated</th>
+                    <th className="break-words px-3 py-2">Alignment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.predictiveness.map((p) => (
+                    <tr key={p.recommendation} className="border-t border-slate-100">
+                      <td className="break-words px-3 py-2 font-medium text-slate-800">{REC_LABEL[p.recommendation] ?? p.recommendation}</td>
+                      <td className="px-3 py-2 text-slate-700">{p.total}</td>
+                      <td className="px-3 py-2 text-emerald-700">{p.endedInPass}</td>
+                      <td className="px-3 py-2 text-rose-700">{p.endedInTerminate}</td>
+                      <td className="px-3 py-2 text-slate-700">{p.total > 0 ? pct(p.alignmentRate) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        />
       </section>
 
       <p className="text-phx-xs text-slate-400">

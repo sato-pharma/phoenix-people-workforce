@@ -84,6 +84,13 @@ const EXEMPT: Record<string, string> = {
     "and cards would put the things being compared on separate screens, which defeats it. It " +
     "declares no minimum width, uses px-2/text-xs (80px of padding, not 160px), and already " +
     "sits in an overflow-x-auto. Scrolling a comparison grid sideways is the expected gesture.",
+  "app/(admin)/admin/private-calendars/page.tsx":
+    "Reachable from the HR sidebar since 2026-10-08 (Private Calendars on the Talent Acquisition " +
+    "seat). Five <th> tags, but a phone never sees five columns: Title, Line and Area / Department " +
+    "are `hidden sm:table-cell` with `w-0` cols, and their values are MERGED into the Employee " +
+    "cell below sm — the fits-the-screen rule's own prescribed fix (merge columns, never shrink " +
+    "type) — so 375px shows two columns, Employee and View Calendar, inside a table-fixed colgroup. " +
+    "Cards would rebuild a list the owner had re-cut the same day to hold the whole company.",
 };
 
 function read(file: string): string {

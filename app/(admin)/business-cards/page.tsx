@@ -3,20 +3,19 @@ import { Suspense } from "react";
 
 import { BusinessCardsManager } from "@/components/business-cards/business-cards-manager";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canPrintBusinessCards } from "@/lib/business-cards/access";
 import { listBusinessCardEmployees } from "@/lib/business-cards/service";
 import type { BusinessCardEmployee } from "@/lib/business-cards/service";
 
 export const dynamic = "force-dynamic";
 
-// Gated exactly like HR Forms: `employee_documents` and an HR seat. The API route enforces the same.
+// Gated by canPrintBusinessCards — an HR seat holding `employee_documents` (as HR Forms), or the
+// Talent Acquisition seat through the business-card request desk. The API route calls the same predicate.
 
 export default async function BusinessCardsPage() {
   const access = await resolveAccessContextFromPage();
-  // Two separate gates, each in the shape the HR seat and navigation guards read from source.
-  if (!(await canAccess(access, "employee_documents", "read"))) redirect("/employee-portals");
-  if (!isHrAuthorityRole(access.role)) redirect("/employee-portals");
+  if (!(await canPrintBusinessCards(access))) redirect("/employee-portals");
 
   return (
     <Suspense

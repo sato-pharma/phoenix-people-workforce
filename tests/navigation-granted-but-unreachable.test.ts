@@ -318,7 +318,9 @@ export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
     gates.filter((gate) => gate.readable).length >= 150,
     `expected 150+ gate-readable routes, read ${gates.filter((g) => g.readable).length} (202)`,
   );
-  assert.equal(phoenixRoles.length, 17, "the role list changed — re-measure every floor below");
+  // 18 since 2026-10-08 (HR Resourcing, the Talent Acquisition seat). Every floor below was re-run
+  // with the new role in place and none of them moved below its threshold.
+  assert.equal(phoenixRoles.length, 18, "the role list changed — re-measure every floor below");
   assert.ok(
     offeredByRole.get("Super Admin" as PhoenixRole)!.hrefs.size >= 100,
     `Super Admin should be offered 100+ links, got ${offeredByRole.get("Super Admin" as PhoenixRole)!.hrefs.size} (171)`,

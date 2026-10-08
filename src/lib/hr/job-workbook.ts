@@ -1351,9 +1351,14 @@ export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
   },
   {
     jobTitle: "Talent Acquisition",
-    role: null,
+    // Re-opened 2026-10-08 as the HR Resourcing seat, built from the owner's own ticks on the access
+    // blueprint. The old "Talent Acquisition" ROLE retired on 2026-08-28 stays retired: this title
+    // now carries a capability-keyed bundle (HR_ROLE_BUNDLES["HR Resourcing"]). No written job
+    // description has been supplied for it, so it holds no responsibility lines — see the
+    // anti-fabrication pin in tests/hr-job-workbook.test.ts.
+    role: "HR Resourcing",
     purpose:
-      "Retired 2026-08-28. Held recruiting only; its work is now the recruiting function inside HR Advisory. Kept because employee records, offers and applications still name it historically.",
+      "Recruiting pipeline and offers (builds and sends, never approves), CV lookup, the HR support and business-card desks, and read-only workforce context.",
     hasWrittenJd: false,
   },
   {

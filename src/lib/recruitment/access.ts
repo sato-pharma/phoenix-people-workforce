@@ -30,12 +30,21 @@ export function hiringManagerInterviewType(role: PhoenixRole): InterviewType {
   return "hiring_manager";
 }
 
-// Roles that manage the pipeline end to end.
+// Roles that manage the pipeline end to end — and, read by inbound/recruitment-notify.ts,
+// stale-send-check.ts and triage-backlog-check.ts, the AUDIENCE of every recruitment alert. That
+// second use is why the Talent Acquisition seat is NOT in this list: who receives those alerts is
+// the owner's decision, and he has not made it for her. Her screens read recruitmentWorkRoles below.
 export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin", "HR Advisory"];
-// Roles that may read every requisition/application (managers see only their own).
+// Roles that WORK the pipeline's screens: the managers above plus the Talent Acquisition seat
+// (HR Resourcing), opened 2026-10-08 from the owner's own ticks on the access blueprint. A screen
+// list only — nothing here sends anybody anything.
+const recruitmentWorkRoles: readonly PhoenixRole[] = [...recruitmentManageRoles, "HR Resourcing"];
+// Roles that may read every requisition/application (managers see only their own). The Talent
+// Acquisition seat reads the whole pool — the owner chose "whole company" for her scope.
 export const recruitmentGlobalReadRoles: readonly PhoenixRole[] = [
   "Super Admin",
   "HR Advisory",
+  "HR Resourcing",
   "CEO",
 ];
 
@@ -44,8 +53,9 @@ export function canSeeAllRecruitment(access: AccessContext): boolean {
 }
 
 // Inbound Intake Health — the mailbox/queue monitor, and the only page that would say why CVs
-// stopped arriving. Same authority as the rest of the pipeline (Super Admin / Talent Acquisition),
-// not the broader recruitmentGlobalReadRoles: the CEO does not need plumbing diagnostics.
+// stopped arriving. Same authority as the rest of the pipeline (Super Admin / HR Advisory), not the
+// broader recruitmentGlobalReadRoles: the CEO does not need plumbing diagnostics. Deliberately NOT
+// recruitmentWorkRoles: the owner left Inbound Intake Health out of the Talent Acquisition seat.
 //
 // This was canViewCvExtractionAnalytics until 2026-08-15, when the accuracy dashboard, the CV
 // review queue and the per-field settings page were all removed — the owner used the review queue
@@ -66,7 +76,7 @@ export function canViewInboundIntakeHealth(access: Pick<AccessContext, "role" | 
 // content of conversations with the public — the same reasoning canReviewCandidateContacts is
 // separated on, one clause down.
 export function canViewWhatsAppOutboundLog(access: Pick<AccessContext, "role" | "scope">): boolean {
-  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
+  return access.scope === "system" || recruitmentWorkRoles.includes(access.role);
 }
 
 // WhatsApp message templates — SENDING one to a candidate.
@@ -77,7 +87,7 @@ export function canViewWhatsAppOutboundLog(access: Pick<AccessContext, "role" | 
 // that one guards READING what was said, this one guards SAYING it, and a later widening of the
 // read gate must not quietly hand a wider audience the ability to message the public.
 export function canSendWhatsAppTemplate(access: Pick<AccessContext, "role" | "scope">): boolean {
-  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
+  return access.scope === "system" || recruitmentWorkRoles.includes(access.role);
 }
 
 // WhatsApp message templates — WRITING, EDITING and DELETING them.
@@ -106,6 +116,8 @@ export function canManageWhatsAppTemplates(access: Pick<AccessContext, "role" | 
 // though the two resolve identically today: this page WRITES to two dedupe-deciding columns, so it
 // is gated on who may work the pipeline, not on who may read the plumbing diagnostics. Sharing the
 // intake-health helper would make a later widening of that read gate silently widen this write one.
+// Deliberately NOT recruitmentWorkRoles: the owner left Missing Contact Details out of the Talent
+// Acquisition seat.
 export function canReviewCandidateContacts(access: Pick<AccessContext, "role" | "scope">): boolean {
   return access.scope === "system" || recruitmentManageRoles.includes(access.role);
 }

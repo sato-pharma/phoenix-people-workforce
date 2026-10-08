@@ -50,7 +50,10 @@ export type HrFunctionKey =
   | "people_records"
   | "time_attendance"
   | "payroll_inputs"
-  | "hr_governance";
+  | "hr_governance"
+  | "hiring_paperwork"
+  | "employee_requests"
+  | "workforce_context";
 
 export type HrFunction = {
   key: HrFunctionKey;
@@ -103,12 +106,30 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // approved range; the offer chain's approval step belongs to the HR Section Head and above.
       offers: MAINTAIN,
       hiring_interviews: ["read", "update"],
+      // account_activation and employee_documents lived here until 2026-10-08 and moved, unchanged,
+      // to `hiring_paperwork` below — see the note there for why a recruiting seat can now exist
+      // without them.
+    },
+  },
+  {
+    key: "hiring_paperwork",
+    label: "Hiring Paperwork",
+    summary:
+      "Fill the new joiner's hiring documents and HR forms, and switch their portal login on.",
+    // Split out of `recruiting` on 2026-10-08, grants unchanged, when the owner built the Talent
+    // Acquisition seat on the access blueprint and ticked the pipeline but NOT Hiring Documents or
+    // HR Forms. Both pages, and every hiring-pack and hiring-documents route, open on
+    // employee_documents — the contract, the salary on it and the national-ID paperwork — so
+    // leaving these two grants inside `recruiting` would have handed his new seat exactly the
+    // pages he left out. HR Advisory holds both functions, so nothing she can do changed.
+    jdSections: ["hrbp 1 — Talent Acquisition & Workforce Support"],
+    grants: {
       // The portal-only activate/deactivate tool for a new joiner's login. Deliberately NOT
       // user_admin, which also covers role, scope and permission changes and stays Super Admin.
       account_activation: ["read", "update"],
       // HR Forms and Hiring Documents are cards on the Recruitment & Hiring hub, and both
-      // pages gate on employee_documents. hr_governance grants only read+export, so recruiting must
-      // carry the write half or the seat that runs the hire can open the contract and not fill it.
+      // pages gate on employee_documents. hr_governance grants only read+export, so the seat that
+      // runs the hire must carry the write half or it can open the contract and not fill it.
       employee_documents: MAINTAIN,
     },
   },
@@ -457,17 +478,58 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       overview: READ_ONLY,
     },
   },
+  {
+    key: "employee_requests",
+    label: "Employee Requests",
+    summary:
+      "Work the two desks an employee raises a request at: HR support and business cards.",
+    // The Talent Acquisition seat, specified by the owner on the access blueprint on 2026-10-08.
+    // He ticked HR Support Requests and Business Card Requests and left Retention Register out, so
+    // this is NOT engagement_retention: that function carries `retention` beside these two, and
+    // handing it over would have opened stay discussions and exit interviews to a seat he never
+    // gave them to. A function of its own is the narrowest thing that serves his ticks.
+    jdSections: ["owner 2026-10-08 — Talent Acquisition access blueprint"],
+    grants: {
+      support_requests: MAINTAIN,
+      business_card_requests: MAINTAIN,
+    },
+  },
+  {
+    key: "workforce_context",
+    label: "Workforce Context",
+    summary:
+      "Read the organogram, the planning and HR calendars, the punctuality boards and the probation dashboard. No personnel records.",
+    // The same blueprint. He ticked Organogram, Planning Calendar, HR Calendar, Early Birds and
+    // Phoenix Ranks, and did NOT tick Employees, Contract Renewal, Territory Management or any
+    // command centre. workforce_insight carries every one of those (employees, contracts,
+    // territory, overview), so it is deliberately not reused: this is its read-only context half
+    // without the records, which is exactly the line his ticks drew.
+    jdSections: ["owner 2026-10-08 — Talent Acquisition access blueprint"],
+    grants: {
+      organogram: READ_ONLY,
+      weekly_plans: READ_ONLY,
+      hr_calendar: READ_ONLY,
+      early_birds: READ_ONLY,
+      // He ticked the Probation Decision Dashboard, Probation Analytics and the Probation hub, and
+      // left the Probation Tracker out. READ only — the same grant performance_probation carries,
+      // without its coaching half, which he did not tick. Company-wide reading comes from
+      // canReadAllProbation (src/lib/probation/service.ts); the tracker is fenced by page
+      // (src/lib/auth/seat-page-fences.ts).
+      probation: READ_ONLY,
+    },
+  },
 ] as const;
 
 /**
- * The two HR seats opening 1 September 2026, each as a SET OF FUNCTIONS.
+ * The HR seats, each as a SET OF FUNCTIONS — two opened 1 September 2026, the third (HR Resourcing,
+ * shown as Talent Acquisition) on 8 October 2026.
  *
  * The bundle name is a label and carries no meaning on its own — that is deliberate, and it is
  * what stops this from going stale the way "HR Specialist" and "Talent Acquisition" both did. To
  * change what a seat can do, move a function key between these arrays. To add a seat, add a
  * bundle. Neither needs a rename, a codebase sweep, or a migration.
  *
- * Union of the two = the WHOLE catalogue, which is the owner's "at the end of the day, everything":
+ * Union of the seats = the WHOLE catalogue, which is the owner's "at the end of the day, everything":
  * between them the HR department is fully covered, with two functions (performance_probation,
  * hr_governance) genuinely shared because both job descriptions ask for them from different angles.
  * Rule 3 of tests/hr-function-governance.test.ts asserts that union by identity, so a function added
@@ -481,6 +543,8 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
 export const HR_ROLE_BUNDLES = {
   "HR Advisory": [
     "recruiting",
+    // Split out of recruiting 2026-10-08 with its grants unchanged — her access did not move.
+    "hiring_paperwork",
     "engagement_retention",
     // HR Advisory ONLY - HR Operations is not a sender, and adding it to a shared function such as
     // hr_governance would have handed her the composer as a side effect.
@@ -500,6 +564,25 @@ export const HR_ROLE_BUNDLES = {
     // (tests/cv-database-recruiting-boundary.test.ts), and what she gains is a search box that
     // answers with the people she searched for and nothing else.
     "cv_lookup",
+  ],
+  // The Talent Acquisition seat, opened 2026-10-08 from the owner's own ticks on the access
+  // blueprint. Shown as "Talent Acquisition" (HR_SEAT_JOB_TITLES below); keyed "HR Resourcing" so
+  // the key never strands when the person changes, which is the exact failure that retired the old
+  // "Talent Acquisition" role on 2026-08-28.
+  //
+  // `recruiting` is held by HR Advisory TOO, deliberately, for now. The owner chose to MOVE
+  // recruiting to this seat; taking it off HR Advisory in the same deploy that creates an EMPTY
+  // seat would leave the pipeline with nobody but the Super Admin until the hire starts. The move
+  // is one line (delete "recruiting" from HR Advisory above) and lands on her first day.
+  //
+  // No hiring_paperwork (he left Hiring Documents and HR Forms out), no hr_communication (he
+  // answered "no" to system email), no engagement_retention, no workforce_insight, no
+  // people_records, no time_attendance, no payroll_inputs.
+  "HR Resourcing": [
+    "recruiting",
+    "cv_lookup",
+    "employee_requests",
+    "workforce_context",
   ],
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 
@@ -528,6 +611,7 @@ export type HrBundleName = keyof typeof HR_ROLE_BUNDLES;
 export const HR_SEAT_JOB_TITLES = {
   "HR Advisory": "HR Business Partner",
   "HR Operations": "HR Operations Coordinator",
+  "HR Resourcing": "Talent Acquisition",
 } as const satisfies Record<HrBundleName, PhoenixCompanyJobTitle>;
 
 /**

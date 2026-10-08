@@ -301,6 +301,13 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
   const directoryFunctionKey: HrFunctionKey = holds("workforce_insight")
     ? "workforce_insight"
     : "people_records";
+  /**
+   * The same problem for the support desk, which two functions work: `engagement_retention` on HR
+   * Advisory and `employee_requests` on the Talent Acquisition seat (2026-10-08).
+   */
+  const supportFunctionKey: HrFunctionKey = holds("engagement_retention")
+    ? "engagement_retention"
+    : "employee_requests";
 
   // ── Performance & probation ────────────────────────────────────────────────
   // First because it is the only one of these with a legal clock on it: a probation decision not
@@ -519,7 +526,7 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
         action: "Answer",
         clearLabel: "No employee is waiting on a first reply.",
         detail: "An employee has written to HR and nobody has picked it up yet.",
-        functionKey: "engagement_retention",
+        functionKey: supportFunctionKey,
         href: "/hr/admin/support-requests",
         hrefLabel: "Open HR Support Requests",
         items: untouched.map((row) => {
@@ -741,7 +748,10 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
   }
 
   // ── Workforce insight ──────────────────────────────────────────────────────
-  if (loaded.directory) {
+  // Only for the seats whose job a missing manager is. The Talent Acquisition seat loads the
+  // directory too — `recruiting` compares requisitions against open seats — but fixing somebody's
+  // reporting line is personnel-record work her seat was not given, so the row is not hers to carry.
+  if (loaded.directory && (holds("workforce_insight") || holds("people_records"))) {
     // `isMissingRequiredManager`, not a bare `!managerHrId` — the same predicate the No Manager Set
     // tile counts with. A plain null test also catches the seats for which a manager is OPTIONAL
     // (the top of the tree reports to nobody by definition), which put a permanent, unfixable task

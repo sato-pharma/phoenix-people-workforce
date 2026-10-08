@@ -27,10 +27,12 @@ export const phoenixRoles = [
   // HR seats are BUNDLES OF FUNCTIONS, not job titles — see src/lib/auth/hr-functions.ts.
   // "HR Specialist" (retired 2026-06) and "Talent Acquisition" (retired here, 2026-08-28) were
   // both job titles used as permission keys, and both had to be renamed across the codebase and
-  // an eleven-table migration when the person left. These two names are labels for a set of
-  // functions and are read by nothing for intent, so neither can go stale the same way.
+  // an eleven-table migration when the person left. These names are labels for a set of
+  // functions and are read by nothing for intent, so none can go stale the same way.
   "HR Advisory",
   "HR Operations",
+  // Shown everywhere as "Talent Acquisition" (HR_SEAT_JOB_TITLES). Opened 2026-10-08.
+  "HR Resourcing",
   "Manager",
   "CEO",
   "Super Admin",
@@ -389,7 +391,7 @@ export type NavigationMode = "admin" | "employee-portal" | "hr";
  * resource, which is the fail-OPEN direction. Adding a seat here is a decision someone makes on
  * purpose.
  */
-export const hrNamespaceRoles = new Set<PhoenixRole>(["HR Advisory", "HR Operations"]);
+export const hrNamespaceRoles = new Set<PhoenixRole>(["HR Advisory", "HR Operations", "HR Resourcing"]);
 
 export function usesHrNamespace(role: PhoenixRole): boolean {
   return hrNamespaceRoles.has(role);
@@ -471,6 +473,9 @@ export const adminShellEmployeeRoles = [
   // unreachable for the seat this replaces.
   "HR Advisory",
   "HR Operations",
+  // Talent Acquisition, 2026-10-08: the owner chose the admin shell on the access blueprint, the
+  // same side as both other HR seats.
+  "HR Resourcing",
 ] as const satisfies readonly PhoenixRole[];
 const adminShellEmployeeRoleSet = new Set<PhoenixRole>(adminShellEmployeeRoles);
 
@@ -479,10 +484,17 @@ export function isAdminShellEmployeeRole(role: PhoenixRole): boolean {
 }
 
 // Every caller pairs this with a resource check — `isHrAuthorityRole(role) && canAccess(role, X, Y)` —
-// so listing both HR bundles here is safe and the grant does the discriminating: the recruitment
-// and offers pages also demand recruitment:read, which only HR Advisory holds, and vacation
-// control also demands leave:update, which only HR Operations holds.
-export const hrAuthorityRoles = ["Super Admin", "HR Advisory", "HR Operations"] as const satisfies readonly PhoenixRole[];
+// so listing every HR bundle here is safe and the grant does the discriminating: the recruitment
+// and offers pages also demand recruitment:read, which HR Advisory and HR Resourcing hold, and
+// vacation control also demands leave:update, which only HR Operations holds. HR Resourcing MUST
+// be here: hardBoundaryAllowedActions strips recruitment, candidates, offers, employee_documents,
+// cv_lookup and the HR half of the two request desks from any role that is not.
+export const hrAuthorityRoles = [
+  "Super Admin",
+  "HR Advisory",
+  "HR Operations",
+  "HR Resourcing",
+] as const satisfies readonly PhoenixRole[];
 const hrAuthorityRoleSet = new Set<PhoenixRole>(hrAuthorityRoles);
 const hrSupportStaffActions: PermissionAction[] = ["read", "create", "update", "export"];
 const supportRequestSenderActions: PermissionAction[] = ["create"];
@@ -506,7 +518,9 @@ export function isHrAuthorityRole(role: PhoenixRole): boolean {
  * outstationApprovalReviewRoles below is its own — running a hiring round and administering the
  * system are different privileges and must be able to diverge later without one dragging the other.
  */
-export const personalCandidateInboxRoles = ["CEO", "Super Admin"] as const satisfies readonly PhoenixRole[];
+// HR Resourcing (the Talent Acquisition seat) added 2026-10-08 — the owner ticked My Candidates for
+// her. It lists the CVs addressed to HER, which is empty until somebody sends her one.
+export const personalCandidateInboxRoles = ["CEO", "Super Admin", "HR Resourcing"] as const satisfies readonly PhoenixRole[];
 const personalCandidateInboxRoleSet = new Set<PhoenixRole>(personalCandidateInboxRoles);
 
 export function canOpenPersonalCandidateInbox(
@@ -1132,6 +1146,9 @@ const defaultPermissionMatrix: PermissionMap = {
   // a governance section, from different angles. Union of the two bundles = all eight functions.
   "HR Advisory": hrBundleGrants("HR Advisory"),
   "HR Operations": hrBundleGrants("HR Operations"),
+  //   HR Resourcing  recruiting · cv_lookup · employee_requests · workforce_context
+  //                  (shown as Talent Acquisition; built from the owner's 2026-10-08 blueprint)
+  "HR Resourcing": hrBundleGrants("HR Resourcing"),
   // Finance Manager (Ahmed El Maraghy, B-185 — the only holder): the company's finance execution
   // point. He EXECUTES money movements that others have already approved; he does not approve the
   // spend itself. Retuned 2026-08-10 on owner instruction, when the account was activated for the
@@ -1829,6 +1846,7 @@ export function getRolePrivilegeRank(role: PhoenixRole) {
       return 300;
     case "HR Advisory":
     case "HR Operations":
+    case "HR Resourcing":
       return 150;
     case "Finance Manager":
       return 200;

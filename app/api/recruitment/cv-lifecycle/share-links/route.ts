@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import {
@@ -21,6 +22,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // CV Sheet Links is fenced off the Talent Acquisition seat (src/lib/auth/seat-page-fences.ts):
+    // her recruitment:export exports what she sees, it does not mint a public feed of the pool.
+    assertPageOpenForRole(access.role, "/recruitment/cv-lifecycle-sheet");
     const links = await listCvLifecycleShareLinks(access);
     return NextResponse.json({ links, success: true });
   } catch (error) {
@@ -38,6 +42,7 @@ export async function POST(request: Request) {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
+    assertPageOpenForRole(access.role, "/recruitment/cv-lifecycle-sheet");
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
     if (String(body.action ?? "") === "revoke") {

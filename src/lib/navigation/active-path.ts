@@ -22,6 +22,7 @@ import type {
   PermissionResource,
   PhoenixRole,
 } from "@/lib/auth/permissions";
+import { isPageFencedForRole } from "@/lib/auth/seat-page-fences";
 
 export type PermissionLookup = Partial<Record<`${PermissionResource}:${PermissionAction}`, boolean>>;
 type PermissionLookupKey = keyof PermissionLookup;
@@ -158,6 +159,8 @@ export function roleNotExcluded(role: PhoenixRole | undefined, excludedRoles?: r
  */
 export type GatedNavigationItem = {
   excludedRoles?: readonly PhoenixRole[];
+  /** Read only for the per-seat page fences (src/lib/auth/seat-page-fences.ts). */
+  href?: string;
   permissions?: readonly NavigationPermission[];
   roles?: readonly PhoenixRole[];
 };
@@ -200,6 +203,9 @@ export function navigationItemVisible(
   role?: PhoenixRole,
 ): boolean {
   if (!roleNotExcluded(role, item.excludedRoles)) return false;
+  // A page the owner left out of a seat that one of its keys would otherwise open. AppShell refuses
+  // the same address server-side; this keeps the row from being offered in the first place.
+  if (item.href && isPageFencedForRole(role, item.href)) return false;
   if (!permissionAllowed(lookup, item.permissions)) return false;
   return role === SYSTEM_ADMINISTRATOR_ROLE || roleAllowed(role, item.roles);
 }

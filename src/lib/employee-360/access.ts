@@ -37,7 +37,14 @@ import {
 const COMPANY_360_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Super Admin"]);
 
 /** Roles restricted to Medical Reps only (+ self), company-wide — no line/hierarchy scope. */
-const MEDICAL_REP_ONLY_360_ROLES = new Set<PhoenixRole>(["Training Manager", "HR Advisory", "HR Operations"]);
+// HR Resourcing — the Talent Acquisition seat — sits with the other two HR seats (2026-10-08):
+// company-wide, medical reps only.
+const MEDICAL_REP_ONLY_360_ROLES = new Set<PhoenixRole>([
+  "Training Manager",
+  "HR Advisory",
+  "HR Operations",
+  "HR Resourcing",
+]);
 
 /**
  * Employees removed from Employee 360 entirely (owner-requested, 2026-07-30).

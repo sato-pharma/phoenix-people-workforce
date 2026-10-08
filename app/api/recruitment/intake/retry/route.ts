@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertSameOriginMutation, readJsonObject, requireRecruitmentAccess, recruitmentApiError, str } from "@/app/api/recruitment/_lib/http";
+import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { requeueInbound } from "@/lib/recruitment/inbound/intake-queue";
 
 export const runtime = "nodejs";
@@ -12,7 +13,9 @@ export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "recruitment", "update");
+    const access = await requireRecruitmentAccess(request, "recruitment", "update");
+    // Inbound Intake Health is fenced off the Talent Acquisition seat (src/lib/auth/seat-page-fences.ts).
+    assertPageOpenForRole(access.role, "/recruitment/intake-health");
     const id = str((await readJsonObject(request)).id);
     if (!id) {
       return NextResponse.json({ error: "validation", message: "A queue row id is required.", success: false }, { status: 400 });

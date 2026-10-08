@@ -246,7 +246,20 @@ function emptySources(): HrCommandSources {
 // awaiting screening) is a fact about the pool. It would print the size and shape of the withheld
 // thing on her landing page before she had searched for anybody. SOURCES_BY_FUNCTION.cv_lookup is
 // empty for the same reason, so there is nothing loaded to build a tile from even by accident.
-const FUNCTIONS_WITH_NO_TILES = new Set(["hr_governance", "hr_communication", "cv_lookup"]);
+// `hiring_paperwork` and `workforce_context` added 2026-10-08 with the Talent Acquisition seat.
+// hiring_paperwork is two GRANTS lifted out of recruiting (employee documents and account
+// activation) so that seat could hold recruiting without the contracts and salary letters; it moved
+// no data source, so the tiles recruiting already drew stay with recruiting and this function has
+// nothing of its own to count. workforce_context is read-only REFERENCE for that seat — organogram,
+// calendars, Early Birds, probation outcomes — every one of them a sidebar row whose figures belong
+// to the function that owns the work; a tile here would only repeat another group’s number.
+const FUNCTIONS_WITH_NO_TILES = new Set([
+  "hr_governance",
+  "hr_communication",
+  "cv_lookup",
+  "hiring_paperwork",
+  "workforce_context",
+]);
 
 export async function runHrCommandCenterTests() {
   // ── The gate the page gates on ────────────────────────────────────────────────────────────────

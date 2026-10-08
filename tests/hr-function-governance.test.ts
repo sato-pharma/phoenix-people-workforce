@@ -422,6 +422,35 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/retention-risk/messages.ts",
   "src/lib/support-requests/service.ts",
   "src/lib/workflow-control/definitions.ts",
+  // ── The Talent Acquisition seat (HR Resourcing), 2026-10-08 ──────────────────────────────────
+  // Each file below names HR Resourcing because the owner ticked that page for her on the access
+  // blueprint and the page gates by NAME rather than by a permission key. Reviewed verdict for
+  // every one: it GRANTS her a READ of the page he ticked, and nothing her bundle withholds —
+  // none of them reaches payroll, salary, deductions, contracts, employee documents or messaging.
+  //
+  //   ceo-probation/page.tsx     the probation hub (a page of three cards). The tracker card is
+  //                              DROPPED for her by isPageFencedForRole; dashboard and analytics
+  //                              read through canReadAllProbation, which is GET-only for her.
+  //   company-calendar/page.tsx  READ: she is not in CALENDAR_MANAGER_ROLES, so /api/calendar
+  //                              refuses her edits.
+  //   early-birds/page.tsx, ranks/page.tsx, early-birds/permissions.ts
+  //                              READ of the company-wide board. Confirming a fortnight stays with
+  //                              each District Manager; she holds no early_birds write action.
+  //   private-calendar/logic.ts  the company-wide private-calendar viewer, which he ticked.
+  "app/(admin)/admin/ceo-probation/page.tsx",
+  "app/(admin)/admin/company-calendar/page.tsx",
+  "app/(admin)/admin/early-birds/page.tsx",
+  "app/(admin)/admin/ranks/page.tsx",
+  "src/lib/early-birds/permissions.ts",
+  "src/lib/private-calendar/logic.ts",
+  // REMOVES reach and can only ever remove it: the per-seat page fence. Naming a seat here closes a
+  // page her keys would otherwise open (the CV Database, the Probation Tracker, the attendance and
+  // planning screens, Payslips Center) and opens nothing.
+  "src/lib/auth/seat-page-fences.ts",
+  // GRANTS her the Business Cards print screen through business_card_requests:update, the desk she
+  // already works — instead of employee_documents, which carries contracts and salary letters and
+  // which the owner left OUT of her seat. A card holds a name, title, phone and work email only.
+  "src/lib/business-cards/access.ts",
 ];
 
 /**

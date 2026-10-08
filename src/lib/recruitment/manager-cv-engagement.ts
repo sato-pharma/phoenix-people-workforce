@@ -67,7 +67,15 @@ import { isUuid } from "@/lib/http/uuid";
  * records, attendance and payroll inputs, and no part of that reads a hiring manager's response
  * time. Written as a role set rather than a permission for the reason below.
  */
-const managerCvEngagementRoles: readonly PhoenixRole[] = ["Super Admin", "CEO", "National Sales Manager", "HR Advisory"];
+// HR Resourcing (the Talent Acquisition seat) joined on 2026-10-08, ticked by the owner on the access
+// blueprint, for the reason he gave HR Advisory: chasing a silent manager is recruiting work.
+const managerCvEngagementRoles: readonly PhoenixRole[] = [
+  "Super Admin",
+  "CEO",
+  "National Sales Manager",
+  "HR Advisory",
+  "HR Resourcing",
+];
 
 /**
  * May this viewer open the silent manager-engagement report?
