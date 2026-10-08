@@ -71,6 +71,7 @@ xlsx/*
 # #5574 had just fixed. It is now a thin launcher with no logic in it; tracked, any edit that puts
 # logic back shows up in `git status` and in review instead of waiting to be discovered on paper.
 !xlsx/field-day-print.mjs
+!xlsx/field-day.mjs
 
 # Root-level scratch scripts from local automation sessions (e.g. Excel COM builds)
 _tmp-*
