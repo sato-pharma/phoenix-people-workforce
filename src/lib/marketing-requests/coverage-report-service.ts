@@ -9,7 +9,7 @@ import {
   computeMarketingCoverageFilterOptions,
   resolveMarketingCoverageScope,
 } from "@/lib/marketing-requests/coverage-report-scope";
-import { entryMatchesCoverageFilters } from "@/lib/marketing-requests/coverage-report-facets";
+import { coverageFilterLabels, entryMatchesCoverageFilters } from "@/lib/marketing-requests/coverage-report-facets";
 import type { RoiAttributionLine } from "@/lib/marketing-requests/roi-report-types";
 import {
   chunk,
@@ -871,6 +871,9 @@ export async function getMarketingCoverageReport(
     rows: finalRows,
     kpi,
     appliedFilters: filters,
+    // From the whole index, not the final rows: a selected requester whose requests another
+    // filter removed is still named on the export's cover.
+    filterLabels: coverageFilterLabels(ctx.entries, filters),
     autoAppliedByDimension,
     includedRestricted: includeRestricted,
     generatedAtIso,

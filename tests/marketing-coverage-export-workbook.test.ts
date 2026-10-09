@@ -87,6 +87,7 @@ export function sampleReport(): MarketingCoverageReport {
       actualsDegraded: { count: 0, requestIds: [] },
     },
     appliedFilters: { ...emptyMarketingCoverageFilterState(), area: ["Cairo"] },
+    filterLabels: { area: { Cairo: "Cairo" } },
     autoAppliedByDimension: {},
     includedRestricted: false,
     generatedAtIso: META.generatedAtIso,

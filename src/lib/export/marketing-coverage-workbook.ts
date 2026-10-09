@@ -17,6 +17,8 @@ import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-palette";
 import { marketingRequestStatusLabel, ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingCoverageExportSalesDetailRow,
+  MarketingCoverageFilterKey,
+  MarketingCoverageFilterLabels,
   MarketingCoverageFilterState,
   MarketingCoverageReport,
   MarketingRoiExportDetail,
@@ -67,26 +69,37 @@ export function coverageCodeNames(rows: MarketingCoverageReport["rows"]): Covera
   return { product, distributor };
 }
 
-export function describeCoverageFilters(filters: MarketingCoverageFilterState, names?: CoverageCodeNames): string {
+/**
+ * The cover's "Applied filters" line. Every value prints as the label the filter panel showed for
+ * it (`report.filterLabels`, read off the viewer's own index): a person by name, a request type by
+ * name, a status as a reader sees it — never an HR id, a type id or a raw status word (owner rule:
+ * names, never codes or IDs). A person the index does not carry reads "Name not on file", exactly
+ * as the panel says it.
+ */
+export function describeCoverageFilters(filters: MarketingCoverageFilterState, labels: MarketingCoverageFilterLabels = {}): string {
   const parts: string[] = [];
-  const push = (label: string, values: Array<string | number>, nameOf?: Map<string, string>) => {
-    if (values.length > 0) parts.push(`${label}: ${values.map((value) => nameOf?.get(String(value)) ?? value).join(", ")}`);
+  const push = (label: string, values: Array<string | number>, nameOf: (value: string) => string) => {
+    if (values.length > 0) parts.push(`${label}: ${values.map((value) => nameOf(String(value))).join(", ")}`);
   };
-  push("Line", filters.line);
-  push("Region", filters.region);
-  push("Area", filters.area);
-  push("Requester tier", filters.requesterTier);
-  push("NSM", filters.nsm);
-  push("RSM", filters.rsm);
-  push("DM", filters.dm);
-  push("Requester", filters.requester);
-  push("Approved by", filters.approvedBy);
-  push("Status", filters.status);
-  push("Request type", filters.requestType);
-  push("Distributor", filters.distributor, names?.distributor);
-  push("Product", filters.product, names?.product);
-  push("Pharmacy", filters.pharmacy);
-  push("ROI status", filters.roiStatus);
+  const labelled = (key: MarketingCoverageFilterKey, fallback: (value: string) => string) => (value: string) =>
+    labels[key]?.[value] ?? fallback(value);
+  const asIs = (value: string) => value;
+  const personNotOnFile = () => "Name not on file";
+  push("Line", filters.line, labelled("line", asIs));
+  push("Region", filters.region, labelled("region", asIs));
+  push("Area", filters.area, labelled("area", asIs));
+  push("Requester tier", filters.requesterTier, labelled("requesterTier", asIs));
+  push("NSM", filters.nsm, labelled("nsm", personNotOnFile));
+  push("RSM", filters.rsm, labelled("rsm", personNotOnFile));
+  push("DM", filters.dm, labelled("dm", personNotOnFile));
+  push("Requester", filters.requester, labelled("requester", personNotOnFile));
+  push("Approved by", filters.approvedBy, labelled("approvedBy", asIs));
+  push("Status", filters.status, marketingRequestStatusLabel);
+  push("Request type", filters.requestType, labelled("requestType", () => "Unknown request type"));
+  push("Distributor", filters.distributor, labelled("distributor", asIs));
+  push("Product", filters.product, labelled("product", asIs));
+  push("Pharmacy", filters.pharmacy, labelled("pharmacy", asIs));
+  push("ROI status", filters.roiStatus, (value) => RESULT_LABELS[value] ?? "Unknown result");
   if (filters.payDateFrom || filters.payDateTo) parts.push(`Pay date: ${filters.payDateFrom ?? "…"} → ${filters.payDateTo ?? "…"}`);
   if (filters.durationMin != null || filters.durationMax != null) parts.push(`Duration: ${filters.durationMin ?? "…"} → ${filters.durationMax ?? "…"} months`);
   if (filters.includeRestricted) parts.push("Includes confidential products");
@@ -171,7 +184,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
       ["Exported by", meta.exportedByName],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
-      ["Applied filters", describeCoverageFilters(report.appliedFilters, names)],
+      ["Applied filters", describeCoverageFilters(report.appliedFilters, report.filterLabels)],
       ["Requests", String(kpi.requestCount)],
       ["Total cost (EGP)", kpi.totalEstimatedCost.toLocaleString("en-US")],
       ["Required ROI (EGP)", kpi.totalRequiredRoi.toLocaleString("en-US")],

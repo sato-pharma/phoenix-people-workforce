@@ -5,9 +5,9 @@ import ExcelJS from "exceljs";
 
 import {
   buildMarketingCoverageReportWorkbook,
-  coverageCodeNames,
   describeCoverageFilters,
 } from "../src/lib/export/marketing-coverage-workbook.ts";
+import { coverageFilterLabels } from "../src/lib/marketing-requests/coverage-report-facets.ts";
 import {
   computeCoverageRollupByDimension,
   computeCoverageTrend,
@@ -16,7 +16,9 @@ import { marketingRequestStatusLabel, resolveRoiDataCoverage } from "../src/lib/
 import { mergePharmacyCoverage } from "../src/lib/marketing-requests/coverage-report-service.ts";
 import { aggregateViewSales } from "../src/lib/marketing-requests/roi-report-service.ts";
 import type {
+  MarketingCoverageFilterState,
   MarketingCoverageReportRow,
+  MarketingCoverageRequestIndexEntry,
   MarketingRoiViewSalesRow,
   RoiAttributionLine,
 } from "../src/lib/marketing-requests/roi-report-types.ts";
@@ -171,12 +173,98 @@ async function testWorkbookPrintsProductAndDistributorNames() {
   assert.deepEqual(cellsUnder("Requests", "Distributors"), ["Ibnsina"], "the Requests sheet names its distributors, never IS");
   assert.deepEqual(cellsUnder("Target Pharmacies", "Distributor"), ["Ibnsina", "Ibnsina"], "each target pharmacy names its distributor");
   assert.deepEqual(cellsUnder("Sales Detail", "Distributor"), ["Ibnsina"], "the sales detail names its distributor");
+}
 
-  const filters = { ...emptyMarketingCoverageFilterState(), product: ["GU001"], distributor: ["IS"] };
-  const described = describeCoverageFilters(filters, coverageCodeNames(report.rows));
-  assert.match(described, /Product: Gutrin/, "the cover's filter line names the product");
-  assert.match(described, /Distributor: Ibnsina/, "the cover's filter line names the distributor");
-  assert.doesNotMatch(described, /GU001|: IS(?![A-Za-z])/, "no code survives on the cover");
+function coverageIndexEntry(overrides: Partial<MarketingCoverageRequestIndexEntry>): MarketingCoverageRequestIndexEntry {
+  return {
+    requestId: "r1",
+    requestCode: "REQ-0001",
+    requesterHrId: "b-201",
+    requesterName: "Mona Rep",
+    managerHrId: "b-150",
+    status: "pending_approval",
+    requestTypeId: 3,
+    requestTypeName: "Doctor Request",
+    payDate: "2026-08-01",
+    roiDurationMonths: 3,
+    lineName: "Pedia",
+    regionName: "Delta",
+    areaName: "Tanta",
+    requesterTier: "Medical Rep",
+    dmHrId: "b-150",
+    dmName: "Karim District",
+    nsmHrId: "b-157",
+    nsmName: "Line NSM",
+    rsmHrId: "b-120",
+    rsmName: "Hany Region",
+    approverRoleKeys: ["National Sales Manager"],
+    distributorCodes: ["IS"],
+    distributorNames: ["Ibnsina"],
+    distributorWeights: [{ distributorCode: "IS", weight: 1 }],
+    productCodes: ["GU001"],
+    productNames: ["Gutrin"],
+    pharmacyKeys: ["12345"],
+    pharmacyNames: ["Pharmacy One"],
+    pharmacyIds: ["pharmacy-1"],
+    hasRestrictedProduct: false,
+    ...overrides,
+  };
+}
+
+async function testCoverFilterLineNamesEveryDimension() {
+  // Owner rule: names, never codes or IDs. After #5609 named the product and distributor, the
+  // cover's "Applied filters" line still printed a selected DM as b-150, a status as
+  // pending_approval, a result as awaiting_data, a request type as 3 and a pharmacy as its code.
+  const entries = [coverageIndexEntry({}), coverageIndexEntry({ requestId: "r2", requesterHrId: "b-202", requesterName: null })];
+  const filters: MarketingCoverageFilterState = {
+    ...emptyMarketingCoverageFilterState(),
+    requester: ["b-201", "b-202", "b-999"],
+    dm: ["b-150"],
+    rsm: ["b-120"],
+    nsm: ["b-157"],
+    status: ["pending_approval", "roi_tracking"],
+    roiStatus: ["awaiting_data", "behind"],
+    requestType: [3],
+    area: ["Tanta"],
+    pharmacy: ["12345"],
+    product: ["GU001"],
+    distributor: ["IS"],
+  };
+  const report = sampleReport();
+  report.appliedFilters = filters;
+  report.filterLabels = coverageFilterLabels(entries, filters);
+  const buffer = await buildMarketingCoverageReportWorkbook({ report, detail: sampleDetail(), salesDetail: sampleSalesDetail(), meta: META });
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(buffer);
+  let applied: unknown = null;
+  book.getWorksheet("Cover")!.eachRow((row) => {
+    row.eachCell((cell, column) => {
+      if (cell.value === "Applied filters") applied = row.getCell(column + 1).value;
+    });
+  });
+  assert.equal(typeof applied, "string", "the emitted cover carries an Applied filters line");
+  const line = applied as unknown as string;
+  assert.match(line, /Requester: Mona Rep, Name not on file, Name not on file/, "requesters by name; one with no name on file, or outside the index, never as an HR id");
+  assert.match(line, /NSM: Line NSM/, "the NSM by name");
+  assert.match(line, /RSM: Hany Region/, "the RSM by name");
+  assert.match(line, /DM: Karim District/, "the DM by name");
+  assert.match(line, /Status: Pending approval, ROI tracking/, "statuses as a reader sees them");
+  assert.match(line, /ROI status: Data pending, Behind/, "results as the tracker labels them");
+  assert.match(line, /Request type: Doctor Request/, "the request type by name, never its id");
+  assert.match(line, /Area: Tanta/, "the area by name");
+  assert.match(line, /Pharmacy: Pharmacy One/, "the pharmacy by name, never its code");
+  assert.match(line, /Product: Gutrin/, "the product by name");
+  assert.match(line, /Distributor: Ibnsina/, "the distributor by name");
+  assert.doesNotMatch(
+    line,
+    /b-\d+|pending_approval|roi_tracking|awaiting_data|Request type: 3|12345|GU001|: IS\b/,
+    "no HR id, raw status word, type id or code survives on the cover",
+  );
+  assert.equal(
+    describeCoverageFilters({ ...emptyMarketingCoverageFilterState(), dm: ["b-150"] }),
+    "DM: Name not on file",
+    "with no labels at all a person still never prints as an HR id",
+  );
 }
 
 function testViewSalesNeverAddsUnitsAcrossProducts() {
@@ -250,6 +338,11 @@ function testSourcePins() {
     /entries\.some\(\(entry\) => entry\.requestId === requestId\)/,
     "the pharmacy drill-down is admitted by the Coverage index, not by View Sales' wider ROI scope",
   );
+  assert.match(
+    coverage,
+    /filterLabels: coverageFilterLabels\(ctx\.entries, filters\)/,
+    "the report carries the cover's filter labels, read off the whole index rather than the final rows",
+  );
   const tracker = readFileSync("src/components/marketing-requests/marketing-roi-live-tracker.tsx", "utf8");
   assert.match(
     tracker,
@@ -271,6 +364,7 @@ export async function runMarketingRoiCoverageAuditTests() {
   testBreakdownAndTrendCountASharedSaleOnce();
   await testWorkbookTotalIsTheDedupedHeadline();
   await testWorkbookPrintsProductAndDistributorNames();
+  await testCoverFilterLineNamesEveryDimension();
   testViewSalesNeverAddsUnitsAcrossProducts();
   await testFinanceManagerCannotReadTheArchivedExcelSet();
   testStatusLabelsAreShared();
