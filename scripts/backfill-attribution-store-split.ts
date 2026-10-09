@@ -50,9 +50,14 @@ import {
   type AttributionSplitRow,
   type StoreSplitNetPayloadRow,
 } from "@/lib/sales/attribution-store-split-net";
+import { assertTreeIsCurrent } from "./lib/tree-is-current.ts";
 
 const apply = process.argv.includes("--apply");
 const requested = process.argv.slice(2).filter((arg) => /^\d{4}-\d{2}$/.test(arg));
+
+// This script recomputes the rule from the code in THIS tree, so a tree behind origin/main
+// produces pre-merge numbers (and, with --apply, writes them). Refused, with an override.
+assertTreeIsCurrent("backfill-attribution-store-split");
 
 const supabase = getSupabaseAdmin();
 

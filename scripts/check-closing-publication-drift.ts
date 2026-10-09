@@ -33,6 +33,7 @@ import {
   type PublicationLineDrift,
 } from "@/lib/sales/closing-publication-drift";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assertTreeIsCurrent } from "./lib/tree-is-current.ts";
 
 const argv = process.argv.slice(2);
 const failOnDrift = argv.includes("--fail-on-drift");
@@ -45,6 +46,10 @@ if (unknown.length > 0) {
   console.error(`check-closing-publication-drift: unknown flag(s) ${unknown.join(", ")} — refusing to run`);
   process.exit(64);
 }
+
+// This script recomputes the rule from the code in THIS tree and its verdict gets quoted, so a
+// tree behind origin/main reports drift (or calm) about pre-merge code. Refused, with an override.
+assertTreeIsCurrent("check-closing-publication-drift");
 
 const supabase = getSupabaseAdmin();
 
