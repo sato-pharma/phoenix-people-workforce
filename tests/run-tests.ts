@@ -1394,6 +1394,7 @@ import { runPostgrestSearchFilterTests } from "./postgrest-search-filter.test.ts
 import { runAutomatedPayrollSplitTests } from "./automated-payroll-split.test.ts";
 import { runAutomatedPayrollExportOrderTests } from "./automated-payroll-export-order.test.ts";
 import { runAutomatedPayrollPart1ScopeTests } from "./automated-payroll-part1-scope.test.ts";
+import { runAutomatedPayrollDeductionReconciliationTests } from "./automated-payroll-deduction-reconciliation.test.ts";
 import { runAutomatedPayrollNonEmployeesTests } from "./automated-payroll-non-employees.test.ts";
 import { runAutomatedPayrollFabSheetTests } from "./automated-payroll-fab-sheet.test.ts";
 import { runAutomatedPayrollNotifyGovernanceTests } from "./automated-payroll-notify-governance.test.ts";
@@ -2745,6 +2746,7 @@ await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);
 await runTest("automated payroll export order (fixed HR-ID sequence)", runAutomatedPayrollExportOrderTests);
 await runTest("automated payroll Part 1/2 scope (no CRM/vacation double-deduction)", runAutomatedPayrollPart1ScopeTests);
+await runTest("automated payroll run vs Deductions module (every bucket compared against the column its routing feeds)", runAutomatedPayrollDeductionReconciliationTests);
 await runTest("automated payroll Non-Employees Payroll (inline rows + accurate Executive Summary)", runAutomatedPayrollNonEmployeesTests);
 await runTest("automated payroll FAB bank-transfer sheet (schema + filtering)", runAutomatedPayrollFabSheetTests);
 await runTest("automated payroll notify governance (authorizedRecipient fix)", runAutomatedPayrollNotifyGovernanceTests);
