@@ -6,6 +6,7 @@ import {
   isLeaveBalanceReason,
   planLeaveBalanceCharge,
 } from "../src/lib/deductions/leave-balance.ts";
+import { LEAVE_BALANCE_CATEGORIES, isLeaveBalanceCategory } from "../src/lib/deductions/types.ts";
 import { foldLeaveBalanceCharges } from "../src/lib/deductions/leave-balance-ledger.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import { buildEmployeeEligibilityRows } from "../src/lib/vacation/service.ts";
@@ -19,6 +20,10 @@ import { buildEmployeeEligibilityRows } from "../src/lib/vacation/service.ts";
  *
  * His answers: annual balance only · take what is there and leave the rest on salary · the comment is
  * required and the employee reads it as written · it can be undone.
+ *
+ * Widened hours later, same day, on his word — "also show the deduct from balance in unpaid and
+ * insufficient" — to Unpaid Vacation and Insufficient Balance Vacation. Section 0 pins the list and
+ * every gate that has to agree with it.
  *
  *   1. the split between leave and salary, and the decision it leaves on the row;
  *   2. the ledger fold — a give-back nets the charge out, a re-charge shows the NEW comment;
@@ -58,6 +63,63 @@ function ledger(over: Partial<LedgerRow> & Pick<LedgerRow, "id" | "days">): Ledg
 }
 
 export function runDeductionsLeaveBalanceTests() {
+  // 0. THE CATEGORIES, AND THE FOUR GATES THAT MUST AGREE ON THEM. Owner, 2026-10-09: "also show the
+  // deduct from balance in unpaid and insufficient". A tab that shows the button while any one of the
+  // other gates still refuses it is the whole failure mode — so the list is pinned once, and each
+  // gate is checked for reading THAT list rather than a second copy of it.
+  {
+    assert.deepEqual(
+      [...LEAVE_BALANCE_CATEGORIES],
+      ["crm", "crm_half_day", "unpaid_vacation", "insufficient_balance_vacation"],
+      "the leave-balance button covers CRM, CRM half day, Unpaid Vacation and Insufficient Balance Vacation",
+    );
+    assert.ok(isLeaveBalanceCategory("unpaid_vacation"), "Unpaid Vacation must be chargeable to the leave balance");
+    assert.ok(isLeaveBalanceCategory("insufficient_balance_vacation"), "Insufficient Balance Vacation must be chargeable to the leave balance");
+    assert.ok(!isLeaveBalanceCategory("fingerprint"), "a fingerprint deduction is not a leave day");
+    assert.ok(!isLeaveBalanceCategory("loan") && !isLeaveBalanceCategory("other") && !isLeaveBalanceCategory(null));
+
+    const workspace = read("src/components/admin/deductions-workspace.tsx");
+    assert.match(
+      workspace,
+      /isLeaveBalanceCategory\(row\.category\) && row\.unit === "days"/,
+      "the workspace must decide which rows show the button from the shared list, never from its own category test",
+    );
+    assert.match(workspace, /isLeaveBalanceCategory,[\s\S]{0,200}from "@\/lib\/deductions\/types\.ts"/);
+
+    const decide = read("src/lib/deductions/service.ts");
+    assert.match(
+      decide,
+      /input\.viaLeaveBalance !== true && isLeaveBalanceCategory\(candidateRow\.category\)/,
+      "the decide guard must cover every category the button reaches, or a bulk decide takes the same day from salary AND leave",
+    );
+
+    const charge = read("src/lib/deductions/leave-balance.ts");
+    assert.match(charge, /if \(!categoryTakesLeaveBalance\(candidate\.category\)\)/, "the charge service must gate on the shared list");
+    assert.ok(
+      !/LEAVE_BALANCE_CATEGORIES = \[/.test(charge),
+      "the list must not be declared a second time here — types.ts owns it",
+    );
+
+    const sql = read("supabase/migrations/20261009210000_deductions_leave_balance_vacation_categories.sql");
+    assert.match(
+      sql,
+      /category not in \('crm', 'crm_half_day', 'unpaid_vacation', 'insufficient_balance_vacation'\)/,
+      "the database function is the last gate and must name the same four categories",
+    );
+    assert.match(sql, /pg_advisory_xact_lock\(hashtext\(lower\(p_employee_hr_id\)\)\)/, "the widening must not drop the per-employee lock");
+    assert.match(sql, /The annual balance changed while this was being saved/, "the widening must not drop the moved-balance refusal");
+    // A migration that redefines a public SECURITY DEFINER function must restate its own revoke:
+    // anon and authenticated inherit EXECUTE through PUBLIC membership, and a file that defines one
+    // and says nothing about grants reads exactly like one that opened it up. check-migrations.mjs
+    // fails the required `validate` job over this, which is how it was caught here.
+    assert.match(
+      sql,
+      /revoke execute on function public\.phx_deductions_charge_leave_balance\([^)]*\) from public, anon, authenticated;/,
+      "the redefinition must revoke EXECUTE from public, anon and authenticated",
+    );
+    assert.match(sql, /grant execute on function public\.phx_deductions_charge_leave_balance\([^)]*\) to service_role;/);
+  }
+
   // 1a. THE SPLIT. Enough balance takes the whole deduction; a short balance takes what is there and
   // the rest stays on salary; an empty or unreadable balance takes nothing.
   {
@@ -136,7 +198,7 @@ export function runDeductionsLeaveBalanceTests() {
   // salary AND leave.
   {
     const source = read("src/lib/deductions/service.ts");
-    assert.match(source, /input\.viaLeaveBalance !== true && \(candidateRow\.category === "crm" \|\| candidateRow\.category === "crm_half_day"\)/);
+    assert.match(source, /input\.viaLeaveBalance !== true && isLeaveBalanceCategory\(candidateRow\.category\)/);
     assert.match(source, /getLeaveBalanceChargeForCandidate\(input\.candidateId\)/);
     assert.ok(
       source.indexOf("getLeaveBalanceChargeForCandidate(input.candidateId)") < source.indexOf('.upsert(payload, { onConflict: "candidate_id" })'),

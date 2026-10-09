@@ -1,7 +1,9 @@
 // Deductions → "Deduct from leave balance" / "Return to salary" (owner, 2026-10-09).
 //
-// A CRM day or a CRM half day with no record can be taken from the employee's ANNUAL leave instead of
-// from salary. His rulings, in chat the same day:
+// A deduction counted in days can be taken from the employee's ANNUAL leave instead of from salary.
+// It started with CRM and CRM half day and was widened the same day on his word — "also show the
+// deduct from balance in unpaid and insufficient" — to Unpaid Vacation and Insufficient Balance
+// Vacation; `LEAVE_BALANCE_CATEGORIES` in types.ts is the list all four gates read. His rulings:
 //   - annual balance only
 //   - when the balance is shorter than the deduction: take what is there, the rest stays on salary
 //   - the comment is required and the employee reads it exactly as written (no notification)
@@ -25,10 +27,14 @@ import { getLeaveBalanceChargeForCandidate, type LeaveBalanceCharge } from "./le
 import { loadActivePushedLineIdByCandidate } from "./pushed-lines.ts";
 import { assertDeductionsDecisionActor } from "./permissions.ts";
 import { recordDecision } from "./service.ts";
-import type { DeductionsDecision } from "./types.ts";
+import { isLeaveBalanceCategory as categoryTakesLeaveBalance, type DeductionsDecision } from "./types.ts";
 
-/** The categories this button exists for. */
-export const LEAVE_BALANCE_CATEGORIES = ["crm", "crm_half_day"] as const;
+/**
+ * The categories this button exists for live in `types.ts` — the one module here the admin workspace
+ * and the database migration can both be checked against. Re-exported so this file stays the single
+ * import for everything about the charge.
+ */
+export { LEAVE_BALANCE_CATEGORIES, isLeaveBalanceCategory } from "./types.ts";
 
 const DAYS_EPSILON = 0.0005;
 
@@ -236,8 +242,10 @@ async function loadHireDate(employeeHrId: string): Promise<string | null> {
 }
 
 function assertChargeable(candidate: CandidateForCharge) {
-  if (!(LEAVE_BALANCE_CATEGORIES as readonly string[]).includes(candidate.category)) {
-    throw new Error("Validation: only a CRM or CRM half-day deduction can be taken from the leave balance.");
+  if (!categoryTakesLeaveBalance(candidate.category)) {
+    throw new Error(
+      "Validation: only a CRM, CRM half-day, unpaid vacation or insufficient balance vacation deduction can be taken from the leave balance.",
+    );
   }
   if (candidate.unit !== "days") {
     throw new Error("Validation: only a deduction counted in days can be taken from the leave balance.");
@@ -333,7 +341,7 @@ function rethrowRpcError(error: { code?: string; message?: string }): never {
   throw new Error(message);
 }
 
-/** Take a CRM / half-day deduction from the employee's annual leave. Super Admin only. */
+/** Take a deduction from the employee's annual leave. Super Admin only. */
 export async function chargeDeductionToLeaveBalance(input: {
   actor: Pick<AccessContext, "role" | "hrId" | "loginId">;
   candidateId: string;

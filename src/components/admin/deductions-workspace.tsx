@@ -10,6 +10,7 @@ import {
   scaleDeductionAmountToDays,
 } from "@/lib/deductions/calculations.ts";
 import {
+  isLeaveBalanceCategory,
   visibleDeductionsCategories,
   type DeductionsCategory,
 } from "@/lib/deductions/types.ts";
@@ -720,9 +721,13 @@ type LeaveBalancePreviewApi = {
   refusal: string | null;
 };
 
-/** A CRM or CRM half-day deduction counted in days is the only kind that can be taken from leave. */
+/**
+ * Which rows offer the button: one of `LEAVE_BALANCE_CATEGORIES`, counted in days. The list is
+ * imported rather than written again here — the server, the decide guard and the database function
+ * read the same one, and a tab that shows a button the server then refuses is the drift that matters.
+ */
 function canTakeFromLeaveBalance(row: CandidateApiRow): boolean {
-  return (row.category === "crm" || row.category === "crm_half_day") && row.unit === "days";
+  return isLeaveBalanceCategory(row.category) && row.unit === "days";
 }
 
 function daysText(days: number): string {
