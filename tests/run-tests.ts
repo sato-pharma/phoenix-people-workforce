@@ -807,6 +807,7 @@ import { runMarketingVenueMergeTests } from "./marketing-venue-merge.test.ts";
 import { runMarketingVenueMergeRouteTests } from "./marketing-venue-merge-route.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
 import { runMarketingRoiFastAwaitingDataTests } from "./marketing-roi-fast-awaiting-data.test.ts";
+import { runMarketingRoiRefreshScheduleTests } from "./marketing-roi-refresh-schedule.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
 import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
@@ -4034,6 +4035,10 @@ await runTest("marketing ROI Tracker (composes the authoritative engine, adds no
 await runTest(
   "the fast ROI RPC reads awaiting_data while a window is still open — mirroring resolveRoiResultStatus, filtering on the status it computes, and never counting an open campaign as spend at risk",
   runMarketingRoiFastAwaitingDataTests,
+);
+await runTest(
+  "the ROI fact rebuild is scheduled in a migration — by name, hourly at :20, guarded on pg_cron, refusing a second caller, and calling a function that skips an overlapping run",
+  runMarketingRoiRefreshScheduleTests,
 );
 await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
 
