@@ -27,7 +27,20 @@ import {
  * «طاي جروب» reaches that ONE business on its SIX accounts and no neighbour at all, which is why
  * the stem is TWO words — «طاى» is a substring of «مطاى», the town Matay, in 60+ Minia pharmacy
  * names. All six sell from AB2 (Alex Center) alone, so the split deals them into thirds across
- * Alexandria; 11 rows and 20,025.30 EGP actually change hands, every one September 2026 CNS.
+ * Alexandria — AB1 Alex East, AB2 Alex Center, AB3 Alex West, evenly, because the banded rule is El
+ * Qema on Pedia alone and this is neither.
+ *
+ * 🔴 RE-MEASURED LATE THE SAME NIGHT, AFTER THE LAST BOOKS LANDED, AND BOTH HALVES OF THAT SENTENCE
+ * HAD MOVED. September 2026 now holds **20 CNS rows / 460 units / 31,027.80 EGP** across four of the
+ * accounts, of which two thirds — **20,685.20 EGP** — deals out to Alex East and Alex West. The
+ * «11 rows and 20,025.30 EGP» reading was taken at 16:40 Cairo and three books landed after it.
+ *
+ * 🔴 AND A FIFTH SLICE APPEARED THAT IS NOT CNS. «طاى جروب - الاسكندرية» (22197684, EP-PHS) filed
+ * **4 rows / 380 units / 79,515.00 EGP on Head Office** — 72% of everything the stem now reaches. It
+ * classifies as a store and still moves nothing, because `isSplitEligibleLine("Head Office")` is
+ * false; the danger is in the reporting, not the split. Head Office is in neither weekly nor monthly
+ * tracking, so a total quoted off this stem without filtering the line overstates the ruling's reach
+ * more than threefold.
  *
  * This file exists for the NEIGHBOURS. `STORE_OVERRIDE_NAMES` is the one list that can CREATE a
  * warehouse from a name — `PHARMACY_OVERRIDE_CHAINS` can only ever refuse one — so an over-wide
@@ -184,19 +197,36 @@ const MUST_STAY_PHARMACY: ReadonlyArray<readonly [string, string, string]> = [
  *
  * Measured on production before the word was written: تامين reaches 26 accounts, every one of them
  * the health-insurance authority, a branch, a depot or a clinic of it, or the unified-procurement
- * authority buying for it; NOT ONE is a wholesaler. Seven of the 26 split, all seven on مخزن — his
- * three plus four more of exactly the same kind, which the ruling therefore reaches too.
+ * authority buying for it; NOT ONE is a wholesaler. Seven of the 26 were measured as splitting, all
+ * seven on مخزن — his three plus four more of exactly the same kind, which the ruling therefore
+ * reaches too.
+ *
+ * 🔴 RE-MEASURED THROUGH THE CLASSIFIER ITSELF LATE THE SAME NIGHT, AND IT IS **NINE** OF THE 26,
+ * NOT SEVEN — AND THE TWO IT MISSED ARE A SPELLING, NOT A NEW CUSTOMER. `تأمين` with a hamza does
+ * not match a raw `like '%تامين%'`: the classifier normalizes أ/إ/آ/ى/ة before it matches and a SQL
+ * sweep does not, so the audit's own query could not see them. The two are 781
+ * «هيئة الشراء الموحد - للتأمين الصحي المنطقة الثانية حلوان- المخزن الاقليمى» — **1,827 units /
+ * 65,596.65 EGP, the LARGEST of all nine**, July and August only on RM-T out of Helwan-Maadi, so it
+ * is published and restates nothing — and 3430120 كفر الشيخ, which landed at 10:44 Cairo on the day
+ * itself and is live. Both are refused correctly; only the count and this list were wrong. Normalize
+ * the name in SQL (`translate(name, 'ىأإآة', 'ياااه')`) or the sweep under-reports.
  *
  * WHAT IT MOVES. The never-store words are invisible to `legacyIsStoreCustomer`, so every month
- * before the cutover is judged by the old rule and nothing published restates. In a gated period
- * these seven hold exactly two rows, both September 2026 CNS: 23495 in D24 Sharkia 1 (249 units,
- * 8,889.30 EGP) and 64845 in D11 Qalubeya (200 units, 7,140.00 EGP). Qalubeya is a one-area city,
- * so its split was already a no-op; Sharkia has two areas, so what actually changes hands is
- * 124.5 units and 4,444.65 EGP returning from Sharkia 2 to Sharkia 1. The other five carry no row
- * at or after the cutover at all.
+ * before the cutover is judged by the old rule and nothing published restates. In a gated period the
+ * nine hold **three** rows, every one September 2026 CNS:
+ *
+ *   23495    D24 Sharkia 1        249 units   8,889.30 EGP   2-area city — half stays put
+ *   64845    D11 Qalubeya         200 units   7,140.00 EGP   1-area city — the split was a no-op
+ *   3430120  D16 Kafr El-Sheikh 1 165 units   5,680.13 EGP   2-area city — half stays put
+ *
+ * So what actually changes hands is **207 units / 7,284.71 EGP** held in the rep's own area instead
+ * of dealt across the city: 124.5 units / 4,444.65 EGP that would have gone to Sharkia 2 and
+ * 82.5 units / 2,840.06 EGP that would have gone to Kafr El-Sheikh 2. Two more September rows reach
+ * the word and were never splitting anyway — 21000166 سوهاج and 512 بنى سويف carry no store word at
+ * all — so the ruling's credit is the 207 units, never the 706 the word touches.
  */
 const GOVERNMENT_HEALTH_INSURANCE_DEPOTS: ReadonlyArray<readonly [string, string, string]> = [
-  // The three he named. 23495 and 64845 are the only two with a row in a gated period.
+  // The three he named. 23495, 64845 and 3430120 below are the three with a row in a gated period.
   ["فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي", "23495", "EG-HOS"],
   // Its own spelling runs the dash onto the word with no space before it — a search for the spaced
   // form misses it, which is why it was first reported as two depots and not three.
@@ -208,6 +238,11 @@ const GOVERNMENT_HEALTH_INSURANCE_DEPOTS: ReadonlyArray<readonly [string, string
   ["فرع شمال الصعيد - المخزن الرئيسي بنى سويف - تامين صحي", "66085", "EG-HOS"],
   ["فرع شمال شرق الدلتا- مخزن ادوية الطلبة الرئيسى بجديلة - تامين الصحي", "139359", "EG-HOS"],
   ["فرع وسط الصعيد - مخزن العاشر من رمضان سوهاج - تامين صحي", "139062", "EG-HOS"],
+  // The two the audit's own SQL could not see, because they spell it «تأمين» with a hamza — added
+  // once the classifier was asked instead of a `like`. 781 is the largest of the nine and sold only
+  // in published months; 3430120 is the third live row, out of Kafr El-Sheikh 1.
+  ["هيئة الشراء الموحد - للتأمين الصحي المنطقة الثانية حلوان- المخزن الاقليمى", "781", "RM-T"],
+  ["هيئه الشراء الموحد - الهيئه العامه للتامين الصحى - فرع كفر الشيخ - المخزن الرئيسى بفوه", "3430120", "RM-T"],
 ];
 
 /**
