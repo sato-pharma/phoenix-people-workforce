@@ -6,6 +6,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import {
   parseCustomerPhone,
   parsePharmacyPin,
+  PLACE_MAX_ACCURACY_METERS,
   ROUGH_PIN_AT_THE_PHARMACY,
   VISIT_MAX_ACCURACY_METERS,
 } from "../src/lib/phoenix-crm/entry-rules.ts";
@@ -91,7 +92,21 @@ export function runPhoenixCrmPharmacyPinTests() {
 
     // The ONE refusal: a reading too rough to be a place at all. The module's own wider line, the
     // same 500 m a visit is allowed, because a rep standing inside a shop is not at a signboard.
-    assert.equal(VISIT_MAX_ACCURACY_METERS, 500, "the module's wider accuracy line");
+    // 🔴 THE LINE IS THE OWNER'S OWN, CONFIRMED 2026-10-09 ("keep the 500 m limit on a pharmacy
+    // pin") when he was asked whether a pin should instead be held to a validated place's 250 m. A
+    // session reading the two limits as an inconsistency must not tighten this one: the refusal
+    // exists only so a phone on APPROXIMATE location (a flat ~2,000 m) cannot write a brick the rep
+    // is not standing in, and it never blocks the save.
+    assert.equal(
+      VISIT_MAX_ACCURACY_METERS,
+      500,
+      "the module's wider accuracy line, and the owner's own confirmed choice for a pharmacy pin (2026-10-09) — never a validated place's 250 m",
+    );
+    assert.notEqual(
+      VISIT_MAX_ACCURACY_METERS,
+      PLACE_MAX_ACCURACY_METERS,
+      "a pharmacy pin is deliberately NOT held to the line a validated place is held to",
+    );
     assert.ok(parsePharmacyPin(captured({ accuracyMeters: 500 })).ok, "500 m is inside the line");
     const rough = parsePharmacyPin(captured({ accuracyMeters: 900 }));
     assert.ok(!rough.ok, "and 900 m is not a pharmacy's place");

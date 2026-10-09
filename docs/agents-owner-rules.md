@@ -4788,8 +4788,31 @@ brick, government. Area, brick, and government, yes."*
   pharmacy without it.
 - **Nothing changed** for a doctor's primary pharmacy or for the pharmacies a doctor's visit names.
 
+### The 500 m limit is his, confirmed the same day
+
+The one judgement call the build left open was whether a pharmacy pin should keep the module's
+existing accuracy line or take the tighter one a validated place is held to. It was put to him twice
+and he answered on the second asking, 2026-10-09: *"keep the 500 m limit on a pharmacy pin"*. So the
+limit stays `VISIT_MAX_ACCURACY_METERS` — 500 m, the visit line — and **not** a place's
+`PLACE_MAX_ACCURACY_METERS` of 250 m.
+
+The reasoning behind the recommendation he accepted: a rep pinning a pharmacy is standing inside a
+shop, not at a signboard being validated, so the tighter line would cost him the pin indoors for no
+gain. The limit is not there to judge the rep at all — it exists because a phone left on APPROXIMATE
+location reports a flat ~2,000 m, which resolves to a different brick and would be read months later
+as that pharmacy's own brick. And it never blocks the work: the refusal is about that one reading and
+its own words offer to save the pharmacy without a location. An UNKNOWN accuracy still pins, because
+refusing it would cost the pin on every phone that does not report one.
+
+**So nothing was changed in the code for this ruling** — it confirmed the behaviour that shipped in
+#5652, and this section exists so no later session reads the two different limits as an
+inconsistency and "fixes" the pharmacy down to 250 m. `tests/phoenix-crm-pharmacy-pin.test.ts` names
+the ruling where it asserts the line, so a session that tightens it reads whose decision it is in the
+failure itself.
+
 **What must NOT be "fixed".** Never make either one required. Never measure a pharmacy visit against
 the pin, never let it gate or flag anything, and never show a rep an accuracy or a brick distance.
+Never tighten the 500 m line to a validated place's 250 m — it is his own confirmed choice, above.
 Never resolve the geography a second time anywhere — `tests/phoenix-crm-place-location-frozen.test.ts`
 pins `resolvePinGeography` as the file's only caller of the address service for exactly that reason.
 
