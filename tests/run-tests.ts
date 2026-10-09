@@ -402,6 +402,7 @@ import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-an
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
 import { runDeductionsHalfDayTests } from "./deductions-half-day.test.ts";
+import { runDeductionsDmVisitIdentityTests } from "./deductions-dm-visit-identity.test.ts";
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
 import { runDeductionsCrmVacationEmploymentJoinTests } from "./deductions-crm-vacation-employment-join.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
@@ -3445,6 +3446,10 @@ await runTest(
 await runTest(
   "deductions half day (a morning or afternoon with nothing on file is half a day; every check-in, save time, vacation, plan and request clears it first)",
   runDeductionsHalfDayTests,
+);
+await runTest(
+  "deductions DM visit identity (a district manager is credited by EITHER id, on his own single visit or on a double — the mirror leaves the hr id null for weeks and three managers were charged a full day each inside that window)",
+  runDeductionsDmVisitIdentityTests,
 );
 await runTest(
   "deductions vacation ledger guard (the HR-request path must not re-charge a day a CRM-signal candidate already claims)",

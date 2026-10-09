@@ -49,7 +49,14 @@ import {
   ledgerRowStillClaimsItsDaysBySource,
   type LedgerClaimRow,
 } from "../conflict.ts";
-import { combineLeaveParts, fullDayCheckLeaveVerdict, leavePartOf, type LeavePart } from "../half-day-rule.ts";
+import {
+  buildHalfDayIdentity,
+  combineLeaveParts,
+  fullDayCheckLeaveVerdict,
+  leavePartOf,
+  resolveSlot,
+  type LeavePart,
+} from "../half-day-rule.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 // The rep pipeline's own company-wide CRM data-gap detector, reused here so both
@@ -275,27 +282,75 @@ export async function collectDsmNoRecordCandidates(input: {
   // comes back with `agent_hr_id` nulled, so the loop below credits the partner and nobody else.
   const rows = await scanVisitsForRangeCreditingPartners<{
     agent_hr_id: string | null;
+    agent_crm_id: number | string | null;
     double_hr_id: string | null;
+    double_crm_id: number | string | null;
     double2_hr_id: string | null;
+    double2_crm_id: number | string | null;
     visit_date: string | null;
   }>({
     dateFrom: workingDays[0]!,
     dateTo: workingDays[workingDays.length - 1]!,
-    columns: "agent_hr_id, double_hr_id, double2_hr_id, visit_date",
+    columns:
+      "agent_hr_id, agent_crm_id, double_hr_id, double_crm_id, double2_hr_id, double2_crm_id, visit_date",
   });
+
+  // 🔴 EITHER ID CREDITS THE DAY — THE HR ID ALONE IS NOT ENOUGH (owner, 2026-10-09: the module
+  // "must read both dm single or double visit").
+  //
+  // The mirror resolves `*_hr_id` asynchronously and leaves it NULL for weeks, while `*_crm_id` is
+  // on the row from the moment it is written (half-day-rule.ts records 2,050 such rows since June).
+  // This connector read the hr id columns alone, so during that window a manager who was in the
+  // field read as ABSENT — and absent here means a FULL day charged, with no approval step, because
+  // these rows publish themselves unless somebody marks them "Do Not Take Action".
+  //
+  // Measured on production 2026-10-09: of 52 flagged DSM no-record days, THREE are days the manager
+  // is now provably credited on as a double partner — Sameh Shabaan El Hoseiny 2026-07-06 (7 rows on
+  // Ahmed Essam's visits), Taha Mohamed AboElftouh 2026-07-13 (8 rows), Yehya Mohamed Kamal
+  // 2026-07-21 (10 rows). Every one of those rows re-synced on 2026-09-20 17:17 UTC, five weeks
+  // AFTER the candidates were created on 2026-08-11, which is the backfill arriving too late.
+  //
+  // The resolver is `resolveSlot`, shared with the Half Day (CRM) connector so the two cannot
+  // disagree about who was on a visit. An AMBIGUOUS crm id (two people claim it) credits EVERY
+  // claimant's day rather than nobody's: the only thing a day can do here is REMOVE a charge, and
+  // on a contested identity not charging is the safe direction to be wrong in.
+  //
+  // 🔴 THE MAP IS BUILT FROM THE FEED'S OWN ROWS AND NEVER FROM `employees.crm_id`, which the rule
+  // below this block has forbidden since 2026-08-04: on 3 reused CRM logins that column names a
+  // RESIGNED person while the feed resolves the current holder correctly, so joining it would
+  // attribute a working rep's day to a leaver. A row that carries BOTH ids teaches the pairing, and
+  // the rows carrying only the crm id are then resolved from it.
+  const identity = buildHalfDayIdentity([
+    ...rows.map((row) => ({ hrId: row.agent_hr_id, crmId: row.agent_crm_id })),
+    ...rows.map((row) => ({ hrId: row.double_hr_id, crmId: row.double_crm_id })),
+    ...rows.map((row) => ({ hrId: row.double2_hr_id, crmId: row.double2_crm_id })),
+  ]);
+
   const activity = new Set<string>();
   const anySignal = new Set<string>();
+  const credit = (compact: string, date: string) => {
+    activity.add(`${compact}:${date}`);
+    anySignal.add(compact);
+  };
   for (const row of rows) {
     const date = String(row.visit_date ?? "").slice(0, 10);
     if (!date) continue;
-    // BOTH partner slots. A chain visit's second manager stands in slot 2, and a manager read as
-    // ABSENT here is a manager this category DEDUCTS FROM — the same reasoning as the comment above,
-    // one slot further along.
-    for (const raw of [row.agent_hr_id, row.double_hr_id, row.double2_hr_id]) {
-      const compact = compactDeductionsHrId(String(raw ?? ""));
-      if (!compact) continue;
-      activity.add(`${compact}:${date}`);
-      anySignal.add(compact);
+    // All three slots. The agent slot is the manager's OWN single visit, the other two are the
+    // visits he is credited on as a partner — a chain visit's second manager stands in slot 2 — and
+    // a manager read as ABSENT here is a manager this category DEDUCTS FROM.
+    const slots: Array<{ hr: unknown; crm: unknown }> = [
+      { hr: row.agent_hr_id, crm: row.agent_crm_id },
+      { hr: row.double_hr_id, crm: row.double_crm_id },
+      { hr: row.double2_hr_id, crm: row.double2_crm_id },
+    ];
+    for (const slot of slots) {
+      const resolved = resolveSlot(slot.hr, slot.crm, identity);
+      if (resolved.ambiguous) {
+        for (const claimant of resolved.claimants) credit(claimant, date);
+        continue;
+      }
+      if (!resolved.compact) continue;
+      credit(resolved.compact, date);
     }
   }
 

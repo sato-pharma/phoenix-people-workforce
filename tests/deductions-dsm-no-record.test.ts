@@ -205,11 +205,24 @@ export async function runDeductionsDsmNoRecordTests(): Promise<void> {
   // (1391 Soad Atef vs Tayseer Khaled, 1399 Mohamed Yasser vs Nada Elsharkawy,
   // 1536 Essam Youssef vs Mayar Tarek). Joining on it silently attributes a
   // working rep's activity to a leaver.
+  //
+  // Narrowed 2026-10-09 from a blanket ban on the substring `crm_id`. The connector now resolves a
+  // slot by the feed's OWN `agent_crm_id`/`double_crm_id`/`double2_crm_id` when the hr id has not
+  // been backfilled yet, which is the fix for three managers charged a full day each while provably
+  // in the field. What the rule actually protects — never pairing a crm id to a person through the
+  // DIRECTORY — is unchanged and is asserted below in both spellings it could arrive in.
   {
     assert.doesNotMatch(
       code,
+      /employees\.crm_id|crm_id[^,)]*\bfrom\b[^;]*employees/i,
+      "this connector must never pair a crm id to a person through employees.crm_id — on reused CRM logins that column names a RESIGNED person while the feed resolves the current holder correctly",
+    );
+    const employeeSelect = /\.from\("employees"\)[\s\S]{0,400}?\.select\(([^)]*)\)/.exec(code);
+    assert.ok(employeeSelect, "the employee directory read must still be findable");
+    assert.doesNotMatch(
+      employeeSelect![1]!,
       /crm_id/,
-      "this connector must resolve people through the feed's own agent_hr_id/double_hr_id, never by joining employees.crm_id",
+      "the employee directory read must not fetch crm_id — fetching it is the first half of the join this rule forbids",
     );
   }
 
