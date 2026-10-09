@@ -298,3 +298,70 @@ export function maskSourceCoverage<T extends SourceCoverageLike>(coverage: T, vi
     sources: coverage.sources.map(relabel),
   } as T;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The Source of Sales dashboard's BATCH COVERAGE banner — the fourth surface
+//
+// 🔴 `maskPortalSosDashboard` ABOVE NEVER SAW THIS ONE. It masks four fields; the coverage warning
+// is a SENTENCE in `insights`, assembled from the batch-coverage report, and it names the single
+// costliest gap by estimated value. Measured on production 2026-10-09: once EPDA-BULK's merged July
+// and August stop counting as holes (sos-coverage.ts), the costliest remaining gap on Pedia is
+// El Qema's — seven absent months at roughly 10.6M EGP — so the fix that stopped over-reporting one
+// hole would have written "El Qema is missing from …" onto the one screen thirteen of the nineteen
+// roles can open.
+//
+// Same owner decision as the closing workbook's distributor sheets: KEEP THE MONEY, DROP THE NAME.
+// Every period list, estimate and count is untouched, so "is this month complete?" still reads true.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The distributor-bearing fields of a SoS batch-coverage report, structurally. */
+type SosCoverageLike = {
+  distributors: readonly {
+    distributorCode: string;
+    name: string;
+    mergedInto: string | null;
+    mergedIntoCode: string | null;
+  }[];
+  mergedSources: readonly { distributorCode: string; name: string; into: string; intoCode: string }[];
+  periods: readonly { missingDistributors: readonly { code: string; name: string }[] }[];
+};
+
+/**
+ * Relabel every masked distributor out of a SoS batch-coverage report, unless this viewer may reveal.
+ *
+ * 🔴 CALL IT BEFORE `buildInsights`, never after. The banner is free text by then — the name sits
+ * inside a sentence beside a value and a month list that must stay exactly as they are, and there
+ * is nothing structural left to recognise.
+ *
+ * Three fields carry identity, not one: the ranked gap rows, the merge explanations, and each
+ * month's missing-distributor list. The absorbing source of a merge is relabelled too — it is named
+ * in the sentence that explains the quiet months.
+ */
+export function maskSosCoverageReport<T extends SosCoverageLike>(coverage: T, viewer: SourceMaskViewer): T {
+  if (canRevealClosingSource(viewer)) return coverage;
+  return {
+    ...coverage,
+    distributors: coverage.distributors.map((row) => {
+      const named = isMaskedCode(row.distributorCode)
+        ? { ...row, distributorCode: MASKED_SOURCE_LABEL, name: MASKED_SOURCE_LABEL }
+        : row;
+      return isMaskedCode(named.mergedIntoCode)
+        ? { ...named, mergedInto: MASKED_SOURCE_LABEL, mergedIntoCode: MASKED_SOURCE_LABEL }
+        : named;
+    }),
+    mergedSources: coverage.mergedSources.map((row) => {
+      const named = isMaskedCode(row.distributorCode)
+        ? { ...row, distributorCode: MASKED_SOURCE_LABEL, name: MASKED_SOURCE_LABEL }
+        : row;
+      return isMaskedCode(named.intoCode)
+        ? { ...named, into: MASKED_SOURCE_LABEL, intoCode: MASKED_SOURCE_LABEL }
+        : named;
+    }),
+    periods: coverage.periods.map((period) => ({
+      ...period,
+      missingDistributors: period.missingDistributors.map((entry) =>
+        isMaskedCode(entry.code) ? { ...entry, code: MASKED_SOURCE_LABEL, name: MASKED_SOURCE_LABEL } : entry,
+      ),
+    })),
+  } as T;
+}
