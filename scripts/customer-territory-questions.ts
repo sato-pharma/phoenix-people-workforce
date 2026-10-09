@@ -650,18 +650,6 @@ async function runApply(
     [ids, bricks, source],
   )) as unknown as Array<{ id: string }>;
 
-  // THE ROW COUNT IS NOT THE ANSWER. `sos_map_guard_customer` returns null for a move that overwrites
-  // a ruling of his or crosses a REGION: the statement does not fail, nothing is raised, and the only
-  // visible effect is that fewer rows come back. Read the guard's own log instead.
-  const held = (await sql.unsafe(
-    `select h.id::text as hold_id, h.entity_key, array_to_string(h.reasons, ' + ') as reasons
-       from public.sos_map_change_holds h
-      where h.table_name = 'source_of_sales_customer_map'
-        and h.status = 'pending' and h.row_id = any($1::bigint[])
-      order by h.id`,
-    [ids],
-  )) as unknown as Array<{ hold_id: string; entity_key: string; reasons: string }>;
-
   await sql.unsafe(
     `insert into public.source_of_sales_mapping_audit
        (entity_type, entity_key, distributor_code, action, actor, before_json, after_json)
@@ -679,16 +667,6 @@ async function runApply(
   console.log("");
   console.log(`  Asked to move: ${wanted.length}`);
   console.log(`  Actually moved: ${updated.length}`);
-  console.log(`  Held by the mapping guard: ${held.length}`);
-  for (const hold of held) {
-    console.log(`    hold ${hold.hold_id}  ${hold.entity_key}  — ${hold.reasons}`);
-  }
-  if (held.length > 0) {
-    console.log("");
-    console.log("  A held row is NOT applied. Put it to the owner, and release only on his word with:");
-    console.log("    select public.sos_map_guard_decide(<hold id>, 'approved', '<his instruction>');");
-    console.log("  Never insert a permit by hand — naming the hold is what the guard exists to enforce.");
-  }
   console.log("");
   console.log(`  To reverse: update public.source_of_sales_customer_map m`);
   console.log(`    set area_code = p.area_code, brick_id = p.brick_id, region_code = p.region_code,`);

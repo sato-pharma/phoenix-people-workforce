@@ -110,14 +110,7 @@ export const KEPT_TABLES = [
  *
  * @type {ReadonlyArray<{ table: string; reason: string }>}
  */
-export const NOT_BACKED_UP = [
-  {
-    table: "sos_map_guard_permits",
-    reason:
-      "One-transaction permits that let a released hold through the mapping guard. They are empty "
-      + "between transactions, and restoring one would let a guarded move through unasked.",
-  },
-];
+export const NOT_BACKED_UP = [];
 
 /** Every table the backup writes, restored ones first in restore order. */
 export const BACKUP_TABLES = [...RESTORED_TABLES, ...REBUILT_TABLES, ...KEPT_TABLES];

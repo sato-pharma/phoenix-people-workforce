@@ -2857,19 +2857,6 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     excludedRoles: ["SFE Manager"],
     permissions: [{ action: "read", resource: "sales" }],
   },
-  {
-    href: "/sales/mapping-guard",
-    icon: ShieldAlert,
-    label: "Mapping Guard",
-    description: "Customer, brick and area re-mappings stopped for review.",
-    // Same Super-Admin/system-scope-only boundary as Mapping Database above, and for a stronger
-    // reason: releasing a hold is an owner decision by construction, since the guard fires
-    // precisely when somebody else's change was about to replace one of his. `sales:import` is held
-    // by Super Admin and SFE Manager, so excluding SFE Manager leaves exactly Super Admin. The page
-    // enforces the same boundary itself — this list is UX, that gate is the security boundary.
-    excludedRoles: ["SFE Manager"],
-    permissions: [{ action: "import", resource: "sales" }],
-  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Master Data hub (app/(admin)/admin/master-data/page.tsx) ────────────────────
@@ -5024,7 +5011,6 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         hrefs: [
           "/sales/mapping-database",
           "/sales/database-mapping",
-          "/sales/mapping-guard",
           "/sales/territory-management",
           "/sales/distributor-profiles",
         ],

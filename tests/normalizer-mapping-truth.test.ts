@@ -247,31 +247,9 @@ function theHealStepsAroundALockedMonth() {
   }
 }
 
-function aSwitchedOffRowIsNotARegionMove() {
-  const { file, body } = effectiveDefinition("sos_map_guard_customer");
-  // The headline: the region reason sits inside the live-row check.
-  assert.match(body,
-    /if old\.active is not false then v_old_rgn := public\.sos_map_region_of_area\(old\.area_code\); v_new_rgn := public\.sos_map_region_of_area\(new\.area_code\); if v_old_rgn is distinct from v_new_rgn then v_reasons := array_append\(v_reasons, format\('moves the customer from region %s to %s'/,
-    `sos_map_guard_customer (latest: ${file}) must judge a region move only for a LIVE row - a switched-off row's brick is discarded, `
-      + "so re-mapping it is a new mapping and was being held and silently dropped");
-  // The owner's decisions are still held, switched on or not.
-  assert.match(body,
-    /if old\.source ~ '\^\(owner-\|final-new-\)' or old\.source = 'sheet-verified' then v_reasons := array_append\(v_reasons, 'overwrites a mapping decision of yours'\); end if; if old\.active is not false then/,
-    `sos_map_guard_customer (latest: ${file}): overwriting a decision of the owner's must still be held, whether or not the row is switched on`);
-  // A held change is still logged and still dropped; an applied one is still logged.
-  assert.match(body, /values \(tg_table_name, new\.id, v_key, 'update', 'held', v_reasons, to_jsonb\(old\), to_jsonb\(new\), v_actor\)/,
-    `sos_map_guard_customer (latest: ${file}): a held change must still be logged`);
-  assert.match(body, /current_user, v_actor\); return null; end;/, `sos_map_guard_customer (latest: ${file}): a held change must still be dropped`);
-  assert.match(body, /values \(tg_table_name, new\.id, v_key, 'update', 'applied', to_jsonb\(old\), to_jsonb\(new\), v_actor\); return new;/,
-    `sos_map_guard_customer (latest: ${file}): an applied change must still be logged`);
-  assert.match(migration(file), /revoke execute on function public\.sos_map_guard_customer\(\) from public, anon, authenticated;/,
-    `${file}: the guard function stays out of reach of the browser roles`);
-}
-
 export function runNormalizerMappingTruthTests() {
   aHandChangedPickSavesNoAiConfidence();
   onlyTrustedMappingsTeachTheFreeSteps();
   aSavedMappingKeepsTheNameAndAddress();
   theHealStepsAroundALockedMonth();
-  aSwitchedOffRowIsNotARegionMove();
 }

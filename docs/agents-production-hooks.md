@@ -628,6 +628,8 @@ as a data-quality gap. They are not one. Read `team_id` and join.
 
 ## New hook — a held re-mapping is dropped with no error (2026-09-11)
 
+> **RETIRED 2026-10-10.** The owner removed the Mapping Guard completely (see `docs/source-of-sales-decisions.md`, "The Mapping Guard retirement"): the triggers, the decide functions and the permits table are dropped, so nothing below is live. It stays as the account of why the guard once existed.
+
 `sos_map_guard_customer` (PR #3647) is a `BEFORE INSERT OR UPDATE OR DELETE` trigger on
 `public.source_of_sales_customer_map`. It holds a move when either of two things is true: the row's
 existing `source` matches `^(owner-|final-new-)` or equals `sheet-verified`, or
@@ -707,7 +709,7 @@ and the diagnosis traps that nearly sent each the wrong way — is in
 - **A `not_found` on `marketing_pharmacy_distributor_codes` means "unresolved when the resolver LAST RAN", not unmappable** — `mapped_area_code`/`reference_status` are a CACHE, and `master_resolved_at` can PREDATE the `source_of_sales_customer_map` row that answers it. **Join the live map before telling the owner a venue's territory cannot be recovered**, or you will put a question to him that production already answers. Same shape as `au.f_monthly_achievement` in §2.1 — a precomputed answer that goes stale with no error and no staleness marker.
 - 🔴 **A shared distributor customer code CANNOT prove two direct-order venues are the same — and the cleanup's own standard asks for exactly that.** `confirmDirectOrderCleanup` states *"identity is proven by a shared distributor customer code — never by a similar name"*, but every distributor issues codes from its OWN catalogue, and `direct_order_pharmacy_distributor_codes` exists precisely so ONE venue holds MANY. Two rows sourced from two distributors therefore **can never share one**, so on the commonest duplicate shape the test does not return false — **it cannot fire at all**, and "no shared code" reads as *not duplicates*. Satisfy the standard's INTENT instead: byte-identical order lines from one DM in one brick, or two distributors independently recording the same building number. **Never merge on name similarity, and never on your own inference — put the pair to the owner.**
 - 🔴 **A `teams` row belongs to an AREA but is NAMED for a REGION, and since Delta (3) one area sits in different regions on different LINES — so an area holds SEVERAL teams, and RENAMING one corrupts the lines that were right.** Resolve from the occupant's SEAT region (`au.v_org_tree.region_name`), never from the area's existing team: the obvious move files a Delta (3) rep under Delta (1) and reads as correct because the area matches. `team_name`/`department_name` are DEAD (0 of 107) — read `team_id`.
-- 🔴 **`sos_map_guard_customer` DROPS a held customer-map move SILENTLY — the `UPDATE` returns FEWER ROWS and raises nothing.** It holds any move that overwrites a ruling of his or crosses a REGION, so a bulk remap reporting "111 applied" can mean 99. Read `sos_map_change_holds`, never the row count, and release ONLY via `sos_map_guard_decide` — minting your own permit is the one move it exists to catch.
+- ⏸️ **RETIRED 2026-10-10 — `sos_map_guard_customer` no longer exists, so a customer-map `UPDATE` is never held or dropped.** The trap below is history; see "The Mapping Guard retirement" in `docs/source-of-sales-decisions.md`.
 
 **Which environment the code thinks it is in**
 

@@ -85,39 +85,26 @@ function theRpcWrapperIsNotExecutableByABrowserRole() {
 }
 
 /**
- * 4. The route's ORDER, which is the whole reason the sweep lives on this clock rather than inside
- *    the application's mapping write paths. The alert goes first and the sweep sits outside the dead
- *    man's switch: the territory re-stamp already cost this repo 14 hours of false "stranded" alarms
- *    by pinging behind a slower tail.
+ * 4. The route is the sweep's clock, and its liveness ping sits on the sweep itself. The Mapping Guard
+ *    alert that used to share this route is retired, so nothing may queue behind or ahead of the sweep.
  */
-function theAlertGoesOutBeforeTheSweepAndOutsideTheSwitch() {
+function theRouteWrapsOnlyTheSweepAndNamesWhatItRefreshed() {
   const route = readFileSync(ROUTE, "utf8");
 
   const switchAt = route.indexOf("withDeadMansSwitch(");
-  const sweepAt = route.indexOf("refreshStaleAttributionPeriods(");
-  assert.notEqual(switchAt, -1, "the route must still wrap the notify in its dead man's switch");
+  const sweepAt = route.indexOf("refreshStaleAttributionPeriods()");
+  assert.notEqual(switchAt, -1, "the route must still ping the dead man's switch");
   assert.notEqual(sweepAt, -1, "the route must run the attribution freshness sweep");
+  assert.ok(sweepAt > switchAt, "the sweep is the work the dead man's switch wraps");
+  assert.ok(!route.includes("runMappingGuardNotify"), "the retired Mapping Guard alert must not come back");
   assert.ok(
-    switchAt < sweepAt,
-    "the notify must complete before the sweep starts — a held change means the map is refusing "
-      + "writes, and that alert must never queue behind a rollup refresh",
-  );
-
-  // The sweep must not be inside the switch's callback: the ping fires when the wrapped work ends.
-  const wrapped = route.slice(switchAt, route.indexOf("\n", route.indexOf("runMappingGuardNotify()", switchAt)));
-  assert.ok(
-    !wrapped.includes("refreshStaleAttributionPeriods"),
-    "the sweep must sit OUTSIDE withDeadMansSwitch — a liveness ping behind a slower tail is what "
-      + "reported a healthy territory re-stamp as stranded for 14 hours on 2026-09-04",
-  );
-  assert.ok(
-    /attributionPeriodsRefreshed: freshness\.refreshed/.test(route),
+    /attributionPeriodsRefreshed: freshness.refreshed/.test(route),
     "the response must name the periods refreshed — a sweep nobody can see is indistinguishable "
       + "from one that never ran",
   );
 }
 
-/** 5. A failed refresh must never turn a delivered alert into a 500. */
+/** 5. A failed refresh must never turn the clock's run into a 500. */
 function aFailedSweepCannotFailTheAlert() {
   const sweepSource = readFileSync(MODULE, "utf8");
   assert.ok(
@@ -139,6 +126,6 @@ export function runAttributionFreshnessSweepTests() {
   stalenessIsDecidedByTheFingerprintReadOnce();
   theSweepCannotReachAPublishedMonthsSalesRows();
   theRpcWrapperIsNotExecutableByABrowserRole();
-  theAlertGoesOutBeforeTheSweepAndOutsideTheSwitch();
+  theRouteWrapsOnlyTheSweepAndNamesWhatItRefreshed();
   aFailedSweepCannotFailTheAlert();
 }

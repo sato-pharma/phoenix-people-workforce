@@ -2007,8 +2007,6 @@ import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
 import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test.ts";
 import { runDistributorUploadNudgeTests } from "./distributor-upload-nudge.test.ts";
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
-import { runSosMappingGuardTests } from "./sos-mapping-guard.test.ts";
-import { runMappingGuardSheetTests } from "./mapping-guard-sheet.test.ts";
 import { runAttributionFreshnessSweepTests } from "./attribution-freshness-sweep.test.ts";
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
@@ -8476,16 +8474,6 @@ await runTest(
 );
 
 await runTest("leave request codes (EXC-/VAC- stored, unique, backfilled, immutable)", runLeaveRequestCodesTests);
-
-await runTest(
-  "the mapping guard holds a re-mapping that overwrites his decision or crosses a region, and tells him once per batch",
-  runSosMappingGuardTests,
-);
-
-await runTest(
-  "the held-changes sheet exports the geography, reads answers by header, previews before writing, and writes only through the guard's own decision",
-  runMappingGuardSheetTests,
-);
 
 await runTest(
   "a mapping change heals the attribution rollup on the mapping clock, and the sweep cannot reach a published month",

@@ -146,3 +146,23 @@ Recorded so nobody re-opens them. All checked against production:
 - "Weekly Sales still scopes DM/RM by region label" — **already seat-based**.
 - The backfill RPC caused the 1,698 stale rows — **no**; it only fills NULL bricks, never re-points.
   That backlog belongs to the reconcile path.
+
+## The Mapping Guard retirement (owner, 2026-10-10)
+
+The owner removed the Mapping Guard completely ("drop this module … retire and kill it") after its holds
+kept disagreeing with the mapping he was uploading. What went, in one PR:
+
+- the `/sales/mapping-guard` screen, its API routes and the held-changes spreadsheet;
+- the database triggers on the customer map, the bricks and the areas, the `sos_map_guard_*` functions
+  and the `sos_map_guard_permits` table;
+- the `sos_mapping_guard_alert` email-center audience.
+
+What stays: `sos_map_change_holds` (3,468 rows) and `sos_map_change_log` (24,292 rows) as history, because
+production has no point-in-time recovery; the cron route `/api/cron/mapping-guard-notify` and its
+`phoenix-mapping-guard-notify` switch, because cron-job.org calls that path and it now only runs the
+attribution freshness sweep.
+
+The same night, the 30 customers behind the 55 still-held changes were switched to unmapped
+(`active = false`, brick and area untouched) and all 55 holds were refused; the pre-image is
+`sos_map_unmap_preimage_20261010`. He maps them again when he next uploads. Sales rows and published
+closings were not touched, and the un-map re-stamps nothing until the next upload or a reconcile.

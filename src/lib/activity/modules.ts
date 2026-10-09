@@ -207,7 +207,6 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/sales/normalizer", key: "source_normalizer", label: "Source Normalizer" },
   { prefix: "/sales/database-mapping", key: "database_mapping", label: "Database Mapping" },
   { prefix: "/sales/mapping-database", key: "database_mapping", label: "Database Mapping" },
-  { prefix: "/sales/mapping-guard", key: "database_mapping", label: "Database Mapping" },
   { prefix: "/sales/customer-mapping", key: "customer_mapping", label: "Customer Mapping" },
   { prefix: "/customer-pharmacy-mapping", key: "customer_mapping", label: "Customer Mapping" },
   { prefix: "/sales/customer-directory", key: "customers_database", label: "Customers Database" },
