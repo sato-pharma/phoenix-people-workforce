@@ -10,7 +10,7 @@ import { LEAVE_BALANCE_CATEGORIES, isLeaveBalanceCategory } from "../src/lib/ded
 import { foldLeaveBalanceCharges } from "../src/lib/deductions/leave-balance-ledger.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import { calculateVacationPayment, isWithinFirstSixMonths } from "../src/lib/vacation/calculations.ts";
-import { buildEmployeeEligibilityRows } from "../src/lib/vacation/service.ts";
+import { annualBalanceLedgerDays, buildEmployeeEligibilityRows, requestableAnnualLeaveDays } from "../src/lib/vacation/service.ts";
 
 /**
  * Deductions → "Deduct from leave balance" / "Return to salary" (owner, 2026-10-09).
@@ -33,6 +33,11 @@ import { buildEmployeeEligibilityRows } from "../src/lib/vacation/service.ts";
  *      migration's shape, the screens that show the button and the comment;
  *   5. the first-six-months override he added once the widening landed — the accrued days are
  *      charged, the block on REQUESTING paid leave is untouched.
+ *   6. an already-cleared row can be charged, and a PART charge on one puts nothing back on salary;
+ *   7. the balance the Vacation Report shows goes DOWN by the charged days — for every row in that
+ *      cohort, so the figure moves the way he asked — while the row still says the employee cannot
+ *      request paid leave and the employee's own portal tile still offers them nothing; it counts
+ *      EVERY annual-balance pool, says so when it cannot read them, and accrues by completed month.
  */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -65,7 +70,7 @@ function ledger(over: Partial<LedgerRow> & Pick<LedgerRow, "id" | "days">): Ledg
   } as LedgerRow;
 }
 
-export function runDeductionsLeaveBalanceTests() {
+export async function runDeductionsLeaveBalanceTests() {
   // 0. THE CATEGORIES, AND THE FOUR GATES THAT MUST AGREE ON THEM. Owner, 2026-10-09: "also show the
   // deduct from balance in unpaid and insufficient". A tab that shows the button while any one of the
   // other gates still refuses it is the whole failure mode — so the list is pinned once, and each
@@ -251,7 +256,15 @@ export function runDeductionsLeaveBalanceTests() {
     assert.match(report, /whitespace-pre-wrap break-words[^"]*">\{row\.comment\}</, "the comment is shown exactly as written");
     const service = read("src/lib/vacation/service.ts");
     assert.match(service, /leaveBalanceDeductions: \{/);
-    assert.match(service, /balanceCharges: leaveBalanceRead\.charges/);
+    // The charges SECTION shows the deductions fold; the Used and Balance columns are handed EVERY
+    // annual-balance day instead (annualBalanceLedgerDays), or a weekly-review charge and a payroll
+    // settlement go missing from Used and the Balance column reads above the request price.
+    assert.match(service, /balanceCharges: annualLedgerRead\.rows/);
+    assert.match(service, /balanceChargesUnavailable: annualLedgerRead\.failed/);
+    assert.ok(
+      !/balanceCharges: leaveBalanceRead\.charges/.test(service),
+      "the entitlement rows must not be handed the deductions fold alone — that is only one of the three pools a request is priced against",
+    );
   }
 
   // 5. THE FIRST-SIX-MONTHS OVERRIDE (owner, 2026-10-09, after the widening: charge the ACCRUED days
@@ -355,7 +368,12 @@ export function runDeductionsLeaveBalanceTests() {
       !/allowFirstSixMonths: true/.test(vacationService),
       "the vacation service must never turn the override on for itself — only the deductions charge asks for it",
     );
-
+    // The entitlement row needs the accrued balance, and reads it off the snapshot it already holds
+    // (roundDays(max(0, entitlementDays - usedPaidDays)) — the annual path's own arithmetic, on the
+    // two fields the snapshot carries identically with the flag and without it). Section 7 asserts
+    // that figure on the ROW. An earlier draft called the calculator a second time behind a guard and
+    // pinned it with the guard's exact text plus a 200-character window: it broke on a rename or a
+    // reformat, and still allowed the override to reach any other field inside the window.
     // The Super Admin is told what the charge is spending — neutrally worded, like every other
     // string this app shows (tests/neutral-wording.test.ts, which caught the first draft of it).
     assert.match(
@@ -428,5 +446,190 @@ export function runDeductionsLeaveBalanceTests() {
       read("src/components/admin/deductions-workspace.tsx"),
       /This row is already cleared, so nothing is on salary[\s\S]{0,160}Return to salary puts it back to Pending/,
     );
+  }
+  // 7. THE BALANCE THE VACATION REPORT SHOWS MUST GO DOWN BY THE CHARGED DAYS (owner, 2026-10-09:
+  // "make the entitlments of the peoplw qho got this decrease by number of days", then "in vacation
+  // report"). Sections 5 and 6 made the button able to charge the tab he asked for it on; the days
+  // then landed in the Entitlements tab's Used column while Balance stayed on 0, because inside the
+  // first six months calculateVacationPayment answers balanceBeforeDays: 0 flat. Every live charge
+  // is on someone inside that window, so the whole screen read as though nothing had been spent.
+  //
+  // 🔴 AND THE FIRST DRAFT MOVED THE NUMBER THE WRONG WAY. Overriding the figure only for someone who
+  // ALREADY had a charge left an uncharged joiner reading 0 and put a charged one on 0.25: the Balance
+  // column ROSE when a day was spent, and the colleague who had spent nothing read poorer than the one
+  // who had. The accrued balance is what every first-six-months row carries now, charged or not, so a
+  // charge subtracts from it and Entitlement - Used adds up for the whole cohort.
+  {
+    const JOINER_TODAY = "2026-09-26";
+    const joiner = { ...employee("MR-9"), hireDate: "2026-08-02" } as EmployeeDirectoryRow;
+    const rows = (balanceCharges?: Array<{ employeeHrId: string; workDate: string; days: number }>) =>
+      buildEmployeeEligibilityRows({ allScopedRows: [], balanceCharges, employees: [joiner], filters: {}, today: JOINER_TODAY });
+
+    // One completed month since 02 Aug: 15/12 of a day accrued, and nothing charged yet. Balance is
+    // that accrued figure, so the three columns agree (1.25 - 0 = 1.25) before anything is spent.
+    const before = rows()[0];
+    assert.equal(before?.annualEntitlementDays, 1.25, "the accrued first-year entitlement is what the row carries");
+    assert.equal(before?.annualUsedDays, 0);
+    assert.equal(before?.annualBalanceDays, 1.25, "an uncharged first-six-months row shows what it has accrued, not a flat 0");
+
+    const after = rows([{ employeeHrId: "MR-9", workDate: "2026-09-10", days: 1 }])[0];
+    assert.equal(after?.annualUsedDays, 1, "the charged day is used");
+    assert.equal(after?.annualBalanceDays, 0.25, "the charged day must come off the balance the Vacation Report shows");
+    assert.ok(
+      (after?.annualBalanceDays ?? 0) < (before?.annualBalanceDays ?? 0),
+      "the figure he reads must go DOWN when a day is charged — the ask itself, and what the first draft had backwards",
+    );
+
+    // The thing that must NOT move with it: he is still inside his first six months, so the row must
+    // still tell HR he cannot request paid leave. Reading "eligible" here would invite exactly the
+    // paid approval the rule exists to prevent.
+    assert.equal(after?.eligibilityStatus, "first_six_months", "the override must not make him look eligible");
+    assert.equal(after?.eligibleForAnnualPaidLeave, false);
+    assert.ok((after?.daysUntilEligibility ?? 0) > 0, "the countdown to paid eligibility must survive the override");
+    assert.ok(
+      !after?.reviewFlags.includes("No paid annual balance remaining"),
+      "the review flags are read off the unoverridden snapshot, so no new flag may appear",
+    );
+
+    // 🔴 AND HIS OWN PORTAL TILE MUST NOT OFFER THOSE DAYS. The report shows the accrued balance so HR
+    // can see the charge land; the rep still cannot request a paid day, and the request screen the tile
+    // links to prices it unpaid. "Annual leave left: 0.25 days" there would contradict the next screen
+    // one click away — getEmployeeAnnualLeaveBalanceDays returns exactly this figure.
+    assert.equal(requestableAnnualLeaveDays(after!), 0, "a day the request flow refuses is not a day left");
+    assert.equal(requestableAnnualLeaveDays(before!), 0, "and that holds with no charge on the row either");
+
+    // The block itself is untouched: with nobody passing the flag the calculator still refuses, which
+    // is what keeps a leave REQUEST priced unpaid however the report's own column reads.
+    const priced = calculateVacationPayment({
+      approvedPaidDaysInPeriod: 0,
+      durationDays: 1,
+      employeeHrId: "MR-9",
+      hireDate: "2026-08-02",
+      startDate: JOINER_TODAY,
+      vacationType: "annual",
+    });
+    assert.equal(priced.unpaidReason, "first_six_months", "without the flag the six-month block must still answer");
+    assert.equal(priced.balanceBeforeDays, 0, "and still price the request against an empty balance");
+
+    // Half a day decreases it by half a day; a charge past the accrual floors at 0, never below.
+    assert.equal(rows([{ employeeHrId: "MR-9", workDate: "2026-09-10", days: 0.5 }])[0]?.annualBalanceDays, 0.75);
+    assert.equal(rows([{ employeeHrId: "MR-9", workDate: "2026-09-10", days: 3 }])[0]?.annualBalanceDays, 0);
+
+    // A charge dated outside this balance period belongs to another leave year and must not touch it —
+    // the row reads exactly what it reads with no charge at all.
+    assert.equal(rows([{ employeeHrId: "MR-9", workDate: "2026-07-30", days: 1 }])[0]?.annualBalanceDays, 1.25);
+
+    // 🔴 EVERY ANNUAL-BALANCE POOL COUNTS, NOT THE DEDUCTIONS FOLD ALONE. approvedPaidDaysInPeriod —
+    // what actually prices a request — counts request days PLUS attendance_annual_balance_charges
+    // with no source filter PLUS the payroll settlements. The tab was handed only the
+    // source = 'deductions' fold, so a day the weekly attendance review had charged, or one payroll
+    // had settled, never reached Used and left Balance reading higher than the request price. The row
+    // builder sums whatever it is given, so what matters is that the reader fetches both pools and
+    // filters neither by source.
+    {
+      const seen: Array<{ table: string; filters: string[] }> = [];
+      const rowsByTable: Record<string, Array<Record<string, unknown>>> = {
+        attendance_annual_balance_charges: [
+          { employee_hr_id: "MR-9", work_date: "2026-09-10", days: 1 },
+          { employee_hr_id: "mr-9", work_date: "2026-09-11", days: 0.5 },
+          { employee_hr_id: "MR-9", work_date: "2026-09-10", days: -1 },
+        ],
+        payroll_copilot_vacation_settlements: [
+          { employee_hr_id_compact: "mr9", start_date: "2026-09-15", balance_days_consumed: 2 },
+        ],
+      };
+      const client = {
+        from(table: string) {
+          const entry = { table, filters: [] as string[] };
+          seen.push(entry);
+          const builder: Record<string, (...args: unknown[]) => unknown> = {};
+          for (const method of ["select", "in", "is", "eq", "gte", "lt", "ilike", "limit"]) {
+            builder[method] = (...args: unknown[]) => {
+              entry.filters.push(`${method}:${String(args[0] ?? "")}`);
+              return method === "limit" ? Promise.resolve({ data: rowsByTable[table] ?? [], error: null }) : builder;
+            };
+          }
+          return builder;
+        },
+      };
+
+      const ledger = await annualBalanceLedgerDays(client as unknown as Parameters<typeof annualBalanceLedgerDays>[0]);
+      assert.deepEqual(
+        seen.map((entry) => entry.table).sort(),
+        ["attendance_annual_balance_charges", "payroll_copilot_vacation_settlements"],
+        "both annual-balance pools must be read — the deductions fold alone understates Used",
+      );
+      const chargeFilters = seen.find((entry) => entry.table === "attendance_annual_balance_charges")?.filters ?? [];
+      assert.ok(
+        !chargeFilters.some((filter) => filter.includes("source")),
+        "the charges read must NOT filter by source — a weekly-review charge spends the same balance",
+      );
+      assert.equal(ledger.length, 4, "every row comes back; the row builder nets and periods them");
+      assert.equal(
+        ledger.reduce((sum, row) => sum + row.days, 0),
+        2.5,
+        "a reversal nets itself and the settlement counts: 1 + 0.5 - 1 + 2",
+      );
+
+      // Those rows, through the row builder, must land on the SAME employee whatever the HR_ID case.
+      const charged = buildEmployeeEligibilityRows({
+        allScopedRows: [],
+        balanceCharges: ledger,
+        employees: [joiner],
+        filters: {},
+        today: JOINER_TODAY,
+      })[0];
+      assert.equal(charged?.annualUsedDays, 2.5, "all four ledger rows reach Used, in any HR_ID casing");
+      assert.equal(charged?.annualBalanceDays, 0, "and the accrued 1.25 is spent, floored at 0");
+    }
+
+    // 🔴 10. A FAILED LEDGER READ MUST SAY SO ON THIS TAB. Falling back to no rows leaves Used and
+    // Balance reading as though nothing had been spent — the pre-fix screen — and the charges
+    // section's own banner is somewhere else entirely.
+    {
+      const unavailable = buildEmployeeEligibilityRows({
+        allScopedRows: [],
+        balanceChargesUnavailable: true,
+        employees: [joiner],
+        filters: {},
+        today: JOINER_TODAY,
+      })[0];
+      assert.ok(
+        unavailable?.reviewFlags.includes("Balance charges could not be read"),
+        "a failed ledger read must be visible on the Entitlements row, not only in the server log",
+      );
+      assert.ok(
+        !rows()[0]?.reviewFlags.includes("Balance charges could not be read"),
+        "and must not appear when the read succeeded",
+      );
+    }
+
+    // 🔴 4. THE ACCRUAL COUNTS COMPLETED MONTHS, NOT MONTH BOUNDARIES. (y2-y1)*12 + (m2-m1) read
+    // 30 Sep -> 01 Oct as a whole month, so a joiner carried 1.25 days after ONE day of service while
+    // one hired on the 1st carried 0 after thirty — and that figure is now the Balance column.
+    {
+      const accrued = (hireDate: string, today: string) =>
+        buildEmployeeEligibilityRows({ allScopedRows: [], employees: [{ ...employee("MR-11"), hireDate } as EmployeeDirectoryRow], filters: {}, today })[0]
+          ?.annualEntitlementDays;
+      assert.equal(accrued("2026-09-30", "2026-10-01"), 0, "one day of service has completed no month");
+      assert.equal(accrued("2026-09-30", "2026-10-29"), 0, "nor has 29 of them");
+      assert.equal(accrued("2026-09-30", "2026-10-30"), 1.25, "the month completes when the hire day comes round");
+      assert.equal(accrued("2026-08-02", "2026-09-26"), 1.25, "02 Aug -> 26 Sep is still the one completed month");
+      assert.equal(accrued("2026-01-31", "2026-02-28"), 1.25, "a hire date no shorter month has completes on its last day");
+      assert.equal(accrued("2026-08-01", "2026-08-31"), 0, "and thirty days inside the hire month complete nothing");
+    }
+
+    // Past six months this already worked, and must keep working through the same one subtraction.
+    const senior = buildEmployeeEligibilityRows({
+      allScopedRows: [],
+      balanceCharges: [{ employeeHrId: "MR-10", workDate: "2026-02-01", days: 2 }],
+      employees: [employee("MR-10")],
+      filters: {},
+      today: "2026-06-15",
+    })[0];
+    assert.equal(senior?.annualEntitlementDays, 21);
+    assert.equal(senior?.annualBalanceDays, 19, "an eligible employee's balance still drops by the charged days");
+    assert.equal(senior?.eligibilityStatus, "eligible");
+    assert.equal(requestableAnnualLeaveDays(senior!), 19, "and for an eligible employee the tile shows that same number");
   }
 }
