@@ -33,6 +33,7 @@ import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/team-performance", icon: Users, label: "Team Performance" },
@@ -79,7 +80,7 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       )}
 
-      <div className="overflow-hidden border border-slate-200 bg-white">
+      <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
         <SectionHead
           title="District Performance"
           right={

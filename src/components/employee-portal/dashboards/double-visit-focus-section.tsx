@@ -9,6 +9,7 @@ import type {
   DoubleVisitPortalFocus,
   DoubleVisitScopeFocus,
 } from "@/lib/double-visit-analytics/types";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -24,7 +25,7 @@ function DvTrendBlock({ trend, reportHref }: { trend: DoubleVisitFocusTrendPoint
   const max = Math.max(1, ...trend.map((point) => point.count));
   const total = trend.reduce((sum, point) => sum + point.count, 0);
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
         <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Your Double-Visit Trend</h2>
         <div className="h-1.5 w-12 bg-orange-500" />

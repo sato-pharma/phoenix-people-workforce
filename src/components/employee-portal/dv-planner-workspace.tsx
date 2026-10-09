@@ -23,6 +23,7 @@ import type { DoubleVisitReportRow, DoubleVisitRosterEntry } from "@/lib/double-
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminChipDepthClassName, adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // Per-rep "planned date" tracker: pick the date you chose to visit a rep, see whether CRM
 // confirmed a DV on that exact day using the roster already loaded — no separate fetch. Client-only
@@ -110,11 +111,11 @@ function PeriodFilterBar({ dateFrom, dateTo }: { dateFrom: string; dateTo: strin
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3 border border-slate-200 bg-white px-5 py-4">
+    <div className={`flex flex-wrap items-end gap-3 border border-slate-200 bg-white px-5 py-4 ${adminSoftDepthClassName}`}>
       <div className="flex flex-wrap gap-2">
         {PERIOD_PRESETS.map((preset) => (
           <button
-            className="h-9 border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-600 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+            className={`h-9 border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-600 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 ${adminControlDepthClassName}`}
             key={preset.label}
             onClick={() => {
               const nextFrom = preset.from();
@@ -288,7 +289,7 @@ function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate
   }
   if (result.status === "outside-range") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-phx-2xs font-bold uppercase text-slate-500">
+      <span className={`inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-phx-2xs font-bold uppercase text-slate-500 ${adminChipDepthClassName}`}>
         <CalendarSearch className="h-3 w-3" />
         Widen date range above
       </span>
@@ -593,7 +594,7 @@ export function DvPlannerWorkspace({
       <PeriodFilterBar dateFrom={dateFrom} dateTo={dateTo} />
 
       {/* Scorecard */}
-      <div className="border border-slate-200 bg-white px-5 py-4">
+      <div className={`border border-slate-200 bg-white px-5 py-4 ${adminSoftDepthClassName}`}>
         <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
           <div className="flex items-center gap-3">
             <div className="flex flex-col">

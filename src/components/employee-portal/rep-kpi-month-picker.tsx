@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * The month picker over a Medical Rep's landing keycards.
@@ -58,7 +59,7 @@ export function RepKpiMonthPicker({
   if (options.length === 0) return null;
 
   return (
-    <label className="flex flex-wrap items-center gap-2 border border-slate-200 bg-white px-3 py-2">
+    <label className={`flex flex-wrap items-center gap-2 border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
       <span className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500">KPI month</span>
       <select
         // `text-base` and `font-semibold` are this screen's own, kept through `cn()` so

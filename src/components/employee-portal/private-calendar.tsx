@@ -40,6 +40,7 @@ import {
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminChipDepthClassName, adminControlDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -494,10 +495,10 @@ export function PrivateCalendar({
   const deskDetail = showDeskDetail ?? isWorkspaceSurface;
   const showHrIds = deskDetail;
   const inputClass = isWorkspaceSurface
-    ? "h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+    ? `h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none ${adminControlDepthClassName}`
     : "h-9 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
   const searchInputClass = isWorkspaceSurface
-    ? "h-9 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15"
+    ? `h-9 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 ${adminControlDepthClassName}`
     : "h-9 w-full rounded-sm border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
   const controlRadiusClass = "rounded-sm";
 
@@ -1191,7 +1192,7 @@ export function PrivateCalendar({
               );
             })}
             {noActivityDays > 0 ? (
-              <span className="inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-black text-slate-800">
+              <span className={`inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-black text-slate-800 ${adminChipDepthClassName}`}>
                 <span className={["h-3 w-3 shrink-0", noActivitySwatch].join(" ")} />
                 <span>No Activity Recorded</span>
               </span>
@@ -1776,7 +1777,7 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
       </div>
       <div className="grid max-h-72 gap-3 overflow-y-auto p-5 md:grid-cols-2 xl:grid-cols-3">
         {sortedRows.slice(0, 18).map((row) => (
-          <article key={row.hrId} className="border border-slate-200 bg-white p-4">
+          <article key={row.hrId} className={`border border-slate-200 bg-white p-4 ${adminPanelDepthClassName}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h4 className="text-sm font-black text-slate-900">{row.fullName}</h4>

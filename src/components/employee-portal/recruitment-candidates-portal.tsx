@@ -49,6 +49,7 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminChipDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = {
   /**
@@ -544,7 +545,7 @@ function SentCandidateCard({
             );
           })()}
         </div>
-        <span className="inline-block rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-600">
+        <span className={`inline-block rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-600 ${adminChipDepthClassName}`}>
           {candidateStatusLabel(candidate.status)}
         </span>
       </div>

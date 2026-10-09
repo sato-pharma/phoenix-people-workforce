@@ -103,6 +103,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminChipDepthClassName, adminControlDepthClassName, adminPanelDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 /* --------------------------------------------------------------------- Focus Trap Hook --------------------------------------------------------------------- */
@@ -854,7 +855,7 @@ function PharmacySourceTab({
           ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
           : disabled
             ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
-            : "border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            : `border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 ${adminControlDepthClassName}`
       }`}
       disabled={disabled}
       onClick={onClick}
@@ -888,7 +889,7 @@ function ReusablePharmacyPicker({
 
   if (options.length === 0) {
     return (
-      <div className="rounded-none border border-slate-200 bg-white px-3.5 py-3 text-phx-sm font-semibold text-slate-500">
+      <div className={`rounded-none border border-slate-200 bg-white px-3.5 py-3 text-phx-sm font-semibold text-slate-500 ${adminSoftDepthClassName}`}>
         No validated pharmacies yet. Validate one on the other tab and it will be here next time —
         for you and for your colleagues in the same area.
       </div>
@@ -1002,7 +1003,7 @@ function TabButton({
       className={`min-h-10 min-w-0 break-words rounded-none px-2 py-1.5 text-phx-md font-bold leading-tight transition sm:px-4 md:min-h-9 ${
         active
           ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
-          : "border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+          : `border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 ${adminControlDepthClassName}`
       }`}
       onClick={onClick}
       type="button"
@@ -1138,7 +1139,7 @@ function PharmacyLicensePanel({
       className={
         fillsTheGap && !license
           ? "rounded-none border border-amber-200 bg-amber-50/60 p-3"
-          : "rounded-none border border-slate-200 bg-slate-50 p-3"
+          : `rounded-none border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`
       }
     >
       <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
@@ -1165,7 +1166,7 @@ function PharmacyLicensePanel({
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button
-          className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50`}
+          className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
           onClick={() => cameraRef.current?.click()}
           type="button"
         >
@@ -1173,7 +1174,7 @@ function PharmacyLicensePanel({
           Photograph
         </Button>
         <Button
-          className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50`}
+          className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
           onClick={() => fileRef.current?.click()}
           type="button"
         >
@@ -1231,7 +1232,7 @@ function CapturePanel({
   const hasPhoto = Boolean(capture.photoName && capture.photoCapturedAt);
 
   return (
-    <div className="rounded-none border border-slate-200 bg-slate-50 p-3">
+    <div className={`rounded-none border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-phx-md font-bold text-slate-800">{label}</p>
@@ -1260,7 +1261,7 @@ function CapturePanel({
             GPS
           </Button>
           <Button
-            className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50`}
+            className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
             disabled={!hasLocation}
             onClick={onOpenCamera}
             type="button"
@@ -1508,7 +1509,7 @@ function ValidatedPharmaciesModal({
             <h3 className="mt-1 break-words text-lg font-black text-slate-900">{group.customerName}</h3>
           </div>
           <Button
-            className="h-10 shrink-0 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 sm:h-8"
+            className={`h-10 shrink-0 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 sm:h-8 ${adminControlDepthClassName}`}
             onClick={onClose}
             type="button"
           >
@@ -1520,7 +1521,7 @@ function ValidatedPharmaciesModal({
           <div className="block md:hidden">
             <div className="space-y-3">
               {pharmacies.map((pharmacy) => (
-                <div className="rounded-none border border-slate-200 bg-white p-3" key={pharmacy.id}>
+                <div className={`rounded-none border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`} key={pharmacy.id}>
                   <p className="text-phx-md font-bold text-slate-900">{pharmacy.name}</p>
                   {/* 🔴 NEUTRAL INK ON PURPOSE. The warning below it is amber because it asks the
                       human to doubt something; this asks him to doubt nothing. A verdict here is
@@ -1551,7 +1552,7 @@ function ValidatedPharmaciesModal({
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {pharmacy.vendorCodes.map((line) => (
                       <span
-                        className="min-w-0 break-words rounded-none border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-700"
+                        className={`min-w-0 break-words rounded-none border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-700 ${adminSoftDepthClassName}`}
                         key={line.id}
                       >
                         {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -1606,7 +1607,7 @@ function ValidatedPharmaciesModal({
                         <div className="flex flex-wrap gap-1.5">
                           {pharmacy.vendorCodes.map((line) => (
                             <span
-                              className="min-w-0 break-words rounded-none border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-600"
+                              className={`min-w-0 break-words rounded-none border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-600 ${adminSoftDepthClassName}`}
                               key={line.id}
                             >
                               {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -1852,7 +1853,7 @@ function LiveCameraModal({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 bg-slate-50 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:pb-3">
             <Button
-              className={`${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50`}
+              className={`${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
               onClick={onClose}
               type="button"
             >
@@ -2886,7 +2887,7 @@ export function MarketingValidationWorkspace() {
           <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Validation summary</p>
           <button
             aria-label="Refresh data"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 md:h-9 md:w-9"
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 md:h-9 md:w-9 ${adminControlDepthClassName}`}
             onClick={() => {
               setIsLoading(true);
               setMessage(null);
@@ -2948,7 +2949,7 @@ export function MarketingValidationWorkspace() {
           breaking onto three lines below ~500px. A phone reads the short labels; from `sm` up the
           full ones. */}
       <div
-        className={`grid gap-2 rounded-none border border-slate-200 bg-white p-1.5 ${
+        className={`grid gap-2 rounded-none border border-slate-200 bg-white p-1.5 ${adminChipDepthClassName} ${
           pendingGroups.length > 0 ? "grid-cols-3" : "grid-cols-2"
         }`}
       >
@@ -3022,7 +3023,7 @@ export function MarketingValidationWorkspace() {
                   </div>
                   <div className="md:col-span-3">
                     <Field label="What this does">
-                      <div className="flex min-h-10 items-center rounded-none border border-slate-200 bg-white px-3.5 py-2">
+                      <div className={`flex min-h-10 items-center rounded-none border border-slate-200 bg-white px-3.5 py-2 ${adminSoftDepthClassName}`}>
                         <p className="text-phx-sm font-semibold text-slate-600">
                           {onBehalfEmployee
                             ? `Customer is owned by ${onBehalfEmployee.name} and appears in their marketing request list.`
@@ -3037,7 +3038,7 @@ export function MarketingValidationWorkspace() {
                     <span className="inline-flex items-center rounded-none border border-sky-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
                       Desk mode — map search, no live photo
                     </span>
-                    <span className="inline-flex items-center rounded-none border border-slate-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600">
+                    <span className={`inline-flex items-center rounded-none border border-slate-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600 ${adminChipDepthClassName}`}>
                       Saved as admin validated
                     </span>
                   </div>
@@ -3048,7 +3049,7 @@ export function MarketingValidationWorkspace() {
             <div className="space-y-4 p-4 sm:p-5">
               {customers.map((customer, customerIndex) => (
                 <div
-                  className="overflow-hidden rounded-none border border-slate-200 bg-white"
+                  className={`overflow-hidden rounded-none border border-slate-200 bg-white ${adminSoftDepthClassName}`}
                   key={customer.key}
                 >
                   <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-3 py-2.5 sm:px-4">
@@ -3063,7 +3064,7 @@ export function MarketingValidationWorkspace() {
                     </div>
                     <button
                       aria-label="Remove customer"
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 sm:h-7 sm:w-7"
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 sm:h-7 sm:w-7 ${adminControlDepthClassName}`}
                       disabled={customers.length === 1}
                       onClick={() =>
                         setCustomers((current) =>
@@ -3214,7 +3215,7 @@ export function MarketingValidationWorkspace() {
                           </p>
                         </div>
                         <Button
-                          className="h-10 shrink-0 gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 sm:h-8"
+                          className={`h-10 shrink-0 gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 sm:h-8 ${adminControlDepthClassName}`}
                           onClick={() =>
                             updateCustomer(customer.key, {
                               pharmacies: [...customer.pharmacies, newPharmacyLine(defaultDistributorId)],
@@ -3238,7 +3239,7 @@ export function MarketingValidationWorkspace() {
                         unbreakable value can ever size the track past the screen again. */}
                     {customer.pharmacies.map((pharmacy, index) => (
                       <div className="min-w-0 md:col-span-6" key={pharmacy.key}>
-                        <div className="rounded-none border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
+                        <div className={`rounded-none border border-slate-200 bg-slate-50/50 p-3 sm:p-4 ${adminPanelDepthClassName}`}>
                           <div className="mb-3 flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2.5">
                               <div className="flex h-7 w-7 items-center justify-center rounded-none bg-white text-orange-600 ring-1 ring-orange-100">
@@ -3248,7 +3249,7 @@ export function MarketingValidationWorkspace() {
                             </div>
                             <button
                               aria-label="Remove venue"
-                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 sm:h-7 sm:w-7"
+                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 sm:h-7 sm:w-7 ${adminControlDepthClassName}`}
                               disabled={customer.pharmacies.length === 1}
                               onClick={() =>
                                 updateCustomer(customer.key, {
@@ -3421,7 +3422,7 @@ export function MarketingValidationWorkspace() {
                                         className={
                                           pharmacy.venueType === venueType
                                             ? `${CAPTURE_BUTTON_SIZE} rounded-none border border-orange-300 bg-orange-50 px-2.5 text-phx-xs font-bold text-orange-700`
-                                            : `${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50`
+                                            : `${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`
                                         }
                                         key={venueType}
                                         onClick={() => updatePharmacy(customer.key, pharmacy.key, { venueType })}
@@ -3454,7 +3455,7 @@ export function MarketingValidationWorkspace() {
                                     Vendor Codes
                                   </p>
                                   <Button
-                                    className="h-10 gap-1.5 rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 sm:h-7"
+                                    className={`h-10 gap-1.5 rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 sm:h-7 ${adminControlDepthClassName}`}
                                     onClick={() =>
                                       updatePharmacy(customer.key, pharmacy.key, {
                                         vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)],
@@ -3504,7 +3505,7 @@ export function MarketingValidationWorkspace() {
                                       />
                                       <button
                                         aria-label="Remove vendor"
-                                        className="flex h-10 w-full items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                        className={`flex h-10 w-full items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${adminControlDepthClassName}`}
                                         disabled={pharmacy.vendorCodes.length === 1}
                                         onClick={() =>
                                           updatePharmacy(customer.key, pharmacy.key, {
@@ -3529,7 +3530,7 @@ export function MarketingValidationWorkspace() {
                                         being checked: each row describes the CODE's registered
                                         place, never his. */}
                                     {(codeSuggestions[line.key] ?? []).length > 0 ? (
-                                      <div className="mt-1.5 max-h-48 overflow-y-auto rounded-none border border-slate-200 bg-white">
+                                      <div className={`mt-1.5 max-h-48 overflow-y-auto rounded-none border border-slate-200 bg-white ${adminRecessedDepthClassName}`}>
                                         {(codeSuggestions[line.key] ?? []).map((suggestion) => (
                                           <button
                                             className="flex w-full items-start justify-between gap-2 border-b border-slate-100 px-2.5 py-2 text-left last:border-b-0 hover:bg-orange-50"
@@ -3851,7 +3852,7 @@ export function MarketingValidationWorkspace() {
                       const customer = group.rows[0]?.customer;
                       const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                       return (
-                        <div className="rounded-none border border-slate-200 bg-white p-3" key={group.key}>
+                        <div className={`rounded-none border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`} key={group.key}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="break-words text-phx-md font-bold text-slate-900">{group.customerName}</p>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * "Return this CV to the administrator." One control, on a district manager's OWN folder cards.
@@ -90,7 +91,7 @@ export function CandidateReturnControl({
   if (mode === "idle") {
     return (
       <button
-        className="whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-semibold text-slate-600 transition hover:border-amber-300 hover:text-amber-700"
+        className={`whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-semibold text-slate-600 transition hover:border-amber-300 hover:text-amber-700 ${adminControlDepthClassName}`}
         onClick={() => {
           setError(null);
           setMode("form");
@@ -158,7 +159,7 @@ export function CandidateReturnControl({
           {submitting ? "Returning…" : "Return to administrator"}
         </button>
         <button
-          className="whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-semibold text-slate-600 transition hover:border-slate-400 disabled:opacity-60"
+          className={`whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-semibold text-slate-600 transition hover:border-slate-400 disabled:opacity-60 disabled:shadow-none ${adminControlDepthClassName}`}
           disabled={submitting}
           onClick={() => {
             setError(null);

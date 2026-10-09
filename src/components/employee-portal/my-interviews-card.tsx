@@ -14,6 +14,7 @@ import type { PortalMyInterview } from "@/lib/employee-portal/home-snapshot";
 import { PLATFORM_LABEL } from "@/lib/recruitment/interview-calendar-types";
 import { formatDayLong, formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export function MyInterviewsCard({ interviews }: { interviews: PortalMyInterview[] }) {
   const [feedUrl, setFeedUrl] = useState<string | null>(null);
@@ -52,7 +53,7 @@ export function MyInterviewsCard({ interviews }: { interviews: PortalMyInterview
   const webcalUrl = feedUrl ? feedUrl.replace(/^https?:/, "webcal:") : null;
 
   return (
-    <section aria-label="Your interviews" className="border border-slate-200 bg-white">
+    <section aria-label="Your interviews" className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <header className="flex items-center gap-2 border-b border-slate-200 border-l-[3px] border-l-orange-500 bg-slate-50 px-4 py-2.5">
         <CalendarClock className="h-4 w-4 shrink-0 text-orange-600" />
         <h2 className="text-sm font-black uppercase tracking-wide text-slate-900">Your interviews</h2>
@@ -66,7 +67,7 @@ export function MyInterviewsCard({ interviews }: { interviews: PortalMyInterview
               className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
               href={`/employee-portals/interview-calendar?open=${encodeURIComponent(interview.id)}`}
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 text-slate-500 group-hover:border-orange-300 group-hover:text-orange-600">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 text-slate-500 group-hover:border-orange-300 group-hover:text-orange-600 ${adminControlDepthClassName}`}>
                 {interview.platform === "zoom" ? <Video className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
               </span>
               <span className="min-w-0 flex-1">
@@ -95,7 +96,7 @@ export function MyInterviewsCard({ interviews }: { interviews: PortalMyInterview
                 onFocus={(event) => event.currentTarget.select()}
               />
               <button
-                className="inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:border-orange-400 hover:text-orange-700"
+                className={`inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:border-orange-400 hover:text-orange-700 ${adminControlDepthClassName}`}
                 onClick={() => void copy()}
                 type="button"
               >

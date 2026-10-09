@@ -19,6 +19,7 @@ import {
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 const emptySubscribe = () => () => {};
@@ -457,7 +458,7 @@ export function CompanyCalendar({
                           <option value="line">My team / line</option>
                         </SearchableSelect>
                       ) : (
-                        <div className="flex h-11 items-center rounded border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500">
+                        <div className={`flex h-11 items-center rounded border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500 ${adminSoftDepthClassName}`}>
                           {viewerLineName ? `Team: ${viewerLineName}` : "Your team line"}
                         </div>
                       )}

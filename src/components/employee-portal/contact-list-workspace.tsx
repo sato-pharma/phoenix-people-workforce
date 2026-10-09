@@ -29,6 +29,7 @@ import type {
   ContactListView,
 } from "@/lib/crm/contact-lists/types";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * Doctor lists maintained in Phoenix (CRM phase 7). A rep asks for a change to his own AM or PM list
@@ -543,7 +544,7 @@ export function ContactListWorkspace() {
                   </Button>
                 </div>
                 {chosen ? (
-                  <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                  <p className={`border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 ${adminSoftDepthClassName}`}>
                     {`Chosen: ${chosen.name}${chosen.speciality ? ` · ${chosen.speciality}` : ""}${chosen.address ? ` · ${chosen.address}` : ""}`}
                   </p>
                 ) : null}

@@ -413,7 +413,11 @@ export function runPhoenixCrmTodayTests(): void {
     //    imports THIS file, so they cannot be imported back (a cycle) and are written out instead.
     //    These comparisons are what stops the two copies drifting into two looks.
     for (const [what, shape] of [
-      ["the panel shell", 'className="min-w-0 border border-slate-200 bg-white"'],
+      // The shell took `adminSoftDepthClassName` in the portal's premium-depth pass (2026-10-09),
+      // which is why the shape is a template and not a quoted literal. The comparison is the point
+      // and is unchanged: BOTH copies must wear it, so a pass that lights one and forgets the
+      // other still fails here.
+      ["the panel shell", 'className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}'],
       ["the panel title", 'className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600"'],
       ["the header chip", "border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums"],
       ["the row rail", 'className={`w-1 self-stretch'],

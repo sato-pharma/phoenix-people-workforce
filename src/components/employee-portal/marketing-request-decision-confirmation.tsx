@@ -13,6 +13,7 @@ import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * One labelled field. An absent value renders "Not captured" rather than an empty cell — a blank
@@ -158,7 +159,7 @@ export function MarketingRequestDecisionConfirmation({
 
   return (
     <section className="mx-auto w-full max-w-3xl px-4 py-8">
-      <div className="border border-slate-200 bg-white">
+      <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
         <div className="bg-slate-950 px-6 py-5">
           <p className="text-phx-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Marketing · action required</p>
           <h1 className="mt-1 text-xl font-semibold text-white">Review marketing request</h1>
@@ -198,7 +199,7 @@ export function MarketingRequestDecisionConfirmation({
               {/* Mobile: card list (tables are desktop-only) */}
               <div className="mt-2 space-y-2 md:hidden">
                 {summary.products.map((product, index) => (
-                  <div className="border border-slate-200 bg-white px-3 py-2.5" key={`m-${product.name}-${index}`}>
+                  <div className={`border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`} key={`m-${product.name}-${index}`}>
                     <p className="text-phx-md font-medium text-slate-950">{product.name}</p>
                     <div className="mt-1.5 flex items-center justify-between text-xs">
                       <span className="text-slate-500">
@@ -271,7 +272,7 @@ export function MarketingRequestDecisionConfirmation({
             <DetailField label="Governorate" value={summary.customerGovernorate} />
           </div>
           {summary.customerAddress ? (
-            <p className="mt-2 border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium leading-5 text-slate-600">
+            <p className={`mt-2 border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium leading-5 text-slate-600 ${adminSoftDepthClassName}`}>
               {summary.customerAddress}
             </p>
           ) : null}
@@ -306,7 +307,7 @@ export function MarketingRequestDecisionConfirmation({
           {summary.targetPharmacies.length > 0 ? (
             <div className="mt-2 space-y-2">
               {summary.targetPharmacies.map((pharmacy, index) => (
-                <div className="border border-slate-200 bg-white px-3 py-2.5" key={`${pharmacy.pharmacyCode}-${index}`}>
+                <div className={`border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`} key={`${pharmacy.pharmacyCode}-${index}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-phx-md font-medium text-slate-950">{pharmacy.pharmacyName}</p>
                     <span
@@ -394,7 +395,7 @@ export function MarketingRequestDecisionConfirmation({
           {summary.notes ? (
             <>
               <p className="mt-4 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Requester notes</p>
-              <p className="mt-1 border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium leading-5 text-slate-700">
+              <p className={`mt-1 border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium leading-5 text-slate-700 ${adminSoftDepthClassName}`}>
                 {summary.notes}
               </p>
             </>
@@ -521,7 +522,7 @@ export function MarketingRequestDecisionConfirmation({
             </div>
             <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-5 py-3">
               <button
-                className="border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+                className={`border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 ${adminSoftDepthClassName}`}
                 onClick={() => setPendingConfirm(null)}
                 type="button"
               >

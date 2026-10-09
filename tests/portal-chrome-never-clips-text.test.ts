@@ -176,7 +176,11 @@ export function runPortalChromeNeverClipsTextTests() {
       `per line. The row has to size to its content instead.`,
   );
 
-  const item = actions.match(/className="(flex min-h-\[48px\][^"]*)"/);
+  // Either quoting: the item became `className={`…`}` when the portal's premium-depth pass
+  // appended a token (2026-10-09). What this assertion is about is the flex trio below, never how
+  // the attribute is spelled — and a pattern that only accepts a double-quoted literal reports
+  // "the item no longer opens flex min-h-[48px]", which reads as the item having been rebuilt.
+  const item = actions.match(/className=(?:"|\{`)(flex min-h-\[48px\][^"`]*)(?:"|`\})/);
   assert.ok(item, `${COMMAND}: the QuickActions item no longer opens "flex min-h-[48px] …".`);
   const itemTokens = tokens(item[1]);
   for (const required of ["min-w-fit", "grow", "basis-[calc(50%-0.25rem)]"]) {

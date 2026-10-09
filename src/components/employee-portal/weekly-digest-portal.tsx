@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { DeductionMethod, MyDigest, MyDigestLine } from "@/lib/attendance/digest-service.ts";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // House rules this component is built to, not decorated with:
 //   • Square edges everywhere — owner rule 2026-09-04. No rounded-* classes.
@@ -131,7 +132,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
       ) : null}
 
       {open.length === 0 && settled.length === 0 ? (
-        <p className="border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
+        <p className={`border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
           Nothing to answer. You are notified here, by email and on Telegram when a week needs your answer.
         </p>
       ) : null}
@@ -139,7 +140,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
       {open.map((digest) => {
         const pendingCount = digest.lines.filter((line) => line.action === "pending").length;
         return (
-          <section key={digest.id} className="border border-slate-300 bg-white">
+          <section key={digest.id} className={`border border-slate-300 bg-white ${adminSoftDepthClassName}`}>
             <header className="border-b border-slate-200 px-4 py-3">
               <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-700">
                 {formatDay(digest.weekStart, false)} to {formatDay(digest.weekEnd, false)}
@@ -238,7 +239,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                     ) : null}
 
                     {canAnswer && lineDraft?.step === "ask_dispute" ? (
-                      <div className="mt-3 border border-slate-300 bg-slate-50 p-3">
+                      <div className={`mt-3 border border-slate-300 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
                         <p className="text-sm font-semibold text-slate-800">
                           You chose {methodText(lineDraft.method)}. Do you want to dispute this day?
                         </p>
@@ -252,7 +253,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                             No, save my answer
                           </button>
                           <button
-                            className="border border-slate-400 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-700 disabled:opacity-50"
+                            className={`border border-slate-400 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-700 disabled:opacity-50 disabled:shadow-none ${adminControlDepthClassName}`}
                             disabled={busy}
                             onClick={() => setDraft({ ...lineDraft, step: "write_reason" })}
                             type="button"
@@ -272,7 +273,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                     ) : null}
 
                     {canAnswer && lineDraft?.step === "write_reason" ? (
-                      <div className="mt-3 border border-slate-300 bg-slate-50 p-3">
+                      <div className={`mt-3 border border-slate-300 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
                         <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-600" htmlFor={`reason-${line.id}`}>
                           What actually happened?
                         </label>
@@ -318,7 +319,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
       })}
 
       {settled.length ? (
-        <section className="border border-slate-200 bg-white">
+        <section className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           <header className="border-b border-slate-200 px-4 py-3">
             <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Earlier weeks</h2>
           </header>

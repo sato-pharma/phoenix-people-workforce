@@ -54,6 +54,7 @@ import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { formatOutstationDescriptionInline } from "@/lib/outstation/description-format";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 /** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
@@ -152,7 +153,7 @@ type PeriodPreset = "7d" | "30d" | "90d" | "ytd" | "thismonth" | "lastmonth" | "
 /*  Design tokens                                                     */
 /* ------------------------------------------------------------------ */
 
-const cardShadow = "shadow-sm";
+const cardShadow = adminPanelDepthClassName;
 
 const inputClass  = phxFieldClassName;
 
@@ -494,7 +495,7 @@ function SmartPeriodFilter({
       <div>
         <p className={labelClass}>Period</p>
         <div
-          className="mt-1.5 inline-flex w-full items-center gap-0.5 border border-slate-300 bg-slate-50 p-0.5 sm:w-auto"
+          className={`mt-1.5 inline-flex w-full items-center gap-0.5 border border-slate-300 bg-slate-50 p-0.5 sm:w-auto ${adminSoftDepthClassName}`}
           role="group"
         >
           {segmentBtn("7d", "7 days")}
@@ -1772,7 +1773,7 @@ export function PersonalExpenseWorkloadDashboard({
         <ChartCard
           action={
             <button
-              className="border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-200 hover:text-orange-600"
+              className={`border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-200 hover:text-orange-600 ${adminControlDepthClassName}`}
               onClick={() => setShowCostByTransportation((prev) => !prev)}
               type="button"
             >
@@ -2380,7 +2381,7 @@ export function PersonalExpenseWorkloadDashboard({
                 const category = mapStatusCategory(trip.status);
                 return (
                   <div
-                    className="relative overflow-hidden border border-slate-200 bg-white"
+                    className={`relative overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}
                     key={`${trip.tripId}-${trip.date}-mobile`}
                   >
                     <div className="absolute inset-y-0 left-0 w-[3px] bg-orange-400" />
@@ -2517,7 +2518,7 @@ export function PersonalExpenseWorkloadDashboard({
               <div className="flex items-center gap-2">
                 <button
                   aria-label="Previous page"
-                  className="border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  className={`border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
                   disabled={safePage <= 1}
                   onClick={() => setPage((value) => Math.max(1, value - 1))}
                   type="button"
@@ -2529,7 +2530,7 @@ export function PersonalExpenseWorkloadDashboard({
                 </span>
                 <button
                   aria-label="Next page"
-                  className="border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  className={`border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
                   disabled={safePage >= totalPages}
                   onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
                   type="button"

@@ -17,6 +17,7 @@ import type { CandidateCallClaim } from "@/lib/recruitment/candidate-call-claims
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
+import { adminChipDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * One CV a manager can READ but not answer: everything needed to form an opinion, and nowhere to
@@ -109,7 +110,7 @@ export function CandidateReadCard({
             {appliedFor.text ? `Applying for ${appliedFor.text}` : "No role stated on the application"}
           </p>
         </div>
-        <span className="inline-block whitespace-nowrap rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-600">
+        <span className={`inline-block whitespace-nowrap rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-600 ${adminChipDepthClassName}`}>
           {candidateStatusLabel(candidate.status)}
         </span>
       </div>

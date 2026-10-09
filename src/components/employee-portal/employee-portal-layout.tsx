@@ -147,6 +147,7 @@ import { portalQuickActions } from "@/lib/employee-portal/portal-quick-actions";
 import { useBottomNavPreference } from "@/components/employee-portal/use-bottom-nav-preference";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminChipDepthClassName, adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /** The default fold set: EMPTY — every section opens expanded (owner, 2026-10-03). Module-level so
  *  its identity is stable across renders, exactly as the useMemo it replaced was. */
@@ -1284,7 +1285,7 @@ function EmployeePortalMenu({
                             aria-hidden="true"
                             className={`${
                               isMobile ? "h-[26px] w-[26px]" : "h-[24px] w-[24px]"
-                            } flex shrink-0 items-center justify-center border border-[#F6D4B8] bg-[#FFF7ED] transition ${
+                            } flex shrink-0 items-center justify-center border border-[#F6D4B8] bg-[#FFF7ED] transition ${adminChipDepthClassName} ${
                               canPin ? "group-hover/row:opacity-0" : ""
                             }`}
                           >
@@ -1567,7 +1568,7 @@ export function EmployeePortalTopNav({
             {onOpenCommandBar ? (
               <button
                 aria-label="Open the command bar (Ctrl K)"
-                className="absolute right-1.5 hidden h-7 items-center gap-1 border border-slate-200 bg-white px-1.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-500 transition hover:border-orange-300 hover:text-orange-700 md:flex"
+                className={`absolute right-1.5 hidden h-7 items-center gap-1 border border-slate-200 bg-white px-1.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-500 transition hover:border-orange-300 hover:text-orange-700 md:flex ${adminControlDepthClassName}`}
                 onMouseDown={(event) => {
                   event.preventDefault();
                   onOpenCommandBar();
@@ -1646,7 +1647,7 @@ export function EmployeePortalTopNav({
           {/* The date reads first (lg+), then the "waiting on you" chip, then a hairline that
               separates the ambient readouts from the action controls to their right — the polish pass
               of 2026-09-29 grouped what used to be a loose row of mismatched chips. */}
-          <div className="hidden items-center gap-1.5 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex">
+          <div className={`hidden items-center gap-1.5 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex ${adminSoftDepthClassName}`}>
             <CalendarClock className="h-3 w-3 text-slate-400" />
             <EmployeePortalHeaderDate />
           </div>
@@ -1655,7 +1656,7 @@ export function EmployeePortalTopNav({
           {/* One bordered cluster for the ambient icon controls — zoom · notifications · messages —
               with hairline dividers, so they read as one control group at even 36px targets rather
               than three floating buttons. */}
-          <div className="flex shrink-0 items-center border border-slate-200 bg-white [&>*:not(:first-child)]:border-l [&>*]:border-slate-200">
+          <div className={`flex shrink-0 items-center border border-slate-200 bg-white [&>*:not(:first-child)]:border-l [&>*]:border-slate-200 ${adminSoftDepthClassName}`}>
             <DisplayScaleControl isAdminMode={false} />
             <EmployeePortalInbox />
           </div>

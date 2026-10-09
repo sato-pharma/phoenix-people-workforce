@@ -24,6 +24,7 @@ import type {
   PlanningCalendarWorkspace,
 } from "@/lib/weekly-planning/calendar";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -621,7 +622,7 @@ export function PlanningCalendar({
           <PlanningCalendarAgenda agendaDays={agendaDays} onSelectDate={setSelectedDate} />
         ) : viewMode === "week" ? (
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-slate-200 bg-slate-50 px-4 py-2.5">
+            <div className={`flex flex-wrap items-center justify-between gap-2 rounded-sm border border-slate-200 bg-slate-50 px-4 py-2.5 ${adminSoftDepthClassName}`}>
               <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Week of</span>
               <span className="whitespace-nowrap text-sm font-black text-slate-900">{weekRangeLabel}</span>
             </div>
@@ -890,7 +891,7 @@ function PlanningCalendarDetailsTable({
           title="No detail rows for this day"
         />
       ) : (
-        <div className="divide-y divide-slate-100 border border-slate-200 bg-white lg:hidden">
+        <div className={`divide-y divide-slate-100 border border-slate-200 bg-white lg:hidden ${adminSoftDepthClassName}`}>
           {rows.map((row) => (
             <PortalRecordCard
               accent={detailAccent(row.tone)}
@@ -925,7 +926,7 @@ function PlanningCalendarDetailsTable({
           ))}
         </div>
       )}
-      <div className="border border-slate-200 bg-white">
+      <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
         <PortalDesktopTable
           breakpoint="lg"
           className="text-xs"

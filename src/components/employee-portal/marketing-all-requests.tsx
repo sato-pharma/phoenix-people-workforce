@@ -20,6 +20,7 @@ import type {
   MarketingAllRequestsWorkspace,
 } from "@/lib/marketing-requests/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const PAGE_SIZE = 25;
 
@@ -228,7 +229,7 @@ export function MarketingAllRequests() {
             workbook never strands a spinner on screen. Server-side permission is enforced in the
             loader — this control is UX only. */}
         <a
-          className="ml-auto inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3.5 py-2 text-xs font-black text-slate-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+          className={`ml-auto inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3.5 py-2 text-xs font-black text-slate-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 ${adminControlDepthClassName}`}
           download
           href="/api/marketing-requests/report/export"
         >
@@ -327,7 +328,7 @@ export function MarketingAllRequests() {
         />
         <PortalPagination label={pageLabel}>
           <button
-            className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40"
+            className={`rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
             disabled={safePage <= 1}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
             type="button"
@@ -335,7 +336,7 @@ export function MarketingAllRequests() {
             Previous
           </button>
           <button
-            className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40"
+            className={`rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
             disabled={safePage >= totalPages}
             onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             type="button"

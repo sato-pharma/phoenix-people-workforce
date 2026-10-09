@@ -7,6 +7,7 @@ import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { personLabel, UNNAMED_AUTHOR_LABEL } from "@/lib/recruitment/person-labels";
 import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recruitment/types";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * What the managers above a CV have said about it.
@@ -126,7 +127,7 @@ export function CandidateCommentThread({
       ) : (
         <ul className="space-y-2">
           {comments.map((comment) => (
-            <li className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2" key={comment.id}>
+            <li className={`rounded-md border border-slate-200 bg-slate-50 px-3 py-2 ${adminSoftDepthClassName}`} key={comment.id}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 {/* The name AS AT the moment of writing, never re-resolved — HR_IDs are reused when a
                     seat is refilled, so a join here would eventually credit a successor.

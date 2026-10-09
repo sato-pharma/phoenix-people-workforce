@@ -12,6 +12,7 @@ import {
   visiblePortalNavEntries,
 } from "./employee-portal-nav-registry";
 import { useBottomNavPreference } from "./use-bottom-nav-preference";
+import { adminChipDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export function BottomNavCustomizer({
   visibility,
@@ -66,7 +67,7 @@ export function BottomNavCustomizer({
           const Icon = entry.icon;
           return (
             <span
-              className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-500"
+              className={`inline-flex items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-500 ${adminChipDepthClassName}`}
               key={entry.href}
             >
               <Icon className="h-3.5 w-3.5" />
