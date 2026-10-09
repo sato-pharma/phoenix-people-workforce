@@ -424,6 +424,27 @@ function coverRows(run: MonthlySalaryRun, rows: AssembledRow[], scopeLabel: stri
   return cover;
 }
 
+/**
+ * The cover's state line, READ FROM THE RUN instead of asserted (owner, 2026-10-09 — "fix the
+ * full-sheet cover that says HR-confirmed while Part 2 is unconfirmed").
+ *
+ * It was the fixed string `HR-confirmed`, so every full-sheet download wore a confirmed label
+ * whatever state the run was in. The September 2026 sheet the owner opened said
+ * "September 2026 · HR-confirmed" on its cover while Part 2 had not been confirmed at all — and
+ * the cover's own rows, three lines below, correctly read "Part 2 confirmed: No". The headline
+ * contradicted the table under it, and the headline is what a reader quotes.
+ *
+ * A pre-confirm download is a legitimate thing to want — it is how the figures get reviewed before
+ * anyone confirms them — so the fix is to SAY SO, not to withhold the file. The order is strict:
+ * published is later than Part 2 confirmed, which is later than Part 1.
+ */
+export function sheetStateLabel(run: MonthlySalaryRun): string {
+  if (run.publishedAt) return "published";
+  if (run.part2ConfirmedAt) return "HR-confirmed";
+  if (run.part1ConfirmedAt) return "PREVIEW — Part 1 confirmed, Part 2 still open";
+  return "PREVIEW — nothing confirmed yet";
+}
+
 const CONFIDENTIAL_NOTE =
   "CONFIDENTIAL — Payroll compensation data. For authorized finance and executive review only.";
 
@@ -453,7 +474,7 @@ export async function buildFullSheetWorkbook(input: {
   const workbook = new ExcelJS.Workbook();
   buildCoverSheet(workbook, {
     title: "Automated Payroll — Full Monthly Sheet",
-    subtitle: `${monthLabel(input.run.month, input.run.year)} · HR-confirmed`,
+    subtitle: `${monthLabel(input.run.month, input.run.year)} · ${sheetStateLabel(input.run)}`,
     rows: coverRows(input.run, input.rows, "Full monthly sheet"),
     confidentialNote: CONFIDENTIAL_NOTE,
   });
