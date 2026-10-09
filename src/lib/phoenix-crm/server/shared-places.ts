@@ -196,6 +196,16 @@ async function seatedCounts(sharedPlaceIds: readonly string[]): Promise<Map<stri
  * (`superAdminHasNoFieldWrite`) and anybody without `canCreate` — correct for CAPTURING a venue, and
  * wrong for a list: it would 403 the Super Admin's own look at the screen and every manager reading a
  * territory. Capturing one is gated where it is written, below.
+ *
+ * 🔒 ONE SEAT, AND NEVER A SHARED POOL — the owner's own ruling, 2026-10-09, asked and answered the
+ * day the venues shipped: "every polyclinic appears only to the rep validated it. No sharing." So
+ * the filter below is `.eq("seat_id", …)` and must stay a single-seat equality. Two reps covering
+ * one building each capture it for themselves, and that is CORRECT, not duplication to tidy away:
+ * a venue carries the capturing rep's own evidence — his live signboard photo, his two readings,
+ * his `created_by_hr_id` — and seating somebody on another rep's capture would put a customer's
+ * place behind a photo that rep never took. Widening this to `.in("seat_id", …)`, to a territory,
+ * line, area or brick, is the defect this comment exists to stop.
+ * Pinned by `tests/phoenix-crm-shared-place.test.ts`.
  */
 export async function loadSharedPlacesFor(viewer: PhoenixCrmViewer, raw: unknown): Promise<SharedPlaceRow[]> {
   const body = record(raw);

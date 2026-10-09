@@ -135,6 +135,29 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   assert.ok(service.includes("resolvePlaceLocation("), "one resolver, so brick_lookup keeps its pessimistic default");
   assert.ok(service.includes("territoryForValidation("), "and the rep's own territory is the gate");
 
+  // ── ONE SEAT SEES A VENUE, AND NEVER A SHARED POOL ──────────────────────────────────────────
+  //
+  // The owner, 2026-10-09, asked the day the venues shipped whether a polyclinic one rep captured
+  // should be offered to the other reps covering the same building: "No, every polyclinic appears
+  // only to the rep validated it. No sharing."
+  //
+  // It is not a preference about clutter. A venue carries the CAPTURING rep's own evidence — his
+  // live signboard photo, his two readings, his `created_by_hr_id` — so seating a customer on
+  // another rep's capture would stand that customer's place behind a photo its own rep never took.
+  // Two reps on one building each capture it, and those duplicate rows are CORRECT.
+  const picker = service.slice(
+    service.indexOf("export async function loadSharedPlacesFor("),
+    service.indexOf("async function venueSignboard("),
+  );
+  assert.ok(picker.length > 0, "the venue picker's read is where this is decided");
+  assert.ok(
+    picker.includes('.eq("seat_id", seat.seatId)'),
+    "🔒 the picker reads ONE seat's venues — his ruling: no sharing between reps",
+  );
+  for (const widening of ['.in("seat_id"', '.eq("line_code"', '.eq("area_code"', '.eq("region_code"', '.eq("brick_id"']) {
+    assert.ok(!picker.includes(widening), `nor is it widened with ${widening} — that is the defect, not a tidy-up`);
+  }
+
   // ── Seating: the timetable, the hours, and NO LOCATION AT ALL ────────────────────────────────
   const noVenue = parseSeatedPlaceDraft({ photoPath: "crm/timetables/a.jpg", timings: [{ weekday: 6, start: "10:00" }] });
   assert.equal(noVenue.ok === false ? noVenue.error : null, SEATED_PLACE_NO_VENUE);

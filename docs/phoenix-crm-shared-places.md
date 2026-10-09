@@ -28,7 +28,7 @@ schedule and look at it.
 On the Google listing check, asked directly: *"understand, but even if no uh, Google check, he must
 validate by a live photo and location."*
 
-His seven decisions, each asked and answered in chat the same day:
+His eight decisions, each asked and answered in chat the same day:
 
 1. **A shared place is a venue only** — on nobody's list, takes no visit, counts in no call rate and
    in no KPI. The seated customer stays the one who is planned, visited and counted.
@@ -52,6 +52,15 @@ His seven decisions, each asked and answered in chat the same day:
    customer (`schedule_other_name`), and no timetable in the photo (`schedule_missing`). The existing
    "a photo of paper, not a building" reason is never offered on a timetable photo — it would be wrong
    by construction.
+8. **A venue belongs to the seat that captured it, and is offered to nobody else.** Asked on
+   2026-10-09, the evening the feature shipped, whether a polyclinic one rep captured should appear
+   to the other reps covering the same building: *"No, every polyclinic appears only to the rep
+   validated it. No sharing."* So `loadSharedPlacesFor` filters `.eq("seat_id", …)` and two reps on
+   one building each capture it — those duplicate rows are **correct**, not clutter to tidy away. A
+   venue carries the capturing rep's own evidence (his live signboard photo, his two readings, his
+   `created_by_hr_id`); seating a customer on another rep's capture would stand that customer's place
+   behind a photo his own rep never took. Widening the read to `.in("seat_id", …)`, or to a line,
+   area, region or brick, is the defect this rule exists to stop.
 
 ## Why the timetable photo is per customer and not one shared image
 
