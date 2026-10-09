@@ -50,6 +50,8 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const DOCTOR = "scripts/repo-doctor.mjs";
 const GUARD = ".claude/hooks/memory-index-guard.mjs";
+const REFRESH = "scripts/cloud-mirror-drift-refresh.mjs";
+const MEMORY_DIR_LIB = "scripts/lib/memory-dir.mjs";
 const SOURCE = "scripts/cloud-mirror-source.mjs";
 const SYNC = "scripts/sync-cloud-context.mjs";
 const flat = (path: string) => stripComments(readFileSync(path, "utf8")).replace(/\s+/g, " ");
@@ -181,23 +183,56 @@ export function runCloudMirrorDriftTests() {
   assert.ok(manySession.length <= 4, "the SessionStart form stays a handful of lines whatever the drift count");
 
   // ── 7. The SessionStart hook's wiring ────────────────────────────────────────────────────────
+  //
+  // 2026-10-09 (hook speed fixes): the READING moved to `scripts/cloud-mirror-drift-refresh.mjs`, an
+  // async SessionStart entry that caches it, and the blocking guard prints the cached reading. So the
+  // pins follow the code: the comparison and the unreadable-mirror rule are pinned in the refresher,
+  // the wording and the alarm stay pinned in the guard, and the cache lives in one shared module.
+  // The behaviour behind each is driven for real in tests/session-start-memory-index-guard.test.ts.
   const guard = flat(GUARD);
+  const refresh = flat(REFRESH);
+  const memoryDirLib = flat(MEMORY_DIR_LIB);
   assert.ok(guard.includes("cloud-mirror-drift.mjs"), `${GUARD}: the SessionStart guard must load the shared decision`);
   assert.ok(
     /cloudMirrorSessionLines\(drift\)/.test(guard),
     `${GUARD}: it must use the SessionStart form, not repo-doctor's long report`,
   );
+  assert.ok(refresh.includes("cloud-mirror-drift.mjs"), `${REFRESH}: the reading must use the shared decision`);
+  assert.ok(
+    /cloudMirrorDrift\(\{\s*live: readMd\(memoryDir\), mirror: mirror\.files\s*\}\)/.test(refresh),
+    `${REFRESH}: the reading must be cloudMirrorDrift over the live notes and the mirror's files, as the guard's was`,
+  );
   // A mirror that cannot be read at all is not drift and not "current" — the same under-claiming
   // direction every other section of that hook takes.
   assert.ok(
-    /mirror !== null/.test(guard),
-    `${GUARD}: an unreadable mirror must be passed over, not reported either way`,
+    /mirror !== null/.test(refresh),
+    `${REFRESH}: an unreadable mirror must be passed over, not reported either way`,
   );
   // The owner is told as well as the session: the cost of not knowing lands on him, as a cloud run
   // that comes back having redone finished work.
   assert.ok(
     /mirrorDrifted > 0\)\s*\{\s*alarms\.push/.test(guard),
     `${GUARD}: drift must reach the human through systemMessage, not only the session's context`,
+  );
+  // 🔴 The blocking guard must not take the reading back. Every session start waited on it — p50
+  // 2.0 s, worst 11.1 s for the hook — and "it still works, just slower" fails no output assertion.
+  assert.ok(
+    !guard.includes("cloud-mirror-source.mjs") && !/readCloudMirror\(/.test(guard) && !/cloudMirrorDrift\(/.test(guard),
+    `${GUARD}: the blocking guard must print the cached reading, never read the mirror or compare it itself`,
+  );
+  // Both sides go through the ONE shared module, so they can never disagree about which memory
+  // directory a reading belongs to or where its cache file is.
+  assert.ok(
+    /readDriftCache\(memoryDir, \{ maxAgeMs: DRIFT_CACHE_SHOW_MS \}\)/.test(guard),
+    `${GUARD}: it must read the cached reading through scripts/lib/memory-dir.mjs, under its 24-hour limit`,
+  );
+  assert.ok(
+    /readDriftCache\(memoryDir, \{ maxAgeMs: DRIFT_CACHE_REFRESH_MS \}\)/.test(refresh) && /writeDriftCache\(memoryDir,/.test(refresh),
+    `${REFRESH}: it must skip a fresh reading and write the new one through scripts/lib/memory-dir.mjs`,
+  );
+  assert.ok(
+    /renameSync\(temp, file\)/.test(memoryDirLib),
+    `${MEMORY_DIR_LIB}: the reading must be written atomically — a half-written cache reads as no reading and silences a real alarm`,
   );
 
   // ── 8. BOTH READERS MEASURE `origin/main`, NOT THE WORKING TREE ──────────────────────────────
@@ -209,7 +244,9 @@ export function runCloudMirrorDriftTests() {
   // against a mirror already superseded. A cloud session clones `main`; the tree on disk only says
   // what a commit from here would ship. A check that cries wolf at every session start is one people
   // learn to skip, which costs the real alarm too.
-  for (const [file, text] of [[DOCTOR, doctor], [GUARD, guard]] as Array<[string, string]>) {
+  // The SessionStart half of this is the refresher since 2026-10-09 (hook speed fixes) — it is what
+  // reads the mirror now, from `projectDir`, the repo root the session runs in.
+  for (const [file, text] of [[DOCTOR, doctor], [REFRESH, refresh]] as Array<[string, string]>) {
     assert.ok(
       text.includes("cloud-mirror-source.mjs"),
       `${file}: must read the mirror through the shared source module, not readdirSync`,

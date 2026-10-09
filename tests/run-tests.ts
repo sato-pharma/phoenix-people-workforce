@@ -2157,6 +2157,7 @@ import { runNotificationChannelWiringTests } from "./notification-channel-wiring
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runWorktreeProvisionAllTests } from "./worktree-provision-all.test.ts";
+import { runSyncWorktreeEnvFastPathTests } from "./sync-worktree-env-fast-path.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
 import { runCustomerChannelSqlRuleTests } from "./customer-channel-sql-rule.test.ts";
 import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
@@ -2291,6 +2292,7 @@ import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runTrapInjectorClustersTests } from "./trap-injector-clusters.test.ts";
 import { runHookCommandsResolveTests } from "./hook-commands-resolve.test.ts";
+import { runHookHotPathTests } from "./hook-hot-path.test.ts";
 import { runDocsShareTokenGuardTests } from "./docs-share-token-guard.test.ts";
 import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
@@ -8099,6 +8101,10 @@ await runTest(
   runWorktreeProvisionAllTests,
 );
 await runTest(
+  "sync-worktree-env fast paths (the primary starts no process, a worktree copies exactly the gitignored env with ONE check-ignore and no rev-parse, --sweep-only provisions siblings and never its own folder however its path is cased, --hook and --sweep-only fail open with one stderr line while the no-flag run still exits non-zero)",
+  runSyncWorktreeEnvFastPathTests,
+);
+await runTest(
   "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",
   runChannelsByRepPharmacyOverrideTests,
 );
@@ -8843,10 +8849,15 @@ await runTest(
 
 await runTest(
   "every .claude/settings.json hook command names a script that EXISTS, carries shell syntax only "
-    + "where it declares \"shell\": \"bash\" (exactly two entries do), and points at a hook that fails "
+    + "where it declares \"shell\": \"bash\" (exactly one entry does, the cloud-only setup script), and points at a hook that fails "
     + "open — the three guarantees that moved out of the command string when the shell-expanded "
     + "`$DIR ... || true` form was removed, and that nothing was checking",
   runHookCommandsResolveTests,
+);
+
+await runTest(
+  "a blocking project hook starts NO process and touches no network on an ordinary Read, Edit, Write, Grep, Glob, Bash `ls` / `git status`, PowerShell `Get-ChildItem`, PostToolUse or prompt — every node hook runs in exec form with no Git Bash in front, every SessionStart entry is either named as one a session must wait for or `async: true` (the all-worktrees sweep and the cloud-mirror drift reading included), and a session start makes only the memory-index guard's three bounded checkout-position git calls; on 9 Oct 2026 those costs had taken a Phoenix Read from 45 to 210–260 ms, a Write from 155 to 634 ms and a session start to 2–4 s, and no test noticed because every hook still worked",
+  runHookHotPathTests,
 );
 
 await runTest(

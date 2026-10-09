@@ -21,8 +21,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { settingsHookGroups } from "./support/hook-wiring.ts";
+
 const hookPath = resolve(".claude/hooks/test-registration-check.mjs");
-const settingsPath = resolve(".claude/settings.json");
 const EXPORT = "export " + "function ";
 
 function runHook(tool: string, filePath: string): string {
@@ -99,10 +100,8 @@ export function runTestRegistrationCheckTests() {
   }
 
   // 2. The wiring.
-  const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
-    hooks?: { PostToolUse?: Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> };
-  };
-  const entries = (settings.hooks?.PostToolUse ?? []).filter((e) =>
+  // Read through the wiring helper: an exec-form entry's `command` is just "node" (2026-10-09).
+  const entries = settingsHookGroups("PostToolUse").filter((e) =>
     (e.hooks ?? []).some((h) => (h.command ?? "").includes("test-registration-check.mjs")),
   );
   assert.ok(entries.length > 0, "the test-registration check must be registered as a PostToolUse hook in .claude/settings.json");

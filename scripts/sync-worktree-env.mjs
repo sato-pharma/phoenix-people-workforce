@@ -39,68 +39,117 @@
 //                                                   # machine (node_modules junction + missing env
 //                                                   # only — never their settings), so node / pnpm /
 //                                                   # npm run in all working trees, not just this one.
-//                                                   # This is what the SessionStart hook runs; see
-//                                                   # scripts/lib/provision-worktree.mjs for why it is
-//                                                   # safe to touch another session's worktree.
+//                                                   # See scripts/lib/provision-worktree.mjs for why it
+//                                                   # is safe to touch another session's worktree.
+//   node scripts/sync-worktree-env.mjs --hook      # the no-flag run, but FAIL-OPEN: any failure prints
+//                                                   # one line to stderr and exits 0. The BLOCKING
+//                                                   # SessionStart entry runs this, with no shell.
+//   node scripts/sync-worktree-env.mjs --sweep-only # ONLY the sweep of every OTHER worktree — never
+//                                                   # this folder's env, node_modules or settings —
+//                                                   # and fail-open the same way. The ASYNC
+//                                                   # SessionStart entry runs this.
+//
+// 2026-10-09 (hook speed fixes): the SessionStart hook used to run `--all` through a bash
+// one-liner, blocking every session start on a sweep of ~27 worktrees (p50 1.7 s, worst 17.6 s).
+// It is now two entries: `--hook` (this folder only, blocking — the session needs its env before
+// the first command) and `--sweep-only` (everything else, async — nobody waits on it). `--all`
+// still does both in one run, unchanged, for a human at a terminal. `--hook` exists because the
+// entry runs node with no shell, so the old `2>/dev/null || true` fail-open is gone; the no-flag
+// run keeps exiting 1 on failure, because scripts/new-session.mjs reads that exit code.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { gitLayout } from "./lib/git-layout.mjs";
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
 import { sweepWorktrees, wasChanged, linkedNodeModules } from "./lib/provision-worktree.mjs";
 
+// stderr is captured, not inherited (2026-10-09, hook speed fixes): a fail-open run must print ONE
+// line, and git's own "fatal: not a git repository" would be a second one ahead of ours.
 function git(args, opts = {}) {
-  return execFileSync("git", args, { encoding: "utf8", ...opts }).trim();
-}
-
-function fail(message) {
-  console.error("sync-worktree-env aborted — " + message);
-  process.exit(1);
+  return execFileSync("git", args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], ...opts }).trim();
 }
 
 const args = process.argv.slice(2);
 const force = args.includes("--force");
 const dryRun = args.includes("--dry-run");
 const all = args.includes("--all");
+const sweepOnly = args.includes("--sweep-only");
+const hook = args.includes("--hook");
+// 2026-10-09 (hook speed fixes): a SessionStart entry must never fail the session start, and it
+// now runs without the shell that used to swallow the exit code. So under --hook / --sweep-only
+// every failure — a fail() below, or anything thrown — is one stderr line and exit 0.
+const failOpen = hook || sweepOnly;
+
+function fail(message) {
+  console.error("sync-worktree-env aborted — " + message);
+  process.exit(failOpen ? 0 : 1);
+}
+
+if (failOpen) {
+  process.on("uncaughtException", (err) => {
+    const first = String((err && err.message) || err).split(/\r?\n/)[0];
+    console.error("sync-worktree-env skipped — " + first);
+    process.exit(0);
+  });
+}
 
 // The common .git dir's parent is always the PRIMARY worktree (the original
 // clone) — unlike `git worktree list`'s first entry, this is reliable
 // regardless of which worktree the script is invoked from.
+//
+// 2026-10-09 (hook speed fixes): read off disk with gitLayout() — the same `.git` folder / `.git`
+// file + `commondir` pointer git itself reads — instead of two `git rev-parse` processes, so a
+// session start in the PRIMARY now starts no process at all. gitLayout() returns null whenever the
+// layout cannot be read off disk (or GIT_DIR and friends are set), and then git still answers.
+const layout = gitLayout(process.cwd());
 let commonDir;
-try {
-  commonDir = git(["rev-parse", "--git-common-dir"]);
-} catch {
-  fail("not inside a git repository.");
+let currentRoot;
+if (layout) {
+  commonDir = layout.commonDir;
+  currentRoot = layout.toplevel;
+} else {
+  try {
+    commonDir = git(["rev-parse", "--git-common-dir"]);
+  } catch {
+    fail("not inside a git repository.");
+  }
+  try {
+    currentRoot = git(["rev-parse", "--show-toplevel"]);
+  } catch {
+    fail("could not resolve the current worktree root.");
+  }
 }
 const primaryRoot = path.resolve(path.dirname(commonDir));
-
-let currentRoot;
-try {
-  currentRoot = git(["rev-parse", "--show-toplevel"]);
-} catch {
-  fail("could not resolve the current worktree root.");
-}
 currentRoot = path.resolve(currentRoot);
+// Off disk, "primary" is a `.git` FOLDER rather than a string comparison of two paths.
+const isPrimary = layout ? !layout.linked : primaryRoot === currentRoot;
 
 // Candidate files: anything in the primary worktree root matching /^\.env/,
 // excluding tracked *.example templates (already present via checkout), and
 // double-checked as actually gitignored so a tracked file can never be swept
 // in by accident.
+//
+// 2026-10-09 (hook speed fixes): ONE `git check-ignore` for every candidate, not one per file —
+// the primary has 7 of them, so that was 7 processes on every session start. `-z --stdin` takes
+// the names on stdin and answers NUL-separated, so no name is ever quoted or length-limited.
+// check-ignore exits 1 when NONE of the names is ignored: that is an answer, not an error, and
+// any other failure is read the way the per-file loop read it — not provably ignored, so not copied.
 function getEnvCandidates() {
-  return fs
+  const names = fs
     .readdirSync(primaryRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.startsWith(".env") && !entry.name.endsWith(".example"))
-    .map((entry) => entry.name)
-    .filter((name) => {
-      try {
-        git(["-C", primaryRoot, "check-ignore", "-q", name]);
-        return true;
-      } catch {
-        return false; // not gitignored — leave tracked files alone
-      }
-    })
-    .sort();
+    .map((entry) => entry.name);
+  if (names.length === 0) return [];
+  let out = "";
+  try {
+    out = git(["-C", primaryRoot, "check-ignore", "-z", "--stdin"], { input: names.map((n) => n + "\0").join("") });
+  } catch {
+    out = ""; // exit 1 = none ignored; anything else = nothing provably ignored. Tracked files are left alone either way.
+  }
+  const ignored = new Set(out.split("\0").filter(Boolean));
+  return names.filter((name) => ignored.has(name)).sort();
 }
 
 // Every worktree git knows about, as absolute paths — the primary plus every
@@ -114,6 +163,18 @@ function listWorktreeDirs() {
   return dirs;
 }
 
+// One spelling per folder, for the sweep's skip test: the real path (junctions and 8.3 names
+// resolved), case-folded on Windows. A folder that is gone keeps its resolved spelling.
+function dirKey(dir) {
+  let real = path.resolve(dir);
+  try {
+    real = fs.realpathSync.native(real);
+  } catch {
+    // a husk — sweepWorktrees marks it not-present anyway
+  }
+  return process.platform === "win32" ? real.toLowerCase() : real;
+}
+
 // `--all`: provision node_modules + missing env in every OTHER worktree, so node /
 // pnpm / npm run in ALL working trees, not just the one this session opened. The
 // current worktree (already fully synced above, settings and all) and the primary
@@ -124,8 +185,15 @@ function runSweep(candidates, skip) {
   try {
     dirs = listWorktreeDirs();
   } catch {
+    if (sweepOnly) fail("could not list the worktrees."); // the sweep IS the whole run — say why it did nothing
     return; // no git / no worktrees — nothing to sweep
   }
+  // 2026-10-09 (hook speed fixes): the skip test now compares real, case-folded paths. The roots
+  // come off disk from the session's own folder, `git worktree list` prints git's spelling, and on
+  // Windows those can differ in drive-letter case or through a junction — and `--sweep-only`
+  // promises never to touch the folder it runs in.
+  const skipKeys = new Set([primaryRoot, ...skip].map(dirKey));
+  dirs = dirs.filter((d) => !skipKeys.has(dirKey(d)));
   const results = sweepWorktrees(primaryRoot, dirs, candidates, { dryRun, skip });
   let changed = 0;
   for (const r of results) {
@@ -144,7 +212,17 @@ function runSweep(candidates, skip) {
   );
 }
 
-if (primaryRoot === currentRoot) {
+// --sweep-only (2026-10-09, hook speed fixes): the async half of the SessionStart work. Provision
+// every OTHER worktree and stop — this folder's env files, node_modules link and
+// settings.local.json are the blocking `--hook` run's job, and rewriting a permission file under
+// the session that is already running in it is exactly what the sweep must never do.
+if (sweepOnly) {
+  console.log("sync-worktree-env: primary=" + primaryRoot + " — sweeping every other worktree");
+  runSweep(getEnvCandidates(), [currentRoot]);
+  process.exit(0);
+}
+
+if (isPrimary) {
   // A control-tower (primary) session has nothing of its OWN to sync, but it is the
   // ideal place to provision every worktree, so `--all` still sweeps from here.
   if (all) {

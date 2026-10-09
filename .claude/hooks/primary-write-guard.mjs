@@ -81,6 +81,8 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
+import { gitLayout } from '../../scripts/lib/git-layout.mjs';
+
 /** The claim `scripts/new-session.mjs` writes into the git admin folder of a worktree it creates. */
 export const CLAIM_FILE = 'phx-session-owner.json';
 
@@ -210,15 +212,24 @@ function gitTrees(dir) {
   let gitDir = null;
   let commonDir = null;
   let toplevel = null;
-  try {
-    const out = execFileSync(
-      'git',
-      ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 },
-    );
-    [gitDir, commonDir, toplevel] = out.trim().split(/\r?\n/);
-  } catch {
-    return { linked: false, primary: null, root: null, others: [] };
+  // 2026-10-09 (hook speed fixes): read the layout off disk first. This hook runs on EVERY
+  // Write/Edit/NotebookEdit, and the `git rev-parse` below cost ~75 ms of process start-up on each
+  // one — more inside a busy session. gitLayout() reads the same `.git` folder / `gitdir:` file /
+  // `commondir` pointer git reads, and answers null (so git still decides) whenever it cannot.
+  const layout = gitLayout(dir);
+  if (layout) {
+    ({ gitDir, commonDir, toplevel } = layout);
+  } else {
+    try {
+      const out = execFileSync(
+        'git',
+        ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 },
+      );
+      [gitDir, commonDir, toplevel] = out.trim().split(/\r?\n/);
+    } catch {
+      return { linked: false, primary: null, root: null, others: [] };
+    }
   }
   if (!gitDir || !commonDir) return { linked: false, primary: null, root: null, others: [] };
 

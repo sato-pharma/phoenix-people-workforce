@@ -70,6 +70,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, s
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { gitLayout } from '../../scripts/lib/git-layout.mjs';
+
 function deny(reason) {
   process.stdout.write(
     JSON.stringify({
@@ -110,8 +112,9 @@ function withoutHeredocBodies(text) {
 /**
  * Is `dir` inside a LINKED worktree rather than the primary checkout?
  *
- * Two independent tests. git answers first because it also yields the primary's path for the
- * message and it works from a SUBDIRECTORY of the worktree: from anywhere inside one, `--git-dir`
+ * Two independent tests. The layout (read off disk by gitLayout, or by git when that cannot) answers
+ * first because it also yields the primary's path for the message and it works from a SUBDIRECTORY
+ * of the worktree: from anywhere inside one, `--git-dir`
  * (<primary>/.git/worktrees/<name>) differs from `--git-common-dir` (<primary>/.git), while in the
  * primary the two are the same folder. The `.git`-is-a-FILE shape is the fallback for when git
  * cannot be run at all. Only reached once the command already matched, so its cost is never paid
@@ -119,11 +122,16 @@ function withoutHeredocBodies(text) {
  */
 function linkedWorktree(dir) {
   try {
-    const out = execFileSync(
-      'git',
-      ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'],
-      { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 },
-    );
+    // 2026-10-09 (hook speed fixes): the layout read off disk first — the same `.git` folder /
+    // `gitdir:` file / `commondir` pointer git reads — and git only when that cannot be read.
+    const layout = gitLayout(dir);
+    const out = layout
+      ? `${layout.gitDir}\n${layout.commonDir}\n${layout.toplevel}`
+      : execFileSync(
+        'git',
+        ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'],
+        { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 },
+      );
     const [gitDir, commonDir, toplevel] = out.trim().split(/\r?\n/);
     if (gitDir && commonDir && normPath(gitDir) !== normPath(commonDir)) {
       return {
