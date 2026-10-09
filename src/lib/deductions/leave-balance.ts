@@ -1,0 +1,457 @@
+// Deductions → "Deduct from leave balance" / "Return to salary" (owner, 2026-10-09).
+//
+// A CRM day or a CRM half day with no record can be taken from the employee's ANNUAL leave instead of
+// from salary. His rulings, in chat the same day:
+//   - annual balance only
+//   - when the balance is shorter than the deduction: take what is there, the rest stays on salary
+//   - the comment is required and the employee reads it exactly as written (no notification)
+//   - it can be undone with "Return to salary": the days go back and the row returns to Pending
+//
+// THE BALANCE ARITHMETIC IS NOT COPIED HERE. How much annual leave an employee has left is
+// calculatePaymentForRequest (the same call a leave request and the weekly attendance review price
+// themselves with). What this file adds is the decision on top of it, and the write: one atomic
+// database function charges the days under the per-employee lock a leave approval takes, refusing if
+// the balance moved since it was read.
+
+import { writeAuditLog } from "@/lib/admin/audit";
+import type { AccessContext } from "@/lib/auth/permissions";
+import { balanceReadIsComplete } from "@/lib/attendance/digest-rules.ts";
+import { hrIdForStorage } from "@/lib/hr-id.ts";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
+import { calculatePaymentForRequest } from "@/lib/vacation/service";
+
+import { getLeaveBalanceChargeForCandidate, type LeaveBalanceCharge } from "./leave-balance-ledger.ts";
+import { loadActivePushedLineIdByCandidate } from "./pushed-lines.ts";
+import { assertDeductionsDecisionActor } from "./permissions.ts";
+import { recordDecision } from "./service.ts";
+import type { DeductionsDecision } from "./types.ts";
+
+/** The categories this button exists for. */
+export const LEAVE_BALANCE_CATEGORIES = ["crm", "crm_half_day"] as const;
+
+const DAYS_EPSILON = 0.0005;
+
+function roundDays(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * Pure: how a deduction splits between annual leave and salary. `coverableDays` is how many of the
+ * `dueDays` the balance can pay (null or zero when it cannot be worked out or is empty).
+ */
+export function planLeaveBalanceCharge(input: { dueDays: number; coverableDays: number | null }): {
+  chargeDays: number;
+  salaryDays: number;
+} {
+  const due = Number.isFinite(input.dueDays) && input.dueDays > 0 ? input.dueDays : 0;
+  const coverable = input.coverableDays != null && Number.isFinite(input.coverableDays) ? Math.max(0, input.coverableDays) : 0;
+  const chargeDays = roundDays(Math.min(due, coverable));
+  return { chargeDays, salaryDays: roundDays(due - chargeDays) };
+}
+
+/**
+ * Pure: the decision a charge leaves on the deduction. Fully covered → cleared, nothing on salary.
+ * Part covered → approved for payroll for ONLY the days the balance could not pay.
+ */
+export function decisionAfterLeaveBalanceCharge(input: {
+  chargeDays: number;
+  salaryDays: number;
+  dueDays: number;
+  comment: string;
+}): { status: "Do Not Take Action" | "Approved for Payroll"; reason: string; appliedValue: number | null } {
+  const comment = input.comment.trim();
+  if (input.salaryDays <= DAYS_EPSILON) {
+    return {
+      status: "Do Not Take Action",
+      reason: `${LEAVE_BALANCE_REASON_FULL} (${input.chargeDays} day${input.chargeDays === 1 ? "" : "s"}). ${comment}`,
+      appliedValue: null,
+    };
+  }
+  return {
+    status: "Approved for Payroll",
+    reason: `${LEAVE_BALANCE_REASON_PART} (${input.chargeDays} of ${input.dueDays} days); ${input.salaryDays} day${input.salaryDays === 1 ? "" : "s"} stay on salary. ${comment}`,
+    appliedValue: input.salaryDays,
+  };
+}
+
+export const LEAVE_BALANCE_REASON_FULL = "Paid from the annual leave balance";
+export const LEAVE_BALANCE_REASON_PART = "Partly paid from the annual leave balance";
+
+/** Whether a decision reason was written by this button — used to finish an interrupted return. */
+export function isLeaveBalanceReason(reason: string | null | undefined): boolean {
+  const text = String(reason ?? "");
+  return text.startsWith(LEAVE_BALANCE_REASON_FULL) || text.startsWith(LEAVE_BALANCE_REASON_PART);
+}
+
+function refusalText(reason: string | null): string {
+  switch (reason) {
+    case "missing_hire_date":
+      return "The employee's hire date is not on file, so the annual balance cannot be worked out.";
+    case "first_six_months":
+      return "The employee is in the first six months of employment, when annual balance cannot be used.";
+    case "balance_unreadable":
+      return "The annual balance could not be fully read right now. Try again shortly.";
+    case "no_balance":
+      return "The employee has no annual leave balance left to take this from.";
+    default:
+      return "The annual balance cannot be used for this deduction.";
+  }
+}
+
+type BalanceRead = {
+  coverableDays: number;
+  availableDays: number | null;
+  refusal: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  seenRequestDays: number | null;
+  seenChargeDays: number | null;
+  seenCopilotDays: number | null;
+};
+
+async function readBalanceInputs(employeeHrId: string, periodStart: string, periodEnd: string) {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_attendance_balance_inputs", {
+    p_employee_hr_id: employeeHrId,
+    p_period_start: periodStart,
+    p_period_end: periodEnd,
+  });
+  if (error) throw new Error(`Failed to read the annual balance: ${(error as { message?: string }).message ?? String(error)}`);
+  const row = (data ?? {}) as { requestDays?: unknown; chargeDays?: unknown; copilotDays?: unknown };
+  return {
+    requestDays: Number(row.requestDays) || 0,
+    chargeDays: Number(row.chargeDays) || 0,
+    copilotDays: Number(row.copilotDays) || 0,
+  };
+}
+
+/** How many of `days` annual leave can pay for on `workDate`, with the figures the write re-checks. */
+async function readLeaveBalance(input: { employeeHrId: string; hireDate: string | null; workDate: string; days: number }): Promise<BalanceRead> {
+  const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate: input.hireDate, referenceDate: input.workDate });
+  const seen = period ? await readBalanceInputs(input.employeeHrId, period.periodStart, period.periodEnd) : null;
+  const unreadable = (refusal: string): BalanceRead => ({
+    coverableDays: 0,
+    availableDays: null,
+    refusal,
+    periodStart: period?.periodStart ?? null,
+    periodEnd: period?.periodEnd ?? null,
+    seenRequestDays: seen?.requestDays ?? null,
+    seenChargeDays: seen?.chargeDays ?? null,
+    seenCopilotDays: seen?.copilotDays ?? null,
+  });
+  if (!period) return unreadable("missing_hire_date");
+
+  let snapshot: Awaited<ReturnType<typeof calculatePaymentForRequest>>;
+  try {
+    // Fail closed: a payroll balance ledger that cannot be read refuses instead of counting as zero spent.
+    snapshot = await calculatePaymentForRequest({
+      durationDays: input.days,
+      employeeHrId: input.employeeHrId,
+      failClosedLedgerRead: true,
+      hireDate: input.hireDate,
+      startDate: input.workDate,
+      vacationType: "annual",
+    });
+  } catch {
+    return unreadable("balance_unreadable");
+  }
+  const readComplete =
+    !seen ||
+    balanceReadIsComplete({
+      calculatorUsedDays: snapshot.usedPaidDays,
+      carriedOverDebtDays: snapshot.carriedOverDebtDays,
+      requestDays: seen.requestDays,
+      chargeDays: seen.chargeDays,
+      copilotDays: seen.copilotDays,
+    });
+  const samePeriod = snapshot.periodStart === period.periodStart && snapshot.periodEnd === period.periodEnd;
+  if (!readComplete || !samePeriod) return unreadable("balance_unreadable");
+  if (snapshot.unpaidReason === "missing_hire_date" || snapshot.unpaidReason === "first_six_months") {
+    return { ...unreadable(snapshot.unpaidReason), availableDays: null };
+  }
+  const coverableDays = roundDays(Math.max(0, snapshot.paidDurationDays));
+  return {
+    coverableDays,
+    availableDays: roundDays(Math.max(0, snapshot.balanceBeforeDays)),
+    refusal: coverableDays <= DAYS_EPSILON ? "no_balance" : null,
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
+    seenRequestDays: seen?.requestDays ?? null,
+    seenChargeDays: seen?.chargeDays ?? null,
+    seenCopilotDays: seen?.copilotDays ?? null,
+  };
+}
+
+type CandidateForCharge = {
+  id: string;
+  category: string;
+  unit: string;
+  employeeHrId: string;
+  monthKey: string;
+  lockedAt: string | null;
+  supersededAt: string | null;
+  rawValue: number;
+  dates: string[];
+  decisionStatus: string | null;
+  decisionReason: string | null;
+  appliedValue: number | null;
+};
+
+async function loadCandidateForCharge(candidateId: string): Promise<CandidateForCharge> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("deductions_candidates")
+    .select("id, category, unit, employee_hr_id, month_key, locked_at, superseded_at, raw_value, dates, deductions_decisions(decision_status, decision_reason, applied_value)")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load the deduction: ${error.message}`);
+  if (!data) throw new Error("Not found: that deduction does not exist.");
+  const row = data as Record<string, unknown>;
+  const nested = row.deductions_decisions as Record<string, unknown> | Array<Record<string, unknown>> | null;
+  const decision = Array.isArray(nested) ? (nested[0] ?? null) : nested;
+  return {
+    id: String(row.id),
+    category: String(row.category ?? ""),
+    unit: String(row.unit ?? ""),
+    employeeHrId: String(row.employee_hr_id ?? ""),
+    monthKey: String(row.month_key ?? ""),
+    lockedAt: (row.locked_at as string | null) ?? null,
+    supersededAt: (row.superseded_at as string | null) ?? null,
+    rawValue: Number(row.raw_value) || 0,
+    dates: Array.isArray(row.dates) ? (row.dates as unknown[]).map(String).sort() : [],
+    decisionStatus: decision ? String(decision.decision_status ?? "") || null : null,
+    decisionReason: decision ? String(decision.decision_reason ?? "") || null : null,
+    appliedValue: decision && decision.applied_value != null ? Number(decision.applied_value) : null,
+  };
+}
+
+async function loadHireDate(employeeHrId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hire_date")
+    .ilike("hr_id", employeeHrId.trim().replace(/[\\%_]/g, (char) => `\\${char}`))
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to read the employee's hire date: ${error.message}`);
+  return ((data as { hire_date?: string | null } | null)?.hire_date ?? null) || null;
+}
+
+function assertChargeable(candidate: CandidateForCharge) {
+  if (!(LEAVE_BALANCE_CATEGORIES as readonly string[]).includes(candidate.category)) {
+    throw new Error("Validation: only a CRM or CRM half-day deduction can be taken from the leave balance.");
+  }
+  if (candidate.unit !== "days") {
+    throw new Error("Validation: only a deduction counted in days can be taken from the leave balance.");
+  }
+  if (candidate.supersededAt) {
+    throw new Error("Conflict: this deduction was replaced by a newer one — reload and look again.");
+  }
+  if (candidate.lockedAt) {
+    throw new Error("Conflict: this deduction is locked by a publication and can no longer be changed.");
+  }
+  if (!candidate.employeeHrId.trim()) {
+    throw new Error("Validation: this deduction has no employee on it.");
+  }
+}
+
+/** The day the balance period is read from: the deduction's first date, else the first of its month. */
+function anchorDate(candidate: CandidateForCharge): string {
+  if (candidate.dates[0] && /^\d{4}-\d{2}-\d{2}/.test(candidate.dates[0])) return candidate.dates[0].slice(0, 10);
+  return `${candidate.monthKey.slice(0, 7)}-01`;
+}
+
+export type LeaveBalancePreview = {
+  candidateId: string;
+  employeeHrId: string;
+  /** Days this deduction currently costs. */
+  dueDays: number;
+  /** Annual leave left before this deduction, null when it could not be worked out. */
+  availableDays: number | null;
+  /** Days that would come off annual leave. */
+  chargeDays: number;
+  /** Days that would stay on salary. */
+  salaryDays: number;
+  /** Plain-words reason the button cannot be used, null when it can. */
+  refusal: string | null;
+  /** Already charged: what is on the leave balance now. */
+  charged: LeaveBalanceCharge | null;
+};
+
+async function previewFor(candidate: CandidateForCharge) {
+  const dueDays = candidate.appliedValue != null ? candidate.appliedValue : candidate.rawValue;
+  const hireDate = await loadHireDate(candidate.employeeHrId);
+  const balance = await readLeaveBalance({
+    employeeHrId: candidate.employeeHrId,
+    hireDate,
+    workDate: anchorDate(candidate),
+    days: dueDays,
+  });
+  const plan = planLeaveBalanceCharge({ dueDays, coverableDays: balance.coverableDays });
+  return { dueDays, balance, plan };
+}
+
+/** What pressing "Deduct from leave balance" would do — read only, for the confirmation dialog. */
+export async function previewLeaveBalanceCharge(input: {
+  actor: Pick<AccessContext, "role">;
+  candidateId: string;
+}): Promise<LeaveBalancePreview> {
+  assertDeductionsDecisionActor(input.actor);
+  const candidate = await loadCandidateForCharge(input.candidateId);
+  const charged = await getLeaveBalanceChargeForCandidate(candidate.id);
+  if (charged) {
+    return {
+      candidateId: candidate.id,
+      employeeHrId: candidate.employeeHrId,
+      dueDays: roundDays(charged.days + (candidate.appliedValue ?? 0)),
+      availableDays: null,
+      chargeDays: charged.days,
+      salaryDays: candidate.appliedValue ?? 0,
+      refusal: null,
+      charged,
+    };
+  }
+  assertChargeable(candidate);
+  const { dueDays, balance, plan } = await previewFor(candidate);
+  let refusal = plan.chargeDays > DAYS_EPSILON ? null : refusalText(balance.refusal ?? "no_balance");
+  if (candidate.decisionStatus === "Do Not Take Action") refusal = "This deduction is already cleared — there is nothing to take from the leave balance.";
+  return {
+    candidateId: candidate.id,
+    employeeHrId: candidate.employeeHrId,
+    dueDays,
+    availableDays: balance.availableDays,
+    chargeDays: plan.chargeDays,
+    salaryDays: plan.salaryDays,
+    refusal,
+    charged: null,
+  };
+}
+
+function rethrowRpcError(error: { code?: string; message?: string }): never {
+  const message = error.message || "The leave balance could not be changed.";
+  if (error.code === "40001" || error.code === "55000") throw new Error(`Conflict: ${message}`);
+  if (error.code === "P0002") throw new Error(`Not found: ${message}`);
+  if (error.code === "22023") throw new Error(`Validation: ${message}`);
+  throw new Error(message);
+}
+
+/** Take a CRM / half-day deduction from the employee's annual leave. Super Admin only. */
+export async function chargeDeductionToLeaveBalance(input: {
+  actor: Pick<AccessContext, "role" | "hrId" | "loginId">;
+  candidateId: string;
+  comment: string;
+}): Promise<{ chargedDays: number; salaryDays: number; decisionStatus: string; decision: DeductionsDecision }> {
+  assertDeductionsDecisionActor(input.actor);
+  const comment = String(input.comment ?? "").trim();
+  if (!comment) throw new Error("Validation: write the comment the employee will read.");
+
+  const candidate = await loadCandidateForCharge(input.candidateId);
+  assertChargeable(candidate);
+  if (candidate.decisionStatus === "Do Not Take Action") {
+    throw new Error("Conflict: this deduction is already cleared — there is nothing to take from the leave balance.");
+  }
+  if (await getLeaveBalanceChargeForCandidate(candidate.id)) {
+    throw new Error("Conflict: this deduction is already taken from the leave balance — reload and look again.");
+  }
+  const pushed = await loadActivePushedLineIdByCandidate(candidate.monthKey);
+  if (pushed.get(candidate.id)) {
+    throw new Error("Conflict: this deduction was already released to the employee — withdraw it first.");
+  }
+
+  const { dueDays, balance, plan } = await previewFor(candidate);
+  if (plan.chargeDays <= DAYS_EPSILON || !balance.periodStart || !balance.periodEnd) {
+    throw new Error(`Conflict: ${refusalText(balance.refusal ?? "no_balance")}`);
+  }
+
+  const actorHrId = input.actor.hrId ?? input.actor.loginId ?? null;
+  const { error } = await getSupabaseAdmin().rpc("phx_deductions_charge_leave_balance", {
+    p_candidate_id: candidate.id,
+    p_employee_hr_id: hrIdForStorage(candidate.employeeHrId),
+    p_work_date: anchorDate(candidate),
+    p_days: plan.chargeDays,
+    p_comment: comment,
+    p_actor_hr_id: actorHrId ? hrIdForStorage(actorHrId) : null,
+    p_period_start: balance.periodStart,
+    p_period_end: balance.periodEnd,
+    p_seen_request_days: balance.seenRequestDays,
+    p_seen_charge_days: balance.seenChargeDays,
+    p_seen_copilot_days: balance.seenCopilotDays,
+  });
+  if (error) rethrowRpcError(error as { code?: string; message?: string });
+
+  const after = decisionAfterLeaveBalanceCharge({ ...plan, dueDays, comment });
+  let decision: DeductionsDecision;
+  try {
+    decision = await recordDecision({
+      actor: input.actor,
+      candidateId: candidate.id,
+      decisionStatus: after.status,
+      decisionReason: after.reason,
+      appliedValue: after.appliedValue,
+      viaLeaveBalance: true,
+    });
+  } catch (decisionError) {
+    // The days were taken but the row could not be updated — give them straight back so salary and
+    // leave are never both left holding the same deduction.
+    await getSupabaseAdmin()
+      .rpc("phx_deductions_return_leave_balance", {
+        p_candidate_id: candidate.id,
+        p_reason: "Undone automatically: the deduction could not be updated.",
+        p_actor_hr_id: actorHrId ? hrIdForStorage(actorHrId) : null,
+      })
+      .then(() => undefined, () => undefined);
+    throw decisionError;
+  }
+
+  await writeAuditLog({
+    actorLoginId: input.actor.loginId ?? input.actor.hrId ?? "unknown",
+    entityId: candidate.id,
+    entityType: "deductions_decision",
+    newValues: { chargedDays: plan.chargeDays, salaryDays: plan.salaryDays, comment } as unknown as Record<string, unknown>,
+    summary: `Deduction taken from the annual leave balance: ${plan.chargeDays} day(s)`,
+  });
+  return { chargedDays: plan.chargeDays, salaryDays: plan.salaryDays, decisionStatus: after.status, decision };
+}
+
+/** Undo a leave balance charge: the days go back and the deduction returns to Pending. Super Admin only. */
+export async function returnDeductionToSalary(input: {
+  actor: Pick<AccessContext, "role" | "hrId" | "loginId">;
+  candidateId: string;
+  reason?: string;
+}): Promise<{ returnedDays: number; decision: DeductionsDecision }> {
+  assertDeductionsDecisionActor(input.actor);
+  const candidate = await loadCandidateForCharge(input.candidateId);
+  if (candidate.lockedAt) {
+    throw new Error("Conflict: this deduction is locked by a publication and can no longer be changed.");
+  }
+  const actorHrId = input.actor.hrId ?? input.actor.loginId ?? null;
+  const charged = await getLeaveBalanceChargeForCandidate(candidate.id);
+  let returnedDays = 0;
+  if (charged) {
+    const { data, error } = await getSupabaseAdmin().rpc("phx_deductions_return_leave_balance", {
+      p_candidate_id: candidate.id,
+      p_reason: String(input.reason ?? "").trim() || "Returned to salary by the Super Admin.",
+      p_actor_hr_id: actorHrId ? hrIdForStorage(actorHrId) : null,
+    });
+    if (error) rethrowRpcError(error as { code?: string; message?: string });
+    returnedDays = Number((data as { returnedDays?: unknown } | null)?.returnedDays) || 0;
+  } else if (!isLeaveBalanceReason(candidate.decisionReason)) {
+    throw new Error("Conflict: this deduction is not taken from the leave balance — reload and look again.");
+  }
+  // A previous return that gave the days back but could not reset the row is finished here.
+  const decision = await recordDecision({
+    actor: input.actor,
+    candidateId: candidate.id,
+    decisionStatus: "Pending",
+    decisionReason: "",
+    appliedValue: null,
+    appliedDates: null,
+    viaLeaveBalance: true,
+  });
+  await writeAuditLog({
+    actorLoginId: input.actor.loginId ?? input.actor.hrId ?? "unknown",
+    entityId: candidate.id,
+    entityType: "deductions_decision",
+    newValues: { returnedDays } as unknown as Record<string, unknown>,
+    summary: `Deduction returned to salary: ${returnedDays} day(s) given back to the annual leave balance`,
+  });
+  return { returnedDays, decision };
+}

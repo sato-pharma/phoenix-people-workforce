@@ -413,6 +413,23 @@ export type VacationReportData = {
     zeroBalance: number;
   };
   filters: VacationReportFilters;
+  /**
+   * Deductions (CRM no-record days and half days) the Super Admin took from annual leave instead of
+   * salary, with the comment written for the employee (owner, 2026-10-09). Scoped to the same
+   * employees the report shows. `failed` is true when the read failed, so the page can say so instead
+   * of showing an empty list.
+   */
+  leaveBalanceDeductions?: {
+    failed: boolean;
+    rows: Array<{
+      chargedAt: string;
+      comment: string;
+      days: number;
+      employeeHrId: string;
+      employeeName: string;
+      workDate: string;
+    }>;
+  };
   options: {
     departments: string[];
     employees: Array<{ label: string; value: string }>;

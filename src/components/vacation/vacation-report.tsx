@@ -913,6 +913,48 @@ function SelfLeaveFact({ label, value, tone }: { label: string; value: string; t
 }
 
 /**
+ * Deductions the Super Admin took from annual leave instead of salary (Deductions → "Deduct from leave
+ * balance", owner 2026-10-09), each with the comment he wrote — shown exactly as written. These days are
+ * already inside "Used" above. A failed read says so rather than printing an empty list.
+ */
+function LeaveBalanceDeductionsPanel({
+  data,
+  isSelfView,
+}: {
+  data: NonNullable<VacationReportData["leaveBalanceDeductions"]>;
+  isSelfView: boolean;
+}) {
+  if (!data.failed && data.rows.length === 0) return null;
+  return (
+    <section className="mt-2 min-w-0 rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-5">
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+        {isSelfView ? "Taken from your annual leave" : "Deductions taken from annual leave"}
+      </p>
+      {data.failed ? (
+        <p className="mt-2 text-phx-sm font-semibold text-amber-700">
+          The deductions taken from annual leave could not be read right now. Reload the page to try again.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-slate-100">
+          {data.rows.map((row) => (
+            <li className="py-3 first:pt-0 last:pb-0" key={`${row.employeeHrId}-${row.workDate}-${row.chargedAt}`}>
+              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-phx-sm font-bold text-slate-900">
+                {isSelfView ? null : <span>{row.employeeName}</span>}
+                <span className="tabular-nums text-slate-600">{row.workDate}</span>
+                <span className="text-sky-800">
+                  {formatDays(row.days)} {row.days === 1 ? "day" : "days"} from annual leave
+                </span>
+              </p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-phx-sm leading-5 text-slate-700">{row.comment}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
  * The Entitlements tab for a viewer who can see nobody but themselves — every Medical Rep, and any
  * employee without a team. The team report it replaces for them (five population counters, an
  * eligibility distribution drawn over one person, a nine-column register holding one row, and an
@@ -1748,6 +1790,10 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             requestsHref={selfRequestsHref}
             row={employeeEligibility[0] ?? null}
           />
+        ) : null}
+
+        {showEntitlementsTab && initialData?.leaveBalanceDeductions ? (
+          <LeaveBalanceDeductionsPanel data={initialData.leaveBalanceDeductions} isSelfView={isSelfView} />
         ) : null}
 
         {showEntitlementsTab && !isSelfView ? (

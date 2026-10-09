@@ -51,9 +51,15 @@ export function runDeductionsBulkDecideTests() {
 
   const tabStart = source.indexOf("function CategoryTab(");
   const tab = source.slice(tabStart, source.indexOf("function PublicationPanel(", tabStart));
+  // Open-ended on purpose: more exclusions may join this filter (a leave-balance charge did on
+  // 2026-10-09), but `!row.pushedLineId` must stay the first of them.
   assert.ok(
-    /selectableRows\s*=\s*canDecide \? rows\.filter\(\(row\) => !row\.pushedLineId\)/.test(tab),
+    /selectableRows\s*=\s*canDecide \? rows\.filter\(\(row\) => !row\.pushedLineId\b/.test(tab),
     `${WORKSPACE}: the selectable rows are no longer limited to unpushed ones. A pushed line is locked and the server refuses a decision on it.`,
+  );
+  assert.ok(
+    /selectableRows\s*=\s*canDecide \? rows\.filter\(\(row\) =>[^)]*!row\.leaveBalanceCharge/.test(tab),
+    `${WORKSPACE}: a row already charged to the employee's annual leave balance is selectable again. recordDecision refuses it until "Return to salary" is pressed, so a bulk decide over it fails the whole tick.`,
   );
   assert.ok(
     /Select all \(/.test(tab) && /Select pending only/.test(tab),

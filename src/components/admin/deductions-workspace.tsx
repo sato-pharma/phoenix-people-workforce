@@ -18,7 +18,10 @@ import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
   phxButtonApproveDenseClassName,
   phxFieldClassName,
+  phxLabelClassName,
+  phxRequiredMarkClassName,
   phxSelectClassName,
+  phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +63,11 @@ type CandidateApiRow = {
    * again. Loaded by the candidates route from the active publication lines.
    */
   pushedLineId?: string | null;
+  /**
+   * Set when this deduction is taken from the employee's annual leave instead of salary (owner,
+   * 2026-10-09): the net days charged and the comment the employee reads. Null when paid from salary.
+   */
+  leaveBalanceCharge?: { days: number; comment: string; chargedAt: string } | null;
 };
 
 /**
@@ -699,6 +707,166 @@ function CandidateDecideRow({
           Decide
         </button>
       )}
+    </div>
+  );
+}
+
+/** What the server says taking one deduction from annual leave would do (GET /api/admin/deductions/leave-balance). */
+type LeaveBalancePreviewApi = {
+  dueDays: number;
+  availableDays: number | null;
+  chargeDays: number;
+  salaryDays: number;
+  refusal: string | null;
+};
+
+/** A CRM or CRM half-day deduction counted in days is the only kind that can be taken from leave. */
+function canTakeFromLeaveBalance(row: CandidateApiRow): boolean {
+  return (row.category === "crm" || row.category === "crm_half_day") && row.unit === "days";
+}
+
+function daysText(days: number): string {
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+/**
+ * "Deduct from leave balance" and "Return to salary" (owner, 2026-10-09). The comment is required: it
+ * is what the employee reads, as written, in their Vacation Report. The confirmation shows what the
+ * server worked out — how much annual leave there is, how many days come off it and how many stay on
+ * salary — before anything is saved.
+ */
+function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<LeaveBalancePreviewApi | null>(null);
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const charged = row.leaveBalanceCharge ?? null;
+  if (!charged && !canTakeFromLeaveBalance(row)) return null;
+
+  async function openDialog() {
+    setOpen(true);
+    setError(null);
+    setPreview(null);
+    setLoading(true);
+    try {
+      const payload = await fetchJson<{ preview: LeaveBalancePreviewApi }>(
+        `/api/admin/deductions/leave-balance?candidateId=${encodeURIComponent(row.id)}`,
+      );
+      setPreview(payload.preview);
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "Unable to read the leave balance.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function send(body: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await fetchJson("/api/admin/deductions/leave-balance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidateId: row.id, ...body }),
+      });
+      setOpen(false);
+      setComment("");
+      onChanged();
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "Unable to change the leave balance.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (charged) {
+    return (
+      <div className="mt-1.5 space-y-1">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-sky-800">
+          From leave balance · {daysText(charged.days)}
+        </span>
+        <p className="text-phx-xs text-slate-600">{charged.comment}</p>
+        <button
+          className="whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-50"
+          disabled={busy}
+          onClick={() => send({ action: "return" })}
+          type="button"
+        >
+          {busy ? "Returning…" : "Return to salary"}
+        </button>
+        {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <div className="mt-1.5">
+        <button
+          className="whitespace-nowrap border border-sky-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-sky-800 transition hover:border-sky-500 hover:bg-sky-50"
+          onClick={openDialog}
+          type="button"
+        >
+          Deduct from leave balance
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 space-y-1.5 rounded-sm border border-slate-200 bg-slate-50 p-2">
+      {loading ? <p className="text-phx-xs text-slate-500">Reading the annual leave balance…</p> : null}
+      {preview ? (
+        preview.refusal ? (
+          <p className="text-phx-xs font-semibold text-amber-800">{preview.refusal}</p>
+        ) : (
+          <p className="text-phx-xs text-slate-700">
+            Annual leave left: {preview.availableDays == null ? "unknown" : daysText(preview.availableDays)}. This takes{" "}
+            <span className="font-black">{daysText(preview.chargeDays)}</span> from leave
+            {preview.salaryDays > 0 ? (
+              <>
+                {" "}
+                and <span className="font-black">{daysText(preview.salaryDays)}</span> stay on salary
+              </>
+            ) : null}
+            .
+          </p>
+        )
+      ) : null}
+      <label className="block">
+        <span className={phxLabelClassName}>
+          Comment for the employee<span className={phxRequiredMarkClassName}>*</span>
+        </span>
+        <textarea
+          className={phxTextareaClassName}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder="The employee reads this exactly as written, in their Vacation Report"
+          rows={2}
+          value={comment}
+        />
+      </label>
+      {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+          disabled={busy || loading || !preview || Boolean(preview.refusal) || !comment.trim()}
+          onClick={() => send({ action: "charge", comment })}
+          type="button"
+        >
+          {busy ? "Saving…" : "Deduct from leave"}
+        </button>
+        <button
+          className="rounded-sm px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500"
+          disabled={busy}
+          onClick={() => setOpen(false)}
+          type="button"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -1383,7 +1551,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   const config = DEDUCTIONS_CATEGORY_CONFIG[category];
 
   // A pushed line is locked against edits, so it can be neither ticked nor decided in bulk.
-  const selectableRows = canDecide ? rows.filter((row) => !row.pushedLineId) : [];
+  const selectableRows = canDecide ? rows.filter((row) => !row.pushedLineId && !row.leaveBalanceCharge) : [];
   const selectedRows = selectableRows.filter((row) => selectedIds.has(row.id));
   const allSelected = selectableRows.length > 0 && selectedRows.length === selectableRows.length;
   const pendingRows = selectableRows.filter((row) => (row.decision?.decisionStatus ?? "Pending") === "Pending");
@@ -1632,7 +1800,9 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                               {/* A pushed line is LOCKED — editing days or changing the
                                   decision would be refused server-side. Hide those and
                                   offer only Withdraw until it is pulled back. */}
-                              {row.pushedLineId ? null : (
+                              {row.pushedLineId ? null : row.leaveBalanceCharge ? (
+                                <LeaveBalanceControl onChanged={() => setReloadToken((token) => token + 1)} row={row} />
+                              ) : (
                                 <>
                                   <button
                                     className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
@@ -1642,6 +1812,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                                     {editingId === row.id ? "Close days" : "Edit days"}
                                   </button>
                                   <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
+                                  <LeaveBalanceControl onChanged={() => setReloadToken((token) => token + 1)} row={row} />
                                 </>
                               )}
                               <PushControl onPushChange={handlePushChange} row={row} />
@@ -1706,7 +1877,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                   {row.reason ? <p className="mt-1 text-xs text-slate-600">{row.reason}</p> : null}
                   {/* A pushed line is LOCKED — hide Edit days + Decide, offer only
                       Withdraw, until it is pulled back. */}
-                  {canDecide && !row.pushedLineId ? (
+                  {canDecide && !row.pushedLineId && !row.leaveBalanceCharge ? (
                     <button
                       className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
                       onClick={() => setEditingId(editingId === row.id ? null : row.id)}
@@ -1720,8 +1891,11 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                       <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
                     </div>
                   ) : null}
-                  {canDecide && !row.pushedLineId ? (
+                  {canDecide && !row.pushedLineId && !row.leaveBalanceCharge ? (
                     <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
+                  ) : null}
+                  {canDecide && !row.pushedLineId ? (
+                    <LeaveBalanceControl onChanged={() => setReloadToken((token) => token + 1)} row={row} />
                   ) : null}
                   {canDecide ? (
                     <div className="mt-1.5">
