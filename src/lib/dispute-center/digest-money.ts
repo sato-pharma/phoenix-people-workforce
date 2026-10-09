@@ -2,9 +2,9 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeMonthKey } from "@/lib/deductions/candidate-key.ts";
 import { pushDeduction, withdrawDeduction } from "@/lib/deductions/push.ts";
 import { recordDecision } from "@/lib/deductions/service.ts";
-import { roundCurrency } from "@/lib/payroll/money";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { payrollCharge, type ChargeCandidateRow, type ChargeDecisionRow } from "./charge.ts";
 import { monthKeyLabel, payrollMonthState } from "./payroll-month.ts";
 import { cancelLiveRefund, recommendDisputeRefund } from "./refunds.ts";
 import { dayLabel, moneyLabel } from "./text.ts";
@@ -32,12 +32,14 @@ export type RevisionMoneyResult = {
   notices: string[];
 };
 
-type CandidateRow = {
+// The charge columns come with it (`ChargeCandidateRow`): what this day costs is read from the
+// candidate's DECISION, never from its payslip line, and `payrollCharge` needs the unit, the detected
+// figure, the estimate and the dates to answer in payroll's own terms.
+type CandidateRow = ChargeCandidateRow & {
   employee_hr_id: string | null;
   id: string;
   locked_at: string | null;
   month_key: string | null;
-  raw_value: number | string;
 };
 
 /** The month-end fingerprint candidate for one employee-day, keyed the way the connector writes it. */
@@ -45,7 +47,7 @@ async function findFingerprintCandidate(employeeHrId: string, workDate: string):
   const monthKey = normalizeMonthKey(workDate.slice(0, 7));
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_candidates")
-    .select("id, month_key, raw_value, locked_at, employee_hr_id")
+    .select("id, month_key, raw_value, locked_at, employee_hr_id, category, unit, estimated_amount, dates")
     .eq("category", "fingerprint")
     .eq("month_key", monthKey)
     .eq("source_record_id", `${employeeHrId}:${workDate}`)
@@ -55,16 +57,35 @@ async function findFingerprintCandidate(employeeHrId: string, workDate: string):
   return (data as CandidateRow | null) ?? null;
 }
 
-async function activeLineFor(candidateId: string): Promise<{ appliedAmount: number; id: string } | null> {
+/** The decision on record for that candidate — the thing payroll actually charges. */
+async function decisionFor(candidateId: string): Promise<ChargeDecisionRow | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("deductions_decisions")
+    .select("decision_status, applied_value, applied_amount, applied_dates")
+    .eq("candidate_id", candidateId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ChargeDecisionRow | null) ?? null;
+}
+
+/**
+ * The live payslip line for that candidate, if there is one — its ID and nothing else.
+ *
+ * 🔴 IT DELIBERATELY NO LONGER CARRIES `applied_amount`. The line says whether the employee can SEE
+ * the deduction on their payslip, which is all it is read for here (withdraw it, or push one when
+ * none exists). It is not what payroll charges, and a money figure sitting in this helper is exactly
+ * how it became the basis of a refund in the first place — `payrollCharge` answers that question.
+ */
+async function activeLineFor(candidateId: string): Promise<{ id: string } | null> {
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_publication_lines")
-    .select("id, applied_amount")
+    .select("id")
     .eq("candidate_id", candidateId)
     .eq("line_status", "active")
     .maybeSingle();
   if (error) throw error;
-  const row = data as { applied_amount: number | string; id: string } | null;
-  return row ? { appliedAmount: roundCurrency(Number(row.applied_amount) || 0), id: row.id } : null;
+  const row = data as { id: string } | null;
+  return row ? { id: row.id } : null;
 }
 
 /**
@@ -105,7 +126,12 @@ export async function applyDigestRevisionToDeduction(input: {
   const monthKey = normalizeMonthKey(String(candidate.month_key ?? input.workDate.slice(0, 7)));
   const monthState = await payrollMonthState(monthKey);
   const line = await activeLineFor(candidate.id);
-  const chargedBefore = line?.appliedAmount ?? 0;
+  // WHAT THIS DAY COSTS IS THE DECISION, NOT THE PAYSLIP LINE (`charge.ts`). The line was the basis
+  // here too, and the weekly review is the path where the two disagree most often: the month-end
+  // fingerprint candidate is approved by the bridge when the month closes and pushed separately, so
+  // "approved, not yet pushed" is the ordinary state of a day for days at a time. Read off the line,
+  // a dispute upheld in that window refunded 0.00 while payroll charged the day in full.
+  const chargedBefore = payrollCharge(candidate, await decisionFor(candidate.id)).amount;
 
   if (input.upheld) {
     if (line) {

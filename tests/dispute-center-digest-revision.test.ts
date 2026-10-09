@@ -125,6 +125,40 @@ export async function runDisputeCenterDigestRevisionTests() {
     digest.includes("reopenedSince("),
     "…and only after the case was really reopened — a reviewer cannot re-decide a closed day on a whim",
   );
+  // ---- THE MONEY SIDE READS THE DECISION, NEVER THE PAYSLIP LINE -------------------------------
+  //
+  // The weekly review is where the two disagree most often, and for the longest: the month-end
+  // fingerprint candidate for a day is approved when the month closes and PUSHED separately, so
+  // "approved, not yet pushed" is the ordinary state of a day for days at a time. Read off the line,
+  // a dispute upheld inside that window gave back 0.00 — `chargedBefore = line?.appliedAmount ?? 0`
+  // — while payroll charged the day in full from the decision. Same defect as the deduction screen's
+  // (fixed in #5610); same single answer now, out of `charge.ts`, because two copies of "what does
+  // this day cost" are two answers to one employee's money.
+  const money = readFileSync("src/lib/dispute-center/digest-money.ts", "utf8");
+  assert.ok(
+    money.includes("const chargedBefore = payrollCharge(candidate, await decisionFor(candidate.id)).amount;"),
+    "what the day costs comes from the candidate's DECISION, through the shared charge rule",
+  );
+  assert.ok(
+    !/chargedBefore\s*=\s*line/.test(money) && !/appliedAmount/.test(money),
+    "and the publication line's own amount is not read here at all — not even carried as a field",
+  );
+  assert.ok(
+    money.includes("recommendDisputeRefund(") && money.includes("if (recommended.refund) refundSentence"),
+    "a refund over one this case was already PAID recommends nothing and tells the reviewer, rather " +
+      "than raising a unique violation after the decision moved the money",
+  );
+  assert.ok(
+    /select\("id, month_key, raw_value, locked_at, employee_hr_id, category, unit, estimated_amount, dates"\)/.test(money),
+    "…which means the candidate read must carry the columns that rule needs — a missing column is a " +
+      "silently dead branch, and here it would silently mean a charge of nothing",
+  );
+  const charge = readFileSync("src/lib/dispute-center/charge.ts", "utf8");
+  assert.ok(
+    charge.includes("isConfirmedForPayroll(forPayroll)") && charge.includes("candidateAmount(forPayroll)"),
+    "the rule is payroll's own two functions, not a third opinion written for the dispute screens",
+  );
+
   const migration = readFileSync("supabase/migrations/20261009120000_dispute_center.sql", "utf8");
   assert.ok(
     migration.includes("phx_attendance_revise_digest_dispute"),
