@@ -82,7 +82,58 @@ const MONEY_ADDING_STEP_KEYS: readonly StepKey[] = ["p2_additions"];
  */
 export function canBeUnbackedCharge(stepKey: StepKey, field: string): boolean {
   if (MONEY_ADDING_STEP_KEYS.includes(stepKey)) return false;
+  return isMoneyField(stepKey, field);
+}
+
+/**
+ * Whether this field is the one the sheet actually pays — the only kind whose drift may BLOCK the
+ * Part 2 confirm.
+ *
+ * 🔴 A DAY COUNT IS AN INPUT, NOT A CHARGE, SO IT NEVER BLOCKS ON ITS OWN. It is still reported: a
+ * stale day count beside a figure somebody chose is worth seeing. But the sheet pays the money
+ * column, and the money column has its own drift row whenever the money moved — so nothing is lost
+ * by refusing to stop the month over a number that pays nothing. A day count only becomes money
+ * when somebody EDITS it (`autoCalcMoneyKey`), which a confirm does not do.
+ *
+ * Measured on the live September 2026 run, 2026-10-09, immediately after the display-field fix
+ * shipped: the two rows still blocking were both `resignationCrmDays` — Aisha Ehab Mamdouh Hussein
+ * (B-79) 2.50 days and Ahmed Elsayed Ahmed Ibrahim (PD-0010) 1.00 day, each with a NULL day column
+ * — and the money beside each was a deliberate override the same panel declared "still stands"
+ * (1,250.00 against a module 1,458.33; 1,050.00 against 1,166.67). So the month was held up over a
+ * day count attached to a figure the owner had already decided, and the only way out was a
+ * re-confirm that writes the module's day count NEXT TO his own money, making the row read as 2.50
+ * days priced at 1,250.00.
+ *
+ * The genuine case is untouched: a deduction the module proposes and the sheet froze at zero moves
+ * the MONEY column too, and that row still blocks.
+ */
+export function isMoneyField(stepKey: StepKey, field: string): boolean {
   return fieldSpec(stepKey, field)?.kind === "money";
+}
+
+/**
+ * The money column a day count PRICES, for a field that prices one — `resignationCrmDays` → `crm`.
+ *
+ * The link already exists on the field spec (`autoCalcMoneyKey`): typing days multiplies the daily
+ * rate into that column. It is read here so the drift remedy can take a day count only TOGETHER
+ * with the money it prices, and never on its own beside a figure somebody chose — which is exactly
+ * what made the re-confirm a trap rather than a remedy on 2026-10-09. See `isMoneyField`.
+ */
+export function pricedMoneyField(stepKey: StepKey, field: string): string | undefined {
+  return fieldSpec(stepKey, field)?.autoCalcMoneyKey;
+}
+
+/**
+ * The step AND the column a drift row is about — "Resignations CRM → Days", not "Resignations CRM".
+ *
+ * Every step the drift check watches carries more than one column, and most carry a day count beside
+ * the money. Naming only the step is what made "the module now says 2.50" read as 2.50 EGP next to a
+ * line that genuinely was 1,458.33 EGP, in the same list, on the live September 2026 run.
+ */
+export function columnLabel(stepKey: StepKey, field: string): string {
+  const definition = stepDefinition(stepKey);
+  const label = fieldSpec(stepKey, field)?.label;
+  return label ? `${definition.title} → ${label}` : definition.title;
 }
 
 /**

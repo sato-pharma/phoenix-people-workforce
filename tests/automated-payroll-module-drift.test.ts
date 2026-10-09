@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  columnLabel,
   describeModuleDrift,
   describeModuleDriftBlock,
   detectModuleDrift,
   mergeModuleDrift,
   MODULE_SOURCED_STEP_KEYS,
+  pricedMoneyField,
   RECOMMENDED_AT_CONFIRM_KEY,
   snapshotFromSummary,
   snapshotRecommendations,
@@ -512,7 +514,13 @@ export function runAutomatedPayrollModuleDriftTests() {
     ["p1odCrmDays", "p1odCrmValue"],
     "a real CRM deduction approved after the confirm must still be caught, days and value both",
   );
-  assert.equal(moneyBesideIt.staleCharges, 2, "and must still block");
+  assert.equal(
+    moneyBesideIt.staleCharges,
+    1,
+    "and must still block — on the MONEY. The day count beside it is reported and never blocks on " +
+      "its own (2026-10-09): it pays nothing, and whenever it matters the money moved too, which is " +
+      "this very row",
+  );
 
   // Nor is it recorded in the first place, so a snapshot written from now on carries no phantom.
   assert.deepEqual(
@@ -595,5 +603,127 @@ export function runAutomatedPayrollModuleDriftTests() {
     /2931\.00 in Other Deductions \(Loan & Other\) → Other Value/,
     "the sentence must name the COLUMN, not only the step — a deduction step carries more than one " +
       "money column, and its own instruction is to check the other columns on the same row",
+  );
+
+  // ---- A DAY COUNT NEVER BLOCKS THE PART 2 CONFIRM ON ITS OWN (2026-10-09) --------------------
+  // Measured on the live September 2026 run minutes after the display-field fix shipped: the only two
+  // rows still blocking were both `resignationCrmDays` — Aisha Ehab Mamdouh Hussein (B-79) 2.50 days
+  // and Ahmed Elsayed Ahmed Ibrahim (PD-0010) 1.00 day, each with a NULL day column — while the MONEY
+  // beside each was a figure somebody chose that the same panel declared "still stands" (1,250.00
+  // against the module's 1,458.33; 1,050.00 against 1,166.67). So the month was held up over a number
+  // that pays nothing, attached to a figure already decided, and the only way out was a re-confirm
+  // writing the module's day count next to that money — leaving the row reading "2.50 non-working days
+  // priced at 1,250.00".
+  const chosenMoneyStaleDays = {
+    stepKey: "p1_resignation_crm" as const,
+    rows: [
+      row({
+        hrId: "B-79",
+        fullName: "Aisha Ehab Mamdouh Hussein",
+        recommended: { resigCrmWorkingDays: 27.5, resignationCrmDays: 2.5, crm: 1458.33 },
+        // What the run really carries: the chosen 1,250.00 and a day column nobody filled.
+        values: { resigCrmWorkingDays: 30, resignationCrmDays: 0, crm: 1250 },
+      }),
+    ],
+    snapshot: {},
+    chargedByCompact: { b79: { crm: 1250 } },
+  };
+  const dayBesideChosenMoney = detectModuleDrift(chosenMoneyStaleDays);
+  assert.equal(
+    dayBesideChosenMoney.staleCharges,
+    0,
+    "a day count pays nothing, so it must not stop the month — and the money beside it is a figure " +
+      "somebody chose, which the owner's 2026-10-06 rule says still stands",
+  );
+  assert.deepEqual(
+    dayBesideChosenMoney.rows.map((r) => r.field).sort(),
+    ["crm", "resignationCrmDays"],
+    "both are still REPORTED — a stale day count beside a chosen figure is worth seeing",
+  );
+  assert.equal(
+    dayBesideChosenMoney.overriddenButMoved,
+    1,
+    "and the money row reads as the override it is, not as a block",
+  );
+  assert.match(
+    describeModuleDrift(dayBesideChosenMoney),
+    /^No confirmed figure is stale./,
+    "so the summary must not open by announcing stale figures",
+  );
+
+  // AND THE REMEDY MUST NOT WRITE THE DAY COUNT NEXT TO THAT MONEY. Clearing the block by
+  // re-confirming was the only route offered, and it would have changed a displayed day count on a
+  // row whose money nobody is allowed to touch.
+  const afterTakingNothing = takeCurrentModuleFigures(chosenMoneyStaleDays);
+  assert.equal(afterTakingNothing[0].values.crm, 1250, "the chosen money stays exactly as it is");
+  assert.equal(
+    afterTakingNothing[0].values.resignationCrmDays,
+    0,
+    "and the day count is NOT taken beside it — a re-confirm that prices 2.50 days at 1,250.00 is " +
+      "the trap, not the remedy",
+  );
+
+  // THE GENUINE CASE IS UNTOUCHED: a deduction the module proposes and the sheet froze at zero moves
+  // the MONEY column too, so that row still blocks — and the re-confirm takes the day count WITH the
+  // money, never leaving 733.33 priced at 0.00 days.
+  const moneyFrozenAtZero = {
+    stepKey: "p1_resignation_crm" as const,
+    rows: [
+      row({
+        hrId: "B-58",
+        fullName: "Ahmed Abdallah",
+        recommended: { resigCrmWorkingDays: 28, resignationCrmDays: 2, crm: 733.33 },
+        values: { resigCrmWorkingDays: 30, resignationCrmDays: 0, crm: 0 },
+      }),
+    ],
+    snapshot: {},
+    chargedByCompact: { b58: { resignationCrmDays: 0, crm: 0 } },
+  };
+  const frozenReport = detectModuleDrift(moneyFrozenAtZero);
+  assert.equal(frozenReport.staleCharges, 1, "the money the sheet froze at 0.00 must still block");
+  assert.deepEqual(
+    frozenReport.rows.filter((r) => !r.overridden).map((r) => r.field).sort(),
+    ["crm", "resignationCrmDays"],
+    "the day row is reported beside it — only the money one counts toward the block",
+  );
+  assert.match(
+    describeModuleDriftBlock(frozenReport),
+    /^1 figure\(s\) on this run no longer match .* is set to 0\.00 and the Deductions module now says 733\.33/,
+    "and the refusal counts and quotes the money, never the day count",
+  );
+  const afterTakingBoth = takeCurrentModuleFigures(moneyFrozenAtZero);
+  assert.equal(afterTakingBoth[0].values.crm, 733.33, "the re-confirm takes the module's money");
+  assert.equal(
+    afterTakingBoth[0].values.resignationCrmDays,
+    2,
+    "and the day count that prices it comes along, so the row never reads 733.33 against 0.00 days",
+  );
+  assert.equal(pricedMoneyField("p1_resignation_crm", "resignationCrmDays"), "crm");
+  assert.equal(
+    pricedMoneyField("p1_resignation_crm", "crm"),
+    undefined,
+    "money prices nothing — the link is one-way, from the day count to its own money column",
+  );
+
+  // ---- THE PANEL NAMES THE COLUMN, NOT ONLY THE STEP ------------------------------------------
+  // "the module now says 2.50" sat in the same list as a line that genuinely was 1,458.33 EGP, both
+  // labelled only "Resignations CRM" — so 2.50 days read as 2.50 EGP.
+  assert.equal(columnLabel("p1_resignation_crm", "resignationCrmDays"), "Resignations CRM → Non-Working Days");
+  assert.equal(columnLabel("p1_resignation_crm", "crm"), "Resignations CRM → CRM Value");
+  assert.equal(
+    columnLabel("p1_resignation_crm", "noSuchField"),
+    "Resignations CRM",
+    "an unrecognised key falls back to the step title rather than printing undefined",
+  );
+  const wizardSource = readFileSync("src/components/automated-payroll/automated-payroll-wizard.tsx", "utf8");
+  assert.equal(
+    wizardSource.split("columnLabel(row.stepKey, row.field)").length - 1,
+    2,
+    "both drift branches in the Show-who panel must name the column — the unbacked charge and the " +
+      "drifted figure alike",
+  );
+  assert.ok(
+    !wizardSource.includes("stepDefinition(row.stepKey).title"),
+    "and neither may go back to naming the step alone",
   );
 }
