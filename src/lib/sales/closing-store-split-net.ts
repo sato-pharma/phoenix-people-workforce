@@ -79,7 +79,7 @@ export type ClosingStoreSplit = {
    * the Closing Matrix (No Office) tab is `matrix − office` cell by cell, so the two grids have to
    * agree about which area holds an Office unit or that subtraction prints negative sales).
    *
-   * Empty on every line but CNS, every month before 2026-10, and every month whose Office rows did
+   * Empty on every line but CNS, every month before 2026-09, and every month whose Office rows did
    * not move.
    */
   officeNet: Map<string, NetCell>;
@@ -126,7 +126,7 @@ const loadClosingStoreSplitUncached = async (line: string, period: string): Prom
     buildBulkAllocation(details.rows, period, line),
   );
   // THE OFFICE CHANNEL'S READ-TIME RESPREAD RIDES THE SAME NET (owner, 2026-10-09: "fix the Office
-  // allocation to read-time shares"), from the October 2026 closing, CNS only. Folded in here for the
+  // allocation to read-time shares"), from the September 2026 closing, CNS only. Folded in here for the
   // third time for the same reason as the other two: this is the ONE loader both the screen and the
   // export read, so neither can respread while the other does not. Its OUT legs cancel the spread the
   // upload stamped on the stored rows and its IN legs are today's, so a month whose batches have not
@@ -184,8 +184,8 @@ export async function loadClosingStoreSplit(
   // coincidence silently drops a whole rule the day the coincidence ends.
   const bulkApplies = isBulkAllocationActive(trimmedPeriod) && isBulkAllocationLine(trimmedLine);
   // The Office read-time respread is a THIRD independent reason this result is not empty, with its
-  // own line and start month (CNS, 2026-10). Asked separately for the same reason the bulk rule is:
-  // today it is a subset of the city split's gate — CNS is split-eligible and October is after the
+  // own line and start month (CNS, 2026-09). Asked separately for the same reason the bulk rule is:
+  // today it is a subset of the city split's gate — CNS is split-eligible and September is after the
   // split's August start — and a gate that is correct by coincidence silently drops a whole rule the
   // day one of those dates moves.
   const officeApplies = isOfficeRespreadPair(trimmedLine, trimmedPeriod);
@@ -205,7 +205,7 @@ export async function loadClosingStoreSplit(
     // announced number. The `office` GRID is the one that needs the Office slice on its own, or
     // `matrix − office` (the Closing Matrix (No Office) tab) stops describing distributor sell-out.
     //
-    // So that slice is recomputed live, and ONLY for a pair that can carry one (CNS, 2026-10 on) —
+    // So that slice is recomputed live, and ONLY for a pair that can carry one (CNS, 2026-09 on) —
     // which also keeps a published month before the rule from paying for a detail-row read it has no
     // use for. The residual this leaves is named rather than hidden: if a batch was re-mapped AFTER
     // the month was published, the live Office slice is today's and the frozen matrix is the
@@ -214,17 +214,22 @@ export async function loadClosingStoreSplit(
     // and it is exactly zero whenever the rows have not changed since publication, which is what a
     // published month is supposed to mean.
     //
-    // 🔴 THE ONE CASE WHERE THAT WOULD BE THE WRONG WAY ROUND — AND IT IS WHY THIS RULE STARTS AT
-    // OCTOBER. `isFrozenStoreSplitPeriod` matches `monthly_closing_publications` by PERIOD with NO
-    // line predicate (deliberately — PR 4848), so publishing ONE line freezes EVERY line's net for
-    // that month: 2026-09 is frozen for CNS because Anti Infective September was published, while CNS
-    // September is still being uploaded. A frozen net stamped BEFORE this rule existed carries no
-    // respread at all, and a live Office slice against it would be out by the WHOLE respread rather
-    // than by a post-publish drift. That is reachable only for a month frozen before the rule — never
-    // for 2026-10 on, which is all this rule covers. 🔴 So extending the rule back to September is NOT
-    // one constant: September's frozen net would have to be rebuilt first (his unpublish →
-    // `scripts/backfill-attribution-store-split.ts --apply` → `au.f_refresh_monthly_attribution` →
-    // re-publish), and September holds no Office rows at all until its Office book arrives.
+    // 🔴 THE ONE CASE WHERE THAT WOULD BE THE WRONG WAY ROUND, AND WHY THE RULE STOPS AT SEPTEMBER.
+    // `isFrozenStoreSplitPeriod` matches `monthly_closing_publications` by PERIOD with NO line
+    // predicate (deliberately — PR 4848), so publishing ONE line freezes EVERY line's net for that
+    // month. A frozen net stamped BEFORE this rule existed carries no respread at all, and a live
+    // Office slice against it would be out by the WHOLE respread rather than by a post-publish
+    // drift. That is reachable only for a month frozen before the rule — August 2026 and earlier,
+    // which `isOfficeRespreadActive` excludes, so this branch never meets one.
+    //
+    // 🔴 SEPTEMBER WAS EXACTLY THAT CASE UNTIL 9 OCTOBER 2026 19:12:21.58 CAIRO, WHEN HE UNPUBLISHED
+    // September Anti Infective. While that row stood, 2026-09 was frozen for CNS too against a
+    // pre-rule net, which is why he first ruled "leave the Office respread at October". With it
+    // withdrawn, no `2026-09` row has `unpublished_at IS NULL`, this whole frozen branch is
+    // unreachable for September, and the month recomputes live — which is what made his second
+    // ruling ("make September's Office split recalculate like October", same day) a one-constant
+    // change. If he re-publishes September, the net stamped then is computed by the live path and
+    // therefore already carries the respread, so it freezes WITH it and this branch stays correct.
     if (!officeApplies) return frozen;
     const live = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod).catch(() => null);
     return { ...frozen, officeNet: new Map(live?.officeNet ?? []) };

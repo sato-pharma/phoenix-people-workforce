@@ -33,13 +33,20 @@
 // `buildOfficeAreaWeightsByLine`, never a second implementation of the rule.
 //
 // 🔴 ITS SUBJECT IS THE STORED ROWS, WHICH IS WHY ITS AUGUST NUMBER IS NOT THE RESPREAD'S. The
-// read-time respread (`closing-office-respread.ts`, from the October closing, CNS only) measures the
-// same month through the closing LOADER, after the city-split rails, and reads 6,834 packs / 6.23% /
-// 548,777 EGP. This module compares the Office BATCH's own rows with today's shares and reads 3,698
-// units / 3.37%. Both are true of August CNS — two measurements at two points, not a disagreement,
-// and a session that "reconciles" them will break one of them. From the October closing the respread
-// absorbs this drift at read time; for every earlier month the stored geography is what the published
-// closing was built on, and this is the only thing that can say how far it has since moved.
+// read-time respread (`closing-office-respread.ts`, from the September closing, CNS only) measures
+// the same month through the closing LOADER, after the city-split rails, and reads 6,834 packs /
+// 6.23% / 548,777 EGP. This module compares the Office BATCH's own rows with today's shares and
+// reads 3,698 units / 3.37%. Both are true of August CNS — two measurements at two points, not a
+// disagreement, and a session that "reconciles" them will break one of them. From the September
+// closing the respread absorbs this drift at read time; for every earlier month the stored geography
+// is what the published closing was built on, and this is the only thing that can say how far it has
+// since moved.
+//
+// 🔴 SO FOR A MONTH THE RESPREAD COVERS, THIS MODULE'S NUMBER IS NOT A TASK. The closing already
+// reads those units in the right area, and the board says so rather than asking him to re-commit the
+// book (`officeAllocationDriftItems` in needs-you/sources.ts puts such a row in worth-knowing). What
+// it still measures is the STORED rows, which is what a future re-upload, a re-map or any reader of
+// the raw table meets — never nothing.
 //
 // 🔴 IT REPORTS, IT NEVER REPAIRS. Re-allocating a published month restates an announced number,
 // and a published and announced month is never corrected however justified the fix — the owner's

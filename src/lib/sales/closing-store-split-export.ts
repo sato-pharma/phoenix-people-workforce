@@ -50,7 +50,7 @@ export type ClosingStoreSplitExport = {
    * from the matrix cell by cell) must take that part and nothing else: the city split and the bulk
    * rule never touch an Office row, and an Office grid left on the upload's geography while the
    * matrix moves to today's turns that subtraction into negative sales. See
-   * closing-office-respread.ts. Empty on every line but CNS and every month before 2026-10.
+   * closing-office-respread.ts. Empty on every line but CNS and every month before 2026-09.
    */
   officeNet: ReturnType<typeof netStoreSplitByAreaProduct>;
   /**

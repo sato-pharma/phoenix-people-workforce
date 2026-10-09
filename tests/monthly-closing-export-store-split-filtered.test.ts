@@ -434,7 +434,7 @@ export async function runMonthlyClosingExportStoreSplitFilteredTests() {
       }],
       net: new Map([[areaProductKey("AB1", PRODUCT), { qty: -999, value: -999_000 }]]),
       // The Office channel's own slice of `net` — empty here, as it is on every line but CNS and
-      // every month before 2026-10 (closing-office-respread.ts). Present because the Office GRID
+      // every month before 2026-09 (closing-office-respread.ts). Present because the Office GRID
       // takes this slice and nothing else of `net`.
       officeNet: new Map<string, { qty: number; value: number }>(),
     };

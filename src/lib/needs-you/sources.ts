@@ -62,6 +62,7 @@ import {
   loadPeriodsWithOfficeBatch,
   type OfficeAllocationDriftReport,
 } from "@/lib/sales/office-allocation-drift";
+import { isOfficeRespreadPair } from "@/lib/sales/office-distributor";
 import { ApiError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/phoenix-crm/server/needs-you";
@@ -1254,6 +1255,14 @@ export function officeAllocationDriftItems(
       const moved = Math.round(line.unitsThatWouldMove);
       if (moved <= 0) continue;
       const areas = line.areas.length;
+      // 🔴 A MONTH THE READ-TIME RESPREAD COVERS IS NOT HIS TO ACT ON, AND IS STILL REPORTED.
+      // From the September 2026 closing on CNS the closing recomputes the spread on every read
+      // (closing-office-respread.ts), so this difference lives in the STORED rows only — no closing
+      // figure, tab or workbook is wrong, and re-committing the Office book would fix nothing that
+      // is broken. It stays on the board because this board may never under-report: the stored rows
+      // are what a re-upload, a re-map or any reader of the raw table meets. Same treatment as a
+      // published month — worth-knowing, not yours.
+      const respread = isOfficeRespreadPair(line.lineCode, report.period);
 
       const note: string[] = [];
       if (causes.length > 0) {
@@ -1273,6 +1282,13 @@ export function officeAllocationDriftItems(
         "Both sides hold the same units for the line, so the published-closing drift check reads "
         + "clean through this.",
       );
+      if (respread) {
+        note.push(
+          `The closing already respreads ${report.period}'s Office units on today's shares, so every `
+          + "closing figure, tab and workbook is right and this difference is in the stored rows "
+          + "only — here to be known, not acted on.",
+        );
+      }
       if (published) {
         note.push(
           `${report.period} is published, so re-committing its Office book would restate an `
@@ -1285,7 +1301,7 @@ export function officeAllocationDriftItems(
         key: `office-allocation-drift:${report.period}:${line.lineCode}`,
         sourceId: "office-allocation-drift",
         kind: "flag",
-        lane: published ? "worth-knowing" : "yours",
+        lane: published || respread ? "worth-knowing" : "yours",
         label:
           `${line.lineCode} ${report.period}: ${moved.toLocaleString("en-US")} of `
           + `${Math.round(line.officeUnits).toLocaleString("en-US")} Office units `

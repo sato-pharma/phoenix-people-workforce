@@ -137,6 +137,37 @@ export function runNeedsYouOfficeAllocationDriftTests() {
   };
   assert.deepEqual(officeAllocationDriftItems([clean], [], now), [], "a spread that matches the rule is no row");
 
+  // ── A MONTH THE READ-TIME RESPREAD COVERS IS REPORTED, BUT IS NOT HIS TO ACT ON.
+  // From the September 2026 closing on CNS (owner, 2026-10-09: "make September's Office split
+  // recalculate like October") the closing recomputes the spread on every read, so a stored-row
+  // difference breaks no closing figure and re-committing the book would fix nothing. It must stay
+  // visible — this board may never under-report, and the stored rows are what a re-upload or a
+  // re-map meets — so it lands in `worth-knowing`, the same lane a published month gets, and says
+  // why. UNPUBLISHED here deliberately: it is the respread, not a publication, that moves the lane.
+  const respreadCovered: OfficeAllocationDriftReport = {
+    ...drifted,
+    period: "2026-09",
+    officeCommittedAt: "2026-10-09T17:10:51.400Z",
+  };
+  const covered = officeAllocationDriftItems([respreadCovered], [], now);
+  assert.equal(covered.length, 1, "it is still reported");
+  assert.equal(
+    covered[0]?.lane,
+    "worth-knowing",
+    "the closing already corrects it, so it is not a decision waiting on him",
+  );
+  assert.match(
+    covered[0]?.note ?? "",
+    /already respreads 2026-09's Office units on today's shares/,
+    `the note must say the closing figures are right: ${covered[0]?.note}`,
+  );
+  // And the lane is NOT moved for a month the rule does not cover — August stays his.
+  assert.equal(
+    officeAllocationDriftItems([drifted], [], now)[0]?.lane,
+    "yours",
+    "August is outside the respread, so its stale spread is still a decision only he can make",
+  );
+
   // ── Share-arithmetic noise is not a movement: under half a unit rounds to zero and is dropped.
   const noise: OfficeAllocationDriftReport = {
     ...drifted,
