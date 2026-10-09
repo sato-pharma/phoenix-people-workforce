@@ -1,6 +1,6 @@
-# Taking a CRM or half-day deduction from the annual leave balance
+# Taking a deduction from the annual leave balance
 
-The account behind the module rule in `.claude/rules/time-off.md` ("A CRM OR HALF-DAY DEDUCTION CAN
+The account behind the module rule in `.claude/rules/time-off.md` ("A DEDUCTION COUNTED IN DAYS CAN
 BE TAKEN FROM ANNUAL LEAVE INSTEAD OF SALARY"). The rule is the cue; this file is the evidence.
 
 ## What the owner asked for, 2026-10-09
@@ -19,11 +19,45 @@ actually charged:
 | The comment | **Required, shown to the employee exactly as written** (no notification) |
 | Undo | **Yes — a "Return to salary" button** |
 
+## Widened the same day: Unpaid Vacation and Insufficient Balance Vacation
+
+Hours after it shipped he asked for it on two more tabs, in his own words: *"also show the deduct
+from balance in unpaid and insufficient"*. So the button now covers **four** categories — `crm`,
+`crm_half_day`, `unpaid_vacation`, `insufficient_balance_vacation` — all of which are stored in
+`days` on production (measured 2026-10-09: 47 live unpaid-vacation rows, 2 insufficient-balance).
+
+**Four gates have to agree, so there is exactly one list.** `LEAVE_BALANCE_CATEGORIES` lives in
+`src/lib/deductions/types.ts`, the one module in `deductions/` with no imports at all, because the
+admin workspace is a client component and cannot import the charge service. It is read by:
+
+| Gate | Where | What it refuses |
+| --- | --- | --- |
+| the button | `canTakeFromLeaveBalance`, `deductions-workspace.tsx` | shows nothing on a row it cannot charge |
+| the decide guard | `recordDecision`, `service.ts` | deciding a charged row without `viaLeaveBalance` |
+| the charge service | `assertChargeable`, `leave-balance.ts` | a category, or a row not counted in days |
+| the database function | `phx_deductions_charge_leave_balance` | the same four categories, last word |
+
+A tab that shows a button the server then refuses is the one failure mode worth designing against,
+and the widening before this one had the list written out by hand in three of those four places.
+
+**Why charging a vacation day does not double-count.** An unpaid vacation day is a day the annual
+balance could **not** pay for — that is why it became a deduction candidate — so its
+`v2_vacation_requests.paid_duration_days` is zero, and `requestDays` in
+`phx_attendance_balance_inputs` (which every balance reader sums) does not count it. The charge
+lands once, in `attendance_annual_balance_charges`. The day is in the leave ledger, but not as a day
+the balance paid for, so taking it from the balance now consumes it exactly once.
+
+**Expect a refusal on most of those rows, and read it as correct.** `insufficient_balance_vacation`
+exists precisely because the balance was short, so `readLeaveBalance` usually answers `no_balance`
+and the dialog says "The employee has no annual leave balance left to take this from." That is the
+right answer, not a defect. The button becomes usable when the balance is there again — a new annual
+period, or days given back — which is exactly the case he wants it for.
+
 ## Where it lives on screen
 
-`/admin/deductions`, on a CRM or half-day row: **Deduct from leave balance** and, once charged,
-**Return to salary**. The employee reads the comment in the Vacation Report under "Taken from your
-annual leave", rendered `whitespace-pre-wrap break-words` so his own line breaks survive.
+`/admin/deductions`, on any row of those four categories: **Deduct from leave balance** and, once
+charged, **Return to salary**. The employee reads the comment in the Vacation Report under "Taken
+from your annual leave", rendered `whitespace-pre-wrap break-words` so his own line breaks survive.
 
 ## The split when the balance is short
 

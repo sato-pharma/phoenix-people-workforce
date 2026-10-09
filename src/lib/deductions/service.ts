@@ -39,6 +39,7 @@ import {
   deductionsDecisionStatuses,
   deductionsSeverities,
   deductionsUnits,
+  isLeaveBalanceCategory,
   type DeductionsCandidate,
   type DeductionsCandidateDraft,
   type DeductionsCandidateWithDecision,
@@ -1663,7 +1664,10 @@ export async function recordDecision(input: {
   if (candidateRow.locked_at) {
     throw new Error("Conflict: this candidate is locked by a publication — it can no longer be decided directly.");
   }
-  if (input.viaLeaveBalance !== true && (candidateRow.category === "crm" || candidateRow.category === "crm_half_day")) {
+  // Every category the leave-balance button reaches: a charged row must not be decided from anywhere
+  // else, or the same day is taken from salary AND from leave. Reads the one shared list, so widening
+  // the button cannot leave this guard behind.
+  if (input.viaLeaveBalance !== true && isLeaveBalanceCategory(candidateRow.category)) {
     if (await getLeaveBalanceChargeForCandidate(input.candidateId)) {
       throw new Error(
         "Conflict: this deduction is taken from the employee's annual leave balance. Press Return to salary first, then decide it.",

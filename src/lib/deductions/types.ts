@@ -37,6 +37,35 @@ export const deductionsCategories = [
 ] as const;
 export type DeductionsCategory = (typeof deductionsCategories)[number];
 
+/**
+ * The categories "Deduct from leave balance" exists for. CRM and CRM half day on 2026-10-09, widened
+ * the same day on the owner's word: "also show the deduct from balance in unpaid and insufficient".
+ *
+ * It lives in this file — the one module in `deductions/` with no imports at all — because FOUR
+ * places have to agree on it: the admin workspace (a client component, which cannot import the
+ * charge service), the `recordDecision` guard that stops a bulk decide charging a day to salary AND
+ * leave, the charge service itself, and the database function. A second hand-written list in any of
+ * them is exactly the drift this constant exists to prevent.
+ *
+ * An unpaid or insufficient-balance vacation day is, by definition, a day the annual balance could
+ * NOT pay for — so on most of those rows the button answers "no annual leave balance left", and that
+ * is the correct answer rather than a fault. It becomes usable once the balance is there again: a new
+ * annual period, or days given back. Charging one consumes the balance exactly once, because
+ * `phx_attendance_balance_inputs` counts an approved request by its `paid_duration_days`, which for
+ * an unpaid day is zero — the day sits in the leave ledger, but not as a day the balance paid for.
+ */
+export const LEAVE_BALANCE_CATEGORIES = [
+  "crm",
+  "crm_half_day",
+  "unpaid_vacation",
+  "insufficient_balance_vacation",
+] as const satisfies readonly DeductionsCategory[];
+
+/** Whether a deduction's category can be taken from the annual leave balance at all. */
+export function isLeaveBalanceCategory(category: string | null | undefined): boolean {
+  return (LEAVE_BALANCE_CATEGORIES as readonly string[]).includes(String(category ?? ""));
+}
+
 export const deductionsUnits = ["days", "amount"] as const;
 export type DeductionsUnit = (typeof deductionsUnits)[number];
 
