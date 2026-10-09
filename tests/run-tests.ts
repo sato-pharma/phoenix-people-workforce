@@ -2417,6 +2417,7 @@ import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-sourc
 import { runPrivateCalendarsAdminAnyEmployeeTests } from "./private-calendars-admin-any-employee.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 import { runOfficeAllocationDriftTests } from "./office-allocation-drift.test.ts";
+import { runSosMonthCompleteTests } from "./sos-month-complete.test.ts";
 import { runClosingPublicationDriftTests } from "./closing-publication-drift.test.ts";
 import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywhere.test.ts";
 import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-admin-reports.test.ts";
@@ -9468,6 +9469,10 @@ await runTest(
 await runTest(
   "a committed Office allocation is compared to where the rule would put it today, because the spread is unit-preserving per line and the publication check — one total per line — is blind to the whole drift class (3,698 of August 2026 CNS's 109,719 Office units sit in a different area after seven batches were re-mapped on 13-14 Sep): the line total agrees on both sides by construction, movers are counted once rather than twice, an area present on only one side is compared against zero, each line is its own subject, share-arithmetic noise is not a movement, and the batches that moved the base travel with the magnitude",
   runOfficeAllocationDriftTests,
+);
+await runTest(
+  "a month's upload set is judged COMPLETE by the coverage engine and never by a count: a source carried by another's file is quiet on purpose and still explained, the same source is a real hole the month its merge window ends, and a month with no validated batch at all is never read as complete",
+  runSosMonthCompleteTests,
 );
 await runTest(
   "the publication drift check reports WHICH AREAS hold the difference, not just a net delta that cancels to zero (production 2026-10-09: Anti Infective 2026-09 read 27 drifted cells with net units AND net value both 0.000000 while Menoufia 2 had lost 1,111.50 EGP), it counts the receivers rather than double-counting every giver, it names the layer each movement came from, it folds in the store-split net the publication snapshot cannot see at all and names a line that drifted only there, it reports no unpublished line, and the clean-summary flag stays off when a net delta is genuinely non-zero; a report whose expensive layer was never read is NOT provably clean and a placeholder split carrying rows is refused; a line whose own read failed is NAMED rather than dropped, because a caught timeout came back as the same null a missing publication row returns; and the Needs You row it produces carries no money at all, counts the areas holding the difference, names the script that reads the half it skipped, and leaves his lane once he has acknowledged it",
