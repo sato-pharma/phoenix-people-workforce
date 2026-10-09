@@ -132,10 +132,10 @@ async function loadConsolidatedMonth(
   const { details, net, officeNet } = prepareClosingStoreSplit(monthRows, scopedAreaCodes, sharedSplit);
   const { applied, cells: storeSplitCells, matrix: splitMatrix } = applyStoreSplitToMatrix(matrix, net);
   // 🔴 The Office grid takes the Office respread's own net and NOTHING else of `net` (owner,
-  // 2026-10-09 — CNS, from the October closing): this workbook subtracts the Office grid from the
+  // 2026-10-09 — CNS, from the September closing): this workbook subtracts the Office grid from the
   // matrix on its own no-Office tab, so the two have to agree about which area holds an Office unit,
   // and the city split and the bulk rule must not reach this grid because neither moves an Office
-  // row. See closing-office-respread.ts. Empty on every line but CNS and every month before 2026-10,
+  // row. See closing-office-respread.ts. Empty on every line but CNS and every month before 2026-09,
   // so a consolidated range that predates the rule keeps exactly the grids it had.
   const officeWithRespread = office && officeNet.size > 0
     ? applyStoreSplitToMatrix(office, officeNet).matrix

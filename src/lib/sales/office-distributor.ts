@@ -44,26 +44,42 @@ export function isOfficeDistributorCode(value: unknown): boolean {
  * than a rewrite of the stored rows — the same shape, and the same reason, as the city split and the
  * EPDA-BULK allocation. A net recomputed on every read cannot go stale.
  *
- * 🔴 OCTOBER, NOT AUGUST, AND THAT IS THE POINT. Every earlier month keeps the numbers it was
+ * 🔴 SEPTEMBER, NOT AUGUST, AND THAT IS THE POINT. Every earlier month keeps the numbers it was
  * published with — the direction every dated sales rule in this repo takes, and the owner's own
  * standing rule that a published and announced month is never corrected. The 6.23% measured on
  * August is the EVIDENCE for the rule, never a backlog to go and fix.
  *
- * 🔴 AND SEPTEMBER IS THE OWNER'S CALL, NOT THIS CONSTANT'S. Read live 9 October 2026: September CNS
- * is NOT published (only September Anti Infective is, and that line carries no Office channel), it is
- * still being imported — its last batch landed 9 October 16:51 Cairo — and it holds ZERO Office rows,
- * because its Office file has not been uploaded yet. So moving this constant back to `2026-09` would
- * restate nothing published; what it WOULD need is September's frozen net rebuilt first, because
- * publishing one line freezes the whole period (see the frozen path in `closing-store-split-net.ts`).
+ * 🔴 SEPTEMBER WAS OCTOBER FOR ONE DAY, AND BOTH ANSWERS ARE HIS OWN. Asked on 9 October 2026 he
+ * first ruled **"leave the Office respread at October"**, on two premises read live that afternoon:
+ * September CNS held ZERO Office rows because its Office file had not been uploaded, and September
+ * was FROZEN for every line because September Anti Infective was published (that freeze is
+ * period-wide with no line predicate, deliberately — PR 4848) against a net stamped before this
+ * rule existed, so a live Office slice over that frozen matrix would have been out by the WHOLE
+ * respread rather than by a post-publish drift.
  *
- * 🔴 PUT TO HIM WITH THAT, AND HE RULED: **"leave the Office respread at October"** (2026-10-09).
- * So September stays on the spread its upload stamped, and this constant does not move again without
- * his own new word about September — never a session's reading that the data now makes it look safe.
+ * BOTH PREMISES THEN INVERTED, the same evening, and neither of them by a session's reading:
+ *   · Marcyrl's September Office book landed at 20:10:51 Cairo — 3,920 rows, 80,565 units,
+ *     6,971,179.95 EGP — and a customer re-map applied at 21:00:22 left **10,987 of those 80,565
+ *     packs (13.64%), across 48 areas,** on a geography the data no longer supports: four times the
+ *     August figure that was the evidence for the rule in the first place.
+ *   · September Anti Infective was UNPUBLISHED at 19:12:21.58 Cairo (read live from
+ *     `monthly_closing_publications`), so no row for `2026-09` has `unpublished_at IS NULL` any
+ *     more, `isFrozenStoreSplitPeriod` answers false, and the month recomputes live. There is no
+ *     frozen net to rebuild and nothing published to restate.
+ *
+ * 🔴 PUT TO HIM AGAIN WITH THAT, AND HE RULED: **"make September's Office split recalculate like
+ * October"** (2026-10-09). So this constant is `2026-09`, and it does not move again without his own
+ * new word — in either direction, and never a session's reading that the data makes it look safe.
+ *
+ * 🔴 IF HE RE-PUBLISHES SEPTEMBER, NOTHING HERE NEEDS DOING. The net stamped at that publish is
+ * computed by the live path, which now carries the respread, so September freezes WITH it. The
+ * hazard in the first ruling is reachable only for a month frozen BEFORE this rule — August and
+ * earlier, which this constant excludes.
  */
-export const OFFICE_RESPREAD_START_PERIOD = "2026-10";
+export const OFFICE_RESPREAD_START_PERIOD = "2026-09";
 
 /**
- * True for `2026-10` and every month after it.
+ * True for `2026-09` and every month after it.
  *
  * A STRING comparison on `YYYY-MM`, which sorts correctly, and a period that is not that shape
  * answers FALSE — the safe direction, because a month this cannot read is a month whose published
@@ -76,7 +92,7 @@ export function isOfficeRespreadActive(period: string | null | undefined): boole
 }
 
 /**
- * True when this (line, period) pair takes the read-time respread at all — CNS, from October 2026.
+ * True when this (line, period) pair takes the read-time respread at all — CNS, from September 2026.
  *
  * The line test is `isOfficeAllocationLine`, the SAME list the upload enforces and the closing
  * displays, deliberately: a second list would drift, and a drift here means respreading a line that

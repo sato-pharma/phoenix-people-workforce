@@ -7407,13 +7407,13 @@ second allocation, and it is the first behavioural case in
 **Why a net and not a re-run of the upload-time allocation.** Re-running `computeOfficeAllocation`
 on every re-map was the obvious alternative — the re-map already triggers the attribution refresh —
 and it was rejected because that path **rewrites the stored rows**, which restates the Closing tab of
-a month that may already be published and announced. A net is additive and gated by period, so July,
-August and September keep the numbers they were published with. 🔴 **The 6.23% on August is the
+a month that may already be published and announced. A net is additive and gated by period, so July
+and August keep the numbers they were published with. 🔴 **The 6.23% on August is the
 evidence for the rule, never a backlog to go and fix.**
 
-### October, and the September question that is his
+### The start month: October for one day, then September — both his own word
 
-Read live on 9 October 2026, before choosing the start month:
+**First ruling, 9 October 2026 afternoon.** Read live before choosing the start month:
 
 - **August CNS** is published (10 September 23:22 Cairo, snapshot 178,272 units) and holds the
   109,719 Office units above. A rule starting in August would restate a published, announced month.
@@ -7423,26 +7423,46 @@ Read live on 9 October 2026, before choosing the start month:
 - **October CNS has no rows at all yet.** So on today's data the rule moves nothing: it starts
   working the moment October's distributor batches and Office file land.
 
-So `OFFICE_RESPREAD_START_PERIOD` is **2026-10**, the conservative direction every dated sales rule
-in this repo takes. 🔴 **Moving it back to `2026-09` would restate nothing published** — and it is
-his decision, not a session's — but it is **not** a one-constant change, for two reasons measured the
-same day:
+Two further reasons made September more than a constant change at that hour:
 
-- **September's net is FROZEN, for every line.** `isFrozenStoreSplitPeriod` matches
+- **September's net was FROZEN, for every line.** `isFrozenStoreSplitPeriod` matches
   `monthly_closing_publications` by **period with no line predicate** (deliberately — PR 4848), so
   his publication of September *Anti Infective* froze CNS September too, and that frozen net was last
   stamped **4 October 16:52 Cairo**, before this rule and before thirteen of September's fourteen
-  books. A respread gated at September would therefore not reach the matrix at all until the period's
-  net is rebuilt: his unpublish → `scripts/backfill-attribution-store-split.ts --apply 2026-09` →
-  `au.f_refresh_monthly_attribution('2026-09')` → re-publish. He already parked that rebuild on
-  2026-10-09 until September's last books are in.
-- **September has no Office rows yet.** Its Office book (Marcyrl) has not arrived, so there is
-  nothing for the rule to respread in September until it does.
+  books. A respread gated at September would not have reached the matrix at all until the period's
+  net was rebuilt: unpublish → `scripts/backfill-attribution-store-split.ts --apply 2026-09` →
+  `au.f_refresh_monthly_attribution('2026-09')` → re-publish.
+- **September had no Office rows yet.** Its Office book (Marcyrl) had not arrived, so there was
+  nothing for the rule to respread.
 
-🔴 **HE WAS ASKED WITH ALL OF THAT AND RULED: "leave the Office respread at October"**
-(2026-10-09). So September keeps the spread its upload stamped, the constant stays `2026-10`, and it
-moves again only on **his own new word about September** — never on a session's reading that the data
-has since made it look safe, and never as a side effect of the September split rebuild he parked.
+🔴 **HE WAS ASKED WITH ALL OF THAT AND RULED: "leave the Office respread at October"** (2026-10-09).
+
+**Both premises then inverted the same evening, and neither by a session's reading.**
+
+| | |
+| --- | --- |
+| Marcyrl's September Office book | landed **20:10:51 Cairo** — 3,920 rows, 80,565 units, 6,971,179.95 EGP |
+| A customer re-map applied after it | **21:00:22 Cairo**, 2,643 rows re-resolved |
+| September CNS Office units on a geography the data no longer supports | **10,987 of 80,565 — 13.64% — across 48 areas**, four times August's figure |
+| September *Anti Infective* unpublished | **19:12:21.58 Cairo** — so no `2026-09` row in `monthly_closing_publications` has `unpublished_at IS NULL` |
+| Therefore `isFrozenStoreSplitPeriod('CNS','2026-09')` | **false** — the month recomputes live, there is no frozen net to rebuild, and nothing published to restate |
+
+🔴 **PUT TO HIM AGAIN WITH THAT, AND HE RULED: "make September's Office split recalculate like
+October"** (2026-10-09). So `OFFICE_RESPREAD_START_PERIOD` is **`2026-09`**, and it was a
+one-constant change after all — because the freeze that would have made it more than one had been
+withdrawn an hour earlier.
+
+🔴 **It moves again only on his own new word, in EITHER direction** — never on a session's reading
+that the data makes a different month look safe. And **if he re-publishes September, nothing needs
+doing**: the net stamped at that publish is computed by the live path, which now carries the
+respread, so September freezes *with* it. The hazard in the first ruling is reachable only for a
+month frozen *before* this rule — August 2026 and earlier, which the constant excludes.
+
+🔴 **A month the respread covers is not a task on the Needs You board.** The stored-row drift
+detector (#5679) still measures and reports it, because the stored rows are what a re-upload or a
+re-map meets, but the row sits in **worth-knowing** rather than *yours* and says the closing figures
+are already right — re-committing the Office book would fix nothing that is broken, and would total
+*higher* than the file (`allocateProduct` drops products netting ≤ 0 inside the locked region).
 
 ### The three things that had to be wired, and the one that nearly shipped wrong
 

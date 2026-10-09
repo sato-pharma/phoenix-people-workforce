@@ -44,8 +44,9 @@ import { areaProductKey, isSplitEligible } from "../src/lib/sales/store-sales-ci
  *      product on units, effective units and value. A redistribution that changes the total is the
  *      whole bug in one sentence (store-split-matrix.ts's header), and largest-remainder rounding is
  *      where it gets lost.
- *   4. Nothing before 2026-10 moves. July, August and September keep the numbers they were published
- *      with; the 6.23% measured on August is the EVIDENCE for the rule, never a backlog.
+ *   4. Nothing before 2026-09 moves, and September DOES. July and August keep the numbers they were
+ *      published with; the 6.23% measured on August is the EVIDENCE for the rule, never a backlog.
+ *      September is in by his own second ruling of 2026-10-09 — see the case for the account.
  *   5. CNS only — the Office channel's own line list, the same one the upload enforces.
  *   6. Office never weights its own respread, and an excluded, confidential or direct row never
  *      weights it either.
@@ -226,18 +227,40 @@ export function runClosingOfficeRespreadTests() {
     near(effectiveOut, 120, "effective units out === the channel's effective units");
   }
 
-  // 4. THE DATE IS THE MECHANISM. September and everything before it keep their published numbers.
+  // 4. THE DATE IS THE MECHANISM. August and everything before it keep their published numbers.
+  //
+  // 🔴 SEPTEMBER MOVED ONCE, BY HIS OWN WORD IN BOTH DIRECTIONS, AND THAT IS WHAT THIS PINS.
+  // 2026-10-09, first: "leave the Office respread at October" — September held no Office rows and
+  // was frozen for every line by September Anti Infective's publication, against a net stamped
+  // before this rule existed. The same evening Marcyrl's September Office book landed (80,565 units,
+  // 13.64% of them on a geography the data no longer supported) and that publication was withdrawn
+  // at 19:12:21.58 Cairo, so he ruled again: "make September's Office split recalculate like
+  // October". Only his own new word moves this constant again, in either direction.
   {
-    assert.equal(OFFICE_RESPREAD_START_PERIOD, "2026-10", "the owner's start month");
-    assert.equal(isOfficeRespreadActive("2026-09"), false, "September is published and must not move");
+    assert.equal(OFFICE_RESPREAD_START_PERIOD, "2026-09", "the owner's start month");
+    assert.equal(isOfficeRespreadActive("2026-08"), false, "August is published and must not move");
+    assert.equal(isOfficeRespreadActive("2026-09"), true, "his second ruling, 2026-10-09");
     assert.equal(isOfficeRespreadActive("2026-10"), true);
     assert.equal(isOfficeRespreadActive("2027-03"), true, "a later year is still after the start");
     assert.equal(isOfficeRespreadActive(""), false, "an unreadable period never moves a number");
     assert.equal(isOfficeRespreadActive("2026-9"), false, "only YYYY-MM is read");
-    for (const period of ["2026-01", "2026-07", "2026-08", "2026-09"]) {
+    for (const period of ["2026-01", "2026-07", "2026-08"]) {
       const respread = buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], period, LINE);
       assert.equal(respread.movements.length, 0, `${period} is untouched`);
       assert.equal(respread.net.size, 0, `${period} has no net`);
+    }
+    // September takes the rule now, on the same drifted population every other case uses — so this
+    // fails if the constant is moved back without his word, which a boundary-only check would not.
+    {
+      const september = buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], "2026-09", LINE);
+      assert.ok(september.movements.length > 0, "September is respread, exactly as October is");
+      assert.ok(september.net.size > 0, "September carries a net");
+      const october = buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], PERIOD, LINE);
+      assert.equal(
+        september.movements.length,
+        october.movements.length,
+        "the same population respreads identically in both months — the period is a gate, not an input",
+      );
     }
   }
 
@@ -253,7 +276,8 @@ export function runClosingOfficeRespreadTests() {
     }
     assert.equal(isOfficeRespreadPair(LINE, PERIOD), true);
     assert.equal(isOfficeRespreadPair("Pedia", PERIOD), false, "Pedia has no Office channel");
-    assert.equal(isOfficeRespreadPair(LINE, "2026-09"), false, "and the month still has to be covered");
+    assert.equal(isOfficeRespreadPair(LINE, "2026-09"), true, "September is covered since his second ruling");
+    assert.equal(isOfficeRespreadPair(LINE, "2026-08"), false, "and the month still has to be covered");
 
     // A caller that does not name the line is answered per row: the CNS Office rows move, the Pedia
     // rows in the same list do not.
@@ -327,8 +351,13 @@ export function runClosingOfficeRespreadTests() {
     );
     assert.equal(
       isOfficeRespreadRow({ distributorCode: OFFICE_DISTRIBUTOR_CODE, officialLine: LINE }, "2026-09"),
+      true,
+      "September's Office rows are respread too, since his second ruling of 2026-10-09",
+    );
+    assert.equal(
+      isOfficeRespreadRow({ distributorCode: OFFICE_DISTRIBUTOR_CODE, officialLine: LINE }, "2026-08"),
       false,
-      "and September's Office rows stay exactly where they were published",
+      "and August's Office rows stay exactly where they were published",
     );
   }
 
@@ -403,8 +432,9 @@ export function runClosingOfficeRespreadTests() {
       );
     }
 
-    // A month with nothing to respread leaves the city split's numbers untouched.
-    const untouched = mergeOfficeRespreadIntoSplit(city, buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], "2026-09", LINE));
+    // A month with nothing to respread leaves the city split's numbers untouched. August, not
+    // September: September is inside the rule since his second ruling of 2026-10-09.
+    const untouched = mergeOfficeRespreadIntoSplit(city, buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], "2026-08", LINE));
     assert.equal(untouched.net, city.net, "no respread → the same net object back");
     assert.equal(untouched.officeNet.size, 0, "and an empty Office slice, so no grid is touched");
   }

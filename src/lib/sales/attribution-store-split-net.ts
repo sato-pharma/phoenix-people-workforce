@@ -115,7 +115,7 @@ export function buildStoreSplitNetPayload(
   // 🔴 THREE RULES SHARE THIS NET, AND ANY ONE ON ITS OWN IS A REASON TO WRITE ONE. The city split
   // (from 2026-08, Pedia / Anti Infective / CNS), the EPDA-BULK contribution allocation (owner,
   // 2026-10-09 — from the September closing, Pedia only) and the Office channel's read-time respread
-  // (owner, 2026-10-09 — from the October closing, CNS only) all move money between areas of one
+  // (owner, 2026-10-09 — from the September closing, CNS only) all move money between areas of one
   // line, and au.f_monthly_attribution can see none of them on its own. Asked as three tests rather
   // than one because their lines and start months are independent.
   //
@@ -227,7 +227,7 @@ export async function writeAttributionStoreSplitNet(input: {
   // owner moved a start period later, and attribution would keep applying a split that no longer
   // exists.
   // ANY of the three rules is a reason to read the lines — the city split from 2026-08, the
-  // EPDA-BULK allocation from 2026-09, the Office read-time respread from 2026-10 (see
+  // EPDA-BULK allocation from 2026-09, the Office read-time respread from 2026-09 (see
   // buildStoreSplitNetPayload, which decides per line).
   if (isStoreCitySplitActive(period) || isBulkAllocationActive(period) || isOfficeRespreadActive(period)) {
     for (const line of ATTRIBUTION_SPLIT_LINES) {

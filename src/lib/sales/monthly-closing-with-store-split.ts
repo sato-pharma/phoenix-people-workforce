@@ -58,13 +58,13 @@ export async function loadMonthlyClosingPartsWithStoreSplit(input?: {
     // and pushing either net onto this grid would make "of which Office" exceed the area's own
     // Office units. That is why this grid was passed straight through until 2026-10-09.
     //
-    // The Office channel's own read-time respread (owner, 2026-10-09; CNS, from the October closing)
+    // The Office channel's own read-time respread (owner, 2026-10-09; CNS, from the September closing)
     // moves exactly these rows, so leaving the grid untouched is now the error: "of wh. Office"
     // would still describe the areas the UPLOAD stamped on them while the matrix beside it describes
     // today's, and the Closing Matrix (No Office) tab — literally `matrix − office`, cell by cell —
     // would stop describing distributor sell-out and could print a negative. `officeNet` is that
     // slice on its own (closing-store-split-net.ts), empty on every line but CNS and every month
-    // before 2026-10, so every other closing keeps the grid it had.
+    // before 2026-09, so every other closing keeps the grid it had.
     office: parts.office && officeNet.size > 0
       ? applyStoreSplitToMatrix(parts.office, officeNet).matrix
       : parts.office,
