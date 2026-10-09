@@ -1,4 +1,18 @@
-FROM node:24-alpine AS base
+# 🔴 THE BASE IMAGE IS PULLED FROM A MIRROR, NOT FROM DOCKER HUB, AND MUST STAY THAT WAY.
+# On 2026-10-09 four consecutive merges to main failed to deploy — #5711, #5712, #5713, #5714,
+# 23:43 to 23:58 Cairo — every one of them on the same line:
+#   failed to solve: node:24-alpine: failed to resolve source metadata for
+#   docker.io/library/node:24-alpine: 429 Too Many Requests
+# Railway builds on shared metal, so the anonymous Docker Hub pull limit belongs to the builder's IP
+# and not to this project: nothing in the repository was wrong, the merges were green, and production
+# simply stopped moving while the service kept serving the previous revision. Four code and docs
+# changes sat merged-but-not-live with nothing red anywhere except the Railway build log.
+# public.ecr.aws/docker/library/* is AWS's copy of the Docker Official Images and does not fall back
+# to Docker Hub, so a Hub rate limit cannot reach this build. It is the SAME image, proven by digest
+# on 2026-10-09: Docker Hub, mirror.gcr.io and public.ecr.aws all answered
+# sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 for 24-alpine.
+# Pinned by tests/railway-deploy-config.test.ts in the required `validate` job.
+FROM public.ecr.aws/docker/library/node:24-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
