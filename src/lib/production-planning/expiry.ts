@@ -93,14 +93,26 @@ function parseIsoDateUtc(value: string): number | null {
   return stamp;
 }
 
+/** The critical band, in days before expiry. His ruling, 2026-10-09: "keep the critical band at 30 days". */
+export const CRITICAL_BAND_DAYS = 30;
+
 /**
- * The critical band inside the warning window — a third of it, so 90 days gives 30.
+ * The critical band inside the warning window — a FIXED 30 days, whatever the window is.
  *
- * Derived rather than fixed because `warnDays` is his to change: a hard-coded 30 would swallow the
- * whole window if he ever shortened it to 20 days, and every lot would arrive already critical.
+ * It used to be a third of the window, so widening `expiry_warn_days` widened the urgent band with
+ * it: his move from 90 to 180 days on 2026-10-09 would have made every lot inside two months read
+ * critical. He ruled the band stays 30 — "urgent" is a property of how close the expiry is, not of
+ * how early he asked to hear about it.
+ *
+ * The one case where 30 is impossible is a window NARROWER than the band, where a fixed 30 would
+ * swallow the whole window and every lot would arrive already critical. There the old
+ * third-of-the-window rule still applies, so a 20-day window keeps a 6-day band.
  */
 export function criticalDaysFor(warnDays: number): number {
-  return Math.max(1, Math.floor(warnDays / 3));
+  const window = Number.isFinite(warnDays) ? Math.trunc(warnDays) : 0;
+  if (window <= 0) return 1;
+  if (window <= CRITICAL_BAND_DAYS) return Math.max(1, Math.floor(window / 3));
+  return CRITICAL_BAND_DAYS;
 }
 
 /**

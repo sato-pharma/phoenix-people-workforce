@@ -127,9 +127,14 @@ would, with `dry_run = true` and `email_sent = false`, and the table's own CHECK
 `dry_run = true` beside `email_sent = true` — so a bypassed gate fails at the database rather than in
 his inbox.
 
-The window is `expiry_warn_days`, defaulting to 90 (his three months). The critical band is a
-**third** of it, derived rather than fixed: a hard-coded 30 days would swallow a 20-day window whole
-and every lot would arrive already critical.
+The window is `expiry_warn_days`, **180 since 2026-10-09** (he widened it from 90 the same day he
+armed the alarm, so the nearest lot — Aspartame, 2027-05-09 — enters the window on 2026-11-10). The
+critical band is a **fixed 30 days**, `CRITICAL_BAND_DAYS`: he ruled it on 2026-10-09, on being told
+that widening the window would have stretched the urgent band with it ("keep the critical band at 30
+days"), because urgency is how close the expiry is and not how early he asked to hear about it. The
+old rule was a third of the window, and it survives in one place only — a window NARROWER than the
+band, where a fixed 30 would swallow the window whole and every lot would arrive already critical, so
+a 20-day window still keeps a 6-day band.
 
 `prodplan_expiry_events` stores no severity and no `product_id`, both on purpose. Severity is
 reconstructable from `days_remaining` beside `warn_days` through `criticalDaysFor`, and a stored band

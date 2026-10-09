@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { parseQty } from "../src/lib/production-planning/rules.ts";
 import {
+  CRITICAL_BAND_DAYS,
   criticalDaysFor,
   daysBetweenDates,
   evaluateExpiry,
@@ -63,13 +64,40 @@ export function runProductionPlanningExpiryTests() {
   assert.equal(daysBetweenDates("2026-10-08", "08/10/2026"), null, "and only ISO is accepted");
   assert.equal(daysBetweenDates("2026-10-08", ""), null);
 
-  // ── The critical band is a THIRD of his window, not a fixed 30 days ───────────────────────────
+  // ── The critical band is a FIXED 30 days, whatever his window is ──────────────────────────────
+  // His ruling, 2026-10-09, on being told that widening the window from 90 to 180 days would have
+  // widened the urgent band with it: "keep the critical band at 30 days". Urgency is how close the
+  // expiry is, not how early he asked to hear about it.
+  assert.equal(CRITICAL_BAND_DAYS, 30, "the band is his number, not a derived one");
   assert.equal(criticalDaysFor(90), 30, "three months warning makes the last month critical");
-  assert.equal(criticalDaysFor(180), 60);
-  // A fixed 30 would swallow a short window whole and every lot would arrive already critical.
+  assert.equal(criticalDaysFor(180), 30, "and so does six months — the band does not stretch with the window");
+  assert.equal(criticalDaysFor(365), 30);
+  // The one case where 30 is impossible: a window narrower than the band, where a fixed 30 would
+  // swallow the window whole and every lot would arrive already critical. The old third-of-the
+  // window rule still covers that end.
+  assert.equal(criticalDaysFor(30), 10, "a window AT the band is still split, never wholly critical");
   assert.equal(criticalDaysFor(20), 6, "a twenty-day window keeps a band narrower than itself");
   assert.equal(criticalDaysFor(1), 1, "and never collapses to zero, which would make nothing critical");
   assert.equal(criticalDaysFor(0), 1);
+
+  // Behaviourally, at the window he actually set: a lot 45 days out is WARNING, not critical.
+  const atOneEighty = evaluateExpiry(
+    [
+      lot({ code: "FORTY_FIVE", expiryDate: "2026-11-22" }), // 45 days from 2026-10-08
+      lot({ code: "TWENTY_NINE", expiryDate: "2026-11-06" }), // 29 days
+    ],
+    { today: "2026-10-08", warnDays: 180 },
+  );
+  assert.equal(
+    atOneEighty.find((v) => v.code === "FORTY_FIVE")?.severity,
+    "warning",
+    "45 days out is a warning at a 180-day window — under the old third-of-the-window band it read critical",
+  );
+  assert.equal(
+    atOneEighty.find((v) => v.code === "TWENTY_NINE")?.severity,
+    "critical",
+    "and 29 days out is critical, which is the band itself",
+  );
 
   // ── The verdict ───────────────────────────────────────────────────────────────────────────────
   const today = "2026-10-08";

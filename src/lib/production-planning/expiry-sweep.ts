@@ -139,7 +139,9 @@ export async function runProductionPlanningExpirySweep(): Promise<ExpirySweepRes
   // and lemon flavour are shared between both products — naming one of them on the row would be a
   // choice nobody made. The SEVERITY is not stored either, for a better reason: `days_remaining`
   // beside `warn_days` reconstructs it exactly through `criticalDaysFor`, and a stored band is a
-  // second copy of a derivation that can drift from the one the screen shows.
+  // second copy of a derivation that can drift from the one the screen shows. The band is a fixed 30
+  // days since 2026-10-09, so a row written before that date reconstructs under TODAY's rule — read
+  // an old row's severity as what the screen would say now, never as what his inbox said then.
   const rows = verdicts.map((verdict) => ({
     days_remaining: verdict.daysLeft,
     dry_run: dryRun,
