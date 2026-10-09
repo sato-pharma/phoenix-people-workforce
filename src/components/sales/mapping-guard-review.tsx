@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { BrickMoveRefreshStatus, useBrickMoveRefresh } from "@/components/sales/brick-move-refresh";
+import { MappingGuardSheetPanel, type GuardSheetApplied } from "@/components/sales/mapping-guard-sheet-panel";
 import { describeBrickSalesMove, parseBrickSalesMove } from "@/lib/sales/master-data/brick-move-result";
 import type { HeldMappingChange } from "@/lib/sales/mapping-guard";
 import {
@@ -248,6 +249,33 @@ function SalesMovedNotice({ notice }: { notice: SalesNotice }) {
   );
 }
 
+/**
+ * The notice for EVERY sales move in a set of decisions, never just the first: one answer used to be
+ * one pharmacy, and a selection of sixty — or an answered sheet — can move the sales of several.
+ * Shared by the buttons and the sheet so both report a move the same way.
+ */
+function salesNoticeFromMoves(
+  brickMoves: ReadonlyArray<{ holdId: number; brickMove?: unknown }>,
+  nameOf: (holdId: number) => string,
+): { notice: SalesNotice; needsRebuild: boolean } | null {
+  const moves = brickMoves.flatMap((entry) => {
+    const move = parseBrickSalesMove(entry.brickMove);
+    return move ? [{ holdId: entry.holdId, move }] : [];
+  });
+  if (moves.length === 0) return null;
+  return {
+    needsRebuild: moves.some(({ move }) => move.pendingFiles > 0),
+    notice: {
+      lines: moves.flatMap(({ holdId, move }) => {
+        const described = describeBrickSalesMove(move);
+        const body = described.length > 0 ? described : ["It had no sales in an open month."];
+        return moves.length === 1 ? body : body.map((line) => `${nameOf(holdId)}: ${line}`);
+      }),
+      subject: moves.length === 1 ? nameOf(moves[0].holdId) : `${moves.length} pharmacies`,
+    },
+  };
+}
+
 /** The ceiling the route enforces, repeated here so the screen never sends a request it refuses. */
 const MAX_PER_CLICK = 60;
 
@@ -358,22 +386,12 @@ export function MappingGuardReview({
       // EVERY move in the click, never just the first. One answer used to be one pharmacy; a
       // selection of sixty can move the sales of several, and reading `brickMoves[0]` would leave
       // the others' moved files unrebuilt — silently, because the screen would still report a move.
-      const moves = (payload.brickMoves ?? []).flatMap((entry) => {
-        const move = parseBrickSalesMove(entry.brickMove);
-        return move ? [{ holdId: entry.holdId, move }] : [];
-      });
-      if (moves.length > 0) {
-        const nameOf = (holdId: number) =>
-          holds.find((hold) => hold.id === holdId)?.subject ?? only?.subject ?? "The pharmacy";
-        setSalesNotice({
-          lines: moves.flatMap(({ holdId, move }) => {
-            const described = describeBrickSalesMove(move);
-            const body = described.length > 0 ? described : ["It had no sales in an open month."];
-            return moves.length === 1 ? body : body.map((line) => `${nameOf(holdId)}: ${line}`);
-          }),
-          subject: moves.length === 1 ? nameOf(moves[0].holdId) : `${moves.length} pharmacies`,
-        });
-        if (moves.some(({ move }) => move.pendingFiles > 0)) void rebuildMovedFiles();
+      const reported = salesNoticeFromMoves(payload.brickMoves ?? [], (holdId) =>
+        holds.find((hold) => hold.id === holdId)?.subject ?? only?.subject ?? "The pharmacy",
+      );
+      if (reported) {
+        setSalesNotice(reported.notice);
+        if (reported.needsRebuild) void rebuildMovedFiles();
       }
     } catch {
       setError("That did not go through.");
@@ -382,6 +400,40 @@ export function MappingGuardReview({
       setBusyId(null);
     }
   }, [holds, lock, rebuildMovedFiles]);
+
+  // What an uploaded sheet wrote, reported through the same notices the buttons use.
+  const handleSheetApplied = useCallback(
+    (result: GuardSheetApplied) => {
+      if (Array.isArray(result.holds)) setHolds(result.holds);
+      setSelected(new Set());
+      setError(null);
+      setSalesNotice(null);
+      const { decided, locked, warnings } = result;
+      setDone(
+        `${decided === 1 ? "One answer from the sheet was" : `${decided} answers from the sheet were`} written` +
+          (locked > 0 ? `, and ${locked === 1 ? "that mapping is" : `${locked} of those mappings are`} locked.` : ".") +
+          (warnings.length > 0
+            ? ` ${warnings.map((entry) => `${entry.customer}: ${entry.warning ?? "needs a look."}`).join(" ")}`
+            : ""),
+      );
+      setFailures(
+        result.failed.map((entry) => ({
+          holdId: entry.holdId,
+          reason: entry.customer ? `${entry.customer}: ${entry.reason ?? "it had already been decided."}` : entry.reason,
+        })),
+      );
+      const reported = salesNoticeFromMoves(result.brickMoves, (holdId) => {
+        const known = holds.find((hold) => hold.id === holdId)?.subject;
+        return known ?? result.failed.find((entry) => entry.holdId === holdId)?.customer ?? "The pharmacy";
+      });
+      if (reported) {
+        setSalesNotice(reported.notice);
+        if (reported.needsRebuild) void rebuildMovedFiles();
+      }
+    },
+    [holds, rebuildMovedFiles],
+  );
+
 
   // What the normalizer would answer for EVERY row on the screen, not only the ticked ones — the
   // button below applies exactly this plan, and prints these counts before it runs.
@@ -549,6 +601,8 @@ export function MappingGuardReview({
         Allowing a pharmacy that a brick move held also moves its sales in every open month; a published
         month never changes.
       </p>
+
+      <MappingGuardSheetPanel onApplied={handleSheetApplied} />
 
       {/* The lock, and the selection's own buttons. Square, flat, and it wraps rather than scrolls. */}
       <div className="space-y-2 border border-phx-line bg-white p-3">
