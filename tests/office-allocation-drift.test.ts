@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   diffOfficeAllocation,
@@ -128,6 +129,24 @@ export function runOfficeAllocationDriftTests() {
     ["PS", "IS"],
     "the batches re-touched after the commit are named in the report",
   );
+
+  // ── 7. AND THE CLI PRINTS THOSE NAMES, NEVER THE CODES ──────────────────────────────────────
+  // The owner's standing rule is names in chat and in UI, and a CLI a session reads from is both.
+  // `baseTouchedAfterCommit` already substitutes the code where a distributor has no name, so the
+  // script has nothing to decide — yet it printed `IS-T, RM-T, SF, IS, RM, EG, EG-BR, PS` on
+  // 2026-10-09 and eight codes had to be translated by hand before September could be reported.
+  // Source-read deliberately: running that script needs production credentials.
+  {
+    const cli = readFileSync("scripts/check-office-allocation-drift.ts", "utf8");
+    assert.ok(
+      cli.includes("batch.distributorName"),
+      "the drift CLI must print the distributor NAME in its base-moved line",
+    );
+    assert.ok(
+      !cli.includes("batch.distributorCode"),
+      "and must not fall back to a raw distributor code anywhere — names, never codes",
+    );
+  }
 
   console.log(
     `  office allocation drift: ${report.unitsThatWouldMove} units move on a line total that is identical on both sides`,

@@ -1,11 +1,11 @@
 ---
 name: a-rebuilt-net-goes-stale-when-an-upload-is-withdrawn
-description: "A store-split net rebuilt minutes after a book lands is stale the moment that book is withdrawn — September 2026 went 423 (stale code) → 492 (current code, EPDA-BULK in) → 449 (EPDA-BULK pulled) inside twenty minutes, and only the cell count tells the three apart."
+description: "A store-split net rebuilt minutes after a book lands is stale the moment that book is withdrawn, and NOTHING re-runs it — it is keyed without a batch_id, so no cascade touches it and no timer refreshes it; September 2026 was withdrawn twice on 2026-10-09 and the second one left 492 frozen cells against 449 live (179,956.14 EGP of area movement by valuation) until his \"rebuild the September net now\" at 21:31 Cairo. A publication row with unpublished_at set still counts as a row — count LIVE ones."
 metadata:
   node_type: memory
   type: project
   originSessionId: d5764c39-c02c-4dd4-a40d-70ad08cc490c
-  modified: 2026-10-09T17:00:00.000Z
+  modified: 2026-10-09T18:35:41.000Z
 ---
 
 **2026-09's net was written three times in twenty minutes on 2026-10-09, and each count is a
@@ -46,3 +46,40 @@ gap the pipeline cannot close is a **WITHDRAWN** batch, which leaves the last im
 place with nothing re-running (19:47 → 19:56 on 2026-10-09, 140,339.41 EGP of Pedia). Check
 `check-store-split-drift.ts` after a withdrawal, not after a landing. Tonight's three manual applies
 were each overwritten by the next import within minutes.
+
+🔴 **IT HAPPENED A SECOND TIME THE SAME NIGHT, AN ORDER OF MAGNITUDE BIGGER, AND THE REASON NOTHING
+CASCADES IS THE KEY.** `au.monthly_store_split_net` is keyed `(period, line_code, area_code,
+product_code)` and carries **no `batch_id` at all**, so deleting a batch can never reach it. The
+re-uploaded EPDA-BULK book (20:02, batch `282d836b`) was withdrawn at about 21:2x Cairo over its
+cleared `is_bonus` column, and the 492 cells stamped **21:00:21** — written by the customer-map
+re-resolution, not by a session — stayed behind holding that book's units: **56 cells across 46
+line x area pairs, 492 frozen against 449 live**, worst pairs all Pedia (D11 -75,607.17,
+CA4 +68,882.42, D21 +64,422.54, UE7 +28,162.77, UE5 -21,227.98 = Sohag 1).
+
+- 🔴 **THE EGP IS A VALUATION, NOT MONEY IN THE TABLE.** The net holds `net_qty` and
+  `net_effective_units` only — no value column — so "179,956.14 EGP ends up on a different area" is
+  those cells priced, and must be said that way to him.
+- 🔴 **NOTHING REFRESHES IT ON A TIMER.** `refreshAttributionStoreSplit` is reached only from the
+  import, the normalizer mapping and customer-map paths, and `source-of-sales-rollup-rebuild` — no
+  cron, no Actions workflow. So "an upload fixes it by itself" is true, and "it will fix itself" is
+  NOT: with no further upload the staleness is permanent.
+- 🔴 **THE APP'S OWN WITHDRAWAL LEAVES THE SAME HOLE.** `deleteSourceOfSalesUploadBatch` checks the
+  period lock, deletes the batch and writes an audit row — and does not refresh the net. This is the
+  normal consequence of any withdrawal through the UI, not an artefact of doing it in SQL.
+
+**Repaired on his word** — *"rebuild the September net now"*, 2026-10-09: pre-image copied to
+`public.msn_202609_backup_20261009` (492 rows), dry run first, then
+`backfill-attribution-store-split.ts --apply 2026-09` wrote **449 rows at 21:31:39 Cairo** with
+`sum(net_qty)` and `sum(net_effective_units)` both exactly 0, then
+**`au.f_refresh_monthly_attribution('2026-09')` — the single-period re-stamp, deliberately NOT
+`f_rebuild_monthly_attribution_all()`**, which the script suggests but which rebuilds every period
+and is a separate operator decision. Post-proof from the drift script: *"no drift. 449 frozen cells
+match the rule."*
+
+🔴 **AND DO NOT TEST "IS IT PUBLISHED" BY COUNTING `monthly_closing_publications` ROWS.** 2026-09
+holds **one** row — Anti Infective, published 2026-10-05 — with `unpublished_at` set to 18:12 Cairo
+on 2026-10-09 by `b-10`. A row count therefore says "published" about a period that is not, which
+would have read `phx_write_monthly_store_split_net`'s silent 0-row refusal into a month where the
+write was in fact free to proceed. Count rows whose `unpublished_at IS NULL`, which is the same test
+the write function makes. [[publishing-one-line-freezes-the-whole-periods-store-split-net]]
+

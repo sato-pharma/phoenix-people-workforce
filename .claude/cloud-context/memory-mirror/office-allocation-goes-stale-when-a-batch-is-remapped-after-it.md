@@ -89,3 +89,23 @@ September CNS is unpublished, which makes it the one case where re-committing th
 genuinely his to decide. The remap itself was right and is not in question: Sohag 1 fell 291.3% →
 246.3%, Sohag 2 rose 42.2% → 90.1%, Down town 207.2% → 140.6%, Cairo East 1 50.7% → 123.9%, with
 national CNS unchanged at 11,885,444.55 EGP / 151,876 units — value moved between areas, none created.
+
+🔴 **RE-MEASURED AT 21:4x CAIRO ON 2026-10-09 AND IDENTICAL — 10,987 of 80,565 (13.64%), 48 areas**,
+from a tree the script's own guard certifies current (`12e483b81` = `origin/main`). It did not move
+across either of that evening's two upheavals: the **EPDA-BULK withdrawal and re-upload** (that book
+is Pedia; this drift is CNS only, so it cannot touch it) or the **September store-split net rebuild**
+(449 cells applied 21:31:39 Cairo by the closing-audit session, net 0.000, "no drift" after). The
+largest cells are unchanged too — CA5 −5,550 against CA3 +4,997, UE5 −2,639 against UE6 +2,600. So
+the figure is a property of the 1,212-pair customer-map remap alone, and quoting it does not need
+re-measuring after an unrelated upload: only a new remap, or him re-uploading the Office book, can
+move it.
+
+**The CLI prints NAMES since PR 5701.** It printed `IS-T, RM-T, SF, IS, RM, EG, EG-BR, PS` for the
+eight batches that moved the base, against the standing names-never-codes rule, and a session had to
+translate all eight by hand before it could report September. `baseTouchedAfterCommit` already
+substitutes the code where a distributor has no name, so there was nothing to guard — the script read
+`distributorCode` where the field it wanted was `distributorName`. Pinned in
+`tests/office-allocation-drift.test.ts` §7, which also refuses `batch.distributorCode` anywhere in
+that script. Run it with `--env-file=.env.local`: without it the script dies on
+`SUPABASE_SERVICE_ROLE_KEY is required` from `getSupabaseAdmin`, which reads as a broken script
+rather than a missing flag.
