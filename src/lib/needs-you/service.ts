@@ -12,6 +12,43 @@
  * seconds is a source whose contents are unknown. The loser becomes
  * `{status: "unavailable", because: "it did not answer within 8 seconds"}` and shows up in band one
  * with that sentence, so a slow queue reads as unread rather than as clear.
+ *
+ * 🔴 AND WHY THE FAN-OUT IS BOUNDED RATHER THAN A `Promise.all` OVER ALL 22 (2026-10-09). It WAS an
+ * unbounded `Promise.all`, and on production the owner read the board three times and got 9 items,
+ * then 8, then 7 — a different set of amber rows each time, and nine of the 22 sources unread on the
+ * read he kept. Nothing was slow: measured alone against production the same evening, the worst
+ * source took 5,516 ms and NONE of the 22 exceeded the 8-second budget. Started together they
+ * inflate each other — the three heavy ones to 10,280 / 9,387 / 9,222 ms, and even a 903 ms source
+ * to 7,016 ms — so the budget was being spent queueing behind the other 21 reads rather than on the
+ * read itself. Three measured fixes, in the order they matter:
+ *
+ *   1. TWO LANES, so a heavy source never runs beside another heavy source (one at a time) while
+ *      the light ones fan out four at a time. Measured: wall 12.7 s, heaviest single source
+ *      5,647 ms, nothing within 2 s of the budget, and no `57014 canceling statement due to
+ *      statement timeout` — which the 22-way shape DID provoke out of `phx_closing_drift_status`.
+ *      At two heavy lanes the peak was 7,687 ms: 313 ms of headroom, which is not headroom at all,
+ *      so the heavy lane is ONE.
+ *   2. EACH SOURCE'S CLOCK STARTS WHEN THAT SOURCE STARTS. Under the old shape every timer started
+ *      at fan-out, so a source could spend its whole budget in a queue and amber having never run.
+ *      `office-allocation-drift` starts at +10.5 s in the measured run and answers in 2,264 ms: a
+ *      fan-out clock ambers it, its own clock does not.
+ *   3. A BOARD CEILING, because bounding the width unbounds the total. 22 sources that all hang
+ *      cost 8 s in parallel and up to 48 s through lanes, so the whole fan-out carries
+ *      {@link NEEDS_YOU_BOARD_BUDGET_MS}; a source still queued when it passes is returned amber
+ *      with its own sentence instead of starting a read nobody is waiting for any more.
+ *
+ * 🔴 WHAT THIS DELIBERATELY TRADES. The page is SLOWER in the healthy case. Three whole-board
+ * reads from the laptop after the fix: 14.9 s, 12.2 s, 19.6 s — against the old shape's 10.3 s — and
+ * all three returned **0 amber of 22 sources** and the identical 14 / 9 / 1 lanes, where the old
+ * shape returned 9, then 8, then 7 items with a different set of unread sources each time. The
+ * heavy lane IS that wall: three sources at 4.6-5.5 s each, run one after another on purpose.
+ *
+ * That is the right way round for this board — "a board that under-reports is worse than no board"
+ * (`types.ts`) prices a few seconds of a loading screen he is already shown below nine sources he
+ * cannot see, two of which were hiding 13 overdue marketing requests at his own step and a
+ * nine-day-old uncollected leaver deduction. Never buy the seconds back by widening a lane. The way
+ * to make this page faster is to make a heavy source cheaper, which changes what it measures and is
+ * his call, not a scheduling one.
  */
 import type { AccessContext } from "@/lib/auth/permissions";
 import { logStructured } from "@/lib/observability/log";
@@ -25,8 +62,46 @@ import {
   type NeedsYouSourceState,
 } from "./types";
 
-/** Eight seconds per source. Measured against the slowest adapters that are still worth waiting for. */
+/**
+ * Eight seconds per source, counted from the moment THAT source starts — never from the fan-out.
+ *
+ * Measured alone against production 2026-10-09, the slowest source answers in 5,516 ms, so this is
+ * not a ceiling any healthy read approaches; a source that reaches it is a source in trouble. The
+ * lane limits below are what keep it that way, and raising this number instead of narrowing a lane
+ * would make a hung source hold the page for longer without making any source answer.
+ */
 export const NEEDS_YOU_SOURCE_TIMEOUT_MS = 8_000;
+
+/**
+ * ONE. A heavy source never runs beside another heavy source.
+ *
+ * At two, the measured peak was 7,687 ms against an 8,000 ms budget — 313 ms, which is noise, not
+ * headroom, and production carries real traffic this measurement did not. At one, the peak was
+ * 5,647 ms. Account: the header.
+ */
+export const NEEDS_YOU_HEAVY_LANE_LIMIT = 1;
+
+/**
+ * Four light sources at a time. Nineteen sources averaging 400 ms drain in about 2 s, well inside
+ * the heavy lane's own run, so widening this buys no wall time — it only puts the light sources
+ * back into contention with each other.
+ */
+export const NEEDS_YOU_LIGHT_LANE_LIMIT = 4;
+
+/**
+ * The whole fan-out's ceiling. Bounding the width unbounds the total: 22 sources that all hang cost
+ * 8 s under a `Promise.all` and up to 48 s through two lanes, which would be a page that never
+ * paints. A source still QUEUED when this passes is returned amber rather than started — and a
+ * source already running keeps its own 8 s, so the worst case is this plus one budget.
+ *
+ * 🔴 45 s, AND IT IS NOT A LATENCY TARGET — IT IS THE LINE PAST WHICH THE BOARD IS BROKEN RATHER
+ * THAN SLOW. Three whole-board reads measured from the laptop read 12.2 s, 14.9 s and 19.6 s, so a
+ * 30 s ceiling sat inside 1.6x of a measured read: it would have fired on an ordinary slow
+ * afternoon and ambered sources that were about to answer, manufacturing the exact under-report the
+ * lanes were built to remove. Tightening this to trim the page is therefore backwards — trim the
+ * page by making a heavy source cheaper.
+ */
+export const NEEDS_YOU_BOARD_BUDGET_MS = 45_000;
 
 const TIMED_OUT = Symbol("needs-you-source-timed-out");
 
@@ -47,13 +122,14 @@ async function loadWithTimeout(
   adapter: NeedsYouAdapter,
   access: AccessContext,
   now: Date,
+  budgetMs: number,
 ): Promise<NeedsYouSourceState> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const raced = await Promise.race([
       adapter.load(access, now),
       new Promise<typeof TIMED_OUT>((resolve) => {
-        timer = setTimeout(() => resolve(TIMED_OUT), NEEDS_YOU_SOURCE_TIMEOUT_MS);
+        timer = setTimeout(() => resolve(TIMED_OUT), budgetMs);
       }),
     ]);
     if (raced === TIMED_OUT) {
@@ -66,7 +142,12 @@ async function loadWithTimeout(
           scope: access.scope,
         },
       });
-      return { status: "unavailable", because: "it did not answer within 8 seconds" };
+      // The sentence carries the budget it actually raced, so a changed budget cannot leave the
+      // row claiming a number nothing measured. At 8,000 ms it reads exactly as it always has.
+      return {
+        status: "unavailable",
+        because: `it did not answer within ${Math.round(budgetMs / 1000)} seconds`,
+      };
     }
     return raced;
   } catch (error) {
@@ -127,17 +208,91 @@ async function loadWithTimeout(
  * producer per rule — and the caller still receives `unavailable`, so a failed read cannot become a
  * zero on that screen either.
  */
+/**
+ * The four numbers above, overridable.
+ *
+ * 🔴 NOTHING IN THE APP PASSES THIS, AND NOTHING SHOULD. It exists so
+ * `tests/needs-you-source-scheduling.test.ts` can prove the two properties that are otherwise
+ * untestable without sitting through real seconds — that a source's budget starts when the SOURCE
+ * starts rather than at fan-out, and that the board ceiling ambers a source it never read instead of
+ * dropping it. A page that passes its own numbers here is a page that has quietly left the measured
+ * shape; change the constants instead, with a measurement.
+ */
+export type NeedsYouFanOutOptions = {
+  sourceTimeoutMs?: number;
+  boardBudgetMs?: number;
+  heavyLaneLimit?: number;
+  lightLaneLimit?: number;
+};
+
 export async function loadNeedsYouSources(
   access: AccessContext,
   adapters: readonly NeedsYouAdapter[],
   now: Date = new Date(),
+  options: NeedsYouFanOutOptions = {},
 ): Promise<NeedsYouSourceResult[]> {
-  return Promise.all(
-    adapters.map(async (adapter) => ({
-      id: adapter.id,
-      state: await loadWithTimeout(adapter, access, now),
-    })),
-  );
+  const sourceTimeoutMs = options.sourceTimeoutMs ?? NEEDS_YOU_SOURCE_TIMEOUT_MS;
+  const heavyLaneLimit = options.heavyLaneLimit ?? NEEDS_YOU_HEAVY_LANE_LIMIT;
+  const lightLaneLimit = options.lightLaneLimit ?? NEEDS_YOU_LIGHT_LANE_LIMIT;
+  const deadline = Date.now() + (options.boardBudgetMs ?? NEEDS_YOU_BOARD_BUDGET_MS);
+  // Written by INDEX, so results come back in the order they were asked for however the two lanes
+  // interleave. `classify.ts` does not depend on that order, but a caller reading `results[0]`
+  // would, and a non-deterministic order is what makes one flaky test look like two.
+  const results = new Array<NeedsYouSourceResult | undefined>(adapters.length);
+
+  const drain = async (indexes: readonly number[], limit: number): Promise<void> => {
+    let next = 0;
+    const lane = async (): Promise<void> => {
+      for (;;) {
+        const slot = next;
+        next += 1;
+        if (slot >= indexes.length) return;
+        const index = indexes[slot]!;
+        const adapter = adapters[index]!;
+        if (Date.now() >= deadline) {
+          // Never read: still queued when the board ran out of time. Amber for the same reason a
+          // timeout is amber — its contents are unknown — and in its own words, so the row cannot
+          // be mistaken for a read that happened and found nothing.
+          logStructured("ERROR", "Needs You source was never read", {
+            labels: {
+              event: "needs_you_source_unstarted",
+              source: adapter.id,
+              hrId: access.hrId,
+              role: access.role,
+              scope: access.scope,
+            },
+          });
+          results[index] = {
+            id: adapter.id,
+            state: { status: "unavailable", because: "the board ran out of time before it could be read" },
+          };
+          continue;
+        }
+        results[index] = {
+          id: adapter.id,
+          state: await loadWithTimeout(adapter, access, now, sourceTimeoutMs),
+        };
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, limit) }, lane));
+  };
+
+  const heavy: number[] = [];
+  const light: number[] = [];
+  adapters.forEach((adapter, index) => {
+    if (adapter.cost === "heavy") heavy.push(index);
+    else light.push(index);
+  });
+
+  // Both lanes at once. The heavy lane is the long pole, so the light ones finish inside its run.
+  await Promise.all([drain(heavy, heavyLaneLimit), drain(light, lightLaneLimit)]);
+
+  // Every adapter asked for, answered. A hole here would render as a source that is not on the
+  // board at all, so it throws rather than filters — `classify.ts` would drop it in silence.
+  return results.map((result, index) => {
+    if (!result) throw new Error(`needs-you: source "${adapters[index]?.id}" produced no result`);
+    return result;
+  });
 }
 
 export async function getNeedsYouBoard(access: AccessContext, now: Date = new Date()): Promise<NeedsYouBoard> {

@@ -93,6 +93,25 @@ export type NeedsYouAdapter = {
    * remember to catch, and a new adapter that forgets fails in the safe direction.
    */
   load: (access: AccessContext, now: Date) => Promise<NeedsYouSourceState>;
+  /**
+   * `"heavy"` means this source costs SECONDS on its own, so `service.ts` must never let it run
+   * beside another heavy one.
+   *
+   * 🔴 THIS IS NOT A HINT — IT IS THE WHOLE DIFFERENCE BETWEEN A COMPLETE BOARD AND A FLAPPING ONE.
+   * Measured on production 2026-10-09, each source read alone: `closing-publication-drift` 5,516 ms,
+   * `action-inbox` 5,119 ms, `office-allocation-drift` 4,640 ms, every other source under 1,100 ms,
+   * and NONE of the 22 over the 8-second budget. Run all 22 at once — the shape this board shipped
+   * with — and the three inflate to 10,280 / 9,387 / 9,222 ms while even `payroll-publish` goes from
+   * 903 ms to 7,016 ms: the contention, not any one query, is what breaks the budget. Which three
+   * lose the race is then luck, which is exactly how the owner saw nine items, then eight, then
+   * seven, a different set each read.
+   *
+   * 🔴 SO A NEW SOURCE THAT COSTS SECONDS MUST DECLARE IT. An undeclared heavy source joins the
+   * light lane, contends with three others, and reintroduces the flapping amber this field removes —
+   * and it would do it to the OTHER sources in that lane, not only to itself.
+   * `tests/needs-you-source-scheduling.test.ts` pins the three above as heavy.
+   */
+  cost?: "heavy";
 };
 
 const EMPTY: NeedsYouSourceState = { status: "ok", items: [] };
@@ -171,6 +190,7 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? one 
  */
 const actionInbox: NeedsYouAdapter = {
   id: "action-inbox",
+  cost: "heavy",
   load: async (access) => {
     // The SAME gate `/api/approvals/badge-counts` puts in front of this read. See `hubBadge` below
     // for why the adapter asserts it rather than leaning on the page.
@@ -1192,6 +1212,7 @@ export function closingPublicationDriftItems(
 
 const closingPublicationDrift: NeedsYouAdapter = {
   id: "closing-publication-drift",
+  cost: "heavy",
   load: async (access) => {
     const notYours = ownerOnlyQueue(
       access,
@@ -1326,6 +1347,7 @@ export function officeAllocationDriftItems(
 
 const officeAllocationDrift: NeedsYouAdapter = {
   id: "office-allocation-drift",
+  cost: "heavy",
   load: async (access, now) => {
     const notYours = ownerOnlyQueue(
       access,
