@@ -22,6 +22,9 @@
 // is folded into it. And the AM-to-PM change is a shift break (median 196 minutes), never a gap.
 
 import { distanceMeters } from "@/lib/phoenix-crm/geo";
+// The settlement rule itself, pure, so this file stays pure: `readIntegritySettlement` is the same
+// function the integrity board and the weekly fraud scan judge a settled case by.
+import { readIntegritySettlement } from "@/lib/phoenix-crm/integrity-settlement";
 import {
   COARSE_ACCURACY_METERS,
   PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS,
@@ -145,6 +148,47 @@ export function countedIntegrityFlags(flags: readonly string[], accuracyMeters: 
       (PHOENIX_CRM_STRONG_INTEGRITY_FLAGS as readonly string[]).includes(flag) &&
       !(coarse && (PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS as readonly string[]).includes(flag)),
   );
+}
+
+/**
+ * The strong flags one integrity ROW costs a rep's rank — the approximate-location rule above, and
+ * then the Super Admin's own settlement.
+ *
+ * 🔴 A SETTLED CASE COSTS THE REP NOTHING (owner, 2026-10-09: "make settling drop the rep-ranks
+ * penalty too"). Settling is the Super Admin writing that a flag about a named person needs nothing
+ * further, so a score that still carried it would have the board saying closed and the ladder saying
+ * guilty about the same save in the same week. The weekly fraud scan already drops settled cases
+ * (`loadIntegrityCasesForWindow`); this is the same rule reaching the one surface that turns a flag
+ * into a NUMBER a manager reads — the integrity pillar and the admin twin's counts, which are the
+ * same map.
+ *
+ * 🔴 AND IT UNSETTLES ITSELF, because the test is `settled_flags = flags` and nothing else. The
+ * detectors upsert on (subject_kind, subject_id, source), so a fresh finding replaces `flags` in
+ * place, the stored settlement stops describing the row, and the save is back in the score — with no
+ * filer, and no rank job, taught that settling exists. Ranks are recomputed nightly for everybody,
+ * so a case settled today leaves the score on the next run and never retro-rewrites a closed window.
+ *
+ * It is one exported function rather than a filter beside the query, so the rule can be broken in a
+ * test and watched to fire. `readIntegritySettlement` is pure, and so is this.
+ */
+export function rankCountedFlags(row: {
+  flags: readonly string[] | null;
+  accuracyMeters: number | null;
+  settledAt: unknown;
+  settledBy: unknown;
+  settledNote: unknown;
+  settledFlags: unknown;
+}): string[] {
+  const flags = (row.flags ?? []).map((flag) => String(flag));
+  const settled = readIntegritySettlement({
+    settledAt: row.settledAt,
+    settledBy: row.settledBy,
+    settledNote: row.settledNote,
+    settledFlags: row.settledFlags,
+    flagsNow: flags,
+  });
+  if (settled) return [];
+  return countedIntegrityFlags(flags, row.accuracyMeters);
 }
 
 const usableFix = (save: RankFieldSave): boolean =>

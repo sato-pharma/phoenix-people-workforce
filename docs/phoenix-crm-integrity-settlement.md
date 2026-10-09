@@ -110,6 +110,25 @@ finding and he would close it again. The test is `settled_flags = flags`, a colu
 which PostgREST cannot ask; asking only for `settled_at is null` would wrongly drop a settled case the
 detectors have since flagged again, which is the opposite of the point.
 
+**And the rank, from 2026-10-09.** When this shipped, two other readers of the same table still
+ignored a settlement, and the owner was shown both in review. He ruled on the one that turns a flag
+into a number a manager reads: *"make settling drop the rep-ranks penalty too"*. Phoenix Ranks' own
+reader (`readIntegrityFlags` in `src/lib/rep-ranks/server/compute.ts`) now selects the four
+`settled_*` columns and decides through `rankCountedFlags` in `src/lib/rep-ranks/field-quality.ts` —
+the same pure `readIntegritySettlement` the board and the scan use, so there is one rule and not
+three. A settled case costs the integrity pillar and the admin twin's counts nothing; a fresh finding
+on the same subject replaces `flags` in place and the penalty returns on the next nightly pass.
+Because ranks are rebuilt nightly for everybody rather than patched, a settlement never
+retro-rewrites a window that has already closed. `tests/rep-ranks.test.ts` pins both halves — the
+rule, and the fact that the READ asks for the columns the rule needs, which the pure function cannot
+prove and the compiler cannot see in a PostgREST select string.
+
+The third reader is **`readStrongCaseReps` in `src/lib/phoenix-crm/server/behaviour.ts`**, where a
+strong case is the company a save-time pattern needs before the board may print it. It was raised in
+the same review and he has not ruled on it, so it still counts a settled case. That is a decision
+about what evidence a pattern needs, not an oversight to be tidied — do not change it without his
+word.
+
 ## 2 · `capture_trust` — the signboard defect, unsprung
 
 `signboard` began filing on 2026-10-08 and was never added to the reader's source union, so the row
