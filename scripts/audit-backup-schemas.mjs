@@ -150,9 +150,11 @@ export function daysBetween(fromIso, toIso) {
  *
  * 🔴 ORDER IS THE SAFETY PROPERTY. A live dependency is checked BEFORE age, so no schema is ever
  * called expired while something references it, however old it is. That is not theoretical here:
- * `deductions_governance_backup_20260830` is a month old and the live table
- * `public.private_calendar_no_activity_clarifications` holds a foreign key into it, so a sweep
- * that went by name and age would take production's referential integrity with it.
+ * `deductions_governance_backup_20260830` was a month old and the live table
+ * `public.private_calendar_no_activity_clarifications` held a foreign key into it, so a sweep
+ * that went by name and age would have taken production's referential integrity with it. That one
+ * was dropped by 20261009213000_drop_clarifications_fk_into_deductions_backup.sql; the ordering
+ * stays, because the next such dependency will not announce itself.
  *
  * @param {{ schema: string, tables?: string[], blockers?: string[] }} entry
  * @param {{ today: string, retentionDays?: number }} options
