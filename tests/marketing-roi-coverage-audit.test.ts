@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
-import { buildMarketingCoverageReportWorkbook } from "../src/lib/export/marketing-coverage-workbook.ts";
+import {
+  buildMarketingCoverageReportWorkbook,
+  coverageCodeNames,
+  describeCoverageFilters,
+} from "../src/lib/export/marketing-coverage-workbook.ts";
 import {
   computeCoverageRollupByDimension,
   computeCoverageTrend,
@@ -16,7 +20,7 @@ import type {
   MarketingRoiViewSalesRow,
   RoiAttributionLine,
 } from "../src/lib/marketing-requests/roi-report-types.ts";
-import { emptyRoiFilterState } from "../src/lib/marketing-requests/roi-report-types.ts";
+import { emptyMarketingCoverageFilterState, emptyRoiFilterState } from "../src/lib/marketing-requests/roi-report-types.ts";
 import { getMarketingRoiTracker } from "../src/lib/marketing-requests/roi-tracker-service.ts";
 import { META, sampleDetail, sampleReport, sampleSalesDetail } from "./marketing-coverage-export-workbook.test.ts";
 
@@ -56,6 +60,8 @@ function coverageRow(overrides: Partial<MarketingCoverageReportRow>): MarketingC
     approverRoleKeys: [],
     productCodes: ["GU001"],
     distributorCodes: ["IS"],
+    productNames: ["Gutrin"],
+    distributorNames: ["Ibnsina"],
     pharmacyKeys: ["12345"],
     pharmacyIds: ["pharmacy-1"],
     ...overrides,
@@ -133,6 +139,44 @@ async function testWorkbookTotalIsTheDedupedHeadline() {
     });
   });
   assert.equal(exportedBy, META.exportedByName, "the cover names the exporter, never 'name (HR id)'");
+}
+
+async function testWorkbookPrintsProductAndDistributorNames() {
+  // Owner, 2026-10-09: "fix the Coverage workbook's product and distributor columns to show names".
+  // The Requests sheet printed GU001 / IS, Target Pharmacies printed IS, and the cover's filter line
+  // printed the selected codes.
+  const report = sampleReport();
+  const buffer = await buildMarketingCoverageReportWorkbook({ report, detail: sampleDetail(), salesDetail: sampleSalesDetail(), meta: META });
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(buffer);
+  const cellsUnder = (sheetName: string, header: string): unknown[] => {
+    const sheet = book.getWorksheet(sheetName);
+    assert.ok(sheet, `${sheetName} sheet`);
+    let column = 0;
+    const values: unknown[] = [];
+    sheet!.eachRow((row) => {
+      if (column === 0) {
+        row.eachCell((cell, index) => {
+          if (cell.value === header) column = index;
+        });
+        return;
+      }
+      const value = row.getCell(column).value;
+      if (value !== null && value !== undefined && row.getCell(1).value !== "TOTAL") values.push(value);
+    });
+    assert.ok(column > 0, `${sheetName} has a ${header} column`);
+    return values;
+  };
+  assert.deepEqual(cellsUnder("Requests", "Products"), ["Gutrin"], "the Requests sheet names its products, never GU001");
+  assert.deepEqual(cellsUnder("Requests", "Distributors"), ["Ibnsina"], "the Requests sheet names its distributors, never IS");
+  assert.deepEqual(cellsUnder("Target Pharmacies", "Distributor"), ["Ibnsina", "Ibnsina"], "each target pharmacy names its distributor");
+  assert.deepEqual(cellsUnder("Sales Detail", "Distributor"), ["Ibnsina"], "the sales detail names its distributor");
+
+  const filters = { ...emptyMarketingCoverageFilterState(), product: ["GU001"], distributor: ["IS"] };
+  const described = describeCoverageFilters(filters, coverageCodeNames(report.rows));
+  assert.match(described, /Product: Gutrin/, "the cover's filter line names the product");
+  assert.match(described, /Distributor: Ibnsina/, "the cover's filter line names the distributor");
+  assert.doesNotMatch(described, /GU001|: IS(?![A-Za-z])/, "no code survives on the cover");
 }
 
 function testViewSalesNeverAddsUnitsAcrossProducts() {
@@ -226,6 +270,7 @@ export async function runMarketingRoiCoverageAuditTests() {
   testAttributedSalesAreNeverNoData();
   testBreakdownAndTrendCountASharedSaleOnce();
   await testWorkbookTotalIsTheDedupedHeadline();
+  await testWorkbookPrintsProductAndDistributorNames();
   testViewSalesNeverAddsUnitsAcrossProducts();
   await testFinanceManagerCannotReadTheArchivedExcelSet();
   testStatusLabelsAreShared();

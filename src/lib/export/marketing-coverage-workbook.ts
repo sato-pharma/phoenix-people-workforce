@@ -48,10 +48,29 @@ const CONFIDENTIAL_INCLUDED =
 const CONFIDENTIAL_EXCLUDED =
   "Confidential products (LA003 / LA004 / SS001) are excluded from this report and its totals.";
 
-export function describeCoverageFilters(filters: MarketingCoverageFilterState): string {
+/** Display name per product / distributor code, read off the report's own rows — never a lookup. */
+export type CoverageCodeNames = { product: Map<string, string>; distributor: Map<string, string> };
+
+export function coverageCodeNames(rows: MarketingCoverageReport["rows"]): CoverageCodeNames {
+  const product = new Map<string, string>();
+  const distributor = new Map<string, string>();
+  for (const row of rows) {
+    row.productCodes.forEach((code, index) => {
+      const name = row.productNames[index];
+      if (name && !product.has(code)) product.set(code, name);
+    });
+    row.distributorCodes.forEach((code, index) => {
+      const name = row.distributorNames[index];
+      if (name && !distributor.has(code)) distributor.set(code, name);
+    });
+  }
+  return { product, distributor };
+}
+
+export function describeCoverageFilters(filters: MarketingCoverageFilterState, names?: CoverageCodeNames): string {
   const parts: string[] = [];
-  const push = (label: string, values: Array<string | number>) => {
-    if (values.length > 0) parts.push(`${label}: ${values.join(", ")}`);
+  const push = (label: string, values: Array<string | number>, nameOf?: Map<string, string>) => {
+    if (values.length > 0) parts.push(`${label}: ${values.map((value) => nameOf?.get(String(value)) ?? value).join(", ")}`);
   };
   push("Line", filters.line);
   push("Region", filters.region);
@@ -64,8 +83,8 @@ export function describeCoverageFilters(filters: MarketingCoverageFilterState): 
   push("Approved by", filters.approvedBy);
   push("Status", filters.status);
   push("Request type", filters.requestType);
-  push("Distributor", filters.distributor);
-  push("Product", filters.product);
+  push("Distributor", filters.distributor, names?.distributor);
+  push("Product", filters.product, names?.product);
   push("Pharmacy", filters.pharmacy);
   push("ROI status", filters.roiStatus);
   if (filters.payDateFrom || filters.payDateTo) parts.push(`Pay date: ${filters.payDateFrom ?? "…"} → ${filters.payDateTo ?? "…"}`);
@@ -141,6 +160,8 @@ export async function buildMarketingCoverageReportWorkbook(input: {
   workbook.created = new Date(meta.generatedAtIso);
 
   const kpi = report.kpi;
+  // Products and distributors are printed by NAME on every sheet, never by code (owner rule).
+  const names = coverageCodeNames(report.rows);
   buildHouseCoverSheet(workbook, {
     title: "Marketing Coverage Report",
     subtitle: "Filtered marketing requests, KPI totals, and target-pharmacy coverage, role-scoped.",
@@ -150,7 +171,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
       ["Exported by", meta.exportedByName],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
-      ["Applied filters", describeCoverageFilters(report.appliedFilters)],
+      ["Applied filters", describeCoverageFilters(report.appliedFilters, names)],
       ["Requests", String(kpi.requestCount)],
       ["Total cost (EGP)", kpi.totalEstimatedCost.toLocaleString("en-US")],
       ["Required ROI (EGP)", kpi.totalRequiredRoi.toLocaleString("en-US")],
@@ -188,7 +209,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
     { label: "Result", width: 14 },
     { label: "Approved by", width: 24 },
     { label: "Products", width: 30 },
-    { label: "Distributors", width: 16 },
+    { label: "Distributors", width: 24 },
   ];
   const requestRows: CellValue[][] = report.rows.map((row) => [
     row.requestCode,
@@ -208,8 +229,8 @@ export async function buildMarketingCoverageReportWorkbook(input: {
     row.actualCoverageRatio,
     RESULT_LABELS[row.resultStatus] ?? row.resultStatus,
     row.approverRoleKeys.join(", "),
-    row.productCodes.join(", "),
-    row.distributorCodes.join(", "),
+    row.productNames.join(", "),
+    row.distributorNames.join(", "),
   ]);
   const totals: CellValue[] = new Array(requestColumns.length).fill(null);
   totals[0] = "TOTAL";
@@ -246,10 +267,16 @@ export async function buildMarketingCoverageReportWorkbook(input: {
       { label: "Request", width: 14 },
       { label: "Pharmacy", width: 32 },
       { label: "Customer code", width: 18 },
-      { label: "Distributor", width: 14 },
+      { label: "Distributor", width: 22 },
       { label: "Tracking status", width: 18 },
     ],
-    rows: detail.pharmacies.map((p) => [p.requestCode, p.pharmacyName, p.customerCode, p.distributorCode ?? "—", p.trackingStatus ?? "—"]),
+    rows: detail.pharmacies.map((p) => [
+      p.requestCode,
+      p.pharmacyName,
+      p.customerCode,
+      p.distributorCode ? names.distributor.get(p.distributorCode) ?? p.distributorCode : "—",
+      p.trackingStatus ?? "—",
+    ]),
     note: `${detail.pharmacies.length} target pharmacy code(s). Open a request's Coverage Report accordion for its per-pharmacy sales value (shown even at zero).`,
   });
 
@@ -264,7 +291,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
       { label: "Request", width: 14 },
       { label: "Pharmacy", width: 32 },
       { label: "Customer code", width: 18 },
-      { label: "Distributor", width: 14 },
+      { label: "Distributor", width: 22 },
       { label: "Product", width: 26 },
       { label: "Month", width: 12 },
       { label: "Qty", right: true, width: 10 },
@@ -274,7 +301,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
       s.requestCode,
       pharmacyNameByRequestAndCode.get(`${s.requestId}|${s.customerCode}`) ?? s.customerCode,
       s.customerCode,
-      s.distributorName ?? s.distributorCode ?? "—",
+      s.distributorName ?? (s.distributorCode ? names.distributor.get(s.distributorCode) ?? s.distributorCode : "—"),
       s.productName,
       s.invoicePeriod,
       s.qty,

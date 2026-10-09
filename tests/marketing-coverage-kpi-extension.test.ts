@@ -36,6 +36,8 @@ function row(overrides: Partial<MarketingCoverageReportRow>): MarketingCoverageR
     approverRoleKeys: [],
     productCodes: ["P1"],
     distributorCodes: ["IS"],
+    productNames: ["Product One"],
+    distributorNames: ["Ibnsina"],
     pharmacyKeys: ["ph-1"],
     pharmacyIds: ["ph-1"],
     ...overrides,
