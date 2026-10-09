@@ -71,6 +71,16 @@ export function isOfficeDistributorCode(value: unknown): boolean {
  * October"** (2026-10-09). So this constant is `2026-09`, and it does not move again without his own
  * new word — in either direction, and never a session's reading that the data makes it look safe.
  *
+ * 🔴 ASKED THE SAME NIGHT ABOUT THE OTHER DIRECTION, HE RULED: **"leave January-June outside the
+ * respread window"** (2026-10-09), after 61 Sohag customer moves re-pointed rows in those six
+ * months. So it does not widen BACKWARDS either. What stays behind is stored geography and not a
+ * reported number: `monthly_closing_publications` holds no row at all before 2026-07, so
+ * January-June were never published. Their committed Office spread is drifted — CNS 6,680 of
+ * 22,757 units out of place in January (29.36%), 5,794 of 50,121 in February (11.56%) and
+ * 190-1,114 units (1.47-2.99%) in each of March to June, measured against production on
+ * 2026-10-09 with `scripts/check-office-allocation-drift.ts`. The needs-you drift channel cannot
+ * show them because it reads two periods only, which is why the numbers are written down here.
+ *
  * 🔴 IF HE RE-PUBLISHES SEPTEMBER, NOTHING HERE NEEDS DOING. The net stamped at that publish is
  * computed by the live path, which now carries the respread, so September freezes WITH it. The
  * hazard in the first ruling is reachable only for a month frozen BEFORE this rule — August and

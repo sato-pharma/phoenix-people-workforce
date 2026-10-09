@@ -244,7 +244,12 @@ export function runClosingOfficeRespreadTests() {
     assert.equal(isOfficeRespreadActive("2027-03"), true, "a later year is still after the start");
     assert.equal(isOfficeRespreadActive(""), false, "an unreadable period never moves a number");
     assert.equal(isOfficeRespreadActive("2026-9"), false, "only YYYY-MM is read");
-    for (const period of ["2026-01", "2026-07", "2026-08"]) {
+    // 🔴 HIS THIRD RULING, 2026-10-09: **"leave January-June outside the respread window"** — asked
+    // directly, because that night's 61 Sohag customer moves re-pointed rows in those six months. So
+    // the window does not widen BACKWARDS either, and each month is pinned by name here rather than
+    // by the boundary alone.
+    for (const period of ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"]) {
+      assert.equal(isOfficeRespreadActive(period), false, `${period} is outside the window by his word`);
       const respread = buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], period, LINE);
       assert.equal(respread.movements.length, 0, `${period} is untouched`);
       assert.equal(respread.net.size, 0, `${period} has no net`);
