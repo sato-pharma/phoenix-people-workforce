@@ -73,6 +73,13 @@ const PINNED_HOOKS = [
   // rewrote a script and re-registered a scheduled task anyway, at 01:41-02:21 Cairo with nobody
   // watching. Its 45-case suite was in neither list. Note the flag is `--selftest`, like the reaper's.
   'weekly-review-readonly.mjs',
+  // NOT a hook, and mirrored for one reason: memory-guard.mjs's own selftest loads it with
+  // --import to prove the hook starts NO subprocess on a session start. It resolves as a sibling,
+  // so on a CI runner - which has no ~/.claude at all - the mirrored guard found nothing and that
+  // one case failed, taking the required validate job down on the memory-fold PR of 2026-10-09
+  // 09:00 Cairo. A spawn probe added beside a pinned hook has to be pinned with it. It is inert
+  // unless SPAWN_PROBE_OUT is set, so it starts and records nothing in CI.
+  'spawn-probe.mjs',
 ];
 const HOOKS_DIR = process.env.PHX_HOOKS_DIR || path.join(os.homedir(), '.claude', 'hooks');
 

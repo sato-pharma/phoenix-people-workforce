@@ -167,14 +167,22 @@ The measurements and incidents behind each line: `~/.claude/docs/standing-rules-
 
 ## Compact Instructions
 
-When this conversation is compacted, write a SHORT summary: about 8,000 characters, never more than
-10,000 (owner, 2026-10-09). The freeze grows about 6 seconds per 1,000 summary characters — 187
-compactions, 6–8 Oct: 79 s under 15k characters, 175 s at 25–35k. Keep word for word: his
-instructions, approvals and decisions with their Cairo times; every open item with its real target
-(PR numbers, branch and worktree names, full SHAs, background and scheduled task IDs, uncommitted
-files); what is proven and the one number that proves it; the exact next step. Leave out: code
-already committed (name the file and the commit), command and tool output, the exploration behind a
-finished result, and any rule already in this file, a repo's AGENTS.md/CLAUDE.md or module memory.
+These REPLACE the default summary format (owner, 2026-10-09; rewritten the same day because the
+first wording was in context for 17 compactions and they still wrote a median 19,000 characters in
+the default nine sections). The session is frozen for as long as the model is writing — about 5 s
+per 1,000 characters — and the hidden analysis block counts too. Evidence: `~/.claude/docs/standing-rules-account.md`.
+
+- **Analysis block: five short lines at most.** It is thrown away, but it is still writing time.
+- **Summary: about 8,000 characters, never more than 10,000** (roughly 1,200 words).
+- **Only these four headings, one-line bullets:** *His words* — his instructions, approvals and
+  decisions, word for word, with Cairo times. *Open items* — each with its real target (PR number,
+  branch and worktree, full SHA, background or scheduled task ID, uncommitted file). *Proven* — what
+  is proven and the one number that proves it. *Next step* — where the work stopped and the exact
+  next action.
+- **Do not write** the default sections (Key Technical Concepts, Files and Code Sections, Errors and
+  fixes, Problem Solving, All user messages), code snippets, file contents, command or tool output,
+  the exploration behind a finished result, code already committed (name the file and the commit),
+  or any rule already in this file, a repo's AGENTS.md/CLAUDE.md or module memory.
 
 ## Never delete documents (owner rule, 2026-09-14; narrowed 2026-09-20; stand-down added 2026-10-06)
 
