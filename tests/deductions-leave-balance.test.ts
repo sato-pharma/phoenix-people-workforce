@@ -905,5 +905,32 @@ export async function runDeductionsLeaveBalanceTests() {
       service.includes("const person = visibleIncludingDeparted.find((employee) => hrIdsMatch(employee.hrId, charge.employeeHrId));"),
       "and the row's name must be looked up in that same wider list",
     );
+
+    // (g) 🔴 AND THE CHARGES SECTION SAYS IT TOO. This is the one place the charge itself is listed,
+    // and it is the case where the final settlement may already have paid that balance out — so the
+    // row names the person, then says they have gone.
+    const reportTypes = read("src/lib/vacation/types.ts");
+    const reportUi = read("src/components/vacation/vacation-report.tsx");
+    assert.ok(
+      reportTypes.includes("      employeeHasLeft: boolean;") &&
+        reportTypes.includes("      lastWorkingDate: string | null;"),
+      "the charge row's type must carry it, or TypeScript drops the field on the way to the client",
+    );
+    assert.ok(
+      service.includes("employeeHasLeft: hasDepartedEmployment(person?.employmentStatus),"),
+      "it must come from the same directory row the name comes from, through the shared helper",
+    );
+    assert.ok(
+      service.includes("lastWorkingDate: person?.lastWorkingDate ?? null,"),
+      "and carry the day they stopped working, with no date invented when it is missing",
+    );
+    assert.ok(
+      reportUi.includes("{!isSelfView && row.employeeHasLeft ? ("),
+      "the charges section must print it beside the name — and never in somebody's own self view",
+    );
+    assert.ok(
+      reportUi.includes("left the company{row.lastWorkingDate ?"),
+      "in plain words, with the date only when there is one",
+    );
   }
 }

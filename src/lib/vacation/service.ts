@@ -7033,6 +7033,10 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
           days: charge.days,
           employeeHrId: charge.employeeHrId,
           employeeName: person?.displayName ?? person?.fullName ?? "Name unavailable",
+          // From the SAME row the name comes from, through the one shared vocabulary for "has left"
+          // — never the complement of active, which would mark the historical payroll records too.
+          employeeHasLeft: hasDepartedEmployment(person?.employmentStatus),
+          lastWorkingDate: person?.lastWorkingDate ?? null,
           workDate: charge.workDate,
         };
       }),

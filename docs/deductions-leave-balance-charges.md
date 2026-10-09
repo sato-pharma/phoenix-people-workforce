@@ -382,6 +382,22 @@ parts. **"Sept", not "Sep"**, is the point of that formatter: it pins the CLDR 4
 reader instead of asking each browser's own ICU build, which is the React #418 trap the charge
 dialog hit an hour earlier.
 
+### The charges section says it as well
+
+Owner, 2026-10-09: **"say in the charges section that the person has left"**. That section is the one
+place the charge itself is listed, with the comment the employee reads — and a day taken from a
+leaver's balance is exactly the case where the final settlement may already have paid that balance
+out. So the row names the person, then says they have gone:
+
+- `employeeHasLeft` and `lastWorkingDate` come from the **same directory row the name comes from**,
+  through `hasDepartedEmployment` — never the complement of `active`;
+- printed **beside the name**, because that is what it is about;
+- and **never in the self view**: a leaver cannot sign in anyway, and "you have left the company" is
+  not something to print in somebody's own report.
+
+The date is ISO, like the work date beside it. This section prints its date-only columns raw, and a
+second format here would be the one place the two disagreed.
+
 ## Proof
 
 `tests/deductions-leave-balance.test.ts`, registered in `tests/run-tests.ts`. Section 5 covers the

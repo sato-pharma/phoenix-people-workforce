@@ -427,6 +427,15 @@ export type VacationReportData = {
       days: number;
       employeeHrId: string;
       employeeName: string;
+      /**
+       * This person has LEFT (resigned · terminated · not_renewed). Said here as well as on the
+       * Entitlements row and in the charge dialog, because this section is the one place the charge
+       * itself is listed — and a day taken from a leaver's balance is the case where the final
+       * settlement may already have paid that balance out.
+       */
+      employeeHasLeft: boolean;
+      /** The day they stopped working, or null when it is not on record. */
+      lastWorkingDate: string | null;
       workDate: string;
     }>;
   };
