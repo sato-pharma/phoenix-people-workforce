@@ -5,6 +5,8 @@ import {
 } from "../src/lib/sales/sos-coverage.ts";
 import {
   describeMonthCompleteness,
+  SOURCE_QUIET_PERIODS,
+  sourceQuietIn,
   summarizeMonthCompleteness,
 } from "../src/lib/sales/sos-month-complete.ts";
 
@@ -95,4 +97,58 @@ export function runSosMonthCompleteTests() {
   assert.equal(untouched.started, false, "October has no validated batch");
   assert.equal(untouched.complete, false, "so it is NOT complete");
   assert.match(describeMonthCompleteness(untouched), /no validated upload at all yet/);
+
+  // ── 5. A SOURCE THE OWNER SAYS IS NOT FILING THIS MONTH IS NOT OWED ────────────────────────────
+  // 2026-10-09, his words: "ebda and mec are not comming this month". Both fed August, so the
+  // last-month rule expected both and the gate would have waited for ever — and the September
+  // store-split rebuild parked behind this gate could never have fired.
+  const quietBatches: SosCoverageBatch[] = [
+    batch("2026-08", "EP", "epda"),
+    batch("2026-08", "MC", "mec"),
+    batch("2026-08", "IS", "Ibn sina"),
+    batch("2026-08", "Office", "Marcyrl"),
+    batch("2026-09", "IS", "Ibn sina"),
+    batch("2026-09", "Office", "Marcyrl"),
+  ];
+  const quiet = summarize(quietBatches, "2026-09");
+  assert.deepEqual(quiet.missing, [], "epda and mec are declared quiet for 2026-09, so nothing is owed");
+  assert.equal(quiet.complete, true, "September is COMPLETE — the two books are not coming");
+  assert.deepEqual(
+    quiet.quietExplained.map((entry) => entry.name),
+    ["epda", "mec"],
+    "and both are NAMED as quiet, so a complete month never reads as if their books arrived",
+  );
+  assert.match(describeMonthCompleteness(quiet), /epda and mec file nothing this month/);
+  assert.doesNotMatch(
+    describeMonthCompleteness(quiet),
+    /every source that fed 2026-08 has landed/,
+    "and it must NOT claim they landed — two of August's sources did not",
+  );
+  assert.match(describeMonthCompleteness(quiet), /not comming this month/, "his own words travel to the reader");
+
+  // The declaration is PERIOD-scoped, never a retirement: October expects both files again.
+  const october = summarize([...quietBatches, batch("2026-10", "IS", "Ibn sina")], "2026-10");
+  assert.deepEqual(
+    october.missing.map((entry) => entry.name),
+    ["Marcyrl"],
+    "October's expectation is September's present set — epda and mec were not in it, so they are not owed there either",
+  );
+  assert.equal(sourceQuietIn("EP", "2026-10"), null, "but the DECLARATION itself stops at September");
+  assert.equal(sourceQuietIn("MC", "2026-10"), null);
+
+  // 🔴 THE DATA OUTVOTES THE DECLARATION. A book that does arrive is present, so a late upload can
+  // never be hidden by the line in SOURCE_QUIET_PERIODS that said it was not coming.
+  const lateArrival = summarize([...quietBatches, batch("2026-09", "EP", "epda")], "2026-09");
+  assert.equal(lateArrival.complete, true);
+  assert.deepEqual(
+    lateArrival.quietExplained.map((entry) => entry.name),
+    ["mec"],
+    "epda filed after all, so only mec is reported quiet",
+  );
+
+  // Every declaration carries his words, so a reader can always tell who decided it.
+  for (const declared of SOURCE_QUIET_PERIODS) {
+    assert.match(declared.reason, /owner, \d{4}-\d{2}-\d{2}/, `${declared.code}'s declaration must cite the owner and the date`);
+    assert.ok(declared.periods.length > 0, `${declared.code} must name at least one period`);
+  }
 }
