@@ -55,6 +55,7 @@ export const adminInsetPanelClassName =
 //                `disabled:shadow-none` wherever the control has a disabled state, or a greyed
 //                button goes on floating and still reads as clickable.
 //   • CHIP     — a pill or a segmented group: contact only, so a pill still reads as a pill.
+//   • THUMB BAR— a bar fixed over the page on a phone: the SAME ladder pointing UP, see below.
 export const adminPanelDepthClassName =
   "shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_rgba(15,23,42,0.055)]";
 export const adminSoftDepthClassName =
@@ -63,6 +64,14 @@ export const adminRecessedDepthClassName = "shadow-[inset_0_1px_2px_rgba(15,23,4
 export const adminControlDepthClassName =
   "shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]";
 export const adminChipDepthClassName = "shadow-[0_1px_1px_rgba(15,23,42,0.05)]";
+
+// A bar fixed over the page on a phone — the direct-order workspace's submit bar, the Approvals
+// Hub's decision bar — casts its shadow UPWARD. A downward one falls on the content the bar is
+// covering, where nobody can see it, and the bar then reads as painted onto the page instead of
+// floating over it. The Approvals Hub still writes this value inline in `decision-actions.tsx`,
+// because `tests/approvals-hub-premium-depth.test.ts` reads the class string on that element;
+// naming it here is what keeps the next bar from inventing a third spelling.
+export const adminThumbBarDepthClassName = "shadow-[0_-8px_24px_rgba(15,23,42,0.1)]";
 
 // The dark header band that sits at the top of a panel, naming what the panel is. The Approvals
 // Hub wears it on thirteen panels and was the reason this became a token: thirteen copies of

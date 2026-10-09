@@ -8,6 +8,7 @@ import {
   phxFieldClassName,
   phxLabelClassName,
 } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = {
   /** The reader's current filter slice, captured into the link so it matches their screen. */
@@ -148,8 +149,8 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
   }
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} flex items-center justify-between px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Live link / Google Sheet</h3>
         <button type="button" className="text-phx-sm font-bold text-slate-300 hover:text-white" onClick={() => setOpen(false)}>
           Close

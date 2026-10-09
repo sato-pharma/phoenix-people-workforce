@@ -16,6 +16,7 @@ import {
   phxFieldClassName,
   phxLabelClassName,
 } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = {
   pharmacyId: string;
@@ -198,14 +199,14 @@ export function PharmacyInvoiceValidationCapture({ pharmacyId, pharmacyName, req
           <button
             type="button"
             onClick={() => cameraRef.current?.click()}
-            className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+            className={`border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
           >
             Photograph invoice
           </button>
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+            className={`border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
           >
             Choose file
           </button>

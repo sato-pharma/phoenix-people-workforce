@@ -1,4 +1,5 @@
 import type { DirectOrderRepCountersResult } from "@/lib/direct-orders/rep-counters";
+import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { data: DirectOrderRepCountersResult };
 
@@ -49,7 +50,7 @@ export function RepCountersTable({ data }: Props) {
     // keeps hitting: "zero validation requests" read as reps ignoring the process, when in fact
     // they had never been shown a button.
     return (
-      <section className="border border-phx-line bg-white px-4 py-8 text-center">
+      <section className={`border border-phx-line bg-white px-4 py-8 text-center ${adminSoftDepthClassName}`}>
         <p className="text-sm font-bold text-slate-600">{emptyReason}</p>
         <p className="mt-1 text-phx-sm text-slate-400">
           Counters appear here as soon as a direct order is held or expires.
@@ -80,8 +81,8 @@ export function RepCountersTable({ data }: Props) {
   );
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-3 px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">
           Per-rep counters — {rows.length} {rows.length === 1 ? "person" : "people"}
         </h3>

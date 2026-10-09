@@ -1,5 +1,6 @@
 import type { DirectOrderStuckVenue } from "@/lib/direct-orders/stuck-venues";
 import { venueTypeLabel } from "@/lib/venues/venue-type";
+import { adminPanelClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * "Waiting for a capture nobody has filed" — the panel under the validation desk's real work.
@@ -34,8 +35,8 @@ export function StuckVenuesPanel({ venues }: { venues: DirectOrderStuckVenue[] }
   // reads like a screen that failed to load.
   if (venues.length === 0) {
     return (
-      <section className="border border-phx-line bg-white">
-        <header className="border-b border-phx-line bg-slate-50 px-4 py-2.5">
+      <section className={adminPanelClassName}>
+        <header className={`border-b border-phx-line bg-slate-50 px-4 py-2.5 ${adminRecessedDepthClassName}`}>
           <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-700">
             Waiting for a capture
           </h3>
@@ -51,8 +52,8 @@ export function StuckVenuesPanel({ venues }: { venues: DirectOrderStuckVenue[] }
   const total = venues.reduce((sum, venue) => sum + venue.ordersValue, 0);
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-50 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-50 px-4 py-2.5 ${adminRecessedDepthClassName}`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-700">
           Waiting for a capture · {venues.length}
         </h3>

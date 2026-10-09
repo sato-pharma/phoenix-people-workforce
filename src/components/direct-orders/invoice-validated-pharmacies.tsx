@@ -6,6 +6,7 @@ import { PharmacyValidationCapture } from "@/components/direct-orders/pharmacy-v
 import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidence";
 import type { DirectOrderInvoiceSlots } from "@/lib/direct-orders/pharmacy-validation";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 
 const cairo = (iso: string) =>
   iso
@@ -24,8 +25,8 @@ export function InvoiceValidatedPharmacies({ slots }: { slots: DirectOrderInvoic
   const [openId, setOpenId] = useState<string | null>(null);
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-2 px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Pharmacies validated by invoice</h3>
         <span className="text-phx-xs font-black text-orange-300">{directOrderInvoiceSlotLabel(slots)}</span>
       </header>

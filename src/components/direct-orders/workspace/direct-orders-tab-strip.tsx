@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import type { DirectOrderWorkspaceTabKey } from "@/lib/direct-orders/workspace-data";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * What each tab is CALLED. Lives here, with the strip that renders it, so the workspace and the
@@ -56,7 +57,7 @@ export function DirectOrdersTabStrip({
   const control = rounded ? "rounded-lg" : "";
   return (
     <div className="-mx-1 overflow-x-auto px-1">
-      <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${control}`} role="tablist">
+      <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control}`} role="tablist">
         {tabs.map((key) => {
           const active = activeTab === key;
           return (

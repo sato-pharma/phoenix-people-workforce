@@ -20,6 +20,7 @@ import {
 } from "@/lib/venues/venue-type";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminControlDepthClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type AreaOption = { areaCode: string; areaName: string; regionCode: string; regionName: string };
 type BrickOption = {
@@ -363,7 +364,7 @@ export function PharmacyRegistryManager({
           <div
             className={
               venueTypeIsAnswered(newVenueType)
-                ? "mb-2 border border-slate-200 bg-white p-2"
+                ? `mb-2 border border-slate-200 bg-white p-2 ${adminSoftDepthClassName}`
                 : "mb-2 border border-orange-300 bg-orange-50 p-2"
             }
           >
@@ -374,7 +375,7 @@ export function PharmacyRegistryManager({
                   className={
                     newVenueType === venueType
                       ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-phx-sm font-black text-orange-700"
-                      : "border border-slate-200 bg-white px-2.5 py-1 text-phx-sm font-bold text-slate-600 hover:bg-slate-50"
+                      : `border border-slate-200 bg-white px-2.5 py-1 text-phx-sm font-bold text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`
                   }
                   key={venueType}
                   onClick={() => setNewVenueType(venueType)}
@@ -434,7 +435,7 @@ export function PharmacyRegistryManager({
 
           {/* Hidden until the type is known, and for good once it is a nursery: a venue with no
               distributor account has no code to give, and asking anyway is what produced `0000`. */}
-          <div className={choiceRequiresDistributorCode(newVenueType) ? "mt-3 border border-slate-200 bg-white p-2" : "hidden"}>
+          <div className={choiceRequiresDistributorCode(newVenueType) ? `mt-3 border border-slate-200 bg-white p-2 ${adminSoftDepthClassName}` : "hidden"}>
             <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
             <p className="mb-2 text-phx-xs font-semibold text-slate-500">
               This is the point of registering ahead of time — search the distributor&apos;s own customer
@@ -499,7 +500,7 @@ export function PharmacyRegistryManager({
               <col key={width} style={{ width }} />
             ))}
           </colgroup>
-          <thead className="bg-slate-900 text-white">
+          <thead className={`${adminPanelHeaderClassName} text-white`}>
             <tr className="text-left text-phx-xs font-black uppercase tracking-wider">
               {/* Geography MERGED into Venue, and Orders into Status — the golden rule's own
                   remedy. A venue's brick is part of the same answer as its name, and its order
@@ -618,7 +619,7 @@ export function PharmacyRegistryManager({
       {/* Mobile cards — the admin shell never shows a table on a phone. */}
       <div className="space-y-2 md:hidden">
         {shown.map((row) => (
-          <div key={row.id} className="border border-slate-200 bg-white p-3">
+          <div key={row.id} className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="font-semibold text-slate-800">{row.pharmacyName}</div>
@@ -658,7 +659,7 @@ export function PharmacyRegistryManager({
       </div>
 
       {editingId && canManage ? (
-        <section className="border border-slate-300 bg-white p-4">
+        <section className={`border border-slate-300 bg-white p-4 ${adminSoftDepthClassName}`}>
           <h3 className="mb-3 text-phx-xs font-black uppercase tracking-wider text-slate-600">
             Editing {rows.find((r) => r.id === editingId)?.pharmacyName ?? ""}
           </h3>

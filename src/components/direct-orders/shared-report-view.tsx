@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminPanelHeaderClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { token: string };
 
@@ -79,8 +80,8 @@ export function SharedDirectOrderReport({ token }: Props) {
 
   if (!rows) {
     return (
-      <section className="mx-auto max-w-md border border-phx-line bg-white">
-        <header className="border-b border-phx-line bg-slate-900 px-4 py-3">
+      <section className={`${adminPanelClassName} mx-auto max-w-md`}>
+        <header className={`${adminPanelHeaderClassName} px-4 py-3`}>
           <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-orange-400">Phoenix</p>
           <h1 className="text-base font-black text-white">Direct Orders Report</h1>
         </header>
@@ -113,8 +114,8 @@ export function SharedDirectOrderReport({ token }: Props) {
   const total = rows.reduce((sum, r) => sum + (Number(r.salesValue) || 0), 0);
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-3">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-2 px-4 py-3`}>
         <div>
           <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-orange-400">Phoenix</p>
           <h1 className="text-base font-black text-white">{label ?? "Direct Orders Report"}</h1>
@@ -127,7 +128,7 @@ export function SharedDirectOrderReport({ token }: Props) {
         </div>
       </header>
 
-      <div className="flex flex-wrap gap-4 border-b border-[#eef1f3] bg-slate-50 px-4 py-2.5 text-phx-sm">
+      <div className={`flex flex-wrap gap-4 border-b border-[#eef1f3] bg-slate-50 px-4 py-2.5 text-phx-sm ${adminRecessedDepthClassName}`}>
         <span><span className="font-black uppercase tracking-wider text-slate-400">Rows </span>{rows.length.toLocaleString("en-US")}</span>
         <span><span className="font-black uppercase tracking-wider text-slate-400">Total value </span>{money(total)}</span>
       </div>

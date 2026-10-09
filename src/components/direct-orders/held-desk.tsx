@@ -10,6 +10,7 @@ import {
   phxButtonApproveDenseClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminPanelHeaderClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { rows: HeldDirectOrderRow[] };
 
@@ -148,7 +149,7 @@ export function HeldDesk({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <section className="border border-phx-line bg-white px-4 py-8 text-center">
+      <section className={`border border-phx-line bg-white px-4 py-8 text-center ${adminSoftDepthClassName}`}>
         <p className="text-sm font-bold text-slate-600">No held direct orders.</p>
         <p className="mt-1 text-phx-sm text-slate-400">
           Every submitted request is on a venue the master database recognises.
@@ -158,8 +159,8 @@ export function HeldDesk({ rows }: Props) {
   }
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-3 px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">
           Held requests — {rows.length}
         </h3>
@@ -318,7 +319,7 @@ export function HeldDesk({ rows }: Props) {
               </dl>
 
               {head.holdReleaseGround ? (
-                <p className="mt-2 border border-slate-200 bg-slate-50 px-2 py-1.5 text-phx-xs text-slate-600">
+                <p className={`mt-2 border border-slate-200 bg-slate-50 px-2 py-1.5 text-phx-xs text-slate-600 ${adminRecessedDepthClassName}`}>
                   Already ruled <b>{head.holdReleaseGround.replace(/_/g, " ")}</b> on{" "}
                   {cairoStamp(head.holdReleaseDecidedAt)} — {head.holdReleaseReason}
                 </p>

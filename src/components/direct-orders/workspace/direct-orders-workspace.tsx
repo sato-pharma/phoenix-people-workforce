@@ -33,6 +33,7 @@ import type {
   DirectOrderWorkspaceTabKey,
 } from "@/lib/direct-orders/workspace-data";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminPanelDepthClassName, adminRecessedDepthClassName, adminThumbBarDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ONE Direct Orders workspace, rendered by BOTH shells.
@@ -155,8 +156,8 @@ const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) 
 /** The two visual families the owner's rule preserves: square admin, rounded portal. */
 const surface = (variant: Variant) =>
   variant === "portal"
-    ? "rounded-xl border border-slate-200 bg-white"
-    : "border border-phx-line bg-white";
+    ? `rounded-xl border border-slate-200 bg-white ${adminPanelDepthClassName}`
+    : adminPanelClassName;
 
 const control = (variant: Variant) => (variant === "portal" ? "rounded-lg" : "");
 
@@ -583,7 +584,7 @@ function OrdersList({
       </label>
 
       <div className="-mx-1 overflow-x-auto px-1">
-        <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${control(variant)}`} role="tablist">
+        <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control(variant)}`} role="tablist">
           {FILTERS.map((entry) => (
             <button
               key={entry.key}
@@ -738,7 +739,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
               New Order
             </Link>
           </div>
-          <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur sm:hidden">
+          <div className={`fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur sm:hidden ${adminThumbBarDepthClassName}`}>
             <Link
               href={newOrderHref}
               className={`flex min-h-[48px] items-center justify-center gap-2 bg-orange-600 text-sm font-black text-white ${control(variant)}`}
@@ -866,7 +867,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
       {tab === "orders" ? (
         <div className="space-y-3">
           {showOrdersScopeStrip ? (
-            <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${control(variant)}`} role="tablist">
+            <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control(variant)}`} role="tablist">
               {ORDERS_FILTERS.map((option) => (
                 <button
                   key={option.key}

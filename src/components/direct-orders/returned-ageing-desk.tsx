@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import type { ReturnedDirectOrderAgeingRow } from "@/lib/direct-orders/service";
 import { type ReturnedAgeBand, returnedAgeBand } from "@/lib/direct-orders/returned-ageing";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { rows: ReturnedDirectOrderAgeingRow[] };
 
@@ -66,7 +67,7 @@ export function ReturnedAgeingDesk({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <section className="border border-phx-line bg-white px-4 py-8 text-center">
+      <section className={`border border-phx-line bg-white px-4 py-8 text-center ${adminSoftDepthClassName}`}>
         <p className="text-sm font-bold text-slate-600">No returned orders waiting.</p>
         <p className="mt-1 text-phx-sm text-slate-400">
           Every order sent back to a rep has been answered, resubmitted or cancelled.
@@ -76,8 +77,8 @@ export function ReturnedAgeingDesk({ rows }: Props) {
   }
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-3 px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">
           Returned, waiting on the rep — {rows.length}
         </h3>

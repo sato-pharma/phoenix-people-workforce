@@ -197,8 +197,17 @@ import { stripComments } from "./support/comment-strip.ts";
  * MEASURED in the browser against the real stylesheet, which then found a SECOND floor the ratchet
  * cannot see either — the header's three-letter weekday, clean only from 800px — so that
  * abbreviation shortens between `lg` and `xl`. One counted site; two invisible floors retired.
+ *
+ * 214 -> 213 on 2026-10-09, and NOT by this branch: the ROI Tracker's own
+ * `overflow-x-auto rounded-sm border border-slate-200 bg-white` wrapper in
+ * `src/components/marketing-requests/marketing-roi-tracker.tsx`, dropped by the ROI Tracker and
+ * Coverage Report audit (#5604, `7420a7d44`). Recorded by the direct-orders depth pass, which met
+ * the warning and had to answer it first: the number here is a TOTAL, so "my change retired a
+ * scroller" and "my change blinded the detector" read identically in it. MEASURED per file, HEAD
+ * against the working tree, across all 24 files this branch touches — every one of them moved the
+ * count by zero, which is what licenses lowering the floor on another branch's work.
  */
-const BASELINE = 214;
+const BASELINE = 213;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

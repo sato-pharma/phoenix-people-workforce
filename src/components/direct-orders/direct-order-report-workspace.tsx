@@ -12,6 +12,7 @@ import { showsAwaitingFinanceMonth } from "@/lib/direct-orders/types";
 import type { DirectOrderReportRow, DirectOrderReportScope } from "@/lib/direct-orders/types";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // The shell this report was opened in, so a row's link stays inside it.
 //
@@ -112,7 +113,7 @@ const COLUMNS: Col[] = [
 
 function KpiCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+    <div className={`rounded-lg border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
       <div className="text-phx-xs font-black uppercase tracking-wider text-slate-400">{label}</div>
       <div className={`text-xl font-black ${tone ?? "text-slate-900"}`}>{value}</div>
     </div>
@@ -314,7 +315,7 @@ export function DirectOrderReportWorkspace({
 
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="min-w-full border-collapse text-left text-sm">
-          <thead className="bg-slate-900 text-white">
+          <thead className={`${adminPanelHeaderClassName} text-white`}>
             <tr>
               <th className="whitespace-nowrap px-3 py-2 text-left text-phx-xs font-black uppercase tracking-wider">
                 Open

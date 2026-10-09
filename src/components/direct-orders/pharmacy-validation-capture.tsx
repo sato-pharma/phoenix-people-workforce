@@ -30,6 +30,7 @@ import {
   phxFieldClassName,
   phxLabelClassName,
 } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = {
   pharmacyId: string;
@@ -447,8 +448,8 @@ export function PharmacyValidationCapture({
   const labelClass = phxLabelClassName;
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">
           {isUpgrade ? `Confirm this ${venueWord} in the field` : `Validate this ${venueWord}`}
         </h3>
@@ -618,14 +619,14 @@ export function PharmacyValidationCapture({
               <button
                 type="button"
                 onClick={() => licenseCameraRef.current?.click()}
-                className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+                className={`border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
               >
                 Photograph licence
               </button>
               <button
                 type="button"
                 onClick={() => licenseFileRef.current?.click()}
-                className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+                className={`border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
               >
                 Choose file
               </button>

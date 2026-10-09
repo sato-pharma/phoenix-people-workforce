@@ -43,6 +43,7 @@ import {
   venueTypeLabel,
   type VenueTypeChoice,
 } from "@/lib/venues/venue-type";
+import { adminControlDepthClassName, adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type ProductOption = {
   productCode: string;
@@ -665,8 +666,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
       {/* ── Form ── */}
-      <section className="border border-phx-line bg-white">
-        <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+      <section className={adminPanelClassName}>
+        <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
           <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">New direct order</h3>
         </header>
         <div className="space-y-4 px-4 py-4">
@@ -777,7 +778,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   const line = extraLines[sibling.productCode];
                   const on = Boolean(line);
                   return (
-                    <div key={sibling.productCode} className="border border-slate-200 bg-white p-2">
+                    <div key={sibling.productCode} className={`border border-slate-200 bg-white p-2 ${adminSoftDepthClassName}`}>
                       <label className="flex items-center gap-2 text-sm font-bold text-slate-800">
                         <input
                           type="checkbox"
@@ -1149,7 +1150,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                         className={
                           newVenueType === venueType
                             ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-phx-sm font-black text-orange-700"
-                            : "border border-[#eef1f3] bg-white px-2.5 py-1 text-phx-sm font-bold text-slate-600 hover:bg-slate-50"
+                            : `border border-[#eef1f3] bg-white px-2.5 py-1 text-phx-sm font-bold text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`
                         }
                         key={venueType}
                         onClick={() => setNewVenueType(venueType)}
@@ -1379,7 +1380,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     ) : (
                       <button
                         type="button"
-                        className="mt-1.5 w-full whitespace-nowrap border border-slate-400 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
+                        className={`mt-1.5 w-full whitespace-nowrap border border-slate-400 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`}
                         onClick={() => setAcknowledgedCodeConflict(true)}
                       >
                         No — mine is a different pharmacy
@@ -1440,7 +1441,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
       </section>
 
       {/* ── My requests ── */}
-      <section className="border border-phx-line bg-white">
+      <section className={adminPanelClassName}>
         <header className="border-b border-phx-line bg-slate-100 px-4 py-2.5">
           <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-600">My direct orders</h3>
         </header>

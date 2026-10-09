@@ -9,6 +9,7 @@ import {
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type ProductOption = {
   productCode: string;
@@ -111,7 +112,7 @@ export function DirectOrderCapsManager({
       {ok ? <p className="text-sm font-semibold text-emerald-600">{ok}</p> : null}
 
       {/* Global caps */}
-      <section className="border border-slate-200 bg-white p-4">
+      <section className={`border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
         <h3 className="mb-3 text-phx-xs font-black uppercase tracking-wider text-slate-500">Global caps (default for every product)</h3>
         <div className="flex flex-wrap items-end gap-4">
           <label className="text-sm">
@@ -136,7 +137,7 @@ export function DirectOrderCapsManager({
       </section>
 
       {/* Per-product overrides */}
-      <section className="border border-slate-200 bg-white p-4">
+      <section className={`border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
         <h3 className="mb-3 text-phx-xs font-black uppercase tracking-wider text-slate-500">Per-product cap overrides</h3>
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -187,7 +188,7 @@ export function DirectOrderCapsManager({
       </section>
 
       {/* Product prices — the one place both deal types get their price basis. */}
-      <section className="border border-slate-200 bg-white p-4">
+      <section className={`border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Product prices</h3>
