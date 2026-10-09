@@ -32,8 +32,14 @@ rebuild the same period, or one moves a constant the owner has already ruled on.
 **How to apply:** when a September book lands, the owner of that half acts and the other is told;
 `select distributor_code, max(created_at at time zone 'Africa/Cairo') from
 source_of_sales_import_batches where period = '2026-09' group by 1` is the trigger test, and
-"Marcyrl's Office book" is **two** uploads — `MC` and `Office`
-([[office-allocation-goes-stale-when-a-batch-is-remapped-after-it]]).
+🔴 **"Marcyrl's Office book" IS ONE UPLOAD — `Office`, whose `distributor_name` is Marcyrl**
+(the repo's own rule: `.claude/rules/sales-closing.md`, "Marcyrl IS the Office channel", owner
+2026-10-05). **`MC` is mec — A SEPARATE DISTRIBUTOR, never one of Marcyrl's books** (owner,
+2026-10-09: *"MEC is a separate distributor"*). An earlier version of this line read his words as
+two uploads and sent a session hunting a second trigger; there is one trigger, the September
+`Office` upload, and it is also the respread's only input
+([[office-allocation-goes-stale-when-a-batch-is-remapped-after-it]],
+[[the-office-code-is-marcyrl-and-mc-is-mec]]).
 
 🔴 **A SOURCE CAN APPEAR AS WELL AS DISAPPEAR, so compare the two months BOTH WAYS** (the peer
 session that verified the five absent books independently, same evening): `SF-T` is the mirror case

@@ -1,11 +1,11 @@
 ---
 name: the-store-split-keywords-and-how-a-new-warehouse-ruling-is-written
-description: "The complete keyword inventory the store/pharmacy split is decided by — six store words, two start-only prefixes, the two-half trade phrase, eleven never-store words, five override lists — and the rule that a NEW ruling is written as a NAME in STORE_OVERRIDE_NAMES, counted on production both ways first, never as a code."
+description: "The complete keyword inventory the store/pharmacy split is decided by — six store words, two start-only prefixes, the two-half trade phrase, eleven never-store words, five override lists — and the rule that a NEW ruling is written as a NAME in STORE_OVERRIDE_NAMES, counted on production both ways first, never as a code — while a GOVERNMENT ruling is a NEVER_STORE word instead, as the تامين الصحي depots were on 2026-10-09."
 metadata:
   node_type: memory
   type: project
   originSessionId: d5764c39-c02c-4dd4-a40d-70ad08cc490c
-  modified: 2026-10-09T15:36:08.895Z
+  modified: 2026-10-09T16:40:00.000Z
 ---
 
 Owner instruction, 2026-10-09: **"do a deeper audit and remember the keywords that we split based on
@@ -41,19 +41,35 @@ catch if broadened). The name list is read from the cutover forward
 (`WAREHOUSE_RULE_FROM_PERIOD_BY_LINE` — 2026-09, Pedia 2026-08), so no published month restates; a
 code in `STORE_OVERRIDE_CUSTOMER_KEYS` would rewrite all of 2026 silently. Pin the neighbours in the
 same PR. 🔴 **A name he rules that contradicts his 2026-09-06 decision sheet goes BACK to him, never
-into the list** — طاى جروب (1,060,947.52 EGP over six accounts) is waiting on one word, and the 167
-answers of that sheet are pinned in the required `validate` job. Twelve stems went in on 2026-10-09:
-20 names, 374 rows, 435,133.42 EGP all-time, of which 51,022.72 actually changes hands.
+into the list** — the 167 answers of that sheet are pinned in the required `validate` job, and when
+he overrides one the later answer stands, the fixture carries it and the sheet itself is left
+untouched. **طاى جروب is the sixth such reversal and it is SETTLED: "split طاى جروب too, it
+overrides the Sep 6 sheet" (2026-10-09), so its four sheet accounts flip to warehouse and the pin
+reads 79 warehouse / 72 pharmacy** (PR 5687). Twelve stems went in on 2026-10-09 off column C — 20
+names, 374 rows, 435,133.42 EGP all-time, of which 51,022.72 changes hands — and the thirteenth is
+طاى جروب: 11 rows and 20,025.30 EGP, all September 2026 CNS, out of Alex Center into Alexandria's
+thirds. 🔴 **ITS STEM IS TWO WORDS BECAUSE A ONE-WORD ARABIC STEM CAN BE A SUBSTRING OF A TOWN
+NAME** — `طاى` sits inside `مطاى` (Matay) in 60+ Minia pharmacy names, and inside `مصطاى` and
+`نهطاى`; the test proves it by widening the stem to bare `طاي` and watching `هيثم اسامة مطاى` fail.
+Check a candidate stem against the town and village names in the customer list, not only against
+other companies.
 
-Account, with the measurements and the government health-insurance depots that still split
-wrongly: `docs/agents-owner-rules.md`, "The store-split rulings of 2026-10-09". 🔴 **That doc says
-TWO depots and the real count is THREE, with one spelling wrong** — read live 2026-10-09 from
-`source_of_sales_import_rows`: `فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي`
-(23495), `فرع شرق الدلتا - المخزن الاقليمي القليوبية- تامين الصحي` (64845 — no space before the
-dash, which the doc adds) and `فرع شرق الدلتا - المخزن الاقليمي شبرا الخيمة - تامين الصحي` (27863).
-**All three are CNS-only — not one Anti Infective row ever** — so they cannot touch an Anti Infective
-answer: 2026-09 holds 23495 in Dakahlia 4 (249 units, 8,889.30 EGP) and 64845 in Qalubeya (200 units,
-7,140.00 EGP); 27863 last sold in July. Carry this correction into the next PR that opens on this
-thread. Pinned by
-`tests/store-split-owner-rulings-2026-10-09.test.ts`. Related: [[sos-monthly-closing-is-the-only-sales-truth]],
+🔴 **A GOVERNMENT RULING IS A `NEVER_STORE_KEYWORDS` WORD, NEVER `STORE_OVERRIDE_NAMES`** — one
+REFUSES a split, the other CREATES one. **"the three تامين الصحي depots are government, never split
+them"** (owner, 2026-10-09) is the word `تامين`, shipped in PR 5689: `ت.ص` could not reach a name
+that spells تامين الصحي out in full while carrying `مخزن`. Counted both ways on production first —
+it reaches **26 accounts, every one a health-insurance body, branch, depot or clinic, NOT ONE a
+wholesaler**, of which **seven split**: his three (23495 العاشر من رمضان, 64845 القليوبية — its dash
+runs onto the word with no space, 27863 شبرا الخيمة) plus 139383 منوف, 66085 بنى سويف, 139359 جديلة
+and 139062 سوهاج, the same kind of depot, so his ruling reaches them too; the bare `امين` would add
+**257 PEOPLE called أمين**, none carrying a store word. 🔴 **A never-store word needs NO cutover gate
+— `legacyIsStoreCustomer` never reads one**, so no published month restates: the only live movement
+is **124.5 units / 4,444.65 EGP of September CNS back from Sharkia 2 to Sharkia 1** (23495 is
+**D24 Sharkia 1**, never Dakahlia 4 as the doc said; Qalubeya is a one-area city so its depot moved
+nothing, and the other five hold no row at or after the cutover). All seven are CNS-only — never one
+Anti Infective row.
+
+Account: `docs/agents-owner-rules.md`, "The store-split rulings of 2026-10-09". Pinned by
+`tests/store-split-owner-rulings-2026-10-09.test.ts`, proven by breaking it three ways. Related:
+[[sos-monthly-closing-is-the-only-sales-truth]],
 [[publishing-one-line-freezes-the-whole-periods-store-split-net]].

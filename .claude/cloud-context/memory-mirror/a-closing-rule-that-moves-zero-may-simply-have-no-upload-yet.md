@@ -11,9 +11,8 @@ in PR 5662. `buildBulkAllocation` on the live Pedia 2026-09 closing details (1,7
 `EP-BK` row at or after 2026-07. Read alone, that looks like the rule is inert and like
 [[epda-bulk-merged-into-epda-pharmacies-from-july-2026]] settles it.
 
-**It does not.** September 2026 is **mid-upload**. Thirteen books are in, six that August had are
-still missing — **Marcyrl (the Office channel), epda, EPDA-Pharmacies, Ibn sina, mec and Direct
-(Company)** — and nine of the thirteen landed that same afternoon between 16:17 and 16:46 Cairo,
+**It does not.** September 2026 is **mid-upload**. Thirteen books are in, five that August had are
+still missing — **Marcyrl (the Office channel), epda, EPDA-Pharmacies, Ibn sina and mec** — and nine of the thirteen landed that same afternoon between 16:17 and 16:46 Cairo,
 one of them while this very check was running. So **no EPDA book of any kind has reached September
 yet**, the bulk rule has no input rather than no effect, and whether the sector returns as its own
 `EP-BK` file (his 2026-10-09 ruling) or merged into قطاع الصيدليات (the July-onward measurement)
@@ -30,3 +29,5 @@ period = '<period>'` against the previous period, resolving codes through
 batch table also dates each upload, which is what separates "not yet sent" from "sent and
 mis-handled". `tests/closing-bulk-allocation.test.ts` pins the arithmetic, so a green suite plus a
 0.00 EGP production reading is consistent with a correct rule waiting for its file.
+
+**Corrected 2026-10-09:** Direct was listed here as a sixth missing book by comparing raw codes; `DirectReq` had landed 2026-10-05 and the repo folds the two vintages onto one channel — [[direct-company-is-never-a-coverage-hole]].

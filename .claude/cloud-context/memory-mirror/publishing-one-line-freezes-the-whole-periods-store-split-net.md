@@ -69,3 +69,22 @@ numbers would not move if it were — which is exactly the call he made on 2026-
 unpublish itself in a `Next step:` box**: it is his own click in a screen Claude cannot reach, so it
 belongs in the body with the path, and the box carries the decision he answers in words
 ([[never-put-his-physical-actions-in-the-next-step-box]]).
+
+**RESOLVED for 2026-09 on 9 Oct 2026.** He unpublished Anti Infective himself at **19:12 Cairo**
+("I UNPUBLISHED ANTI INFECTIVE"), which lifted the period freeze, and the rebuild ran at 19:35:
+`backfill-attribution-store-split.ts --apply 2026-09` wrote **423 rows** over the stale 139
+(Pedia 87 cells / 40 areas / 3,059.180 units relocated · Anti Infective 47 / 32 / 975.167 · CNS
+289 / 36 / 3,999.667), each line's net balancing to zero, and `check-store-split-drift.ts` then
+read **"no drift. 423 frozen cells match the rule."** 🔴 **Anti Infective's NET was already current
+— 0 of its 47 cells changed; CNS (268 cells, 4,054 units) and Pedia (79 cells, 3,035.846) were the
+stale halves.** Pre-image kept in `sos_september_split_rebuild_20261009` (139 net rows, 1
+publication row).
+
+🔴 **BUT HIS RE-PUBLISH STILL RESTATES ANTI INFECTIVE, and the net is not where you see it.**
+Compared against the 5 Oct snapshot: the TOTAL is identical (9,322 units, 815,359.00 EGP, same 89
+area × product keys, none new, none gone) while **94,196.16 EGP changes hands across 57 keys** —
+Menoufia 1 → 2 **33,534.30**, Kafr El-Sheikh 1 → 2 **24,431.38**, Sohag1 → 2 **13,962.78**,
+Gharbia (Mahalla) → (Tanta) **8,737.60**, Assuit 2 → 1 **6,9xx**. Every pair is inside one city, so
+it is the city split dealing the TWELVE warehouse stems he ruled on 2026-10-09 (PR 5685) — not the
+rebuild. Read it with [[a-publication-snapshot-holds-two-rows-per-area-product]] or the figure
+doubles.
