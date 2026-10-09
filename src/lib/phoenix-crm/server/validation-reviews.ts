@@ -321,6 +321,16 @@ export type ValidationReviewRow = {
   signText: string | null;
   /** The names the system read on it, people and places together, for the Super Admin's eye. */
   signNames: string[];
+  /**
+   * The OTHER signs that were in the same photograph, as read — the clothes shop beside the practice,
+   * the room number, the pharmacy next door.
+   *
+   * 🔴 IT IS WHY THE VERDICT IS WHAT IT IS. Four of the five holds of 2026-10-09 were a second sign in
+   * the frame, and the board showed only the one that had been judged, so nothing on the screen could
+   * tell him that the sign quoted to him was a clothes shop. Empty for a timetable hold and for a hold
+   * recorded before the reader returned a list.
+   */
+  otherSigns: string[];
   /** What was wrong with the photo, as the Super Admin chose it on a rejection — his label, not the rep's sentence. */
   refusalLabel: string | null;
   query: string | null;
@@ -439,6 +449,15 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       : schedule
         ? (Array.isArray(google.personNames) ? google.personNames : []).map((name) => text(name)).filter((name): name is string => name !== null)
         : [];
+    // Every sign the reader saw, minus the one quoted above — kept in the record's own order, which
+    // puts the judged sign first.
+    const judgedText = signboard ? text(google.signText) : null;
+    const otherSigns = signboard && Array.isArray(google.signs)
+      ? (google.signs as Row[])
+          .map((sign) => (sign && typeof sign === "object" ? text(sign.text) : null))
+          .filter((sign): sign is string => sign !== null && sign !== judgedText)
+          .slice(0, 6)
+      : [];
     const venue = schedule && google.sharedPlace && typeof google.sharedPlace === "object" ? (google.sharedPlace as Row) : null;
     return {
       // 🔴 THE RECORD DECIDES, NEVER THE PLACE ROW. A seating is `point_source = 'shared_place'`, but a
@@ -449,6 +468,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       hoursRead: schedule ? text(google.hoursRead) : null,
       signText: signboard || schedule ? text(signboard ? google.signText : google.scheduleText) : null,
       signNames,
+      otherSigns,
       refusalLabel: status === "rejected" ? validationRefusalLabel(text(row.refusal_reason)) : null,
       reviewId: String(row.id),
       status,
