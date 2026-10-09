@@ -40,7 +40,7 @@ const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approvals Hub" },
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Vacation Request" },
   { href: "/employee-portals/med-reps-performance", icon: Target, label: "Med Rep Performance" },
-  { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" },
+  { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "My Expenses" },
 ];
 
 const ACTIONS: readonly ActionStripItem[] = [

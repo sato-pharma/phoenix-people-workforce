@@ -280,6 +280,20 @@ export function runMedicalRepExpenseViewerTests() {
     "the workspace must not recognise the refusal by its own string match",
   );
   assert.doesNotMatch(workspaceSource, /\bisMedicalRep\(/);
+
+  // The District Manager's home tile opens the manager's own expense page. It used to point at the
+  // Medical Rep workspace, which refuses a manager's job title and bounced the tile through a redirect.
+  const dsmHomeSource = readFileSync("src/components/employee-portal/dashboards/dsm-command-center.tsx", "utf8");
+  assert.doesNotMatch(
+    dsmHomeSource,
+    /href: "\/employee-portals\/expenses"/,
+    "RED the District Manager home must not link to the Medical Rep expense workspace",
+  );
+  assert.match(
+    dsmHomeSource,
+    /href: "\/employee-portals\/expense-dashboard", icon: ReceiptText, label: "My Expenses"/,
+    "RED the District Manager home's My Expenses tile opens the Expense Dashboard",
+  );
   assert.match(workspaceSource, /title="Outstation Expenses Unavailable"/, "the workspace's existing empty state is what a refused Medical Rep login sees");
 
   assert.match(
