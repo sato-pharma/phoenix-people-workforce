@@ -47,9 +47,14 @@ within 18 minutes of its shutter. It was an instruction-and-feedback problem.
   image (`stampBandFraction`: 0.18 portrait, 0.4917 landscape). Reading the uncropped photo would
   report a match on a blank wall every time.
 - **The nightly signboard pass** (`server/signboard-sweep.ts`), between the photo and behaviour passes
-  of the integrity sweep: 60 places a night, oldest first, four at once, two minutes at most. It files
-  a FLAG on the integrity board for a confident negative and never holds or un-validates. 612 active
-  places had never been read on the first night — about ten nights of backlog.
+  of the integrity sweep: **200 places a night since 2026-10-09** (60 before that), oldest first, four
+  at once, two minutes at most. It files a FLAG on the integrity board for a confident negative and
+  never holds or un-validates. 612 active places had never been read on the first night. **The raise
+  came from that night's own clock, not from ambition:** it read its 60 between 03:35:04 and 03:35:45
+  Cairo — 42 seconds, about 1.4 places a second with four in flight — and stopped on its LIMIT with
+  547 places still waiting and its 120-second budget barely touched. The budget is untouched and is
+  now what ends a normal night, so a slow night still costs the same wall clock as before; what the
+  raise buys is three nights of backlog instead of nine.
 - **The refusal reason** (`validation-feedback.ts`). Six closed reasons: no signboard in the photo;
   the sign is not this customer; too dark or blurred to read; not taken at the entrance; a photo of
   paper, not a building; the location is not where the photo was taken. The free note stays on the
