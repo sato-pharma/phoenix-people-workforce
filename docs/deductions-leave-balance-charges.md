@@ -105,9 +105,39 @@ from your annual leave", rendered `whitespace-pre-wrap break-words` so his own l
   reaches payroll; the whole deduction is paid out of leave.
 - **Partly covered** → the leave takes `coverableDays` and the decision becomes
   `Approved for Payroll` for the remaining salary days only.
+- **Partly covered on a row that was ALREADY cleared** → the leave takes `coverableDays` and the row
+  **stays `Do Not Take Action`** with `appliedValue: null`. The remainder reaches no salary.
 
 The comment is **required**: the table's own check constraint refuses a blank or whitespace-only one,
 so a charge cannot exist without the words the employee will read.
+
+## A cleared row can be charged — and the trap inside that
+
+**The button refused a cleared row, which was the second thing standing between it and the tab it was
+asked for.** On 2026-10-09 the owner pressed it and read back *"This deduction is already cleared —
+there is nothing to take from the leave balance."* Measured the same minute: **9 of the 16** live
+September `unpaid_vacation` rows are `Do Not Take Action`, Adel Eid Abdelrahman Mohamed Srour's — the
+first row on his screen — among them.
+
+His ruling: **let it charge the balance anyway.** Clearing a row stopped the salary deduction; whether
+the employee keeps the leave day as well is a separate decision he makes per row.
+
+🔴 **The load-bearing half is the PART-covered case, and getting it wrong moves money.** The split
+above would have turned the uncovered remainder into `Approved for Payroll` — quietly reinstating a
+deduction he had already waived, on a row he only touched to spend leave. So
+`decisionAfterLeaveBalanceCharge` takes `alreadyCleared`, and such a row stays cleared whatever the
+balance could pay; the preview reports those days as `uncollectedDays`, never as `salaryDays`.
+
+Two things the dialog now says out loud, because neither is guessable from the row:
+
+- the row is already cleared, so the charge costs a leave day and saves no money;
+- **Return to salary puts it back to Pending, not back to cleared.** The prior decision is not
+  recorded anywhere, so the undo cannot restore it — he re-decides the row.
+
+**The same change closed a gap in the other direction:** the preview now runs the released-line check
+the charge runs, so the dialog can no longer offer a charge the save then refuses with *"withdraw it
+first"*. The button is already hidden on a pushed row, so this is the server agreeing with the screen
+rather than a visible change.
 
 ## One ledger, no function redefined — the load-bearing design choice
 

@@ -67,8 +67,15 @@ export function planLeaveBalanceCharge(input: { dueDays: number; coverableDays: 
 /**
  * Pure: the decision a charge leaves on the deduction. Fully covered → cleared, nothing on salary.
  * Part covered → approved for payroll for ONLY the days the balance could not pay.
+ *
+ * 🔴 `alreadyCleared` — the row was ALREADY "Do Not Take Action" before the charge (owner,
+ * 2026-10-09: the button must work on a cleared row too). Nothing was on salary then, and a charge
+ * must not put anything there: a part-covered cleared row takes what the balance has and the
+ * remainder stays UNCHARGED, not approved for payroll. Without this, pressing the button on a
+ * cleared row would silently turn a deduction he had waived into a payroll charge.
  */
 export function decisionAfterLeaveBalanceCharge(input: {
+  alreadyCleared?: boolean;
   chargeDays: number;
   salaryDays: number;
   dueDays: number;
@@ -79,6 +86,13 @@ export function decisionAfterLeaveBalanceCharge(input: {
     return {
       status: "Do Not Take Action",
       reason: `${LEAVE_BALANCE_REASON_FULL} (${input.chargeDays} day${input.chargeDays === 1 ? "" : "s"}). ${comment}`,
+      appliedValue: null,
+    };
+  }
+  if (input.alreadyCleared) {
+    return {
+      status: "Do Not Take Action",
+      reason: `${LEAVE_BALANCE_REASON_PART} (${input.chargeDays} of ${input.dueDays} days); the remaining ${input.salaryDays} day${input.salaryDays === 1 ? "" : "s"} stay cleared and reach no salary. ${comment}`,
       appliedValue: null,
     };
   }
@@ -296,10 +310,18 @@ export type LeaveBalancePreview = {
   availableDays: number | null;
   /** Days that would come off annual leave. */
   chargeDays: number;
-  /** Days that would stay on salary. */
+  /** Days that would stay on salary. Always 0 on an already-cleared row — see `alreadyCleared`. */
   salaryDays: number;
   /** Plain-words reason the button cannot be used, null when it can. */
   refusal: string | null;
+  /**
+   * The row is already "Do Not Take Action", so nothing is on salary. The charge is ALLOWED (owner,
+   * 2026-10-09) — the day comes off the balance and the row stays cleared — but the dialog says so,
+   * because this is the one case where the charge costs the employee a day and saves no money.
+   */
+  alreadyCleared: boolean;
+  /** Days the balance cannot pay that will stay CLEARED rather than reach salary (cleared rows only). */
+  uncollectedDays: number;
   /**
    * Still inside the first six months. The charge is allowed (owner, 2026-10-09) but the dialog
    * says so, because it spends leave the employee has accrued and cannot yet request directly.
@@ -339,22 +361,33 @@ export async function previewLeaveBalanceCharge(input: {
       chargeDays: charged.days,
       salaryDays: candidate.appliedValue ?? 0,
       refusal: null,
+      alreadyCleared: false,
+      uncollectedDays: 0,
       withinFirstSixMonths: false,
       charged,
     };
   }
   assertChargeable(candidate);
+  // The same release check the charge itself runs. Without it the dialog offered a charge the save
+  // then refused — the one failure mode this button is designed against.
+  const pushed = await loadActivePushedLineIdByCandidate(candidate.monthKey);
   const { dueDays, balance, plan } = await previewFor(candidate);
+  const alreadyCleared = candidate.decisionStatus === "Do Not Take Action";
   let refusal = plan.chargeDays > DAYS_EPSILON ? null : refusalText(balance.refusal ?? "no_balance");
-  if (candidate.decisionStatus === "Do Not Take Action") refusal = "This deduction is already cleared — there is nothing to take from the leave balance.";
+  if (pushed.get(candidate.id)) {
+    refusal = "This deduction was already released to the employee — withdraw it first, then take it from the leave balance.";
+  }
   return {
     candidateId: candidate.id,
     employeeHrId: candidate.employeeHrId,
     dueDays,
     availableDays: balance.availableDays,
     chargeDays: plan.chargeDays,
-    salaryDays: plan.salaryDays,
+    // A cleared row has nothing on salary and the charge must not put anything there.
+    salaryDays: alreadyCleared ? 0 : plan.salaryDays,
     refusal,
+    alreadyCleared,
+    uncollectedDays: alreadyCleared ? plan.salaryDays : 0,
     withinFirstSixMonths: balance.withinFirstSixMonths,
     charged: null,
   };
@@ -380,9 +413,10 @@ export async function chargeDeductionToLeaveBalance(input: {
 
   const candidate = await loadCandidateForCharge(input.candidateId);
   assertChargeable(candidate);
-  if (candidate.decisionStatus === "Do Not Take Action") {
-    throw new Error("Conflict: this deduction is already cleared — there is nothing to take from the leave balance.");
-  }
+  // A row already "Do Not Take Action" is NO LONGER refused (owner, 2026-10-09). Clearing a row
+  // stopped the salary deduction; whether the leave day is free as well is his call per row, and
+  // the charge below leaves such a row cleared whatever the balance could pay.
+  const alreadyCleared = candidate.decisionStatus === "Do Not Take Action";
   if (await getLeaveBalanceChargeForCandidate(candidate.id)) {
     throw new Error("Conflict: this deduction is already taken from the leave balance — reload and look again.");
   }
@@ -412,7 +446,7 @@ export async function chargeDeductionToLeaveBalance(input: {
   });
   if (error) rethrowRpcError(error as { code?: string; message?: string });
 
-  const after = decisionAfterLeaveBalanceCharge({ ...plan, dueDays, comment });
+  const after = decisionAfterLeaveBalanceCharge({ ...plan, alreadyCleared, dueDays, comment });
   let decision: DeductionsDecision;
   try {
     decision = await recordDecision({
@@ -440,10 +474,10 @@ export async function chargeDeductionToLeaveBalance(input: {
     actorLoginId: input.actor.loginId ?? input.actor.hrId ?? "unknown",
     entityId: candidate.id,
     entityType: "deductions_decision",
-    newValues: { chargedDays: plan.chargeDays, salaryDays: plan.salaryDays, comment } as unknown as Record<string, unknown>,
+    newValues: { chargedDays: plan.chargeDays, salaryDays: after.appliedValue ?? 0, alreadyCleared, comment } as unknown as Record<string, unknown>,
     summary: `Deduction taken from the annual leave balance: ${plan.chargeDays} day(s)`,
   });
-  return { chargedDays: plan.chargeDays, salaryDays: plan.salaryDays, decisionStatus: after.status, decision };
+  return { chargedDays: plan.chargeDays, salaryDays: after.appliedValue ?? 0, decisionStatus: after.status, decision };
 }
 
 /** Undo a leave balance charge: the days go back and the deduction returns to Pending. Super Admin only. */
