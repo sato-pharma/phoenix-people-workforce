@@ -20,9 +20,14 @@ import {
  * A FIFTH was settled on 2026-09-07, and the counts below are the settled ones, not the 2026-09-06
  * ones: «شركة اورينت جروب - بهتيم» (164162) was ruled a pharmacy in that sheet and a wholesaler on
  * the EPDA Pedia sheet the next day. Asked which answer stood, he said the wholesaler one — so its
- * TWO accounts move, and the totals here read 75 warehouse and 76 pharmacy. The 2026-09-06 sheet is
- * untouched and still says pharmacy; this file carries what is true now, which is the only thing an
- * assertion can usefully carry.
+ * TWO accounts move. The 2026-09-06 sheet is untouched and still says pharmacy; this file carries
+ * what is true now, which is the only thing an assertion can usefully carry.
+ *
+ * A SIXTH was settled on 2026-10-09, the same way: «طاى جروب» on its FOUR sheet accounts — 433363
+ * (IS and IS-S), 3080282 (RM) and 1500023301 (SF) — all four ruled pharmacy on 2026-09-06 and all
+ * four now warehouses, because after he was sent the whole 10,420-name list he named it in column C
+ * and then said, in his own words, **"split طاى جروب too, it overrides the Sep 6 sheet"**. So the
+ * totals here read 79 warehouse and 72 pharmacy.
  *
  * WHY THE WHOLE LIST IS PINNED AND NOT A SAMPLE. This is a NAME rule: it reads text a distributor
  * typed. Widening a stem by one letter, adding a word, or changing the Arabic folding silently
@@ -46,9 +51,9 @@ const OWNER_RULINGS: ReadonlyArray<
 > = [
   ["المستودع الطبى الرئيسى الجبل ا","0003000003","PS","government"],
   ["الفرسان انترناشيونال جروب","0001558912","PS","warehouse"],
-  ["طاى جروب","433363","IS","pharmacy"],
+  ["طاى جروب","433363","IS","warehouse"],
   ["اى بى يو لتجارة و توزيع الادوية","429955","IS","pharmacy"],
-  ["شركة طاى جروب","3080282","RM","pharmacy"],
+  ["شركة طاى جروب","3080282","RM","warehouse"],
   ["ت.ص.مخازن السيوف","0003000591","PS","pharmacy"],
   ["ت.ص.مخازن السيوف","3000591","PS-T","government"],
   ["شركه أيه ام جروب","0001535504","PS","pharmacy"],
@@ -84,7 +89,7 @@ const OWNER_RULINGS: ReadonlyArray<
   ["الزهراء لتجارةوتوزيع اﻻدويةومستلزمات","434650","IS","warehouse"],
   ["شركة المحمدية لتجارة وتوزيع ال","0001534401","PS","warehouse"],
   ["تيسلا لتجارة الدواء","0001554353","PS","warehouse"],
-  ["طاى جروب","433363","IS-S","pharmacy"],
+  ["طاى جروب","433363","IS-S","warehouse"],
   ["الدوائية لتجارة وتوزيع الادوية","447891","IS","warehouse"],
   ["مصطفى نبيل الطرشوبى لتجاره الادويه بالجمله","8010355","RM","pharmacy"],
   ["الحكمةلتجارةوتوزيع اﻻدويةوالمستلزما","437285","IS","warehouse"],
@@ -117,7 +122,7 @@ const OWNER_RULINGS: ReadonlyArray<
   ["سيف الاسلام لتجارة وتوزيع الادوية","426630","IS","warehouse"],
   ["ال ياسين لتجارة وتوزيع الادوية","441162","IS","warehouse"],
   ["الجمهورية لتجارة وتوزيع ن م","0001541015","PS","warehouse"],
-  ["شركة طاى جروب","1500023301","SF","pharmacy"],
+  ["شركة طاى جروب","1500023301","SF","warehouse"],
   ["الوجيه لتجارة الادويه - المنوفيه","164155","EP-PHS","warehouse"],
   ["ابوالوفاء -دمياط (ورثه)/  مطلوب سجل تجارى حديث","879","EG","pharmacy"],
   ["ايةام جروب للاستثمار وتجارةالادوية","428612","IS","warehouse"],
@@ -217,8 +222,9 @@ export function runSosWarehouseOwnerRulingsTests() {
   assert.equal(OWNER_RULINGS.length, 167, "every customer he ruled on is pinned here");
   assert.equal(
     OWNER_RULINGS.filter((row) => row[3] === "warehouse").length,
-    75,
-    "73 on 2026-09-06, plus the two accounts of شركة اورينت جروب - بهتيم he settled on 2026-09-07",
+    79,
+    "73 on 2026-09-06, plus the two accounts of شركة اورينت جروب - بهتيم settled 2026-09-07 and the "
+      + "four of طاى جروب he overrode on 2026-10-09",
   );
 
   const wrong: string[] = [];

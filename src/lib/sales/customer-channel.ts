@@ -464,12 +464,13 @@ export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   // were ALREADY warehouses on مخزن (9 rows, 7,132.05), which changes nothing. The whole breakdown
   // is one query, kept in tests/store-split-owner-rulings-2026-10-09.test.ts.
   //
-  // «طاى جروب» IS DELIBERATELY NOT HERE, although he named it in column C. He ruled its four
-  // accounts PHARMACY in the 2026-09-06 decision sheet (433363 IS and IS-S, 3080282 RM,
-  // 1500023301 SF), with their value and areas in front of him, and those answers are pinned in
-  // tests/sos-warehouse-owner-rulings.test.ts. A contradiction in this rule goes back to him rather
-  // than being resolved in code — the five earlier ones all did — so its 1,060,947.52 EGP across six
-  // accounts waits for one word from him.
+  // «طاى جروب» WAS DELIBERATELY ABSENT UNTIL HE SETTLED IT, and he settled it on 2026-10-09:
+  // **"split طاى جروب too, it overrides the Sep 6 sheet"**. He had ruled its four accounts PHARMACY
+  // on the 2026-09-06 decision sheet (433363 IS and IS-S, 3080282 RM, 1500023301 SF) with their
+  // value and areas in front of him, so the contradiction went back to him rather than being
+  // resolved in code — the SIXTH such reversal in this rule, handled exactly like the five before
+  // it: the later answer stands, the pinned fixture carries it, and the 2026-09-06 sheet itself is
+  // left untouched. The stem is added at the end of this list.
   //
   // Each stem is named in full rather than broadened, for the reason «الفرسان» records above.
   { label: "شركة مخازن كومباس فارما للادوية", stem: "كومباس فارما" },
@@ -504,6 +505,28 @@ export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   // with a ح. Named in full so neither stem can adopt a future society he has not seen.
   { label: "جمعية العاملين بشركة مصر حلوان", stem: "جمعيه العاملين بشركه مصر حلوان" },
   { label: "الحمعيه التعاونيه يشركه كيما", stem: "الحمعيه التعاونيه" },
+  // HIS OVERRIDE OF THE 2026-09-06 SHEET, 2026-10-09 — see «طاى جروب» above.
+  //
+  // «طاى» ALONE WOULD BE A CATASTROPHE AND IS THE REASON THIS STEM IS TWO WORDS: «طاى» is a
+  // SUBSTRING of «مطاى», the town Matay, which 60+ Minia pharmacies carry in their name («الفتح -
+  // مطاى», «نشوى - مطاى», «هيثم اسامة مطاى» …), and of «مصطاى» and «نهطاى» besides. Bare «جروب» is
+  // common too. Measured on production 2026-10-09 over every name containing طاى / طاي / طى جروب:
+  // «طاي جروب» reaches this ONE business on its SIX accounts and not a single neighbour —
+  // «طاى جروب» (433363 IS and IS-S), «شركة طاى جروب» (3080282 RM, 1500023301 SF), «طاى جروب -
+  // الاسكندرية» (22197684 EP-PHS) and «مخزن طاى جروب - طاى» (0001573635 PS), which was already a
+  // store on «مخزن» and is unaffected either way.
+  //
+  // WHAT IT MOVES. All six accounts sell from ONE area — AB2, Alex Center — so the split deals
+  // their sales into thirds across Alexandria (AB1 Alex East, AB2 Alex Center, AB3 Alex West).
+  // On the rollup at the period factory price: 166 rows and 1,057,167.56 EGP all-time across the
+  // six; 113 rows and 620,042.96 on the five that were not already stores; 99 rows and 338,276.36
+  // of that on the tracked lines. But the list is read from the cutover only
+  // (WAREHOUSE_RULE_FROM_PERIOD_BY_LINE — 2026-09, Pedia 2026-08), so WHAT ACTUALLY CHANGES HANDS
+  // IS 11 ROWS AND 20,025.30 EGP, every one of them SEPTEMBER 2026 CNS: 3080282 (RM) 200 units
+  // 14,951.25 and 433363 (IS) 123 units 5,074.05. Alex Center gives up 13,350.20 of it and Alex
+  // East and Alex West take 6,675.10 each. 22197684 is Head Office only and never splits;
+  // 1500023301 has no row at or after the cutover.
+  { label: "طاى جروب", stem: "طاي جروب" },
 ];
 
 /**
