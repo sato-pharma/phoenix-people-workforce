@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
 import { pathDeltaLanded, registryAddedLinesLanded } from "../scripts/rollup-carried.mjs";
-import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
+import { latestRunPerName, membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
 import { isRollupBranch, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
 
 /**
@@ -1092,6 +1092,123 @@ export function runRollupPrsTests(): void {
       "and an EMPTY contexts array must be recorded as an unreadable gate rather than kept as an empty "
         + "Set, which is the shape that makes every PR read green on a 200",
     );
+  }
+
+  // ── 4e-quaterdecies. Two runs of ONE required check on ONE commit — judge the LATEST ────────
+  // Measured 2026-10-09 on PR #5605 at `6e8d0b9b96d3fb4bc676bf5772bdb10301239a39`. GitHub dropped the
+  // `synchronize` event, the PR was closed and reopened to recreate the run, the dropped event was then
+  // delivered late — so two `pull_request` runs existed on that one sha and `concurrency` cancelled the
+  // first. `commits/<sha>/check-runs` returned `validate` TWICE (cancelled, run 37864635258; success,
+  // run 37864679406) and `checks` twice the same way. `gh pr checks 5605 --required` read `pass` for
+  // both. This module read the cancelled copies and the script printed
+  // `RED CHECK #5605 ... required check(s) failing: validate (cancelled), checks (cancelled)`.
+  //
+  // A false red is the one direction AGENTS.md §6 cannot afford: a PR marked RED CHECK is held out of
+  // the group and never reaches the owner, so a ready merge sits unmerged with nobody told why, while
+  // the script's own "fix them and re-run" sends a session hunting a failure that does not exist.
+  {
+    const HEAD_AT = "2026-10-09T00:24:30Z";
+    const RUN_URL = (run: string, job: string) =>
+      `https://github.com/Gawish-1997/phoenix-people-workforce/actions/runs/${run}/job/${job}`;
+    const CANCELLED_RUN = "37864635258";
+    const SURVIVING_RUN = "37864679406";
+    // The four required-check entries exactly as gh returned them for #5605.
+    const rollup = [
+      { __typename: "CheckRun", name: "validate", status: "COMPLETED", conclusion: "CANCELLED", startedAt: "2026-10-09T00:24:46Z", completedAt: "2026-10-09T00:26:17Z", detailsUrl: RUN_URL(CANCELLED_RUN, "113608325621") },
+      { __typename: "CheckRun", name: "validate", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-10-09T00:26:22Z", completedAt: "2026-10-09T00:33:26Z", detailsUrl: RUN_URL(SURVIVING_RUN, "113608778532") },
+      { __typename: "CheckRun", name: "checks", status: "COMPLETED", conclusion: "CANCELLED", startedAt: "2026-10-09T00:24:46Z", completedAt: "2026-10-09T00:26:18Z", detailsUrl: RUN_URL(CANCELLED_RUN, "113608325422") },
+      { __typename: "CheckRun", name: "checks", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-10-09T00:26:22Z", completedAt: "2026-10-09T00:28:02Z", detailsUrl: RUN_URL(SURVIVING_RUN, "113608778846") },
+    ];
+    const gate = new Set(["validate", "checks"]);
+
+    const state = requiredCheckState(rollup, gate, HEAD_AT);
+    assert.deepEqual(
+      state,
+      { red: [], pending: [] },
+      "#5605's own shape: the cancelled run of each name was SUPERSEDED by a later successful one, so "
+        + "the gate passed — exactly what `gh pr checks --required` said — and reading the cancelled "
+        + "copies held a ready PR out of the roll-up as RED CHECK",
+    );
+    assert.deepEqual(
+      membersReadyToBuild([{ number: 5605, ...state }]).carry,
+      [5605],
+      "and the member is therefore rollable, which is the whole point: the owner gets the one merge",
+    );
+    // The API's order is not a contract — the earlier run came first for #5605, but nothing promises it.
+    assert.deepEqual(
+      requiredCheckState([...rollup].reverse(), gate, HEAD_AT),
+      { red: [], pending: [] },
+      "and the answer cannot depend on which copy the API happened to return first",
+    );
+    assert.equal(
+      latestRunPerName(rollup).length,
+      2,
+      "two names, four runs, one entry each — the dedup is what the rest of the judgement runs on",
+    );
+
+    // Narrowing WHICH run is judged must not soften the judgement. A cancelled run that came LAST is
+    // the live verdict and still red.
+    assert.deepEqual(
+      requiredCheckState(
+        [
+          { name: "validate", conclusion: "SUCCESS", startedAt: "2026-10-09T00:24:46Z", completedAt: "2026-10-09T00:26:17Z", detailsUrl: RUN_URL(CANCELLED_RUN, "113608325621") },
+          { name: "validate", conclusion: "CANCELLED", startedAt: "2026-10-09T00:26:22Z", completedAt: "2026-10-09T00:33:26Z", detailsUrl: RUN_URL(SURVIVING_RUN, "113608778532") },
+        ],
+        new Set(["validate"]),
+        HEAD_AT,
+      ).red,
+      ["validate (cancelled)"],
+      "a cancelled run that is the LATEST one is this commit's verdict — the dedup narrows which run is "
+        + "judged, it never excuses a cancellation",
+    );
+
+    // And a name with NOTHING to supersede it keeps its reading: not settled, and never green.
+    const lone = requiredCheckState(
+      [{ name: "validate", conclusion: "CANCELLED", startedAt: "2026-10-09T00:24:46Z", completedAt: "2026-10-09T00:26:17Z", detailsUrl: RUN_URL(CANCELLED_RUN, "113608325621") }],
+      new Set(["validate"]),
+      HEAD_AT,
+    );
+    assert.deepEqual(
+      lone.red,
+      ["validate (cancelled)"],
+      "one run for the name and it was cancelled: nothing replaced it, GitHub will not count it as a "
+        + "pass, so it stays UNSETTLED — dropping a cancelled run just because it is cancelled would "
+        + "have turned this into a silent green",
+    );
+    assert.deepEqual(
+      membersReadyToBuild([{ number: 5605, ...lone }]).carry,
+      [],
+      "and it is never built from",
+    );
+
+    // The run id is the last ordering key and has to work alone: a pair with no timestamps at all is
+    // still ordered by the run it belongs to.
+    assert.deepEqual(
+      requiredCheckState(
+        [
+          { name: "validate", conclusion: "CANCELLED", detailsUrl: RUN_URL(CANCELLED_RUN, "113608325621") },
+          { name: "validate", conclusion: "SUCCESS", detailsUrl: RUN_URL(SURVIVING_RUN, "113608778532") },
+        ],
+        new Set(["validate"]),
+      ),
+      { red: [], pending: [] },
+      "GitHub's run ids increase, so the larger one is the later run — the only ordering left when a "
+        + "pair carries no usable timestamps",
+    );
+
+    // Nothing orderable at all is a hand-written shape, and there the BLOCKING entry is kept: an
+    // unorderable pair may only ever wait longer, never build sooner.
+    for (const pair of [
+      [{ name: "validate", conclusion: "CANCELLED" }, { name: "validate", conclusion: "SUCCESS" }],
+      [{ name: "validate", conclusion: "SUCCESS" }, { name: "validate", conclusion: "CANCELLED" }],
+    ]) {
+      assert.deepEqual(
+        requiredCheckState(pair, new Set(["validate"])).red,
+        ["validate (cancelled)"],
+        "with no timestamps and no run id there is no evidence which came last, so the blocking entry "
+          + "is the one judged, whichever order they arrive in",
+      );
+    }
   }
 
   // ── 4f. The required list is READ, never written down here ──────────────────────────────────
