@@ -2,7 +2,12 @@ import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
 import { stepDefinition } from "./step-definitions.ts";
 
-import { isUnbackedCharge, MODULE_SOURCED_STEP_KEYS } from "./module-sourced-steps.ts";
+import {
+  canBeUnbackedCharge,
+  isDriftComparableField,
+  isUnbackedCharge,
+  MODULE_SOURCED_STEP_KEYS,
+} from "./module-sourced-steps.ts";
 import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
 /**
@@ -34,7 +39,7 @@ import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
 // The step list lives in a browser-safe file (this one reaches the database client through feeders.ts),
 // so the wizard can read it too. Re-exported so every existing import keeps working.
-export { isUnbackedCharge, MODULE_SOURCED_STEP_KEYS };
+export { canBeUnbackedCharge, isDriftComparableField, isUnbackedCharge, MODULE_SOURCED_STEP_KEYS };
 
 /** The key the snapshot is stored under, inside the step state's existing jsonb summary. */
 export const RECOMMENDED_AT_CONFIRM_KEY = "recommendedAtConfirm";
@@ -126,8 +131,16 @@ function tally(rows: ModuleDriftRow[]): ModuleDriftReport {
   };
 }
 
-/** What the system proposed for each employee, to be stored alongside the confirm. */
-export function snapshotRecommendations(rows: StepRow[]): RecommendationSnapshot {
+/**
+ * What the system proposed for each employee, to be stored alongside the confirm.
+ *
+ * The step key is required rather than optional so a display-only field cannot be recorded by a
+ * caller that simply did not pass it: a `notPersisted` field has no draft column, so storing what it
+ * proposed records a figure nothing can ever charge — the 30-working-days rows that blocked the live
+ * September 2026 run were read straight out of a snapshot written this way. `detectModuleDrift`
+ * refuses them on the way out too; both ends, because the snapshots already stored carry them.
+ */
+export function snapshotRecommendations(stepKey: StepKey, rows: StepRow[]): RecommendationSnapshot {
   const snapshot: RecommendationSnapshot = {};
   for (const row of rows) {
     if (row.readOnly) continue;
@@ -135,6 +148,7 @@ export function snapshotRecommendations(rows: StepRow[]): RecommendationSnapshot
     if (!compact) continue;
     const fields: Record<string, number> = {};
     for (const [field, value] of Object.entries(row.recommended ?? {})) {
+      if (!isDriftComparableField(stepKey, field)) continue;
       if (typeof value === "number" && Number.isFinite(value)) fields[field] = value;
     }
     // An employee the step proposed nothing numeric for contributes no entry rather than an empty
@@ -210,6 +224,10 @@ export function detectModuleDrift(input: {
     const fields = new Set([...Object.keys(proposedThen), ...Object.keys(row.recommended ?? {})]);
 
     for (const field of fields) {
+      // A FIELD WITH NO DRAFT COLUMN CHARGES NOTHING, SO THERE IS NOTHING TO COMPARE — and comparing
+      // it anyway blocked the live September 2026 run with 11 working-days rows and 0.00 of money.
+      // See `isDriftComparableField`.
+      if (!isDriftComparableField(input.stepKey, field)) continue;
       const atConfirm = proposedThen[field] ?? 0;
       const now = row.recommended?.[field];
       if (typeof now !== "number" || !Number.isFinite(now)) continue;
@@ -253,7 +271,14 @@ export function detectModuleDrift(input: {
       // onto the Other tab with no candidate behind it by design, so the figure can be perfectly
       // deliberate. Which it is, is `chargeSource` from the cell history — not something this
       // comparison can know. See docs/approved-deductions-that-never-reached-the-sheet.md.
-      if (now === atConfirm && !(now === 0 && charged > 0)) continue;
+      //
+      // 🔴 AND IT IS A QUESTION ONLY WHERE A DEDUCTION COULD HAVE STOOD BEHIND THE FIGURE: a MONEY
+      // field on a step that CHARGES. On the day this exception shipped, every one of the five rows
+      // it produced on the live run was an Addition being PAID — a 60,000.00 incentive among them —
+      // because no module proposes an Incentive, a Bonus or Overtime and `overtime` is recommended
+      // as a literal 0 for the whole population. See `canBeUnbackedCharge`.
+      const unbacked = now === 0 && charged > 0 && canBeUnbackedCharge(input.stepKey, field);
+      if (now === atConfirm && !unbacked) continue;
 
       rows.push({
         hrId: row.hrId,
@@ -386,13 +411,26 @@ export function describeModuleDriftBlock(report: ModuleDriftReport): string {
  * Separate from the drift wording on purpose: these rows did NOT drift, so folding them into "the
  * module moved" would state the one thing that is not true about them.
  */
+/**
+ * The step and the COLUMN, not the step alone.
+ *
+ * A deduction step carries more than one money column — Part 1 Other Deductions has Loan Value and
+ * Other Value side by side — and "2,931.00 in Other Deductions" leaves the reader to guess which,
+ * on the one sentence whose whole instruction is to check the other columns on the same row.
+ */
+function columnName(row: ModuleDriftRow): string {
+  const definition = stepDefinition(row.stepKey);
+  const label = definition.fields.find((spec) => spec.key === row.field)?.label;
+  return label ? `${definition.title} → ${label}` : definition.title;
+}
+
 function describeUnbacked(report: ModuleDriftReport): string {
   if (report.unbackedCharges === 0) return "";
   const unbacked = report.rows.filter(isUnbackedCharge);
   const total = unbacked.reduce((sum, row) => sum + row.charged, 0);
   const sample = unbacked
     .slice(0, 5)
-    .map((row) => `${row.fullName} (${row.hrId}) ${row.charged.toFixed(2)} in ${stepDefinition(row.stepKey).title}`);
+    .map((row) => `${row.fullName} (${row.hrId}) ${row.charged.toFixed(2)} in ${columnName(row)}`);
   const more = unbacked.length > 5 ? ` …and ${unbacked.length - 5} more.` : "";
   return (
     ` ${report.unbackedCharges} charge(s) totalling ${total.toFixed(2)} have no approved deduction behind them` +

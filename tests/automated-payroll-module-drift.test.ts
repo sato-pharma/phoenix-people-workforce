@@ -56,7 +56,7 @@ function row(overrides: Partial<StepRow> = {}): StepRow {
 
 export function runAutomatedPayrollModuleDriftTests() {
   // ---- The snapshot records what was proposed, per employee ------------------------------------
-  const atConfirm = snapshotRecommendations([
+  const atConfirm = snapshotRecommendations("p2_crm", [
     row({ hrId: "B-1", recommended: { crm: 450 }, values: { crm: 450 } }),
     row({ hrId: "B-2", recommended: { crm: 900 }, values: { crm: 700 } }),
     // A read-only row is informational and never persisted, so it is not part of the record either.
@@ -438,7 +438,7 @@ export function runAutomatedPayrollModuleDriftTests() {
   const afterReconfirm = detectModuleDrift({
     stepKey: "p1_crm",
     rows: taken.map((r) => ({ ...r })),
-    snapshot: snapshotRecommendations(taken),
+    snapshot: snapshotRecommendations("p1_crm", taken),
     chargedByCompact: { b1: { p1odCrmValue: taken[0].values.p1odCrmValue }, b2: { p1odCrmValue: 700 } },
   });
   assert.equal(afterReconfirm.staleCharges, 0);
@@ -460,4 +460,140 @@ export function runAutomatedPayrollModuleDriftTests() {
     runService.indexOf("function assertStepPhaseAllowed("),
   );
   assert.match(viewBody, /withCurrentModuleFigures\(/, "the step view must show what the confirm will store");
+
+  // ---- A DISPLAY-ONLY FIELD HAS NO CHARGE, SO IT CANNOT DRIFT (2026-10-09) ---------------------
+  // `p1odCrmWorkingDays` is the COMPLEMENT of the chargeable days — days in the month minus them —
+  // and it has no column on the draft row at all (`notPersisted`). So `charged` reads 0.00 for ever
+  // while the recommendation is a real 30, and the comparison reported a stale charge of 30.00
+  // against an employee being charged nothing. The direction is inverted, which is what made it
+  // bite: the fewer the CRM deduction days, the LARGER the fake drift.
+  //
+  // Live September 2026 run, 2026-10-09: all 11 rows blocking the Part 2 confirm were working-days
+  // fields — "set to 0.00 and the Deductions module now says 30.00" — with 0.00 of money among them,
+  // and no re-confirm could clear one, because there is no column to write the 30 into.
+  const displayOnly = detectModuleDrift({
+    stepKey: "p1_crm",
+    // Absent from the snapshot entirely: the step was confirmed before this employee joined its
+    // population, which is precisely how the live 11 arose.
+    rows: [
+      row({
+        hrId: "AI-0008",
+        fullName: "Magdy El Senosey",
+        recommended: { p1odCrmWorkingDays: 30, p1odCrmDays: 0, p1odCrmValue: 0 },
+        values: { p1odCrmWorkingDays: 30, p1odCrmDays: 0, p1odCrmValue: 0 },
+      }),
+    ],
+    snapshot: {},
+    chargedByCompact: { ai0008: {} },
+  });
+  assert.deepEqual(
+    displayOnly.rows.map((r) => r.field),
+    [],
+    "a notPersisted display field charges nothing, so it must raise no drift row at all — it blocked " +
+      "the live September 2026 Part 2 confirm 11 times with 0.00 of money behind it",
+  );
+  assert.equal(displayOnly.staleCharges, 0, "and therefore must not block the Part 2 confirm");
+
+  // The money beside it is still watched: the exclusion is the column, never the step.
+  const moneyBesideIt = detectModuleDrift({
+    stepKey: "p1_crm",
+    rows: [
+      row({
+        hrId: "AI-0008",
+        recommended: { p1odCrmWorkingDays: 28, p1odCrmDays: 2, p1odCrmValue: 733.33 },
+        values: { p1odCrmWorkingDays: 28, p1odCrmDays: 2, p1odCrmValue: 0 },
+      }),
+    ],
+    snapshot: {},
+    chargedByCompact: { ai0008: { p1odCrmDays: 0, p1odCrmValue: 0 } },
+  });
+  assert.deepEqual(
+    moneyBesideIt.rows.map((r) => r.field).sort(),
+    ["p1odCrmDays", "p1odCrmValue"],
+    "a real CRM deduction approved after the confirm must still be caught, days and value both",
+  );
+  assert.equal(moneyBesideIt.staleCharges, 2, "and must still block");
+
+  // Nor is it recorded in the first place, so a snapshot written from now on carries no phantom.
+  assert.deepEqual(
+    snapshotRecommendations("p1_crm", [
+      row({ hrId: "AI-0008", recommended: { p1odCrmWorkingDays: 30, p1odCrmDays: 0, p1odCrmValue: 0 } }),
+    ]),
+    { ai0008: { p1odCrmDays: 0, p1odCrmValue: 0 } },
+    "the confirm must not record what a column with no draft column was proposing",
+  );
+
+  // ---- AN UNBACKED CHARGE IS MONEY BEING CHARGED, NOT MONEY BEING PAID (2026-10-09) -----------
+  // The unbacked-charge report shipped the same day and every one of the 5 rows it produced on the
+  // live run was an ADDITION: 65,947.00 of money being PAID, reported as "charges with no approved
+  // deduction behind them". No module proposes an Incentive, a Bonus or Overtime — `recommendAdditions`
+  // recommends `overtime: 0` for the entire population — so every overtime HR entered tripped it.
+  const additions = detectModuleDrift({
+    stepKey: "p2_additions",
+    rows: [
+      row({
+        hrId: "A-12",
+        fullName: "Ali Mohamed Ali Elsayed",
+        recommended: { incentive: 0, bonus: 0, overtime: 0, otherAdditions: 0 },
+        values: { incentive: 60000, bonus: 0, overtime: 0, otherAdditions: 0 },
+      }),
+      row({
+        hrId: "AI-0012",
+        fullName: "Hanan Safwat SalahEldeen Hassan",
+        recommended: { incentive: 0, bonus: 0, overtime: 0, otherAdditions: 0 },
+        values: { incentive: 0, bonus: 0, overtime: 2133, otherAdditions: 0 },
+      }),
+    ],
+    snapshot: { a12: { incentive: 0 }, ai0012: { overtime: 0 } },
+    chargedByCompact: { a12: { incentive: 60000 }, ai0012: { overtime: 2133 } },
+  });
+  assert.equal(
+    additions.unbackedCharges,
+    0,
+    "an Incentive and an Overtime are money PAID — no approved deduction could ever stand behind " +
+      "one, so the question has no answer and the report is pure noise on a payroll confirm screen",
+  );
+  assert.equal(
+    describeModuleDrift(additions),
+    "Every confirmed figure still matches the Deductions module.",
+    "and the summary must not mention them at all",
+  );
+
+  // Additions stays WATCHED, though: a stale dispute refund still blocks (owner, 2026-10-09).
+  const staleRefund = detectModuleDrift({
+    stepKey: "p2_additions",
+    rows: [row({ hrId: "B-170", recommended: { otherAdditions: 1548 }, values: { otherAdditions: 0 } })],
+    snapshot: {},
+    chargedByCompact: { b170: { otherAdditions: 0 } },
+  });
+  assert.equal(staleRefund.staleCharges, 1, "a refund the Dispute Center owes back must still block the confirm");
+
+  // A DAY COUNT IS AN INPUT, NOT A CHARGE. `p1odOtherDays` is recommended as a hard-coded 0 whatever
+  // the module says, so a day count HR typed read as "2.00 with no approved deduction behind it" —
+  // two EGP, in a sentence about money. The money column beside it carries the charge.
+  const typedDays = detectModuleDrift({
+    stepKey: "p1_other_deductions",
+    rows: [
+      row({
+        hrId: "A-10",
+        fullName: "Nahed Tarek Hassan Omar Hattab",
+        recommended: { p1odOtherDays: 0, p1odOtherValue: 0 },
+        values: { p1odOtherDays: 2, p1odOtherValue: 2931 },
+      }),
+    ],
+    snapshot: { a10: { p1odOtherDays: 0, p1odOtherValue: 0 } },
+    chargedByCompact: { a10: { p1odOtherDays: 2, p1odOtherValue: 2931 } },
+  });
+  assert.deepEqual(
+    typedDays.rows.filter((r) => r.proposedNow === 0 && r.charged > 0).map((r) => r.field),
+    ["p1odOtherValue"],
+    "the money is the charge worth reporting; the days beside it are an input",
+  );
+  assert.equal(typedDays.unbackedCharges, 1, "and the case the check was built for must still be reported");
+  assert.match(
+    describeModuleDrift(typedDays),
+    /2931\.00 in Other Deductions \(Loan & Other\) → Other Value/,
+    "the sentence must name the COLUMN, not only the step — a deduction step carries more than one " +
+      "money column, and its own instruction is to check the other columns on the same row",
+  );
 }
