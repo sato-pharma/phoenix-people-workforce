@@ -68,7 +68,10 @@ const DRAFT_WEIGHTS = { pharmacy_codes: 60, products: 20, window: 20 } as const;
 export type DraftCaptureInput = {
   /** One entry per chosen pharmacy; true when its code is unverified (`not_found`/`ambiguous`). */
   pharmacySuspect: boolean[];
-  /** Total forecast units across the promoted products. */
+  /**
+   * Total forecast units across the promoted products — tested only against zero, and printed only
+   * when `productCount` is 1 (units of different products are never added into a shown figure).
+   */
   forecastUnits: number;
   productCount: number;
   /** A pay date has been chosen — without one there is no measurement window at all. */
@@ -110,7 +113,10 @@ export function draftCaptureConfidence(input: DraftCaptureInput): RoiConfidence 
         input.productCount === 0
           ? "Add at least one promoted product."
           : input.forecastUnits > 0
-            ? `${input.productCount} product(s), ${Math.round(input.forecastUnits)} units forecast.`
+            // Units are named only for ONE product — units of different products are never added.
+            ? input.productCount === 1
+              ? `1 product, ${Math.round(input.forecastUnits)} units forecast.`
+              : `${input.productCount} products, forecast quantities set.`
             : "Add a forecast quantity — without one there is nothing to measure the result against.",
       key: "products",
       label: "Products & forecast",
@@ -155,6 +161,8 @@ export function roiConfidenceOf(row: RoiConfidenceInput): RoiConfidence {
   const coverageRatio =
     row.dataCoverage === "complete" ? 1 : row.dataCoverage === "partial_pending" ? 0.5 : 0;
 
+  // Only ever compared with zero ("is there a forecast at all") or printed for a single product:
+  // units of different products are never added into a figure a reader sees.
   const forecastUnits = row.products.reduce((sum, product) => sum + product.forecastQty, 0);
 
   const factors: RoiConfidenceFactor[] = [
@@ -197,7 +205,9 @@ export function roiConfidenceOf(row: RoiConfidenceInput): RoiConfidence {
           ? "No promoted products recorded."
           : forecastUnits <= 0
             ? `${row.products.length} product(s) recorded, but no forecast quantity to measure against.`
-            : `${row.products.length} product(s) with a forecast of ${Math.round(forecastUnits)} units.`,
+            : row.products.length === 1
+              ? `1 product with a forecast of ${Math.round(forecastUnits)} units.`
+              : `${row.products.length} products with forecast quantities.`,
       key: "products",
       label: "Products & forecast",
       ratio: row.products.length === 0 ? 0 : forecastUnits > 0 ? 1 : 0.5,

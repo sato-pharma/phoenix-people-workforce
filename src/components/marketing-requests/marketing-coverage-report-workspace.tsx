@@ -14,7 +14,6 @@ import {
   Star,
   Trash2,
   Building2,
-  Users2,
   TrendingUp,
   PackageSearch,
   CircleDollarSign,
@@ -64,7 +63,7 @@ import {
   type MarketingCoverageReportRow,
   type MarketingRoiResultStatus,
 } from "@/lib/marketing-requests/roi-report-types";
-import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
+import { MARKETING_REQUEST_STATUS_LABEL, ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 
@@ -136,20 +135,7 @@ const ROLLUP_DIMENSION_LABELS: Record<CoverageRollupDimension, string> = {
   requesterTier: "Requester tier",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  pending_validation: "Pending validation",
-  pending_approval: "Pending approval",
-  returned: "Returned",
-  rejected: "Rejected",
-  approved: "Approved",
-  active: "Active",
-  roi_tracking: "ROI tracking",
-  closed: "Closed",
-  finance_hold: "Finance hold",
-  archived: "Archived",
-  cancelled: "Cancelled",
-};
+const STATUS_LABELS: Record<string, string> = MARKETING_REQUEST_STATUS_LABEL;
 
 const RESULT_BADGE_CLASS: Record<MarketingRoiResultStatus, string> = {
   on_track: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -230,6 +216,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
       </button>
     );
   }
+  // The cache is keyed by request AND by whether confidential products are revealed: the same
+  // request's drill-down is a different answer with the confidential toggle on or off.
+  const pharmacyCacheKey = (requestId: string) => `${requestId}|${report?.includedRestricted ? "revealed" : "masked"}`;
   function cachePharmacies(requestId: string, pharmacies: MarketingCoveragePharmacyRow[]) {
     setPharmacyCache((prev) => {
       const next = new Map(prev);
@@ -431,10 +420,12 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
   async function downloadExport() {
     setExporting(true);
     try {
+      // The filters the ON-SCREEN report ran with, not the panel's unapplied edits — the workbook
+      // must be the page the viewer is looking at.
       const response = await fetch("/api/marketing-requests/coverage-report/export", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filters }),
+        body: JSON.stringify({ filters: report?.appliedFilters ?? filters }),
         cache: "no-store",
       });
       if (!response.ok) {
@@ -468,11 +459,11 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
   const dimensionRollup = React.useMemo(
     () =>
       report && breakdownDimension !== "distributor"
-        ? computeCoverageRollupByDimension(report.rows, breakdownDimension)
+        ? computeCoverageRollupByDimension(report.rows, breakdownDimension, report.attributionLines ?? [])
         : [],
     [report, breakdownDimension],
   );
-  const trend = React.useMemo(() => (report ? computeCoverageTrend(report.rows) : []), [report]);
+  const trend = React.useMemo(() => (report ? computeCoverageTrend(report.rows, report.attributionLines ?? []) : []), [report]);
   const sortedRows = React.useMemo(
     () => (report ? sortRequestRows(report.rows, requestSort.key, requestSort.direction) : []),
     [report, requestSort],
@@ -684,7 +675,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       checked={filters.includeRestricted}
                       onChange={(event) => startFilterTransition(() => setFilters((prev) => ({ ...prev, includeRestricted: event.target.checked })))}
                     />
-                    Include confidential products (LA003 / LA004 / SS001)
+                    Include confidential products
                   </label>
                 ) : null}
 
@@ -799,8 +790,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
           <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-none border border-amber-300 bg-amber-50 px-4 py-2.5 text-phx-md font-semibold text-amber-900">
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
             <span>
-              {kpi.actualsDegraded.count} request{kpi.actualsDegraded.count === 1 ? "" : "s"} used a slower
-              recalculation path — actuals may lag by a few minutes.
+              {kpi.actualsDegraded.count} request{kpi.actualsDegraded.count === 1 ? " has" : "s have"} no stored ROI
+              figures yet, so {kpi.actualsDegraded.count === 1 ? "its" : "their"} actual sales were calculated live —
+              current, but the page took longer to load.
             </span>
           </div>
         ) : null}
@@ -828,6 +820,16 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
             tablet width it still hid half the screen. z-10 keeps it under the top bar (sticky
             top-0 z-20), and the opaque background stops table rows showing through. Two cards to
             a row on a phone, three on a tablet, five on a desktop. */}
+        {/* The default status scope is applied on the server (approved money only, the ROI
+            report's own default). Said on screen, because a scope nobody can see is a figure
+            nobody can check. */}
+        {report && report.appliedFilters.status.length === 0 ? (
+          <p className="text-phx-sm font-semibold text-phx-ink-soft">
+            Approved money only: Approved, Active, ROI tracking, Closed and Finance hold. Choose statuses in the
+            Status filter to include pending, sent-back, rejected or cancelled requests.
+          </p>
+        ) : null}
+
         {kpi ? (
           <section className="grid grid-cols-2 gap-2 bg-phx-paper py-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5 xl:sticky xl:top-20 xl:z-10">
             <CoverageKpiCard tone="slate" icon={<PackageSearch className="h-5 w-5" />} label="Requests" value={kpi.requestCount.toLocaleString("en-US")} />
@@ -838,7 +840,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
             <CoverageKpiCard
               tone="emerald"
               icon={<CheckCircle2 className="h-5 w-5" />}
-              label="On track"
+              label={ROI_RESULT_STATUS_LABEL.on_track}
               value={kpi.onTrackCount.toLocaleString("en-US")}
               onClick={() => toggleRoiStatusKpiFilter("on_track")}
               active={filters.roiStatus.length === 1 && filters.roiStatus[0] === "on_track"}
@@ -846,21 +848,37 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
             <CoverageKpiCard
               tone="amber"
               icon={<AlertTriangle className="h-5 w-5" />}
-              label="Behind"
+              label={ROI_RESULT_STATUS_LABEL.behind}
               value={kpi.behindCount.toLocaleString("en-US")}
               onClick={() => toggleRoiStatusKpiFilter("behind")}
               active={filters.roiStatus.length === 1 && filters.roiStatus[0] === "behind"}
             />
+            {/* Every result status has its card. There was none for "Data pending", so while every
+                window was still open (all of them, 2026-10-09) the three status cards read 0 / 0 / 0
+                of 52 and the requests seemed to have no result at all. */}
+            <CoverageKpiCard
+              tone="blue"
+              icon={<CalendarClock className="h-5 w-5" />}
+              label={ROI_RESULT_STATUS_LABEL.awaiting_data}
+              value={kpi.awaitingDataCount.toLocaleString("en-US")}
+              onClick={() => toggleRoiStatusKpiFilter("awaiting_data")}
+              active={filters.roiStatus.length === 1 && filters.roiStatus[0] === "awaiting_data"}
+            />
             <CoverageKpiCard
               tone="slate"
               icon={<CircleSlash className="h-5 w-5" />}
-              label="No data"
+              label={ROI_RESULT_STATUS_LABEL.no_data}
               value={kpi.noDataCount.toLocaleString("en-US")}
               onClick={() => toggleRoiStatusKpiFilter("no_data")}
               active={filters.roiStatus.length === 1 && filters.roiStatus[0] === "no_data"}
             />
-            <CoverageKpiCard tone="violet" icon={<Building2 className="h-5 w-5" />} label="Distinct pharmacies" value={kpi.distinctPharmacyCount.toLocaleString("en-US")} />
-            <CoverageKpiCard tone="violet" icon={<Users2 className="h-5 w-5" />} label="Distinct customers" value={kpi.distinctCustomerCount.toLocaleString("en-US")} />
+            {/* Pharmacies and customers share one card so the band stays at ten. */}
+            <CoverageKpiCard
+              tone="violet"
+              icon={<Building2 className="h-5 w-5" />}
+              label="Pharmacies · customers"
+              value={`${kpi.distinctPharmacyCount.toLocaleString("en-US")} · ${kpi.distinctCustomerCount.toLocaleString("en-US")}`}
+            />
           </section>
         ) : null}
 
@@ -890,8 +908,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   expanded={expandedRequestId === row.requestId}
                   onToggle={() => setExpandedRequestId((current) => (current === row.requestId ? null : row.requestId))}
                   isSuperAdmin={isSuperAdmin}
-                  cachedPharmacies={pharmacyCache.get(row.requestId) ?? null}
-                  onPharmaciesLoaded={(pharmacies) => cachePharmacies(row.requestId, pharmacies)}
+                  cachedPharmacies={pharmacyCache.get(pharmacyCacheKey(row.requestId)) ?? null}
+                  includeRestricted={Boolean(report?.includedRestricted)}
+                  onPharmaciesLoaded={(pharmacies) => cachePharmacies(pharmacyCacheKey(row.requestId), pharmacies)}
                 />
               )}
               renderTable={() => (
@@ -940,8 +959,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                         expanded={expandedRequestId === row.requestId}
                         onToggle={() => setExpandedRequestId((current) => (current === row.requestId ? null : row.requestId))}
                         isSuperAdmin={isSuperAdmin}
-                        cachedPharmacies={pharmacyCache.get(row.requestId) ?? null}
-                        onPharmaciesLoaded={(pharmacies) => cachePharmacies(row.requestId, pharmacies)}
+                        cachedPharmacies={pharmacyCache.get(pharmacyCacheKey(row.requestId)) ?? null}
+                        includeRestricted={Boolean(report?.includedRestricted)}
+                        onPharmaciesLoaded={(pharmacies) => cachePharmacies(pharmacyCacheKey(row.requestId), pharmacies)}
                       />
                     ))}
                   </tbody>
@@ -1096,8 +1116,9 @@ function CoverageBreakdownPanel({
                     fields={[
                       { label: "Cost", value: money(row.totalCost) },
                       { label: "Actual", value: money(row.totalActualValue) },
-                      { label: "Behind", value: row.behindCount.toLocaleString("en-US") },
-                      { label: "No data", value: row.noDataCount.toLocaleString("en-US") },
+                      { label: ROI_RESULT_STATUS_LABEL.behind, value: row.behindCount.toLocaleString("en-US") },
+                      { label: ROI_RESULT_STATUS_LABEL.awaiting_data, value: row.awaitingDataCount.toLocaleString("en-US") },
+                      { label: ROI_RESULT_STATUS_LABEL.no_data, value: row.noDataCount.toLocaleString("en-US") },
                     ]}
                   />
                 </PortalRecordCard>
@@ -1117,9 +1138,9 @@ function CoverageBreakdownPanel({
               );
             }}
             renderTable={() => (
-              // "Behind" and "No data" share one column (the two counts side by side, in their
+              // "Behind", "Data pending" and "No attributed sales" share one column (the counts side by side, in their
               // own colours) — seven columns did not fit a laptop with the sidebar open.
-              <FittedTable widths={[30, 12, 16, 16, 12, 14]}>
+              <FittedTable widths={[26, 10, 15, 15, 12, 22]}>
                 <thead>
                   <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                     <th className="px-3 py-2.5">{ROLLUP_DIMENSION_LABELS[dimension]}</th>
@@ -1127,7 +1148,9 @@ function CoverageBreakdownPanel({
                     <th className="px-3 py-2.5 text-right">Cost</th>
                     <th className="px-3 py-2.5 text-right">Actual</th>
                     <th className="px-3 py-2.5 text-right">Coverage</th>
-                    <th className="px-3 py-2.5 text-right">Behind · No data</th>
+                    <th className="px-3 py-2.5 text-right">
+                      {ROI_RESULT_STATUS_LABEL.behind} · {ROI_RESULT_STATUS_LABEL.awaiting_data} · {ROI_RESULT_STATUS_LABEL.no_data}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1161,6 +1184,8 @@ function CoverageBreakdownPanel({
                         <td className="break-words px-3 py-2 text-right tabular-nums text-slate-700">{percent(row.coverageRatio)}</td>
                         <td className="break-words px-3 py-2 text-right tabular-nums">
                           <span className="text-amber-700">{row.behindCount.toLocaleString("en-US")}</span>
+                          <span className="text-slate-300"> · </span>
+                          <span className="text-sky-700">{row.awaitingDataCount.toLocaleString("en-US")}</span>
                           <span className="text-slate-300"> · </span>
                           <span className="text-slate-500">{row.noDataCount.toLocaleString("en-US")}</span>
                         </td>
@@ -1234,11 +1259,14 @@ function CoverageBreakdownPanel({
 function useExpandedPharmacies({
   cachedPharmacies,
   expanded,
+  includeRestricted,
   onPharmaciesLoaded,
   requestId,
 }: {
   cachedPharmacies: MarketingCoveragePharmacyRow[] | null;
   expanded: boolean;
+  /** Mirrors the report's own confidential toggle — the drill-down must never reveal more than the row. */
+  includeRestricted: boolean;
   onPharmaciesLoaded: (pharmacies: MarketingCoveragePharmacyRow[]) => void;
   requestId: string;
 }) {
@@ -1256,7 +1284,8 @@ function useExpandedPharmacies({
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/marketing-requests/coverage-report/${encodeURIComponent(requestId)}/pharmacies`, { cache: "no-store" });
+        const query = includeRestricted ? "?includeRestricted=1" : "";
+        const response = await fetch(`/api/marketing-requests/coverage-report/${encodeURIComponent(requestId)}/pharmacies${query}`, { cache: "no-store" });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.message ?? "Unable to load target pharmacies.");
         const loaded = (payload.pharmacies ?? []) as MarketingCoveragePharmacyRow[];
@@ -1406,18 +1435,20 @@ function RequestAccordionRow({
   onToggle,
   isSuperAdmin,
   cachedPharmacies,
+  includeRestricted,
   onPharmaciesLoaded,
 }: {
   row: MarketingCoverageReportRow;
   expanded: boolean;
   onToggle: () => void;
   isSuperAdmin: boolean;
+  includeRestricted: boolean;
   /** Parent-level cache lookup — a request's target-pharmacy sales don't change on
    *  re-expand, so a cache hit skips the network fetch entirely. */
   cachedPharmacies: MarketingCoveragePharmacyRow[] | null;
   onPharmaciesLoaded: (pharmacies: MarketingCoveragePharmacyRow[]) => void;
 }) {
-  const { pharmacies, loading, error } = useExpandedPharmacies({ cachedPharmacies, expanded, onPharmaciesLoaded, requestId: row.requestId });
+  const { pharmacies, loading, error } = useExpandedPharmacies({ cachedPharmacies, expanded, includeRestricted, onPharmaciesLoaded, requestId: row.requestId });
 
   const locationLabel = [row.line, row.region, row.areaName].filter(Boolean).join(" / ") || "—";
 
@@ -1499,16 +1530,18 @@ function RequestAccordionCard({
   onToggle,
   isSuperAdmin,
   cachedPharmacies,
+  includeRestricted,
   onPharmaciesLoaded,
 }: {
   row: MarketingCoverageReportRow;
   expanded: boolean;
   onToggle: () => void;
   isSuperAdmin: boolean;
+  includeRestricted: boolean;
   cachedPharmacies: MarketingCoveragePharmacyRow[] | null;
   onPharmaciesLoaded: (pharmacies: MarketingCoveragePharmacyRow[]) => void;
 }) {
-  const { pharmacies, loading, error } = useExpandedPharmacies({ cachedPharmacies, expanded, onPharmaciesLoaded, requestId: row.requestId });
+  const { pharmacies, loading, error } = useExpandedPharmacies({ cachedPharmacies, expanded, includeRestricted, onPharmaciesLoaded, requestId: row.requestId });
 
   const locationLabel = [row.line, row.region, row.areaName].filter(Boolean).join(" / ") || "—";
 

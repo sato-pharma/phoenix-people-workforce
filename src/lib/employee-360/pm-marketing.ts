@@ -58,7 +58,8 @@ export async function getPmMarketingRoi(
     const report = await getMarketingRoiReport(access, emptyRoiFilterState(), nowIso);
     const rows = report.rows.filter((r) => hrIdsMatch(r.requesterHrId, hrId));
     if (rows.length === 0) return EMPTY;
-    const kpi = buildKpiBand(rows, report.kpi.salesDataAsOf, 0);
+    // The report's ledger, so a sale two of this PM's campaigns both claim is counted once.
+    const kpi = buildKpiBand(rows, report.kpi.salesDataAsOf, 0, report.attributionLines);
     const topRequests: PmMarketingRequest[] = [...rows]
       .sort((a, b) => b.estimatedCost - a.estimatedCost)
       .slice(0, 6)

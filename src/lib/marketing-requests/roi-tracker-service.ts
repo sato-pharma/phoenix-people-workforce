@@ -55,7 +55,10 @@ export type RoiTrackerPharmacyRow = {
   /** Resolved from the Source-of-Sales distributor master; falls back to the code. */
   distributorName: string | null;
   trackingStatus: string | null;
-  /** matched | ambiguous | not_found | pending (pending = never validated). */
+  /**
+   * matched | manual_approved | ambiguous | not_found | pending (pending = never validated) |
+   * no_code (a codeless venue — a nursery — which has nothing to validate).
+   */
   referenceStatus: string;
   /** True when the code is suspect — surfaced as a warning chip rather than hidden. */
   referenceSuspect: boolean;
@@ -83,6 +86,9 @@ export type RoiTrackerReport = {
 };
 
 const SUSPECT_REFERENCE_STATES = new Set(["not_found", "ambiguous", "pending"]);
+
+/** Reference state of a codeless target (a nursery). Deliberately NOT in SUSPECT_REFERENCE_STATES. */
+export const NO_CODE_REFERENCE_STATE = "no_code";
 
 /**
  * Which provenance this tracker reports on. The two are deliberately separate modules:
@@ -173,6 +179,12 @@ export async function getMarketingRoiTracker(
   generatedAtIso: string,
   origin: MarketingRequestOrigin = "phoenix",
 ): Promise<RoiTrackerReport> {
+  // Owner, 2026-08-11: the legacy Excel ROI set is revoked for the Finance Manager. The page
+  // (/admin/archived-marketing-requests) redirects him, but this API answered `origin: "xlsx_import"`
+  // to anyone the marketing workspace admits — and he is company-wide there. Hidden is not revoked.
+  if (origin === "xlsx_import" && access.role === "Finance Manager") {
+    throw new Error("Forbidden: the archived Excel ROI set is not available to the Finance Manager.");
+  }
   const full = await getMarketingRoiReport(access, filters, generatedAtIso);
 
   // Split by provenance. Rows come from the authoritative engine untouched; only the SET of rows
@@ -232,7 +244,11 @@ export async function getMarketingRoiTracker(
   const pharmaciesByRequest = new Map<string, RoiTrackerPharmacyRow[]>();
   for (const pharmacy of detail.pharmacies) {
     const key = (pharmacy.customerCode ?? "").trim().toLowerCase();
-    const referenceStatus = referenceByCode.get(key) ?? "pending";
+    // A target with no distributor code is a venue with no distributor account (a nursery) — the
+    // owner's own filing, never a suspect code. Looking "" up fell through to "pending" and badged
+    // it "unverified pharmacy code" (production 2026-10-09: the Tanta pipeline company's nursery on
+    // a pending request).
+    const referenceStatus = key ? referenceByCode.get(key) ?? "pending" : NO_CODE_REFERENCE_STATE;
     const distributorCode = pharmacy.distributorCode;
     const enriched: RoiTrackerPharmacyRow = {
       customerCode: pharmacy.customerCode,
@@ -258,7 +274,12 @@ export async function getMarketingRoiTracker(
 
     return {
       ...row,
-      approvals: (approvalsByRequest.get(row.requestId) ?? []).sort((a, b) => a.sequence - b.sequence),
+      // The approvers' free-text notes are withheld here: neither tracker renders them, and since the
+      // territory route (2026-09-18) a Medical Rep's payload carries his District Manager's requests —
+      // the CEO's and Finance's own words included. The Case File is where a note is read.
+      approvals: (approvalsByRequest.get(row.requestId) ?? [])
+        .map((approval) => ({ ...approval, decisionNote: null }))
+        .sort((a, b) => a.sequence - b.sequence),
       coverageGap: Math.max(row.requiredRoiValue - row.actualSalesValue, 0),
       pharmacies,
       products: productsByRequest.get(row.requestId) ?? [],

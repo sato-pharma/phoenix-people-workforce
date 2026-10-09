@@ -258,6 +258,21 @@ function testTooEarlyToMeasureIsNotApplicableAndNamesTheFrontier() {
   );
 }
 
+function testAttributedSalesBeforeTheFrontierAreShownNotCalledTooEarly() {
+  // 2026-10-09: a September request carried EGP 35,751 of attributed sales while validated data
+  // ended in August. "Too early to measure … zero attributed sales is expected" sat on top of a
+  // real figure. Attributed sales are shown; only a window with nothing attributed is too early.
+  const block = resolveOutcomeBlock({
+    confidence: NO_CONFIDENCE,
+    payDate: "2026-09-15",
+    reportError: null,
+    roiDurationMonths: 3,
+    row: roiRow({ actualSalesValue: 35_751.38, payDate: "2026-09-15", roiWindow: "2026-09 → 2026-11", salesDataComplete: false }),
+    salesDataAsOf: "2026-08",
+  });
+  assert.equal(block.state, "ok", "a request already carrying attributed sales shows them, even before the validated frontier");
+}
+
 function testMissingRowInsideAnOpenWindowIsUnavailable() {
   // The status-scope trap's fingerprint: the window has opened, sales data reaches it, and the
   // engine still returned nothing for this request.
@@ -327,10 +342,10 @@ function testAwaitingDataNeverReadsAsAFailedCampaign() {
 function testLifecycleStageRunsForTheRequestsTheRoiEngineDrops() {
   // These three have no surface anywhere today, and the ROI engine never returns them — so the
   // stage has to be derivable from the request alone.
-  assert.equal(roiLifecycleStage({ dataCoverage: "no_validated_data", payDate: null, status: "draft" }, "2026-07"), "awaiting_approval");
-  assert.equal(roiLifecycleStage({ dataCoverage: "no_validated_data", payDate: null, status: "returned" }, "2026-07"), "awaiting_approval");
+  assert.equal(roiLifecycleStage({ dataCoverage: "no_validated_data", payDate: null, status: "draft" }, "2026-07-31"), "awaiting_approval");
+  assert.equal(roiLifecycleStage({ dataCoverage: "no_validated_data", payDate: null, status: "returned" }, "2026-07-31"), "awaiting_approval");
   assert.equal(
-    roiLifecycleStage({ dataCoverage: "complete", payDate: "2026-01-01", status: "rejected" }, "2026-07"),
+    roiLifecycleStage({ dataCoverage: "complete", payDate: "2026-01-01", status: "rejected" }, "2026-07-31"),
     "rejected",
     "a rejected request that still carries a pay date must never be promoted into committed spend",
   );
@@ -740,6 +755,7 @@ export async function runMarketingCaseFileTests() {
   testOutcomeIsUnavailableWhenTheEngineFails();
   testOutcomeIsUnavailableWhenNoSalesDataIsLoadedAtAll();
   testTooEarlyToMeasureIsNotApplicableAndNamesTheFrontier();
+  testAttributedSalesBeforeTheFrontierAreShownNotCalledTooEarly();
   testMissingRowInsideAnOpenWindowIsUnavailable();
   testMeasuredOutcomeIsOkAndCarriesTheFigures();
   testAwaitingDataNeverReadsAsAFailedCampaign();

@@ -34,7 +34,7 @@ export function runMarketingCancelledStatusTests() {
   // A cancelled request with a real pay date must still read `cancelled`, not be promoted into the
   // measured pipeline — the exact trap the `rejected` early-return documents.
   assert.equal(
-    roiLifecycleStage({ dataCoverage: "complete", payDate: "2026-09-05", status: "cancelled" }, "2026-12"),
+    roiLifecycleStage({ dataCoverage: "complete", payDate: "2026-09-05", status: "cancelled" }, "2026-12-31"),
     "cancelled",
     "a cancelled request is never promoted into the ROI pipeline, even with a pay date",
   );

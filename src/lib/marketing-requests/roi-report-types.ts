@@ -469,7 +469,11 @@ export type MarketingRoiViewSalesAggregate = {
   key: string;
   label: string;
   value: number;
-  units: number;
+  /**
+   * Units for this bucket — `null` when its rows span more than one product code. Units of
+   * different products are never added (owner golden rule); such a bucket is read by value.
+   */
+  units: number | null;
 };
 
 /** A request that also targets one of this request's pharmacies (scope-gated). */
@@ -486,7 +490,8 @@ export type MarketingRoiViewSales = {
   /** the period range actually queried. */
   range: { from: string; to: string; isCustom: boolean };
   rows: MarketingRoiViewSalesRow[];
-  totals: { value: number; units: number; rows: number };
+  /** `units` is null when the matched rows span more than one product code (never add units across products). */
+  totals: { value: number; units: number | null; rows: number };
   /** actual vs the request's required return over the queried range. */
   actualValue: number;
   coverageRatio: number;
@@ -554,6 +559,12 @@ export type MarketingCoverageRequestIndexEntry = MarketingRoiRequestIndexEntry &
    *  numerator nor denominator. A request with zero resolvable targets gets `[]` —
    *  it contributes to no distributor bucket, rather than being split evenly. */
   distributorWeights: Array<{ distributorCode: string; weight: number }>;
+  /** Display name per `distributorCodes` entry (same order) — the code itself when no name is on file. */
+  distributorNames: string[];
+  /** Distinct marketing_pharmacies ids targeted. One pharmacy can carry a code at several
+   *  distributors, so `pharmacyKeys` (codes) over-counts pharmacies — 55 codes for 49 pharmacies
+   *  on production, 2026-10-09. The distinct-pharmacy KPI counts these. */
+  pharmacyIds: string[];
 };
 
 /** Governance surface — who last exported this report, and when. Read-only, best-effort
@@ -580,6 +591,8 @@ export type MarketingCoverageReportRow = MarketingRoiReportRow & {
   requesterTier: string | null;
   customerId: string;
   pharmacyKeys: string[];
+  /** Distinct pharmacy ids targeted — the identity the distinct-pharmacy KPI counts. */
+  pharmacyIds: string[];
 };
 
 /** MarketingRoiKpiBand + the 2 counts unique to this report. */
@@ -621,6 +634,9 @@ export type MarketingCoverageReport = {
   includedRestricted: boolean;
   generatedAtIso: string;
   distributorRollup: MarketingCoverageDistributorRollupRow[];
+  /** The claimed invoice lines behind `rows` (withheld rows excluded) — the ledger the KPI band
+   *  deducts shared sales from, shipped so the breakdown, trend and workbook dedupe the same way. */
+  attributionLines: RoiAttributionLine[];
 };
 
 export type MarketingCoveragePreset = {
@@ -652,7 +668,8 @@ export type MarketingCoveragePharmacyRow = {
   distributorName: string | null;
   parentDistributorCode: string | null;
   salesValue: number;
-  salesUnits: number;
+  /** Null when this pharmacy bought more than one product code — units of different products are never added. */
+  salesUnits: number | null;
   hasSalesRows: boolean;
   salesDetail: MarketingCoveragePharmacySaleRow[];
 };

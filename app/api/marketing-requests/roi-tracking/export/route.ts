@@ -12,6 +12,7 @@ import {
   getMarketingRoiReport,
   loadMarketingRoiExportDetail,
   parseRoiFilterState,
+  resolveMarketingExporterName,
   writeMarketingRoiExportAudit,
 } from "@/lib/marketing-requests/roi-report-service";
 
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
       report,
       detail,
       matchedSales,
-      meta: { exportedByName: exportedBy, exportedByHrId: exportedBy, role: access.role, exportId, generatedAtIso },
+      meta: { exportedByName: await resolveMarketingExporterName(access), exportedByHrId: exportedBy, role: access.role, exportId, generatedAtIso },
     });
 
     await writeMarketingRoiExportAudit({

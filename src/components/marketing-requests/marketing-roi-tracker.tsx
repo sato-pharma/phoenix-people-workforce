@@ -43,6 +43,8 @@ import { ROI_NEAR_MISS_ACTION, ROI_NEAR_MISS_LABEL } from "@/lib/marketing-reque
 import type { MarketingRoiResultStatus, RoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 import { emptyRoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 import type { RoiTrackerReport, RoiTrackerRow } from "@/lib/marketing-requests/roi-tracker-service";
+import { singleProductUnits } from "@/lib/marketing-requests/roi-units";
+import { cairoDate } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 
@@ -121,15 +123,22 @@ const VERDICT_STYLE: Record<MarketingRoiResultStatus, string> = {
   on_track: "border-emerald-200 bg-emerald-50 text-emerald-700",
 };
 
+// Every state roi-tracker-service can emit has its own entry — a missing one fell back to
+// "Unvalidated", so a code a reviewer had approved by hand, or a venue with no distributor
+// account at all, read as never checked.
 const REFERENCE_STYLE: Record<string, string> = {
   ambiguous: "border-amber-200 bg-amber-50 text-amber-700",
+  manual_approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
   matched: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  no_code: "border-slate-200 bg-slate-50 text-slate-600",
   not_found: "border-rose-200 bg-rose-50 text-rose-700",
   pending: "border-slate-200 bg-slate-50 text-slate-600",
 };
 const REFERENCE_LABEL: Record<string, string> = {
   ambiguous: "Ambiguous code",
+  manual_approved: "Approved by a reviewer",
   matched: "Verified",
+  no_code: "No distributor code",
   not_found: "Unknown code",
   pending: "Unvalidated",
 };
@@ -199,7 +208,9 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 
 const CODE_CHECK_LABEL: Record<string, string> = {
   ambiguous: "Ambiguous — matches more than one",
+  manual_approved: "Approved by a reviewer",
   matched: "Verified",
+  no_code: "No distributor code",
   not_found: "Not found in reference",
   pending: "Never validated",
 };
@@ -216,7 +227,10 @@ const CODE_CHECK_LABEL: Record<string, string> = {
  * still shows which request each row belongs to.
  */
 function toExportRows(row: RoiTrackerRow): ExportRow[] {
-  const forecastUnits = row.products.reduce((sum, product) => sum + product.forecastQty, 0);
+  // Units only for a single-product request — units of different products are never added, so a
+  // multi-product request leaves the unit cells blank and is measured by value.
+  const unitFigures = singleProductUnits(row);
+  const forecastUnits = unitFigures?.forecastUnits ?? null;
   // Same rule the cards use: with no validated sales, an actual of 0 is "not measured", not a
   // measured zero. Blank cells keep that distinction in Excel instead of asserting a false zero.
   const measured = row.dataCoverage !== "no_validated_data";
@@ -229,7 +243,7 @@ function toExportRows(row: RoiTrackerRow): ExportRow[] {
     region: row.region ?? "",
     requestCode: row.requestCode,
     requestType: row.requestTypeName ?? "",
-    requester: row.requesterName ?? row.requesterHrId,
+    requester: row.requesterName ?? "Unknown requester",
     result: ROI_RESULT_STATUS_LABEL[row.resultStatus],
     roiWindow: row.roiWindow ?? "",
     salesData: ROI_DATA_COVERAGE_LABEL[row.dataCoverage],
@@ -238,14 +252,18 @@ function toExportRows(row: RoiTrackerRow): ExportRow[] {
 
   const figures = {
     actualSalesValue: measured ? Math.round(row.actualSalesValue) : null,
-    actualUnits: measured ? Math.round(row.actualSalesUnits) : null,
+    actualUnits: measured && unitFigures ? Math.round(unitFigures.actualUnits) : null,
     coverage: measured ? percent(row.actualCoverageRatio) : "Not measured yet",
     coverageGap: Math.round(row.coverageGap),
     estimatedCost: Math.round(row.estimatedCost),
     forecastUnits,
     products: row.products.map((product) => product.productName).join(", "),
     requiredRoiValue: Math.round(row.requiredRoiValue),
-    unitAchievement: measured && forecastUnits > 0 ? percent(row.actualSalesUnits / forecastUnits) : "Not measured yet",
+    unitAchievement: !unitFigures
+      ? "Several products — measured by value"
+      : measured && unitFigures.forecastUnits > 0
+        ? percent(unitFigures.actualUnits / unitFigures.forecastUnits)
+        : "Not measured yet",
   };
 
   // A request with no targets still deserves a row — otherwise it silently vanishes from the
@@ -305,7 +323,7 @@ type Facet = { key: string; label: string; values: (row: RoiTrackerRow) => strin
 const FACETS: Facet[] = [
   { key: "region", label: "Region", values: (row) => (row.region ? [row.region] : []) },
   { key: "line", label: "Line", values: (row) => (row.line ? [row.line] : []) },
-  { key: "requester", label: "Requester", values: (row) => [row.requesterName ?? row.requesterHrId] },
+  { key: "requester", label: "Requester", values: (row) => [row.requesterName ?? "Unknown requester"] },
   { key: "customer", label: "Customer", values: (row) => [row.customerName] },
   { key: "type", label: "Request type", values: (row) => (row.requestTypeName ? [row.requestTypeName] : []) },
   { key: "progress", label: "Progress", values: (row) => [BUCKET_META[bucketOf(row)].label] },
@@ -484,12 +502,15 @@ function MoneyWaterfall({
 // ── ZONE 2 ───────────────────────────────────────────────────────────────────
 function Maturation({ rows }: { rows: RoiTrackerRow[] }) {
   const months = useMemo(() => {
-    const map = new Map<string, { committed: number; earned: number; count: number }>();
+    const map = new Map<string, { committed: number; earned: number; count: number; required: number }>();
     for (const row of rows) {
       const key = (row.payDate ?? "").slice(0, 7) || "unknown";
-      const entry = map.get(key) ?? { committed: 0, count: 0, earned: 0 };
+      const entry = map.get(key) ?? { committed: 0, count: 0, earned: 0, required: 0 };
       entry.committed += row.estimatedCost;
       entry.earned += row.actualSalesValue;
+      // Each request carries its OWN required return; a flat "10x the cost" disagreed with every
+      // request whose type sets a different multiple.
+      entry.required += row.requiredRoiValue;
       entry.count += 1;
       map.set(key, entry);
     }
@@ -502,11 +523,11 @@ function Maturation({ rows }: { rows: RoiTrackerRow[] }) {
     <section className="flex flex-col gap-2 rounded-sm border border-slate-200 bg-white p-4">
       <h2 className="text-xs font-black uppercase tracking-wide text-slate-500">Is it maturing?</h2>
       <p className="text-xs text-slate-500">
-        How much of each month&apos;s spend has come back so far. A campaign is required to return 10× its cost.
+        How much of each month&apos;s spend has come back so far, against what those campaigns are required to return.
       </p>
       <ul className="flex flex-col gap-1.5">
         {months.map(([month, m]) => {
-          const required = m.committed * 10;
+          const required = m.required;
           const ratio = required > 0 ? m.earned / required : 0;
           return (
             <li className="flex items-center gap-3" key={month}>
@@ -776,7 +797,7 @@ function CaseFile({ row }: { row: RoiTrackerRow }) {
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
                     <span>{s.assignedRole}</span>
-                    {s.decisionAt ? <span>{s.decisionAt.slice(0, 10)}</span> : null}
+                    {s.decisionAt ? <span>{cairoDate(s.decisionAt)}</span> : null}
                   </div>
                 </li>
               ))}
@@ -793,8 +814,16 @@ function CaseFile({ row }: { row: RoiTrackerRow }) {
           <p className="text-sm text-slate-500">No sales attributed to this request yet.</p>
         ) : null}
         {explain && explain.ledger.length > 0 ? (
-          <div className="overflow-x-auto rounded-sm border border-slate-200 bg-white">
-            <table className="w-full border-collapse text-xs">
+          <div className="rounded-sm border border-slate-200 bg-white">
+            {/* Fits-the-screen: a fixed table with set column shares that wraps, never a scroll. */}
+            <table className="w-full table-fixed border-collapse text-xs">
+              <colgroup>
+                <col className="w-[17%]" />
+                <col className="w-[29%]" />
+                <col className="w-[22%]" />
+                <col className="w-[12%]" />
+                <col className="w-[20%]" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-2xs font-black uppercase tracking-wide text-slate-500">
                   <th className="px-2 py-1.5">Month</th>
@@ -808,8 +837,8 @@ function CaseFile({ row }: { row: RoiTrackerRow }) {
                 {explain.ledger.map((l) => (
                   <tr className="border-b border-slate-100" key={l.ledgerKey}>
                     <td className="px-2 py-1.5 tabular-nums">{l.invoicePeriod}</td>
-                    <td className="px-2 py-1.5">{l.productName || l.productCode}</td>
-                    <td className="px-2 py-1.5 font-mono">{l.clientCode}</td>
+                    <td className="break-words px-2 py-1.5">{l.productName || l.productCode}</td>
+                    <td className="break-all px-2 py-1.5 font-mono">{l.clientCode}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{units(l.qty)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{money(l.valueCounted)}</td>
                   </tr>
@@ -1100,8 +1129,11 @@ export function MarketingRoiTracker({
                 {rows.map((row) => {
                   const open = expanded === row.requestId;
                   const b = bucketOf(row);
-                  const forecastUnits = row.products.reduce((sum, product) => sum + product.forecastQty, 0);
-                  const unitRatio = forecastUnits > 0 ? row.actualSalesUnits / forecastUnits : 0;
+                  // Units are shown for a single-product request only — units of different
+                  // products are never added. A multi-product request is measured by value.
+                  const unitFigures = singleProductUnits(row);
+                  const forecastUnits = unitFigures?.forecastUnits ?? 0;
+                  const unitRatio = unitFigures && forecastUnits > 0 ? unitFigures.actualUnits / forecastUnits : 0;
                   // A hard "0 sold" is only the truth once validated sales actually cover the
                   // window. With no validated data the same 0 means "not measured yet", and
                   // printing it as a number reads as failure — the misleading zero this module
@@ -1155,7 +1187,7 @@ export function MarketingRoiTracker({
                             <dt className="text-slate-400">Line</dt>
                             <dd className="text-slate-700">{row.line ?? "—"}</dd>
                             <dt className="text-slate-400">Requester</dt>
-                            <dd className="text-slate-700">{row.requesterName ?? row.requesterHrId}</dd>
+                            <dd className="text-slate-700">{row.requesterName ?? "Unknown requester"}</dd>
                             <dt className="text-slate-400">Paid</dt>
                             <dd className="tabular-nums text-slate-700">{row.payDate ?? "—"}</dd>
                             <dt className="text-slate-400">Window</dt>
@@ -1169,12 +1201,14 @@ export function MarketingRoiTracker({
                           <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Units</span>
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-lg font-bold tabular-nums text-slate-900">
-                              {measured ? units(row.actualSalesUnits) : "—"}
+                              {measured && unitFigures ? units(unitFigures.actualUnits) : "—"}
                             </span>
-                            <span className="text-xs text-slate-500">sold of {units(forecastUnits)} forecast</span>
+                            <span className="text-xs text-slate-500">
+                              {unitFigures ? `sold of ${units(forecastUnits)} forecast` : `${row.products.length} products`}
+                            </span>
                           </div>
                           <div className="h-1.5 w-full overflow-hidden rounded-sm bg-slate-200">
-                            {measured ? (
+                            {measured && unitFigures ? (
                               <div
                                 className={cn("h-full rounded-sm", unitRatio >= 1 ? "bg-emerald-500" : "bg-orange-400")}
                                 style={{ width: `${Math.min(Math.round(unitRatio * 100), 100)}%` }}
@@ -1182,7 +1216,9 @@ export function MarketingRoiTracker({
                             ) : null}
                           </div>
                           <span className="text-phx-xs tabular-nums text-slate-500">
-                            {!measured
+                            {!unitFigures
+                              ? "Several products — measured by value"
+                              : !measured
                               ? "No validated sales cover this window yet"
                               : forecastUnits > 0
                                 ? `${percent(unitRatio)} of forecast units`

@@ -113,7 +113,7 @@ export async function buildMarketingRoiReportWorkbook(input: {
     confidentialNote: report.includedRestricted ? CONFIDENTIAL_INCLUDED : CONFIDENTIAL_EXCLUDED,
     rows: [
       houseGeneratedRow(meta.generatedAtIso),
-      ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
+      ["Exported by", meta.exportedByName],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
       ["Applied filters", describeRoiFilters(report.appliedFilters)],
@@ -156,7 +156,7 @@ export async function buildMarketingRoiReportWorkbook(input: {
   ];
   const requestRows: CellValue[][] = report.rows.map((row) => [
     row.requestCode,
-    row.requesterName ?? row.requesterHrId,
+    row.requesterName ?? "Unknown requester",
     row.line ?? "—",
     row.region ?? "—",
     row.customerName,
@@ -283,18 +283,19 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
     confidentialNote: data.includedRestricted ? CONFIDENTIAL_INCLUDED : CONFIDENTIAL_EXCLUDED,
     rows: [
       houseGeneratedRow(meta.generatedAtIso),
-      ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
+      ["Exported by", meta.exportedByName],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
       ["Request", data.context.requestCode],
       ["Customer", data.context.customerName],
-      ["Requester", `${data.context.requesterName ?? data.context.requesterHrId}${data.context.line ? ` · ${data.context.line}` : ""}`],
+      ["Requester", `${data.context.requesterName ?? "Unknown requester"}${data.context.line ? ` · ${data.context.line}` : ""}`],
       ["Period range", `${data.range.from} → ${data.range.to}${data.range.isCustom ? " (custom)" : " (ROI window)"}`],
       ["Cost (EGP)", data.context.estimatedCost.toLocaleString("en-US")],
       ["Required ROI (EGP)", data.context.requiredRoiValue.toLocaleString("en-US")],
       ["Actual sales (EGP)", data.actualValue.toLocaleString("en-US")],
       ["Coverage", `${Math.round(data.coverageRatio * 100)}%`],
-      ["Matched rows / units", `${data.totals.rows} / ${data.totals.units.toLocaleString("en-US")}`],
+      // Units only when every matched row is one product — units of different products are never added.
+      ["Matched rows / units", `${data.totals.rows} / ${data.totals.units === null ? "several products, read by value" : data.totals.units.toLocaleString("en-US")}`],
       ["Sales data as of", data.salesDataAsOf ?? "n/a"],
     ],
   });

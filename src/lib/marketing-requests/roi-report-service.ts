@@ -1,10 +1,12 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { describeUnexpectedError, errorMessageOf, notFoundError } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { logError } from "@/lib/observability/log";
 import { roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
 import { resolveRoiDataCoverage } from "@/lib/marketing-requests/roi-labels";
+import { sharedAttributionOverlap } from "@/lib/marketing-requests/roi-attribution-overlap";
 import {
   assertMarketingWorkspaceAccess,
   normalizeHrId,
@@ -150,6 +152,32 @@ export function roiValueBucket(status: MarketingRoiReportRow["status"]): "approv
  */
 export function resolveRoiStatusScope(status: RoiFilterState["status"]): RoiFilterState["status"] {
   return status.length > 0 ? status : [...APPROVED_STATUSES];
+}
+
+/**
+ * The name printed as "Exported by" on a marketing workbook. Every export route passed the HR id
+ * as BOTH the name and the id, so the cover sheet read "A-9 (A-9)" — names, never ids. Falls back
+ * to the login, then to "Unknown user"; never throws, because a cover-sheet label must not fail
+ * the export.
+ */
+export async function resolveMarketingExporterName(access: Pick<AccessContext, "hrId" | "loginId">): Promise<string> {
+  const hrId = (access.hrId ?? "").trim();
+  if (hrId) {
+    try {
+      const { data } = await getSupabaseAdmin()
+        .from("employees")
+        .select("full_name, nickname")
+        .eq("hr_id", hrId)
+        .maybeSingle();
+      if (data) {
+        const name = resolveEmployeeDisplayName(String(data.full_name ?? ""), data.nickname ?? null);
+        if (name) return name;
+      }
+    } catch {
+      // Fall through to the login — the label is never worth failing the export over.
+    }
+  }
+  return (access.loginId ?? "").trim() || "Unknown user";
 }
 
 export function toNum(value: unknown): number {
@@ -952,52 +980,9 @@ export async function loadAttributionLines(
   return lines;
 }
 
-const attributionLineKey = (line: RoiAttributionLine): string =>
-  `${line.distributorCode}|${line.customerCode}|${line.productCode}|${line.invoicePeriod}|${line.qty}|${line.value}`;
-
-/**
- * How much value would be counted more than once if these claimed lines were simply added up.
- *
- * Attribution matches a campaign to an invoice line on distributor + pharmacy code + product +
- * month and nothing makes that match exclusive, so two campaigns targeting the same pharmacy and
- * product over overlapping ROI windows both legitimately claim the same sale. Per request that is
- * correct; a COMPANY-WIDE total that adds the per-request figures is not (production: 729,884.77
- * added up against 480,155.92 of real sales, +52%).
- *
- * The RPC does not expose the underlying sale's row id, so identical lines are reconciled as a
- * MULTISET: a signature appearing three times within one request is three distinct sales, and the
- * union keeps the most copies any single request claimed. Deduping on the signature alone would
- * collapse those three into one and under-report the company's sales (197 signatures cover 309
- * real lines in production). Two requests matching the same signature always matched the same
- * sales, because the match criteria in the signature are the whole of the match.
- */
-export function sharedAttributionOverlap(lines: RoiAttributionLine[]): number {
-  const copiesByRequest = new Map<string, Map<string, number>>();
-  const valueByLine = new Map<string, number>();
-  let claimed = 0;
-
-  for (const line of lines) {
-    const key = attributionLineKey(line);
-    valueByLine.set(key, line.value);
-    let perRequest = copiesByRequest.get(key);
-    if (!perRequest) {
-      perRequest = new Map<string, number>();
-      copiesByRequest.set(key, perRequest);
-    }
-    perRequest.set(line.requestId, (perRequest.get(line.requestId) ?? 0) + 1);
-    claimed += line.value;
-  }
-
-  let distinct = 0;
-  for (const [key, perRequest] of copiesByRequest) {
-    let copies = 0;
-    for (const count of perRequest.values()) {
-      if (count > copies) copies = count;
-    }
-    distinct += (valueByLine.get(key) ?? 0) * copies;
-  }
-  return claimed - distinct;
-}
+// The overlap arithmetic lives in roi-attribution-overlap.ts — pure and client-safe, so the
+// Coverage Report's breakdown and trend can dedupe per bucket with the very same function.
+export { sharedAttributionOverlap } from "@/lib/marketing-requests/roi-attribution-overlap";
 
 /**
  * The filtered, role-scoped ROI report + executive KPI band. `filters` is the full
@@ -1090,6 +1075,7 @@ export async function getMarketingRoiReport(
       windowStart: entry.payDate ? entry.payDate.slice(0, 7) : null,
       windowEnd: endPeriod,
       salesDataAsOf: ctx.salesDataAsOf,
+      hasAttributedSales: actuals.salesRows > 0,
     });
 
     const resultStatus = resolveRoiResultStatus({
@@ -1197,12 +1183,9 @@ export async function getMarketingRoiReport(
  *
  * Passing none leaves the money totals as the plain sum of the rows, which over-states any set
  * where two campaigns claim the same sale (production: 729,884.77 summed vs 480,155.92 real,
- * +52%). Three callers still pass none and are therefore STILL double-counted — they need the
- * same wiring getMarketingRoiReport now does, in their own files:
- *   - roi-tracker-service.ts (ROI Tracking / Live Tracker rebuild the band per origin)
- *   - coverage-report-service.ts (Marketing Coverage Report's "Actual sales (EGP)")
- *   - employee-360/pm-marketing.ts (the PM/GPM marketing card)
- * The default is `[]` only so those call sites keep compiling; it is not a safe default.
+ * +52%). Every caller now passes its report's ledger — the ROI report, ROI Tracking / the Live
+ * Tracker, the Coverage Report and the PM/GPM marketing card (the last wired 2026-10-09). The
+ * default is `[]` only for tests; it is not a safe default for a new caller.
  */
 export function buildKpiBand(
   rows: MarketingRoiReportRow[],
@@ -1655,25 +1638,29 @@ type ViewSalesDbRow = {
   value: number | string | null;
 };
 
-function aggregate(
+export function aggregateViewSales(
   rows: MarketingRoiViewSalesRow[],
   keyOf: (row: MarketingRoiViewSalesRow) => { key: string; label: string },
 ): MarketingRoiViewSalesAggregate[] {
-  const map = new Map<string, MarketingRoiViewSalesAggregate>();
+  // Units are summed only within ONE product code — a month or a pharmacy that sold two products
+  // (or two concentrations) has no meaningful unit total, so its `units` is null and it reads by value.
+  const map = new Map<string, { key: string; label: string; value: number; units: number; products: Set<string> }>();
   for (const row of rows) {
     const { key, label } = keyOf(row);
     const current = map.get(key);
     if (current) {
       current.value += row.value;
       current.units += row.qty;
+      current.products.add(row.productCode);
     } else {
-      map.set(key, { key, label, value: row.value, units: row.qty });
+      map.set(key, { key, label, value: row.value, units: row.qty, products: new Set([row.productCode]) });
     }
   }
   return Array.from(map.values()).map((entry) => ({
-    ...entry,
+    key: entry.key,
+    label: entry.label,
     value: roundMarketingMoney(entry.value),
-    units: entry.units,
+    units: entry.products.size === 1 ? entry.units : null,
   }));
 }
 
@@ -1689,6 +1676,12 @@ export async function getMarketingRequestViewSales(
   fromInput: string | null | undefined,
   toInput: string | null | undefined,
   generatedAtIso: string,
+  /**
+   * `includeRestricted: false` masks confidential products even for a role allowed to see them —
+   * the Coverage Report's drill-down passes its own toggle. Omitted, a revealing role sees them,
+   * as View Sales always has.
+   */
+  options: { includeRestricted?: boolean } = {},
 ): Promise<MarketingRoiViewSales> {
   assertMarketingWorkspaceAccess(access);
   const cleanId = String(requestId ?? "").trim();
@@ -1749,7 +1742,7 @@ export async function getMarketingRequestViewSales(
   const derivedContextLine = Array.from(
     new Set(Array.from(productByIdMap.values()).map((p) => p.line).filter((l): l is string => Boolean(l))),
   ).sort().join(" / ") || null;
-  const reveal = canViewRestrictedProducts(access.role);
+  const reveal = canViewRestrictedProducts(access.role) && options.includeRestricted !== false;
   const restrictedNames = await restrictedProductNameSet();
   const allProductCodes = Array.from(productByIdMap.values()).map((product) => product.code).filter(Boolean);
   const visibleProductsForContext = Array.from(productByIdMap.values()).filter(
@@ -1762,13 +1755,33 @@ export async function getMarketingRequestViewSales(
     ownedProductCodes = (await resolveOwnedProductScope(supabase, access, byHrId)).ownedProductCodes;
   }
   const scope = resolveMarketingRoiScope(access, employeeRows, { ownedProductCodes });
-  const visible = scope.isCompanyWide
+  let visible = scope.isCompanyWide
     ? true
     : scope.visibleProductCodes
       ? allProductCodes.some((code) => (scope.visibleProductCodes as Set<string>).has(code))
       : scope.visibleRequesterHrIds
         ? scope.visibleRequesterHrIds.has(requesterKey)
         : false;
+  // The Medical Rep's TERRITORY route — the very area-AND-line rule the report admits rows by
+  // (territoryRouteAdmitsRequest). Without it a rep saw a District Manager's request on his own
+  // patch in ROI Tracking, was refused its View Sales, and the ROI Tracking export dropped its
+  // matched-sales lines without a word. Line names come from the requester's seat and EVERY
+  // promoted product (never the masked list), exactly as the report builds them.
+  if (!visible && scope.visibleRequesterHrIds && scope.visibleAreaIds.size > 0) {
+    const customerArea = await supabase
+      .from("marketing_customers")
+      .select("area_id")
+      .eq("id", request.customerId)
+      .maybeSingle();
+    if (customerArea.error) throw customerArea.error;
+    const rawAreaId = (customerArea.data as { area_id?: number | string | null } | null)?.area_id;
+    const areaId = rawAreaId === null || rawAreaId === undefined ? null : Number(rawAreaId);
+    const requestLineNames = [
+      byHrId.get(requesterKey)?.lineName ?? null,
+      ...Array.from(productByIdMap.values()).map((product) => product.line),
+    ];
+    visible = territoryRouteAdmitsRequest(scope, Number.isFinite(areaId) ? areaId : null, requestLineNames);
+  }
   if (!visible) throw new Error("Forbidden: you cannot view this marketing request.");
 
   // Target pharmacies (codes + display names, incl. zero-sales targets).
@@ -1858,7 +1871,10 @@ export async function getMarketingRequestViewSales(
   }));
 
   const totalValueRaw = rows.reduce((sum, row) => sum + toNum(row.value), 0);
-  const totalUnits = rows.reduce((sum, row) => sum + row.qty, 0);
+  // Never add units of different products: a total exists only when every matched row is one product.
+  const totalUnits = new Set(rows.map((row) => row.productCode)).size <= 1
+    ? rows.reduce((sum, row) => sum + row.qty, 0)
+    : null;
   const actualValue = roundMarketingMoney(totalValueRaw);
   const coverageRatio = request.requiredRoiValue > 0
     ? roundMarketingRatio(totalValueRaw / request.requiredRoiValue)
@@ -1910,9 +1926,9 @@ export async function getMarketingRequestViewSales(
     totals: { value: actualValue, units: totalUnits, rows: rows.length },
     actualValue,
     coverageRatio,
-    byMonth: aggregate(rows, (row) => ({ key: row.invoicePeriod, label: row.invoicePeriod })).sort((a, b) => a.key.localeCompare(b.key)),
-    byProduct: aggregate(rows, (row) => ({ key: row.productCode, label: row.productName })).sort((a, b) => b.value - a.value),
-    byPharmacy: aggregate(rows, (row) => ({ key: row.customerCode, label: row.customerName ?? row.customerCode })).sort((a, b) => b.value - a.value),
+    byMonth: aggregateViewSales(rows, (row) => ({ key: row.invoicePeriod, label: row.invoicePeriod })).sort((a, b) => a.key.localeCompare(b.key)),
+    byProduct: aggregateViewSales(rows, (row) => ({ key: row.productCode, label: row.productName })).sort((a, b) => b.value - a.value),
+    byPharmacy: aggregateViewSales(rows, (row) => ({ key: row.customerCode, label: row.customerName ?? row.customerCode })).sort((a, b) => b.value - a.value),
     matrix: buildMatrix(rows),
     reverseLookup,
     includedRestricted: reveal,

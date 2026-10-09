@@ -49,9 +49,15 @@ import { clampPanelToViewport, type PanelPlacement } from "@/lib/navigation/pane
 import { DISPLAY_SCALE_APPLIED_CSS_VAR } from "@/lib/ui/display-scale";
 import { ROI_DATA_COVERAGE_LABEL, ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import { roiConfidenceOf } from "@/lib/marketing-requests/roi-confidence";
+import { singleProductUnits } from "@/lib/marketing-requests/roi-units";
 import type { RoiConfidenceBand } from "@/lib/marketing-requests/roi-confidence";
 import type { RoiLifecycleStage } from "@/lib/marketing-requests/roi-live-stages";
-import { roiJudgementMonth, roiLifecycleStage } from "@/lib/marketing-requests/roi-live-stages";
+import {
+  isUncommittedStage,
+  ROI_LIVE_TRACKER_STATUSES,
+  roiJudgementMonth,
+  roiLifecycleStage,
+} from "@/lib/marketing-requests/roi-live-stages";
 import type { RoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 import { emptyRoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 import type { RoiTrackerReport, RoiTrackerRow } from "@/lib/marketing-requests/roi-tracker-service";
@@ -68,7 +74,8 @@ const units = (value: number) => Math.round(value).toLocaleString("en-US");
 // The rules themselves live in src/lib/marketing-requests/roi-live-stages.ts (domain-first, and
 // unit-tested there); this file only decides how to draw them.
 type Stage = RoiLifecycleStage;
-const stageOf = roiLifecycleStage;
+// The stage reads the pay date against today, never the sales-data frontier — see roiLifecycleStage.
+const stageOf = (row: RoiTrackerRow): Stage => roiLifecycleStage(row);
 const judgementMonth = roiJudgementMonth;
 
 const STAGE_ORDER: Stage[] = ["awaiting_approval", "approved_unpaid", "measuring", "judged", "rejected", "cancelled"];
@@ -330,12 +337,10 @@ function FacetSelect({
 // ── ZONE 1 ───────────────────────────────────────────────────────────────────
 function FlightPath({
   rows,
-  dataFrontier,
   focus,
   onFocus,
 }: {
   rows: RoiTrackerRow[];
-  dataFrontier: string | null;
   focus: Stage | null;
   onFocus: (next: Stage | null) => void;
 }) {
@@ -349,17 +354,20 @@ function FlightPath({
       cancelled: { cost: 0, count: 0 },
     };
     for (const row of rows) {
-      const stage = stageOf(row, dataFrontier);
+      const stage = stageOf(row);
       acc[stage].cost += row.estimatedCost;
       acc[stage].count += 1;
     }
     return acc;
-  }, [rows, dataFrontier]);
+  }, [rows]);
 
-  // Rejected and cancelled money was never committed, so both are deliberately excluded from the
-  // committed total — otherwise the bar would imply the company spent money it turned down or called off.
-  const uncommittedStage = (stage: Stage) => stage === "rejected" || stage === "cancelled";
-  const committed = STAGE_ORDER.filter((stage) => !uncommittedStage(stage)).reduce((sum, stage) => sum + totals[stage].cost, 0);
+  // The bar draws the live pipeline — everything except refused and called-off money. "Committed"
+  // is narrower: money still awaiting a decision is in the pipeline but nobody has committed it
+  // (isUncommittedStage), so it is named beside the committed figure rather than inside it.
+  const refusedOrCalledOff = (stage: Stage) => stage === "rejected" || stage === "cancelled";
+  const pipeline = STAGE_ORDER.filter((stage) => !refusedOrCalledOff(stage)).reduce((sum, stage) => sum + totals[stage].cost, 0);
+  const committed = STAGE_ORDER.filter((stage) => !isUncommittedStage(stage)).reduce((sum, stage) => sum + totals[stage].cost, 0);
+  const notCounted = totals.rejected.cost + totals.cancelled.cost;
 
   return (
     <section className="flex flex-col gap-3 rounded-sm border border-slate-200 bg-white p-4">
@@ -367,14 +375,15 @@ function FlightPath({
         <h2 className="text-xs font-black uppercase tracking-wide text-slate-500">Where the money is right now</h2>
         <span className="text-xs text-slate-500">
           {money(committed)} committed
-          {totals.rejected.count > 0 ? ` · ${money(totals.rejected.cost)} rejected and not counted` : ""}
+          {totals.awaiting_approval.count > 0 ? ` · ${money(totals.awaiting_approval.cost)} awaiting a decision` : ""}
+          {notCounted > 0 ? ` · ${money(notCounted)} rejected or cancelled and not counted` : ""}
         </span>
       </div>
 
-      {committed > 0 ? (
+      {pipeline > 0 ? (
         <div className="flex h-7 w-full overflow-hidden rounded-sm bg-slate-100">
-          {STAGE_ORDER.filter((stage) => !uncommittedStage(stage)).map((stage) => {
-            const share = totals[stage].cost / committed;
+          {STAGE_ORDER.filter((stage) => !refusedOrCalledOff(stage)).map((stage) => {
+            const share = totals[stage].cost / pipeline;
             if (share <= 0) return null;
             return (
               <button
@@ -437,7 +446,9 @@ function JudgementCalendar({ rows, dataFrontier }: { rows: RoiTrackerRow[]; data
   const months = useMemo(() => {
     const map = new Map<string, { committed: number; count: number; judged: number; judgedCount: number }>();
     for (const row of rows) {
-      if (row.status === "rejected") continue;
+      // Committed money only — the calendar's sums are labelled "committed", and a refused,
+      // cancelled or still-undecided request may never run at all.
+      if (isUncommittedStage(stageOf(row))) continue;
       const month = judgementMonth(row);
       if (!month) continue;
       const entry = map.get(month) ?? { committed: 0, count: 0, judged: 0, judgedCount: 0 };
@@ -658,18 +669,17 @@ function ApprovalTracker({ row }: { row: RoiTrackerRow }) {
 
 function RequestCard({
   row,
-  dataFrontier,
   open,
   onToggle,
 }: {
   row: RoiTrackerRow;
-  dataFrontier: string | null;
   open: boolean;
   onToggle: () => void;
 }) {
-  const stage = stageOf(row, dataFrontier);
+  const stage = stageOf(row);
   const confidence = roiConfidenceOf(row);
-  const forecastUnits = row.products.reduce((sum, product) => sum + product.forecastQty, 0);
+  // Units only for a single-product request — never added across products (owner golden rule).
+  const unitFigures = singleProductUnits(row);
   const measured = row.dataCoverage !== "no_validated_data";
   const month = judgementMonth(row);
 
@@ -756,7 +766,11 @@ function RequestCard({
           </div>
           <span className="text-phx-xs tabular-nums text-slate-500">
             spent {money(row.estimatedCost)} ·{" "}
-            {measured ? `${units(row.actualSalesUnits)} of ${units(forecastUnits)} units` : `${units(forecastUnits)} units forecast`}
+            {unitFigures
+              ? measured
+                ? `${units(unitFigures.actualUnits)} of ${units(unitFigures.forecastUnits)} units`
+                : `${units(unitFigures.forecastUnits)} units forecast`
+              : `${row.products.length} products — measured by value`}
           </span>
         </div>
       </div>
@@ -819,7 +833,7 @@ const EXPORT_COLUMNS: ExportColumn[] = [
   { key: "result", label: "Result", width: 16 },
 ];
 
-function toExportRow(row: RoiTrackerRow, dataFrontier: string | null): ExportRow {
+function toExportRow(row: RoiTrackerRow): ExportRow {
   const measured = row.dataCoverage !== "no_validated_data";
   const current = row.approvals.find((approval) => approval.status === "current" && !approval.isCc);
   const month = judgementMonth(row);
@@ -837,7 +851,7 @@ function toExportRow(row: RoiTrackerRow, dataFrontier: string | null): ExportRow
     requester: requesterLabel(row),
     result: ROI_RESULT_STATUS_LABEL[row.resultStatus],
     roiWindow: row.roiWindow ?? "",
-    stage: STAGE_META[stageOf(row, dataFrontier)].label,
+    stage: STAGE_META[stageOf(row)].label,
     status: readableRequestStatus(row.status),
     waitingRole: current?.assignedRole ?? "",
     waitingStep: current?.stepName ?? "",
@@ -872,7 +886,9 @@ export function MarketingRoiLiveTracker({
   const [facets, setFacets] = useState<FacetState>({});
 
   const fetchReport = useCallback(async (): Promise<RoiTrackerReport> => {
-    const filters: RoiFilterState = emptyRoiFilterState();
+    // Every lifecycle status, asked for explicitly — an empty list means "approved money only" to the
+    // report service, which hid the whole approval queue from this page (see ROI_LIVE_TRACKER_STATUSES).
+    const filters: RoiFilterState = { ...emptyRoiFilterState(), status: [...ROI_LIVE_TRACKER_STATUSES] };
     let response: Response;
     try {
       response = await fetch("/api/marketing-requests/roi-tracker", {
@@ -954,7 +970,7 @@ export function MarketingRoiLiveTracker({
 
   const rows = useMemo(() => {
     let list = allRows;
-    if (stageFocus) list = list.filter((row) => stageOf(row, dataFrontier) === stageFocus);
+    if (stageFocus) list = list.filter((row) => stageOf(row) === stageFocus);
     if (activeFilterCount > 0) list = list.filter((row) => matchesFacets(row, facets));
     const term = search.trim().toLowerCase();
     if (term) {
@@ -966,7 +982,7 @@ export function MarketingRoiLiveTracker({
       );
     }
     return list;
-  }, [allRows, stageFocus, search, dataFrontier, facets, activeFilterCount]);
+  }, [allRows, stageFocus, search, facets, activeFilterCount]);
 
   // Grouped by the month each request becomes judgeable, so the list carries the same spine as
   // zone 2 instead of being a flat table bolted underneath it.
@@ -1044,7 +1060,7 @@ export function MarketingRoiLiveTracker({
 
       {allRows.length > 0 ? (
         <>
-          <FlightPath dataFrontier={dataFrontier} focus={stageFocus} onFocus={setStageFocus} rows={allRows} />
+          <FlightPath focus={stageFocus} onFocus={setStageFocus} rows={allRows} />
           <JudgementCalendar dataFrontier={dataFrontier} rows={allRows} />
           <WaitingOnAPerson onPick={(requestId) => setExpanded(requestId)} rows={allRows} />
 
@@ -1080,7 +1096,7 @@ export function MarketingRoiLiveTracker({
                   <ExportXlsxButton
                     columns={EXPORT_COLUMNS}
                     label="Export XLSX"
-                    rows={rows.map((row) => toExportRow(row, dataFrontier))}
+                    rows={rows.map((row) => toExportRow(row))}
                     sheetName="ROI Tracker"
                     subtitle={`${rows.length} of ${allRows.length} request(s) · ${
                       dataFrontier ? `validated sales through ${monthLabel(dataFrontier)}` : "no validated sales data loaded"
@@ -1143,7 +1159,6 @@ export function MarketingRoiLiveTracker({
                       <div className="flex flex-col gap-3">
                         {groupRows.map((row) => (
                           <RequestCard
-                            dataFrontier={dataFrontier}
                             key={row.requestId}
                             onToggle={() => setExpanded(expanded === row.requestId ? null : row.requestId)}
                             open={expanded === row.requestId}

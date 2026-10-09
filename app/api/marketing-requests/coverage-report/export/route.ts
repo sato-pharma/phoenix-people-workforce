@@ -12,7 +12,7 @@ import {
   loadMarketingCoverageExportSalesDetail,
   parseMarketingCoverageFilterState,
 } from "@/lib/marketing-requests/coverage-report-service";
-import { loadMarketingRoiExportDetail, writeMarketingRoiExportAudit } from "@/lib/marketing-requests/roi-report-service";
+import { loadMarketingRoiExportDetail, resolveMarketingExporterName, writeMarketingRoiExportAudit } from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       report,
       detail,
       salesDetail,
-      meta: { exportedByName: exportedBy, exportedByHrId: exportedBy, role: access.role, exportId, generatedAtIso },
+      meta: { exportedByName: await resolveMarketingExporterName(access), exportedByHrId: exportedBy, role: access.role, exportId, generatedAtIso },
     });
 
     await writeMarketingRoiExportAudit({

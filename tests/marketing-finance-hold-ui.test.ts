@@ -102,7 +102,7 @@ export async function runMarketingFinanceHoldUiTests() {
   // pipeline; a held request must stay OUT of the committed bucket. Fixing the prose by moving the
   // status between stages would silently restate company spend on every ROI screen.
   assert.equal(
-    roiLifecycleStage({ dataCoverage: "no_validated_data", payDate: "2026-08-11", status: "finance_hold" }, "2026-08"),
+    roiLifecycleStage({ dataCoverage: "no_validated_data", payDate: "2026-08-11", status: "finance_hold" }, "2026-08-31"),
     "awaiting_approval",
     "the hold must stay in awaiting_approval — the fix is the sentence, never the stage",
   );

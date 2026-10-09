@@ -61,6 +61,7 @@ export function sampleReport(): MarketingCoverageReport {
         productCodes: ["GU001"],
         distributorCodes: ["IS"],
         pharmacyKeys: ["12345", "67890"],
+        pharmacyIds: ["pharmacy-a", "pharmacy-b"],
       },
     ],
     kpi: {
@@ -88,6 +89,7 @@ export function sampleReport(): MarketingCoverageReport {
     includedRestricted: false,
     generatedAtIso: META.generatedAtIso,
     distributorRollup: [],
+    attributionLines: [],
   };
 }
 
