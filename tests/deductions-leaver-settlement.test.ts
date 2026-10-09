@@ -113,10 +113,25 @@ export async function runDeductionsLeaverSettlementTests(): Promise<void> {
       false,
       "the settlement path must NEVER call reconcileCandidateDrafts — a one-employee draft set would supersede every other employee's candidates for that month",
     );
+    // `mine` is the one-employee filter. Since the same-day guard landed (2026-10-09) the write
+    // takes `keep`, a SUBSET of `mine`, so all three links are pinned: the filter itself, that the
+    // guard splits `mine` rather than the raw company-wide scan, and that the insert takes the
+    // split. Pinning only the last of them would let `splitDraftsByClaimedDays(scanned, live)`
+    // through, which writes every employee's drafts under one leaver's settlement.
     assert.match(
       settlement,
-      /drafts: mine/,
-      "only the target employee's drafts may be written",
+      /const mine = scanned\.filter\(/,
+      "only the target employee's drafts may be written — the one-employee filter is gone",
+    );
+    assert.match(
+      settlement,
+      /splitDraftsByClaimedDays\(mine,/,
+      "only the target employee's drafts may be written — the same-day guard must split `mine`, never the whole scan",
+    );
+    assert.match(
+      settlement,
+      /drafts: keep/,
+      "only the target employee's drafts may be written — the insert must take the guard's kept subset",
     );
     assert.equal(
       /autoDecideStatus/.test(settlement),

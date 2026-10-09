@@ -1452,6 +1452,7 @@ import { runPasswordResetCodeEmailCarriesTheCodeTests } from "./password-reset-c
 import { runDeductionsApprovedNotPushedFeedbackTests } from "./deductions-approved-not-pushed-feedback.test.ts";
 import { runDeductionsVacationSelfRetireTests } from "./deductions-vacation-self-retire.test.ts";
 import { runDeductionsBulkDecideTests } from "./deductions-bulk-decide.test.ts";
+import { runDeductionsSameDayGuardTests } from "./deductions-same-day-guard.test.ts";
 import { runDeductionsManualDayGuardTests } from "./deductions-manual-day-guard.test.ts";
 import { runAuthPasswordResetCodeTests } from "./auth-password-reset-code.test.ts";
 import { runLoginFormLocatorContractTests } from "./login-form-locator-contract.test.ts";
@@ -5257,6 +5258,10 @@ await runTest(
 await runTest(
   "the Deductions workspace decides many candidates at once (tick several or all; one confirmed decision per row through the single-decision route, no amount or days sent, a pushed line can never be ticked)",
   runDeductionsBulkDecideTests,
+);
+await runTest(
+  "one employee-day is never charged by two live deduction rows (the settlement scan holds back a draft that shares a day with a live row, and the screen marks a pair that is already there — an approved and a pending row charged one resigned rep's 27 September twice-over)",
+  runDeductionsSameDayGuardTests,
 );
 await runTest(
   "a manual HR entry claims no day in the database guard either (its date is a 1st-of-month placeholder; the trigger refused 6 of Ahmed Nabil's 7 approved September manual entries as double deductions of the 1st)",

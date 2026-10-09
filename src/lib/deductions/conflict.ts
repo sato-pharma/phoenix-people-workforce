@@ -315,6 +315,75 @@ export function findDayCollisions(
   );
 }
 
+export type SettlementDraftLike = {
+  employeeHrId: string;
+  category: DeductionsCategory;
+  monthKey: string;
+  dates?: readonly string[] | null;
+};
+
+export type SettlementClaimRow = {
+  employeeHrIdCompact: string;
+  category: DeductionsCategory;
+  sourceSystem?: string | null;
+  dates: readonly string[];
+};
+
+/**
+ * The final-settlement scan inserts and never reconciles (settlement.ts), so unlike a normal
+ * collection it cannot retire an earlier row that covers the same days — and the leaver draft is keyed
+ * `leaver_<hr>_<month>` while the normal CRM scan keys each day `live_<month>_..._<day>`, so the
+ * candidate_key unique index sees two different rows. Measured on production 2026-09: a resigned
+ * representative carried an APPROVED `live_` row for 27 September and a PENDING `leaver_` row for the
+ * same day, both 533.33 EGP, both live — one approval away from a double charge.
+ *
+ * A draft that shares ANY day with a live row of the same employee and category is therefore held back,
+ * never inserted. Not trimmed to the open days: the amount is derived from the weighted day count (a
+ * Thursday is a half day) and the scan's base salary is not on the draft, so a trimmed row would carry
+ * a wrong figure. The caller names the open days so the one that is not covered can be added by hand.
+ *
+ * Every live row claims, whatever its decision and whichever source wrote it: a day the reviewer
+ * already cleared ("Do Not Take Action", or unticked) must not be proposed again, and a sibling
+ * source's row (`dsm_no_record` shares `crm`) means the day is genuinely taken. A `manual_hr` row is
+ * skipped, as in findDayCollisions — its date is a placeholder, not a detection.
+ *
+ * Pure — no DB I/O.
+ */
+export function splitDraftsByClaimedDays<D extends SettlementDraftLike>(
+  drafts: readonly D[],
+  live: ReadonlyArray<SettlementClaimRow>,
+): { keep: D[]; held: Array<{ draft: D; claimedDates: string[]; openDates: string[] }> } {
+  const claimed = new Map<string, Set<string>>();
+  for (const row of live) {
+    if (String(row.sourceSystem ?? "").trim() === "manual_hr") continue;
+    const key = `${row.employeeHrIdCompact}\u0000${row.category}`;
+    const days = claimed.get(key) ?? new Set<string>();
+    for (const date of row.dates) {
+      if (typeof date === "string" && date.trim()) days.add(date.trim());
+    }
+    claimed.set(key, days);
+  }
+
+  const keep: D[] = [];
+  const held: Array<{ draft: D; claimedDates: string[]; openDates: string[] }> = [];
+  for (const draft of drafts) {
+    const compact = canonicalHrIdKey(draft.employeeHrId)?.replace(/[^a-z0-9]/g, "") ?? "";
+    const days = claimed.get(`${compact}\u0000${draft.category}`);
+    const draftDates = (draft.dates ?? []).filter((date): date is string => typeof date === "string" && date.trim() !== "");
+    const claimedDates = days ? draftDates.filter((date) => days.has(date.trim())) : [];
+    if (claimedDates.length === 0) {
+      keep.push(draft);
+      continue;
+    }
+    held.push({
+      draft,
+      claimedDates: [...claimedDates].sort(),
+      openDates: draftDates.filter((date) => !days!.has(date.trim())).sort(),
+    });
+  }
+  return { keep, held };
+}
+
 export class DeductionsConflictError extends Error {
   public readonly code = "DEDUCTIONS_CONFLICT" as const;
   public readonly overlappingDates: string[];
