@@ -10,6 +10,7 @@ import { LEAVE_BALANCE_CATEGORIES, isLeaveBalanceCategory } from "../src/lib/ded
 import { foldLeaveBalanceCharges } from "../src/lib/deductions/leave-balance-ledger.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import { calculateVacationPayment, isWithinFirstSixMonths } from "../src/lib/vacation/calculations.ts";
+import { DEPARTED_EMPLOYMENT_STATUSES, hasDepartedEmployment } from "../src/lib/auth/session-lifecycle.ts";
 import { annualBalanceLedgerDays, buildEmployeeEligibilityRows, requestableAnnualLeaveDays } from "../src/lib/vacation/service.ts";
 
 /**
@@ -38,6 +39,8 @@ import { annualBalanceLedgerDays, buildEmployeeEligibilityRows, requestableAnnua
  *      cohort, so the figure moves the way he asked — while the row still says the employee cannot
  *      request paid leave and the employee's own portal tile still offers them nothing; it counts
  *      EVERY annual-balance pool, says so when it cannot read them, and accrues by completed month.
+ *   8. someone who has LEFT is SAID, never refused — the dialog names the day he stopped working and
+ *      the charge still goes through, in both views, and the already-charged view actually reads it.
  */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -632,4 +635,160 @@ export async function runDeductionsLeaveBalanceTests() {
     assert.equal(senior?.eligibilityStatus, "eligible");
     assert.equal(requestableAnnualLeaveDays(senior!), 19, "and for an eligible employee the tile shows that same number");
   }
+
+  // 🔴 8. A PERSON WHO HAS LEFT IS SAID, NEVER REFUSED. Asked and answered the same day — "Allow it,
+  // but say he has left" — after the production read showed three of the sixteen September Unpaid
+  // Vacation rows belonging to people who had gone (last working days 17 Sep, 30 Sep and 04 Oct), two
+  // of them being offered 5 and 1.25 days of balance with nothing on screen to say so. So this
+  // section pins BOTH halves: the charge stays allowed, and the words are there.
+  {
+    const charge = read("src/lib/deductions/leave-balance.ts");
+    const workspace = read("src/components/admin/deductions-workspace.tsx");
+    const route = read("app/api/admin/deductions/leave-balance/route.ts");
+
+    // (a) ONE vocabulary for "has left". DEPARTED_EMPLOYMENT_STATUSES is deliberately not the
+    // complement of active: production carries 15 historical_payroll_record and 2 system_placeholder
+    // rows, and calling either a leaver would put the notice on rows it is not about.
+    assert.ok(
+      charge.includes('import { hasDepartedEmployment } from "@/lib/auth/session-lifecycle"'),
+      "the charge service must read the shared departed-status helper, never its own list",
+    );
+    assert.ok(
+      charge.includes("hasLeft: hasDepartedEmployment(row?.employment_status)"),
+      "and must decide it from the employee row's employment_status through that helper",
+    );
+    assert.ok(
+      !charge.includes('!== "active"') && !charge.includes('=== "active"'),
+      "a complement-of-active test would call a historical payroll record a leaver",
+    );
+    assert.deepEqual(
+      [...DEPARTED_EMPLOYMENT_STATUSES].sort(),
+      ["not_renewed", "resigned", "terminated"],
+      "the set this notice hangs off is resigned, terminated and not_renewed",
+    );
+    assert.ok(hasDepartedEmployment("resigned") && hasDepartedEmployment("terminated") && hasDepartedEmployment("not_renewed"));
+    assert.ok(
+      !hasDepartedEmployment("active") &&
+        !hasDepartedEmployment("historical_payroll_record") &&
+        !hasDepartedEmployment("system_placeholder") &&
+        !hasDepartedEmployment(null),
+      "and nothing else on production is called a leaver",
+    );
+
+    // (b) The read asks for the columns, and still has NO employment filter — a deduction raised
+    // while someone was working stays chargeable after the resignation is recorded.
+    assert.ok(
+      charge.includes('.select("hire_date, employment_status, last_working_date")'),
+      "the employee read must fetch the status and the last working day, or the notice has nothing to say",
+    );
+    assert.ok(!charge.includes("loadHireDate"), "the hire-date-only loader is gone — one read answers both questions");
+    {
+      const start = charge.indexOf("async function loadEmployeeForCharge");
+      const body = charge.slice(start, charge.indexOf("\n}\n", start));
+      assert.ok(start > 0 && body.length > 0, "loadEmployeeForCharge must exist");
+      assert.ok(
+        !body.includes('.eq("employment_status') && !body.includes('.in("employment_status'),
+        "it must not filter the read by employment status — that would refuse the charge instead of saying so",
+      );
+    }
+
+    // (c) BOTH return paths carry it. The already-charged path matters most: that is where Return to
+    // salary is decided.
+    assert.equal(
+      charge.split("employeeHasLeft: employee.hasLeft").length - 1,
+      2,
+      "the preview must carry employeeHasLeft on the already-charged path AND the chargeable one",
+    );
+    assert.equal(
+      charge.split("lastWorkingDate: employee.lastWorkingDate").length - 1,
+      2,
+      "and the last working day with it, on both",
+    );
+    assert.ok(
+      charge.indexOf("const employee = await loadEmployeeForCharge(candidate.employeeHrId)") <
+        charge.indexOf("const charged = await getLeaveBalanceChargeForCandidate(candidate.id)"),
+      "the employee must be read BEFORE the already-charged branch, or that branch has nothing to report",
+    );
+
+    // (d) SAID, NEVER REFUSED. No gate, no refusal text and no throw may mention it.
+    {
+      const gateStart = charge.indexOf("function assertChargeable(");
+      const gate = charge.slice(gateStart, charge.indexOf("\n}\n", gateStart));
+      assert.ok(gateStart > 0 && !gate.includes("hasLeft"), "assertChargeable must not refuse a leaver");
+      const refusalStart = charge.indexOf("function refusalText(");
+      const refusal = charge.slice(refusalStart, charge.indexOf("\n}\n", refusalStart));
+      // "no annual leave balance left" is about days remaining, so the test names the concept
+      // instead: no refusal may be about having LEFT THE COMPANY.
+      assert.ok(refusalStart > 0, "refusalText must exist");
+      for (const phrase of ["left the company", "resign", "terminated", "not renewed", "no longer employed"]) {
+        assert.ok(!refusal.toLowerCase().includes(phrase), `no refusal text may be about leaving: ${phrase}`);
+      }
+      for (const line of charge.split("\n")) {
+        if (!line.includes("hasLeft")) continue;
+        assert.ok(!line.includes("throw "), `a leaver must never throw: ${line.trim()}`);
+        assert.ok(!line.includes("refusal"), `a leaver must never set a refusal: ${line.trim()}`);
+      }
+    }
+
+    // (e) The route hands the whole preview through, so both fields reach the dialog.
+    assert.ok(
+      route.includes("return NextResponse.json({ success: true, preview })"),
+      "the route must pass the preview through whole — a field whitelist would drop the notice silently",
+    );
+
+    // (f) The words, in BOTH views, and nothing disabled by them.
+    assert.ok(workspace.includes("function EmployeeHasLeftNotice"), "the notice must be one component, used twice");
+    assert.ok(
+      workspace.includes("This employee has left the company"),
+      "and must say it in plain words, naming what the charge still does",
+    );
+    assert.equal(
+      workspace.split("<EmployeeHasLeftNotice lastWorkingDate=").length - 1,
+      2,
+      "it belongs in the charge dialog AND beside Return to salary on an already-charged row",
+    );
+    assert.ok(workspace.includes("employeeHasLeft: boolean;"), "the client type must carry the field or TypeScript drops it");
+    for (const line of workspace.split("\n")) {
+      if (!line.includes("employeeHasLeft")) continue;
+      assert.ok(!line.includes("disabled"), `the notice must never gate a button: ${line.trim()}`);
+    }
+
+    // (g) 🔴 THE ALREADY-CHARGED VIEW NEVER OPENS THE DIALOG, so without its own read `preview` stays
+    // null there for ever and the notice beside Return to salary is a silently dead branch.
+    assert.ok(
+      workspace.indexOf("if (!row.leaveBalanceCharge) return;") <
+        workspace.indexOf("const charged = row.leaveBalanceCharge ?? null;"),
+      "the charged row must fetch its own preview, before the branch that renders it",
+    );
+    assert.ok(
+      workspace.includes("useEffect(() => {") && workspace.includes("}, [row.id, row.leaveBalanceCharge]);"),
+      "and it must be an effect keyed on the row, not a fetch on every render",
+    );
+    {
+      const effectStart = workspace.indexOf("if (!row.leaveBalanceCharge) return;");
+      const effect = workspace.slice(effectStart, workspace.indexOf("}, [row.id, row.leaveBalanceCharge]);", effectStart));
+      assert.ok(effect.includes("setPreview(payload.preview)"), "the effect must actually store what it read");
+      assert.ok(effect.includes("live = false"), "and must not set state after the row is gone");
+    }
+
+    // (h) 🔴 The last working day goes through this file's own date-only renderer. Two things ride
+    // on that: a date-only column formatted in Cairo lands a day early, and a raw
+    // `new Intl.DateTimeFormat("en-GB", { month: "short" })` in a CLIENT component is React
+    // hydration error #418 on any pre-CLDR-42 ICU build ("Sep" vs "Sept") — in September only, which
+    // is exactly when a September deduction is being charged. The first attempt here shipped that
+    // raw formatter and the required validate job caught it.
+    assert.ok(
+      workspace.includes("const label = hireDateLabel(lastWorkingDate);"),
+      "the notice must render the last working day through hireDateLabel, not a formatter of its own",
+    );
+    assert.ok(
+      workspace.includes('stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" })'),
+      "and that renderer must stay on stableEnGbFormatter in UTC",
+    );
+    assert.ok(
+      !workspace.includes('new Intl.DateTimeFormat("en-GB"'),
+      "no client component may build an en-GB formatter directly — that is React #418 every September",
+    );
+  }
+
 }

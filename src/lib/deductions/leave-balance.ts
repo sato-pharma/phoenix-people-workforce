@@ -26,6 +26,7 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { balanceReadIsComplete } from "@/lib/attendance/digest-rules.ts";
+import { hasDepartedEmployment } from "@/lib/auth/session-lifecycle";
 import { hrIdForStorage } from "@/lib/hr-id.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getVacationBalancePeriod, isWithinFirstSixMonths } from "@/lib/vacation/calculations";
@@ -264,15 +265,40 @@ async function loadCandidateForCharge(candidateId: string): Promise<CandidateFor
   };
 }
 
-async function loadHireDate(employeeHrId: string): Promise<string | null> {
+/** The employee row a leave-balance charge needs. */
+type EmployeeForCharge = { hireDate: string | null; hasLeft: boolean; lastWorkingDate: string | null };
+
+/**
+ * The hire date the balance period hangs off, plus whether this person has LEFT.
+ *
+ * 🔴 It reads `employees` with NO employment-status filter, and that is deliberate — a deduction
+ * raised while someone was still working stays chargeable after the resignation is recorded. The
+ * consequence is what the dialog now says out loud: measured on production 2026-10-09, three of the
+ * sixteen September Unpaid Vacation rows belong to people who have left (last working days 17 Sep,
+ * 30 Sep and 04 Oct), and the button offered 5 and 1.25 days of balance on two of them with nothing
+ * on screen to say so. The Vacation Report cannot show such a charge either: its Entitlements tab
+ * lists active employees, so someone who has left has no row there to carry it.
+ *
+ * `hasDepartedEmployment` is the repo's one vocabulary for this (`@/lib/auth/session-lifecycle`) —
+ * resigned, terminated and not_renewed, deliberately NOT the complement of active, so the 15
+ * `historical_payroll_record` and 2 `system_placeholder` rows on production are never called leavers.
+ */
+async function loadEmployeeForCharge(employeeHrId: string): Promise<EmployeeForCharge> {
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hire_date")
+    .select("hire_date, employment_status, last_working_date")
     .ilike("hr_id", employeeHrId.trim().replace(/[\\%_]/g, (char) => `\\${char}`))
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(`Failed to read the employee's hire date: ${error.message}`);
-  return ((data as { hire_date?: string | null } | null)?.hire_date ?? null) || null;
+  const row = data as
+    | { hire_date?: string | null; employment_status?: string | null; last_working_date?: string | null }
+    | null;
+  return {
+    hireDate: (row?.hire_date ?? null) || null,
+    hasLeft: hasDepartedEmployment(row?.employment_status),
+    lastWorkingDate: (row?.last_working_date ?? null) || null,
+  };
 }
 
 function assertChargeable(candidate: CandidateForCharge) {
@@ -327,21 +353,30 @@ export type LeaveBalancePreview = {
    * says so, because it spends leave the employee has accrued and cannot yet request directly.
    */
   withinFirstSixMonths: boolean;
+  /**
+   * This person has LEFT (resigned, terminated or not renewed). The charge is still allowed (owner,
+   * 2026-10-09: allow it, but say he has left) and the dialog says so, because it spends a balance
+   * the final settlement may already have paid out, and the Vacation Report cannot show it — a
+   * leaver has no row on the Entitlements tab, which lists active employees.
+   */
+  employeeHasLeft: boolean;
+  /** The day that person stopped working, for the words the dialog prints. Null when not recorded. */
+  lastWorkingDate: string | null;
   /** Already charged: what is on the leave balance now. */
   charged: LeaveBalanceCharge | null;
 };
 
-async function previewFor(candidate: CandidateForCharge) {
+async function previewFor(candidate: CandidateForCharge, preloaded?: EmployeeForCharge) {
   const dueDays = candidate.appliedValue != null ? candidate.appliedValue : candidate.rawValue;
-  const hireDate = await loadHireDate(candidate.employeeHrId);
+  const employee = preloaded ?? (await loadEmployeeForCharge(candidate.employeeHrId));
   const balance = await readLeaveBalance({
     employeeHrId: candidate.employeeHrId,
-    hireDate,
+    hireDate: employee.hireDate,
     workDate: anchorDate(candidate),
     days: dueDays,
   });
   const plan = planLeaveBalanceCharge({ dueDays, coverableDays: balance.coverableDays });
-  return { dueDays, balance, plan };
+  return { dueDays, balance, plan, employee };
 }
 
 /** What pressing "Deduct from leave balance" would do — read only, for the confirmation dialog. */
@@ -351,6 +386,9 @@ export async function previewLeaveBalanceCharge(input: {
 }): Promise<LeaveBalancePreview> {
   assertDeductionsDecisionActor(input.actor);
   const candidate = await loadCandidateForCharge(input.candidateId);
+  // Read BEFORE the already-charged branch below: "this person has left" is worth knowing just as
+  // much when the question is whether to RETURN a charge to salary.
+  const employee = await loadEmployeeForCharge(candidate.employeeHrId);
   const charged = await getLeaveBalanceChargeForCandidate(candidate.id);
   if (charged) {
     return {
@@ -364,6 +402,8 @@ export async function previewLeaveBalanceCharge(input: {
       alreadyCleared: false,
       uncollectedDays: 0,
       withinFirstSixMonths: false,
+      employeeHasLeft: employee.hasLeft,
+      lastWorkingDate: employee.lastWorkingDate,
       charged,
     };
   }
@@ -371,7 +411,7 @@ export async function previewLeaveBalanceCharge(input: {
   // The same release check the charge itself runs. Without it the dialog offered a charge the save
   // then refused — the one failure mode this button is designed against.
   const pushed = await loadActivePushedLineIdByCandidate(candidate.monthKey);
-  const { dueDays, balance, plan } = await previewFor(candidate);
+  const { dueDays, balance, plan } = await previewFor(candidate, employee);
   const alreadyCleared = candidate.decisionStatus === "Do Not Take Action";
   let refusal = plan.chargeDays > DAYS_EPSILON ? null : refusalText(balance.refusal ?? "no_balance");
   if (pushed.get(candidate.id)) {
@@ -389,6 +429,10 @@ export async function previewLeaveBalanceCharge(input: {
     alreadyCleared,
     uncollectedDays: alreadyCleared ? plan.salaryDays : 0,
     withinFirstSixMonths: balance.withinFirstSixMonths,
+    // SAID, never refused (owner, 2026-10-09). A deduction raised while someone was still working
+    // stays his to take from the balance; what he could not see was that the person had gone.
+    employeeHasLeft: employee.hasLeft,
+    lastWorkingDate: employee.lastWorkingDate,
     charged: null,
   };
 }
