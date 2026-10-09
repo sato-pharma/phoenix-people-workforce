@@ -93,17 +93,14 @@ export function runMarketingCoverageReportScopeTests() {
     assert.equal(scope.visibleRequesterHrIds, null);
   }
 
-  // ── KEY DIVERGENCE from ROI Tracking: Finance Manager / Financial Advisor are
-  //    SCOPED here, not company-wide. With no subordinates, a Finance Manager
-  //    resolves to seeing only themselves (fail-closed self-only), never everyone.
+  // ── Finance Manager / Financial Advisor: company-wide here, as in ROI Tracking (owner,
+  //    2026-10-09). Before, a Finance Manager with no subordinates resolved to himself alone
+  //    and the real one opened a Coverage Report reading 0 of 52 requests. The ROLE decides,
+  //    so even a "line"-scoped session is company-wide.
   for (const role of ["Finance Manager", "Financial Advisor"] as PhoenixRole[]) {
     const scope = resolveMarketingCoverageScope(access(role, "FIN-1", "line"), rows);
-    assert.equal(scope.isCompanyWide, false, `${role} must NOT be company-wide in the coverage report`);
-    assert.ok(scope.visibleRequesterHrIds, `${role} must have a bounded visible-requester set`);
-    const visible = scope.visibleRequesterHrIds as Set<string>;
-    assert.equal(visible.has("fin-1"), true, `${role} sees their own requests`);
-    assert.equal(visible.has("r-1"), false, `${role} must NOT see an unrelated rep's requests`);
-    assert.equal(visible.has("b-157"), false, `${role} must NOT see an unrelated NSM's requests`);
+    assert.equal(scope.isCompanyWide, true, `${role} must be company-wide in the coverage report, as in ROI Tracking`);
+    assert.equal(scope.visibleRequesterHrIds, null, `${role} must not be bounded to his own (empty) subtree`);
   }
 
   // ── NSM sees own line subtree (self + DM + rep), never the foreign-department rep.

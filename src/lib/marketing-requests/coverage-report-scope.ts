@@ -22,14 +22,14 @@ import type {
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure scope + filter-option logic for the Marketing Coverage Report.
 //
-// Structurally mirrors roi-report-scope.ts, but with a DELIBERATELY NARROWER
-// company-wide role set (coverageReportCompanyWideRoles: CEO / Super Admin /
-// SFE Manager / Marketing Manager only — Finance Manager and Financial Advisor
-// are scoped to their own manager-chain subtree here, unlike ROI Tracking's
-// companyMarketingRoles). Everyone else is scoped via the SAME manager-chain
-// walk ROI Tracking uses (reportsUpToViewer / sameEmployeeDepartment, both
-// exported from service.ts) so the two reports never disagree on what "own
-// subtree" means — only on who is exempt from it.
+// Structurally mirrors roi-report-scope.ts. Its company-wide role set
+// (coverageReportCompanyWideRoles) is the same six roles as ROI Tracking's
+// companyMarketingRoles since 2026-10-09 (owner) — it used to leave the Finance
+// Manager and Financial Advisor on their own, empty, subtree. Everyone else is
+// scoped via the SAME manager-chain walk ROI Tracking uses (reportsUpToViewer /
+// sameEmployeeDepartment, both exported from service.ts) so the two reports never
+// disagree on what "own subtree" means. The one remaining difference is the
+// Medical Rep's territory route, which only ROI Tracking runs (see emptyScope).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ResolveMarketingCoverageScopeOptions = {
@@ -39,10 +39,9 @@ export type ResolveMarketingCoverageScopeOptions = {
 
 /**
  * Per-record visibility check for the coverage report. Mirrors
- * `canSeeMarketingHierarchyRecord` (service.ts) exactly EXCEPT for the
- * company-wide role set: only `coverageReportCompanyWideRoles` short-circuits to
- * "sees everything"; every other role (including Finance Manager/Financial
- * Advisor) falls through to the manager-chain walk.
+ * `canSeeMarketingHierarchyRecord` (service.ts): `coverageReportCompanyWideRoles`
+ * short-circuits to "sees everything"; every other role falls through to the
+ * manager-chain walk.
  */
 function canSeeMarketingCoverageRecord(
   access: AccessContext,

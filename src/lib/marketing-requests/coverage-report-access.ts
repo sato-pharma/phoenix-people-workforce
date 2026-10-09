@@ -8,9 +8,12 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 // tests/marketing-coverage-report-access.test.ts.
 //  - coverageReportViewerRoles: who may open the report at all (either shell).
 //  - coverageReportCompanyWideRoles: who sees every request unrestricted, scoped
-//    in src/lib/marketing-requests/coverage-report-scope.ts (deliberately NARROWER
-//    than ROI Tracking's companyMarketingRoles — Finance Manager/Financial Advisor
-//    are scoped to their own subtree here, unlike ROI Tracking).
+//    in src/lib/marketing-requests/coverage-report-scope.ts. The SAME six roles as
+//    ROI Tracking's companyMarketingRoles (owner, 2026-10-09). It once left out the
+//    Finance Manager and Financial Advisor, so the Finance Manager opened a report
+//    reading 0 of 52 requests while ROI Tracking — and its View Sales, which shows
+//    the same pharmacies and sales — gave him all 52. Narrowing hid nothing and
+//    left him an empty page.
 //  - coverageReportAdminShellRoles: who reaches the report's PAGE via the admin
 //    shell — this must be every viewer role whose resolveNavigationMode() is
 //    "admin" (CEO, Super Admin, and the adminShellEmployeeRoles subset: SFE
@@ -44,6 +47,8 @@ export const coverageReportCompanyWideRoles = new Set<PhoenixRole>([
   "Super Admin",
   "SFE Manager",
   "Marketing Manager",
+  "Finance Manager",
+  "Financial Advisor",
 ]);
 
 export const coverageReportAdminShellRoles = new Set<PhoenixRole>([

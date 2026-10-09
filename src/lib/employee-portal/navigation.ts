@@ -523,8 +523,8 @@ export function canUseEmployeePortalMilestones(
 /**
  * Broader than ROI Tracking's own role set: the Marketing Coverage Report is
  * deliberately open to the whole marketing/sales hierarchy INCLUDING Finance
- * Manager and Financial Advisor (scoped to their own subtree server-side — see
- * coverage-report-scope.ts), not just marketingRequestRoles.
+ * Manager and Financial Advisor (company-wide server-side, as in ROI Tracking —
+ * see coverage-report-scope.ts), not just marketingRequestRoles.
  */
 export function canUseEmployeePortalMarketingCoverageReport(
   roleLabel: string | null | undefined,

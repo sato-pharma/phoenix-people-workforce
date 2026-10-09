@@ -61,9 +61,9 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 // A separate, broader-access report over the SAME underlying requests as ROI
 // Tracking. It reuses ROI Tracking's expensive/well-tested internals (KPI math,
 // attribution loading, per-request pharmacy sales) unchanged, but builds its OWN
-// role-scoped request index via `resolveMarketingCoverageScope` — a DELIBERATELY
-// NARROWER company-wide role set (Finance Manager/Financial Advisor are scoped
-// to their own subtree here, unlike ROI Tracking). Kept as a fully separate
+// role-scoped request index via `resolveMarketingCoverageScope` (the same
+// company-wide roles as ROI Tracking since 2026-10-09, but no Medical Rep
+// territory route). Kept as a fully separate
 // index + cache from ROI Tracking's so the two reports' scope decisions can
 // never leak into each other via a shared cache key.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -959,8 +959,8 @@ export async function getMarketingCoverageRequestPharmacies(
   includeRestrictedInput = false,
 ): Promise<MarketingCoveragePharmacyRow[]> {
   // Admitted by the COVERAGE report's own index, not by View Sales' ROI scope: the two scopes are
-  // not the same (the Finance Manager is wider in ROI), and a drill-down must never open a request
-  // the report itself does not list for this viewer.
+  // not the same (a Medical Rep's territory route runs in ROI only), and a drill-down must never
+  // open a request the report itself does not list for this viewer.
   const includeRestricted = includeRestrictedInput && (access.role === "CEO" || access.role === "Super Admin");
   const ctx = await getCachedCoverageIndex(access, includeRestricted);
   if (!ctx.entries.some((entry) => entry.requestId === requestId)) {
