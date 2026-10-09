@@ -25,6 +25,11 @@
 // The two measures are equal on all 21,066 production rows from 2026-08 today. That is a fact about
 // the current data, not a definition, so they are carried separately.
 
+import {
+  isBulkAllocationActive,
+  isBulkAllocationLine,
+} from "@/lib/sales/bulk-allocation-channel";
+import { buildBulkAllocation } from "@/lib/sales/closing-bulk-allocation";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import type { SplitRegions } from "@/lib/sales/store-sales-city-split";
 import {
@@ -61,6 +66,9 @@ export type StoreSplitNetPayloadRow = {
  * a net whose money half is zero, which reads as "this line does not split" instead of as an error.
  */
 export type AttributionSplitRow = StoreSplitRow & { effectiveUnits: number };
+
+/** As much of one city-split pass as the payload below reads. */
+type CitySplitPass = { movements: readonly StoreSplitAreaMovement[]; splitRowCount: number };
 
 /** Rounding floor. Below this a cell is noise from float arithmetic, not a movement. */
 const EPSILON = 1e-9;
@@ -102,18 +110,32 @@ export function buildStoreSplitNetPayload(
   period: string,
   regions?: SplitRegions,
 ): StoreSplitNetPayloadRow[] {
-  if (!isStoreCitySplitActive(period)) return [];
-  if (!isSplitEligibleLine(officialLine)) return [];
+  // 🔴 TWO RULES SHARE THIS NET, AND EITHER ONE ON ITS OWN IS A REASON TO WRITE ONE. The city split
+  // (from 2026-08, Pedia / Anti Infective / CNS) and the EPDA-BULK contribution allocation (owner,
+  // 2026-10-09 — from the September closing, Pedia only) both move money between areas of one line,
+  // and au.f_monthly_attribution can see neither of them on its own. Asked as two tests rather than
+  // one because their lines and start months are independent.
+  const bulkApplies = isBulkAllocationActive(period) && isBulkAllocationLine(officialLine);
+  const cityApplies = isStoreCitySplitActive(period) && isSplitEligibleLine(officialLine);
+  if (!cityApplies && !bulkApplies) return [];
 
   // Both passes take the SAME exclusion set. They already have to move the same rows (asserted
   // below); handing one of them a different set of target areas would put units on one geography
   // and money on another, which is the one shape this function exists to make impossible.
-  const qtyPass = splitStoreSalesAcrossCityAreas(rows, period, regions);
-  const effectivePass = splitStoreSalesAcrossCityAreas(
-    rows.map((row) => ({ ...row, qty: row.effectiveUnits })),
-    period,
-    regions,
-  );
+  //
+  // Not run at all when only the bulk rule applies: the city split's own period gate lives in its
+  // CALLERS, not in isSplitEligible, so calling the splitter for a month the city rule does not
+  // cover would silently split a month the owner froze.
+  const qtyPass: CitySplitPass = cityApplies
+    ? splitStoreSalesAcrossCityAreas(rows, period, regions)
+    : { movements: [], splitRowCount: 0 };
+  const effectivePass: CitySplitPass = cityApplies
+    ? splitStoreSalesAcrossCityAreas(
+      rows.map((row) => ({ ...row, qty: row.effectiveUnits })),
+      period,
+      regions,
+    )
+    : { movements: [], splitRowCount: 0 };
 
   // Both passes must have moved the SAME rows — see the header. If they ever diverge the net would
   // be internally inconsistent (units from one population, money from another), so this throws
@@ -128,6 +150,15 @@ export function buildStoreSplitNetPayload(
   const byCell = new Map<string, StoreSplitNetPayloadRow>();
   accumulate(byCell, officialLine, qtyPass.movements, "net_qty");
   accumulate(byCell, officialLine, effectivePass.movements, "net_effective_units");
+
+  // THE EPDA-BULK ALLOCATION, ON THE SAME TWO MEASURES. One computation produces both lists, so
+  // units and money cannot come from different populations here either — which is why this module
+  // calls it rather than re-deriving a share: `buildBulkAllocation` reconciles each measure onto
+  // exactly the total that left, so every cell it adds still sums to zero per product and
+  // phx_write_monthly_store_split_net's own re-check holds.
+  const bulk = buildBulkAllocation(rows, period, officialLine);
+  accumulate(byCell, officialLine, bulk.movements, "net_qty");
+  accumulate(byCell, officialLine, bulk.effectiveMovements, "net_effective_units");
 
   return [...byCell.values()].filter(
     (row) => Math.abs(row.net_qty) > EPSILON || Math.abs(row.net_effective_units) > EPSILON,
@@ -179,7 +210,9 @@ export async function writeAttributionStoreSplitNet(input: {
   // previous run left behind. Skipping the call instead would strand stale rows the moment the
   // owner moved a start period later, and attribution would keep applying a split that no longer
   // exists.
-  if (isStoreCitySplitActive(period)) {
+  // Either rule is a reason to read the lines — the city split from 2026-08, the EPDA-BULK
+  // allocation from 2026-09 (see buildStoreSplitNetPayload, which decides per line).
+  if (isStoreCitySplitActive(period) || isBulkAllocationActive(period)) {
     for (const line of ATTRIBUTION_SPLIT_LINES) {
       const rows = await input.loadRowsForLine(line, period);
       // The organogram's Others set, for THIS line and THIS month — see loadOthersAreas. Loaded

@@ -7148,6 +7148,66 @@ Voice message: take HR (Omar Gawish, B-10, the sole Super Admin) out of the appr
   Each ends as "refused" with `admin_decided_by_hr_id`, `admin_decided_at`, `admin_note`; the rep, district manager and SFE are told "The Administrator reversed the approval of …". Weekly and monthly plans are out of scope — his existing return already takes them back. Migration `20261008190000_phoenix_crm_administrator_reverses.sql` (three functions, six additive columns).
 - Pinned by `tests/phoenix-crm-administrator.test.ts` and `tests/phoenix-crm-plan-edit-requests.test.ts`.
 
+## The EPDA-BULK contribution rule — owner, 2026-10-09
+
+**His words, spoken:** *"Starting from September closing, the ابدأ bulk will be distributed and
+calculated exactly as uh, office but in line pedia it will be you will get the total sales
+contribution of the other distributors … over the total sales and get … the contribution of every
+one and based on this distribute the same uh, contribution from uh, epda, bulk."*
+
+**His three answers the same day**, asked as in-chat multiple choice because each changed the
+outcome: the source is **"ساتو قطاع جملة"**, which still arrives as its own upload under `EP-BK`
+(so nothing has to classify a merged pharmacies file); the lines are **Pedia only**; the allocated
+money is labelled **EPDA-BULK**, the real distributor, not a Main-Stores-style stand-in.
+
+### The rule
+
+From the **2026-09** closing, an `EP-BK` row on **Pedia** is no longer credited where the wholesale
+invoice put it. Each area takes the whole bulk book by **its share of the line's other
+distributors' sales value** — units × master factory price, excluding `EP-BK` itself and direct
+orders — one blended share per area applied to every product, then pro-rata onto the area's bricks.
+That is the locked Office rule's arithmetic (`src/lib/sales/office-allocation.ts`,
+`GOLDEN RULE · LOCKED`) applied to a real distributor's book rather than to a channel.
+
+**Why it is right:** the bulk book invoices warehouses, so the invoice address is where the goods
+were BOUGHT, never where they were sold — the same defect the Office channel and the city rule
+exist to answer. Measured on June 2026: all 30 Pedia packs sat in **two** areas (AB1 24, AB2 6)
+while 37 others showed nothing.
+
+**What is untouched:** Head Office — **99.2%** of every bulk row ever uploaded, Lacto Basic
+(`LA003`/`LA004`), untracked and confidential, excluded by name by both closing RPCs — and every
+month **before 2026-09**. A late ruling is a rule for upcoming months, never a correction of a
+published one.
+
+### Three implementation facts that are decisions, not details
+
+1. **It is a NET, computed at closing READ time, folded onto the city split's existing rails** —
+   the matrix write-back and `au.monthly_store_split_net` — so the Closing tab, the premium
+   workbook, achievement, incentives and the rep keycard all move together.
+   **Row substitution was rejected:** `tests/closing-total-sheet-matches-matrix.test.ts` proves
+   Total = Data SUMIFS + net + direct, so allocated detail rows PLUS the net would move the same
+   money twice. Read time rather than upload time for the measured Office defect — a batch
+   re-mapped after the file lands leaves upload-time shares stale (3.39% of August's CNS Office
+   units).
+2. **The bulk rows are the FOURTH carve-out from the city rule**, beside EZ, Office and El Qema's
+   warehouses: `isSplitEligible` refuses them from September. `WHOLESALE_ONLY_DISTRIBUTORS` is
+   `{"QM"}` only, so `EP-BK` rows are classified by customer name — most of its customers are
+   wholesalers, so without the carve-out the city rule shares each row across its own city first
+   and the same units move twice.
+3. **`closing-bulk-allocation.ts` cannot import `buildOfficeAreaWeights`** — office-allocation →
+   monthly-distributor-import → attribution-store-split-refresh → attribution-store-split-net
+   cycles back to the caller. The arithmetic is duplicated and `tests/closing-bulk-allocation.test.ts`
+   pins it **equal to the locked builder to 1e-9** instead; the locked file itself is never touched.
+
+**Known and accepted:** on a FILTERED export the Store Split sheet's `crossing` excludes the bulk
+net while the Total sheet's applied delta includes it — the sheet re-derives from the rows it was
+given, by design. Whole-month exports are unaffected, both zero.
+
+**The arithmetic, on June's real shape:** 30 packs invoiced to 2 areas, spread by contribution —
+D21 20,000/35,000 → 17.142857, D15 → 8.571429, D14 → 4.285714, largest-remainder residual pushed so
+the net sums to **0** on units and on value. Shipped in #5662.
+
+
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08
 
 AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.

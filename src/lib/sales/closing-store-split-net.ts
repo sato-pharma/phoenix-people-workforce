@@ -31,6 +31,11 @@
 
 import { unstable_cache } from "next/cache.js";
 
+import {
+  isBulkAllocationActive,
+  isBulkAllocationLine,
+} from "@/lib/sales/bulk-allocation-channel";
+import { buildBulkAllocation, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -82,30 +87,46 @@ const loadClosingStoreSplitUncached = async (line: string, period: string): Prom
     includeConfidential: false,
     unpaged: true,
   });
+  // The city split is NOT run for a month or line it does not cover, even when the EPDA-BULK
+  // allocation below is what brought us here: the city rule's period gate lives in its CALLERS
+  // rather than in isSplitEligible, so calling the splitter anyway would split a month the owner
+  // froze. Today every bulk month is a city-split month too; this keeps that a fact rather than a
+  // dependency.
+  const cityApplies = isStoreCitySplitActive(period) && isSplitEligibleLine(line);
+  // The organogram parks some areas in Others, and those take no share of an El Qema split —
+  // owner, 2026-09-08. Resolved here, from the same line and month the rows were loaded for.
+  const regions = cityApplies ? await loadSplitRegions(line, period) : undefined;
   // The period decides which warehouse rule answers "is this a store" — the owner's 2026-09-06
   // rulings from September on, the six words alone before that. Passed explicitly here because this
   // loader is the ONE place both the screen and the export read, so neither can use a different
   // rule from the other, and neither can restate a month the owner froze.
-  // The organogram parks some areas in Others, and those take no share of an El Qema split —
-  // owner, 2026-09-08. Resolved here, from the same line and month the rows were loaded for.
-  const regions = await loadSplitRegions(line, period);
-  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(
-    details.rows,
-    period,
-    regions,
+  const { exemptStoreValueByBrick, movements } = cityApplies
+    ? splitStoreSalesAcrossCityAreas(details.rows, period, regions)
+    : { exemptStoreValueByBrick: new Map<string, number>(), movements: [] as StoreSplitAreaMovement[] };
+  // THE EPDA-BULK ALLOCATION RIDES THE SAME NET (owner, 2026-10-09, from the September closing).
+  // Folded in here, in the one loader both the screen and the export read, for the same reason the
+  // city split is: two surfaces deriving one redistribution separately is the defect this module was
+  // written to end. The two nets are added — both are zero-sum per product, so their sum is — and
+  // the bulk rows are already refused by `isSplitEligible`, so nothing moves twice.
+  const merged = mergeBulkAllocationIntoSplit(
+    { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
+    buildBulkAllocation(details.rows, period, line),
   );
   return {
-    exempt: Array.from(exemptStoreValueByBrick.entries()),
-    movements,
-    net: Array.from(netStoreSplitByAreaProduct(movements).entries()),
+    exempt: Array.from(merged.exemptStoreValueByBrick.entries()),
+    movements: merged.movements,
+    net: Array.from(merged.net.entries()),
   };
 };
 
 // Cache key deliberately renamed from the old "closing-store-split-net": the payload shape changed,
 // and a new key means an entry written by the previous deploy can never be read back as this shape.
+// Renamed AGAIN for the EPDA-BULK allocation above: the shape is identical this time but the numbers
+// are not, and an hour of entries written by the previous deploy would otherwise serve a September
+// Pedia closing with the bulk book still sitting on its invoiced areas.
 const loadClosingStoreSplitCached = unstable_cache(
   loadClosingStoreSplitUncached,
-  ["closing-store-split"],
+  ["closing-store-split-with-bulk"],
   { revalidate: 3600, tags: [CLOSING_STORE_SPLIT_CACHE_TAG] },
 );
 
@@ -131,8 +152,15 @@ export async function loadClosingStoreSplit(
   // does not, and neither can apply it to a month the owner froze.
   const trimmedLine = String(line ?? "").trim();
   const trimmedPeriod = String(period ?? "").trim();
-  if (!isStoreCitySplitActive(trimmedPeriod)) return emptySplit();
-  if (!trimmedLine || !isSplitEligibleLine(trimmedLine)) return emptySplit();
+  // The EPDA-BULK allocation is a SECOND reason this result is not empty, and it has its own line
+  // and start month (Pedia, 2026-09). Today it is a strict subset of the city split's gate — Pedia
+  // is split-eligible and September is after the split's August start — so the two tests can only
+  // disagree if one of those dates is ever moved. Asked separately anyway: a gate that is correct by
+  // coincidence silently drops a whole rule the day the coincidence ends.
+  const bulkApplies = isBulkAllocationActive(trimmedPeriod) && isBulkAllocationLine(trimmedLine);
+  if (!isStoreCitySplitActive(trimmedPeriod) && !bulkApplies) return emptySplit();
+  if (!trimmedLine) return emptySplit();
+  if (!isSplitEligibleLine(trimmedLine) && !bulkApplies) return emptySplit();
   // 🔴 A PUBLISHED month is FROZEN — the tab AND the export read the frozen net, not a live recompute
   // that drifted after publish. See loadFrozenStoreSplitIfPublished. Unpublished months fall through
   // to the live cache below, unchanged. Gated HERE (the one loader both surfaces read) rather than in
