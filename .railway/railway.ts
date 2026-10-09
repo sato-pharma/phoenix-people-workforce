@@ -1,16 +1,21 @@
 // Railway Infrastructure as Code for Phoenix-HR-Workforce.
 //
-// 🔴 OWNER DECISION, 2026-10-01: IT STAYS THAT WAY UNTIL HE SAYS OTHERWISE — "leave the railway
-// IaC inert for now". A session may not apply it, nor read the 2026-12-01 deadline as permission to:
-// the deadline is a reason to ask him, never a mandate. Only he lifts this, in his own words.
+// 🔴 OWNER DECISION, 2026-10-10: THE 2026-10-01 HOLD ("leave the railway IaC inert for now") IS
+// LIFTED, AND THE FIRST APPLY IS DONE — `phoenix-people-workforce` ONLY, at 01:35 Cairo. It ended on his
+// words, never on the 2026-12-01 deadline. Every further apply still needs his word, because it is a
+// production change that does not pass the deploy gate: `phoenix-headwind`'s `builder` and `deploy`
+// below are NOT yet applied and are the second one. See docs/deployment.md, "The first apply".
 //
-// 🔴 THIS FILE IS NOT APPLIED YET, AND NOTHING APPLIES IT AUTOMATICALLY. It is the reviewed
-// authoring file for the cutover away from `railway.json` / `railway.toml`, which Railway deprecated
-// with existing files working until 2026-12-01. Both `railway.toml` files are still in place and are
-// still what configures the live services; per `.railway/README.md`, "services already managed by
-// railway.json must be migrated before .railway/railway.ts can manage them". So this lands inert, on
-// purpose, so the apply can be reviewed from a file in git rather than from something generated on
-// the spot at the moment of pressing.
+// 🔴 `railway.toml` STAYS. The apply stored the healthcheck but Railway never stores the restart
+// policy, so a plan shows `restartPolicyType` / `restartPolicyMaxRetries` as pending forever and the toml
+// is the only thing enforcing them (owner, 2026-10-10: "keep railway.toml until the restart policy is
+// stored"). An apply also REDEPLOYS the service, rebuilding the same commit.
+//
+// 🔴 THIS FILE IS THE AUTHORING FILE for the cutover away from `railway.json` / `railway.toml`, which
+// Railway deprecated with existing files working until 2026-12-01; nothing applies it automatically.
+// Per `.railway/README.md`, "services already managed by railway.json must be migrated before
+// .railway/railway.ts can manage them", so each apply is reviewed from this file in git rather than
+// generated on the spot at the moment of pressing.
 //
 // 🔴 HOW TO APPLY IT, AND WHY NOT `railway config migrate`. Measured 2026-10-01: `migrate --apply`
 // translates only the two toml files and emits a WHOLE-PROJECT definition naming 2 services after
