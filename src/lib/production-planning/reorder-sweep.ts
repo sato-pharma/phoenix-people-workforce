@@ -23,12 +23,13 @@
  * arming anything. The table's own CHECK refuses `dry_run = true` beside `email_sent = true`, so a
  * bypassed gate fails at the database rather than in his inbox.
  */
-import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
+import { renderPhoenixDataGrid, renderPhoenixDataGridText } from "@/emails/phoenix-email-layout";
 import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { formatCoverRuns, type AlarmVerdict } from "./alarm";
+import { resolveRunGeometry, type RunGeometry } from "./geometry";
 import { formatQty, toDisplayQty } from "./rules";
 import {
   evaluateReorderAlarms,
@@ -37,12 +38,16 @@ import {
   type ProductionPlanningData,
 } from "./service";
 import {
-  ALARM_SEVERITY_LABELS,
+  ALARM_SEVERITY_LABELS_EN,
+  ALARM_SEVERITY_TONES,
   buildAlarmEmailSummary,
-  buildAlarmRowValue,
+  buildReorderEmailRow,
   formatNumberLatin,
-  PP,
+  nameEnglish,
+  PP_EN,
+  REORDER_EMAIL_COLUMNS,
   reorderEmailMaterialLabel,
+  unitLabelEn,
 } from "./strings";
 
 export type ReorderSweepResult = {
@@ -63,23 +68,64 @@ function todayCairo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
 }
 
-function emailRows(verdicts: readonly AlarmVerdict[], data: ProductionPlanningData) {
+/**
+ * One grid row per material — ENGLISH, and one column per quantity (owner, 2026-10-09).
+ *
+ * Both quantities are converted to the unit he BUYS in (kilograms, not the grams the engine counts
+ * in) and both are converted the SAME way, because the whole point of the two columns beside each
+ * other is that "held" can be read against "needed per run" without arithmetic.
+ *
+ * Each one then carries what it comes to in BOXES ("put quantities in kg and number of boxes", the
+ * same morning). `boxesPerRun` is the run this alarm is measured against — ONE run with no samples,
+ * the same baseline `needed_per_run_qty` is computed on, so held ÷ needed × boxes is exact rather
+ * than a ratio of two different runs. The arithmetic stays in BigInt: `held × boxes ÷ needed`
+ * truncates, which is the honest direction — a part-made box is not a box.
+ */
+function emailRows(
+  verdicts: readonly AlarmVerdict[],
+  data: ProductionPlanningData,
+  boxesPerRun: bigint,
+) {
   return verdicts.map((verdict) => {
     const material = data.materials.find((candidate) => candidate.id === verdict.materialId) ?? null;
-    // In the unit he buys in — kilograms, not the grams the engine counts in.
-    const held = material ? toDisplayQty(verdict.heldQty, material.basePerDisplay).text : formatQty(verdict.heldQty);
-    return {
+    const inDisplayUnit = (qty: bigint) =>
+      material ? toDisplayQty(qty, material.basePerDisplay).text : formatQty(qty);
+    const heldBoxes =
+      boxesPerRun > BigInt(0) && verdict.neededPerRunQty > BigInt(0)
+        ? (verdict.heldQty * boxesPerRun) / verdict.neededPerRunQty
+        : null;
+    return buildReorderEmailRow({
+      coverRuns: formatNumberLatin(formatCoverRuns(verdict.coverRunsMicro)),
+      heldBoxes: heldBoxes === null ? null : formatNumberLatin(heldBoxes),
+      heldText: formatNumberLatin(inDisplayUnit(verdict.heldQty)),
+      leadTimeDays: verdict.leadTimeDays === null ? null : formatNumberLatin(verdict.leadTimeDays),
       // The packaging row is spelled out, because this email also says boxes for the product count.
-      label: reorderEmailMaterialLabel(verdict.code, material?.nameAr ?? verdict.nameAr),
-      value: buildAlarmRowValue({
-        coverRuns: formatNumberLatin(formatCoverRuns(verdict.coverRunsMicro)),
-        displayUnit: material?.displayUnit ?? "",
-        heldText: formatNumberLatin(held),
-        leadTimeDays: verdict.leadTimeDays === null ? null : formatNumberLatin(verdict.leadTimeDays),
-        severityLabel: ALARM_SEVERITY_LABELS[verdict.severity],
-      }),
-    };
+      materialName: reorderEmailMaterialLabel(verdict.code, nameEnglish(material ?? verdict)),
+      perRunBoxes: boxesPerRun > BigInt(0) ? formatNumberLatin(boxesPerRun) : null,
+      perRunText: formatNumberLatin(inDisplayUnit(verdict.neededPerRunQty)),
+      severityLabel: ALARM_SEVERITY_LABELS_EN[verdict.severity],
+      tone: ALARM_SEVERITY_TONES[verdict.severity],
+      unitLabel: unitLabelEn(material?.displayUnit ?? ""),
+    });
   });
+}
+
+/**
+ * How many boxes ONE run makes, with no samples — the run the alarm's figures are measured on.
+ *
+ * Fail-soft on purpose: a product whose geometry cannot be resolved (a zero somewhere in it) loses
+ * the box line and keeps the kilograms, rather than losing the whole alarm.
+ */
+function boxesPerRunFor(product: { readonly geometry: RunGeometry }): bigint {
+  try {
+    return resolveRunGeometry(product.geometry, {
+      mode: "runs",
+      requestedQty: BigInt(1),
+      sampleUnits: BigInt(0),
+    }).totalBoxes;
+  } catch {
+    return BigInt(0);
+  }
 }
 
 export async function runProductionPlanningReorderSweep(): Promise<ReorderSweepResult> {
@@ -144,19 +190,19 @@ export async function runProductionPlanningReorderSweep(): Promise<ReorderSweepR
     return { ...base, alarms: verdicts.length, dryRun: true, emailSkippedReason: "dry run", recorded, warnings };
   }
 
-  const rowsForEmail = emailRows(verdicts, data);
+  const rowsForEmail = emailRows(verdicts, data, boxesPerRunFor(product));
   const worstCover = formatCoverRuns(verdicts[0]!.coverRunsMicro);
   // Switches 3 and 4 live inside sendTemplatedEmail: an inactive template and a disabled notification
   // environment both come back as `skipped` with a reason, which is reported rather than swallowed.
   const sent = await sendTemplatedEmail({
     context: {
-      detailsTable: renderPhoenixMetadataTable(rowsForEmail),
-      detailsTableText: renderPhoenixMetadataTableText(rowsForEmail),
-      status: PP.alarmEmailStatus,
-      subject: PP.alarmEmailSubject,
+      detailsTable: renderPhoenixDataGrid(REORDER_EMAIL_COLUMNS, rowsForEmail),
+      detailsTableText: renderPhoenixDataGridText(REORDER_EMAIL_COLUMNS, rowsForEmail),
+      status: PP_EN.alarmEmailStatus,
+      subject: PP_EN.alarmEmailSubject,
       summary: buildAlarmEmailSummary({
         count: formatNumberLatin(verdicts.length),
-        productNameAr: product.nameAr,
+        productName: nameEnglish(product),
       }),
     },
     // The Cairo date AND what the sweep actually found: a repeat run the same morning reaches nobody

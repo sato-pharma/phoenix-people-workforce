@@ -65,8 +65,12 @@ export function runEmailZebraSurvivesSanitizerTests() {
     !/style="padding:16px 20px;background:\$\{rowBg\}/.test(layout),
     "the metadata cells must not write the `background` shorthand — the sanitizer drops it",
   );
+  const metadataTable = layout.slice(
+    layout.indexOf("export function renderPhoenixMetadataTable("),
+    layout.indexOf("export function renderPhoenixMetadataTableText("),
+  );
   assert.equal(
-    layout.split("background-color:${rowBg}").length - 1,
+    metadataTable.split("background-color:${rowBg}").length - 1,
     2,
     "both metadata cells (label and value) must set background-color from the row colour",
   );
@@ -74,4 +78,71 @@ export function runEmailZebraSurvivesSanitizerTests() {
     layout.includes('bgcolor="${rowBg}"'),
     "the rows must keep their bgcolor attribute for the clients that ignore CSS",
   );
+
+  // --- The COLUMNAR grid, added 2026-10-09, is held to exactly the same two mechanisms ---
+  //
+  // It carries the production planner's reorder and expiry alarms, which reach their four readers
+  // through a stored template body — so it is sanitised on the same path, and a `background`
+  // shorthand or a dropped bgcolor would flatten it the same way.
+  const grid = layout.slice(
+    layout.indexOf("export function renderPhoenixDataGrid("),
+    layout.indexOf("export function renderPhoenixDataGridText("),
+  );
+  assert.ok(grid.length > 0, "renderPhoenixDataGrid must still exist — the two alarm emails render through it");
+  assert.ok(
+    !/style="[^"]*background:/.test(grid),
+    "the grid must not write the `background` shorthand anywhere — the sanitizer drops it",
+  );
+  assert.equal(
+    grid.split("background-color:${rowBg.css}").length - 1,
+    1,
+    "the grid's body cell must set background-color from the row's own tint",
+  );
+  assert.ok(
+    grid.includes('bgcolor="${rowBg.attr}"'),
+    "the grid's rows and cells must keep an OPAQUE bgcolor attribute — it is all Outlook's Word engine reads",
+  );
+  assert.ok(
+    grid.includes("${hairline}") && !grid.includes("border-bottom:"),
+    "the grid must draw its hairlines with `border`, not `border-bottom` — border-bottom is not an allowed style",
+  );
+  // 🔴 The grid may not declare its own text colour: `.phoenix-text td, .phoenix-text span` carry
+  // `color: … !important` in BOTH schemes and an inline declaration loses to them, while an inline
+  // `!important` is dropped here (the value stops matching the pattern). Every fill is therefore a
+  // translucent wash and the ink is inherited — a hard-coded colour would be a lie in one scheme.
+  assert.ok(
+    !/color:#[0-9a-f]{3,8}/i.test(grid),
+    "the grid must not hard-code a text colour — the reader's colour scheme owns the ink",
+  );
+  assert.ok(
+    /rgba\(/.test(grid),
+    "the grid's fills must be translucent, so they read on a white body and on a dark one",
+  );
+  // And the two dark-mode blocks must re-tint by the bgcolor ATTRIBUTE, because class is stripped.
+  for (const selector of ['tr[bgcolor="#ffffff"]', 'td[bgcolor="#f1f5f9"]', 'th[bgcolor="#e2e8f0"]']) {
+    assert.equal(
+      layout.split(selector).length - 1,
+      2,
+      `both dark-mode blocks must re-tint ${selector} — a sanitised table has no class left to match`,
+    );
+  }
+  const translucent = sanitizeEmailTemplateHtml(
+    '<td bgcolor="#f1f5f9" style="background-color:rgba(100,116,139,0.10);border:1px solid rgba(100,116,139,0.35)">x</td>',
+  );
+  assert.ok(translucent.includes("rgba(100,116,139,0.10)"), "a translucent fill must survive sanitising");
+  assert.ok(translucent.includes("border:1px solid rgba(100,116,139,0.35)"), "a translucent border must survive too");
+  for (const dropped of ["text-transform", "vertical-align", "white-space", "border-radius", "box-shadow"]) {
+    assert.ok(!grid.includes(dropped), `the grid writes ${dropped}, which the sanitizer drops — it must not rely on it`);
+  }
+
+  // And behaviourally: a HEADER row has to survive, or the columns lose their headings.
+  const headed = sanitizeEmailTemplateHtml(
+    '<table width="100%"><thead><tr bgcolor="#e2e8f0">' +
+      '<th bgcolor="#e2e8f0" style="background-color:rgba(100,116,139,0.18);border:1px solid rgba(100,116,139,0.35);padding:10px 12px;text-align:right">HELD NOW</th>' +
+      "</tr></thead><tbody><tr><td>x</td></tr></tbody></table>",
+  );
+  assert.ok(headed.includes("HELD NOW"), "a column heading must survive sanitising");
+  assert.ok(headed.includes("background-color:rgba(100,116,139,0.18)"), "the header band's fill must survive");
+  assert.ok(headed.includes('bgcolor="#e2e8f0"'), "the header band must keep its bgcolor for Outlook");
+  assert.ok(headed.includes("text-align:right"), "a numeric column must keep its right alignment");
 }

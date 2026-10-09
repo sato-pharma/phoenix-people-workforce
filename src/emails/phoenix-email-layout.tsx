@@ -156,6 +156,153 @@ export function renderPhoenixMetadataTableText(rows: PhoenixEmailMetadataRow[] |
     .join("\n");
 }
 
+/** One column of a {@link renderPhoenixDataGrid} — a heading, and which way its cells read.
+ * Numbers go `align: "right"`, words stay left, and the heading is written in the case it
+ * should appear in: `text-transform` is NOT on the template sanitizer's allowed-style list,
+ * so a lowercase heading styled uppercase arrives lowercase. */
+export type PhoenixEmailGridColumn = {
+  readonly label: string;
+  readonly align?: "left" | "right";
+};
+
+/** One cell. `sub` is a quiet second line under the value — the same quantity in another unit.
+ * `note` is a bordered chip under it — a status, a band, a remark — and `tone` colours that chip. */
+export type PhoenixEmailGridCell = {
+  readonly text: string | number | null | undefined;
+  readonly sub?: string | null;
+  readonly note?: string | null;
+  readonly tone?: "neutral" | "danger" | "warning" | "ok";
+};
+
+/**
+ * A chip's tint and rule, as TRANSLUCENT colour — never an opaque pastel.
+ *
+ * The chip cannot own its text colour (see renderPhoenixDataGrid), so the signal has to survive
+ * being read in whatever ink the client is using. A translucent wash sits correctly on a white
+ * body and on a dark one, while `#fef2f2` would be a pale pink block with pale text on top of it
+ * the moment the reader's client is in dark mode.
+ */
+const gridNoteTones = {
+  danger: { bg: "rgba(190,24,24,0.14)", border: "rgba(190,24,24,0.55)" },
+  neutral: { bg: "rgba(100,116,139,0.12)", border: "rgba(100,116,139,0.45)" },
+  ok: { bg: "rgba(21,128,61,0.14)", border: "rgba(21,128,61,0.5)" },
+  warning: { bg: "rgba(194,65,12,0.14)", border: "rgba(194,65,12,0.5)" },
+} as const;
+
+function gridCell(cell: PhoenixEmailGridCell | string | number | null | undefined): PhoenixEmailGridCell {
+  return typeof cell === "object" && cell !== null ? cell : { text: cell };
+}
+
+/**
+ * A COLUMNAR zebra grid — the many-measurements cousin of renderPhoenixMetadataTable.
+ *
+ * The label/value table says one thing per row, so a row carrying four numbers has to crush them
+ * into one sentence ("below the threshold — cover 0.7 runs · held 14.12 kg · lead time 30 days").
+ * The owner read exactly that in the reorder alarm on 2026-10-09 and asked for a real table with
+ * the quantities in their own columns, so each number can be compared down the column.
+ *
+ * Everything here is written for `sanitizeEmailTemplateHtml`, because this reaches most recipients
+ * as the `{{detailsTable}}` token inside a stored template body and is sanitised as part of it:
+ *  - `background-color` AND the legacy `bgcolor` attribute, never the `background` shorthand —
+ *    both halves of the striping, exactly as the metadata table above (Outlook's Word engine
+ *    ignores CSS backgrounds, every other client ignores nothing).
+ *  - `border` on each cell and `border-collapse:collapse` on the table. `border-bottom` is NOT on
+ *    the allowed-style list, so hairlines have to be whole-cell borders or they vanish.
+ *  - no `text-transform`, `vertical-align`, `white-space`, `border-radius` or `box-shadow`: all
+ *    dropped. Headings are written in the case they must appear in.
+ *  - `class` is not an allowed attribute either, so the dark-mode rules in the document <style>
+ *    never reach a grid inside a template body.
+ *
+ * 🔴 AND THE GRID DOES NOT OWN ITS TEXT COLOUR — THE READER'S COLOUR SCHEME DOES. The layout's own
+ * stylesheet carries `.phoenix-text td, .phoenix-text span { color:… !important }` in BOTH schemes,
+ * and an `!important` author rule beats an inline declaration, while `!important` inside an inline
+ * style is dropped by the sanitizer (the value stops matching its pattern). Measured in the Browser
+ * pane on 2026-10-09: a dark header band with white headings came out blank in light mode, and a
+ * white body row came out blank in dark mode. So every fill here is a TRANSLUCENT wash of the ink
+ * colour — it reads as a tint over a white body and over a dark one — and the ink is left to be
+ * inherited. The legacy `bgcolor` attribute still carries an opaque hex, because the one engine
+ * that ignores all of this (Outlook's Word renderer) has no dark mode either.
+ * Pinned by tests/email-zebra-survives-sanitizer.test.ts.
+ */
+export function renderPhoenixDataGrid(
+  columns: readonly PhoenixEmailGridColumn[],
+  rows: readonly (readonly (PhoenixEmailGridCell | string | number | null | undefined)[])[],
+) {
+  if (columns.length === 0 || rows.length === 0) return "";
+
+  // Opaque for the `bgcolor` attribute (Outlook's Word engine, light only); translucent for the
+  // CSS every other client reads.
+  const zebraBase = { attr: "#ffffff", css: "rgba(148,163,184,0.00)" };
+  const zebraAlt = { attr: "#f1f5f9", css: "rgba(100,116,139,0.10)" };
+  const headRow = { attr: "#e2e8f0", css: "rgba(100,116,139,0.18)" };
+  const hairline = "1px solid rgba(100,116,139,0.35)";
+  const font = "Arial,Helvetica,sans-serif";
+  /** Size and weight only. The colour is the reader's — see the note above. */
+  const ink = (value: string, size: number, weight: "bold" | "normal", spaced = false) =>
+    `<span style="font-family:${font};font-size:${size}px;font-weight:${weight}${spaced ? ";letter-spacing:0.5px" : ""}">${value}</span>`;
+
+  const head = columns
+    .map(
+      (column) =>
+        `<th bgcolor="${headRow.attr}" style="background-color:${headRow.css};border:${hairline};padding:10px 12px;font-family:${font};font-size:11px;font-weight:bold;letter-spacing:0.5px;line-height:1.5;text-align:${column.align === "right" ? "right" : "left"}">${ink(escapeEmailHtml(column.label), 11, "bold", true)}</th>`,
+    )
+    .join("");
+
+  const body = rows
+    .map((row, index) => {
+      const rowBg = index % 2 === 1 ? zebraAlt : zebraBase;
+      const altClass = index % 2 === 1 ? " phoenix-grid-row-alt" : "";
+      const cells = columns
+        .map((column, columnIndex) => {
+          const cell = gridCell(row[columnIndex]);
+          const tone = gridNoteTones[cell.tone ?? "neutral"];
+          const note = String(cell.note ?? "").trim();
+          const noteHtml = note
+            ? `<br /><span style="background-color:${tone.bg};border:1px solid ${tone.border};padding:2px 6px;font-family:${font};font-size:11px;font-weight:bold;line-height:2.1">${escapeAndIsolate(note)}</span>`
+            : "";
+          const sub = String(cell.sub ?? "").trim();
+          const subHtml = sub ? `<br />${ink(escapeAndIsolate(sub), 11, "normal")}` : "";
+          const text = String(cell.text ?? "").trim();
+          const value = ink(text ? escapeAndIsolate(text) : "—", 13, columnIndex === 0 ? "bold" : "normal");
+          return `<td class="phoenix-grid-cell${altClass}" bgcolor="${rowBg.attr}" style="background-color:${rowBg.css};border:${hairline};padding:10px 12px;font-family:${font};font-size:13px;line-height:1.5;text-align:${column.align === "right" ? "right" : "left"}">${value}${subHtml}${noteHtml}</td>`;
+        })
+        .join("");
+      return `<tr class="phoenix-grid-row${altClass}" bgcolor="${rowBg.attr}">${cells}</tr>`;
+    })
+    .join("");
+
+  return `
+    <table class="phoenix-grid" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:100%;border-collapse:collapse;border:${hairline}">
+      <thead><tr class="phoenix-grid-head" bgcolor="${headRow.attr}">${head}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>`;
+}
+
+/** Plain-text projection of renderPhoenixDataGrid — the same columns, padded so they line up in a
+ * monospaced reader and still readable in one that is not. */
+export function renderPhoenixDataGridText(
+  columns: readonly PhoenixEmailGridColumn[],
+  rows: readonly (readonly (PhoenixEmailGridCell | string | number | null | undefined)[])[],
+) {
+  if (columns.length === 0 || rows.length === 0) return "";
+
+  const matrix = rows.map((row) =>
+    columns.map((_column, index) => {
+      const cell = gridCell(row[index]);
+      const text = String(cell.text ?? "").trim() || "—";
+      const extras = [String(cell.sub ?? "").trim(), String(cell.note ?? "").trim()].filter(Boolean);
+      return extras.length > 0 ? `${text} (${extras.join(", ")})` : text;
+    }),
+  );
+  const widths = columns.map((column, index) =>
+    Math.max(column.label.length, ...matrix.map((cells) => cells[index]!.length)),
+  );
+  const line = (cells: readonly string[]) =>
+    cells.map((cell, index) => cell.padEnd(widths[index]!)).join("  |  ").trimEnd();
+
+  return [line(columns.map((column) => column.label)), ...matrix.map(line)].join("\n");
+}
+
 /** Several headed zebra tables in sequence — the sectioned alternative to one long
  * renderPhoenixMetadataTable list. A section with no non-empty rows is dropped entirely
  * rather than rendering an empty card. */
@@ -306,6 +453,14 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
         .phoenix-metadata { border-color:#334155 !important; }
         .phoenix-metadata-cell { background:#18212f !important; border-color:#2b3a4f !important; }
         .phoenix-metadata-cell.phoenix-metadata-row-alt { background:#1f2b3d !important; }
+        /* A table that arrived through a TEMPLATE BODY has had its class attributes stripped by
+           the sanitizer, so the two rules above cannot reach it - but the bgcolor attribute IS
+           allow-listed, and it is the only handle left. Without these three, a light row keeps
+           its light fill under the dark-mode ink and the table reads blank (measured 2026-10-09).
+           No backticks in this comment: it sits inside a template literal. */
+        .phoenix-text tr[bgcolor="#ffffff"], .phoenix-text td[bgcolor="#ffffff"] { background-color:rgba(255,255,255,0.03) !important; }
+        .phoenix-text tr[bgcolor="#f1f5f9"], .phoenix-text td[bgcolor="#f1f5f9"] { background-color:rgba(255,255,255,0.10) !important; }
+        .phoenix-text tr[bgcolor="#e2e8f0"], .phoenix-text th[bgcolor="#e2e8f0"] { background-color:rgba(255,255,255,0.17) !important; }
         .phoenix-divider { background:#334155 !important; }
         .phoenix-section-title { color:#f8fafc !important; -webkit-text-fill-color:#f8fafc !important; }
         .phoenix-hero-cell { background:#2a1607 !important; background-image:linear-gradient(135deg,#2a1607 0%,#3a2008 100%) !important; border-color:#7c3f12 !important; }
@@ -332,6 +487,9 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
       [data-ogsc] .phoenix-muted { color:#cbd5e1 !important; -webkit-text-fill-color:#cbd5e1 !important; }
       [data-ogsc] .phoenix-metadata-cell { background:#18212f !important; border-color:#2b3a4f !important; }
       [data-ogsc] .phoenix-metadata-cell.phoenix-metadata-row-alt { background:#1f2b3d !important; }
+      [data-ogsc] .phoenix-text tr[bgcolor="#ffffff"], [data-ogsc] .phoenix-text td[bgcolor="#ffffff"] { background-color:rgba(255,255,255,0.03) !important; }
+      [data-ogsc] .phoenix-text tr[bgcolor="#f1f5f9"], [data-ogsc] .phoenix-text td[bgcolor="#f1f5f9"] { background-color:rgba(255,255,255,0.10) !important; }
+      [data-ogsc] .phoenix-text tr[bgcolor="#e2e8f0"], [data-ogsc] .phoenix-text th[bgcolor="#e2e8f0"] { background-color:rgba(255,255,255,0.17) !important; }
       [data-ogsc] .phoenix-section-title { color:#f8fafc !important; -webkit-text-fill-color:#f8fafc !important; }
       [data-ogsc] .phoenix-hero-cell { background:#2a1607 !important; border-color:#7c3f12 !important; }
       [data-ogsc] .phoenix-hero-label { color:#fdba74 !important; -webkit-text-fill-color:#fdba74 !important; }
