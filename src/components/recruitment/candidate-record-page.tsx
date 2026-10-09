@@ -67,6 +67,7 @@ import { screeningHref } from "@/lib/recruitment/screening-link";
 import { candidateDecisionTabOf } from "@/lib/recruitment/candidate-decision-tabs";
 import type { ManagerSend } from "@/lib/recruitment/manager-sends";
 import type { Candidate, RecruitmentFile } from "@/lib/recruitment/types";
+import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
 
 /** What each part is called when it could not be read — in the reader's words, never a code. */
 const PART_WORDS: Record<CandidateRecordPart, string> = {
@@ -289,7 +290,7 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
     .join(" · ");
 
   return (
-    <div className="border border-phx-line bg-white">
+    <div className={adminPanelClassName}>
       <WorkHeader
         controls={
           <>

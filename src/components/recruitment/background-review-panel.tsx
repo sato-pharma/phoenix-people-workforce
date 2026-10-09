@@ -16,6 +16,7 @@ import { candidateFolderKindLabels, candidateFolderLabel } from "@/lib/recruitme
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import type { Candidate } from "@/lib/recruitment/types";
+import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * The admin's queue for CVs the eligibility rule will not decide by itself.
@@ -59,7 +60,7 @@ export function BackgroundReviewPanel({
   if (total === 0) return null;
 
   return (
-    <section className="rounded-lg border border-phx-line bg-white">
+    <section className={`${adminPanelClassName} rounded-lg`}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2">
         <span className="flex items-center whitespace-nowrap text-sm font-black text-phx-ink">
           <FileSearch aria-hidden className="mr-1.5 h-4 w-4 text-phx-accent-press" />

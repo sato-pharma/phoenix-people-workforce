@@ -33,6 +33,7 @@ import {
   type WhatsAppApplicantsView,
 } from "@/lib/recruitment/whatsapp-applicant-filters";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /** Rows drawn at once. A longer list shows a button for the next lot. */
 const ROWS_PER_STEP = 100;
@@ -376,7 +377,7 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
 
   if (view.titles.length === 0) {
     return (
-      <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
+      <p className={`border border-slate-200 bg-white p-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
         Nobody has answered the WhatsApp questions yet.
       </p>
     );
@@ -384,7 +385,7 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
 
   return (
     <div className="space-y-4">
-      <section className="border border-slate-200 bg-white px-4 py-4">
+      <section className={`border border-slate-200 bg-white px-4 py-4 ${adminSoftDepthClassName}`}>
         <label className={labelClass} htmlFor="whatsapp-applicants-title">
           Job title
         </label>
@@ -454,7 +455,7 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
             ) : null}
             {filtered ? (
               <button
-                className="border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                className={`border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`}
                 onClick={() => {
                   setSelections({});
                   setLimit(ROWS_PER_STEP);
@@ -481,12 +482,12 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
           ) : null}
 
           {matches.length === 0 ? (
-            <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
+            <p className={`border border-slate-200 bg-white p-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
               {emptyMessage(filtered, decisionTab)}
             </p>
           ) : (
             <>
-              <div className="hidden border border-slate-200 bg-white md:block">
+              <div className={`hidden border border-slate-200 bg-white md:block ${adminPanelDepthClassName}`}>
                 <table className="w-full table-fixed text-left text-sm">
                   <colgroup>
                     <col className="w-[24%]" />
@@ -529,7 +530,7 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
                 </table>
               </div>
 
-              <ul className="divide-y divide-slate-100 border border-slate-200 bg-white md:hidden">
+              <ul className={`divide-y divide-slate-100 border border-slate-200 bg-white md:hidden ${adminPanelDepthClassName}`}>
                 {shown.map((row) => (
                   <li className="space-y-2.5 px-4 py-3 text-sm" key={row.key}>
                     <ApplicantCell
@@ -553,7 +554,7 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
 
               {matches.length > shown.length ? (
                 <button
-                  className="w-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className={`w-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
                   onClick={() => setLimit((current) => current + ROWS_PER_STEP)}
                   type="button"
                 >

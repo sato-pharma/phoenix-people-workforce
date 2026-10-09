@@ -15,6 +15,7 @@ import {
   monthGrid,
 } from "@/lib/recruitment/interview-calendar-week";
 import { cn } from "@/lib/utils";
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export type MonthCursor = { year: number; monthIndex: number };
 
@@ -57,7 +58,7 @@ export function MonthPicker({
       <div className="mb-2 flex items-center justify-between gap-2">
         <button
           aria-label="Previous month"
-          className="inline-flex h-8 w-8 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+          className={`inline-flex h-8 w-8 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 ${adminControlDepthClassName} disabled:shadow-none`}
           disabled={atFloor}
           onClick={() => onCursor(shiftCursor(cursor, -1))}
           type="button"
@@ -69,7 +70,7 @@ export function MonthPicker({
         </p>
         <button
           aria-label="Next month"
-          className="inline-flex h-8 w-8 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+          className={`inline-flex h-8 w-8 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 ${adminControlDepthClassName}`}
           onClick={() => onCursor(shiftCursor(cursor, 1))}
           type="button"
         >

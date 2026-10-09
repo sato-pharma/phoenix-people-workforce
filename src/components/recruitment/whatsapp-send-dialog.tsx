@@ -19,6 +19,7 @@ import {
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Template = {
   id: string;
@@ -58,7 +59,7 @@ type EmployeeContext = {
 function MessagePreview({ text }: { text: string }) {
   const lines = text.split("\n");
   return (
-    <div className="border border-slate-200 bg-[#e7f6e9] p-3 text-[13px] leading-relaxed text-slate-800">
+    <div className={`border border-slate-200 bg-[#e7f6e9] p-3 text-[13px] leading-relaxed text-slate-800 ${adminSoftDepthClassName}`}>
       {lines.map((line, index) => (
         // A blank line is a paragraph break in the original and must survive as vertical space, so
         // it renders a non-breaking space rather than collapsing to nothing.
@@ -310,7 +311,7 @@ export function WhatsAppSendDialog({
         ref={dialogRef}
         role="dialog"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+        <div className={`flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 ${adminRecessedDepthClassName}`}>
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-slate-900">WhatsApp message</h2>
             <p className="text-xs text-slate-600" dir="auto">
@@ -318,7 +319,7 @@ export function WhatsAppSendDialog({
             </p>
           </div>
           <button
-            className="border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            className={`border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 ${adminControlDepthClassName}`}
             onClick={onClose}
             type="button"
           >
@@ -443,7 +444,7 @@ export function WhatsAppSendDialog({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+        <div className={`flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 ${adminRecessedDepthClassName}`}>
           <p className="text-xs text-slate-600">
             Opens WhatsApp with the message written. You press send there.
           </p>

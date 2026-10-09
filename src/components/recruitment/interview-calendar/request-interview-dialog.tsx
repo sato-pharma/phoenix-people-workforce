@@ -23,6 +23,7 @@ import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker"
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import { CV_LIMIT_BYTES, PersonPicker, initialPersonChoice, personLabel, personProblem, type PersonChoice } from "./person-picker";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const MAX_ITEMS = 25;
 
@@ -140,7 +141,7 @@ export function RequestInterviewDialog({
         <section>
           <PanelHeading>The day</PanelHeading>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,18rem)_minmax(0,1fr)] sm:items-start">
-            <div className="border border-slate-200 bg-white p-3">
+            <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
               <MonthPicker cursor={cursor} onCursor={setCursor} onSelect={setDay} selected={day} todayKey={todayKey} />
             </div>
             <NoteLine tone={day ? "emerald" : "slate"}>
@@ -159,7 +160,7 @@ export function RequestInterviewDialog({
           <PanelHeading aside={<span className="text-[11px] text-slate-500">{items.length} of {MAX_ITEMS}</span>}>The CVs</PanelHeading>
           <ul className="flex flex-col gap-3">
             {items.map((item, index) => (
-              <li className="border border-slate-200 bg-slate-50/60 p-3" key={item.key}>
+              <li className={`border border-slate-200 bg-slate-50/60 p-3 ${adminRecessedDepthClassName}`} key={item.key}>
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="text-[12px] font-bold text-slate-700">
                     CV {index + 1}

@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { ReturnedCvItem, ReturnedCvManagerGroup } from "@/lib/recruitment/district-returns";
 import { managerLabel } from "@/lib/recruitment/person-labels";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
@@ -54,7 +55,7 @@ function ReturnedRow({
         ) : null}
       </div>
       <button
-        className="shrink-0 whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-60"
+        className={`shrink-0 whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-60 ${adminControlDepthClassName} disabled:shadow-none`}
         disabled={busy}
         onClick={() => onResolve(item)}
         type="button"
@@ -116,7 +117,7 @@ export function ReturnedCvsQueue({ groups: initialGroups }: { groups: ReturnedCv
 
   if (initialGroups.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
+      <div className={`rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
         No CVs have been returned. When a district manager hands a CV back — because it is not for one of their areas, or
         for any other reason — it will appear here, grouped by the manager who returned it.
       </div>
@@ -149,7 +150,7 @@ export function ReturnedCvsQueue({ groups: initialGroups }: { groups: ReturnedCv
       ) : null}
 
       {groups.map((manager) => (
-        <div className="rounded-lg border border-slate-200 bg-white" key={manager.managerHrId}>
+        <div className={`rounded-lg border border-slate-200 bg-white ${adminPanelDepthClassName}`} key={manager.managerHrId}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-900" dir="auto">
               {/* A pile is headed by the manager who sent it back — by name, or by words when his

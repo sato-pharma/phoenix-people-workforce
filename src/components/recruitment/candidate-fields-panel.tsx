@@ -15,6 +15,7 @@ import {
   type CvPositionSchema,
   type CvSubFieldDefinition,
 } from "@/lib/recruitment/cv-field-schemas";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type FieldValue = string | boolean | number | Array<Record<string, unknown>> | null;
 
@@ -80,7 +81,7 @@ function BlockEntries({ entries, itemFields }: { entries: Array<Record<string, u
           .filter((line): line is { subField: CvSubFieldDefinition; text: string } => line.text !== null);
         if (lines.length === 0) return null;
         return (
-          <div key={index} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+          <div key={index} className={`rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 ${adminRecessedDepthClassName}`}>
             {lines.map(({ subField, text }) => (
               <p key={subField.key} className="text-xs text-slate-700">
                 <span className="font-medium text-slate-500">{subField.label}:</span> {text}

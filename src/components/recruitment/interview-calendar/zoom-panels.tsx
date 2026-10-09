@@ -29,6 +29,7 @@ import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, PanelHeading } from "./calendar-dialog";
 import { PollEditor, PollSetsDialog } from "./poll-editor";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export type MeetingTarget = { kind: "booking" | "session"; id: string };
 
@@ -125,7 +126,7 @@ function InvitationPanel({ api, hasMeeting, target }: { api: CalendarApi; hasMee
         <NoteLine>The invitation appears once the Zoom meeting exists.</NoteLine>
       ) : invitation ? (
         <div className="flex flex-col gap-2">
-          <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-800">
+          <p className={`max-h-56 overflow-y-auto whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-800 ${adminRecessedDepthClassName}`}>
             {invitation.text}
           </p>
           <div className="flex flex-wrap gap-2">

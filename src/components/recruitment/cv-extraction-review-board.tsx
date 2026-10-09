@@ -54,6 +54,7 @@ import {
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const POOL_ID = "__pool__";
 
@@ -385,7 +386,7 @@ export function CvExtractionReviewBoard({
 
   return (
     <DndContext onDragEnd={handleDragEnd} onDragStart={handleDragStart} sensors={sensors}>
-      <div className="space-y-3 rounded border border-slate-200 bg-slate-50/60 p-4">
+      <div className={`space-y-3 rounded border border-slate-200 bg-slate-50/60 p-4 ${adminRecessedDepthClassName}`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Drag a field into the right column, or drag one out to leave it blank. Populate resets everything to the original suggested values.

@@ -34,13 +34,14 @@ import {
 } from "@/lib/recruitment/manager-engagement-presentation";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /** One row of the report's own file-list response — the CV file is the one whose kind is "cv". */
 type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
 
 function StatTile({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: "plain" | "warn" }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
       <div className={`text-2xl font-semibold ${tone === "warn" ? "text-amber-600" : "text-slate-900"}`}>{value}</div>
       <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
       {hint ? <div className="mt-1 text-xs text-slate-400">{hint}</div> : null}
@@ -264,7 +265,7 @@ function ExportXlsxButton({ query, disabled }: { query: string; disabled: boolea
       {/* Wraps rather than pushing the button off a 375px screen when the message is showing. */}
       {state === "error" ? <span className="text-xs text-rose-600">Export failed — try again</span> : null}
       <button
-        className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
+        className={`inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
         disabled={disabled || state === "working"}
         onClick={() => void handleClick()}
         title="Every manager on screen, their four counts, and one line per CV behind them."
@@ -330,18 +331,18 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
       </div>
 
       {report.rows.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
+        <div className={`rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
           No CVs have been sent to any manager{report.scoped ? " on your line" : ""} yet. As the recruitment team pushes
           CVs to managers, each manager and what they do with them will appear here.
         </div>
       ) : rows.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
+        <div className={`rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
           No manager matches &ldquo;{query}&rdquo;.
         </div>
       ) : (
         <>
           {/* ── Desktop: the full table (owner's rule) ── */}
-          <div className="hidden rounded-lg border border-slate-200 bg-white md:block">
+          <div className={`hidden rounded-lg border border-slate-200 bg-white md:block ${adminPanelDepthClassName}`}>
             <table className="hidden w-full text-sm md:table" data-portal-desktop-table>
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -377,7 +378,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
               const key = row.managerHrId;
               const isOpen = Boolean(expanded[key]);
               return (
-                <div className="rounded-lg border border-slate-200 bg-white p-4" key={key}>
+                <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`} key={key}>
                   <button
                     className="flex w-full items-start justify-between gap-3 text-left"
                     onClick={() => toggle(key)}

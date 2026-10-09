@@ -36,6 +36,34 @@ export const adminSoftPanelClassName =
 export const adminInsetPanelClassName =
   "border border-phx-line bg-[#FBFCFD] shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)]";
 
+// ── Depth WITHOUT a ground ───────────────────────────────────────────────────
+// The tokens above carry a border and a background as well as a shadow, which is right for a
+// surface being built now and wrong for one that already exists. Recruitment draws 139 surfaces
+// on `border-slate-200`/`border-slate-300`, on the warm `bg-phx-paper` strips and on the WhatsApp
+// preview green — and `--phx-line` is #e0dcd4 (warm) where slate-200 is #e2e8f0 (cool). Taking
+// those onto adminPanelClassName would recolour a hundred borders: a redesign, under cover of a
+// rule about depth. These five are the SAME shadows as the tokens above, named once, for a
+// surface that keeps its own ground. tests/recruitment-premium-depth.test.ts pins each one to the
+// token it was lifted from, so the two cannot drift apart.
+//
+// Which one a surface takes is decided by where it sits, never by how big it is:
+//   • PANEL    — a page-level box: the two-layer lift, so it reads as sitting ON the page.
+//   • SOFT     — a box nested inside a panel: the same shape, shallower, so it does not compete.
+//   • RECESSED — a read-only well, a dialog's edge strip, a toolbar tray: an INNER shadow, because
+//                a surface below the page cannot also float above it.
+//   • CONTROL  — a button: a contact shadow that grows on hover. Pair it with
+//                `disabled:shadow-none` wherever the control has a disabled state, or a greyed
+//                button goes on floating and still reads as clickable.
+//   • CHIP     — a pill or a segmented group: contact only, so a pill still reads as a pill.
+export const adminPanelDepthClassName =
+  "shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_rgba(15,23,42,0.055)]";
+export const adminSoftDepthClassName =
+  "shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_24px_rgba(15,23,42,0.045)]";
+export const adminRecessedDepthClassName = "shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)]";
+export const adminControlDepthClassName =
+  "shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]";
+export const adminChipDepthClassName = "shadow-[0_1px_1px_rgba(15,23,42,0.05)]";
+
 // The dark header band that sits at the top of a panel, naming what the panel is. The Approvals
 // Hub wears it on thirteen panels and was the reason this became a token: thirteen copies of
 // `bg-slate-900` drift the moment one of them is touched.

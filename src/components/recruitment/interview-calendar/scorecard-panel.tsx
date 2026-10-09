@@ -19,6 +19,7 @@ import {
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { ErrorLine } from "./calendar-dialog";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -84,7 +85,7 @@ export function ScorecardPanel({ api, booking, onChanged }: { api: CalendarApi; 
       ) : null}
 
       {booking.canScoreInterview ? (
-        <div className="border border-slate-200 bg-white p-3">
+        <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
           <p className="text-[12px] font-bold text-slate-700">{mine ? "Your scorecard" : "Add your scorecard"}</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <div aria-label="Rating" className="inline-flex items-center gap-1" role="group">

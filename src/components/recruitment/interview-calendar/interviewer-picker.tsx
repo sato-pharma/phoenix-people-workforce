@@ -7,6 +7,7 @@ import { Loader2, Search, UserRound, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { InterviewCalendarPerson } from "@/lib/recruitment/interview-calendar-types";
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 import type { CalendarApi } from "./calendar-api";
 
@@ -51,7 +52,7 @@ export function InterviewerPicker({
 
   if (value) {
     return (
-      <div className="flex items-center justify-between gap-2 border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className={`flex items-center justify-between gap-2 border border-slate-200 bg-slate-50 px-3 py-2 ${adminRecessedDepthClassName}`}>
         <p className="flex min-w-0 items-center gap-2 break-words text-[13px] font-semibold text-slate-900">
           <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
           {value.name}
@@ -83,7 +84,7 @@ export function InterviewerPicker({
         {searching ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-400" /> : null}
       </label>
       {shown.length > 0 ? (
-        <ul className="mt-1 max-h-44 overflow-y-auto border border-slate-200 bg-white">
+        <ul className={`mt-1 max-h-44 overflow-y-auto border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           {shown.map((person) => (
             <li key={person.hrId}>
               <button

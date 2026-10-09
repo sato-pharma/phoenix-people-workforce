@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { ContactReviewRow } from "@/lib/recruitment/contact-review-service";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // Every moment this module shows a person is Cairo local time, never a raw UTC string. Written
 // here, matching intake-health-view.tsx and recruitment-workspace.tsx, rather than imported across
@@ -28,7 +29,7 @@ function sourceLabel(source: string | null): string {
 
 function StatTile({ hint, label, value }: { hint?: string; label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
       <div className="text-2xl font-semibold text-slate-900">{value}</div>
       <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
       {hint ? <div className="mt-1 text-xs text-slate-400">{hint}</div> : null}
@@ -127,7 +128,7 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
         />
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Contact details found in CVs</h2>

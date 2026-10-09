@@ -70,6 +70,7 @@ import {
   type InterviewOutcomeGroup,
   type InterviewSession,
 } from "@/lib/recruitment/interview-calendar-types";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import {
   SLOT_MINUTES,
   WORKDAY_END_MINUTES,
@@ -484,7 +485,7 @@ export function InterviewCalendarView({
       {link ? null : <ZoomAutoOpen api={api} />}
 
       {/* ── The week bar ───────────────────────────────────────────────────────────────────── */}
-      <section className="border border-slate-200 bg-white">
+      <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
         <div className="flex flex-col gap-3 border-b-2 border-b-orange-600 px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <p className="text-[22px] font-bold leading-tight text-slate-900">{formatWeekOf(weekStart)}</p>
@@ -498,7 +499,7 @@ export function InterviewCalendarView({
                 <div className="flex">
                   <button
                     aria-label="Previous week"
-                    className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                    className={`inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 ${adminControlDepthClassName}`}
                     onClick={() => goToWeek(addDays(weekStart, -7))}
                     type="button"
                   >
@@ -506,7 +507,7 @@ export function InterviewCalendarView({
                   </button>
                   <button
                     aria-label="Next week"
-                    className="-ml-px inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                    className={`-ml-px inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 ${adminControlDepthClassName}`}
                     onClick={() => goToWeek(addDays(weekStart, 7))}
                     type="button"
                   >
@@ -616,7 +617,7 @@ export function InterviewCalendarView({
       ) : null}
 
       {/* ── Desktop: the grid ──────────────────────────────────────────────────────────────── */}
-      <section aria-busy={loading} aria-label="Week grid" className="relative hidden border border-slate-200 bg-white md:block">
+      <section aria-busy={loading} aria-label="Week grid" className={`relative hidden border border-slate-200 bg-white md:block ${adminPanelDepthClassName}`}>
         {loading ? (
           <div className="absolute right-3 top-3 z-10 inline-flex items-center gap-1 text-[11px] text-slate-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the week…
@@ -630,7 +631,10 @@ export function InterviewCalendarView({
             ))}
           </colgroup>
           <thead>
-            <tr className="bg-slate-900 text-white">
+            {/* The week grid's head is the shared dark band, not a local `bg-slate-900`: the same
+                treatment the Approvals Hub and the Coverage Report wear, so the three cannot
+                drift. Every OTHER bg-slate-900 in this module is a selected state on a button. */}
+            <tr className={`${adminPanelHeaderClassName} text-white`}>
               <th className="border-r border-slate-700 px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide" scope="col">
                 Time
               </th>
@@ -751,7 +755,7 @@ export function InterviewCalendarView({
               ? bookableStart(day, day === nowKey ? Math.max(WORKDAY_START_MINUTES, slotFor(earliestToday)) : WORKDAY_START_MINUTES)
               : null;
           return (
-            <li className="border border-slate-200 bg-white" key={day}>
+            <li className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`} key={day}>
               <p className={cn("flex items-baseline justify-between gap-2 px-3 py-2 text-white", day === todayKey ? "bg-orange-600" : "bg-slate-900")}>
                 <span className="text-[14px] font-bold">{weekdayName(day)}</span>
                 <span className="text-[12px] font-semibold opacity-80">{formatShortDate(day)}</span>
