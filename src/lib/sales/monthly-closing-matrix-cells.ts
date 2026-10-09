@@ -192,6 +192,15 @@ export function filterMonthlyClosingMatrix(
     },
     line: matrix.line,
     period: matrix.period,
+    // Which MONTHS this matrix folds is not a thing a filter can change — narrowing areas, regions
+    // or products leaves the selection exactly as it was. Dropping it here made a filtered
+    // multi-month matrix claim to be a single month (`periods` undefined means "one month", never
+    // "unknown" — see the field's own contract in monthly-distributor-import.ts), which is the one
+    // field on which the Performance Review's filtered fold and the consolidated closing's
+    // filter-then-fold disagreed. Nothing read it off a filtered matrix, so no behaviour moves;
+    // what changes is that the two paths are now identical rather than identical-but-for-this.
+    // Pinned by tests/closing-consolidated-export.test.ts.
+    ...(matrix.periods ? { periods: matrix.periods } : {}),
     regions,
   };
 }
