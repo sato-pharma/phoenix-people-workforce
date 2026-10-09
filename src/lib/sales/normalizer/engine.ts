@@ -464,11 +464,28 @@ export function normalizeRows(
     // These are free-goods shipments, not real sales — counting them inflates the numbers. The WHOLE
     // row goes, so a profile may list only a flag column here, never a bonus count that sits beside
     // paid units (see DistributorProfile.bonusColumns).
+    //
+    // The row's OWN units and its resolved product are recorded on the way out. They are never sales
+    // and never reach a coded row — they exist so the Validate screen can say, under that product,
+    // how many units the file carried that this rule excluded. Recording 0 here (what it did before
+    // 2026-10-09) is what made an EPDA-BULK sheet of 6,736 Ivyronc packs validate at 5,214 with no
+    // trace of the other 1,522 anywhere on the screen.
     if (profile.bonusColumns?.length) {
       const flag = firstValue(row, header, profile.bonusColumns);
       if (flag && flag !== "0" && flag.toLowerCase() !== "false") {
         ignored += 1;
-        ignoredRows.push({ rawProduct, rawProductName: productValues.slice(1).find(Boolean) ?? "", rawRowNumber: r, qty: 0, reason: "bonus" });
+        const freeGoodsQty = parseNum(firstCell(row, header, profile.qtyColumns));
+        const freeGoodsProduct = productCode ? maps.productByCode.get(productCode) : undefined;
+        ignoredRows.push({
+          rawProduct,
+          rawProductName: productValues.slice(1).find(Boolean) ?? "",
+          rawRowNumber: r,
+          qty: Number.isFinite(freeGoodsQty) ? freeGoodsQty : 0,
+          reason: "bonus",
+          productCode: productCode || undefined,
+          productName: freeGoodsProduct?.productName,
+          officialLine: freeGoodsProduct?.line,
+        });
         continue;
       }
     }

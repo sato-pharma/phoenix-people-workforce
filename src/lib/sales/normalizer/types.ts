@@ -149,9 +149,19 @@ export type NormalizeIgnoredRow = {
   rawProduct: string;
   rawProductName: string;
   rawRowNumber: number;
+  // The units the SHEET carried on this row. A free-goods row used to record 0 here, so the units it
+  // excluded were invisible on every surface: the Validate screen showed a smaller Qty than the file
+  // and nothing said where the difference went (EPDA-BULK, read 2026-10-09 — a sheet carrying 6,736
+  // Ivyronc packs validated at 5,214, and the missing 1,522 were free goods on 14 is_bonus rows).
   qty: number;
   // "ignore_mapped" = user explicitly mapped this product to IGNORE; "bonus" = distributor sheet flag
   reason?: "ignore_mapped" | "bonus";
+  // Resolved product identity, when the alias dictionary placed the row before it was skipped. Lets
+  // the validation breakdowns report the excluded units UNDER THE PRODUCT, in the Bonus column, so
+  // the sheet's own total reconciles on screen. Absent when the product itself is unmapped.
+  productCode?: string;
+  productName?: string;
+  officialLine?: string;
 };
 
 // A row the normalizer could not fully code — surfaced for one-time mapping (never dropped).

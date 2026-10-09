@@ -143,16 +143,49 @@ async function buildSuggestions(distributorCode: string, unmapped: UnmappedCusto
     }));
 }
 
-// Per-row advisory for rows whose product is mapped to "ignore" (intentionally excluded).
-function ignoredRowsAdvisory(normalizeResult: NormalizeResult): string | null {
+// Advisories for the rows the recognizer skipped. TWO reasons, two sentences, never one — they have
+// different causes and opposite fixes, and lumping them told a reader whose rows were free goods to
+// go and change a product mapping that was perfectly correct. Free-goods rows also used to record 0
+// units, so the single sentence reported "(0 units)" for them: an EPDA-BULK sheet carrying 6,736
+// Ivyronc packs validated at 5,214 with nothing on the screen naming the missing 1,522.
+export function skippedRowsAdvisories(normalizeResult: NormalizeResult): string[] {
   const { ignoredRows } = normalizeResult;
-  if (ignoredRows.length === 0) return null;
-  const totalIgnoredQty = ignoredRows.reduce((sum, r) => sum + r.qty, 0);
-  return (
-    `${ignoredRows.length} row${ignoredRows.length === 1 ? "" : "s"} (${totalIgnoredQty} unit${totalIgnoredQty === 1 ? "" : "s"}) were skipped — ` +
-    `their products are mapped as "ignore" in the Mapping tab. ` +
-    `If this is unexpected, go to the Mapping tab → update those product mappings → Save → re-upload.`
-  );
+  const units = (rows: typeof ignoredRows) =>
+    rows.reduce((sum, r) => sum + (Number.isFinite(r.qty) ? r.qty : 0), 0);
+
+  const mapped = ignoredRows.filter((r) => r.reason !== "bonus");
+  const freeGoods = ignoredRows.filter((r) => r.reason === "bonus");
+  const advisories: string[] = [];
+
+  if (mapped.length > 0) {
+    const qty = units(mapped);
+    advisories.push(
+      `${mapped.length} row${mapped.length === 1 ? "" : "s"} (${qty} unit${qty === 1 ? "" : "s"}) were skipped — ` +
+      `their products are mapped as "ignore" in the Mapping tab. ` +
+      `If this is unexpected, go to the Mapping tab → update those product mappings → Save → re-upload.`,
+    );
+  }
+
+  if (freeGoods.length > 0) {
+    const qty = units(freeGoods);
+    // Name the products, so the reader sees WHICH total on their sheet will not match the screen.
+    const byProduct = new Map<string, number>();
+    for (const row of freeGoods) {
+      const name = row.productName || row.rawProductName || row.rawProduct || "—";
+      byProduct.set(name, (byProduct.get(name) ?? 0) + (Number.isFinite(row.qty) ? row.qty : 0));
+    }
+    const named = [...byProduct.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, productQty]) => `${name} ${productQty}`)
+      .join(", ");
+    advisories.push(
+      `${freeGoods.length} row${freeGoods.length === 1 ? "" : "s"} (${qty} unit${qty === 1 ? "" : "s"}) are free goods and are excluded from sales — ` +
+      `the sheet flags them, and no distributor's bonus is ever counted. Excluded units by product: ${named}. ` +
+      `Nothing is wrong with the file: its quantity for those products is the imported Qty plus these units.`,
+    );
+  }
+
+  return advisories;
 }
 
 // The field each row no mapping can fix is reported under. Deliberately none of the labels the wizard's
@@ -357,9 +390,9 @@ export async function importSourceOfSalesFile(input: {
       const rows: ImportPreviewRow[] = parsedRows.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
       const previewDiff = await buildPreviewDiff(input.distributorCode, rows, result);
       const splitPlan = buildSplitPlan(parsedRows, result.period ?? input.periodOverride);
-      const advisory = ignoredRowsAdvisory(normalizeResult);
-      return advisory
-        ? { ...result, advisories: [...(result.advisories ?? []), advisory], previewDiff, splitPlan }
+      const advisory = skippedRowsAdvisories(normalizeResult);
+      return advisory.length > 0
+        ? { ...result, advisories: [...(result.advisories ?? []), ...advisory], previewDiff, splitPlan }
         : { ...result, previewDiff, splitPlan };
     }
 
@@ -374,8 +407,8 @@ export async function importSourceOfSalesFile(input: {
 
     // Surface ignored rows as an advisory so the user knows exactly how many units were excluded
     // and why — without blocking the import (the "ignore" mapping is intentional).
-    const advisory = ignoredRowsAdvisory(normalizeResult);
-    if (!advisory) return persistResult;
-    return { ...persistResult, advisories: [...(persistResult.advisories ?? []), advisory] };
+    const advisory = skippedRowsAdvisories(normalizeResult);
+    if (advisory.length === 0) return persistResult;
+    return { ...persistResult, advisories: [...(persistResult.advisories ?? []), ...advisory] };
   }
 }
