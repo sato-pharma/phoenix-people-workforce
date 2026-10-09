@@ -1128,6 +1128,7 @@
   "the-ci-box-runs-three-remote-checks-at-once-and-swaps": "engineering",
   "the-claude-scripts-live-off-machine-on-a-never-merge-branch": "sessions",
   "the-closing-functions-disagree-on-the-line-argument": "sales-closing",
+  "the-closing-loader-falls-back-to-the-first-line-silently": "org",
   "the-crm-departed-exclusion-is-119-ids-not-56": "crm",
   "the-delete-guard-now-has-a-named-file-stand-down": "sessions",
   "the-delete-guard-reads-a-variable-named-rm-as-rm": "sessions",
