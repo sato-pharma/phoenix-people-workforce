@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { buildEmployeeEligibilityRows } from "../src/lib/vacation/service.ts";
+import { buildEmployeeEligibilityRows, requestableAnnualLeaveDays } from "../src/lib/vacation/service.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import type { VacationRequestRecord } from "../src/lib/vacation/types.ts";
 
@@ -98,9 +98,30 @@ export function runPortalHomeAnnualLeaveLeftTests() {
     const body = functionBody(source, "export async function getEmployeeAnnualLeaveBalanceDays(");
 
     assert.match(body, /buildEmployeeEligibilityRows\(\{/, "must call the report's own entitlement-row builder, not a second copy of the math");
-    assert.match(body, /\breturn\s+eligibilityRow\?\.annualBalanceDays\b/, "must return the BALANCE field (entitlement minus used), not the raw entitlement");
+    assert.ok(
+      body.includes("return eligibilityRow ? requestableAnnualLeaveDays(eligibilityRow) : null;"),
+      "must return the row's REQUESTABLE balance — entitlement minus used, and 0 while the six-month block applies — never the raw entitlement",
+    );
     assert.ok(!body.includes("annualEntitlementDays"), "must never fall back to the raw entitlement field");
     assert.match(body, /hrIdsMatch\(row\.employeeHrId, employee\.hrId\)/, "must narrow the fetched rows to the requested employee before summing");
+
+    // 2b. THE FIGURE ITSELF, behaviourally rather than by matching source. A joiner inside their
+    // first six months HAS an accrued balance, and the Vacation Report's Balance column shows it so
+    // that a deduction charged against it is visible to HR (tests/deductions-leave-balance.test.ts
+    // section 7). The rep still cannot request a paid day: this tile links straight to the request
+    // screen, which prices it unpaid, so the tile must read 0 rather than offer days that vanish one
+    // click later.
+    const joiner = employee({ hrId: "MR-2", hireDate: "2026-04-01" });
+    const [joinerRow] = buildEmployeeEligibilityRows({ allScopedRows: [], employees: [joiner], filters: {}, today: TODAY });
+    assert.equal(joinerRow?.eligibilityStatus, "first_six_months");
+    assert.equal(joinerRow?.eligibleForAnnualPaidLeave, false);
+    assert.ok((joinerRow?.annualBalanceDays ?? 0) > 0, "the report row must carry the accrued balance — that is the report's own fix");
+    assert.equal(requestableAnnualLeaveDays(joinerRow!), 0, "but the tile must not promise a day the request flow refuses");
+
+    // And nothing about this tile changes for an eligible employee: the two figures are one number.
+    const [eligibleRow] = buildEmployeeEligibilityRows({ allScopedRows: [], employees: [employee({ hrId: "MR-3" })], filters: {}, today: TODAY });
+    assert.equal(requestableAnnualLeaveDays(eligibleRow!), eligibleRow?.annualBalanceDays);
+    assert.equal(requestableAnnualLeaveDays(eligibleRow!), 21);
   }
 
   // 3. THE HOME TILE. The Medical Rep command center must render the new balance field under the

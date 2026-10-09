@@ -35,7 +35,8 @@ function usesCalendarYearVacationReset(employeeHrId: string | null | undefined) 
 const emergencyCutoffHour = 10;
 const vacationPolicyTimeZone = "Africa/Cairo";
 
-function roundDays(value: number) {
+/** Exported for buildEmployeeEligibilityRows, which reads a balance off a snapshot it already has. */
+export function roundDays(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
@@ -178,11 +179,30 @@ export function calculateFirstYearVacationEntitlement(hireDate: string | null | 
   return firstYearAnnualEntitlementDays;
 }
 
-function calendarMonthDiff(start: string, end: string) {
-  const startDate = dateOnlyOrNull(start);
-  const endDate = dateOnlyOrNull(end);
-  if (!startDate || !endDate || endDate < startDate) return 0;
-  return Math.max(0, (endDate.getFullYear() - startDate.getFullYear()) * 12 + endDate.getMonth() - startDate.getMonth());
+/**
+ * COMPLETED months from `start` to `end` — not month-boundary crossings.
+ *
+ * 🔴 `(y2 - y1) * 12 + (m2 - m1)` counts the BOUNDARY, so 30 Sep -> 01 Oct read as a whole month:
+ * a joiner had accrued 1.25 days after ONE day of service, while one hired on the 1st had accrued 0
+ * after thirty. The rule this implements is "15/12 of a day per completed month from the hire date"
+ * (.claude/rules/time-off.md), and the entitlement row now puts that figure in the Vacation Report's
+ * Balance column for the whole first-six-months cohort, so the day of the month has to count.
+ *
+ * A month completes when the hire day-of-month comes round again, and on the LAST day of a shorter
+ * month when it cannot (31 Jan completes on 28 Feb). Date-string arithmetic throughout: parsing to
+ * Date and reading getMonth() puts a UTC midnight into Cairo's own day and can shift the month.
+ */
+function completedMonthsBetween(start: string, end: string) {
+  const from = toDateOnlyString(start);
+  const to = toDateOnlyString(end);
+  if (!from || !to || to < from) return 0;
+
+  const [fromYear, fromMonth, fromDay] = from.split("-").map(Number);
+  const [toYear, toMonth, toDay] = to.split("-").map(Number);
+  const boundaries = (toYear - fromYear) * 12 + (toMonth - fromMonth);
+  const daysInToMonth = new Date(Date.UTC(toYear, toMonth, 0)).getUTCDate();
+  const anniversaryDay = Math.min(fromDay, daysInToMonth);
+  return Math.max(0, toDay >= anniversaryDay ? boundaries : boundaries - 1);
 }
 
 function calculateMonthlyAccruedEntitlement(input: {
@@ -190,7 +210,7 @@ function calculateMonthlyAccruedEntitlement(input: {
   periodStart: string;
   referenceDate: string;
 }) {
-  const accruedMonths = Math.min(monthsInYear, calendarMonthDiff(input.periodStart, input.referenceDate));
+  const accruedMonths = Math.min(monthsInYear, completedMonthsBetween(input.periodStart, input.referenceDate));
   return roundDays((input.annualEntitlementDays / monthsInYear) * accruedMonths);
 }
 

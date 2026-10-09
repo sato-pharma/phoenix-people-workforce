@@ -52,6 +52,7 @@ import {
   normalizeVacationPaymentStatus,
   normalizeVacationRequestStatus,
   normalizeVacationType,
+  roundDays,
   vacationTypeLabel,
 } from "@/lib/vacation/calculations";
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
@@ -810,12 +811,23 @@ export function buildEmployeeEligibilityRows(input: {
   filters: VacationReportFilters;
   today: string;
   /**
-   * Annual leave taken for a CRM / half-day deduction (Deductions → "Deduct from leave balance",
-   * 2026-10-09). Counted as used when its work date falls in the employee's balance period, so the
-   * Entitlements tab and the portal's "annual leave left" agree with the balance a leave request is
-   * priced against.
+   * EVERY annual-balance ledger day, from `annualBalanceLedgerDays()` — counted as used when its
+   * work date falls in the employee's own balance period, so the Entitlements tab and the portal's
+   * "annual leave left" agree with the balance a leave request is actually priced against.
+   *
+   * 🔴 It was the `source = 'deductions'` fold alone, which is only one of the three pools
+   * `approvedPaidDaysInPeriod` counts: a day the WEEKLY ATTENDANCE REVIEW had charged, or a day
+   * payroll had SETTLED against the balance, was missing from Used and left Balance reading HIGHER
+   * than the figure a request is priced against. Negative reversal rows net themselves.
    */
   balanceCharges?: ReadonlyArray<{ employeeHrId: string; workDate: string; days: number }>;
+  /**
+   * That ledger read FAILED (see `annualBalanceLedgerDays`). Every row then carries a review flag
+   * saying so, because the Used and Balance columns otherwise read as though nothing had been spent
+   * — the very screen the charge feature exists to remove — with nothing on this tab to say the
+   * figure is incomplete. The charges section carries its own separate banner.
+   */
+  balanceChargesUnavailable?: boolean;
 }): VacationEmployeeEligibilityRow[] {
   return input.employees
     .filter((employee) => employeeEligibilityFilterMatches(employee, input.filters))
@@ -850,6 +862,33 @@ export function buildEmployeeEligibilityRows(input: {
         startDate: input.today,
         vacationType: "annual",
       });
+      // THE BALANCE COLUMN CARRIES WHAT HAS ACCRUED, SO SPENDING A DAY VISIBLY SUBTRACTS FROM IT
+      // (owner, 2026-10-09: "make the entitlments of the peoplw qho got this decrease by number of
+      // days", then "in vacation report"). Inside the first six months calculateVacationPayment
+      // answers balanceBeforeDays: 0 flat - the right answer when PRICING A REQUEST - so the column
+      // read 0 for the whole cohort while the charged days sat in Used, and Entitlement - Used never
+      // added up. Every live charge is on someone inside that window, so the feature was invisible.
+      //
+      // 🔴 THE FIRST DRAFT OVERRODE THIS ONLY FOR SOMEONE WHO ALREADY HAD A CHARGE, WHICH MOVED THE
+      // NUMBER THE WRONG WAY: an uncharged joiner read 0 and a charged one 0.25, so pressing the
+      // button RAISED the Balance column and the colleague who had spent nothing looked poorer. The
+      // accrued balance is what every first-six-months row carries now, charged or not - 1.25 goes to
+      // 0.25 when a day is charged, which is the decrease he asked to see.
+      //
+      // ONLY this figure moves: eligibilityStatus, daysUntilEligibility, eligibleForAnnualPaidLeave
+      // and reviewFlags all stay on the snapshot below, so the row still reads "First 6 months" and
+      // still says the employee cannot request paid leave. What an employee may actually TAKE is a
+      // different question and a different function - requestableAnnualLeaveDays, which the portal
+      // tile reads.
+      //
+      // It is READ OFF THE SNAPSHOT, not calculated a second time. The annual path of the calculator
+      // answers roundDays(max(0, entitlementDays - usedPaidDays)) and carries both of those fields on
+      // the snapshot already, identical with the flag and without it, so a second call with a copy of
+      // the same six arguments only created two argument lists to keep in lockstep. `allowFirstSixMonths`
+      // is left to the Deductions balance read alone, which is the one caller the flag was added for.
+      const annualBalanceDays = annualBalance.unpaidReason === "first_six_months"
+        ? roundDays(Math.max(0, annualBalance.entitlementDays - annualBalance.usedPaidDays))
+        : annualBalance.balanceBeforeDays;
       const sixMonthAnniversary = addMonthsToDateOnly(employee.hireDate, 6);
       const daysSinceHire = daysBetweenDateOnly(employee.hireDate);
       const eligibilityDate = parseDateOnly(sixMonthAnniversary);
@@ -862,6 +901,7 @@ export function buildEmployeeEligibilityRows(input: {
           ? "first_six_months"
           : "eligible";
       const reviewFlags = [
+        input.balanceChargesUnavailable ? "Balance charges could not be read" : null,
         eligibilityStatus === "missing_hire_date" ? "Missing hire date" : null,
         eligibilityStatus === "first_six_months" && daysUntilEligibility && daysUntilEligibility > 0
           ? `${daysUntilEligibility} days until paid eligibility`
@@ -873,7 +913,7 @@ export function buildEmployeeEligibilityRows(input: {
       ].filter((value): value is string => Boolean(value));
 
       return {
-        annualBalanceDays: annualBalance.balanceBeforeDays,
+        annualBalanceDays,
         annualEntitlementDays: annualBalance.entitlementDays,
         annualUsedDays: annualBalance.usedPaidDays,
         daysSinceHire,
@@ -899,6 +939,23 @@ export function buildEmployeeEligibilityRows(input: {
       if (priorityDiff !== 0) return priorityDiff;
       return left.displayName.localeCompare(right.displayName);
     });
+}
+
+/**
+ * The days an employee may actually TAKE as paid annual leave today — what a portal tile answering
+ * "Annual leave left" must show, and NOT the same question as the Entitlements tab's Balance column.
+ *
+ * Inside the first six months the row carries the ACCRUED balance, so that a deduction charged
+ * against it is visible on the report (buildEmployeeEligibilityRows above). The six-month rule still
+ * refuses every paid request from that employee — calculatePaymentForRequest is never passed
+ * `allowFirstSixMonths` — so offering those days to the employee as leave they have left would
+ * promise a day the request screen then prices unpaid, on two screens one click apart. 0 is the
+ * honest answer until they are eligible. For an eligible employee the two figures are one number.
+ */
+export function requestableAnnualLeaveDays(
+  row: Pick<VacationEmployeeEligibilityRow, "annualBalanceDays" | "eligibleForAnnualPaidLeave">,
+): number {
+  return row.eligibleForAnnualPaidLeave ? row.annualBalanceDays : 0;
 }
 
 function buildEmployeeEligibilitySummary(
@@ -2860,6 +2917,78 @@ export async function attendanceChargedDaysInPeriod(
     throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
   }
   return (data ?? []).reduce((sum, row) => sum + numberValue((row as { days?: unknown }).days), 0);
+}
+
+/**
+ * A full ledger read past this many rows is refused rather than silently truncated: a balance that
+ * forgot days already spent says more is left than there is.
+ */
+const ANNUAL_BALANCE_LEDGER_READ_LIMIT = 20_000;
+
+/**
+ * EVERY annual-balance ledger day, for `buildEmployeeEligibilityRows` — the Entitlements tab's
+ * counterpart to `attendanceChargedDaysInPeriod` and `balanceSettledDaysInPeriod` above, which take
+ * one employee and one period each and would be two round trips per row of the report.
+ *
+ * 🔴 BOTH POOLS, AND `attendance_annual_balance_charges` WITH NO `source` FILTER. The tab used to be
+ * handed `listLeaveBalanceChargesForEmployees` — the `source = 'deductions'` fold — so a day the
+ * weekly attendance review had charged, or a day payroll had settled, never reached Used, and the
+ * Balance column read higher than the figure `calculatePaymentForRequest` prices a request against.
+ * `approvedPaidDaysInPeriod` counts request days plus BOTH of these, and this is the same arithmetic
+ * on the same rows: negative reversal rows net themselves, exactly as they do there.
+ *
+ * Rows come back with no employee or period filter, the way `readDeductionsRows` already reads this
+ * ledger: the caller matches on `hrIdsMatch` (the ledger carries the same HR_ID case drift the
+ * per-employee readers use `ilike` for) and on each employee's own balance period. A missing table
+ * means the migration has not run, so no such day can exist and it reads as none; anything else
+ * throws, and the caller decides what to show.
+ */
+export async function annualBalanceLedgerDays(
+  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<Array<{ employeeHrId: string; workDate: string; days: number }>> {
+  const tableMissing = (error: unknown) => {
+    const code = String((error as { code?: unknown } | null)?.code ?? "");
+    const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+    return code === "PGRST205" || code === "42P01" || code === "42703" || message.includes("could not find the table");
+  };
+  const rowsOf = (label: string, result: { data?: unknown; error?: unknown }) => {
+    if (result.error) {
+      if (tableMissing(result.error)) return [];
+      const message = (result.error as { message?: unknown }).message;
+      throw new Error(`Failed to read ${label}: ${typeof message === "string" ? message : String(result.error)}`);
+    }
+    const rows = (result.data ?? []) as Array<Record<string, unknown>>;
+    if (rows.length >= ANNUAL_BALANCE_LEDGER_READ_LIMIT) {
+      throw new Error(`${label} returned ${rows.length} rows or more, so the balance would be understated`);
+    }
+    return rows;
+  };
+
+  const [chargeRead, settlementRead] = await Promise.all([
+    client
+      .from("attendance_annual_balance_charges")
+      .select("employee_hr_id,work_date,days")
+      .limit(ANNUAL_BALANCE_LEDGER_READ_LIMIT),
+    client
+      .from("payroll_copilot_vacation_settlements")
+      .select("employee_hr_id_compact,start_date,balance_days_consumed")
+      .in("settlement_method", ["balance", "partial_balance", "defer_to_balance"])
+      .is("superseded_at", null)
+      .limit(ANNUAL_BALANCE_LEDGER_READ_LIMIT),
+  ]);
+
+  return [
+    ...rowsOf("the annual balance charges", chargeRead as { data?: unknown; error?: unknown }).map((row) => ({
+      employeeHrId: String(row.employee_hr_id ?? ""),
+      workDate: String(row.work_date ?? ""),
+      days: numberValue(row.days),
+    })),
+    ...rowsOf("the vacation balance settlements", settlementRead as { data?: unknown; error?: unknown }).map((row) => ({
+      employeeHrId: String(row.employee_hr_id_compact ?? ""),
+      workDate: String(row.start_date ?? ""),
+      days: numberValue(row.balance_days_consumed),
+    })),
+  ].filter((row) => row.employeeHrId && row.workDate);
 }
 
 /** How many past balance periods the carried-debt walk reads at once — each is up to three reads. */
@@ -6757,18 +6886,33 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
     .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds));
   // Deductions taken from annual leave (owner, 2026-10-09). A failed read must not take the whole
   // report down, but it must not read as "none" either — it is logged and the section says so.
-  const leaveBalanceRead = await listLeaveBalanceChargesForEmployees(visibleEmployees.map((employee) => employee.hrId)).then(
-    (charges) => ({ charges, failed: false }),
-    (error: unknown) => {
-      console.error("Vacation report: could not read the deductions taken from annual leave", error);
-      return { charges: [] as Awaited<ReturnType<typeof listLeaveBalanceChargesForEmployees>>, failed: true };
-    },
-  );
+  // TWO READS, STARTED TOGETHER. The charges section shows the deductions fold — one row per
+  // deduction, with the Super Admin's comment; the Used and Balance columns need EVERY annual-balance
+  // day, including the weekly attendance review's and payroll's, or they read higher than the balance
+  // a request is priced against (annualBalanceLedgerDays). A failed read of either must not take the
+  // whole report down, and must not read as "none" either: each is logged and said on screen.
+  const [leaveBalanceRead, annualLedgerRead] = await Promise.all([
+    listLeaveBalanceChargesForEmployees(visibleEmployees.map((employee) => employee.hrId)).then(
+      (charges) => ({ charges, failed: false }),
+      (error: unknown) => {
+        console.error("Vacation report: could not read the deductions taken from annual leave", error);
+        return { charges: [] as Awaited<ReturnType<typeof listLeaveBalanceChargesForEmployees>>, failed: true };
+      },
+    ),
+    annualBalanceLedgerDays().then(
+      (rows) => ({ rows, failed: false }),
+      (error: unknown) => {
+        console.error("Vacation report: could not read the annual balance ledger", error);
+        return { rows: [] as Awaited<ReturnType<typeof annualBalanceLedgerDays>>, failed: true };
+      },
+    ),
+  ]);
   const employeeEligibility = buildEmployeeEligibilityRows({
     allScopedRows,
     employees: visibleEmployees,
     filters: clean,
-    balanceCharges: leaveBalanceRead.charges,
+    balanceCharges: annualLedgerRead.rows,
+    balanceChargesUnavailable: annualLedgerRead.failed,
     // Africa/Cairo calendar day, matching getVacationRequestPageData's employee-facing twin.
     // This is the reference date for the whole Entitlements table — balance period, payment
     // calculation and days-until-eligibility all hang off it. On an employee's hire anniversary
@@ -6835,6 +6979,10 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
  * duplicate this subtraction elsewhere (e.g. a portal home tile): call this instead, so the two
  * screens can never disagree.
  *
+ * It answers what the employee may actually TAKE (requestableAnnualLeaveDays), which inside the
+ * first six months is 0 even though the report's Balance column carries the accrued figure — the
+ * rule still refuses the request, and the tile links straight to the screen that would refuse it.
+ *
  * Reads systemAccessContext's own all-visibility row set rather than the caller's AccessContext —
  * this is "what does employeeHrId have left", not "what can the viewer see" — then narrows to that
  * one employee in memory. loadAllVacationRequestRowsCached and getEmployeeDirectory are both
@@ -6855,11 +7003,12 @@ export async function getEmployeeAnnualLeaveBalanceDays(employeeHrId: string | n
     .map((row) => mapVacationRow(row))
     .filter((row) => hrIdsMatch(row.employeeHrId, employee.hrId));
 
-  // Unknown beats overstated: a balance that forgot days taken for a deduction would say more is left
-  // than there is, so a failed read answers null (the callers already treat that as "not shown").
-  let balanceCharges: Awaited<ReturnType<typeof listLeaveBalanceChargesForEmployees>>;
+  // Unknown beats overstated: a balance that forgot days already spent would say more is left than
+  // there is, so a failed read answers null (the callers already treat that as "not shown"). EVERY
+  // pool, not the deductions fold alone — see annualBalanceLedgerDays.
+  let balanceCharges: Awaited<ReturnType<typeof annualBalanceLedgerDays>>;
   try {
-    balanceCharges = await listLeaveBalanceChargesForEmployees([employee.hrId]);
+    balanceCharges = await annualBalanceLedgerDays();
   } catch {
     return null;
   }
@@ -6871,7 +7020,9 @@ export async function getEmployeeAnnualLeaveBalanceDays(employeeHrId: string | n
     balanceCharges,
   });
 
-  return eligibilityRow?.annualBalanceDays ?? null;
+  // NOT the row's Balance column: inside the first six months that is the accrued figure the report
+  // shows, which this employee cannot request. See requestableAnnualLeaveDays.
+  return eligibilityRow ? requestableAnnualLeaveDays(eligibilityRow) : null;
 }
 
 /**

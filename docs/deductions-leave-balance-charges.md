@@ -139,6 +139,94 @@ the charge runs, so the dialog can no longer offer a charge the save then refuse
 first"*. The button is already hidden on a pushed row, so this is the server agreeing with the screen
 rather than a visible change.
 
+## The report had to show the balance go down — the third thing in the way
+
+Minutes after the cleared-row fix shipped he asked for the last half of it: *"make the entitlments of the
+peoplw qho got this decrease by number of days"*, then *"in vacation report"*.
+
+The charged days were already counted. `buildEmployeeEligibilityRows` adds them to `usedPaidDays`, so the
+Entitlements tab Used column and the bar moved. **The Balance column did not** — and that is the number the
+screen leads with (*“N days remaining”*, and *“Annual leave left”* on an employee own view). Inside the first
+six months `calculateVacationPayment` returns `defaultUnpaid`, whose `balanceBeforeDays` is a hard **0**,
+because that is the right answer when pricing a REQUEST. So a first-six-months row showed
+`Entitlement 1.25 · Used 1 · Balance 0` — internally inconsistent, and identical to the row before the charge.
+Since every live charge is on someone inside that window, the whole feature was invisible on screen.
+
+**One figure changes, for EVERY row in that cohort.** Whenever the snapshot says `first_six_months` the
+entitlement row reads the accrued balance off that snapshot — `roundDays(max(0, entitlementDays -
+usedPaidDays))`, the annual path's own arithmetic on the two fields it already carries. Nothing else on
+the row moves, and 🔴 **`allowFirstSixMonths` stays opt-in to the Deductions balance read ALONE**: an
+earlier draft called the calculator a second time with a copy of the same six arguments, which left two
+argument lists to keep in lockstep and put the flag in `vacation/service.ts`, where no leave request may
+ever reach it. `tests/deductions-leave-balance.test.ts` refuses the string in that file outright.
+
+🔴 **The first draft overrode it only for someone who ALREADY had a charge, and that moved the number the
+wrong way.** An uncharged joiner stayed on `Balance 0` while a charged one read `0.25`, so pressing
+*Deduct from leave balance* made the Balance column RISE from 0, and the colleague who had spent nothing
+read poorer than the one who had spent a day. `Entitlement - Used` added up only on charged rows. Carrying
+the accrued balance on every first-six-months row fixes both: `1.25` becomes `0.25` when a day is charged,
+which is the decrease he asked to see, and two rows can be read side by side.
+
+🔴 **What must NOT move with it, and is pinned separately:** `eligibilityStatus`, `daysUntilEligibility`,
+`eligibleForAnnualPaidLeave` and `reviewFlags` all stay on the UNOVERRIDDEN snapshot. Passing the override
+into the status would turn the badge from **First 6 months** to **Eligible** and drop the countdown — telling
+HR that a joiner may take paid annual leave, which is the one thing the six-month rule exists to prevent.
+An uncharged first-six-months row is left exactly as it was, so the only rows that move are the people he
+charged.
+
+🔴 **And Used has to count EVERY annual-balance pool, or the new figure overstates.**
+`approvedPaidDaysInPeriod` — what prices a request — is `requestDays + balanceSettledDaysInPeriod +
+attendanceChargedDaysInPeriod`, and that last one reads `attendance_annual_balance_charges` with **no
+`source` filter**, so it counts the weekly attendance review's charges beside the deductions ones. The
+Entitlements tab was handed `listLeaveBalanceChargesForEmployees` — the `source = 'deductions'` fold alone
+— so a joiner who had accrued 1.25 days, been charged 1 by the weekly review and 0.25 by a deduction read
+**Balance 1.00** on the report while `calculatePaymentForRequest` answered **0**. While the column was a
+flat 0 for the cohort that gap was invisible; making it the headline figure made it a wrong headline.
+`annualBalanceLedgerDays()` reads both pools in one pair of queries, with no `source` filter and no
+employee filter (the ledger carries the same HR_ID case drift the per-employee readers use `ilike` for, so
+the row builder matches on `hrIdsMatch`), and refuses a read past 20,000 rows rather than truncate it into
+an understated balance.
+
+🔴 **A FAILED ledger read is said on the tab.** Falling back to no rows leaves Used and Balance reading as
+though nothing had been spent — the exact screen this feature exists to remove — and the charges section's
+own banner is somewhere else entirely. `balanceChargesUnavailable` puts **“Balance charges could not be
+read”** in every row's review flags instead.
+
+🔴 **The accrued figure itself had to be right first.** `calculateMonthlyAccruedEntitlement` counted
+month-BOUNDARY crossings: `(y2-y1)*12 + (m2-m1)` made 30 Sep → 01 Oct a whole month, so a joiner carried
+1.25 days after ONE day of service while one hired on the 1st carried 0 after thirty. It counts COMPLETED
+months now — the month lands when the hire day-of-month comes round, and on the last day of a shorter
+month when it cannot (31 Jan completes 28 Feb) — which is the rule `.claude/rules/time-off.md` always
+stated. Date-string arithmetic, because parsing to `Date` and reading `getMonth()` puts a UTC midnight
+into Cairo's own day.
+
+🔴 **The employee's own portal tile must NOT read that figure, and that is the other half of the fix.**
+`getEmployeeAnnualLeaveBalanceDays` feeds `leaveDaysRemaining`, rendered as **“Annual leave left — N days”**
+on the portal home and the Medical Rep command center. The accrued balance is the right answer for HR on the
+report and the WRONG answer for the rep: the six-month rule still refuses every paid request —
+`calculatePaymentForRequest` is never passed `allowFirstSixMonths` — and the tile links straight to the
+request screen, which prices that day unpaid and shows **First 6 months**. Nothing in
+`src/components/employee-portal` renders an eligibility caption beside the tile, so there is no second
+figure there to make the first one honest. `requestableAnnualLeaveDays(row)` answers `row.annualBalanceDays`
+only once `eligibleForAnnualPaidLeave` is true and `0` before that — which is what the tile read before this
+feature existed. For an eligible employee the two figures are one number, so nothing moves for them.
+
+Section 7 of `tests/deductions-leave-balance.test.ts` and section 2 of
+`tests/portal-home-annual-leave-left.test.ts`. Each break was run and the named assertion watched firing:
+
+| Break | What fired |
+| --- | --- |
+| override only the rows that already have a charge (the first draft) | *an uncharged first-six-months row shows what it has accrued, not a flat 0* |
+| `requestableAnnualLeaveDays` hands the report figure to the tile | *a day the request flow refuses is not a day left* |
+| the portal returns the row's Balance column straight | *must return the row's REQUESTABLE balance … never the raw entitlement* |
+| the accrual counts month boundaries again | *one day of service has completed no month* |
+| the charges read filters by `source` again | *the charges read must NOT filter by source* |
+| the settlement pool is dropped | *every row comes back; the row builder nets and periods them* |
+| the failed-read flag is removed | *a failed ledger read must be visible on the Entitlements row* |
+| the override is called a second time | *the vacation service must never turn the override on for itself* |
+| price the override as if nothing had accrued | *the charged day must come off the balance the Vacation Report shows* |
+| let the override reach `eligibilityStatus` | *the override must not make him look eligible* |
+
 ## One ledger, no function redefined — the load-bearing design choice
 
 The days are inserted into **`attendance_annual_balance_charges`**, the same insert-only ledger the
