@@ -888,6 +888,16 @@ export const accessRegistry = [
   // Refusing a validation the check never held — every PM customer, and the AM ones that matched
   // (2026-10-03). The same gate and the same decider; the reject underneath is the one above.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/refuse", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Settling a location-integrity case, and putting a settled one back (owner, 2026-10-09): the Super
+  // Admin ALONE — `update` at the route, `canSettleIntegrityCases` in the service, so the SFE Manager
+  // reads that board without being able to close a case on it. Neither route deletes anything.
+  //
+  // 🔴 UNDER `/api/admin/`, NOT `/api/phoenix-crm/`, and that is the same decision as the note above
+  // about the deleted integrity GET: the rep's own app calls `/api/phoenix-crm/*`, so an address
+  // there that reaches the evidence is a disclosure surface whatever it answers. The admin namespace
+  // is where the board's own decisions belong — the board page itself is `(admin)`.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/phoenix-crm/integrity/settle", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/phoenix-crm/integrity/reopen", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // A polyclinic, medical centre, medical tower or hospital outpatient suite — captured ONCE at its
   // door, with customers seated inside it (owner, 2026-10-09). GET is the picker, for a reader of the
   // territory; POST captures one, and the service gates it to the territory's own rep or a manager.
