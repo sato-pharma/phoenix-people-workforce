@@ -15,10 +15,17 @@
  * totals ONCE at the end instead of once per customer (refreshBatchRollups rebuilds the whole
  * rollup chain including the wholesaler split net, so running it per customer would take hours).
  *
- * A PUBLISHED OR LOCKED MONTH IS SAFE WITHOUT THIS SCRIPT'S HELP. The RPC skips any file that holds
- * a row in a locked closing (sos_import_batch_touches_locked_closing), and it skips the WHOLE file,
- * so a July file is never half-corrected. This script prints the files it will skip for that reason
- * before it writes anything.
+ * A PUBLISHED MONTH IS REFUSED OUTRIGHT, BY ASKING THE PUBLICATION TABLE ITSELF. Two things stand
+ * in the way of a published month, and only one of them used to be here. The RPC skips any file
+ * that holds a row in a LOCKED closing (sos_import_batch_touches_locked_closing), whole file at a
+ * time, so a July file is never half-corrected — but a lock is the owner's switch on
+ * monthly_closing_locks and a publication is a row in monthly_closing_publications, set from two
+ * different screens at two different times, and NOTHING pairs them. So this script also reads the
+ * publications and refuses to apply when the period it was given is published, or when ANY row it
+ * would rewrite sits in a published month (src/lib/sales/published-month-guard.ts — the owner's
+ * rule of 2026-10-09, "never cange a publkished month"). A dry run reports instead of refusing,
+ * because measuring a month is not changing it. It still prints the files a lock will skip before
+ * it writes anything.
  *
  * THE REPAIR IS PER (DISTRIBUTOR, CUSTOMER) AND IGNORES THE PERIOD. A pair selected from the CNS
  * rows of one month also has its OTHER lines' and other months' rows re-pointed, wherever a lock
@@ -45,6 +52,13 @@ import { dirname } from "node:path";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { refreshBatchRollups } from "@/lib/sales/normalizer/customer-map";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
+import {
+  findPublishedMonthsAtRisk,
+  livePublishedPeriods,
+  publishedMonthGuardMessage,
+  publishedMonthRiskIsClear,
+  type PublishedMonthRisk,
+} from "@/lib/sales/published-month-guard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type ImportRow = {
@@ -314,8 +328,26 @@ function report(rows: PendingRow[]): void {
   console.log(`  ${"NET".padEnd(10)} ${money(total)} EGP  (must be 0.00 — value only moves between areas, it is never created)`);
 }
 
+// A published month stops an APPLY dead. A dry run reports instead: tonight's September repair
+// (2026-10-09) was measured on a dry run before the owner unpublished the month, which is the
+// correct order and must stay possible.
+function enforcePublishedMonthRule(risk: PublishedMonthRisk): void {
+  if (publishedMonthRiskIsClear(risk)) return;
+  const message = publishedMonthGuardMessage(risk);
+  if (apply) throw new Error(message);
+  console.log(`\nWOULD BE REFUSED ON --apply — ${message}`);
+}
+
 async function main(): Promise<void> {
   console.log(`${apply ? "APPLYING" : "DRY RUN, nothing will be written"} — period ${period}, line ${line}, actor ${actorLoginId}`);
+
+  const publishedPeriods = await livePublishedPeriods(supabase);
+  console.log(
+    `Published closing month(s): ${[...publishedPeriods].sort().join(", ") || "none"} — a run that would write into one is refused.`,
+  );
+  enforcePublishedMonthRule(
+    findPublishedMonthsAtRisk({ targetPeriod: period, publishedPeriods, rowPeriods: [] }),
+  );
 
   const batchIds = await periodBatchIds();
   if (batchIds.length === 0) throw new Error(`No validated file for period ${period}.`);
@@ -339,6 +371,19 @@ async function main(): Promise<void> {
   await mkdir(dirname(preimagePath), { recursive: true });
   await writeFile(preimagePath, csv(rows), "utf8");
   console.log(`\nPre-image of all ${rows.length} row(s) written to ${preimagePath}`);
+
+  // The RPC is keyed on (distributor, customer) and ignores the period, so the rows it would
+  // rewrite — not the period asked for — are what has to be clear of every published month.
+  const rowRisk = findPublishedMonthsAtRisk({
+    targetPeriod: period,
+    publishedPeriods,
+    rowPeriods: rows.map((row) => row.invoice_period),
+  });
+  if (publishedMonthRiskIsClear(rowRisk)) {
+    console.log(`\nPublished-month guard: clear — none of the ${rows.length} row(s) sit in a published month.`);
+  } else {
+    enforcePublishedMonthRule(rowRisk);
+  }
 
   if (!apply) {
     console.log("\nDRY RUN — nothing was written. Re-run with --apply to perform the repair.");

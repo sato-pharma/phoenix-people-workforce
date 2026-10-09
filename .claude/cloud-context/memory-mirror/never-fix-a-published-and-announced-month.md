@@ -1,15 +1,21 @@
 ---
 name: never-fix-a-published-and-announced-month
-description: "🔒 OWNER RULE 2026-09-07 — a closing that has been PUBLISHED AND ANNOUNCED is never corrected, however wrong it is. A ruling that arrives late applies to UPCOMING months only. Said in response to a correct, measured, owner-ruled fix to July Anti Infective — he refused it."
+description: "🔒 OWNER RULE 2026-09-07, restated 2026-10-09 as \"never cange a publkished month\" — a closing that has been PUBLISHED is never corrected, however wrong it is. A ruling that arrives late applies to UPCOMING months only. Said first about a correct, measured, owner-ruled fix to July Anti Infective — he refused it; said again the moment a session quoted a pre-July bulk repair in a Next step box. Mechanical for bulk repairs since: src/lib/sales/published-month-guard.ts."
 metadata: 
   node_type: memory
   type: feedback
   originSessionId: eb852d60-f518-4906-813c-3edc70fb29da
-  modified: 2026-09-06T21:37:20.228Z
+  modified: 2026-10-09T18:54:11.193Z
 ---
 
 **His words, 2026-09-07:** *"no donot fix any already published an announced month implement this to be
 considered in the upcomings"*
+
+**His words again, 2026-10-09:** *"never cange a publkished month"* — typed the instant a session put
+“re-resolve the January to June CNS rows against the customer map” in a `Next step:` box, after a
+September repair he had ordered himself. He did not argue the measurement; he refused the shape of the
+proposal. **So the trigger is not only "has it been announced" — proposing a bulk rewrite of a closed
+month is itself the error**, and the pre-July repair was withdrawn unrun, not parked.
 
 ## What it settles
 
@@ -42,6 +48,19 @@ question.
   forward rule.
 * The reps' numbers are the reason: a published closing has been read, discussed and acted on. Moving
   someone from +20.7% to −12.2% after the fact costs more trust than the wrong number does.
+* 🔴 **A LOCK AND A PUBLICATION ARE TWO SWITCHES AND NOTHING PAIRS THEM** — so "the repair skips
+  locked files" was never the same promise as "a published month is safe". Since 2026-10-09 the bulk
+  customer-map repair reads `monthly_closing_publications` itself
+  (`src/lib/sales/published-month-guard.ts`) and refuses an `--apply` that would write into a
+  published month, **including the rows it reaches in months nobody asked about** — the repair RPC is
+  keyed on (distributor, customer) and ignores the period, so clearing the target month proves
+  nothing. It fails CLOSED when the table cannot be read, and a dry run still measures, because
+  measuring a month is not changing it. Verified live the same evening: a dry run on published July
+  printed the refusal and listed rows in six other months. Pinned by
+  `tests/published-month-guard.test.ts`.
+* **Unpublished is not the same as open for business.** January–June 2026 carry no publication row at
+  all, so the guard does not block them — his 2026-10-09 words still do. Do not re-propose a bulk
+  repair of a closed month on the ground that nothing refuses it.
 * `monthly_closing_locks` already enforces this mechanically for `source_of_sales_import_rows` and
   `source_of_sales_fact_rollup` — a locked (line, period) refuses every insert, update and delete
   including direct SQL and migrations. **Treat a lock as the owner's decision, not an obstacle to

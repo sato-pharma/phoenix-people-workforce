@@ -83,3 +83,39 @@ would have read `phx_write_monthly_store_split_net`'s silent 0-row refusal into 
 write was in fact free to proceed. Count rows whose `unpublished_at IS NULL`, which is the same test
 the write function makes. [[publishing-one-line-freezes-the-whole-periods-store-split-net]]
 
+🔴 **A BRICK RELOCATION IS THE THIRD PATH THAT LEAVES THE NET STALE, AND IT IS THE ONE WITH NO
+SELF-REPAIR.** Verified in the tree at `69354b489`: `app/api/sales/database-mapping/bricks/[key]/relocate`,
+`src/lib/sales/master-data/brick-moves.ts` and `import-service.ts` contain **no reference to the
+store split or attribution at all**. The only writers of the net are
+`attribution-store-split-refresh.ts`, `closing-bulk-allocation.ts`, `monthly-distributor-import.ts`,
+the normalizer's `customer-map.ts` / `mapping.ts` / `service.ts`,
+`source-of-sales-rollup-rebuild.ts` and the backfill script — a relocate reaches none of them. So
+moving a brick between areas moves the units and leaves the net describing the old geography, with
+nothing queued to fix it. That is why the owner's standing order on 2026-10-09 was *"rebuild the
+September net after the Sohag bricks"*: it is not belt-and-braces, it is the only repair.
+
+**The three Sohag bricks, by their real identity** (as of 2026-10-09 they were still UNAPPLIED —
+`updated_at` 2026-07-28, and `source_of_sales_brick_move_files` held 0 moves in six hours):
+
+| brick_id | brick_name | block | area now | he intends |
+| --- | --- | --- | --- | --- |
+| `B213-1` | مدينة سوهاج (Sohag City) | B213 | `UE5` Sohag1 | → Sohag2 |
+| `B213-3` | بلصفورة (Balasfora) | B213 | `UE5` Sohag1 | → Sohag2 |
+| `B214-2` | العسيرات (El Osairat) | B214 | `UE6` Sohag2 | → Sohag1 |
+
+- 🔴 **SEARCHING FOR THEM BY LATIN NAME FINDS NOTHING.** `brick_name` is Arabic, so
+  `ilike '%sohag%'`, `'%osairat%'` and `'%balasfora%'` each return 0 rows across
+  `source_of_sales_bricks`, `source_of_sales_blocks` and `geo_bricks` — which reads as "these bricks
+  do not exist" and makes a peer's correct ids look wrong. Query by `brick_id`, or by `block_code`.
+- 🔴 **`area_code IS DISTINCT FROM source_area_code` IS NOT A MOVED TEST.** `source_area_code` is
+  NULL on every one of these rows, so that expression returns **true for all seven bricks in B213
+  and B214** — a clean false positive. Compare `area_code` against the intended target instead.
+
+🔴 **AND THE NET CAN BE REWRITTEN WITH NO AUDIT TRAIL.** After the 21:31:39 apply the net was
+rewritten again at **21:34:23**, three minutes later, with **no upload after 20:10:51**, nothing in
+`sales_audit_logs` between 21:25 and 21:45, and `au.f_refresh_monthly_attribution` proven not to
+touch the net (`pg_get_functiondef` holds no reference to `monthly_store_split_net`). Row count
+stayed 449 and a re-measure from a certified tree read *"no drift. 449 frozen cells match the
+rule."* So an unattributable rewrite is survivable — but never assume the stamp you read is the one
+you wrote, and re-measure rather than reasoning from your own apply time.
+
