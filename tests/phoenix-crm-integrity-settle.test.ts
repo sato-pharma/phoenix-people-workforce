@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { INTEGRITY_NOTE_LIMIT, readIntegritySettlement, sameIntegrityFlags } from "@/lib/phoenix-crm/integrity-settlement";
+import { INTEGRITY_NOTE_LIMIT, isSettledIntegrityRow, readIntegritySettlement, sameIntegrityFlags } from "@/lib/phoenix-crm/integrity-settlement";
 import { INTEGRITY_SOURCES, integritySourceLabel } from "@/lib/phoenix-crm/server/integrity-board";
 
 // 🔴 `stripSqlComments`, never a line filter. A `--` written after code on the same line survives a
@@ -44,6 +44,10 @@ const PAGE = read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx");
 // other integrity UI, and the same reasoning puts its routes under `/api/admin/`.
 const CONTROL = read("../src/components/crm-integrity/integrity-settle.tsx");
 const REGISTRY = read("../src/lib/security/access-registry.ts");
+// The other two readers of the table that must honour a settlement — the behaviour board's
+// strong-case gate and Phoenix Ranks' nightly score. Section 5.
+const BEHAVIOUR = read("../src/lib/phoenix-crm/server/behaviour.ts");
+const RANKS = read("../src/lib/rep-ranks/server/compute.ts");
 const MIGRATION = read("../supabase/migrations/20261009190708_phoenix_crm_integrity_settlement.sql");
 
 /** Every file that writes a row into `phoenix_crm_location_integrity`. */
@@ -253,11 +257,12 @@ function boardAndPageTests(): void {
   assert.match(board, /const settled = standing\.filter\(\(entry\) => entry\.settlement !== null\)/);
   assert.match(board, /strongCount: cases\.filter\(\(entry\) => entry\.strong\)\.length/, "the strong counter counts the live cases only");
 
-  // 🔴 SETTLING MEANS THE SAME THING ON EVERY SURFACE THAT READS THIS TABLE. The weekly fraud scan is
-  // the other one: a case he closed on the board must not arrive on Saturday as a fresh finding.
+  // 🔴 SETTLING MEANS THE SAME THING ON EVERY SURFACE THAT READS THIS TABLE — the weekly fraud scan
+  // here, and the other two readers in section 5. A case he closed on the board must not arrive on
+  // Saturday as a fresh finding.
   const window = board.slice(board.indexOf("export async function loadIntegrityCasesForWindow"));
   assert.match(window, /settled_at, settled_by, settled_note, settled_flags/, "the weekly scan must read the settlement columns");
-  assert.match(window, /\.filter\(\(row\) => settlementOf\(row, new Map\(\)\) === null\)/, "the weekly scan must drop settled cases by the board's own test");
+  assert.match(window, /\.filter\(\(row\) => !isSettledIntegrityRow\(row\)\)/, "the weekly scan must drop settled cases by the shared row test");
 
   // The page: the button is the Super Admin's, the withdrawn list offers no decision, and every
   // state has a counter rather than vanishing.
@@ -284,10 +289,69 @@ function boardAndPageTests(): void {
   }
 }
 
+// ── 5. Every reader of the table honours a settlement ────────────────────────
+
+/**
+ * Four readers now, and ONE rule between them — `readIntegritySettlement` for the board, which
+ * prints the settlement, and `isSettledIntegrityRow` for the three that need only the yes/no.
+ *
+ * 🔴 A READER THAT RE-IMPLEMENTS `settled_flags = flags` IS THE DEFECT THIS SECTION EXISTS TO CATCH.
+ * The first implementation of the comparison compared lengths and then membership one way, which
+ * answered "unchanged" for ["a","b"] against ["a","a"] and would have held a case closed through a
+ * genuinely different finding. One function, or that mistake returns per reader.
+ *
+ * And each reader must actually ASK for the four columns: a PostgREST select is a string the
+ * compiler never checks, and a missing column fails the whole read rather than one field.
+ */
+function everyReaderHonoursSettlementTests(): void {
+  const flags = ["mock_provider", "impossible_travel"];
+  const row = (extra: Record<string, unknown>) => ({ flags, ...extra });
+
+  // The row-shaped test, on the database's own column names.
+  assert.ok(isSettledIntegrityRow(row({ settled_at: SETTLED.settledAt, settled_by: SETTLED.settledBy, settled_note: SETTLED.settledNote, settled_flags: flags })));
+  assert.ok(!isSettledIntegrityRow(row({ settled_at: null, settled_by: null, settled_note: null, settled_flags: null })), "a case nobody settled is standing");
+  assert.ok(
+    !isSettledIntegrityRow(row({ settled_at: SETTLED.settledAt, settled_by: SETTLED.settledBy, settled_note: SETTLED.settledNote, settled_flags: ["mock_provider"] })),
+    "a case flagged again since it was settled is standing — the reopening, at row level",
+  );
+  assert.ok(
+    !isSettledIntegrityRow(row({ settled_at: SETTLED.settledAt, settled_by: null, settled_note: SETTLED.settledNote, settled_flags: flags })),
+    "a settlement nobody owns must not clear anything",
+  );
+  // Order is the detector's business here too, and a repeated flag is not a new finding.
+  assert.ok(isSettledIntegrityRow(row({ settled_at: SETTLED.settledAt, settled_by: SETTLED.settledBy, settled_note: SETTLED.settledNote, settled_flags: [...flags].reverse() })));
+
+  // Reader 3 — the behaviour board's strong-case gate (owner, 2026-10-09). A settled case is not the
+  // company a save-time pattern needs: using a closed case to unlock a new suspicion about the same
+  // person is precisely what settling decided against.
+  const behaviour = stripComments(BEHAVIOUR);
+  const gate = behaviour.slice(behaviour.indexOf("async function readStrongCaseReps"));
+  assert.match(gate, /settled_at, settled_by, settled_note, settled_flags/, "the strong-case gate must read the settlement columns");
+  assert.match(gate, /flags,/, "and `flags`, or the comparison has nothing to compare against");
+  assert.match(gate, /\.filter\(\(row\) => !isSettledIntegrityRow\(row\)\)/, "the strong-case gate must drop settled cases");
+
+  // Reader 4 — Phoenix Ranks' nightly score (owner, 2026-10-09). Its own suite pins the arithmetic;
+  // what belongs here is that it goes through the shared rule at all.
+  const ranks = stripComments(RANKS);
+  const ranksRead = ranks.slice(ranks.indexOf("async function readIntegrityFlags"));
+  assert.match(ranksRead, /settled_at, settled_by, settled_note, settled_flags/, "the rank read must read the settlement columns");
+  assert.match(ranksRead, /rankCountedFlags\(/, "the rank penalty must go through the function that honours a settlement");
+
+  // 🔴 NOBODY HAND-ROLLS THE COMPARISON. A reader writing its own `settled_flags` test is how the
+  // length-check bug comes back, one file at a time.
+  for (const [name, source] of [["behaviour.ts", gate], ["compute.ts", ranksRead]] as const) {
+    assert.ok(
+      !/settled_flags\s*(===|!==|\.length)/.test(source),
+      `${name} must not compare settled_flags itself — isSettledIntegrityRow is the one test`,
+    );
+  }
+}
+
 export function runPhoenixCrmIntegritySettleTests() {
   sourceUnionTests();
   settlementRuleTests();
   settleGateTests();
   boardAndPageTests();
+  everyReaderHonoursSettlementTests();
   console.log("phoenix-crm integrity settle: OK");
 }
