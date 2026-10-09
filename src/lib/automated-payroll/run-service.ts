@@ -937,7 +937,7 @@ export async function confirmStep(
   // figure somebody deliberately overrode from one the module has since changed — see
   // module-drift.ts. Stored in the step state's existing jsonb summary, so it costs no schema.
   if (MODULE_SOURCED_STEP_KEYS.includes(stepKey)) {
-    summary[RECOMMENDED_AT_CONFIRM_KEY] = snapshotRecommendations(rows);
+    summary[RECOMMENDED_AT_CONFIRM_KEY] = snapshotRecommendations(stepKey, rows);
   }
 
   // CONFIRMING p2_vacation TOUCHES NO LEAVE BALANCE, AND READS NO CRM LEAVE TO DECIDE ONE.

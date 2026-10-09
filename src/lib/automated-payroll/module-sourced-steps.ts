@@ -21,6 +21,70 @@ export function isUnbackedCharge(row: {
   return row.proposedNow === 0 && row.proposedAtConfirm === 0 && row.charged > 0;
 }
 
+/** A step field's own spec, or undefined for a key no step column declares. */
+function fieldSpec(stepKey: StepKey, field: string) {
+  return stepDefinition(stepKey).fields.find((spec) => spec.key === field);
+}
+
+/**
+ * Whether the drift check may compare this field at all.
+ *
+ * 🔴 A `notPersisted` FIELD HAS NO COLUMN ON THE DRAFT ROW, SO IT CHARGES NOTHING — and comparing
+ * it reports money that does not exist. `charged` reads the draft, finds no column, and is 0.00 for
+ * ever, while the recommendation is a real number; the row then looks like a figure the module moved
+ * and nobody chose, which is exactly what blocks the Part 2 confirm.
+ *
+ * It is worse than a stray row, because all five such fields are DISPLAY COMPLEMENTS of the money
+ * beside them — `p1odCrmWorkingDays` is `days in month − chargeable days`, `resigCrmWorkingDays` is
+ * `days worked − non-working days`. The "drift" is therefore LARGEST when nothing at all is wrong:
+ * an employee with no CRM deduction proposes 30 working days, charges nothing, and blocks the month.
+ *
+ * Measured on the live September 2026 run, 2026-10-09: all 11 rows blocking the Part 2 confirm were
+ * working-days fields — Magdy El Senosey (AI-0008), Reham Elwiy (OF-0004), Ahmed Abdallah (B-58),
+ * Ayman El Salhy (B-96), Mohamed Elawadi (B-115) and six more, every one of them "set to 0.00 and
+ * the Deductions module now says 30.00", with 0.00 of money among them. Each was absent from the
+ * step's snapshot (`p1_crm` was confirmed on 24 September carrying 15 people, and the one-part
+ * population grew afterwards), so the working-days complement compared 0 against 30 — and no
+ * re-confirm could ever settle it, because the field has no column to write the 30 into.
+ *
+ * An unrecognised key is still compared — the conservative direction, and no recommendation emits
+ * one today.
+ */
+export function isDriftComparableField(stepKey: StepKey, field: string): boolean {
+  return fieldSpec(stepKey, field)?.notPersisted !== true;
+}
+
+/** The steps that ADD money rather than charge it. Among the module-sourced steps, only Additions. */
+const MONEY_ADDING_STEP_KEYS: readonly StepKey[] = ["p2_additions"];
+
+/**
+ * Whether an UNBACKED CHARGE can exist on this field — a charge with no approved deduction behind
+ * it, which only means something where the field is a charge and a deduction is what fills it.
+ *
+ * 🔴 MONEY ONLY. The day counts beside the money are inputs, not charges, and several are recommended
+ * as a hard-coded 0 whatever the module says (`p1odVacationDays`, `p1odLoanDays`, `p1odOtherDays`).
+ * A day count HR typed therefore read as "2.00 with no approved deduction behind it", which inside a
+ * sentence about money reads as 2 EGP. The money field beside it carries the charge and is the one
+ * worth reporting.
+ *
+ * 🔴 AND NEVER ON ADDITIONS, WHICH PAY MONEY RATHER THAN CHARGE IT. No approved deduction could ever
+ * stand behind an Incentive, a Bonus or Overtime, so the question has no answer there and the finding
+ * is noise written in deduction wording. `overtime` is recommended as a literal 0 for everybody
+ * (`recommendAdditions` in recommend.ts), so EVERY overtime HR enters tripped it.
+ *
+ * Measured on the live September 2026 run, 2026-10-09: all 5 unbacked rows were Additions — 65,947.00
+ * of money being PAID, reported as charges with no deduction behind them. Ali Elsayed (A-12)
+ * 60,000.00 Incentive; Hanan Hassan (AI-0012) 2,133.00 Overtime; Khaled elkamry (B-170) 1,548.00
+ * Other additions; Adel Srour (CN-0006) 1,266.00 Overtime; Aya Salam (B-7) 1,000.00 Overtime.
+ *
+ * Additions stay in `MODULE_SOURCED_STEP_KEYS` regardless: a dispute refund the Dispute Center gives
+ * back can still go stale, and that drift must still block (owner, 2026-10-09).
+ */
+export function canBeUnbackedCharge(stepKey: StepKey, field: string): boolean {
+  if (MONEY_ADDING_STEP_KEYS.includes(stepKey)) return false;
+  return fieldSpec(stepKey, field)?.kind === "money";
+}
+
 /**
  * The steps whose figures come from a module OUTSIDE the run — the ones that can change behind the
  * run's back, which is the whole reason the drift check exists.
