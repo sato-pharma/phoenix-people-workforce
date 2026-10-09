@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Download, Loader2, RefreshCw, Trophy } from "lucide-react";
-import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 
 import {
   AdminCallout,
@@ -16,6 +16,7 @@ import {
   type MonthlyClosingFilter,
 } from "@/components/sales/monthly-closing-filters";
 import { Button } from "@/components/ui/button";
+import { MatrixScroller } from "@/components/ui/matrix-scroller";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { emptyMonthlyClosingFilterOptions } from "@/lib/sales/monthly-closing-filter-options";
 import { describePeriodSelection } from "@/lib/sales/monthly-closing-period-merge";
@@ -119,28 +120,12 @@ function RegionDot({ regionCode }: { regionCode: string }) {
 // their container. The three MATRIX tables (GridTable, the month series, and the
 // per-product month blocks) keep a sideways scroll on purpose — their column count is
 // the product/month count and can never fit — so each re-applies nowrap on its own
-// <table> with [&_th]/[&_td], and all three share the one scroller below.
+// <table> with [&_th]/[&_td], and all three share the ONE declared scroller,
+// MatrixScroller — moved to src/components/ui so the weekly per-product units grid
+// shares the same single permission rather than opening a fourth one.
 const headClassName =
   "break-words px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
 const cellClassName = "break-words px-3 py-2 text-sm text-slate-700";
-
-/**
- * The ONE scroll container the matrix tables on this page share.
- *
- * All three of them are exempt from the fits-the-screen rule for the same owner ruling — the
- * monthly closing matrix "can NEVER fit; leave the scroll" — because their width IS a count:
- * one column per product (GridTable), one per month (SeriesTable), or one block per product
- * times its months (ProductMonthTable). No merge bounds a count, and the sticky first column
- * that freezes the names only works inside a sideways scroll.
- *
- * It is one component rather than three identical wrappers so that the permission is declared,
- * and reasoned about, in exactly one place — the move `PortalDesktopTable` made for the portal
- * tables, and the reason adding the third matrix lowered the fits-the-screen count instead of
- * raising it.
- */
-function MatrixScroller({ children }: { children: ReactNode }) {
-  return <div className="overflow-x-auto">{children}</div>;
-}
 
 /**
  * The owner's shape: who on the left, what across the top.

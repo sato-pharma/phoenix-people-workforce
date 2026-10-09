@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   Boxes,
   Building2,
+  Grid3x3,
   CalendarRange,
   CheckCircle2,
   Clock,
@@ -37,6 +38,7 @@ import {
 
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
 import { PortalWeeklyFieldForceView } from "@/components/sales/weekly/portal-weekly-field-force-view";
+import { WeeklyProductUnitsView } from "@/components/sales/weekly/weekly-product-units-view";
 import { WeeklySalesDepotDetail } from "@/components/sales/weekly/weekly-sales-depot-detail";
 import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import { breakdownColumns, completenessColumns } from "@/components/sales/weekly/weekly-table-widths";
@@ -68,7 +70,7 @@ type Props = {
  * "detail" is Weekly Sales laid out exactly as Weekly Stock (owner, 2026-09-16): every product at every
  * depot, then products, depots, areas, regions and distributors.
  */
-type WeeklyTab = "field" | "distribution" | "detail";
+type WeeklyTab = "field" | "products" | "distribution" | "detail";
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 function formatEgp(value: number): string {
@@ -127,6 +129,9 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
   const [activeTab, setActiveTab] = useState<WeeklyTab>("field");
   // The Depot Detail tab loads on its first opening, then stays mounted so its own filters survive a tab switch.
   const [detailOpened, setDetailOpened] = useState(false);
+  // Products by Month loads on its first opening and then stays mounted, so its month window and the
+  // several months of row grain behind it survive a tab switch. Same reason as Depot Detail above.
+  const [productsOpened, setProductsOpened] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -266,6 +271,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
 
   const openTab = (next: WeeklyTab) => {
     if (next === "detail") setDetailOpened(true);
+    if (next === "products") setProductsOpened(true);
     setActiveTab(next);
   };
 
@@ -454,7 +460,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
         </div>
       </div>
 
-      {/* Tabs. Field Force is the default landing view — see WeeklyTab. */}
+      {/* Tabs. Field Force is the default landing view — see WeeklyTabBar. */}
       <WeeklyTabBar active={activeTab} onChange={openTab} repCount={fieldForce?.totals.repsWithSales ?? 0} />
 
       {isEmpty ? (
@@ -603,6 +609,18 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
         </>
       ) : null}
 
+      {/* Products by Month sits outside the chain too, for the same reason (see productsOpened). */}
+      {productsOpened ? (
+        <div className={activeTab === "products" && !isEmpty ? undefined : "hidden"}>
+          <WeeklyProductUnitsView
+            active={activeTab === "products" && !isEmpty}
+            availableMonths={data.availableMonths.map((month) => month.code)}
+            hostFilterCount={activeFilterCount}
+            scopeSummary={scope.scopeSummary}
+          />
+        </div>
+      ) : null}
+
       {/* Depot Detail sits outside the chain above so it stays mounted once opened (see detailOpened). */}
       {detailOpened ? (
         <WeeklySalesDepotDetail
@@ -631,12 +649,15 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 
 /**
- * The three views of one week's sales.
+ * The four views of one week's sales.
  *
  * "Field Force" leads because it answers the question the screen is opened for — how each medical
- * rep is doing, week by week, per product. "Distribution" is the original dashboard: the same
- * numbers cut by distributor, region and product, which is the supply-side view of the same sheet.
- * "Depot Detail" is the same sheet laid out as Weekly Stock: every product at every depot.
+ * rep is doing, week by week, per product. "Products by Month" turns that the other way round, at
+ * the owner's instruction: one block per PRODUCT, its months inside it, the people down the side, so
+ * a product manager can read how his own product moved person by person across the months.
+ * "Distribution" is the original dashboard: the same numbers cut by distributor, region and product,
+ * which is the supply-side view of the same sheet. "Depot Detail" is the same sheet laid out as
+ * Weekly Stock: every product at every depot.
  */
 function WeeklyTabBar({
   active,
@@ -649,6 +670,7 @@ function WeeklyTabBar({
 }) {
   const tabs: { key: WeeklyTab; label: string; hint: string; icon: typeof Users }[] = [
     { key: "field", label: "Field Force", hint: "Reps week by week, per product", icon: Users },
+    { key: "products", label: "Products by Month", hint: "Units per product, per person", icon: Grid3x3 },
     { key: "distribution", label: "Distribution", hint: "Distributors, regions and products", icon: Truck },
     { key: "detail", label: "Branch Detail", hint: "Every product at every branch", icon: Building2 },
   ];
@@ -681,7 +703,7 @@ function WeeklyTabBar({
                 <Icon className="h-4 w-4" />
               </span>
               <span className="min-w-0">
-                {/* Three tabs share a row from the sm breakpoint, so a label wraps rather than being clipped. */}
+                {/* Four tabs share a row from the sm breakpoint, so a label wraps rather than being clipped. */}
                 <span
                   className={`block break-words text-sm font-black tracking-tight ${
                     isActive ? "text-white" : "text-slate-900"
