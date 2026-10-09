@@ -11,6 +11,12 @@ import { displayTitleForRole } from "../src/lib/auth/hr-functions.ts";
 // B-10 is his employee account; `employees.job_title` in production has read HR Section Head all
 // along, and the screens were printing `app_auth_users.role` at him instead.
 //
+// THE TITLE IS HR MANAGER since 2026-10-09 ("update my job title to HR Manager") — he was promoted
+// from HR Section Head. `positions.title` for his position (id 17) already read HR Manager, so the
+// employee record was the half that lagged; it was corrected in the same change. The HR Section
+// Head title is still live elsewhere on purpose — it is the seat he is RECRUITING for — so a sweep
+// that finds it in the recruitment files has found the vacancy, not a missed rename.
+//
 // What this pins, in the order it can break:
 //   1. the value itself, case-insensitively — HR ids are stored mixed-case here;
 //   2. that it does NOT leak: every other account still reads its seat, and the two HR seat
@@ -33,15 +39,15 @@ export function runAccountJobTitlesTests() {
   for (const spelling of ["B-10", "b-10", " B-10 "]) {
     assert.equal(
       displayTitleForAccount(spelling, "Super Admin"),
-      "HR Section Head",
+      "HR Manager",
       `B-10 must read as his job title, not the permission key (spelling ${JSON.stringify(spelling)})`,
     );
   }
-  assert.equal(accountJobTitle("B-10"), "HR Section Head");
+  assert.equal(accountJobTitle("B-10"), "HR Manager");
 
   // The title belongs to the PERSON, not to the key he happens to hold, so it survives a role
   // change. If that is ever wrong the entry should be removed, not made conditional on the role.
-  assert.equal(displayTitleForAccount("B-10", "HR Advisory"), "HR Section Head");
+  assert.equal(displayTitleForAccount("B-10", "HR Advisory"), "HR Manager");
 
   // 2. Nobody else moves. Every account without a declared title reads exactly what it read
   //    before this module existed.

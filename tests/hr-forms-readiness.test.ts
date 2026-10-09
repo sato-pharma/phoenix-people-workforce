@@ -381,11 +381,12 @@ function testAPersonWaitingOnBothArabicValuesIsCountedOnce(): void {
 }
 
 /**
- * THE SEVEN THE OWNER REWROTE.
+ * THE ONES THE OWNER REWROTE HIMSELF.
  *
  * He did not accept the proposals for these: a District Sales Manager is contracted as
- * مدير دعاية طبية rather than the literal مدير مبيعات منطقة, an HR Section Head as
- * مدير ادارة الموارد البشرية, and so on. Each of those looks, to anyone reading the file later,
+ * مدير دعاية طبية rather than the literal مدير مبيعات منطقة, and the HR management title as
+ * مدير ادارة الموارد البشرية — his own, carried onto HR Manager when he was promoted on
+ * 2026-10-09 and left on HR Section Head, the seat he is now recruiting for. And so on. Each of those looks, to anyone reading the file later,
  * like a translation that could be improved — which is exactly why they are pinned. The wording on
  * an employment contract is not a style question, and the person who would "fix" one of these is
  * not going to be the person who asked him.
@@ -401,6 +402,10 @@ function testTheOwnersOwnWordingIsNotTidiedAway(): void {
     ["Group Product Manager", "مدير تسويق"],
     ["HR Business Partner", "مشرف موارد بشرية"],
     ["HR Operations Coordinator", "اخصائي موارد بشرية"],
+    // His own title, 2026-10-09: "give HR Manager the Arabic مدير ادارة الموارد البشرية", after the
+    // promotion moved `employees.job_title` for B-10 off HR Section Head. The old title keeps the
+    // same wording while it is the seat he is recruiting for — the new holder's is his to give.
+    ["HR Manager", "مدير ادارة الموارد البشرية"],
     ["HR Section Head", "مدير ادارة الموارد البشرية"],
     // Answered 2026-09-06. The proposal was أخصائي استقطاب المواهب, a literal rendering of "talent
     // acquisition"; he answered with the HR-specialist title he had already confirmed for

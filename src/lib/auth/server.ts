@@ -650,8 +650,9 @@ export const resolveViewerIdentityFromPage = cache(async (accessContext?: Access
   // an HR seat's account rather than on the pages someone remembered to fix.
   //
   // IT ASKS THE ACCOUNT BEFORE THE SEAT. `displayTitleForAccount` reads account-job-titles.ts
-  // first, which is what makes B-10 read "HR Section Head" rather than the Super Admin key he
-  // signs in with (owner, 2026-09-04), and falls back to the seat map for everyone else. The HR ID
+  // first, which is what makes B-10 read "HR Manager" rather than the Super Admin key he
+  // signs in with (owner, 2026-09-04; the title itself updated on his promotion, 2026-10-09), and
+  // falls back to the seat map for everyone else. The HR ID
   // is the row's own where there is a row — an account can be found by login_id alone, and the
   // request's `access.hrId` is empty in that case.
   const roleLabel = displayTitleForAccount(row?.hr_id ?? access.hrId, row?.role?.trim() || fallbackRole);
