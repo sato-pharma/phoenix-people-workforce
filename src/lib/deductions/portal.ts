@@ -6,10 +6,15 @@
 // The legacy deductions-governance snapshot it used to dual-read from was
 // retired in C6 — its portal table (deduction_monthly_summary_lines) had been
 // dead-on-arrival (0 rows) since the module went live, so removing that arm
-// changes nothing a viewer sees. The two portal call sites
+// changes nothing a viewer sees.
+//
+// TWO READS LIVE HERE SINCE 2026-10-09, and the two portal call sites
 // (app/employee-portals/deductions/page.tsx and admin-shell-employee-pages.tsx's
-// WorkspaceDeductionsPage) both call getPortalDeductions, so both surfaces stay
-// consistent.
+// WorkspaceDeductionsPage) both moved to the second one, so both surfaces stay consistent:
+//   * getPortalDeductions      — what was RELEASED to the employee (publication lines only)
+//   * getPortalDeductionLedger — what was RAISED against him, decided or not, with HR's answer
+// Both resolve visibility through collectPortalDeductionScope, so both are self-only for every
+// non-system role.
 //
 // DeductionsPortalWorkspace (the live component both pages render) is
 // intentionally left unchanged — its DeductionsPortalLine/DeductionsComment
@@ -34,7 +39,9 @@ import type {
   AdminDeductionCommentThread,
   DeductionsCategory,
   DeductionsComment,
+  DeductionsPortalLedgerRow,
   DeductionsPortalLine,
+  DeductionsUnit,
 } from "./types.ts";
 
 function safeNormalizeMonthKey(input: string | undefined): string | undefined {
@@ -200,6 +207,227 @@ export async function getPortalDeductions(input: {
 
   const comments = await listDeductionsComments({ candidateIds: lines.map((line) => line.candidateId) });
   return { comments, lines };
+}
+
+// ---------------------------------------------------------------------------
+// The portal LEDGER — every deduction raised against the employee, not only the released ones
+// ---------------------------------------------------------------------------
+// Owner, 2026-10-09: "in deductions in emp portal starting from september salary show all deductions
+// should be applied on him and how hr responded to every single row, and employee can filter by
+// another month or period or type or status."
+//
+// WHY THIS IS A SECOND READ AND NOT A WIDENED getPortalDeductions. That one answers "what was
+// RELEASED to this employee" — it starts from the publication tables, and a row with no active
+// published line does not exist for it. This one answers "what was RAISED against this employee",
+// so it starts from the candidates and treats the publication as one more fact about a row. Both
+// stay: the publication is still what opens a dispute (a comment needs a released line), and the
+// released figures are still what the payslip page quotes.
+//
+// WHAT THE EMPLOYEE NOW SEES THAT HE DID NOT. An undecided detection (owner's choice, same day:
+// show them, marked under review). 67 half-day rows for 26 people were in that state when this
+// shipped, so the screen says in words that nothing is deducted until HR decides.
+//
+// WHY THE DECISION, NOT THE PUBLICATION, DECIDES "on your payslip". Automated Payroll charges the
+// DECISION — the push gate was retired on 2026-10-07 — so an "Approved for Payroll" row is money
+// whether or not anyone released it. Deriving the outcome from the publication would tell an
+// employee a charge was not happening while payroll was charging it.
+
+/** The first payroll month this ledger shows (owner, 2026-10-09: "starting from september salary"). */
+export const PORTAL_DEDUCTIONS_FIRST_MONTH = "2026-09";
+
+/** What the employee is actually facing on a row, in the order a person asks about it. */
+export type PortalDeductionOutcome =
+  | "on_payslip"
+  | "cleared"
+  | "under_review"
+  | "needs_follow_up"
+  | "disputed";
+
+/**
+ * Pure: HR's decision → what the employee is facing. Keyed on the DECISION, because that is what
+ * Automated Payroll charges (deductions-source.ts); the publication only decides whether the row
+ * can be argued with. A status this does not know reads as under review rather than as nothing,
+ * so a new decision status can never quietly render as "no deduction".
+ */
+export function derivePortalDeductionOutcome(decisionStatus: string | null | undefined): PortalDeductionOutcome {
+  switch (String(decisionStatus ?? "").trim()) {
+    case "Approved for Payroll":
+      return "on_payslip";
+    case "Do Not Take Action":
+      return "cleared";
+    case "Needs Follow-up":
+      return "needs_follow_up";
+    case "Disputed":
+      return "disputed";
+    default:
+      return "under_review";
+  }
+}
+
+type LedgerCandidateRow = {
+  id: string;
+  employee_hr_id: string;
+  employee_hr_id_compact: string;
+  employee_name: string | null;
+  month_key: string;
+  category: DeductionsCategory;
+  unit: string;
+  raw_value: number | string;
+  estimated_amount: number | string | null;
+  dates: unknown;
+  reason: string | null;
+  created_at: string;
+  deductions_decisions?: unknown;
+};
+
+type LedgerDecisionRow = {
+  decision_status?: string | null;
+  decision_reason?: string | null;
+  hr_note?: string | null;
+  applied_value?: number | string | null;
+  applied_amount?: number | string | null;
+  decided_by?: string | null;
+  decided_at?: string | null;
+};
+
+function numberOrNull(value: unknown): number | null {
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Pure: one candidate row plus its decision and publication state → the row the portal renders.
+ * Exported for its test, and so the mapping can never drift between the two portal surfaces.
+ */
+export function mapPortalLedgerRow(input: {
+  candidate: LedgerCandidateRow;
+  decision: LedgerDecisionRow | null;
+  releasedLine: DeductionsPortalLine | null;
+  decidedByName: string | null;
+}): DeductionsPortalLedgerRow {
+  const { candidate, decision } = input;
+  const unit: DeductionsUnit = candidate.unit === "amount" ? "amount" : "days";
+  const detectedValue = numberOrNull(candidate.raw_value) ?? 0;
+  const detectedAmount = numberOrNull(candidate.estimated_amount);
+  const appliedValue = numberOrNull(decision?.applied_value);
+  const appliedAmount = numberOrNull(decision?.applied_amount);
+  const outcome = derivePortalDeductionOutcome(decision?.decision_status);
+  // An approved decision that was never narrowed carries no applied figure — it charges everything
+  // that was detected. Mirrors the admin workspace's own appliedDaysOf/appliedAmountOf fallback, so
+  // the two screens quote one number.
+  const chargedValue = outcome === "on_payslip" ? appliedValue ?? detectedValue : 0;
+  const chargedAmount = outcome === "on_payslip" ? appliedAmount ?? detectedAmount ?? 0 : 0;
+  return {
+    candidateId: candidate.id,
+    releasedLineId: input.releasedLine?.id ?? null,
+    employeeCode: candidate.employee_hr_id,
+    employeeHrIdCompact: candidate.employee_hr_id_compact,
+    employeeName: candidate.employee_name,
+    monthKey: candidate.month_key,
+    category: candidate.category,
+    payrollColumn: salaryRecordsColumnForCategory(candidate.category) ?? "other_deductions",
+    unit,
+    dates: Array.isArray(candidate.dates) ? (candidate.dates as unknown[]).map(String) : [],
+    whyFlagged: candidate.reason,
+    detectedValue,
+    detectedAmount,
+    chargedValue,
+    chargedAmount,
+    outcome,
+    hrStatus: String(decision?.decision_status ?? "").trim() || "Pending",
+    hrResponse: String(decision?.decision_reason ?? "").trim() || null,
+    hrNote: String(decision?.hr_note ?? "").trim() || null,
+    decidedByName: input.decidedByName,
+    decidedAt: decision?.decided_at ?? null,
+    // His ruling, 2026-10-09: a dispute is for money actually taken, so the comment box stays on
+    // the released line exactly as addDeductionsComment's own gate requires. A cleared or
+    // still-undecided row shows HR's answer and offers no reply.
+    canComment: Boolean(input.releasedLine),
+    createdAt: candidate.created_at,
+  };
+}
+
+/** Newest payroll month first, then the biggest charge, so what costs money leads its month. */
+export function sortPortalLedgerRows(rows: readonly DeductionsPortalLedgerRow[]): DeductionsPortalLedgerRow[] {
+  return [...rows].sort((left, right) => {
+    const byMonth = right.monthKey.localeCompare(left.monthKey);
+    if (byMonth !== 0) return byMonth;
+    const byAmount = right.chargedAmount - left.chargedAmount;
+    if (byAmount !== 0) return byAmount;
+    return left.category.localeCompare(right.category);
+  });
+}
+
+/**
+ * Every deduction raised against the employee from {@link PORTAL_DEDUCTIONS_FIRST_MONTH} onwards,
+ * with HR's answer on each. Self-only for every role, through the same
+ * {@link collectPortalDeductionScope} the released read uses — a manager never reads a
+ * subordinate's figures here either.
+ */
+export async function getPortalDeductionLedger(input: {
+  access: AccessContext;
+}): Promise<{
+  rows: DeductionsPortalLedgerRow[];
+  comments: DeductionsComment[];
+  firstMonthKey: string;
+}> {
+  const scope = collectPortalDeductionScope({ access: input.access });
+  const supabase = getSupabaseAdmin();
+
+  // The month floor is applied HERE and asserted again in JS below, because it is the owner's
+  // instruction and not a performance filter: an earlier month's rows were never reviewed with an
+  // employee reading them and must not surface by way of a widened query.
+  const candidates = await fetchAllRows<LedgerCandidateRow>(
+    () => {
+      const query = supabase
+        .from("deductions_candidates")
+        .select(
+          "id, employee_hr_id, employee_hr_id_compact, employee_name, month_key, category, unit, raw_value, estimated_amount, dates, reason, created_at, deductions_decisions(decision_status, decision_reason, hr_note, applied_value, applied_amount, decided_by, decided_at)",
+        )
+        .is("superseded_at", null)
+        .gte("month_key", PORTAL_DEDUCTIONS_FIRST_MONTH);
+      return scope.all ? query : query.in("employee_hr_id_compact", [...scope.compactHrIds]);
+    },
+    "id",
+  );
+
+  const mine = candidates.filter(
+    (row) =>
+      String(row.month_key ?? "") >= PORTAL_DEDUCTIONS_FIRST_MONTH &&
+      (scope.all || scope.compactHrIds.has(String(row.employee_hr_id_compact ?? ""))),
+  );
+  if (mine.length === 0) return { rows: [], comments: [], firstMonthKey: PORTAL_DEDUCTIONS_FIRST_MONTH };
+
+  const decisionOf = (row: LedgerCandidateRow): LedgerDecisionRow | null => {
+    const nested = row.deductions_decisions;
+    const decision = Array.isArray(nested) ? (nested[0] ?? null) : (nested ?? null);
+    return (decision as LedgerDecisionRow | null) ?? null;
+  };
+
+  const [releasedByCandidate, names] = await Promise.all([
+    loadPublishedLinesByCandidate(mine.map((row) => row.id)),
+    loadEmployeeNames(mine.map((row) => decisionOf(row)?.decided_by ?? null)),
+  ]);
+
+  const rows = sortPortalLedgerRows(
+    mine.map((candidate) => {
+      const decision = decisionOf(candidate);
+      const decidedByKey = canonicalHrIdKey(decision?.decided_by);
+      return mapPortalLedgerRow({
+        candidate,
+        decision,
+        releasedLine: releasedByCandidate.get(candidate.id) ?? null,
+        decidedByName: decidedByKey ? names.get(decidedByKey) ?? null : null,
+      });
+    }),
+  );
+
+  // Only a released row can carry a conversation, so only those ids are asked for.
+  const comments = await listDeductionsComments({
+    candidateIds: rows.filter((row) => row.canComment).map((row) => row.candidateId),
+  });
+  return { rows, comments, firstMonthKey: PORTAL_DEDUCTIONS_FIRST_MONTH };
 }
 
 // Fetch the active published line for each candidate, keyed by candidate id. Mirrors

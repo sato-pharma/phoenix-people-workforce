@@ -59,7 +59,7 @@ import {
   getDsmTeamPerformance,
 } from "@/lib/employee-portal/service";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
-import { getPortalDeductions } from "@/lib/deductions/portal.ts";
+import { getPortalDeductionLedger } from "@/lib/deductions/portal.ts";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { hrBundleForRole } from "@/lib/hr/command-center";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
@@ -479,14 +479,16 @@ export async function WorkspacePayslipsPage() {
   );
 }
 
-export async function WorkspaceDeductionsPage({ searchParams }: { searchParams: SearchParams }) {
+// The admin shell's own copy of the employee Deductions page. It moved to the ledger read with the
+// portal page on 2026-10-09 so the two surfaces keep showing the same thing — the month, type and
+// status filters live inside the workspace now, so this takes no searchParams either.
+export async function WorkspaceDeductionsPage() {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "employee_profile" });
-  const monthKey = firstParam(searchParams.monthKey)?.trim() || undefined;
-  const data = await getPortalDeductions({ access, monthKey }).catch((error) => ({ error }));
+  const data = await getPortalDeductionLedger({ access }).catch((error) => ({ error }));
   if ("error" in data) {
     return (
       <WorkspaceUnavailable
-        message={data.error instanceof Error ? data.error.message : "Unable to load published deductions."}
+        message={data.error instanceof Error ? data.error.message : "Unable to load your deductions."}
         title="Deductions Unavailable"
       />
     );
@@ -494,14 +496,15 @@ export async function WorkspaceDeductionsPage({ searchParams }: { searchParams: 
   return (
     <WorkspaceFrame
       access={access}
-      description="Approved and finalized salary deductions visible to your existing employee scope."
+      description="Every deduction raised against you, and what HR decided on each one."
       icon={<ReceiptText className="h-3.5 w-3.5" />}
       title="Deductions"
     >
       <DeductionsPortalWorkspace
         comments={data.comments}
-        lines={data.lines}
+        firstMonthKey={data.firstMonthKey}
         ownCompactHrId={compactDeductionsHrId(access.hrId ?? access.loginId)}
+        rows={data.rows}
       />
     </WorkspaceFrame>
   );

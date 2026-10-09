@@ -249,6 +249,47 @@ export type DeductionsPortalLine = {
   createdAt: string;
 };
 
+/**
+ * One deduction raised against the employee, as his own portal shows it (owner, 2026-10-09: every
+ * deduction from the September salary on, with HR's answer on each).
+ *
+ * Unlike {@link DeductionsPortalLine} this is NOT a released publication line — it is the candidate
+ * itself, so a row HR has not decided yet is in here too. `outcome` says what the person is facing
+ * and is derived from the DECISION, because that is what Automated Payroll charges; `canComment` is
+ * the separate question of whether the row was released and can be argued with.
+ */
+export type DeductionsPortalLedgerRow = {
+  candidateId: string;
+  /** The active published line, when this row was released to him; null when it was not. */
+  releasedLineId: string | null;
+  employeeCode: string;
+  employeeHrIdCompact: string;
+  employeeName: string | null;
+  monthKey: string;
+  category: DeductionsCategory;
+  payrollColumn: DeductionsSalaryRecordsColumn;
+  unit: DeductionsUnit;
+  dates: string[];
+  /** Why the system raised it, in the connector's own words. */
+  whyFlagged: string | null;
+  /** What was detected before anyone looked at it. */
+  detectedValue: number;
+  detectedAmount: number | null;
+  /** What is actually being taken — zero on anything not approved for payroll. */
+  chargedValue: number;
+  chargedAmount: number;
+  outcome: "on_payslip" | "cleared" | "under_review" | "needs_follow_up" | "disputed";
+  /** HR's decision status verbatim, or "Pending" when nobody has decided. */
+  hrStatus: string;
+  /** HR's written answer on this row — the decision reason. */
+  hrResponse: string | null;
+  hrNote: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  canComment: boolean;
+  createdAt: string;
+};
+
 // Employee/HR comment thread on a published candidate (Phase 4). Mirrors
 // legacy deductions-governance's DeductionComment shape 1:1 — see
 // src/lib/deductions/comments.ts.
