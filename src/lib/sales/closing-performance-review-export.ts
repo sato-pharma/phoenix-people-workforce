@@ -11,6 +11,10 @@ import {
   type PerformanceProductMonthMatrix,
   type PerformanceReviewSeriesRow,
 } from "@/lib/sales/closing-performance-review";
+import {
+  reviewShowsLessThanTheWholeLine,
+  reviewTotalRowLabel,
+} from "@/lib/sales/closing-performance-review-regions";
 import { SATO_LOGO_ON_LIGHT_PNG_BASE64 } from "@/lib/sales/sato-logo-asset";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,8 +208,13 @@ export function headlinePeriodLabel(review: ClosingPerformanceReview): string {
  * full option lists — so this needs no new field and cannot drift from what was filtered.
  *
  * Empty string when nothing was narrowed, so an unfiltered workbook reads exactly as it always has.
+ *
+ * The TRIGGER is `reviewShowsLessThanTheWholeLine`, not these parts, so that this masthead and the
+ * total row's own wording cannot drift: a sheet whose masthead says "filtered" always has a total row
+ * that says FILTERED TOTAL, and one that says NATIONAL TOTAL always has an empty scope here.
  */
 export function scopeLabel(review: ClosingPerformanceReview): string {
+  if (!reviewShowsLessThanTheWholeLine(review)) return "";
   const allAreas = review.filterOptions?.areas.length ?? 0;
   const allProducts = review.filterOptions?.products.length ?? 0;
   const parts: string[] = [];
@@ -490,7 +499,7 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
     horizontal: "left",
     indent: 1,
     vertical: "middle",
-  }).value = `${(review.line ?? "").toUpperCase()} LINE ${DOT} NATIONAL TOTAL`;
+  }).value = `${(review.line ?? "").toUpperCase()} LINE ${DOT} ${reviewTotalRowLabel(review).toUpperCase()}`;
   money(sheet.getCell(row, 6), review.totals.salesValue, { bold: true, color: DEEP });
   money(sheet.getCell(row, 7), review.totals.targetValue, { bold: true, color: DEEP, na: review.totals.targetValue == null });
   pct(sheet.getCell(row, 8), review.totals.achievement, { bold: true });
@@ -743,7 +752,12 @@ function buildGridSheet(
         indent: 1,
       });
     } else {
-      label(cells[0], entry.kind === "grandTotal" ? "NATIONAL TOTAL" : `${entry.regionName.toUpperCase()} TOTAL`);
+      label(
+        cells[0],
+        entry.kind === "grandTotal"
+          ? reviewTotalRowLabel(review).toUpperCase()
+          : `${entry.regionName.toUpperCase()} TOTAL`,
+      );
       for (const index of [1, 2, 3]) {
         cells[index].value = "";
         font(cells[index], { color: { argb: ink }, name: HOUSE_XLSX_FONT, size: 9 });
@@ -1007,7 +1021,12 @@ function buildProductMonthSheet(
         indent: 1,
       });
     } else {
-      label(cells[0], entry.kind === "grandTotal" ? "NATIONAL TOTAL" : `${entry.regionName.toUpperCase()} TOTAL`);
+      label(
+        cells[0],
+        entry.kind === "grandTotal"
+          ? reviewTotalRowLabel(review).toUpperCase()
+          : `${entry.regionName.toUpperCase()} TOTAL`,
+      );
       for (const index of [1, 2, 3]) {
         cells[index].value = "";
         font(cells[index], { color: { argb: ink }, name: HOUSE_XLSX_FONT, size: 9 });

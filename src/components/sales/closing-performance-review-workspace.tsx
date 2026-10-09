@@ -28,6 +28,7 @@ import type {
 import {
   performanceReviewRegionStyle,
   PERFORMANCE_REVIEW_FIRST_PERIOD,
+  reviewTotalRowLabel,
 } from "@/lib/sales/closing-performance-review-regions";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
@@ -148,8 +149,20 @@ function MatrixScroller({ children }: { children: ReactNode }) {
  * family or product code, then the row's own total, target and achievement. The cell is units on the
  * by-product grid and value on the by-family grid; the row total is value on both, because adding a
  * row's units across products is the one sum that is never done.
+ *
+ * `totalLabel` is what the bottom row is CALLED — "National total" only when the view really covers
+ * the whole line. It is passed in rather than decided here because the grid alone cannot tell: the
+ * rows it holds are the ones that survived the filter, and the full option lists live on the payload.
  */
-function GridTable({ grid, measure }: { grid: PerformanceMatrix; measure: "units" | "value" }) {
+function GridTable({
+  grid,
+  measure,
+  totalLabel,
+}: {
+  grid: PerformanceMatrix;
+  measure: "units" | "value";
+  totalLabel: string;
+}) {
   const stickyHead = headClassName + " sticky left-0 z-20 bg-slate-50";
   // EXEMPT from the fits-the-screen sweep, deliberately: one column PER PRODUCT, so the width is
   // the product count and no merge can bound it — the same shape as the monthly closing matrix,
@@ -198,7 +211,7 @@ function GridTable({ grid, measure }: { grid: PerformanceMatrix; measure: "units
               <tr className={tone} key={row.kind + ":" + row.areaCode + ":" + index}>
                 <td className={stickyCell}>
                   {row.kind !== "area" ? (
-                    row.kind === "grandTotal" ? "National total" : row.regionName + " total"
+                    row.kind === "grandTotal" ? totalLabel : row.regionName + " total"
                   ) : row.repName ? (
                     row.repName
                   ) : row.repIsVacant ? (
@@ -297,7 +310,13 @@ function SeriesTable({
  * quantity because a block never spans more than one product code — which is also why there is no
  * row total here: a row spans products, and units of different products are never added.
  */
-function ProductMonthTable({ grid }: { grid: PerformanceProductMonthMatrix }) {
+function ProductMonthTable({
+  grid,
+  totalLabel,
+}: {
+  grid: PerformanceProductMonthMatrix;
+  totalLabel: string;
+}) {
   const stickyHead = headClassName + " sticky left-0 z-20 bg-slate-50";
   const perProduct = grid.months.length + 1;
   // EXEMPT from the fits-the-screen sweep, deliberately, and for the two reasons already ruled on
@@ -369,7 +388,7 @@ function ProductMonthTable({ grid }: { grid: PerformanceProductMonthMatrix }) {
               <tr className={tone} key={row.kind + ":" + row.areaCode + ":" + index}>
                 <td className={stickyCell}>
                   {row.kind !== "area" ? (
-                    row.kind === "grandTotal" ? "National total" : row.regionName + " total"
+                    row.kind === "grandTotal" ? totalLabel : row.regionName + " total"
                   ) : row.repName ? (
                     row.repName
                   ) : row.repIsVacant ? (
@@ -433,6 +452,11 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
   const line = review?.line ?? "";
   const period = review?.period ?? "";
   const months = review?.months ?? [];
+
+  // What every total row that closes a whole table is CALLED. A filtered view's bottom row is not a
+  // national anything — three areas of fifty-eight, or one product of twelve, is a FILTERED total,
+  // and the workbook reads the same helper so the export and the screen cannot disagree.
+  const totalLabel = review ? reviewTotalRowLabel(review) : "National total";
 
   // The months the headline figures actually cover — one, or several folded together. Distinct from
   // `months` above, which is the by-month SERIES behind the growth tabs and is always a run of them.
@@ -690,14 +714,14 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         description={"Every rep and area down the side, every family across the top. A family cell is value: a family spans several concentrations, and units of different products are never added. Region totals and the national total close each block."}
         title={"Reps and areas " + DOT + " families"}
       >
-        <GridTable grid={review.matrixByFamily} measure="value" />
+        <GridTable grid={review.matrixByFamily} measure="value" totalLabel={totalLabel} />
       </AdminTableShell>
 
       <AdminTableShell
         description={"The same rows against every product code. Each column is one product, so these units are a real quantity and may be read down the column. The row total stays value, because a row spans products."}
         title={"Reps and areas " + DOT + " products"}
       >
-        <GridTable grid={review.matrixByProduct} measure="units" />
+        <GridTable grid={review.matrixByProduct} measure="units" totalLabel={totalLabel} />
       </AdminTableShell>
 
       <AdminTableShell
@@ -761,7 +785,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
               ))}
               <tr className="border-t-2 border-slate-300 bg-slate-100/80">
                 <td className={cellClassName + " font-black uppercase tracking-[0.12em] text-slate-700"} colSpan={5}>
-                  {line} {DOT} national total
+                  {line} {DOT} {totalLabel}
                 </td>
                 <td className={cellClassName + " text-right font-black text-slate-900"}>
                   <Figure value={review.totals.salesValue} />
@@ -954,7 +978,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         description={"Every product in turn, and under each one every rep's own months and growth. The figures are units: a block is ONE product code, so they are a real quantity and may be read across the months and down the column. There is no row total " + DOT + " a row spans products, and units of different products are never added."}
         title={"Reps and areas " + DOT + " products by month"}
       >
-        <ProductMonthTable grid={review.productUnitsByRepByMonth} />
+        <ProductMonthTable grid={review.productUnitsByRepByMonth} totalLabel={totalLabel} />
       </AdminTableShell>
     </div>
   );
