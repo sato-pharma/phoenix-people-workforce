@@ -73,11 +73,14 @@ const PRODUCTION_2026_09_29: AdvisorCount[] = [
  * alone), 6 referenced by no live policy. `PRODUCTION_2026_09_29` above keeps the historical 14.
  */
 const PRODUCTION_TODAY: AdvisorCount[] = [
-  { category: "rls_enabled_no_policy", current_count: 176 },
+  // 210, RAISED from 176 on 2026-10-09 after a triage recorded in the baseline document. The
+  // 2026-09-30 "knowingly red at 177" pre-image table is inside this number now.
+  { category: "rls_enabled_no_policy", current_count: 210 },
   { category: "function_search_path_mutable", current_count: 0 },
   { category: "extension_in_public", current_count: 1 },
   { category: "authenticated_security_definer_function_executable", current_count: 11 },
-  { category: "unused_index", current_count: 615 },
+  // 722 = the highest daily reading 1-9 October (576 to 722); raised from 615 the same day.
+  { category: "unused_index", current_count: 722 },
   { category: "stats_age_hours", current_count: -1 },
 ];
 
@@ -108,13 +111,13 @@ export function runAdvisorBaselineGuardTests() {
 
   // ── growth is an error ───────────────────────────────────────────────────
   const grew = PRODUCTION_TODAY.map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 177 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 211 } : r,
   );
   const growth = evaluateAdvisorCounts(REAL_BASELINE, grew);
   const exceeded = growth.find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(exceeded, "a single new untriaged table must fail the check");
   assert.equal(exceeded!.severity, "error");
-  assert.match(exceeded!.message, /177/);
+  assert.match(exceeded!.message, /211/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
 
   // ── a fall is NOT an error ───────────────────────────────────────────────

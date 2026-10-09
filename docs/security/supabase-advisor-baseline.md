@@ -1,7 +1,7 @@
 # Supabase Advisor Baseline — Accepted / By-Design Items
 
 **Project:** Phoenix HR production (`ozucdzovmcqvepbozvqf`)
-**Last reviewed:** 2026-09-30 *(previously 2026-09-29, and 2026-07-19 before that)*
+**Last reviewed:** 2026-10-09 *(previously 2026-09-30, 2026-09-29, and 2026-07-19 before that)*
 
 This is the single triage reference for `get_advisors` output. Items listed here are
 **reviewed and accepted as by-design** (or explicitly deferred). Related context:
@@ -125,7 +125,20 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (176 as of 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (210 as of 2026-10-09; 176 on 2026-09-29)
+
+**Raised 176 to 210 on 2026-10-09, after the daily check had been breaching it since 1 October.**
+The run list stayed green throughout, because the advisor step is `continue-on-error` and the
+reporting step always exits 0 - the breach lived only in a run annotation (181 on 1 Oct, 185 on
+3 Oct, 206 on 8 Oct, 210 on 9 Oct). This is a triage, not a padding: the 210 splits as 92 other
+`public` tables, 22 `ats_*`, 21 in dated backup schemas, 20 marketing / direct-order, 18 in `au`,
+16 `prodplan_*`, 12 CRM / iReports360, 7 `customer_identity_*` / `rep_rank_*`, and 2 backup-named
+tables in `public`. All are RLS-on with no policy, none grants anything to `anon` or
+`authenticated`, and they follow the same server-only pattern as the rest. **The 23 backup
+snapshots leave the count by themselves** as their schemas pass the 90-day retention in
+`scripts/audit-backup-schemas.mjs` (the first on 24 November), so the durable part of the raise is
+about 187. Group counts are from a live query on 2026-10-09 and are approximate by module prefix;
+the **count** is what is gated.
 
 RLS is enabled with no policy, so a browser role (`anon` / `authenticated`) is denied all access.
 Deny-by-default is the intended posture: these tables are read and written only by the service
@@ -149,7 +162,7 @@ actually matters, by `phx_ci_browser_reachability()`.
 > If a table here ever needs RLS-respecting *browser* reads, that is a real change - add a
 > scoped policy rather than treating the INFO as noise.
 
-**Known, and deliberately not absorbed (2026-09-30):** production currently reads **177**, one
+**Historical (2026-09-30), now absorbed by the 2026-10-09 triage above:** production then read **177**, one
 above this baseline. The extra is `public.hiring_document_definitions_pre_20260930`, a pre-image
 table another session created while Phase 4 was in flight. It is not reachable by any browser
 role, and it is not this session's to move (`AGENTS.md` section 5: changes you did not create).
@@ -297,9 +310,16 @@ one's grants outside a migration.
   overlapping `authenticated` SELECT policies into one; writes unchanged). Perf-only, not
   a security gap.
 
-### DEFERRED - `unused_index` (615 as of 2026-09-29, recorded here as 326 until then)
+### DEFERRED - `unused_index` (722 accepted as of 2026-10-09; 615 on 2026-09-29, 326 before that)
 
 Reviewed and **deferred** - not bulk-dropped. The reasoning has not changed, only the number.
+
+**Raised 615 to 722 on 2026-10-09.** The daily check read 576 to 722 between 1 and 9 October (666
+on 9 October): the count moves both ways, because indexes on newly shipped tables read as unused
+until their screens are opened. 722 is the highest reading seen, so it is a ceiling for noise, not
+a target. **A caution from the same review:** `phoenix_crm_touch_trail_session_idx` (31 MB) reads
+as never scanned, but the table is only 6 days old and the index backs the Super Admin
+touch-trail session view (`.eq("session_id", ...)`), so its zero scans are not evidence it is dead.
 
 **Our definition, not the advisor's:** an index never scanned since the last stats reset
 (`idx_scan = 0`), that is not unique, not a primary key, and does not back a constraint.
