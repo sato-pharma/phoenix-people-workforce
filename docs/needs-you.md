@@ -56,6 +56,33 @@ type NeedsYouSourceState =
 One adapter per source, one fan-out, an 8-second per-source timeout. A source that has not answered in
 eight seconds is a source whose contents are unknown, and it renders amber rather than empty.
 
+🔴 **THE FAN-OUT IS BOUNDED, AND THE LANE WIDTHS ARE THE FIX RATHER THAN A TUNING** (2026-10-09). It
+was an unbounded `Promise.all` over all 22 sources, and on production the owner read the board three
+times and got 9 items, then 8, then 7 — a different set of amber rows each read, nine of the 22
+sources unread on the one he kept, and behind two of them **13 marketing requests at his own step,
+overdue**, and a leaver with an uncollected deduction nine days old. **Nothing was slow.** Measured
+alone against production the same evening: `closing-publication-drift` 5,516 ms, `action-inbox`
+5,119 ms, `office-allocation-drift` 4,640 ms, every other source under 1,100 ms — **0 of 22 over the
+budget**. Started together, the same three took 10,280 / 9,387 / 9,222 ms and even a 903 ms source
+took 7,016 ms: the budget was being spent queueing behind the other 21 reads, so **which** sources
+ambered was luck.
+
+So an adapter declares `cost: "heavy"` and `service.ts` runs two lanes at once — **heavy one at a
+time, light four at a time** — with each source's clock starting when THAT source starts, and a
+45-second ceiling on the whole fan-out so bounding the width cannot unbound the total. Measured
+after: three whole-board reads at 12.2 s, 14.9 s and 19.6 s, every one of them **0 amber of 22** and
+the identical 14 / 9 / 1 lanes.
+
+- **A heavy lane of two is not a cheaper version of this.** Its peak was 7,687 ms against an 8,000 ms
+  budget — 313 ms, on a laptop measurement carrying none of production's traffic — and the 22-way
+  shape provoked a real `57014 canceling statement due to statement timeout` out of
+  `phx_closing_drift_status`.
+- **A new source that costs seconds MUST declare it.** An undeclared heavy source joins the light
+  lane and inflates the other three sources there, not only itself.
+- **The page is slower on purpose, and the ceiling is not a latency target.** The way to make this
+  page faster is to make a heavy source cheaper — which changes what it measures, and is the owner's
+  call rather than a scheduling one. Pinned by `tests/needs-you-source-scheduling.test.ts`.
+
 `action-inbox` · `plan-approvals` · `leave-approvals` · `excuse-approvals` ·
 `direct-order-approvals` · `direct-order-unbooked` · `direct-order-validations` ·
 `marketing-approvals` · `market-awareness-approvals` · `monthly-closings` · `payroll-publish` ·
