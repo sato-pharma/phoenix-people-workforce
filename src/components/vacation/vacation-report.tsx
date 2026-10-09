@@ -940,6 +940,18 @@ function LeaveBalanceDeductionsPanel({
             <li className="py-3 first:pt-0 last:pb-0" key={`${row.employeeHrId}-${row.workDate}-${row.chargedAt}`}>
               <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-phx-sm font-bold text-slate-900">
                 {isSelfView ? null : <span>{row.employeeName}</span>}
+                {/*
+                  Said beside the NAME, because that is what it is about. Not in the self view: a
+                  leaver cannot sign in anyway, and "you have left the company" is not something to
+                  print in somebody's own report. The date is ISO like the work date next to it —
+                  this section prints date-only columns raw, and inventing a second format here
+                  would be the one place they disagreed.
+                */}
+                {!isSelfView && row.employeeHasLeft ? (
+                  <span className="font-semibold text-amber-700">
+                    left the company{row.lastWorkingDate ? ` ${row.lastWorkingDate.slice(0, 10)}` : ""}
+                  </span>
+                ) : null}
                 <span className="tabular-nums text-slate-600">{row.workDate}</span>
                 <span className="text-sky-800">
                   {formatDays(row.days)} {row.days === 1 ? "day" : "days"} from annual leave
