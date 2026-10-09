@@ -889,6 +889,8 @@ export async function runDeductionsLeaveBalanceTests() {
     );
 
     // (e) The totals stay about the active workforce — the first figure is literally activeEmployees.
+    // Owner-confirmed 2026-10-09: "keep the entitlements summary counting active employees only",
+    // so this assertion is his rule and not a tidy-up — widening the filter is the regression.
     assert.ok(
       service.includes("employeeEligibility.filter((row) => !hasDepartedEmployment(row.employmentStatus)),"),
       "the summary must exclude the charged leavers so a headcount he reads monthly does not move",

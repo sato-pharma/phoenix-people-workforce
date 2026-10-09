@@ -7013,10 +7013,12 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
     viewerHrId: access.hrId ?? null,
     dashboard: buildVacationDashboardData({ latestSlaRun, rows: filteredRows }),
     employeeEligibility,
-    // 🔴 THE SUMMARY STAYS ABOUT THE ACTIVE WORKFORCE — its first figure is literally
+    // 🔴 THE SUMMARY STAYS ABOUT THE ACTIVE WORKFORCE — HIS OWN DECISION, confirmed 2026-10-09:
+    // "keep the entitlements summary counting active employees only". Its first figure is literally
     // `activeEmployees`, and counting the charged leavers in it would move a headcount he reads
     // every month to make a few leaver rows visible. The rows are on the tab; the totals are not
-    // restated.
+    // restated. Do not widen this filter to "include leavers for completeness" — that is the change
+    // he was asked about and declined.
     employeeEligibilitySummary: buildEmployeeEligibilitySummary(
       employeeEligibility.filter((row) => !hasDepartedEmployment(row.employmentStatus)),
     ),
