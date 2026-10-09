@@ -22,6 +22,15 @@
 // rather than as the month having three figures the owner decided himself. Only `--gate` exits 1,
 // for a cron that needs to alarm; nothing in this repo calls it that way today.
 //
+// 🔴 A RETIRED APPROVAL IS REPORTED, NEVER SCORED (owner, 2026-10-09). The module total counts an
+// approval the module has since retired only when it was retired AFTER this run was frozen, and the
+// claim then reads `RETIRED APPROVAL` instead of a difference — in BOTH directions. The figure was
+// approved when the sheet was frozen, so it cannot prove an over-charge; the module has withdrawn
+// it, so it cannot demand a charge either. Comparing against the module as it looks today reported
+// 934.74 EGP of sound August 2026 charges as over-charged, and folding the retired money into the
+// total instead produced 3,597.53 EGP of false shortfall. An approval retired BEFORE the freeze is
+// not counted at all. Account: docs/approved-deductions-that-never-reached-the-sheet.md.
+//
 // 🔴 A DIFFERENCE IS NOT A DEFECT, AND THIS SCRIPT NEVER REPAIRS ONE. The owner trims a proposal
 // deliberately — two September 2026 figures are his own decision (2026-10-09). Read the list, name
 // the rows, and leave the money alone.
@@ -53,6 +62,7 @@ const VERDICT_LABEL: Record<ReconciliationRow["verdict"], string> = {
   "charged less": "CHARGED LESS",
   "charged more": "CHARGED MORE",
   "not comparable by design": "NOT COMPARABLE",
+  "explained by a retired approval": "RETIRED APPROVAL",
   "not in the population": "NOT IN POPULATION",
   "not on this run": "NOT ON THIS RUN",
 };
@@ -102,6 +112,31 @@ function printReport(run: MonthlySalaryRun, report: ReconciliationReport, verbos
     }
   }
 
+  if (report.retiredApprovalsCounted.count > 0) {
+    const frozen = run.publishedAt ?? run.part1ConfirmedAt;
+    console.log(
+      `\n  ${report.retiredApprovalsCounted.count} approval(s) worth` +
+        ` ${money(report.retiredApprovalsCounted.amount)} were live and approved when this run was` +
+        ` frozen${frozen ? ` (${cairoTimeLabel(frozen)} Cairo)` : ""} and the module has RETIRED them` +
+        ` since. Open the Deductions module today and you will not find them — that is expected, not` +
+        ` a discrepancy. An approval retired BEFORE the freeze is not counted at all.`,
+    );
+    if (report.explainedByRetiredApproval.length > 0) {
+      console.log(
+        `  ${report.explainedByRetiredApproval.length} claim(s) stand on that retired money, so they` +
+          ` are NOT scored as a difference in either direction — the module no longer stands behind` +
+          ` the figure, which neither proves the run over-charged nor asks it to charge more. Read` +
+          ` the step before calling any of them either way:`,
+      );
+      for (const row of report.explainedByRetiredApproval) {
+        console.log(
+          `    ${row.fullName.padEnd(38)} ${row.label.padEnd(30)}` +
+            ` approved ${money(row.moduleAmount).padStart(12)}  charged ${money(row.runAmount).padStart(12)}`,
+        );
+      }
+    }
+  }
+
   console.log(`\n  ${describeReconciliation(report)}`);
 }
 
@@ -109,7 +144,13 @@ async function reconcileRun(run: MonthlySalaryRun) {
   const period = { month: run.month, year: run.year };
   const [population, deductions, draftRows, directory] = await Promise.all([
     resolvePayrollPopulationAndSources(period),
-    loadConfirmedDeductions(period),
+    // Compare against the approvals this run was FROZEN on, not against the module as it looks
+    // today. An approval retired AFTER the sheet could no longer move still explains what the
+    // sheet charges; one retired before it does not, and keeps reporting as a difference. Without
+    // this the August 2026 run reported 934.74 EGP of over-charge that was entirely sound.
+    loadConfirmedDeductions(period, {
+      countSupersededApprovedAfter: run.publishedAt ?? run.part1ConfirmedAt,
+    }),
     listDraftRows(run.id),
     // Names for anybody the population leaves out — the owner's standing rule is names, never
     // codes, and those rows are precisely the ones with no population name to fall back on.

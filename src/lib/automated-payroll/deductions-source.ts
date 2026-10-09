@@ -156,10 +156,29 @@ export type DeductionLine = {
    * manual entry would read as a second claim on a real day. Production carries one such row.
    */
   sourceSystem: string;
+  /**
+   * When this candidate was RETIRED, or null for a live one. Always null unless the caller asked
+   * for retired approvals with `countSupersededApprovedAfter`, so every money path reads null here.
+   * The reconciliation report prints it: a charge explained by an approval retired after the run
+   * was published is a sound charge, and the date is the whole evidence for saying so.
+   */
+  supersededAt?: string | null;
 };
 
 export type EmployeeDeductions = {
   buckets: DeductionBuckets;
+  /**
+   * How much of `buckets` came from approvals the module has since RETIRED. All zeroes unless the
+   * caller passed `countSupersededApprovedAfter`, so every money path reads zeroes.
+   *
+   * Carried per bucket, not as one total, because the reconciliation compares bucket by bucket and
+   * has to know WHICH claim is standing on retired money. A claim that is must not be scored as a
+   * difference in either direction: the module no longer stands behind the figure, so it can
+   * neither prove the run over-charged nor demand that it charge more. Measured on the August 2026
+   * run — folding it into the total silently turned two false over-charges into five false
+   * under-charges worth 3,597.53 EGP.
+   */
+  retiredBuckets?: DeductionBuckets;
   lines: DeductionLine[];
   /**
    * Candidates the month DETECTED for this employee that the payroll gate did
@@ -321,6 +340,69 @@ export function candidateAmount(candidate: DeductionsCandidateWithDecision): num
 }
 
 /**
+ * How a caller asks for RETIRED approvals to be counted as well. Omitted — which is every money
+ * path in the app — and nothing changes: a superseded candidate contributes nothing, exactly as
+ * before.
+ */
+export type BuildDeductionBucketsOptions = {
+  /**
+   * Count a candidate that was approved and then RETIRED, provided it was retired strictly AFTER
+   * this instant. Pass the moment the run's figures stopped being able to move — `publishedAt`,
+   * else `part1ConfirmedAt`.
+   *
+   * WHY A CUT-OFF RATHER THAN "COUNT THEM ALL" (owner, 2026-10-09: "fix the reconcile tool to
+   * count a superseded approval"). The reconciliation asks whether a run charges what was
+   * approved, and it asked it against the module as it looks TODAY — so an approval retired weeks
+   * after the month was published turned a correct charge into a reported over-charge. Measured on
+   * the August 2026 run: two rows, 934.74 EGP, both of them sound. The naive fix is to count every
+   * retired approval, and that is wrong in the other direction: 93 of the 94 retired approvals on
+   * production have no replacement at all, meaning the SOURCE withdrew the row — an unpaid day
+   * corrected to paid, a fingerprint day excused. Counting those would claim money is approved
+   * that the module has withdrawn. The cut-off keeps the only honest reading: money that was
+   * live and approved when the sheet was frozen explains what the sheet charges; money retired
+   * BEFORE that does not, and still reports as a difference.
+   */
+  countSupersededApprovedAfter?: string | null;
+};
+
+function parseCutoff(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Whether a retired candidate still explains money on a run frozen at `cutoff`.
+ *
+ * The replacement walk is what stops a day being counted twice. A retirement that handed its
+ * decision on to a live replacement (the carry-forward in `reconcileCandidates`) is already
+ * represented by that replacement, so counting the retired row as well would double the charge.
+ * The chain is followed rather than just the immediate successor, because a row can be
+ * re-calculated more than once, and `visited` keeps a cycle from hanging the report.
+ */
+function countsAsRetiredApproval(
+  candidate: DeductionsCandidateWithDecision,
+  cutoff: number | null,
+  byId: Map<string, DeductionsCandidateWithDecision> | null,
+): boolean {
+  if (cutoff === null || !byId) return false;
+  if (!isConfirmedForPayroll(candidate)) return false;
+  const retiredAt = parseCutoff(candidate.supersededAt);
+  if (retiredAt === null || retiredAt <= cutoff) return false;
+
+  const visited = new Set<string>([candidate.id]);
+  let next = candidate.supersededByCandidateId;
+  while (next && !visited.has(next)) {
+    visited.add(next);
+    const replacement = byId.get(next);
+    if (!replacement) return true;
+    if (isConfirmedForPayroll(replacement)) return false;
+    next = replacement.supersededByCandidateId;
+  }
+  return true;
+}
+
+/**
  * Folds the month's eligible candidates into per-employee buckets. Pure and
  * exported so the mapping and the eligibility gate are unit-tested without a
  * database — this decides real money, and a rule that only exists inside a
@@ -333,16 +415,24 @@ export function candidateAmount(candidate: DeductionsCandidateWithDecision): num
  */
 export function buildDeductionBuckets(
   candidates: DeductionsCandidateWithDecision[],
+  options?: BuildDeductionBucketsOptions,
 ): Map<string, EmployeeDeductions> {
+  const cutoff = parseCutoff(options?.countSupersededApprovedAfter);
+  const byId = cutoff === null ? null : new Map(candidates.map((row) => [row.id, row]));
   const byCompact = new Map<string, EmployeeDeductions>();
   for (const candidate of candidates) {
-    if (candidate.supersededAt) continue;
+    if (candidate.supersededAt && !countsAsRetiredApproval(candidate, cutoff, byId)) continue;
     const compact = candidate.employeeHrIdCompact;
     if (!compact) continue;
 
     const confirmed = isConfirmedForPayroll(candidate);
     const amount = candidateAmount(candidate);
-    const entry = byCompact.get(compact) ?? { buckets: emptyBuckets(), lines: [], pendingLines: [] };
+    const entry = byCompact.get(compact) ?? {
+      buckets: emptyBuckets(),
+      retiredBuckets: emptyBuckets(),
+      lines: [],
+      pendingLines: [],
+    };
 
     const line: DeductionLine = {
       category: candidate.category,
@@ -356,11 +446,15 @@ export function buildDeductionBuckets(
       reason: candidate.reason ?? "",
       status: candidate.decision?.decisionStatus ?? "Pending",
       sourceSystem: candidate.sourceSystem ?? "",
+      supersededAt: candidate.supersededAt ?? null,
     };
 
     if (confirmed) {
       const bucket = bucketFor(candidate.category);
       entry.buckets[bucket] = roundCurrency(entry.buckets[bucket] + amount);
+      if (candidate.supersededAt && entry.retiredBuckets) {
+        entry.retiredBuckets[bucket] = roundCurrency(entry.retiredBuckets[bucket] + amount);
+      }
       entry.lines.push(line);
     } else {
       // NOT added to any bucket — see EmployeeDeductions.pendingLines. This is
@@ -401,11 +495,13 @@ export function buildDeductionBuckets(
  */
 export async function loadConfirmedDeductions(
   period: PayrollPeriod,
+  options?: BuildDeductionBucketsOptions,
 ): Promise<Map<string, EmployeeDeductions>> {
   const monthKey = `${period.year}-${String(period.month).padStart(2, "0")}`;
+  const includeSuperseded = Boolean(options?.countSupersededApprovedAfter);
   try {
-    const candidates = await listCandidatesForMonth({ monthKey });
-    return buildDeductionBuckets(candidates);
+    const candidates = await listCandidatesForMonth({ monthKey, includeSuperseded });
+    return buildDeductionBuckets(candidates, options);
   } catch (error) {
     logError("Automated payroll: confirmed-deductions load failed", {
       labels: {

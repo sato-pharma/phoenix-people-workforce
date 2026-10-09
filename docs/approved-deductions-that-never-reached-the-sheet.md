@@ -231,3 +231,66 @@ opinion about it.
 
 Pinned by `tests/automated-payroll-deduction-reconciliation.test.ts`, which runs inside the required
 `validate` job. Twelve assertions, each watched failing with the fix broken and restored from a copy.
+
+## A retired approval is never scored in either direction (2026-10-09)
+
+The owner ran the new command for August 2026 and it reported **934.74 EGP over-charged** across two
+unpaid-vacation rows:
+
+| Employee | Approved | Run charges | Module showed |
+| --- | --- | --- | --- |
+| Yathreb El Ghannam | 2 Aug + 25 Aug, 2 days = 967.74 | 967.00 | 483.87 |
+| Aya Abdullah | 8 Aug, 1 day = 451.61 | 451.61 | 0.00 |
+
+Both charges were sound. Each traced to an approval the owner gave on **4 Sep 2026**, and each
+approval was retired *after* the run was published on **8 Sep 2026, 14:43 Cairo** — Aya's on 10 Sep,
+Yathreb's on **8 Oct**, a month after the money was paid. The reconciliation was comparing a frozen
+sheet against the module as it looks today, so a retirement that happened weeks later read as the
+run having over-charged.
+
+**Neither figure could be proved from the cell history.** `automated_payroll_draft_cell_history`
+begins 7 Oct 2026 at 10:37 Cairo, so August has no per-cell provenance at all. The candidates and
+their decisions are what settle it.
+
+### Why "count every retired approval" is worse than the bug
+
+Measured on production the same day — 94 retired approvals across 45 employees, 62,679.51 EGP:
+
+| Shape | Rows | EGP |
+| --- | --- | --- |
+| No replacement candidate at all — the **source withdrew the row** | 93 | 56,582.74 |
+| Replacement approved (the carry-forward worked) | 1 | 2,800.00 |
+| Replacement left Pending | 1 | 6,096.77 |
+
+93 of 94 are retractions: an unpaid day corrected to paid, a fingerprint day excused. Counting those
+would report a run as correct for charging money nobody stands behind — the failure direction that
+costs an employee real pay. July holds 65 of them, August 25, September 4.
+
+None of this is missing pay. Each run froze its figures while the approvals were live, so the
+published months charged what was confirmed at the time. What was lost is the audit trail.
+
+### The rule
+
+1. A retired approval counts on the module side **only if it was retired after the run was frozen**
+   (`publishedAt`, else `part1ConfirmedAt`). One retired before the freeze was already withdrawn
+   when the sheet was built and still reports as a difference.
+2. A claim standing on retired money gets its own verdict, **`explained by a retired approval`** —
+   reported, never scored. It cannot prove an over-charge, because the figure was approved when the
+   sheet was frozen; it cannot demand a charge either, because the module has withdrawn the money
+   and a run that never charged it gives the same answer the module now gives.
+3. `buildDeductionBuckets` is **default-off**. Every money path — `recommend.ts`, `run-service.ts`,
+   `step-definitions.ts`, `module-sourced-steps.ts` — calls it without the option and sees exactly
+   what it saw before.
+
+Rule 2 is the one that is easy to get wrong. Folding retired approvals into the module total removes
+the two false over-charges and creates **five false under-charges worth 3,597.53 EGP** — Samia Ali
+Kasem Ali Gabr 967.75, Mina Farouk Nawar Rizkallah 870.97, Sameh Shabaan El Hoseiny 870.97, Mohamed
+Raffat Mohamed Waly Gad 532.26, Ahmed Mohamed Rabiee Fayk Elkawas 354.84 — because a withdrawn
+approval the run also never charged is the module and the run *agreeing*.
+
+After the fix August reads "Every approved deduction is charged by this run", with six claims listed
+under `RETIRED APPROVAL` and 25 approvals worth 11,959.69 EGP declared as retired-since-frozen.
+September is unchanged, including the owner's own trims on Ghada (483.33) and Esraa (258.34).
+
+Pinned by `tests/reconcile-counts-retired-approval.test.ts` in the required `validate` job — five
+breaks watched failing, each restored from a copy.
