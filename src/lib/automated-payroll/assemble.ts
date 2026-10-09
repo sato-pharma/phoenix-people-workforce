@@ -86,15 +86,45 @@ function num(value: number | null | undefined): number {
   return value == null || !Number.isFinite(value) ? 0 : value;
 }
 
-/** Sum of the Part-1 manual deduction tabs' 5 category values (CRM/Vacation/No-Record/Loan/Other; 0 for any not filled in). */
-function otherPart1DeductionsTotal(draft: DraftRow | undefined): number {
+/**
+ * The Part-1 LOAN repayment, which the sheet shows in its own Loans column (owner, 2026-10-09).
+ *
+ * It used to be `const loans = 0` with the money folded into Other Deductions, so the September
+ * 2026 full sheet showed a Loans column of zeros for all 102 rows while Mahmoud Ibrahim Ahmed
+ * Mohamed (A-1) 1,250.00 and Muhammad AlMinshawy (B-148) 725.01 sat under *Other Deductions*. The
+ * money was right and the column was not, which is the worse half: a reader checking a loan
+ * balance against the sheet finds nothing and the figure beside it unexplained.
+ *
+ * 🔴 PRESENTATION ONLY — IT MOVES NO MONEY. The loan stays inside
+ * `otherPart1DeductionsTotal`, which is what feeds `freezeFirstPart`, so the frozen First Part
+ * cannot shift; and Total Deductions sums `loans` and `otherDeductions` together, so taking the
+ * loan out of one and putting it in the other leaves every total byte-identical. Pinned by
+ * `tests/automated-payroll-assemble.test.ts`.
+ */
+function part1LoanDeduction(draft: DraftRow | undefined): number {
+  return roundCurrency(num(draft?.p1odLoanValue));
+}
+
+/** The Part-1 manual deduction tabs EXCEPT the loan, which now carries its own column. */
+function otherPart1DeductionsExceptLoan(draft: DraftRow | undefined): number {
   return roundCurrency(
     num(draft?.p1odCrmValue) +
       num(draft?.p1odVacationValue) +
       num(draft?.p1odNoRecordValue) +
-      num(draft?.p1odLoanValue) +
       num(draft?.p1odOtherValue),
   );
+}
+
+/**
+ * Sum of the Part-1 manual deduction tabs' 5 category values (CRM/Vacation/No-Record/Loan/Other;
+ * 0 for any not filled in).
+ *
+ * 🔴 THE LOAN STAYS IN HERE even though it is now shown in its own column: this total is what
+ * `freezeFirstPart` takes off the First Part, and dropping the loan from it would move money
+ * that has already been paid. Only the PRESENTATION splits — see `part1LoanDeduction`.
+ */
+function otherPart1DeductionsTotal(draft: DraftRow | undefined): number {
+  return roundCurrency(otherPart1DeductionsExceptLoan(draft) + part1LoanDeduction(draft));
 }
 
 /**
@@ -353,13 +383,20 @@ export function assembleRows(input: {
       0,
       roundCurrency(input.carryForwardByCompact?.get(member.compact) ?? 0),
     );
+    // The loan is shown in the Loans column, so it must not also be counted inside Other
+    // Deductions — `totalDeductions` adds both, and counting it twice would overstate every
+    // affected row's deductions. `otherPart1Total` above is untouched and still carries it, which
+    // is what keeps the frozen First Part exactly where it was.
     const otherDeductionsTotal = roundCurrency(
-      manualOtherDeductions + otherPart1Total + specialDeduction + carriedForwardApplied,
+      manualOtherDeductions +
+        otherPart1DeductionsExceptLoan(draft) +
+        specialDeduction +
+        carriedForwardApplied,
     );
     // The Additions step's Other additions cell (a dispute refund, 2026-10-09) is paid in the same
     // column as the Special Situations addition, and like it counts once for the whole month.
     const otherAdditionsTotal = roundCurrency(specialAddition + num(draft?.otherAdditions));
-    const loans = 0;
+    const loans = part1LoanDeduction(draft);
 
     const parts = assembleParts({
       effective,
