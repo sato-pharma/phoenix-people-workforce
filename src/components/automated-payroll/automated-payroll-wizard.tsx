@@ -31,7 +31,7 @@ import {
 } from "@/lib/automated-payroll/data-quality";
 import type { PayrollDayCollision } from "@/lib/automated-payroll/day-collisions";
 import type { ModuleDriftReport } from "@/lib/automated-payroll/module-drift";
-import { isUnbackedCharge, stepOpenDuringPart2 } from "@/lib/automated-payroll/module-sourced-steps";
+import { columnLabel, isUnbackedCharge, stepOpenDuringPart2 } from "@/lib/automated-payroll/module-sourced-steps";
 import { cairoTimeLabel, describeChargeSource } from "@/lib/automated-payroll/cell-history-labels";
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
@@ -890,13 +890,13 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                         wrong while the row is the whole finding. State the charge instead. */}
                     {isUnbackedCharge(row) ? (
                       <>
-                        {row.fullName}, {stepDefinition(row.stepKey).title} — this run charges {row.charged.toFixed(2)} and
+                        {row.fullName}, {columnLabel(row.stepKey, row.field)} — this run charges {row.charged.toFixed(2)} and
                         the Deductions module has no approved line behind any of it,{" "}
                         {describeChargeSource(row.chargeSource, cairoTimeLabel)}
                       </>
                     ) : (
                       <>
-                        {row.fullName}, {stepDefinition(row.stepKey).title} — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
+                        {row.fullName}, {columnLabel(row.stepKey, row.field)} — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
                         says {row.proposedNow.toFixed(2)}
                         {row.overridden
                           ? `; this run charges ${row.charged.toFixed(2)}, ${describeChargeSource(row.chargeSource, cairoTimeLabel)}`

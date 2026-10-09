@@ -4,9 +4,12 @@ import { stepDefinition } from "./step-definitions.ts";
 
 import {
   canBeUnbackedCharge,
+  columnLabel,
   isDriftComparableField,
+  isMoneyField,
   isUnbackedCharge,
   MODULE_SOURCED_STEP_KEYS,
+  pricedMoneyField,
 } from "./module-sourced-steps.ts";
 import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
@@ -39,7 +42,27 @@ import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
 // The step list lives in a browser-safe file (this one reaches the database client through feeders.ts),
 // so the wizard can read it too. Re-exported so every existing import keeps working.
-export { canBeUnbackedCharge, isDriftComparableField, isUnbackedCharge, MODULE_SOURCED_STEP_KEYS };
+export {
+  canBeUnbackedCharge,
+  columnLabel,
+  isDriftComparableField,
+  isMoneyField,
+  isUnbackedCharge,
+  MODULE_SOURCED_STEP_KEYS,
+  pricedMoneyField,
+};
+
+/**
+ * The rows that STOP the Part 2 confirm: a figure nobody chose, on the column the sheet pays.
+ *
+ * Two filters, and both have cost a real false block on the live September 2026 run. `!overridden`
+ * is the owner's 2026-10-06 rule — a figure somebody typed is their decision and still wins.
+ * `isMoneyField` is the second: a day count pays nothing, and the money it would price has its own
+ * row whenever it moved. See `isMoneyField` for the two day-count rows that held the month up.
+ */
+export function blocksPart2Confirm(row: ModuleDriftRow): boolean {
+  return !row.overridden && isMoneyField(row.stepKey, row.field);
+}
 
 /** The key the snapshot is stored under, inside the step state's existing jsonb summary. */
 export const RECOMMENDED_AT_CONFIRM_KEY = "recommendedAtConfirm";
@@ -125,7 +148,7 @@ export type ModuleDriftReport = {
 function tally(rows: ModuleDriftRow[]): ModuleDriftReport {
   return {
     rows,
-    staleCharges: rows.filter((row) => !row.overridden).length,
+    staleCharges: rows.filter(blocksPart2Confirm).length,
     overriddenButMoved: rows.filter((row) => row.overridden && !isUnbackedCharge(row)).length,
     unbackedCharges: rows.filter((row) => isUnbackedCharge(row)).length,
   };
@@ -339,7 +362,8 @@ export function chargedFiguresFromDrafts(draftRows: DraftRow[]): Record<string, 
  *
  * Only `!overridden` rows are touched — the figure is still the one the module proposed at the last
  * confirm, so nobody chose it. A figure that differs from that confirm is somebody's decision and
- * stays exactly as it is. A step never confirmed (no snapshot) is returned unchanged.
+ * stays exactly as it is. A step never confirmed (no snapshot) is returned unchanged. And a DAY
+ * COUNT comes only with the money it prices, never alone — see the filter below.
  */
 export function takeCurrentModuleFigures(input: {
   stepKey: StepKey;
@@ -347,7 +371,21 @@ export function takeCurrentModuleFigures(input: {
   snapshot: RecommendationSnapshot | null;
   chargedByCompact: Record<string, Record<string, number>>;
 }): StepRow[] {
-  const stale = detectModuleDrift(input).rows.filter((row) => !row.overridden);
+  const candidates = detectModuleDrift(input).rows.filter((row) => !row.overridden);
+  const takenMoney = new Set(
+    candidates.filter((row) => isMoneyField(row.stepKey, row.field)).map((row) => `${row.hrId}|${row.field}`),
+  );
+  // A DAY COUNT IS TAKEN ONLY TOGETHER WITH THE MONEY IT PRICES, NEVER ON ITS OWN. Writing the
+  // module's current day count beside a figure somebody chose is what turned this remedy into the
+  // trap measured on 2026-10-09: Aisha Ehab Mamdouh Hussein (B-79) carried a chosen 1,250.00 of CRM
+  // against the module's 1,458.33, and the only way to clear the block was a re-confirm that would
+  // have left the row reading "2.50 non-working days priced at 1,250.00". Where the money IS being
+  // taken, its day count comes with it — otherwise the row would read 733.33 against 0.00 days.
+  const stale = candidates.filter((row) => {
+    if (isMoneyField(row.stepKey, row.field)) return true;
+    const money = pricedMoneyField(row.stepKey, row.field);
+    return money !== undefined && takenMoney.has(`${row.hrId}|${money}`);
+  });
   if (stale.length === 0) return input.rows;
   const byHr = new Map<string, Map<string, number>>();
   for (const row of stale) {
@@ -384,7 +422,7 @@ export function takeCurrentModuleFigures(input: {
  * is an ordinary action — a Part 1 step stays confirmable while the run is in Part 2.
  */
 export function describeModuleDriftBlock(report: ModuleDriftReport): string {
-  const stale = report.rows.filter((row) => !row.overridden);
+  const stale = report.rows.filter(blocksPart2Confirm);
   const steps = [...new Set(stale.map((row) => stepDefinition(row.stepKey).title))];
   const sample = stale
     .slice(0, 5)
@@ -411,26 +449,13 @@ export function describeModuleDriftBlock(report: ModuleDriftReport): string {
  * Separate from the drift wording on purpose: these rows did NOT drift, so folding them into "the
  * module moved" would state the one thing that is not true about them.
  */
-/**
- * The step and the COLUMN, not the step alone.
- *
- * A deduction step carries more than one money column — Part 1 Other Deductions has Loan Value and
- * Other Value side by side — and "2,931.00 in Other Deductions" leaves the reader to guess which,
- * on the one sentence whose whole instruction is to check the other columns on the same row.
- */
-function columnName(row: ModuleDriftRow): string {
-  const definition = stepDefinition(row.stepKey);
-  const label = definition.fields.find((spec) => spec.key === row.field)?.label;
-  return label ? `${definition.title} → ${label}` : definition.title;
-}
-
 function describeUnbacked(report: ModuleDriftReport): string {
   if (report.unbackedCharges === 0) return "";
   const unbacked = report.rows.filter(isUnbackedCharge);
   const total = unbacked.reduce((sum, row) => sum + row.charged, 0);
   const sample = unbacked
     .slice(0, 5)
-    .map((row) => `${row.fullName} (${row.hrId}) ${row.charged.toFixed(2)} in ${columnName(row)}`);
+    .map((row) => `${row.fullName} (${row.hrId}) ${row.charged.toFixed(2)} in ${columnLabel(row.stepKey, row.field)}`);
   const more = unbacked.length > 5 ? ` …and ${unbacked.length - 5} more.` : "";
   return (
     ` ${report.unbackedCharges} charge(s) totalling ${total.toFixed(2)} have no approved deduction behind them` +
@@ -445,7 +470,7 @@ export function describeModuleDrift(report: ModuleDriftReport): string {
   if (report.staleCharges === 0 && report.overriddenButMoved === 0 && report.unbackedCharges === 0) {
     return "Every confirmed figure still matches the Deductions module.";
   }
-  const stale = report.rows.filter((row) => !row.overridden);
+  const stale = report.rows.filter(blocksPart2Confirm);
   const sample = stale
     .slice(0, 5)
     .map(
