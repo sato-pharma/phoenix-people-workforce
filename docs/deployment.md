@@ -464,14 +464,14 @@ Do not run `gcloud` to verify anything.
 
 ## Config as Code is deprecated — and the CLI's own migration command is DESTRUCTIVE here
 
-🔴 **OWNER DECISION, 2026-10-01: `.railway/railway.ts` STAYS INERT — DO NOT APPLY IT** (his words,
-*"leave the railway IaC inert for now"*). The file is committed and current, read from
-`railway config pull`, and **nothing applies it**: the live project is still driven by the two
-`railway.toml` files and the dashboard. **A session may not apply it, plan-then-apply it, or treat
-the 2026-12-01 deadline as authority to act** — a deadline is a reason to ask him, never a mandate,
-and the window is wide. **Only he lifts this, in his own words, about the IaC.** Until then the file
-is a prepared cutover sitting ready, not a migration half-done: finishing it is not a tidy-up, and
-the table below is why that distinction is worth a paragraph.
+🔴 **OWNER DECISION, 2026-10-10: THE 2026-10-01 HOLD IS LIFTED, AND THE FIRST APPLY IS DONE — APP ONLY**
+(his words, *"lift the Railway IaC hold and plan the apply"*, then *"leave phoenix-headwind out of
+the first apply"* and *"apply the app-only plan when 5725 is live"*). The 2026-10-01 ruling was
+*"leave the railway IaC inert for now"*; it ended on those words and **not** on the 2026-12-01
+deadline, which is still a reason to ask him and never a mandate. 🔴 **Lifting the hold is not
+blanket permission: every further apply is still a production infrastructure change that does not
+pass the deploy gate, so each one needs his word** — the second apply (`phoenix-headwind`) included.
+What happened and what it proved is under "The first apply, 2026-10-10" below.
 
 Railway now warns on every CLI call that `railway.json` / `railway.toml` is superseded by
 Infrastructure as Code in `.railway/railway.ts`, and that **existing files keep working until
@@ -510,8 +510,9 @@ Measured again on 2026-10-10, and both halves of that paragraph now have a readi
 and no restart policy at all**, while the build log of the revision then serving (`fab743655`) reads
 `Starting Healthcheck / Path: /api/readyz / Retry window: 5m0s / [1/1] Healthcheck succeeded!`. So
 the gate is demonstrably in force and demonstrably invisible to a pull, and `railway.toml` is what
-Railway reads today — which is also the answer to "is the new file live yet": it is not, and no
-reading of the repo can make it so.
+Railway reads today — which was the answer to "is the new file live yet" on that day: it was not, and
+no reading of the repo could make it so. **That changed on 2026-10-10 at 01:35 Cairo**: the apply
+stored the healthcheck on the service, though not the restart policy (below).
 
 🔴 **A PULLED AUTHORING FILE IS PERISHABLE, AND NINE DAYS WAS ENOUGH TO MAKE IT DESTRUCTIVE.** The
 same 2026-10-10 read found `phoenix-people-workforce` carrying **107** variable names against the
@@ -567,6 +568,36 @@ Two things `pull` confirmed that are worth knowing on their own:
   2026-09-30 listed it as a leftover to delete; that was wrong, and deleting it would remove a
   production cron path. cron-job.org is the scheduler of record (§ Cron Jobs), so establish which of
   the two is actually firing each route before touching either.
+
+### The first apply, 2026-10-10
+
+Applied 01:35:05 Cairo, `phoenix-people-workforce` only, from a scratch copy of the file with
+`phoenix-headwind`'s `builder` and `deploy` lines removed (his ruling: *"leave phoenix-headwind out
+of the first apply"*). Plan **0 add / 1 change / 0 destroy**, identical on a re-plan the minute before,
+no variable touched, no `--confirm-destructive` needed because nothing was destroyed.
+
+- 🔴 **An apply REDEPLOYS the service.** Deployment `8416c821` went `BUILDING` nine seconds after
+  the apply and rebuilt the SAME commit, so `/api/healthz` `revision` did **not** move and is not the
+  proof; read the deployment's own status and its build log. Let any in-flight `main` deploy finish
+  first, or the two cannot be told apart. It reached `SUCCESS` and printed `Path: /api/readyz` /
+  `Retry window: 5m0s` / `[1/1] Healthcheck succeeded!`; `/api/readyz` answers 200.
+- 🔴 **The restart policy is NEVER stored.** After the apply `healthcheckPath` and
+  `healthcheckTimeout` read back from the service, but `restartPolicyType` / `restartPolicyMaxRetries`
+  still plan as `null → "ON_FAILURE"` / `10` on every run — Railway applies them from `railway.toml` at
+  deploy time. **His ruling: *"keep railway.toml until the restart policy is stored"*, so neither
+  `railway.toml` is deleted and rules 1-5 of `tests/railway-deploy-config.test.ts` stay.** A plan that
+  shows only those two lines is the expected steady state, not drift.
+- `phoenix-headwind` did not redeploy (its deployments read `SKIPPED`), so an apply that leaves its
+  fields alone leaves the MDM server alone. Its `builder: "DOCKERFILE"` and `ON_FAILURE` / 10 are still
+  pending in the committed file and are the second apply, which is his to order — a redeploy there
+  restarts the server about 100 rep tablets check in to.
+- **How to run it on this machine.** `railway config plan` fails with a false "requires Railway CLI
+  5.42.1 or newer" on CLI 5.59.0: the SDK runs `execFileSync(process.env._ || "railway", ["--version"])`,
+  which cannot run the npm `.cmd` shim and gets Git Bash's `_`. Use PowerShell with `$env:_` set to
+  the native `railway.exe` inside the npm-installed `@railway/cli` package (`bin/railway.exe`), with
+  `npm install railway` done in a SCRATCH folder holding a copy of the file and `--file` pointing at
+  it — never in the repo or a worktree. A `--out` plan pins `git rev-parse HEAD:.railway` of the
+  directory it ran in, so plan from a checkout of the merge before any `--plan` apply.
 
 ## Branch Model
 

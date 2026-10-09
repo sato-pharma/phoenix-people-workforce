@@ -164,8 +164,8 @@ export function runRailwayDeployConfigTests() {
 
   // 9-12. WHAT MUST SURVIVE THE CUTOVER TO `.railway/railway.ts`. Railway deprecated Config as Code
   //    and prints so in every build log; existing files keep working until 2026-12-01, and the
-  //    authoring file is committed but DELIBERATELY INERT (owner decision 2026-10-01 — see
-  //    docs/deployment.md, "Config as Code is deprecated"). The hazard is not the deadline, it is
+  //    authoring file was first applied 2026-10-10, app only (owner lifted the 2026-10-01 hold — see
+  //    docs/deployment.md, "Config as Code is deprecated" and "The first apply"). The hazard is not the deadline, it is
   //    that the three decisions below live in `railway.toml` today and a cutover can drop all three
   //    WITHOUT FAILING ANYTHING:
   //
