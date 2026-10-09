@@ -464,14 +464,14 @@ Do not run `gcloud` to verify anything.
 
 ## Config as Code is deprecated — and the CLI's own migration command is DESTRUCTIVE here
 
-🔴 **OWNER DECISION, 2026-10-10: THE 2026-10-01 HOLD IS LIFTED, AND THE FIRST APPLY IS DONE — APP ONLY**
+🔴 **OWNER DECISION, 2026-10-10: THE 2026-10-01 HOLD IS LIFTED, AND BOTH APPLIES ARE DONE — APP FIRST, THEN HEADWIND**
 (his words, *"lift the Railway IaC hold and plan the apply"*, then *"leave phoenix-headwind out of
-the first apply"* and *"apply the app-only plan when 5725 is live"*). The 2026-10-01 ruling was
+the first apply"* *"apply the app-only plan when 5725 is live"* and, later the same night, *"apply the phoenix-headwind plan"*). The 2026-10-01 ruling was
 *"leave the railway IaC inert for now"*; it ended on those words and **not** on the 2026-12-01
 deadline, which is still a reason to ask him and never a mandate. 🔴 **Lifting the hold is not
 blanket permission: every further apply is still a production infrastructure change that does not
-pass the deploy gate, so each one needs his word** — the second apply (`phoenix-headwind`) included.
-What happened and what it proved is under "The first apply, 2026-10-10" below.
+pass the deploy gate, so each one needs his word.**
+What happened and what it proved is under "The first apply, 2026-10-10" and "The second apply" below.
 
 Railway now warns on every CLI call that `railway.json` / `railway.toml` is superseded by
 Infrastructure as Code in `.railway/railway.ts`, and that **existing files keep working until
@@ -587,10 +587,17 @@ no variable touched, no `--confirm-destructive` needed because nothing was destr
   deploy time. **His ruling: *"keep railway.toml until the restart policy is stored"*, so neither
   `railway.toml` is deleted and rules 1-5 of `tests/railway-deploy-config.test.ts` stay.** A plan that
   shows only those two lines is the expected steady state, not drift.
-- `phoenix-headwind` did not redeploy (its deployments read `SKIPPED`), so an apply that leaves its
-  fields alone leaves the MDM server alone. Its `builder: "DOCKERFILE"` and `ON_FAILURE` / 10 are still
-  pending in the committed file and are the second apply, which is his to order — a redeploy there
-  restarts the server about 100 rep tablets check in to.
+- `phoenix-headwind` did not redeploy on the first apply (its deployments read `SKIPPED`), so an apply
+  that leaves its fields alone leaves the MDM server alone. Its `builder` was the second apply, below.
+- **The second apply, 2026-10-10 01:51 Cairo — `phoenix-headwind` (his words: *"apply the phoenix-headwind plan"*).**
+  Plan **0 add / 3 change / 0 destroy**, no variable touched; the apply returned exit 0 and "Changes (2)".
+  It **redeployed the MDM server**: deployment `2d849e38` went `BUILDING` ten seconds later, built from
+  `infra/headwind-phoenix-actions/Dockerfile` on the `headwindmdm/hmdm:0.1.9` base, reached `SUCCESS` in
+  about 90 seconds, and the container logged `Starting Container` and the add-on seeding line. `builder:
+  "DOCKERFILE"` now stores (the re-plan no longer lists it); only the restart-policy lines remain pending,
+  on both services, which is the expected steady state. The app got a new `WAITING` deployment as well,
+  held behind `main`'s CI gate like every other — an apply queues one even when the app's own fields are
+  unchanged, so count deployments after an apply instead of assuming one.
 - **How to run it on this machine.** `railway config plan` fails with a false "requires Railway CLI
   5.42.1 or newer" on CLI 5.59.0: the SDK runs `execFileSync(process.env._ || "railway", ["--version"])`,
   which cannot run the npm `.cmd` shim and gets Git Bash's `_`. Use PowerShell with `$env:_` set to

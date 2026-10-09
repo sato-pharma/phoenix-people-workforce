@@ -1,10 +1,10 @@
 // Railway Infrastructure as Code for Phoenix-HR-Workforce.
 //
 // 🔴 OWNER DECISION, 2026-10-10: THE 2026-10-01 HOLD ("leave the railway IaC inert for now") IS
-// LIFTED, AND THE FIRST APPLY IS DONE — `phoenix-people-workforce` ONLY, at 01:35 Cairo. It ended on his
+// LIFTED, AND BOTH APPLIES ARE DONE — `phoenix-people-workforce` at 01:35 Cairo, `phoenix-headwind` at
+// 01:51. The hold ended on his
 // words, never on the 2026-12-01 deadline. Every further apply still needs his word, because it is a
-// production change that does not pass the deploy gate: `phoenix-headwind`'s `builder` and `deploy`
-// below are NOT yet applied and are the second one. See docs/deployment.md, "The first apply".
+// production change that does not pass the deploy gate. See docs/deployment.md, "The first apply".
 //
 // 🔴 `railway.toml` STAYS. The apply stored the healthcheck but Railway never stores the restart
 // policy, so a plan shows `restartPolicyType` / `restartPolicyMaxRetries` as pending forever and the toml
