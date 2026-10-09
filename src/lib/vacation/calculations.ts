@@ -82,6 +82,18 @@ export function compareDateOnly(left: string, right: string) {
   return leftDate.getTime() - rightDate.getTime();
 }
 
+/**
+ * The first-six-months rule, in one place. It blocks a paid leave REQUEST; it does not stop the
+ * employee accruing, which is why the Deductions leave-balance button can still spend what has been
+ * earned (calculateVacationPayment's `allowFirstSixMonths`).
+ */
+export function isWithinFirstSixMonths(input: { hireDate: string | null | undefined; referenceDate: string }): boolean {
+  const hireDate = toDateOnlyString(input.hireDate);
+  if (!hireDate) return false;
+  const sixMonthAnniversary = addMonthsToDateOnly(hireDate, 6);
+  return Boolean(sixMonthAnniversary) && compareDateOnly(input.referenceDate, sixMonthAnniversary as string) < 0;
+}
+
 export function normalizeVacationType(value: unknown): VacationType | null {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "personal") return "other";
@@ -334,6 +346,17 @@ export function getVacationPolicyWarnings(input: {
 }
 
 export function calculateVacationPayment(input: {
+  /**
+   * Charge the days the employee has ACCRUED even inside the first six months (owner, 2026-10-09).
+   *
+   * The first-six-months rule is a block on *requesting* paid leave, not an absence of entitlement:
+   * a first-year employee accrues 15/12 of a day for every completed month from the hire date, and
+   * `getVacationBalancePeriod` already returns that accrual. Only the Deductions "Deduct from leave
+   * balance" button passes this, where the Super Admin is deliberately choosing to take an unpaid
+   * day off the balance instead of off salary. Every leave request leaves it unset and still reads
+   * `first_six_months`.
+   */
+  allowFirstSixMonths?: boolean;
   approvedPaidDaysInPeriod: number;
   durationDays: number;
   employeeHrId?: string | null;
@@ -378,8 +401,7 @@ export function calculateVacationPayment(input: {
     return defaultUnpaid("missing_hire_date");
   }
 
-  const sixMonthAnniversary = addMonthsToDateOnly(hireDate, 6);
-  if (sixMonthAnniversary && compareDateOnly(input.startDate, sixMonthAnniversary) < 0) {
+  if (!input.allowFirstSixMonths && isWithinFirstSixMonths({ hireDate, referenceDate: input.startDate })) {
     const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate, referenceDate: input.startDate });
     return defaultUnpaid("first_six_months", period);
   }

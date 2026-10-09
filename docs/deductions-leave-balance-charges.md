@@ -47,11 +47,48 @@ balance could **not** pay for — that is why it became a deduction candidate �
 lands once, in `attendance_annual_balance_charges`. The day is in the leave ledger, but not as a day
 the balance paid for, so taking it from the balance now consumes it exactly once.
 
-**Expect a refusal on most of those rows, and read it as correct.** `insufficient_balance_vacation`
-exists precisely because the balance was short, so `readLeaveBalance` usually answers `no_balance`
-and the dialog says "The employee has no annual leave balance left to take this from." That is the
-right answer, not a defect. The button becomes usable when the balance is there again — a new annual
-period, or days given back — which is exactly the case he wants it for.
+`insufficient_balance_vacation` exists precisely because the balance was short, so `readLeaveBalance`
+usually answers `no_balance` there and the dialog says "The employee has no annual leave balance left
+to take this from." That is the right answer on that tab, not a defect; the button becomes usable
+when the balance is there again — a new annual period, or days given back.
+
+## The first-six-months override — without it the widening was decoration
+
+**The widening above shipped refusing every row of the tab it was asked for.** Measured on production
+the same day, after it merged: **every** live `unpaid_vacation` candidate is `first_six_months` — 16
+in September 2026, 23 in August, 8 in July, with zero `missing_hire_date` among them. `readLeaveBalance`
+refused that reason outright, so the new button on the Unpaid Vacation tab could not charge a single
+row. The commit message even recorded the refusal as "the correct answer, not a fault".
+
+Put to the owner as multiple choice, he chose **charge the accrued days and override the block**:
+
+| Option | His answer |
+| --- | --- |
+| Charge the days he has ACCRUED so far, overriding the first-six-months block | **chosen** |
+| Charge his whole first-year entitlement, past what he has accrued | no |
+| Only a balance he may already use (refuses every row today) | no |
+
+**The rule was never an absence of entitlement.** A first-year employee accrues
+`firstYearAnnualEntitlementDays / 12` = **1.25 days per completed calendar month** from the hire date,
+and `getVacationBalancePeriod` already returns that accrual — the six-month rule blocks *requesting*
+paid leave. So someone hired 02 Aug 2026 has 1.25 days on 26 Sep 2026, enough for the one unpaid day
+that otherwise costs 550 EGP of salary. The Super Admin pressing the button is deliberately spending
+days the employee has already earned.
+
+**It is opt-in, in one place.** `calculateVacationPayment({ allowFirstSixMonths: true })` skips the
+gate; `calculatePaymentForRequest` passes the caller's flag straight through; the Deductions balance
+read is the only caller in the system that sets it. Every leave request, every weekly review and every
+payroll read still gets `first_six_months`, and `tests/vacation-calculations.test.ts` fails the moment
+that leaks ("Requests before six months should be unpaid" — proven by removing the guard).
+
+What stays refused: `missing_hire_date` (there is no period to accrue over), and a joiner with no
+completed month, who has accrued nothing and falls through to the ordinary `no_balance` refusal. The
+partial rule is unchanged — 3 days against 1.25 accrued charges 1.25 and leaves 1.75 on salary.
+
+The dialog says so in words before anything is saved: *"Still inside the first six months, so this
+spends days already accrued but not yet available to request."* It is worded neutrally like every
+other string this app shows — `tests/neutral-wording.test.ts` turned the required `validate` job red
+over the first draft of that sentence, naming the file and the line.
 
 ## Where it lives on screen
 
@@ -123,4 +160,15 @@ section 7. If `20261009120000_dispute_center.sql` is applied **after** this file
 
 ## Proof
 
-`tests/deductions-leave-balance.test.ts`, registered in `tests/run-tests.ts`.
+`tests/deductions-leave-balance.test.ts`, registered in `tests/run-tests.ts`. Section 5 covers the
+override, and each of its headline assertions was proven by breaking the fix and watching that
+assertion — and only that one — fire:
+
+| Break | What fired |
+| --- | --- |
+| drop `allowFirstSixMonths: true` from the deductions balance read | *the leave-balance read must ask for the accrued days* |
+| make the gate ignore the flag | *the override must price the day instead of refusing it* |
+| make the gate never apply (the override leaks) | *Requests before six months should be unpaid* — in `vacation-calculations.test.ts`, the suite that already owned that rule |
+
+The override needs **no migration**: `phx_deductions_charge_leave_balance` re-checks the three figures
+a concurrent writer could move, and has never held a six-month rule of its own.

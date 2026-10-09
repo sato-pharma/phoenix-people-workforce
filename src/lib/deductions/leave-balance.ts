@@ -8,6 +8,14 @@
 //   - when the balance is shorter than the deduction: take what is there, the rest stays on salary
 //   - the comment is required and the employee reads it exactly as written (no notification)
 //   - it can be undone with "Return to salary": the days go back and the row returns to Pending
+//   - IT CHARGES THE ACCRUED DAYS EVEN INSIDE THE FIRST SIX MONTHS (owner, 2026-10-09, after the
+//     widening: "accrued days, override the block"). That is not a detail — every live Unpaid
+//     Vacation row on production is `first_six_months`, so without the override this button refused
+//     every one of them. A first-year employee accrues 15/12 of a day per completed month from the
+//     hire date, and the six-month rule blocks REQUESTING paid leave, not earning it; the Super
+//     Admin pressing this button is deliberately spending days the employee has already earned so
+//     that the salary is left alone. `allowFirstSixMonths` reaches calculateVacationPayment and
+//     nothing else in the system passes it.
 //
 // THE BALANCE ARITHMETIC IS NOT COPIED HERE. How much annual leave an employee has left is
 // calculatePaymentForRequest (the same call a leave request and the weekly attendance review price
@@ -20,7 +28,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { balanceReadIsComplete } from "@/lib/attendance/digest-rules.ts";
 import { hrIdForStorage } from "@/lib/hr-id.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
+import { getVacationBalancePeriod, isWithinFirstSixMonths } from "@/lib/vacation/calculations";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 
 import { getLeaveBalanceChargeForCandidate, type LeaveBalanceCharge } from "./leave-balance-ledger.ts";
@@ -95,6 +103,8 @@ function refusalText(reason: string | null): string {
     case "missing_hire_date":
       return "The employee's hire date is not on file, so the annual balance cannot be worked out.";
     case "first_six_months":
+      // Unreachable through this button since the override (the header), and kept rather than deleted
+      // so a future reader who removes `allowFirstSixMonths` gets words instead of the default.
       return "The employee is in the first six months of employment, when annual balance cannot be used.";
     case "balance_unreadable":
       return "The annual balance could not be fully read right now. Try again shortly.";
@@ -109,6 +119,8 @@ type BalanceRead = {
   coverableDays: number;
   availableDays: number | null;
   refusal: string | null;
+  /** Still inside the first six months, so these are days accrued but not yet available to request. */
+  withinFirstSixMonths: boolean;
   periodStart: string | null;
   periodEnd: string | null;
   seenRequestDays: number | null;
@@ -135,10 +147,12 @@ async function readBalanceInputs(employeeHrId: string, periodStart: string, peri
 async function readLeaveBalance(input: { employeeHrId: string; hireDate: string | null; workDate: string; days: number }): Promise<BalanceRead> {
   const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate: input.hireDate, referenceDate: input.workDate });
   const seen = period ? await readBalanceInputs(input.employeeHrId, period.periodStart, period.periodEnd) : null;
+  const withinFirstSixMonths = isWithinFirstSixMonths({ hireDate: input.hireDate, referenceDate: input.workDate });
   const unreadable = (refusal: string): BalanceRead => ({
     coverableDays: 0,
     availableDays: null,
     refusal,
+    withinFirstSixMonths,
     periodStart: period?.periodStart ?? null,
     periodEnd: period?.periodEnd ?? null,
     seenRequestDays: seen?.requestDays ?? null,
@@ -151,6 +165,8 @@ async function readLeaveBalance(input: { employeeHrId: string; hireDate: string 
   try {
     // Fail closed: a payroll balance ledger that cannot be read refuses instead of counting as zero spent.
     snapshot = await calculatePaymentForRequest({
+      // The override (file header): the accrued days are charged inside the first six months too.
+      allowFirstSixMonths: true,
       durationDays: input.days,
       employeeHrId: input.employeeHrId,
       failClosedLedgerRead: true,
@@ -172,7 +188,10 @@ async function readLeaveBalance(input: { employeeHrId: string; hireDate: string 
     });
   const samePeriod = snapshot.periodStart === period.periodStart && snapshot.periodEnd === period.periodEnd;
   if (!readComplete || !samePeriod) return unreadable("balance_unreadable");
-  if (snapshot.unpaidReason === "missing_hire_date" || snapshot.unpaidReason === "first_six_months") {
+  // `first_six_months` is NOT refused here any more — `allowFirstSixMonths` above means the snapshot
+  // prices such a day against the accrued entitlement, and someone with nothing accrued yet falls
+  // through to `no_balance` below like anyone else whose balance is empty.
+  if (snapshot.unpaidReason === "missing_hire_date") {
     return { ...unreadable(snapshot.unpaidReason), availableDays: null };
   }
   const coverableDays = roundDays(Math.max(0, snapshot.paidDurationDays));
@@ -180,6 +199,7 @@ async function readLeaveBalance(input: { employeeHrId: string; hireDate: string 
     coverableDays,
     availableDays: roundDays(Math.max(0, snapshot.balanceBeforeDays)),
     refusal: coverableDays <= DAYS_EPSILON ? "no_balance" : null,
+    withinFirstSixMonths,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
     seenRequestDays: seen?.requestDays ?? null,
@@ -280,6 +300,11 @@ export type LeaveBalancePreview = {
   salaryDays: number;
   /** Plain-words reason the button cannot be used, null when it can. */
   refusal: string | null;
+  /**
+   * Still inside the first six months. The charge is allowed (owner, 2026-10-09) but the dialog
+   * says so, because it spends leave the employee has accrued and cannot yet request directly.
+   */
+  withinFirstSixMonths: boolean;
   /** Already charged: what is on the leave balance now. */
   charged: LeaveBalanceCharge | null;
 };
@@ -314,6 +339,7 @@ export async function previewLeaveBalanceCharge(input: {
       chargeDays: charged.days,
       salaryDays: candidate.appliedValue ?? 0,
       refusal: null,
+      withinFirstSixMonths: false,
       charged,
     };
   }
@@ -329,6 +355,7 @@ export async function previewLeaveBalanceCharge(input: {
     chargeDays: plan.chargeDays,
     salaryDays: plan.salaryDays,
     refusal,
+    withinFirstSixMonths: balance.withinFirstSixMonths,
     charged: null,
   };
 }
