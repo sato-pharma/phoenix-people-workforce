@@ -7602,19 +7602,49 @@ the cutover. The 1,060,947.52 quoted before this was the same six accounts measu
 `source_of_sales_import_rows` where `validation_state = 'valid'` — a different basis, not a
 correction.
 
-### The other defects found in the same audit, still waiting on his word
+### The government health-insurance depots — RULED the same day
 
-1. 🔴 **THREE** government health-insurance depots **split today**, against his own 17-of-17
-   "government depot, do not split" ruling — not the two first reported:
-   `فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي` (23495),
-   `فرع شرق الدلتا - المخزن الاقليمي القليوبية- تامين الصحي` (64845 — **its own spelling runs the
-   dash straight onto the word, with no space before it**, which is why a search for the spaced form
-   misses it) and `فرع شرق الدلتا - المخزن الاقليمي شبرا الخيمة - تامين الصحي` (27863). They carry
-   `مخزن` and spell "تامين الصحي" out in full, so the `ت.ص` never-store word misses all three.
-   🔴 **All three are CNS-only — not one Anti Infective row, ever** — so they can never move an Anti
-   Infective number: 2026-09 holds 23495 in Dakahlia 4 (249 units, 8,889.30 EGP) and 64845 in
-   Qalubeya (200 units, 7,140.00 EGP); 27863 last sold in July.
-2. Four `الطرشوبى` accounts say `مخزن` in the name and are held pharmacy by his chain override —
+🔒 **"the three تامين الصحي depots are government, never split them"** (owner, 2026-10-09, after he
+was shown that they split against his own 17-of-17 "government depot, do NOT split" answers of
+2026-09-06). The three, as production spells them:
+`فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي` (23495),
+`فرع شرق الدلتا - المخزن الاقليمي القليوبية- تامين الصحي` (64845 — **its own spelling runs the dash
+straight onto the word, with no space before it**, which is why a search for the spaced form misses
+it, and why they were first reported as two) and
+`فرع شرق الدلتا - المخزن الاقليمي شبرا الخيمة - تامين الصحي` (27863). They carry `مخزن` and spell
+"تامين الصحي" out in full, so the abbreviation stem `ت.ص` could not reach them.
+
+🔴 **THE INSTRUMENT IS A NEVER-STORE WORD, NOT `STORE_OVERRIDE_NAMES`.** A government ruling REFUSES
+a split, so it belongs with `صيدلي`/`هيئه`/`ت.ص` — the name-keyed override list is the one that
+CREATES a warehouse and would have been the wrong half of the file. The word is `تامين`, and it is
+the same 17-of-17 ruling reaching the names that spell themselves out, not a new policy.
+
+**Counted on production both ways before it was written** (`ozucdzovmcqvepbozvqf`, resolved with
+`list_projects`):
+
+- `تامين` reaches **26 accounts**, every one of them the health-insurance authority, a branch, depot
+  or clinic of it, or the unified-procurement authority buying for it. **Not one is a wholesaler.**
+- **Seven of the 26 split**, all seven on `مخزن`: his three, plus four of exactly the same kind the
+  sweep found beside them — 139383 (منوف main depot), 66085 (بنى سويف main depot), 139359 (جديلة
+  students' medicines depot) and 139062 (سوهاج). His ruling reaches these four as well; after the
+  word, 0 of the 26 split.
+- 🔴 **Broadening the stem by one letter to `امين` adds 257 more names, every one a PERSON called
+  أمين** (احمد امين, منال حسنى امين موسى …) — and none of them carries a store word, so the wider
+  stem would be inert today and wrong the first day one of them registered a company.
+
+**WHAT IT MOVES.** The never-store words are invisible to `legacyIsStoreCustomer`, so every month
+before the cutover is judged by the old rule and **nothing published restates**. In a gated period
+the seven hold exactly two rows, both September 2026 CNS: 23495 in **D24 Sharkia 1** (249 units,
+8,889.30 EGP) and 64845 in **D11 Qalubeya** (200 units, 7,140.00 EGP). Qalubeya is a one-area city,
+so its split was already a no-op; Sharkia has two areas, so **what actually changes hands is 124.5
+units and 4,444.65 EGP returning from Sharkia 2 to Sharkia 1**. The other five carry no row at or
+after the cutover. 🔴 **All seven are CNS-only — not one Anti Infective row, ever** — so they cannot
+move an Anti Infective number. (An earlier note here put 23495 in **Dakahlia 4**; the import rows say
+D24 Sharkia 1 in every period it ever sold, and 10th of Ramadan is in Sharkia.)
+
+### The other defect found in the same audit
+
+1. Four `الطرشوبى` accounts say `مخزن` in the name and are held pharmacy by his chain override —
    correct by his standing ruling, and worth knowing before anyone reads the name as evidence.
 
 ### What holds it
@@ -7626,6 +7656,15 @@ legacy rule stays blind to every one of them — and measures the neighbours **a
 `STORE_OVERRIDE_NAMES`**, so a stem added next month is checked against them too. The neighbour
 guard was proven by breaking it: an over-wide `صيادله` stem fails with
 `الصيادلة فارم -الكوامل must not match any STORE_OVERRIDE_NAMES stem`.
+
+The same file pins the health-insurance ruling: the seven depots are asserted to carry `مخزن` AND to
+be refused by the `تامين` word, so deleting the word puts them back to splitting while nothing else
+in the file notices; August CNS is asserted to still read 23495 as a store, which is the proof no
+published month restated. Proven by breaking it three ways — the word deleted
+(`تأمين صحى (هيئة التأمين الصحي)` must still be a NEVER_STORE keyword), the stem shortened to `امين`
+(the stem must stay `تامين`), and the stem shortened with that assertion removed, which leaves only
+the behavioural control and fails with
+`a warehouse whose owner is called أمين must still split — the stem is تامين, not امين`.
 
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08
 

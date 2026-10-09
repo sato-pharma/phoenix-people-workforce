@@ -334,6 +334,12 @@ export const STORE_OVERRIDE_CUSTOMER_KEYS: ReadonlySet<string> = new Set([
  * The government stems (مخازن, مستودع, هيئه, ت.ص, قوى عاملة, سكك حديد) scored ZERO: the owner
  * marked all 17 customers they catch as government depots, none as warehouses. A government depot
  * supplies its own institutions rather than a city's pharmacies, which is what the split assumes.
+ *
+ * 🔒 OWNER RULING 2026-10-09, after the deeper audit of the store split showed seven government
+ * health-insurance depots splitting anyway: **"the three تامين الصحي depots are government, never
+ * split them"**. The abbreviation stem ت.ص could not reach them because they spell the words out in
+ * full — and they carry مخزن, so the store word won. تامين below closes that, and it is the same
+ * 17-of-17 ruling applied to the names that spell themselves differently, not a new policy.
  */
 export const NEVER_STORE_KEYWORDS: readonly ChannelNameKeyword[] = [
   { label: "صيدلية", stem: "صيدلي" },
@@ -345,6 +351,19 @@ export const NEVER_STORE_KEYWORDS: readonly ChannelNameKeyword[] = [
   { label: "مستودع", stem: "مستودع" },
   { label: "هيئة", stem: "هيئه" },
   { label: "ت.ص (تأمين صحى)", stem: "ت.ص" },
+  // تأمين صحى spelled out — the owner's 2026-10-09 ruling, see the doc above. Measured on
+  // production (ozucdzovmcqvepbozvqf) before it was written: تامين reaches 26 accounts and every
+  // single one is the health-insurance authority, one of its branches, depots or clinics, or the
+  // unified-procurement authority buying for it. NOT ONE is a wholesaler. Seven of the 26 split
+  // today, all seven on مخزن: the three he named — 23495 (العاشر من رمضان), 64845 (القليوبية) and
+  // 27863 (شبرا الخيمة) — plus 139383 (منوف), 66085 (بنى سويف), 139359 (جديلة) and 139062 (سوهاج),
+  // which are the same kind of depot and which his ruling therefore reaches as well.
+  //
+  // THE STEM IS تامين AND NOT امين. Broadening it by one letter adds 257 more customer names, every
+  // one of them a person called أمين (احمد امين, منال حسنى امين موسى …). None carries a store word,
+  // so the broader stem would be inert on the split today and wrong the first day one of them
+  // registered a company — the word being ruled on is تأمين, insurance.
+  { label: "تأمين صحى (هيئة التأمين الصحي)", stem: "تامين" },
   { label: "قوى عاملة", stem: "قوي عامله" },
   { label: "سكك حديد", stem: "سكك حديد" },
   { label: "كهرباء", stem: "كهرباء" },
