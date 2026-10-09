@@ -2095,6 +2095,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/mappings/clusters", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Read-only JSON request: clusters the submitted unknown labels in memory so near-duplicates can be mapped in one go; persists nothing." }),
   // Split by method on purpose: GET reports centroid coverage, POST rebuilds every brick centroid.
   // One entry each, so the rebuild is classified as the mutation it is instead of inheriting a read.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/sales/normalizer/unmapped-customers", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/sales/normalizer/brick-centroids", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/brick-centroids", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin rebuild: recomputes and persists the geographic centroid of every brick from its customer coordinates. Writes on EVERY call — the handler has no input to bail on." }),
   // Had no entry of its own and fell through to the /api/sales/** blanket below, which carries no

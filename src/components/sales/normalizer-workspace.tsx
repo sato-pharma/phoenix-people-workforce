@@ -10,6 +10,7 @@ type IconType = typeof Sparkles;
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { useBrickMovesListener } from "@/components/sales/brick-move-refresh";
 import { ComboBox, ConfidenceBadge, CopyBtn } from "@/components/sales/normalizer-controls";
+import { NormalizerIgnoredRows } from "@/components/sales/normalizer-ignored-rows";
 import { Button } from "@/components/ui/button";
 import {
   brickCorrectionHref,
@@ -23,6 +24,7 @@ import { packCustomersByPharmacy } from "@/lib/sales/normalizer/customer-request
 import { mappingLeft, needsMappingTabLabel, stillNeedMappingSentence } from "@/lib/sales/normalizer/mapping-left";
 import { pickConfidence } from "@/lib/sales/normalizer/pick-confidence";
 import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
+import type { PreviewIgnoredRow } from "@/lib/sales/recognize";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -57,6 +59,8 @@ type Preview = {
   // 7,318" instead of silently presenting a truncated list as the whole job.
   unknownTotals?: { customers: number; products: number; territories: number; rows?: number };
   summary: { totalRows: number; productResolved: number; brickResolved: number; fullyCoded: number; ignored: number };
+  // Every row the analyzer dropped, uncut (the Ignored rows tab). Absent on a preview built before this field.
+  ignoredRows?: PreviewIgnoredRow[];
 };
 
 type UnknownKind = "p" | "t" | "c";
@@ -307,7 +311,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<"coded" | "map">("coded");
+  const [tab, setTab] = useState<"coded" | "map" | "ignored">("coded");
   const [advanced, setAdvanced] = useState(false);
   const [geoCoverage, setGeoCoverage] = useState<{ totalBricks: number; cached: number; success: number; mismatch: number } | null>(null);
   const [backfillHistory, setBackfillHistory] = useState(true);
@@ -1041,7 +1045,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               </div>
 
               <div className="flex gap-1 border-b border-slate-200">
-                {([["coded", `Coded preview (${preview.sampleCoded.length})`], ["map", needsMappingTabLabel(preview)]] as const).map(([key, label]) => (
+                {([["coded", `Coded preview (${preview.sampleCoded.length})`], ["map", needsMappingTabLabel(preview)], ["ignored", `Ignored rows (${(preview.ignoredRows?.length ?? preview.summary.ignored).toLocaleString("en-US")})`]] as const).map(([key, label]) => (
                   <button className={cn("-mb-px border-b-2 px-3.5 py-2 text-sm font-semibold transition-colors", tab === key ? "border-orange-500 text-slate-900" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900")} key={key} onClick={() => setTab(key)} type="button">{label}</button>
                 ))}
               </div>
@@ -1078,6 +1082,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                     </tbody>
                   </table>
                 </div>
+              ) : tab === "ignored" ? (
+                <NormalizerIgnoredRows ignoredCount={preview.summary.ignored} rows={preview.ignoredRows ?? []} />
               ) : (
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-2 border border-slate-200 bg-slate-50 p-4 shadow-sm">

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { NormalizerUnmappedCustomers } from "@/components/sales/normalizer-unmapped-customers";
 import { NormalizerWorkspace } from "@/components/sales/normalizer-workspace";
 import { WeeklyNormalizerWorkspace, type WeeklyNormalizerDistributor, type WeeklyNormalizerReferences } from "@/components/sales/weekly/weekly-normalizer-workspace";
 import type { MappingReferences } from "@/lib/sales/normalizer/brick-area";
@@ -38,15 +39,18 @@ export function NormalizerTabs({
   weeklyDistributors: WeeklyNormalizerDistributor[];
   weeklyReferences: WeeklyNormalizerReferences;
 }) {
-  const [tab, setTab] = useState<"monthly" | "weekly">("monthly");
+  const [tab, setTab] = useState<"monthly" | "weekly" | "unmapped">("monthly");
   return (
     <div className="space-y-4">
       <div className="inline-flex gap-1 border border-slate-200 bg-white p-1 shadow-sm">
         <TabButton active={tab === "monthly"} onClick={() => setTab("monthly")}>Monthly Normalization</TabButton>
         <TabButton active={tab === "weekly"} onClick={() => setTab("weekly")}>Weekly Normalization</TabButton>
+        <TabButton active={tab === "unmapped"} onClick={() => setTab("unmapped")}>Unmapped customers</TabButton>
       </div>
       {tab === "monthly" ? (
         <NormalizerWorkspace aiEnabled={aiEnabled} distributors={distributors} references={references} />
+      ) : tab === "unmapped" ? (
+        <NormalizerUnmappedCustomers />
       ) : (
         <WeeklyNormalizerWorkspace aiEnabled={aiEnabled} distributors={weeklyDistributors} references={weeklyReferences} />
       )}
