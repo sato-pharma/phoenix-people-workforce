@@ -8,6 +8,8 @@
 // ~371ms + Get-Process/.Path ~77ms + prune I/O. The session count needs a subprocess, so it is
 // cached and hard-timed-out — tasklist was measured at 7.2s under load, which must never be
 // allowed to block startup. Commit now rides along in that same call, so it costs no extra spawn.
+// Since 2026-10-09 that call runs ONLY in `memory-guard.mjs refresh`, an async SessionStart entry:
+// the blocking run reads the cache and starts nothing (see cachedStats()).
 //
 // --- 2026-08-25: this hook measured the WRONG THING for months ---------------------------
 // It warned on os.freemem() (free PHYSICAL RAM) below 2.5 GB, or more than 4 Claude sessions.
@@ -33,8 +35,11 @@ const HOME = process.env.USERPROFILE || os.homedir();
 // cache files on purpose: this one used to write a commit-less {at,n} record, which blanked the
 // statusline's commit segment for 20s after every SessionStart. Same shape now, still separate.
 const CACHE = path.join(os.tmpdir(), 'claude-statusline-sessions.json');
-const CACHE_TTL_MS = 20_000;
-const COUNT_TIMEOUT_MS = 2500;
+// 2026-10-09 (hook speed fixes): was CACHE_TTL_MS = 20_000, after which the BLOCKING run started
+// powershell.exe itself. See `refresh` below for why it no longer does.
+const CACHE_MAX_AGE_MS = 60 * 60_000; // the blocking run trusts a reading this old and never refreshes it
+const REFRESH_MIN_AGE_MS = 60_000; // `refresh` skips PowerShell when the reading is younger than this
+const REFRESH_TIMEOUT_MS = 8000; // `refresh` runs async, so it can wait; its settings entry allows 10 s
 const COMMIT_WARN_PCT = 85;
 // `FALLBACK_LOW_FREE_RAM_GB = 1.0` stood here until 2026-10-06. It gated a branch that was dead by
 // arithmetic — see the note at the end of decideMessage — and nothing else read it.
@@ -119,7 +124,7 @@ if (process.argv[2] === 'selftest') {
     (decide({ pct: 90, used: 28, lim: 31.8, count: 'an unknown number of' }) || '').includes(
       'with an unknown number of Claude Code sessions',
     ),
-    'the count comes from a 2.5s-timeout subprocess and is allowed to be unknown',
+    'the count comes from a cache that can be missing or over an hour old, so it is allowed to be unknown',
   );
   check(
     'a healthy machine is SILENT',
@@ -219,6 +224,70 @@ if (process.argv[2] === 'selftest') {
     'this runs at the start of EVERY session; a throw here would be a startup failure on the whole machine',
   );
 
+  // --- 2026-10-09: the blocking run starts NOTHING; PowerShell lives only in the async `refresh`.
+  // spawn-probe.mjs (next to this file) records every child_process call the hook makes. TEMP is
+  // redirected, so the cache here is a fixture and the live one is never read or written.
+  const { pathToFileURL } = await import('node:url');
+  const TMP_T = fs.mkdtempSync(path.join(os.tmpdir(), 'mg-selftest-tmp-'));
+  const PROBE = pathToFileURL(path.join(path.dirname(process.argv[1]), 'spawn-probe.mjs')).href;
+  const CACHE_T = path.join(TMP_T, 'claude-statusline-sessions.json');
+  const probed = (args, cache) => {
+    const log = path.join(TMP_T, 'probe.jsonl');
+    fs.writeFileSync(log, '');
+    if (cache === null) fs.rmSync(CACHE_T, { force: true });
+    else fs.writeFileSync(CACHE_T, JSON.stringify(cache));
+    const stdout = execFileSync(process.execPath, ['--import', PROBE, process.argv[1], ...args], {
+      input: JSON.stringify({ session_id: 'sess-probe', source: 'startup' }),
+      encoding: 'utf8',
+      env: { ...process.env, USERPROFILE: HOME_T, HOME: HOME_T, TEMP: TMP_T, TMP: TMP_T, SPAWN_PROBE_OUT: log },
+    });
+    const spawned = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).what);
+    let after = null;
+    try {
+      after = JSON.parse(fs.readFileSync(CACHE_T, 'utf8'));
+    } catch {}
+    return { stdout, spawned, after };
+  };
+  const ago = (ms) => Date.now() - ms;
+
+  check(
+    'a session start with NO cache starts no process',
+    probed([], null).spawned.length === 0,
+    'until 2026-10-09 it started powershell.exe here: 1.0 s alone, 3.15 s median inside real starts',
+  );
+  check(
+    'a session start with a 15-minute-old cache starts no process',
+    probed([], { at: ago(15 * 60_000), n: 6, used: 20.8, lim: 79.8 }).spawned.length === 0,
+    'the old 20-second cache made nearly every start pay for PowerShell',
+  );
+  check(
+    'a cached reading IS used: 72 of 80 GB in the cache warns at 90%',
+    /commit charge at 90%/.test(probed([], { at: ago(5 * 60_000), n: 6, used: 72, lim: 80 }).stdout),
+    'proves the blocking run still reads commit, now from the cache instead of its own PowerShell',
+  );
+  check(
+    'a reading over an hour old is NOT trusted for commit',
+    !/commit charge/.test(probed([], { at: ago(61 * 60_000), n: 6, used: 72, lim: 80 }).stdout),
+    'CACHE_MAX_AGE_MS is 60 minutes; past it, commit is unknown rather than stale',
+  );
+  check(
+    '`refresh` skips PowerShell when the reading is under a minute old',
+    (() => {
+      const at = ago(10_000);
+      const r = probed(['refresh'], { at, n: 6, used: 20.8, lim: 79.8 });
+      return r.spawned.length === 0 && r.after?.at === at;
+    })(),
+    'a burst of session starts must run PowerShell once, not once per session',
+  );
+  check(
+    '`refresh` with a stale reading DOES start PowerShell (the only place left that reads commit)',
+    probed(['refresh'], { at: ago(2 * 3600_000), n: 6, used: 20.8, lim: 79.8 }).spawned.some((w) => /powershell/i.test(w)),
+    'if refresh stopped running, the blocking run would go blind to commit and count without a sound',
+  );
+  try {
+    fs.rmSync(TMP_T, { recursive: true, force: true });
+  } catch {}
+
   check(
     "the owner's live ~/.claude/.session-starts was not touched by this run",
     !fs.existsSync(path.join(HOME_T, '.claude', '.next-step')) &&
@@ -232,6 +301,35 @@ if (process.argv[2] === 'selftest') {
 
   console.log(`\n${ran} cases, ${failed} failed`);
   process.exit(failed ? 1 : 0);
+}
+
+// MODE: `memory-guard.mjs refresh` — the ONLY place this file starts PowerShell (2026-10-09).
+// Wired as its own SessionStart entry with "async": true, so no session waits for it: it refreshes
+// the cache the blocking run reads, for the NEXT start. Above the stdin read on purpose — it needs
+// no input, and readFileSync(0) would block a hand run. Skips when another start refreshed the
+// reading under a minute ago, so a burst of starts runs PowerShell once.
+if (process.argv[2] === 'refresh') {
+  try {
+    let fresh = false;
+    try {
+      fresh = Date.now() - JSON.parse(fs.readFileSync(CACHE, 'utf8')).at < REFRESH_MIN_AGE_MS;
+    } catch {}
+    if (!fresh) {
+      const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PS_STATS], {
+        encoding: 'utf8',
+        timeout: REFRESH_TIMEOUT_MS,
+        windowsHide: true,
+      });
+      const [n, used, lim] = out.trim().split('|').map((v) => parseFloat(v));
+      if (Number.isFinite(n)) {
+        fs.writeFileSync(
+          CACHE,
+          JSON.stringify({ at: Date.now(), n, used: Number.isFinite(used) ? used : null, lim: Number.isFinite(lim) ? lim : null }),
+        );
+      }
+    }
+  } catch {}
+  process.exit(0);
 }
 
 let input = null;
@@ -260,40 +358,23 @@ try {
 } catch {}
 
 // --- 2. saturation warning
-// Counts Claude CODE engines only. Claude Desktop ships as WindowsApps\Claude.exe and runs
-// ~14 processes of its own; counting those would report ~21 "sessions" and panic the reader.
-function stats() {
+// Counts Claude CODE engines only (PS_STATS, run by `refresh`). Claude Desktop ships as
+// WindowsApps\Claude.exe and runs ~14 processes of its own; counting those would report ~21
+// "sessions" and panic the reader.
+//
+// 2026-10-09 (hook speed fixes): this read the cache for 20 s and then started powershell.exe
+// itself — 1.0 s alone, a median 3.15 s inside real session starts where a dozen hooks start at
+// once — on nearly every start, and every session waited for it. The blocking run now only READS:
+// count and commit come from a reading up to CACHE_MAX_AGE_MS old, else they are unknown (the
+// message already says so). What stays live is the limit that bites, free RAM, read below with
+// os.freemem(). Commit near its ~80 GB limit moves slowly (20.8 of 79.8 GB on 9 Oct): a reading an
+// hour old still catches a climb to 85%.
+function cachedStats() {
   try {
     const c = JSON.parse(fs.readFileSync(CACHE, 'utf8'));
-    if (Date.now() - c.at < CACHE_TTL_MS) return { n: c.n, used: c.used ?? null, lim: c.lim ?? null };
+    if (Date.now() - c.at < CACHE_MAX_AGE_MS) return { n: c.n ?? null, used: c.used ?? null, lim: c.lim ?? null };
   } catch {}
-  let n = null;
-  let used = null;
-  let lim = null;
-  try {
-    const out = execFileSync(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', PS_STATS],
-      { encoding: 'utf8', timeout: COUNT_TIMEOUT_MS, windowsHide: true },
-    );
-    const [pn, pu, pl] = out.trim().split('|').map((v) => parseFloat(v));
-    if (Number.isFinite(pn)) n = pn;
-    if (Number.isFinite(pu)) used = pu;
-    if (Number.isFinite(pl)) lim = pl;
-  } catch {}
-  if (n === null) {
-    // timed out or failed: fall back to the last known value rather than blocking or lying
-    try {
-      const c = JSON.parse(fs.readFileSync(CACHE, 'utf8'));
-      return { n: c.n, used: c.used ?? null, lim: c.lim ?? null };
-    } catch {
-      return { n: null, used: null, lim: null };
-    }
-  }
-  try {
-    fs.writeFileSync(CACHE, JSON.stringify({ at: Date.now(), n, used, lim }));
-  } catch {}
-  return { n, used, lim };
+  return { n: null, used: null, lim: null };
 }
 
 // --- 2026-10-06: the message CHOICE is extracted so it can be tested -----------------------
@@ -359,7 +440,7 @@ function decideMessage({ pct, used, lim, freeBytes, count }) {
 }
 
 try {
-  const { n, used, lim } = stats();
+  const { n, used, lim } = cachedStats();
   const pct = used !== null && lim ? Math.round((used / lim) * 100) : null;
   const count = n === null ? 'an unknown number of' : n;
   // Read free memory ONCE and hand it to the pure decision above, so the figure in the message is

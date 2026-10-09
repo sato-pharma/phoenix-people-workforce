@@ -1,6 +1,7 @@
 {
   "a-403-on-a-phoenix-crm-route-proves-nothing": "platform",
   "a-background-poller-dies-with-the-worktree-it-runs-in": "git-worktrees",
+  "a-backtick-in-a-css-comment-kills-the-email-layouts-template-literal": "notifications",
   "a-backtick-in-a-regex-literal-blinds-a-comment-only-guard": "sessions",
   "a-backup-keyed-by-basename-restores-the-wrong-file": "sessions",
   "a-branch-behind-main-reads-as-unshipped-under-a-byte-test": "notifications",
@@ -222,6 +223,7 @@
   "bilingual-bodies-need-direction-per-line-not-per-block": "platform",
   "blind-coordinate-clicks-fired-a-production-collection-run": "engineering",
   "both-max-accounts-share-one-local-config": "sessions",
+  "both-production-planner-alarms-are-armed-since-2026-10-09": "production-planning",
   "box-run-setup-is-five-seconds-warm-slots-not-worth-it": "git-worktrees",
   "brace-expansion-audit-fix-trap": "engineering",
   "branch-up-to-date-rule-disabled-2026-08-05": "git-worktrees",
@@ -1100,6 +1102,7 @@
   "the-crm-departed-exclusion-is-119-ids-not-56": "crm",
   "the-delete-guard-now-has-a-named-file-stand-down": "sessions",
   "the-delete-guard-reads-a-variable-named-rm-as-rm": "sessions",
+  "the-edit-tool-cannot-match-a-line-holding-arabic-or-an-escape": "production-planning",
   "the-edit-tool-resolves-a-unicode-escape-into-the-character": "notifications",
   "the-email-import-allowlist-holds-an-inbox-not-a-sender": "recruitment",
   "the-four-shapes-a-stale-citation-sweep-misreads": "sessions",
