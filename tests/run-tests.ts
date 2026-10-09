@@ -1598,6 +1598,7 @@ import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runWholesalerVenueGuardTests } from "./wholesaler-venue-guard.test.ts";
 import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
 import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-rulings.test.ts";
+import { runStoreSplitOwnerRulings20261009Tests } from "./store-split-owner-rulings-2026-10-09.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
@@ -5634,6 +5635,10 @@ await runTest(
 await runTest(
   "EPDA Pedia warehouse rulings 2026-09-07 (seven named, and the 3.6M neighbour they must not catch)",
   runEpdaPediaWarehouseRulingsTests,
+);
+await runTest(
+  "store-split rulings 2026-10-09 (the twelve stems he ruled off the 10,420-name list, the 24 accounts they reach, the 1.4M neighbours they must not, and طاى جروب held pharmacy until he reconciles it)",
+  runStoreSplitOwnerRulings20261009Tests,
 );
 await runTest(
   "CEO marketing approval inbox (the final rung reaches page, sidebar link and decision page in the admin shell; the opt-in widens nothing else)",

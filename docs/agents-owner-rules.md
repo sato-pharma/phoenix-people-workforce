@@ -7472,6 +7472,95 @@ to fire, and the file restored byte-for-byte:
    closing) and the bulk rule is Pedia-only, so it never meets CNS.
 
 
+## The store-split rulings of 2026-10-09 — twelve more names, and the keywords behind all of them
+
+He asked for the whole customer list, split the way the system splits it: *"give me xlsx 2 coloumns
+splityted and non splitted"*, then *"add the select column … from our rules shared rules put in the
+third row what should be splitted third column"*, then — on the eleven that column proposed —
+**"split the 11 in column C"**, and finally **"do a deeper audit and remember the keywords that we
+split based on them and use your mind don't be as a fool of course more than this should be split
+of course"**.
+
+### What the list actually is
+
+10,420 customer names, all distinct, judged by the repo's own `isStoreCustomer` rather than a copy
+of the rule: **119 split, 10,301 whole** (98 of them hospitals, 10,203 pharmacies). The legacy and
+current rules disagree on 42 names, which is the cutover working as designed, not a defect.
+
+### The keywords the split is based on — the answer to "remember the keywords"
+
+Everything lives in `src/lib/sales/customer-channel.ts`, and nothing outside it decides this.
+
+| Layer | Content |
+| --- | --- |
+| Store words (substring, anywhere) | `مخزن` · `فارم` (covers فارما / فارماسي / فارمسي) · `تريد` · `الشركة` · `الجمعيه` · `للتجارة` |
+| Store PREFIXES (start of the name only) | `م - ` and `م- ` — EPDA's own notation for مخزن. It cannot be a keyword: it starts 29 names and appears inside 623 |
+| The trade phrase | a business word (`تجار` · `توزيع` · `توريد`) **plus** a goods word (`ادوي` · `دواء` · `دوائ` · `الادي`), or `تجار` and `توزيع` together — tested on the name with ALL whitespace removed, because distributors split words mid-token |
+| Hospital words (win the overlap) | `مستشف` and its siblings — a hospital is never a warehouse |
+| Never-store words | `صيدلي` · `مستشف` · `سجل تجار` · `مخازن` · `مستودع` · `هيئه` · `ت.ص` · `قوي عامله` · `سكك حديد` · `كهرباء` — the 17-of-17 "government depot, do NOT split" ruling of 2026-09-06 lives here |
+| Five override lists | `PHARMACY_OVERRIDE_CLIENT_CODES` (code) · `STORE_OVERRIDE_CUSTOMER_KEYS` (distributor\|code — **the only one the legacy rule reads**) · `PHARMACY_OVERRIDE_CHAINS` and `PHARMACY_OVERRIDE_NAMES` (name, can only ever REFUSE a split) · `STORE_OVERRIDE_NAMES` (name, the only one that can CREATE one) |
+
+🔴 **A new ruling goes in `STORE_OVERRIDE_NAMES`, by NAME, never by code.** The name list is read
+from the cutover forward (`WAREHOUSE_RULE_FROM_PERIOD_BY_LINE` — 2026-09, Pedia 2026-08), so a
+published month cannot restate; the code-keyed list is what `legacyIsStoreCustomer` reads, and an
+entry there rewrites all of 2026 silently.
+
+### The twelve, and what they move
+
+Of the 10,301 names left whole, only **154 carry any organisation marker at all** — the token
+frequency of the rest (محمد 2,109, احمد 1,275, الجديده 817) is the signature of individual
+pharmacies. Eleven survived judgement in the first pass and were put to him; the deeper audit he
+then ordered added four more. Those fifteen names are **twelve stems**, because three of them are a
+second or third account of a business another stem already names — the long form of `دار الدواء`,
+and two of the three `صيادلة البحيرة` accounts.
+
+Measured on production (`ozucdzovmcqvepbozvqf`) over `source_of_sales_import_rows` where
+`validation_state = 'valid'`, all-time, before the stems were written:
+
+| | names | rows | EGP |
+| --- | --- | --- | --- |
+| everything the twelve stems reach | 20 (26 accounts) | 374 | 435,133.42 |
+| already warehouses on `مخزن` — no change | 2 | 9 | 7,132.05 |
+| DIRECT — carries no area either way | 1 | 4 | 16,772.40 |
+| `official_line = Head Office` — never splits | 3 | 7 | 42,890.78 |
+| **what actually changes hands** | **15** | **58** | **51,022.72** |
+
+`دار الدواء` deliberately reaches its whole family — the company, its long form, a DIRECT account,
+two Head-Office branches and `دار الدواء المنصورة` — because the bare company name cannot be
+narrowed without a code, and a code would reach the published months. `صيادلة البحيرة` is one
+business on three accounts at two distributors (177,392.03 EGP), which is the case this list exists
+for. Every stem is written long: bare `الشرق` would have taken 184,707.00 EGP of pharmacy sales,
+bare `صيادله` 3,117,937.50 on its two largest neighbours alone, bare `اورينت` 50,220.00.
+
+### 🔴 طاى جروب is NOT in the change, and it is the one thing waiting on him
+
+He named it in column C. He also ruled its four accounts **pharmacy** on the 2026-09-06 decision
+sheet — 433363 (IS and IS-S), 3080282 (RM), 1500023301 (SF) — with their value and areas in front
+of him, and those 167 answers are pinned in the required `validate` job by
+`tests/sos-warehouse-owner-rulings.test.ts`. A contradiction in this rule goes back to him instead
+of being resolved in code; the five before it all did. **1,060,947.52 EGP across six accounts waits
+for one word.** Its own warehouse account `مخزن طاى جروب - طاى` (437,672.60 EGP) already splits on
+`مخزن` and is unaffected either way.
+
+### Two defects found in the same audit, left for him to rule on
+
+1. Two government health-insurance depots **split today**, against his own 17-of-17 "government
+   depot, do not split" ruling: `فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي` and
+   `فرع شرق الدلتا - المخزن الاقليمي القليوبية - تامين الصحي`. They carry `مخزن` and spell
+   "تامين الصحي" out in full, so the `ت.ص` never-store word misses them.
+2. Four `الطرشوبى` accounts say `مخزن` in the name and are held pharmacy by his chain override —
+   correct by his standing ruling, and worth knowing before anyone reads the name as evidence.
+
+### What holds it
+
+`tests/store-split-owner-rulings-2026-10-09.test.ts`, registered in `tests/run-tests.ts` and
+therefore in the required `validate` job. It pins the twelve stems verbatim, asserts all 24 accounts
+they reach are warehouses, asserts the cutover (September yes, August no, July no), asserts the
+legacy rule stays blind to every one of them — and measures the neighbours **against the live
+`STORE_OVERRIDE_NAMES`**, so a stem added next month is checked against them too. The neighbour
+guard was proven by breaking it: an over-wide `صيادله` stem fails with
+`الصيادلة فارم -الكوامل must not match any STORE_OVERRIDE_NAMES stem`.
+
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08
 
 AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.

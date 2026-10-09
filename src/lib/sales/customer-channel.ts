@@ -450,6 +450,60 @@ export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   // Head Office, which is untracked and never splits. It decides how the account is treated the
   // first time it sells on a rep line.
   { label: "الفرسان جروب - بنها", stem: "الفرسان جروب" },
+  // TWELVE MORE, 2026-10-09. The owner was sent the whole 10,420-name customer list split two ways
+  // — the 119 this rule splits today and the 10,301 it leaves whole — plus a third column naming the
+  // ones that read as medicines traders and reach no stem. He ruled: **"split the 11 in column C"**,
+  // then **"do a deeper audit … of course more than this should be split"**, which found four more.
+  //
+  // EVERY STEM COUNTED BOTH WAYS ON PRODUCTION FIRST, as this list requires — it is the one that can
+  // CREATE a warehouse. Together the twelve reach 20 distinct customer names on 26 accounts, 374
+  // valid rows and 435,133.42 EGP all-time, of which only **51,022.72 EGP over 58 rows actually
+  // changes hands**: the override list is read from the cutover only
+  // (WAREHOUSE_RULE_FROM_PERIOD_BY_LINE — 2026-09, Pedia 2026-08), Head Office (7 rows, 42,890.78)
+  // never splits, Direct carries no area (4 rows, 16,772.40), and two of the names these stems reach
+  // were ALREADY warehouses on مخزن (9 rows, 7,132.05), which changes nothing. The whole breakdown
+  // is one query, kept in tests/store-split-owner-rulings-2026-10-09.test.ts.
+  //
+  // «طاى جروب» IS DELIBERATELY NOT HERE, although he named it in column C. He ruled its four
+  // accounts PHARMACY in the 2026-09-06 decision sheet (433363 IS and IS-S, 3080282 RM,
+  // 1500023301 SF), with their value and areas in front of him, and those answers are pinned in
+  // tests/sos-warehouse-owner-rulings.test.ts. A contradiction in this rule goes back to him rather
+  // than being resolved in code — the five earlier ones all did — so its 1,060,947.52 EGP across six
+  // accounts waits for one word from him.
+  //
+  // Each stem is named in full rather than broadened, for the reason «الفرسان» records above.
+  { label: "شركة مخازن كومباس فارما للادوية", stem: "كومباس فارما" },
+  // Blocked until now by «مخازن», which is a NEVER_STORE word written for the 17 government depots
+  // he ruled on — a private company carrying the plural of مخزن was its one wrong exclusion.
+  { label: "دار الدواء", stem: "دار الدواء" },
+  // The stem reaches the family, which is what he named: the company (IS 448686, CNS 9,288.00), its
+  // long form «دار الدواء للادويةوالمستلزمات الطبية», a DIRECT account that is passed through with no
+  // area either way, «دار الدواء-اكتوبر» and «دار الدواء  - اخميم ن» (Head Office, never split), and
+  // «دار الدواء المنصورة» (CNS, 111.38). The bare name cannot be narrowed further without a code,
+  // and a code-keyed override would reach the PUBLISHED months — legacyIsStoreCustomer reads
+  // STORE_OVERRIDE_CUSTOMER_KEYS and ignores this list, so a name is the only safe instrument here.
+  { label: "شركة فاروس للادوية والمستحضرات الطبي", stem: "فاروس للادويه" },
+  { label: "الشرق للادوية", stem: "الشرق للادويه" },
+  // Also matches «مخزن الشرق للادوية المنيا» and «مخزن الشرق للادويه», both already warehouses.
+  { label: "الفجر للادوية", stem: "الفجر للادويه" },
+  { label: "مركز الخليل للادوية واللقاحات والامصال", stem: "الخليل للادويه" },
+  // «الخليل فارما لتجارة الادوية» is already a warehouse and puts فارما between the two words, so it
+  // is not what this stem reaches.
+  { label: "لاستثمارات الدوائية والكيماويات", stem: "لاستثمارات الدوائيه" },
+  { label: "اورينت للاستيراد والتصدير والتوكيلات", stem: "اورينت للاستيراد" },
+  // The four the deeper audit found, same shape as the seven above: an organisation that supplies the
+  // trade, carrying no store word, no prefix and no trade phrase.
+  { label: "شركه لابروكس", stem: "لابروكس" },
+  // One business on three accounts — «شركة صيادلةالبحيرة فرع الاسكندرية» (IS 403594), «صيادلة
+  // البحيرة» (IS 358607) and «ص  ش  صيادلة البحيره» (SF 1500027123), 177,392.03 EGP between them. A
+  // pharmacists' company with branches, which is the case this list exists for; one stem reaches all
+  // three, exactly as الفرسان and ابو عميرة do above.
+  { label: "صيادلة البحيرة", stem: "صيادله البحيره" },
+  // Co-operative societies are warehouses under his own «الجمعيه» keyword — 13 of them already split
+  // on it. These two escape it only on spelling: one drops the «ال», the other was typed «الحمعيه»
+  // with a ح. Named in full so neither stem can adopt a future society he has not seen.
+  { label: "جمعية العاملين بشركة مصر حلوان", stem: "جمعيه العاملين بشركه مصر حلوان" },
+  { label: "الحمعيه التعاونيه يشركه كيما", stem: "الحمعيه التعاونيه" },
 ];
 
 /**
