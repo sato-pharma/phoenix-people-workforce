@@ -805,6 +805,7 @@ import { runVenueValidationRuleTests } from "./venue-validation-rule.test.ts";
 import { runMarketingVenueMergeTests } from "./marketing-venue-merge.test.ts";
 import { runMarketingVenueMergeRouteTests } from "./marketing-venue-merge-route.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
+import { runMarketingRoiFastAwaitingDataTests } from "./marketing-roi-fast-awaiting-data.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
 import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
@@ -4026,6 +4027,10 @@ await runTest("marketing ROI report scope + filter options", runMarketingRoiRepo
 await runTest("marketing ROI report helpers (date math + body parse)", runMarketingRoiReportHelpersTests);
 await runTest("marketing ROI forecast-vs-actual labeling", runMarketingRoiLabelingTests);
 await runTest("marketing ROI Tracker (composes the authoritative engine, adds no fifth)", runMarketingRoiTrackerTests);
+await runTest(
+  "the fast ROI RPC reads awaiting_data while a window is still open — mirroring resolveRoiResultStatus, filtering on the status it computes, and never counting an open campaign as spend at risk",
+  runMarketingRoiFastAwaitingDataTests,
+);
 await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
 
 await runTest(
