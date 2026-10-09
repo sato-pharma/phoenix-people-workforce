@@ -40,8 +40,25 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-/** How many places one night reads. One model call each; 612 waited on the first night. */
-export const SIGNBOARD_SWEEP_LIMIT = 60;
+/**
+ * How many places one night reads. One model call each; 612 waited on the first night.
+ *
+ * 🔴 RAISED 60 -> 200 ON 2026-10-09, AT THE OWNER'S INSTRUCTION, AND THE NUMBER COMES FROM THE FIRST
+ * NIGHT'S OWN CLOCK RATHER THAN FROM AMBITION. That night read its 60 between **03:35:04 and
+ * 03:35:45 Cairo — 42 seconds** for the whole pass, measured from the `checkedAt` stamps it wrote,
+ * so four reads in flight settle about **1.4 places a second** and the pass stopped on THIS limit
+ * with 547 places still waiting, nowhere near its 120-second budget. At 60 a night that backlog
+ * needed nine more nights; at 200 it needs three.
+ *
+ * 🔴 THE BUDGET, NOT THIS NUMBER, IS WHAT PROTECTS THE CRON — and that is why it is untouched. 200
+ * at the measured rate is ~140 s, which is over `SIGNBOARD_SWEEP_BUDGET_MS`, so a normal night now
+ * stops on the BUDGET with `moreWaiting` true instead of on the limit. That is the designed graceful
+ * stop (oldest first, the rest tomorrow), and it is also the worst case: a night where every read
+ * burns its full 8-second timeout fits only ~60 reads in the same window, exactly today's volume.
+ * So raising this cannot lengthen the pass — it can only let a fast night use the window it already
+ * had. Raise the BUDGET and you are spending the behaviour pass's room; raise this and you are not.
+ */
+export const SIGNBOARD_SWEEP_LIMIT = 200;
 
 /** Reads in flight at once. Each is bounded by `PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS`. */
 export const SIGNBOARD_SWEEP_CONCURRENCY = 4;

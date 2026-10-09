@@ -147,10 +147,67 @@ function checkServerAndSweep(): void {
   assert.ok(photos > 0 && photos < signs && signs < behaviour, "photos, then signboards, then the month's shape");
 }
 
+/**
+ * How fast the nightly pass is allowed to be, and what stops it.
+ *
+ * MEASURED ON PRODUCTION, 2026-10-09: the first night read its 60 places between 03:35:04 and
+ * 03:35:45 Cairo — 42 seconds, from the `checkedAt` stamps the pass itself wrote — and stopped on
+ * its LIMIT with 547 places still waiting. The owner raised the limit that day. What has to stay
+ * true afterwards is not the number but the shape: the BUDGET is what ends a normal night, and the
+ * whole pass still fits well inside the cron window with the behaviour pass left its room.
+ *
+ * Read out of the source rather than imported: this module reaches Supabase and the OpenAI client at
+ * import time, and the rest of this file deliberately reads it as text for the same reason.
+ */
+function checkSweepRate(): void {
+  const source = readFileSync("src/lib/phoenix-crm/server/signboard-sweep.ts", "utf8");
+  const number = (name: string): number => {
+    const found = source.match(new RegExp(`export const ${name} = ([0-9_]+)`));
+    assert.ok(found, `${name} must still be an exported literal — this gate reads it out of the source`);
+    return Number(found[1].replace(/_/g, ""));
+  };
+  const limit = number("SIGNBOARD_SWEEP_LIMIT");
+  const budgetMs = number("SIGNBOARD_SWEEP_BUDGET_MS");
+  const concurrency = number("SIGNBOARD_SWEEP_CONCURRENCY");
+  const perReadTimeoutMs = Number(
+    readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8")
+      .match(/PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS = ([0-9_]+)/)?.[1]
+      .replace(/_/g, "") ?? NaN,
+  );
+
+  /** 60 reads in 42 s, measured; four in flight. Places per second for the whole pass. */
+  const MEASURED_READS_PER_SECOND = 60 / 42;
+
+  assert.ok(
+    limit >= 200,
+    `the nightly limit is ${limit}: at the measured 1.4 places a second the pass used 42 s of its `
+      + "120 s budget and then stopped on this number, leaving 547 places for nine more nights "
+      + "(owner, 2026-10-09 — raise it)",
+  );
+  assert.ok(
+    (limit / MEASURED_READS_PER_SECOND) * 1000 >= budgetMs,
+    `the BUDGET must be what ends a normal night, not the limit: ${limit} places at the measured `
+      + `rate is ${Math.round((limit / MEASURED_READS_PER_SECOND) * 1000)} ms against a ${budgetMs} ms budget. `
+      + "Below that line the pass stops early with the window unused, which is the state this change undid.",
+  );
+  assert.ok(
+    budgetMs + perReadTimeoutMs <= 150_000,
+    `the pass may start a read right before the deadline, so its worst case is ${budgetMs + perReadTimeoutMs} ms; `
+      + "the cron's maxDuration is 300 s and the photo and behaviour passes share it, so half is the ceiling",
+  );
+  assert.ok(limit <= 500, "the in-function clamp is 500 — a default above it would be silently cut");
+  assert.ok(
+    /Math\.min\(options\.limit \?\? SIGNBOARD_SWEEP_LIMIT, 500\)/.test(source),
+    "that clamp must stay, so a caller's limit cannot run the pass past the cron window",
+  );
+  assert.equal(concurrency, 4, "reads in flight are unchanged — the raise buys nights, never parallel load");
+}
+
 export function runPhoenixCrmSignboardCheckTests(): void {
   checkStampBand();
   checkVerdicts();
   checkRecords();
   checkServerAndSweep();
+  checkSweepRate();
   console.log("phoenix-crm signboard check: OK");
 }
