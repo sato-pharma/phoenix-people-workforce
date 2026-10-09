@@ -36,6 +36,11 @@ import path from "node:path";
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
 import { isShaLike, pickMergedPrForTip, removalVerdict } from "./lib/remove-gate.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
+import {
+  directoriesLinkedThrough,
+  isLoadBearing,
+  linksThroughFolder,
+} from "./repo-doctor-load-bearing.mjs";
 
 // Commit charge, not RAM, is what freezes this machine — and a freeze leaves no
 // dump. Below the floor a new session is refused; below the warn line it is
@@ -348,6 +353,20 @@ function dropModulesJunction(dir) {
     return "unreadable — left alone";
   }
   if (!stat.isSymbolicLink()) return "a REAL folder, not a junction — left alone";
+  // 🔴 THE JUNCTION CAN BE CARRYING THE PRIMARY'S OWN DEPENDENCIES. A stray `pnpm run` inside a
+  // worktree rewrites the PRIMARY's top-level package links to absolute paths routed through
+  // `<this worktree>\node_modules\.pnpm\…`, which resolve only while this junction stands. Unlink
+  // it and the primary cannot import anything — ERR_MODULE_NOT_FOUND everywhere, which is what
+  // happened three times on 2026-10-09 (see scripts/repo-doctor-load-bearing.mjs). Retiring the
+  // folder is not what breaks it; removing THIS LINK is, so the refusal belongs here.
+  if (isLoadBearing(dir, directoriesLinkedThrough(primaryRoot))) {
+    const { count } = linksThroughFolder(primaryRoot, dir);
+    return (
+      `LEFT ALONE — ${count} of the PRIMARY's package links resolve through it. Unlinking it ` +
+      "breaks every session on this machine. The PRIMARY's own dependency links have to be " +
+      "re-pointed first, which is the owner's call and his timing, never a session's"
+    );
+  }
   try {
     execFileSync("cmd", ["/c", "rmdir", nm], { stdio: "ignore" });
   } catch {
@@ -717,7 +736,18 @@ if (args.includes("--remove")) {
   const husk = fs.existsSync(dir);
   console.log("  worktree removed    " + (husk ? "folder REMAINS — a husk" : "yes, no husk left"));
   if (husk) {
-    console.log("    clear it by hand:  rmdir /s /q " + JSON.stringify(dir));
+    // The advice is a deletion command, so it must ask the load-bearing question before printing
+    // one. A folder whose junction was LEFT ALONE above is exactly the folder this `rmdir /s /q`
+    // would take the primary's dependencies down with — the advice was the last way left to break
+    // the machine once repo-doctor stopped offering it.
+    if (isLoadBearing(dir, directoriesLinkedThrough(primaryRoot))) {
+      console.log(
+        "    DO NOT clear it — the PRIMARY's package links resolve through this folder. " +
+          "`rmdir /s /q` here breaks every session on the machine.",
+      );
+    } else {
+      console.log("    clear it by hand:  rmdir /s /q " + JSON.stringify(dir));
+    }
   }
   // A detached HEAD leaves no branch behind, so the old wording printed "The branch (detached) still
   // exists locally" and then advised `gh pr list --head (detached)` — advice for a branch that does
