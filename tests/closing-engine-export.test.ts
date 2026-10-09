@@ -1134,6 +1134,8 @@ export async function runClosingEngineExportTests() {
     missingPrevValue: missing.reduce((sum, one) => sum + one.prevValue, 0),
     missingSources: missing,
     period: july.period ?? "2026-07",
+    quietPrevValue: 0,
+    quietSources: [],
     prevPeriod: "2026-06",
     prevSourceCount: 17,
     sources: missing,
