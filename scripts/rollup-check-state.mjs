@@ -44,6 +44,97 @@ export const TERMINAL_FAILURE = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'E
 export const TERMINAL_SUCCESS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
 
 /**
+ * The state one rollup entry is reporting, as an upper-case string.
+ *
+ * `conclusion` comes back as an EMPTY STRING for a running check, not as null, and `??` does not skip
+ * an empty string — so reading it first printed a running check as "not started". Take the first
+ * NON-EMPTY of the three instead, or the report misdescribes the very state it is waiting on.
+ *
+ * @param {Record<string, unknown> | null | undefined} entry
+ * @returns {string}
+ */
+function entryState(entry) {
+  return String(
+    [entry?.conclusion, entry?.state, entry?.status].find((v) => v !== null && v !== undefined && v !== '') ?? '',
+  ).toUpperCase();
+}
+
+/**
+ * The three things that can order two runs of the SAME check name, newest last.
+ *
+ * `startedAt` first because it is the one field every CheckRun carries here. `completedAt` next, for a
+ * pair that somehow started in the same second. The workflow RUN ID last — GitHub's run ids increase
+ * monotonically, so a larger one is a later run — and it is parsed out of `detailsUrl`, which is the
+ * only place `--json statusCheckRollup` exposes it.
+ *
+ * @param {Record<string, unknown> | null | undefined} entry
+ */
+function runOrderKeys(entry) {
+  const runId = /\/actions\/runs\/(\d+)/.exec(String(entry?.detailsUrl ?? ''));
+  return {
+    started: entry?.startedAt ? Date.parse(String(entry.startedAt)) : NaN,
+    completed: entry?.completedAt ? Date.parse(String(entry.completedAt)) : NaN,
+    runId: runId ? Number(runId[1]) : NaN,
+  };
+}
+
+/**
+ * One entry per check NAME — the LATEST run — with the superseded ones dropped.
+ *
+ * 🔴 TWO RUNS OF ONE REQUIRED CHECK ON ONE COMMIT IS NORMAL, AND THE FIRST OF THEM IS USUALLY
+ * `CANCELLED`. Measured 2026-10-09 on PR #5605 at `6e8d0b9b`: GitHub dropped the `synchronize` event,
+ * the PR was closed and reopened to recreate the run, the dropped event was then delivered late, and
+ * `concurrency` cancelled the first of the two. `commits/<sha>/check-runs` therefore returned
+ * `validate` TWICE — cancelled (run 37864635258) and successful (run 37864679406) — and so did
+ * `checks`. `gh pr checks 5605 --required` read `pass` for both; this module read the cancelled copies
+ * and reported `required check(s) failing: validate (cancelled), checks (cancelled)`, so a PR whose
+ * gate had passed was held out of the group as RED CHECK, with the run telling a session to go and
+ * fix a failure that did not exist.
+ *
+ * That is the one direction AGENTS.md §6 cannot afford: a PR this script marks red is not handed to
+ * the owner at all, so a false red leaves a ready merge sitting with nobody told why.
+ *
+ * A CANCELLED run is therefore ignored only because a LATER run of that name replaced it — never
+ * because it is cancelled. A name whose only run is cancelled keeps its reading and stays unsettled:
+ * nothing superseded it, GitHub will not count it as a pass, and a roll-up carrying it could not go
+ * green. The dedup narrows WHICH run is judged; it never softens the judgement.
+ *
+ * When nothing can order a pair — no timestamps and no run id, which is a hand-written fixture rather
+ * than anything GitHub returns — the BLOCKING entry is kept, so an unorderable pair can only ever
+ * wait longer, never build sooner.
+ *
+ * @param {ReadonlyArray<Record<string, unknown>> | null | undefined} statusCheckRollup
+ * @returns {Array<Record<string, unknown>>}
+ */
+export function latestRunPerName(statusCheckRollup) {
+  /** @type {Map<string, Record<string, unknown>>} */
+  const byName = new Map();
+  for (const entry of statusCheckRollup ?? []) {
+    const name = String(entry?.name ?? entry?.context ?? '');
+    const held = byName.get(name);
+    if (held === undefined || supersedes(entry, held)) byName.set(name, entry);
+  }
+  return [...byName.values()];
+}
+
+/**
+ * Whether `candidate` is the later run of the two, and so the one to judge.
+ *
+ * @param {Record<string, unknown>} candidate
+ * @param {Record<string, unknown>} held
+ */
+function supersedes(candidate, held) {
+  const a = runOrderKeys(candidate);
+  const b = runOrderKeys(held);
+  for (const key of /** @type {const} */ (['started', 'completed', 'runId'])) {
+    if (Number.isFinite(a[key]) && Number.isFinite(b[key]) && a[key] !== b[key]) return a[key] > b[key];
+  }
+  // Unorderable: keep whichever one blocks. Replacing a blocking entry with a green one on no evidence
+  // of which came last is the only mistake here that could carry an unproven member.
+  return !TERMINAL_SUCCESS.has(entryState(held)) ? false : !TERMINAL_SUCCESS.has(entryState(candidate));
+}
+
+/**
  * Whether the required-check list can be judged against at all.
  *
  * Two unusable shapes, and BOTH answer green today if nothing else is wrong. `null` is an unreadable
@@ -101,6 +192,10 @@ export function requiredGateUsable(required) {
  * Handles both shapes `statusCheckRollup` returns: a CheckRun (`name`, `status` + `conclusion`) and a
  * StatusContext (`context` + `state`).
  *
+ * 🔴 AND IT JUDGES ONE RUN PER NAME — THE LATEST. A commit can carry two runs of the same required
+ * check, the first of them `CANCELLED`, and judging both read a passed gate as red (see
+ * `latestRunPerName`, measured on PR #5605).
+ *
  * @param {ReadonlyArray<Record<string, unknown>> | null | undefined} statusCheckRollup
  * @param {Set<string> | null} required
  * @param {string | null} [headCommittedAt] ISO date of the PR's head commit. Omitted, the staleness
@@ -115,14 +210,12 @@ export function requiredCheckState(statusCheckRollup, required, headCommittedAt 
   // this stays 0 for an unreadable or empty gate — see the clause at the end.
   let confirmed = 0;
   const headAt = headCommittedAt ? Date.parse(headCommittedAt) : NaN;
-  for (const entry of statusCheckRollup ?? []) {
+  // 🔴 ONE ENTRY PER NAME, THE LATEST RUN, BEFORE ANYTHING IS JUDGED. A commit can carry two runs of
+  // the same required check — the first usually `CANCELLED` by `concurrency` — and judging both made a
+  // passing gate read red (`latestRunPerName`, PR #5605 on 2026-10-09).
+  for (const entry of latestRunPerName(statusCheckRollup)) {
     const name = entry?.name ?? entry?.context ?? '';
-    // `conclusion` comes back as an EMPTY STRING for a running check, not as null, and `??` does not
-    // skip an empty string — so reading it first printed a running check as "not started". Take the
-    // first NON-EMPTY of the three instead, or the report misdescribes the very state it is waiting on.
-    const state = String(
-      [entry?.conclusion, entry?.state, entry?.status].find((v) => v !== null && v !== undefined && v !== '') ?? '',
-    ).toUpperCase();
+    const state = entryState(entry);
     if (required !== null && !required.has(name)) continue;
     seen.add(name);
     const label = name || 'an unnamed check';
