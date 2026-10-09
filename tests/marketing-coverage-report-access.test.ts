@@ -11,6 +11,7 @@ import {
   coverageReportCompanyWideRoles,
   coverageReportViewerRoles,
 } from "../src/lib/marketing-requests/coverage-report-access.ts";
+import { companyMarketingRoles } from "../src/lib/marketing-requests/service.ts";
 
 export function runMarketingCoverageReportAccessTests() {
   // ── Pin the exact 12-role viewer set (broadly open to the whole hierarchy).
@@ -35,16 +36,21 @@ export function runMarketingCoverageReportAccessTests() {
   assert.equal(canViewMarketingCoverageReport("Employee"), false, "an unlisted role must not view the report");
   assert.equal(canViewMarketingCoverageReport(null), false, "a null role must not view the report");
 
-  // ── Pin the exact 4-role unrestricted (company-wide) set — deliberately
-  //    NARROWER than ROI Tracking's companyMarketingRoles: Finance Manager and
-  //    Financial Advisor are NOT unrestricted here.
-  const expectedCompanyWide = ["CEO", "Super Admin", "SFE Manager", "Marketing Manager"];
+  // ── Pin the exact 6-role unrestricted (company-wide) set — the SAME roles as
+  //    ROI Tracking's companyMarketingRoles (owner, 2026-10-09). The Finance
+  //    Manager used to be left on his own subtree here, which is empty: he opened
+  //    a Coverage Report reading 0 of 52 requests while ROI Tracking showed him
+  //    all 52, and its View Sales the same pharmacies and sales.
+  const expectedCompanyWide = ["CEO", "Super Admin", "SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"];
   assert.equal(coverageReportCompanyWideRoles.size, expectedCompanyWide.length);
   for (const role of expectedCompanyWide) {
     assert.equal(coverageReportCompanyWideRoles.has(role as never), true, `${role} must be company-wide`);
   }
-  assert.equal(coverageReportCompanyWideRoles.has("Finance Manager" as never), false, "Finance Manager must NOT be company-wide here (diverges from ROI Tracking)");
-  assert.equal(coverageReportCompanyWideRoles.has("Financial Advisor" as never), false, "Financial Advisor must NOT be company-wide here (diverges from ROI Tracking)");
+  assert.deepEqual(
+    Array.from(coverageReportCompanyWideRoles).sort(),
+    Array.from(companyMarketingRoles).sort(),
+    "the Coverage Report's company-wide roles must be ROI Tracking's companyMarketingRoles — a role company-wide in one and scoped in the other opens an empty Coverage page",
+  );
 
   // ── Pin the exact 5-role admin-shell set: every viewer role whose
   //    resolveNavigationMode() is "admin" (CEO, Super Admin, and the three
@@ -68,10 +74,8 @@ export function runMarketingCoverageReportAccessTests() {
   assert.equal(canViewMarketingCoverageReportInAdminShell("Super Admin"), true);
 
   // ── Role-parity invariant: every company-wide role must be a valid viewer.
-  //    (NOT the inverse: admin-shell roles are no longer guaranteed to be
-  //    company-wide — Finance Manager/Financial Advisor are admin-shell viewers
-  //    that are deliberately scoped, not company-wide, which is exactly the
-  //    point of this report's divergence from ROI Tracking.)
+  //    (NOT the inverse: the company-wide set holds portal-shell roles too, e.g.
+  //    the Marketing Manager, so admin-shell and company-wide stay separate sets.)
   for (const role of coverageReportCompanyWideRoles) {
     assert.equal(coverageReportViewerRoles.has(role), true, `company-wide role ${role} must also be a valid viewer`);
   }
