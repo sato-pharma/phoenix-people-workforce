@@ -1731,6 +1731,7 @@ import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmFieldReachTests } from "./phoenix-crm-field-reach.test.ts";
+import { runPhoenixCrmPharmacyPinTests } from "./phoenix-crm-pharmacy-pin.test.ts";
 import { runPhoenixCrmAdminSurfaceTests } from "./phoenix-crm-admin-surface.test.ts";
 import { runPhoenixCrmNameBesidePillsTests } from "./phoenix-crm-name-beside-pills.test.ts";
 import { runPhoenixCrmCardTableParityTests } from "./phoenix-crm-card-table-parity.test.ts";
@@ -6451,6 +6452,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's field day and reach (owner, 2026-10-02): a Directions link to the customer's SAVED place — the destination only, Google Maps, no key, nothing about where the rep is, and no link with no usable point — on the visit flow's customer card (under it, never inside its button), the visit form's header and his planned day; one line for his own field week, his sent plan against his countable visits, AM · PM · Pharmacies apart and never totalled, read in the day's one parallel wave; and a 'Get Phoenix CRM messages on Telegram' card at the top of Phoenix CRM for the reps and managers until the server says they are connected, through the ONE existing connect flow, hidden for the Cairo day by Later with every storage touch wrapped",
   runPhoenixCrmFieldReachTests,
+);
+
+await runTest(
+  "Phoenix CRM lets a rep save a pharmacy's own place and its responsible person's phone, both OPTIONAL (owner, 2026-10-09: \"visiting pharmacy or adding a new pharmacy make it optional to add its location by a pin button, optional if you want to save its location do this if you want also don't do this, and also make optional to add the responsible person phone number, and of course when he captured the location, the location is then cleaned and separated into area, brick, government\"): an absent pin, an empty pin and an empty phone are all null and never a refusal, so a pharmacy saved by its name alone takes exactly the taps it did before, and the ONE refusal is a reading too rough to be a place; the pin is resolved through the SAME function a doctor's validated place uses, so a pharmacy and the clinic across the street can never disagree about the brick, and the governorate is the geocode's own component rather than words cut out of the address; the pin is a RECORD and never a check — no visit measured against it, nothing flagged, no approval, no KPI — and the rep's own screens carry WHERE and never how rough the reading was or how far from its brick it sits; adding a pharmacy already on his list fills only what is EMPTY while phoenix_crm_set_pharmacy_details is the correction path, where a named key means set it and an absent key means leave it; and the thirteen columns are named in the ONE select string that feeds his List, his planner and his visit form alike",
+  runPhoenixCrmPharmacyPinTests,
 );
 
 await runTest(

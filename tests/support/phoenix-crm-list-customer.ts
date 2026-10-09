@@ -59,6 +59,9 @@ export const LIST_CUSTOMER_BASE: ListCustomer = {
   primaryPharmacyName: null,
   phone: null,
   pharmacies: [],
+  // A pharmacy's own pin (owner, 2026-10-09) — null here because this base is a DOCTOR, and a doctor
+  // can never hold one: the `pharmacy_pin_is_a_pharmacy` check refuses it in the database.
+  pharmacyPin: null,
 };
 
 /**

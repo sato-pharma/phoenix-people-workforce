@@ -142,6 +142,8 @@ export type ListScreen =
   | { name: "new" }
   /** A pharmacy added by its name, with no photo and no approval (owner, 2026-10-03). */
   | { name: "add-pharmacy" }
+  /** A pharmacy's own location and its responsible person's phone, both optional (owner, 2026-10-09). */
+  | { name: "pharmacy-details"; customerId: string }
   | { name: "restore"; customerId: string; from: "customer" | "list" }
   | { name: "add-request"; customerId: string }
   | { name: "add-place"; customerId: string; draft: PlaceDraftState | null }

@@ -26,6 +26,7 @@ export type {
   ListPlace,
   ListReferenceEntry,
   ListRequest,
+  PharmacyPin,
   PlaceReading,
   SeatReadiness,
   TerritoryListView,

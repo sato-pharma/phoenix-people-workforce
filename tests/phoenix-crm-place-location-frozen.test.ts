@@ -119,18 +119,34 @@ function runServerTests() {
 
   const resolver = /export async function resolvePlaceLocation\(point: [^)]*\): Promise<Row> \{([\s\S]*?)\n\}/.exec(list);
   assert.ok(resolver, "the location is resolved in one place");
+  assert.match(resolver[1], /resolvePinGeography\(point\)/, "the place row's location comes from the one geography resolver, read with the fixed point");
+  for (const column of ["area_code", "area_name", "region_code", "region_name", "brick_distance_km"]) {
+    assert.match(resolver[1], new RegExp(`${column}:`), `the capture writes ${column}, so the location is separated into its parts`);
+  }
+
+  // 4b. And the resolver it reads answers from the coordinates alone.
+  //
+  //     `resolvePinGeography` was extracted from `resolvePlaceLocation` on 2026-10-09, when a rep was
+  //     given a pin on a pharmacy too (owner: "cleaned and separated into area, brick, government").
+  //     The protection is unchanged and now shared: BOTH mappings read this one function, which is
+  //     asserted below to be the only caller of the address service in the file — two callers would be
+  //     two answers about which brick a point is in, which is the defect the extraction prevents.
+  const geography = /async function resolvePinGeography\(point: [^)]*\): Promise<PinGeography> \{([\s\S]*?)\n\}/.exec(list);
+  assert.ok(geography, "the geography behind a captured point is resolved in one place");
   // Assert the two ARGUMENTS, not one verbatim call expression: the first version of this test
   // pinned the literal text `{ lat: place.lat, lon: place.lon }` and went green on a call that
   // could not compile, because resolveEvidenceLocation takes latitude/longitude. A test that
   // passes on code typecheck rejects is worse than no test — it says the layer is guarded.
-  assert.match(resolver[1], /resolveEvidenceLocation\(\{[^}]*\blatitude: point\.lat\b/, "the clean address is resolved from the fixed point's latitude");
-  assert.match(resolver[1], /resolveEvidenceLocation\(\{[^}]*\blongitude: point\.lon\b/, "the clean address is resolved from the fixed point's longitude");
-  assert.match(resolver[1], /resolveBrickForPoint\(point\.lat, point\.lon, centroids\)/, "the brick is resolved from the fixed point");
-  for (const column of ["area_code", "area_name", "region_code", "region_name", "brick_distance_km"]) {
-    assert.match(resolver[1], new RegExp(`${column}:`), `the capture writes ${column}, so the location is separated into its parts`);
-  }
-  // Nothing on either path may read a location off the draft again.
-  for (const body of [payload[1], resolver[1]]) {
+  assert.match(geography[1], /resolveEvidenceLocation\(\{[^}]*\blatitude: point\.lat\b/, "the clean address is resolved from the fixed point's latitude");
+  assert.match(geography[1], /resolveEvidenceLocation\(\{[^}]*\blongitude: point\.lon\b/, "the clean address is resolved from the fixed point's longitude");
+  assert.match(geography[1], /resolveBrickForPoint\(point\.lat, point\.lon, centroids\)/, "the brick is resolved from the fixed point");
+  assert.equal(
+    list.split("resolveEvidenceLocation(").length - 1,
+    1,
+    "the address service is called once in this file — every mapping goes through resolvePinGeography",
+  );
+  // Nothing on any path may read a location off the draft again.
+  for (const body of [payload[1], resolver[1], geography[1]]) {
     for (const banned of [/place\.address/, /place\.zone/, /place\.brick\b/]) {
       assert.doesNotMatch(body, banned, "the row takes no location from what the phone sent");
     }

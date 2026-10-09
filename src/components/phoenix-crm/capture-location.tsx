@@ -33,10 +33,17 @@ export function CaptureLocation({
   disabled = false,
   onChange,
   value,
+  where = "clinic",
 }: {
   disabled?: boolean;
   onChange: (pin: CapturedPin | null) => void;
   value: CapturedPin | null;
+  /**
+   * The door he is standing at. Both sentences said "clinic" until a pharmacy could be pinned too
+   * (owner, 2026-10-09) — and telling a rep standing in a pharmacy to stand at the clinic is how a
+   * sentence stops being read at all. Unset keeps the clinic, so every validation screen is unchanged.
+   */
+  where?: "clinic" | "pharmacy";
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +92,9 @@ export function CaptureLocation({
         </>
       ) : (
         <>
-          <p className="text-sm font-medium leading-6 text-slate-600">Stand at the clinic and press Capture location.</p>
+          <p className="text-sm font-medium leading-6 text-slate-600">
+            {where === "pharmacy" ? "Stand at the pharmacy and press Capture location." : "Stand at the clinic and press Capture location."}
+          </p>
           <CrmButton busy={busy} disabled={disabled} onClick={capture} variant="primary">
             {busy ? null : <LocateFixed aria-hidden className="h-4 w-4" />}
             {busy ? "Capturing the location" : "Capture location"}

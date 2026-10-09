@@ -14,7 +14,14 @@ import { stripComments } from "./support/comment-strip.ts";
 export function runPhoenixCrmPlaceBrickLookupTests(): void {
   const list = stripComments(readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8"));
   assert.ok(list.includes('centroids.length === 0 || brick === null ? "could_not_look" : trusted ? "matched" : "none_nearby"'), "an empty brick master is read as could_not_look, never inferred");
-  assert.ok(list.includes("brick_lookup: brickLookup"), "the resolver hands it to the write");
+  // Since 2026-10-09 the verdict is returned by the shared `resolvePinGeography` (extracted so a
+  // pharmacy's own pin and a doctor's validated place cannot disagree about a brick) and mapped onto
+  // the column by each writer. BOTH mappings are asserted: a verdict that reached only one of them
+  // would leave the other writing a silent null, which is the whole defect this rule exists to stop.
+  assert.ok(list.includes("brickLookup,"), "the resolver returns the verdict");
+  for (const write of ["brick_lookup: geo.brickLookup"]) {
+    assert.equal(list.split(write).length - 1, 2, `both the place and the pharmacy mappings write it (${write})`);
+  }
   assert.match(list, /const PLACE_COLUMNS =\s*"[^"]*\bbrick_lookup\b/, "the List reads it");
 
   const blind = stripComments(readFileSync("src/lib/phoenix-crm/server/blind-payloads.ts", "utf8"));

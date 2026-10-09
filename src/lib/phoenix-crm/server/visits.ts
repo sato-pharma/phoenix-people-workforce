@@ -549,7 +549,36 @@ export type VisitCustomerOption = {
    * a second read: he is at the door with the phone already in his hand.
    */
   referenceContactCrmId: number | null;
+  /**
+   * 🔴 A PHARMACY'S OWN PINNED LOCATION (owner, 2026-10-09) — null on every doctor, and on every
+   * pharmacy nobody has pinned. It is what makes the Directions link work for a pharmacy at all: a
+   * pharmacy has no validated place, so until it could be pinned there was nothing to drive to.
+   *
+   * It carries WHERE and never HOW WELL (Golden Rule #1): no accuracy, no brick distance, nothing the
+   * rep could read as a measurement of himself. He pinned it himself, standing in the shop.
+   */
+  pharmacyPin: { lat: number; lon: number; address: string | null; governorate: string | null; areaName: string | null; brickName: string | null } | null;
+  /** A pharmacy's responsible person's phone (owner, 2026-10-09). Pharmacies only, and optional. */
+  pharmacyPhone: string | null;
 };
+
+/**
+ * A pinned pharmacy as the picker reads it: where it is, and nothing about how well it was read.
+ * Both coordinates or no pin at all, exactly as the database's own check constraint has it.
+ */
+function pickerPharmacyPin(row: Record<string, unknown>): VisitCustomerOption["pharmacyPin"] {
+  const lat = numberOrNull(row.pharmacy_pin_lat);
+  const lon = numberOrNull(row.pharmacy_pin_lon);
+  if (lat === null || lon === null) return null;
+  return {
+    lat,
+    lon,
+    address: textOrNull(row.pharmacy_pin_address),
+    governorate: textOrNull(row.pharmacy_pin_governorate),
+    areaName: textOrNull(row.pharmacy_pin_area_name),
+    brickName: textOrNull(row.pharmacy_pin_brick_name),
+  };
+}
 
 export type VisitPerson = {
   /** The value the form sends back; shown by name only. */
@@ -873,6 +902,10 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       pending: row.status === "pending" && !isPharmacyListType(row.list_type),
       outside: row.status === "outside",
       referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
+      // Pharmacies only, both of them: a doctor's phone is shown on his own page and the picker has
+      // never carried it, and a doctor's location is a validated place, never a pin.
+      pharmacyPin: isPharmacyListType(row.list_type) ? pickerPharmacyPin(row) : null,
+      pharmacyPhone: isPharmacyListType(row.list_type) ? textOrNull(row.phone) : null,
     };
   });
   // Today's planned customers first, then the rest by name. The picker groups by brick on top of this,

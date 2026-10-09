@@ -33,6 +33,8 @@ import { useState } from "react";
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { CustomerPhoneLink } from "@/components/phoenix-crm/customer-phone";
 import { CustomerTimeline } from "@/components/phoenix-crm/customer-timeline";
+import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
+import { PharmacyLocationFacts } from "@/components/phoenix-crm/pharmacy-details";
 import { CustomerVisitAsks } from "@/components/phoenix-crm/visit-asks";
 import { cairoStamp, plural } from "@/components/phoenix-crm/format";
 import {
@@ -64,6 +66,7 @@ import {
   CrmSelect,
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
+import { directionsUrl } from "@/lib/phoenix-crm/directions";
 import { DROP_REASONS } from "@/lib/phoenix-crm/entry-rules";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import {
@@ -334,6 +337,39 @@ export function CustomerScreen({
           <CurateFromList customer={customer} onLeave={onLeave ?? onNotice} seatId={seatId} test={test} view={view} />
         ) : null}
       </CrmBlock>
+
+      {/* 🔴 A PHARMACY'S OWN LOCATION AND ITS RESPONSIBLE PERSON'S PHONE (owner, 2026-10-09), both
+          optional. It is a RECORD of where the shop is — the governorate, the area and the brick the
+          server read off the rep's pin — and never a check: no visit of his is measured against it. A
+          doctor's location is a validated place and is drawn by `ListPlaces` below, never here. */}
+      {isPharmacyListType(customer.listType) ? (
+        <CrmBlock className="border-t border-slate-100" title="Where it is">
+          {customer.pharmacyPin ? (
+            <div className="grid min-w-0 gap-2">
+              <PharmacyLocationFacts pin={customer.pharmacyPin} />
+              <DirectionsLink customerName={customer.name} href={directionsUrl(customer.pharmacyPin)} />
+              {customer.pharmacyPin.capturedAt ? (
+                <p className="min-w-0 break-words text-phx-xs font-semibold text-slate-500">
+                  Captured {cairoStamp(customer.pharmacyPin.capturedAt)}
+                  {customer.pharmacyPin.capturedByName ? ` by ${customer.pharmacyPin.capturedByName}` : ""}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="min-w-0 break-words text-sm font-medium leading-6 text-slate-600">
+              Its location is not saved. Saving it is optional — stand in the pharmacy and capture it the next time you are there, and Phoenix works
+              out its governorate, area and brick by itself.
+            </p>
+          )}
+          {view.canEdit && !archived ? (
+            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+              <CrmButton onClick={() => onOpen({ name: "pharmacy-details", customerId: customer.customerId })}>
+                {customer.pharmacyPin ? "Change its location or phone" : "Save its location or phone"}
+              </CrmButton>
+            </div>
+          ) : null}
+        </CrmBlock>
+      ) : null}
 
       {waiting.length > 0 ? (
         <CrmBlock className="border-t border-slate-100" title="Waiting for a decision">

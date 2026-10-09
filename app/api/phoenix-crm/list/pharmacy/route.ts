@@ -10,8 +10,11 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST = add a pharmacy to his own list by its name (owner, 2026-10-03): no photo, no location, no
-// request and no approval — on his list at once. The territory's own rep only.
+// POST = add a pharmacy to his own list by its name (owner, 2026-10-03): no photo, no request and no
+// approval — on his list at once. The territory's own rep only.
+//
+// Its location and its responsible person's phone ride along as OPTIONAL extras in the same save
+// (owner, 2026-10-09), never a second step: a body carrying neither behaves exactly as it did.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);

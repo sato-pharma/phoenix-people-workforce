@@ -575,6 +575,60 @@ export function parseCustomerPhone(value: unknown): EntryRuleResult<string | nul
   return CUSTOMER_PHONE_PATTERN.test(phone) ? { ok: true, value: phone } : { ok: false, error: CUSTOMER_PHONE_ERROR };
 }
 
+// ── A pharmacy's own location (owner, 2026-10-09) ───────────────────────────────────────────────
+
+/**
+ * The pin a rep may put on a pharmacy — adding one, or visiting one (owner, 2026-10-09: "make it
+ * optional to add its location by a pin button … optional, if you want to save its location do this,
+ * if you want also don't do this").
+ *
+ * OPTIONAL MEANS OPTIONAL: no pin at all is `null` and never a refusal, and nothing about a pharmacy
+ * — adding it, visiting it, its feedback — is ever held up by the absence of one. There is no photo,
+ * no second reading and no shutter fix: a pharmacy is not validated at its door the way a doctor is,
+ * so this is one position, recorded because the rep chose to record it.
+ *
+ * 🔴 BUT A REFUSED READING IS NOT SAVED SILENTLY. The whole point of the pin is that the server reads
+ * the governorate, the area and the brick off it; a phone left on APPROXIMATE location reports a flat
+ * 2,000 m, which lands in a different brick from the one the rep is standing in and would be read
+ * later as fact. So a reading wider than the VISIT line — the module's existing, wider line, not the
+ * validation one — is refused in plain words about his own phone, and he can still save the pharmacy
+ * with no location at all. An UNKNOWN accuracy is taken, exactly as everywhere else in this file.
+ */
+export const ROUGH_PIN_AT_THE_PHARMACY = `Your phone gave only a rough location, so the pharmacy's place was not saved. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside and wait a few seconds, then press Capture location again — or save the pharmacy without it.`;
+const NO_FIX_AT_THE_PHARMACY = `Your location was not captured. Allow location for ${BROWSER_PLACEHOLDER} and capture it again at the pharmacy — or save the pharmacy without it.`;
+
+export type PharmacyPinDraft = { lat: number; lon: number; accuracyMeters: number | null; capturedAt: string | null };
+
+export function parsePharmacyPin(raw: unknown): EntryRuleResult<PharmacyPinDraft | null> {
+  // Absent, null, or an empty object: he chose not to pin it. Not an error.
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  if (typeof raw !== "object") return { ok: false, error: NO_FIX_AT_THE_PHARMACY };
+  const body = raw as Record<string, unknown>;
+  if (body.lat === undefined && body.lon === undefined) return { ok: true, value: null };
+  const fix = parseCapturedFix(body, NO_FIX_AT_THE_PHARMACY);
+  if (!fix.ok) return fix;
+  if (!withinAccuracy(fix.value.accuracyMeters, VISIT_MAX_ACCURACY_METERS)) {
+    return { ok: false, error: roughPinAtThePharmacy(fix.value.accuracyMeters) };
+  }
+  return {
+    ok: true,
+    value: {
+      lat: fix.value.lat,
+      lon: fix.value.lon,
+      accuracyMeters: fix.value.accuracyMeters,
+      // The phone's own clock, kept as the rep's "captured at". It is never compared with the server's
+      // here: there is no photo slot to compare it against, and nothing is measured against a pharmacy.
+      capturedAt: fix.value.deviceCapturedAt,
+    },
+  };
+}
+
+/** His reading, never the line he is being measured against (Golden Rule #1, as for a visit). */
+function roughPinAtThePharmacy(accuracyMeters: number | null): string {
+  if (accuracyMeters === null) return ROUGH_PIN_AT_THE_PHARMACY;
+  return `Your phone gave ${metresSaid(accuracyMeters)}, which is too rough to save the pharmacy's place. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside and wait a few seconds, then press Capture location again — or save the pharmacy without it.`;
+}
+
 export type DropDraft = { reason: DropReason; note: string | null };
 
 export function parseDropDraft(raw: unknown): EntryRuleResult<DropDraft> {

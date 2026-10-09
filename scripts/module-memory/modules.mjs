@@ -239,6 +239,26 @@ export const MODULES = [
     keywords: ["signboard", "refusal reason", "validate again", "duplicate merge", "place checks", "capture trust", "brick lookup"],
     tables: [],
   },
+  // 🔴 SPLIT, 2026-10-09, FOR THE SAME REASON AS THE THREE ABOVE: `phoenix-crm` reached 33 rules and its
+  // injected pointer measured 4,064 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the
+  // moment the pharmacy's own pin added its rule. The manager-facing reports and boards and the ARITHMETIC
+  // behind each figure are one family — the exceptions board's working days, brick coverage keyed by line,
+  // plan vs actual, counting visits through the KPI view, the tracking sheet and workbook, and the catalogue
+  // every report must be offered through — so they move together. `phoenix-crm` keeps every glob it had, so a
+  // file here loads the pair and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-reports",
+    title: "Phoenix CRM — the reports, the boards and how every figure is counted",
+    scope: "The manager-facing reports, the exceptions board and the 06:55 digest's figures, and the arithmetic behind each — working days, brick coverage keyed by line, plan vs actual, counting visits through the KPI view, the tracking sheet and the workbook, and the report catalogue.",
+    globs: [
+      "src/lib/phoenix-crm/{brick-report,daily-plan-report,exceptions,report-guide,report-rules,samples-report}.ts",
+      "src/lib/phoenix-crm/server/{brick-report,daily-digest,daily-plan-report,exceptions,insight-reports,reports,reports-workbook}.ts",
+      "app/api/phoenix-crm/reports/**",
+      "tests/phoenix-crm-{brick-coverage-report,daily-digest,daily-plan-report,exceptions,insight-reports,report-comparison,reports-export,wave2-reports}*",
+    ],
+    keywords: ["exceptions board", "working day", "call rate denominator", "brick coverage", "plan vs actual", "tracking sheet", "reports workbook", "report catalogue", "report guide", "daily digest figures"],
+    tables: [],
+  },
   {
     id: "crm",
     title: "Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans",
