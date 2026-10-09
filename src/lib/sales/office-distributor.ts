@@ -17,6 +17,98 @@ export function isOfficeDistributorCode(value: unknown): boolean {
 }
 
 /**
+ * The first closing whose Office units are respread on READ-TIME shares — owner, 2026-10-09:
+ * "fix the Office allocation to read-time shares."
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * WHAT WAS WRONG. The locked golden rule spreads Office units across the line's areas by each
+ * area's share of the line's non-Office sales VALUE (office-allocation.ts). That rule is not in
+ * question and is not touched. What was wrong is WHEN it is evaluated: the weights are computed
+ * once, at UPLOAD, and stamped onto the stored rows — so every distributor batch that lands, is
+ * re-mapped or is corrected AFTER the Office file silently leaves the Office units on last month's
+ * geography.
+ *
+ * MEASURED ON THE LIVE AUGUST 2026 CNS ROWS, 9 October 2026, through the repo's own closing loader
+ * and this rule: Office is 109,719 of 178,272 units (61.5% of the month), its last batch landed
+ * 10 September 19:15 Cairo and the month was published 10 September 23:22 Cairo — and **6,834 of
+ * those packs, 6.23%, worth 548,777 EGP, are today credited to a different area from the one the
+ * current data gives them**, over 48 areas with 17 of them short — the sum of the positive legs of
+ * today's net over the stored spread, measured through the closing LOADER, after the city-split
+ * rails, which is where a reader actually meets the number. `check-office-allocation-drift.ts`
+ * (#5679) reports 3,698 units / 3.37% for the same month because it compares the BATCH's own rows
+ * with today's shares on the line's own stored total: two measuring points on one defect, both
+ * true, neither to be "reconciled" away. Nothing anywhere reported it before those two landed, and
+ * the only repair available was to re-upload the Office file by hand.
+ *
+ * SO THE SPREAD IS RECOMPUTED ON EVERY READ, as a net movement (closing-office-respread.ts) rather
+ * than a rewrite of the stored rows — the same shape, and the same reason, as the city split and the
+ * EPDA-BULK allocation. A net recomputed on every read cannot go stale.
+ *
+ * 🔴 OCTOBER, NOT AUGUST, AND THAT IS THE POINT. Every earlier month keeps the numbers it was
+ * published with — the direction every dated sales rule in this repo takes, and the owner's own
+ * standing rule that a published and announced month is never corrected. The 6.23% measured on
+ * August is the EVIDENCE for the rule, never a backlog to go and fix.
+ *
+ * 🔴 AND SEPTEMBER IS THE OWNER'S CALL, NOT THIS CONSTANT'S. Read live 9 October 2026: September CNS
+ * is NOT published (only September Anti Infective is, and that line carries no Office channel), it is
+ * still being imported — its last batch landed 9 October 16:51 Cairo — and it holds ZERO Office rows,
+ * because its Office file has not been uploaded yet. So moving this constant back to `2026-09` would
+ * restate nothing published; what it WOULD need is September's frozen net rebuilt first, because
+ * publishing one line freezes the whole period (see the frozen path in `closing-store-split-net.ts`).
+ *
+ * 🔴 PUT TO HIM WITH THAT, AND HE RULED: **"leave the Office respread at October"** (2026-10-09).
+ * So September stays on the spread its upload stamped, and this constant does not move again without
+ * his own new word about September — never a session's reading that the data now makes it look safe.
+ */
+export const OFFICE_RESPREAD_START_PERIOD = "2026-10";
+
+/**
+ * True for `2026-10` and every month after it.
+ *
+ * A STRING comparison on `YYYY-MM`, which sorts correctly, and a period that is not that shape
+ * answers FALSE — the safe direction, because a month this cannot read is a month whose published
+ * numbers must not move.
+ */
+export function isOfficeRespreadActive(period: string | null | undefined): boolean {
+  const trimmed = String(period ?? "").trim();
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return false;
+  return trimmed >= OFFICE_RESPREAD_START_PERIOD;
+}
+
+/**
+ * True when this (line, period) pair takes the read-time respread at all — CNS, from October 2026.
+ *
+ * The line test is `isOfficeAllocationLine`, the SAME list the upload enforces and the closing
+ * displays, deliberately: a second list would drift, and a drift here means respreading a line that
+ * may not be allocated Office units in the first place.
+ */
+export function isOfficeRespreadPair(
+  line: string | null | undefined,
+  period: string | null | undefined,
+): boolean {
+  return isOfficeRespreadActive(period) && isOfficeAllocationLine(line);
+}
+
+/**
+ * True when this ROW is one the respread moves: the Office channel, on an allocated line, in a month
+ * the rule covers.
+ *
+ * 🔴 THE CITY SPLIT DOES NOT HAVE TO ASK THIS, and that is a property of the row rather than a
+ * coincidence: Office rows carry no customer (`clientCode` null by construction), so
+ * `isStoreCustomer` answers false and `isSplitEligible` refuses them before any period gate is
+ * reached — see customersExemptFromCitySplit in store-sales-city-split.ts. So no Office unit can be
+ * moved by the city rule and then moved again by this one.
+ */
+export function isOfficeRespreadRow(
+  row: { distributorCode?: string | null; officialLine?: string | null },
+  period: string | null | undefined,
+): boolean {
+  if (!isOfficeRespreadActive(period)) return false;
+  if (!isOfficeDistributorCode(row.distributorCode)) return false;
+  return isOfficeAllocationLine(row.officialLine);
+}
+
+/**
  * The lines that carry an Office channel at all — the owner's rule, 2026-08-25: **CNS only.**
  *
  * Office is not a distributor. It is the company's own stock, imported last and spread across

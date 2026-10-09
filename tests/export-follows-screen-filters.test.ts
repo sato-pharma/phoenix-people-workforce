@@ -425,9 +425,20 @@ export function runExportFollowsScreenFiltersTests() {
     + " the on-screen behaviour the export below is required to match",
   );
   assert.ok(
-    closingExportRouteSource.includes("office: officeFiltered,"),
+    closingExportRouteSource.includes("office: officeGrid,"),
     "the closing export must always hand the Office grid to the workbook builder, so the file shows"
     + " the Office columns the screen shows",
+  );
+  // `officeGrid` is `officeFiltered` with the Office channel's READ-TIME RESPREAD applied (owner,
+  // 2026-10-09 — CNS, from the October closing), and it must fall back to `officeFiltered` itself
+  // whenever there is no net to apply. The only thing that may ever differ between the screen's grid
+  // and the workbook's is which AREA an Office unit sits in — never whether the grid is handed over.
+  assert.match(
+    closingExportRouteSource,
+    /const officeGrid = officeFiltered && storeSplitOfficeNet\.size > 0\s*\?\s*applyStoreSplitToMatrix\(officeFiltered, storeSplitOfficeNet\)\.matrix\s*:\s*officeFiltered;/,
+    "the grid handed over must be officeFiltered itself, or officeFiltered with the OFFICE-ONLY net"
+    + " applied — never the combined store-split net (neither the city split nor the bulk book moves"
+    + " an Office row), and never a dropped or separately narrowed grid",
   );
   assert.ok(
     !closingExportRouteSource.includes("office: rowLevelActive ? null"),

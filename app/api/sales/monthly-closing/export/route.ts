@@ -388,7 +388,19 @@ export async function POST(request: Request) {
         exemptStoreValueByBrick: storeSplitExemptByBrick,
         movements: storeSplitMovements,
         net: storeSplitNet,
+        officeNet: storeSplitOfficeNet,
       } = prepareClosingStoreSplit(monthRows, scopedAreaCodes, await sharedSplitPromise);
+      // 🔴 THE OFFICE GRID TAKES THE OFFICE RESPREAD'S OWN NET, AND NOTHING ELSE OF `storeSplitNet`
+      // (owner, 2026-10-09 — CNS, from the October closing). The matrix below moves the Office units
+      // onto today's value shares; an Office grid left on the areas the upload stamped would make
+      // "of wh. Office" describe a different geography from the matrix beside it, and the Closing
+      // Matrix (No Office) tab — `matrix − office`, cell by cell — could print negative sales. The
+      // city split and the bulk allocation must NOT reach this grid: neither moves an Office row.
+      // Applied AFTER the place filter, exactly as the retail half is, so both grids are narrowed the
+      // same way before any net lands. Empty on every line but CNS and every month before 2026-10.
+      const officeGrid = officeFiltered && storeSplitOfficeNet.size > 0
+        ? applyStoreSplitToMatrix(officeFiltered, storeSplitOfficeNet).matrix
+        : officeFiltered;
       // The split is FROZEN only when the shared (whole-month) split was used AND the period is frozen
       // — exactly when `storeSplitMovements` above are the frozen ones. isFrozenStoreSplitPeriod is the
       // SAME per-period predicate loadFrozenStoreSplitIfPublished uses to decide to freeze, so the
@@ -565,7 +577,7 @@ export async function POST(request: Request) {
         // The Office grid genuinely cannot be narrowed by a row-level filter: loadMonthlyClosingParts
         // builds it from an aggregate that carries no customer and no distributor. So rather than
         // hide it, the note below states in words that these figures are the whole month's Office.
-        office: officeFiltered,
+        office: officeGrid,
         // Whether the Office grid above is comparable with the matrix, which is what decides the
         // "Closing Matrix (No Office)" tab. Under a row-level filter it is NOT — the note three
         // lines up says so in words — and subtracting the whole month's Office from a narrowed

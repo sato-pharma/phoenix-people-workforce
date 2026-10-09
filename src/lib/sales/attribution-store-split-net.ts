@@ -30,7 +30,9 @@ import {
   isBulkAllocationLine,
 } from "@/lib/sales/bulk-allocation-channel";
 import { buildBulkAllocation } from "@/lib/sales/closing-bulk-allocation";
+import { buildOfficeRespread } from "@/lib/sales/closing-office-respread";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
+import { isOfficeRespreadActive, isOfficeRespreadPair } from "@/lib/sales/office-distributor";
 import type { SplitRegions } from "@/lib/sales/store-sales-city-split";
 import {
   isSplitEligibleLine,
@@ -110,14 +112,20 @@ export function buildStoreSplitNetPayload(
   period: string,
   regions?: SplitRegions,
 ): StoreSplitNetPayloadRow[] {
-  // 🔴 TWO RULES SHARE THIS NET, AND EITHER ONE ON ITS OWN IS A REASON TO WRITE ONE. The city split
-  // (from 2026-08, Pedia / Anti Infective / CNS) and the EPDA-BULK contribution allocation (owner,
-  // 2026-10-09 — from the September closing, Pedia only) both move money between areas of one line,
-  // and au.f_monthly_attribution can see neither of them on its own. Asked as two tests rather than
-  // one because their lines and start months are independent.
+  // 🔴 THREE RULES SHARE THIS NET, AND ANY ONE ON ITS OWN IS A REASON TO WRITE ONE. The city split
+  // (from 2026-08, Pedia / Anti Infective / CNS), the EPDA-BULK contribution allocation (owner,
+  // 2026-10-09 — from the September closing, Pedia only) and the Office channel's read-time respread
+  // (owner, 2026-10-09 — from the October closing, CNS only) all move money between areas of one
+  // line, and au.f_monthly_attribution can see none of them on its own. Asked as three tests rather
+  // than one because their lines and start months are independent.
+  //
+  // The Office one matters most of the three in size: Office was 61.5% of CNS August 2026, so a
+  // respread the Closing Matrix applies and attribution does not would put every CNS rep's
+  // achievement out by most of their line.
   const bulkApplies = isBulkAllocationActive(period) && isBulkAllocationLine(officialLine);
   const cityApplies = isStoreCitySplitActive(period) && isSplitEligibleLine(officialLine);
-  if (!cityApplies && !bulkApplies) return [];
+  const officeApplies = isOfficeRespreadPair(officialLine, period);
+  if (!cityApplies && !bulkApplies && !officeApplies) return [];
 
   // Both passes take the SAME exclusion set. They already have to move the same rows (asserted
   // below); handing one of them a different set of target areas would put units on one geography
@@ -159,6 +167,14 @@ export function buildStoreSplitNetPayload(
   const bulk = buildBulkAllocation(rows, period, officialLine);
   accumulate(byCell, officialLine, bulk.movements, "net_qty");
   accumulate(byCell, officialLine, bulk.effectiveMovements, "net_effective_units");
+
+  // THE OFFICE READ-TIME RESPREAD, ON THE SAME TWO MEASURES and for the same reason: one computation
+  // produces both lists, so units and money cannot come from different populations. Its OUT legs are
+  // the stored Office rows themselves, so each cell it adds still sums to zero per product and
+  // phx_write_monthly_store_split_net's own re-check holds.
+  const office = buildOfficeRespread(rows, period, officialLine);
+  accumulate(byCell, officialLine, office.movements, "net_qty");
+  accumulate(byCell, officialLine, office.effectiveMovements, "net_effective_units");
 
   return [...byCell.values()].filter(
     (row) => Math.abs(row.net_qty) > EPSILON || Math.abs(row.net_effective_units) > EPSILON,
@@ -210,9 +226,10 @@ export async function writeAttributionStoreSplitNet(input: {
   // previous run left behind. Skipping the call instead would strand stale rows the moment the
   // owner moved a start period later, and attribution would keep applying a split that no longer
   // exists.
-  // Either rule is a reason to read the lines — the city split from 2026-08, the EPDA-BULK
-  // allocation from 2026-09 (see buildStoreSplitNetPayload, which decides per line).
-  if (isStoreCitySplitActive(period) || isBulkAllocationActive(period)) {
+  // ANY of the three rules is a reason to read the lines — the city split from 2026-08, the
+  // EPDA-BULK allocation from 2026-09, the Office read-time respread from 2026-10 (see
+  // buildStoreSplitNetPayload, which decides per line).
+  if (isStoreCitySplitActive(period) || isBulkAllocationActive(period) || isOfficeRespreadActive(period)) {
     for (const line of ATTRIBUTION_SPLIT_LINES) {
       const rows = await input.loadRowsForLine(line, period);
       // The organogram's Others set, for THIS line and THIS month — see loadOthersAreas. Loaded
