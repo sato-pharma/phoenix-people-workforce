@@ -7275,6 +7275,45 @@ Measured against live production before and after: the banner's own headline fel
 the contribution allocation needs), and the trailing count from 11 other distributors to 10.
 
 
+## September's split is rebuilt once its books are all in — owner, 2026-10-09
+
+He parked the rebuild on a condition rather than a date: **"rebuild September's split once the last
+books are in, not now"**, after being shown that the frozen 2026-09 store-split net is stale and
+still moving. The rebuild is worth exactly one shot, at the end, because every upload changes it.
+
+**Why a month's completeness cannot be judged against the whole upload history.** The first version
+of the gate used `buildSosCoverageReport`, whose expectation is every source seen in any loaded
+period — correct for the audit banner, because the SoS history was backfilled and a never-uploaded
+January is indistinguishable from an onboarding. As a gate it is useless: **chimipharm last supplied
+2026-05**, so it would call every month since May incomplete for ever and the gate would never fire
+once. The shipped rule uses the basis `source-coverage.ts` already uses for a closing — what fed the
+**previous** month, plus whatever another source's file carried for it then — and a month with no
+validated batch at all is never "complete".
+
+**Why the merge-carry term is not optional.** EPDA-BULK's file was folded into EPDA-Pharmacies' for
+2026-07..2026-08 only, so it is absent from last month's present set while being exactly the book
+the EPDA-BULK contribution rule spreads. Dropping it because last month was quiet would hide the one
+absence that rule depends on. Proven by breaking it: with the term removed the test's own headline
+fired — `September is INCOMPLETE — the merge window ended in August`.
+
+**What it read when it was armed.** Production, 2026-10-09:
+`sos-month-complete: INCOMPLETE 2026-09 missing=5` — **epda, EPDA-BULK, EPDA-Pharmacies, Marcyrl,
+mec**. Direct (Company) is correctly excluded by the DirectReq fold, so it is not a sixth hole.
+
+**Why the drift figure is read only after the month is complete.** On an incomplete month it moves
+with the next upload: 2026-09's frozen-versus-live difference went from **839,283.83 EGP** to
+**1,030,551.19 EGP** on different areas inside one day (347 cells over 76 line×area pairs, frozen
+139 cells versus live 423; **CNS holds 36 pairs and 221,712.21 EGP**, Anti Infective holds 0, so
+nothing he announced has moved). The sum of differences is 0.00 and every line's unit totals agree,
+which is why the publication drift check — it compares units — is blind to all of it.
+
+The `september-upload-completeness` scheduled task watches the gate at 21:30 Cairo daily, stays
+silent on an unchanged incomplete month, reports when the missing list changes, reports once after
+five static days, and on COMPLETE reports the drift and deletes itself. The rebuild itself starts
+with his unpublish of 2026-09 on the Monthly Closing publication screen, which is his click and
+never belongs in a Next-step line.
+
+
 ## The Office channel's read-time respread — owner, 2026-10-09
 
 **His words:** *"fix the Office allocation to read-time shares."* Typed the same day as the
