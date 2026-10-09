@@ -276,6 +276,52 @@ public/anon/authenticated and granted to `service_role` only.
 section 7. If `20261009120000_dispute_center.sql` is applied **after** this file, it replaces
 `days_check` with its own two-branch version and a deductions charge would then be refused.
 
+## Someone who has left: said, never refused
+
+The production read on 2026-10-09 showed what the button could not say. Of the sixteen September
+Unpaid Vacation rows, **three belonged to people who had already left** — last working days 17 Sep,
+30 Sep and 04 Oct — and two of them were being offered **5** and **1.25** days of annual balance with
+`refusal: NONE` and nothing on screen to mark them apart from a row for someone still working.
+
+Put to the owner as a choice, his answer was **"Allow it, but say he has left"**. So nothing is
+refused:
+
+- `loadEmployeeForCharge` keeps **no employment-status filter** — a deduction raised while someone
+  was still working stays his to take from the balance.
+- The preview carries `employeeHasLeft` and `lastWorkingDate` on **both** of its return paths.
+- The dialog prints the day he stopped working, says the charge still goes through, and says why it
+  is worth knowing: it spends a balance the **final settlement may already have paid out**, and the
+  **Vacation Report cannot show it** — the Entitlements tab lists active employees, so a leaver has
+  no row there to carry the charge.
+- Nothing is disabled by it. The confirm button's `disabled` still reads `preview.refusal`, and
+  `assertChargeable` and `refusalText` never mention leaving.
+
+**"Has left" has one vocabulary in this repo** — `hasDepartedEmployment` over
+`DEPARTED_EMPLOYMENT_STATUSES` (`resigned`, `terminated`, `not_renewed`) in
+`src/lib/auth/session-lifecycle.ts`. Deliberately **not** the complement of `active`: production
+carries 116 active, 73 resigned, 15 `historical_payroll_record`, 3 `declined_offer`, 3 terminated
+and 2 `system_placeholder`, and a `!== "active"` test would hang the notice on the twenty rows the
+owner never meant by it.
+
+### The dead branch this nearly shipped with
+
+The notice belongs beside **Return to salary** as much as beside the charge — a leaver is exactly
+when returning a charge to salary wants a second look. But an already-charged row **never opens the
+dialog**, and `preview` is only filled by `openDialog`, so `preview?.employeeHasLeft` there would
+have been `null` for ever: a branch that reads correctly, renders nothing, and cannot be told from
+"nobody has left". That row now reads its own preview once, in an effect keyed on the row, and the
+suite pins the ordering so the branch cannot go dead again.
+
+### And the formatter the first attempt shipped
+
+The notice first printed the last working day with its own
+`new Intl.DateTimeFormat("en-GB", { month: "short" })`. The required `validate` job refused it:
+in a **client** component that asks the reader's own ICU build for an en-GB month abbreviation, CLDR 42
+changed `Sep` to `Sept`, so anyone on an older browser gets React hydration error **#418** — and
+only in September, which is exactly when a September deduction is being charged. This file already
+owned the right implementation of a date-only column, `hireDateLabel` (Y/M/D parts, UTC, through
+`stableEnGbFormatter`), so the notice uses that and never a formatter of its own.
+
 ## Proof
 
 `tests/deductions-leave-balance.test.ts`, registered in `tests/run-tests.ts`. Section 5 covers the
@@ -287,6 +333,17 @@ assertion — and only that one — fire:
 | drop `allowFirstSixMonths: true` from the deductions balance read | *the leave-balance read must ask for the accrued days* |
 | make the gate ignore the flag | *the override must price the day instead of refusing it* |
 | make the gate never apply (the override leaks) | *Requests before six months should be unpaid* — in `vacation-calculations.test.ts`, the suite that already owned that rule |
+
+Section 8 covers the leaver notice, proven the same way — five breaks, five headline assertions,
+each firing on its own:
+
+| Break | What fired |
+| --- | --- |
+| decide "has left" from the complement of `active` | *and must decide it from the employee row's employment_status through that helper* |
+| refuse the charge for a leaver instead of saying so | *a leaver must never throw* |
+| drop the notice from the already-charged view | *it belongs in the charge dialog AND beside Return to salary on an already-charged row* |
+| drop the charged row's own preview read | *and it must be an effect keyed on the row, not a fetch on every render* |
+| gate Return to salary on it | *the notice must never gate a button* |
 
 The override needs **no migration**: `phx_deductions_charge_leave_balance` re-checks the three figures
 a concurrent writer could move, and has never held a six-month rule of its own.

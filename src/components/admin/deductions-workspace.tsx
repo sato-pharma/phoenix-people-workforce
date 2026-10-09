@@ -722,6 +722,8 @@ type LeaveBalancePreviewApi = {
   alreadyCleared: boolean;
   uncollectedDays: number;
   withinFirstSixMonths: boolean;
+  employeeHasLeft: boolean;
+  lastWorkingDate: string | null;
 };
 
 /**
@@ -738,6 +740,28 @@ function daysText(days: number): string {
 }
 
 /**
+ * Says the person has LEFT — in the charge dialog AND in the already-charged view (owner,
+ * 2026-10-09: allow it, but say he has left). It never blocks the charge; what was missing was the
+ * words. Measured on production the same day: 3 of the 16 September Unpaid Vacation rows belong to
+ * people who have left, and two of them were being offered 5 and 1.25 days of balance with nothing
+ * on screen to say so.
+ */
+function EmployeeHasLeftNotice({ lastWorkingDate }: { lastWorkingDate: string | null }) {
+  // hireDateLabel is this file's date-only renderer — UTC parts through stableEnGbFormatter, which
+  // is what keeps an en-GB "Sep"/"Sept" month out of React hydration error #418. A last working day
+  // is the same kind of column, so it is rendered by the same function, never by a second one.
+  const label = hireDateLabel(lastWorkingDate);
+  const when = label === "—" ? "" : label;
+  return (
+    <p className="text-phx-xs font-semibold text-amber-800">
+      This employee has left the company{when ? ` on ${when}` : ""}. The charge still goes through, but it spends a
+      balance the final settlement may already have paid out, and the Vacation Report cannot show it — the Entitlements
+      tab lists active employees, so someone who has left has no row there.
+    </p>
+  );
+}
+
+/**
  * "Deduct from leave balance" and "Return to salary" (owner, 2026-10-09). The comment is required: it
  * is what the employee reads, as written, in their Vacation Report. The confirmation shows what the
  * server worked out — how much annual leave there is, how many days come off it and how many stay on
@@ -750,6 +774,26 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 🔴 An ALREADY-CHARGED row never opens the dialog, so without this read `preview` stays null
+  // there for ever and any notice hung off it is a silently dead branch. It is read once, only for
+  // the rows that carry a charge — 6 of them on production on 2026-10-09 — because "this person has
+  // left" is exactly what the Return to salary button beside it needs to say.
+  useEffect(() => {
+    if (!row.leaveBalanceCharge) return;
+    let live = true;
+    void fetchJson<{ preview: LeaveBalancePreviewApi }>(
+      `/api/admin/deductions/leave-balance?candidateId=${encodeURIComponent(row.id)}`,
+    )
+      .then((payload) => {
+        if (live) setPreview(payload.preview);
+      })
+      // Silent on purpose: the badge, the comment and the Return button below do not depend on it.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [row.id, row.leaveBalanceCharge]);
 
   const charged = row.leaveBalanceCharge ?? null;
   if (!charged && !canTakeFromLeaveBalance(row)) return null;
@@ -805,6 +849,7 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
         >
           {busy ? "Returning…" : "Return to salary"}
         </button>
+        {preview?.employeeHasLeft ? <EmployeeHasLeftNotice lastWorkingDate={preview.lastWorkingDate} /> : null}
         {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
       </div>
     );
@@ -860,6 +905,7 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
                 Still inside the first six months, so this spends days already accrued but not yet available to request.
               </p>
             ) : null}
+            {preview.employeeHasLeft ? <EmployeeHasLeftNotice lastWorkingDate={preview.lastWorkingDate} /> : null}
           </>
         )
       ) : null}
