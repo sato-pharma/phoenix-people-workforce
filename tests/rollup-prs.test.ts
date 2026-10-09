@@ -198,6 +198,48 @@ export function runRollupPrsTests(): void {
     assert.equal(v.get(6)?.kind, "rollable", "an ordinary docs PR beside them is still rollable");
   }
 
+  // ── 3b. A NEIGHBOUR of a protected file is NOT protected ────────────────────────────────────
+  // 🔴 The test was a string PREFIX, so `src/lib/sales/office-allocation-drift.ts` — read-only, with
+  // no locked formula anywhere near it — read as the Office golden rule. #5694 was reported to the
+  // owner on 2026-10-09 as carrying a protected file, and a peer session had to correct that to him
+  // by hand. Only the files CLAUDE.md names are locked.
+  {
+    const v = verdicts([
+      pr(1, ["src/lib/sales/office-allocation-drift.ts", "src/lib/needs-you/sources.ts"]),
+      pr(2, ["src/lib/payroll/policy-notes.ts"]),
+      pr(3, ["src/lib/incentives/scheme-2026-archive.ts"]),
+      pr(4, ["src/components/employee-portal/identity-card-styles.css"]),
+      pr(5, ["eas.json.example"]),
+    ]);
+    for (const n of [1, 2, 3, 4, 5]) {
+      assert.equal(
+        v.get(n)?.kind,
+        "rollable",
+        `#${n} touches a NEIGHBOUR of a protected path, not the protected file itself, and must roll `
+          + `up like any other PR. Got ${v.get(n)?.kind}: ${v.get(n)?.why}`,
+      );
+    }
+  }
+
+  // ── 3c. And a protected file SPLIT INTO A FOLDER is still protected ─────────────────────────
+  // The one direction in which a loose match is the safe mistake.
+  {
+    const v = verdicts([
+      pr(1, ["src/lib/sales/office-allocation/golden-rule.ts"]),
+      pr(2, ["src/lib/payroll/policy/basic-salary.ts"]),
+      pr(3, ["docs/harmless.md"]),
+    ]);
+    for (const n of [1, 2]) {
+      assert.equal(
+        v.get(n)?.kind,
+        "separate",
+        `#${n} edits a locked file that became a folder of the same name and must stay SEPARATE. `
+          + `Got ${v.get(n)?.kind}: ${v.get(n)?.why}`,
+      );
+    }
+    assert.equal(v.get(3)?.kind, "rollable", "and the ordinary PR beside them still rolls up");
+  }
+
   // ── 4. A superseded PR must not disqualify the PR that supersedes it ────────────────────────
   // The script's own first run got this wrong, and it is the whole reason classification is two passes.
   {

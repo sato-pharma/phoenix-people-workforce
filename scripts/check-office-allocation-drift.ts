@@ -63,8 +63,12 @@ function print(report: OfficeAllocationDriftReport): void {
   }
   console.log(`\n${report.period}  Office committed ${cairo(report.officeCommittedAt)} Cairo`);
   if (report.baseTouchedAfterCommit.length > 0) {
+    // NAMES, NEVER CODES — the owner's standing rule, and `baseTouchedAfterCommit` already falls
+    // back to the code where a distributor has no name, so there is nothing to guard here. This
+    // printed `IS-T, RM-T, SF, IS, RM, EG, EG-BR, PS` on 2026-10-09 and a session had to translate
+    // all eight by hand before it could tell him which books had moved the base.
     const names = report.baseTouchedAfterCommit
-      .map((batch) => `${batch.distributorCode} (${cairo(batch.updatedAt)})`)
+      .map((batch) => `${batch.distributorName} (${cairo(batch.updatedAt)})`)
       .join(", ");
     console.log(`  base moved AFTER the commit: ${names}`);
   } else {

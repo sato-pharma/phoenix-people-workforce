@@ -44,6 +44,7 @@
   "a-leavers-earlier-months-can-never-be-recovered-by-rerunning-them": "payroll",
   "a-ledger-version-never-matches-the-file": "database",
   "a-licence-verdict-is-permanent-and-has-no-correction-path": "marketing",
+  "a-line-scoped-re-resolve-leaves-the-other-lines-contradictions": "sales-imports",
   "a-listener-on-port-3000-may-be-the-preview-tunnel": "sessions",
   "a-main-only-check-makes-a-prs-green-meaningless": "engineering",
   "a-manual-scheduled-task-run-leaves-no-trace": "sessions",

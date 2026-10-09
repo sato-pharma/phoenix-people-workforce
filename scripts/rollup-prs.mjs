@@ -70,6 +70,22 @@ const REPO = 'Gawish-1997/phoenix-people-workforce';
 const BILLABLE_MINUTES_PER_MERGE = 28;
 
 /**
+ * Is this path the protected file `base` names — the file itself, or a directory it was split into?
+ *
+ * 🔴 IT IS NOT A STRING PREFIX, AND IT WAS, WHICH MISREPORTED A REAL PR. A bare
+ * `startsWith('src/lib/sales/office-allocation')` also matches `office-allocation-drift.ts`, a
+ * read-only neighbour that touches no locked formula — so on 2026-10-09 #5694 was reported to the
+ * owner as carrying a protected file, and had to be corrected to him by hand. The locked region
+ * lives in `office-allocation.ts` alone (CLAUDE.md, "Protected Files"). A prefix is wrong in the
+ * same way for every entry: `payroll/policy-notes.ts` and `scheme-2026-archive.ts` are not locked
+ * either.
+ *
+ * It still holds if a locked file becomes a FOLDER of that name, which is the only direction where
+ * being loose is the safe mistake.
+ */
+const protectedFile = (base) => (p) => p === base || p.startsWith(`${base}.`) || p.startsWith(`${base}/`);
+
+/**
  * Paths that must never be folded into a roll-up.
  *
  * A migration is applied BY HAND before its merge and is the one thing CI never checks, so it needs
@@ -79,11 +95,11 @@ const BILLABLE_MINUTES_PER_MERGE = 28;
 const NEVER_ROLL_UP = [
   { test: (p) => p.startsWith('supabase/migrations/'), why: 'carries a migration — applied by hand, needs its own approval' },
   { test: (p) => p === 'CLAUDE.md', why: 'CLAUDE.md is a protected file — the owner approves that change specifically' },
-  { test: (p) => p.startsWith('src/lib/incentives/scheme-2026'), why: 'protected: the 2026 incentive curve' },
-  { test: (p) => p.startsWith('src/lib/payroll/policy'), why: 'protected: salary derivation' },
-  { test: (p) => p.startsWith('src/lib/sales/office-allocation'), why: 'protected: the Office golden rule' },
-  { test: (p) => p.startsWith('src/components/employee-portal/identity-card'), why: 'protected: the portal identity banner' },
-  { test: (p) => p.startsWith('mobile/') || p.startsWith('eas.json'), why: 'the mobile app is frozen' },
+  { test: protectedFile('src/lib/incentives/scheme-2026'), why: 'protected: the 2026 incentive curve' },
+  { test: protectedFile('src/lib/payroll/policy'), why: 'protected: salary derivation' },
+  { test: protectedFile('src/lib/sales/office-allocation'), why: 'protected: the Office golden rule' },
+  { test: protectedFile('src/components/employee-portal/identity-card'), why: 'protected: the portal identity banner' },
+  { test: (p) => p.startsWith('mobile/') || p === 'eas.json', why: 'the mobile app is frozen' },
 ];
 
 /**

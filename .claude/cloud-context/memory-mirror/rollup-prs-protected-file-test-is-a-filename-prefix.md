@@ -1,6 +1,6 @@
 ---
 name: rollup-prs-protected-file-test-is-a-filename-prefix
-description: "`rollup-prs.mjs` decides \"protected file\" with `path.startsWith('src/lib/sales/office-allocation')`, so a NEW sibling file trips it — it labelled PR 5694 \"protected: the Office golden rule\" when the locked file was never touched; read the changed-file list before repeating that label to him."
+description: "`rollup-prs.mjs` decided \"protected file\" with `path.startsWith('src/lib/sales/office-allocation')`, so a sibling file tripped it — it labelled PR 5694 \"protected: the Office golden rule\" when the locked file was never touched; FIXED in PR 5701 to the file itself or a folder of that name, so the rule now is: read the changed-file list before repeating that label to him."
 metadata:
   node_type: memory
   type: project
@@ -27,3 +27,12 @@ locked paths exactly (`.ts`-anchored, or the locked region's own file list) rath
 is one line plus an assertion and belongs in the next PR that already touches `scripts/`, never a PR
 of its own — see [[hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces]] and the §6 rule that
 he never gets more than one merge at a time.
+
+🔴 **FIXED, 2026-10-09, in PR 5701** — `scripts/rollup-prs.mjs` now tests each locked path through one
+`protectedFile(base)` helper: the path equals `base`, starts with `base.` (the file with its
+extension) or starts with `base/` (the file split into a folder of that name, the one direction in
+which a loose match is the safe mistake). `eas.json` became an equality test for the same reason. The
+four neighbours that used to trip it — `office-allocation-drift.ts`, `payroll/policy-notes.ts`,
+`incentives/scheme-2026-archive.ts`, `employee-portal/identity-card-styles.css` — and `eas.json.example`
+are each pinned rollable in `tests/rollup-prs.test.ts` §3b, with §3c pinning that a locked file split
+into a folder stays SEPARATE. Both assertions were watched failing with the prefix restored.

@@ -29,3 +29,11 @@ EP-PHS (`bonusColumns: ["is_bonus"]`, the only two in `profiles.ts`, and no DB p
 one) and the Direct order template, whose 780 free units are stored as `bonus_qty` and stay visible.
 El Qema's `بونص` is deliberately unmapped and every September row of it is 0.
 See [[a-closing-rule-that-moves-zero-may-simply-have-no-upload-yet]].
+
+**Outcome, 21:2x Cairo the same evening:** the owner said "withdraw the 20:02 EPDA-BULK batch" and it was
+deleted the way the app deletes one — `monthly_sales_period_lock` has no 2026-09 row so the period was
+open, one delete on the batch row, every child table cascading (73 import rows, 14 distributor-product
+rollup rows, 44 fact-rollup rows, 58 summaries), plus an `audit_logs` row of its own. Pre-image kept in
+`ep_bk_202609_backup_20261009_batch` / `_rows` / `_prodrollup` / `_factrollup` / `_summaries`. September
+EPDA-BULK is now EMPTY — the withdrawal took the 9,723 real units with the 1,675 free ones, so Pedia
+September has no Ivyronc from this book at all until he re-uploads a correctly flagged export.
