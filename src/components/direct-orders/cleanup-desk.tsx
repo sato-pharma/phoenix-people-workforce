@@ -11,6 +11,7 @@ import type {
 } from "@/lib/direct-orders/service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { plan: DirectOrderCleanupPlan };
 
@@ -107,7 +108,7 @@ function LookAlikes({ groups }: { groups: DirectOrderCleanupLookAlike[] }) {
             <p className="mt-0.5 text-phx-sm text-slate-600">{group.explanation}</p>
             <div className="mt-2 space-y-1.5">
               {group.members.map((member) => (
-                <div key={member.pharmacyId} className="border border-[#eef1f3] bg-white px-2 py-1.5">
+                <div key={member.pharmacyId} className={`border border-[#eef1f3] bg-white px-2 py-1.5 ${adminSoftDepthClassName}`}>
                   <p className="text-phx-sm font-bold text-slate-900" dir="auto">
                     {member.pharmacyName} ({member.pharmacyCode})
                     <span
@@ -251,7 +252,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
   if (plan.isEmpty) {
     return (
       <>
-        <section className="border border-phx-line bg-white px-4 py-8 text-center">
+        <section className={`border border-phx-line bg-white px-4 py-8 text-center ${adminSoftDepthClassName}`}>
           <p className="text-sm font-bold text-slate-800">
             {plan.lookAlikes.length > 0 ? "Nothing the system can fix on its own." : "Nothing to clean up."}
           </p>
@@ -277,8 +278,8 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
 
   return (
     <>
-      <section className="border border-phx-line bg-white">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
+      <section className={adminPanelClassName}>
+        <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-3 px-4 py-2.5`}>
           <div>
             <p className="text-phx-xs font-black uppercase tracking-wider text-orange-400">Proposed cleanup</p>
             <p className="text-phx-sm text-slate-300">
@@ -485,7 +486,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                       </span>
                       <span className="mt-1 block space-y-1">
                         {release.requests.map((request) => (
-                          <span key={request.requestId} className="block border border-[#eef1f3] bg-white px-2 py-1">
+                          <span key={request.requestId} className={`block border border-[#eef1f3] bg-white px-2 py-1 ${adminSoftDepthClassName}`}>
                             <OrderLine request={request} />
                           </span>
                         ))}

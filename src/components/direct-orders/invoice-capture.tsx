@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import type { InvoiceExtractionResult } from "@/lib/direct-orders/invoice-extraction";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 
 export type InvoiceApplyPayload = {
   productCode: string;
@@ -26,7 +27,7 @@ type Props = {
   onInvoicePhoto?: (file: File) => void;
 };
 
-const box = "border border-phx-line bg-white";
+const box = adminPanelClassName;
 
 /**
  * Invoice-photo prefill (spec B5).
@@ -135,7 +136,7 @@ export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props)
 
   return (
     <section className={box}>
-      <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Fill from the invoice</h3>
       </header>
       <div className="space-y-3 px-4 py-4">

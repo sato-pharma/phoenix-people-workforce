@@ -6,6 +6,7 @@ import {
   phxFieldClassName,
   phxLabelClassName,
 } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = {
   requestId: string;
@@ -68,7 +69,7 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
 
   if (done) {
     return (
-      <section className="border border-phx-line bg-white px-4 py-3">
+      <section className={`border border-phx-line bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
         <p className="text-phx-sm font-bold text-slate-700">
           Withdrawn. This request is now cancelled and no longer counts against your held total.
         </p>
@@ -91,8 +92,8 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
   }
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Withdraw this request</h3>
       </header>
       <div className="space-y-3 px-4 py-4">

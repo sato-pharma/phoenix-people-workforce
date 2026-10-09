@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { PharmacyGeoVariance } from "@/lib/direct-orders/service";
+import { adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 
 export function PharmacyVarianceManager({ rows, canResolve }: { rows: PharmacyGeoVariance[]; canResolve: boolean }) {
   const router = useRouter();
@@ -41,7 +42,7 @@ export function PharmacyVarianceManager({ rows, canResolve }: { rows: PharmacyGe
       {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
       <div className="overflow-x-auto border border-slate-200">
         <table className="w-full min-w-[860px] border-collapse text-sm">
-          <thead className="bg-slate-900 text-white">
+          <thead className={`${adminPanelHeaderClassName} text-white`}>
             <tr className="text-left text-phx-xs font-black uppercase tracking-wider">
               <th className="px-3 py-2">Venue</th>
               <th className="px-3 py-2">Submitted brick</th>

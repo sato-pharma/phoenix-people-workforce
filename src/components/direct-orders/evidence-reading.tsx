@@ -1,5 +1,6 @@
 import type { DirectOrderEvidenceCheck } from "@/lib/direct-orders/evidence-check";
 import { DEFAULT_VENUE_TYPE, venueRequiresDistributorCode, type VenueType } from "@/lib/venues/venue-type";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * What the storefront photo was read to say (spec E2).
@@ -36,7 +37,7 @@ export function EvidenceReading({
 }) {
   if (!check) {
     return (
-      <p className="mt-2 border border-slate-200 bg-slate-50 px-3 py-2 text-phx-sm font-semibold text-slate-500">
+      <p className={`mt-2 border border-slate-200 bg-slate-50 px-3 py-2 text-phx-sm font-semibold text-slate-500 ${adminRecessedDepthClassName}`}>
         The photo has not been read. Judge it yourself.
       </p>
     );

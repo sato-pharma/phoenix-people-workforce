@@ -13,6 +13,7 @@ import {
 } from "@/components/sales/target-visuals";
 import type { RepAreaDirectOrderRow, RepAreaDirectOrdersReport } from "@/lib/direct-orders/rep-area-view-service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { report: RepAreaDirectOrdersReport };
 
@@ -185,7 +186,7 @@ export function RepAreaDirectOrders({ report }: Props) {
             </div>
             <div className="space-y-2 p-3">
               {group.rows.map((row, index) => (
-                <article key={`${row.requestId}-${row.productName}-${index}`} className="flex border border-slate-200 bg-white">
+                <article key={`${row.requestId}-${row.productName}-${index}`} className={`flex border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
                   <span className="w-1 shrink-0" style={{ backgroundColor: DIRECT_ORDERS_RAIL }} aria-hidden />
                   <div className="min-w-0 flex-1 p-3">
                     <p dir="auto" className="break-words text-sm font-black text-slate-900">

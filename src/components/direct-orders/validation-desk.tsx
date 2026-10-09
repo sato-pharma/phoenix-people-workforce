@@ -18,6 +18,7 @@ import {
   phxButtonApproveDenseClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { rows: DirectOrderValidationRow[] };
 
@@ -100,7 +101,7 @@ export function ValidationDesk({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <section className="border border-phx-line bg-white px-4 py-8 text-center">
+      <section className={`border border-phx-line bg-white px-4 py-8 text-center ${adminSoftDepthClassName}`}>
         <p className="text-sm font-bold text-slate-600">No venue validations waiting.</p>
         <p className="mt-1 text-phx-sm text-slate-400">Every submitted order is on a venue the master database recognises.</p>
       </section>
@@ -131,8 +132,8 @@ export function ValidationDesk({ rows }: Props) {
               : { tone: "bg-rose-100 text-rose-800", label: `${row.areaDistanceKm} km from their area` };
 
         return (
-          <div key={row.id} className="border border-phx-line bg-white">
-            <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-50 px-4 py-2.5">
+          <div key={row.id} className={adminPanelClassName}>
+            <header className={`flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-50 px-4 py-2.5 ${adminRecessedDepthClassName}`}>
               <div>
                 <p className="text-sm font-black text-slate-900" dir="auto">
                   {row.claimedPharmacyName}

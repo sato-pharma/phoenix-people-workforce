@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { prepareDirectOrderInvoiceFile, type PreparedDirectOrderInvoice } from "@/components/direct-orders/invoice-file";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * Attach the distributor invoice to an order already sent (owner, 2026-09-14).
@@ -90,7 +91,7 @@ export function AttachDirectOrderInvoice({ hasInvoice, requestId }: { hasInvoice
           type="button"
           disabled={busy}
           onClick={() => cameraRef.current?.click()}
-          className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+          className={`border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 ${adminControlDepthClassName} disabled:shadow-none`}
         >
           Photograph invoice
         </button>
@@ -98,7 +99,7 @@ export function AttachDirectOrderInvoice({ hasInvoice, requestId }: { hasInvoice
           type="button"
           disabled={busy}
           onClick={() => fileRef.current?.click()}
-          className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+          className={`border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 ${adminControlDepthClassName} disabled:shadow-none`}
         >
           Choose file
         </button>
