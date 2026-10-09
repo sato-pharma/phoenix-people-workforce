@@ -100,6 +100,29 @@ export const needsYouSourceIds = [
   // It reads the LATEST published period only: all of them together took 15,352 ms on the same day,
   // and re-issuing a month announced long ago is not a live choice — the script answers for those.
   "closing-publication-drift",
+  // Added 2026-10-09. A month whose COMMITTED Office spread no longer matches where the owner's
+  // golden rule would put those units today. The Office channel carries no geography, so each area
+  // takes its share of the line's non-Office VALUE — and those shares are computed once, when the
+  // Office file is committed, then written into the rows. Nothing re-runs them, so a distributor
+  // book that lands or is re-mapped AFTER the commit moves the base underneath a frozen spread.
+  // Produced by `src/lib/sales/office-allocation-drift.ts`.
+  //
+  // 🔴 NOTHING ELSE IN THE PRODUCT CAN SEE IT. Today's side is today's shares applied to the line's
+  // OWN stored Office total, so both sides hold the same units per line BY CONSTRUCTION — the
+  // publication drift check compares a line's total units, one scalar, and is therefore
+  // structurally blind to every difference here. Until this row existed the only way to ask was for
+  // a session to remember to run a script: measured on production 2026-10-09, August 2026 CNS has
+  // 3,697.58 of its 109,719 Office units (3.37%) sitting in the wrong area across 43 areas, and no
+  // screen said so.
+  //
+  // 🔴 IT READS TWO PERIODS AND NO MORE: the latest with an Office batch, and the latest PUBLISHED
+  // one that has an Office batch. They are different questions — the live month can still be
+  // re-committed, while a published month's stale spread is already serving and the fix is ruled out
+  // by his 2026-09-07 rule, so it is shown as `worth-knowing` rather than hidden. Measured the same
+  // day: 656 ms to list the nine periods that have an Office batch, 1,851–2,182 ms per period, and
+  // 2,735 ms for this whole adapter against the board's 8-second budget; all nine would be ~18 s.
+  // Every other month is the script's question, and the row names it.
+  "office-allocation-drift",
 ] as const;
 
 export type NeedsYouSourceId = (typeof needsYouSourceIds)[number];
@@ -133,6 +156,7 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "uncollected-leaver-deductions": "Leavers with an uncollected deduction",
   "calendar-review-requests": "Calendar review requests",
   "closing-publication-drift": "Published closings that have moved",
+  "office-allocation-drift": "Office allocation that no longer matches the rule",
 };
 
 /**
@@ -183,6 +207,10 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // The publication screen: unpublishing and re-issuing a closing is the only place this is
   // decided, and it is his decision alone. The board links there and never offers to rebuild.
   "closing-publication-drift": { href: "/sales/monthly-closing", screen: "Monthly Closing" },
+  // The Sales Import wizard, NOT the closing screen: re-committing the Office book is the only
+  // action anywhere that recomputes those shares (`app/api/sales/monthly-sales/office/commit`), and
+  // the closing screen cannot do it. The board links there and never re-commits anything itself.
+  "office-allocation-drift": { href: "/sales/import", screen: "Sales Import" },
 };
 
 /**

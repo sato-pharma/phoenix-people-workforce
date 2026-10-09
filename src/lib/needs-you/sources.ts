@@ -57,6 +57,11 @@ import {
   loadPublishedPeriods,
   type PublicationDriftReport,
 } from "@/lib/sales/closing-publication-drift";
+import {
+  loadOfficeAllocationDrift,
+  loadPeriodsWithOfficeBatch,
+  type OfficeAllocationDriftReport,
+} from "@/lib/sales/office-allocation-drift";
 import { ApiError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/phoenix-crm/server/needs-you";
@@ -1211,6 +1216,134 @@ const closingPublicationDrift: NeedsYouAdapter = {
 };
 
 /**
+ * A month whose committed Office spread no longer matches where the golden rule would put those
+ * units today — one item per drifted LINE, which in practice is CNS, the only line that carries an
+ * Office channel at all.
+ *
+ * 🔴 THE LINE TOTAL IS IDENTICAL ON BOTH SIDES BY CONSTRUCTION, which is the whole reason this row
+ * exists. Today's side is today's area shares applied to the line's OWN stored Office total, so the
+ * units never change in aggregate — only which area holds them. The publication drift check
+ * compares a line's total units, one scalar, so it reads clean through every difference counted
+ * here, and the note says that in plain words rather than leaving him to infer it.
+ *
+ * 🔴 NO EGP, AND NO INSTRUCTION TO RE-COMMIT. The report carries units only, and the board links to
+ * the Sales Import wizard without ever proposing the upload — re-committing the Office book of a
+ * month whose figures were announced restates a published number, which his 2026-09-07 rule
+ * forbids. A period that is already published therefore drops to `worth-knowing`: the spread still
+ * disagrees with the rule, but the fix is ruled out, so it is not a decision waiting on him.
+ *
+ * The age is measured from the FIRST base move after the commit — the instant the spread actually
+ * went stale — not from the commit itself, which was correct when it was written.
+ */
+export function officeAllocationDriftItems(
+  reports: readonly OfficeAllocationDriftReport[],
+  publishedPeriods: readonly string[],
+  now: Date,
+): NeedsYouItem[] {
+  const items: NeedsYouItem[] = [];
+  for (const report of reports) {
+    if (!report.drifted) continue;
+    const published = publishedPeriods.includes(report.period);
+    // Oldest first, so the earliest move after the commit is the age — `baseTouchedAfterCommit` is
+    // sorted newest first by its producer, and reading [0] would report the freshest move as the
+    // moment it went stale.
+    const causes = [...report.baseTouchedAfterCommit].sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+    const wentStaleAt = causes[0]?.updatedAt ?? null;
+
+    for (const line of report.lines) {
+      const moved = Math.round(line.unitsThatWouldMove);
+      if (moved <= 0) continue;
+      const areas = line.areas.length;
+
+      const note: string[] = [];
+      if (causes.length > 0) {
+        // Names, never codes — and spelled out rather than cut off at an ellipsis.
+        const names = causes.map((cause) => cause.distributorName);
+        note.push(
+          `${names.join(", ")} ${plural(names.length, "was", "were")} written after the Office book `
+          + "was committed, which moved the value base the spread was frozen against.",
+        );
+      } else {
+        note.push(
+          "No distributor book was written after the Office commit, so the move came from the "
+          + "customer map rather than an upload.",
+        );
+      }
+      note.push(
+        "Both sides hold the same units for the line, so the published-closing drift check reads "
+        + "clean through this.",
+      );
+      if (published) {
+        note.push(
+          `${report.period} is published, so re-committing its Office book would restate an `
+          + "announced figure — this row is here to be known, not acted on.",
+        );
+      }
+      note.push("scripts/check-office-allocation-drift.ts answers the same question for any other month.");
+
+      items.push({
+        key: `office-allocation-drift:${report.period}:${line.lineCode}`,
+        sourceId: "office-allocation-drift",
+        kind: "flag",
+        lane: published ? "worth-knowing" : "yours",
+        label:
+          `${line.lineCode} ${report.period}: ${moved.toLocaleString("en-US")} of `
+          + `${Math.round(line.officeUnits).toLocaleString("en-US")} Office units `
+          + `(${line.percentOfOfficeUnits.toFixed(2)}%) sit in a different area from the one the rule `
+          + `gives them today`,
+        // Areas IS a count — of the places holding a difference, the same meaning the published
+        // closing drift row gives it.
+        count: areas > 0 ? areas : null,
+        people: [],
+        href: needsYouDestinations["office-allocation-drift"].href,
+        externalUrl: null,
+        oldestAt: wentStaleAt,
+        ageDays: ageDaysSince(wentStaleAt, now),
+        // No upstream SLA exists for this, exactly as for the published-closing drift row.
+        overdue: false,
+        note: note.join(" "),
+      });
+    }
+  }
+  return items;
+}
+
+const officeAllocationDrift: NeedsYouAdapter = {
+  id: "office-allocation-drift",
+  load: async (access, now) => {
+    const notYours = ownerOnlyQueue(
+      access,
+      "Re-committing a month's Office book is the Super Admin's decision",
+    );
+    if (notYours) return notYours;
+
+    // TWO PERIODS, AND THE REASON IS THAT THEY ARE DIFFERENT QUESTIONS. The latest period with an
+    // Office batch is the live one, where a re-commit still costs nothing; the latest PUBLISHED one
+    // is where a stale spread is already serving and the fix is ruled out, so it has to be visible
+    // somewhere even though it is not his to act on. Nine periods have an Office batch and reading
+    // them all is ~18 s against this board's 8-second budget (measured 2026-10-09: 656 ms to list
+    // them, 1,851-2,182 ms each), so the set is bounded to these two — 2,735 ms end to end on
+    // production — and the row names the script for every other month.
+    const [periods, publishedPeriods] = await Promise.all([
+      loadPeriodsWithOfficeBatch(),
+      loadPublishedPeriods(),
+    ]);
+    // `loadPeriodsWithOfficeBatch` answers newest first, so the first published entry it holds is
+    // the latest published month that has an Office batch — a published month with no Office book
+    // has no spread to be stale.
+    const wanted = [periods[0], periods.find((period) => publishedPeriods.includes(period))]
+      .filter((period): period is string => typeof period === "string" && period.length > 0);
+    const unique = [...new Set(wanted)];
+    if (unique.length === 0) return { status: "ok", items: [] };
+
+    // The reads THROW on failure, which `service.ts` turns into the amber row. An empty array here
+    // would claim the spread still matches the rule.
+    const reports = await Promise.all(unique.map((period) => loadOfficeAllocationDrift(period)));
+    return ok(officeAllocationDriftItems(reports, publishedPeriods, now));
+  },
+};
+
+/**
  * THE REGISTRY. `service.ts` fans out over exactly this array, and
  * `tests/needs-you-never-under-reports.test.ts` holds its ids against `needsYouSourceIds` — so an
  * adapter added without a source id, or a source id with no adapter, fails CI. That pairing is what
@@ -1238,6 +1371,7 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   uncollectedLeaverDeductions,
   calendarReviewRequests,
   closingPublicationDrift,
+  officeAllocationDrift,
 ];
 
 /**

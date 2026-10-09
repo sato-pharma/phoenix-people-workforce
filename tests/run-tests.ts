@@ -2388,6 +2388,7 @@ import { runNeedsYouEmailOwnerOnlyTests } from "./needs-you-email-owner-only.tes
 import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
 import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts";
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
+import { runNeedsYouOfficeAllocationDriftTests } from "./needs-you-office-allocation-drift.test.ts";
 import { runNeedsYouUncollectedLeaverDeductionsTests } from "./needs-you-uncollected-leaver-deductions.test.ts";
 import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
 import { runOrphanedRequestsReaderTests } from "./orphaned-requests-reader.test.ts";
@@ -9359,6 +9360,10 @@ await runTest(
 await runTest(
   "the uncollected-leaver-deduction board source is preventive, not a ledger of gone money (owner 2026-10-07): it surfaces a departed employee with an APPROVED deduction not yet collected on-system ONLY from the closed-cohort floor (2026-09-01) forward — the August cohort settled off-system is never shown — and only inside a rolling window so a leaver already gone and paid drops off, never a standing row; a collected month clears it, an unknown category is treated as uncollected (the safe over-reporting direction), an active employee is never a leaver, and the row carries NO EGP field at all (a structural guarantee) while linking to /admin/deductions where a human can still settle one",
   runNeedsYouUncollectedLeaverDeductionsTests,
+);
+await runTest(
+  "the Office-allocation board row reports a month whose COMMITTED Office spread no longer matches the golden rule — the shares are frozen at the Office commit and nothing re-runs them, so a distributor book written afterwards moves the base underneath them (August 2026 CNS: 3,698 of 109,719 units, 3.37%, across 43 areas, measured on production 2026-10-09) — and because today's side applies today's shares to the line's OWN stored total, both sides hold identical units per line and the published-closing drift check is structurally blind to all of it; the row names its cause in NAMES never codes, ages from the FIRST base move rather than the commit, carries no EGP, drops to worth-knowing once the month is published because re-committing would restate an announced figure, and links to /sales/import where the Office book is actually re-committed",
+  runNeedsYouOfficeAllocationDriftTests,
 );
 await runTest(
   "the orphaned-request detector flags a request stranded because its next actor has left: a resigned actor is caught even through a casing difference (assigned_hr_id keeps the master's casing), while an ACTIVE actor, a role rung with no named person, and an actor the master does not hold are each left alone (it detects a KNOWN departure, never guesses one from a missing row); grouping is by (module, reason), dedupes the people and keeps the OLDEST timestamp; and the source is wired into the Needs You board in all four places (id, label, destination, adapter) so it reaches the morning digest rather than only existing",

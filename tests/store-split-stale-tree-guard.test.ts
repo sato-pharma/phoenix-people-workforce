@@ -36,6 +36,11 @@ const GUARDED_SCRIPTS = [
   "scripts/backfill-attribution-store-split.ts",
   "scripts/check-store-split-drift.ts",
   "scripts/check-closing-publication-drift.ts",
+  // Added 2026-10-09 with the Needs You row that points at it. It recomputes the Office golden rule
+  // from THIS tree's `buildOfficeAreaWeightsByLine`, so a stale checkout answers with superseded
+  // shares — the same defect the other three carry, and it reaches production through its loaders
+  // rather than building a client itself (see the boundary below).
+  "scripts/check-office-allocation-drift.ts",
 ] as const;
 
 function git(cwd: string, ...args: string[]): string {
@@ -185,11 +190,21 @@ export function runStoreSplitStaleTreeGuardTests() {
         `${script} must import the guard`,
       );
       const call = source.indexOf("assertTreeIsCurrent(");
-      const client = source.indexOf("getSupabaseAdmin()");
       assert.ok(call > 0, `${script} must CALL assertTreeIsCurrent, not merely import it`);
+      // WHERE PRODUCTION STARTS. Some of these build the client themselves; one reaches production
+      // only through a loader it awaits. Either way the guard must come FIRST, so the boundary is
+      // whichever comes earlier — not `getSupabaseAdmin()` alone, which is absent from a script
+      // that delegates its reads and would silently compare against -1.
+      const boundary = [source.indexOf("getSupabaseAdmin()"), source.indexOf("await load")]
+        .filter((index) => index > 0)
+        .sort((a, b) => a - b)[0];
       assert.ok(
-        call < client,
-        `${script} must check the tree before it builds a production client (call at ${call}, client at ${client})`,
+        boundary !== undefined,
+        `${script} must reach production somehow, or it is not a script this guard is for`,
+      );
+      assert.ok(
+        call < boundary,
+        `${script} must check the tree before it reads production (call at ${call}, first read at ${boundary})`,
       );
       const name = /assertTreeIsCurrent\("([^"]+)"\)/.exec(source)?.[1];
       assert.equal(

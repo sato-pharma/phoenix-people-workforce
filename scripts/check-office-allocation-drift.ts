@@ -30,6 +30,7 @@ import {
   loadPeriodsWithOfficeBatch,
   type OfficeAllocationDriftReport,
 } from "@/lib/sales/office-allocation-drift";
+import { assertTreeIsCurrent } from "./lib/tree-is-current.ts";
 
 const argv = process.argv.slice(2);
 const failOnDrift = argv.includes("--fail-on-drift");
@@ -92,6 +93,12 @@ function print(report: OfficeAllocationDriftReport): void {
       " — which is why the publication drift check cannot see any of this",
   );
 }
+
+// 🔴 THIS SCRIPT RECOMPUTES THE RULE, so the checkout it runs in is one of its inputs: today's side
+// is built by this tree's own `buildOfficeAreaWeightsByLine`. A tree behind `origin/main` therefore
+// answers with superseded shares and prints the result as production's. Refused after the flag
+// check, so bad flags still exit 64 whatever the tree, and before the first production read.
+assertTreeIsCurrent("check-office-allocation-drift");
 
 const periods = requested.length > 0 ? requested : await loadPeriodsWithOfficeBatch();
 let drifted = 0;

@@ -88,6 +88,8 @@ export type OfficeAllocationDriftLine = {
 /** A distributor batch re-touched after the Office commit — the cause, not the symptom. */
 export type OfficeBaseTouchedAfterCommit = {
   distributorCode: string;
+  /** The distributor's own name — what a reader is shown. Falls back to the code when it is blank. */
+  distributorName: string;
   /** Cairo-local, formatted by the caller; this is the raw ISO instant. */
   updatedAt: string;
 };
@@ -198,6 +200,12 @@ export function diffOfficeAllocation(input: {
 export type PeriodBatch = {
   id: string;
   distributorCode: string;
+  /**
+   * `distributor_name` — read alongside the code because the owner's standing rule is names, never
+   * codes, and the Needs You board prints this straight onto his screen. Empty when the column is
+   * null, and every consumer falls back to the code rather than printing nothing.
+   */
+  distributorName: string;
   /** `created_at` — when the batch was inserted, i.e. when its rows were computed. */
   createdAt: string | null;
   /** `updated_at` — the last write to the batch, which a customer re-map moves. */
@@ -214,12 +222,13 @@ export async function loadPeriodBatches(period: string): Promise<PeriodBatch[]> 
   const supabase = getSupabaseAdmin();
   const result = await supabase
     .from("source_of_sales_import_batches")
-    .select("id, distributor_code, created_at, updated_at")
+    .select("id, distributor_code, distributor_name, created_at, updated_at")
     .eq("period", period);
   if (result.error) throw new Error(`batch read failed: ${result.error.message}`);
   const rows = (result.data ?? []) as Array<{
     id?: string;
     distributor_code?: string;
+    distributor_name?: string;
     created_at?: string;
     updated_at?: string;
   }>;
@@ -228,6 +237,7 @@ export async function loadPeriodBatches(period: string): Promise<PeriodBatch[]> 
     .map((row) => ({
       createdAt: row.created_at ?? null,
       distributorCode: String(row.distributor_code ?? "").trim(),
+      distributorName: String(row.distributor_name ?? "").trim(),
       id: String(row.id),
       updatedAt: row.updated_at ?? null,
     }));
@@ -384,7 +394,11 @@ export function baseTouchedAfterCommit(
       if (!batch.distributorCode || /^direct/i.test(batch.distributorCode)) return false;
       return String(batch.updatedAt ?? "") > officeCommittedAt;
     })
-    .map((batch) => ({ distributorCode: batch.distributorCode, updatedAt: String(batch.updatedAt ?? "") }))
+    .map((batch) => ({
+      distributorCode: batch.distributorCode,
+      distributorName: batch.distributorName.length > 0 ? batch.distributorName : batch.distributorCode,
+      updatedAt: String(batch.updatedAt ?? ""),
+    }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
