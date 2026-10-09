@@ -1329,6 +1329,14 @@ function recommendCrm(
  * (dispute-refunds.ts — owner, 2026-10-09: a deduction a reopened dispute cancels after its own
  * month was paid is given back "in additions, other"). Same two rules: HR's saved figure wins, and
  * the refund's reason is offered only while HR has not saved Other additions themselves.
+ *
+ * 🔴 A SAVED **ZERO** IN OTHER ADDITIONS NEVER SUPPRESSES THE REFUND'S REASON. Confirming this step
+ * persists every visible row, so a zero there is as likely to be the whole grid's untouched default
+ * as anybody's decision — and the drift check's remedy is to confirm the step again, which swaps the
+ * refund back onto the row (`takeCurrentModuleFigures`). With the reason suppressed, that confirm
+ * was then refused outright by `assertAdditionsReasonsPresent` — money with no reason — and the
+ * refund had no way through at all. A zero explains nothing and needs no explanation, so offering
+ * the reason beside one can mislead nobody; a figure HR actually typed still suppresses it.
  */
 export function recommendAdditions(
   members: PopulationMember[],
@@ -1353,7 +1361,7 @@ export function recommendAdditions(
       otherAdditions: pick(draft?.otherAdditions, otherAdditions),
     };
     const hrSavedAdditions = draft?.incentive != null || draft?.bonus != null;
-    const hrSavedOther = draft?.otherAdditions != null;
+    const hrSavedOther = draft?.otherAdditions != null && Math.abs(Number(draft.otherAdditions)) >= 0.005;
     const offered = [hrSavedAdditions ? null : (due?.reason ?? null), hrSavedOther ? null : (refund?.reason ?? null)].filter(
       (reason): reason is string => Boolean(reason),
     );

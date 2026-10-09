@@ -83,6 +83,59 @@ then revised to rejected after that month was paid, raises a NOTICE on the decis
 "that month is already paid, so this day cannot be charged in it; decide where it is taken in
 Automated Payroll" — instead of silently charging it to a different month.
 
+### What "charged before" means, and six ways it was wrong (fixed 2026-10-09)
+
+Every money sentence on a deduction dispute is `charged before − charged after`, so the whole screen
+rests on one question: what does this deduction charge? The answer is its **decision**, never its
+publication line — owner, 2026-10-07, in `buildDeductionBuckets`: *"a candidate counts iff its
+decision is 'Approved for Payroll' … Whether the line was pushed is not read here at all."* The
+dispute path read the LINE, and the two disagree in both directions:
+
+1. **A refund of nothing.** Approved but never pushed means no active line, so "charged before" read
+   0.00 and a dispute the employee WON gave nothing back while payroll charged the month in full.
+   `payrollCharge` (`src/lib/dispute-center/deduction.ts`) now asks payroll's own `candidateAmount`
+   and `isConfirmedForPayroll`, so one person's money never has a second opinion.
+2. **A refund twice over.** A line withdrawn by an earlier decision read 0.00 the same way, so the
+   next decision looked like money going back and recommended a second refund on top of the live one.
+3. **A "reduce" that raised the charge.** The ceiling was the line's days, or — with no live line —
+   the DETECTED days, the one figure nobody has decided: a deduction already cut to 1 day in the
+   workspace could be "reduced" to 3 of its 4 detected days. The ceiling is now what it charges now,
+   and a deduction charging nothing cannot be reduced at all.
+4. **A reject that changed nothing.** "The deduction stands" was a message and not a figure: after an
+   accept was reopened and then rejected, the module still held Do Not Take Action, payroll charged
+   nothing, and the refund from the accept stayed live. A reject now restores the charge recorded by
+   this dispute's FIRST decision event (`chargedValueBefore` — the decision row is overwritten each
+   time, so the event trail is the only record of what it charged before) and pushes the line back.
+5. **A second decision with no reopen.** Nothing refused one, and each decision measured what it owed
+   against what the last one left. `isDecidedByEvents` now refuses it in the same words the weekly
+   review uses, and the decision panel no longer offers the buttons while a reopen is only requested.
+6. **A unique violation after the money moved.** `recommendDisputeRefund` discarded
+   `cancelLiveRefund`'s answer, so a case whose earlier refund had already been PAID hit
+   `dispute_refunds_one_live_per_case` (23505) *after* the decision was recorded. It now recommends
+   nothing, says so, and hands HR the difference to settle.
+
+And one on the same path that is not about a figure: a `recordDecision` that fails **after** the line
+was withdrawn now puts the line back and names the state it leaves behind, instead of reporting a
+plain failure while payroll charges a figure the portal no longer shows.
+
+### The refund had to survive the Additions confirm
+
+`confirmStep` persists every visible row, so the first Additions confirm wrote
+`other_additions = 0.00` for the whole population — and `pick` in `recommend.ts` prefers a saved
+figure over the feeder for ever. A refund recommended after that confirm could appear nowhere: not on
+the step, not in the drift report, not in the Part 2 gate. The money was owed and nothing could pay
+it.
+
+`p2_additions` is now on `MODULE_SOURCED_STEP_KEYS`, the repo's own answer to exactly this shape of
+problem: the confirm records what the feeder was proposing at the time, so a zero nobody chose is
+told apart from a figure HR typed. The refund swaps back onto the row
+(`takeCurrentModuleFigures`), the Part 2 confirm refuses while confirming would pay the month without
+it, and a save no longer stamps an untouched 0.00 as somebody's own figure. One consequence worth
+knowing: a saved **zero** in Other Additions never suppresses the refund's reason, because without a
+reason the re-confirm that block asks for was refused outright by `assertAdditionsReasonsPresent` —
+money with no explanation. A zero explains nothing and needs no explanation of its own; a figure HR
+actually typed still suppresses it.
+
 ## The case briefing
 
 Super Admin only (`assertAssistActor`). It reads the case's own records — the day's calendar
@@ -129,7 +182,7 @@ holding `attendance:read` opens the page and sees nothing of a rep's pay-affecti
 | `tests/dispute-center-participants.test.ts` | a case readable on `attendance:read` alone; a decide or reopen that does not assert the participant inside the domain helper |
 | `tests/dispute-center-assist-accuracy.test.ts` | a statement with no citation, or with a figure the cited records do not hold; a stale briefing read as current |
 | `tests/dispute-center-digest-revision.test.ts` | a reader of a settled day that answers from the first decision for ever |
-| `tests/dispute-center-refunds.test.ts` | a refund paid twice, a cancelled refund paid, a published month rewritten, a storage key carrying a file name |
+| `tests/dispute-center-refunds.test.ts` | a refund paid twice, a cancelled refund paid, a published month rewritten, a storage key carrying a file name — and every one of the six money faults above: a charge read off the payslip line, a reduce measured against the detected figure, a reject that records nothing, a second decision with no reopen, a refund recommended over one already paid, a frozen 0.00 in Other Additions |
 
 ## The migration
 

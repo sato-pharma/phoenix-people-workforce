@@ -33,10 +33,14 @@ export const MODULES = [
     title: "Payroll, salaries and deductions",
     scope: "Salary runs and batches, the automated payroll, payslips, deductions, statutory figures, finance exports.",
     globs: [
-      "src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator}/**",
-      "src/components/{payroll,automated-payroll}/**",
-      "app/**/{payroll,automated-payroll,m-payroll,payroll-copilot,payroll-management,payslips-center,payslips,daily-deductions,deductions,finance-command-center}/**",
-      "tests/*{payroll,payslip,salary,deduction,statutory}*",
+      // `dispute-center` and `disputes` belong here: this module holds the Dispute Center's rules
+      // (its three outcomes, the refund into Other Additions, the charge basis), and until
+      // 2026-10-09 no module's globs matched those folders at all — so a session editing the money
+      // path of a dispute loaded no module memory while the rules for it sat in this file.
+      "src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator,dispute-center}/**",
+      "src/components/{payroll,automated-payroll,disputes}/**",
+      "app/**/{payroll,automated-payroll,m-payroll,payroll-copilot,payroll-management,payslips-center,payslips,daily-deductions,deductions,finance-command-center,disputes}/**",
+      "tests/*{payroll,payslip,salary,deduction,statutory,dispute}*",
       "supabase/migrations/*{payroll,salary,payslip,deduction}*",
     ],
     keywords: ["payroll", "salary", "salaries", "payslip", "payslips", "deduction", "deductions", "net pay", "gross pay", "basic salary", "social insurance", "salary batch", "مرتب", "مرتبات", "رواتب"],

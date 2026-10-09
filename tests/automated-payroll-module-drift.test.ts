@@ -295,10 +295,14 @@ export function runAutomatedPayrollModuleDriftTests() {
     "and it must record it from the rows the SERVER computed, not from anything the browser sent",
   );
 
-  // ---- The watched step list must match the steps the module actually feeds ---------------------------
-  // Adding a module-sourced step without adding it here would leave that step silently unwatched —
-  // the one failure this check cannot detect about itself. `loadConfirmedDeductions` is the
-  // module's only entry point into the recommendation engine, so the two lists are the same list.
+  // ---- The watched step list must match the steps a module actually feeds ----------------------------
+  // Adding a module-fed step without adding it here would leave that step silently unwatched — the
+  // one failure this check cannot detect about itself. A module reaches the recommendation engine
+  // through exactly two loaders: `loadConfirmedDeductions` (the Deductions module) and, since
+  // 2026-10-09, `loadDisputeRefunds` (the Dispute Center's refund into Additions → Other additions).
+  // Both are watched, because both can move after a step is confirmed — which is the only property
+  // this check cares about. Scanning for one of them alone is what left `p2_additions` off the list
+  // while its confirm froze a 0.00 over money the company owed back.
   const recommendSource = readFileSync("src/lib/automated-payroll/recommend.ts", "utf8");
   const switchBody = recommendSource.slice(
     recommendSource.indexOf("async function recommendStepRows"),
@@ -312,13 +316,13 @@ export function runAutomatedPayrollModuleDriftTests() {
   for (const line of switchBody.split("\n")) {
     const match = /^\s*case "([a-z0-9_]+)":/.exec(line);
     if (match) caseKey = match[1];
-    if (caseKey && line.includes("loadConfirmedDeductions")) fed.add(caseKey);
+    if (caseKey && (line.includes("loadConfirmedDeductions") || line.includes("loadDisputeRefunds"))) fed.add(caseKey);
   }
   assert.deepEqual(
     [...fed].sort(),
     [...MODULE_SOURCED_STEP_KEYS].sort(),
-    "every step that reads the Deductions module must be watched for drift, and only those — a " +
-      "new module-sourced step added without this list would go unwatched with nothing to show it",
+    "every step that reads a module feeder must be watched for drift, and only those — a new " +
+      "module-fed step added without this list would go unwatched with nothing to show it",
   );
 
   // ---- RE-CONFIRMING A STEP TAKES THE MODULE'S CURRENT FIGURE (2026-10-07) ---------------------
