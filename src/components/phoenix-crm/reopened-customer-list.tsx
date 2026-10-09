@@ -56,9 +56,21 @@ function Waiting({ row }: { row: ReopenedCustomerRow }) {
 
 function Reason({ row }: { row: ReopenedCustomerRow }) {
   return (
-    <p className="break-words text-sm text-slate-700">
-      {row.reasonLabel ?? "No reason was chosen — refused before the reason list existed."}
-    </p>
+    <div className="min-w-0 space-y-1">
+      <p className="break-words text-sm text-slate-700">
+        {row.reasonLabel ?? "No reason was chosen — refused before the reason list existed."}
+      </p>
+      {/*
+        Which photo the reason above is about. A venue's refusal reopens every customer seated in it,
+        and the reason then belongs to the POLYCLINIC's own signboard photo, not to this customer's
+        capture — read without this line it says the rep photographed the wrong door.
+      */}
+      {row.sharedPlaceName ? (
+        <p className="break-words text-xs text-slate-500" dir="auto">
+          About the polyclinic or centre: {row.sharedPlaceName}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

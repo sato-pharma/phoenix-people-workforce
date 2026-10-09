@@ -18,7 +18,13 @@ import {
   type SharedPlaceNamed,
 } from "../src/lib/phoenix-crm/shared-place-rules.ts";
 import { PLACE_MAX_ACCURACY_METERS } from "../src/lib/phoenix-crm/entry-rules.ts";
-import { reasonsFor } from "../src/lib/phoenix-crm/validation-feedback.ts";
+import {
+  reasonsFor,
+  SHARED_PLACE_REFUSED_ACTION,
+  SHARED_PLACE_REFUSED_LEAD,
+  sharedPlaceRefusalRepText,
+  VALIDATION_REFUSAL_REASONS,
+} from "../src/lib/phoenix-crm/validation-feedback.ts";
 import {
   matchesSharedPlaceFilters,
   sharedPlacePassesOutcome,
@@ -354,6 +360,87 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   ]) {
     assert.ok(migration.includes(line), `the migration carries: ${line}`);
   }
+
+
+  // ── A REJECTED VENUE MUST SPEAK, AND IN ITS OWN WORDS ─────────────────────────────────────────
+  //
+  // Owner, 2026-10-09, after he watched a venue rejected on the board: "fix the polyclinic rejection
+  // so the rep is told the reason". Two separate holes were behind it, both measured on staging that
+  // night with one rejected venue and the two customers seated in it:
+  //
+  //   1. `decideSharedPlace` never raised a notice at all. Its own paragraph said the reopened
+  //      customers get `phoenix_crm.validation_not_confirmed`; the call was simply absent, so the
+  //      venue retired, both places retired, both customers went back to To validate — in SILENCE.
+  //   2. the board's "Waiting to be captured again" read "A rep" and "No reason was chosen — refused
+  //      before the reason list existed." for both, while `no_signboard` sat on the venue: it looked
+  //      the reason up on a `phoenix_crm_validation_reviews` row, which a VENUE refusal never writes.
+  const venueReasons = reasonsFor("signboard");
+  const A_PERSON_OR_DECISION = /\b(admin|super admin|manager|reviewer|rejected|refused by|approved|sfe|owner|he |she |they )/i;
+  for (const reason of venueReasons) {
+    const told = sharedPlaceRefusalRepText(reason.key);
+    assert.ok(told, `a venue refused for "${reason.key}" has a sentence of its own`);
+    // 🔴 The CLAUSE, not the whole sentence: wrapping a customer's own-door sentence in the venue's
+    // lead and action would differ from `reason.rep` as a string while still being that sentence.
+    const clause = String(told).slice(SHARED_PLACE_REFUSED_LEAD.length, String(told).length - SHARED_PLACE_REFUSED_ACTION.length).trim();
+    assert.ok(clause.length > 0, `"${reason.key}" says what is wrong, between the lead and the action`);
+    assert.ok(
+      !reason.rep.includes(clause),
+      `🔴 "${reason.key}" is NOT the sentence about this customer's own capture, forwarded — it is about the VENUE's photo`,
+    );
+    assert.doesNotMatch(
+      String(told),
+      /own entrance|customer's own|this customer's entrance/i,
+      "🔴 a customer seated in a polyclinic HAS no door of his own — never send a rep to photograph one",
+    );
+    assert.ok(String(told).startsWith(SHARED_PLACE_REFUSED_LEAD), "it says which photo is meant first");
+    assert.ok(String(told).endsWith(SHARED_PLACE_REFUSED_ACTION), "and ends in the one action that clears it");
+    assert.doesNotMatch(String(told), A_PERSON_OR_DECISION, `"${reason.key}" names no person and no decision`);
+  }
+  for (const reason of VALIDATION_REFUSAL_REASONS) {
+    if ((reason.kinds as readonly string[]).includes("signboard")) continue;
+    assert.equal(
+      sharedPlaceRefusalRepText(reason.key),
+      null,
+      `"${reason.key}" is a TIMETABLE reason — a venue refusal is never offered it, so it says nothing here`,
+    );
+  }
+  assert.equal(sharedPlaceRefusalRepText(null), null, "no reason, no sentence — the caller falls back to the system's own");
+  assert.equal(sharedPlaceRefusalRepText("<script>"), null, "and nothing off the wire is trusted");
+
+  // The call that was missing, and the two things it must carry.
+  const venueServer = stripComments(readFileSync("src/lib/phoenix-crm/server/shared-places.ts", "utf8"));
+  assert.ok(
+    venueServer.includes("await tellSeatedRepsValidateAgain(viewer, result, reopened);"),
+    "🔴 the rejection TELLS the reps — a venue that reopens customers in silence is the defect this pins",
+  );
+  assert.ok(venueServer.includes('via: "shared_place"'), "and it is told in the venue's wording, not a customer's");
+  assert.ok(
+    venueServer.includes("reviewId: sharedPlaceId"),
+    "the venue stands in for the review row it does not have, so one refusal raises one notice for ever",
+  );
+  const notices = stripComments(readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8"));
+  assert.ok(
+    notices.includes('notice.via === "shared_place" ? sharedPlaceRefusalRepText(notice.reason)'),
+    "the notice picks the venue's sentence over the six about a customer's own capture",
+  );
+
+  // And what the board reads where no review row exists.
+  const reviewsServer = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
+  assert.ok(
+    reviewsServer.includes("loadSharedPlaceRefusalsForCustomers("),
+    "🔴 the waiting list asks the VENUE for the reason and the rep when the customer has no refused review of his own",
+  );
+  assert.ok(reviewsServer.includes("sharedPlaceName: venue?.sharedPlaceName ?? null"), "and names the venue beside the reason");
+  assert.ok(
+    venueServer.includes('.eq("status", "retired").not("shared_place_id", "is", null)'),
+    "the join is the customer's RETIRED seated place → the venue behind it",
+  );
+  assert.ok(
+    venueServer.includes('if (!venue || venue.status !== "retired") continue;'),
+    "an ACTIVE venue reopened nobody — a seating retired on its own carries a review row of its own",
+  );
+  const waiting = readFileSync("src/components/phoenix-crm/reopened-customer-list.tsx", "utf8");
+  assert.ok(waiting.includes("row.sharedPlaceName"), "and the board says the reason is about the polyclinic's photo");
 
   console.log("phoenix-crm shared places: OK");
 }

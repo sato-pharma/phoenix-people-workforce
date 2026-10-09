@@ -82,7 +82,7 @@ import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/ser
 import { managerChain, personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
-import { validationRefusalRepText } from "@/lib/phoenix-crm/validation-feedback";
+import { sharedPlaceRefusalRepText, validationRefusalRepText } from "@/lib/phoenix-crm/validation-feedback";
 import type { VisitAskKind } from "@/lib/phoenix-crm/visit-ask-rules";
 
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
@@ -309,9 +309,22 @@ export type PhoenixCrmNotice =
       repHrId: string;
       customerId: string;
       customerName: string;
+      /**
+       * The review row this refusal is recorded on — or, when `via` is `shared_place`, the VENUE's
+       * own id, because a venue carries its decision on its own row and has no review row at all.
+       * Either way it is the one thing the refusal happened to, which is what the key below needs.
+       */
       reviewId: string;
       /** A key from `VALIDATION_REFUSAL_REASON_KEYS`. Null only for a caller that sent none. */
       reason: string | null;
+      /**
+       * WHOSE photo was refused. `place` (the default) — his own capture of this customer.
+       * `shared_place` — the polyclinic or centre he seated the customer in, refused as a whole,
+       * which sends every customer seated there back to To validate. The two take DIFFERENT wording
+       * and that is not a nicety: the six signboard sentences name this customer's OWN door, which a
+       * seated customer has not got, so `sharedPlaceRefusalRepText` answers for a venue.
+       */
+      via?: "place" | "shared_place";
     };
 
 type Delivery = {
@@ -825,7 +838,9 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
     // 🔴 EVERY WORD HERE IS ABOUT HIS PICTURE. No name of a decider, no "rejected", no "admin", no
     // "review", no metres: `validationRefusalRepText` is the only sentence that varies, and a regex
     // sweep in tests/phoenix-crm-validation-feedback.test.ts refuses any of those words inside the six.
-    const why = validationRefusalRepText(notice.reason) ?? LOCATION_NOT_CONFIRMED_TEXT;
+    const why =
+      (notice.via === "shared_place" ? sharedPlaceRefusalRepText(notice.reason) : validationRefusalRepText(notice.reason)) ??
+      LOCATION_NOT_CONFIRMED_TEXT;
     return {
       recipients: [notice.repHrId],
       eventType: "validation_not_confirmed",

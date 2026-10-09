@@ -165,3 +165,45 @@ export const VALIDATION_REASON_REQUIRED =
   "Choose what is wrong with the photo — the rep is told this.";
 /** On the note box, replacing the old "never shown to the rep". The promise it made is still kept. */
 export const VALIDATION_NOTE_LABEL = "Note for the record (the rep reads only the reason above)";
+
+// ── When the POLYCLINIC was refused, not his own capture of the customer ─────────────────────────
+
+/** Said first, so the clause's "its" has a subject and the rep knows which photo is meant. */
+export const SHARED_PLACE_REFUSED_LEAD = "The polyclinic or centre this customer is in could not be confirmed.";
+/** Said last, because photographing this customer's timetable again would never clear it. */
+export const SHARED_PLACE_REFUSED_ACTION =
+  "Capture the polyclinic or centre again at its door, then register this customer in it.";
+
+/**
+ * What a rep is told when the POLYCLINIC OR CENTRE his customer sits in was refused — rather than his
+ * own capture of that customer, which is what the eight above are about.
+ *
+ * 🔴 NONE OF THE SIX SIGNBOARD SENTENCES MAY BE FORWARDED HERE. Every one of them is about THIS
+ * CUSTOMER's own door — "take the photo at this customer's own entrance", "take a live photo of the
+ * building and its sign" — and a customer seated in a polyclinic has no door of his own: the venue is
+ * captured ONCE at its own, which is the entire reason this feature exists. Sent as they stand, they
+ * would order a rep to photograph an entrance that is not there. So the venue carries its own clause
+ * per reason, about the VENUE's photo, ending in the one action that actually clears it.
+ *
+ * Worded under the same ban as the eight: no person, no role, no decision, no threshold, no pronoun —
+ * and "polyclinic or centre", the phrase the rep's own screen uses, never a kind he did not capture.
+ */
+const SHARED_PLACE_REFUSAL_CLAUSE: Partial<Record<ValidationRefusalReason, string>> = {
+  no_signboard: "Its photo does not show the signboard on the building.",
+  wrong_name: "The sign in its photo is not this polyclinic or centre's own.",
+  too_dark: "Its photo is too dark or too blurred to read.",
+  not_at_door: "Its photo was not taken at the entrance — it looks taken from a distance or from a vehicle.",
+  photo_of_paper: "Its photo shows paper or a screen rather than the building itself.",
+  point_off: "The location saved with its photo is not where the photo was taken.",
+};
+
+/**
+ * The whole sentence a seated customer's rep reads when the venue was refused. Null for a reason this
+ * module cannot honestly say about a venue — the two timetable ones, which a venue refusal is never
+ * offered — so the caller falls back to the system's own wording.
+ */
+export function sharedPlaceRefusalRepText(key: string | null): string | null {
+  const clause = key ? SHARED_PLACE_REFUSAL_CLAUSE[key as ValidationRefusalReason] : undefined;
+  if (!clause) return null;
+  return `${SHARED_PLACE_REFUSED_LEAD} ${clause} ${SHARED_PLACE_REFUSED_ACTION}`;
+}

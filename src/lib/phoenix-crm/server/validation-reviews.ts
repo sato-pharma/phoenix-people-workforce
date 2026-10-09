@@ -31,7 +31,7 @@ import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
-import { loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
+import { loadSharedPlaceNames, loadSharedPlaceRefusalsForCustomers } from "@/lib/phoenix-crm/server/shared-places";
 import {
   parseValidationRefusalReason,
   validationRefusalLabel,
@@ -880,6 +880,12 @@ export type ReopenedCustomerRow = {
   waitingHours: number;
   /** What was wrong with the photo, as chosen — null for a refusal that predates the reason. */
   reasonLabel: string | null;
+  /**
+   * The polyclinic or centre whose own refusal reopened him, when that is what happened — so the
+   * reason above is read as being about the VENUE's photo and not about his own capture. Null for an
+   * ordinary refusal of his own place, which is every row this list held before 2026-10-09.
+   */
+  sharedPlaceName: string | null;
 };
 
 /**
@@ -925,11 +931,23 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
     const current = latest.get(customerId);
     if (!current || String(review.decided_at ?? "") > String(current.decided_at ?? "")) latest.set(customerId, review);
   }
-  const names = await loadPeopleNames([...latest.values()].map((row) => text(row.created_by_hr_id)));
+  // 🔴 A VENUE'S REFUSAL WRITES NO REVIEW ROW FOR THE CUSTOMER, so the read above finds nothing for a
+  // customer reopened by a rejected polyclinic and this list rendered "A rep" and "No reason was
+  // chosen — refused before the reason list existed." while `no_signboard` sat on the venue (measured
+  // on staging, 2026-10-09, both customers of one rejected venue). The reason lives on the venue and
+  // the rep on the retired seating, so those are asked for — only for the customers with no review.
+  const viaVenue = await loadSharedPlaceRefusalsForCustomers(
+    customers.map((row) => String(row.id)).filter((id) => !latest.has(id)),
+  );
+  const names = await loadPeopleNames([
+    ...[...latest.values()].map((row) => text(row.created_by_hr_id)),
+    ...[...viaVenue.values()].map((row) => row.repHrId),
+  ]);
   const now = Date.now();
 
   const rows = customers.map((row): ReopenedCustomerRow => {
     const review = latest.get(String(row.id));
+    const venue = review ? undefined : viaVenue.get(String(row.id));
     const seat = viewer.org.seats.get(String(row.seat_id));
     const reopenedAt = String(row.reopened_at);
     const at = new Date(reopenedAt).getTime();
@@ -939,14 +957,15 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
       listType: String(row.list_type ?? ""),
       isTest: row.is_test === true,
       // The rep who took the refused photo — the occupant may since have changed.
-      repName: review ? nameOf(names, text(review.created_by_hr_id), "A rep") : "A rep",
+      repName: nameOf(names, review ? text(review.created_by_hr_id) : (venue?.repHrId ?? null), "A rep"),
       territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
       line: seat?.lineName ?? null,
       region: seat?.regionName ?? null,
       reopenedAt,
       reopenedAtText: formatPhoenixDateTime(reopenedAt),
       waitingHours: Number.isNaN(at) ? 0 : Math.max(0, Math.floor((now - at) / 3_600_000)),
-      reasonLabel: review ? validationRefusalLabel(text(review.refusal_reason)) : null,
+      reasonLabel: validationRefusalLabel(review ? text(review.refusal_reason) : (venue?.refusalReason ?? null)),
+      sharedPlaceName: venue?.sharedPlaceName ?? null,
     };
   });
   return { rows, capped: read.capped };

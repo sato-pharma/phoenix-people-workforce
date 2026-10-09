@@ -149,6 +149,43 @@ it to the `aws-0` pooler — the wrong region.** Production answers on
 Anything applying a file to production has to try `aws-1`, or it fails with "Tenant or user not found"
 and reads like a bad password.
 
+## The rejection that said nothing — measured on the board, 2026-10-09
+
+The venue decision was exercised on the administrator's board the night it shipped, on the staging
+project, with one venue approved and one rejected. The approval behaved. The rejection turned up two
+holes, and the owner's answer to both was one sentence: *"fix the polyclinic rejection so the rep is
+told the reason"*.
+
+**1. The venue rejection raised no notice at all.** "Test Board Centre B" was rejected with the
+reason *No signboard in the photo*: the venue retired, its two seated places retired, both customers
+went back to To validate with `reopened_at` stamped — and nothing reached either rep.
+`decideSharedPlace`'s own paragraph already said those customers get the existing
+`phoenix_crm.validation_not_confirmed` notice; the call was simply never written. A refusal that
+reopens work in silence is the exact frustration the 2026-10-08 feedback work was built to end (0 of
+22 reopened customers re-validated, 40.8 hours average wait).
+
+🔴 **And the six signboard sentences could not just be forwarded.** Every one of them is about THIS
+CUSTOMER's own door — "take the photo at this customer's own entrance", "take a live photo of the
+building and its sign" — and a customer seated in a polyclinic has no door of his own; that is the
+whole reason the venue is captured once at its own. Forwarded as they stand, a rejection would have
+ordered a rep to photograph an entrance that is not there. So a venue refusal gets its own wording
+(`sharedPlaceRefusalRepText`): the lead says which photo is meant, the clause says what is wrong with
+the VENUE's photo, and the action is the one that actually clears it — capture the polyclinic or
+centre again at its door, then register the customer in it. The notice carries `via: "shared_place"`
+and the VENUE's id in place of a review id, because a venue keeps its decision on its own row and has
+no review row; a rejected venue is retired for good, so that is one idempotency key per refusal, for
+ever. Withdrawal is unchanged: the key is still customer-first, so validating again clears the bell.
+
+**2. The board then said nobody had chosen a reason.** Both reopened customers appeared under
+"Waiting to be captured again (2)" reading "A rep" and *"No reason was chosen — refused before the
+reason list existed."* while `no_signboard` sat on the venue row. `loadReopenedCustomers` looked both
+the rep and the reason up on a `phoenix_crm_validation_reviews` row with `status = 'rejected'`, and a
+venue refusal writes none. The fallback asks the two places that do hold it:
+`loadSharedPlaceRefusalsForCustomers` takes each customer's latest RETIRED seated place, joins it to
+its venue, and uses the venue's `refusal_reason` with the rep on the retired seating — the rep who
+photographed the timetable. The venue's name is shown beside the reason, because a signboard reason
+read against a customer's own capture says he photographed the wrong door.
+
 ## Verification still owed after the merge
 
 Production has no point-in-time recovery — seven daily backups are the whole recovery story — and this
