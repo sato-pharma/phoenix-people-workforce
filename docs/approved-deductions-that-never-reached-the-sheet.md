@@ -125,3 +125,52 @@ category to draft column, branched on `settled_in_part1` — which is **null** o
 Both months are published, production has **no PITR**, and a correction is money. Whether any of
 this is carried forward is decided on the Automated Payroll screen and
 `/admin/deductions` — not in chat, and not by a write from here.
+
+## The mirror defect, on the OPEN month: a charge the module never proposed (2026-10-09)
+
+Everything above is a deduction the module approved that reached the payslip as **0** — money the
+company did not collect. This is the opposite direction, found the same week on the **open**
+September 2026 run (`6b941989-9f31-49f1-830b-31edc0e8f374`, Part 1 confirmed 2026-10-09 03:33
+Cairo): a column charging money the module proposes **nothing** for.
+
+Audited across all 104 rows and the five payroll buckets — 520 figures, of which 513 match the
+module exactly:
+
+| Who | Column | Run charges | Module approved | Candidates |
+| --- | --- | --- | --- | --- |
+| Nahed Tarek Hassan Omar Hattab (A-10) | Part 1 Other Deductions → Other | 2,931.00 | 0.00 | **none in the month** |
+| Hossam Mohamed Reda AboElftouh Abdelghafar (A-9) | Part 1 Other Deductions → Other | 400.00 | 0.00 | **none in the month** |
+| Ghada Mohamed Abdelwahab Ismaiel (B-189) | CRM | 483.33 | 241.67 | 1 approved half day |
+
+A-10 and A-9 are the same lateness charged **twice**. Their Fingerprint column is correct and
+module-backed — A-10 at 2.75 days / 2,933.32 (six approved candidates, each locked) and A-9 at
+0.26 days / 400.00 (two approved of seven) — and the Other column repeats it. Neither has a single
+`other`-category candidate in September, live or superseded, so not a piastre of the Other figure
+has an approved deduction behind it. Both figures predate the cell history (which begins
+2026-10-07), so nothing records who wrote them; the `p1_other_deductions` confirm at 01:32:25 wrote
+`0.00` for every other employee on the step and left these two alone, because `pick(draft,
+recommended)` prefers the saved figure.
+
+### Why no existing check saw it
+
+`detectModuleDrift` asked one question: *has the module changed its mind since the confirm?* With
+the module proposing 0.00 at the confirm **and** 0.00 now, the comparison had nothing to compare and
+returned early — before it ever looked at what the row actually charges. So the figure was invisible
+to the drift report, to the Part 2 gate (which only blocks on `staleCharges`), and to
+`takeCurrentModuleFigures`, whose remedy is a re-confirm that `pick` makes a no-op anyway.
+
+Closed by `isUnbackedCharge` (`src/lib/automated-payroll/module-sourced-steps.ts`, browser-safe and
+re-exported by `module-drift.ts`) and the new `unbackedCharges` count, pinned by
+`tests/automated-payroll-module-drift.test.ts`. It is **reported, never blocking and never
+rewritten**: HR may enter a manual deduction straight onto a step with no candidate behind it by
+design, so such a figure can be perfectly deliberate, and only `chargeSource` from the cell history
+can say who set it. B-189's CRM gap is a different shape — the module does propose 241.67 there — and
+is covered by the existing stale-charge path.
+
+Four figures run the other way on the same run and are **not** defects to sweep: B-79 CRM 1,250.00
+against 1,450.00 approved, AI-0021 vacation 258.33 against 516.67, B-189 vacation 483.33 against
+966.66, A-7 vacation 0.00 against 733.33. B-189's was reduced from 966.66 by hand at 2026-10-09
+07:58 Cairo and is a decision, not drift.
+
+Correcting any of it is money on an open run: it is decided on the Automated Payroll screen, not by
+a write from here.

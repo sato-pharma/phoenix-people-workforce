@@ -143,6 +143,84 @@ export function runAutomatedPayrollModuleDriftTests() {
   });
   assert.deepEqual(absentAndUnchanged.rows, [], "nothing then, nothing now — silence is correct");
 
+  // ---- HEADLINE 3: A CHARGE THE MODULE PROPOSES NOTHING FOR, AND NEVER DID (2026-10-09) ----------
+  //
+  // BOTH SIDES OF THE COMPARISON ARE 0.00, so "has the module changed its mind" had nothing to
+  // compare and returned early — hiding real money from this report, from the Part 2 gate, and from
+  // takeCurrentModuleFigures, whose remedy a `pick(draft, recommended)` re-confirm makes a no-op.
+  //
+  // Measured on the live September 2026 run, 2026-10-09: Nahed Tarek Hassan Omar Hattab (A-10) was
+  // charged 2,931.00 in Part 1 Other Deductions → Other with no `other` candidate in that month at
+  // all, beside a CORRECT 2,933.32 in the Fingerprint column for the same six approved late days —
+  // the same lateness charged twice. Hossam Mohamed Reda AboElftouh Abdelghafar (A-9) carried 400.00
+  // the same way against a correct 400.00 of fingerprint. 3,331.00 EGP, every existing check silent.
+  const unbacked = detectModuleDrift({
+    stepKey: "p1_other_deductions",
+    rows: [row({ hrId: "A-10", fullName: "Nahed", recommended: { p1odOtherValue: 0 } })],
+    snapshot: {},
+    chargedByCompact: { a10: { p1odOtherValue: 2931 } },
+  });
+  assert.equal(
+    unbacked.rows.length,
+    1,
+    "a charge with no approved deduction behind a piastre of it must be REPORTED — the module " +
+      "proposing nothing at confirm AND nothing now is exactly what hid 3,331.00 EGP",
+  );
+  assert.equal(unbacked.unbackedCharges, 1);
+  assert.equal(unbacked.rows[0]?.charged, 2931, "and what the run charges is stated plainly");
+  assert.equal(unbacked.rows[0]?.proposedNow, 0);
+  assert.equal(
+    unbacked.staleCharges,
+    0,
+    "it must NEVER block Part 2: HR may enter a manual deduction straight onto the Other tab with " +
+      "no candidate behind it by design, so the figure can be perfectly deliberate",
+  );
+  assert.equal(
+    unbacked.overriddenButMoved,
+    0,
+    "and it is not counted as the module moving — it did not move at all, and these counters are " +
+      "what the one sentence a person reads is built from",
+  );
+  assert.match(describeModuleDrift(unbacked), /no approved deduction behind them/);
+  assert.match(describeModuleDrift(unbacked), /2931\.00/, "the sentence names the money, not a count");
+
+  // Reported, never REWRITTEN. Zeroing it would silently delete a hand-entered manual deduction —
+  // the mirror of the bug this whole file opens with.
+  const unbackedRows = [
+    row({ hrId: "A-10", fullName: "Nahed", values: { p1odOtherValue: 2931 }, recommended: { p1odOtherValue: 0 } }),
+  ];
+  assert.equal(
+    takeCurrentModuleFigures({
+      stepKey: "p1_other_deductions",
+      rows: unbackedRows,
+      snapshot: {},
+      chargedByCompact: { a10: { p1odOtherValue: 2931 } },
+    })[0].values.p1odOtherValue,
+    2931,
+    "a re-confirm leaves an unbacked charge exactly as it is — only the person who entered it may clear it",
+  );
+
+  // THE SIGNAL-QUALITY HALF: a zero column is not an unbacked charge. Every one of the 104 people on
+  // a real run carries 0.00 in most columns, so reporting those would put the banner permanently on.
+  const unbackedZero = detectModuleDrift({
+    stepKey: "p1_other_deductions",
+    rows: [row({ hrId: "B-3", recommended: { p1odOtherValue: 0 } })],
+    snapshot: {},
+    chargedByCompact: { b3: { p1odOtherValue: 0 } },
+  });
+  assert.deepEqual(unbackedZero.rows, [], "nothing charged and nothing proposed — silence");
+
+  // Nor is a figure trimmed from a REAL proposal: the module proposing 900 and still proposing 900
+  // while HR charges 700 is their decision, and the module standing still is not news about it.
+  // This is the case `quiet` below pins, repeated here because it is the boundary of the new rule.
+  const trimmedNotUnbacked = detectModuleDrift({
+    stepKey: "p2_crm",
+    rows: [row({ hrId: "B-2", recommended: { crm: 900 } })],
+    snapshot: { b2: { crm: 900 } },
+    chargedByCompact: { b2: { crm: 700 } },
+  });
+  assert.deepEqual(trimmedNotUnbacked.rows, [], "a trimmed proposal is not an unbacked charge");
+
   // ---- THE SIGNAL-QUALITY INVARIANT: an override is not a problem --------------------------------
   // This is the half that decides whether the warning is worth having. HR typed 700 over a proposed
   // 900; the module has since moved to 500. Their decision still stands and still wins, so this is
@@ -226,7 +304,7 @@ export function runAutomatedPayrollModuleDriftTests() {
   assert.doesNotMatch(describeModuleDrift(merged), /by hand/);
   assert.doesNotMatch(describeModuleDriftBlock(merged), /by hand/);
   assert.equal(
-    describeModuleDrift({ rows: [], staleCharges: 0, overriddenButMoved: 0 }),
+    describeModuleDrift({ rows: [], staleCharges: 0, overriddenButMoved: 0, unbackedCharges: 0 }),
     "Every confirmed figure still matches the Deductions module.",
   );
 
