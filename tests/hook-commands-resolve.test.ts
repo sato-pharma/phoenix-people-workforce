@@ -158,12 +158,18 @@ export function runHookCommandsResolveTests() {
       );
     }
   }
+  // ONE since 2026-10-09 (hook speed fixes): the all-worktrees provisioning one-liner became two
+  // exec-form entries (`sync-worktree-env.mjs --hook`, which fails open itself, and an async
+  // `--sweep-only`), so the cloud-only remote setup script is the last command that needs bash.
+  // The folded `command` above is how an exec-form entry (`"command": "node", "args": [...]`) reads
+  // here — see tests/support/hook-wiring.ts; tests/hook-hot-path.test.ts checks the spelling itself.
   assert.equal(
     bashEntries.length,
-    2,
-    "exactly two hook commands are genuinely bash (the worktree `[ -f .git ]` test and the remote "
-      + "Linux setup script). A third means a shell-expanded command came back — that is what "
-      + "errored under cmd.exe and PowerShell and denied every tool call.",
+    1,
+    "exactly one hook command is genuinely bash (the remote Linux setup script, which only runs in "
+      + "a cloud session). A second means a shell-expanded command came back — that is what "
+      + "errored under cmd.exe and PowerShell and denied every tool call, and it pays a Git Bash "
+      + "spawn every time it runs.",
   );
 
   // 3. EVERY HOOK SCRIPT FAILS OPEN. The command no longer does it for them, and AGENTS.md §2.1

@@ -26,7 +26,6 @@
 // threw is precisely how the cliff gets crossed while the report reads clean.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 // FAIL OPEN, ALWAYS. The settings.json command ended `2>/dev/null || true` until 2026-09-27; the
@@ -55,6 +54,21 @@ try {
   } = await import("../../scripts/memory-index-budget.mjs"));
 } catch {
   process.exit(0);
+}
+
+// 2026-10-09 (hook speed fixes): WHICH memory directory, and the cloud mirror's cached drift reading,
+// come from `scripts/lib/memory-dir.mjs` — one copy shared with `scripts/cloud-mirror-drift-refresh.mjs`,
+// the async entry that now takes that reading, so the two can never disagree about where it lives.
+// Imported in its own try for the same partial-checkout reason as above, but a missing module does
+// NOT end the hook: it means no memory directory is found, so the index section is not printed while
+// the footprint section below still is.
+let DRIFT_CACHE_SHOW_MS = 0;
+let readDriftCache = null;
+let resolveMemoryDir = () => null;
+try {
+  ({ DRIFT_CACHE_SHOW_MS, readDriftCache, resolveMemoryDir } = await import("../../scripts/lib/memory-dir.mjs"));
+} catch {
+  // no shared resolution in this checkout — no memory directory, no drift reading
 }
 
 /**
@@ -90,50 +104,16 @@ function checkoutPosition(dir) {
   }
 }
 
+// `scripts/cloud-mirror-drift-refresh.mjs` resolves the project directory by this same rule, character
+// for character, so both name the same memory directory and therefore the same cached drift reading.
 const projectDir = process.argv[2] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
-/**
- * The primary checkout's root, or null when git cannot answer.
- *
- * Memory belongs to the PROJECT, not to the worktree a session happens to be sitting in, and
- * `repo-doctor.mjs` resolves it exactly this way. Without it a worktree session would look up a
- * slug of its own `_wt-*` path, find no directory, and stay silent — muting the warning for the
- * sessions that do most of the appending.
- */
-function primaryRootFor(dir) {
-  try {
-    const commonDir = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
-      cwd: dir,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 10_000,
-    }).trim();
-    return commonDir ? path.resolve(path.dirname(commonDir)) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * `<config>/projects/<slug>/memory` for a checkout, or null when it does not exist. The slug is the
- * absolute path with every non-alphanumeric character replaced by a hyphen, so
- * `F:\Phoenix Workforce\phoenix-workforce` becomes `F--Phoenix-Workforce-phoenix-workforce` — the
- * doubled hyphen is the drive colon plus the separator, not a typo. `CLAUDE_CONFIG_DIR` relocates
- * the config root when set.
- */
-function memoryDirFor(root) {
-  const configRoot = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude");
-  const slug = path.resolve(root).replace(/[^A-Za-z0-9]/g, "-");
-  const dir = path.join(configRoot, "projects", slug, "memory");
-  try {
-    return fs.statSync(dir).isDirectory() ? dir : null;
-  } catch {
-    return null;
-  }
-}
-
-const roots = [primaryRootFor(projectDir), projectDir].filter(Boolean);
-const memoryDir = roots.map(memoryDirFor).find(Boolean) ?? null;
+// The PRIMARY checkout's memory first, then this checkout's own: memory belongs to the project, not to
+// the `_wt-*` folder a session sits in, and resolving the slug from the worktree would find nothing and
+// mute the warning for the sessions that do most of the appending. The full account (and the slug
+// arithmetic) sits beside the code in `scripts/lib/memory-dir.mjs`. 2026-10-09 (hook speed fixes): the
+// primary is now read off disk (`scripts/lib/git-layout.mjs`), and git is asked only when it cannot be.
+const memoryDir = resolveMemoryDir(projectDir);
 
 /** Bytes of `MEMORY.md`, or 0 when it cannot be measured — which both graders read as "unknown". */
 function indexBytes() {
@@ -258,27 +238,27 @@ if (footprintDetail) {
  * COST, measured on this repository 2026-10-02: 299 ms for 1,066 files — one `ls-tree` plus one
  * `cat-file --batch` for the whole mirror, never a `git show` per file. Paid once per session, inside
  * a try that keeps the fail-open contract at the top of this file.
+ *
+ * 2026-10-09 (hook speed fixes): THE READING IS NO LONGER TAKEN HERE. By then it meant 1,225 notes
+ * (about 12 MB) read in full plus the `ls-tree` and a `cat-file` over ~1,222 blobs, and this hook was
+ * recorded at p50 2.0 s, worst 11.1 s, with every session start waiting on it. The same reading — the
+ * same `readMd` / `readCloudMirror({ root: projectDir, … })` / `cloudMirrorDrift` calls, the same
+ * `mirror !== null` guard — now runs in `scripts/cloud-mirror-drift-refresh.mjs`, an async SessionStart
+ * entry nobody waits for, which caches the drift object in os.tmpdir() and re-takes it at most every
+ * 30 minutes. This hook reads that cache and prints from it exactly as before, while the reading is
+ * under 24 hours old. No cache, an older one, or one that cannot be read: no section, which is the
+ * same silence an unreadable mirror always produced. The lines are still built HERE by
+ * `cloudMirrorSessionLines`, so the wording a session reads is always today's.
  */
 let mirrorDrifted = 0;
 try {
-  const mirrorDir = path.join(projectDir, ".claude", "cloud-context", "memory-mirror");
-  // A mirror that cannot be read AT ALL is NOT drift — a checkout can legitimately not carry one —
-  // and it is not "current" either. Nothing is said, which is the same under-claiming direction the
-  // sections above take; `repo-doctor` is where an unreadable mirror is reported out loud.
-  if (memoryDir !== null) {
-    const { cloudMirrorDrift, cloudMirrorSessionLines } = await import("../../scripts/cloud-mirror-drift.mjs");
-    const { readCloudMirror } = await import("../../scripts/cloud-mirror-source.mjs");
-    const readMd = (dir) => {
-      const out = new Map();
-      for (const name of fs.readdirSync(dir)) {
-        if (!name.toLowerCase().endsWith(".md") || name.includes(".bak")) continue;
-        out.set(name, fs.readFileSync(path.join(dir, name), "utf8"));
-      }
-      return out;
-    };
-    const mirror = readCloudMirror({ root: projectDir, diskDir: mirrorDir });
-    if (mirror !== null) {
-      const drift = cloudMirrorDrift({ live: readMd(memoryDir), mirror: mirror.files });
+  if (memoryDir !== null && readDriftCache !== null) {
+    const cached = readDriftCache(memoryDir, { maxAgeMs: DRIFT_CACHE_SHOW_MS });
+    if (cached !== null) {
+      const { cloudMirrorSessionLines } = await import("../../scripts/cloud-mirror-drift.mjs");
+      // `drift` is null when the refresher could not read the mirror at all — not drift and not
+      // "current", so `cloudMirrorSessionLines` answers nothing for it, as it always did.
+      const drift = cached.drift;
       const lines = cloudMirrorSessionLines(drift);
       if (lines.length > 0) {
         mirrorDrifted = drift.drifted;
@@ -287,7 +267,7 @@ try {
     }
   }
 } catch {
-  // Unreadable directory, missing module, anything at all — say nothing. A drift REPORT must never
+  // Unreadable cache, missing module, anything at all — say nothing. A drift REPORT must never
   // turn a session's start into an error.
 }
 

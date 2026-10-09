@@ -6,7 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/hook-dispatch.mjs\" PreToolUse",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/hook-dispatch.mjs",
+              "PreToolUse"
+            ],
             "timeout": 90
           }
         ]
@@ -18,7 +22,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/test-registration-check.mjs\"",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/test-registration-check.mjs"
+            ],
             "timeout": 10
           }
         ]
@@ -29,11 +36,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/autorun-guard.mjs\""
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/autorun-guard.mjs"
+            ]
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/module-memory-injector.mjs\"",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/module-memory-injector.mjs"
+            ],
             "timeout": 10
           }
         ]
@@ -44,7 +57,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs\" start"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs",
+              "start"
+            ]
           }
         ]
       },
@@ -53,14 +70,39 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; if [ -f \"$DIR/scripts/sync-worktree-env.mjs\" ]; then node \"$DIR/scripts/sync-worktree-env.mjs\" --all 2>/dev/null || true; fi",
-            "shell": "bash",
-            "statusMessage": "Provisioning node_modules + env in all worktrees"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/scripts/sync-worktree-env.mjs",
+              "--hook"
+            ],
+            "statusMessage": "Provisioning node_modules + env in this worktree"
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/memory-index-guard.mjs\"",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/scripts/sync-worktree-env.mjs",
+              "--sweep-only"
+            ],
+            "async": true,
+            "timeout": 120
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/memory-index-guard.mjs"
+            ],
             "statusMessage": "Checking memory index budget"
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/scripts/cloud-mirror-drift-refresh.mjs"
+            ],
+            "async": true,
+            "timeout": 120
           },
           {
             "type": "command",
@@ -77,11 +119,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs\" end"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs",
+              "end"
+            ]
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/worktree-exit-guard.mjs\"",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/worktree-exit-guard.mjs"
+            ],
             "timeout": 45,
             "statusMessage": "Checking worktree state"
           }

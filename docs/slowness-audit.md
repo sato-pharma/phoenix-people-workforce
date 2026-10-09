@@ -225,6 +225,92 @@ change per day against the previous transcript record: compactions and hours, st
 on compact (expected ~0 for the heavy ones), the turn-end wait (expected well under 524 ms) and the
 prompt-hook text per session.
 
+## Layer 7 — hook, memory and config, 2026-10-09
+
+The third audit, the next morning, started from his words — *"ur walking the wrong way its in hook
+memory config the issue is here"* — and he was right: after Layer 6 the per-call cost of the hooks
+themselves was still the largest thing every session paid, and nothing was watching for the next
+one. Measured from the transcripts before any change:
+
+| What | Before | Cause |
+| --- | --- | --- |
+| A Phoenix Read / Grep / Write, tool call to result | 210–260 / 547 / 634 ms, against 45 / 185 / 155 ms before module memory (2 Oct) | every project hook ran through Git Bash first; primary-write-guard started `git rev-parse` on every Write/Edit |
+| A Phoenix session start | 2–4 s, about 25 processes at once | the memory index guard re-read 1,225 notes and ran `git ls-tree` + `git cat-file --batch` over the cloud mirror (p50 2.0 s, worst 11.1 s); the all-worktrees provisioning sweep (p50 1.7 s, worst 17.6 s) |
+| Relapse | the push typecheck froze commands for 6.1 h over six days, a reminder repeated 440k tokens in 28 h | nothing read the transcripts until a manual audit |
+
+**What changed in this repository:**
+
+- **No shell in front of a project hook.** Every node hook in `.claude/settings.json` is exec form,
+  `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/…"]`, which Claude Code 2.1.293 spawns with no
+  shell and still fills `${CLAUDE_PROJECT_DIR}` in (read from its own spawn code; confirmed by three
+  headless sessions in the branch, every start-up hook exit 0 and the PreToolUse dispatcher running
+  before a Read with no hook error). One Read through the dispatcher: **144 ms through Git Bash, 99 ms
+  without** (median of 9 interleaved runs, quiet box). The cloud-only setup script is the one entry
+  left in shell form.
+- **No git process on an ordinary edit.** `scripts/lib/git-layout.mjs` reads the checkout layout from
+  the same `.git` folder, `gitdir:` file and `commondir` pointer git reads (identical to `git
+  rev-parse` in 7 real folders), and returns null — so git still decides — whenever it cannot.
+  primary-write-guard and bash-guard use it. One Edit through the dispatcher: **156–174 ms → 120–139
+  ms**.
+- **The mirror drift reading left the blocking path.** `scripts/cloud-mirror-drift-refresh.mjs` runs
+  as an `async` start-up entry, takes the same reading the guard used to take (same `readMd`,
+  `readCloudMirror`, `cloudMirrorDrift`) at most every 30 minutes, and leaves it in
+  `%TEMP%/phx-cloud-mirror-drift-<memory folder>.json`. The guard prints the same "CLOUD MIRROR IS
+  STALE" section and alarm from that file when it is under 24 hours old — one start late at most. Its
+  three bounded checkout-position git calls stay. The memory folder is resolved in one shared place,
+  `scripts/lib/memory-dir.mjs`, so the two can never disagree.
+- **The provisioning sweep split in two.** `sync-worktree-env.mjs --hook` provisions only the
+  session's own folder and stays blocking, because the session reads the `.env` and
+  `settings.local.json` it writes; in the primary checkout it returns without starting a process, and
+  in a worktree its seven `git check-ignore` calls became one. `--sweep-only` provisions the other
+  worktrees as an `async` entry. Both fail open themselves now that `|| true` is gone.
+- **Blocking start-up hooks, measured** (5 interleaved rounds, quiet box, the sweep with `--dry-run`
+  on both sides): primary checkout **603 → 202 ms**, worktree **677 → 203 ms**; the memory index guard
+  alone 584–595 → 195 ms, the provisioning step 556–585 → 84–123 ms. Inside a real start-up burst on
+  this laptop the old pair was 2–4 s.
+
+**What changed on the laptop the same morning** (not in this repository, recorded here so the numbers
+add up): `~/.claude/hooks/memory-guard.mjs` and `session-census.mjs` no longer start PowerShell on the
+blocking path (1.0–1.1 s → 0.12–0.14 s and 0.6 s → 0.12 s); memory-guard's PowerShell reading moved to
+an `async` refresh, and the start-up sweep, reaper and needs-you hooks became `async`.
+
+**What keeps it from coming back:**
+
+- `tests/hook-hot-path.test.ts` runs every blocking hook settings.json names under
+  `tests/support/spawn-probe.mjs`, which records every child_process, net, http(s), dns and fetch
+  call, with an ordinary Read, Edit, Write, Grep, Glob, Bash `ls` / `git status`, PowerShell
+  `Get-ChildItem`, PostToolUse and prompt: each must record nothing. A session start may make only the
+  three checkout-position git calls. It also refuses a node hook in shell form and a start-up entry
+  that is neither `async` nor on a named list with its reason.
+- `scripts/slow-audit.mjs --transcripts --check` folds four more figures — tool wall time split
+  Phoenix vs other, the session-start wait (the slowest start hook per start), the share of hook text
+  that repeats inside one compaction cycle, and compaction summary length — and judges a day against
+  `TRANSCRIPT_LIMITS`:
+
+| Watched | Good state | Alarm when |
+| --- | --- | --- |
+| Phoenix Read wall time, p50 | 210–260 ms before this change | over 400 ms (at least 50 Reads) |
+| Any PreToolUse hook | dispatcher p50 ~540 ms | p90 over 3 s (n ≥ 20), or any run over 60 s |
+| Session-start wait, p90 | 2–4 s before this change | over 2.5 s (at least 10 starts) |
+| Any UserPromptSubmit hook, p50 | ~390 ms | over 800 ms (n ≥ 20) |
+| Turn-end (Stop) wait, p50 | under 524 ms | over 800 ms (at least 20 turns) |
+| Repeated hook text | 3% | over 15% (at least 50,000 characters) |
+| Compaction summary, median | 6.7k characters | over 10,000 (at least 3), or any in the default nine sections |
+| Compaction freeze, p50 | ~59 s | over 90 s (at least 3) |
+
+  Module memory is never measured against a limit (`tests/slow-audit.test.ts` pins that).
+- A daily sentinel on the laptop (`~/.claude/scripts/slowness-sentinel.mjs`, Task Scheduler 06:15
+  Cairo) runs that check on the previous Cairo day from origin/main's copy of the script and sends any
+  crossed limit to his phone through the backup alert's Telegram path, in plain words. It reports
+  only; the fix waits for him.
+
+**Not done, and why:** a persistent hook process or an `http` hook server (the guards' own work is
+3–75 ms; an HTTP hook fails open when its server is down, silently disabling the delete and push
+guards); merging the laptop's context-printing start hooks into one process (small once the
+PowerShell spawns are gone — the session-start figure above will show if it is ever worth it). Note
+for anyone comparing transcripts across this date: Claude Code records no duration for an `async`
+hook, so the rows of the start-up hooks made async disappear rather than shrink.
+
 ## Related
 
 - `AGENTS.md` §5, "Machine limits" and the routing golden rule — free RAM binds, not commit charge;

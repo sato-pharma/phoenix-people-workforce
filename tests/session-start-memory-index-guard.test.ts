@@ -30,28 +30,91 @@
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { cloudMirrorSessionLines } from "../scripts/cloud-mirror-drift.mjs";
+import { settingsHookGroups } from "./support/hook-wiring.ts";
 
 /** The hook under test, resolved from the repo root the suite runs in. */
 const hookPath = resolve(".claude/hooks/memory-index-guard.mjs");
+/** The async SessionStart entry that takes the cloud mirror's drift reading for it (2026-10-09). */
+const refresherPath = resolve("scripts/cloud-mirror-drift-refresh.mjs");
+/** Records every subprocess / network call of the process it is preloaded into (tests/support). */
+const spawnProbeUrl = pathToFileURL(resolve("tests/support/spawn-probe.mjs")).href;
 
 type HookOutput = { systemMessage?: string; hookSpecificOutput?: { additionalContext?: string } };
 
 /** The hook's own slug arithmetic, reproduced so a fixture lands where it will actually look. */
 const slugFor = (root: string): string => resolve(root).replace(/[^A-Za-z0-9]/g, "-");
 
-/** Runs the guard exactly as the SessionStart entry does: project directory as argv[2]. */
-function runHook(projectDir: string, configRoot: string): { raw: string; out: HookOutput | null } {
-  const raw = execFileSync(process.execPath, [hookPath, projectDir], {
+/**
+ * The child's temp folder. 2026-10-09 (hook speed fixes): the guard now reads a cached drift reading
+ * from os.tmpdir(), so every run points TMP/TEMP/TMPDIR at a throwaway folder beside the throwaway
+ * config root — a test must never read or write the real temp folder's reading, nor the real
+ * ~/.claude (CLAUDE_CONFIG_DIR already sandboxes that).
+ */
+const tmpFor = (configRoot: string): string => {
+  const dir = `${configRoot}-tmp`;
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
+
+/** The cache file the refresher writes and the guard reads, named from the memory directory. */
+const driftCacheFor = (tmp: string, memoryDir: string): string =>
+  join(tmp, `phx-cloud-mirror-drift-${resolve(memoryDir).replace(/[^A-Za-z0-9]/g, "-")}.json`);
+
+function sandboxEnv(configRoot: string, probeOut?: string): NodeJS.ProcessEnv {
+  const tmp = tmpFor(configRoot);
+  const env: NodeJS.ProcessEnv = { ...process.env, CLAUDE_CONFIG_DIR: configRoot, TMP: tmp, TEMP: tmp, TMPDIR: tmp };
+  delete env.SPAWN_PROBE_OUT;
+  if (probeOut) env.SPAWN_PROBE_OUT = probeOut;
+  return env;
+}
+
+/** Every call the spawn probe recorded, as `{kind, what}` — an absent file means none. */
+const probeCalls = (file: string): Array<{ kind: string; what: string }> =>
+  existsSync(file)
+    ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as { kind: string; what: string })
+    : [];
+
+/**
+ * Runs the guard with the project directory as argv[2] — the first place it looks; the exec-form
+ * SessionStart entry passes none and the guard falls back to CLAUDE_PROJECT_DIR, which argv[2]
+ * overrides here so a test run inside a live session cannot read that session's project.
+ */
+function runHook(
+  projectDir: string,
+  configRoot: string,
+  probeOut?: string,
+): { raw: string; out: HookOutput | null } {
+  const preload = probeOut ? ["--import", spawnProbeUrl] : [];
+  const raw = execFileSync(process.execPath, [...preload, hookPath, projectDir], {
     cwd: projectDir,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 30000,
-    env: { ...process.env, CLAUDE_CONFIG_DIR: configRoot },
+    env: sandboxEnv(configRoot, probeOut),
   });
   return { raw, out: raw.trim() ? (JSON.parse(raw) as HookOutput) : null };
+}
+
+/**
+ * Runs the drift refresher the way its async SessionStart entry does: no argv, CLAUDE_PROJECT_DIR
+ * set, the hook's JSON on stdin (which it never reads). Returns what it printed — which must be nothing.
+ */
+function runRefresher(projectDir: string, configRoot: string, probeOut?: string): string {
+  const preload = probeOut ? ["--import", spawnProbeUrl] : [];
+  return execFileSync(process.execPath, [...preload, refresherPath], {
+    cwd: projectDir,
+    encoding: "utf8",
+    input: JSON.stringify({ hook_event_name: "SessionStart", source: "startup", cwd: projectDir }),
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 60000,
+    env: { ...sandboxEnv(configRoot, probeOut), CLAUDE_PROJECT_DIR: projectDir },
+  });
 }
 
 /** Gives `root` a memory directory holding a MEMORY.md of exactly `bytes` bytes (null = no file). */
@@ -69,10 +132,12 @@ function git(at: string, args: string[]): string {
 
 export function runSessionStartMemoryIndexGuardTests() {
   // 1. THE WIRING. A hook nobody invokes is a file, not a guard.
-  const settings = JSON.parse(readFileSync(".claude/settings.json", "utf8")) as {
-    hooks?: { SessionStart?: Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> };
-  };
-  const startGroups = settings.hooks?.SessionStart ?? [];
+  //
+  // Read through `settingsHookGroups`, not JSON.parse: since 2026-10-09 (hook speed fixes) the node
+  // hooks are exec-form entries (`"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/…"]`), and the
+  // helper folds either spelling into one `node "<script>"` command line, so "which hook does this
+  // entry run" reads the same both ways.
+  const startGroups = settingsHookGroups("SessionStart");
   const startEntries = startGroups.flatMap((group) => group.hooks ?? []);
 
   // 1a. A COMPACTION IS A SessionStart TOO (source `compact`), and it re-runs every entry with no
@@ -115,6 +180,36 @@ export function runSessionStartMemoryIndexGuardTests() {
         + "session's lock is live, so anything sharing its process is silent in the colliding case",
     );
   }
+
+  // 1b. THE DRIFT READING HAS ITS OWN ASYNC ENTRY (2026-10-09, hook speed fixes). The guard no longer
+  // takes the cloud mirror's drift reading — 1,225 notes read in full plus a git ls-tree and cat-file
+  // over the whole mirror, on every session start — it prints the one this refresher cached. Unwired,
+  // the cache is never written and the "CLOUD MIRROR IS STALE" alarm goes quiet for good with nothing
+  // failing; wired blocking, every session waits for the very scan this moved off its path; wired
+  // with no matcher, it re-runs inside every compaction's freeze, as the guard used to.
+  const refresherEntries = startEntries.filter((h) => (h.command ?? "").includes("cloud-mirror-drift-refresh.mjs"));
+  assert.equal(
+    refresherEntries.length,
+    1,
+    "scripts/cloud-mirror-drift-refresh.mjs must be registered exactly once as a SessionStart hook — "
+      + "without it the guard has no drift reading to print",
+  );
+  assert.equal(
+    refresherEntries[0]?.async,
+    true,
+    "the drift refresher must be an \"async\": true entry — a blocking one puts the whole mirror scan "
+      + "back on every session's start",
+  );
+  for (const source of ["startup", "resume", "clear"]) {
+    assert.ok(
+      firesOn(groupOf("cloud-mirror-drift-refresh.mjs"), source),
+      `the drift refresher must run on SessionStart source "${source}"`,
+    );
+  }
+  assert.ok(
+    !firesOn(groupOf("cloud-mirror-drift-refresh.mjs"), "compact"),
+    "the drift refresher must NOT re-run on every compaction — keep it in the \"startup|resume|clear\" group",
+  );
 
   // 2. THE MEASURED CASE — over budget, under the cliff. 23,463 bytes, measured live 2026-08-28.
   // This is the size at which the old ceiling-only rule said nothing at all, with 937 bytes of room
@@ -296,7 +391,170 @@ export function runSessionStartMemoryIndexGuardTests() {
       /budget left/,
       "reading the worktree's own slug would have reported the 20,000-byte decoy as healthy",
     );
+
+    // The drift refresher must land on the SAME memory directory from a worktree, or it caches a
+    // reading under a name the guard never looks up and the alarm goes quiet in exactly the
+    // sessions that do most of the work (2026-10-09, hook speed fixes).
+    runRefresher(worktree, config);
+    const wtTmp = tmpFor(config);
+    assert.ok(
+      existsSync(driftCacheFor(wtTmp, join(config, "projects", slugFor(primary), "memory"))),
+      "a worktree's drift refresher must cache its reading under the PRIMARY's memory directory — the one the guard reads",
+    );
+    assert.ok(
+      !existsSync(driftCacheFor(wtTmp, join(config, "projects", slugFor(worktree), "memory"))),
+      "and never under the worktree-slug decoy",
+    );
   } finally {
     rmSync(wtRoot, { recursive: true, force: true });
+  }
+
+  // 10. THE DRIFT READING IS A CACHE, NOT A SCAN (2026-10-09, hook speed fixes).
+  //
+  // The guard used to read every live memory note in full and run `git ls-tree` plus a
+  // `git cat-file --batch` over the whole mirror on every session start — 1,225 notes and ~1,222
+  // blobs here, p50 2.0 s and worst 11.1 s for the hook, every session waiting. The reading moved
+  // to `scripts/cloud-mirror-drift-refresh.mjs`, an async entry, which caches it; the guard prints
+  // the cached one. What must hold, each asserted below against a real repository whose mirror on
+  // `origin/main` has really drifted:
+  //   · no cache → no drift section, and the guard starts no git beyond its three checkout-position
+  //     calls (the spawn probe records every process it starts);
+  //   · the refresher writes the cache, prints nothing, and skips while the reading is under 30 min;
+  //   · a cached drift prints the stale-mirror section and its alarm word for word, under 24 hours.
+  const driftRoot = mkdtempSync(join(tmpdir(), "phx-mig-drift-"));
+  try {
+    const repo = join(driftRoot, "repo");
+    const config = join(driftRoot, "config");
+    const tmp = tmpFor(config);
+    execFileSync("git", ["init", "-b", "main", repo], { stdio: ["ignore", "ignore", "pipe"] });
+    git(repo, ["config", "user.email", "test@example.com"]);
+    git(repo, ["config", "user.name", "Guard Test"]);
+    git(repo, ["config", "commit.gpgsign", "false"]);
+
+    // The mirror a cloud session would clone: committed, and `origin/main` pointing at it.
+    const index = "x".repeat(20_000);
+    const mirrorDir = join(repo, ".claude", "cloud-context", "memory-mirror");
+    mkdirSync(mirrorDir, { recursive: true });
+    writeFileSync(join(mirrorDir, "MEMORY.md"), index);
+    writeFileSync(join(mirrorDir, "same.md"), "unchanged\n");
+    writeFileSync(join(mirrorDir, "moved-on.md"), "OPEN GAP, NOT yet fixed\n");
+    writeFileSync(join(mirrorDir, "retired.md"), "a memory deleted upstream, still shipping to cloud\n");
+    git(repo, ["add", "-A"]);
+    git(repo, ["commit", "-m", "mirror"]);
+    git(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+
+    // The live memory it has drifted from: one stale, one missing from the mirror, one retired.
+    const memoryDir = join(config, "projects", slugFor(repo), "memory");
+    mkdirSync(memoryDir, { recursive: true });
+    writeFileSync(join(memoryDir, "MEMORY.md"), index);
+    writeFileSync(join(memoryDir, "same.md"), "unchanged\n");
+    writeFileSync(join(memoryDir, "moved-on.md"), "the gap is FIXED and the migration applied\n");
+    writeFileSync(join(memoryDir, "brand-new.md"), "written since the last refresh\n");
+    const cacheFile = driftCacheFor(tmp, memoryDir);
+
+    const CHECKOUT_POSITION_CALLS = new Set([
+      "child_process.execFileSync git rev-parse --git-dir",
+      "child_process.execFileSync git rev-parse --short HEAD",
+      "child_process.execFileSync git rev-list --count HEAD..origin/main",
+    ]);
+    const mirrorReads = (calls: Array<{ kind: string; what: string }>) =>
+      calls.filter((call) => /\bls-tree\b|\bcat-file\b/.test(call.what));
+
+    // 10a. NO CACHE: no drift section, and nothing started but the checkout position.
+    assert.ok(!existsSync(cacheFile), "precondition: no drift reading is cached yet");
+    const probeNoCache = join(driftRoot, "probe-guard-no-cache.jsonl");
+    const noCache = runHook(repo, config, probeNoCache);
+    assert.match(contextOf(noCache.out), /2000 bytes of budget left/, "with no reading cached the index is still reported");
+    assert.doesNotMatch(
+      contextOf(noCache.out),
+      /CLOUD MIRROR IS STALE/,
+      "with NO cached reading the guard must print no drift section — it no longer takes the reading itself",
+    );
+    assert.equal(noCache.out?.systemMessage, undefined, "and must raise no drift alarm");
+    const noCacheCalls = probeCalls(probeNoCache);
+    assert.ok(
+      noCacheCalls.length > 0,
+      "the spawn probe recorded nothing at all — it was not loaded, so the two checks below would pass for free",
+    );
+    assert.deepEqual(
+      mirrorReads(noCacheCalls),
+      [],
+      "the blocking guard must not read the mirror — no git ls-tree, no git cat-file on the session-start path",
+    );
+    for (const call of noCacheCalls) {
+      assert.ok(
+        CHECKOUT_POSITION_CALLS.has(`${call.kind} ${call.what}`),
+        `the blocking guard may start only its three checkout-position git calls, and it started: ${call.kind} ${call.what}`,
+      );
+    }
+
+    // 10b. THE REFRESHER WRITES THE CACHE, and says nothing.
+    const before = Date.now();
+    const printed = runRefresher(repo, config);
+    const after = Date.now();
+    assert.equal(printed, "", "the refresher prints nothing — an async entry's output would land in a later turn");
+    assert.ok(existsSync(cacheFile), `the refresher must write its reading to ${cacheFile}`);
+    const first = JSON.parse(readFileSync(cacheFile, "utf8"));
+    assert.equal(first.memoryDir, memoryDir, "the reading must record which memory directory it measured");
+    assert.ok(first.at >= before && first.at <= after, "and when, as epoch milliseconds");
+    assert.equal(first.source, "ref", "it must read origin/main's mirror — the copy a cloud session clones");
+    assert.deepEqual(
+      [first.drift?.stale, first.drift?.missing, first.drift?.extra, first.drift?.drifted, first.drift?.compared],
+      [["moved-on.md"], ["brand-new.md"], ["retired.md"], 3, 4],
+      "the cached reading must be cloudMirrorDrift's own answer for live memory against origin/main's mirror",
+    );
+
+    // 10c. A CACHED DRIFT PRINTS THE SECTION AND ITS ALARM, word for word, without scanning anything.
+    const probeCached = join(driftRoot, "probe-guard-cached.jsonl");
+    const cached = runHook(repo, config, probeCached);
+    assert.ok(
+      contextOf(cached.out).includes(cloudMirrorSessionLines(first.drift).join("\n")),
+      "a cached drift must print the CLOUD MIRROR IS STALE section exactly as cloudMirrorSessionLines words it",
+    );
+    assert.ok(
+      (cached.out?.systemMessage ?? "").includes(
+        "Cloud mirror 3 file(s) stale — a cloud session would read those memories wrong; "
+          + "run node scripts/sync-cloud-context.mjs before sending work there.",
+      ),
+      "and the human must get the drift alarm, word for word as before",
+    );
+    assert.deepEqual(mirrorReads(probeCalls(probeCached)), [], "printing a cached reading must not scan the mirror");
+
+    // 10d. UNDER 30 MINUTES OLD, THE REFRESHER SKIPS. A note written since would change the reading,
+    // so an unchanged cache proves the work was not redone — and the probe proves no scan started.
+    writeFileSync(join(memoryDir, "another-new.md"), "written after the reading was taken\n");
+    const probeSkip = join(driftRoot, "probe-refresh-skip.jsonl");
+    runRefresher(repo, config, probeSkip);
+    const second = JSON.parse(readFileSync(cacheFile, "utf8"));
+    assert.equal(second.at, first.at, "a reading under 30 minutes old must be left as it is");
+    assert.equal(second.drift?.drifted, 3, "and not re-taken — the note written since is not in it");
+    assert.deepEqual(mirrorReads(probeCalls(probeSkip)), [], "a skipped refresh must not scan the mirror at all");
+
+    // Past 30 minutes it is re-taken, and sees the new note.
+    writeFileSync(cacheFile, JSON.stringify({ ...second, at: Date.now() - 31 * 60 * 1000 }));
+    runRefresher(repo, config);
+    const third = JSON.parse(readFileSync(cacheFile, "utf8"));
+    assert.ok(third.at > second.at, "a reading over 30 minutes old must be re-taken");
+    assert.equal(third.drift?.drifted, 4, "and the new reading must count the note written since");
+
+    // 10e. THE GUARD PRINTS A READING UNDER 24 HOURS OLD, AND NOT AN OLDER ONE. Past a day the reading
+    // may describe a mirror since refreshed and merged, and a false alarm is the one sessions learn
+    // to skip.
+    writeFileSync(cacheFile, JSON.stringify({ ...third, at: Date.now() - 23 * 60 * 60 * 1000 }));
+    assert.match(
+      contextOf(runHook(repo, config).out),
+      /CLOUD MIRROR IS STALE/,
+      "a cached reading under 24 hours old must still be printed",
+    );
+    writeFileSync(cacheFile, JSON.stringify({ ...third, at: Date.now() - 25 * 60 * 60 * 1000 }));
+    const stale = runHook(repo, config);
+    assert.doesNotMatch(
+      contextOf(stale.out),
+      /CLOUD MIRROR IS STALE/,
+      "a reading over 24 hours old must not be printed — it may describe a mirror already refreshed",
+    );
+    assert.equal(stale.out?.systemMessage, undefined, "nor raise the drift alarm");
+  } finally {
+    rmSync(driftRoot, { recursive: true, force: true });
   }
 }

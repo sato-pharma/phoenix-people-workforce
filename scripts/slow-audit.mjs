@@ -45,10 +45,16 @@
 //   node scripts/slow-audit.mjs --transcripts [--since YYYY-MM-DD] [--until YYYY-MM-DD]
 //                                            what sessions actually waited for, from their own
 //                                            transcripts (Layer 6); --until is exclusive, Cairo days
+//   node scripts/slow-audit.mjs --transcripts --check [--since …] [--until …]
+//                                            the same record, then one plain sentence per limit in
+//                                            TRANSCRIPT_LIMITS that it crossed (or "no limit crossed"),
+//                                            also written to ~/.claude/logs/slow-audit-alarms.json.
+//                                            Exit code stays 0 either way; it spawns nothing.
 
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -61,6 +67,11 @@ const LOG = path.join(homedir(), '.claude', 'logs', 'slow-audit.jsonl');
 // Layer 6 keeps its own log, so a machine snapshot's delta is never computed against a
 // transcript record (they share no fields) and --history stays one kind of row.
 const TRANSCRIPT_LOG = path.join(homedir(), '.claude', 'logs', 'slow-audit-transcripts.jsonl');
+// 2026-10-09 (hook speed fixes): --check turns the transcript record into alarms. The verdict file
+// is OVERWRITTEN each run (it answers "is anything over its limit now?"); the history stays in
+// TRANSCRIPT_LOG, so nothing a before/after comparison reads moves.
+const CHECK = ARGS.has('--check');
+const ALARMS_FILE = path.join(homedir(), '.claude', 'logs', 'slow-audit-alarms.json');
 const argValue = (name) => {
   const i = process.argv.indexOf(name);
   return i > -1 ? process.argv[i + 1] ?? null : null;
@@ -512,6 +523,26 @@ export function hookLabel(command, fallback = '') {
   return String(command || fallback || '?').slice(0, 48);
 }
 
+// 2026-10-09 (hook speed fixes). The tools whose wall time a hook can stretch: every one of them is
+// held by its PreToolUse/PostToolUse hooks, and a Read or Grep is otherwise near-instant, so its
+// wall time is close to pure hook overhead. Bash and PowerShell count only in the foreground — a
+// `run_in_background` call returns at once, and counting it would drag the median DOWN.
+/** @type {Set<string>} */
+const TIMED_TOOLS = new Set(['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash', 'PowerShell']);
+const BACKGROUNDABLE_TOOLS = new Set(['Bash', 'PowerShell']);
+// Claude Code's own nine-section summary template, which the owner's Compact Instructions replace
+// with four headings. Either heading is enough: both are unique to that template. Only as a heading
+// at the start of a line ("1. Primary Request and Intent:", "## 1. …", "1. **…:**"): a four-heading
+// summary that quotes the phrase mid-sentence (one did, 2026-10-09 08:19) is not the template, and
+// this limit is zero, so one such quote would alarm every morning.
+const DEFAULT_SUMMARY_TEMPLATE =
+  /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(?:\d+\.[ \t]*)?(?:\*\*)?(?:Primary Request and Intent|Key Technical Concepts)\b/m;
+
+/**
+ * @typedef {'phoenix' | 'other'} ProjectKind
+ * @typedef {{ n: number, p50Ms: number | null, p90Ms: number | null }} ToolWallRow
+ */
+
 /**
  * The fold. `begin()` once per transcript file, `line(raw)` for each of its lines, `finish()` for
  * the summary. Only lines timestamped inside [sinceMs, untilMs) count.
@@ -525,6 +556,19 @@ export function hookLabel(command, fallback = '') {
  *   Stop hooks run in parallel, so the turn-end WAIT is the slowest of them, not the sum;
  * - a SessionStart hook run's source (startup, resume, clear, compact) is after the colon in its
  *   `hookName`.
+ *
+ * Added 2026-10-09 (hook speed fixes), so a fix to the hooks can be proved by the sessions' own
+ * records rather than by a probe timed on an idle box:
+ * - `toolWall`: a tool call's wall time, `tool_use` (assistant line) to its `tool_result` (user
+ *   line), matched by id inside one file, grouped by project kind (`begin(folderName)`: a folder
+ *   named like phoenix is 'phoenix', anything else — or no name — is 'other') and by tool;
+ * - `sessionStartWait`: one start = every SessionStart row sharing a `toolUseID` in one file; its
+ *   wait is the SLOWEST row (they run in parallel), never the sum;
+ * - `repeatedHookText`: `hook_additional_context` text only — module memory (`nested_memory`) and
+ *   rules files (`instructions`) are never measured against a limit — counted as repeated when the
+ *   same text already arrived in this file since the last compaction;
+ * - `compactSummaries`: the size of each compaction summary, and how many used the default
+ *   nine-section template.
  *
  * @param {{ sinceMs?: number, untilMs?: number }} [window]
  */
@@ -554,19 +598,73 @@ export function createTranscriptStats({ sinceMs = 0, untilMs = Infinity } = {}) 
   let pendingUserMs = null;
   let afterCompact = false;
 
+  // 2026-10-09 (hook speed fixes) — state for the four added measurements (see the doc above).
+  /** @type {Record<ProjectKind, Map<string, number[]>>} */
+  const toolWall = { phoenix: new Map(), other: new Map() };
+  /** @type {ProjectKind} */
+  let kind = 'other';
+  // Open tool calls of THIS file only: a tool_use id is never closed by a result in another file.
+  /** @type {Map<string, { tool: string, ts: number }>} */
+  let openTools = new Map();
+  // Files seen so far; scopes a start's toolUseID to its own file (a resumed session's file can
+  // carry a copy of the same ids).
+  let fileSeq = 0;
+  /** @type {Map<string, number>} */
+  const startWait = new Map();
+  /** @type {Set<string>} */
+  let seenHookText = new Set();
+  const hookText = { chars: 0, repeatedChars: 0 };
+  /** @type {number[]} */
+  const summaryChars = [];
+  let summariesInDefaultNine = 0;
+
+  /**
+   * Hook-added text: reset the seen-set at a compaction (the context really was emptied, so a
+   * re-injection after it is new), otherwise hash each text and count it as repeated when this
+   * file already received it in this compaction cycle. `inWindow` false only SEEDS the set, so
+   * a session that spans the window's start does not read its first in-window repeat as new.
+   *
+   * @param {any} o
+   * @param {boolean} inWindow
+   */
+  const noteHookText = (o, inWindow) => {
+    if (o?.type === 'system' && o.subtype === 'compact_boundary') { seenHookText = new Set(); return; }
+    const a = o?.attachment;
+    if (a?.type !== 'hook_additional_context') return;
+    for (const piece of Array.isArray(a.content) ? a.content : [a.content]) {
+      const text = typeof piece === 'string' ? piece : String(piece ?? '');
+      if (!text) continue;
+      const hash = createHash('sha1').update(text).digest('hex');
+      const repeated = seenHookText.has(hash);
+      seenHookText.add(hash);
+      if (!inWindow) continue;
+      hookText.chars += text.length;
+      if (repeated) hookText.repeatedChars += text.length;
+    }
+  };
+
   return {
-    begin() {
+    /** @param {string} [folderName] the transcript's project folder; absent counts as 'other' */
+    begin(folderName) {
       counted = false;
       pendingUserMs = null;
       afterCompact = false;
+      kind = /phoenix/i.test(String(folderName ?? '')) ? 'phoenix' : 'other';
+      openTools = new Map();
+      seenHookText = new Set();
+      fileSeq += 1;
     },
     /** @param {string} raw */
     line(raw) {
       let o;
       try { o = JSON.parse(raw); } catch { return; }
       const ts = Date.parse(o?.timestamp ?? '');
-      if (Number.isNaN(ts) || ts < sinceMs || ts >= untilMs) return;
+      if (Number.isNaN(ts) || ts < sinceMs || ts >= untilMs) {
+        if (ts < sinceMs) noteHookText(o, false);
+        return;
+      }
       if (!counted) { counted = true; sessions += 1; }
+      noteHookText(o, true);
 
       const a = o.attachment;
       if (a) {
@@ -575,6 +673,10 @@ export function createTranscriptStats({ sinceMs = 0, untilMs = Infinity } = {}) 
           if (a.hookEvent === 'SessionStart') {
             const source = String(a.hookName ?? '').split(':')[1] || 'unlabelled';
             startRuns[source] = (startRuns[source] ?? 0) + 1;
+            if (typeof a.toolUseID === 'string' && a.toolUseID) {
+              const key = `${fileSeq}\u0000${a.toolUseID}`;
+              startWait.set(key, Math.max(startWait.get(key) ?? 0, a.durationMs));
+            }
           }
         }
         if (a.type === 'instructions') {
@@ -600,6 +702,32 @@ export function createTranscriptStats({ sinceMs = 0, untilMs = Infinity } = {}) 
         for (const h of timed) push(hooks, `Stop ${hookLabel(h.command)}`, h.durationMs);
         if (timed.length) stopWaits.push(Math.max(...timed.map((h) => h.durationMs)));
         return;
+      }
+      // 2026-10-09 (hook speed fixes): tool results close the calls opened below, and compaction
+      // summaries are sized. Neither returns, so the turn-wait arithmetic after it is unchanged.
+      if (o.type === 'user') {
+        const content = o.message?.content;
+        for (const b of Array.isArray(content) ? content : []) {
+          if (b?.type !== 'tool_result') continue;
+          const open = openTools.get(b.tool_use_id);
+          if (!open) continue;
+          openTools.delete(b.tool_use_id);
+          if (ts >= open.ts) push(toolWall[kind], open.tool, ts - open.ts);
+        }
+        if (o.isCompactSummary === true) {
+          const text = typeof content === 'string'
+            ? content
+            : (Array.isArray(content) ? content : []).filter((b) => typeof b?.text === 'string').map((b) => b.text).join('\n');
+          summaryChars.push(text.length);
+          if (DEFAULT_SUMMARY_TEMPLATE.test(text)) summariesInDefaultNine += 1;
+        }
+      }
+      if (o.type === 'assistant' && Array.isArray(o.message?.content)) {
+        for (const b of o.message.content) {
+          if (b?.type !== 'tool_use' || typeof b.id !== 'string' || !TIMED_TOOLS.has(b.name)) continue;
+          if (BACKGROUNDABLE_TOOLS.has(b.name) && b.input?.run_in_background === true) continue;
+          openTools.set(b.id, { tool: b.name, ts });
+        }
       }
       if (o.type === 'user' && !o.isMeta) {
         pendingUserMs = ts;
@@ -627,6 +755,20 @@ export function createTranscriptStats({ sinceMs = 0, untilMs = Infinity } = {}) 
       }
       const secs = compactions.map((c) => c.secs);
       const perSessionKB = (/** @type {number} */ chars) => (sessions ? num(chars / sessions / 1024, 0) : null);
+      // 2026-10-09 (hook speed fixes). A reduce, not Math.max(...xs): a long window can hold more
+      // samples than a spread can pass as arguments.
+      const maxOf = (/** @type {number[]} */ xs) => (xs.length ? xs.reduce((x, y) => (y > x ? y : x)) : null);
+      /** @returns {Record<string, ToolWallRow>} */
+      const wallOf = (/** @type {Map<string, number[]>} */ byTool) => {
+        /** @type {Record<string, ToolWallRow>} */
+        const out = {};
+        for (const tool of TIMED_TOOLS) {
+          const xs = byTool.get(tool);
+          if (xs) out[tool] = { n: xs.length, p50Ms: quantile(xs, 0.5), p90Ms: quantile(xs, 0.9) };
+        }
+        return out;
+      };
+      const waits = [...startWait.values()];
       return {
         sessions,
         compactions: {
@@ -654,6 +796,20 @@ export function createTranscriptStats({ sinceMs = 0, untilMs = Infinity } = {}) 
           moduleMemory: perSessionKB(injected.moduleMemory),
           hookContext: Object.fromEntries(Object.entries(injected.hookContext).map(([k, v]) => [k, perSessionKB(v)])),
         },
+        // 2026-10-09 (hook speed fixes) — added after every existing field, which keep their shape.
+        toolWall: { phoenix: wallOf(toolWall.phoenix), other: wallOf(toolWall.other) },
+        sessionStartWait: { starts: waits.length, p50Ms: quantile(waits, 0.5), p90Ms: quantile(waits, 0.9), maxMs: maxOf(waits) },
+        repeatedHookText: {
+          chars: hookText.chars,
+          repeatedChars: hookText.repeatedChars,
+          share: hookText.chars ? num(hookText.repeatedChars / hookText.chars, 4) : null,
+        },
+        compactSummaries: {
+          n: summaryChars.length,
+          p50Chars: quantile(summaryChars, 0.5),
+          maxChars: maxOf(summaryChars),
+          defaultNine: summariesInDefaultNine,
+        },
       };
     },
   };
@@ -674,7 +830,7 @@ async function readTranscripts({ sinceMs, untilMs }) {
     for (const f of names) {
       const file = path.join(dir, f);
       try { if (statSync(file).mtimeMs < sinceMs) continue; } catch { continue; } // untouched since: nothing in the window
-      stats.begin();
+      stats.begin(project); // the folder name says whether this is a Phoenix session (toolWall)
       const rl = readline.createInterface({ input: createReadStream(file), crlfDelay: Infinity });
       for await (const l of rl) stats.line(l);
     }
@@ -694,6 +850,86 @@ export function transcriptRates(rec) {
     dispatcherP50Ms: dispatcher?.p50Ms ?? null,
     promptHookKBPerSession: rec?.injectedPerSessionKB?.hookContext?.UserPromptSubmit ?? null,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2026-10-09 (hook speed fixes) — the limits a transcript record is checked against, so a slowdown
+// is caught the day it lands instead of when the owner next says "everything is slow". Each limit
+// carries a MINIMUM SAMPLE: a quiet day with three Read calls must not alarm on one slow one.
+// A value alarms only when it is strictly ABOVE its limit; at the limit is still clean.
+// Module memory and rules files are deliberately absent — they are never measured against a limit.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @typedef {{ limit: number, minSample: number }} TranscriptLimit
+ * @typedef {{ key: string, value: number, limit: number, hook?: string, say: string }} TranscriptAlarm
+ */
+export const TRANSCRIPT_LIMITS = {
+  phoenixReadP50Ms: { limit: 400, minSample: 50 },          // toolWall.phoenix.Read, over n Read calls
+  preToolUseP90Ms: { limit: 3000, minSample: 20 },          // each "PreToolUse …" hooks row, over its n
+  preToolUseMaxMs: { limit: 60_000, minSample: 1 },         // each "PreToolUse …" hooks row, its worst run
+  sessionStartP90Ms: { limit: 2500, minSample: 10 },        // sessionStartWait, over its starts
+  userPromptSubmitP50Ms: { limit: 800, minSample: 20 },     // each "UserPromptSubmit …" hooks row
+  stopWaitP50Ms: { limit: 800, minSample: 20 },             // stopWait, over its turns
+  repeatedHookTextShare: { limit: 0.15, minSample: 50_000 }, // repeatedHookText.share, over its chars
+  compactSummaryP50Chars: { limit: 10_000, minSample: 3 },  // compactSummaries, over n summaries
+  compactDefaultNine: { limit: 0, minSample: 1 },           // any summary in the default template
+  compactP50Secs: { limit: 90, minSample: 3 },              // compactions.p50Secs, over their count
+};
+
+const en = (/** @type {number} */ n) => n.toLocaleString('en-US');
+// One plain sentence per limit, for the owner: no file names, and never a hook's name — that goes
+// in the alarm's separate `hook` field, so the sentence reads the same whichever check was slow.
+/** @type {Record<string, (value: number, limit: number) => string>} */
+const ALARM_SAY = {
+  phoenixReadP50Ms: (v, l) => `Opening a file in a Phoenix session took ${en(v)} ms in a typical case, above the ${en(l)} ms limit.`,
+  preToolUseP90Ms: (v, l) => `One of the checks that run before each session action took ${en(v)} ms or more on its slowest tenth of runs, above the ${en(l)} ms limit.`,
+  preToolUseMaxMs: (v, l) => `One of the checks that run before each session action held a session for ${en(num(v / 1000, 1))} seconds at its worst, above the ${en(num(l / 1000, 1))}-second limit.`,
+  sessionStartP90Ms: (v, l) => `Opening or resuming a session, or carrying on after it summarised itself, kept it waiting ${en(v)} ms on the slowest tenth of starts, above the ${en(l)} ms limit.`,
+  userPromptSubmitP50Ms: (v, l) => `Each message sent to a session waited ${en(v)} ms in a typical case for a check before work began, above the ${en(l)} ms limit.`,
+  stopWaitP50Ms: (v, l) => `At the end of each reply, sessions waited ${en(v)} ms in a typical case for their closing checks, above the ${en(l)} ms limit.`,
+  repeatedHookTextShare: (v, l) => `${en(num(v * 100, 1))}% of the text the checks add to sessions was a repeat of text the session already had, above the ${en(num(l * 100, 1))}% limit, so sessions fill up and freeze to summarise sooner.`,
+  compactSummaryP50Chars: (v, l) => `When a session ran out of room, its typical summary ran to ${en(v)} characters, above the ${en(l)} limit, and a longer summary keeps the session frozen longer while it is written.`,
+  compactDefaultNine: (v) => `${en(v)} session ${v === 1 ? 'summary' : 'summaries'} used the long default layout instead of the four-heading format you set.`,
+  compactP50Secs: (v, l) => `When a session ran out of room and summarised itself, it froze for ${en(v)} seconds in a typical case, above the ${en(l)}-second limit.`,
+};
+
+/**
+ * The limits a transcript record crossed. Pure: no file, no clock, no process — `--check` writes
+ * what this returns, and tests/slow-audit.test.ts feeds it synthetic records.
+ *
+ * @param {any} rec a record as `--transcripts` builds it
+ * @param {typeof TRANSCRIPT_LIMITS} [limits]
+ * @returns {TranscriptAlarm[]}
+ */
+export function transcriptAlarms(rec, limits = TRANSCRIPT_LIMITS) {
+  /** @type {TranscriptAlarm[]} */
+  const alarms = [];
+  /** @param {keyof typeof TRANSCRIPT_LIMITS} key @param {unknown} value @param {unknown} sample @param {string} [hook] */
+  const over = (key, value, sample, hook) => {
+    const L = limits[key];
+    if (!L || typeof value !== 'number' || !Number.isFinite(value)) return;
+    if (!(typeof sample === 'number' && sample >= L.minSample)) return; // a quiet day cannot alarm
+    if (!(value > L.limit)) return;
+    alarms.push({ key, value, limit: L.limit, ...(hook ? { hook } : {}), say: ALARM_SAY[key](value, L.limit) });
+  };
+  const read = rec?.toolWall?.phoenix?.Read;
+  over('phoenixReadP50Ms', read?.p50Ms, read?.n);
+  for (const h of Array.isArray(rec?.hooks) ? rec.hooks : []) {
+    const label = typeof h?.hook === 'string' ? h.hook : '';
+    if (label.startsWith('PreToolUse ')) {
+      over('preToolUseP90Ms', h.p90Ms, h.n, label);
+      over('preToolUseMaxMs', h.maxMs, h.n, label);
+    } else if (label.startsWith('UserPromptSubmit ')) {
+      over('userPromptSubmitP50Ms', h.p50Ms, h.n, label);
+    }
+  }
+  over('sessionStartP90Ms', rec?.sessionStartWait?.p90Ms, rec?.sessionStartWait?.starts);
+  over('stopWaitP50Ms', rec?.stopWait?.p50Ms, rec?.stopWait?.turns);
+  over('repeatedHookTextShare', rec?.repeatedHookText?.share, rec?.repeatedHookText?.chars);
+  over('compactSummaryP50Chars', rec?.compactSummaries?.p50Chars, rec?.compactSummaries?.n);
+  over('compactDefaultNine', rec?.compactSummaries?.defaultNine, rec?.compactSummaries?.n);
+  over('compactP50Secs', rec?.compactions?.p50Secs, rec?.compactions?.count);
+  return alarms;
 }
 
 function transcriptTable(r, prev) {
@@ -765,6 +1001,21 @@ async function transcriptAudit() {
     appendFileSync(TRANSCRIPT_LOG, JSON.stringify(rec) + '\n', 'utf8');
   } catch { /* still useful without its log */ }
   console.log(AS_JSON ? JSON.stringify(rec, null, 2) : transcriptTable(rec, prev));
+
+  // 2026-10-09 (hook speed fixes): --check. The record above is built and logged exactly as
+  // without it; this only reads it. The exit code stays 0 whatever crossed — a scheduled run must
+  // not read a crossed limit as a failed audit — and with --json the sentences go to stderr so
+  // stdout stays one parseable document.
+  if (CHECK) {
+    const alarms = transcriptAlarms(rec);
+    const say = AS_JSON ? console.error : console.log;
+    if (alarms.length) for (const alarm of alarms) say(alarm.say);
+    else say('no limit crossed');
+    try {
+      mkdirSync(path.dirname(ALARMS_FILE), { recursive: true });
+      writeFileSync(ALARMS_FILE, JSON.stringify({ at: rec.at, since: rec.since, until: rec.until, alarms }, null, 2) + '\n', 'utf8');
+    } catch { /* the printed sentences still stand */ }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

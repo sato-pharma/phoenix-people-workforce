@@ -173,6 +173,25 @@ transcripts is that same process started on a box short of free RAM, so the plan
 What makes this call slow is the machine (`docs/slowness-audit.md`), not this file. Re-measure with
 the transcript audit before reopening it.
 
+**2026-10-09 — the two process starts around the dispatcher, removed.** The dispatcher itself is
+unchanged; what changed is what ran *with* it on every call:
+
+- **No Git Bash in front of it.** `.claude/settings.json` now runs it, and every other node hook, in
+  exec form — `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/hook-dispatch.mjs",
+  "PreToolUse"]` — which Claude Code spawns with no shell and still fills `${CLAUDE_PROJECT_DIR}` in.
+  One Read through the dispatcher, median of 9 interleaved runs on a quiet box: **144 ms through Git
+  Bash, 99 ms without it.**
+- **No `git rev-parse` inside primary-write-guard.** It asked git for the checkout layout on every
+  Write/Edit/NotebookEdit — the 75 ms in the table above. It now reads the same `.git` folder,
+  `gitdir:` file and `commondir` pointer git reads (`scripts/lib/git-layout.mjs`), and falls back to
+  git only when those cannot be read. One Edit through the dispatcher: **156–174 ms before, 120–139
+  ms after** (two rounds of 9). bash-guard's pnpm-in-a-worktree check uses the same helper.
+
+Both are pinned by `tests/hook-hot-path.test.ts`: it runs every blocking hook settings.json names
+under `tests/support/spawn-probe.mjs` with ordinary payloads and fails on any process start or
+network call. The persistent-process ideas above stay declined; the full account is
+`docs/slowness-audit.md`, "Layer 7".
+
 ## batch-nudge — one step, several reads
 
 Added 2026-10-08, after the owner's "building is slow". Measured from 72 hours of Phoenix transcripts

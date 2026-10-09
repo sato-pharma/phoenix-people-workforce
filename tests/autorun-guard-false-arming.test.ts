@@ -36,6 +36,8 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { settingsHookGroups } from "./support/hook-wiring.ts";
+
 /** The hook under test, resolved from the repo root the suite runs in. */
 const hookSource = resolve(".claude/hooks/autorun-guard.mjs");
 
@@ -77,10 +79,8 @@ const nextTurn = (sandbox: Sandbox, session: string): string =>
   submit(sandbox, session, "carry on with the next phase")?.hookSpecificOutput?.additionalContext ?? "";
 
 function testTheGuardIsWired() {
-  const settings = JSON.parse(readFileSync(".claude/settings.json", "utf8")) as {
-    hooks?: { UserPromptSubmit?: Array<{ hooks?: Array<{ command?: string }> }> };
-  };
-  const entries = (settings.hooks?.UserPromptSubmit ?? []).flatMap((group) => group.hooks ?? []);
+  // Read through the wiring helper: an exec-form entry's `command` is just "node" (2026-10-09).
+  const entries = settingsHookGroups("UserPromptSubmit").flatMap((group) => group.hooks ?? []);
   assert.equal(
     entries.filter((entry) => (entry.command ?? "").includes("autorun-guard.mjs")).length,
     1,

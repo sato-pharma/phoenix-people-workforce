@@ -44,6 +44,7 @@ import {
   HOOKS,
   MACHINE_COUNTERS,
   THRESHOLDS,
+  TRANSCRIPT_LIMITS,
   cairoMidnightMs,
   contextBucket,
   createTranscriptStats,
@@ -51,6 +52,7 @@ import {
   hookLabel,
   spanSeconds,
   summarizeRun,
+  transcriptAlarms,
   transcriptRates,
 } from "../scripts/slow-audit.mjs";
 
@@ -428,6 +430,268 @@ function transcriptFoldMeasuresWhatSessionsWaitedFor(): void {
   assert.ok(!/\b(run|ps|spawn)\(/.test(source.slice(start, end)), "the transcript layer must never spawn a process");
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 2026-10-09 (hook speed fixes) — four measurements added to the fold, the limits a record is
+// checked against, and `--check`. Each was added so a fix to the hooks can be proved (or a
+// regression caught) from what the sessions themselves recorded, not from a probe timed on an
+// idle box. Every assertion below was watched failing against a deliberate break before it landed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WINDOW = () => ({ sinceMs: cairoMidnightMs("2026-10-06")!, untilMs: cairoMidnightMs("2026-10-09")! });
+const jsonl = (o: Record<string, unknown>) => JSON.stringify(o);
+
+/**
+ * A tool call's wall time is its tool_use to its tool_result. A Read is near-instant on its own,
+ * so in a Phoenix session its wall time is close to pure hook overhead — the figure a hook fix moves.
+ */
+function toolWallIsTimedPerProjectAndTool(): void {
+  const call = (ts: string, id: string, name: string, input: Record<string, unknown> = {}) =>
+    jsonl({ type: "assistant", timestamp: ts, message: { content: [{ type: "tool_use", id, name, input }] } });
+  const result = (ts: string, id: string) =>
+    jsonl({ type: "user", timestamp: ts, message: { content: [{ type: "tool_result", tool_use_id: id, content: "ok" }] } });
+  const stats = createTranscriptStats(WINDOW());
+
+  // A worktree's folder: "Phoenix" only in capitals, so the match must ignore case.
+  stats.begin("F--Phoenix-Workforce--wt-hook-speed-9oct");
+  for (const raw of [
+    call("2026-10-07T10:00:00.000Z", "t1", "Read"),
+    result("2026-10-07T10:00:00.250Z", "t1"),
+    call("2026-10-07T10:00:01.000Z", "t2", "Read"),
+    result("2026-10-07T10:00:01.350Z", "t2"),
+    // A background Bash returns at once; counting it would drag the median DOWN.
+    call("2026-10-07T10:00:02.000Z", "t3", "Bash", { command: "gh run watch", run_in_background: true }),
+    result("2026-10-07T10:00:02.005Z", "t3"),
+    call("2026-10-07T10:00:03.000Z", "t4", "Bash", { command: "git status --porcelain" }),
+    result("2026-10-07T10:00:04.200Z", "t4"),
+    // An Agent call is minutes of model work, not hook overhead.
+    call("2026-10-07T10:00:05.000Z", "t5", "Agent"),
+    result("2026-10-07T10:09:05.000Z", "t5"),
+    result("2026-10-07T10:09:06.000Z", "never-opened"),
+    call("2026-10-07T10:10:00.000Z", "t7", "Write"), // left open: its result never arrives in this file
+  ]) stats.line(raw);
+
+  stats.begin(); // no folder name: must still work, and counts as 'other'
+  for (const raw of [
+    result("2026-10-07T11:00:00.000Z", "t7"), // a result in ANOTHER file must never close t7
+    call("2026-10-07T11:00:01.000Z", "t6", "Glob"),
+    result("2026-10-07T11:00:01.090Z", "t6"),
+  ]) stats.line(raw);
+
+  const r = stats.finish();
+  assert.deepEqual(
+    r.toolWall.phoenix.Read,
+    { n: 2, p50Ms: 350, p90Ms: 350 },
+    "a Read's wall time runs from its tool_use to the tool_result with the same id, filed under 'phoenix' for a folder named Phoenix in any case",
+  );
+  assert.equal(r.toolWall.phoenix.Bash?.n, 1, "a run_in_background Bash returns at once and must not be timed");
+  assert.deepEqual(
+    r.toolWall.other,
+    { Glob: { n: 1, p50Ms: 90, p90Ms: 90 } },
+    "begin() with no folder name counts as 'other' (never inherits the previous file's kind), and a call left open in one file is never closed by a result in another",
+  );
+  assert.deepEqual(Object.keys(r.toolWall.phoenix), ["Read", "Bash"], "only the tools a hook can stretch are timed: Agent is not");
+}
+
+/** All SessionStart hooks of one start run in parallel, so the session waits for the slowest. */
+function sessionStartWaitIsTheSlowestHookOfEachStart(): void {
+  const row = (ts: string, durationMs: number, toolUseID?: string, hookEvent = "SessionStart", hookName = "SessionStart:startup") =>
+    jsonl({ type: "attachment", timestamp: ts, attachment: { type: "hook_success", hookEvent, hookName, toolUseID, command: "x", durationMs } });
+  const stats = createTranscriptStats(WINDOW());
+
+  stats.begin("F--Phoenix-Workforce-phoenix-workforce");
+  for (const raw of [
+    row("2026-10-07T09:00:00Z", 200, "A"),
+    row("2026-10-07T09:00:00Z", 900, "A"),
+    row("2026-10-07T09:00:00Z", 400, "A"),
+    row("2026-10-07T09:00:00Z", 99_999), // no toolUseID: cannot be tied to a start, skipped
+    row("2026-10-07T09:00:01Z", 50_000, "A", "PreToolUse", "PreToolUse:Bash"), // not a SessionStart row
+    row("2026-10-07T12:00:00Z", 1500, "B", "SessionStart", "SessionStart:compact"),
+    row("2026-10-07T12:00:00Z", 300, "B", "SessionStart", "SessionStart:compact"),
+  ]) stats.line(raw);
+  stats.begin("F--Phoenix-Workforce-phoenix-workforce");
+  stats.line(row("2026-10-07T13:00:00Z", 100, "A")); // the same id in another file is another start
+
+  const r = stats.finish();
+  assert.equal(r.sessionStartWait.starts, 3, "one start per toolUseID per file; a row with no toolUseID is skipped");
+  assert.equal(r.sessionStartWait.maxMs, 1500, "a start waits for its SLOWEST hook (1,500ms), never the sum (1,800ms)");
+  assert.deepEqual(r.sessionStartWait, { starts: 3, p50Ms: 900, p90Ms: 1500, maxMs: 1500 }, "starts of 900, 1,500 and 100ms");
+}
+
+/**
+ * Hook text that repeats what the session already holds fills the context for nothing and brings
+ * the next compaction closer. Module memory and rules files are deliberately NOT measured.
+ */
+function repeatedHookTextIsCountedPerCompactionCycle(): void {
+  const ctx = (ts: string, content: string | string[]) =>
+    jsonl({ type: "attachment", timestamp: ts, attachment: { type: "hook_additional_context", hookName: "UserPromptSubmit", content } });
+  const X = "x".repeat(1000), W = "w".repeat(300), Z = "z".repeat(200);
+  const stats = createTranscriptStats(WINDOW());
+
+  stats.begin("F--Phoenix-Workforce-phoenix-workforce");
+  for (const raw of [
+    ctx("2026-10-05T20:00:00Z", W), // 23:00 Cairo on 5 Oct: before the window, so it only SEEDS
+    ctx("2026-10-07T10:00:00Z", W), // ...and this in-window copy is therefore a repeat
+    ctx("2026-10-07T10:00:01Z", [X]),
+    ctx("2026-10-07T10:00:02Z", X), // a string body is a text too, and this one is a repeat
+    jsonl({ type: "attachment", timestamp: "2026-10-07T10:00:03Z", attachment: { type: "nested_memory", content: { path: "m", content: X } } }),
+    jsonl({ type: "attachment", timestamp: "2026-10-07T10:00:04Z", attachment: { type: "instructions", files: [{ content: X }] } }),
+    jsonl({ type: "system", subtype: "compact_boundary", timestamp: "2026-10-07T11:00:00Z", compactMetadata: { durationMs: 60_000 } }),
+    ctx("2026-10-07T11:00:01Z", [X, Z]), // after a compaction the context is new: NOT a repeat
+    ctx("2026-10-07T11:00:02Z", [X]), // ...until it arrives twice in the new cycle
+  ]) stats.line(raw);
+  stats.begin("F--Phoenix-Workforce-phoenix-workforce");
+  stats.line(ctx("2026-10-07T12:00:00Z", X)); // another file: new
+
+  const r = stats.finish();
+  assert.equal(r.repeatedHookText.chars, 5500, "only hook_additional_context is measured: module memory and rules files are never put against a limit");
+  assert.equal(
+    r.repeatedHookText.repeatedChars,
+    2300,
+    "a repeat is the same text again in the same file AND the same compaction cycle, with text from before the window still counted as seen",
+  );
+  assert.deepEqual(r.repeatedHookText, { chars: 5500, repeatedChars: 2300, share: 0.4182 }, "share is repeated chars over all chars");
+
+  const empty = createTranscriptStats().finish();
+  assert.deepEqual(
+    {
+      toolWall: empty.toolWall,
+      sessionStartWait: empty.sessionStartWait,
+      repeatedHookText: empty.repeatedHookText,
+      compactSummaries: empty.compactSummaries,
+    },
+    {
+      toolWall: { phoenix: {}, other: {} },
+      sessionStartWait: { starts: 0, p50Ms: null, p90Ms: null, maxMs: null },
+      repeatedHookText: { chars: 0, repeatedChars: 0, share: null },
+      compactSummaries: { n: 0, p50Chars: null, maxChars: null, defaultNine: 0 },
+    },
+    "an empty window reports nulls, never a zero dressed as a measurement",
+  );
+}
+
+/** A compaction freezes the session while its summary is written, so the summary's length is the cost. */
+function compactSummariesAreSizedAndTheDefaultTemplateCaught(): void {
+  const summary = (ts: string, content: unknown, isCompactSummary = true) =>
+    jsonl({ type: "user", timestamp: ts, isCompactSummary, message: { role: "user", content } });
+  const stats = createTranscriptStats(WINDOW());
+  stats.begin("C--Users-satoh");
+  for (const raw of [
+    summary("2026-10-07T10:00:00Z", ("1. Primary Request and Intent: " + "p".repeat(20_000)).slice(0, 12_000)),
+    summary("2026-10-07T11:00:00Z", [{ type: "text", text: "a".repeat(3500) }, { type: "text", text: "b".repeat(3499) }]), // 7,000 joined
+    summary(
+      "2026-10-07T12:00:00Z",
+      ('## His words\n- count summaries containing "Key Technical Concepts" or "Primary Request and Intent"\n' + "h".repeat(5000)).slice(0, 4000),
+    ),
+    summary("2026-10-07T13:00:00Z", "Key Technical Concepts — an ordinary prompt quoting the heading", false),
+  ]) stats.line(raw);
+
+  const r = stats.finish();
+  assert.equal(r.compactSummaries.n, 3, "only lines flagged isCompactSummary are summaries");
+  assert.equal(
+    r.compactSummaries.defaultNine,
+    1,
+    "a summary with Claude Code's default nine-section headings is counted; one that only quotes a heading mid-line is not",
+  );
+  assert.deepEqual(
+    r.compactSummaries,
+    { n: 3, p50Chars: 7000, maxChars: 12_000, defaultNine: 1 },
+    "a summary's length is its string content, or its text blocks joined",
+  );
+}
+
+/**
+ * The limits. A value alarms only when strictly ABOVE its limit and only on its minimum sample, so a
+ * quiet day cannot alarm on one slow call. The sentence is for the owner: no file names, and a hook
+ * is named only in its own `hook` field.
+ */
+function transcriptLimitsAlarmOnlyOnRealSamples(): void {
+  // A record sitting EXACTLY on every limit with EXACTLY the minimum sample: clean.
+  const atLimit = () => ({
+    toolWall: {
+      phoenix: { Read: { n: 50, p50Ms: 400, p90Ms: 900 } },
+      other: { Read: { n: 999, p50Ms: 9999, p90Ms: 9999 } }, // another project's reads are not Phoenix's limit
+    },
+    hooks: [
+      { hook: "PreToolUse hook-dispatch PreToolUse", n: 20, p50Ms: 300, p90Ms: 3000, maxMs: 60_000 },
+      { hook: "UserPromptSubmit relay-capture", n: 20, p50Ms: 800, p90Ms: 5000, maxMs: 90_000 },
+      // Rows for other events are measured, never put against these limits.
+      { hook: "SessionStart Provisioning node_modules + env in all worktrees", n: 99, p50Ms: 9000, p90Ms: 17_500, maxMs: 120_000 },
+      { hook: "Stop next-step-capture", n: 99, p50Ms: 5000, p90Ms: 9000, maxMs: 120_000 },
+    ],
+    sessionStartWait: { starts: 10, p50Ms: 1000, p90Ms: 2500, maxMs: 9000 },
+    stopWait: { turns: 20, p50Ms: 800, p90Ms: 2000 },
+    repeatedHookText: { chars: 50_000, repeatedChars: 7500, share: 0.15 },
+    compactSummaries: { n: 3, p50Chars: 10_000, maxChars: 30_000, defaultNine: 0 },
+    compactions: { count: 3, p50Secs: 90 },
+  });
+  type Rec = ReturnType<typeof atLimit>;
+
+  assert.deepEqual(transcriptAlarms(atLimit()), [], "a record exactly at every limit, other projects and other hook events included, crosses none");
+  assert.ok(
+    !Object.keys(TRANSCRIPT_LIMITS).some((k) => /memory|instruction|rules/i.test(k)),
+    "module memory and rules files are never measured against a limit",
+  );
+
+  const PRE = "PreToolUse hook-dispatch PreToolUse";
+  const UPS = "UserPromptSubmit relay-capture";
+  // [limit, the value that crosses it, push it over, then thin its sample to one under the minimum, hook]
+  const cases: [keyof typeof TRANSCRIPT_LIMITS, number, (r: Rec) => void, (r: Rec) => void, string | null][] = [
+    ["phoenixReadP50Ms", 401, (r) => { r.toolWall.phoenix.Read.p50Ms = 401; }, (r) => { r.toolWall.phoenix.Read.n = 49; }, null],
+    ["preToolUseP90Ms", 3001, (r) => { r.hooks[0].p90Ms = 3001; }, (r) => { r.hooks[0].n = 19; }, PRE],
+    ["preToolUseMaxMs", 60_001, (r) => { r.hooks[0].maxMs = 60_001; }, (r) => { r.hooks[0].n = 0; }, PRE],
+    ["sessionStartP90Ms", 2501, (r) => { r.sessionStartWait.p90Ms = 2501; }, (r) => { r.sessionStartWait.starts = 9; }, null],
+    ["userPromptSubmitP50Ms", 801, (r) => { r.hooks[1].p50Ms = 801; }, (r) => { r.hooks[1].n = 19; }, UPS],
+    ["stopWaitP50Ms", 801, (r) => { r.stopWait.p50Ms = 801; }, (r) => { r.stopWait.turns = 19; }, null],
+    ["repeatedHookTextShare", 0.16, (r) => { r.repeatedHookText.share = 0.16; }, (r) => { r.repeatedHookText.chars = 49_999; }, null],
+    ["compactSummaryP50Chars", 10_001, (r) => { r.compactSummaries.p50Chars = 10_001; }, (r) => { r.compactSummaries.n = 2; }, null],
+    ["compactDefaultNine", 1, (r) => { r.compactSummaries.defaultNine = 1; }, (r) => { r.compactSummaries.n = 0; }, null],
+    ["compactP50Secs", 91, (r) => { r.compactions.p50Secs = 91; }, (r) => { r.compactions.count = 2; }, null],
+  ];
+  assert.deepEqual(
+    cases.map(([key]) => key).sort(),
+    Object.keys(TRANSCRIPT_LIMITS).sort(),
+    "every limit has a case that fires it and a case one sample short of its minimum",
+  );
+
+  for (const [key, value, over, thin, hook] of cases) {
+    const hot = atLimit();
+    over(hot);
+    const alarms = transcriptAlarms(hot);
+    assert.deepEqual(
+      alarms.map((a) => [a.key, a.value, a.limit, a.hook ?? null]),
+      [[key, value, TRANSCRIPT_LIMITS[key].limit, hook]],
+      `${key}: one step over its limit must raise exactly one alarm${hook ? `, naming the hook in its own field` : ""}`,
+    );
+    const say = alarms[0].say;
+    assert.ok(/^[A-Z0-9][^\n]*\.$/.test(say) && !/\.\s+[A-Z]/.test(say), `${key}: the owner gets one plain sentence, got ${JSON.stringify(say)}`);
+    assert.ok(!/\.(mjs|js|ts|json|jsonl|md|ps1)\b|[\\/]/.test(say), `${key}: no file name or path in what the owner reads, got ${JSON.stringify(say)}`);
+    assert.ok(!hook || !say.includes(hook.split(" ")[1]), `${key}: the hook is named only in its own field, never in the sentence`);
+
+    const quiet = atLimit();
+    over(quiet);
+    thin(quiet);
+    assert.deepEqual(transcriptAlarms(quiet), [], `${key}: one sample under its minimum must not alarm — a quiet day cannot`);
+  }
+}
+
+/** `--check` judges the record it just logged, says so in plain words, and never fails the run. */
+function checkFlagReportsWithoutFailing(): void {
+  const start = source.indexOf("async function transcriptAudit(");
+  const audit = source.slice(start, source.indexOf("// The verdict.", start));
+  const check = audit.slice(audit.indexOf("if (CHECK)"));
+  assert.ok(start > 0 && audit.includes("if (CHECK)") && check.includes("transcriptAlarms(rec)"), "--check must judge the very record --transcripts just built");
+  assert.ok(
+    audit.indexOf("appendFileSync(TRANSCRIPT_LOG") > 0 && audit.indexOf("appendFileSync(TRANSCRIPT_LOG") < audit.indexOf("if (CHECK)"),
+    "the record is logged exactly as without --check, BEFORE it is judged",
+  );
+  assert.ok(check.includes("'no limit crossed'"), "a clean check must say so in words, not print nothing");
+  assert.ok(!/exitCode|process\.exit\(/.test(check), "--check must leave the exit code at 0: a crossed limit is a finding, not a failed audit");
+  assert.ok(
+    /ALARMS_FILE = [^\n]*'slow-audit-alarms\.json'/.test(source) && check.includes("JSON.stringify({ at: rec.at, since: rec.since, until: rec.until, alarms }"),
+    "--check writes { at, since, until, alarms } to ~/.claude/logs/slow-audit-alarms.json",
+  );
+}
+
 export async function runSlowAuditTests(): Promise<void> {
   counterChoiceIsPinned();
   thresholdsAreCoherent();
@@ -436,4 +700,10 @@ export async function runSlowAuditTests(): Promise<void> {
   importingIsSideEffectFree();
   hookWaitIsTheSlowestNotTheSum();
   transcriptFoldMeasuresWhatSessionsWaitedFor();
+  toolWallIsTimedPerProjectAndTool();
+  sessionStartWaitIsTheSlowestHookOfEachStart();
+  repeatedHookTextIsCountedPerCompactionCycle();
+  compactSummariesAreSizedAndTheDefaultTemplateCaught();
+  transcriptLimitsAlarmOnlyOnRealSamples();
+  checkFlagReportsWithoutFailing();
 }
