@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { certificateReasons, certificateSentence, rankCertificateHtml, type RankCertificateInput } from "../src/lib/rep-ranks/certificate.ts";
 import { explainStanding, leverSentence } from "../src/lib/rep-ranks/explain.ts";
 import { insigniaSvgInner } from "../src/lib/rep-ranks/insignia-svg.ts";
@@ -11,6 +13,7 @@ import {
   gapScore,
   gpsScore,
   qualityScores,
+  rankCountedFlags,
   stopsOfDay,
   type RankFieldSave,
 } from "../src/lib/rep-ranks/field-quality.ts";
@@ -161,6 +164,37 @@ export function runRepRanksTests() {
   assert.deepEqual(countedIntegrityFlags(["coordinate_replay", "zero_jitter"], 600), [], "the coarse line is COARSE_ACCURACY_METERS");
   assert.deepEqual(countedIntegrityFlags(["mock_provider", "impossible_travel"], 2000), ["mock_provider", "impossible_travel"]);
   assert.deepEqual(countedIntegrityFlags(["constant_accuracy", "typed_coordinate"], 10), [], "weak flags never count on their own");
+
+  // A case the Super Admin has SETTLED costs the rep's rank nothing (owner, 2026-10-09). The test is
+  // `settled_flags = flags` and nothing else, so a settlement the detectors have overtaken counts
+  // again by itself — no filer and no rank job knows settling exists.
+  const flagged = { accuracyMeters: 12, flags: ["mock_provider"] };
+  const unsettled = { settledAt: null, settledBy: null, settledFlags: null, settledNote: null };
+  const settledOn = (flags: string[]) => ({
+    settledAt: "2026-10-09T18:00:00.000Z",
+    settledBy: "B-10",
+    settledFlags: flags,
+    settledNote: "The sign was replaced the week before; the reading was of the new one.",
+  });
+  assert.deepEqual(rankCountedFlags({ ...flagged, ...unsettled }), ["mock_provider"], "an unsettled case still costs the rank");
+  assert.deepEqual(rankCountedFlags({ ...flagged, ...settledOn(["mock_provider"]) }), [], "a settled case costs the rank nothing");
+  assert.deepEqual(
+    rankCountedFlags({ ...flagged, flags: ["mock_provider", "impossible_travel"], ...settledOn(["mock_provider"]) }),
+    ["mock_provider", "impossible_travel"],
+    "a NEW finding on a settled subject reopens the penalty — the flags no longer match what was settled",
+  );
+  assert.deepEqual(
+    rankCountedFlags({ ...flagged, ...settledOn(["mock_provider"]), settledNote: null }),
+    ["mock_provider"],
+    "a half-written settlement is no settlement — it must not quietly clear a penalty",
+  );
+  // The settlement never overrides the approximate-location rule in the other direction either.
+  assert.deepEqual(
+    rankCountedFlags({ accuracyMeters: 2000, flags: ["coordinate_replay"], ...unsettled }),
+    [],
+    "the coarse-fix rule still drops a precision artefact with no settlement in sight",
+  );
+
   assert.equal(
     qualityScores({ ...facts({ hrIdKey: "q" }).quality, integrity: { saves: 20, flagged: 1, flags: { mock_provider: 1 } } }).integrity,
     75,
@@ -431,6 +465,21 @@ export function runRepRanksTests() {
   assert.ok(compute.includes('.from("phoenix_crm_countable_visits")'), "the visits are Phoenix CRM's countable visits");
   assert.ok(compute.includes('.from("phoenix_crm_location_integrity")'), "integrity is Phoenix CRM's own silent detectors");
   assert.ok(compute.includes('row.capture_source === "admin"'), "an admin-keyed entry never reaches the deeper measures");
+
+  // A settled case can only drop out of the score if the READ actually asks for the four columns the
+  // rule is judged on — the pure function cannot prove that, and a PostgREST select is a string the
+  // compiler never checks. Comments are stripped first (the shared lexer, never a line-wise strip):
+  // this file's own prose names `settled_flags`, which would satisfy a raw-source pin for nothing.
+  const computeCode = stripComments(compute);
+  const integritySelect = /\.from\("phoenix_crm_location_integrity"\)\s*\.select\(([^)]*)\)/.exec(computeCode)?.[1] ?? "";
+  for (const column of ["settled_at", "settled_by", "settled_note", "settled_flags"]) {
+    assert.ok(integritySelect.includes(column), `the integrity read must select ${column} — a settled case cannot be seen without it`);
+  }
+  assert.ok(computeCode.includes("rankCountedFlags("), "the rank penalty goes through the one function that honours a settlement");
+  assert.ok(
+    !/\bcountedIntegrityFlags\(/.test(computeCode),
+    "compute must not call countedIntegrityFlags directly — that path ignores the Super Admin's settlement",
+  );
 
   // ── the portal never receives the metrics ─────────────────────────────────────────────────────
   const read = readFileSync(new URL("../src/lib/rep-ranks/server/read.ts", import.meta.url), "utf8");

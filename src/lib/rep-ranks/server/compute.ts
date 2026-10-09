@@ -11,7 +11,8 @@
 //   * the AM start — the rep's own press, `phoenix_crm_day_starts`;
 //   * leave — HR's approved FULL days (`loadApprovedLeaveDays`), which come out of the owed days;
 //   * the deeper measures — every save the rep made in the field (any list, its time, fix, products,
-//     note) and the silent detectors' STRONG flags on those saves (`phoenix_crm_location_integrity`).
+//     note) and the silent detectors' STRONG flags on those saves (`phoenix_crm_location_integrity`),
+//     minus the cases the Super Admin has SETTLED (owner, 2026-10-09 — `rankCountedFlags`).
 //     The flags reach the score as one number and the admin twin's counts, never a portal answer.
 // Nothing from iReports360, the KPIs board or Early Birds.
 //
@@ -34,7 +35,7 @@ import { PHOENIX_CRM_DEFAULT_SETTINGS } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
-import { countedIntegrityFlags, type RankFieldSave } from "@/lib/rep-ranks/field-quality";
+import { rankCountedFlags, type RankFieldSave } from "@/lib/rep-ranks/field-quality";
 import {
   factsForWindow,
   indexRankData,
@@ -145,15 +146,33 @@ async function readVisits(seatIds: readonly string[], from: string, to: string):
   return out;
 }
 
-/** The strong integrity flags on each of the reps' saves, keyed by visit id, after the approximate-location rule. */
+/**
+ * The strong integrity flags on each of the reps' saves, keyed by visit id, after the
+ * approximate-location rule AND after the Super Admin's settlements.
+ *
+ * 🔴 THE FOUR `settled_*` COLUMNS ARE READ HERE BECAUSE THE TEST IS A COLUMN AGAINST A COLUMN.
+ * `settled_flags = flags` is not a filter PostgREST can ask for, and asking only for
+ * `settled_at is null` would wrongly keep dropping a case the detectors have since flagged again —
+ * the same reason `loadIntegrityCasesForWindow` compares in TypeScript. `rankCountedFlags` is the one
+ * place that decides, and it is pure.
+ */
 async function readIntegrityFlags(seatIds: readonly string[], from: string, to: string): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   for (const part of chunk([...seatIds], 100)) {
-    const rows = await fetchAllRowsKeyset<{ id: string; subject_id: string; flags: string[] | null; accuracy_meters: number | string | null }>(
+    const rows = await fetchAllRowsKeyset<{
+      id: string;
+      subject_id: string;
+      flags: string[] | null;
+      accuracy_meters: number | string | null;
+      settled_at: string | null;
+      settled_by: string | null;
+      settled_note: string | null;
+      settled_flags: string[] | null;
+    }>(
       () =>
         db()
           .from("phoenix_crm_location_integrity")
-          .select("id, subject_id, flags, accuracy_meters")
+          .select("id, subject_id, flags, accuracy_meters, settled_at, settled_by, settled_note, settled_flags")
           .in("seat_id", part)
           .eq("subject_kind", "visit")
           .eq("strong", true)
@@ -164,7 +183,14 @@ async function readIntegrityFlags(seatIds: readonly string[], from: string, to: 
     );
     for (const row of rows) {
       const accuracy = row.accuracy_meters === null ? null : Number(row.accuracy_meters);
-      const counted = countedIntegrityFlags(row.flags ?? [], accuracy !== null && Number.isFinite(accuracy) ? accuracy : null);
+      const counted = rankCountedFlags({
+        accuracyMeters: accuracy !== null && Number.isFinite(accuracy) ? accuracy : null,
+        flags: row.flags,
+        settledAt: row.settled_at,
+        settledBy: row.settled_by,
+        settledFlags: row.settled_flags,
+        settledNote: row.settled_note,
+      });
       if (counted.length === 0) continue;
       const key = String(row.subject_id);
       out.set(key, [...new Set([...(out.get(key) ?? []), ...counted])]);
