@@ -2415,6 +2415,7 @@ import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-doubl
 import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-source.test.ts";
 import { runPrivateCalendarsAdminAnyEmployeeTests } from "./private-calendars-admin-any-employee.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
+import { runOfficeAllocationDriftTests } from "./office-allocation-drift.test.ts";
 import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywhere.test.ts";
 import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-admin-reports.test.ts";
 import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
@@ -9457,6 +9458,10 @@ await runTest(
 await runTest(
   "the frozen wholesaler split is compared to the rule by VALUE, because both nets total zero units by construction and a units-only check is blind to the whole drift class (a redistribution, a cell on one side only in either direction, a price change that is not drift, float noise, folded duplicates)",
   runStoreSplitDriftTests,
+);
+await runTest(
+  "a committed Office allocation is compared to where the rule would put it today, because the spread is unit-preserving per line and the publication check — one total per line — is blind to the whole drift class (3,698 of August 2026 CNS's 109,719 Office units sit in a different area after seven batches were re-mapped on 13-14 Sep): the line total agrees on both sides by construction, movers are counted once rather than twice, an area present on only one side is compared against zero, each line is its own subject, share-arithmetic noise is not a movement, and the batches that moved the base travel with the magnitude",
+  runOfficeAllocationDriftTests,
 );
 await runTest(
   "Phoenix CRM counts everywhere from each team's start (owner, 2026-10-02): Delta (1) from Saturday 3 October by his ruling, every other team only when the Super Admin presses Start (a Saturday, never before this Cairo month, a stop sticks, one audited writer, Super Admin only), and the first real plan on a team not started tells him once; the WHOLE team, its district manager too, leaves iReports360 for exactly the days it sat there, so nothing is counted twice; visits, recorded day activities, plans sent as of the day and positioned visits as check-ins on manager screens only, with no integrity field; AM, PM and Pharmacies apart; countable and real only; Early Birds and the SFE start times begin at the first Phoenix visit, never called GPS; a Phoenix visit is its own check-in and a customer not validated yet stays out of the rate",

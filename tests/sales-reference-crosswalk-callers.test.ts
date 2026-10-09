@@ -28,6 +28,7 @@ function referenceDataCalls(source: string): string[] {
 // Each reads the brick, area, region, product or distributor master and nothing else.
 const SKIPS_THE_CROSSWALK = [
   "src/lib/sales/monthly-closing-comparison.ts",
+  "src/lib/sales/office-allocation-drift.ts",
   "src/lib/sales/normalizer/brick-centroids.ts",
   "src/lib/sales/normalizer/crosswalks.ts",
   "src/lib/sales/normalizer/customer-map.ts",
