@@ -1,16 +1,19 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROI Tracker — the two-tab shell that merges the two marketing-ROI surfaces the
-// owner used to reach as separate sidebar links (2026-09-22):
+// ROI Tracker — the tab shell that merges the marketing-ROI surfaces the owner
+// used to reach as separate sidebar links (2026-09-22; a third tab, 2026-10-09):
 //
 //   ROI       MarketingRoiLiveTracker — the live campaign pipeline, money in
 //             flight and when each request becomes judgeable.
 //   Coverage  MarketingCoverageReportWorkspace — every request's target
 //             pharmacies and their realized sales.
+//   Managers  MarketingManagerScorecard — one row per person who raised
+//             requests: how many, how many were approved, their value, the
+//             forecast ROI, and what has actually come back.
 //
-// Both are unchanged client components rendered exactly "as they are"; this file
-// adds only the tab strip. The two tabs have DIFFERENT audiences, so each is gated
+// All three are unchanged client components rendered exactly "as they are"; this
+// file adds only the tab strip. The tabs have DIFFERENT audiences, so each is gated
 // individually by the server page and this component renders only the tabs the
 // viewer may see (Finance Manager / Financial Advisor get Coverage only). The
 // active tab is the only one mounted, so only its data loads — switching tabs is a
@@ -19,34 +22,51 @@
 // The live tracker is told it sits in the PORTAL (`surface="portal"`), so it does
 // not draw a second "ROI Tracker" hero under the page's own header.
 //
-// The initial tab is read once from ?tab (roi | coverage) so the retired
+// The initial tab is read once from ?tab (roi | coverage | managers) so the retired
 // /employee-portals/marketing-requests/coverage-report route and the command
 // palette can deep-link straight to Coverage. It is NOT written back to the URL on
 // switch: MarketingCoverageReportWorkspace owns the query string for its own filter
 // state, and a second writer here would fight it.
 //
-// The strip is real tab markup — a `tablist` owning two `tab`s, each pointing at
+// The strip is real tab markup — a `tablist` owning the `tab`s, each pointing at
 // the one `tabpanel` — with the arrow keys moving between them, so a screen reader
-// announces "tab, 1 of 2" instead of two loose buttons that claim to be tabs.
+// announces "tab, 1 of 3" instead of loose buttons that claim to be tabs. The arrows
+// walk the tabs this viewer HAS, never the full order: stepping onto one he cannot
+// see would select a tab whose panel renders nothing.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { MarketingCoverageReportWorkspace } from "@/components/marketing-requests/marketing-coverage-report-workspace";
+import { MarketingManagerScorecard } from "@/components/marketing-requests/marketing-manager-scorecard";
 import { MarketingRoiLiveTracker } from "@/components/marketing-requests/marketing-roi-live-tracker";
 
-type RoiTrackerTab = "roi" | "coverage";
+type RoiTrackerTab = "roi" | "coverage" | "managers";
 
-const TAB_ORDER: RoiTrackerTab[] = ["roi", "coverage"];
+const TAB_ORDER: RoiTrackerTab[] = ["roi", "coverage", "managers"];
+
+const TAB_LABEL: Record<RoiTrackerTab, string> = {
+  coverage: "Coverage",
+  managers: "Managers",
+  roi: "ROI",
+};
 
 export function RoiTrackerTabs({
   canSeeCoverage,
+  canSeeManagers,
   canSeeRoi,
   isSuperAdmin,
   isTerritoryScoped = false,
 }: {
   canSeeCoverage: boolean;
+  /**
+   * Managers — the Manager Scorecard (owner, 2026-10-09): one row per person who raised marketing
+   * requests, his approved value, his forecast ROI and what has actually come back. Same audience
+   * as the ROI tab, and scoped by the same server-side scope, so a National Sales Manager reads the
+   * managers under him and an oversight role reads the company.
+   */
+  canSeeManagers: boolean;
   canSeeRoi: boolean;
   isSuperAdmin: boolean;
   /**
@@ -57,26 +77,29 @@ export function RoiTrackerTabs({
   isTerritoryScoped?: boolean;
 }) {
   const searchParams = useSearchParams();
+  const allowed = (key: RoiTrackerTab): boolean =>
+    key === "roi" ? canSeeRoi : key === "coverage" ? canSeeCoverage : canSeeManagers;
+  const firstAllowed: RoiTrackerTab = TAB_ORDER.find(allowed) ?? "coverage";
   const [tab, setTab] = useState<RoiTrackerTab>(() => {
     const requested = searchParams.get("tab");
-    if (requested === "coverage" && canSeeCoverage) return "coverage";
-    if (requested === "roi" && canSeeRoi) return "roi";
-    return canSeeRoi ? "roi" : "coverage";
+    const match = TAB_ORDER.find((key) => key === requested && allowed(key));
+    return match ?? firstAllowed;
   });
   const baseId = useId();
 
-  const showTabStrip = canSeeRoi && canSeeCoverage;
-  const activeTab: RoiTrackerTab = tab === "roi" && canSeeRoi ? "roi" : "coverage";
+  const visibleTabs = TAB_ORDER.filter(allowed);
+  const showTabStrip = visibleTabs.length > 1;
+  const activeTab: RoiTrackerTab = allowed(tab) ? tab : firstAllowed;
   const tabId = (key: RoiTrackerTab) => `${baseId}-tab-${key}`;
   const panelId = `${baseId}-panel`;
 
   function onStripKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    const edge = event.key === "Home" ? TAB_ORDER[0] : event.key === "End" ? TAB_ORDER[TAB_ORDER.length - 1] : null;
+    const edge = event.key === "Home" ? visibleTabs[0] : event.key === "End" ? visibleTabs[visibleTabs.length - 1] : null;
     if (!step && !edge) return;
     event.preventDefault();
     const next =
-      edge ?? TAB_ORDER[(TAB_ORDER.indexOf(activeTab) + step + TAB_ORDER.length) % TAB_ORDER.length];
+      edge ?? visibleTabs[(visibleTabs.indexOf(activeTab) + step + visibleTabs.length) % visibleTabs.length];
     setTab(next);
     document.getElementById(tabId(next))?.focus();
   }
@@ -89,19 +112,22 @@ export function RoiTrackerTabs({
       {activeTab === "coverage" && canSeeCoverage ? (
         <MarketingCoverageReportWorkspace isSuperAdmin={isSuperAdmin} />
       ) : null}
+      {activeTab === "managers" && canSeeManagers ? <MarketingManagerScorecard /> : null}
     </>
   );
 
   return (
-    <div className="space-y-6">
+    <div className="@container space-y-6">
       {showTabStrip ? (
         <div
           aria-label="ROI Tracker views"
-          className="grid grid-cols-2 gap-2 rounded-sm border border-slate-200 bg-white p-1.5"
+          className={`grid gap-2 border border-slate-200 bg-white p-1.5 ${
+            visibleTabs.length > 2 ? "grid-cols-2 @min-[560px]:grid-cols-3" : "grid-cols-2"
+          }`}
           onKeyDown={onStripKeyDown}
           role="tablist"
         >
-          {TAB_ORDER.map((key) => (
+          {visibleTabs.map((key) => (
             <TabButton
               active={activeTab === key}
               controls={panelId}
@@ -109,7 +135,7 @@ export function RoiTrackerTabs({
               key={key}
               onClick={() => setTab(key)}
             >
-              {key === "roi" ? "ROI" : "Coverage"}
+              {TAB_LABEL[key]}
             </TabButton>
           ))}
         </div>

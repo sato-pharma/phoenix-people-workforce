@@ -68,9 +68,9 @@ export default async function EmployeePortalRoiTrackerPage() {
   const coverageSummary = "Open any request's target pharmacies and their realized sales.";
   const description =
     canSeeRoi && canSeeCoverage
-      ? `${roiSummary} Switch to Coverage to open any request's target pharmacies and their realized sales — two views of the same campaigns.`
+      ? `${roiSummary} Coverage opens any request's target pharmacies and their realized sales, and Managers totals every person who raised requests — three views of the same campaigns.`
       : canSeeRoi
-        ? roiSummary
+        ? `${roiSummary} Managers totals every person who raised requests.`
         : coverageSummary;
 
   return (
@@ -81,6 +81,10 @@ export default async function EmployeePortalRoiTrackerPage() {
     >
       <RoiTrackerTabs
         canSeeCoverage={canSeeCoverage}
+        // Managers — the Manager Scorecard (owner, 2026-10-09). Same audience as the ROI tab, and
+        // the same server-side scope resolves its rows, so a National Sales Manager reads the
+        // managers under him while an oversight role reads the company.
+        canSeeManagers={canSeeRoi}
         canSeeRoi={canSeeRoi}
         isSuperAdmin={access.role === "Super Admin"}
         isTerritoryScoped={access.role === "Medical Rep"}
