@@ -8,6 +8,18 @@
 //
 // Nothing here may import anything that is not itself client-safe.
 
+/**
+ * Is this mapping row one of HIS decisions? The guard's own test, word for word (the trigger holds a
+ * change as "overwrites a mapping decision of yours" when the row's source starts `owner-` or
+ * `final-new-`, or is `sheet-verified`) — plus a confidence of 100, which a lock stamps. Reading
+ * confidence alone missed every hold the guard itself called a ruling.
+ */
+export function isOwnerRuling(source: string | null | undefined, confidence: number | string | null | undefined): boolean {
+  const text = String(source ?? "");
+  if (text.startsWith("owner-") || text.startsWith("final-new-") || text === "sheet-verified") return true;
+  return Number(confidence ?? 0) >= 100;
+}
+
 /** What he can say about a held change in the sheet. */
 export type GuardAnswer = "allow" | "keep" | "move";
 

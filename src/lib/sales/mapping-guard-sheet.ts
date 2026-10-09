@@ -28,11 +28,12 @@ import {
   type HoldDetail,
   type HoldSalesImpactRow,
 } from "@/lib/sales/mapping-guard-detail";
-import type {
-  GuardApplyOutcome,
-  GuardGeo,
-  GuardInstruction,
-  GuardPlan,
+import {
+  isOwnerRuling,
+  type GuardApplyOutcome,
+  type GuardGeo,
+  type GuardInstruction,
+  type GuardPlan,
 } from "@/lib/sales/mapping-guard-sheet-shape";
 import {
   guardPageDigest,
@@ -178,7 +179,7 @@ async function readMapRecords(rowIds: readonly number[]): Promise<Map<number, Ma
 }
 
 function isRuling(map: MapRecord | undefined): boolean {
-  return Number(map?.confidence ?? 0) >= 100;
+  return isOwnerRuling(map?.source, map?.confidence);
 }
 
 const VERDICT_TEXT: Record<string, string> = {
