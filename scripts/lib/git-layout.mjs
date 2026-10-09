@@ -79,3 +79,61 @@ export function primaryRootOf(start) {
   const l = gitLayout(start);
   return l ? slash(path.dirname(l.commonDir)) : null;
 }
+
+const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+
+/** A ref's commit id from its loose file, else packed-refs, as git looks it up; null if neither has it. */
+function refCommit(commonDir, name) {
+  const read = (file) => {
+    try {
+      return readFileSync(file, 'utf8').trim();
+    } catch {
+      return null;
+    }
+  };
+  const loose = read(path.join(commonDir, name));
+  if (loose !== null) return COMMIT_ID.test(loose) ? loose : null; // a symbolic loose ref: let git answer
+  const packed = read(path.join(commonDir, 'packed-refs'));
+  if (packed === null) return null;
+  for (const line of packed.split(/\r?\n/)) {
+    if (line.startsWith('#') || line.startsWith('^')) continue;
+    const space = line.indexOf(' ');
+    if (space > 0 && line.slice(space + 1) === name) return COMMIT_ID.test(line.slice(0, space)) ? line.slice(0, space) : null;
+  }
+  return null;
+}
+
+/**
+ * The commit ids of HEAD and `origin/main` for a checkout, read off disk (2026-10-09, memory-check
+ * speed). memory-index-guard asked git for them at every session start, three processes that cost
+ * ~110 ms alone and most of a second inside a real start, when about ten hooks launch at once.
+ *
+ * HEAD lives in the checkout's own git dir; branches and remotes in the common dir, loose file first,
+ * then packed-refs. Null — and the caller asks git — for anything this does not read the way git
+ * would: an unreadable layout, a symbolic or missing ref, the reftable format (its HEAD names
+ * `refs/heads/.invalid`, which is never found here), or a shallow clone, whose cut-off history makes
+ * a count of commits between two ids depend on the clone rather than on the ids.
+ *
+ * @param {string} start  any folder inside a checkout
+ * @returns {{ head: string, main: string } | null}
+ */
+export function headAndOriginMain(start) {
+  const l = gitLayout(start);
+  if (!l) return null;
+  try {
+    statSync(path.join(l.commonDir, 'shallow'));
+    return null;
+  } catch {
+    // not shallow
+  }
+  let head;
+  try {
+    head = readFileSync(path.join(l.gitDir, 'HEAD'), 'utf8').trim();
+  } catch {
+    return null;
+  }
+  const symbolic = /^ref:\s*(refs\/\S+)$/.exec(head);
+  const headId = symbolic ? refCommit(l.commonDir, symbolic[1]) : COMMIT_ID.test(head) ? head : null;
+  const mainId = refCommit(l.commonDir, 'refs/remotes/origin/main');
+  return headId && mainId ? { head: headId, main: mainId } : null;
+}
