@@ -1239,6 +1239,7 @@ import { runCrmIntegrityPlaceDistanceTests } from "./crm-integrity-place-distanc
 import { runCrmIntegritySignboardCaseTests } from "./crm-integrity-signboard-cases.test.ts";
 import { runCrmShutterFixTests } from "./crm-shutter-fix.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runPublishedMonthGuardTests } from "./published-month-guard.test.ts";
 import { runProductPeriodPriceTests } from "./product-period-price.test.ts";
 import { runClosingDetailsPeriodPriceTests } from "./closing-details-period-price.test.ts";
 import { runImportStoredValuePeriodPriceTests } from "./import-stored-value-period-price.test.ts";
@@ -5111,6 +5112,10 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest(
+  "NEVER CHANGE A PUBLISHED MONTH (owner, 2026-10-09): the bulk customer-map repair reads the live publications itself and refuses an --apply that would write into a published month — including the half a period check cannot see, where the target month is open but the repair, keyed on (distributor, customer) and ignoring the period, would reach a published month's rows anyway; it fails CLOSED when the publication table cannot be read, names the month and the row count, and a dry run still measures",
+  runPublishedMonthGuardTests,
+);
 await runTest('crm integrity board (how far a visit was saved from its place, read never recomputed)', runCrmIntegrityPlaceDistanceTests);
 await runTest('crm integrity board (a signboard case is its own detector, and a flag a later reading no longer supports leaves the findings)', runCrmIntegritySignboardCaseTests);
 await runTest('crm shutter fix (the visit photo takes its own gps reading, silently)', runCrmShutterFixTests);
