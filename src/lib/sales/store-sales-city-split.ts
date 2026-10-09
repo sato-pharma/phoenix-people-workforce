@@ -1148,6 +1148,12 @@ export function isSplitEligible(
   // The PERIOD switches it on, exactly like every other dated rule here, and an omitted period
   // means the OLD rule — so a pure-arithmetic caller that passes a row alone is untouched and no
   // published month moves.
+  //
+  // 🔴 AND IT IS ONE PRODUCT WIDE — IVYRONC (owner, 2026-10-09: "ANY OTHER PRODUCT NORMAL MAPPING").
+  // A bulk row that is not Ivyronc is NOT carved out here, because it is not allocated either: it
+  // keeps the ordinary rules, so a bulk wholesaler in a multi-area city still takes the city rule.
+  // The carve-out and the allocation cannot disagree about which rows those are — both ask
+  // `isBulkAllocatedRow`.
   if (isBulkAllocatedRow(row, period)) return false;
   if (!isSplitEligibleLine(row.officialLine)) return false;
   // The client code is passed so an owner override can be honoured. Without it the override is

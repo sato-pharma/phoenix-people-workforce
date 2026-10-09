@@ -1,14 +1,29 @@
 ---
 name: epda-bulk-is-allocated-like-office-on-pedia-from-september-2026
-description: From the September 2026 closing EPDA-BULK is spread across Pedia areas by each area's share of the OTHER distributors' sales, exactly as Office is on CNS — implemented as a read-time NET on the city split's rails, never a rewrite of the uploaded rows.
+description: "From the September 2026 closing EPDA-BULK's IVYRONC (`IV001`) only — he narrowed it to one product the same evening — is spread across Pedia areas by each area's share of the OTHER distributors' sales, exactly as Office is on CNS; every other bulk product keeps normal mapping, is not a weight and still takes the city rule. A read-time NET on the city split's rails, never a rewrite of the uploaded rows."
 metadata:
+  node_type: memory
   type: project
+  originSessionId: 61ac0cfb-9a45-4123-ac88-7f2173f492b1
+  modified: 2026-10-09T16:07:01.192Z
 ---
 
 Owner instruction, 2026-10-09 (spoken): "Starting from September closing, the EPDA bulk will be
 distributed and calculated exactly as Office, but in line Pedia — you will get the total sales
 contribution of the other distributors over the total sales, get the contribution of every one, and
 based on this distribute the same contribution from EPDA bulk."
+
+🔴 **AND HE NARROWED IT TO ONE PRODUCT THE SAME EVENING, typed: "IN EPDA BULK ONLY IVYRONC WILL BE
+CONTRIBUTION ANY OTHER PRODUCT NORMAL MAPPING."** So the allocation is `EP-BK` **× Pedia × `IV001`**
+— the live master holds exactly one Ivyronc code (family `IV`, Pedia, active), and a second
+concentration must be added to `BULK_ALLOCATION_PRODUCT_CODES` because a detail row carries its code,
+never its family. **"Normal mapping" is three things:** another bulk product keeps its invoiced area,
+is **not a weight** (the bulk sector is not one of the "other distributors" whichever product it
+sold — into the base it would help decide where its own Ivyronc goes), and **stays split-eligible**,
+so a bulk wholesaler in a multi-area city still takes the city rule. Freezing those rows is the
+inverted defect. 🔴 **On the live book this now moves NOTHING: no `EP-BK` batch has ever carried
+Ivyronc** (2026-02/03/04/06 = Lacto Basic on Head Office + 599 packs of Lacto Advanced on Pedia), so
+a zero is the rule working and the 599 packs are back on normal mapping.
 
 So EPDA-BULK (`EP-BK`) becomes an ALLOCATED channel on **Pedia**, run on the locked Office rule's
 arithmetic: one blended share per AREA = that area's share of the line's non-`EP-BK`, non-direct

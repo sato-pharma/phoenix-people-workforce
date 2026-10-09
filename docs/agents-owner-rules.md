@@ -7212,7 +7212,8 @@ published one.
    money twice. Read time rather than upload time for the measured Office defect — a batch
    re-mapped after the file lands leaves upload-time shares stale (6,834 of August's 109,719 CNS
    Office units, 6.23%, measured on the live rows 9 October 2026).
-2. **The bulk rows are the FOURTH carve-out from the city rule**, beside EZ, Office and El Qema's
+2. **The allocated bulk rows are the FOURTH carve-out from the city rule** (Ivyronc only, see the
+   narrowing below), beside EZ, Office and El Qema's
    warehouses: `isSplitEligible` refuses them from September. `WHOLESALE_ONLY_DISTRIBUTORS` is
    `{"QM"}` only, so `EP-BK` rows are classified by customer name — most of its customers are
    wholesalers, so without the carve-out the city rule shares each row across its own city first
@@ -7229,6 +7230,42 @@ given, by design. Whole-month exports are unaffected, both zero.
 **The arithmetic, on June's real shape:** 30 packs invoiced to 2 areas, spread by contribution —
 D21 20,000/35,000 → 17.142857, D15 → 8.571429, D14 → 4.285714, largest-remainder residual pushed so
 the net sums to **0** on units and on value. Shipped in #5662.
+
+### He narrowed it to ONE PRODUCT the same evening — Ivyronc
+
+**His words, typed:** *"IN EPDA BULK ONLY IVYRONC WILL BE CONTRIBUTION ANY OTHER PRODUCT NORMAL
+MAPPING"* (2026-10-09, about three hours after the rule above).
+
+So the question is no longer "is this the bulk sector, on Pedia, in a covered month" — it is that
+**and** "is this Ivyronc". `IV001` is the whole of Ivyronc: the live master holds exactly one
+Ivyronc product code (family `IV`, line Pedia, active — read 9 October 2026), so
+`BULK_ALLOCATION_PRODUCT_CODES` is the product rather than a sample of it, and a second
+concentration would have to be added there because a closing detail row carries its product code
+and not its family.
+
+**"Normal mapping" is three things, and the second is the one a later change could break
+silently.** A bulk row that is not Ivyronc (1) keeps the area its invoice names, (2) is **not a
+weight** — the shares are "the other distributors'" contribution in his words, and the bulk sector
+is not one of them whichever product its row carries, so an unallocated bulk row joins neither the
+moved set nor the base; letting it into the base would let the book help decide where its own
+Ivyronc goes — and (3) **stays split-eligible**, so a bulk wholesaler in a multi-area city still
+takes the city rule. The carve-out from the city rule is therefore exactly as wide as the
+allocation, by construction: both ask `isBulkAllocatedRow`. Freezing every bulk row on its invoiced
+area would be a change to published behaviour he did not ask for, in the opposite direction to the
+one he did.
+
+**What it changes on the live book: nothing yet, and that is correct.** The bulk sector has uploaded
+four batches ever — 2026-02, 03, 04 and 06 — and **not one carries Ivyronc**: they are Lacto Basic
+(`LA003`/`LA004`) on the untracked Head Office line plus 599 packs of Lacto Advanced (`LA001`/
+`LA002`) on Pedia (measured on `source_of_sales_import_rows` 9 October 2026). So on the historical
+shape the allocation now moves nothing, and the 599 Lacto Advanced packs the line-level version
+would have spread are back on normal mapping. **A zero here is the rule working** — never a defect
+to chase, and never a reason to widen the product list. The rule is for the Ivyronc volume the
+September `EP-BK` file is expected to carry.
+
+Pinned by case 9 of `tests/closing-bulk-allocation.test.ts`, which was proven by breaking both
+halves and watching each headline assertion fire: the product gate ("Lacto Advanced is not
+allocated any more") and the weight half ("the same three areas weight it").
 
 ### The coverage banner was calling EPDA-BULK's absence a 24.16M EGP hole
 
