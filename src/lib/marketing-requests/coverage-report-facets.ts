@@ -1,6 +1,7 @@
 import type {
   CoverageFilterDimension,
   MarketingCoverageFilterKey,
+  MarketingCoverageFilterLabels,
   MarketingCoverageFilterState,
   MarketingCoverageRequestIndexEntry,
   RoiFilterOption,
@@ -68,6 +69,30 @@ export function withCoverageFilterValues(
     return { ...filters, requestType: values.map((v) => Number(v)).filter((v) => Number.isFinite(v)) };
   }
   return { ...filters, [key]: values } as MarketingCoverageFilterState;
+}
+
+/**
+ * The label the filter panel shows for each SELECTED value, read off the viewer's own index — never
+ * a query. The export's cover prints these, so a selected District Manager reads as a name, never
+ * an HR id. A value no entry carries gets no label here; the cover decides its fallback.
+ */
+export function coverageFilterLabels(
+  entries: MarketingCoverageRequestIndexEntry[],
+  filters: MarketingCoverageFilterState,
+): MarketingCoverageFilterLabels {
+  const labels: MarketingCoverageFilterLabels = {};
+  for (const spec of MULTISELECT_SPECS) {
+    const selected = new Set(selectedCoverageValues(filters, spec.key));
+    if (selected.size === 0) continue;
+    const found = new Map<string, string>();
+    for (const entry of entries) {
+      for (const { value, label } of spec.extract(entry)) {
+        if (selected.has(value) && !found.has(value)) found.set(value, label);
+      }
+    }
+    labels[spec.key] = Object.fromEntries(found);
+  }
+  return labels;
 }
 
 export function entryMatchesCoverageFilters(

@@ -630,10 +630,17 @@ export type MarketingCoverageDistributorRollupRow = {
   allocatedRequiredRoi: number;
 };
 
+/** Display label per SELECTED filter value, keyed by dimension — read off the viewer's own index
+ *  by the same extractors the filter panel uses, so the export's "Applied filters" line names the
+ *  people, request types and pharmacies the viewer picked, never an HR id or a code. Only the
+ *  selected values are carried, never the whole index. */
+export type MarketingCoverageFilterLabels = Partial<Record<MarketingCoverageFilterKey, Record<string, string>>>;
+
 export type MarketingCoverageReport = {
   rows: MarketingCoverageReportRow[];
   kpi: MarketingCoverageKpiBand;
   appliedFilters: MarketingCoverageFilterState;
+  filterLabels: MarketingCoverageFilterLabels;
   autoAppliedByDimension: Partial<Record<MarketingCoverageFilterKey, string[]>>;
   includedRestricted: boolean;
   generatedAtIso: string;
