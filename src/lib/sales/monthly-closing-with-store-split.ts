@@ -17,7 +17,7 @@ import {
   type MonthlyClosingMatrix,
   type MonthlyClosingParts,
 } from "@/lib/sales/monthly-distributor-import";
-import { loadClosingStoreSplitNet } from "@/lib/sales/closing-store-split-net";
+import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
 
 /** The pair a store split is read for, trimmed exactly as loadClosingStoreSplit trims its arguments. */
@@ -37,25 +37,37 @@ export async function loadMonthlyClosingPartsWithStoreSplit(input?: {
   // pair, exactly as before. The guard keeps an early read nobody uses from surfacing unhandled.
   const requestedLine = input?.line;
   const requestedPeriod = input?.period;
-  const earlyNet = requestedLine && requestedPeriod ? loadClosingStoreSplitNet(requestedLine, requestedPeriod) : null;
-  earlyNet?.catch(() => {});
+  const earlySplit = requestedLine && requestedPeriod ? loadClosingStoreSplit(requestedLine, requestedPeriod) : null;
+  earlySplit?.catch(() => {});
   const parts = await loadMonthlyClosingParts(input);
-  const earlyNetFits =
+  const earlySplitFits =
     storeSplitPairKey(requestedLine, requestedPeriod) === storeSplitPairKey(parts.combined.line, parts.combined.period);
-  const net = earlyNet && earlyNetFits
-    ? await earlyNet
-    : await loadClosingStoreSplitNet(parts.combined.line, parts.combined.period);
+  const split = earlySplit && earlySplitFits
+    ? await earlySplit
+    : await loadClosingStoreSplit(parts.combined.line, parts.combined.period);
+  const { net, officeNet } = split;
   if (net.size === 0) return parts;
   return {
     combined: applyStoreSplitToMatrix(parts.combined, net).matrix,
     retail: applyStoreSplitToMatrix(parts.retail, net).matrix,
     directCells: parts.directCells,
-    // `office` is deliberately NOT split. The split moves WHOLESALER customers between the areas of
-    // one city; Office rows carry no customer at all (clientCode is null by construction), so none
-    // of them is ever a store row and none of them ever moves. Passing it through applyStoreSplitToMatrix
-    // would push another channel's net onto the Office grid and make "of which Office" exceed the
-    // area's own Office units.
-    office: parts.office,
+    // 🔴 THE OFFICE GRID TAKES THE OFFICE RESPREAD'S NET, AND NOTHING ELSE OF `net`.
+    //
+    // The city split and the EPDA-BULK allocation never move an Office row — Office rows carry no
+    // customer at all (clientCode is null by construction), so none of them is ever a store row —
+    // and pushing either net onto this grid would make "of which Office" exceed the area's own
+    // Office units. That is why this grid was passed straight through until 2026-10-09.
+    //
+    // The Office channel's own read-time respread (owner, 2026-10-09; CNS, from the October closing)
+    // moves exactly these rows, so leaving the grid untouched is now the error: "of wh. Office"
+    // would still describe the areas the UPLOAD stamped on them while the matrix beside it describes
+    // today's, and the Closing Matrix (No Office) tab — literally `matrix − office`, cell by cell —
+    // would stop describing distributor sell-out and could print a negative. `officeNet` is that
+    // slice on its own (closing-store-split-net.ts), empty on every line but CNS and every month
+    // before 2026-10, so every other closing keeps the grid it had.
+    office: parts.office && officeNet.size > 0
+      ? applyStoreSplitToMatrix(parts.office, officeNet).matrix
+      : parts.office,
   };
 }
 

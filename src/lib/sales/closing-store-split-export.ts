@@ -19,6 +19,7 @@
 // Difference row still proves the audit sheet reproduces the headline.
 
 import { buildBulkAllocation, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
+import { buildOfficeRespread, mergeOfficeRespreadIntoSplit } from "@/lib/sales/closing-office-respread";
 import type { ClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import {
   narrowClosingDetailsToAreas,
@@ -43,6 +44,15 @@ export type ClosingStoreSplitExport = {
    * the amount, which is what lets the workbook name it instead of losing it.
    */
   net: ReturnType<typeof netStoreSplitByAreaProduct>;
+  /**
+   * The OFFICE CHANNEL's own slice of `net` — already inside it, carried out separately because the
+   * workbook's Office grid ("of wh. Office", and the Closing Matrix (No Office) tab that subtracts it
+   * from the matrix cell by cell) must take that part and nothing else: the city split and the bulk
+   * rule never touch an Office row, and an Office grid left on the upload's geography while the
+   * matrix moves to today's turns that subtraction into negative sales. See
+   * closing-office-respread.ts. Empty on every line but CNS and every month before 2026-10.
+   */
+  officeNet: ReturnType<typeof netStoreSplitByAreaProduct>;
   /**
    * The movements `net` was folded from, per area, line and product.
    *
@@ -90,6 +100,7 @@ export function prepareClosingStoreSplit(
     exemptStoreValueByBrick: split.exemptStoreValueByBrick,
     movements: split.movements,
     net: split.net,
+    officeNet: split.officeNet,
   };
 }
 
@@ -109,8 +120,16 @@ function deriveSplit(
   // screen's shared split could not be used — a failed read, or a row-level filter that narrowed the
   // population — and leaving it out would print a workbook whose Pedia areas disagree with the
   // screen's by exactly the bulk book, on the one path that exists because the two once disagreed.
-  return mergeBulkAllocationIntoSplit(
-    { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
-    buildBulkAllocation(monthRows.rows, monthRows.period, monthRows.line),
+  // The Office channel's read-time respread is folded in HERE TOO (owner, 2026-10-09), for the same
+  // reason and on the same path: a workbook built from this fallback would otherwise print CNS areas
+  // that disagree with the screen's by exactly the Office drift, on the one path that exists because
+  // the two once disagreed. It also carries the Office-only net out, which this path's Office grid
+  // needs — see ClosingStoreSplitExport.officeNet.
+  return mergeOfficeRespreadIntoSplit(
+    mergeBulkAllocationIntoSplit(
+      { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
+      buildBulkAllocation(monthRows.rows, monthRows.period, monthRows.line),
+    ),
+    buildOfficeRespread(monthRows.rows, monthRows.period, monthRows.line),
   );
 }
