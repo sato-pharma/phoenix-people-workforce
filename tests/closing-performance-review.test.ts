@@ -45,6 +45,7 @@ const EM = String.fromCharCode(0x2014);
 const AREA_SHEET_NAME = "Growth by Month " + DOT + " Area";
 const FAMILY_GRID_SHEET_NAME = "Reps " + DOT + " Families";
 const PRODUCT_GRID_SHEET_NAME = "Reps " + DOT + " Products";
+const PRODUCT_MONTH_SHEET_NAME = "Reps " + DOT + " Products by Month";
 
 const REJECTED_LABELS = ["Not mapped to an area", "No district manager"];
 
@@ -306,6 +307,7 @@ export async function runClosingPerformanceReviewTests() {
       "Units & Growth by Month",
       "All Products by Month",
       AREA_SHEET_NAME,
+      PRODUCT_MONTH_SHEET_NAME,
     ],
     "the workbook's tabs, in the order the page shows them",
   );
@@ -387,6 +389,80 @@ export async function runClosingPerformanceReviewTests() {
     () => buildClosingPerformanceReviewWorkbook(doctoredGrid),
     /units of different products are never added/i,
     "the builder must refuse a units grid whose columns span more than one product code",
+  );
+
+  // (7d) THE PER-REP BY-MONTH UNITS GRID: a block per product, that product's months inside it.
+  //
+  // The owner's shape for this one — "Royafloxacin merged, and under it July, August, September and
+  // the growth, then Saginko merged, and so on" — carried per REP rather than for the line as a
+  // whole. The rule it has to respect is the same one: a block is ONE product code, so its units are
+  // a real quantity and the subtotals down the column are legitimate, while the row carries NO total
+  // at all, because a row spans products.
+  const byRep = review.productUnitsByRepByMonth;
+  assert.deepEqual(byRep.months, ["2026-07", "2026-08", "2026-09"], "the blocks carry the series' own months");
+  assert.deepEqual(
+    byRep.columns.map((column) => column.label),
+    ["Tebofortin 40mg", "Tebofortin 80mg", "Satoslim"],
+    "one block per product code, in the product grid's order — a family's concentrations together",
+  );
+  assert.ok(
+    byRep.columns.every((column) => column.unitsAreAddable),
+    "every block is a single product code, so every figure in it is a real quantity",
+  );
+  assert.deepEqual(
+    byRep.rows.map((row) => row.kind),
+    ["area", "regionSubtotal", "area", "regionSubtotal", "grandTotal"],
+    "each region closes with its own subtotal and the grid closes with the national total",
+  );
+
+  const cairoByRep = byRep.rows.find((row) => row.areaCode === "CA1");
+  assert.ok(cairoByRep, "the grid carries an area row for Cairo 1");
+  assert.equal(cairoByRep.repName, "Mostafa Kamel", "the row names the rep, not just the territory");
+  assert.equal(cairoByRep.managerName, "Hany Adel", "and the district manager above that rep");
+  assert.deepEqual(
+    cairoByRep.units[0],
+    [null, 100, 200],
+    "July was never uploaded (a dash, never a zero), August is the base month, September is double it",
+  );
+  assert.equal(cairoByRep.growth[0], 1, "200 units over 100 is +100%, per product, per rep");
+  assert.ok(
+    !("salesValue" in cairoByRep),
+    "a row of this grid carries no total of any kind — adding a rep's units across products is the " +
+      "one sum that is never done",
+  );
+
+  const storeByRep = byRep.rows.find((row) => row.areaCode === "OTMS");
+  assert.ok(storeByRep, "the grid carries Main Store");
+  assert.equal(storeByRep.areaName, "Main Store", "an area outside the seat model keeps its own name here too");
+  assert.equal(storeByRep.repName, null, "and shows no invented rep");
+  assert.deepEqual(storeByRep.units[1], [null, 0, 0], "a product that sold nothing is a zero, not a dash");
+  assert.equal(storeByRep.growth[1], null, "nothing to grow from reads as new, never as a percentage");
+
+  const nationalByRep = byRep.rows[byRep.rows.length - 1];
+  assert.deepEqual(
+    nationalByRep.units[0],
+    [null, 120, 240],
+    "the national row sums ONE product down its own column — 100 + 20, then double",
+  );
+  assert.deepEqual(
+    nationalByRep.units[2],
+    [null, 15, 30],
+    "and does the same for every other product block",
+  );
+
+  // The refusal applies here too: a units grid whose blocks claim to span several products is the
+  // same error, and the builder must throw rather than print a figure that is not a quantity.
+  const doctoredByRep: ClosingPerformanceReview = {
+    ...review,
+    productUnitsByRepByMonth: {
+      ...byRep,
+      columns: byRep.columns.map((column) => ({ ...column, unitsAreAddable: false })),
+    },
+  };
+  await assert.rejects(
+    () => buildClosingPerformanceReviewWorkbook(doctoredByRep),
+    /units of different products are never added/i,
+    "the builder must refuse a per-rep units grid whose blocks span more than one product code",
   );
 
   // (8) The national total is the closing's own grand total — the review re-shapes it, never

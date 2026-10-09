@@ -21,6 +21,10 @@
 // ATTRIBUTION LEDGER".
 // ─────────────────────────────────────────────────────────────────────────────
 
+import {
+  mergeFileGaps,
+  type DistributorFileGap,
+} from "@/lib/marketing-requests/manager-scorecard-awaiting";
 import { roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
 import { sharedAttributionOverlap } from "@/lib/marketing-requests/roi-attribution-overlap";
 import { roiValueBucket } from "@/lib/marketing-requests/roi-report-service";
@@ -61,12 +65,28 @@ export type MarketingManagerScorecardRow = {
   /** actual / approved spend — how much of the money came back. */
   recoveryRatio: number;
 
+  /**
+   * How many approved campaigns cannot be measured yet because a distributor they actually trade on
+   * has not filed an already-elapsed month of their ROI window (owner, 2026-10-09: "show on the
+   * Scorecard which zeroes are missing distributor files").
+   *
+   * 🔴 IT QUALIFIES THE FIGURE AND NEVER CHANGES IT. `actualValue` is the same number with or
+   * without this, every campaign still counts, and nothing here refuses anybody anything.
+   */
+  awaitingFileRequests: number;
+  /** The approved EGP behind those campaigns — the money the caption is about. */
+  awaitingFileValue: number;
+  /** Who has not filed, and which months. Names, never codes. */
+  fileGaps: DistributorFileGap[];
 };
 
 export type MarketingManagerScorecardTotals = Pick<
   MarketingManagerScorecardRow,
   | "actualValue"
   | "approvedRequests"
+  | "awaitingFileRequests"
+  | "awaitingFileValue"
+  | "fileGaps"
   | "approvedValue"
   | "awaitingRequests"
   | "expectedRoiValue"
@@ -87,6 +107,8 @@ export type MarketingManagerScorecard = {
 };
 
 type Bucket = {
+  /** One entry per approved campaign waiting on a file, merged into the row at the end. */
+  gaps: DistributorFileGap[][];
   lines: RoiAttributionLine[];
   row: MarketingManagerScorecardRow;
 };
@@ -95,8 +117,11 @@ const emptyRow = (managerHrId: string): MarketingManagerScorecardRow => ({
   actualValue: 0,
   approvedRequests: 0,
   approvedValue: 0,
+  awaitingFileRequests: 0,
+  awaitingFileValue: 0,
   awaitingRequests: 0,
   expectedRoiValue: 0,
+  fileGaps: [],
   lineName: null,
   managerHrId,
   managerName: managerHrId,
@@ -122,11 +147,17 @@ const dedupe = (summed: number, lines: RoiAttributionLine[]): number =>
  */
 export function buildMarketingManagerScorecard(input: {
   attributionLines: RoiAttributionLine[];
+  /**
+   * request id → the distributors whose already-elapsed window months are not filed
+   * (`missingDistributorFiles`). Optional: without it the report is exactly what it was, with no
+   * caption — a caller that cannot reach Source-of-Sales batches still gets every figure.
+   */
+  fileGapsByRequestId?: ReadonlyMap<string, DistributorFileGap[]>;
   generatedAtIso: string;
   rows: MarketingRoiReportRow[];
   salesDataAsOf: string | null;
 }): MarketingManagerScorecard {
-  const { attributionLines, generatedAtIso, rows, salesDataAsOf } = input;
+  const { attributionLines, fileGapsByRequestId, generatedAtIso, rows, salesDataAsOf } = input;
 
   const buckets = new Map<string, Bucket>();
   // Which money bucket each request fell in, so the ledger can be split the same way the figures
@@ -138,7 +169,7 @@ export function buildMarketingManagerScorecard(input: {
     if (!key) continue;
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { lines: [], row: emptyRow(key) };
+      bucket = { gaps: [], lines: [], row: emptyRow(key) };
       buckets.set(key, bucket);
     }
     const target = bucket.row;
@@ -159,6 +190,14 @@ export function buildMarketingManagerScorecard(input: {
       target.expectedRoiValue += row.expectedRoiValue;
       target.requiredRoiValue += row.requiredRoiValue;
       target.actualValue += row.actualSalesValue;
+      // Only approved money carries the caption: an unapproved campaign has nothing to measure yet,
+      // so a missing file says nothing about it.
+      const gaps = fileGapsByRequestId?.get(row.requestId);
+      if (gaps && gaps.length > 0) {
+        target.awaitingFileRequests += 1;
+        target.awaitingFileValue += row.estimatedCost;
+        bucket.gaps.push(gaps);
+      }
     } else if (money === "pending") {
       target.awaitingRequests += 1;
     } else {
@@ -180,7 +219,7 @@ export function buildMarketingManagerScorecard(input: {
     if (approvedRequestIds.has(line.requestId)) bucket.lines.push(line);
   }
 
-  const scorecardRows = [...buckets.values()].map(({ lines, row }) => {
+  const scorecardRows = [...buckets.values()].map(({ gaps, lines, row }) => {
     const actualValue = dedupe(row.actualValue, lines);
     const approvedValue = roundMarketingMoney(row.approvedValue);
     const requiredRoiValue = roundMarketingMoney(row.requiredRoiValue);
@@ -188,7 +227,9 @@ export function buildMarketingManagerScorecard(input: {
       ...row,
       actualValue,
       approvedValue,
+      awaitingFileValue: roundMarketingMoney(row.awaitingFileValue),
       expectedRoiValue: roundMarketingMoney(row.expectedRoiValue),
+      fileGaps: mergeFileGaps(gaps),
       recoveryRatio: approvedValue > 0 ? roundMarketingRatio(actualValue / approvedValue) : 0,
       requiredRoiValue,
       roiCoverageRatio: requiredRoiValue > 0 ? roundMarketingRatio(actualValue / requiredRoiValue) : 0,
@@ -209,6 +250,8 @@ export function buildMarketingManagerScorecard(input: {
     (acc, row) => ({
       approvedRequests: acc.approvedRequests + row.approvedRequests,
       approvedValue: acc.approvedValue + row.approvedValue,
+      awaitingFileRequests: acc.awaitingFileRequests + row.awaitingFileRequests,
+      awaitingFileValue: acc.awaitingFileValue + row.awaitingFileValue,
       awaitingRequests: acc.awaitingRequests + row.awaitingRequests,
       expectedRoiValue: acc.expectedRoiValue + row.expectedRoiValue,
       refusedRequests: acc.refusedRequests + row.refusedRequests,
@@ -219,6 +262,8 @@ export function buildMarketingManagerScorecard(input: {
     {
       approvedRequests: 0,
       approvedValue: 0,
+      awaitingFileRequests: 0,
+      awaitingFileValue: 0,
       awaitingRequests: 0,
       expectedRoiValue: 0,
       refusedRequests: 0,
@@ -247,7 +292,11 @@ export function buildMarketingManagerScorecard(input: {
       ...summed,
       actualValue: totalActualValue,
       approvedValue: roundMarketingMoney(summed.approvedValue),
+      awaitingFileValue: roundMarketingMoney(summed.awaitingFileValue),
       expectedRoiValue: roundMarketingMoney(summed.expectedRoiValue),
+      // The company caption names every distributor behind any waiting campaign, once each —
+      // these counts are campaigns and distributors, never money, so nothing is deduped here.
+      fileGaps: mergeFileGaps(scorecardRows.map((row) => row.fileGaps)),
       managerCount: scorecardRows.length,
       recoveryRatio:
         summed.approvedValue > 0 ? roundMarketingRatio(totalActualValue / summed.approvedValue) : 0,

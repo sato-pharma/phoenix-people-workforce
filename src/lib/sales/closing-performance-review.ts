@@ -198,6 +198,49 @@ export type PerformanceMatrix = {
   rows: PerformanceMatrixRow[];
 };
 
+/**
+ * One block of the per-rep by-month grid: ONE product code, carrying its own run of months.
+ *
+ * `unitsAreAddable` is always true here and is carried anyway, for the same reason a matrix column
+ * carries it — the workbook builder REFUSES to print a units block whose column says it spans more
+ * than one product code, so the decision has to travel on the data rather than be assumed by a
+ * renderer downstream.
+ */
+export type PerformanceProductMonthColumn = {
+  key: string;
+  label: string;
+  subLabel: string;
+  unitsAreAddable: boolean;
+};
+
+/**
+ * One row of the per-rep by-month grid — the rep and area on the left, then every product's months.
+ *
+ * `units[productIndex][monthIndex]` is UNITS, and it is a real quantity: a block is one product
+ * code, so a figure may be read across its own months and summed down its own column. There is
+ * deliberately NO row total — a row spans products, and units of different products are never
+ * added. `growth[productIndex]` is that product's newest month over the one before it.
+ */
+export type PerformanceProductMonthRow = {
+  areaCode: string;
+  areaName: string;
+  growth: Array<number | null>;
+  kind: "area" | "regionSubtotal" | "grandTotal";
+  managerName: string | null;
+  regionCode: string;
+  regionName: string;
+  repIsVacant: boolean;
+  repName: string | null;
+  units: Array<Array<number | null>>;
+};
+
+/** Reps and areas down the side, one product per block across the top, months inside each block. */
+export type PerformanceProductMonthMatrix = {
+  columns: PerformanceProductMonthColumn[];
+  months: string[];
+  rows: PerformanceProductMonthRow[];
+};
+
 export type ClosingPerformanceReview = {
   areas: PerformanceReviewAreaRow[];
   /** By-month VALUE per area, plus its growth. Value, never units — see rule 1. */
@@ -227,6 +270,15 @@ export type ClosingPerformanceReview = {
   productValueByMonth: PerformanceReviewSeriesRow[];
   /** By-month UNITS per product code — one product code per row, so the sum is real. */
   productUnitsByMonth: PerformanceReviewSeriesRow[];
+  /**
+   * The same UNITS, per REP: reps and areas down the side, each product's own months across the top.
+   *
+   * `productUnitsByMonth` answers "how did Tebofortin 40mg move month to month on the line"; this
+   * answers "how did it move for Mostafa Kamel", which is the question a review of PEOPLE is for.
+   * A block is one product code, so these units are a real quantity — and there is no row total,
+   * because a row spans products.
+   */
+  productUnitsByRepByMonth: PerformanceProductMonthMatrix;
   regions: PerformanceReviewGroupRow[];
   /**
    * Every month folded into the headline figures, oldest first — one entry for a single-month read.
@@ -621,6 +673,144 @@ function buildPerformanceMatrix(input: {
 }
 
 /**
+ * Reps and areas down the side, each product's own run of months across the top — in UNITS.
+ *
+ * This is the per-rep half of "Units & growth by month": one block per product code, and inside the
+ * block one column per month plus that product's growth. Every figure is a real quantity, because a
+ * block never spans more than one product code — which is also why the row carries no total, and why
+ * a region subtotal and the national total are legitimate here: they sum ONE product down a column.
+ *
+ * ROWS COVER EVERY MONTH OF THE SERIES, not just the selected one. An area that sold in July and
+ * nothing in September still belongs on a sheet whose whole point is the trend; a month, an area or
+ * a product that is genuinely absent reads as null — never 0, which would claim nothing was sold.
+ */
+function buildProductMonthMatrix(input: {
+  columns: PerformanceProductMonthColumn[];
+  headline: MonthlyClosingMatrix;
+  line: string;
+  seatAssignments: Map<string, AreaSeatAssignment>;
+  seriesMatrices: Array<{ matrix: MonthlyClosingMatrix | null; period: string }>;
+}): PerformanceProductMonthMatrix {
+  const { columns, headline, line, seatAssignments, seriesMatrices } = input;
+  const months = seriesMatrices.map((entry) => entry.period);
+
+  // One lookup per month: which column holds a product code, and which cells belong to an area.
+  // Built once, because the alternative is a findIndex per cell — areas × products × months of them.
+  const perMonth = seriesMatrices.map((entry) => {
+    const columnIndex = new Map<string, number>();
+    const cellsByArea = new Map<string, MonthlyClosingCell[]>();
+    if (entry.matrix) {
+      entry.matrix.columns.forEach((column, index) => columnIndex.set(column.productCode, index));
+      for (const { area } of areaRowsOf(entry.matrix)) {
+        cellsByArea.set(area.areaCode.trim().toUpperCase(), area.cells);
+      }
+    }
+    return { cellsByArea, columnIndex, uploaded: entry.matrix != null };
+  });
+
+  // Every area that appears in ANY month, grouped by region in the closing's own region order.
+  const regionGroups = new Map<
+    string,
+    { areas: Map<string, { areaCode: string; areaName: string }>; regionCode: string; regionName: string }
+  >();
+  const collect = (matrix: MonthlyClosingMatrix | null) => {
+    if (!matrix) return;
+    for (const group of matrix.regions) {
+      let entry = regionGroups.get(group.regionCode);
+      if (!entry) {
+        entry = { areas: new Map(), regionCode: group.regionCode, regionName: group.regionName };
+        regionGroups.set(group.regionCode, entry);
+      }
+      for (const area of group.areas) {
+        const code = area.areaCode.trim().toUpperCase();
+        if (!entry.areas.has(code)) entry.areas.set(code, { areaCode: area.areaCode, areaName: area.areaName });
+      }
+    }
+  };
+  collect(headline);
+  for (const entry of seriesMatrices) collect(entry.matrix);
+
+  const emptyBlocks = () => columns.map(() => months.map(() => null as number | null));
+
+  const unitsFor = (areaCode: string): Array<Array<number | null>> =>
+    columns.map((column) =>
+      perMonth.map((month) => {
+        if (!month.uploaded) return null;
+        const cells = month.cellsByArea.get(areaCode);
+        if (!cells) return null;
+        const index = month.columnIndex.get(column.key);
+        if (index == null) return null;
+        return cells[index]?.salesUnits ?? null;
+      }),
+    );
+
+  // A null stays null until something real lands on it: a total over three unuploaded months is
+  // "not uploaded", not zero.
+  const addInto = (target: Array<Array<number | null>>, source: Array<Array<number | null>>) => {
+    source.forEach((series, productIndex) => {
+      series.forEach((value, monthIndex) => {
+        if (value == null) return;
+        target[productIndex][monthIndex] = (target[productIndex][monthIndex] ?? 0) + value;
+      });
+    });
+  };
+
+  const rows: PerformanceProductMonthRow[] = [];
+  const national = emptyBlocks();
+  const ordered = [...regionGroups.values()].sort((a, b) => regionOrder(a.regionCode) - regionOrder(b.regionCode));
+
+  for (const group of ordered) {
+    const subtotal = emptyBlocks();
+    for (const [code, meta] of group.areas) {
+      const seat = seatAssignments.get(`${line}::${code}`);
+      const units = unitsFor(code);
+      addInto(subtotal, units);
+      rows.push({
+        areaCode: meta.areaCode,
+        // The area's OWN name — see rule 2 at the top of this file.
+        areaName: meta.areaName,
+        growth: units.map((series) => growthOf(series)),
+        kind: "area",
+        managerName: seat?.managerName ?? null,
+        regionCode: group.regionCode,
+        regionName: group.regionName,
+        repIsVacant: seat?.repIsVacant ?? false,
+        repName: seat?.repName ?? null,
+        units,
+      });
+    }
+    addInto(national, subtotal);
+    rows.push({
+      areaCode: group.regionCode,
+      areaName: group.regionName,
+      growth: subtotal.map((series) => growthOf(series)),
+      kind: "regionSubtotal",
+      managerName: null,
+      regionCode: group.regionCode,
+      regionName: group.regionName,
+      repIsVacant: false,
+      repName: null,
+      units: subtotal,
+    });
+  }
+
+  rows.push({
+    areaCode: "",
+    areaName: "National total",
+    growth: national.map((series) => growthOf(series)),
+    kind: "grandTotal",
+    managerName: null,
+    regionCode: "",
+    regionName: "",
+    repIsVacant: false,
+    repName: null,
+    units: national,
+  });
+
+  return { columns, months, rows };
+}
+
+/**
  * Build every view of the review for one (line, period).
  *
  * `seriesMatrices` carries the earlier months. A month that was never uploaded is simply absent,
@@ -839,6 +1029,33 @@ export function buildClosingPerformanceReview(input: {
     productValueByMonth.push({ ...row, growth: growthOf(values), perMonth: values });
     productUnitsByMonth.push({ ...row, growth: growthOf(units), perMonth: units });
   }
+  // The same units, per REP. Blocks follow the product grid's order — each family's concentrations
+  // kept together, biggest family first — and then any product that sold in an earlier month of the
+  // series but not in the selected one, which would otherwise vanish from a by-month view.
+  const productMonthColumns: PerformanceProductMonthColumn[] = matrixByProduct.columns.map((column) => ({
+    key: column.key,
+    label: column.label,
+    subLabel: column.subLabel,
+    unitsAreAddable: true,
+  }));
+  const inGrid = new Set(productMonthColumns.map((column) => column.key));
+  for (const [productCode, meta] of productKeys) {
+    if (inGrid.has(productCode)) continue;
+    productMonthColumns.push({
+      key: productCode,
+      label: meta.productName,
+      subLabel: meta.family,
+      unitsAreAddable: true,
+    });
+  }
+  const productUnitsByRepByMonth = buildProductMonthMatrix({
+    columns: productMonthColumns,
+    headline: matrix,
+    line,
+    seatAssignments,
+    seriesMatrices,
+  });
+
   const byLatest = (a: PerformanceReviewSeriesRow, b: PerformanceReviewSeriesRow) =>
     (b.perMonth[b.perMonth.length - 1] ?? 0) - (a.perMonth[a.perMonth.length - 1] ?? 0);
   productValueByMonth.sort(byLatest);
@@ -891,6 +1108,7 @@ export function buildClosingPerformanceReview(input: {
     months,
     period: matrix.period,
     productUnitsByMonth,
+    productUnitsByRepByMonth,
     productValueByMonth,
     regions,
     selectedPeriods,

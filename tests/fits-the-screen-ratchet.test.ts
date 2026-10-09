@@ -206,8 +206,19 @@ import { stripComments } from "./support/comment-strip.ts";
  * scroller" and "my change blinded the detector" read identically in it. MEASURED per file, HEAD
  * against the working tree, across all 24 files this branch touches — every one of them moved the
  * count by zero, which is what licenses lowering the floor on another branch's work.
+ *
+ * 213 -> 212 on 2026-10-09, by the branch that ADDED a matrix table — which is the interesting part.
+ * The Performance Review grew a third matrix (units per product, per rep, per month: one block per
+ * product, its months inside the block), and that shape is exempt under the same owner ruling as
+ * the closing matrix — "the matrix can NEVER fit; leave the scroll" — because its width IS a count,
+ * which no merge bounds. Written as a fourth identical `<div className="overflow-x-auto">` it would
+ * have read 213 -> 214 and gone red, correctly: the ratchet cannot tell an exempt matrix from a
+ * careless wrapper, and it must not be taught to. So the three wrappers already on that page became
+ * ONE `MatrixScroller` component, where the exemption is declared and reasoned about once — the
+ * `PortalDesktopTable` move at 238 -> 237, at page scale. Three sites became one, and the page is
+ * now the only place a fourth matrix could inherit the scroll without declaring a new one.
  */
-const BASELINE = 213;
+const BASELINE = 212;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on
