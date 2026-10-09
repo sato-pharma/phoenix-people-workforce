@@ -399,3 +399,121 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
     signals,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A FLAG IS A READING WITH A DATE ON IT — whether a later reading still supports a signboard case.
+//
+// Pure, here beside the flags and their labels, for the reason the rest of this file is pure: the
+// judging holds no I/O, so it can be tested on real verdict shapes rather than inferred from the
+// board's source text. The board reads the place row and asks this.
+//
+// 🔴 A SIGNBOARD VERDICT IS NOT A PROPERTY OF THE PHOTOGRAPH. Measured 2026-10-09: the same frame
+// read `other_name` at 18:12 and `unjudged` at 18:34, and another read blank at 18:35 and a clear
+// nameplate at 18:48. Legibility moves and the verdict moves with it, so four of the five signboard
+// flags standing on the owner's board that evening were already contradicted by the place's own
+// stored verdict — two of them by a plain `match`, and a matched place leaves the nightly backlog,
+// so those two would never have been re-read and would have stood for ever against a named person.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The two signboard verdicts that put a name on the integrity board. Anything else is not a flag. */
+const FLAGGABLE_SIGNBOARD_VERDICTS = new Set(["other_name", "no_name"]);
+
+/** Which filed flag each of those verdicts corresponds to, so "still the same finding" is a test. */
+const SIGNBOARD_VERDICT_FLAG: Record<string, string> = {
+  other_name: "sign_other_name",
+  no_name: "sign_no_name",
+};
+
+/**
+ * What a later reading says, in the integrity board's own words.
+ *
+ * Deliberately NOT the sentences the two place boards print. Those answer "what does this place's
+ * sign say"; these answer "does it still say the thing this flag was filed for", which is a different
+ * question and reads wrongly in the other voice. A reason not named here falls back to the verdict's
+ * own sentence, so a reason added later can never surface as a code.
+ */
+const LATER_READING_TEXT: Record<string, string> = {
+  match: "the sign names this customer after all",
+  other_name: "the sign names somebody else",
+  no_name: "there is no name on the sign to judge",
+  unjudged: "the sign could not be read",
+};
+
+const LATER_READING_UNJUDGED_TEXT: Record<string, string> = {
+  name_unusable: "there is nothing on a sign to compare",
+  unconfirmed: "two readings of the sign disagreed with each other",
+  unreadable: "the sign could not be read, and it is still being retried",
+  unreadable_final: "the sign could not be read, and it has had every attempt it gets",
+};
+
+function laterReadingWords(verdict: string, reason: string | null): string {
+  if (verdict !== "unjudged") return LATER_READING_TEXT[verdict] ?? LATER_READING_TEXT.unjudged;
+  return LATER_READING_UNJUDGED_TEXT[reason ?? ""] ?? LATER_READING_TEXT.unjudged;
+}
+
+/** A signboard verdict as the place row stores it, pared to what judging a later reading needs. */
+export type StoredSignboardVerdict = {
+  verdict: string;
+  reason: string | null;
+  /** When that reading was taken, as an ISO instant. Null when the stored check never carried one. */
+  checkedAt: string | null;
+  signText: string | null;
+};
+
+/**
+ * A reading of the same signboard taken AFTER a flag was filed, and whether it still says it.
+ *
+ * Derived from `phoenix_crm_places.signboard_check` at board time rather than stored on the case —
+ * the same discipline the board already follows for a visit's `distance_meters`. A stored copy is a
+ * second place for the truth to live, and a flag whose place is never re-read again would keep
+ * whatever had been written into it the day it was filed.
+ */
+export type IntegrityLaterReading = {
+  /** When the sign was last read, as an ISO instant. Always later than the flag's own filing. */
+  checkedAt: string;
+  /** Does the later reading still reach a verdict that would put a name on the board? */
+  supportsFlag: boolean;
+  /** Is it the SAME finding as the one filed, and not merely still a finding? */
+  sameFinding: boolean;
+  /** What it says, in plain English, ready to print after "read again on <date>". */
+  words: string;
+  /** The sign's own words at that reading, in their own script. Null when it read nothing. */
+  signText: string | null;
+};
+
+/**
+ * Does a later reading of the same signboard still support the flag that was filed?
+ *
+ * 🔴 "LATER" IS MEASURED AGAINST WHEN THE FLAG WAS FILED, NEVER AGAINST THE CAPTURE. A case's
+ * `captured_at` is when the REP stood at the door, days before the nightly pass ever read the
+ * photograph — judge against that and the reading that FILED the flag withdraws it, emptying the
+ * board of every signboard case at once. `created_at` is when the row was written, and an upsert
+ * leaves it at the first filing, so a re-filed flag is judged against the first time it was made.
+ *
+ * 🔴 AND A MISSING OR UNPARSEABLE DATE LEAVES THE FLAG STANDING. Null is "nothing read it again",
+ * never "it was withdrawn" — a board that quietly drops findings it cannot date is worse than one
+ * that shows a stale finding, because the stale one can be read and judged.
+ */
+export function judgeLaterSignboardReading(input: {
+  source: string;
+  flags: string[];
+  /** The ISO instant the flag was filed — the case row's `created_at`. */
+  filedAt: string | null;
+  stored: StoredSignboardVerdict | null;
+}): IntegrityLaterReading | null {
+  // Only the signboard pass keeps a re-readable verdict somewhere else. Every other detector's
+  // evidence is the capture itself, which cannot change its mind.
+  if (input.source !== "signboard") return null;
+  if (!input.stored || !input.stored.checkedAt || !input.filedAt) return null;
+  const readAt = Date.parse(input.stored.checkedAt);
+  const filedAt = Date.parse(input.filedAt);
+  if (!Number.isFinite(readAt) || !Number.isFinite(filedAt) || readAt <= filedAt) return null;
+  const supportsFlag = FLAGGABLE_SIGNBOARD_VERDICTS.has(input.stored.verdict);
+  return {
+    checkedAt: input.stored.checkedAt,
+    supportsFlag,
+    sameFinding: supportsFlag && input.flags.includes(SIGNBOARD_VERDICT_FLAG[input.stored.verdict] ?? ""),
+    words: laterReadingWords(input.stored.verdict, input.stored.reason),
+    signText: input.stored.signText,
+  };
+}
