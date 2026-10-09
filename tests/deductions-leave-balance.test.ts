@@ -41,6 +41,8 @@ import { annualBalanceLedgerDays, buildEmployeeEligibilityRows, requestableAnnua
  *      EVERY annual-balance pool, says so when it cannot read them, and accrues by completed month.
  *   8. someone who has LEFT is SAID, never refused — the dialog names the day he stopped working and
  *      the charge still goes through, in both views, and the already-charged view actually reads it.
+ *   9. a leaver whose balance has actually been spent GETS A ROW on the Entitlements tab, saying so,
+ *      without widening request visibility and without moving the active-workforce totals.
  */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -791,4 +793,117 @@ export async function runDeductionsLeaveBalanceTests() {
     );
   }
 
+
+  // 🔴 9. A CHARGED LEAVER GETS A ROW ON THE ENTITLEMENTS TAB, AND IT SAYS SO. Owner, 2026-10-09:
+  // "show the charged leavers on the vacation report entitlements tab" — the gap section 8's dialog
+  // could only describe. Three of the sixteen September Unpaid Vacation rows on production belong to
+  // people who had left, so a day charged against one of them came off a balance that appeared on no
+  // screen at all: the tab lists active employees.
+  {
+    const service = read("src/lib/vacation/service.ts");
+
+    // (a) The row says it, through reviewFlags — the one channel that already reaches all four
+    // renderings of a row (desktop table, mobile card, self-only card, CSV export).
+    const flagsFor = (over: Partial<EmployeeDirectoryRow>) =>
+      buildEmployeeEligibilityRows({
+        allScopedRows: [],
+        employees: [{ ...employee("MR-20"), ...over } as EmployeeDirectoryRow],
+        filters: {},
+        today: "2026-10-09",
+      })[0]?.reviewFlags ?? [];
+
+    assert.ok(
+      // "Sept", not "Sep": stableEnGbFormatter pins the CLDR 42 spelling for every reader, which is
+      // the whole point of it — the same words the charge dialog prints.
+      flagsFor({ employmentStatus: "resigned", lastWorkingDate: "2026-09-17" }).includes("Left the company on 17 Sept 2026"),
+      "a resigned employee's row must say so, with the day they stopped working",
+    );
+    assert.ok(
+      flagsFor({ employmentStatus: "terminated", lastWorkingDate: "2026-10-04" }).includes("Left the company on 04 Oct 2026"),
+      "terminated counts as left, and the date is printed the same way",
+    );
+    assert.ok(
+      flagsFor({ employmentStatus: "not_renewed", lastWorkingDate: null }).includes("Left the company"),
+      "a leaver with no last working day on record still says they left, without inventing a date",
+    );
+    for (const status of ["active", "historical_payroll_record", "system_placeholder", null]) {
+      assert.ok(
+        !flagsFor({ employmentStatus: status, lastWorkingDate: "2026-09-17" }).some((flag) => flag.startsWith("Left the company")),
+        `${String(status)} is not a leaver and must never carry the notice`,
+      );
+    }
+    // The date is a DATE-ONLY column: formatted in UTC from its own parts, so it never lands a day
+    // early, and through the engine-independent formatter rather than the reader's ICU build.
+    assert.ok(
+      service.includes('stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" })'),
+      "the leaver date must go through stableEnGbFormatter in UTC",
+    );
+
+    // (b) WHO gets a row: active employees plus the leavers whose balance was actually spent.
+    assert.ok(
+      service.includes("employees: [...visibleEmployees, ...chargedLeavers],"),
+      "the Entitlements tab must be built from the active employees PLUS the charged leavers",
+    );
+    assert.ok(
+      service.includes("await getEmployeeDirectoryRows({ includeInactive: true })"),
+      "finding them needs the directory read that includes the people who have left",
+    );
+    assert.ok(
+      service.includes("if (!hasDepartedEmployment(employee.employmentStatus)) return false;"),
+      "and only a departed status qualifies — never the complement of active",
+    );
+
+    // (c) 🔴 NET days. A charge RETURNED TO SALARY leaves a negative ledger row that nets it out, and
+    // a leaver whose charge was given back is not a charged leaver — otherwise the row would appear
+    // for ever after one undone click.
+    assert.ok(
+      service.includes("    return netDays > 0;"),
+      "a leaver qualifies on NET days above zero, not on the presence of any ledger row",
+    );
+    assert.ok(
+      service.includes("annualLedgerRead.failed ? leaveBalanceRead.charges : annualLedgerRead.rows;"),
+      "and when the wider ledger read fails, the deductions fold is the fallback rather than silence",
+    );
+    // 🔴 Scoped to the person's OWN current balance period — the same window Used and Balance count.
+    // The period moves with today, so without this the row would never drop off and would eventually
+    // show a departed person with a full untouched entitlement.
+    assert.ok(
+      service.includes("row.workDate >= period.periodStart &&") &&
+        service.includes("row.workDate < period.periodEnd"),
+      "the leaver's net days must be counted inside their own balance period, not across all time",
+    );
+
+    // (d) 🔴 REQUEST VISIBILITY IS NOT WIDENED. visibleEmployeeHrIds decides which REQUESTS a viewer
+    // may see; building it from the wider list would hand a manager rows nobody asked to show them.
+    assert.ok(
+      service.includes("const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);"),
+      "the visible-request id set must still be built from the ACTIVE list",
+    );
+    assert.ok(
+      !service.includes("buildVisibleHrIdSet(visibleIncludingDeparted)"),
+      "it must never be built from the wider list",
+    );
+    assert.ok(
+      service.includes("filterVacationEmployeesForAccess(\n    access,\n    await getEmployeeDirectoryRows({ includeInactive: true }),\n  )"),
+      "the wider list must itself pass the access filter, or a manager sees another manager's leavers",
+    );
+
+    // (e) The totals stay about the active workforce — the first figure is literally activeEmployees.
+    assert.ok(
+      service.includes("employeeEligibility.filter((row) => !hasDepartedEmployment(row.employmentStatus)),"),
+      "the summary must exclude the charged leavers so a headcount he reads monthly does not move",
+    );
+
+    // (f) The charges section shows a leaver's charge, with a NAME. It was dropped entirely, because
+    // the id list stopped at the active employees; and the name lookup would then have said
+    // "Name unavailable", against his standing rule of names, never ids.
+    assert.ok(
+      service.includes("listLeaveBalanceChargesForEmployees(visibleIncludingDeparted.map((employee) => employee.hrId))"),
+      "the charges read must cover the leavers too",
+    );
+    assert.ok(
+      service.includes("const person = visibleIncludingDeparted.find((employee) => hrIdsMatch(employee.hrId, charge.employeeHrId));"),
+      "and the row's name must be looked up in that same wider list",
+    );
+  }
 }

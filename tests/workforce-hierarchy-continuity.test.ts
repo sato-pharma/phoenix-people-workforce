@@ -468,10 +468,32 @@ export function runWorkforceHierarchyContinuityTests() {
     /fetchVacationReportRowsFromDatabase\(\{ access, filters: clean, visibleEmployeeHrIds \}\);[\s\S]*\.filter\(\(row\) => canSeeVacation\(access, row, visibleEmployeeHrIds\)\)/,
     "Vacation report rows must be fetched and filtered by the scoped employee set",
   );
+  // 🔴 THE INVARIANT IS "SCOPED", NOT "visibleEmployees" LITERALLY. Since 2026-10-09 the tab also
+  // carries the LEAVERS whose annual balance was actually spent (owner: "show the charged leavers on
+  // the vacation report entitlements tab"), and `chargedLeavers` is derived from a SECOND directory
+  // read that is itself put through filterVacationEmployeesForAccess — so a manager still sees only
+  // their own people. The three assertions below keep the original teeth: the builder takes the
+  // scoped active set plus that scoped leaver set, the leaver set comes from the access-filtered
+  // wider list, and an UNFILTERED directory read may never reach the builder.
   assert.match(
     vacationServiceSource,
-    /const employeeEligibility = buildEmployeeEligibilityRows\(\{[\s\S]*employees: visibleEmployees,/,
-    "Vacation report entitlements must be built only from scoped visible employees",
+    /const employeeEligibility = buildEmployeeEligibilityRows\(\{[\s\S]*employees: \[\.\.\.visibleEmployees, \.\.\.chargedLeavers\],/,
+    "Vacation report entitlements must be built from the scoped visible employees plus the scoped charged leavers",
+  );
+  assert.match(
+    vacationServiceSource,
+    /const visibleIncludingDeparted = await filterVacationEmployeesForAccess\(\s*access,\s*await getEmployeeDirectoryRows\(\{ includeInactive: true \}\),\s*\);/,
+    "the wider directory read must itself pass the access filter before any leaver is taken from it",
+  );
+  assert.match(
+    vacationServiceSource,
+    /const chargedLeavers = visibleIncludingDeparted\.filter\(/,
+    "the charged leavers must be taken from that access-filtered list, never from a raw directory read",
+  );
+  assert.ok(
+    !/employees: activeEmployees/.test(vacationServiceSource) &&
+      !/employees: await getEmployeeDirectoryRows/.test(vacationServiceSource),
+    "an unscoped directory read must never reach buildEmployeeEligibilityRows",
   );
 
   const directorySource = readFileSync(

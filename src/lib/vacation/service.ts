@@ -18,6 +18,8 @@ import {
 import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
+import { hasDepartedEmployment } from "@/lib/auth/session-lifecycle";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { invalidateExecutiveDashboardCache, VACATION_REPORT_ROWS_CACHE_TAG } from "@/lib/dashboard/invalidation";
@@ -794,6 +796,24 @@ function approvedPaidDaysFromRows(input: {
   }, 0);
 }
 
+/** Date-only, printed through the engine-independent en-GB formatter so the month never shifts. */
+const departedDayFormatter = stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" });
+
+/**
+ * "Left the company on 17 Sep 2026" for someone who has gone, null for everyone else.
+ *
+ * `hasDepartedEmployment` is the repo's one vocabulary for this (resigned · terminated ·
+ * not_renewed), deliberately NOT the complement of active: production carries 15
+ * `historical_payroll_record` and 2 `system_placeholder` rows that are nobody's leaver.
+ */
+function departedLabel(employee: EmployeeDirectoryRow): string | null {
+  if (!hasDepartedEmployment(employee.employmentStatus)) return null;
+  const iso = employee.lastWorkingDate ? employee.lastWorkingDate.slice(0, 10) : null;
+  const parts = iso ? iso.split("-").map(Number) : null;
+  if (!parts || parts.length !== 3 || parts.some((part) => !part)) return "Left the company";
+  return `Left the company on ${departedDayFormatter.format(new Date(Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!)))}`;
+}
+
 /**
  * The report's Entitlements table.
  *
@@ -901,6 +921,13 @@ export function buildEmployeeEligibilityRows(input: {
           ? "first_six_months"
           : "eligible";
       const reviewFlags = [
+        // 🔴 THE ROW SAYS THE PERSON HAS LEFT (owner, 2026-10-09: "show the charged leavers on the
+        // vacation report entitlements tab"). A leaver only reaches this table when a charge has
+        // been taken from their balance — loadVacationReportData adds exactly those — and without
+        // these words the row reads as an ordinary employee with a strangely short balance. It is a
+        // review flag rather than a new column because the flag already reaches all four places a
+        // row is rendered: the desktop table, the mobile card, the self-only card and the CSV.
+        departedLabel(employee),
         input.balanceChargesUnavailable ? "Balance charges could not be read" : null,
         eligibilityStatus === "missing_hire_date" ? "Missing hire date" : null,
         eligibilityStatus === "first_six_months" && daysUntilEligibility && daysUntilEligibility > 0
@@ -6842,6 +6869,15 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
   const activeEmployees = await getEmployeeDirectoryRows();
   const visibleEmployees = await filterVacationEmployeesForAccess(access, activeEmployees);
   const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
+  // 🔴 A SECOND, WIDER READ — used ONLY to find the leavers a charge has been taken from (owner,
+  // 2026-10-09). `visibleEmployeeHrIds` is deliberately NOT widened with it: that set decides which
+  // REQUESTS the viewer may see, and widening it would change request visibility, which nobody asked
+  // for. The access filter is re-applied here so a manager can only ever see their own leavers, and
+  // both directory reads are TTL-cached and request-deduped, so this adds no round trip in practice.
+  const visibleIncludingDeparted = await filterVacationEmployeesForAccess(
+    access,
+    await getEmployeeDirectoryRows({ includeInactive: true }),
+  );
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: clean, visibleEmployeeHrIds });
 
   const scopedRows = (data ?? [])
@@ -6892,7 +6928,11 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
   // a request is priced against (annualBalanceLedgerDays). A failed read of either must not take the
   // whole report down, and must not read as "none" either: each is logged and said on screen.
   const [leaveBalanceRead, annualLedgerRead] = await Promise.all([
-    listLeaveBalanceChargesForEmployees(visibleEmployees.map((employee) => employee.hrId)).then(
+    // The WIDER list: a charge taken from a leaver's balance belongs in this section as much as on
+    // the Entitlements tab, and it was being dropped here because the id list stopped at the active
+    // employees. listLeaveBalanceChargesForEmployees reads every deduction row and filters in
+    // memory, so a longer list of ids costs nothing.
+    listLeaveBalanceChargesForEmployees(visibleIncludingDeparted.map((employee) => employee.hrId)).then(
       (charges) => ({ charges, failed: false }),
       (error: unknown) => {
         console.error("Vacation report: could not read the deductions taken from annual leave", error);
@@ -6907,9 +6947,52 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
       },
     ),
   ]);
+  // 🔴 WHO GETS A ROW: every active employee, plus the LEAVERS whose balance has actually been
+  // spent. Measured on production 2026-10-09: three of the sixteen September Unpaid Vacation rows
+  // belong to people who had left, so a day charged against them landed on a balance that appeared
+  // on no screen at all — the gap the charge dialog could only describe.
+  //
+  // 🔴 NET days, not any ledger row: a charge returned to salary leaves a NEGATIVE row that nets it
+  // out, and a leaver whose charge was given back is not a charged leaver. The ledger covers every
+  // annual-balance pool; when that read failed, the deductions fold is the fallback so a leaver does
+  // not silently vanish on the one day the wider read is broken.
+  //
+  // 🔴 AND INSIDE THAT PERSON'S OWN CURRENT BALANCE PERIOD — the same window the Used and Balance
+  // columns count. Without it the row never drops off: the period moves with today, so a leaver
+  // whose charge fell out of it would keep a row showing Used 0 and a FULL untouched entitlement for
+  // someone who no longer works here, which is worse than not showing them at all.
+  const balanceLedgerRows: ReadonlyArray<{ employeeHrId: string; workDate: string; days: number }> =
+    annualLedgerRead.failed ? leaveBalanceRead.charges : annualLedgerRead.rows;
+  const activeHrIdKeys = new Set(
+    visibleEmployees.map((employee) => employee.hrId.trim().toLowerCase()).filter(Boolean),
+  );
+  const chargedLeavers = visibleIncludingDeparted.filter((employee) => {
+    const key = employee.hrId.trim().toLowerCase();
+    if (!key || activeHrIdKeys.has(key)) return false;
+    if (!hasDepartedEmployment(employee.employmentStatus)) return false;
+    // currentCairoDateOnlyIso() again rather than a hoisted constant: the builder's own call below
+    // is matched verbatim by tests/cairo-leave-today.test.ts, which is what keeps this table on the
+    // Cairo calendar day, and two reads of the same day are cheaper than loosening that pin.
+    const period = getVacationBalancePeriod({
+      employeeHrId: employee.hrId,
+      hireDate: employee.hireDate,
+      referenceDate: currentCairoDateOnlyIso(),
+    });
+    if (!period) return false;
+    const netDays = balanceLedgerRows.reduce(
+      (sum, row) =>
+        hrIdsMatch(row.employeeHrId, employee.hrId) &&
+        row.workDate >= period.periodStart &&
+        row.workDate < period.periodEnd
+          ? sum + row.days
+          : sum,
+      0,
+    );
+    return netDays > 0;
+  });
   const employeeEligibility = buildEmployeeEligibilityRows({
     allScopedRows,
-    employees: visibleEmployees,
+    employees: [...visibleEmployees, ...chargedLeavers],
     filters: clean,
     balanceCharges: annualLedgerRead.rows,
     balanceChargesUnavailable: annualLedgerRead.failed,
@@ -6930,12 +7013,20 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
     viewerHrId: access.hrId ?? null,
     dashboard: buildVacationDashboardData({ latestSlaRun, rows: filteredRows }),
     employeeEligibility,
-    employeeEligibilitySummary: buildEmployeeEligibilitySummary(employeeEligibility),
+    // 🔴 THE SUMMARY STAYS ABOUT THE ACTIVE WORKFORCE — its first figure is literally
+    // `activeEmployees`, and counting the charged leavers in it would move a headcount he reads
+    // every month to make a few leaver rows visible. The rows are on the tab; the totals are not
+    // restated.
+    employeeEligibilitySummary: buildEmployeeEligibilitySummary(
+      employeeEligibility.filter((row) => !hasDepartedEmployment(row.employmentStatus)),
+    ),
     filters: clean,
     leaveBalanceDeductions: {
       failed: leaveBalanceRead.failed,
       rows: leaveBalanceRead.charges.map((charge) => {
-        const person = visibleEmployees.find((employee) => hrIdsMatch(employee.hrId, charge.employeeHrId));
+        // The wider list, or a leaver's own charge reads "Name unavailable" — his rule is names,
+        // never ids, and this section is where the comment the employee reads is shown.
+        const person = visibleIncludingDeparted.find((employee) => hrIdsMatch(employee.hrId, charge.employeeHrId));
         return {
           chargedAt: charge.chargedAt,
           comment: charge.comment,
