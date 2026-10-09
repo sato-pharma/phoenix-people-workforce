@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 61ac0cfb-9a45-4123-ac88-7f2173f492b1
-  modified: 2026-10-09T17:57:05.202Z
+  modified: 2026-10-09T18:14:30.661Z
 ---
 
 **epda (`EP`) and mec (`MC`) file nothing for September 2026, by his own word on 2026-10-09:
@@ -37,8 +37,15 @@ batch table, which is the whole reason the module refuses to guess.
   both as absent, deliberately: September's totals really do not contain their volume, so a
   month-over-month comparison is not like-for-like and the banner exists to say so. Do not "fix"
   that into agreement with the gate.
-- Two checks that read September on his word the same evening: the Office allocation drift is
-  **0** on the final base (read twice, from a stale tree and from a current one), and the
-  store split is **live, nothing published**, so there is nothing frozen to rebuild —
+- The store split is **live, nothing published**, so there is nothing frozen to rebuild —
   26,321.57 EGP across 42 cells recomputes on every read. See
   [[publishing-one-line-freezes-the-whole-periods-store-split-net]].
+- 🔴 **DO NOT CARRY THE "OFFICE DRIFT IS 0" READING — IT WAS TRUE FOR ABOUT FORTY MINUTES.** Two
+  reads at ~20:55 and ~21:05 Cairo both said 0 on the final book set, and both were taken BEFORE
+  the 1,212-pair customer-map re-resolution finished re-pointing 2,643 September rows between
+  areas. Re-read from `af65d4906`: **10,987 of 80,565 CNS Office units — 13.64%, across 48 areas —
+  are now stored in the wrong area**, worst CA5 −5,550 against CA3 +4,997, with eight distributor
+  batches touched at 20:57–21:00, i.e. after the 20:10:51 Office commit. `line unit totals agree on
+  both sides: true`, which is exactly why the publication drift check is blind to it. "The last
+  books are in" never meant "the base is final" — a re-map moves the base too.
+  [[office-allocation-goes-stale-when-a-batch-is-remapped-after-it]]

@@ -1,11 +1,11 @@
 ---
 name: office-allocation-goes-stale-when-a-batch-is-remapped-after-it
-description: "Office units are allocated at COMMIT time and nothing re-runs them, so any batch re-mapped afterwards leaves the spread on a base that no longer exists — 3,698 of August 2026 CNS Office units (3.37%) at the batch, 6,834 packs (6.23%) through the closing loader; FIXED as a read-time respread from October (#5676) and REPORTED on the needs-you board since #5694."
+description: "Office units are allocated at COMMIT time and nothing re-runs them, so any batch re-mapped afterwards leaves the spread on a base that no longer exists — August 2026 CNS 3,698 units (3.37%) at the batch, and September 2026 CNS 10,987 of 80,565 (13.64%, 48 areas) after the 9 Oct customer-map remap; FIXED read-time from October (#5676), DETECTED (#5679) and REPORTED on the needs-you board (#5694)."
 metadata:
   node_type: memory
   type: project
   originSessionId: 61ac0cfb-9a45-4123-ac88-7f2173f492b1
-  modified: 2026-10-09T17:58:43.568Z
+  modified: 2026-10-09T18:02:12.871Z
 ---
 
 The Office channel's value shares used to be computed when the Office file was uploaded and written
@@ -72,3 +72,20 @@ month"*, so September is COMPLETE at 15 books and no further distributor file is
 his October ruling. See
 [[a-rule-script-run-in-the-primary-reads-its-stale-checked-out-code]] — the drift script recomputes
 the rule from its own checkout and joined the stale-tree guard in #5694.
+
+🔴 **AND THE REMAP DID STALE IT — SEPTEMBER 2026 CNS IS 10,987 OF 80,565 OFFICE UNITS (13.64%) ACROSS
+48 AREAS**, measured 9 Oct 2026 by the session that ran the remap, from its own worktree HEAD
+`beeba7b6a` on `origin/main 4439685b5` after all eight rollup rebuilds settled. **Four times August's
+3.37%**, because 968,448.03 EGP of base moved in one go with 783 rows crossing an area boundary. The
+largest single cells: CA5 −5,550 against CA3 +4,997, UE5 −2,639 against UE6 +2,600. `line unit totals
+agree on both sides: true`, which is exactly why no published-closing check can see it. All eight
+distributors that moved the base wrote AFTER the Office commit (20:11:07 Cairo): **overseas 20:57,
+EGD Branch 20:58, EGD 20:58, ramco 20:58, Ibn sina 20:59, sofico 20:59, Ramco Tender 20:59, Ibn Sina
+Tender 21:00** — every one carries a real `distributor_name` on production, so the board row names
+them rather than falling back to codes.
+
+**So the board's first live row is September in the `yours` lane, not August in `worth-knowing`** —
+September CNS is unpublished, which makes it the one case where re-committing the Office book is
+genuinely his to decide. The remap itself was right and is not in question: Sohag 1 fell 291.3% →
+246.3%, Sohag 2 rose 42.2% → 90.1%, Down town 207.2% → 140.6%, Cairo East 1 50.7% → 123.9%, with
+national CNS unchanged at 11,885,444.55 EGP / 151,876 units — value moved between areas, none created.
