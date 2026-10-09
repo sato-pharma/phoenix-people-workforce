@@ -2103,6 +2103,7 @@ import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folder
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
 import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.ts";
 import { runRepoDoctorGitMaintenanceTests } from "./repo-doctor-git-maintenance.test.ts";
+import { runRepoDoctorLoadBearingTests } from "./repo-doctor-load-bearing.test.ts";
 import { runWorktreeLivenessTests } from "./worktree-liveness.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
@@ -7858,6 +7859,16 @@ await runTest(
   "repo-doctor reports a stale git maintenance lock (every maintenance run then does nothing and exits 0), an unpinned "
     + "data-deleting maintenance task (git's default automatic run executes rerere gc over the shared cache), and a loose-object backlog",
   runRepoDoctorGitMaintenanceTests,
+);
+await runTest(
+  "a zero-file folder the PRIMARY's package links resolve THROUGH is LOAD-BEARING, never a husk: it is "
+    + "detected from the real link targets on disk (junctions and scoped @scope/pkg links included, a "
+    + "dangling link still counting, paths compared canonically across git's slashes and Windows' casing) "
+    + "while a healthy self-contained install marks no sibling at all and a missing node_modules answers "
+    + "EMPTY instead of throwing; and repo-doctor consults it in BOTH destructive paths — the branch runs "
+    + "before the zero-file husk test, --fix re-proves it from a fresh read immediately before each delete, "
+    + "--strip-idle refuses such a worktree, and the section prints under its own heading even at zero",
+  runRepoDoctorLoadBearingTests,
 );
 
 await runTest(

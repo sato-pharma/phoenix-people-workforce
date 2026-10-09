@@ -40,6 +40,23 @@
 // checkout from the only copy of an afternoon. It is report-only and disjoint from --fix's
 // input by construction; see scripts/repo-doctor-orphaned-folders.mjs.
 //
+// THE FOURTH CATEGORY: LOAD-BEARING. Added 2026-10-09, after this report talked three
+// separate sessions into breaking the machine in one day. A zero-file folder can still be
+// the thing the PRIMARY's module resolution runs through. `_wt-reconcile-deductions` held
+// exactly one entry — a `node_modules` junction back to the primary — because a `pnpm run`
+// inside that worktree had rewritten all 68 of the primary's top-level package links to
+// absolute paths routed through it. Delete the folder and every one of those links dangles
+// at once: nothing can import `@supabase/supabase-js`, in the primary and in every worktree
+// that junctions into it. The report called it "ZERO files — safe to delete", `--fix` acted
+// on it, and the first command run afterwards died with ERR_MODULE_NOT_FOUND. Three times.
+//
+// So the husk test now asks one more question, and it is a question about PROOF rather than
+// about the folder's name: does any of the primary's own package links resolve THROUGH this
+// directory? If it does, the folder is load-bearing and is reported under its own heading,
+// never under HUSKS — which keeps it out of `--fix`'s input set by construction, the same
+// way ORPHANED FOLDERS is. A name-based exception would have been worthless here: the next
+// worktree to be retired after a stray `pnpm run` gets the same way, under a different name.
+//
 // Removal of REGISTERED worktrees is deliberately never automated. AGENTS.md section 6
 // requires separate owner approval for that, so this prints the exact commands instead —
 // the same report-don't-act stance as .claude/hooks/worktree-exit-guard.mjs.
@@ -141,6 +158,14 @@ import { compareToProtection, declaredRequiredChecks, readProtectionContexts } f
 // judgement come from the module it shares with the test.
 import { alertsEnabled, judgeAlerts, readOpenAlerts } from "./dependabot-alerts.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
+// THE FOURTH CATEGORY (see the header). Its own file for the usual reason — this one reports at
+// import time — and because the property it decides is a runtime one: what real junctions on a real
+// disk say, which is what `tests/repo-doctor-load-bearing.test.ts` drives it against.
+import {
+  directoriesLinkedThrough,
+  isLoadBearing,
+  linksThroughFolder,
+} from "./repo-doctor-load-bearing.mjs";
 import { sessionHoldReason } from "./repo-doctor-session-hold.mjs";
 import { buildCacheIdleMinutes, livenessVerdict, readHolderProbe } from "./worktree-liveness.mjs";
 import {
@@ -217,6 +242,14 @@ const registered = new Set(
     .filter((l) => l.startsWith("worktree "))
     .map((l) => canon(l.slice("worktree ".length))),
 );
+
+/**
+ * Every directory the PRIMARY's own package links resolve through — read this early, because BOTH
+ * destructive passes have to consult it: --fix (the husk bucket, below) and --strip-idle (its fifth
+ * gate, in `stripIdleVerdict`). One read, one answer, so the two passes cannot disagree about which
+ * folder is holding the primary's dependencies together.
+ */
+const linkedThrough = directoriesLinkedThrough(primaryRoot);
 
 /**
  * Recursive count that does NOT follow symlinks, and counts them as links rather than
@@ -398,6 +431,20 @@ function stripIdleVerdict(dir, thresholdMin, probe) {
   const heldBy = sessionHoldReason(dir) ?? stripLivenessReason(dir, probe);
   if (heldBy) return { ok: false, reason: heldBy, idleMin: null };
 
+  // FIFTH GATE — THE SAME DEFECT AS --fix's, ONE LAYER DOWN. --strip-idle deletes a worktree's
+  // `node_modules`, and if the PRIMARY's package links resolve through that very directory, the
+  // folder surviving is no comfort at all: the chain breaks exactly as it did when `--fix` removed
+  // the whole folder on 2026-10-09. This asks the one question that matters and refuses on a yes.
+  // Registered worktrees are the input here, so the husk branch above never sees them — the gate
+  // has to be repeated rather than inherited.
+  if (isLoadBearing(dir, linkedThrough)) {
+    return {
+      ok: false,
+      reason: "the PRIMARY's package links resolve through its node_modules — stripping it breaks the primary",
+      idleMin: null,
+    };
+  }
+
   const idle = idleMinutes(dir);
   if (idle === null) {
     return { ok: false, reason: "cannot read its files to judge idleness", idleMin: null };
@@ -437,6 +484,12 @@ addFrom(parentDir, isWt);
 const live = [];
 const husks = [];
 /**
+ * Zero-file folders the PRIMARY's module resolution runs through — see THE FOURTH CATEGORY in the
+ * header. Disjoint from `husks` by construction, so `--fix` can never reach one.
+ */
+const loadBearing = [];
+
+/**
  * Every candidate, in one list, so the ORPHANED FOLDERS section below can ask its own question of
  * all of them. It has to: the two buckets here split on `isRegistered || hasGitEntry`, which files
  * a DEREGISTERED folder under `live` whenever a failed `git worktree remove` left its `.git` stub
@@ -453,6 +506,11 @@ for (const dir of candidates) {
   const row = { dir, files, dirs, links, isRegistered, hasGitEntry, unreadable };
   allRows.push(row);
   if (isRegistered || hasGitEntry) live.push(row);
+  // THE FOURTH CATEGORY, and it is tested BEFORE the husk test on purpose. A load-bearing folder
+  // passes every husk test there is — unregistered, no .git, zero files — so the only way it stays
+  // out of `husks` is for this branch to take it first. That keeps it out of --fix's input set by
+  // construction rather than by a later filter someone can forget to apply.
+  else if (isLoadBearing(dir, linkedThrough)) loadBearing.push(row);
   else if (files === 0 && !unreadable) husks.push(row);
 }
 
@@ -495,6 +553,36 @@ for (const r of husks) {
 }
 const huskEntries = husks.reduce((a, r) => a + r.dirs + r.links, 0);
 if (husks.length) console.log(`  -> ${num(huskEntries)} empty path entries reclaimable`);
+console.log("");
+
+// ── LOAD-BEARING: the folder that looks like a husk and holds the machine up ───────
+//
+// Printed even when empty, unlike HUSKS' reclaimable line, because the useful reading on a healthy
+// machine is the explicit zero: it says the question was ASKED. Silence here would be
+// indistinguishable from the version of this report that deleted the folder three times.
+console.log(
+  `LOAD-BEARING folders (zero files, but the PRIMARY's packages resolve THROUGH them — NEVER delete): ${loadBearing.length}`,
+);
+for (const r of loadBearing) {
+  const { count, example } = linksThroughFolder(primaryRoot, r.dir);
+  console.log(
+    `  ${rel(r.dir).padEnd(58)} ${num(count).padStart(9)} of the primary's package links travel through it`,
+  );
+  if (example) console.log(`    e.g. node_modules/${example} resolves inside this folder`);
+  console.log(
+    "    Deleting it dangles every one of those links at once — ERR_MODULE_NOT_FOUND in the " +
+      "primary and in every worktree junctioned into it.",
+  );
+  // No command is printed here ON PURPOSE, and `tests/repo-doctor-worktree-restore-advice.test.ts`
+  // caught the first draft of this line for it: the only thing that re-points the primary's links
+  // is a dependency reinstall in the PRIMARY, and this report may not put that command in anyone's
+  // hands — the same spelling run one folder over purges the primary's node_modules (AGENTS.md §5).
+  // It is the owner's own call and his own timing, so this names who decides, not how.
+  console.log(
+    "    It is NOT in --fix's input set. Retiring it for real means re-pointing the PRIMARY's own " +
+      "dependency links first — the owner's call and his timing, never a session's.",
+  );
+}
 console.log("");
 
 // ── ORPHANED FOLDERS: the evidence a file count could not give ─────────────────────
@@ -956,6 +1044,16 @@ if (!fix && !stripIdle) {
     console.log(`Run with --fix to delete ${husks.length} husk(s) (${num(huskEntries)} empty path entries).`);
   } else {
     console.log("No husks to clear.");
+  }
+  // Said here as well as in its own section, because this verdict is what a tired reader at 4am
+  // scrolls to — and the reading that broke the machine three times in one day was exactly this:
+  // "nothing is holding that empty folder, so clear it away".
+  if (loadBearing.length) {
+    console.log(
+      `${loadBearing.length} folder(s) look empty but the PRIMARY's packages resolve THROUGH them — ` +
+        "listed under LOAD-BEARING above. --fix will NOT touch them, and deleting one by hand breaks " +
+        "every session on this machine.",
+    );
   }
   // Said again down here because the verdict is what a tired reader scrolls to, and the one thing
   // that must never be lost between the inventory and the verdict is a folder holding work that is
@@ -2106,6 +2204,17 @@ if (fix) {
     }
     if (fs.existsSync(path.join(r.dir, ".git")) || registered.has(canon(r.dir))) {
       console.log(`  SKIPPED ${rel(r.dir)} — it became a live worktree.`);
+      continue;
+    }
+    // Re-prove the fourth category too, and from a FRESH read of the links rather than from the
+    // set computed at inventory time. The race is not theoretical here: a parallel session running
+    // `pnpm` in a sibling worktree re-points the primary's 68 top-level links mid-run, and this
+    // list was built before that happened. Cheap — it runs once per husk, and a healthy machine has
+    // none.
+    if (isLoadBearing(r.dir, directoriesLinkedThrough(primaryRoot))) {
+      console.log(
+        `  SKIPPED ${rel(r.dir)} — the PRIMARY's package links now resolve through it (load-bearing).`,
+      );
       continue;
     }
     try {
