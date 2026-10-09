@@ -382,6 +382,22 @@ parts. **"Sept", not "Sep"**, is the point of that formatter: it pins the CLDR 4
 reader instead of asking each browser's own ICU build, which is the React #418 trap the charge
 dialog hit an hour earlier.
 
+### The summary is NOT restated — his own decision
+
+Asked on 2026-10-09 whether the Entitlements **summary** at the top of the tab should start counting
+the charged leavers it now shows rows for, he answered: **"keep the entitlements summary counting
+active employees only"**.
+
+So the tab carries two different populations on purpose, and that is correct rather than a drift:
+
+- the **rows** include a departed person whose net annual-balance days inside their own current
+  period are above zero, because those days are the thing a charge took;
+- the **summary** counts `activeEmployees` only, because it is a headcount he reads every month and
+  a few leaver rows are not worth moving it.
+
+Widening the filter "for completeness" is the one change he was asked about and declined. Pinned by
+section 9(e) of `tests/deductions-leave-balance.test.ts`.
+
 ### The charges section says it as well
 
 Owner, 2026-10-09: **"say in the charges section that the person has left"**. That section is the one
