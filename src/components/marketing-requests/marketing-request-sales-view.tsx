@@ -17,6 +17,7 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const unitFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -59,7 +60,7 @@ function StatCard({ label, value, hint, accent = "slate" }: { label: string; val
 
 function AggregateTable({ title, rows, max }: { title: string; rows: MarketingRoiViewSalesAggregate[]; max: number }) {
   return (
-    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
       <div className="border-b border-phx-line px-4 py-2.5">
         <h3 className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink">{title}</h3>
       </div>
@@ -190,7 +191,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
     <WorkspaceErrorBoundary fallbackTitle="View Sales error">
       <div className="space-y-4" dir="auto">
         {loading && !data ? (
-          <div className="flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 py-8 text-phx-md font-semibold text-phx-ink-soft shadow-sm">
+          <div className={`${adminSoftPanelClassName} flex items-center gap-2 rounded-[6px] px-4 py-8 text-phx-md font-semibold text-phx-ink-soft`}>
             <LoadingSpinner /> Loading sales for this request…
           </div>
         ) : error ? (
@@ -198,7 +199,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
         ) : data ? (
           <>
             {/* Context */}
-            <section className="rounded-[6px] border border-phx-line bg-white p-4 shadow-sm sm:p-5">
+            <section className={`${adminPanelClassName} rounded-[6px] p-4 sm:p-5`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">View Sales · {data.context.requestCode}</p>
@@ -234,7 +235,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
             </section>
 
             {/* Range controls */}
-            <section className="flex flex-wrap items-end gap-3 rounded-[6px] border border-phx-line bg-white px-4 py-3 shadow-sm">
+            <section className={`${adminSoftPanelClassName} flex flex-wrap items-end gap-3 rounded-[6px] px-4 py-3`}>
               <div className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                 <CalendarRange className="h-3.5 w-3.5" /> Period range
                 {data.range.isCustom ? (
@@ -262,7 +263,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
               <button
                 type="button"
                 onClick={() => { setFrom(""); setTo(""); void load("", ""); }}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
+                className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
               >
                 <RefreshCcw className="h-3.5 w-3.5" /> Reset to ROI window
               </button>
@@ -284,7 +285,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
             </div>
 
             {/* Detail rows */}
-            <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+            <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
               <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
                 <h3 className="text-phx-md font-black uppercase tracking-[0.12em] text-phx-ink">Matched sales rows</h3>
                 <span className="inline-flex items-center rounded-[5px] border border-phx-line bg-phx-paper px-2.5 py-1 text-phx-xs font-bold text-phx-ink-soft">{data.rows.length} row{data.rows.length === 1 ? "" : "s"}</span>
@@ -377,7 +378,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
 
             {/* Reverse lookup */}
             {data.reverseLookup.length > 0 ? (
-              <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+              <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
                 <div className="flex items-center gap-2 border-b border-phx-line px-4 py-3">
                   <ArrowLeftRight className="h-3.5 w-3.5 text-phx-accent" />
                   <h3 className="text-phx-md font-black uppercase tracking-[0.12em] text-phx-ink">Other requests targeting these pharmacies</h3>
@@ -394,7 +395,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                         href={`${viewSalesBasePath}/marketing-requests/${row.requestId}/view-sales`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
+                        className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
                       >
                         <ExternalLink className="h-3 w-3" /> View Sales
                       </a>

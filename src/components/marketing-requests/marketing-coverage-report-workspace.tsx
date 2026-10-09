@@ -66,6 +66,7 @@ import {
 import { MARKETING_REQUEST_STATUS_LABEL, ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 function money(value: number) {
@@ -473,7 +474,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
     <WorkspaceErrorBoundary fallbackTitle="Marketing Coverage Report error">
       <div className="space-y-5" dir="auto">
         {/* ── Filters ───────────────────────────────────────────────────────── */}
-        <section className="rounded-none border border-phx-line bg-white shadow-sm">
+        <section className={`${adminPanelClassName} rounded-none`}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4 text-phx-accent" />
@@ -524,7 +525,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   />
 
                   {durationDim?.render ? (
-                    <div className="rounded-none border border-phx-line bg-white px-3 py-2 shadow-sm">
+                    <div className={`${adminSoftPanelClassName} rounded-none px-3 py-2`}>
                       <p className="mb-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">ROI duration (months)</p>
                       <div className="flex items-center gap-2">
                         <input
@@ -551,7 +552,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   ) : null}
 
                   {payDateDim?.render ? (
-                    <div className="rounded-none border border-phx-line bg-white px-3 py-2 shadow-sm">
+                    <div className={`${adminSoftPanelClassName} rounded-none px-3 py-2`}>
                       <p className="mb-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">Pay date</p>
                       <div className="flex items-center gap-2">
                         <input
@@ -696,7 +697,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       setReport(null);
                       setState("ready");
                     }}
-                    className="inline-flex items-center gap-2 rounded-none border border-phx-line bg-white px-3 py-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
+                    className="inline-flex items-center gap-2 rounded-none border border-phx-line bg-white px-3 py-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
                   >
                     <RefreshCcw className="h-3.5 w-3.5" /> Reset
                   </button>
@@ -720,7 +721,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                     <Bookmark className="h-3.5 w-3.5" /> Presets
                   </span>
                   {presets.map((preset) => (
-                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-none border border-phx-line bg-white pl-2 text-phx-sm font-bold text-phx-ink-2">
+                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-none border border-phx-line bg-white pl-2 text-phx-sm font-bold text-phx-ink-2 shadow-[0_1px_1px_rgba(15,23,42,0.05)]">
                       {preset.isDefault ? <Star className="h-3 w-3 fill-phx-accent text-phx-accent" /> : null}
                       <button type="button" onClick={() => applyPreset(preset)} className="py-1 transition hover:text-phx-accent">{preset.name}</button>
                       <button type="button" aria-label={`Delete ${preset.name}`} onClick={() => void deletePreset(preset.id)} className="px-1.5 py-1 text-phx-line-strong transition hover:text-red-500">
@@ -741,7 +742,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       type="button"
                       onClick={() => void savePreset(false)}
                       disabled={savingPreset || !presetName.trim()}
-                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)] disabled:shadow-none"
                     >
                       <Save className="h-3.5 w-3.5" /> Save
                     </button>
@@ -750,7 +751,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       onClick={() => void savePreset(true)}
                       disabled={savingPreset || !presetName.trim()}
                       title="Save as my default view"
-                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)] disabled:shadow-none"
                     >
                       <Star className="h-3.5 w-3.5" /> Default
                     </button>
@@ -896,7 +897,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
 
         {/* ── Collapsible request list ─────────────────────────────────────── */}
         {report ? (
-          <section className="overflow-hidden rounded-none border border-phx-line bg-white shadow-sm">
+          <section className={`${adminPanelClassName} overflow-hidden rounded-none`}>
             <PortalResponsiveDataList
               empty={<div className="px-4 py-10 text-center text-phx-md font-semibold text-phx-ink-soft">No requests match the applied filters.</div>}
               getKey={(row) => row.requestId}
@@ -919,7 +920,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                 // every one still sorts from its own header button.
                 <FittedTable widths={REQUEST_TABLE_WIDTHS}>
                   <thead>
-                    <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
+                    <tr className={`${adminPanelHeaderClassName} text-left text-phx-xs font-black uppercase tracking-wide text-white`}>
                       <th className="px-2 py-2.5">
                         <span className="inline-flex flex-wrap gap-x-2 gap-y-0.5">
                           {sortButton("requestCode", "Request")}
@@ -1007,7 +1008,7 @@ function CoverageBreakdownPanel({
   onFilterDimension: (key: MarketingCoverageFilterKey, values: string[]) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-none border border-phx-line bg-white shadow-sm">
+    <section className={`${adminPanelClassName} overflow-hidden rounded-none`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
         <div>
           <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">Coverage breakdown</p>
@@ -1065,7 +1066,7 @@ function CoverageBreakdownPanel({
             renderTable={() => (
               <FittedTable widths={[40, 16, 22, 22]}>
                 <thead>
-                  <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
+                  <tr className={`${adminPanelHeaderClassName} text-left text-phx-xs font-black uppercase tracking-wide text-white`}>
                     <th className="px-3 py-2.5">Distributor</th>
                     <th className="px-3 py-2.5 text-right">Requests</th>
                     <th className="px-3 py-2.5 text-right">Allocated cost</th>
@@ -1142,7 +1143,7 @@ function CoverageBreakdownPanel({
               // own colours) — seven columns did not fit a laptop with the sidebar open.
               <FittedTable widths={[26, 10, 15, 15, 12, 22]}>
                 <thead>
-                  <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
+                  <tr className={`${adminPanelHeaderClassName} text-left text-phx-xs font-black uppercase tracking-wide text-white`}>
                     <th className="px-3 py-2.5">{ROLLUP_DIMENSION_LABELS[dimension]}</th>
                     <th className="px-3 py-2.5 text-right">Requests</th>
                     <th className="px-3 py-2.5 text-right">Cost</th>
@@ -1382,7 +1383,7 @@ function PharmacyDrilldownPanel({
               ) : null}
             </div>
             {pharmacyExpanded ? (
-              <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="border-t border-slate-200 bg-slate-50 px-3 py-2 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)]">
                 <PortalResponsiveDataList
                   empty={<p className="py-1 text-phx-sm font-medium text-slate-500">No matched sales in this window.</p>}
                   getKey={(sale, index) => `${sale.productCode}-${sale.invoicePeriod}-${index}`}
