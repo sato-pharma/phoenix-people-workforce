@@ -18,6 +18,12 @@
  * same day settled the rest: the file keeps arriving as its own upload under `EP-BK` (so nothing has
  * to classify a merged sheet), Pedia is the only line that takes it, and the allocated money keeps
  * the distributor's own name rather than being folded into an invented source.
+ *
+ * 🔴 AND THE RULE IS ONE PRODUCT WIDE (owner, 2026-10-09, narrowing his own rule the same evening):
+ * "IN EPDA BULK ONLY IVYRONC WILL BE CONTRIBUTION ANY OTHER PRODUCT NORMAL MAPPING." So the
+ * question this module answers is no longer "is this the bulk sector, on Pedia, in a covered
+ * month" — it is that AND "is this Ivyronc". Every other product of the same book keeps the area its
+ * invoice names and takes the ordinary rules, the city split included.
  */
 
 /** The distributor code the bulk sector's own uploads carry. */
@@ -35,10 +41,36 @@ export const BULK_DISTRIBUTOR_LABEL = "EPDA-BULK";
  *
  * It is not a limitation of the rule, it is the shape of the book: 99.2% of every bulk row ever
  * uploaded is Lacto Basic (`LA003`/`LA004`) on the untracked HEAD OFFICE line, which both closing
- * RPCs exclude by name, and the only part of it that has ever reached a closing at all is 599 packs
- * of Lacto Advanced on Pedia. Head Office is left exactly as invoiced.
+ * RPCs exclude by name. Head Office is left exactly as invoiced.
+ *
+ * Since the product narrowing below it is also, strictly, redundant — Ivyronc IS a Pedia product, so
+ * no Ivyronc row can arrive on another line. It is kept, and asked FIRST, because the two gates mean
+ * different things: a product mis-mastered onto another line must not be spread across THAT line's
+ * areas, and the line is the grain every caller of `buildBulkAllocation` already works in.
  */
 export const BULK_ALLOCATION_LINES = ["Pedia"] as const;
+
+/**
+ * 🔴 THE ONLY PRODUCT THE ALLOCATION MOVES — IVYRONC (owner, 2026-10-09): "IN EPDA BULK ONLY
+ * IVYRONC WILL BE CONTRIBUTION ANY OTHER PRODUCT NORMAL MAPPING."
+ *
+ * `IV001` is the whole of Ivyronc: the live master holds exactly one Ivyronc product code (family
+ * `IV`, line Pedia, active — read 9 October 2026), so this list is the product, not a sample of it.
+ * A second concentration would arrive as a new code and must be added HERE; it cannot be inferred,
+ * because a closing detail row carries its product code and not its family.
+ *
+ * It is a LIST rather than a constant for that reason alone, and it is deliberately not a prefix
+ * match: `IV` would also catch any future unrelated code that happens to start with those letters,
+ * and the rule moves money.
+ *
+ * What it changes in practice, measured on the live book the same day: the bulk sector has uploaded
+ * four batches ever (2026-02, 03, 04, 06) and NOT ONE of them carries Ivyronc — they are Lacto Basic
+ * on Head Office and 599 packs of Lacto Advanced on Pedia. So on the book's historical shape this
+ * rule now moves nothing at all, and the Lacto Advanced rows that the line-level rule would have
+ * spread are back on normal mapping. That is his instruction, not a defect: the rule is for the
+ * Ivyronc volume the September file is expected to carry.
+ */
+export const BULK_ALLOCATION_PRODUCT_CODES = ["IV001"] as const;
 
 /**
  * The first closing the allocation applies to — "starting from September closing" (owner,
@@ -51,6 +83,17 @@ export const BULK_ALLOCATION_START_PERIOD = "2026-09";
 /** True when a row's distributor code is the bulk sector's. Tolerant of case and stray spaces. */
 export function isBulkDistributorCode(value: unknown): boolean {
   return String(value ?? "").replace(/\s+/g, "").toUpperCase() === BULK_DISTRIBUTOR_CODE.toUpperCase();
+}
+
+/**
+ * True when this PRODUCT is one the allocation moves — Ivyronc and nothing else (owner,
+ * 2026-10-09). Tolerant of case and stray spaces, like the distributor test above, because a sheet's
+ * product code arrives as typed.
+ */
+export function isBulkAllocatedProduct(value: unknown): boolean {
+  const key = String(value ?? "").replace(/\s+/g, "").toUpperCase();
+  if (!key) return false;
+  return BULK_ALLOCATION_PRODUCT_CODES.some((candidate) => candidate.toUpperCase() === key);
 }
 
 /** True when this line's bulk rows are allocated rather than left on their invoiced area. */
@@ -73,8 +116,8 @@ export function isBulkAllocationActive(period: string | null | undefined): boole
 }
 
 /**
- * True when this ROW is one the allocation moves: the bulk sector, on an allocated line, in a month
- * the rule covers.
+ * True when this ROW is one the allocation moves: the bulk sector, on an allocated line, carrying an
+ * allocated PRODUCT, in a month the rule covers.
  *
  * 🔴 THE CITY SPLIT ASKS THIS BEFORE IT ASKS ANYTHING ELSE. The bulk sector's customers are
  * wholesalers by definition, so the six keywords classify most of its rows as stores and the city
@@ -82,12 +125,24 @@ export function isBulkAllocationActive(period: string | null | undefined): boole
  * units again by contribution. Money moved twice is money invented. `isSplitEligible` refuses these
  * rows outright (store-sales-city-split.ts), which makes the bulk sector the FOURTH carve-out from
  * the city rule beside EZ, Office and El Qema's warehouses.
+ *
+ * 🔴 AND THE CARVE-OUT IS EXACTLY AS WIDE AS THE ALLOCATION, NEVER WIDER (owner, 2026-10-09 —
+ * "ANY OTHER PRODUCT NORMAL MAPPING"). A bulk row that is not Ivyronc is moved by NEITHER rule here
+ * and by the ordinary ones instead: it stays split-eligible, so a wholesaler in a multi-area city
+ * still takes the city rule, which is what "normal mapping" is. Widening this test to the whole book
+ * would quietly freeze those rows on their invoiced area — a change to published behaviour he did
+ * not ask for, in the opposite direction to the one he did.
+ *
+ * `productCode` is optional ONLY so the pure-arithmetic callers can keep asking with a row alone;
+ * absent, it answers FALSE, which is the safe direction — a row this cannot read is a row whose
+ * published area must not move.
  */
 export function isBulkAllocatedRow(
-  row: { distributorCode?: string | null; officialLine?: string | null },
+  row: { distributorCode?: string | null; officialLine?: string | null; productCode?: string | null },
   period: string | null | undefined,
 ): boolean {
   if (!isBulkAllocationActive(period)) return false;
   if (!isBulkDistributorCode(row.distributorCode)) return false;
-  return isBulkAllocationLine(row.officialLine);
+  if (!isBulkAllocationLine(row.officialLine)) return false;
+  return isBulkAllocatedProduct(row.productCode);
 }

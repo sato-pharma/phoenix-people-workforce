@@ -45,7 +45,15 @@ into the list** — طاى جروب (1,060,947.52 EGP over six accounts) is wait
 answers of that sheet are pinned in the required `validate` job. Twelve stems went in on 2026-10-09:
 20 names, 374 rows, 435,133.42 EGP all-time, of which 51,022.72 actually changes hands.
 
-Account, with the measurements and the two government health-insurance depots that still split
-wrongly: `docs/agents-owner-rules.md`, "The store-split rulings of 2026-10-09". Pinned by
+Account, with the measurements and the government health-insurance depots that still split
+wrongly: `docs/agents-owner-rules.md`, "The store-split rulings of 2026-10-09". 🔴 **That doc says
+TWO depots and the real count is THREE, with one spelling wrong** — read live 2026-10-09 from
+`source_of_sales_import_rows`: `فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي`
+(23495), `فرع شرق الدلتا - المخزن الاقليمي القليوبية- تامين الصحي` (64845 — no space before the
+dash, which the doc adds) and `فرع شرق الدلتا - المخزن الاقليمي شبرا الخيمة - تامين الصحي` (27863).
+**All three are CNS-only — not one Anti Infective row ever** — so they cannot touch an Anti Infective
+answer: 2026-09 holds 23495 in Dakahlia 4 (249 units, 8,889.30 EGP) and 64845 in Qalubeya (200 units,
+7,140.00 EGP); 27863 last sold in July. Carry this correction into the next PR that opens on this
+thread. Pinned by
 `tests/store-split-owner-rulings-2026-10-09.test.ts`. Related: [[sos-monthly-closing-is-the-only-sales-truth]],
 [[publishing-one-line-freezes-the-whole-periods-store-split-net]].

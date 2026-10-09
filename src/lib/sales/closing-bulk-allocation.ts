@@ -13,8 +13,16 @@
 // (`closing-office-respread.ts`) both drive — because they ARE one rule applied to different rows,
 // and a second hand-written copy of a largest-remainder spread agrees on the test data and disagrees
 // on a return. This module owns only the two things that are the bulk rule's own: which rows move
-// (the bulk sector's, on an allocated line, in a covered month) and which rows the weights come from
-// (every other distributor row of the closing).
+// (the bulk sector's, on an allocated line, carrying an allocated product, in a covered month) and
+// which rows the weights come from (every other distributor row of the closing).
+//
+// 🔴 AND ONLY IVYRONC MOVES. He narrowed his own rule the same evening — "IN EPDA BULK ONLY IVYRONC
+// WILL BE CONTRIBUTION ANY OTHER PRODUCT NORMAL MAPPING" — so the bulk book is read per PRODUCT:
+// `IV001` is spread by contribution, and every other product of the same book keeps the area its
+// invoice names and takes the ordinary rules, the city split included. The gate is
+// `isBulkAllocatedProduct` (bulk-allocation-channel.ts), asked both here and by the city rule's
+// carve-out, so the allocation and the carve-out are the same width by construction rather than by
+// two lists agreeing.
 //
 // The alternative — re-stamping the rows' area at upload, the way the Office channel is BORN
 // allocated — was rejected deliberately. Office is uploaded last by convention, so its weights see
@@ -28,6 +36,7 @@
 // on every read cannot go stale that way.
 
 import {
+  isBulkAllocatedProduct,
   isBulkAllocationActive,
   isBulkAllocationLine,
   isBulkDistributorCode,
@@ -67,9 +76,9 @@ export type BulkMergeableSplit = RespreadMergeableSplit;
  * among themselves and each take several times what the closing credits.
  *
  * Returns an EMPTY allocation — not a throw — whenever the rule does not apply or cannot be
- * computed: a period before September 2026, a line that is not Pedia, a month with no bulk rows,
- * or (the one that matters) a month whose other distributors have no sales value to weight on at
- * all. In that last case the bulk rows keep their invoiced area, which is the state the closing was
+ * computed: a period before September 2026, a line that is not Pedia, a month with no bulk rows, a
+ * month whose bulk rows carry no Ivyronc (which is every month uploaded so far), or (the one that
+ * matters) a month whose other distributors have no sales value to weight on at all. In that last case the bulk rows keep their invoiced area, which is the state the closing was
  * in before this rule and the only honest answer when there is no contribution to copy.
  *
  * PURE: no database, no clock, no cache. Every caller hands it the rows it already has.
@@ -95,8 +104,17 @@ export function buildBulkAllocation(
     if (!row.includedInClosing) continue;
     if (row.isConfidential === true) continue;
     if (!isBulkAllocationLine(row.officialLine)) continue;
-    if (isBulkDistributorCode(row.distributorCode)) moved.push(row);
-    else base.push(row);
+    if (isBulkDistributorCode(row.distributorCode)) {
+      // 🔴 IVYRONC ONLY (owner, 2026-10-09: "IN EPDA BULK ONLY IVYRONC WILL BE CONTRIBUTION ANY
+      // OTHER PRODUCT NORMAL MAPPING"). Any other product of the bulk book keeps its invoiced area —
+      // and it joins NEITHER list, which is the part worth saying out loud: it is not a weight
+      // either. The shares are "the other distributors'" contribution in his words, and the bulk
+      // sector is not one of them whichever product its row carries. Putting an unallocated bulk row
+      // into `base` would let the book help decide where its own Ivyronc goes.
+      if (isBulkAllocatedProduct(row.productCode)) moved.push(row);
+      continue;
+    }
+    base.push(row);
   }
 
   return buildContributionRespread({ base, line: String(line ?? ""), moved });

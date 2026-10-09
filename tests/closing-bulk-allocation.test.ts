@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 
 import {
+  BULK_ALLOCATION_PRODUCT_CODES,
   BULK_ALLOCATION_START_PERIOD,
   BULK_DISTRIBUTOR_CODE,
+  isBulkAllocatedProduct,
   isBulkAllocatedRow,
   isBulkAllocationActive,
 } from "../src/lib/sales/bulk-allocation-channel.ts";
@@ -22,7 +24,8 @@ import {
  * THE EPDA-BULK CONTRIBUTION ALLOCATION — the owner's rule of 2026-10-09, from the September 2026
  * closing on: the bulk sector's (`EP-BK`) Pedia units are spread across the line's areas by each
  * area's share of the OTHER distributors' sales value, "exactly as office", instead of staying on
- * the area its invoice names.
+ * the area its invoice names — and, by his narrowing the same evening, ONLY for Ivyronc: "IN EPDA
+ * BULK ONLY IVYRONC WILL BE CONTRIBUTION ANY OTHER PRODUCT NORMAL MAPPING."
  *
  * What this pins, and why each one is here:
  *
@@ -42,11 +45,16 @@ import {
  *      units are moved by two rules and the money is invented.
  *   6. No contribution base → no movement. The rule copies a contribution; with nothing to copy the
  *      rows keep their invoiced area, which is where the closing had them before this rule existed.
+ *   9. IVYRONC ONLY, and the two halves of that stay the same width: a non-Ivyronc bulk row is not
+ *      allocated, is not a WEIGHT, and is not carved out of the city rule either — it takes the
+ *      ordinary rules, which is what "normal mapping" means. The weight half is the one a future
+ *      change could get wrong silently: letting the book weight itself would move Ivyronc toward
+ *      wherever the bulk sector's own Lacto happened to be invoiced.
  */
 
 // Prices chosen so salesValue === units × price exactly, which is what lets case 2 hand the same
 // population to both implementations and compare the shares rather than the arithmetic around them.
-const PRICE: Record<string, number> = { LA001: 200, LA002: 500 };
+const PRICE: Record<string, number> = { IV001: 300, LA001: 200, LA002: 500 };
 
 function baseRow(overrides: Partial<BulkAllocationRow> = {}): BulkAllocationRow {
   const row: BulkAllocationRow = {
@@ -66,6 +74,11 @@ function baseRow(overrides: Partial<BulkAllocationRow> = {}): BulkAllocationRow 
   return row;
 }
 
+/**
+ * A bulk-sector row. `productCode` defaults to IVYRONC, because that is the only product the rule
+ * moves (owner, 2026-10-09) — a fixture carrying anything else is testing the other half of his
+ * instruction, and case 9 does that deliberately.
+ */
 function bulkRow(overrides: Partial<BulkAllocationRow> = {}): BulkAllocationRow {
   return baseRow({
     areaCode: "AB1",
@@ -73,8 +86,9 @@ function bulkRow(overrides: Partial<BulkAllocationRow> = {}): BulkAllocationRow 
     clientName: "مخزن الحجاز فارما",
     distributorCode: BULK_DISTRIBUTOR_CODE,
     effectiveUnits: 24,
+    productCode: "IV001",
     qty: 24,
-    salesValue: 24 * PRICE.LA001,
+    salesValue: 24 * PRICE.IV001,
     ...overrides,
   });
 }
@@ -94,10 +108,10 @@ const BASE: BulkAllocationRow[] = [
   }),
 ];
 
-/** 30 packs of Lacto Advanced 1, invoiced to two Alexandria areas. June 2026's real shape. */
+/** 30 packs of Ivyronc, invoiced to two Alexandria areas — the shape the rule is written for. */
 const BULK: BulkAllocationRow[] = [
-  bulkRow({ areaCode: "AB1", qty: 24, effectiveUnits: 24, salesValue: 24 * PRICE.LA001 }),
-  bulkRow({ areaCode: "AB2", clientCode: "W-2", qty: 6, effectiveUnits: 6, salesValue: 6 * PRICE.LA001 }),
+  bulkRow({ areaCode: "AB1", qty: 24, effectiveUnits: 24, salesValue: 24 * PRICE.IV001 }),
+  bulkRow({ areaCode: "AB2", clientCode: "W-2", qty: 6, effectiveUnits: 6, salesValue: 6 * PRICE.IV001 }),
 ];
 
 const near = (actual: number, expected: number, what: string) =>
@@ -118,12 +132,14 @@ export function runClosingBulkAllocationTests() {
     assert.equal(allocation.areaShare.size, 3, "only areas with other distributors' sales take a share");
     assert.equal(allocation.areaShare.has("AB1"), false, "the bulk book never weights itself");
 
-    // The spread: 30 packs by those shares, and the invoiced areas give them up in full.
-    near(allocation.net.get(key("D21", "LA001"))?.qty ?? 0, 30 * (20_000 / 35_000), "D21 receives");
-    near(allocation.net.get(key("D15", "LA001"))?.qty ?? 0, 30 * (10_000 / 35_000), "D15 receives");
-    near(allocation.net.get(key("D14", "LA001"))?.qty ?? 0, 30 * (5_000 / 35_000), "D14 receives");
-    assert.equal(allocation.net.get(key("AB1", "LA001"))?.qty, -24, "AB1 gives up its whole invoice");
-    assert.equal(allocation.net.get(key("AB2", "LA001"))?.qty, -6, "AB2 gives up its whole invoice");
+    // The spread: 30 packs by those shares, and the invoiced areas give them up in full. The cells
+    // are keyed by the MOVED row's product — Ivyronc — never by the products that weighted it.
+    near(allocation.net.get(key("D21", "IV001"))?.qty ?? 0, 30 * (20_000 / 35_000), "D21 receives");
+    near(allocation.net.get(key("D15", "IV001"))?.qty ?? 0, 30 * (10_000 / 35_000), "D15 receives");
+    near(allocation.net.get(key("D14", "IV001"))?.qty ?? 0, 30 * (5_000 / 35_000), "D14 receives");
+    assert.equal(allocation.net.get(key("AB1", "IV001"))?.qty, -24, "AB1 gives up its whole invoice");
+    assert.equal(allocation.net.get(key("AB2", "IV001"))?.qty, -6, "AB2 gives up its whole invoice");
+    assert.equal(allocation.net.has(key("D21", "LA001")), false, "the weighting products are not moved");
 
     // 🔴 THE GRAND TOTAL CANNOT MOVE — on units and on money, per product.
     const totals = [...allocation.net.values()].reduce(
@@ -212,7 +228,7 @@ export function runClosingBulkAllocationTests() {
       includedInClosing: true,
       isDirect: false,
       officialLine: "Pedia",
-      productCode: "LA001",
+      productCode: "IV001",
       qty: 120,
       salesValue: 37_800,
     };
@@ -221,7 +237,7 @@ export function runClosingBulkAllocationTests() {
     assert.equal(
       isSplitEligible({ ...splitRow, distributorCode: BULK_DISTRIBUTOR_CODE }, "2026-09"),
       false,
-      "a bulk row is refused by the city rule from September — otherwise it moves twice",
+      "a bulk Ivyronc row is refused by the city rule from September — otherwise it moves twice",
     );
     assert.equal(
       isSplitEligible({ ...splitRow, distributorCode: BULK_DISTRIBUTOR_CODE }, "2026-08"),
@@ -229,11 +245,11 @@ export function runClosingBulkAllocationTests() {
       "August is unchanged: the carve-out is dated, like every other rule here",
     );
     assert.equal(
-      isBulkAllocatedRow({ distributorCode: BULK_DISTRIBUTOR_CODE, officialLine: "Pedia" }, "2026-09"),
+      isBulkAllocatedRow({ distributorCode: BULK_DISTRIBUTOR_CODE, officialLine: "Pedia", productCode: "IV001" }, "2026-09"),
       true,
     );
     assert.equal(
-      isBulkAllocatedRow({ distributorCode: "EP-PHS", officialLine: "Pedia" }, "2026-09"),
+      isBulkAllocatedRow({ distributorCode: "EP-PHS", officialLine: "Pedia", productCode: "IV001" }, "2026-09"),
       false,
       "EPDA-Pharmacies is a different book and keeps the city rule",
     );
@@ -312,10 +328,11 @@ export function runClosingBulkAllocationTests() {
       net: new Map([[key("D21", "LA001"), { qty: 5, value: 1_000 }]]),
     };
     const merged = mergeBulkAllocationIntoSplit(city, allocation);
+    assert.equal(merged.net.get(key("D21", "LA001"))?.qty, 5, "D21 keeps its city share on the city product");
     near(
-      merged.net.get(key("D21", "LA001"))?.qty ?? 0,
-      5 + 30 * (20_000 / 35_000),
-      "D21 carries its city share AND its bulk share",
+      merged.net.get(key("D21", "IV001"))?.qty ?? 0,
+      30 * (20_000 / 35_000),
+      "and carries its bulk share on Ivyronc — the two are added, per product",
     );
     assert.equal(merged.movements.length, 1 + allocation.movements.length, "both movement lists survive");
     assert.equal(merged.exemptStoreValueByBrick.size, 1, "the city split's exempt map is carried through");
@@ -324,5 +341,69 @@ export function runClosingBulkAllocationTests() {
     // A month with nothing to allocate leaves the city split byte-identical.
     const untouched = mergeBulkAllocationIntoSplit(city, buildBulkAllocation([...BASE, ...BULK], "2026-08", "Pedia"));
     assert.equal(untouched, city, "no allocation → the same object back");
+  }
+
+  // 9. 🔴 IVYRONC ONLY — "ANY OTHER PRODUCT NORMAL MAPPING" (owner, 2026-10-09).
+  {
+    assert.deepEqual([...BULK_ALLOCATION_PRODUCT_CODES], ["IV001"], "Ivyronc is the whole list");
+    assert.equal(isBulkAllocatedProduct("IV001"), true);
+    assert.equal(isBulkAllocatedProduct(" iv001 "), true, "a sheet's code arrives as typed");
+    assert.equal(isBulkAllocatedProduct("LA001"), false, "Lacto Advanced is not allocated any more");
+    assert.equal(isBulkAllocatedProduct("IV"), false, "the family is not a product code, and this is not a prefix match");
+    assert.equal(isBulkAllocatedProduct(""), false);
+    assert.equal(isBulkAllocatedProduct(null), false);
+
+    // The row test, which the city rule's carve-out and the allocation both ask.
+    const lactoBulk = { distributorCode: BULK_DISTRIBUTOR_CODE, officialLine: "Pedia", productCode: "LA001" };
+    assert.equal(isBulkAllocatedRow(lactoBulk, "2026-09"), false, "a bulk Lacto row is not allocated");
+    assert.equal(
+      isBulkAllocatedRow({ distributorCode: BULK_DISTRIBUTOR_CODE, officialLine: "Pedia" }, "2026-09"),
+      false,
+      "a row with no product code at all never moves — the safe direction",
+    );
+
+    // Not allocated, and therefore not carved out of the city rule either: it takes NORMAL mapping.
+    assert.equal(
+      isSplitEligible(
+        {
+          areaCode: "D12",
+          clientCode: "W-9",
+          clientName: "مخزن الحجاز فارما",
+          distributorCode: BULK_DISTRIBUTOR_CODE,
+          includedInClosing: true,
+          isDirect: false,
+          officialLine: "Pedia",
+          productCode: "LA001",
+          qty: 120,
+          salesValue: 37_800,
+        },
+        "2026-09",
+      ),
+      true,
+      "a bulk row that is not Ivyronc keeps the city rule — his 'normal mapping'",
+    );
+
+    // And through the allocation: the Lacto bulk row moves nothing, AND does not weight the spread.
+    const lactoOnly = [
+      ...BASE,
+      bulkRow({ areaCode: "AB1", productCode: "LA001", qty: 300, effectiveUnits: 300, salesValue: 300 * PRICE.LA001 }),
+    ];
+    const none = buildBulkAllocation(lactoOnly, "2026-09", "Pedia");
+    assert.equal(none.movements.length, 0, "a bulk book with no Ivyronc in it moves nothing");
+    assert.equal(none.net.size, 0, "and writes no net cell");
+
+    // 🔴 THE WEIGHT HALF. 60,000 EGP of bulk Lacto on an area of its own must not change a single
+    // share: the shares are the OTHER distributors' contribution, and the bulk sector is not one of
+    // them whichever product its row carries.
+    const mixedBook = [...BASE, ...BULK, lactoOnly[lactoOnly.length - 1]!];
+    const mixed = buildBulkAllocation(mixedBook, "2026-09", "Pedia");
+    const clean = buildBulkAllocation([...BASE, ...BULK], "2026-09", "Pedia");
+    assert.equal(mixed.movedQty, 30, "still only the 30 Ivyronc packs moved");
+    assert.equal(mixed.areaShare.size, clean.areaShare.size, "the same three areas weight it");
+    for (const [areaCode, share] of clean.areaShare) {
+      near(mixed.areaShare.get(areaCode) ?? -1, share, `${areaCode}: the bulk book's own Lacto is not a weight`);
+    }
+    assert.equal(mixed.areaShare.has("AB1"), false, "least of all the area its own invoice names");
+    assert.equal(mixed.net.has(key("AB1", "LA001")), false, "and the Lacto row keeps its invoiced area");
   }
 }
