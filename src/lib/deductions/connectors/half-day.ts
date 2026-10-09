@@ -220,6 +220,10 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
     // A resigned rep's crm id is cleared from the directory; his own resolved rows still carry it.
     ...visits.map((row) => ({ hrId: row.agent_hr_id, crmId: row.agent_crm_id })),
     ...visits.map((row) => ({ hrId: row.double_hr_id, crmId: row.double_crm_id })),
+    // Slot 2 as well. `buildHalfDayEvidence` already resolves that slot, so leaving its pairs out
+    // of the identity map meant a chain visit's SECOND manager could only ever be found by his hr
+    // id — the one lookup that is null while the mirror backfills it.
+    ...visits.map((row) => ({ hrId: row.double2_hr_id, crmId: row.double2_crm_id })),
   ]);
   const { byPersonDay, firstSignalByPerson, unattributable } = buildHalfDayEvidence({ visits, checkins, identity });
 

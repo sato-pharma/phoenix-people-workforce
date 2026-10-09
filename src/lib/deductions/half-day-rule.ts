@@ -224,7 +224,13 @@ export type HalfDayIdentity = {
   ambiguousClaimants: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
-function resolveSlot(
+/**
+ * Exported because the DSM no-record connector resolves the same three slots the same way. It read
+ * the hr id columns alone until 2026-10-09, so a manager on a row whose hr id the mirror had not
+ * yet backfilled was read as ABSENT and charged a FULL no-record day — the exact failure the
+ * fallback above exists to prevent, one connector further along. One rule, one implementation.
+ */
+export function resolveSlot(
   hrId: unknown,
   crmId: unknown,
   identity: HalfDayIdentity,
