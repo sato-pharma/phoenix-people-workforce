@@ -31,7 +31,7 @@ import {
 } from "@/lib/automated-payroll/data-quality";
 import type { PayrollDayCollision } from "@/lib/automated-payroll/day-collisions";
 import type { ModuleDriftReport } from "@/lib/automated-payroll/module-drift";
-import { stepOpenDuringPart2 } from "@/lib/automated-payroll/module-sourced-steps";
+import { isUnbackedCharge, stepOpenDuringPart2 } from "@/lib/automated-payroll/module-sourced-steps";
 import { cairoTimeLabel, describeChargeSource } from "@/lib/automated-payroll/cell-history-labels";
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
@@ -869,7 +869,9 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               <div className="font-black">
                 {moduleDrift.staleCharges > 0
                   ? `${people(moduleDrift.staleCharges)} carrying a deduction the Deductions module no longer proposes — Part 2 cannot be confirmed until you re-confirm their step`
-                  : `${people(moduleDrift.overriddenButMoved)} whose module figure moved after you confirmed`}
+                  : moduleDrift.overriddenButMoved > 0
+                    ? `${people(moduleDrift.overriddenButMoved)} whose module figure moved after you confirmed`
+                    : `${people(moduleDrift.unbackedCharges)} carrying a deduction with no approved line behind it — check it against the other columns on the same row`}
               </div>
               <button
                 type="button"
@@ -883,17 +885,32 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               <div className="mt-2 flex flex-col gap-1 text-xs">
                 {moduleDrift.rows.map((row) => (
                   <div key={`${row.stepKey}:${row.hrId}:${row.field}`} className="opacity-80">
-                    {row.fullName}, {stepDefinition(row.stepKey).title} — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
-                    says {row.proposedNow.toFixed(2)}
-                    {row.overridden
-                      ? `; this run charges ${row.charged.toFixed(2)}, ${describeChargeSource(row.chargeSource, cairoTimeLabel)}`
-                      : `; this run still charges ${row.charged.toFixed(2)}`}
+                    {/* An unbacked charge never moved — both sides of the comparison are 0.00, so
+                        "confirmed at 0.00, the module now says 0.00" would read as nothing being
+                        wrong while the row is the whole finding. State the charge instead. */}
+                    {isUnbackedCharge(row) ? (
+                      <>
+                        {row.fullName}, {stepDefinition(row.stepKey).title} — this run charges {row.charged.toFixed(2)} and
+                        the Deductions module has no approved line behind any of it,{" "}
+                        {describeChargeSource(row.chargeSource, cairoTimeLabel)}
+                      </>
+                    ) : (
+                      <>
+                        {row.fullName}, {stepDefinition(row.stepKey).title} — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
+                        says {row.proposedNow.toFixed(2)}
+                        {row.overridden
+                          ? `; this run charges ${row.charged.toFixed(2)}, ${describeChargeSource(row.chargeSource, cairoTimeLabel)}`
+                          : `; this run still charges ${row.charged.toFixed(2)}`}
+                      </>
+                    )}
                   </div>
                 ))}
                 <div className="opacity-80">
                   {moduleDrift.staleCharges > 0
                     ? "Open each step named above and confirm it again — it now takes the module's current figure for every line nobody changed. A figure that differs from the one confirmed still stands and is not blocking anything."
-                    : "Nothing here is wrong on its own. Re-open the step and re-enter a figure to take the module's new one."}
+                    : moduleDrift.overriddenButMoved > 0
+                      ? "Nothing here is wrong on its own. Re-open the step and re-enter a figure to take the module's new one."
+                      : "Nothing here blocks Part 2 — a deduction HR typed by hand has no module line by design and is correct. Open the step and clear the figure only where the same money is already being charged in another column."}
                 </div>
               </div>
             ) : null}

@@ -2,7 +2,7 @@ import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
 import { stepDefinition } from "./step-definitions.ts";
 
-import { MODULE_SOURCED_STEP_KEYS } from "./module-sourced-steps.ts";
+import { isUnbackedCharge, MODULE_SOURCED_STEP_KEYS } from "./module-sourced-steps.ts";
 import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
 /**
@@ -34,7 +34,7 @@ import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
 // The step list lives in a browser-safe file (this one reaches the database client through feeders.ts),
 // so the wizard can read it too. Re-exported so every existing import keeps working.
-export { MODULE_SOURCED_STEP_KEYS };
+export { isUnbackedCharge, MODULE_SOURCED_STEP_KEYS };
 
 /** The key the snapshot is stored under, inside the step state's existing jsonb summary. */
 export const RECOMMENDED_AT_CONFIRM_KEY = "recommendedAtConfirm";
@@ -106,7 +106,25 @@ export type ModuleDriftReport = {
   staleCharges: number;
   /** Rows where the module moved but a human's own figure is in force. Shown, never counted as a problem. */
   overriddenButMoved: number;
+  /**
+   * Rows where the module proposes NOTHING and never did, yet the run charges real money.
+   *
+   * Not a stale charge — nothing drifted — so it never blocks. It is counted apart from
+   * `overriddenButMoved` because the module did not move for these at all, and saying it did
+   * would be false in the one sentence a person actually reads.
+   */
+  unbackedCharges: number;
 };
+
+/** The three counts, from one set of rows — so merging and detecting can never disagree. */
+function tally(rows: ModuleDriftRow[]): ModuleDriftReport {
+  return {
+    rows,
+    staleCharges: rows.filter((row) => !row.overridden).length,
+    overriddenButMoved: rows.filter((row) => row.overridden && !isUnbackedCharge(row)).length,
+    unbackedCharges: rows.filter((row) => isUnbackedCharge(row)).length,
+  };
+}
 
 /** What the system proposed for each employee, to be stored alongside the confirm. */
 export function snapshotRecommendations(rows: StepRow[]): RecommendationSnapshot {
@@ -168,7 +186,7 @@ export function detectModuleDrift(input: {
   chargedByCompact?: Record<string, Record<string, number>>;
 }): ModuleDriftReport {
   const rows: ModuleDriftRow[] = [];
-  if (!input.snapshot) return { rows, staleCharges: 0, overriddenButMoved: 0 };
+  if (!input.snapshot) return tally(rows);
 
   for (const row of input.rows) {
     if (row.readOnly) continue;
@@ -195,7 +213,6 @@ export function detectModuleDrift(input: {
       const atConfirm = proposedThen[field] ?? 0;
       const now = row.recommended?.[field];
       if (typeof now !== "number" || !Number.isFinite(now)) continue;
-      if (now === atConfirm) continue;
 
       // What the run will really charge. `row.values` falls back to the live recommendation when the
       // draft column is null (`pick` in recommend.ts), and a row that was never persisted at confirm
@@ -214,6 +231,30 @@ export function detectModuleDrift(input: {
         : typeof row.values?.[field] === "number"
           ? (row.values[field] as number)
           : atConfirm;
+
+      // THE MODULE HAS NOT MOVED. Normally there is nothing to say, and saying it anyway is what
+      // puts the banner permanently on: a figure somebody trimmed from a real proposal (900 cut to
+      // 700) is their decision, and the module standing still is not news about it.
+      //
+      // THE ONE EXCEPTION IS A CHARGE THE MODULE PROPOSES NOTHING FOR AND NEVER DID. There is no
+      // approved deduction behind a piastre of it, so it is not an adjustment OF anything — and
+      // because both sides of the comparison are 0.00, this early return hid it completely: not
+      // from the drift report, not from the Part 2 gate, and not from `takeCurrentModuleFigures`,
+      // whose remedy is a re-confirm that `pick(draft, recommended)` makes a no-op anyway.
+      //
+      // Measured on the live September 2026 run, 2026-10-09: Nahed Tarek Hassan Omar Hattab (A-10)
+      // carried 2,931.00 in Part 1 Other Deductions → Other with no `other` candidate in the month
+      // at all, beside a correct 2,933.32 in the Fingerprint column for the same six late days —
+      // the same lateness charged twice. Hossam Mohamed Reda AboElftouh Abdelghafar (A-9) carried
+      // 400.00 the same way, against a correct 400.00 of fingerprint. 3,331.00 EGP over two people,
+      // and every existing check silent.
+      //
+      // It is REPORTED, never blocking and never rewritten: HR may type a manual deduction straight
+      // onto the Other tab with no candidate behind it by design, so the figure can be perfectly
+      // deliberate. Which it is, is `chargeSource` from the cell history — not something this
+      // comparison can know. See docs/approved-deductions-that-never-reached-the-sheet.md.
+      if (now === atConfirm && !(now === 0 && charged > 0)) continue;
+
       rows.push({
         hrId: row.hrId,
         fullName: row.fullName,
@@ -227,30 +268,24 @@ export function detectModuleDrift(input: {
     }
   }
 
-  // Biggest change first — the figure that moved furthest is the one to look at, and the order is
-  // stable between loads so a list read twice reads the same way.
+  // Biggest MONEY AT STAKE first, and the order is stable between loads so a list read twice reads
+  // the same way. For a drifted figure that is how far the module moved; for an unbacked charge the
+  // module never moved at all, so movement is 0.00 and ranking by it would bury 2,931.00 of
+  // double-charged lateness under a 10.00 drift — the stake there is the whole charge.
+  const stake = (row: ModuleDriftRow) =>
+    isUnbackedCharge(row) ? Math.abs(row.charged) : Math.abs(row.proposedNow - row.proposedAtConfirm);
   rows.sort(
     (left, right) =>
-      Math.abs(right.proposedNow - right.proposedAtConfirm) -
-        Math.abs(left.proposedNow - left.proposedAtConfirm) ||
+      stake(right) - stake(left) ||
       left.fullName.localeCompare(right.fullName),
   );
 
-  return {
-    rows,
-    staleCharges: rows.filter((row) => !row.overridden).length,
-    overriddenButMoved: rows.filter((row) => row.overridden).length,
-  };
+  return tally(rows);
 }
 
 /** Merge per-step reports into one, for a whole run. */
 export function mergeModuleDrift(reports: ModuleDriftReport[]): ModuleDriftReport {
-  const rows = reports.flatMap((report) => report.rows);
-  return {
-    rows,
-    staleCharges: rows.filter((row) => !row.overridden).length,
-    overriddenButMoved: rows.filter((row) => row.overridden).length,
-  };
+  return tally(reports.flatMap((report) => report.rows));
 }
 
 /** compact HR id -> draft field -> the figure frozen on the run's own row (nulls left out). */
@@ -340,13 +375,36 @@ export function describeModuleDriftBlock(report: ModuleDriftReport): string {
   return (
     `${stale.length} figure(s) on this run no longer match the Deductions module, so confirming now ` +
     `would pay the wrong amount. ${sample.join("; ")}${more} ` +
-    `Re-confirm ${steps.join(" and ")} to take the module's current figures, then confirm Part 2.${overridden}`
+    `Re-confirm ${steps.join(" and ")} to take the module's current figures, then confirm Part 2.${overridden}` +
+    describeUnbacked(report)
+  );
+}
+
+/**
+ * The unbacked-charge sentence, appended to whichever summary is being written.
+ *
+ * Separate from the drift wording on purpose: these rows did NOT drift, so folding them into "the
+ * module moved" would state the one thing that is not true about them.
+ */
+function describeUnbacked(report: ModuleDriftReport): string {
+  if (report.unbackedCharges === 0) return "";
+  const unbacked = report.rows.filter(isUnbackedCharge);
+  const total = unbacked.reduce((sum, row) => sum + row.charged, 0);
+  const sample = unbacked
+    .slice(0, 5)
+    .map((row) => `${row.fullName} (${row.hrId}) ${row.charged.toFixed(2)} in ${stepDefinition(row.stepKey).title}`);
+  const more = unbacked.length > 5 ? ` …and ${unbacked.length - 5} more.` : "";
+  return (
+    ` ${report.unbackedCharges} charge(s) totalling ${total.toFixed(2)} have no approved deduction behind them` +
+    ` at all — the module proposes nothing for them and never did: ${sample.join("; ")}${more}` +
+    ` Check each against the other columns on the same row before confirming. Nothing here blocks:` +
+    ` a manual deduction entered straight onto the step carries no module line by design and is correct.`
   );
 }
 
 /** One line for a banner, an error message or the audit log. */
 export function describeModuleDrift(report: ModuleDriftReport): string {
-  if (report.staleCharges === 0 && report.overriddenButMoved === 0) {
+  if (report.staleCharges === 0 && report.overriddenButMoved === 0 && report.unbackedCharges === 0) {
     return "Every confirmed figure still matches the Deductions module.";
   }
   const stale = report.rows.filter((row) => !row.overridden);
@@ -361,6 +419,9 @@ export function describeModuleDrift(report: ModuleDriftReport): string {
     report.overriddenButMoved > 0
       ? ` ${report.overriddenButMoved} more moved but carry a figure different from the one confirmed, which still stands.`
       : "";
-  if (stale.length === 0) return `No confirmed figure is stale.${overridden}`;
-  return `${stale.length} confirmed figure(s) no longer match the Deductions module. ${sample.join(" | ")}${more}${overridden}`;
+  if (stale.length === 0) return `No confirmed figure is stale.${overridden}${describeUnbacked(report)}`;
+  return (
+    `${stale.length} confirmed figure(s) no longer match the Deductions module. ` +
+    `${sample.join(" | ")}${more}${overridden}${describeUnbacked(report)}`
+  );
 }

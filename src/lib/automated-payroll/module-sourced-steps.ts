@@ -2,7 +2,24 @@ import { stepDefinition } from "./step-definitions.ts";
 import { PART1_STEP_KEYS, type StepKey } from "./types.ts";
 
 // Browser-safe on purpose: the wizard imports this, so nothing here may reach the database client.
-// module-drift.ts re-exports MODULE_SOURCED_STEP_KEYS for the server side.
+// module-drift.ts re-exports MODULE_SOURCED_STEP_KEYS and isUnbackedCharge for the server side.
+
+/**
+ * A charge with NO approved deduction behind a piastre of it: the Deductions module proposed 0.00
+ * when the step was confirmed and proposes 0.00 now, yet the run is charging real money.
+ *
+ * Both sides of the drift comparison being equal is exactly what hid this until 2026-10-09 — see
+ * the long note at the comparison in module-drift.ts for the 3,331.00 EGP it cost on the live
+ * September 2026 run. Lives here, and takes the three figures structurally rather than a
+ * `ModuleDriftRow`, so the wizard can ask the same question without importing the server file.
+ */
+export function isUnbackedCharge(row: {
+  proposedAtConfirm: number;
+  proposedNow: number;
+  charged: number;
+}): boolean {
+  return row.proposedNow === 0 && row.proposedAtConfirm === 0 && row.charged > 0;
+}
 
 /**
  * The steps whose figures come from a module OUTSIDE the run — the ones that can change behind the
