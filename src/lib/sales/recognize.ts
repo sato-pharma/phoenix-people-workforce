@@ -50,6 +50,15 @@ export type DistinctIgnoredItem = {
   totalQty: number;    // sum of qty across those rows
 };
 
+// One row the analyzer dropped before mapping, listed whole so the "N ignored" count on the Needs mapping tab can be read row by row.
+export type PreviewIgnoredRow = {
+  rowNumber: number; // the row's number in the sheet
+  rawProduct: string; // the product code or name as the sheet wrote it
+  productName: string; // best human-readable name
+  qty: number; // the units the sheet carried on the row
+  reason: "ignore_mapped" | "bonus";
+};
+
 export type NormalizePreview = {
   distributorCode: string;
   distributorName: string;
@@ -62,6 +71,8 @@ export type NormalizePreview = {
   unknownTerritories: DistinctUnknown[];
   // Items the user must explicitly confirm (ignore or include) before importing
   ignoredItems: DistinctIgnoredItem[];
+  // EVERY ignored row, uncut (the Ignored rows tab). ignoredItems above is the same rows grouped by product.
+  ignoredRows: PreviewIgnoredRow[];
   // How many distinct unknowns there REALLY are, before PREVIEW_UNKNOWN_LIMIT truncates the three
   // lists above. Without these the UI silently showed the first 500 and looked like the whole job,
   // which is how "the normalizer maps a very small number per click" was invisible from the screen.
@@ -352,6 +363,13 @@ export function summarizePreview(
       rows: distinct.rowsNeedingMapping,
     },
     ignoredItems: [...ignoredMap.values()],
+    ignoredRows: result.ignoredRows.map((row): PreviewIgnoredRow => ({
+      rowNumber: row.rawRowNumber,
+      rawProduct: row.rawProduct,
+      productName: row.productName || row.rawProductName || masterNameByCode.get(normalizeCodeKey(row.rawProduct)) || row.rawProduct,
+      qty: Number.isFinite(row.qty) ? row.qty : 0,
+      reason: row.reason === "bonus" ? "bonus" : "ignore_mapped",
+    })),
     blankCustomerSkipped: result.summary.blankCustomerSkipped,
     blankCustomerErrors: distinct.blankCustomerErrors,
     darkCount: distinct.darkCount,

@@ -700,6 +700,7 @@ function codedPreview(distributorCode: string, r: DistributorSalesValidationResu
     // Nothing is capped here because nothing is unknown: this channel arrives fully coded.
     unknownTotals: { customers: 0, products: 0, territories: 0, rows: 0 },
     ignoredItems: [],
+    ignoredRows: [],
     blankCustomerSkipped: 0,
     blankCustomerErrors: 0,
     darkCount: 0,
@@ -793,6 +794,7 @@ function emptyOfficePreview(distributorCode: string): NormalizePreview {
     // Nothing is capped here because nothing is unknown: this channel arrives fully coded.
     unknownTotals: { customers: 0, products: 0, territories: 0, rows: 0 },
     ignoredItems: [],
+    ignoredRows: [],
     blankCustomerSkipped: 0,
     blankCustomerErrors: 0,
     darkCount: 0,
