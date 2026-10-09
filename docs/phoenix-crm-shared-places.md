@@ -34,8 +34,12 @@ His seven decisions, each asked and answered in chat the same day:
    in no KPI. The seated customer stays the one who is planned, visited and counted.
 2. **The cap is three visits a day inside one shared place**, whatever the number seated there, and it
    bites **both** when he plans the day and at the door.
-3. **Scope is every shared venue** — polyclinic, medical centre, medical tower, hospital outpatient —
-   carried as a `kind` on the record. The polyclinic is the first case, not the only one.
+3. **Scope is every shared venue** — polyclinic, medical centre, hospital outpatient — carried as a
+   `kind` on the record. The polyclinic is the first case, not the only one. **It was four kinds for
+   an hour.** The medical tower shipped in #5670 and he took it off the same day, reading the chooser
+   on the rep's own screen: *"remove medical tower option"*. Nothing had to be migrated — the table
+   held 0 venues when the narrowing was written — and a tower is now captured as whichever of the
+   three its own sign says.
 4. **The rep validates it at the door**: live signboard photo bearing the venue's name, plus the two
    readings inside 250 m. Fixed for ever once validated; only the Super Admin and the SFE Manager may
    move it.

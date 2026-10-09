@@ -42,6 +42,8 @@ import { stripComments } from "./support/comment-strip.ts";
  */
 
 const MIGRATION = "supabase/migrations/20261010013001_phoenix_crm_shared_places.sql";
+/** The kind list was narrowed an hour after it shipped — he took the medical tower off the chooser. */
+const NARROWED = "supabase/migrations/20261010013002_phoenix_crm_shared_place_drop_medical_tower.sql";
 
 /** A clean reading at the door: the pin and the shutter both well inside the place line. */
 function atTheDoor(extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -62,14 +64,31 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   const migration = readFileSync(MIGRATION, "utf8");
 
   // ── The venue's own gate: a live photo, a name, a kind, and BOTH readings at the door ─────────
+  //
+  // THREE kinds, not the four it shipped with: he read the chooser on the rep's own screen on
+  // 2026-10-09 and answered "remove medical tower option". The CHECK that is live is the NARROWED
+  // one, so that is the file this compares against — the original still names the tower, and reading
+  // it here would pass a screen offering a kind the database now refuses.
+  const narrowed = readFileSync(NARROWED, "utf8");
   assert.deepEqual(
     [...SHARED_PLACE_KIND_KEYS],
-    ["polyclinic", "medical_centre", "medical_tower", "hospital_outpatient"],
-    "the four the owner named — scope is every shared venue, not the polyclinic alone",
+    ["polyclinic", "medical_centre", "hospital_outpatient"],
+    "the three the owner left on the chooser — scope is every shared venue, not the polyclinic alone",
   );
   for (const kind of SHARED_PLACE_KIND_KEYS) {
-    assert.ok(migration.includes(`'${kind}'`), `the SQL CHECK holds ${kind}`);
+    assert.ok(narrowed.includes(`'${kind}'`), `the SQL CHECK holds ${kind}`);
   }
+  assert.ok(
+    !SHARED_PLACE_KIND_KEYS.includes("medical_tower" as never),
+    "and the medical tower is not offered to a rep",
+  );
+  for (const guard of stripComments(narrowed).split("check (kind in (").slice(1)) {
+    assert.ok(!guard.slice(0, 200).includes("medical_tower"), "nor accepted by the table's own CHECK");
+  }
+  assert.ok(
+    !stripComments(narrowed).includes("'medical_tower'"),
+    "nor by the RPC guard that writes the row — a wide guard would answer 23514 instead of bad_input",
+  );
   assert.equal(parseSharedPlaceKind("clinic"), null, "nothing off the wire is trusted");
 
   const noPhoto = parseSharedPlaceDraft({ ...atTheDoor(), name: VENUE.name, kind: VENUE.kind });
