@@ -43,11 +43,14 @@ import {
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
-/** Scope is every shared venue, not the polyclinic alone (his third answer, 2026-10-09). */
+/**
+ * Scope is every shared venue, not the polyclinic alone (his third answer, 2026-10-09) — but THREE
+ * kinds, not four: he read the chooser on the rep's own screen the same day and said "remove medical
+ * tower option". A tower is captured as whichever of these three the sign on it says.
+ */
 export const SHARED_PLACE_KINDS = [
   { key: "polyclinic", label: "Polyclinic", one: "One polyclinic" },
   { key: "medical_centre", label: "Medical centre", one: "One medical centre" },
-  { key: "medical_tower", label: "Medical tower", one: "One medical tower" },
   { key: "hospital_outpatient", label: "Hospital outpatient", one: "One hospital outpatient clinic" },
 ] as const;
 
