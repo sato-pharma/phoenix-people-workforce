@@ -52,6 +52,11 @@ import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
+import {
+  loadPublicationDriftWithoutSplitLayer,
+  loadPublishedPeriods,
+  type PublicationDriftReport,
+} from "@/lib/sales/closing-publication-drift";
 import { ApiError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/phoenix-crm/server/needs-you";
@@ -1101,6 +1106,110 @@ const calendarReviewRequests: NeedsYouAdapter = {
   },
 };
 
+// ── Published closings that have moved ──────────────────────────────────────────────────────────
+
+/**
+ * 🔴 WHY A SOURCE AND NOT A SCRIPT. `phx_closing_drift_status` has reported this all along, and its
+ * two headline numbers are sums over the drifted cells — so a redistribution BETWEEN areas cancels
+ * to zero in both. Measured on production 2026-10-09: Anti Infective 2026-09, published, 27 drifted
+ * cells, net units 0.000000, net value 0.000000, 25 areas moved. Until this row existed the only way
+ * to learn that was for a session to run a script and read the area breakdown.
+ *
+ * 🔴 NO EGP ON THIS BOARD, same as the payroll row. The movement is real money and this row counts
+ * AREAS and CELLS, never the value: the figures live on the Monthly Closing screen, and a money
+ * number is never what the owner is asked to act on away from the screen that owns it.
+ *
+ * 🔴 AND THE ROW ADMITS WHAT IT DID NOT READ. `loadPublicationDriftWithoutSplitLayer` skips the
+ * store-split layer (17,282 ms measured, against ~1.5 s for the three layers it does read) because
+ * this board's per-source budget is 8 seconds. So every note names the script that reads both
+ * halves, and `splitLayerRead` is asserted false here rather than assumed — a future change that
+ * makes the fast path complete should remove the sentence, not leave it lying.
+ *
+ * An ALREADY-ACKNOWLEDGED line drops to `worth-knowing` instead of vanishing. He has adjudicated it,
+ * so it is not waiting on him — but the verdict was recorded against a summary that read zero on
+ * both deltas, which is the one thing a reader of that acknowledgement cannot see.
+ */
+export function closingPublicationDriftItems(
+  reports: readonly PublicationDriftReport[],
+): NeedsYouItem[] {
+  const items: NeedsYouItem[] = [];
+  for (const report of reports) {
+    for (const line of report.lines) {
+      if (!line.drifted) continue;
+      const cells = line.cellDrift?.cells ?? 0;
+      const acknowledged = line.cellDrift?.acknowledged === true;
+      const areas = line.areasMoved === 1 ? "1 area" : `${line.areasMoved} areas`;
+
+      const note: string[] = [];
+      if (line.areasMoved > 0 && report.netDeltasReadAsClean) {
+        note.push(
+          "The publication check's own net unit and value deltas both read zero for it, so that "
+          + "check alone says nothing moved.",
+        );
+      } else if (cells > 0) {
+        note.push(`The publication check reports ${cells} drifted cell(s).`);
+      }
+      if (!report.splitLayerRead) {
+        note.push(
+          "This row reads the as-invoiced layer only; run "
+          + "scripts/check-closing-publication-drift.ts for the store-split half as well.",
+        );
+      }
+      if (acknowledged) {
+        note.push("Already acknowledged — kept here because the summary it was judged on read zero.");
+      }
+
+      items.push({
+        key: `closing-publication-drift:${report.period}:${line.lineCode ?? line.line}`,
+        sourceId: "closing-publication-drift",
+        kind: "flag",
+        lane: acknowledged ? "worth-knowing" : "yours",
+        label: line.areasMoved > 0
+          ? `${line.line} ${report.period} was published and has since moved across ${areas}`
+          : `${line.line} ${report.period} was published and has since moved`,
+        // Areas IS a count — of places holding a difference, which is the thing to look at.
+        count: line.areasMoved > 0 ? line.areasMoved : null,
+        people: [],
+        href: needsYouDestinations["closing-publication-drift"].href,
+        externalUrl: null,
+        // The report carries no publication timestamp, so no age is invented here. `overdue` is
+        // false for the same reason the closings row is: there is no upstream SLA to read.
+        oldestAt: null,
+        ageDays: null,
+        overdue: false,
+        note: note.length > 0 ? note.join(" ") : null,
+      });
+    }
+  }
+  return items;
+}
+
+const closingPublicationDrift: NeedsYouAdapter = {
+  id: "closing-publication-drift",
+  load: async (access) => {
+    const notYours = ownerOnlyQueue(
+      access,
+      "Re-issuing a published closing is the Super Admin's decision",
+    );
+    if (notYours) return notYours;
+
+    // 🔴 THE LATEST PUBLISHED PERIOD ONLY, AND BOTH REASONS ARE MEASURED. Every published period
+    // together took 15,352 ms on production 2026-10-09 — three periods, seven line × period pairs —
+    // against this board's 8-second budget, so the whole set would render amber more often than it
+    // rendered rows. And the older months are not a live choice: re-issuing July restates a number
+    // announced months ago, while the latest published month is the one whose books are still
+    // landing. `scripts/check-closing-publication-drift.ts` is the way to ask about any other month.
+    const periods = await loadPublishedPeriods();
+    const latest = periods.at(-1);
+    if (!latest) return { status: "ok", items: [] };
+
+    // The read THROWS on a failed line, as the closings read does — `service.ts` turns that into the
+    // amber row. An empty array here would mean "the published month still matches what it said".
+    const report = await loadPublicationDriftWithoutSplitLayer(latest);
+    return ok(closingPublicationDriftItems([report]));
+  },
+};
+
 /**
  * THE REGISTRY. `service.ts` fans out over exactly this array, and
  * `tests/needs-you-never-under-reports.test.ts` holds its ids against `needsYouSourceIds` — so an
@@ -1128,6 +1237,7 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   orphanedRequests,
   uncollectedLeaverDeductions,
   calendarReviewRequests,
+  closingPublicationDrift,
 ];
 
 /**

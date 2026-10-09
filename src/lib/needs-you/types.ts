@@ -83,6 +83,23 @@ export const needsYouSourceIds = [
   // screen he has to remember to open. One sat pending for two days before this row existed, which is the shape
   // this board exists to stop. Produced by `src/lib/private-calendar/disputes.ts`.
   "calendar-review-requests",
+  // Added 2026-10-09. A PUBLISHED closing line whose figures have moved since it was announced.
+  // `phx_closing_drift_status` already existed and already reported it, but its two headline
+  // numbers are SUMS over the drifted cells, so a redistribution BETWEEN areas cancels to zero in
+  // both: measured on production 2026-10-09, Anti Infective 2026-09 read 27 drifted cells, net
+  // units 0.000000 and net value 0.000000 while 25 areas had moved and Menoufia 2 alone had lost
+  // money. So the one surface that could have said something said nothing, and nothing in the
+  // product asked the question at all unless a session ran a script. Produced by
+  // `src/lib/sales/closing-publication-drift.ts`.
+  //
+  // 🔴 IT READS THE CHEAP LAYERS ONLY, AND THE ROW SAYS SO. The store-split layer is 17,282 ms on
+  // its own (measured, same day) against ~1.5 s for the three layers here, so a live source that
+  // included it would be amber more often than not — the exact trade the vacation note above
+  // refuses. `loadPublicationDriftWithoutSplitLayer` sets `splitLayerRead: false`, the row names
+  // the script that reads both halves, and no item here is ever presented as a whole-month verdict.
+  // It reads the LATEST published period only: all of them together took 15,352 ms on the same day,
+  // and re-issuing a month announced long ago is not a live choice — the script answers for those.
+  "closing-publication-drift",
 ] as const;
 
 export type NeedsYouSourceId = (typeof needsYouSourceIds)[number];
@@ -115,6 +132,7 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "orphaned-requests": "Requests stranded on someone who left",
   "uncollected-leaver-deductions": "Leavers with an uncollected deduction",
   "calendar-review-requests": "Calendar review requests",
+  "closing-publication-drift": "Published closings that have moved",
 };
 
 /**
@@ -162,6 +180,9 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // The Calendar Disputes inbox — its own page since 2026-10-08, and the same destination the
   // submitted-and-replied notifications carry, so the board and the notice land on one screen.
   "calendar-review-requests": { href: "/admin/private-calendar-disputes", screen: "Calendar Disputes" },
+  // The publication screen: unpublishing and re-issuing a closing is the only place this is
+  // decided, and it is his decision alone. The board links there and never offers to rebuild.
+  "closing-publication-drift": { href: "/sales/monthly-closing", screen: "Monthly Closing" },
 };
 
 /**

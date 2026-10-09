@@ -30,11 +30,18 @@
 // split is unit-preserving by construction: `buildStoreSplitNetPayload` returns cells that sum to
 // zero per product, and `phx_write_monthly_store_split_net` independently refuses a net that does
 // not. So BOTH sides of this comparison total zero units no matter how badly they disagree about
-// WHICH area holds them, and the publication drift check — which compares a line's total units
-// (`monthly_closing_locks.snapshot_units`, one scalar) — is structurally blind to every drift this
-// module detects. `lineUnitTotalsAgree` in the report below is true by construction, and it is
-// reported precisely so the output says that out loud rather than leaving a reader to assume the
+// WHICH area holds them. `lineUnitTotalsAgree` in the report below is true by construction, and it
+// is reported precisely so the output says that out loud rather than leaving a reader to assume the
 // existing check had it covered.
+//
+// 🔴 AND WHY THE PUBLICATION DRIFT CHECK CANNOT SEE THIS — THE LAYER, NOT THE GRAIN. An earlier
+// note here said that check "compares a line's total units, one scalar". That was wrong in a way
+// that sends the next reader at the wrong fix: `phx_closing_publication_drift` compares per
+// area × product × is_direct CELL, units AND value. Its real blind spot is that its snapshot is
+// built from `source_of_sales_fact_rollup`, which carries the AS-INVOICED geography — the split net
+// lives downstream in `au.monthly_store_split_net` and never enters the rollup at all. So adding
+// grain or area columns to that check would not surface one EGP of what this module measures. The
+// two layers have to be read together, which is `src/lib/sales/closing-publication-drift.ts`.
 //
 // 🔴 IT REPORTS, IT NEVER REPAIRS. Rebuilding a published month's net restates an announced number,
 // which is the owner's decision and his alone (AGENTS.md §4, "a published and announced month is
