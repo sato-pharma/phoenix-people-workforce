@@ -52,6 +52,7 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const QUARTER = 15;
 const SHORTEST = 30;
@@ -539,7 +540,7 @@ export function CellDialog({
               <FieldLabel>{`${slots.length} ${slots.length === 1 ? "slot" : "slots"}, ${formatDuration(sessionMinutes)} in all`}</FieldLabel>
               <ul className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                 {slots.map((at) => (
-                  <li className="border border-slate-200 bg-slate-50 px-2 py-1.5 text-[12px] font-semibold tabular-nums text-slate-700" key={at}>
+                  <li className={`border border-slate-200 bg-slate-50 px-2 py-1.5 text-[12px] font-semibold tabular-nums text-slate-700 ${adminRecessedDepthClassName}`} key={at}>
                     {formatTimeRange(at, slot)}
                   </li>
                 ))}

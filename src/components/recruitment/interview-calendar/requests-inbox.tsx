@@ -30,6 +30,7 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const DURATION_OPTIONS = [30, 45, 60] as const;
 
@@ -432,7 +433,7 @@ export function InterviewRequestPanels({
   return (
     <>
       {canBook ? (
-        <section className="border border-slate-200 bg-white">
+        <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
           <div className="flex items-center justify-between gap-2 border-b-2 border-b-orange-600 px-4 py-2.5">
             <p className="inline-flex items-center gap-2 text-[14px] font-bold text-slate-900">
               <CalendarClock className="h-4 w-4 text-orange-600" />
@@ -495,7 +496,7 @@ export function InterviewRequestPanels({
       ) : null}
 
       {canRequest ? (
-        <section className="border border-slate-200 bg-white">
+        <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
           <div className="flex items-center justify-between gap-2 border-b border-b-slate-200 px-4 py-2.5">
             <p className="inline-flex items-center gap-2 text-[14px] font-bold text-slate-900">
               <UserRound className="h-4 w-4 text-slate-500" />

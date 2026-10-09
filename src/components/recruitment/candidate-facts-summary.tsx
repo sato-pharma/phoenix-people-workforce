@@ -18,6 +18,7 @@ import {
 import type { Candidate } from "@/lib/recruitment/types";
 import { candidateWhatsAppAnswers, type ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import { WhatsAppAnswersList } from "@/components/recruitment/whatsapp-answers-list";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Cell = {
   hint?: string;
@@ -211,7 +212,7 @@ export function CandidateFactsSummary({
   const gridColumns =
     columns === 1 ? "grid-cols-1" : columns === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
   // Square, unframed and on the workstation's own tokens; or the slate card the older screens draw.
-  const frameClass = flat ? "bg-white" : "rounded-md border border-slate-200 bg-white p-3";
+  const frameClass = flat ? "bg-white" : `rounded-md border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`;
   const headingClass = flat
     ? "text-[11px] font-bold uppercase leading-[1.45] tracking-[0.09em] text-phx-ink-soft"
     : "text-phx-xs font-semibold uppercase tracking-wide text-slate-500";

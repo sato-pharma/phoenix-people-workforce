@@ -37,6 +37,7 @@ import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
 
 type WindowState =
   | { kind: "idle" }
@@ -135,7 +136,7 @@ export function WhatsAppReplyBox({ candidateId }: { candidateId: string }) {
   }
 
   return (
-    <div className="w-full border border-phx-line bg-white p-3 text-[12px]">
+    <div className={`${adminPanelClassName} w-full p-3 text-[12px]`}>
       {state.kind === "loading" ? <p className="text-phx-ink-soft">Checking WhatsApp…</p> : null}
 
       {state.kind === "none" ? (

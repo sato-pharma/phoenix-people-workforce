@@ -22,6 +22,7 @@ import {
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Template = {
   id: string;
@@ -261,8 +262,8 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
       {loading ? <p className="text-sm text-slate-600">Loading…</p> : null}
 
       {editorOpen && canManage ? (
-        <div className="border border-slate-300 bg-white">
-          <div className="border-b border-slate-200 bg-slate-50 px-4 py-2">
+        <div className={`border border-slate-300 bg-white ${adminPanelDepthClassName}`}>
+          <div className={`border-b border-slate-200 bg-slate-50 px-4 py-2 ${adminRecessedDepthClassName}`}>
             <h3 className="text-sm font-semibold text-slate-900">{creating ? "New template" : "Edit template"}</h3>
           </div>
           <div className="space-y-3 px-4 py-4">
@@ -312,7 +313,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {SUGGESTIONS.map((key) => (
                   <button
-                    className="border border-phx-line bg-[#FBFCFD] px-2 py-1 font-mono text-[11px] text-slate-700 transition hover:border-phx-accent-line hover:bg-white hover:text-slate-900"
+                    className={`border border-phx-line bg-[#FBFCFD] px-2 py-1 font-mono text-[11px] text-slate-700 transition hover:border-phx-accent-line hover:bg-white hover:text-slate-900 ${adminControlDepthClassName}`}
                     key={key}
                     onClick={() => insertPlaceholder(key)}
                     type="button"
@@ -355,7 +356,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                 {busy ? "Saving…" : "Save"}
               </button>
               <button
-                className="border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+                className={`border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 ${adminControlDepthClassName}`}
                 onClick={cancelEdit}
                 type="button"
               >
@@ -393,14 +394,14 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                   {canManage ? (
                     <div className="flex flex-wrap gap-1.5">
                       <button
-                        className="border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        className={`border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 ${adminControlDepthClassName}`}
                         onClick={() => startEdit(template)}
                         type="button"
                       >
                         Edit
                       </button>
                       <button
-                        className="border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        className={`border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 ${adminControlDepthClassName}`}
                         disabled={busy}
                         onClick={() => toggleActive(template)}
                         type="button"
@@ -420,7 +421,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                 </div>
                 {/* The whole body, wrapped — never clipped and never an ellipsis. */}
                 <p
-                  className="mt-2 whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 p-2 text-[13px] leading-relaxed text-slate-700"
+                  className={`mt-2 whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 p-2 text-[13px] leading-relaxed text-slate-700 ${adminRecessedDepthClassName}`}
                   dir="auto"
                 >
                   {template.body}

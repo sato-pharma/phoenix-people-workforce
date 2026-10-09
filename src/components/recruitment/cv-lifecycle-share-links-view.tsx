@@ -12,6 +12,7 @@ import {
   phxFieldClassName,
   phxLabelClassName,
 } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { productionUrl: string };
 
@@ -176,8 +177,8 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
       {loadedAtMs > 0 ? <ExpiryBanner verdict={verdict} /> : null}
 
       {/* ── Mint ───────────────────────────────────────────────────────────── */}
-      <section className="border border-phx-line bg-white">
-        <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+      <section className={adminPanelClassName}>
+        <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
           <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Create a link</h2>
         </header>
         <div className="space-y-3 px-4 py-4">
@@ -266,8 +267,8 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
       </section>
 
       {/* ── The links ──────────────────────────────────────────────────────── */}
-      <section className="border border-phx-line bg-white">
-        <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+      <section className={adminPanelClassName}>
+        <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
           <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Existing links</h2>
         </header>
 

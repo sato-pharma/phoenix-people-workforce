@@ -1,11 +1,12 @@
 import type { OutboundMessageRow, WhatsAppOutboundReport } from "@/lib/recruitment/inbound/whatsapp-outbound-report";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // A server component on purpose: there is nothing to click. The page is force-dynamic, so a browser
 // reload is the refresh, and shipping no client bundle keeps a read-only record read-only.
 
 function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
       <div className="text-2xl font-semibold text-slate-900">{value}</div>
       <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
       {hint ? <div className="mt-1 text-xs text-slate-400">{hint}</div> : null}
@@ -111,7 +112,7 @@ function MessageBody({ body }: { body: string }) {
 function MessageCard({ row }: { row: OutboundMessageRow }) {
   const enquiry = enquiryLabel(row.context);
   return (
-    <li className="rounded-lg border border-slate-200 bg-white p-4">
+    <li className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-sm font-semibold text-slate-800">{phoneLabel(row.toWaId)}</span>
         <span className="text-xs text-slate-500">{cairoDateTime(row.createdAt)}</span>
@@ -168,7 +169,7 @@ export function WhatsAppRepliesView({ report }: { report: WhatsAppOutboundReport
         <StatTile hint="newest first" label="Shown below" value={String(rows.length)} />
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
         <h2 className="mb-1 text-sm font-semibold text-slate-900">What went out</h2>
         <p className="text-xs text-slate-500">
           Every WhatsApp message Phoenix sent from the recruitment line, newest first, with the exact
@@ -189,7 +190,7 @@ export function WhatsAppRepliesView({ report }: { report: WhatsAppOutboundReport
         // this page did exactly that, holding four inbound messages from the preceding weeks against
         // a table a few hours old and announcing that Phoenix had answered none of them.
         inboundSinceLogging === 0 ? (
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
             {predatingLog > 0 ? (
               // Saying "nothing arrived either" here would contradict the very next sentence, which
               // is about to name the messages that did.

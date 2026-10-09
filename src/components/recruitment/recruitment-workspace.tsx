@@ -87,6 +87,7 @@ import {
   humanizeRecruitmentTerm,
   requisitionStatusLabel,
 } from "@/lib/recruitment/labels";
+import { adminControlDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 // offer-rules is the pure half of the offer service — no database imports — so the same
 // completeness check runs in the browser and on the server without pulling a Supabase client in.
 import { isOfferStage, missingOfferTerms } from "@/lib/recruitment/offer-rules";
@@ -2532,7 +2533,7 @@ const PROFILE_LANDING_GAP = 12;
  * `aria-label` and the native tooltip so a screen reader and a hovering recruiter get the same word.
  */
 const poolIconButtonClass =
-  "inline-flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-500";
+  `inline-flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-500 ${adminControlDepthClassName} disabled:shadow-none`;
 
 function PoolIconButton({
   active,
@@ -2976,7 +2977,7 @@ function CandidateActionsControl({
       ) : null}
 
       {canManage && openPanel === "start" ? (
-        <div className="flex items-center gap-1.5 border border-slate-200 bg-slate-50 p-1.5">
+        <div className={`flex items-center gap-1.5 border border-slate-200 bg-slate-50 p-1.5 ${adminRecessedDepthClassName}`}>
           <SearchableSelect
             className="h-8 w-full min-w-0 px-2 text-xs"
             value={startReq[candidate.id] ?? ""}
@@ -4451,7 +4452,7 @@ function CandidatesTab({
             })}
             {unsentVisible.length > 0 ? (
               <button
-                className="inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400 ${adminControlDepthClassName}`}
                 onClick={() => scrollToManagerGroup(UNSENT_GROUP_KEY)}
                 type="button"
               >
@@ -5116,7 +5117,7 @@ function CandidatesTab({
             ref={profileHeaderRef}
           >
             <button
-              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent"
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent ${adminControlDepthClassName}`}
               onClick={returnToPool}
               type="button"
             >
@@ -5223,7 +5224,7 @@ function CandidatesTab({
             const readFrom =
               appliedFor.source === "stated" ? profile.candidate.appliedForEvidence : appliedFor.evidence;
             return (
-              <div className="rounded-md border border-slate-200 bg-white p-3">
+              <div className={`rounded-md border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
                 <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">Applying for</p>
                 <p className="mt-1 text-sm font-medium text-slate-900">{appliedFor.text}</p>
                 {readFrom ? (
@@ -5236,7 +5237,7 @@ function CandidatesTab({
           })()}
 
           {profile.candidate.sourceContext && profile.candidate.sourceContext.detailLines.length > 0 ? (
-            <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
+            <div className={`rounded-md border border-slate-200 bg-slate-50/60 p-3 ${adminRecessedDepthClassName}`}>
               <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
                 {profile.candidate.sourceContext.channel === "email" ? "Email subject" : "First WhatsApp messages"}
               </p>

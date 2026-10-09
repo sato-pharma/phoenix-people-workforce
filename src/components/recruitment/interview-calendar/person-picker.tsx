@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { type CalendarApi } from "./calendar-api";
 import { NoteLine, Segmented, Switch } from "./calendar-dialog";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export type CandidateMatch = { id: string; name: string; jobTitle: string | null };
 
@@ -221,7 +222,7 @@ export function PersonPicker({
           <div>
             <span className="text-[12px] font-bold text-slate-700">CV (optional)</span>
             {value.cv ? (
-              <div className="mt-1 flex items-center justify-between gap-2 border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className={`mt-1 flex items-center justify-between gap-2 border border-slate-200 bg-slate-50 px-3 py-2 ${adminRecessedDepthClassName}`}>
                 <span className="min-w-0 break-all text-[12px] font-semibold text-slate-800">{value.cv.name}</span>
                 <button
                   aria-label="Remove the CV"

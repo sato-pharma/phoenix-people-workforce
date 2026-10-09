@@ -62,6 +62,7 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /** The person: a Recruitment candidate, or (id null) someone from outside kept on the calendar only. */
 export type ScheduleCandidate = { id: string | null; name: string; jobTitle?: string | null };
@@ -485,7 +486,7 @@ export function ScheduleInterviewDialog({
               </div>
             </div>
 
-            <footer className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <footer className={`flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${adminRecessedDepthClassName}`}>
               <p className="min-w-0 text-[12px] text-slate-600" role={error ? "alert" : undefined}>
                 {error ? (
                   <span className="font-semibold text-red-700">{error}</span>

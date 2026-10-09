@@ -44,6 +44,7 @@ import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-fold
 import type { Candidate } from "@/lib/recruitment/types";
 import { cn } from "@/lib/utils";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { adminControlDepthClassName, adminPanelClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * Cairo, always — the owner's standing rule, and the same helper shape the workspace uses. A filing
@@ -156,7 +157,7 @@ export function CandidateFoldersTab({
           pressed the button; a person must be able to undo it, and "reversible" is only true if
           there is a screen that shows what to reverse. */}
       {archived.length > 0 ? (
-        <section className="border border-phx-line bg-white">
+        <section className={adminPanelClassName}>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2">
             <h3 className="text-sm font-black text-phx-ink">Duplicates</h3>
             <p className="text-xs font-medium text-slate-500">
@@ -181,7 +182,7 @@ export function CandidateFoldersTab({
                 </button>
                 <span className="text-[12px] text-slate-500">{candidate.phone ?? candidate.email ?? ""}</span>
                 <button
-                  className="ml-auto border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                  className={`ml-auto border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                   disabled={busyId === candidate.id}
                   onClick={() => void returnToPool(candidate)}
                   type="button"
@@ -206,7 +207,7 @@ export function CandidateFoldersTab({
       <BackgroundReviewPanel candidates={candidates} onOpenCandidate={onOpenCandidate} />
 
       {shelves.map((shelf) => (
-        <section className="rounded-lg border border-phx-line bg-white" key={shelf.kind}>
+        <section className={`${adminPanelClassName} rounded-lg`} key={shelf.kind}>
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-phx-line px-3 py-2">
             <span className="whitespace-nowrap text-sm font-black text-phx-ink">{shelf.label}</span>
             {/* The DESCRIPTION wraps, unlike the label and the count beside it. Measured at 375px on
@@ -600,7 +601,7 @@ function DeclaredFilingsPanel({
                           ) : null}
                           {group.cause === "degree" ? null : (
                             <button
-                              className="ml-auto border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
+                              className={`ml-auto border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper ${adminControlDepthClassName}`}
                               onClick={() => onOpenCandidate(row.candidateId)}
                               type="button"
                             >

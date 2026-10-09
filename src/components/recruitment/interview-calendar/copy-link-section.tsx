@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { calendarApi, reasonText } from "./calendar-api";
 import { ErrorLine, NoteLine, PanelHeading, Segmented, Switch } from "./calendar-dialog";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const LEVEL_WITH_LINK: Record<InterviewCalendarAccessLevel, string> = {
   commenter: "Anyone with the link sees the calendar and opens its CVs; after signing in to Phoenix they can also leave notes.",
@@ -117,7 +118,7 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
           <Link2 className="h-3.5 w-3.5" /> Copy link
         </span>
       </PanelHeading>
-      <div className="border border-slate-200 bg-slate-50 p-3">
+      <div className={`border border-slate-200 bg-slate-50 p-3 ${adminRecessedDepthClassName}`}>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">Anyone with the link is</span>
@@ -203,7 +204,7 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
                   onChange={(checked) => void run(link.id, () => api.patch(`/links/${link.id}`, { isActive: checked }), "The link could not be changed.")}
                 />
               </div>
-              <p className={cn("mt-2 break-all border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-[11px]", link.isActive ? "text-slate-800" : "text-slate-400 line-through")}>
+              <p className={cn(`mt-2 break-all border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-[11px] ${adminRecessedDepthClassName}`, link.isActive ? "text-slate-800" : "text-slate-400 line-through")}>
                 {linkUrl(link.token)}
               </p>
               <div className="mt-2 grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">

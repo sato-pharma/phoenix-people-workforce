@@ -5,10 +5,11 @@ import { useState } from "react";
 import type { HeldBackIntakeRow, InboundIntakeAnalytics } from "@/lib/recruitment/inbound/intake-analytics";
 import type { DeadLetteredInboundRow } from "@/lib/recruitment/inbound/intake-queue";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
       <div className="text-2xl font-semibold text-slate-900">{value}</div>
       <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
       {hint ? <div className="mt-1 text-xs text-slate-400">{hint}</div> : null}
@@ -99,7 +100,7 @@ export function IntakeHealthView({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
           <h2 className="mb-3 text-sm font-semibold text-slate-900">By channel</h2>
           {analytics.byChannel.length === 0 ? (
             <p className="text-sm text-slate-500">No inbound messages in this window.</p>
@@ -153,7 +154,7 @@ export function IntakeHealthView({
           )}
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
           <h2 className="mb-3 text-sm font-semibold text-slate-900">By outcome</h2>
           {analytics.byOutcome.length === 0 ? (
             <p className="text-sm text-slate-500">Nothing to show yet.</p>
@@ -174,7 +175,7 @@ export function IntakeHealthView({
           is how a real applicant disappears without anyone finding out. The stricter check on the
           general HR mailbox (src/lib/recruitment/inbound/inbox-cv-gate.ts) writes its reason onto
           the intake event, and this is the screen that reads it back. */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
         <h2 className="mb-1 text-sm font-semibold text-slate-900">Held back</h2>
         <p className="mb-3 text-xs text-slate-500">
           Files that arrived but were not turned into a candidate, newest first. The general HR
@@ -202,7 +203,7 @@ export function IntakeHealthView({
         )}
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
         <h2 className="mb-1 text-sm font-semibold text-slate-900">Dead-lettered CVs</h2>
         <p className="mb-3 text-xs text-slate-500">
           Inbound CVs the pipeline could not process after retries. Retry re-queues one for the worker to try again.
@@ -234,7 +235,7 @@ export function IntakeHealthView({
                   {row.last_error ? <div className="mt-0.5 truncate text-xs text-slate-500">{row.last_error}</div> : null}
                 </div>
                 <button
-                  className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className={`shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                   disabled={Boolean(retrying[row.id])}
                   onClick={() => retry(row.id)}
                   type="button"

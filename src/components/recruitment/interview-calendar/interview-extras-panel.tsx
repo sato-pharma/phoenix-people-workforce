@@ -16,6 +16,7 @@ import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-type
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { ErrorLine } from "./calendar-dialog";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 function whenText(iso: string): string {
   try {
@@ -127,7 +128,7 @@ export function InterviewExtrasPanel({
                   </Action>
                 </div>
               ) : (
-                <div className="border border-slate-200 bg-white p-3">
+                <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
                   <p className="text-[12px] font-bold text-slate-700">{"Why can't you conduct it? (optional)"}</p>
                   <textarea
                     className={`${phxTextareaClassName} mt-1.5 block`}

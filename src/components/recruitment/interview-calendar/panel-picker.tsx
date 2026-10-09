@@ -9,6 +9,7 @@ import { Loader2, Search, UserPlus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { InterviewCalendarPerson } from "@/lib/recruitment/interview-calendar-types";
+import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 import type { CalendarApi } from "./calendar-api";
 import type { ChosenInterviewer } from "./interviewer-picker";
@@ -73,7 +74,7 @@ export function PanelPicker({
       {value.length > 0 ? (
         <ul className="flex flex-wrap gap-1.5">
           {value.map((person) => (
-            <li className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2 py-1 text-[12px] font-semibold text-slate-800" key={person.hrId}>
+            <li className={`inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2 py-1 text-[12px] font-semibold text-slate-800 ${adminChipDepthClassName}`} key={person.hrId}>
               {person.name}
               <button
                 aria-label={`Remove ${person.name} from the panel`}
@@ -100,7 +101,7 @@ export function PanelPicker({
           {searching ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-400" /> : null}
         </label>
         {shown.length > 0 ? (
-          <ul className="mt-1 max-h-40 overflow-y-auto border border-slate-200 bg-white">
+          <ul className={`mt-1 max-h-40 overflow-y-auto border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
             {shown.map((person) => (
               <li key={person.hrId}>
                 <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-orange-50" onClick={() => add(person)} type="button">

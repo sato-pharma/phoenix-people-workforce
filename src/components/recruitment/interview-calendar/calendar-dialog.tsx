@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { cn } from "@/lib/utils";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const layers: symbol[] = [];
 
@@ -102,7 +103,7 @@ export function CalendarDialog({
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
         {footer ? (
-          <footer className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <footer className={`flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${adminRecessedDepthClassName}`}>
             {footer}
           </footer>
         ) : null}

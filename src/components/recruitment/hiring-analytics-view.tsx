@@ -26,10 +26,11 @@
 
 import type { ChannelEffectiveness, FunnelStep, HiringAnalytics } from "@/lib/recruitment/hiring-analytics";
 import type { SourceOfHire } from "@/lib/recruitment/source-of-hire";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="border border-slate-200 bg-white p-4">
+    <div className={`border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
       <div className="text-2xl font-semibold text-slate-900">{value}</div>
       <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
       {hint ? <div className="mt-1 text-xs text-slate-400">{hint}</div> : null}
@@ -95,7 +96,7 @@ function ChannelRows({ channels }: { channels: readonly ChannelEffectiveness[] }
       {/* Phone: cards, never a table. */}
       <div className="space-y-3 md:hidden">
         {channels.map((channel) => (
-          <div key={channel.channel} className="border border-slate-200 bg-white p-3">
+          <div key={channel.channel} className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
             <div className="text-sm font-semibold text-slate-900">{channel.channel}</div>
             <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <div>
@@ -273,7 +274,7 @@ function SourceOfHireSection({ data }: { data: SourceOfHire }) {
             </table>
             <div className="space-y-2 md:hidden">
               {data.adverts.map((row) => (
-                <div key={row.code} className="border border-slate-200 bg-white p-3">
+                <div key={row.code} className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
                   <div className="flex items-baseline justify-between">
                     <span className="text-sm font-semibold text-slate-900">{row.name}</span>
                     <span className="tabular-nums font-semibold text-slate-900">{row.hires}</span>

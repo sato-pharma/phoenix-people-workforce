@@ -34,6 +34,7 @@ import {
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 function AccessSelect({
   disabled,
@@ -309,7 +310,7 @@ export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => vo
           <CopyLinkSection weekStart={weekStart} />
         </div>
 
-        <footer className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
+        <footer className={`flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-5 ${adminRecessedDepthClassName}`}>
           <Action onClick={onClose} size="md" tone="quiet">
             Done
           </Action>

@@ -45,6 +45,7 @@ import {
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminPanelClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * The rows and memberships, exactly as the page loaded them.
@@ -249,7 +250,7 @@ export function CvFolderCabinet({
   );
 
   return (
-    <section className="border border-phx-line bg-white">
+    <section className={adminPanelClassName}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2">
         <h3 className="flex items-center gap-1.5 whitespace-nowrap text-sm font-black text-phx-ink">
           <FolderTree className="h-4 w-4" aria-hidden="true" />
@@ -286,7 +287,7 @@ export function CvFolderCabinet({
             <span className="text-xs font-bold uppercase tracking-wide text-phx-ink-soft">Folders</span>
             {canManage ? (
               <button
-                className="ml-auto flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                className={`ml-auto flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                 disabled={busy}
                 onClick={() => createFolder(null)}
                 type="button"
@@ -393,7 +394,7 @@ export function CvFolderCabinet({
               {canManage ? (
                 <div className="border-b border-phx-line px-3 py-2">
                   <button
-                    className="flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
+                    className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper ${adminControlDepthClassName}`}
                     onClick={() => setAdding((current) => !current)}
                     type="button"
                   >
@@ -439,7 +440,7 @@ export function CvFolderCabinet({
                                 ) : null}
                                 <span className="ml-auto flex flex-wrap gap-1">
                                   <button
-                                    className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                                    className={`border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                                     disabled={busy}
                                     onClick={() => fileCandidates(openFolder.id, [candidate.id], "move")}
                                     type="button"
@@ -448,7 +449,7 @@ export function CvFolderCabinet({
                                   </button>
                                   {inFolders.length > 0 ? (
                                     <button
-                                      className="flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                                      className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                                       disabled={busy}
                                       onClick={() => fileCandidates(openFolder.id, [candidate.id], "copy")}
                                       type="button"
@@ -483,7 +484,7 @@ export function CvFolderCabinet({
               ) : (
                 <>
                   {canManage && selectedIds.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-1.5 border-b border-phx-line bg-phx-paper px-3 py-2">
+                    <div className={`flex flex-wrap items-center gap-1.5 border-b border-phx-line bg-phx-paper px-3 py-2 ${adminRecessedDepthClassName}`}>
                       <span className="whitespace-nowrap text-[12px] font-bold text-phx-ink">
                         {selectedIds.length} picked
                       </span>
@@ -506,7 +507,7 @@ export function CvFolderCabinet({
                         </select>
                       </label>
                       <button
-                        className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                        className={`border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy || !destination}
                         onClick={() => fileCandidates(destination, selectedIds, "move")}
                         type="button"
@@ -514,7 +515,7 @@ export function CvFolderCabinet({
                         Move
                       </button>
                       <button
-                        className="flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                        className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy || !destination}
                         onClick={() => fileCandidates(destination, selectedIds, "copy")}
                         type="button"
@@ -523,7 +524,7 @@ export function CvFolderCabinet({
                         Copy
                       </button>
                       <button
-                        className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                        className={`border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy}
                         onClick={() => takeOut(openFolder.id, selectedIds)}
                         type="button"
@@ -531,7 +532,7 @@ export function CvFolderCabinet({
                         Take out of this folder
                       </button>
                       <button
-                        className="flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                        className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy}
                         onClick={() => returnToPool(selectedIds)}
                         type="button"
@@ -608,7 +609,7 @@ function FolderAction({
 }) {
   return (
     <button
-      className="flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+      className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
       disabled={busy}
       onClick={onClick}
       type="button"
