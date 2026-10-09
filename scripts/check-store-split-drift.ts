@@ -8,9 +8,15 @@
  * Nothing said when the frozen photograph stopped matching the rule. This does.
  *
  * 🔴 IT COMPARES BY VALUE, NEVER BY UNITS, and that is the point rather than a preference. The
- * split is unit-preserving by construction — both nets sum to zero per product — so the existing
- * publication drift check, which compares a line's total units, is structurally blind to every
- * difference printed here. See src/lib/sales/store-split-drift.ts.
+ * split is unit-preserving by construction — both nets sum to zero per product — so every
+ * difference printed here totals zero units. The publication drift check misses all of it because
+ * its snapshot is built from `source_of_sales_fact_rollup` and the split net never enters that
+ * table, NOT because of its grain: it already compares per cell, units and value. See
+ * src/lib/sales/store-split-drift.ts.
+ *
+ * 🔴 THIS SCRIPT SEES ONE LAYER. For "has a published month moved, across BOTH layers, and which
+ * areas hold it", run scripts/check-closing-publication-drift.ts, which folds this report into the
+ * publication check per published line.
  *
  * 🔴 IT REPORTS, IT NEVER WRITES, AND IT EXITS 0 EVEN WHEN IT FINDS DRIFT. Rebuilding a published
  * month's net restates an announced number, which is the owner's decision alone. Pass

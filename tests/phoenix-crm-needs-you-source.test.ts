@@ -158,11 +158,23 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
   // ── 4. A failure is never a zero, and a rep is `not-applicable` rather than a row ────────────
   {
     const adapterSource = source("src/lib/needs-you/sources.ts");
-    const block = adapterSource.slice(
-      adapterSource.indexOf("const phoenixCrmDecisions:"),
-      adapterSource.indexOf("export const needsYouAdapters"),
-    );
+    // 🔴 THE WINDOW ENDS AT THE NEXT ADAPTER, NOT AT THE REGISTRY. It used to run to
+    // `export const needsYouAdapters`, which swept in every adapter declared after this one — so the
+    // `> 0) {` count below was measuring the whole tail of the file, and it read 7 the moment an
+    // unrelated source was added (2026-10-09, `closing-publication-drift`, whose own `cells > 0`
+    // guard matched). The count is meant to be THIS adapter's, so the slice is now this adapter's.
+    const crmStart = adapterSource.indexOf("const phoenixCrmDecisions:");
+    const nextAdapterOffset = adapterSource
+      .slice(crmStart + 1)
+      .search(/\nconst [A-Za-z0-9_]+: NeedsYouAdapter = \{/);
+    assert.ok(crmStart >= 0, "the Phoenix CRM adapter could not be located");
+    assert.ok(nextAdapterOffset > 0, "the Phoenix CRM adapter could not be bounded by its neighbour");
+    const block = adapterSource.slice(crmStart, crmStart + 1 + nextAdapterOffset);
     assert.ok(block.length > 0, "the Phoenix CRM adapter could not be located");
+    assert.ok(
+      !/\nconst [A-Za-z0-9_]+: NeedsYouAdapter = \{/.test(block),
+      "and the window holds exactly ONE adapter, or every assertion below is reading its neighbours",
+    );
 
     // Its own permission call, as every adapter has — a `Forbidden:` rejection is a TRUE zero upstream.
     assert.ok(block.includes('assertPermission(access, "phoenix_crm", "read")'), "the adapter asserts the module's own gate");
