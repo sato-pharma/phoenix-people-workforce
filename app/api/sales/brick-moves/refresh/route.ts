@@ -14,12 +14,11 @@ export const maxDuration = 60;
 const REFRESH_BUDGET_MS = 15_000;
 
 /**
- * Rebuilds the totals of sales files a brick move re-stamped (see brick-moves.ts). A brick move and
- * an approved held pharmacy move the rows inside the database; the screens that made them call this
+ * Rebuilds the totals of sales files a brick move re-stamped (see brick-moves.ts). A brick move
+ * happens inside the database; the screen that made it calls this
  * until nothing is left. GET only counts what is waiting.
  *
- * Super Admin only, with the same `sales:import` permission as the Mapping guard, whose approvals
- * leave files to rebuild too.
+ * Super Admin only, with the `sales:import` permission.
  */
 function fail(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {

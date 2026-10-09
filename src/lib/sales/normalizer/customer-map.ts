@@ -328,7 +328,7 @@ export type ExistingCustomerMapping = {
  * this came from" column.
  *
  * NOTHING CAUGHT IT. The bulk path writes ONE summary audit row (counts only, no before/after), and
- * `sos_map_guard_customer` deliberately ignores a write that leaves `brick_id` and `area_code`
+ * The retired Mapping Guard's trigger deliberately ignored a write that left `brick_id` and `area_code`
  * alone — correctly, since 3,633 of 3,702 edits in a normal day are exactly that. So the erasure was
  * invisible at every layer. Its fingerprints are still in production: 121 rows carry a `confidence`
  * this path never writes and 32 name another writer in `mapped_by`, both left by whoever mapped the

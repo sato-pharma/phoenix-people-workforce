@@ -16,7 +16,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  */
 
 /**
- * Periods refreshed per run. The caller is the ten-minute mapping-guard clock, which sits in front of
+ * Periods refreshed per run. The caller is the ten-minute attribution freshness clock, which sits in front of
  * cron-job.org's unraisable 30-second cut, so a run stays short and a backlog drains over the next few
  * runs rather than becoming one long transaction.
  */
@@ -42,10 +42,9 @@ export type AttributionFreshnessResult = {
 /**
  * Refresh every period the gate can no longer use, newest first.
  *
- * NEVER THROWS, deliberately. Its caller is the mapping-guard alert route, whose job is to tell the
- * owner that mapping changes are being refused. A rollup that could not be refreshed is a performance
- * problem; an alert that did not go out is the map silently swallowing writes. The second must not be
- * able to fail because of the first, so this reports its own failure and returns.
+ * NEVER THROWS, deliberately. Its caller is the freshness clock's route, and a rollup that could not be
+ * refreshed is a performance problem, not an outage: it reports its own failure and returns, so the
+ * clock's run stays a 200 and the failure shows in the response and the logs.
  */
 export async function refreshStaleAttributionPeriods(options?: {
   limit?: number;

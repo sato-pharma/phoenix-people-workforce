@@ -3,8 +3,7 @@ import { logWarning } from "@/lib/observability/log";
 import { refreshBatchRollups } from "@/lib/sales/normalizer/customer-map";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-// A brick move (sos_relocate_brick) and an approved held pharmacy (sos_map_guard_decide_and_move_sales)
-// move the sales rows of unlocked months inside the database, and record each file they re-stamped in
+// A brick move (sos_relocate_brick) moves the sales rows of unlocked months inside the database, and record each file they re-stamped in
 // source_of_sales_brick_move_files. The totals those files feed are rebuilt here, one file per claim:
 // rebuilding them all is too slow for the request that made the move.
 

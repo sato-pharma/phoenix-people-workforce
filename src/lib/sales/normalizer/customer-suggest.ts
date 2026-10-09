@@ -153,7 +153,7 @@ export async function suggestCustomerBricks(
   ]);
   // A brick kept only as history after a move is no answer: its pharmacies would credit the area it
   // left. It is not translated to the brick it moved to either — a pharmacy still on it is one the
-  // owner kept there, or one waiting for his decision on the Mapping guard, and neither says where a
+  // owner kept there, and that does not say where a
   // new pharmacy belongs. So every step below sees the live bricks only.
   const liveBricks = (refs.bricks ?? []).filter((b) => !movedBricks.has(b.brickId));
   const brickMap = new Map(liveBricks.map((b) => [b.brickId, b]));

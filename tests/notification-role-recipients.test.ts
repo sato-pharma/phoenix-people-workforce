@@ -92,13 +92,6 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // notice is how both learn to assume the other one did it. Extended 2026-09-29 at the owner's
   // instruction to copy HR Operations, so the same notice reaches HR alongside the SFE Manager.
   crm_account_setup_alert: { roles: ["SFE Manager", "HR Operations"], enabled: true },
-  // Owner instruction 2026-09-10, after being shown that the mapping audit only ever saw the
-  // application: 144 customer rows were re-pointed by direct SQL that evening with no audit row at
-  // all, and 15 of them silently overwrote mapping decisions of his from August. Super Admin ALONE,
-  // and the narrowness is the point rather than an oversight — a held change is released from
-  // /sales/mapping-guard, and releasing one is his decision by construction, since the guard fires
-  // precisely when somebody else's change was about to replace one of his.
-  sos_mapping_guard_alert: { roles: ["Super Admin"], enabled: true },
   // 22nd key, added 2026-09-18. Owner instruction: when an employee is added, their Turbify
   // mailbox is made and its app password lands in Phoenix, so My email works on day one. Turbify
   // has no API for either, so one person does the Turbify half; he named himself as that person.
@@ -119,7 +112,7 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 25, "expected exactly the 25 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 24, "expected exactly the 24 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),

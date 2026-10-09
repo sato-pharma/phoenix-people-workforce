@@ -153,54 +153,9 @@ function pinMigrations() {
   );
   assert.match(judgedOnce, /security definer/, "the redefinition keeps security definer");
   assert.match(judgedOnce, /set statement_timeout to '120s'/, "the redefinition keeps its two minutes");
-
-  const decideSql = read("supabase/migrations/20260918150200_sos_map_guard_decide_moves_brick_sales.sql");
-  const decide = functionBody(decideSql, "sos_map_guard_decide_and_move_sales");
-  assert.match(decide, /v_result := public\.sos_map_guard_decide\(p_hold_id, p_decision, p_actor\);/, "the owner's decision still goes through the guard");
-  assert.match(
-    decide,
-    /if p_decision = 'approved' and coalesce\(\(v_result->>'ok'\)::boolean, false\) then\s*v_move := public\.sos_move_brick_sales_after_hold\(p_hold_id\);/,
-    "only an approval that went through moves the pharmacy's sales",
-  );
-  assert.match(
-    decide,
-    /return coalesce\(v_result, '\{\}'::jsonb\) \|\| jsonb_build_object\('brickMove', v_move\);/,
-    "the answer is the guard's own, plus what moved",
-  );
-  assert.match(decide, /security definer/, "the wrapper runs as its owner");
-  assert.match(decide, /set statement_timeout to '120s'/, "the whole decision has two minutes");
-  assert.match(
-    decideSql,
-    /revoke execute on function public\.sos_map_guard_decide_and_move_sales\(bigint, text, text\) from public, anon, authenticated;/,
-    "no browser role can decide a hold",
-  );
-  assert.match(
-    decideSql,
-    /grant execute on function public\.sos_map_guard_decide_and_move_sales\(bigint, text, text\) to service_role;/,
-    "only the server decides a hold",
-  );
 }
 
 function pinServerCode() {
-  const guard = read("src/lib/sales/mapping-guard.ts");
-  assert.match(guard, /\.rpc\("sos_map_guard_decide_and_move_sales", \{/, "a decision goes through the wrapper that moves the sales too");
-  assert.doesNotMatch(guard, /\.rpc\("sos_map_guard_decide", \{/, "no decision skips the sales move");
-  assert.match(guard, /brickMove: parseBrickSalesMove\(result\.brickMove\)/, "the decision says what moved");
-
-  const decideRoute = read("app/api/sales/mapping-guard/decide/route.ts");
-  assert.match(
-    decideRoute,
-    /if \(\(error as \{ code\?: unknown \} \| null\)\?\.code === "P0001"\) \{\s*return NextResponse\.json\(\{ success: false, error: `\$\{errorMessageOf\(error\)\} Nothing was decided\.` \}, \{ status: 409 \}\);/,
-    "a refusal the database wrote reaches the screen, and says nothing was decided",
-  );
-  // Keyed by HOLD since the route learned to decide a whole selection (2026-10-09): one click can
-  // move the sales of several pharmacies, so there is no single `result.brickMove` any more.
-  assert.match(
-    decideRoute,
-    /brickMoves: decided[\s\S]{0,200}brickMove: outcome\.brickMove, holdId: outcome\.holdId/,
-    "the decide route hands back what moved, for every hold in the click",
-  );
-
   const refreshRoute = read("app/api/sales/brick-moves/refresh/route.ts");
   assert.equal(
     count(refreshRoute, /if \(access\.role !== "Super Admin" && access\.scope !== "system"\) \{/),
@@ -340,20 +295,6 @@ function pinScreens() {
     "the row editor's block picker shows names, not codes",
   );
 
-  const review = read("src/components/sales/mapping-guard-review.tsx");
-  assert.match(
-    review,
-    /const move = parseBrickSalesMove\(entry\.brickMove\);/,
-    "the Mapping guard reads what an approval moved",
-  );
-  // 🔴 ANY of them, not the first. Reading `brickMoves[0]` leaves the other pharmacies' moved
-  // files unrebuilt while the screen still reports a move — invisible until a file is read.
-  assert.match(
-    review,
-    /if \(moves\.some\(\(\{ move \}\) => move\.pendingFiles > 0\)\) void rebuildMovedFiles\(\);/,
-    "and rebuilds the files the sales moved in, for every hold in the click",
-  );
-  assert.doesNotMatch(review, /brickMoves\?\.\[0\]/, "never only the first move of a selection");
 }
 
 function checkBrickArea() {

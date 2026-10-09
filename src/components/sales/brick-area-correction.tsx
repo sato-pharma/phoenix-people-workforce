@@ -213,7 +213,7 @@ export function BrickAreaCorrection({
         <p className="text-sm text-phx-ink-soft">
           Moving gives the brick a new ID in the area you pick. Its pharmacies and their sales in every open month go
           with it. Published months never change: the old brick stays switched on as history so they keep their
-          numbers. Pharmacies waiting on the Mapping guard stay on the old brick until you approve them there.
+          numbers.
         </p>
 
         {error ? (
