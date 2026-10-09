@@ -117,4 +117,45 @@ export function runRailwayDeployConfigTests() {
       "inherits a 15s per-request timeout multiplied by 3 retries, and a slow-but-healthy deploy " +
       "then fails its own healthcheck.",
   );
+
+  // 8. 🔴 THE PRODUCTION IMAGE MUST NOT BE PULLED FROM DOCKER HUB. On 2026-10-09 four consecutive
+  //    merges — #5711, #5712, #5713, #5714, between 23:43 and 23:58 Cairo — each produced a Railway
+  //    build that died on `docker.io/library/node:24-alpine: 429 Too Many Requests`. Railway builds
+  //    on shared metal, so the anonymous Hub pull limit is the builder's, not this project's: the
+  //    merges were green, the service kept serving the previous revision, and production simply
+  //    stopped moving with nothing red anywhere except a build log nobody is watching at midnight.
+  //    That is the same failure mode as the 2026-08-13 source drift, reached from the other end.
+  //
+  //    Asserted on `FROM` lines only, anchored at line start, so the incident write-up in the
+  //    Dockerfile's own comment — which necessarily quotes `docker.io/library/node:24-alpine` — can
+  //    never satisfy or break this rule.
+  const dockerfile = readFileSync(resolve("Dockerfile"), "utf8");
+  const stages = new Set(
+    [...dockerfile.matchAll(/^FROM\s+\S+\s+AS\s+(\S+)/gim)].map(([, name]) => name.toLowerCase()),
+  );
+  const external = [...dockerfile.matchAll(/^FROM\s+(\S+)/gim)]
+    .map(([, image]) => image)
+    .filter((image) => !stages.has(image.toLowerCase()));
+  assert.ok(
+    external.length > 0,
+    "🔴 the Dockerfile no longer pulls any external base image, which means this rule is now " +
+      "asserting nothing. Re-point it at whatever the image is built from.",
+  );
+  for (const image of external) {
+    assert.ok(
+      image.startsWith("public.ecr.aws/docker/library/"),
+      `🔴 the production image is built from \`${image}\`, an unmirrored registry reference. A bare ` +
+        "`node:24-alpine` resolves to docker.io, whose ANONYMOUS pull limit stopped four deploys " +
+        "dead on 2026-10-09 — green merges, a healthy service, and production four commits behind. " +
+        "public.ecr.aws/docker/library/* is AWS's copy of the Docker Official Images and never falls " +
+        "back to Hub; it is byte-identical, proven by digest across Hub, mirror.gcr.io and ECR on " +
+        "that date. Changing this back trades a one-line mirror for a silent deploy outage.",
+    );
+  }
+  assert.ok(
+    dockerfile.includes("429 Too Many Requests"),
+    "🔴 the Dockerfile lost the note explaining why its base image is mirrored. Without the 429 " +
+      "written down, the next reader sees an oddly long registry path and shortens it — which is " +
+      "precisely the change this rule exists to stop.",
+  );
 }

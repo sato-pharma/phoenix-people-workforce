@@ -576,6 +576,33 @@ export const MODULES = [
     keywords: ["ci", "github actions", "workflow run", "required check", "required checks", "railway", "deploy", "deployed", "test runner", "roll-up", "rollup"],
     tables: [],
   },
+  // 🔴 SPLIT 2026-10-09, FOR THE REASON THE TWO ABOVE WERE: `engineering`'s injected pointer measured
+  // 4,103 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the moment one deploy
+  // rule was added — and a module at its pointer limit is SPLIT, never trimmed. The Production-hooks
+  // section (Railway, the deploy gate, what is actually serving, and the CLI's own traps) is the one
+  // coherent half that can stand alone: it is about what REACHES production, not about what CI says.
+  // 🔴 `engineering` KEEPS EVERY GLOB IT HAD — `Dockerfile`, `railway.toml` and `infra/**` included —
+  // and this module ADDS its own, so a Dockerfile edit loads the PAIR and nothing that used to arrive
+  // stops arriving.
+  {
+    id: "engineering-deploys",
+    title: "Engineering — Railway deploys and what is actually serving",
+    scope: "The Railway deploy and its CI gate, the build itself and where its base image comes from, what revision is live and how to prove it, deployment states, volumes and regions, and the railway CLI's own traps.",
+    globs: [
+      "Dockerfile",
+      "railway.toml",
+      "infra/**",
+      "app/api/healthz/**",
+      "app/api/readyz/**",
+      ".claude/skills/ship/verify-shipped.mjs",
+      "tests/verify-shipped-selftest.test.ts",
+      "scripts/check-dockerfile.mjs",
+      "tests/dockerfile-parse-gate.test.ts",
+      "tests/railway-deploy-config.test.ts",
+    ],
+    keywords: ["railway", "deploy", "deployed", "revision", "healthz", "readyz", "wait for ci", "deploy gate", "base image", "docker hub", "dockerfile", "volume", "region"],
+    tables: [],
+  },
   // ── `sessions` split in two on 2026-10-03, at 69% of the cap and growing fastest ──
   //
   // 135 notes in one file, and they are NOT one subject: half are git and worktree MECHANICS (what a

@@ -22,6 +22,42 @@ Railway is **GitHub-connected**: it deploys from this repo on push to the defaul
 that commit's CI** (see "The deploy gate" below). There is no deploy workflow in
 `.github/workflows/` that ships production any more.
 
+## The base image is pulled from AWS's mirror, not Docker Hub
+
+**Measured 2026-10-09, 20:58-21:10 Cairo.** Four merged PRs — #5711, #5712, #5713 and #5714 — sat
+undeployed with production serving `e2f05f903`, and **every check suite on every one of them was
+`completed/success`**, so none of the §2.3 deploy-gate tells applied. Railway had tried: the
+production deployment for `d7d862603` existed and read **FAILED**, as did staging's for the same
+commit in the same second. The build log named the cause in one line:
+
+```
+[ERRO] [internal] load metadata for docker.io/library/node:24-alpine
+Build Failed: ... 429 Too Many Requests
+```
+
+Docker Hub rate-limits **anonymous** pulls per IP, and Railway's Metal builders share one. The build
+dies at metadata resolution, **before a single layer is built**, so no layer cache helps and a
+`railway redeploy` repeats it verbatim — which it did, 34 seconds after the first retry.
+
+The fix is one line: `public.ecr.aws/docker/library/node`, Docker Hub's own official mirror on AWS
+ECR Public — the same upstream image, the same tags, no anonymous pull limit. Verified from this
+machine before shipping: an anonymous token against `public.ecr.aws` returned **HTTP 200** for the
+`24-alpine` manifest.
+
+🔴 **The parser cannot see this.** `scripts/check-dockerfile.mjs` is a Dockerfile parser and
+`FROM node:24-alpine` parses perfectly, so rule 8 of `tests/railway-deploy-config.test.ts` pins the
+REAL file instead, in the required `validate` job: **every** external `FROM` must start
+`public.ecr.aws/docker/library/`, there must be at least one (so the rule cannot quietly assert
+nothing once the stages are renamed), and the Dockerfile must keep the words `429 Too Many Requests`
+— because without the 429 written down the next reader sees an oddly long registry path and
+shortens it, which is exactly the change the rule exists to stop. It is anchored on `^FROM`, so the
+incident note in the Dockerfile's own comment can quote `docker.io/library/node:24-alpine` without
+satisfying or breaking it. All three were broken on purpose and seen to fire.
+
+The `24-alpine` tag is the **same image** on every mirror: Docker Hub, `mirror.gcr.io` and
+`public.ecr.aws` all answered digest `sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1`
+on the night of the outage.
+
 ## The deploy gate
 
 🔴 **PRODUCTION IS GATED AND PROVEN. STAGING'S TOGGLE IS ON BUT IS NOT ENFORCING — do not read
