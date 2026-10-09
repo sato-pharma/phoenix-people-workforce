@@ -15,7 +15,7 @@ non-Office value base, and the stored Office spread stayed on the old one.
 
 **Measured on production, 2026-10-09, August 2026 CNS**, through the repo's own closing loader and
 `buildOfficeRespread`. Office = 109,719 of 178,272 units (61.5% of the line); its last batch landed
-10 Sep 19:15 Cairo, correctly after the brick-carrying channels, and the month was published 10 Sep
+10 Sep 20:15 Cairo, correctly after the brick-carrying channels, and the month was published 10 Sep
 23:22. **6,834 packs — 6.23%, 548,777 EGP — are credited to a different area than today's base
 gives them**, across 48 areas with 17 of them short; the largest single error is CA1 at +3,119 packs.
 🔴 **TWO TRUE NUMBERS, ONE DEFECT — never "reconcile" them away.** `check-office-allocation-drift.ts`

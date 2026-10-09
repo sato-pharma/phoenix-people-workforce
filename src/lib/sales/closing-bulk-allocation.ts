@@ -21,7 +21,7 @@
 // the finished month; the bulk file is one distributor sheet among nineteen and lands whenever it
 // lands. An upload-time spread would freeze whatever happened to be in the period that hour and
 // nothing downstream would ever report it. Measured on CNS August 2026, the Office channel's own
-// upload-time shares were already stale: its last batch landed 10 September 19:15 Cairo, and 6,834 of
+// upload-time shares were already stale: its last batch landed 10 September 20:15 Cairo, and 6,834 of
 // its 109,719 units (6.23%, 548,777 EGP, measured on the live rows 9 October 2026) sit in a different
 // area from the one the current data would give them. That measurement is what the owner acted on the same day, and
 // the Office channel now takes its own read-time respread for exactly this reason. A net recomputed
