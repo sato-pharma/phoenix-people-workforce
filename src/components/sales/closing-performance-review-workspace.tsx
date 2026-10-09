@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Download, Loader2, RefreshCw, Trophy } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   AdminCallout,
@@ -22,6 +22,7 @@ import { describePeriodSelection } from "@/lib/sales/monthly-closing-period-merg
 import type {
   ClosingPerformanceReview,
   PerformanceMatrix,
+  PerformanceProductMonthMatrix,
   PerformanceReviewSeriesRow,
 } from "@/lib/sales/closing-performance-review";
 import {
@@ -34,8 +35,9 @@ import { phxSelectClassName } from "@/components/ui/form-tokens";
 // order, from the same object — the owner's rule is that an export matches the screen, and the
 // cheapest way to keep that true is for both to render one payload.
 //
-// Units appear in exactly one section, "Units and growth by month", where every row IS one product
-// code. Everywhere else the measure is value, because units of different products are never added.
+// Units appear only where the thing being counted IS one product code: "Units and growth by month"
+// (a row per product) and "Reps and areas · products by month" (a BLOCK per product, months inside
+// it). Everywhere else the measure is value, because units of different products are never added.
 
 type Props = {
   initialError: string | null;
@@ -113,12 +115,31 @@ function RegionDot({ regionCode }: { regionCode: string }) {
 }
 
 // These wrap by default so the ranked/summary tables below can be table-fixed and fit
-// their container. The two MATRIX tables (GridTable, and the month series) keep a
-// sideways scroll on purpose — their column count is the product/month count and can
-// never fit — so each re-applies nowrap on its own <table> with [&_th]/[&_td].
+// their container. The three MATRIX tables (GridTable, the month series, and the
+// per-product month blocks) keep a sideways scroll on purpose — their column count is
+// the product/month count and can never fit — so each re-applies nowrap on its own
+// <table> with [&_th]/[&_td], and all three share the one scroller below.
 const headClassName =
   "break-words px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
 const cellClassName = "break-words px-3 py-2 text-sm text-slate-700";
+
+/**
+ * The ONE scroll container the matrix tables on this page share.
+ *
+ * All three of them are exempt from the fits-the-screen rule for the same owner ruling — the
+ * monthly closing matrix "can NEVER fit; leave the scroll" — because their width IS a count:
+ * one column per product (GridTable), one per month (SeriesTable), or one block per product
+ * times its months (ProductMonthTable). No merge bounds a count, and the sticky first column
+ * that freezes the names only works inside a sideways scroll.
+ *
+ * It is one component rather than three identical wrappers so that the permission is declared,
+ * and reasoned about, in exactly one place — the move `PortalDesktopTable` made for the portal
+ * tables, and the reason adding the third matrix lowered the fits-the-screen count instead of
+ * raising it.
+ */
+function MatrixScroller({ children }: { children: ReactNode }) {
+  return <div className="overflow-x-auto">{children}</div>;
+}
 
 /**
  * The owner's shape: who on the left, what across the top.
@@ -135,7 +156,7 @@ function GridTable({ grid, measure }: { grid: PerformanceMatrix; measure: "units
   // which the owner ruled keeps its scroll. The sticky first column is the frozen-rep-name half of
   // that design and only works with a sideways scroll.
   return (
-    <div className="overflow-x-auto">
+    <MatrixScroller>
       <table className="w-full border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead className="border-b border-slate-200 bg-slate-50/80">
           <tr>
@@ -211,7 +232,7 @@ function GridTable({ grid, measure }: { grid: PerformanceMatrix; measure: "units
           })}
         </tbody>
       </table>
-    </div>
+    </MatrixScroller>
   );
 }
 
@@ -232,7 +253,7 @@ function SeriesTable({
   // EXEMPT, deliberately: one column PER MONTH in the series, so the width is the month count.
   // Same ruling as the closing matrix — the scroll stays.
   return (
-    <div className="overflow-x-auto">
+    <MatrixScroller>
       <table className="w-full min-w-[52rem] border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead className="border-b border-slate-200 bg-slate-50/80">
           <tr>
@@ -264,7 +285,137 @@ function SeriesTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </MatrixScroller>
+  );
+}
+
+/**
+ * Reps and areas down the side, one PRODUCT per block across the top, its months inside the block.
+ *
+ * The owner's shape for this one: the product name merges over its own run of months plus that
+ * product's growth, then the next product's block begins. Every figure is units, and they are a real
+ * quantity because a block never spans more than one product code — which is also why there is no
+ * row total here: a row spans products, and units of different products are never added.
+ */
+function ProductMonthTable({ grid }: { grid: PerformanceProductMonthMatrix }) {
+  const stickyHead = headClassName + " sticky left-0 z-20 bg-slate-50";
+  const perProduct = grid.months.length + 1;
+  // EXEMPT from the fits-the-screen sweep, deliberately, and for the two reasons already ruled on
+  // elsewhere on this page: one block PER PRODUCT and one column PER MONTH inside it, so the width
+  // is the product count times the month count and no merge can bound it. The sticky rep column is
+  // the frozen-names half of that design and only works with a sideways scroll.
+  return (
+    <MatrixScroller>
+      <table className="w-full border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+        <thead className="border-b border-slate-200 bg-slate-50/80">
+          <tr>
+            <th className={stickyHead} colSpan={4}>
+              Who sold it
+            </th>
+            {grid.columns.map((column) => (
+              <th
+                className={headClassName + " border-l border-slate-300 text-center"}
+                colSpan={perProduct}
+                key={column.key}
+                title={column.subLabel}
+              >
+                {column.label}
+              </th>
+            ))}
+          </tr>
+          <tr>
+            <th className={stickyHead}>Rep</th>
+            <th className={headClassName}>Area</th>
+            <th className={headClassName}>District manager</th>
+            <th className={headClassName}>Region</th>
+            {grid.columns.map((column) => (
+              <Fragment key={column.key}>
+                {grid.months.map((month, monthIndex) => (
+                  <th
+                    className={
+                      headClassName + " text-right" + (monthIndex === 0 ? " border-l border-slate-300" : "")
+                    }
+                    key={column.key + ":" + month}
+                  >
+                    {shortMonth(month)}
+                  </th>
+                ))}
+                <th className={headClassName + " text-right"}>Growth</th>
+              </Fragment>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {grid.rows.map((row, index) => {
+            const isTotal = row.kind !== "area";
+            const tone = row.kind === "grandTotal"
+              ? "bg-slate-900 text-white"
+              : row.kind === "regionSubtotal"
+                ? "bg-sky-50 font-semibold"
+                : index % 2 === 1
+                  ? "bg-slate-50/50"
+                  : "";
+            const stickyCell =
+              cellClassName +
+              " sticky left-0 z-10 font-semibold " +
+              (row.kind === "grandTotal"
+                ? "bg-slate-900 text-white"
+                : row.kind === "regionSubtotal"
+                  ? "bg-sky-50 text-slate-900"
+                  : index % 2 === 1
+                    ? "bg-slate-50 text-slate-900"
+                    : "bg-white text-slate-900");
+            return (
+              <tr className={tone} key={row.kind + ":" + row.areaCode + ":" + index}>
+                <td className={stickyCell}>
+                  {row.kind !== "area" ? (
+                    row.kind === "grandTotal" ? "National total" : row.regionName + " total"
+                  ) : row.repName ? (
+                    row.repName
+                  ) : row.repIsVacant ? (
+                    <span className="text-xs italic text-slate-400">Vacant seat</span>
+                  ) : (
+                    <span className="text-slate-300">{EM}</span>
+                  )}
+                </td>
+                <td className={cellClassName}>{isTotal ? "" : row.areaName}</td>
+                <td className={cellClassName}>
+                  {isTotal ? "" : (row.managerName ?? <span className="text-slate-300">{EM}</span>)}
+                </td>
+                <td className={cellClassName}>
+                  {isTotal ? "" : (
+                    <span className="flex items-center gap-2">
+                      <RegionDot regionCode={row.regionCode} />
+                      <span className="text-slate-500">{row.regionName}</span>
+                    </span>
+                  )}
+                </td>
+                {grid.columns.map((column, productIndex) => (
+                  <Fragment key={column.key}>
+                    {grid.months.map((month, monthIndex) => (
+                      <td
+                        className={
+                          cellClassName +
+                          " text-right" +
+                          (isTotal ? " font-semibold" : "") +
+                          (monthIndex === 0 ? " border-l border-slate-300" : "")
+                        }
+                        key={column.key + ":" + month}
+                      >
+                        <Figure value={row.units[productIndex]?.[monthIndex] ?? null} />
+                      </td>
+                    ))}
+                    <td className={cellClassName + " text-right"}>
+                      <Growth ratio={row.growth[productIndex] ?? null} />
+                    </td>
+                  </Fragment>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </MatrixScroller>
   );
 }
 
@@ -797,6 +948,13 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
           rows={review.areaValueByMonth}
           subHeading="Region"
         />
+      </AdminTableShell>
+
+      <AdminTableShell
+        description={"Every product in turn, and under each one every rep's own months and growth. The figures are units: a block is ONE product code, so they are a real quantity and may be read across the months and down the column. There is no row total " + DOT + " a row spans products, and units of different products are never added."}
+        title={"Reps and areas " + DOT + " products by month"}
+      >
+        <ProductMonthTable grid={review.productUnitsByRepByMonth} />
       </AdminTableShell>
     </div>
   );

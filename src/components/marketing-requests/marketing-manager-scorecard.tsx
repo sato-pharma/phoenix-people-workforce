@@ -27,6 +27,7 @@ import {
   adminPanelHeaderClassName,
   adminSoftPanelClassName,
 } from "@/components/admin/admin-design-tokens";
+import type { DistributorFileGap } from "@/lib/marketing-requests/manager-scorecard-awaiting";
 import type { MarketingManagerScorecard } from "@/lib/marketing-requests/manager-scorecard";
 
 const money = (value: number): string => `EGP ${Math.round(value).toLocaleString("en-US")}`;
@@ -46,6 +47,31 @@ function monthLabel(period: string | null): string {
   const [year, month] = (period ?? "").split("-").map((part) => Number(part));
   if (!year || !month || month < 1 || month > 12) return period;
   return `${CAIRO_MONTHS[month - 1]} ${year}`;
+}
+
+/**
+ * "EGP 5,007 of this is still waiting on a distributor file — Ibn sina has not filed Sept 2026."
+ *
+ * Owner instruction, 2026-10-09: "show on the Scorecard which zeroes are missing distributor
+ * files". It leads with the MONEY, because that is what makes a 0 look like a verdict; the reason
+ * follows. Returns null when nothing is waiting, so a row that really did come back empty carries
+ * no excuse.
+ *
+ * 🔴 Months come through `monthLabel` (CAIRO_MONTHS), never `Intl` — see its own note above.
+ * Nothing is truncated with an ellipsis: this wraps instead, which is the owner's rule.
+ */
+function fileGapNote(input: {
+  awaitingFileRequests: number;
+  awaitingFileValue: number;
+  fileGaps: DistributorFileGap[];
+}): string | null {
+  if (input.awaitingFileRequests < 1 || input.fileGaps.length === 0) return null;
+  const names = input.fileGaps.map((gap) => gap.distributorName);
+  const periods = [...new Set(input.fileGaps.flatMap((gap) => gap.periods))].sort();
+  const who = names.length === 1 ? `${names[0]} has` : `${names.join(", ")} have`;
+  const when = periods.map((period) => monthLabel(period)).join(", ");
+  const campaigns = `${input.awaitingFileRequests} ${input.awaitingFileRequests === 1 ? "campaign" : "campaigns"}`;
+  return `${money(input.awaitingFileValue)} across ${campaigns} cannot be judged yet — ${who} not filed ${when}`;
 }
 
 export function MarketingManagerScorecard() {
@@ -209,6 +235,9 @@ export function MarketingManagerScorecard() {
                   <p className="text-phx-xs text-slate-500">
                     {percent(row.recoveryRatio)} of approved spend · {percent(row.roiCoverageRatio)} of required
                   </p>
+                  {fileGapNote(row) ? (
+                    <p className="mt-1 text-phx-xs font-bold text-orange-700">{fileGapNote(row)}</p>
+                  ) : null}
                 </Td>
               </tr>
             ))}
@@ -242,6 +271,9 @@ export function MarketingManagerScorecard() {
                 <p className="text-phx-xs text-slate-500">
                   {percent(totals.recoveryRatio)} of approved spend · shared sales counted once
                 </p>
+                {fileGapNote(totals) ? (
+                  <p className="mt-1 text-phx-xs font-bold text-orange-700">{fileGapNote(totals)}</p>
+                ) : null}
               </Td>
             </tr>
           </tfoot>
@@ -265,6 +297,9 @@ export function MarketingManagerScorecard() {
               <Field label="Actual collected" value={money(row.actualValue)} />
               <Field label="Of approved spend" value={percent(row.recoveryRatio)} />
             </dl>
+            {fileGapNote(row) ? (
+              <p className="mt-3 text-phx-xs font-bold text-orange-700">{fileGapNote(row)}</p>
+            ) : null}
           </article>
         ))}
         <article className={`${adminSoftPanelClassName} p-4`}>
@@ -277,6 +312,9 @@ export function MarketingManagerScorecard() {
             <Field label="Actual collected" value={money(totals.actualValue)} />
             <Field label="Of approved spend" value={percent(totals.recoveryRatio)} />
           </dl>
+          {fileGapNote(totals) ? (
+            <p className="mt-3 text-phx-xs font-bold text-orange-700">{fileGapNote(totals)}</p>
+          ) : null}
         </article>
       </div>
     </div>
@@ -338,7 +376,10 @@ function KpiBand({ data }: { data: MarketingManagerScorecard }) {
       value: money(totals.expectedRoiValue),
     },
     {
-      hint: `${percent(totals.recoveryRatio)} of approved spend · sales loaded to ${monthLabel(data.salesDataAsOf)}`,
+      hint:
+        totals.awaitingFileRequests > 0
+          ? `${percent(totals.recoveryRatio)} of approved spend · ${money(totals.awaitingFileValue)} still waiting on a distributor file`
+          : `${percent(totals.recoveryRatio)} of approved spend · sales loaded to ${monthLabel(data.salesDataAsOf)}`,
       label: "Actual collected",
       value: money(totals.actualValue),
     },

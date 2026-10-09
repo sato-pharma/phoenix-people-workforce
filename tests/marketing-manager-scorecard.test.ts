@@ -3,6 +3,12 @@ import assert from "node:assert/strict";
 import { marketingDraftBlockers } from "../src/lib/marketing-requests/draft-blockers.ts";
 import { buildMarketingManagerScorecard } from "../src/lib/marketing-requests/manager-scorecard.ts";
 import {
+  distributorNormallyFiles,
+  elapsedWindowMonths,
+  missingDistributorFiles,
+  type DistributorFileGap,
+} from "../src/lib/marketing-requests/manager-scorecard-awaiting.ts";
+import {
   buildMarketingManagerScorecardPdf,
   buildMarketingManagerScorecardPdfDocDefinition,
   buildMarketingManagerScorecardWorkbook,
@@ -72,14 +78,41 @@ function line(overrides: Partial<RoiAttributionLine> & { requestId: string }): R
   };
 }
 
-function build(input: { lines?: RoiAttributionLine[]; rows: MarketingRoiReportRow[] }) {
+function build(input: {
+  fileGaps?: Map<string, DistributorFileGap[]>;
+  lines?: RoiAttributionLine[];
+  rows: MarketingRoiReportRow[];
+}) {
   return buildMarketingManagerScorecard({
     attributionLines: input.lines ?? [],
+    fileGapsByRequestId: input.fileGaps,
     generatedAtIso: "2026-06-15T09:00:00.000Z",
     rows: input.rows,
     salesDataAsOf: "2026-05",
   });
 }
+
+/**
+ * Production's own batch index, read 9 Oct 2026, as the rule sees it: August is filed by everyone,
+ * and September by Overseas and Ibn Sina-Sato only — Ibn Sina proper and Overseas Tender have not
+ * filed it. These four codes are what the real case turned on.
+ */
+const FILED_SEPT_2026 = new Map<string, Set<string>>([
+  ["IS", new Set(["2026-06", "2026-07", "2026-08"])],
+  ["IS-S", new Set(["2026-06", "2026-07", "2026-08", "2026-09"])],
+  ["PS", new Set(["2026-06", "2026-07", "2026-08", "2026-09"])],
+  ["PS-T", new Set(["2026-06", "2026-07", "2026-08"])],
+  // Files twice a year — present in the index, and must never produce a caption.
+  ["CP", new Set(["2026-01", "2026-05"])],
+]);
+
+const DISTRIBUTOR_NAMES = new Map<string, string>([
+  ["IS", "Ibn sina"],
+  ["IS-S", "Ibn Sina-Sato"],
+  ["PS", "overseas"],
+  ["PS-T", "Overseas Tender"],
+  ["CP", "chimipharm"],
+]);
 
 export async function runMarketingManagerScorecardTests() {
   // ── His own example, verbatim: "one did five requests, three from them are approved … the first
@@ -239,6 +272,9 @@ export async function runMarketingManagerScorecardTests() {
       "Actual Collected (EGP)",
       "Collected Of Approved",
       "Collected Of Required",
+      "Campaigns Awaiting A File",
+      "Spend Awaiting A File (EGP)",
+      "Who Has Not Filed",
     ],
     "every figure gets its own column — the fits-the-screen rule governs a viewport, and a sheet has none",
   );
@@ -288,6 +324,136 @@ export async function runMarketingManagerScorecardTests() {
     "🔴 and NEVER claims attribution stops at the frontier — later part-loaded months are counted",
   );
   assert.ok(infoFields.includes("Generated"), "and when it was taken, in Cairo");
+  assert.ok(
+    infoFields.includes("Campaigns awaiting a distributor file") && infoFields.includes("Who has not filed"),
+    "the file says which zeroes are a missing distributor file — a forwarded EGP 0 beside committed spend reads as a verdict otherwise",
+  );
+
+  // ── Which zeroes are a MISSING DISTRIBUTOR FILE ──────────────────────────────────────────────
+  // Owner instruction, 2026-10-09: "show on the Scorecard which zeroes are missing distributor
+  // files". The case it came from: one District Manager's three September campaigns all read EGP 0,
+  // and two were unmeasurable rather than unsuccessful.
+
+  assert.deepEqual(
+    elapsedWindowMonths({ lastClosedPeriod: "2026-09", payMonth: "2026-09", roiDurationMonths: 1 }),
+    ["2026-09"],
+    "a one-month window is one month",
+  );
+  assert.deepEqual(
+    elapsedWindowMonths({ lastClosedPeriod: "2026-09", payMonth: "2026-08", roiDurationMonths: 12 }),
+    ["2026-08", "2026-09"],
+    "🔴 a window running to July 2027 is NOT missing ten files — it is the future. Only the elapsed months count, or every long campaign would be captioned with files nobody could have filed",
+  );
+  assert.deepEqual(
+    elapsedWindowMonths({ lastClosedPeriod: "2026-09", payMonth: null, roiDurationMonths: 3 }),
+    [],
+    "no pay month, no window",
+  );
+  assert.deepEqual(
+    elapsedWindowMonths({ lastClosedPeriod: "2026-09", payMonth: "2026-10", roiDurationMonths: 3 }),
+    [],
+    "🔴 a campaign paid THIS month has no closed month at all — a distributor files a month after it ends, so October is not owed in October",
+  );
+
+  assert.equal(
+    distributorNormallyFiles(FILED_SEPT_2026.get("IS") ?? new Set(), "2026-09"),
+    true,
+    "Ibn Sina filed June, July and August — it has been filing, so September's absence is a gap",
+  );
+  assert.equal(
+    distributorNormallyFiles(FILED_SEPT_2026.get("CP") ?? new Set(), "2026-09"),
+    false,
+    "🔴 a distributor that files twice a year never produces a caption. \"Not every distributor uploads every month\" is an owner rule and a headcount of absent distributors is explicitly never a finding",
+  );
+
+  const septemberGaps = missingDistributorFiles({
+    distributorNameByCode: DISTRIBUTOR_NAMES,
+    filedPeriodsByDistributor: FILED_SEPT_2026,
+    lastClosedPeriod: "2026-09",
+    requests: [
+      // His two Ibn Sina campaigns — the pharmacies map to the parent code `IS`.
+      { distributorCodes: ["IS"], payMonth: "2026-09", requestId: "ibn-sina-1", roiDurationMonths: 1 },
+      // The Overseas one. PS has filed September; its tender sibling PS-T has not.
+      { distributorCodes: ["PS"], payMonth: "2026-09", requestId: "overseas-1", roiDurationMonths: 1 },
+      // A twelve-month window: two of its months are closed, and Overseas filed both.
+      { distributorCodes: ["PS"], payMonth: "2026-08", requestId: "long-window", roiDurationMonths: 12 },
+    ],
+  });
+
+  assert.deepEqual(
+    septemberGaps.get("ibn-sina-1"),
+    [{ distributorName: "Ibn sina", periods: ["2026-09"] }],
+    "🔴 Ibn Sina has not filed September, though Ibn Sina-Sato has — counting the FAMILY as one would call it filed and hide exactly the case this caption exists for",
+  );
+  assert.equal(
+    septemberGaps.has("overseas-1"),
+    false,
+    "🔴 AND THE SIBLING CODES ARE NOT CAPTIONED. Overseas filed September; Overseas Tender did not and lags every month, so captioning it would put a caption on almost every row and the signal would be worth nothing",
+  );
+  assert.equal(
+    septemberGaps.has("long-window"),
+    false,
+    "🔴 Overseas filed both closed months and the other ten have not happened — a campaign with nothing missing carries NO excuse beside its figure, and a long window is never captioned for the future",
+  );
+
+  // On the row and in the footer, and the money is untouched either way.
+  const withGaps = build({
+    fileGaps: new Map<string, DistributorFileGap[]>([
+      ["m1", [{ distributorName: "Ibn sina", periods: ["2026-09"] }]],
+      ["m2", [{ distributorName: "Ibn sina", periods: ["2026-09"] }]],
+      // Not approved money — it must not be counted.
+      ["m4", [{ distributorName: "overseas", periods: ["2026-09"] }]],
+    ]),
+    rows: [
+      row({ actualSalesValue: 0, estimatedCost: 3_150, requestId: "m1", status: "approved" }),
+      row({ actualSalesValue: 0, estimatedCost: 1_238, requestId: "m2", status: "approved" }),
+      row({ actualSalesValue: 500, estimatedCost: 619, requestId: "m3", status: "approved" }),
+      row({ estimatedCost: 9_000, requestId: "m4", status: "pending_approval" }),
+    ],
+  });
+  const [waiting] = withGaps.rows;
+  assert.equal(waiting.awaitingFileRequests, 2, "two of his approved campaigns are waiting on a file");
+  assert.equal(
+    waiting.awaitingFileValue,
+    4_388,
+    "3,150 + 1,238 — the committed money the caption is about, and never the campaign that did come back",
+  );
+  assert.deepEqual(
+    waiting.fileGaps,
+    [{ distributorName: "Ibn sina", periods: ["2026-09"] }],
+    "one entry per distributor, however many campaigns are behind it — names, never codes",
+  );
+  assert.equal(
+    withGaps.totals.awaitingFileRequests,
+    2,
+    "🔴 only APPROVED money carries the caption: an unapproved campaign has nothing to measure, so a missing file says nothing about it",
+  );
+  assert.equal(withGaps.totals.awaitingFileValue, 4_388, "and the footer's waiting money is the same");
+
+  const withoutGaps = build({
+    rows: [
+      row({ actualSalesValue: 0, estimatedCost: 3_150, requestId: "m1", status: "approved" }),
+      row({ actualSalesValue: 0, estimatedCost: 1_238, requestId: "m2", status: "approved" }),
+      row({ actualSalesValue: 500, estimatedCost: 619, requestId: "m3", status: "approved" }),
+      row({ estimatedCost: 9_000, requestId: "m4", status: "pending_approval" }),
+    ],
+  });
+  assert.equal(
+    withoutGaps.rows[0]?.actualValue,
+    withGaps.rows[0]?.actualValue,
+    "🔴 THE CAPTION NEVER MOVES A FIGURE. Same actual collected with the gaps and without them",
+  );
+  assert.equal(
+    withoutGaps.totals.actualValue,
+    withGaps.totals.actualValue,
+    "and the same company total",
+  );
+  assert.equal(
+    withoutGaps.rows[0]?.awaitingFileRequests,
+    0,
+    "a caller that cannot reach the batch index gets every figure and simply no caption",
+  );
+  assert.deepEqual(withoutGaps.totals.fileGaps, [], "with nothing to name");
 
   // ── The PDF export ──────────────────────────────────────────────────────────────────────────
   const doc = buildMarketingManagerScorecardPdfDocDefinition(twoManagers);
@@ -311,6 +477,32 @@ export async function runMarketingManagerScorecardTests() {
     (doc as { pageOrientation?: string }).pageOrientation,
     "landscape",
     "six money columns do not fit a portrait page without shrinking the type, which the fits-the-screen rule forbids",
+  );
+
+  assert.ok(
+    !flat.includes("Waiting on a distributor file"),
+    "with every file in, the printed page carries no excuse block at all",
+  );
+
+  // The same page when a distributor is behind. The caption rides UNDER the table, never inside the
+  // 85pt Collected column — "Ibn sina has not filed Sept 2026" at 9pt wraps to six lines there and
+  // pushes the table off the sheet, which is the fits-the-screen rule in print.
+  const waitingDoc = buildMarketingManagerScorecardPdfDocDefinition(
+    build({
+      fileGaps: new Map<string, DistributorFileGap[]>([
+        ["w1", [{ distributorName: "Ibn sina", periods: ["2026-09"] }]],
+      ]),
+      rows: [row({ actualSalesValue: 0, estimatedCost: 3_150, requestId: "w1", status: "approved" })],
+    }),
+  );
+  const waitingFlat = JSON.stringify(waitingDoc);
+  assert.ok(
+    waitingFlat.includes("Waiting on a distributor file") && waitingFlat.includes("Ibn sina has not filed Sept 2026"),
+    "🔴 the printed page names who owes which month — a forwarded EGP 0 beside EGP 3,150 of committed spend reads as a verdict, and its reader cannot ask",
+  );
+  assert.ok(
+    waitingFlat.includes("Sept 2026") && !waitingFlat.includes("Sep 2026"),
+    "the month name is CAIRO_MONTHS', not an Intl abbreviation that reads Sep on one runtime and Sept on another",
   );
 
   const pdf = await buildMarketingManagerScorecardPdf(twoManagers);

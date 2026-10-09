@@ -8,6 +8,7 @@ import {
   PERFORMANCE_REVIEW_REGIONS,
   type ClosingPerformanceReview,
   type PerformanceMatrix,
+  type PerformanceProductMonthMatrix,
   type PerformanceReviewSeriesRow,
 } from "@/lib/sales/closing-performance-review";
 import { SATO_LOGO_ON_LIGHT_PNG_BASE64 } from "@/lib/sales/sato-logo-asset";
@@ -20,10 +21,11 @@ import { SATO_LOGO_ON_LIGHT_PNG_BASE64 } from "@/lib/sales/sato-logo-asset";
 // the screen it was launched from is the usual reason a report and its export disagree, and the
 // owner's rule is that the file must match the screen.
 //
-// Units appear on one sheet only, "Units & Growth by Month", where every row IS one product code.
-// Everywhere else the measure is VALUE, because units of different products and concentrations are
-// never added. `unitsAreAddable` on the row carries that decision from the domain layer; this file
-// asserts it rather than re-deciding it.
+// Units appear only where the thing being counted IS one product code: "Units & Growth by Month",
+// where every ROW is one product, and "Reps · Products by Month", where every BLOCK is one product
+// and the months sit inside it. Everywhere else the measure is VALUE, because units of different
+// products and concentrations are never added. `unitsAreAddable` carries that decision from the
+// domain layer; this file asserts it rather than re-deciding it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── The house document identity — SATO-DIS-2026-01 v1.0 ──────────────────────
@@ -877,6 +879,157 @@ function buildSeriesSheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
   }
 }
 
+// ── Sheet 8 — the per-rep by-month units grid ────────────────────────────────
+
+/**
+ * Reps and areas down the side, one PRODUCT per block across the top, its months inside the block.
+ *
+ * The owner's shape for this sheet: the product name MERGES over its own run of months plus that
+ * product's growth, then the next product's block begins. Frozen at the fourth column and under the
+ * header, so the names stay on screen however far right the products run — on a fifteen-product line
+ * with six months that is ninety-odd columns.
+ *
+ * Every figure is UNITS, and they are a real quantity because a block is one product code: they may
+ * be read across the months and summed down the column, which is why the region subtotals and the
+ * national total are legitimate here. There is deliberately NO row total — a row spans products, and
+ * units of different products are never added.
+ */
+function buildProductMonthSheet(
+  workbook: ExcelJS.Workbook,
+  review: ClosingPerformanceReview,
+  options: { grid: PerformanceProductMonthMatrix; name: string; note: string; subtitle: string; title: string },
+) {
+  const { grid } = options;
+  // The domain layer decides whether a block's units may be added. A units sheet built over columns
+  // that say they cannot is exactly the mistake the rule exists to stop, so refuse to render it.
+  if (grid.columns.some((column) => !column.unitsAreAddable)) {
+    throw new Error(
+      "Refusing to build a units grid whose columns span more than one product: units of different products are never added.",
+    );
+  }
+
+  const NAMES = 4;
+  const PER_PRODUCT = grid.months.length + 1;
+  const LAST = NAMES + grid.columns.length * PER_PRODUCT;
+  const sheet = workbook.addWorksheet(options.name, {
+    pageSetup: PAGE,
+    views: [{ showGridLines: false, state: "frozen", xSplit: NAMES, ySplit: 10 }],
+  });
+  sheet.columns = [
+    { width: 34 }, { width: 26 }, { width: 30 }, { width: 15 },
+    ...grid.columns.flatMap(() => [...grid.months.map(() => ({ width: 12 })), { width: 13 }]),
+  ];
+
+  masthead(workbook, sheet, {
+    legend: "regions",
+    lastCol: LAST,
+    note: options.note,
+    status: `source: Monthly Closing ${DOT} ${seriesSpanLabel(review)} ${DOT} ${grid.columns.length} products ${DOT} ${grid.rows.filter((row) => row.kind === "area").length} areas`,
+    subtitle: options.subtitle,
+    title: options.title,
+  });
+
+  // Band row: one merged cell per product, over that product's own months and its growth column.
+  let row = 9;
+  sheet.getRow(row).height = 18;
+  for (let column = 1; column <= LAST; column += 1) {
+    border(sheet.getCell(row, column), { b: med, t: medB });
+  }
+  sheet.mergeCells(row, 1, row, NAMES);
+  align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 8.5 }), {
+    horizontal: "left",
+    indent: 1,
+    vertical: "middle",
+  }).value = "WHO SOLD IT";
+  grid.columns.forEach((column, index) => {
+    const from = NAMES + index * PER_PRODUCT + 1;
+    const to = from + PER_PRODUCT - 1;
+    if (to > from) sheet.mergeCells(row, from, row, to);
+    align(font(sheet.getCell(row, from), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 8.5 }), {
+      horizontal: "center",
+      vertical: "middle",
+    }).value = column.label;
+  });
+  row += 1;
+
+  headerRow(
+    sheet,
+    row,
+    [
+      "REP",
+      "AREA",
+      "DISTRICT MANAGER",
+      "REGION",
+      ...grid.columns.flatMap(() => [...grid.months.map(shortMonthLabel), "GROWTH"]),
+    ],
+    NAMES,
+  );
+  row += 1;
+
+  const firstBodyRow = row;
+  let zebra = false;
+  for (const entry of grid.rows) {
+    const isTotal = entry.kind !== "area";
+    const style = performanceReviewRegionStyle(entry.regionCode);
+    if (entry.kind === "area") zebra = !zebra;
+    sheet.getRow(row).height = isTotal ? 19 : 16;
+    const cells = bodyRow(sheet, row, LAST, {
+      emphasis: entry.kind === "grandTotal" ? "total" : entry.kind === "regionSubtotal" ? "subtotal" : "area",
+      zebra,
+    });
+
+    const ink = isTotal ? DEEP : INK;
+    const label = (cell: Cell, value: string, muted = false) => {
+      cell.value = value;
+      align(
+        font(cell, {
+          bold: isTotal,
+          color: { argb: isTotal ? DEEP : muted ? MUTE : INK },
+          italic: muted,
+          name: HOUSE_XLSX_FONT,
+          size: isTotal ? 9.5 : 9,
+        }),
+        { horizontal: "left", indent: 1 },
+      );
+    };
+
+    if (entry.kind === "area") {
+      // "Vacant seat" is a real fact about a real seat; a dash is an area the organogram carries no
+      // seat for at all. Neither is a system state, and neither may become one.
+      if (entry.repName) label(cells[0], entry.repName);
+      else if (entry.repIsVacant) label(cells[0], "Vacant seat", true);
+      else label(cells[0], EM, true);
+      label(cells[1], entry.areaName);
+      label(cells[2], entry.managerName ?? EM, entry.managerName == null);
+      cells[3].value = entry.regionName;
+      align(font(cells[3], { bold: true, color: { argb: style.chip }, name: HOUSE_XLSX_FONT, size: 8.5 }), {
+        horizontal: "left",
+        indent: 1,
+      });
+    } else {
+      label(cells[0], entry.kind === "grandTotal" ? "NATIONAL TOTAL" : `${entry.regionName.toUpperCase()} TOTAL`);
+      for (const index of [1, 2, 3]) {
+        cells[index].value = "";
+        font(cells[index], { color: { argb: ink }, name: HOUSE_XLSX_FONT, size: 9 });
+      }
+    }
+
+    grid.columns.forEach((_, productIndex) => {
+      const base = NAMES + productIndex * PER_PRODUCT;
+      grid.months.forEach((_month, monthIndex) => {
+        const value = entry.units[productIndex]?.[monthIndex] ?? null;
+        money(cells[base + monthIndex], value, { bold: isTotal, color: ink, na: value == null });
+      });
+      growth(cells[base + grid.months.length], entry.growth[productIndex] ?? null);
+    });
+    row += 1;
+  }
+
+  if (grid.rows.length > 0) {
+    sheet.autoFilter = { from: { column: 1, row: 10 }, to: { column: LAST, row: firstBodyRow + grid.rows.length - 1 } };
+  }
+}
+
 /**
  * The region a series row belongs to, so the area sheet is tinted like every other sheet.
  *
@@ -959,6 +1112,17 @@ export async function buildClosingPerformanceReviewWorkbook(review: ClosingPerfo
     subtitle: withScope(review, `${review.line ?? EM} ${DOT} value per area ${DOT} ${seriesSpanLabel(review)}`),
     tintByRegion: true,
     title: "GROWTH BY MONTH " + DOT + " AREA",
+  });
+
+  buildProductMonthSheet(workbook, review, {
+    grid: review.productUnitsByRepByMonth,
+    name: "Reps " + DOT + " Products by Month",
+    note: "each block is ONE product code, so these units are a real quantity; there is no row total, because a row spans products",
+    subtitle: withScope(
+      review,
+      `${review.line ?? EM} ${DOT} units per product code, per rep ${DOT} ${seriesSpanLabel(review)}`,
+    ),
+    title: "REPS AND AREAS " + DOT + " PRODUCTS BY MONTH",
   });
 
   const buffer = await workbook.xlsx.writeBuffer();

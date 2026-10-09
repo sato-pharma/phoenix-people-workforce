@@ -24,6 +24,7 @@ import pdfMake from "pdfmake";
 import type { Content, TableCell } from "pdfmake";
 
 import { CAIRO_MONTHS, cairoDateTime, cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
+import type { DistributorFileGap } from "@/lib/marketing-requests/manager-scorecard-awaiting";
 import type {
   MarketingManagerScorecard,
   MarketingManagerScorecardRow,
@@ -56,6 +57,22 @@ const wholeEgp = (value: number): string => `EGP ${Math.round(value).toLocaleStr
 const percent = (ratio: number): string => `${Math.round(ratio * 100)}%`;
 
 /**
+ * "Ibn sina has not filed Sept 2026" — who owes a file, and for when.
+ *
+ * Owner instruction, 2026-10-09: "show on the Scorecard which zeroes are missing distributor
+ * files". The files carry it too: a forwarded PDF showing EGP 0 beside EGP 5,007 of spend, with no
+ * word that the distributor simply has not filed, is the reading this caption exists to prevent.
+ * Empty when nothing is waiting — a campaign that genuinely came back empty gets no excuse.
+ */
+function fileGapText(gaps: DistributorFileGap[]): string {
+  if (gaps.length === 0) return "";
+  const names = gaps.map((gap) => gap.distributorName);
+  const periods = [...new Set(gaps.flatMap((gap) => gap.periods))].sort();
+  const who = names.length === 1 ? `${names[0]} has` : `${names.join(", ")} have`;
+  return `${who} not filed ${periods.map((period) => monthLabel(period)).join(", ")}`;
+}
+
+/**
  * One row of the sheet, in the order both formats read it.
  *
  * Money stays NUMERIC for the workbook — a reader who sums a column of text gets zero — and is
@@ -66,6 +83,9 @@ function sheetRow(row: MarketingManagerScorecardRow) {
     actualValue: row.actualValue,
     approvedRequests: row.approvedRequests,
     approvedValue: row.approvedValue,
+    awaitingFileRequests: row.awaitingFileRequests,
+    awaitingFileValue: row.awaitingFileValue,
+    awaitingFileWho: fileGapText(row.fileGaps),
     awaitingRequests: row.awaitingRequests,
     expectedRoiValue: row.expectedRoiValue,
     lineName: row.lineName ?? "—",
@@ -85,6 +105,9 @@ function totalsRow(totals: MarketingManagerScorecardTotals) {
     actualValue: totals.actualValue,
     approvedRequests: totals.approvedRequests,
     approvedValue: totals.approvedValue,
+    awaitingFileRequests: totals.awaitingFileRequests,
+    awaitingFileValue: totals.awaitingFileValue,
+    awaitingFileWho: fileGapText(totals.fileGaps),
     awaitingRequests: totals.awaitingRequests,
     expectedRoiValue: totals.expectedRoiValue,
     lineName: "",
@@ -130,6 +153,14 @@ export async function buildMarketingManagerScorecardWorkbook(
       field: "Shared sales",
       value: "Counted once: two campaigns on the same pharmacy and product both claim the sale, and the overlap is deducted",
     },
+    {
+      field: "Campaigns awaiting a distributor file",
+      value: scorecard.totals.awaitingFileRequests,
+    },
+    {
+      field: "Who has not filed",
+      value: fileGapText(scorecard.totals.fileGaps) || "every distributor these campaigns trade on has filed every elapsed month",
+    },
   ]);
 
   const sheet = workbook.addWorksheet("Manager Scorecard");
@@ -148,6 +179,9 @@ export async function buildMarketingManagerScorecardWorkbook(
     { header: "Actual Collected (EGP)", key: "actualValue", width: 21 },
     { header: "Collected Of Approved", key: "recoveryRatio", width: 20 },
     { header: "Collected Of Required", key: "roiCoverageRatio", width: 20 },
+    { header: "Campaigns Awaiting A File", key: "awaitingFileRequests", width: 24 },
+    { header: "Spend Awaiting A File (EGP)", key: "awaitingFileValue", width: 26 },
+    { header: "Who Has Not Filed", key: "awaitingFileWho", width: 54 },
   ];
   sheet.addRows(scorecard.rows.map(sheetRow));
   sheet.addRow(totalsRow(scorecard.totals));
@@ -159,6 +193,7 @@ export async function buildMarketingManagerScorecardWorkbook(
     "expectedRoiValue",
     "requiredRoiValue",
     "actualValue",
+    "awaitingFileValue",
   ]) {
     sheet.getColumn(key).numFmt = "#,##0.00";
   }
@@ -192,7 +227,12 @@ function pdfTable(scorecard: MarketingManagerScorecard): Content {
           { alignment: "right", text: wholeEgp(row.totalRequestedValue) },
           { alignment: "right", text: wholeEgp(row.approvedValue) },
           { alignment: "right", text: wholeEgp(row.expectedRoiValue) },
-          { alignment: "right", text: `${wholeEgp(row.actualValue)}\n${percent(row.recoveryRatio)} of approved` },
+          {
+            alignment: "right",
+            text:
+              `${wholeEgp(row.actualValue)}\n${percent(row.recoveryRatio)} of approved` +
+              (row.awaitingFileRequests > 0 ? `\n${wholeEgp(row.awaitingFileValue)} awaiting a file` : ""),
+          },
         ]),
         [
           { bold: true, text: `TOTAL · ${scorecard.totals.managerCount} managers` },
@@ -206,13 +246,50 @@ function pdfTable(scorecard: MarketingManagerScorecard): Content {
           {
             alignment: "right",
             bold: true,
-            text: `${wholeEgp(scorecard.totals.actualValue)}\n${percent(scorecard.totals.recoveryRatio)} of approved`,
+            text:
+              `${wholeEgp(scorecard.totals.actualValue)}\n${percent(scorecard.totals.recoveryRatio)} of approved` +
+              (scorecard.totals.awaitingFileRequests > 0
+                ? `\n${wholeEgp(scorecard.totals.awaitingFileValue)} awaiting a distributor file`
+                : ""),
           },
         ],
       ] satisfies TableCell[][]),
       headerRows: 1,
       widths: ["*", 70, 75, 75, 80, 85],
     },
+  };
+}
+
+/**
+ * "Waiting on a distributor file" — who owes which month, under the table.
+ *
+ * Owner instruction, 2026-10-09: "show on the Scorecard which zeroes are missing distributor
+ * files". A printed EGP 0 beside committed spend reads as a verdict, and the reader of a forwarded
+ * PDF cannot ask. Returns null when every distributor has filed every closed month, so a page with
+ * nothing outstanding carries no block at all.
+ */
+function pdfAwaitingBlock(scorecard: MarketingManagerScorecard): Content | null {
+  const waiting = scorecard.rows.filter((row) => row.awaitingFileRequests > 0);
+  if (waiting.length === 0) return null;
+  return {
+    margin: [0, 14, 0, 0] as [number, number, number, number],
+    stack: [
+      {
+        style: "blockTitle",
+        text:
+          `Waiting on a distributor file — ${wholeEgp(scorecard.totals.awaitingFileValue)} of committed spend ` +
+          `cannot be judged yet`,
+      },
+      {
+        margin: [0, 4, 0, 0] as [number, number, number, number],
+        style: "note",
+        ul: waiting.map(
+          (row) =>
+            `${row.managerName} — ${wholeEgp(row.awaitingFileValue)} across ${row.awaitingFileRequests} ` +
+            `${row.awaitingFileRequests === 1 ? "campaign" : "campaigns"}: ${fileGapText(row.fileGaps)}`,
+        ),
+      },
+    ],
   };
 }
 
@@ -232,6 +309,7 @@ export function buildMarketingManagerScorecardPdfDocDefinition(
           `as soon as its files arrive · read as of ${cairoDateTime(scorecard.generatedAtIso)} Cairo`,
       },
       pdfTable(scorecard),
+      ...(pdfAwaitingBlock(scorecard) ? [pdfAwaitingBlock(scorecard) as Content] : []),
       {
         margin: [0, 10, 0, 0] as [number, number, number, number],
         style: "note",
@@ -244,6 +322,7 @@ export function buildMarketingManagerScorecardPdfDocDefinition(
     pageMargins: [30, 40, 30, 40],
     pageOrientation: "landscape",
     styles: {
+      blockTitle: { bold: true, fontSize: 9 },
       note: { color: "#64748B", fontSize: 8, italics: true },
       subtitle: { color: "#64748B", fontSize: 9 },
       title: { bold: true, fontSize: 18 },
