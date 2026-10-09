@@ -4,6 +4,7 @@ import * as React from "react";
 import { AlertTriangle, ChevronDown, ChevronUp, CircleSlash, TrendingUp } from "lucide-react";
 
 import type { MarketingSalesEvidence } from "@/lib/marketing-requests/sales-evidence";
+import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 
 function egp(value: number) {
   return `EGP ${Math.round(value).toLocaleString("en-US")}`;
@@ -28,7 +29,7 @@ function BreakdownTable({
 }) {
   const max = Math.max(0, ...rows.map((row) => row.value));
   return (
-    <div className="rounded-[6px] border border-phx-line bg-white">
+    <div className={`${adminPanelClassName} rounded-[6px]`}>
       <p className="border-b border-phx-line px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
         {title}
       </p>
@@ -98,7 +99,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
   if (loading) {
     return (
-      <div className="rounded-[8px] border border-phx-line bg-white px-4 py-3 text-phx-sm font-bold text-phx-ink-soft">
+      <div className={`${adminSoftPanelClassName} rounded-[8px] px-4 py-3 text-phx-sm font-bold text-phx-ink-soft`}>
         Loading sales evidence...
       </div>
     );
@@ -176,7 +177,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           once, for EGP 79. It buys Tebofortine 40mg; the request promotes Forte 80 and 120. Same
           family, different SKUs, matched on CODE so a name never credits one to the other. This
           sits above the customer-wide figures because it is the number that decides the request. */}
-      <div className="rounded-[6px] border border-phx-line bg-white p-3">
+      <div className={`${adminSoftPanelClassName} rounded-[6px] p-3`}>
         <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
           The {data.requested.productCount} product{data.requested.productCount === 1 ? "" : "s"} this request promotes
         </p>
@@ -211,11 +212,11 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
       {/* The ask, next to what the history projects. */}
       <div className="grid gap-2 sm:grid-cols-3">
-        <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2">
+        <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2`}>
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Request cost</p>
           <p className="mt-0.5 text-phx-lg font-black text-phx-ink">{egp(ask.estimatedCost)}</p>
         </div>
-        <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2">
+        <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2`}>
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
             Required return ({ask.roiDurationMonths}mo)
           </p>
@@ -250,7 +251,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
       {verdict.hasHistory ? (
         <>
           <button
-            className="inline-flex items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-phx-sm font-black text-phx-ink transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
+            className="inline-flex items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-phx-sm font-black text-phx-ink transition hover:border-phx-accent-line hover:bg-phx-accent-soft shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
             onClick={() => setOpen((current) => !current)}
             type="button"
           >
@@ -260,7 +261,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
           {open ? (
             <div className="grid gap-3 lg:grid-cols-3">
-              <div className="rounded-[6px] border border-phx-line bg-white">
+              <div className={`${adminPanelClassName} rounded-[6px]`}>
                 <p className="border-b border-phx-line px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                   By month
                 </p>

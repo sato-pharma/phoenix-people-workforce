@@ -10,6 +10,7 @@ import {
   type RoiExplainReason,
 } from "@/lib/marketing-requests/roi-explain";
 import { cn } from "@/lib/utils";
+import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 function money(value: number) {
@@ -47,7 +48,7 @@ function Chip({ ok, children }: { ok: boolean; children: React.ReactNode }) {
 
 function SummaryStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2.5">
+    <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2.5`}>
       <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
       <p className="mt-1 text-[16px] font-black leading-none text-phx-ink">{value}</p>
       {hint ? <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{hint}</p> : null}
@@ -92,7 +93,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
   }, [load]);
 
   return (
-    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
       <div className="flex items-center gap-2 border-b border-phx-line px-4 py-3">
         <ListTree className="h-4 w-4 text-phx-accent" />
         <h3 className="text-phx-md font-black uppercase tracking-[0.12em] text-phx-ink">Explain ROI · Attribution Details</h3>

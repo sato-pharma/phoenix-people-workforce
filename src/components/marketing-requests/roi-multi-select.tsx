@@ -37,8 +37,10 @@ export function RoiMultiSelect({
 
   return (
     <details ref={detailsRef} className="group relative" onToggle={onToggle}>
+      {/* The closed control keeps the FORM ground — its border, background and focus ring belong to
+          the one form design (AGENTS.md §4), so only depth is added here, never the surface. */}
       <summary
-        className="flex min-h-[58px] cursor-pointer list-none items-center justify-between gap-3 border border-phx-line bg-white px-3 py-2 shadow-sm outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden"
+        className="flex min-h-[58px] cursor-pointer list-none items-center justify-between gap-3 border border-phx-line bg-white px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_rgba(15,23,42,0.04)] outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden"
         onClick={onSummaryClick}
       >
         <span className="min-w-0">
@@ -55,7 +57,7 @@ export function RoiMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-phx-ink-faint transition group-open:rotate-180" />
       </summary>
 
-      <div className="absolute left-0 top-full z-30 mt-2 w-[320px] max-w-full border border-phx-line bg-white shadow-lg" style={panelStyle}>
+      <div className="absolute left-0 top-full z-30 mt-2 w-[320px] max-w-full border border-phx-line bg-white shadow-[0_2px_4px_rgba(15,23,42,0.08),0_18px_44px_rgba(15,23,42,0.14)]" style={panelStyle}>
         <div className="flex items-center justify-end gap-2 border-b border-phx-line p-2 text-phx-xs font-black">
           <button type="button" aria-label={`Select all ${label}`} className="text-phx-ink-soft transition hover:text-phx-accent" onClick={() => onChange(options.map((option) => option.value))}>
             All

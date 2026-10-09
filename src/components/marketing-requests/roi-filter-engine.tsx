@@ -54,6 +54,7 @@ import {
 } from "@/lib/marketing-requests/roi-labels";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -405,7 +406,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
     <WorkspaceErrorBoundary fallbackTitle="ROI tracking error">
       <div className="space-y-4" dir="auto">
         {/* ── Filter Engine ─────────────────────────────────────────────────── */}
-        <section className="rounded-[6px] border border-phx-line bg-white shadow-sm">
+        <section className={`${adminPanelClassName} rounded-[6px]`}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4 text-phx-accent" />
@@ -458,7 +459,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
                   {/* ROI duration range */}
                   {durationDim?.render ? (
-                    <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm">
+                    <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2`}>
                       <p className="mb-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">ROI duration (months)</p>
                       <div className="flex items-center gap-2">
                         <input
@@ -486,7 +487,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
                   {/* Pay date range */}
                   {payDateDim?.render ? (
-                    <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm">
+                    <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2`}>
                       <p className="mb-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">Pay date</p>
                       <div className="flex items-center gap-2">
                         <input
@@ -561,7 +562,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       setState("ready");
                       window.history.replaceState(null, "", window.location.pathname);
                     }}
-                    className="inline-flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
+                    className="inline-flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
                   >
                     <RefreshCcw className="h-3.5 w-3.5" /> Reset
                   </button>
@@ -581,7 +582,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       <button
                         type="button"
                         onClick={() => void copyShareLink()}
-                        className="inline-flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
+                        className="inline-flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
                       >
                         <Link2 className="h-3.5 w-3.5" /> {copied ? "Copied!" : "Copy share link"}
                       </button>
@@ -595,7 +596,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                     <Bookmark className="h-3.5 w-3.5" /> Presets
                   </span>
                   {presets.map((preset) => (
-                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white pl-2 text-phx-sm font-bold text-phx-ink-2">
+                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white pl-2 text-phx-sm font-bold text-phx-ink-2 shadow-[0_1px_1px_rgba(15,23,42,0.05)]">
                       {preset.isDefault ? <Star className="h-3 w-3 fill-phx-accent text-phx-accent" /> : null}
                       <button type="button" onClick={() => applyPreset(preset)} className="py-1 transition hover:text-phx-accent">{preset.name}</button>
                       <button type="button" aria-label={`Delete ${preset.name}`} onClick={() => void deletePreset(preset.id)} className="px-1.5 py-1 text-phx-line-strong transition hover:text-red-500">
@@ -616,7 +617,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       type="button"
                       onClick={() => void savePreset(false)}
                       disabled={savingPreset || !presetName.trim()}
-                      className="inline-flex h-8 items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)] disabled:shadow-none"
                     >
                       <Save className="h-3.5 w-3.5" /> Save
                     </button>
@@ -625,7 +626,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       onClick={() => void savePreset(true)}
                       disabled={savingPreset || !presetName.trim()}
                       title="Save as my default view"
-                      className="inline-flex h-8 items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)] disabled:shadow-none"
                     >
                       <Star className="h-3.5 w-3.5" /> Default
                     </button>
@@ -756,7 +757,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
 
       {/* trust signals */}
       <div className="flex flex-wrap items-center gap-2 text-phx-xs font-bold">
-        <span className="inline-flex items-center gap-1 rounded-[4px] border border-phx-line bg-white px-2 py-1 text-phx-ink-2">
+        <span className="inline-flex items-center gap-1 rounded-[4px] border border-phx-line bg-white px-2 py-1 text-phx-ink-2 shadow-[0_1px_1px_rgba(15,23,42,0.05)]">
           Sales data as of {kpi.salesDataAsOf ?? "n/a"}
         </span>
         {kpi.pendingValue > 0 ? (
@@ -778,7 +779,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
       </div>
 
       {/* results table */}
-      <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
           <div>
             <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">ROI Report</p>
@@ -892,7 +893,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
                 aria-label="Previous page"
                 onClick={() => goToPage(currentPage - 1)}
                 disabled={currentPage === 1}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-phx-line bg-white text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-phx-line bg-white text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)] disabled:shadow-none"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -901,7 +902,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
                 aria-label="Next page"
                 onClick={() => goToPage(currentPage + 1)}
                 disabled={currentPage === totalPages}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-phx-line bg-white text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-phx-line bg-white text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)] disabled:shadow-none"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -941,7 +942,7 @@ function ViewSalesAction({
       rel="noopener noreferrer"
       title="View sales"
       className={cn(
-        "inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft",
+        "inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]",
         compact ? "h-8 w-8 justify-center p-0 lg:w-auto lg:px-2" : "px-2 py-1",
       )}
     >
@@ -1006,7 +1007,7 @@ const ReportRow = React.memo(function ReportRow({ row, viewSalesBasePath }: { ro
 
 const ReportCard = React.memo(function ReportCard({ row, viewSalesBasePath }: { row: MarketingRoiReportRow; viewSalesBasePath: string }) {
   return (
-    <article className="rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
+    <article className={`${adminPanelClassName} rounded-[6px] p-3`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-mono text-phx-sm font-bold text-phx-ink" title={row.requestCode}>

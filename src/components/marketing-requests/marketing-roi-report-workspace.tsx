@@ -17,6 +17,7 @@ import {
 import type { MarketingRoiExplain } from "@/lib/marketing-requests/roi-explain";
 import { cn } from "@/lib/utils";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 function money(value: number) {
@@ -112,7 +113,7 @@ function RoiReportTable({
                 <button
                   type="button"
                   onClick={() => onSelectRow(row)}
-                  className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
+                  className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
                 >
                   View details
                 </button>
@@ -150,7 +151,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
   }, [row.requestId]);
 
   return (
-    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
       <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
         <div>
           <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">Request details</p>
@@ -160,7 +161,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
           href={`/admin/marketing-requests/${row.requestId}/view-sales`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
+          className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
         >
           <ExternalLink className="h-3 w-3" /> View Sales
         </a>
@@ -195,7 +196,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
                     <span className="text-phx-sm font-medium text-phx-ink-faint">No products.</span>
                   ) : (
                     explain.targetSetup.products.map((product) => (
-                      <span key={product.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2">
+                      <span key={product.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2 shadow-[0_1px_1px_rgba(15,23,42,0.05)]">
                         {product.name}
                       </span>
                     ))
@@ -209,7 +210,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
                     <span className="text-phx-sm font-medium text-phx-ink-faint">No pharmacy codes.</span>
                   ) : (
                     explain.targetSetup.pharmacies.map((pharmacy) => (
-                      <span key={pharmacy.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2">
+                      <span key={pharmacy.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2 shadow-[0_1px_1px_rgba(15,23,42,0.05)]">
                         {pharmacy.name}
                       </span>
                     ))
@@ -278,7 +279,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
 
 function SummaryStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2.5">
+    <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2.5`}>
       <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
       <p className="mt-1 text-phx-base font-black leading-none text-phx-ink">{value}</p>
       {hint ? <p className="mt-1 truncate text-phx-xs font-semibold text-phx-ink-faint" title={hint}>{hint}</p> : null}
@@ -290,7 +291,7 @@ type Tab = "requester" | "customer" | "performance";
 
 function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityLabel: string; title: string; hint: string; rows: RoiCohortRow[]; showForecast?: boolean }) {
   return (
-    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
       <div className="border-b border-phx-line px-4 py-2.5">
         <h3 className="text-phx-md font-black text-phx-ink">{title}</h3>
         <p className="text-phx-xs font-medium text-phx-ink-soft">{hint}</p>
@@ -338,7 +339,7 @@ function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityL
 function PerformanceCohorts({ cohorts, loading, error }: { cohorts: RoiCohorts | null; loading: boolean; error: string | null }) {
   if (loading) {
     return (
-      <div className="flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 py-8 text-phx-md font-medium text-phx-ink-soft shadow-sm">
+      <div className={`${adminSoftPanelClassName} flex items-center gap-2 rounded-[6px] px-4 py-8 text-phx-md font-medium text-phx-ink-soft`}>
         <LoadingSpinner /> Building performance cohorts…
       </div>
     );
@@ -425,7 +426,7 @@ export function MarketingRoiReportWorkspace() {
     <WorkspaceErrorBoundary fallbackTitle="Marketing ROI Report error">
       <div className="space-y-4">
         {/* Tabs */}
-        <div className="inline-flex rounded-[6px] border border-phx-line bg-white p-1 shadow-sm">
+        <div className={`${adminSoftPanelClassName} inline-flex rounded-[6px] p-1`}>
           <button
             type="button"
             onClick={() => switchTab("requester")}
@@ -463,7 +464,7 @@ export function MarketingRoiReportWorkspace() {
         ) : (
           <>
         {/* Selector */}
-        <div className="rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
+        <div className={`${adminPanelClassName} rounded-[6px] p-3`}>
           {tab === "requester" ? (
             <label className="block text-phx-sm font-bold text-phx-ink-2">
               Requester
@@ -508,7 +509,7 @@ export function MarketingRoiReportWorkspace() {
         </div>
 
         {/* Results table */}
-        <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+        <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
           {rowsLoading ? (
             <div className="flex items-center gap-2 px-4 py-8 text-phx-md font-medium text-phx-ink-soft">
               <LoadingSpinner /> Loading marketing requests…
