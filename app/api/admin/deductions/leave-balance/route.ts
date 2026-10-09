@@ -32,8 +32,9 @@ type LeaveBalanceBody = {
 };
 
 /**
- * `charge` takes a CRM / half-day deduction from the employee's annual leave (the comment is required
- * and is what the employee reads); `return` puts it back on salary. Super Admin only — the service
+ * `charge` takes a deduction in one of LEAVE_BALANCE_CATEGORIES from the employee's annual leave (the
+ * comment is required and is what the employee reads); `return` puts it back on salary, and the days
+ * come straight back. Super Admin only — the service
  * asserts it again, so this route is never the only gate.
  */
 export async function POST(request: Request) {

@@ -128,9 +128,15 @@ the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 ### ACCEPTED - `rls_enabled_no_policy` (210 as of 2026-10-09; 176 on 2026-09-29)
 
 **Raised 176 to 210 on 2026-10-09, after the daily check had been breaching it since 1 October.**
-The run list stayed green throughout, because the advisor step is `continue-on-error` and the
-reporting step always exits 0 - the breach lived only in a run annotation (181 on 1 Oct, 185 on
-3 Oct, 206 on 8 Oct, 210 on 9 Oct). This is a triage, not a padding: the 210 splits as 92 other
+The run list stayed green throughout, **by design**: the advisor step is `continue-on-error` and
+the reporting step always exits 0, because a failed suite on `main` HEAD makes Railway withhold
+that commit's production deploy (three were lost on 2026-09-30; the account is in
+`.github/workflows/migration-drift-check.yml`). **The breach was NOT unseen:** the Telegram alert
+fired and was delivered (HTTP 200, checked on the 1, 3 and 8 Oct runs) with the failure streak.
+What was missing was the *triage* - nobody updated this page - not the signal (181 on 1 Oct, 185
+on 3 Oct, 206 on 8 Oct, 210 on 9 Oct). An earlier version of this paragraph called the breach
+"visible only in a run annotation"; that was wrong and is corrected here. This is a triage, not a
+padding: the 210 splits as 92 other
 `public` tables, 22 `ats_*`, 21 in dated backup schemas, 20 marketing / direct-order, 18 in `au`,
 16 `prodplan_*`, 12 CRM / iReports360, 7 `customer_identity_*` / `rep_rank_*`, and 2 backup-named
 tables in `public`. All are RLS-on with no policy, none grants anything to `anon` or

@@ -719,6 +719,7 @@ type LeaveBalancePreviewApi = {
   chargeDays: number;
   salaryDays: number;
   refusal: string | null;
+  withinFirstSixMonths: boolean;
 };
 
 /**
@@ -828,17 +829,24 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
         preview.refusal ? (
           <p className="text-phx-xs font-semibold text-amber-800">{preview.refusal}</p>
         ) : (
-          <p className="text-phx-xs text-slate-700">
-            Annual leave left: {preview.availableDays == null ? "unknown" : daysText(preview.availableDays)}. This takes{" "}
-            <span className="font-black">{daysText(preview.chargeDays)}</span> from leave
-            {preview.salaryDays > 0 ? (
-              <>
-                {" "}
-                and <span className="font-black">{daysText(preview.salaryDays)}</span> stay on salary
-              </>
+          <>
+            <p className="text-phx-xs text-slate-700">
+              Annual leave left: {preview.availableDays == null ? "unknown" : daysText(preview.availableDays)}. This takes{" "}
+              <span className="font-black">{daysText(preview.chargeDays)}</span> from leave
+              {preview.salaryDays > 0 ? (
+                <>
+                  {" "}
+                  and <span className="font-black">{daysText(preview.salaryDays)}</span> stay on salary
+                </>
+              ) : null}
+              .
+            </p>
+            {preview.withinFirstSixMonths ? (
+              <p className="text-phx-xs font-semibold text-amber-800">
+                Still inside the first six months, so this spends days already accrued but not yet available to request.
+              </p>
             ) : null}
-            .
-          </p>
+          </>
         )
       ) : null}
       <label className="block">

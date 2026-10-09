@@ -9,6 +9,7 @@ import {
 import { LEAVE_BALANCE_CATEGORIES, isLeaveBalanceCategory } from "../src/lib/deductions/types.ts";
 import { foldLeaveBalanceCharges } from "../src/lib/deductions/leave-balance-ledger.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
+import { calculateVacationPayment, isWithinFirstSixMonths } from "../src/lib/vacation/calculations.ts";
 import { buildEmployeeEligibilityRows } from "../src/lib/vacation/service.ts";
 
 /**
@@ -29,7 +30,9 @@ import { buildEmployeeEligibilityRows } from "../src/lib/vacation/service.ts";
  *   2. the ledger fold — a give-back nets the charge out, a re-charge shows the NEW comment;
  *   3. the balance the report and the portal show subtracts the days;
  *   4. the wiring that keeps the two sides from disagreeing: the decision guard, the route, the
- *      migration's shape, the screens that show the button and the comment.
+ *      migration's shape, the screens that show the button and the comment;
+ *   5. the first-six-months override he added once the widening landed — the accrued days are
+ *      charged, the block on REQUESTING paid leave is untouched.
  */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -249,5 +252,115 @@ export function runDeductionsLeaveBalanceTests() {
     const service = read("src/lib/vacation/service.ts");
     assert.match(service, /leaveBalanceDeductions: \{/);
     assert.match(service, /balanceCharges: leaveBalanceRead\.charges/);
+  }
+
+  // 5. THE FIRST-SIX-MONTHS OVERRIDE (owner, 2026-10-09, after the widening: charge the ACCRUED days
+  // and override the block). Without it the button was decoration on the tab he asked for it on —
+  // every live Unpaid Vacation row on production is `first_six_months` (16 in September, 23 in
+  // August, 8 in July, measured the same day), so each one refused.
+  {
+    // The rule itself still exists, and still says what it always said.
+    assert.ok(isWithinFirstSixMonths({ hireDate: "2026-08-02", referenceDate: "2026-09-26" }));
+    assert.ok(!isWithinFirstSixMonths({ hireDate: "2026-08-02", referenceDate: "2027-03-01" }));
+    assert.ok(!isWithinFirstSixMonths({ hireDate: null, referenceDate: "2026-09-26" }));
+
+    // A LEAVE REQUEST is unchanged: a man 8 weeks in still cannot take paid annual leave.
+    const asRequested = calculateVacationPayment({
+      approvedPaidDaysInPeriod: 0,
+      durationDays: 1,
+      employeeHrId: "MR-7",
+      hireDate: "2026-08-02",
+      startDate: "2026-09-26",
+      vacationType: "annual",
+    });
+    assert.equal(asRequested.unpaidReason, "first_six_months");
+    assert.equal(asRequested.paidDurationDays, 0, "the six-month block on REQUESTING paid leave must not move");
+
+    // The BUTTON spends what he has already earned: 15 days a year accrued monthly from his hire
+    // date, so one completed month (02 Aug → 26 Sep) is 1.25 days — enough for this one day.
+    const asCharged = calculateVacationPayment({
+      allowFirstSixMonths: true,
+      approvedPaidDaysInPeriod: 0,
+      durationDays: 1,
+      employeeHrId: "MR-7",
+      hireDate: "2026-08-02",
+      startDate: "2026-09-26",
+      vacationType: "annual",
+    });
+    assert.equal(asCharged.unpaidReason, null, "the override must price the day instead of refusing it");
+    assert.equal(asCharged.entitlementDays, 1.25);
+    assert.equal(asCharged.balanceBeforeDays, 1.25);
+    assert.equal(asCharged.paidDurationDays, 1);
+    assert.deepEqual(
+      planLeaveBalanceCharge({ dueDays: 1, coverableDays: asCharged.paidDurationDays }),
+      { chargeDays: 1, salaryDays: 0 },
+      "a first-six-months day with enough accrued comes wholly off leave",
+    );
+
+    // A joiner with no completed month has accrued nothing, so the override changes nothing for him:
+    // the dialog still refuses and the day stays on salary.
+    const brandNew = calculateVacationPayment({
+      allowFirstSixMonths: true,
+      approvedPaidDaysInPeriod: 0,
+      durationDays: 1,
+      employeeHrId: "MR-8",
+      hireDate: "2026-09-20",
+      startDate: "2026-09-26",
+      vacationType: "annual",
+    });
+    assert.equal(brandNew.entitlementDays, 0);
+    assert.equal(brandNew.paidDurationDays, 0);
+    assert.deepEqual(planLeaveBalanceCharge({ dueDays: 1, coverableDays: brandNew.paidDurationDays }), { chargeDays: 0, salaryDays: 1 });
+
+    // And the partial rule he set for CRM holds here too: 3 days against 1.25 accrued.
+    const shortBalance = calculateVacationPayment({
+      allowFirstSixMonths: true,
+      approvedPaidDaysInPeriod: 0,
+      durationDays: 3,
+      employeeHrId: "MR-7",
+      hireDate: "2026-08-02",
+      startDate: "2026-09-26",
+      vacationType: "annual",
+    });
+    assert.deepEqual(
+      planLeaveBalanceCharge({ dueDays: 3, coverableDays: shortBalance.paidDurationDays }),
+      { chargeDays: 1.25, salaryDays: 1.75 },
+    );
+
+    // THE WIRING. Only the deductions charge passes the flag, and the read no longer refuses the reason.
+    const charge = read("src/lib/deductions/leave-balance.ts");
+    assert.match(charge, /allowFirstSixMonths: true,/, "the leave-balance read must ask for the accrued days");
+    assert.match(
+      charge,
+      /if \(snapshot\.unpaidReason === "missing_hire_date"\) \{/,
+      "first_six_months must no longer be refused by the balance read — only a missing hire date is",
+    );
+    assert.ok(
+      !/unpaidReason === "first_six_months"/.test(charge),
+      "a leftover first_six_months refusal would put the whole tab back to refusing every row",
+    );
+    const calculations = read("src/lib/vacation/calculations.ts");
+    assert.match(
+      calculations,
+      /if \(!input\.allowFirstSixMonths && isWithinFirstSixMonths\(/,
+      "the block must stay on by default — the override is opt-in",
+    );
+    const vacationService = read("src/lib/vacation/service.ts");
+    assert.match(
+      vacationService,
+      /allowFirstSixMonths: input\.allowFirstSixMonths,/,
+      "calculatePaymentForRequest must pass the caller's flag through to the calculator",
+    );
+    assert.ok(
+      !/allowFirstSixMonths: true/.test(vacationService),
+      "the vacation service must never turn the override on for itself — only the deductions charge asks for it",
+    );
+
+    // The Super Admin is told what the charge is spending — neutrally worded, like every other
+    // string this app shows (tests/neutral-wording.test.ts, which caught the first draft of it).
+    assert.match(
+      read("src/components/admin/deductions-workspace.tsx"),
+      /Still inside the first six months, so this spends days already accrued but not yet available to request/,
+    );
   }
 }

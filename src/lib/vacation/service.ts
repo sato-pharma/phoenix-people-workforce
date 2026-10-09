@@ -2934,6 +2934,11 @@ export async function getDeferredDebtFromPreviousPeriods(input: {
  * duplicating the balance-period/approved-days query logic above.
  */
 export async function calculatePaymentForRequest(input: {
+  /**
+   * Read the accrued balance even inside the employee's first six months — see
+   * calculateVacationPayment. Only the Deductions "Deduct from leave balance" button passes it.
+   */
+  allowFirstSixMonths?: boolean;
   durationDays: number;
   employeeHrId: string;
   excludeRequestId?: string;
@@ -2991,6 +2996,7 @@ export async function calculatePaymentForRequest(input: {
   }
 
   const payment = calculateVacationPayment({
+    allowFirstSixMonths: input.allowFirstSixMonths,
     approvedPaidDaysInPeriod: usedPaidDays + carriedOverDebtDays,
     durationDays: input.durationDays,
     employeeHrId: input.employeeHrId,
