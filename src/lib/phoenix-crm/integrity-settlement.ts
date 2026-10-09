@@ -87,3 +87,34 @@ export function readIntegritySettlement(input: {
     flagsThen,
   };
 }
+
+/**
+ * Is this `phoenix_crm_location_integrity` ROW settled right now? The same rule as above, taking the
+ * database's own column names, for the readers that only need the yes/no.
+ *
+ * 🔴 EVERY READER OF THIS TABLE GOES THROUGH ONE OF THESE TWO FUNCTIONS, and there are four of them
+ * now: the integrity board (which needs the settlement itself, to print it), the weekly fraud scan,
+ * Phoenix Ranks' nightly score, and the behaviour board's strong-case gate. A fifth reader that
+ * re-implements `settled_flags = flags` is the defect — a length check in place of a set comparison
+ * already held one case closed through a genuinely different finding before this shipped.
+ *
+ * A row that was never settled, and one whose flags have moved since, both answer false: to a reader
+ * deciding whether a case still stands they are the same thing.
+ */
+export function isSettledIntegrityRow(row: {
+  flags?: unknown;
+  settled_at?: unknown;
+  settled_by?: unknown;
+  settled_note?: unknown;
+  settled_flags?: unknown;
+}): boolean {
+  return (
+    readIntegritySettlement({
+      flagsNow: Array.isArray(row.flags) ? row.flags : [],
+      settledAt: row.settled_at,
+      settledBy: row.settled_by,
+      settledFlags: row.settled_flags,
+      settledNote: row.settled_note,
+    }) !== null
+  );
+}
