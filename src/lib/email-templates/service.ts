@@ -776,39 +776,41 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "weekly_sales_uploaded",
     templateName: "Weekly Sales Uploaded",
   },
-  // Arabic, right-to-left, and genderless: both of the people who read it daily are women, and
-  // `dir="rtl"` on each paragraph is what survives the editor's sanitiser (src/lib/email/toolbar-tools.ts).
-  // SHIPPED INACTIVE on purpose — `isActive: false` is one of the four independent switches that keep
-  // this silent until the owner arms it himself (the others are the module's own alarm_enabled /
-  // alarm_dry_run settings and EMAIL_NOTIFICATIONS_ENABLED).
+  // 🔴 ENGLISH, AND NEVER ARABIC AGAIN (owner, 2026-10-09, reading the Arabic alarm in his inbox:
+  // "never never never use arabic in it again all english everything"). Both production-planning
+  // templates were Arabic and right-to-left until that morning; nothing here may reintroduce a
+  // `dir="rtl"` paragraph or an Arabic word, and `tests/production-planning-strings.test.ts` fails
+  // the build if either comes back. Still genderless, and still SHIPPED INACTIVE on purpose —
+  // `isActive: false` is one of the four independent switches that keep this silent until the owner
+  // arms it himself (the others are the module's own alarm_enabled / alarm_dry_run settings and
+  // EMAIL_NOTIFICATIONS_ENABLED).
   production_planning_reorder: {
-    bodyHtml:
-      '<p dir="rtl">{{summary}}</p>{{detailsTable}}<p dir="rtl">{{status}}</p>',
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{status}}</p>",
     bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
-    closingText: "تُراجع الأرصدة من موديول تخطيط الإنتاج قبل إصدار أمر الشراء.",
+    closingText: "Balances are reviewed in the Production Planning module before a purchase order is raised.",
     description:
-      "Ivyronc raw-material reorder alarm: the materials whose stock cover has fallen to about one production run, each with the lead time it needs. Arabic, right-to-left. Ships INACTIVE — it sends nothing until the owner activates it here and arms the module's own alarm switch.",
-    greeting: "تحية طيبة إلى إدارة البحوث والتطوير،",
+      "Raw-material reorder alarm: the materials whose stock cover has fallen to about one production run, each with the quantity held, the quantity one run needs, its cover and its lead time. English. Ships INACTIVE — it sends nothing until the owner activates it here and arms the module's own alarm switch.",
+    greeting: "Dear Research and Development department,",
     isActive: false,
-    previewText: "تنبيه إعادة طلب خامات — تخطيط الإنتاج.",
+    previewText: "Raw-material reorder alarm — production planning.",
     subject: "{{subject}}",
     templateKey: "production_planning_reorder",
     templateName: "Production Reorder Alarm",
   },
   // 🔴 EVERY CONTENT COLUMN IS WRITTEN, not just the key and the subject. A minimal row activates to
   // `<p>Body content is not configured yet.</p>` — the memory note
-  // `activating-an-email-template-by-a-minimal-row-blanks-its-body` is exactly that mistake. Arabic,
-  // right-to-left and genderless, like the reorder one beside it, and SHIPPED INACTIVE: `isActive:
-  // false` is one of the four independent switches that keep this silent until the owner arms it.
+  // `activating-an-email-template-by-a-minimal-row-blanks-its-body` is exactly that mistake. English
+  // and genderless, like the reorder one beside it, and SHIPPED INACTIVE: `isActive: false` is one
+  // of the four independent switches that keep this silent until the owner arms it.
   production_planning_expiry: {
-    bodyHtml: '<p dir="rtl">{{summary}}</p>{{detailsTable}}<p dir="rtl">{{status}}</p>',
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{status}}</p>",
     bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
-    closingText: "تُستهلك الأرصدة الأقرب انتهاءً أولًا، وتُراجع من موديول تخطيط الإنتاج.",
+    closingText: "The balance nearest its expiry date is consumed first; the lots are reviewed in the Production Planning module.",
     description:
-      "Raw-material expiry warning: every stock lot already expired or inside the warning window, with its expiry date, how long it has left, the amount held and where it is held. Arabic, right-to-left. Ships INACTIVE — it sends nothing until the owner activates it here and arms the module's own expiry switch.",
-    greeting: "تحية طيبة إلى إدارة البحوث والتطوير،",
+      "Raw-material expiry warning: every stock lot already expired or inside the warning window, with its expiry date, how long it has left, the quantity held and where it is held. English. Ships INACTIVE — it sends nothing until the owner activates it here and arms the module's own expiry switch.",
+    greeting: "Dear Research and Development department,",
     isActive: false,
-    previewText: "تنبيه تاريخ انتهاء خامات — تخطيط الإنتاج.",
+    previewText: "Raw-material expiry warning — production planning.",
     subject: "{{subject}}",
     templateKey: "production_planning_expiry",
     templateName: "Production Expiry Warning",

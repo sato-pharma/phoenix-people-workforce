@@ -26,7 +26,7 @@
  * sent before arming anything — and the table's own CHECK refuses `dry_run = true` beside
  * `email_sent = true`, so a bypassed gate fails at the database rather than in his inbox.
  */
-import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
+import { renderPhoenixDataGrid, renderPhoenixDataGridText } from "@/emails/phoenix-email-layout";
 import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -40,12 +40,16 @@ import {
   type ProductionPlanningData,
 } from "./service";
 import {
-  buildExpiryDaysNoteAr,
+  buildExpiryDaysNoteEn,
+  buildExpiryEmailRow,
   buildExpiryEmailSummary,
-  buildExpiryRowValue,
-  EXPIRY_SEVERITY_LABELS,
+  EXPIRY_EMAIL_COLUMNS,
+  EXPIRY_SEVERITY_LABELS_EN,
+  EXPIRY_SEVERITY_TONES,
   formatNumberLatin,
-  PP,
+  nameEnglish,
+  PP_EN,
+  unitLabelEn,
 } from "./strings";
 
 export type ExpirySweepResult = {
@@ -65,28 +69,28 @@ function todayCairo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
 }
 
+/** One grid row per lot — ENGLISH, one column per fact (owner, 2026-10-09), like the reorder one. */
 function emailRows(verdicts: readonly ExpiryVerdict[], data: ProductionPlanningData) {
   return verdicts.map((verdict) => {
     const material = data.materials.find((candidate) => candidate.id === verdict.materialId) ?? null;
     const location = data.locations.find((candidate) => candidate.id === verdict.locationId) ?? null;
     // In the unit he buys in — kilograms, not the grams the engine counts in.
     const held = material ? toDisplayQty(verdict.qty, material.basePerDisplay).text : formatQty(verdict.qty);
-    return {
-      label: material?.nameAr ?? verdict.nameAr,
-      value: buildExpiryRowValue({
-        // Latin digits, and the ABSOLUTE day count — the phrase says which side of the date it is on.
-        daysNote: buildExpiryDaysNoteAr(
-          formatNumberLatin(Math.abs(verdict.daysLeft)),
-          verdict.daysLeft < 0,
-          verdict.daysLeft === 0,
-        ),
-        displayUnit: material?.displayUnit ?? "",
-        expiryDate: verdict.expiryDate,
-        heldText: formatNumberLatin(held),
-        locationName: location?.nameAr ?? "",
-        severityLabel: EXPIRY_SEVERITY_LABELS[verdict.severity],
-      }),
-    };
+    return buildExpiryEmailRow({
+      // Latin digits, and the ABSOLUTE day count — the phrase says which side of the date it is on.
+      daysNote: buildExpiryDaysNoteEn(
+        formatNumberLatin(Math.abs(verdict.daysLeft)),
+        verdict.daysLeft < 0,
+        verdict.daysLeft === 0,
+      ),
+      expiryDate: verdict.expiryDate,
+      heldText: formatNumberLatin(held),
+      locationName: location ? nameEnglish(location) : "",
+      materialName: nameEnglish(material ?? verdict),
+      severityLabel: EXPIRY_SEVERITY_LABELS_EN[verdict.severity],
+      tone: EXPIRY_SEVERITY_TONES[verdict.severity],
+      unitLabel: unitLabelEn(material?.displayUnit ?? ""),
+    });
   });
 }
 
@@ -171,13 +175,13 @@ export async function runProductionPlanningExpirySweep(): Promise<ExpirySweepRes
   // environment both come back as `skipped` with a reason, which is reported rather than swallowed.
   const sent = await sendTemplatedEmail({
     context: {
-      detailsTable: renderPhoenixMetadataTable(rowsForEmail),
-      detailsTableText: renderPhoenixMetadataTableText(rowsForEmail),
-      status: PP.expiryEmailStatus,
-      subject: PP.expiryEmailSubject,
+      detailsTable: renderPhoenixDataGrid(EXPIRY_EMAIL_COLUMNS, rowsForEmail),
+      detailsTableText: renderPhoenixDataGridText(EXPIRY_EMAIL_COLUMNS, rowsForEmail),
+      status: PP_EN.expiryEmailStatus,
+      subject: PP_EN.expiryEmailSubject,
       summary: buildExpiryEmailSummary({
         count: formatNumberLatin(verdicts.length),
-        productNameAr: data.products.map((product) => product.nameAr).join("، "),
+        productName: data.products.map((product) => nameEnglish(product)).join(" and "),
       }),
     },
     // The Cairo date AND what the sweep found: a repeat run the same morning reaches nobody twice,

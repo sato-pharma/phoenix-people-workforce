@@ -46,6 +46,14 @@ export function sanitizeEmailTemplateHtml(value: string) {
         border: [/^[\w\s#().,%-]+$/],
         "border-collapse": [/^(collapse|separate)$/],
         color: [/^#[0-9a-f]{3,8}$/i, /^rgba?\([\d\s.,%]+\)$/i],
+        // The WebKit/Blink twin of `color`, and the one that WINS where both are set. Every colour
+        // in the layout is written as that pair, but this half used to be stripped here — so a
+        // table inside a template body inherited `-webkit-text-fill-color` from `.phoenix-body`
+        // and its own `color` did nothing. Measured 2026-10-09 in the Browser pane: white headings
+        // on the reorder alarm's dark header band came out INVISIBLE in light mode (inherited
+        // #0f172a), and the dark text of every body cell came out invisible in dark mode
+        // (inherited #f8fafc). Same value shape as `color`, so it is no wider a hole than that.
+        "-webkit-text-fill-color": [/^#[0-9a-f]{3,8}$/i, /^rgba?\([\d\s.,%]+\)$/i],
         direction: [/^(rtl|ltr)$/],
         "font-family": [/^[\w\s,'"-]+$/],
         "font-size": [/^\d{1,2}(px|pt)$/, /^(x-small|small|medium|large|x-large|xx-large)$/],

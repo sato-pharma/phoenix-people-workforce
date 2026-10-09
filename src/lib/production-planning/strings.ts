@@ -79,12 +79,13 @@ export function packagingBoxName(lang: "ar" | "en"): string {
 }
 
 /**
- * The material label a row of the reorder email carries. The email is Arabic whichever way the toggle
- * is set, so this is the Arabic name — with the packaging row spelled out. A function of its own
- * (not inline in the sweep) because the sweep imports the email service and a test cannot load it.
+ * The material label a row of the reorder email carries — ENGLISH, whichever way the screen toggle
+ * is set (the owner, 2026-10-09: "never never never use arabic in it again"), with the packaging row
+ * spelled out. A function of its own (not inline in the sweep) because the sweep imports the email
+ * service and a test cannot load it.
  */
-export function reorderEmailMaterialLabel(code: string, storedNameAr: string): string {
-  return code === PACKAGING_BOX_CODE ? packagingBoxName("ar") : storedNameAr;
+export function reorderEmailMaterialLabel(code: string, storedNameEn: string): string {
+  return code === PACKAGING_BOX_CODE ? packagingBoxName("en") : storedNameEn;
 }
 
 export type ProductionPlanningTabKey = "planner" | "stock" | "cost" | "run" | "settings";
@@ -446,9 +447,9 @@ export type ProductionPlanningStringKey = keyof typeof PP;
  * headings and impersonal outcomes ("Saved", "Could not save"), which is the app-wide ruling of
  * 2026-10-05 and not a choice re-made here. Numbers stay Latin in both languages.
  *
- * The REORDER EMAIL stays Arabic whichever way the toggle is set. It is not a screen: four named
- * people were given an Arabic notification, and nothing has been said about changing what lands in
- * their inbox — so `buildAlarmEmailSummary` and the sweep keep reading `PP` directly.
+ * BOTH ALARM EMAILS READ THIS HALF AND NEVER THE ARABIC ONE (owner, 2026-10-09). The toggle is a
+ * screen preference and an email has four other readers, so the sweeps read `PP_EN` plus the
+ * English-only `PRODUCTION_PLANNING_EMAIL_EN` catalogue — never `PP`.
  */
 export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   // ── The module itself ──────────────────────────────────────────────────────────────────────────
@@ -731,7 +732,8 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   sheetGeneratedBy: "Exported by",
 
   // ── The reorder email ─────────────────────────────────────────────────────────────────────────
-  // Present for key parity and for the screen's own severity chips. The EMAIL itself stays Arabic.
+  // What the EMAIL itself sends (owner, 2026-10-09), and what the screen's severity chips read in
+  // English. The Arabic half of these keys now serves the Arabic screen alone.
   alarmEmailSubject: "Raw-material reorder alarm",
   alarmSeverityOutOfStock: "No balance",
   alarmSeverityBelow: "Below the threshold",
@@ -757,28 +759,147 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
 };
 
 /**
- * The reorder email's opening sentence, and one line per material.
+ * ── THE TWO ALARM EMAILS ARE ENGLISH, ALWAYS ────────────────────────────────────────────────────
  *
- * Here rather than in the sweep for the same reason the planner sentence is: the catalogue is the
- * one place the Arabic lives, so the email cannot drift from the screen that shows the same verdict.
- * Every number arrives already formatted with Latin digits.
+ * The owner, 2026-10-09, reading the Arabic reorder alarm in his own inbox: *"stop fucking using
+ * arabic in the production planner never never never use arabic in it again all english everything
+ * and also add quantities make it a premium polished zebra tabled clear email"*. Until that morning
+ * both alarms were Arabic whichever way the screen toggle was set; they are now English end to end
+ * — subject, greeting, summary, every column heading, every status word and the closing line — and
+ * the screen's Arabic/English toggle does not reach them. A reader preference on one browser was
+ * never what should decide the language of four other people's email.
+ *
+ * English-only and NOT part of the `PP` / `PP_EN` pair on purpose: a parallel Arabic catalogue for
+ * these strings is the thing that must not exist, because a later call site could reach for it.
+ *
+ * The columns below are the second half of the same instruction — the quantities each get a column
+ * of their own instead of being crushed into one sentence per row. Headings are written in the case
+ * they are to appear in: `text-transform` is not on the email sanitizer's allowed-style list.
  */
-export function buildAlarmEmailSummary(parts: { readonly productNameAr: string; readonly count: string }): string {
-  return `في خطة ${parts.productNameAr}، وصلت ${parts.count} من المواد التي توردها ساتو إلى حد إعادة الطلب.`;
+export const PRODUCTION_PLANNING_EMAIL_EN = {
+  colCover: "COVER",
+  colExpiryDate: "EXPIRY DATE",
+  colHeld: "HELD NOW",
+  colLocation: "HELD AT",
+  colMaterial: "MATERIAL",
+  colPerRun: "NEEDED PER RUN",
+  colQtyHeld: "QUANTITY HELD",
+  colTimeLeft: "TIME LEFT",
+  /** What a cell shows when the figure genuinely is not known — never a bare zero. */
+  notKnown: "Lead time not set",
+} as const;
+
+/** One cell of an alarm email's grid. Structurally the layout's `PhoenixEmailGridCell`, declared
+ * here so this catalogue stays importable by a test runner that cannot load a `.tsx` file. */
+export type ProductionPlanningEmailCell = {
+  readonly text: string;
+  /** A quiet second line under the figure — the same quantity in boxes. */
+  readonly sub?: string;
+  readonly note?: string;
+  readonly tone?: "neutral" | "danger" | "warning" | "ok";
+};
+
+/**
+ * A box count as the email says it (owner, 2026-10-09: "put quantities in kg and number of boxes").
+ *
+ * A kilogram means nothing to the person deciding whether to buy — boxes are what he counts in, so
+ * every quantity carries what it comes to in boxes underneath it. `count` arrives already formatted
+ * with Latin digits and its thousands separators.
+ */
+export function boxesLabel(count: string): string {
+  return `${count} ${count.trim() === "1" ? "box" : "boxes"}`;
 }
 
-export function buildAlarmRowValue(parts: {
+/** Structurally the layout's `PhoenixEmailGridColumn`. */
+export type ProductionPlanningEmailColumn = {
+  readonly label: string;
+  readonly align?: "left" | "right";
+};
+
+/**
+ * FOUR columns, not five: the lead time rides under the cover figure rather than taking a column
+ * of its own. Measured in the Browser pane at 375 px on 2026-10-09, five columns overflowed the
+ * email shell by 57 px — and the repo's own rule for that is to MERGE a column, never to shrink
+ * the type (AGENTS.md §4, the fits-the-screen rule).
+ */
+export const REORDER_EMAIL_COLUMNS: readonly ProductionPlanningEmailColumn[] = [
+  { label: PRODUCTION_PLANNING_EMAIL_EN.colMaterial },
+  { align: "right", label: PRODUCTION_PLANNING_EMAIL_EN.colHeld },
+  { align: "right", label: PRODUCTION_PLANNING_EMAIL_EN.colPerRun },
+  { align: "right", label: PRODUCTION_PLANNING_EMAIL_EN.colCover },
+];
+
+export const EXPIRY_EMAIL_COLUMNS: readonly ProductionPlanningEmailColumn[] = [
+  { label: PRODUCTION_PLANNING_EMAIL_EN.colMaterial },
+  { label: PRODUCTION_PLANNING_EMAIL_EN.colExpiryDate },
+  { align: "right", label: PRODUCTION_PLANNING_EMAIL_EN.colTimeLeft },
+  { align: "right", label: PRODUCTION_PLANNING_EMAIL_EN.colQtyHeld },
+  { label: PRODUCTION_PLANNING_EMAIL_EN.colLocation },
+];
+
+/** How loudly a row is coloured. Out of stock is the only one that cannot wait for the next run. */
+export const ALARM_SEVERITY_TONES = {
+  approaching: "neutral",
+  below_threshold: "warning",
+  out_of_stock: "danger",
+} as const satisfies Record<"out_of_stock" | "below_threshold" | "approaching", ProductionPlanningEmailCell["tone"]>;
+
+export const EXPIRY_SEVERITY_TONES = {
+  critical: "warning",
+  expired: "danger",
+  warning: "neutral",
+} as const satisfies Record<ExpirySeverity, ProductionPlanningEmailCell["tone"]>;
+
+/**
+ * The reorder email's opening sentence.
+ *
+ * Here rather than in the sweep for the same reason the planner sentence is: the catalogue is the
+ * one place the wording lives, so the email cannot drift from the screen showing the same verdict.
+ * Every number arrives already formatted with Latin digits, so `count` is a string.
+ */
+export function buildAlarmEmailSummary(parts: { readonly productName: string; readonly count: string }): string {
+  const one = parts.count.trim() === "1";
+  return `In the ${parts.productName} plan, ${parts.count} of the materials Sato supplies ${one ? "has" : "have"} reached the reorder point. The quantities below are what is held now against what one full run needs.`;
+}
+
+/**
+ * One reorder row, in the column order of `REORDER_EMAIL_COLUMNS`.
+ *
+ * Each quantity carries TWO figures: the amount in the unit he buys in (kilograms for a powder,
+ * pieces for packaging) and, underneath, what that amount comes to in BOXES — his own unit of
+ * account (owner, 2026-10-09). The box line is dropped when it would simply repeat the figure
+ * above it, which is what happens to a packaging material that goes one to a box.
+ */
+export function buildReorderEmailRow(parts: {
+  readonly materialName: string;
   readonly severityLabel: string;
-  readonly coverRuns: string;
+  readonly tone: ProductionPlanningEmailCell["tone"];
   readonly heldText: string;
-  readonly displayUnit: string;
+  readonly heldBoxes?: string | null;
+  readonly perRunText: string;
+  readonly perRunBoxes?: string | null;
+  readonly unitLabel: string;
+  readonly coverRuns: string;
   readonly leadTimeDays: string | null;
-}): string {
-  const head = `${parts.severityLabel} — ${PP.alarmEmailCover} ${parts.coverRuns} ${PP.unitRun}`;
-  const held = `${PP.alarmEmailHeld} ${parts.heldText} ${unitLabelAr(parts.displayUnit)}`;
-  const lead =
-    parts.leadTimeDays === null ? null : `${PP.alarmLeadTimeNote} ${parts.leadTimeDays} ${PP.unitDay}`;
-  return [head, held, lead].filter((part) => part !== null).join(" · ");
+}): readonly ProductionPlanningEmailCell[] {
+  const unit = parts.unitLabel.trim();
+  const withUnit = (value: string) => (unit === "" ? value : `${value} ${unit}`);
+  const boxes = (count: string | null | undefined, quantity: string) =>
+    count === null || count === undefined || count.trim() === "" || count.trim() === quantity.trim()
+      ? undefined
+      : boxesLabel(count);
+  return [
+    { note: parts.severityLabel, text: parts.materialName, tone: parts.tone },
+    { sub: boxes(parts.heldBoxes, parts.heldText), text: withUnit(parts.heldText) },
+    { sub: boxes(parts.perRunBoxes, parts.perRunText), text: withUnit(parts.perRunText) },
+    {
+      sub:
+        parts.leadTimeDays === null
+          ? PRODUCTION_PLANNING_EMAIL_EN.notKnown
+          : `${parts.leadTimeDays} ${parts.leadTimeDays.trim() === "1" ? "day" : "days"} lead time`,
+      text: `${parts.coverRuns} ${parts.coverRuns.trim() === "1" ? "run" : "runs"}`,
+    },
+  ];
 }
 
 /** The three labels for who brings a material, keyed by the supplier the composition carries. */
@@ -1027,27 +1148,33 @@ export const EXPIRY_SEVERITY_LABELS_EN: Record<ExpirySeverity, string> = {
 };
 
 /**
- * The expiry email's own two sentences, in Arabic — the email stays Arabic whatever the screen is on,
- * exactly like the reorder one, because its readers are the five people the owner named.
+ * The expiry email's opening sentence — ENGLISH, like the reorder alarm beside it and for the same
+ * instruction (2026-10-09). The screen toggle does not reach either email.
  */
-export function buildExpiryEmailSummary(parts: { readonly productNameAr: string; readonly count: string }): string {
-  return `في ${parts.productNameAr}، ${parts.count} من أرصدة المواد داخل مدة التنبيه أو منتهية بالفعل.`;
+export function buildExpiryEmailSummary(parts: { readonly productName: string; readonly count: string }): string {
+  const one = parts.count.trim() === "1";
+  return `In ${parts.productName}, ${parts.count} stock ${one ? "balance is" : "balances are"} already expired or inside the warning window. Each line is one lot, with the quantity held where it is held.`;
 }
 
-export function buildExpiryRowValue(parts: {
+/** One expiry row, in the column order of `EXPIRY_EMAIL_COLUMNS`. */
+export function buildExpiryEmailRow(parts: {
+  readonly materialName: string;
   readonly severityLabel: string;
+  readonly tone: ProductionPlanningEmailCell["tone"];
   readonly expiryDate: string;
   readonly daysNote: string;
   readonly heldText: string;
-  readonly displayUnit: string;
+  readonly unitLabel: string;
   readonly locationName: string;
-}): string {
+}): readonly ProductionPlanningEmailCell[] {
+  const unit = parts.unitLabel.trim();
   return [
-    `${parts.severityLabel} — ${PP.stockExpiry} ${parts.expiryDate}`,
-    parts.daysNote,
-    `${PP.alarmEmailHeld} ${parts.heldText} ${unitLabelAr(parts.displayUnit)}`,
-    `${PP.stockLocation} ${parts.locationName}`,
-  ].join(" · ");
+    { note: parts.severityLabel, text: parts.materialName, tone: parts.tone },
+    { text: parts.expiryDate },
+    { text: parts.daysNote },
+    { text: unit === "" ? parts.heldText : `${parts.heldText} ${unit}` },
+    { text: parts.locationName },
+  ];
 }
 
 /**

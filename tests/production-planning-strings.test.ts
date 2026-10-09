@@ -9,6 +9,8 @@ import {
   basisLabelsAr,
   basisLabelsEn,
   buildAlarmEmailSummary,
+  buildExpiryEmailRow,
+  buildExpiryEmailSummary,
   buildPlannerSentence,
   buildPlannerSentenceEn,
   buildSampleUnitsHintAr,
@@ -21,12 +23,16 @@ import {
   PP_EN,
   PRODUCTION_PLANNING_ERRORS,
   PRODUCTION_PLANNING_ERRORS_EN,
+  buildReorderEmailRow,
+  EXPIRY_EMAIL_COLUMNS,
   PRODUCTION_PLANNING_DEFAULT_LANGUAGE,
+  PRODUCTION_PLANNING_EMAIL_EN,
   PRODUCTION_PLANNING_NUMBER_LOCALE,
   PRODUCTION_PLANNING_REFUSALS,
   PRODUCTION_PLANNING_REFUSALS_EN,
   PRODUCTION_PLANNING_TABS,
   PRODUCTION_PLANNING_TABS_EN,
+  REORDER_EMAIL_COLUMNS,
   type ProductMeasure,
   productionPlanningStrings,
   reorderEmailMaterialLabel,
@@ -764,22 +770,134 @@ export function runProductionPlanningStringsTests() {
     "the workspace component holds an Arabic literal - route it through the string catalogue",
   );
 
-  // ── The reorder EMAIL stays Arabic, whichever way the toggle is set ───────────────────────────
+  // ── BOTH ALARM EMAILS ARE ENGLISH, WHICHEVER WAY THE TOGGLE IS SET ───────────────────────────
   //
-  // Deliberate, and not an oversight the toggle forgot: four named people were given an Arabic
-  // notification, nothing has been said about changing what lands in their inbox, and a screen
-  // preference on one reader's browser must not decide the language of somebody else's email.
-  const emailSummary = buildAlarmEmailSummary({ productNameAr: PP.moduleTitle, count: "3" });
+  // The owner, 2026-10-09, reading the Arabic reorder alarm in his own inbox: "stop fucking using
+  // arabic in the production planner never never never use arabic in it again all english
+  // everything". Both alarms were Arabic by an earlier decision and THIS BLOCK IS ITS REVERSAL: the
+  // toggle is a screen preference, an email has four other readers, and neither email may read the
+  // Arabic catalogue again — not the summary, not a column heading, not one severity word.
+  const emailSummary = buildAlarmEmailSummary({ productName: PP_EN.moduleTitle, count: "3" });
+  const expirySummary = buildExpiryEmailSummary({ productName: "Ivyronc", count: "1" });
+  const reorderRow = buildReorderEmailRow({
+    coverRuns: "0.706",
+    heldBoxes: "1,176",
+    heldText: "14.12",
+    leadTimeDays: "30",
+    materialName: "Paracetamol milled",
+    perRunBoxes: "1,666",
+    perRunText: "20",
+    severityLabel: ALARM_SEVERITY_LABELS_EN.below_threshold,
+    tone: "warning",
+    unitLabel: "kg",
+  });
+  const expiryRow = buildExpiryEmailRow({
+    daysNote: "12 days left",
+    expiryDate: "2027-04-30",
+    heldText: "40",
+    locationName: "Sato store",
+    materialName: "Ivy extract",
+    severityLabel: "Expires very soon",
+    tone: "warning",
+    unitLabel: "kg",
+  });
+  const emailStrings = [
+    emailSummary,
+    expirySummary,
+    PP_EN.alarmEmailSubject,
+    PP_EN.alarmEmailStatus,
+    PP_EN.expiryEmailSubject,
+    PP_EN.expiryEmailStatus,
+    ...Object.values(PRODUCTION_PLANNING_EMAIL_EN),
+    ...REORDER_EMAIL_COLUMNS.map((column) => column.label),
+    ...EXPIRY_EMAIL_COLUMNS.map((column) => column.label),
+    ...[...reorderRow, ...expiryRow].flatMap((cell) => [cell.text, cell.sub ?? "", cell.note ?? ""]),
+  ];
+  for (const value of emailStrings) {
+    assert.ok(
+      !/[\u0600-\u06FF]/.test(value),
+      `the production planner emails are English end to end (owner, 2026-10-09): ${JSON.stringify(value)}`,
+    );
+  }
+
+  // The other half of the same instruction ("also add quantities"): what is held and what one run
+  // needs are columns of their own, in the same unit, so they can be read against each other.
+  assert.equal(REORDER_EMAIL_COLUMNS.length, 4, "four columns — five overflowed a 375px screen, so lead time rides under cover");
+  assert.equal(reorderRow[1]?.text, "14.12 kg", "the held quantity carries its unit");
+  assert.equal(reorderRow[2]?.text, "20 kg", "the quantity one run needs is a column of its own");
+  assert.equal(reorderRow[3]?.text, "0.706 runs", "cover names its own unit, since the heading no longer can");
+  assert.equal(reorderRow[3]?.sub, "30 days lead time", "the lead time rides under the cover figure");
+
+  // "put quantities in kg and number of boxes" (owner, 2026-10-09) — boxes are what he counts in.
+  assert.equal(reorderRow[1]?.sub, "1,176 boxes", "what the held stock still makes, in boxes");
+  assert.equal(reorderRow[2]?.sub, "1,666 boxes", "what one run makes, in boxes");
+  assert.equal(
+    buildReorderEmailRow({
+      coverRuns: "1",
+      heldBoxes: "90",
+      heldText: "90",
+      leadTimeDays: "1",
+      materialName: "Packaging box",
+      perRunBoxes: "1,666",
+      perRunText: "1,666",
+      severityLabel: ALARM_SEVERITY_LABELS_EN.below_threshold,
+      tone: "warning",
+      unitLabel: "pcs",
+    })[2]?.sub,
+    undefined,
+    "a material that goes one to a box does not repeat its own figure underneath itself",
+  );
+  const noLeadTime = buildReorderEmailRow({
+    coverRuns: "0",
+    heldBoxes: "0",
+    heldText: "0",
+    leadTimeDays: null,
+    materialName: "Sodium saccharin",
+    perRunBoxes: "1,666",
+    perRunText: "4.1",
+    severityLabel: ALARM_SEVERITY_LABELS_EN.out_of_stock,
+    tone: "danger",
+    unitLabel: "kg",
+  });
+  assert.equal(
+    noLeadTime[3]?.sub,
+    PRODUCTION_PLANNING_EMAIL_EN.notKnown,
+    "a material with no lead time says so in words, never an empty cell and never a zero",
+  );
+  assert.equal(noLeadTime[3]?.text, "0 runs", "no cover at all is still stated in runs");
+
+  // The two sweeps must read the ENGLISH catalogue. A `PP.` beside them is how the Arabic comes back.
+  for (const file of ["src/lib/production-planning/reorder-sweep.ts", "src/lib/production-planning/expiry-sweep.ts"]) {
+    const source = stripComments(readFileSync(file, "utf8"));
+    assert.ok(!/\bPP\./.test(source), `${file} reads the Arabic catalogue (PP.) \u2014 these two emails are English`);
+    assert.ok(!/nameAr\b/.test(source), `${file} reads .nameAr \u2014 an email row must carry the English name`);
+    assert.ok(
+      !/[\u0600-\u06FF]/.test(source),
+      `${file} holds an Arabic literal \u2014 nothing in these two files may be Arabic again`,
+    );
+  }
+
+  // And the two stored TEMPLATES, which carry the greeting, the closing and the preview line: the
+  // sweeps can be perfect English and the email still open in Arabic.
+  const templateSource = readFileSync("src/lib/email-templates/service.ts", "utf8");
+  for (const key of ["production_planning_reorder", "production_planning_expiry"]) {
+    const start = templateSource.indexOf(`\n  ${key}: {\n    bodyHtml`);
+    assert.notEqual(start, -1, `templateDefaults is missing ${key}`);
+    const block = templateSource.slice(start, templateSource.indexOf("\n  },\n", start));
+    assert.ok(!/[\u0600-\u06FF]/.test(block), `the ${key} template default is still Arabic: ${block}`);
+    assert.ok(!/dir="rtl"/.test(block), `the ${key} template default still forces right-to-left`);
+  }
+
   assert.ok(
-    /[\u0600-\u06FF]/.test(emailSummary),
-    `the reorder email is Arabic by decision — the toggle is a screen preference: ${emailSummary}`,
+    !/[\u0600-\u06FF]/.test(emailSummary),
+    `the reorder email's own sentence must be English — the toggle is a screen preference: ${emailSummary}`,
   );
 
   // The owner, 2026-10-08: the packaging material is stored as `Box` / `علبة`, and the email also says
   // boxes for the product count — so the packaging ROW is spelled out in the email, as in the export.
-  // Every other material keeps its stored name, and both documents read the SAME constants.
-  assert.equal(reorderEmailMaterialLabel("CARTON", "علبة"), "علبة التغليف", "the packaging row is spelled out in the email");
-  assert.equal(reorderEmailMaterialLabel("STICKER", "ستيكر"), "ستيكر", "any other material keeps its stored name");
+  // Every other material keeps its stored name; the email takes the ENGLISH side of both.
+  assert.equal(reorderEmailMaterialLabel("CARTON", "Box"), "Packaging box", "the packaging row is spelled out in the email");
+  assert.equal(reorderEmailMaterialLabel("STICKER", "Sticker"), "Sticker", "any other material keeps its stored name");
   assert.equal(packagingBoxName("ar"), "علبة التغليف");
   assert.equal(packagingBoxName("en"), "Packaging box");
   assert.ok(!/[؀-ۿ]/.test(packagingBoxName("en")), "the English packaging name carries no Arabic");
