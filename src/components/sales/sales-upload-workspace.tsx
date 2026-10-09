@@ -32,7 +32,7 @@ type Props = {
   aiEnabled: boolean;
 };
 
-export type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
+export type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number; freeGoodsQty?: number; rowsFreeGoods?: number };
 type UnknownItem = { count: number; raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; suggestionCode: string | null; suggestionLabel: string | null };
 type IgnoredItem = { raw: string; displayName: string; count: number; totalQty: number };
 type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; ignoredItems?: IgnoredItem[]; period: string | null; periods?: { period: string; rows: number }[] };
@@ -951,6 +951,14 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
 
           {/* Unmapped / period gates */}
           <div className="space-y-2 px-4 pt-4">
+            {/* Free goods: excluded from sales by the standing rule, never silently. Without this the
+                screen showed a Qty smaller than the sheet's with nothing to explain the difference. */}
+            {(rec.freeGoodsQty ?? 0) > 0 ? (
+              <AdminCallout tone="neutral"><div>
+                <p className="font-semibold">{num(rec.freeGoodsQty ?? 0)} unit(s) on {num(rec.rowsFreeGoods ?? 0)} row(s) are free goods — excluded from sales, not lost.</p>
+                <p className="text-xs">The sheet flags these rows as free goods, and no distributor&apos;s bonus is ever counted as sales. They are listed in the <b>Bonus</b> column of <b>By product</b> below, so Qty + Bonus there equals the quantity in your file.</p>
+              </div></AdminCallout>
+            ) : null}
             {ignoredItems.length > 0 ? (
               <IgnoredItemsReview
                 distributorCode={distributorCode}

@@ -2329,6 +2329,7 @@ import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
 import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
 import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
+import { runFreeGoodsUnitsStayVisibleTests } from "./free-goods-units-stay-visible.test.ts";
 import { runNormalizerQemaNameFallbackTests } from "./normalizer-qema-name-fallback.test.ts";
 import { runVisualAidsTests } from "./visual-aids.test.ts";
 import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-label.test.ts";
@@ -9035,6 +9036,11 @@ await runTest(
 await runTest(
   "a bonus never drops paid units: an El Qema line carrying paid packs (الكمية) and a bonus count (بونص), even a bonus of 1, imports at its paid packs, valued at units times factory price with nothing added for the bonus, while EPDA's is_bonus flag still skips a free-goods line, and no profile maps a bonus count as a free-goods flag",
   runNormalizerBonusNeverDropsPaidUnitsTests,
+);
+
+await runTest(
+  "free goods are excluded from sales and never invisible: the September EPDA-BULK book's 6,736 Ivyronc packs account on the Validate screen as 5,214 Qty + 1,522 Bonus (and Satoslim 1,097 + 153), a product whose every row was free goods still gets a row, By line carries the same units while By region claims none, a restricted product's free goods stay hidden, the receipt states the excluded units beside a Total qty that is still the paid ones, and the advisory says \"free goods\" with the real count instead of blaming a product mapping",
+  runFreeGoodsUnitsStayVisibleTests,
 );
 
 await runTest(

@@ -34,6 +34,11 @@ export type ReconciliationReceipt = {
   rowsBlocked: number; // exceptions — unmapped product/territory
   totalQty: number;
   totalValue: number;
+  // Units the distributor flagged as free goods. Part of rowsIgnored, never part of totalQty — the
+  // bonus is never counted as sales. Shown so the receipt's Qty and the sheet's Qty reconcile on the
+  // screen instead of in someone's head.
+  freeGoodsQty: number;
+  rowsFreeGoods: number;
 };
 
 // Pure: builds the bucket-accounting receipt shown to the user. NOTE: the read == coded + ignored +
@@ -80,6 +85,11 @@ export function buildReconciliation(
       : result.coded.filter((r) => !hidden.has(String(r.productCode ?? "").trim().toUpperCase()));
   const totalQty = countable.reduce((sum, r) => sum + (Number.isFinite(r.qty) ? r.qty : 0), 0);
   const totalValue = countable.reduce((sum, r) => sum + (Number.isFinite(r.value) ? r.value : 0), 0);
+  // Free goods are excluded from sales by the owner's rule, not lost — the receipt says how many
+  // units that rule took out, beside the Qty it kept. Confidential products are hidden here too.
+  const freeGoods = result.ignoredRows.filter(
+    (r) => r.reason === "bonus" && !hidden.has(String(r.productCode ?? "").trim().toUpperCase()),
+  );
   return {
     rowsRead,
     rowsCoded: s.fullyCoded,
@@ -88,6 +98,8 @@ export function buildReconciliation(
     rowsBlocked,
     totalQty: Number(totalQty.toFixed(6)),
     totalValue: Number(totalValue.toFixed(6)),
+    freeGoodsQty: Number(freeGoods.reduce((sum, r) => sum + (Number.isFinite(r.qty) ? r.qty : 0), 0).toFixed(6)),
+    rowsFreeGoods: freeGoods.length,
   };
 }
 
@@ -427,7 +439,7 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   const reconciliation = buildReconciliation(rec.result, excludeProductCodes);
   // Per-product/region/brick/line breakdown for the Validate step. Confidential products are
   // excluded for non-CEO/Super-Admin viewers (excludeProductCodes) so the tables never leak them.
-  const breakdowns = buildPreviewBreakdowns(rec.result.coded, excludeProductCodes);
+  const breakdowns = buildPreviewBreakdowns(rec.result.coded, excludeProductCodes, rec.result.ignoredRows);
   const decision = resolveUploadPeriod(rec.result.coded.map((r) => r.invoiceDate), String(periodOverride ?? "").trim());
   const resolvedPeriod = decision.kind === "ok" ? decision.period : null;
   // Validate the rows AS THEY WILL BE PERSISTED (consolidated when a period was picked) so analyze
@@ -617,6 +629,10 @@ function codedReconciliation(r: DistributorSalesValidationResult): Reconciliatio
     rowsBlocked: r.failedRows,
     totalQty: Number((r.totals.totalQty ?? 0).toFixed(6)),
     totalValue: Number((r.totals.totalValue ?? 0).toFixed(6)),
+    // A coded sheet carries no free-goods flag — it arrives with the distributor's rows already
+    // resolved, so there is nothing here for the rule to exclude.
+    freeGoodsQty: 0,
+    rowsFreeGoods: 0,
   };
 }
 
@@ -788,7 +804,7 @@ async function analyzeOfficeChannel(distributorCode: string, file: File, periodO
     return {
       status: "ok",
       preview: emptyOfficePreview(distributorCode),
-      reconciliation: { rowsRead: 0, rowsCoded: 0, rowsIgnored: 0, rowsBlankCustomer: 0, rowsBlocked: 0, totalQty: 0, totalValue: 0 },
+      reconciliation: { rowsRead: 0, rowsCoded: 0, rowsIgnored: 0, rowsBlankCustomer: 0, rowsBlocked: 0, totalQty: 0, totalValue: 0, freeGoodsQty: 0, rowsFreeGoods: 0 },
       breakdowns: { byProduct: [], byRegion: [], byBrick: [], byLine: [] },
       period: null,
       needsPeriod: true,
