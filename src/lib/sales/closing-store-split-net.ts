@@ -36,7 +36,9 @@ import {
   isBulkAllocationLine,
 } from "@/lib/sales/bulk-allocation-channel";
 import { buildBulkAllocation, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
+import { buildOfficeRespread, mergeOfficeRespreadIntoSplit } from "@/lib/sales/closing-office-respread";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
+import { isOfficeRespreadPair } from "@/lib/sales/office-distributor";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
@@ -60,6 +62,7 @@ type CachedSplit = {
   exempt: (readonly [string, number])[];
   movements: StoreSplitAreaMovement[];
   net: (readonly [string, NetCell])[];
+  officeNet: (readonly [string, NetCell])[];
 };
 
 /** Everything one (line, period)'s city split produces. One computation, shared by both surfaces. */
@@ -70,6 +73,16 @@ export type ClosingStoreSplit = {
   movements: StoreSplitAreaMovement[];
   /** Per area x product, the net delta the Closing Matrix write-back applies. */
   net: Map<string, NetCell>;
+  /**
+   * The OFFICE CHANNEL's own slice of `net` — already added into it, reported separately because the
+   * `office` grid takes that part and nothing else (closing-office-respread.ts's header says why:
+   * the Closing Matrix (No Office) tab is `matrix − office` cell by cell, so the two grids have to
+   * agree about which area holds an Office unit or that subtraction prints negative sales).
+   *
+   * Empty on every line but CNS, every month before 2026-10, and every month whose Office rows did
+   * not move.
+   */
+  officeNet: Map<string, NetCell>;
 };
 
 const loadClosingStoreSplitUncached = async (line: string, period: string): Promise<CachedSplit> => {
@@ -108,14 +121,22 @@ const loadClosingStoreSplitUncached = async (line: string, period: string): Prom
   // city split is: two surfaces deriving one redistribution separately is the defect this module was
   // written to end. The two nets are added — both are zero-sum per product, so their sum is — and
   // the bulk rows are already refused by `isSplitEligible`, so nothing moves twice.
-  const merged = mergeBulkAllocationIntoSplit(
+  const withBulk = mergeBulkAllocationIntoSplit(
     { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
     buildBulkAllocation(details.rows, period, line),
   );
+  // THE OFFICE CHANNEL'S READ-TIME RESPREAD RIDES THE SAME NET (owner, 2026-10-09: "fix the Office
+  // allocation to read-time shares"), from the October 2026 closing, CNS only. Folded in here for the
+  // third time for the same reason as the other two: this is the ONE loader both the screen and the
+  // export read, so neither can respread while the other does not. Its OUT legs cancel the spread the
+  // upload stamped on the stored rows and its IN legs are today's, so a month whose batches have not
+  // moved since the Office file landed nets to exactly zero — see closing-office-respread.ts.
+  const merged = mergeOfficeRespreadIntoSplit(withBulk, buildOfficeRespread(details.rows, period, line));
   return {
     exempt: Array.from(merged.exemptStoreValueByBrick.entries()),
     movements: merged.movements,
     net: Array.from(merged.net.entries()),
+    officeNet: Array.from(merged.officeNet.entries()),
   };
 };
 
@@ -124,9 +145,12 @@ const loadClosingStoreSplitUncached = async (line: string, period: string): Prom
 // Renamed AGAIN for the EPDA-BULK allocation above: the shape is identical this time but the numbers
 // are not, and an hour of entries written by the previous deploy would otherwise serve a September
 // Pedia closing with the bulk book still sitting on its invoiced areas.
+// Renamed a THIRD time for the Office read-time respread: the payload grew `officeNet`, and an entry
+// from the previous deploy read back as this shape would hand the Office grid an UNDEFINED net —
+// which is the one failure mode that prints a negative Closing Matrix (No Office) cell.
 const loadClosingStoreSplitCached = unstable_cache(
   loadClosingStoreSplitUncached,
-  ["closing-store-split-with-bulk"],
+  ["closing-store-split-with-bulk-and-office-respread"],
   { revalidate: 3600, tags: [CLOSING_STORE_SPLIT_CACHE_TAG] },
 );
 
@@ -135,6 +159,7 @@ const emptySplit = (): ClosingStoreSplit => ({
   exemptStoreValueByBrick: new Map(),
   movements: [],
   net: new Map(),
+  officeNet: new Map(),
 });
 
 /**
@@ -158,20 +183,46 @@ export async function loadClosingStoreSplit(
   // disagree if one of those dates is ever moved. Asked separately anyway: a gate that is correct by
   // coincidence silently drops a whole rule the day the coincidence ends.
   const bulkApplies = isBulkAllocationActive(trimmedPeriod) && isBulkAllocationLine(trimmedLine);
-  if (!isStoreCitySplitActive(trimmedPeriod) && !bulkApplies) return emptySplit();
+  // The Office read-time respread is a THIRD independent reason this result is not empty, with its
+  // own line and start month (CNS, 2026-10). Asked separately for the same reason the bulk rule is:
+  // today it is a subset of the city split's gate — CNS is split-eligible and October is after the
+  // split's August start — and a gate that is correct by coincidence silently drops a whole rule the
+  // day one of those dates moves.
+  const officeApplies = isOfficeRespreadPair(trimmedLine, trimmedPeriod);
+  if (!isStoreCitySplitActive(trimmedPeriod) && !bulkApplies && !officeApplies) return emptySplit();
   if (!trimmedLine) return emptySplit();
-  if (!isSplitEligibleLine(trimmedLine) && !bulkApplies) return emptySplit();
+  if (!isSplitEligibleLine(trimmedLine) && !bulkApplies && !officeApplies) return emptySplit();
   // 🔴 A PUBLISHED month is FROZEN — the tab AND the export read the frozen net, not a live recompute
   // that drifted after publish. See loadFrozenStoreSplitIfPublished. Unpublished months fall through
   // to the live cache below, unchanged. Gated HERE (the one loader both surfaces read) rather than in
   // each caller, so the Closing tab, its reconciliation and the downloaded workbook cannot disagree.
   const frozen = await loadFrozenStoreSplitIfPublished(trimmedLine, trimmedPeriod);
-  if (frozen) return frozen;
+  if (frozen) {
+    // 🔴 THE FROZEN TABLE CANNOT SAY WHICH PART OF ITS NET WAS THE OFFICE CHANNEL'S.
+    // au.monthly_store_split_net stores line, area, product and two measures — no channel — so a
+    // published month's frozen net carries the Office respread mixed in with the city split's and
+    // the bulk book's. The MATRIX is right either way: it applies the whole frozen net, which is the
+    // announced number. The `office` GRID is the one that needs the Office slice on its own, or
+    // `matrix − office` (the Closing Matrix (No Office) tab) stops describing distributor sell-out.
+    //
+    // So that slice is recomputed live, and ONLY for a pair that can carry one (CNS, 2026-10 on) —
+    // which also keeps a published month before the rule from paying for a detail-row read it has no
+    // use for. The residual this leaves is named rather than hidden: if a batch was re-mapped AFTER
+    // the month was published, the live Office slice is today's and the frozen matrix is the
+    // announced one, so the no-Office tab is out by that post-publish drift. That is strictly better
+    // than the alternative — an Office grid carrying none of the respread is out by the WHOLE of it —
+    // and it is exactly zero whenever the rows have not changed since publication, which is what a
+    // published month is supposed to mean.
+    if (!officeApplies) return frozen;
+    const live = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod).catch(() => null);
+    return { ...frozen, officeNet: new Map(live?.officeNet ?? []) };
+  }
   const cached = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod);
   return {
     exemptStoreValueByBrick: new Map(cached.exempt),
     movements: cached.movements,
     net: new Map(cached.net),
+    officeNet: new Map(cached.officeNet ?? []),
   };
 }
 
@@ -262,10 +313,14 @@ async function loadFrozenStoreSplitIfPublished(
   // netStoreSplitByAreaProduct(these) === net by construction (see synthesizeFrozenMovements). The
   // per-brick exempt map is not frozen and is not needed by the frozen path — the Matrix and the
   // area/rep grids read `net`/`movements`, and the brick grid reads its own live figures either way.
+  // `officeNet` is EMPTY here and filled by the caller when the pair can carry one — see the long
+  // note in loadClosingStoreSplit. It cannot be derived from these rows: the frozen table has no
+  // channel column, so the Office slice is not recoverable from the net it is mixed into.
   return {
     net,
     movements: synthesizeFrozenMovements(net, trimmedLine),
     exemptStoreValueByBrick: new Map(),
+    officeNet: new Map(),
   };
 }
 

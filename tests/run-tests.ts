@@ -4,6 +4,7 @@ import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.t
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runClosingFrozenSplitNetTests } from "./closing-frozen-split-net.test.ts";
 import { runClosingBulkAllocationTests } from "./closing-bulk-allocation.test.ts";
+import { runClosingOfficeRespreadTests } from "./closing-office-respread.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
 import { runRepTargetsTests } from "./rep-targets.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
@@ -2542,6 +2543,10 @@ await runTest("closing frozen split net (a published month's Closing tab reads t
 await runTest(
   "EPDA-BULK contribution allocation (from the 2026-09 closing the bulk sector's Pedia units spread by the other distributors' value share, the shares equal the LOCKED Office rule's, the total cannot move, and the city rule no longer moves the same rows)",
   runClosingBulkAllocationTests,
+);
+await runTest(
+  "Office read-time respread (from the 2026-10 closing CNS Office units are respread on TODAY's value shares, an aligned month nets to exactly zero, the shares equal the LOCKED Office rule's, the total cannot move, and every matrix, workbook, attribution net and Office grid takes it)",
+  runClosingOfficeRespreadTests,
 );
 await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
 await runTest("rep targets (a Medical Rep's own targets: self-bounded, published sales only, units within one product)", runRepTargetsTests);

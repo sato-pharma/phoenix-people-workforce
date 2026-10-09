@@ -7210,8 +7210,8 @@ published one.
    **Row substitution was rejected:** `tests/closing-total-sheet-matches-matrix.test.ts` proves
    Total = Data SUMIFS + net + direct, so allocated detail rows PLUS the net would move the same
    money twice. Read time rather than upload time for the measured Office defect — a batch
-   re-mapped after the file lands leaves upload-time shares stale (3.39% of August's CNS Office
-   units).
+   re-mapped after the file lands leaves upload-time shares stale (6,834 of August's 109,719 CNS
+   Office units, 6.23%, measured on the live rows 9 October 2026).
 2. **The bulk rows are the FOURTH carve-out from the city rule**, beside EZ, Office and El Qema's
    warehouses: `isSplitEligible` refuses them from September. `WHOLESALE_ONLY_DISTRIBUTORS` is
    `{"QM"}` only, so `EP-BK` rows are classified by customer name — most of its customers are
@@ -7259,6 +7259,144 @@ the 19 roles hold. `maskPortalSosDashboard` could never have caught it: it masks
 fields, and the banner is a SENTENCE inside `insights`. The mask follows his closing-workbook
 choice of 2026-09-14 — keep the money, drop the name — so every period, estimate and count is
 untouched, and Super Admin still reads the real name.
+
+
+## The Office channel's read-time respread — owner, 2026-10-09
+
+**His words:** *"fix the Office allocation to read-time shares."* Typed the same day as the
+EPDA-BULK rule above, and about a defect that surfaced while that rule was being measured.
+
+### What was wrong — and what was NOT
+
+The owner's **locked golden rule** spreads the Office channel's units across a line's areas by each
+area's share of the line's **non-Office sales value** (`src/lib/sales/office-allocation.ts`, the
+`GOLDEN RULE · LOCKED` region, password-protected, pinned by
+`tests/office-golden-rule-lock.test.ts`). **That rule was never in question and is not touched by
+this change** — no threshold, no weight, no reconciliation, and the locked file is not even
+imported. What was wrong is **when** it was evaluated.
+
+The weights were computed **once, at upload**, and stamped onto the stored Office rows. So every
+distributor batch that landed, was re-mapped or was corrected *after* the Office file left those
+units on a geography the data no longer supported. Nothing anywhere reported it, and the only repair
+available was to re-upload the Office file by hand.
+
+**Measured on the live August 2026 CNS rows, 9 October 2026**, through the repo's own closing loader
+and the new rule (so the number is reproducible, not estimated):
+
+| | |
+| --- | --- |
+| Office channel, August CNS | **109,719 units** of 178,272 — **61.5%** of the published month |
+| Weighting base | 4,277,307 EGP of non-Office sell-out across **48 areas** |
+| Sitting in the wrong area today | **6,834 packs — 6.23% — 548,777 EGP** |
+| Areas short of what today's data gives them | **17 of 48** |
+| Office file's last batch | 10 September **19:15** Cairo |
+| Month published | 10 September **23:22** Cairo |
+| Largest single area error | CA1, **+3,119 packs** (+250,488 EGP) on a 4.75% share |
+
+An earlier, narrower count during the same session put it at 3.39% (~3,700 packs); **6.23% is what
+the live rows reproduce**, as the sum of the positive legs of today's net over the stored spread, and
+it is the number every comment and rule line now carries.
+
+### The rule
+
+From the **2026-10** closing, **CNS only**, the Office spread is **recomputed on every read**, as a
+**net movement** rather than a rewrite of the stored rows:
+
+    net = (today's spread of the Office totals)  −  (the areas the upload stamped on them)
+
+The OUT legs come from the stored Office rows themselves, so the net cancels the stale spread
+precisely, whatever it was; the IN legs are today's. **A month whose batches have not moved since the
+Office file landed nets to exactly zero** — that invariant is what makes this a correction and not a
+second allocation, and it is the first behavioural case in
+`tests/closing-office-respread.test.ts`.
+
+**Why a net and not a re-run of the upload-time allocation.** Re-running `computeOfficeAllocation`
+on every re-map was the obvious alternative — the re-map already triggers the attribution refresh —
+and it was rejected because that path **rewrites the stored rows**, which restates the Closing tab of
+a month that may already be published and announced. A net is additive and gated by period, so July,
+August and September keep the numbers they were published with. 🔴 **The 6.23% on August is the
+evidence for the rule, never a backlog to go and fix.**
+
+### October, and the September question that is his
+
+Read live on 9 October 2026, before choosing the start month:
+
+- **August CNS** is published (10 September 23:22 Cairo, snapshot 178,272 units) and holds the
+  109,719 Office units above. A rule starting in August would restate a published, announced month.
+- **September CNS is NOT published.** Only September *Anti Infective* is, and that line carries no
+  Office channel at all. September CNS is still being imported — its last batch landed **9 October
+  16:51 Cairo** — and holds **zero Office rows**, because its Office file has not been uploaded yet.
+- **October CNS has no rows at all yet.** So on today's data the rule moves nothing: it starts
+  working the moment October's distributor batches and Office file land.
+
+So `OFFICE_RESPREAD_START_PERIOD` is **2026-10**, the conservative direction every dated sales rule
+in this repo takes. 🔴 **Moving it back to `2026-09` would restate nothing published** and would
+cover the next closing he actually has to publish — which is why it was put to him as a one-line
+decision rather than decided in a session. One constant, one test line.
+
+### The three things that had to be wired, and the one that nearly shipped wrong
+
+1. **Three derivation points, not one.** The city split already has three by design — the screen's
+   cached loader (`closing-store-split-net.ts`), the export's own fallback
+   (`closing-store-split-export.ts`) and the attribution payload
+   (`attribution-store-split-net.ts`) — and two of them exist *because* a second derivation once
+   drifted from the first. Each folds the respread. Attribution carries it on **both** measures
+   (`net_qty` and `net_effective_units`): Office is 61.5% of a CNS month, so a respread the matrix
+   applies and attribution does not would put every CNS rep's achievement out by most of their line.
+2. 🔴 **The `office` grid is NOT display-only — this is the part that nearly shipped wrong.**
+   "of wh. Office" and the **Closing Matrix (No Office)** tab are built from
+   `MonthlyClosingParts.office`, and that tab is literally `matrix − office` **cell by cell**
+   (`closing-matrix-without-office.ts`). Move the matrix's Office units to today's geography and
+   leave the grid on the upload's, and the subtraction stops describing distributor sell-out and can
+   print **negative sales**. So `mergeOfficeRespreadIntoSplit` carries an **Office-only `officeNet`**
+   out beside the combined net, and each of the three Office grids applies that slice and nothing
+   else — never the combined net, which also holds the city split and the bulk book.
+3. **No unit may move twice.** Office rows carry no customer (`clientCode` is null on that channel),
+   so `isStoreCustomer` is false and `isSplitEligible` refuses them before any period gate is read —
+   asserted beside a fixture-sanity line proving a real wholesaler on the same geography *does*
+   split, because an assertion that passes for the wrong reason proves nothing.
+
+### The arithmetic lives in ONE place now
+
+`buildOfficeRespread` does not re-implement a largest-remainder spread. The EPDA-BULK rule's
+arithmetic was lifted into a new leaf, `src/lib/sales/contribution-respread.ts` (`round6`,
+`spreadByShares`, `areaValueShares`, `buildContributionRespread`, `mergeRespreadIntoSplit`), and
+`closing-bulk-allocation.ts` was rewritten as a thin driver that keeps its public API — which is why
+its own suite stayed green unchanged. **Two copies agree on test data and disagree on a return.**
+
+🔒 **The locked file is still not imported, and still not touched.** `office-allocation.ts` →
+`monthly-distributor-import.ts` → `attribution-store-split-refresh.ts` →
+`attribution-store-split-net.ts` cycles back to the caller, so the equivalence is pinned **by test**
+instead: `tests/closing-office-respread.test.ts` hands five areas and two prices to both
+implementations and requires the shares to agree **to 1e-9**. That clause runs **first** on purpose —
+the zero-sum cases are sharper than any tolerance, so they would fire first on a share error and say
+only that money moved, never which rule moved it.
+
+### What the test proves, and that each clause actually fires
+
+Ten numbered cases plus **twelve source-level wiring checks**. Every one was verified by
+break-and-watch — the fix or the wiring was broken, the suite run, the *headline* assertion watched
+to fire, and the file restored byte-for-byte:
+
+- the locked-share equivalence, the aligned-month zero, the drift and its zero-sum on units,
+  effective units and value, the 2026-10 gate, the CNS-only line gate, Office never weighting its own
+  spread, no-contribution-base, the city rule's refusal of an Office row, largest-remainder on a
+  return, and the fold keeping `officeNet` isolated;
+- all three derivation points, the cache key (renamed to
+  `closing-store-split-with-bulk-and-office-respread`, so an entry written by the previous deploy can
+  never be read back as this shape), attribution on both measures and its period gate, and each of
+  the three Office grids.
+
+### Two residuals, named rather than hidden
+
+1. **A month published AFTER the respread applies** reads the frozen combined net in the matrix and a
+   live Office slice in the grid, so the no-Office tab is out by any post-publish drift — zero
+   whenever the rows have not changed since publication. Closing it properly needs a channel column
+   on `au.monthly_store_split_net`; deliberately not attempted inside this change.
+2. **The weighting base keeps the locked rule's own population**, `EP-BK` included at its invoiced
+   area. Excluding the bulk book would change the LOCKED rule's input, which is not a session's call;
+   the effect is negligible (599 packs of Lacto Advanced is all the bulk book has ever put in a
+   closing) and the bulk rule is Pedia-only, so it never meets CNS.
 
 
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08

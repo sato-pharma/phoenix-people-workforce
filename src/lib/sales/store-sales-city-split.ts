@@ -1067,11 +1067,17 @@ export type StoreSplitRow = {
  * single Cairo East 1 row for the whole month, while the distribution it is exempt for happens later,
  * in the rollup the Closing Matrix reads. See even-split-registry.ts.
  *
- * OFFICE NEEDS NO ENTRY HERE and that is not an oversight — it is excluded twice over. Office rows
- * carry no customer at all (`clientCode` is null by construction), so `isStoreCustomer` answers false
- * and `isSplitEligible` never reaches this function; and `loadMonthlyClosingPartsWithStoreSplit`
- * passes the `office` grid through without applying any net. Adding Office here would be a third
- * copy of a rule already stated twice.
+ * OFFICE NEEDS NO ENTRY HERE and that is not an oversight: Office rows carry no customer at all
+ * (`clientCode` is null by construction), so `isStoreCustomer` answers false and `isSplitEligible`
+ * never reaches this function. Adding Office here would be a second copy of a rule already stated.
+ *
+ * 🔴 THAT CLAUSE IS WHY THE OFFICE CHANNEL'S OWN READ-TIME RESPREAD CANNOT MOVE A UNIT TWICE. From
+ * the October 2026 closing the Office rows ARE moved between areas — by `closing-office-respread.ts`,
+ * onto today's value shares instead of the upload's — and the city rule has to keep its hands off
+ * them for the same reason it keeps them off the bulk sector's rows: money moved by two rules is
+ * money invented. It holds with no period gate at all, because it is a property of the row rather
+ * than of the month. (The `office` GRID is no longer passed through untouched — it takes that
+ * respread's own net, and only that one, so "of wh. Office" still sums inside the area's total.)
  *
  * ── WHAT WAS REMOVED ON 2026-09-07, AND WHY IT IS NOT COMING BACK ────────────────────────────────
  * Until this date a SECOND route existed: a customer whose rows spanned more than one closing area
