@@ -270,8 +270,22 @@ export async function runMarketingManagerScorecardTests() {
   assert.ok(info, "the info sheet exists");
   const infoFields = info.getRows(2, info.rowCount - 1)?.map((entry) => String(entry.getCell("field").value)) ?? [];
   assert.ok(
-    infoFields.includes("Actual sales attributed up to"),
+    infoFields.includes("Distributor sales fully loaded to"),
     "the file states the sales frontier on its own face — a figure read a month later must say what it was true of",
+  );
+  assert.ok(
+    infoFields.includes("Later months"),
+    "and says a part-loaded month is already counted, because it is",
+  );
+  // 🔴 THE REGRESSION. The frontier is phx_marketing_roi_latest_validated_period(), which answers
+  // the newest month EVERY month-filing distributor has filed — NOT a cap on what is attributed.
+  // The actuals RPC counts every validated sales row there is, part-loaded months included:
+  // measured on production 9 Oct 2026, one Product Manager's whole EGP 1,637.30 came from Ibn
+  // Sina's September file while this field read August. Saying "attributed up to August" on that
+  // face is a false statement about money, so no wording here may claim attribution stops.
+  assert.ok(
+    !infoFields.some((field) => /attributed up to|attributed to/i.test(field)),
+    "🔴 and NEVER claims attribution stops at the frontier — later part-loaded months are counted",
   );
   assert.ok(infoFields.includes("Generated"), "and when it was taken, in Cairo");
 
@@ -281,6 +295,10 @@ export async function runMarketingManagerScorecardTests() {
   assert.ok(flat.includes("Marketing Manager Scorecard"), "the page names the report");
   assert.ok(flat.includes("Hoda Samir") && flat.includes("Mina Fouad"), "and carries both managers");
   assert.ok(flat.includes("TOTAL · 2 managers"), "with the same total row the sheet has");
+  assert.ok(
+    flat.includes("Distributor sales fully loaded to") && !/attributed up to/i.test(flat),
+    "🔴 the printed page describes the frontier the same honest way the sheet does — a forwarded PDF is the copy read a month later",
+  );
   assert.ok(
     flat.includes("EGP 1,000"),
     "printing the deduped company figure, not the 2,000 a re-sum would produce",
