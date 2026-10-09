@@ -50,7 +50,13 @@ const HOOK = join(REPO_ROOT, ".claude", "cloud-context", "laptop-hooks", "memory
 // A ratchet, not an equality: cases may RISE and must never FALL. Raised 18 -> 19 on 2026-10-06, in
 // the commit that fixed the dead branch: the one case pinning that defect became three — the clause
 // present when commit is unreadable, absent when it is not, and silence on a healthy machine.
-const MIN_CASES = 19;
+// 19 -> 25 on 2026-10-09: the hook's 2026-10-09 cache work added six cases (the blocking run starts
+// no process, a 15-minute reading is trusted, a cached reading IS used, a reading past the hour is
+// not, and the two `refresh` cases), and the floor had stayed where it was — so six of the 25 could
+// be deleted with the suite still green, which is the one thing this ratchet exists to prevent. It
+// is raised, never lowered: if a case is genuinely retired, this number comes down in the same
+// commit, with the reason written here.
+const MIN_CASES = 25;
 
 // Each of these covers a distinct way the hook can go quiet when it should speak, or speak the wrong
 // thing. Matched against the selftest's own pass lines, so they prove the case RAN, not merely that
