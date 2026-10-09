@@ -55,6 +55,7 @@ import {
   describeSosCoverageGaps,
   type SosCoverageReport,
 } from "@/lib/sales/sos-coverage";
+import { maskSosCoverageReport } from "@/lib/sales/closing-source-mask";
 import {
   computeContribution,
   computeDelta,
@@ -1469,7 +1470,11 @@ export async function getSosDashboard(
     customerTop10Share,
     whiteSpaceAreas,
     insights: buildInsights({
-      coverage,
+      // 🔴 MASKED HERE, BEFORE THE SENTENCE IS WRITTEN. The coverage banner names the costliest gap
+      // by estimated value, and `maskPortalSosDashboard` cannot reach it — it masks four structural
+      // fields, while this is free text inside `insights`. El Qema is the costliest remaining gap on
+      // Pedia, so without this the dashboard would name it to every role holding `sales:read`.
+      coverage: coverage ? maskSosCoverageReport(coverage, accessContext) : coverage,
       // Same array that fills `incompleteReason` above. It is surfaced here because that field is
       // read by no component, so a failed aggregate had no way to reach the screen.
       incompleteReason: failedRpcs,
@@ -1500,11 +1505,19 @@ export async function getSosDashboard(
  */
 async function loadSosCoverageReport(): Promise<SosCoverageReport> {
   const supabase = getSupabaseAdmin();
-  const rows = await fetchAllRows<{ period: string; distributor_code: string; total_value: number | null }>(
+  const rows = await fetchAllRows<{
+    period: string;
+    distributor_code: string;
+    distributor_name: string | null;
+    total_value: number | null;
+  }>(
     () =>
       supabase
         .from("source_of_sales_import_batches")
-        .select("period,distributor_code,total_value")
+        // The NAME comes along because the banner must say "EPDA-BULK", not "EP-BK" (standing rule:
+        // names, never raw codes). It is the name entered on the batch, so a distributor renamed
+        // mid-year reads under the name of its latest file.
+        .select("period,distributor_code,distributor_name,total_value")
         .eq("status", "validated"),
     "id",
   );
@@ -1512,6 +1525,7 @@ async function loadSosCoverageReport(): Promise<SosCoverageReport> {
     rows.map((row) => ({
       period: String(row.period ?? ""),
       distributorCode: String(row.distributor_code ?? ""),
+      distributorName: row.distributor_name,
       totalValue: row.total_value == null ? 0 : Number(row.total_value),
     })),
   );

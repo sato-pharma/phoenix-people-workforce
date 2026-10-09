@@ -7230,6 +7230,36 @@ given, by design. Whole-month exports are unaffected, both zero.
 D21 20,000/35,000 → 17.142857, D15 → 8.571429, D14 → 4.285714, largest-remainder residual pushed so
 the net sums to **0** on units and on value. Shipped in #5662.
 
+### The coverage banner was calling EPDA-BULK's absence a 24.16M EGP hole
+
+His next instruction the same day: *"fix the SoS coverage banner so EPDA-BULK's absence since July
+is not a hole."*
+
+**What it was reading.** `source_of_sales_import_batches` (validated, 141 rows, read 2026-10-09)
+holds `EP-BK` in **2026-02, 03, 04 and 06 only**. The SoS dashboard's batch-coverage report priced
+each absent month at the distributor's own mean — 4.83M × 5 months = **24.16M EGP**, the largest
+single "hole" on the board — while `EP-PHS`'s own value went from **998K** in June to **8.16M**
+(July) and **12.02M** (August). EPDA had switched to ONE combined pharmacies file; the bulk sector
+was never missing, it was inside its sibling's upload. The same report also read "DIRECT is missing
+from 2026-09" about a channel that landed 880,976.70 EGP that month under `DirectReq`.
+
+**The two absences that are not holes** are now `MERGED_SOURCE_WINDOWS` (`EP-BK → EP-PHS`,
+2026-07..2026-08) in `src/lib/sales/sos-coverage.ts` and the existing Direct fold in
+`direct-channel.ts`. The window is **bounded on purpose**: from the September closing the bulk
+sector uploads on its own again, and the contribution allocation above has nothing to spread
+without that file, so a September absence must still be reported. A merge excuses a month only when
+the **absorbing** file actually landed in it — if EPDA sends nothing at all, both sources are
+missing and the month is a real hole.
+
+🔴 **And the fix would have put El Qema on the banner, which is why `maskSosCoverageReport` is in
+the same change.** The banner names the single costliest gap by estimated value. With EPDA-BULK's
+merged months no longer counted, that is **El Qema** — `QM` appears only in 2026-08 and 2026-09, so
+seven absent months at roughly **10.6M EGP** — on a dashboard gated on `sales:read`, which 13 of
+the 19 roles hold. `maskPortalSosDashboard` could never have caught it: it masks four structural
+fields, and the banner is a SENTENCE inside `insights`. The mask follows his closing-workbook
+choice of 2026-09-14 — keep the money, drop the name — so every period, estimate and count is
+untouched, and Super Admin still reads the real name.
+
 
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08
 

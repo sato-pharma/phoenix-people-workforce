@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
+import { maskSosCoverageReport } from "../src/lib/sales/closing-source-mask.ts";
 import {
   buildSosCoverageReport,
   describeSosCoverageGaps,
+  describeSosMergedSources,
   enumeratePeriods,
+  MERGED_SOURCE_WINDOWS,
+  mergedSourceWindowFor,
   type SosCoverageBatch,
 } from "../src/lib/sales/sos-coverage.ts";
 
@@ -17,6 +23,14 @@ const b = (period: string, distributorCode: string, totalValue: number): SosCove
   distributorCode,
   totalValue,
 });
+
+/** The same, with the name the batch carries — the banner must read names, never codes. */
+const bn = (
+  period: string,
+  distributorCode: string,
+  distributorName: string,
+  totalValue: number,
+): SosCoverageBatch => ({ period, distributorCode, distributorName, totalValue });
 
 export function runSosDataCoverageTests() {
   // ── enumeratePeriods ────────────────────────────────────────────────────────
@@ -99,7 +113,11 @@ export function runSosDataCoverageTests() {
     const feb = report2.periods.find((p) => p.period === "2026-02");
     assert.ok(feb, "February must be reported");
     assert.equal(feb.incomplete, true, "a month missing a known distributor is not like-for-like");
-    assert.deepEqual(feb.missingDistributors, ["EP-BK"]);
+    assert.deepEqual(
+      feb.missingDistributors,
+      [{ code: "EP-BK", name: "EP-BK" }],
+      "code AND name — the name is what a reader sees, the code is the only thing the El Qema mask can match",
+    );
 
     const jan = report2.periods.find((p) => p.period === "2026-01");
     assert.equal(jan?.incomplete, false, "a complete month is not flagged");
@@ -139,6 +157,183 @@ export function runSosDataCoverageTests() {
     assert.equal(report.distributors[0].distributorCode, "BIG", "the costliest gap is reported first");
     assert.match(describeSosCoverageGaps(report) ?? "", /BIG is missing from 2026-02/);
     assert.match(describeSosCoverageGaps(report) ?? "", /not like-for-like/);
+  }
+
+  // ── Names, not codes, and the two Direct vintages are ONE source ───────────
+  {
+    // DIRECT until 2026-07, DirectReq from 2026-08 (owner, 2026-09-04). Without the fold this reads
+    // "DIRECT is missing from 2026-09" about a channel that landed money that month, and the banner
+    // would name a raw code at that.
+    const report = buildSosCoverageReport([
+      bn("2026-07", "DIRECT", "Direct (Company)", 500), bn("2026-07", "PS", "overseas", 1000),
+      bn("2026-08", "DirectReq", "Direct Order Requests", 600), bn("2026-08", "PS", "overseas", 1000),
+      bn("2026-09", "DirectReq", "Direct Order Requests", 700), bn("2026-09", "PS", "overseas", 1000),
+    ]);
+    assert.deepEqual(report.distributors, [], "one continuous Direct row, so no gap at the cutover");
+    assert.equal(report.hasGaps, false);
+    assert.equal(
+      report.periods.every((p) => p.distributorCount === 2),
+      true,
+      "two sources a month, never three",
+    );
+
+    // And the name is what gets printed.
+    const named = buildSosCoverageReport([
+      bn("2026-01", "PS", "overseas", 1000),
+      bn("2026-02", "PS", "overseas", 1000), bn("2026-02", "EP-BK", "EPDA-BULK", 5000),
+      bn("2026-03", "PS", "overseas", 1000),
+    ]);
+    const bulk = named.distributors[0];
+    assert.equal(bulk.name, "EPDA-BULK", "the batch's own name");
+    assert.equal(bulk.distributorCode, "EP-BK", "the code stays on the row for the mask to match");
+    assert.match(describeSosCoverageGaps(named) ?? "", /EPDA-BULK is missing from/);
+    assert.equal(
+      (describeSosCoverageGaps(named) ?? "").includes("EP-BK"),
+      false,
+      "standing rule: names, never raw codes",
+    );
+  }
+
+  // ── A MERGED source's absence is not a hole ────────────────────────────────
+  {
+    // EPDA sent one combined pharmacies file for 2026-07 and 2026-08, so EP-BK has no batch of its
+    // own there. Production valued that silence at ~24.16M EGP — the largest "hole" on the board —
+    // while EP-PHS's own value jumped from 998K in June to 8.16M and 12.02M in exactly those months.
+    assert.deepEqual(
+      MERGED_SOURCE_WINDOWS.map((w) => `${w.code}->${w.into} ${w.from}..${w.until}`),
+      ["EP-BK->EP-PHS 2026-07..2026-08"],
+      "one window, and it ENDS at August",
+    );
+    assert.ok(mergedSourceWindowFor("EP-BK", "2026-07"), "July is inside the window");
+    assert.equal(mergedSourceWindowFor("EP-BK", "2026-06"), null, "June is before it");
+    assert.equal(mergedSourceWindowFor("EP-BK", "2026-09"), null, "September is after it");
+    assert.equal(mergedSourceWindowFor("EP-PHS", "2026-07"), null, "the absorbing source is not merged away");
+
+    const report = buildSosCoverageReport([
+      bn("2026-06", "EP-BK", "EPDA-BULK", 4_000), bn("2026-06", "EP-PHS", "EPDA-Pharmacies", 1_000),
+      bn("2026-07", "EP-PHS", "EPDA-Pharmacies", 8_000),
+      bn("2026-08", "EP-PHS", "EPDA-Pharmacies", 12_000),
+    ]);
+    const bulk = report.distributors.find((d) => d.distributorCode === "EP-BK");
+    assert.equal(bulk, undefined, "EPDA-BULK has no GAP at all — both its absences were carried");
+    assert.equal(report.hasGaps, false, "a merge is not a hole, so the banner stays off");
+    assert.deepEqual(
+      report.mergedSources.map((s) => [s.name, s.into, s.periods]),
+      [["EPDA-BULK", "EPDA-Pharmacies", ["2026-07", "2026-08"]]],
+      "reported as a merge, by name, rather than silently dropped",
+    );
+    assert.match(
+      describeSosMergedSources(report) ?? "",
+      /EPDA-BULK has no file of its own for 2026-07, 2026-08 because EPDA-Pharmacies carried it/,
+    );
+    assert.deepEqual(
+      report.periods.find((p) => p.period === "2026-07")?.missingDistributors,
+      [],
+      "July is complete — nothing is owed for it",
+    );
+    assert.equal(report.periods.find((p) => p.period === "2026-07")?.incomplete, false);
+  }
+
+  // ── The window ENDS: a September absence IS a hole ─────────────────────────
+  {
+    // Owner, 2026-10-09: from the September closing the bulk sector uploads on its own again, as
+    // "ساتو قطاع جملة" under EP-BK, and the EPDA-BULK contribution allocation spreads it over
+    // Pedia's areas. With no file there is nothing to spread, so September must still be reported.
+    const report = buildSosCoverageReport([
+      bn("2026-06", "EP-BK", "EPDA-BULK", 4_000), bn("2026-06", "EP-PHS", "EPDA-Pharmacies", 1_000),
+      bn("2026-07", "EP-PHS", "EPDA-Pharmacies", 8_000),
+      bn("2026-08", "EP-PHS", "EPDA-Pharmacies", 12_000),
+      bn("2026-09", "EP-PHS", "EPDA-Pharmacies", 9_000),
+    ]);
+    const bulk = report.distributors.find((d) => d.distributorCode === "EP-BK");
+    assert.ok(bulk, "September is past the merge, so the absence is real again");
+    assert.deepEqual(bulk.missingPeriods, ["2026-09"], "ONLY September — July and August were carried");
+    assert.deepEqual(bulk.mergedPeriods, ["2026-07", "2026-08"]);
+    assert.equal(bulk.mergedInto, "EPDA-Pharmacies", "and who carried them, by name");
+    assert.equal(
+      bulk.estimatedMissingValue,
+      4_000,
+      "one month x its mean — the merged months are NOT priced into the estimate (the 24.16M defect)",
+    );
+    assert.deepEqual(
+      report.periods.find((p) => p.period === "2026-09")?.missingDistributors,
+      [{ code: "EP-BK", name: "EPDA-BULK" }],
+      "September is the incomplete month, not July",
+    );
+  }
+
+  // ── The guard: a window only excuses a month the absorbing file actually landed in ──
+  {
+    // If EPDA sent nothing at all in July, BOTH sources are missing and the month is a real hole.
+    // Reading the window on trust would silence the larger of the two.
+    const report = buildSosCoverageReport([
+      bn("2026-06", "EP-BK", "EPDA-BULK", 4_000), bn("2026-06", "EP-PHS", "EPDA-Pharmacies", 1_000),
+      bn("2026-07", "PS", "overseas", 1_000),
+      bn("2026-08", "EP-BK", "EPDA-BULK", 4_000), bn("2026-08", "EP-PHS", "EPDA-Pharmacies", 1_000),
+    ]);
+    const bulk = report.distributors.find((d) => d.distributorCode === "EP-BK");
+    assert.ok(bulk, "nothing carried EPDA-BULK in July, so July is still a hole");
+    assert.deepEqual(bulk.missingPeriods, ["2026-07"]);
+    assert.deepEqual(bulk.mergedPeriods, [], "no absorbing file, no merge");
+    assert.deepEqual(bulk.interiorMissingPeriods, ["2026-07"], "present either side — unambiguous");
+    assert.deepEqual(report.mergedSources, []);
+  }
+
+  // ── El Qema leaves no trace on the coverage banner either ──────────────────
+  {
+    // 🔒 Owner, 2026-09-09. The portal SoS dashboard is gated on `sales:read`, which 13 of the 19
+    // roles hold. Once EPDA-BULK's merged months stop counting, El Qema is the costliest remaining
+    // gap on Pedia (~10.6M EGP on production), so the banner would have named it.
+    const viewer = { role: "Medical Rep" as const, scope: "line" as const };
+    const superAdmin = { role: "Super Admin" as const, scope: "company" as const };
+    const report = buildSosCoverageReport([
+      bn("2026-01", "PS", "overseas", 1_000),
+      bn("2026-02", "PS", "overseas", 1_000), bn("2026-02", "QM", "El Qema", 9_000),
+      bn("2026-03", "PS", "overseas", 1_000),
+    ]);
+    assert.equal(report.distributors[0].name, "El Qema", "the real report keeps the truth");
+
+    const masked = maskSosCoverageReport(report, viewer);
+    assert.equal(masked.distributors[0].name, "—", "keep the money, drop the name");
+    assert.equal(masked.distributors[0].distributorCode, "—");
+    assert.equal(
+      masked.distributors[0].estimatedMissingValue,
+      report.distributors[0].estimatedMissingValue,
+      "every number is untouched — this is a mask, not an erase",
+    );
+    assert.deepEqual(
+      masked.periods.find((p) => p.period === "2026-01")?.missingDistributors,
+      [{ code: "—", name: "—" }],
+      "the per-month list carries the identity too, and is masked with it",
+    );
+    const sentence = describeSosCoverageGaps(masked) ?? "";
+    assert.equal(sentence.includes("El Qema"), false, "no trace in the banner sentence");
+    assert.equal(sentence.includes("QM"), false, "nor the code");
+    assert.match(sentence, /— is missing from 2026-01, 2026-03/);
+    assert.equal(
+      maskSosCoverageReport(report, superAdmin),
+      report,
+      "Super Admin gets the same object back, untouched",
+    );
+    assert.match(describeSosCoverageGaps(report) ?? "", /El Qema is missing from/, "he still sees it");
+  }
+
+  // ── The mask is WIRED, ahead of the sentence that would carry the name ─────
+  {
+    // The banner is free text inside `insights` — it cannot be masked after it is written, and
+    // `maskPortalSosDashboard` never saw it. Pin the call site, not just the function.
+    const dashboard = readFileSync(
+      path.resolve(import.meta.dirname, "../src/lib/sales/sos-dashboard.ts"),
+      "utf8",
+    );
+    assert.ok(
+      dashboard.includes("coverage: coverage ? maskSosCoverageReport(coverage, accessContext) : coverage"),
+      "buildInsights must receive the MASKED coverage report",
+    );
+    assert.ok(
+      dashboard.includes('.select("period,distributor_code,distributor_name,total_value")'),
+      "the batch NAME must be in the select itself, or the banner falls back to raw codes",
+    );
   }
 
   // ── Malformed rows are ignored rather than corrupting the report ───────────
