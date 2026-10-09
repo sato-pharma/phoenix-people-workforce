@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { buildProductPeriodPrices } from "../src/lib/sales/product-period-price.ts";
+import { maskSourceCoverage } from "../src/lib/sales/closing-source-mask.ts";
 import {
   aggregateCoverage,
   canonicalSourceKey,
   classifyCoverage,
   isDirectModuleSourced,
+  partitionAbsentSources,
   previousPeriod,
   type CoverageFactRow,
+  type SourceCoverageEntry,
 } from "../src/lib/sales/source-coverage.ts";
+import { quietSourcesSentence, sourceQuietIn } from "../src/lib/sales/source-quiet-periods.ts";
 
 function factRow(overrides: Partial<CoverageFactRow>): CoverageFactRow {
   return {
@@ -236,4 +240,109 @@ export function runSourceCoverageTests() {
     MASTER_TABLE_READ.test(`supabase.from("source_of_sales_products").select("product_code,factory_price").eq("active", true)`),
     "control: the detector fires on the exact read it replaced",
   );
+
+  // ── A source the owner declared quiet is absent, but not OWED ──────────────────────────────
+  //
+  // Owner, 2026-10-09: "fix the closing banner that still calls epda and mec a hole". September
+  // CNS read "missing 2 of the 13 sources that fed 2026-08 — epda, mec … Totals are understated
+  // until these arrive" on a month he had already said was finished, promising two books that are
+  // never coming. The declaration existed; nothing read it — `sourceQuietIn` had zero callers.
+  assert.ok(sourceQuietIn("EP", "2026-09"), "epda is declared quiet in September 2026");
+  assert.ok(sourceQuietIn("MC", "2026-09"), "mec is declared quiet in September 2026");
+  assert.ok(sourceQuietIn("ep", "2026-09"), "the code is compared folded, as every other source key is");
+  assert.equal(
+    sourceQuietIn("EP", "2026-10"),
+    null,
+    "period-scoped, never a retirement — October expects epda's file again",
+  );
+  assert.equal(
+    sourceQuietIn("EP-BK", "2026-09"),
+    null,
+    "EPDA-BULK is a SEPARATE source that did file in September — a declaration must never reach it by prefix",
+  );
+  assert.equal(sourceQuietIn("", "2026-09"), null, "an empty code matches nothing");
+
+  const absentEntry = (key: string, name: string, prevValue: number): SourceCoverageEntry => ({
+    key,
+    name,
+    prevUnits: 10,
+    prevValue,
+    curUnits: 0,
+    curValue: 0,
+    status: "missing",
+  });
+  const septemberShape: SourceCoverageEntry[] = [
+    absentEntry("EP", "epda", 1_900.5),
+    absentEntry("MC", "mec", 618.59),
+    { ...absentEntry("EP-BK", "EPDA-BULK", 5_000), curUnits: 11_398, curValue: 500_000, status: "present" },
+  ];
+  const september = partitionAbsentSources(septemberShape, "2026-09");
+  assert.equal(september.missing.length, 0, "September owes nothing — its only absences are the two he declared");
+  assert.deepEqual(
+    september.quiet.map((entry) => entry.name),
+    ["epda", "mec"],
+    "both declared sources are held apart by NAME, so the banner can still say which books are not coming",
+  );
+  assert.ok(
+    !september.quiet.some((entry) => entry.key === "EP-BK"),
+    "a source that FILED is present and reaches neither list — the data outvotes the declaration",
+  );
+
+  const october = partitionAbsentSources(
+    septemberShape.map((entry) => ({ ...entry })),
+    "2026-10",
+  );
+  assert.deepEqual(
+    october.missing.map((entry) => entry.name),
+    ["epda", "mec"],
+    "the very same absences ARE holes in October — the carve-out expires with its period",
+  );
+  assert.equal(october.quiet.length, 0, "and nothing is explained away there");
+
+  const withUndeclared = partitionAbsentSources(
+    [...septemberShape, absentEntry("IS", "Ibn Sina", 40_000)],
+    "2026-09",
+  );
+  assert.deepEqual(
+    withUndeclared.missing.map((entry) => entry.name),
+    ["Ibn Sina"],
+    "an undeclared absence is still a hole in a month that has declared ones — the carve-out is per source",
+  );
+
+  // ── The sentence he actually reads ────────────────────────────────────────────────────────
+  //
+  // The defect was never the arithmetic: it was "Totals are understated until these arrive" on a
+  // month he had declared finished. This pins the replacement, because a wording regression here
+  // is invisible to every test of the partition above.
+  const sentence = quietSourcesSentence("2026-09", september.quiet);
+  assert.equal(
+    sentence,
+    "epda and mec file nothing in 2026-09 by the owner's instruction, so they are not counted as missing.",
+  );
+  assert.ok(!/arrive/i.test(sentence), "it must never promise an arrival — that promise IS the defect");
+  assert.ok(!/missing \d/.test(sentence), "and it must not call them a hole");
+  assert.equal(
+    quietSourcesSentence("2026-09", [{ name: "mec" }]),
+    "mec files nothing in 2026-09 by the owner's instruction, so it is not counted as missing.",
+    "one source reads as one source — a bare plural on a single name is how these sentences rot",
+  );
+  assert.equal(quietSourcesSentence("2026-10", []), "", "nothing declared, nothing said");
+
+  // The banner names these sources, so they mask exactly like the ones beside them. A field that
+  // carries a distributor name and is rendered to the viewer, but is missed by the mask, is a leak
+  // that no test of the other two fields can see.
+  const masked = maskSourceCoverage(
+    {
+      missingSources: [],
+      quietSources: [{ key: "QM", name: "El Qema" }],
+      sources: [{ key: "QM", name: "El Qema" }],
+    },
+    { role: "Medical Rep", scope: "own" } as never,
+  );
+  assert.equal(
+    masked.quietSources[0]?.name,
+    masked.sources[0]?.name,
+    "a masked distributor is relabelled in quietSources exactly as it is in the per-source table",
+  );
+  assert.notEqual(masked.quietSources[0]?.name, "El Qema", "and the real name does not survive the mask");
 }

@@ -26,6 +26,7 @@ import { ClosingPeriodSelect } from "@/components/sales/closing-period-select";
 import { closingPeriodGateMessage, closingPeriodOpensOn, isClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
 import { describePeriodSelection, periodLabel } from "@/lib/sales/monthly-closing-period-merge";
 import type { MonthlySourceCoverage } from "@/lib/sales/source-coverage";
+import { quietSourcesSentence } from "@/lib/sales/source-quiet-periods";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
@@ -125,7 +126,16 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
     if (!coverage || !coverage.hasPrevData) return null;
     const missing = coverage.missingSources;
     const missingRegions = coverage.missingDirectRegions;
-    if (missing.length === 0 && missingRegions.length === 0) return null;
+    // A month whose only absences are ones the owner declared is NOT incomplete, and saying it is
+    // was the defect he had fixed on 2026-10-09. It still gets a sentence — the month genuinely is
+    // lighter than the one before it — but a flat statement of fact, with no "until these arrive"
+    // behind it. See the quiet-source carve-out in source-coverage.ts.
+    const quiet = coverage.quietSources ?? [];
+    if (missing.length === 0 && missingRegions.length === 0) {
+      if (quiet.length === 0) return null;
+      return `${quietSourcesSentence(coverage.period, quiet)} Every other source that fed `
+        + `${coverage.prevPeriod} has filed, so this month is complete.`;
+    }
     const parts: string[] = [];
     if (missing.length > 0) {
       const names = missing.slice(0, 3).map((entry) => entry.name);
@@ -144,6 +154,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
       parts.push(`The Direct sheet has nothing yet from ${missingRegions.map((entry) => entry.name).join(", ")}.`);
     }
     parts.push("Totals are understated until these arrive.");
+    if (quiet.length > 0) parts.push(quietSourcesSentence(coverage.period, quiet));
     return parts.join(" ");
   }, [coverage]);
 

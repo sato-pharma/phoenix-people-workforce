@@ -27,11 +27,15 @@
 // the merge window is bounded. The DATA still outvotes the declaration — a book that does arrive is
 // simply present, so nothing here can hide a late upload.
 //
-// 🔴 THIS CARVE-OUT IS THE GATE'S ALONE, NOT THE AUDIT BANNER'S. `buildSosCoverageReport` must keep
-// counting those two as absent, because they ARE absent: September's totals genuinely do not hold
-// their volume, so a month-over-month comparison is not like-for-like and saying so is that
-// banner's entire job. "Are the last books in?" and "is this month comparable to last month?" are
-// different questions, and only the first one belongs to this module.
+// 🔴 WHICH SURFACES HONOUR THE DECLARATION, AND WHICH ONE MUST NOT. Two do: this gate, and the
+// CLOSING's own coverage banner (`source-coverage.ts`), which the owner had fixed on 2026-10-09 —
+// "fix the closing banner that still calls epda and mec a hole" — because it was telling him a
+// complete month was short two files and promising they would arrive. The SoS AUDIT banner
+// (`buildSosCoverageReport`) must keep counting those two as absent, because they ARE absent:
+// September's totals genuinely do not hold their volume, so a month-over-month comparison is not
+// like-for-like and saying so is that banner's entire job. "Are the last books in?", "is anything
+// still owed for this closing?" and "is this month comparable to last month?" are three different
+// questions, and only the third one survives a declaration.
 //
 // Deliberately pure: `scripts/check-sos-month-complete.ts` does the I/O and the reporting, and the
 // test pins the judgement without touching the database.
@@ -39,6 +43,7 @@
 import { canonicalDistributorKey, DIRECT_CHANNEL_CODE, DIRECT_CHANNEL_LABEL } from "@/lib/sales/direct-channel";
 import type { SosCoverageBatch, SosCoverageReport } from "@/lib/sales/sos-coverage";
 import { previousPeriod } from "@/lib/sales/source-coverage";
+import { sourceQuietIn } from "@/lib/sales/source-quiet-periods";
 
 /** A source that is quiet in this month because another source's file carried it. */
 export type MonthCompletenessMerge = {
@@ -55,45 +60,13 @@ export type MonthCompletenessMissing = {
 };
 
 /**
- * A source the OWNER has said is not filing in a given month.
- *
- * Period-scoped, never a retirement: the month after the declared one expects its file again, so a
- * source that goes quiet once cannot drop off the expectation for ever. Only the owner's own word
- * puts an entry here — this is not inferred from a quiet month, which is indistinguishable from a
- * book that has not been uploaded yet.
+ * The quiet-period declaration now lives in `source-quiet-periods.ts`, a leaf, and is re-exported
+ * here so every existing caller and test keeps its import. It moved out on 2026-10-09 because the
+ * CLOSING's coverage banner needed the same declaration, and this file imports `previousPeriod`
+ * from `source-coverage.ts` — reaching back the other way would have made the two import each
+ * other. Nothing about the rule changed in the move.
  */
-export type SourceQuietPeriod = {
-  /** The source's code, compared folded. */
-  code: string;
-  /** The months it files nothing in — "YYYY-MM". */
-  periods: readonly string[];
-  /** His words and the date, for the reader of this file. */
-  reason: string;
-};
-
-/** The months the owner has declared a source does not file in. */
-export const SOURCE_QUIET_PERIODS: readonly SourceQuietPeriod[] = [
-  {
-    code: "EP",
-    periods: ["2026-09"],
-    reason: 'owner, 2026-10-09: "ebda and mec are not comming this month"',
-  },
-  {
-    code: "MC",
-    periods: ["2026-09"],
-    reason: 'owner, 2026-10-09: "ebda and mec are not comming this month" — mec, the separate distributor',
-  },
-];
-
-/** The declaration covering this source in this period, or null. Codes are compared folded. */
-export function sourceQuietIn(code: string, period: string): SourceQuietPeriod | null {
-  const key = canonicalDistributorKey(code);
-  for (const quiet of SOURCE_QUIET_PERIODS) {
-    if (canonicalDistributorKey(quiet.code) !== key) continue;
-    if (quiet.periods.includes(period)) return quiet;
-  }
-  return null;
-}
+export { SOURCE_QUIET_PERIODS, sourceQuietIn, type SourceQuietPeriod } from "@/lib/sales/source-quiet-periods";
 
 /** A source that files nothing this month by the owner's word. */
 export type MonthCompletenessQuiet = {

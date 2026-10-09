@@ -81,6 +81,12 @@ const UP = "▲";
 const DOWN = "▼";
 /** Prefixes the completeness note. The card already ships ★, so the glyph set is house style. */
 const WARN = "⚠";
+/**
+ * Prefixes the completeness note when the month is COMPLETE and only says which books are not
+ * coming. A different glyph on purpose: ⚠ next to "COMPLETE" is the same mixed signal the quiet
+ * carve-out exists to remove.
+ */
+const NOTE = "·";
 const DOT = "·";
 const DASH = "—";
 const GAP = "   ";
@@ -588,7 +594,20 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
     if (!coverage?.hasPrevData) return null;
     const missing = coverage.missingSources ?? [];
     const regions = coverage.missingDirectRegions ?? [];
-    if (missing.length === 0 && regions.length === 0) return null;
+    // Declared quiet by the owner is not INCOMPLETE — the workbook must not stamp a red warning on
+    // twelve sheets of a month he has said is finished (owner, 2026-10-09). It still says which
+    // books are not coming, because a reader comparing two months deserves that, but as a plain
+    // note with no "until they arrive". The carve-out itself lives in source-coverage.ts.
+    const quiet = coverage.quietSources ?? [];
+    if (missing.length === 0 && regions.length === 0) {
+      if (quiet.length === 0) return null;
+      const names = quiet.map((entry) => entry.name).join(", ");
+      return {
+        full: `${NOTE} COMPLETE${GAP}${month.label} files nothing from ${names}, by the owner's`
+          + " instruction. Every other source has filed.",
+        terse: `${NOTE} ${count(quiet.length, "source")} not filing`,
+      };
+    }
 
     // Sources first when both are missing: a whole absent distributor outweighs an absent region
     // of the Direct sheet, and the long form still names the region count after it.

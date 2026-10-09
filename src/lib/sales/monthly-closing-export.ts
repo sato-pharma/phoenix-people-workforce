@@ -2776,14 +2776,32 @@ function writeSourceCoverageSheet(workbook: ExcelJS.Workbook, coverage: MonthlyS
     return;
   }
 
+  // A source the owner has declared quiet is absent, but it is not OWED — so it must not read
+  // MISSING on the one sheet whose job is "is this month complete?" (owner, 2026-10-09). Membership
+  // is taken from `quietSources` rather than re-derived, so a masked distributor is matched by the
+  // same relabelled key on both sides and cannot leak its real name through this label.
+  const quiet = coverage.quietSources ?? [];
+  const quietKeys = new Set(quiet.map((entry) => entry.key));
   const statusLabel = (entry: SourceCoverageEntry) =>
-    entry.status === "missing"
-      ? `MISSING in ${coverage.period}`
-      : entry.status === "new"
-        ? `New in ${coverage.period}`
-        : "Present in both";
+    quietKeys.has(entry.key) && entry.status === "missing"
+      ? `Not filing in ${coverage.period}`
+      : entry.status === "missing"
+        ? `MISSING in ${coverage.period}`
+        : entry.status === "new"
+          ? `New in ${coverage.period}`
+          : "Present in both";
 
   const missing = coverage.missingSources;
+  // "Every source that fed last month has also fed this one" would be FALSE on a month whose only
+  // absences are declared ones — the sentence has to name them, or the sheet contradicts its own
+  // table two rows below.
+  const quietNames = quiet.map((entry) => entry.name).join(", ");
+  const allPresentNote =
+    quiet.length === 0
+      ? `Every source that fed ${coverage.prevPeriod} has also fed ${coverage.period}.`
+      : `Every source that fed ${coverage.prevPeriod} has also fed ${coverage.period}, except `
+        + `${quietNames}, which ${quiet.length === 1 ? "files" : "file"} nothing in ${coverage.period} `
+        + "by the owner's instruction. Nothing is owed.";
   row = writeTable(sheet, row, {
     columns: [
       { label: "Source", width: 26 },
@@ -2791,11 +2809,13 @@ function writeSourceCoverageSheet(workbook: ExcelJS.Workbook, coverage: MonthlyS
       { dataBar: true, label: `${coverage.prevPeriod} Value (EGP)`, numFmt: VALUE_FMT, right: true, width: 19 },
     ],
     note: missing.length === 0
-      ? `Every source that fed ${coverage.prevPeriod} has also fed ${coverage.period}.`
+      ? allPresentNote
       : `These fed ${coverage.prevPeriod} and have contributed nothing to ${coverage.period} yet. Until each ` +
         "arrives — or is confirmed as having no business this month — every total in this workbook is understated.",
     rows: missing.length === 0
-      ? [["None — all of last month's sources are present", null, null]]
+      ? [[quiet.length === 0
+          ? "None — all of last month's sources are present"
+          : `None owed — ${quietNames} ${quiet.length === 1 ? "is" : "are"} not filing this month`, null, null]]
       : missing.map((entry) => [entry.name, entry.prevUnits, entry.prevValue]),
     title: `Missing in ${coverage.period} — fed ${coverage.prevPeriod}, nothing yet this month`,
     totals: missing.length === 0 ? undefined : [

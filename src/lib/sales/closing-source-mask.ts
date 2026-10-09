@@ -279,6 +279,18 @@ export function maskComparisonLeaves<T extends ComparisonLeaves>(leaves: T, view
 /** The distributor-keyed half of a month's source coverage, structurally. */
 type SourceCoverageLike = {
   missingSources: readonly { key: string; name: string }[];
+  /**
+   * The declared-quiet sources are named in the same banner, so they mask with the rest. Added
+   * 2026-10-09 with the quiet-source carve-out: a field that carries a distributor name and is
+   * rendered to the viewer, but is not listed here, is a leak that no test of the other two
+   * fields can see.
+   *
+   * Optional HERE and required on `MonthlySourceCoverage`, deliberately: the compiler pressure to
+   * supply it belongs on whoever builds a coverage payload, while this mask is structural and is
+   * handed older payloads — a cached one from before this field existed, and the fixtures that
+   * predate it. Throwing on those would make the mask the thing that breaks.
+   */
+  quietSources?: readonly { key: string; name: string }[];
   sources: readonly { key: string; name: string }[];
 };
 
@@ -295,6 +307,7 @@ export function maskSourceCoverage<T extends SourceCoverageLike>(coverage: T, vi
   return {
     ...coverage,
     missingSources: coverage.missingSources.map(relabel),
+    quietSources: (coverage.quietSources ?? []).map(relabel),
     sources: coverage.sources.map(relabel),
   } as T;
 }

@@ -25,6 +25,7 @@ import { maskSourceCoverage, type SourceMaskViewer } from "@/lib/sales/closing-s
 import { DIRECT_CHANNEL_CODE, canonicalDistributorKey } from "@/lib/sales/direct-channel";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { loadProductPeriodPrices, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
+import { sourceQuietIn } from "@/lib/sales/source-quiet-periods";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Mirrors the confidential exclusion baked into both closing RPCs. */
@@ -97,8 +98,20 @@ export type MonthlySourceCoverage = {
   sources: SourceCoverageEntry[];
   /** Direct-channel rows per region — catches "the Direct sheet arrived but half its regions did not". */
   directRegions: SourceCoverageEntry[];
-  /** Derived: sources with rows last month and none this month, biggest first. */
+  /**
+   * Derived: sources with rows last month and none this month, biggest first — MINUS the ones the
+   * owner has declared quiet for this period, which are in `quietSources` instead.
+   */
   missingSources: SourceCoverageEntry[];
+  /**
+   * Absent because the OWNER said so, not because an upload is owed — see `source-quiet-periods.ts`.
+   *
+   * Held apart rather than dropped: the month really is lighter than the one before it, and a
+   * reader comparing the two deserves to know which books are not coming. What it must NOT do is
+   * read as a hole that will be filled. Same shape as the Direct-region suppression below — the
+   * per-source table keeps every row, only the alarm that promises an arrival goes.
+   */
+  quietSources: SourceCoverageEntry[];
   missingDirectRegions: SourceCoverageEntry[];
   /**
    * True when this month's direct rows come from the Direct Request module. The per-region
@@ -106,8 +119,16 @@ export type MonthlySourceCoverage = {
    */
   directModuleSourced: boolean;
   prevSourceCount: number;
-  /** Last-month value of everything currently missing — the scale of the hole. */
+  /**
+   * Last-month value of everything currently missing — the scale of the hole.
+   *
+   * Counts `missingSources` only. A declared-quiet source contributes nothing, because the sentence
+   * this number is rendered inside says value is absent UNTIL IT ARRIVES, and that is the claim the
+   * owner struck out.
+   */
   missingPrevValue: number;
+  /** Last-month value of the declared-quiet sources — the honest size of the difference. */
+  quietPrevValue: number;
   /** Latest validated upload for the CURRENT month (ISO), i.e. how fresh this month's data is. */
   latestUploadAt: string | null;
 };
@@ -204,6 +225,31 @@ export function aggregateCoverage(
   }
 
   return aggregates;
+}
+
+/**
+ * Split the sources absent this month into the ones still OWED and the ones the owner has declared
+ * quiet — `source-quiet-periods.ts`.
+ *
+ * 🔴 WHY THIS IS A FUNCTION AND NOT THREE LINES IN THE LOADER. The loader needs a database, so a
+ * rule living inside it can only ever be pinned by reading the source — and this one decides
+ * whether a complete month announces itself as incomplete. Here it can be executed.
+ *
+ * Entries that are not `missing` are in neither list: a source that FILED is present, whatever any
+ * declaration says, so the data always outvotes the owner's word in the direction that matters.
+ */
+export function partitionAbsentSources(
+  sources: readonly SourceCoverageEntry[],
+  period: string,
+): { missing: SourceCoverageEntry[]; quiet: SourceCoverageEntry[] } {
+  const missing: SourceCoverageEntry[] = [];
+  const quiet: SourceCoverageEntry[] = [];
+  for (const entry of sources) {
+    if (entry.status !== "missing") continue;
+    if (sourceQuietIn(entry.key, period)) quiet.push(entry);
+    else missing.push(entry);
+  }
+  return { missing, quiet };
 }
 
 /**
@@ -373,7 +419,15 @@ export async function loadMonthlySourceCoverage(
     (key) => regionNameByCode.get(key) ?? key,
   );
 
-  const missingSources = sources.filter((entry) => entry.status === "missing");
+  // 🔴 A SOURCE THE OWNER SAYS IS NOT FILING THIS MONTH IS NOT A HOLE (owner, 2026-10-09: "fix the
+  // closing banner that still calls epda and mec a hole"). September CNS read "missing 2 of the 13
+  // sources that fed 2026-08 — epda, mec … Totals are understated until these arrive" on a month he
+  // had already declared complete, promising two books that are never going to come. Exactly the
+  // false alarm the Direct-module suppression below removes, and answered the same way: the entries
+  // stay in `sources` and in the per-source table, so nothing is hidden — they just stop being
+  // counted as owed. `sourceQuietIn` is period-scoped, so October expects both again, and the data
+  // still outvotes it: a book that arrives is `present` and never reaches this branch at all.
+  const { missing: missingSources, quiet: quietSources } = partitionAbsentSources(sources, selectedPeriod);
   // A region that raised no direct request this month is business reality, not a missing upload —
   // and every consumer of missingDirectRegions renders it as "The Direct sheet has nothing yet
   // from X. Totals are understated until these arrive", which is false once the module is the
@@ -393,11 +447,15 @@ export async function loadMonthlySourceCoverage(
     sources,
     directRegions,
     missingSources,
+    quietSources,
     missingDirectRegions,
     directModuleSourced,
     prevSourceCount: aggregates.sourcesPrev.size,
     missingPrevValue: Number(
       missingSources.reduce((sum, entry) => sum + entry.prevValue, 0).toFixed(2),
+    ),
+    quietPrevValue: Number(
+      quietSources.reduce((sum, entry) => sum + entry.prevValue, 0).toFixed(2),
     ),
     latestUploadAt,
   }, viewer);
