@@ -346,8 +346,20 @@ export function runPhoenixCrmBlindHalfTests(): void {
     if (!/export function readsPositionCases\(viewer: PhoenixCrmViewer\): boolean \{\s*return viewer\.isSuperAdmin;\s*\}/.test(board)) {
       problems.push("the position cases must be the Super Admin's alone, in one predicate: readsPositionCases");
     }
-    if (!/if \(!positions\) query = query\.eq\("source", "photo"\);/.test(board)) {
-      problems.push("for anyone else the board must QUERY the photo cases only, never filter GPS cases out afterwards");
+    // 🔴 The narrowing is an ALLOW-LIST since 2026-10-09, not `.eq("source", "photo")`: that spelling
+    // meant "everything but the position cases" only while `photo` was the only other detector, and
+    // `signboard` proved it was not — it filed five cases nobody had decided an audience for. Three
+    // halves are pinned, because the rule needs all three: the narrowing stays on the QUERY (never a
+    // filter after the read), the windowed copy narrows the same way, and the list itself still holds
+    // nothing but the detectors he decided the SFE may read.
+    if (!/if \(!positions\) query = query\.in\("source", SFE_SOURCES\);/.test(board)) {
+      problems.push("for anyone else the board must QUERY the allow-listed cases only, never filter GPS cases out afterwards");
+    }
+    if (!/if \(!options\.includeGps\) query = query\.in\("source", SFE_SOURCES\);/.test(board)) {
+      problems.push("the windowed read must narrow by the same allow-list, on the query");
+    }
+    if (!/const SFE_SOURCES: IntegritySource\[\] = \["photo"\];/.test(board)) {
+      problems.push("SFE_SOURCES must stay the decided list — position cases are the Super Admin's alone (owner, 2026-10-02) and so are signboard cases (owner, 2026-10-09)");
     }
     if (!/deviceMocked: positions && /.test(board)) problems.push("the phone's mock-location answer must be the Super Admin's alone");
     // A 403 that names the board tells the person asking that the board exists and what it watches.

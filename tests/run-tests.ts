@@ -1236,6 +1236,7 @@ import { runCaptureTrustTests } from "./capture-trust.test.ts";
 import { runVenueDistanceRuleTests } from "./venue-distance-rule.test.ts";
 import { runPharmacyCodeSuggestionTests } from "./pharmacy-code-suggestions.test.ts";
 import { runCrmIntegrityPlaceDistanceTests } from "./crm-integrity-place-distance.test.ts";
+import { runCrmIntegritySignboardCaseTests } from "./crm-integrity-signboard-cases.test.ts";
 import { runCrmShutterFixTests } from "./crm-shutter-fix.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runProductPeriodPriceTests } from "./product-period-price.test.ts";
@@ -5111,6 +5112,7 @@ await runTest("SoS seat attribution (today's wiring, departed reps keep their cr
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
 await runTest('crm integrity board (how far a visit was saved from its place, read never recomputed)', runCrmIntegrityPlaceDistanceTests);
+await runTest('crm integrity board (a signboard case is its own detector, and a flag a later reading no longer supports leaves the findings)', runCrmIntegritySignboardCaseTests);
 await runTest('crm shutter fix (the visit photo takes its own gps reading, silently)', runCrmShutterFixTests);
 await runTest('capture trust (the photo carries its OWN gps fix, never a copy of the location fix)', runCaptureTrustTests);
 await runTest('THE 4 KM RULE (a pharmacy too far from the customer cannot be linked to him)', runVenueDistanceRuleTests);

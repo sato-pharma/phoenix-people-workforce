@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Eye, ShieldAlert, Users } from "lucide-react";
+import { Eye, ShieldAlert, Undo2, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
 import { canAccess } from "@/lib/auth/permissions";
@@ -20,12 +20,13 @@ export const dynamic = "force-dynamic";
  * Location integrity — the Super Admin's and the SFE Manager's board, and the ONLY screen that reads
  * the evidence (owner, 2026-09-26: "recorded in the admin and the SFE account").
  *
- * 🔒 IT CARRIES THREE DETECTORS AND KEEPS ITS NAME. The position checks judge one fix, the nightly
- * photo sweep judges one picture (D5, source "photo"), and the behaviour pass judges a rep's whole
- * month (D4, its own table and its own section below). The name says one of the three, and that was
- * PUT TO THE OWNER on 2026-09-27 once it had stopped describing the board. He answered "keep the
- * name Location integrity". Settled, not deferred: never re-propose a rename when a fourth detector
- * lands — widen the description instead.
+ * 🔒 IT CARRIES FOUR DETECTORS AND KEEPS ITS NAME. The position checks judge one fix, the nightly
+ * photo sweep judges one picture (D5, source "photo"), the signboard pass judges whether the sign on
+ * the building names the customer the place was validated for (source "signboard", from 2026-10-08),
+ * and the behaviour pass judges a rep's whole month (D4, its own table and its own section below).
+ * The name says one of the four, and that was PUT TO THE OWNER on 2026-09-27 once it had stopped
+ * describing the board. He answered "keep the name Location integrity". Settled, not deferred: the
+ * fourth detector landed and the DESCRIPTION widened, exactly as that ruling said it should.
  *
  * It sits under /admin, which a rep cannot open at all. That is the whole reason it is a page of its
  * own rather than a tab inside Phoenix CRM: the CRM tabs are the same component tree the field app
@@ -35,6 +36,14 @@ export const dynamic = "force-dynamic";
  * Nothing on this page acts. There is no button, no decision, no notification and no write — reading
  * it is the entire feature, and what to do about a case is the owner's call, made with the photo and
  * the day in front of him.
+ *
+ * 🔴 WHICH IS WHY A FLAG A LATER READING NO LONGER SUPPORTS IS SHOWN, NOT CLEARED. A signboard
+ * verdict is not stable — the same photograph read a name at 18:12 and nothing at 18:34 on
+ * 2026-10-09 — so four of the five signboard flags on this board that evening were already contra-
+ * dicted by the place's own stored verdict, and the page said nothing about it. They now sit in their
+ * own section with both readings side by side and out of the three counters, because a counter is a
+ * call to look. Nothing is deleted and nothing is settled on his behalf: the table has no resolution
+ * column, so clearing one would mean destroying the record of what the detector did.
  */
 function cairo(value: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -98,16 +107,134 @@ function Position({ entry }: { entry: IntegrityCase }) {
   );
 }
 
+/**
+ * A signboard case's own evidence: what the sign said when it was flagged, and what it says now.
+ *
+ * The words of the sign were kept on the row from the first day and never shown, so "the signboard
+ * names somebody else" named nobody — the one thing a Super Admin needs in order to judge the case
+ * was a database query away. `dir="auto"` per line, because a sign is in Arabic, Latin or both and
+ * direction belongs to the line rather than to the block. Never truncated.
+ */
+function SignEvidence({ entry }: { entry: IntegrityCase }) {
+  if (entry.source !== "signboard") return null;
+  const later = entry.laterReading;
+  return (
+    <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+      {entry.signText ? (
+        <p className="break-words text-xs text-slate-600" dir="auto">
+          The sign read: {entry.signText}
+        </p>
+      ) : (
+        <p className="text-xs text-slate-500">Nothing was transcribed from the sign.</p>
+      )}
+      {later ? (
+        <p className="break-words text-xs text-slate-600">
+          Read again on {cairo(later.checkedAt)} and {later.sameFinding ? "it still says this" : later.words}.
+        </p>
+      ) : (
+        <p className="text-xs text-slate-500">The sign has not been read again since.</p>
+      )}
+      {later?.signText && later.signText !== entry.signText ? (
+        <p className="break-words text-xs text-slate-600" dir="auto">
+          That reading read: {later.signText}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function Reasons({ entry }: { entry: IntegrityCase }) {
   return (
-    <ul className="space-y-1">
-      {entry.reasons.map((reason) => (
-        <li key={reason} className="flex items-start gap-2 text-sm leading-6 text-slate-700">
-          <span className={`mt-2 h-1.5 w-1.5 shrink-0 ${entry.strong ? "bg-rose-500" : "bg-amber-500"}`} />
-          <span>{reason}</span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-1">
+        {entry.reasons.map((reason) => (
+          <li key={reason} className="flex items-start gap-2 text-sm leading-6 text-slate-700">
+            <span className={`mt-2 h-1.5 w-1.5 shrink-0 ${entry.strong ? "bg-rose-500" : "bg-amber-500"}`} />
+            <span>{reason}</span>
+          </li>
+        ))}
+      </ul>
+      <SignEvidence entry={entry} />
+    </>
+  );
+}
+
+/**
+ * One list of cases — the desktop table and the phone's cards, from the same entries.
+ *
+ * ONE component for both lists on this page, so the live cases and the withdrawn ones can never
+ * print different facts about the same row: the photo audit of 2026-10-02 found the phone card had
+ * silently dropped a whole column, and a second copy of this markup is how that happens again.
+ */
+function CaseList({ entries }: { entries: IntegrityCase[] }) {
+  return (
+    <>
+      {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
+      <div className="hidden lg:block">
+        <table className="w-full table-fixed border-collapse">
+          <colgroup>
+            <col className="w-[16%]" />
+            <col className="w-[17%]" />
+            <col className="w-[17%]" />
+            <col className="w-[36%]" />
+            <col className="w-[14%]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+              <th className="px-5 py-3">When</th>
+              <th className="px-5 py-3">Rep</th>
+              <th className="px-5 py-3">Customer</th>
+              <th className="px-5 py-3">What is wrong</th>
+              <th className="px-5 py-3">Position</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr key={entry.id} className="border-b border-slate-100 align-top even:bg-slate-50/60">
+                <td className="px-5 py-4 text-sm text-slate-700">
+                  <div className="font-semibold text-slate-900">{cairo(entry.capturedAt)}</div>
+                  <div className="text-xs text-slate-500">
+                    {entry.subjectKind === "place" ? "Validating a place" : "A visit"} · {integritySourceLabel(entry.source).toLowerCase()}
+                  </div>
+                </td>
+                <td className="px-5 py-4 text-sm font-semibold text-slate-900">{entry.repName}</td>
+                <td className="px-5 py-4 text-sm text-slate-700">{entry.customerName}</td>
+                <td className="px-5 py-4">
+                  <Reasons entry={entry} />
+                </td>
+                <td className="px-5 py-4 text-sm text-slate-600">
+                  <Position entry={entry} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile: the same cases as cards. */}
+      <div className="space-y-3 px-5 py-4 lg:hidden sm:px-6">
+        {entries.map((entry) => (
+          <div key={entry.id} className="border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span className="text-sm font-bold text-slate-900">{entry.repName}</span>
+              <span className="text-xs text-slate-500">{cairo(entry.capturedAt)}</span>
+            </div>
+            <p className="mt-1 text-sm text-slate-700">
+              {entry.customerName} · {entry.subjectKind === "place" ? "validating a place" : "a visit"} · {integritySourceLabel(entry.source).toLowerCase()}
+            </p>
+            <div className="mt-3">
+              <Reasons entry={entry} />
+            </div>
+            <div className="mt-3 border-t border-slate-100 pt-3 text-sm text-slate-600">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Position</div>
+              <div className="mt-1 break-words">
+                <Position entry={entry} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -132,13 +259,15 @@ export default async function PhoenixCrmIntegrityPage() {
         title="Location integrity"
         description={
           positions
-            ? "Captures Phoenix could not account for — a mock location app the phone admitted to, a coordinate used before, a trip nobody could have made, a photograph that had already been sent, or a month whose shape no honest month has. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
+            ? "Captures Phoenix could not account for — a mock location app the phone admitted to, a coordinate used before, a trip nobody could have made, a photograph that had already been sent, a sign on the building naming somebody else, or a month whose shape no honest month has. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
             : "Captures Phoenix could not account for — a photograph that had already been sent, or a month whose shape no honest month has. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
         }
         icon={<ShieldAlert className="h-3.5 w-3.5" />}
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      {/* Four counters when a flag has been withdrawn, three when none has. A withdrawn flag is never
+          silently absent from the page — it leaves the findings and is counted by name instead. */}
+      <div className={`grid gap-3 ${board.withdrawn.length > 0 ? "sm:grid-cols-2 xl:grid-cols-4" : "sm:grid-cols-3"}`}>
         <AdminStatCard
           icon={<ShieldAlert className="h-5 w-5" />}
           label="Strong cases"
@@ -163,14 +292,35 @@ export default async function PhoenixCrmIntegrityPage() {
           tone="blue"
           size="compact"
         />
+        {board.withdrawn.length > 0 ? (
+          <AdminStatCard
+            icon={<Undo2 className="h-5 w-5" />}
+            label="Withdrawn"
+            value={board.withdrawn.length}
+            description="A later reading no longer supports them"
+            tone="violet"
+            size="compact"
+          />
+        ) : null}
       </div>
 
-      {board.cases.length === 0 ? (
+      {/* Both lists, not just the live one: five withdrawn flags beside the words "nothing flagged"
+          would be the page contradicting itself. */}
+      {board.cases.length === 0 && board.withdrawn.length === 0 ? (
         <AdminCallout tone="success">
           <span>
             {positions
               ? "Nothing flagged. Every position and every photograph captured in Phoenix CRM so far has been one the server could account for — and the checks run on every visit and every validated place, whether or not the phone reports anything."
               : "Nothing flagged. Every photograph captured in Phoenix CRM so far has been one the server could account for — and the check runs on every visit and every validated place."}
+          </span>
+        </AdminCallout>
+      ) : null}
+
+      {board.cases.length === 0 && board.withdrawn.length > 0 ? (
+        <AdminCallout tone="neutral">
+          <span>
+            Nothing stands. Every flag on this board has been read again since it was filed, and the later reading no longer supports it — they are listed
+            below with both readings, and none of them has been deleted.
           </span>
         </AdminCallout>
       ) : null}
@@ -268,71 +418,16 @@ export default async function PhoenixCrmIntegrityPage() {
 
       {board.cases.length > 0 ? (
         <AdminTableShell title="Cases" description="Newest first, strong signals at the top. Open the visit itself to see the photo that was taken with it.">
-          {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
-          <div className="hidden lg:block">
-            <table className="w-full table-fixed border-collapse">
-              <colgroup>
-                <col className="w-[16%]" />
-                <col className="w-[17%]" />
-                <col className="w-[17%]" />
-                <col className="w-[36%]" />
-                <col className="w-[14%]" />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
-                  <th className="px-5 py-3">When</th>
-                  <th className="px-5 py-3">Rep</th>
-                  <th className="px-5 py-3">Customer</th>
-                  <th className="px-5 py-3">What is wrong</th>
-                  <th className="px-5 py-3">Position</th>
-                </tr>
-              </thead>
-              <tbody>
-                {board.cases.map((entry) => (
-                  <tr key={entry.id} className="border-b border-slate-100 align-top even:bg-slate-50/60">
-                    <td className="px-5 py-4 text-sm text-slate-700">
-                      <div className="font-semibold text-slate-900">{cairo(entry.capturedAt)}</div>
-                      <div className="text-xs text-slate-500">
-                        {entry.subjectKind === "place" ? "Validating a place" : "A visit"} · {integritySourceLabel(entry.source).toLowerCase()}
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-sm font-semibold text-slate-900">{entry.repName}</td>
-                    <td className="px-5 py-4 text-sm text-slate-700">{entry.customerName}</td>
-                    <td className="px-5 py-4">
-                      <Reasons entry={entry} />
-                    </td>
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      <Position entry={entry} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <CaseList entries={board.cases} />
+        </AdminTableShell>
+      ) : null}
 
-          {/* Mobile: the same cases as cards. */}
-          <div className="space-y-3 px-5 py-4 lg:hidden sm:px-6">
-            {board.cases.map((entry) => (
-              <div key={entry.id} className="border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <span className="text-sm font-bold text-slate-900">{entry.repName}</span>
-                  <span className="text-xs text-slate-500">{cairo(entry.capturedAt)}</span>
-                </div>
-                <p className="mt-1 text-sm text-slate-700">
-                  {entry.customerName} · {entry.subjectKind === "place" ? "validating a place" : "a visit"} · {integritySourceLabel(entry.source).toLowerCase()}
-                </p>
-                <div className="mt-3">
-                  <Reasons entry={entry} />
-                </div>
-                <div className="mt-3 border-t border-slate-100 pt-3 text-sm text-slate-600">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Position</div>
-                  <div className="mt-1 break-words">
-                    <Position entry={entry} />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+      {board.withdrawn.length > 0 ? (
+        <AdminTableShell
+          title="Flags a later reading no longer supports"
+          description="Each of these was filed by the signboard pass and the same sign has since been read again, to a verdict that does not carry the flag. A signboard verdict is not a fixed property of the photograph — legibility moves, and the same frame has read a clear name and then nothing minutes apart — so a flag is a reading with a date on it. Both readings are below. Nothing here has been deleted and nothing has been settled: they are out of the counts because they are no longer somewhere to look, not because a decision was taken."
+        >
+          <CaseList entries={board.withdrawn} />
         </AdminTableShell>
       ) : null}
     </div>

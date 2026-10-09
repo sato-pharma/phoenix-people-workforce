@@ -214,6 +214,7 @@ export const MODULES = [
       "app/api/phoenix-crm/touch-trail/**",
       "app/api/cron/phoenix-crm-integrity-sweep/**",
       "tests/phoenix-crm-{behaviour-integrity,blind,duplicate,location-integrity,refused-readings-board,touch-trail}*",
+      "tests/crm-integrity-*",
     ],
     keywords: ["integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "touch trail", "refused readings", "mock-location", "mock location detection"],
     tables: ["phoenix_crm_location_integrity", "phoenix_crm_behaviour_integrity", "phoenix_crm_photo_fingerprints", "phoenix_crm_touch_trail"],

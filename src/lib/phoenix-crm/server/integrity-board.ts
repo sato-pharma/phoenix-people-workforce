@@ -1,10 +1,16 @@
 /**
  * Phoenix CRM — the integrity board, for the Super Admin and the SFE Manager.
  *
- * TWO DETECTORS FILE HERE, and from 2026-09-27 the row says which. The position checks judge where
- * the phone said it was; the photo sweep judges whether the picture is a new picture. They share
+ * THREE DETECTORS FILE HERE, and from 2026-09-27 the row says which. The position checks judge where
+ * the phone said it was; the photo sweep judges whether the picture is a new picture; the signboard
+ * pass judges whether the sign on the building names the customer it was validated for. They share
  * this table and nothing else — a capture can carry one verdict from each, which is why `source` is
  * part of the unique key rather than a label bolted on afterwards.
+ *
+ * 🔴 AND THE READER MUST KNOW ALL THREE BY NAME. `signboard` began filing on 2026-10-08 and was not
+ * added to `IntegritySource`, so for a day its cases printed as **Position** on the owner's board and
+ * the detector tally hid them — five real cases about five named people, labelled as the one kind of
+ * evidence they are not. A fourth detector is a change to this file, never only to the writer's.
  *
  * This is the ONLY reader of `phoenix_crm_location_integrity`. It lives behind `/admin`, which no rep
  * can open at all, so the evidence cannot leak into the field app through a role mistake in a tab or
@@ -34,7 +40,13 @@ import { notFoundError } from "@/lib/http/api-errors";
 import { PHOENIX_CRM_BEHAVIOUR_LABELS, type PhoenixCrmBehaviourFlag } from "@/lib/phoenix-crm/behaviour-integrity";
 import { PHOENIX_CRM_PHOTO_LABELS, type PhoenixCrmPhotoFlag } from "@/lib/phoenix-crm/duplicate-photos";
 import type { FraudScanCase } from "@/lib/phoenix-crm/fraud-scan-rules";
-import { PHOENIX_CRM_INTEGRITY_LABELS, type PhoenixCrmIntegrityFlag } from "@/lib/phoenix-crm/location-integrity";
+import {
+  judgeLaterSignboardReading,
+  PHOENIX_CRM_INTEGRITY_LABELS,
+  type IntegrityLaterReading,
+  type PhoenixCrmIntegrityFlag,
+  type StoredSignboardVerdict,
+} from "@/lib/phoenix-crm/location-integrity";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -42,8 +54,28 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-/** Which detector filed a case. The board is the one place the two are read together. */
-export type IntegritySource = "gps" | "photo" | "behaviour";
+/**
+ * Which detector filed a case. The board is the one place they are read together.
+ *
+ * 🔴 EVERY DETECTOR THAT WRITES TO THE TABLE BELONGS IN THIS UNION, and `signboard` proves why. It
+ * started filing cases on 2026-10-08 and was never added here, so the five it had filed by the 9th
+ * fell through `row.source === "photo" || "behaviour" ? … : "gps"` and printed on the owner's board
+ * as **Position** — mock-location evidence, which is the one thing they are not. The detector
+ * breakdown hid it too: with signboard folded into gps there was only one source in the tally, and
+ * the callout that names them renders only when there are two or more.
+ */
+export type IntegritySource = "gps" | "photo" | "behaviour" | "signboard";
+
+/**
+ * The detectors a viewer who is NOT the Super Admin may read — an ALLOW-LIST, never a subtraction.
+ *
+ * The position cases are the Super Admin's alone (owner, 2026-10-02) and the query used to say so as
+ * `.eq("source", "photo")`, which is the same thing only for as long as `photo` is the only other
+ * detector. It was not: `signboard` was kept out of the SFE's board by that accident rather than by a
+ * decision. Written as an allow-list, a detector added later is the Super Admin's until somebody
+ * decides otherwise — the safe direction for a table whose rows carry a person's name.
+ */
+const SFE_SOURCES: IntegritySource[] = ["photo"];
 
 export type IntegrityBoardFlag = PhoenixCrmIntegrityFlag | PhoenixCrmPhotoFlag;
 
@@ -60,7 +92,9 @@ const SOURCE_LABELS: Record<IntegritySource, string> = {
   gps: "Position",
   photo: "Photo",
   behaviour: "Pattern",
+  signboard: "Signboard",
 };
+
 
 export function integritySourceLabel(source: IntegritySource): string {
   return SOURCE_LABELS[source] ?? source;
@@ -100,6 +134,16 @@ export type IntegrityCase = {
   placeDistanceMeters: number | null;
   /** The visit’s own stored verdict on that distance, e.g. far from the place. Null when unknown. */
   placeLocationFlag: string | null;
+  /**
+   * What the signboard read when this case was filed, verbatim, in its own script.
+   *
+   * The whole evidence of a signboard case, and the board showed none of it: a Super Admin reading
+   * "the signboard names somebody else" had no way to see WHICH name without opening the database,
+   * which is the one thing this screen exists to spare him. Null for every other detector.
+   */
+  signText: string | null;
+  /** A later reading of the same sign, when one has been taken. Signboard cases only. */
+  laterReading: IntegrityLaterReading | null;
   signals: Record<string, unknown>;
   isTest: boolean;
 };
@@ -127,7 +171,18 @@ export type BehaviourCase = {
 };
 
 export type IntegrityBoard = {
+  /** The cases that still stand — every one whose evidence a later reading has not taken away. */
   cases: IntegrityCase[];
+  /**
+   * Flags a later reading no longer supports. Listed, never dropped, and never counted as findings.
+   *
+   * 🔴 THEY ARE SEPARATED RATHER THAN DELETED, AND THEY ARE NOT HIDDEN EITHER. The table has no
+   * resolution column, so the only way to clear a flag today is to delete the row — and deleting
+   * evidence because a second reading disagreed is how the record of what the detector actually did
+   * disappears. They leave the three counters, because a counter is a call to look and a withdrawn
+   * flag is not one, and they keep their own section with both readings side by side.
+   */
+  withdrawn: IntegrityCase[];
   /** How many of the listed cases carry at least one individually damning flag. */
   strongCount: number;
   /** Reps appearing in the list, most cases first — where a pattern shows rather than an incident. */
@@ -213,7 +268,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("phoenix_crm_location_integrity")
-    .select("id, subject_kind, subject_id, source, seat_id, rep_hr_id, customer_id, captured_at, visit_date, lat, lon, accuracy_meters, device_mocked, flags, strong, signals, is_test")
+    .select("id, subject_kind, subject_id, source, seat_id, rep_hr_id, customer_id, captured_at, created_at, visit_date, lat, lon, accuracy_meters, device_mocked, flags, strong, signals, is_test")
     .order("strong", { ascending: false })
     .order("captured_at", { ascending: false })
     .limit(BOARD_LIMIT);
@@ -221,15 +276,15 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // the real field, never the Super Admin's own trial entries.
   if (options.includeTest !== true || !viewer.isSuperAdmin) query = query.eq("is_test", false);
   // The position cases are the Super Admin's alone (owner, 2026-10-02): for anyone else the query asks
-  // for the photo detector's cases only, so a GPS case never leaves the database for him.
+  // only for the detectors on the allow-list, so a case he may not read never leaves the database.
   const positions = readsPositionCases(viewer);
-  if (!positions) query = query.eq("source", "photo");
+  if (!positions) query = query.in("source", SFE_SOURCES);
 
   const [{ data, error }, behaviourRead] = await Promise.all([query, loadBehaviourCases()]);
   throwIfError(error);
   const rows = (data ?? []) as Row[];
   if (rows.length === 0 && behaviourRead.cases.length === 0) {
-    return { cases: [], strongCount: 0, byRep: [], bySource: [], behaviour: [], behaviourNotChecked: behaviourRead.notChecked };
+    return { cases: [], withdrawn: [], strongCount: 0, byRep: [], bySource: [], behaviour: [], behaviourNotChecked: behaviourRead.notChecked };
   }
 
   const customerIds = [...new Set(rows.map((row) => (row.customer_id ? String(row.customer_id) : null)).filter((id): id is string => Boolean(id)))];
@@ -264,13 +319,50 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     }
   }
 
+  // What each flagged place's signboard reads NOW. The place row is the only record of that — the
+  // nightly pass keeps a verdict there for every place, flagged or not — so a flag that a later
+  // reading has taken the ground out from under can be told apart from one that still stands.
+  // Chunked at 50 for the same reason the visits are.
+  const signboardPlaceIds = [...new Set(rows.filter((row) => row.source === "signboard").map((row) => String(row.subject_id)).filter(Boolean))];
+  const placeSignboards = new Map<string, StoredSignboardVerdict>();
+  for (let index = 0; index < signboardPlaceIds.length; index += 50) {
+    const { data: placeRows, error: placeError } = await supabase
+      .from("phoenix_crm_places")
+      .select("id, signboard_check")
+      .in("id", signboardPlaceIds.slice(index, index + 50));
+    // Non-fatal, and it fails towards leaving the flag standing: a place whose current verdict could
+    // not be read keeps its case in the live list, which is where an unknown belongs.
+    if (placeError) break;
+    for (const place of (placeRows ?? []) as Array<{ id: string; signboard_check: unknown }>) {
+      const check = place.signboard_check;
+      if (!check || typeof check !== "object") continue;
+      const stored = check as Record<string, unknown>;
+      if (typeof stored.verdict !== "string") continue;
+      placeSignboards.set(String(place.id), {
+        verdict: stored.verdict,
+        reason: typeof stored.reason === "string" ? stored.reason : null,
+        checkedAt: typeof stored.checkedAt === "string" ? stored.checkedAt : null,
+        signText: typeof stored.signText === "string" && stored.signText.trim() !== "" ? stored.signText : null,
+      });
+    }
+  }
+
+  const laterReadingFor = (row: Row): IntegrityLaterReading | null =>
+    judgeLaterSignboardReading({
+      source: String(row.source ?? ""),
+      flags: (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)),
+      filedAt: row.created_at ? String(row.created_at) : null,
+      stored: placeSignboards.get(String(row.subject_id)) ?? null,
+    });
+
   const customerNames = new Map<string, string>();
   for (const row of ((customers as { data?: Row[] }).data ?? []) as Row[]) customerNames.set(String(row.id), String(row.name ?? ""));
 
-  const cases: IntegrityCase[] = rows.map((row) => {
+  const allCases: IntegrityCase[] = rows.map((row) => {
     const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)) as IntegrityBoardFlag[];
     const repHrId = String(row.rep_hr_id ?? "");
     const customerId = row.customer_id ? String(row.customer_id) : null;
+    const signals = (row.signals && typeof row.signals === "object" ? row.signals : {}) as Record<string, unknown>;
     return {
       id: String(row.id),
       subjectKind: row.subject_kind === "place" ? "place" : "visit",
@@ -282,9 +374,11 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       capturedAt: String(row.captured_at),
       visitDate: row.visit_date ? String(row.visit_date) : null,
       strong: row.strong === true,
-      source: row.source === "photo" || row.source === "behaviour" ? row.source : "gps",
+      source: row.source === "photo" || row.source === "behaviour" || row.source === "signboard" ? row.source : "gps",
       flags,
       reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
+      signText: typeof signals.signText === "string" && signals.signText.trim() !== "" ? signals.signText : null,
+      laterReading: laterReadingFor(row),
       placeDistanceMeters: row.subject_kind === "place"
         ? null
         : visitDistances.get(String(row.subject_id))?.distanceMeters ?? null,
@@ -296,10 +390,17 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       accuracyMeters: row.accuracy_meters === null || row.accuracy_meters === undefined ? null : Number(row.accuracy_meters),
       // The phone's own mock-location answer is position evidence, so it is the Super Admin's alone.
       deviceMocked: positions && typeof row.device_mocked === "boolean" ? row.device_mocked : null,
-      signals: (row.signals && typeof row.signals === "object" ? row.signals : {}) as Record<string, unknown>,
+      signals,
       isTest: row.is_test === true,
     };
   });
+
+  // A flag a later reading no longer supports leaves the findings, and nothing else happens to it: it
+  // is not deleted, not hidden, and not settled on anybody's behalf. Whether to act on one is the
+  // owner's decision, exactly as it was before — he now gets to make it knowing the sign was read
+  // again and what it said the second time.
+  const cases = allCases.filter((entry) => entry.laterReading === null || entry.laterReading.supportsFlag);
+  const withdrawn = allCases.filter((entry) => entry.laterReading !== null && !entry.laterReading.supportsFlag);
 
   const perRep = new Map<string, { repHrId: string; repName: string; cases: number; strongCases: number }>();
   for (const entry of cases) {
@@ -311,9 +412,12 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
 
   return {
     cases,
+    withdrawn,
     strongCount: cases.filter((entry) => entry.strong).length,
     byRep: [...perRep.values()].sort((left, right) => right.strongCases - left.strongCases || right.cases - left.cases),
-    bySource: (["gps", "photo", "behaviour"] as const).flatMap((source) => {
+    // Every detector in the union, so adding one can never leave its cases counted under another's
+    // name — the defect that printed five signboard cases as Position until 2026-10-09.
+    bySource: (["gps", "photo", "behaviour", "signboard"] as const).flatMap((source) => {
       const count = cases.filter((entry) => entry.source === source).length;
       return count === 0 ? [] : [{ source, label: integritySourceLabel(source), cases: count }];
     }),
@@ -351,9 +455,10 @@ export async function loadIntegrityCasesForWindow(options: {
     .lte("visit_date", options.toIso)
     .order("captured_at", { ascending: false })
     .limit(BOARD_LIMIT);
-  // The position cases are the Super Admin's alone: for the SFE copy the query asks for the photo
-  // detector's cases only, so a GPS case is never read for a recipient who may not see it.
-  if (!options.includeGps) query = query.eq("source", "photo");
+  // The position cases are the Super Admin's alone: the SFE copy asks only for the detectors on the
+  // allow-list, so a case a recipient may not see is never read for him — and a detector added later
+  // is kept out of his copy by the same rule rather than by `photo` happening to be the only other.
+  if (!options.includeGps) query = query.in("source", SFE_SOURCES);
 
   const { data, error } = await query;
   throwIfError(error);
