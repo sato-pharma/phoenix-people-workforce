@@ -1034,6 +1034,7 @@ import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filte
 import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reserves-pending.test.ts";
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
 import { runVacationReadsStartedTogetherTests } from "./vacation-reads-started-together.test.ts";
+import { runDeductionsLeaveBalanceTests } from "./deductions-leave-balance.test.ts";
 import { runPortalHomeAnnualLeaveLeftTests } from "./portal-home-annual-leave-left.test.ts";
 import { runPortalHomeAnnualLeaveLeftRmStandardTests } from "./portal-home-annual-leave-left-rm-standard.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
@@ -4648,6 +4649,10 @@ await runTest(
   "portal home RM and Standard (DSM/NSM/etc.) tiles also show annual leave LEFT via "
   + "leaveDaysRemaining, not the raw entitlement — PmGpmCommandCenter keeps its own",
   runPortalHomeAnnualLeaveLeftRmStandardTests,
+);
+await runTest(
+  "deductions: a CRM / half-day deduction can be taken from annual leave (split, ledger fold, report balance, decision guard, route, migration, screens)",
+  runDeductionsLeaveBalanceTests,
 );
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);

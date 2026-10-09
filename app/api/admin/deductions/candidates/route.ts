@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
+import { loadLiveLeaveBalanceCharges } from "@/lib/deductions/leave-balance-ledger.ts";
 import { loadActivePushedLineIdByCandidate } from "@/lib/deductions/pushed-lines.ts";
 import { listCandidatesForMonth } from "@/lib/deductions/service.ts";
 import { deductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
@@ -32,13 +33,17 @@ export async function GET(request: Request) {
     // to the employee's portal; payroll reads the decision, pushed or not) and — when it is — the active line
     // id needed to withdraw it. `pushedLineId` is null for a not-yet-pushed
     // candidate. Loaded once for the month and joined in memory.
-    const [candidates, pushedLineByCandidate] = await Promise.all([
+    // Also joined: the deductions currently taken from annual leave, with the comment written for
+    // the employee (owner, 2026-10-09). Null for a deduction paid from salary.
+    const [candidates, pushedLineByCandidate, leaveBalanceCharges] = await Promise.all([
       listCandidatesForMonth({ monthKey, category }),
       loadActivePushedLineIdByCandidate(monthKey),
+      loadLiveLeaveBalanceCharges(),
     ]);
     const withPushState = candidates.map((candidate) => ({
       ...candidate,
       pushedLineId: pushedLineByCandidate.get(candidate.id) ?? null,
+      leaveBalanceCharge: leaveBalanceCharges.get(candidate.id) ?? null,
     }));
     return NextResponse.json({ success: true, candidates: withPushState });
   } catch (error) {

@@ -480,6 +480,9 @@ export const accessRegistry = [
   // per-category export above, so it needs its own entry; same export gate + Super-Admin/CEO/Finance read actor.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/export/master", permission: { resource: "deductions", action: "export" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/decisions", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  // Deduct from leave balance / Return to salary (owner, 2026-10-09): a CRM or half-day deduction paid from annual leave. Same approve gate and Super-Admin check as the decision itself.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/leave-balance", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/leave-balance", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/summary/employee", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/summary/company", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/comments", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),

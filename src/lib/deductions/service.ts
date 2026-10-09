@@ -25,6 +25,7 @@ import { computeHolidayBridgeDays, isFieldForceWorkingDay, type HolidayBridgeDay
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { effectiveSettlement } from "@/lib/attendance/digest-rules.ts";
 import { assertDeductionsDecisionActor } from "./permissions.ts";
+import { getLeaveBalanceChargeForCandidate } from "./leave-balance-ledger.ts";
 import {
   buildDeductionsCandidateKey,
   compactDeductionsHrId,
@@ -1412,7 +1413,9 @@ async function assertDayNotPaidFromAnnualBalance(input: { employeeHrId: string |
   if (!hrId || !dates.length) return;
   const { data, error } = await getSupabaseAdmin()
     .from("attendance_annual_balance_charges")
-    .select("work_date, days")
+    // select("*"), not a column list: the `source` column only exists once the leave-balance migration has
+    // run, and a named column that is missing fails the whole read.
+    .select("*")
     .ilike("employee_hr_id", hrId.replace(/[\\%_]/g, (char) => `\\${char}`))
     .in("work_date", dates);
   if (error) {
@@ -1424,7 +1427,10 @@ async function assertDayNotPaidFromAnnualBalance(input: { employeeHrId: string |
   // NET per day (2026-10-09): leave given back by a revised dispute is a negative row on the same
   // day (a reversing entry), and a day whose charge was reversed is no longer paid from leave.
   const netByDay = new Map<string, number>();
-  for (const row of (data ?? []) as Array<{ work_date: string; days: number | string | null }>) {
+  for (const row of (data ?? []) as Array<{ work_date: string; days: number | string | null; source?: string | null }>) {
+    // A CRM deduction taken from leave (source = 'deductions') is a different deduction on possibly the
+    // same date, and this message names the weekly review.
+    if (row.source === "deductions") continue;
     const day = String(row.work_date);
     netByDay.set(day, (netByDay.get(day) ?? 0) + (Number(row.days) || 0));
   }
@@ -1621,6 +1627,12 @@ export async function recordDecision(input: {
   appliedDates?: readonly unknown[] | null;
   /** See resolveDecisionCharge. Passed only by the weekly attendance bridge. */
   allowAboveDetected?: boolean;
+  /**
+   * Passed only by leave-balance.ts (the "Deduct from leave balance" / "Return to salary" buttons).
+   * Every other caller is refused while the deduction is taken from annual leave, because deciding it
+   * by hand would leave the days on the leave balance AND on salary, or the other way round.
+   */
+  viaLeaveBalance?: boolean;
 }): Promise<DeductionsDecision & { payrollNotices: string[] }> {
   assertDeductionsDecisionActor(input.actor);
   if (!deductionsDecisionStatuses.includes(input.decisionStatus)) {
@@ -1650,6 +1662,13 @@ export async function recordDecision(input: {
   };
   if (candidateRow.locked_at) {
     throw new Error("Conflict: this candidate is locked by a publication — it can no longer be decided directly.");
+  }
+  if (input.viaLeaveBalance !== true && (candidateRow.category === "crm" || candidateRow.category === "crm_half_day")) {
+    if (await getLeaveBalanceChargeForCandidate(input.candidateId)) {
+      throw new Error(
+        "Conflict: this deduction is taken from the employee's annual leave balance. Press Return to salary first, then decide it.",
+      );
+    }
   }
   if (input.decisionStatus === "Approved for Payroll" && candidateRow.category === "fingerprint") {
     const reviewedDay = {

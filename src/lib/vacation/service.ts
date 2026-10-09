@@ -117,6 +117,7 @@ import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES, VACATION_TYPES, VACATION_WE
 import { filterVacationRowsInMemory } from "@/lib/vacation/report-filter";
 import { packVacationReportRows, unpackVacationReportRows } from "@/lib/vacation/report-rows-pack";
 import { resolveVacationInformedHrId } from "@/lib/vacation/informed-recipients";
+import { listLeaveBalanceChargesForEmployees } from "@/lib/deductions/leave-balance-ledger";
 
 const vacationRequestsTable = "v2_vacation_requests";
 const vacationEventsTable = "v2_vacation_request_events";
@@ -808,6 +809,13 @@ export function buildEmployeeEligibilityRows(input: {
   employees: EmployeeDirectoryRow[];
   filters: VacationReportFilters;
   today: string;
+  /**
+   * Annual leave taken for a CRM / half-day deduction (Deductions → "Deduct from leave balance",
+   * 2026-10-09). Counted as used when its work date falls in the employee's balance period, so the
+   * Entitlements tab and the portal's "annual leave left" agree with the balance a leave request is
+   * priced against.
+   */
+  balanceCharges?: ReadonlyArray<{ employeeHrId: string; workDate: string; days: number }>;
 }): VacationEmployeeEligibilityRow[] {
   return input.employees
     .filter((employee) => employeeEligibilityFilterMatches(employee, input.filters))
@@ -817,13 +825,23 @@ export function buildEmployeeEligibilityRows(input: {
         hireDate: employee.hireDate,
         referenceDate: input.today,
       });
-      const usedPaidDays = approvedPaidDaysFromRows({
-        employeeHrId: employee.hrId,
-        periodEnd: period?.periodEnd ?? null,
-        periodStart: period?.periodStart ?? null,
-        rows: input.allScopedRows,
-        vacationType: "annual",
-      });
+      const leaveChargedDays = (input.balanceCharges ?? [])
+        .filter(
+          (charge) =>
+            Boolean(period) &&
+            hrIdsMatch(charge.employeeHrId, employee.hrId) &&
+            charge.workDate >= (period?.periodStart ?? "") &&
+            charge.workDate < (period?.periodEnd ?? ""),
+        )
+        .reduce((sum, charge) => sum + charge.days, 0);
+      const usedPaidDays =
+        approvedPaidDaysFromRows({
+          employeeHrId: employee.hrId,
+          periodEnd: period?.periodEnd ?? null,
+          periodStart: period?.periodStart ?? null,
+          rows: input.allScopedRows,
+          vacationType: "annual",
+        }) + leaveChargedDays;
       const annualBalance = calculateVacationPayment({
         approvedPaidDaysInPeriod: usedPaidDays,
         durationDays: 0,
@@ -6731,10 +6749,20 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
   const allScopedRows = settledValueOrThrow(allScopedRead)
     .map((row) => mapVacationRow(row))
     .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds));
+  // Deductions taken from annual leave (owner, 2026-10-09). A failed read must not take the whole
+  // report down, but it must not read as "none" either — it is logged and the section says so.
+  const leaveBalanceRead = await listLeaveBalanceChargesForEmployees(visibleEmployees.map((employee) => employee.hrId)).then(
+    (charges) => ({ charges, failed: false }),
+    (error: unknown) => {
+      console.error("Vacation report: could not read the deductions taken from annual leave", error);
+      return { charges: [] as Awaited<ReturnType<typeof listLeaveBalanceChargesForEmployees>>, failed: true };
+    },
+  );
   const employeeEligibility = buildEmployeeEligibilityRows({
     allScopedRows,
     employees: visibleEmployees,
     filters: clean,
+    balanceCharges: leaveBalanceRead.charges,
     // Africa/Cairo calendar day, matching getVacationRequestPageData's employee-facing twin.
     // This is the reference date for the whole Entitlements table — balance period, payment
     // calculation and days-until-eligibility all hang off it. On an employee's hire anniversary
@@ -6754,6 +6782,20 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
     employeeEligibility,
     employeeEligibilitySummary: buildEmployeeEligibilitySummary(employeeEligibility),
     filters: clean,
+    leaveBalanceDeductions: {
+      failed: leaveBalanceRead.failed,
+      rows: leaveBalanceRead.charges.map((charge) => {
+        const person = visibleEmployees.find((employee) => hrIdsMatch(employee.hrId, charge.employeeHrId));
+        return {
+          chargedAt: charge.chargedAt,
+          comment: charge.comment,
+          days: charge.days,
+          employeeHrId: charge.employeeHrId,
+          employeeName: person?.displayName ?? person?.fullName ?? "Name unavailable",
+          workDate: charge.workDate,
+        };
+      }),
+    },
     options: buildReportOptions(visibleRowsWithWarnings, visibleEmployees),
     rows: filteredRows,
     summary: buildReportSummary(filteredRows),
@@ -6807,11 +6849,20 @@ export async function getEmployeeAnnualLeaveBalanceDays(employeeHrId: string | n
     .map((row) => mapVacationRow(row))
     .filter((row) => hrIdsMatch(row.employeeHrId, employee.hrId));
 
+  // Unknown beats overstated: a balance that forgot days taken for a deduction would say more is left
+  // than there is, so a failed read answers null (the callers already treat that as "not shown").
+  let balanceCharges: Awaited<ReturnType<typeof listLeaveBalanceChargesForEmployees>>;
+  try {
+    balanceCharges = await listLeaveBalanceChargesForEmployees([employee.hrId]);
+  } catch {
+    return null;
+  }
   const [eligibilityRow] = buildEmployeeEligibilityRows({
     allScopedRows: scopedRows,
     employees: [employee],
     filters: {},
     today: currentCairoDateOnlyIso(),
+    balanceCharges,
   });
 
   return eligibilityRow?.annualBalanceDays ?? null;
