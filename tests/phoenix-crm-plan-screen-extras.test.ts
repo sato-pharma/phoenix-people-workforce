@@ -73,7 +73,7 @@ function bodyOf(text: string, declaration: string): string {
   return text.slice(start, start + close + indent.length + 2);
 }
 
-const CAPS = { amDailyCap: 5, pmDailyCap: 15 };
+const CAPS = { amDailyCap: 5, pmDailyCap: 15, sharedPlaceDailyCap: 3 };
 // The week of Saturday 3 October 2026 — the Delta reps' first Phoenix week.
 const WEEK = "2026-10-03";
 const SAT = "2026-10-03";
@@ -262,7 +262,14 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
     );
     assert.ok(plans.includes("const dayOff = planDayOff(date, input.holidays, input.leave);"), "the day builder knows a day off of either kind");
     assert.ok(plans.includes("listTypes: dayOff ? [] : planDayListTypes(date),"), "and a day off holds no list");
-    assert.match(plans, /holidays,\s*leave,\s*\}\);\s*if \(!resolved\.ok\) throw validationError\(resolved\.error\);/, "the save check is handed his leave");
+    // `sharedPlaces` joined the same call on 2026-10-09 (three visits a day inside one polyclinic), so
+    // the fingerprint names that line instead of demanding `leave,` be the last one — what it pins is
+    // unchanged: the SAVE check, not only the week builder, is handed the week's leave.
+    assert.match(
+      plans,
+      /holidays,\s*leave,\s*sharedPlaces: planVenues,\s*\}\);\s*if \(!resolved\.ok\) throw validationError\(resolved\.error\);/,
+      "the save check is handed his leave",
+    );
     const month = source("src/lib/phoenix-crm/server/monthly-plans.ts");
     assert.ok(
       month.includes("loadSeatDaysOff(seat, { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),"),

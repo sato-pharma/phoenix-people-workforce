@@ -98,6 +98,13 @@ export function blindVisitsReport<Row extends RepVisitGroup, View extends { rows
  *
  * NOT withheld, deliberately, because they are on the CUSTOMER and are his own: `reopenedAt` and
  * `validateAgainReason` — the one sentence about his photo is the thing he must read to fix it.
+ *
+ * `sharedPlaceId` is NOT withheld either, and it is not an oversight (2026-10-09): it says WHICH
+ * polyclinic or centre this customer is seated in, the rep chose that venue himself at its door, and
+ * his own list and his plan both have to say which building a call is in — the cap is three visits a
+ * day inside one of them. It measures nothing about him. `pointSource` stays withheld as before, so
+ * the fact that a seated point was copied rather than captured is still only the Super Admin's and
+ * the SFE Manager's to see.
  */
 export function placeWithoutMeasurements(place: ListPlace): ListPlace {
   return {
@@ -116,6 +123,7 @@ export function placeWithoutMeasurements(place: ListPlace): ListPlace {
     timings: place.timings,
     photoPath: place.photoPath,
     capturedAt: place.capturedAt,
+    sharedPlaceId: place.sharedPlaceId ?? null,
   };
 }
 

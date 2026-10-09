@@ -8,6 +8,7 @@
 
 import { ApiError } from "@/lib/http/api-errors";
 import { CUSTOMER_PHONE_ERROR } from "@/lib/phoenix-crm/entry-rules";
+import { SHARED_PLACE_DAY_FULL_TEXT } from "@/lib/phoenix-crm/shared-place-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -48,6 +49,16 @@ const REFUSALS: Record<string, Refusal> = {
   place_not_found: { status: 404, message: "This place is no longer on the list. Reload the list." },
   place_retired: { status: 409, message: "This place was already removed." },
   last_place: { status: 409, message: "A customer keeps at least one place. To take the customer off the list, ask for a drop." },
+  // A shared place — a polyclinic, a medical centre, a medical tower, a hospital outpatient suite
+  // (owner, 2026-10-09). The cap is the database's own BEFORE INSERT trigger on the visits table, so
+  // it answers the rep's save, a manager's entry for him and the Super Admin's entry alike.
+  shared_place_day_full: { status: 409, message: SHARED_PLACE_DAY_FULL_TEXT },
+  shared_place_not_found: { status: 404, message: "This polyclinic or centre is no longer there. Reload the page." },
+  shared_place_retired: { status: 409, message: "This polyclinic or centre was removed. Reload the page." },
+  shared_place_held: {
+    status: 409,
+    message: "The system is still checking this polyclinic or centre. It confirms it automatically, and then customers can be added in it.",
+  },
   note_required: { status: 400, message: "Write a note explaining why." },
   // Removing a clinic is kept on record exactly as a move is (2026-10-02), so the reason has the same
   // bounds and the same sentence: the person refused here is a mover, and he is told the length.

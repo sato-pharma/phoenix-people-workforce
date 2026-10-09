@@ -21,7 +21,7 @@ import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { assertPlaceMover, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { resolvePlaceLocation } from "@/lib/phoenix-crm/server/list";
+import { resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 

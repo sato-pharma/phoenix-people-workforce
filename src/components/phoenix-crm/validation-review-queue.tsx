@@ -33,11 +33,21 @@ const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = 
   sign_other_name: "The signboard in the photo names somebody else — not this customer, and not their place. What the system read is below.",
   sign_no_name:
     "No name the system could judge on: the photo shows no signboard at all, or a PM customer's signboard names no person. What the system read is below.",
+  schedule_other_name:
+    "This customer is seated in a polyclinic or centre, so their evidence is the timetable hanging inside it rather than a signboard — and the timetable the system read does not name them. What it read is below.",
+  schedule_missing:
+    "This customer is seated in a polyclinic or centre, and the photo holds no timetable the system could read. Neither Google nor the signboard is asked about a seating: both would be answered about the building.",
 };
 
-/** A signboard hold is not a Google question, so its evidence is headed for what it is. */
+/** A signboard hold is not a Google question, and a timetable hold is neither — each is headed for what it is. */
 function evidenceHeading(row: ValidationReviewRow): string {
+  if (row.photoKind === "schedule") return "What the timetable says";
   return row.reason === "sign_other_name" || row.reason === "sign_no_name" ? "What the signboard says" : "What Google Maps returned";
+}
+
+/** What the photo IS, so a blind reader is not told a timetable is a signboard. */
+function photoAlt(row: ValidationReviewRow): string {
+  return `${row.photoKind === "schedule" ? "Timetable" : "Signboard"} photo for ${row.customerName}`;
 }
 
 function readingText(label: string, reading: ValidationReviewRow["pin"]): string | null {
@@ -73,9 +83,21 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
             {row.placeLabel}
           </p>
         ) : null}
+        {row.sharedPlaceName ? (
+          <p className="break-words text-xs font-black text-slate-700" dir="auto">
+            Seated in {row.sharedPlaceName}
+          </p>
+        ) : null}
         {row.address ? <p className="break-words text-xs text-slate-500">{row.address}</p> : null}
         {row.brickName || row.areaName ? (
           <p className="break-words text-xs text-slate-500">{[row.brickName, row.areaName].filter(Boolean).join(" · ")}</p>
+        ) : null}
+        {/* A seating has no reading of its own — its point is the building's, captured once at its own
+            door — so `readings` is legitimately empty here and the absence is said in words. */}
+        {row.photoKind === "schedule" && readings.length === 0 ? (
+          <p className="break-words text-xs text-slate-500">
+            No reading of its own: the location is the building&rsquo;s, captured once when the rep validated it at the door.
+          </p>
         ) : null}
         {readings.map((line) => (
           <p key={line} className="break-words text-xs text-slate-500">
@@ -83,7 +105,7 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
           </p>
         ))}
         <a className="text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
-          Open where they stood in Google Maps
+          {row.photoKind === "schedule" ? "Open the building in Google Maps" : "Open where they stood in Google Maps"}
         </a>
       </div>
       <div className="border-t border-slate-100 pt-2">
@@ -99,12 +121,20 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
             Names read: <span dir="auto">{row.signNames.join(" · ")}</span>
           </p>
         ) : null}
+        {row.hoursRead ? (
+          <p className="mt-0.5 break-words text-xs text-slate-500">
+            Hours read: <span dir="auto">{row.hoursRead}</span>
+          </p>
+        ) : null}
         {row.query ? (
           <p className="mt-0.5 break-words text-xs text-slate-500">
             Searched for <span dir="auto">{row.query}</span>
           </p>
         ) : null}
-        {row.signText !== null || row.signNames.length > 0 || row.reason === "sign_no_name" ? null : row.listings.length === 0 ? (
+        {/* 🔴 A TIMETABLE ROW NEVER FALLS THROUGH TO GOOGLE. No listing was ever asked for on a
+            seating, so "No listing came back." would report a question nobody put. */}
+        {row.photoKind === "schedule" || row.signText !== null || row.signNames.length > 0 || row.reason === "sign_no_name" ? null : row.listings
+            .length === 0 ? (
           <p className="mt-1 text-xs text-slate-500">No listing came back.</p>
         ) : (
           <ul className="mt-1 space-y-1">
@@ -216,7 +246,13 @@ function Decision({ row }: { row: ValidationReviewRow }) {
 
   return (
     <div className="space-y-2">
-      <RefusalReasonField disabled={saving !== null} id={`review-reason-${row.reviewId}`} onChange={setReason} value={reason} />
+      <RefusalReasonField
+        disabled={saving !== null}
+        id={`review-reason-${row.reviewId}`}
+        kind={row.photoKind}
+        onChange={setReason}
+        value={reason}
+      />
       <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`review-note-${row.reviewId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
@@ -251,7 +287,7 @@ export function ValidationReviewQueue({ rows }: { rows: ValidationReviewRow[] })
         {rows.map((row) => (
           <div key={row.reviewId} className="space-y-3 px-4 py-4">
             <div className="flex min-w-0 gap-3">
-              <CrmPhotoThumb alt={`Signboard photo for ${row.customerName}`} path={row.photoPath} />
+              <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
               <Who row={row} />
             </div>
             <Evidence row={row} />
@@ -272,7 +308,7 @@ export function ValidationReviewQueue({ rows }: { rows: ValidationReviewRow[] })
           {rows.map((row) => (
             <tr key={row.reviewId} className="even:bg-slate-50/60">
               <td className={crmTdClassName}>
-                <CrmPhotoThumb alt={`Signboard photo for ${row.customerName}`} path={row.photoPath} />
+                <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
               </td>
               <td className={crmTdClassName}>
                 <Who row={row} />

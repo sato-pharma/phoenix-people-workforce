@@ -24,14 +24,13 @@
  * and tells the people who must act.
  */
 
-import { loadBrickCentroids, loadBrickNames, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+import { loadBrickNames } from "@/lib/crm/brick-geo";
 // The iReports360 mirror, reached from inside this walled module exactly as brick-from-coordinates
 // is: the sharing question can only be answered against the WHOLE company's contact roster, which
 // Phoenix CRM's own tables do not hold.
 import type { SharedWith } from "@/lib/crm/location-confidence";
 import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
-import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
@@ -111,7 +110,11 @@ import {
 } from "@/lib/phoenix-crm/server/validation-reviews";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import { resolvePinGeography, resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
+import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
+import { scheduleHoldRecord, scheduleHoldsForReview, type PhoenixCrmScheduleCheck } from "@/lib/phoenix-crm/schedule-rules";
+import { seatedDraftOf, seatedPlacePayload, sharedPlaceForSeating } from "@/lib/phoenix-crm/server/shared-places";
 import { countOffListingRefusals, recordOffListingRefusal, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
@@ -140,8 +143,6 @@ import type {
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
-/** A nearest brick centre further than this is not trusted as the place's brick. */
-const BRICK_TRUST_KM = 3;
 /** Decided requests stay on the rep's screen this long, so the answer is seen. */
 const DECIDED_REQUESTS_DAYS = 45;
 
@@ -215,7 +216,16 @@ export type ListPlace = {
    * Where the fixed point came from (owner, 2026-09-29): the photo's own shutter reading, the
    * Capture-location pin when the photo had none, or a move by the Super Admin or the SFE Manager.
    */
-  pointSource?: "photo" | "pin" | "moved";
+  pointSource?: "photo" | "pin" | "moved" | "shared_place";
+  /**
+   * The polyclinic, medical centre, medical tower or hospital outpatient suite this customer is SEATED
+   * in — set only on a seated place, whose point is the venue's own (owner, 2026-10-09).
+   *
+   * 🔴 NOT A MEASUREMENT, so it is in `placeWithoutMeasurements`' allow-list and the rep keeps it: he
+   * chose the venue himself at the door, and his own screen and his plan both have to say which
+   * building a call is in — the cap is three visits a DAY inside one of them.
+   */
+  sharedPlaceId?: string | null;
   /** The two raw readings, kept beside the fixed point for good. Null where one was not measured. */
   pinReading?: PlaceReading | null;
   photoReading?: PlaceReading | null;
@@ -589,7 +599,11 @@ export function mapPlaceRow(row: Row): ListPlace {
     photoPath: String(row.photo_path),
     capturedAt: String(row.captured_at),
     clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
-    pointSource: row.point_source === "photo" || row.point_source === "moved" ? row.point_source : "pin",
+    pointSource:
+      row.point_source === "photo" || row.point_source === "moved" || row.point_source === "shared_place"
+        ? row.point_source
+        : "pin",
+    sharedPlaceId: text(row.shared_place_id),
     pinReading: readingOf(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
     photoReading: readingOf(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
     moved: text(row.moved_at) ? { at: String(row.moved_at), reason: text(row.move_reason) } : null,
@@ -641,11 +655,11 @@ function mapPharmacyPin(row: Row, names: PeopleNames): PharmacyPin | null {
 // 🔴 A POSTGREST SELECT IS ONE STRING, AND A COLUMN THAT DOES NOT EXIST FAILS THE WHOLE READ WITH
 // 42703 — which here is the rep's list, the planner and the visit form at once. So a column named
 // here must already exist on the database the branch deploys against: `brick_lookup` arrived in
-// migration 20261008023051 and `reopened_at` in 20261008023801, both applied to staging and
-// production before this line shipped.
+// migration 20261008023051, `reopened_at` in 20261008023801 and `shared_place_id` in
+// 20261010013001, each applied to staging and production before this line shipped.
 const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
-  "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason";
+  "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason, shared_place_id";
 const CUSTOMER_COLUMNS =
   "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings, " +
   // A pinned pharmacy's own location (2026-10-09). Every one is nullable and null on every doctor.
@@ -1400,86 +1414,6 @@ async function placePayload(place: PlaceDraft): Promise<Row> {
 }
 
 /**
- * What a captured coordinate MEANS: the clean address Google read for it, the part of town, the
- * governorate, and the Phoenix brick / area / region the point falls in.
- *
- * ONE resolver, two mappings — a doctor's place (`resolvePlaceLocation`) and the location a rep may
- * pin on a pharmacy (`resolvePharmacyPinLocation`) both read this and nothing else, so the two can
- * never disagree about which brick a point is in. The place mapping keeps no governorate because
- * `phoenix_crm_places` has no column for one; the pharmacy's own columns do, because the owner asked
- * for a pinned pharmacy to come back "cleaned and separated into area, brick, government"
- * (2026-10-09).
- */
-type PinGeography = {
-  readonly address: string | null;
-  readonly zone: string | null;
-  readonly governorate: string | null;
-  readonly brickLookup: "matched" | "none_nearby" | "could_not_look";
-  readonly brickId: string | null;
-  readonly brickName: string | null;
-  readonly brickDistanceKm: number | null;
-  readonly areaCode: string | null;
-  readonly areaName: string | null;
-  readonly regionCode: string | null;
-  readonly regionName: string | null;
-};
-
-async function resolvePinGeography(point: { lat: number; lon: number; accuracyMeters: number | null }): Promise<PinGeography> {
-  const [centroids, located] = await Promise.all([
-    loadBrickCentroids(),
-    // Best-effort, exactly as the watermark treats it: a pin in the desert, a refused lookup or a
-    // spent map quota leaves the clean address null. The coordinates, the photo and the brick are
-    // the proof; the address is the courtesy on top of them, and a validation is never blocked on it.
-    resolveEvidenceLocation({ accuracyMeters: point.accuracyMeters, latitude: point.lat, longitude: point.lon }).catch(() => null),
-  ]);
-  const brick = resolveBrickForPoint(point.lat, point.lon, centroids);
-  const trusted = brick && brick.distanceKm <= BRICK_TRUST_KM ? brick : null;
-  // 🔴 DID ANYBODY ACTUALLY LOOK? `centroids.length === 0` is READ, never inferred from a null brick:
-  // `loadBrickCentroids` degrades to an empty list on any error, deliberately outside its cache, so an
-  // empty list is the ONLY tell that the brick master could not be read. Without this, "the pin is
-  // nowhere near a Phoenix brick" and "we could not look" are the same null on the row — the very
-  // distinction the outstation watermark makes in words because an approver needs it.
-  const brickLookup = centroids.length === 0 || brick === null ? "could_not_look" : trusted ? "matched" : "none_nearby";
-  return {
-    address: located?.address ?? null,
-    zone: located?.components.area ?? null,
-    // Google's own component, never guessed from the address text: an address line holds street,
-    // district and city names that read like governorates, and a wrong governorate on a pharmacy is
-    // worse than none at all.
-    governorate: located?.components.governorate ?? null,
-    brickLookup,
-    brickId: trusted?.brickId ?? null,
-    brickName: trusted?.brickName ?? null,
-    brickDistanceKm: brick ? Math.round(brick.distanceKm * 100) / 100 : null,
-    areaCode: trusted?.areaCode ?? null,
-    areaName: trusted?.areaName ?? null,
-    regionCode: trusted?.regionCode ?? null,
-    regionName: trusted?.regionName ?? null,
-  };
-}
-
-/**
- * A point's clean address, part of town, brick, area and region — the location every place row holds,
- * resolved here and nowhere else (a validation and a move read the same function, so they can never
- * disagree about which brick a point is in).
- */
-export async function resolvePlaceLocation(point: { lat: number; lon: number; accuracyMeters: number | null }): Promise<Row> {
-  const geo = await resolvePinGeography(point);
-  return {
-    address: geo.address,
-    zone: geo.zone,
-    brick_lookup: geo.brickLookup,
-    brick_id: geo.brickId,
-    brick_name: geo.brickName,
-    brick_distance_km: geo.brickDistanceKm,
-    area_code: geo.areaCode,
-    area_name: geo.areaName,
-    region_code: geo.regionCode,
-    region_name: geo.regionName,
-  };
-}
-
-/**
  * The pin as the database takes it: the rep's one reading, plus the geography resolved from it.
  *
  * The owner asked for a pinned pharmacy to arrive "cleaned and separated into area, brick,
@@ -1748,21 +1682,31 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   // reviewer, and that is him (`territoryForValidation`).
   const { seat, isTest, validatedAs } = territoryForValidation(viewer, body.seatId, readTestFlag(body.test));
   const lineCode = lineCodeOf(seat);
-  const place = parsePlaceDraft(body.place);
-  if (!place.ok) {
-    // The reading survives the refusal (owner, 2026-10-03). Silent, void, and never throwing: the
-    // rep reads exactly the refusal below, whether or not this lands.
-    await recordRefusedReading({
-      subjectKind: "place",
-      raw: body.place,
-      seatId: seat.seatId,
-      repHrId: viewer.hrId,
-      // Absent on `new` and `outside`, where no customer has been chosen yet. That is legitimate and
-      // must not cost the row — the reading is about the phone, not about the customer.
-      customerId: isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null,
-      isTest,
-    });
-    throw validationError(place.error);
+  // 🔴 A SEATING IN A POLYCLINIC IS THE SAME ACT WITH A DIFFERENT DOOR (owner, 2026-10-09): the venue
+  // was captured once at its own door, so this customer brings a TIMETABLE photo and his hours and no
+  // location at all — `body.seated` instead of `body.place`. Everything below is shared: the mode, the
+  // phone, the request a `new` or `outside` customer files, the notice, the restamp.
+  const seated = seatedDraftOf(body);
+  const venue = seated ? await sharedPlaceForSeating({ seatId: seat.seatId, isTest, sharedPlaceId: seated.sharedPlaceId }) : null;
+  let place: PlaceDraft | null = null;
+  if (!seated) {
+    const parsed = parsePlaceDraft(body.place);
+    if (!parsed.ok) {
+      // The reading survives the refusal (owner, 2026-10-03). Silent, void, and never throwing: the
+      // rep reads exactly the refusal below, whether or not this lands.
+      await recordRefusedReading({
+        subjectKind: "place",
+        raw: body.place,
+        seatId: seat.seatId,
+        repHrId: viewer.hrId,
+        // Absent on `new` and `outside`, where no customer has been chosen yet. That is legitimate and
+        // must not cost the row — the reading is about the phone, not about the customer.
+        customerId: isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null,
+        isTest,
+      });
+      throw validationError(parsed.error);
+    }
+    place = parsed.value;
   }
   // Optional, and written in the same save as the validation (owner, 2026-09-30) — never a second
   // step that could fail after the first one landed.
@@ -1842,23 +1786,60 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     mode === "new" || mode === "outside"
       ? { name: String(payload.name), listType: parseListType(payload.list_type), customerId: null }
       : await validationSubject(seat.seatId, isTest, mode, body);
-  const google = await googleCheckForSave(subject, place.value, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });
-  if (google?.check.verdict.kind === "match") payload.google = google.record;
-  else if (google) payload.hold_review = google.record;
-  // The owner's third step, 2026-10-08: and does the signboard in the photo name this customer. A
-  // confident negative rides the SAME `hold_review` the Google hold rides, so the already-atomic hold
-  // path does all of it — the customer stays under To validate, one review row is raised, and the rep
-  // reads only that the system is checking. 🔴 `unjudged` NEVER holds: see signboardHoldsForReview.
-  const signboard = await signboardCheckForSave(
-    subject,
-    place.value,
-    { seatId: seat.seatId, repHrId: viewer.hrId, isTest },
-    payload.hold_review !== undefined,
-  );
-  if (signboard && payload.hold_review === undefined && signboardHoldsForReview(signboard.check)) {
-    payload.hold_review = signboard.record;
+  let signboard: { check: PhoenixCrmSignboardCheck; record: Record<string, unknown> } | null = null;
+  let schedule: PhoenixCrmScheduleCheck | null = null;
+  if (seated && venue) {
+    // 🔴 NEITHER GOOGLE NOR THE SIGNBOARD RUNS ON A SEATING, and that is the design rather than a gap.
+    // Both are judged against the customer's own name at HIS door: the Google check asks whether the
+    // listing at this point is him, and the signboard asks whether the sign names him. Inside a
+    // polyclinic the listing and the sign are the BUILDING's, so both would refuse every customer for
+    // the exact reason this feature exists. His evidence is the TIMETABLE — the one thing at that door
+    // that does name him — and the administrator's review is the human gate behind it (owner,
+    // 2026-10-09: "even if no Google check, he must validate by a live photo and location", the
+    // location being the venue's, taken once).
+    //
+    // `signboardNameIsUsable` is the SAME guard the signboard read is given, deliberately: a name too
+    // short or too generic to match ("Dr", a single initial) would be judged against a wall of forty
+    // names and could only produce noise. `signboardApplies` is NOT applied — that one answers the
+    // owner's AM/PM rule about whose name a SIGN carries, and a timetable names people whatever list
+    // the customer is on.
+    schedule =
+      subject && signboardNameIsUsable(subject.name)
+        ? await readPlaceSchedule({
+            customerName: subject.name,
+            isTest,
+            photoPath: seated.photoPath,
+            repHrId: viewer.hrId,
+            seatId: seat.seatId,
+          })
+        : null;
+    // A timetable that confidently names somebody else, or holds no timetable at all, rides the SAME
+    // atomic `hold_review` a Google or signboard hold rides: the customer stays under To validate, one
+    // review row is raised for the administrator, and the rep reads only that the system is checking.
+    // 🔴 `unjudged` NEVER holds: see scheduleHoldsForReview.
+    if (schedule && scheduleHoldsForReview(schedule)) {
+      payload.hold_review = scheduleHoldRecord(schedule, {
+        lat: venue.lat,
+        lon: venue.lon,
+        name: venue.name,
+        sharedPlaceId: venue.sharedPlaceId,
+      });
+    }
+    payload.place = await seatedPlacePayload(venue, seated);
+  } else if (place) {
+    const google = await googleCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });
+    if (google?.check.verdict.kind === "match") payload.google = google.record;
+    else if (google) payload.hold_review = google.record;
+    // The owner's third step, 2026-10-08: and does the signboard in the photo name this customer. A
+    // confident negative rides the SAME `hold_review` the Google hold rides, so the already-atomic hold
+    // path does all of it — the customer stays under To validate, one review row is raised, and the rep
+    // reads only that the system is checking. 🔴 `unjudged` NEVER holds: see signboardHoldsForReview.
+    signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, payload.hold_review !== undefined);
+    if (signboard && payload.hold_review === undefined && signboardHoldsForReview(signboard.check)) {
+      payload.hold_review = signboard.record;
+    }
+    payload.place = await placePayload(place);
   }
-  payload.place = await placePayload(place.value);
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_validate_customer", { p: payload });
   const requestKind = text(result.request_kind);
@@ -1881,7 +1862,18 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   // A validated place is the reference point every later visit to this customer is measured against,
   // so a spoof here is worth more to a cheat than a spoofed visit — one fake pin makes a year of
   // visits read "ok". Judged after the save, silently, exactly as a visit is.
-  await judgeCaptureForPlace(viewer, seat.seatId, isTest, validated.placeId, validated.customerId, validated.capturedAt, place.value);
+  //
+  // 🔴 A SEATING IS NOT JUDGED HERE, AND SKIPPING IT IS CORRECT RATHER THAN A HOLE. Both detectors
+  // compare READINGS: `judgeCapture` the fixed point against this rep's own history, and
+  // `filePlaceCaptureTrust` the pin against the photo's reading. A seated row has neither — its point
+  // was copied from the venue, which WAS judged when the rep captured it at the door. Judging it again
+  // would file one venue's single capture once per customer seated in it and read as a cluster.
+  if (place) {
+    await judgeCaptureForPlace(viewer, seat.seatId, isTest, validated.placeId, validated.customerId, validated.capturedAt, place);
+  }
+  // What the timetable said, kept on the seated row for every seating and not only the held ones — the
+  // same reason the signboard verdict is kept below.
+  if (schedule) await recordPlaceSchedule(validated.placeId, schedule);
   // The verdict is kept on the place row for EVERY place and not only the held ones, so "how many
   // validated places has the system actually read the sign of" is a query rather than 643 photographs
   // eyeballed by hand. A plain update, deliberately outside the RPC's transaction: the verdict is a
@@ -2121,45 +2113,78 @@ export async function addPlace(
   const body = record(raw);
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.customerId)) throw validationError("Choose the customer this place belongs to.");
-  const place = parsePlaceDraft(body.place);
-  if (!place.ok) {
-    // A second clinic's refused reading is filed exactly as the first one's is.
-    await recordRefusedReading({
-      subjectKind: "place",
-      raw: body.place,
-      seatId: seat.seatId,
-      repHrId: viewer.hrId,
-      customerId: String(body.customerId).toLowerCase(),
-      isTest,
-    });
-    throw validationError(place.error);
+  const customerId = String(body.customerId).toLowerCase();
+  // A customer already validated at his own clinic who ALSO receives in a polyclinic is seated in it
+  // here, by the same route a first place takes. He legitimately ends with two places, which is what
+  // the five-active cap in `phoenix_crm_add_place` has always allowed for.
+  const seated = seatedDraftOf(body);
+  const venue = seated ? await sharedPlaceForSeating({ seatId: seat.seatId, isTest, sharedPlaceId: seated.sharedPlaceId }) : null;
+  let place: PlaceDraft | null = null;
+  if (!seated) {
+    const parsed = parsePlaceDraft(body.place);
+    if (!parsed.ok) {
+      // A second clinic's refused reading is filed exactly as the first one's is.
+      await recordRefusedReading({
+        subjectKind: "place",
+        raw: body.place,
+        seatId: seat.seatId,
+        repHrId: viewer.hrId,
+        customerId,
+        isTest,
+      });
+      throw validationError(parsed.error);
+    }
+    place = parsed.value;
   }
-  // Another clinic is checked against Google exactly as the first one is (owner, 2026-10-03). Held, it
-  // is saved and waits for the Super Admin; the customer, already validated, is not touched.
-  const subject = await validationSubject(seat.seatId, isTest, "listed", { customerId: String(body.customerId).toLowerCase() });
-  const google = await googleCheckForSave(subject, place.value, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });
-  // And its signboard is read exactly as the first one's is (2026-10-08) — a second doorway is a
-  // second identification, not a free pass on the strength of the first.
-  const googleHolds = google !== null && google.check.verdict.kind !== "match";
-  const signboard = await signboardCheckForSave(
-    subject,
-    place.value,
-    { seatId: seat.seatId, repHrId: viewer.hrId, isTest },
-    googleHolds,
-  );
-  const holdRecord = googleHolds
-    ? (google as { record: Row }).record
-    : signboard && signboardHoldsForReview(signboard.check)
-      ? signboard.record
-      : null;
+  const subject = await validationSubject(seat.seatId, isTest, "listed", { customerId });
+  let signboard: { check: PhoenixCrmSignboardCheck; record: Row } | null = null;
+  let schedule: PhoenixCrmScheduleCheck | null = null;
+  let matched: Row | null = null;
+  let holdRecord: Row | null = null;
+  if (seated && venue) {
+    // Neither Google nor the signboard, for the reason `validateCustomer`'s seated branch records in
+    // full: both are judged on the customer's name at HIS door, and this door is the building's.
+    schedule =
+      subject && signboardNameIsUsable(subject.name)
+        ? await readPlaceSchedule({
+            customerName: subject.name,
+            isTest,
+            photoPath: seated.photoPath,
+            repHrId: viewer.hrId,
+            seatId: seat.seatId,
+          })
+        : null;
+    if (schedule && scheduleHoldsForReview(schedule)) {
+      holdRecord = scheduleHoldRecord(schedule, {
+        lat: venue.lat,
+        lon: venue.lon,
+        name: venue.name,
+        sharedPlaceId: venue.sharedPlaceId,
+      });
+    }
+  } else if (place) {
+    // Another clinic is checked against Google exactly as the first one is (owner, 2026-10-03). Held, it
+    // is saved and waits for the Super Admin; the customer, already validated, is not touched.
+    const google = await googleCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });
+    // And its signboard is read exactly as the first one's is (2026-10-08) — a second doorway is a
+    // second identification, not a free pass on the strength of the first.
+    const googleHolds = google !== null && google.check.verdict.kind !== "match";
+    signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, googleHolds);
+    holdRecord = googleHolds
+      ? (google as { record: Row }).record
+      : signboard && signboardHoldsForReview(signboard.check)
+        ? signboard.record
+        : null;
+    if (google?.check.verdict.kind === "match") matched = google.record;
+  }
   const result = await callPhoenixCrm<Row>("phoenix_crm_add_place", {
     p: {
       seat_id: seat.seatId,
       actor_hr_id: viewer.hrId,
       is_test: isTest,
-      customer_id: String(body.customerId).toLowerCase(),
-      place: await placePayload(place.value),
-      ...(google?.check.verdict.kind === "match" ? { google: google.record } : {}),
+      customer_id: customerId,
+      place: seated && venue ? await seatedPlacePayload(venue, seated) : await placePayload(place as PlaceDraft),
+      ...(matched ? { google: matched } : {}),
       ...(holdRecord ? { hold_review: holdRecord } : {}),
     },
   });
@@ -2172,10 +2197,14 @@ export async function addPlace(
   if (added.held && !isTest) {
     await notifyValidationReviewWaiting({ customerName: added.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
   }
-  // A second place is a second reference point, judged exactly as the first one is.
-  const issuedAt = await photoSlotIssuedAt(place.value.photoPath).catch(() => null);
-  if (issuedAt) await judgeCaptureForPlace(viewer, seat.seatId, isTest, added.placeId, added.customerId, issuedAt, place.value);
+  // A second place is a second reference point, judged exactly as the first one is — unless it is a
+  // seating, which carries no reading of its own to judge (`validateCustomer` records why in full).
+  if (place) {
+    const issuedAt = await photoSlotIssuedAt(place.photoPath).catch(() => null);
+    if (issuedAt) await judgeCaptureForPlace(viewer, seat.seatId, isTest, added.placeId, added.customerId, issuedAt, place);
+  }
   if (signboard) await recordPlaceSignboard(added.placeId, signboard.check);
+  if (schedule) await recordPlaceSchedule(added.placeId, schedule);
   return added;
 }
 

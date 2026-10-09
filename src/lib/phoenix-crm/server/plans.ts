@@ -68,6 +68,7 @@ import {
   type PlanRuleCustomer,
 } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
+import { sharedPlanCapRefusal } from "@/lib/phoenix-crm/shared-place-rules";
 import {
   assertCanReturnPlan,
   assertReviewer,
@@ -92,6 +93,7 @@ import {
   mapTimings,
 } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
+import { loadSharedPlaceIdsByPlace, loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import {
   loadPlanActivities,
@@ -685,11 +687,20 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
           name: String(row.name),
           listType,
           pending: row.status === "pending",
-          places: (placesByCustomer.get(customerId) ?? []).map((place) => ({ placeId: place.placeId, timings: place.timings })),
+          places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
+            placeId: place.placeId,
+            timings: place.timings,
+            sharedPlaceId: place.sharedPlaceId ?? null,
+          })),
         },
         ],
       ];
     }),
+  );
+  // Three visits a day inside one polyclinic (owner, 2026-10-09) — the names only, so the refusal can
+  // say "Nile Polyclinic". The COUNT is off the plan's own items, so this read can never widen the cap.
+  const planVenues = await loadSharedPlaceNames(
+    [...ruleCustomers.values()].flatMap((customer) => customer.places.map((place) => place.sharedPlaceId ?? null)),
   );
   const resolved = resolvePlanItems({
     weekStart,
@@ -699,6 +710,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     isRamadan: (isoDay) => isRamadanDay(isoDay, viewer.config.ramadanOverrides),
     holidays,
     leave,
+    sharedPlaces: planVenues,
   });
   if (!resolved.ok) throw validationError(resolved.error);
 
@@ -849,6 +861,23 @@ export async function transitionPlan(
         changeableDays: access.editableDays,
       });
       if (overCap) throw conflictError(overCap);
+      // 🔴 AND THE VENUE CAP ON THE SAME WHOLE WEEK (owner, 2026-10-09: it bites at the plan AND at
+      // the door). A stored item carries a `place_id` and nothing about the building behind it, so the
+      // venue is read off the places; `onlyDays` is the days he can still change, for the reason the
+      // AM/PM re-check above gives — an over-cap day that has passed would deadlock the week.
+      const venueOfPlace = await loadSharedPlaceIdsByPlace(allRows.map((row) => textOrNull(row.place_id)));
+      const overVenue = sharedPlanCapRefusal({
+        cap: viewer.config.settings.sharedPlaceDailyCap,
+        dayLabel: planDayLabel,
+        forSend: true,
+        items: allRows.map((row) => ({
+          planDate: String(row.plan_date),
+          sharedPlaceId: venueOfPlace.get(String(row.place_id ?? "")) ?? null,
+        })),
+        onlyDays: access.editableDays,
+        venues: await loadSharedPlaceNames([...new Set(venueOfPlace.values())]),
+      });
+      if (overVenue) throw conflictError(overVenue);
     }
   } else if (action === "approve") {
     assertReviewer(viewer, seat, isTest);

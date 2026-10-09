@@ -167,7 +167,7 @@ export function runPhoenixCrmPlanReminderTests() {
       weekStart: "2026-10-03",
       items: [{ customerId: "C-1", placeId: null, planDate: "2026-10-08", exceptionType: null, exceptionNote: null }],
       customers: new Map([["C-1", customer]]),
-      settings: { amDailyCap: 5, pmDailyCap: 15 },
+      settings: { amDailyCap: 5, pmDailyCap: 15, sharedPlaceDailyCap: 3 },
       isRamadan: () => false,
       holidays: new Map([["2026-10-08", "Armed Forces Day"]]),
     });
@@ -177,7 +177,7 @@ export function runPhoenixCrmPlanReminderTests() {
       weekStart: "2026-10-03",
       items: [{ customerId: "C-1", placeId: null, planDate: "2026-10-06", exceptionType: null, exceptionNote: null }],
       customers: new Map([["C-1", customer]]),
-      settings: { amDailyCap: 5, pmDailyCap: 15 },
+      settings: { amDailyCap: 5, pmDailyCap: 15, sharedPlaceDailyCap: 3 },
       isRamadan: () => false,
       holidays: new Map([["2026-10-08", "Armed Forces Day"]]),
     });

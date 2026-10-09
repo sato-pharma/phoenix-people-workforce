@@ -135,10 +135,12 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
 
   // The page hands the board every set — and, since 2026-10-08, the customers waiting to be captured
   // again and which reads hit their ceiling — rather than rendering the sections itself.
+  // Asserted one prop at a time rather than as one literal line: the element wrapped across six lines
+  // when the Polyclinics set joined it (2026-10-09), and a single-line pattern reads that formatting
+  // as a missing set. What is pinned is that every set reaches the board and the page draws none itself.
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(
-    page,
-    /<ValidationReviewsBoard pending=\{waiting\} decided=\{decided\} validated=\{validated\} reopened=\{reopened\} capped=\{capped\} \/>/,
-    "the page delegates the sections to the board",
-  );
+  assert.ok(page.includes("<ValidationReviewsBoard"), "the page delegates the sections to the board");
+  for (const prop of ["capped={capped}", "decided={decided}", "pending={waiting}", "reopened={reopened}", "sharedPlaces={sharedPlaces}", "validated={validated}"]) {
+    assert.ok(page.includes(prop), `the board is handed ${prop}`);
+  }
 }

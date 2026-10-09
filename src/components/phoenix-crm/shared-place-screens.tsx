@@ -1,0 +1,502 @@
+"use client";
+
+/**
+ * Phoenix CRM — a polyclinic or centre, and seating a customer inside it.
+ *
+ * Owner, 2026-10-09 in chat (Arabic): validate the polyclinic ONCE, then register each customer's
+ * times in it, "from X to Y and from X to Y", at most three a day; he uploads a photo of the
+ * timetable showing the names of the people he is adding, at each one; the polyclinic's location is
+ * taken once, so seating needs no location; and the administrator reviews the timetable afterwards.
+ *
+ * 🔴 SO THIS SCREEN HAS NO LOCATION BLOCK AT ALL, and that absence is the feature rather than an
+ * omission. The venue's point was captured at its own door — a live photo of the sign on the building
+ * and both GPS readings inside the place line — and every customer seated behind that door inherits
+ * it. A second capture per customer is exactly what the owner removed: the sign names the BUILDING,
+ * so it could never name the fifth doctor who receives inside it, and each of them stayed unvalidated
+ * with his visits scoring nothing.
+ *
+ * What replaces the signboard for a seated customer is the clinic's own TIMETABLE — the schedule
+ * hanging on the wall, which is the one thing at that door that does name him — plus his days and
+ * hours. Both are read on the server (`readPlaceSchedule`), and the administrator's Polyclinics
+ * section is the human gate behind them.
+ *
+ * 🔴 IT LIVES IN ITS OWN FILE SO `list-screens.tsx` DOES NOT GROW AGAIN: that file is already 1,780
+ * lines and carries nine screens. What it exports is the three pure helpers the save path needs
+ * (`emptySeatedDraft`, `seatedDraftProblem`, `seatedPayload`) and ONE component — so `ValidateScreen`
+ * and `AddPlaceScreen` swap `PlaceEditor` for `SharedPlaceEditor` and keep every other line: the same
+ * same-name question, the same phone field, the same photo-code recovery, the same save bar.
+ *
+ * The rep never reads the words "shared place": the screen says "Polyclinic or centre", and the four
+ * kinds carry the owner's own words.
+ */
+
+import { Building2, CalendarClock } from "lucide-react";
+import { useState } from "react";
+
+import { crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
+import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
+import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
+import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
+import {
+  CrmBlock,
+  CrmButton,
+  CrmChoice,
+  CrmField,
+  CrmLoading,
+  CrmNote,
+  crmInputClassName,
+} from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
+import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, SIGNBOARD_FRAME_NOTE } from "@/lib/phoenix-crm/entry-rules";
+import {
+  SEATED_PLACE_NO_PHOTO,
+  SEATED_PLACE_NO_VENUE,
+  SEATED_PLACE_PHOTO_HINT,
+  SHARED_PLACE_KINDS,
+  SHARED_PLACE_NAME_LABEL,
+  SHARED_PLACE_NAME_MAX,
+  SHARED_PLACE_NO_KIND,
+  SHARED_PLACE_NO_NAME,
+  SHARED_PLACE_NO_PHOTO,
+  SHARED_PLACE_TITLE,
+  type SharedPlaceKind,
+} from "@/lib/phoenix-crm/shared-place-rules";
+import { parseTimings } from "@/lib/phoenix-crm/timings";
+import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+
+/** One venue as the picker reads it — the server's `SharedPlaceRow`, named for the client. */
+export type SharedPlaceChoice = {
+  sharedPlaceId: string;
+  name: string;
+  kind: SharedPlaceKind;
+  kindLabel: string;
+  status: "active" | "held" | "retired";
+  address: string | null;
+  brickName: string | null;
+  areaName: string | null;
+  seated: number;
+  capturedAtText: string;
+};
+
+/** What the rep fills in to seat a customer. No photo of a sign, no pin, no location. */
+export type SeatedDraftState = {
+  sharedPlaceId: string | null;
+  /** The clinic's timetable, photographed live. It is this customer's own evidence. */
+  photo: CapturedPhoto | null;
+  timings: PhoenixCrmTiming[];
+  label: string;
+};
+
+export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = []): SeatedDraftState {
+  return { sharedPlaceId: null, photo: null, timings: [...timings], label: "" };
+}
+
+/**
+ * The server's own checks, so a gap is named before the save leaves the phone.
+ *
+ * His "at least one day and one starting time" is `parseTimings`' own rule — one normal window with a
+ * start minute — so it is asked here rather than restated, exactly as `placeDraftProblem` asks it.
+ */
+export function seatedDraftProblem(draft: SeatedDraftState): string | null {
+  if (!draft.sharedPlaceId) return SEATED_PLACE_NO_VENUE;
+  if (!draft.photo) return SEATED_PLACE_NO_PHOTO;
+  const checked = parseTimings(timingsToDrafts(draft.timings));
+  return checked.ok ? null : checked.error;
+}
+
+/**
+ * The seating as /api/phoenix-crm/list/validate and /list/places read it: which venue, the timetable
+ * photo, the hours, and an optional name for the room.
+ *
+ * 🔴 NOT ONE COORDINATE IN IT. `parseSeatedPlaceDraft` names no fix at all and the server copies the
+ * venue's whole resolution — point, brick, area, region, address — onto the row. A reading sent from
+ * here would be a second answer to a question already answered at the venue's door.
+ */
+export function seatedPayload(photo: CapturedPhoto, draft: SeatedDraftState) {
+  return {
+    sharedPlaceId: draft.sharedPlaceId,
+    photoPath: photo.path,
+    label: draft.label.trim() || null,
+    timings: timingsToDrafts(draft.timings),
+  };
+}
+
+/** The venue's own capture state: the name on the building, which of the four, the photo, the pin. */
+type VenueDraft = {
+  name: string;
+  kind: SharedPlaceKind | null;
+  photo: CapturedPhoto | null;
+  pin: CapturedPin | null;
+};
+
+function emptyVenueDraft(): VenueDraft {
+  return { name: "", kind: null, photo: null, pin: null };
+}
+
+function venueProblem(draft: VenueDraft): string | null {
+  const name = draft.name.replace(/\s+/g, " ").trim();
+  if (name.length < 3) return SHARED_PLACE_NO_NAME;
+  if (!draft.kind) return SHARED_PLACE_NO_KIND;
+  if (!draft.photo) return SHARED_PLACE_NO_PHOTO;
+  if (!draft.pin) return "Press Capture location while you stand at the building.";
+  return null;
+}
+
+/** "Nile Polyclinic · Maadi · Cairo South" — where a venue is, for the picker and the chosen block. */
+function venueWhere(venue: SharedPlaceChoice): string {
+  return [venue.address, venue.brickName, venue.areaName].filter(Boolean).join(" · ") || "No address on record";
+}
+
+function seatedNote(venue: SharedPlaceChoice): string {
+  if (venue.status === "held") return "The system is still checking this one";
+  if (venue.seated === 0) return "No customer in it yet";
+  return venue.seated === 1 ? "1 customer in it" : `${venue.seated} customers in it`;
+}
+
+/**
+ * Captures one venue at its door, inside the seating screen rather than on a route of its own.
+ *
+ * 🔴 IT REPLACES THE REST OF THE FORM WHILE IT IS OPEN, instead of standing beside it: two live
+ * cameras mounted at once would hold two `MediaStream`s on a phone, and the rep would be asked to
+ * photograph a sign and a timetable in one scroll. The timetable photo and the hours live on the
+ * PARENT's draft, so closing this form gives them back untouched.
+ */
+function CaptureVenue({
+  busy,
+  onCancel,
+  onSaved,
+  seatId,
+  test,
+}: {
+  busy: boolean;
+  onCancel: () => void;
+  onSaved: (sharedPlaceId: string, held: boolean) => void;
+  seatId: string;
+  test: boolean;
+}) {
+  const [draft, setDraft] = useState<VenueDraft>(emptyVenueDraft);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  // The rule names HIS browser, never "Phoenix" — the setting it sends him to belongs to the browser.
+  const browserNamed = useBrowserNamed();
+  const disabled = busy || saving;
+  const cleanName = draft.name.replace(/\s+/g, " ").trim();
+
+  async function save() {
+    if (saving) return;
+    const gap = venueProblem(draft);
+    const photo = draft.photo;
+    const pin = draft.pin;
+    if (gap || !photo || !pin) {
+      setProblem(gap ?? SHARED_PLACE_NO_PHOTO);
+      return;
+    }
+    setSaving(true);
+    setProblem(null);
+    try {
+      const saved = await crmPost<{ sharedPlaceId: string; held: boolean }>(
+        "/api/phoenix-crm/shared-places",
+        {
+          seatId,
+          test,
+          sharedPlace: {
+            name: cleanName,
+            kind: draft.kind,
+            photoPath: photo.path,
+            // The two readings travel under the names `parseCapturedFix` reads, exactly as a place's
+            // do: the pin is the button's own reading, the `shutter*`/`photo*` four are the camera's.
+            // Neither is ever a copy of the other.
+            lat: pin.lat,
+            lon: pin.lon,
+            accuracyMeters: pin.accuracyMeters,
+            pinCapturedAt: pin.capturedAt,
+            deviceCapturedAt: photo.deviceCapturedAt,
+            shutterLat: photo.shutterLat,
+            shutterLon: photo.shutterLon,
+            shutterAccuracyMeters: photo.shutterAccuracyMeters,
+            shutterCapturedAt: photo.shutterCapturedAt,
+            photoLat: photo.shutterLat,
+            photoLon: photo.shutterLon,
+            photoAccuracyMeters: photo.shutterAccuracyMeters,
+            photoCapturedAt: photo.shutterCapturedAt,
+          },
+        },
+        "sharedPlace",
+      );
+      onSaved(saved.sharedPlaceId, saved.held === true);
+    } catch (error) {
+      setSaving(false);
+      setProblem(messageOf(error));
+    }
+  }
+
+  return (
+    <>
+      <CrmBlock className="border-t border-slate-100" title={`Add a ${SHARED_PLACE_TITLE.toLowerCase()}`}>
+        <p className="text-sm font-medium leading-6 text-slate-600">
+          Stand at the building and photograph the sign on it, then capture the location. You do this once for the whole building — every customer
+          you add inside it uses this same location.
+        </p>
+        <div className="mt-3 grid min-w-0 gap-3">
+          <CrmField hint="As written on the sign on the building, not a person's name." htmlFor="phoenix-crm-venue-name" label={SHARED_PLACE_NAME_LABEL}>
+            <input
+              autoComplete="off"
+              className={crmInputClassName}
+              disabled={disabled}
+              id="phoenix-crm-venue-name"
+              maxLength={SHARED_PLACE_NAME_MAX}
+              onChange={(event) => {
+                const name = event.target.value;
+                setDraft((current) => ({ ...current, name }));
+                setProblem(null);
+              }}
+              value={draft.name}
+            />
+          </CrmField>
+          <CrmField label="What is it">
+            <CrmChoice
+              columns={2}
+              label="What is it"
+              onChange={(kind: SharedPlaceKind) => {
+                setDraft((current) => ({ ...current, kind }));
+                setProblem(null);
+              }}
+              options={SHARED_PLACE_KINDS.map((kind) => ({ value: kind.key, label: kind.label, disabled }))}
+              value={draft.kind}
+            />
+          </CrmField>
+        </div>
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title="The sign on the building">
+        <CrmNote className="mb-3" tone="info">
+          {browserNamed(PLACE_PRECISION_NOTE)}
+        </CrmNote>
+        {cleanName.length < 3 && !draft.photo ? (
+          <p className="text-sm font-semibold text-slate-500">Write the name on the building first. It is printed on the photo.</p>
+        ) : (
+          <LivePhotoCapture
+            disabled={disabled}
+            frameGuide={{ note: SIGNBOARD_FRAME_NOTE }}
+            hint="Stand at the building and take a live photo of the sign on it. Put the sign inside the box on the screen, with the building's name readable."
+            onChange={(photo) => {
+              setDraft((current) => ({ ...current, photo }));
+              setProblem(null);
+            }}
+            purpose="place"
+            seatId={seatId}
+            test={test}
+            title={`Phoenix CRM ${SHARED_PLACE_TITLE.toLowerCase()}: ${cleanName}`}
+            value={draft.photo}
+          />
+        )}
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title="Capture location">
+        <CaptureLocation
+          disabled={disabled}
+          onChange={(pin) => {
+            setDraft((current) => ({ ...current, pin }));
+            setProblem(null);
+          }}
+          value={draft.pin}
+        />
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100">
+        {problem ? (
+          <CrmNote className="mb-3" tone="bad">
+            {problem}
+          </CrmNote>
+        ) : null}
+        <div className="grid gap-2 sm:flex sm:flex-wrap">
+          <CrmButton busy={saving} onClick={() => void save()} variant="primary">
+            Save this building
+          </CrmButton>
+          <CrmButton
+            disabled={disabled}
+            onClick={() => {
+              releaseCapturedPhoto(draft.photo);
+              onCancel();
+            }}
+          >
+            Cancel
+          </CrmButton>
+        </div>
+      </CrmBlock>
+    </>
+  );
+}
+
+/**
+ * Seating one customer: which venue, the timetable photo, the days and hours, the room's name.
+ *
+ * It mirrors `PlaceEditor`'s contract — numbered steps from `firstStep`, a `disabled` flag, updates
+ * as functions of the latest draft — so the two are swapped for each other on one line in
+ * `ValidateScreen` and `AddPlaceScreen`.
+ */
+export function SharedPlaceEditor({
+  customerName,
+  disabled = false,
+  firstStep,
+  idPrefix,
+  onChange,
+  photoBlockedReason = null,
+  ramadanNote,
+  seatId,
+  test,
+  value,
+}: {
+  customerName: string;
+  disabled?: boolean;
+  /** The number of this editor's first step on the screen ("2 · Polyclinic or centre"). */
+  firstStep: number;
+  idPrefix: string;
+  onChange: (update: (current: SeatedDraftState) => SeatedDraftState) => void;
+  /** Why the camera cannot open yet (the customer's name, printed on the photo, is not written). */
+  photoBlockedReason?: string | null;
+  ramadanNote: string | null;
+  seatId: string;
+  test: boolean;
+  value: SeatedDraftState;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const venues = useCrmGet<{ sharedPlaces: SharedPlaceChoice[] }>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
+  const list = venues.data?.sharedPlaces ?? [];
+  const chosen = list.find((venue) => venue.sharedPlaceId === value.sharedPlaceId) ?? null;
+  const photoStep = firstStep + 1;
+  const timingsStep = firstStep + 2;
+  const detailsStep = firstStep + 3;
+
+  if (adding) {
+    return (
+      <CaptureVenue
+        busy={disabled}
+        onCancel={() => setAdding(false)}
+        onSaved={(sharedPlaceId, held) => {
+          setAdding(false);
+          setJustAdded(held ? sharedPlaceId : null);
+          // A venue still being checked cannot be seated in — the server refuses it under its own
+          // lock — so it is read back into the picker rather than chosen here.
+          if (!held) onChange((current) => ({ ...current, sharedPlaceId }));
+          venues.reload();
+        }}
+        seatId={seatId}
+        test={test}
+      />
+    );
+  }
+
+  return (
+    <>
+      <CrmBlock className="border-t border-slate-100" title={`${firstStep} · ${SHARED_PLACE_TITLE}`}>
+        {venues.loading && list.length === 0 ? (
+          <CrmLoading label="Loading the polyclinics and centres" />
+        ) : (
+          <>
+            {venues.error ? (
+              <CrmNote className="mb-3" tone="bad">
+                {venues.error}
+              </CrmNote>
+            ) : null}
+            {justAdded ? (
+              <CrmNote className="mb-3" title="Saved. The system is checking it" tone="info">
+                The building is saved and the system is checking its photo. It confirms it automatically, and then you can add customers in it.
+              </CrmNote>
+            ) : null}
+            {list.length === 0 ? (
+              <p className="text-sm font-medium leading-6 text-slate-600">
+                No polyclinic or centre is on this territory yet. Add the one you are standing at, then add the customer in it.
+              </p>
+            ) : (
+              <CrmChoice
+                columns={2}
+                label={SHARED_PLACE_TITLE}
+                onChange={(sharedPlaceId: string) => onChange((current) => ({ ...current, sharedPlaceId }))}
+                options={list.map((venue) => ({
+                  value: venue.sharedPlaceId,
+                  label: venue.name,
+                  note: `${venue.kindLabel} · ${venueWhere(venue)} · ${seatedNote(venue)}`,
+                  disabled: disabled || venue.status !== "active",
+                }))}
+                value={value.sharedPlaceId}
+              />
+            )}
+            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+              <CrmButton disabled={disabled} onClick={() => setAdding(true)} size="sm" variant="secondary">
+                <Building2 aria-hidden className="h-4 w-4" />
+                It is not here — add the building
+              </CrmButton>
+            </div>
+            {chosen ? (
+              <div className="mt-3 border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+                <p className="flex min-w-0 items-start gap-2 text-sm font-black text-slate-950">
+                  <Building2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                  <span className="min-w-0 break-words">{chosen.name}</span>
+                </p>
+                <p className="mt-0.5 break-words text-xs font-semibold text-slate-600">
+                  {chosen.kindLabel} · {venueWhere(chosen)}
+                </p>
+                {/* The owner's own design, said plainly: the location is the building's, captured once
+                    at its door, so this customer is not asked for one (2026-10-09). */}
+                <p className="mt-1 break-words text-xs font-semibold text-slate-500">
+                  This building&rsquo;s location was captured at its door on {chosen.capturedAtText}. The customer takes it, so you do not capture a
+                  location here.
+                </p>
+              </div>
+            ) : null}
+          </>
+        )}
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title={`${photoStep} · Timetable photo`}>
+        {photoBlockedReason && !value.photo ? (
+          <p className="text-sm font-semibold text-slate-500">{photoBlockedReason}</p>
+        ) : (
+          <LivePhotoCapture
+            disabled={disabled}
+            hint={SEATED_PLACE_PHOTO_HINT}
+            onChange={(photo) => onChange((current) => ({ ...current, photo }))}
+            purpose="place"
+            seatId={seatId}
+            test={test}
+            title={`Phoenix CRM customer: ${customerName}`}
+            value={value.photo}
+          />
+        )}
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title={`${timingsStep} · Days and hours`}>
+        <p className="mb-3 flex min-w-0 items-start gap-2 text-sm font-medium leading-6 text-slate-600">
+          <CalendarClock aria-hidden className="mt-1 h-4 w-4 shrink-0 text-slate-500" />
+          <span className="min-w-0 break-words">Enter the hours this customer receives in this building, as the timetable shows them.</span>
+        </p>
+        <TimingsEditor
+          disabled={disabled}
+          idPrefix={`${idPrefix}-timings`}
+          onChange={(timings) => onChange((current) => ({ ...current, timings }))}
+          ramadanNote={ramadanNote}
+          value={value.timings}
+        />
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title={`${detailsStep} · Room or clinic name`}>
+        <CrmField hint="Optional. For example: Clinic 4, or Second floor." htmlFor={`${idPrefix}-label`} label="Room or clinic name">
+          <input
+            className={crmInputClassName}
+            disabled={disabled}
+            id={`${idPrefix}-label`}
+            maxLength={PLACE_TEXT_MAX}
+            onChange={(event) => {
+              const label = event.target.value;
+              onChange((current) => ({ ...current, label }));
+            }}
+            value={value.label}
+          />
+        </CrmField>
+      </CrmBlock>
+    </>
+  );
+}

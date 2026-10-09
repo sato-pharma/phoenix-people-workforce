@@ -41,7 +41,11 @@ function readTargets(raw: unknown): PhoenixCrmSettings["gradeTargets"] {
 export async function loadPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
   const supabase = getSupabaseAdmin();
   const [settingsResult, rolloutResult, ramadanResult] = await Promise.all([
-    supabase.from("phoenix_crm_settings").select("pm_daily_cap, am_daily_cap, far_apart_km, visit_far_meters, weak_gps_meters, grade_targets").eq("id", 1).maybeSingle(),
+    supabase
+      .from("phoenix_crm_settings")
+      .select("pm_daily_cap, am_daily_cap, shared_place_daily_cap, far_apart_km, visit_far_meters, weak_gps_meters, grade_targets")
+      .eq("id", 1)
+      .maybeSingle(),
     supabase.from("phoenix_crm_line_rollout").select("line_code, opens_on").order("line_code"),
     supabase.from("phoenix_crm_ramadan_overrides").select("hijri_year, starts_on, ends_on").order("hijri_year"),
   ]);
@@ -54,6 +58,9 @@ export async function loadPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
     ? {
         pmDailyCap: Number(row.pm_daily_cap),
         amDailyCap: Number(row.am_daily_cap),
+        // A row written before the column existed reads null, which `Number` would turn into 0 — and a
+        // cap of 0 refuses every visit inside every shared place. The default is the only safe fallback.
+        sharedPlaceDailyCap: Number(row.shared_place_daily_cap ?? PHOENIX_CRM_DEFAULT_SETTINGS.sharedPlaceDailyCap),
         farApartKm: Number(row.far_apart_km),
         visitFarMeters: Number(row.visit_far_meters),
         weakGpsMeters: Number(row.weak_gps_meters),
@@ -116,6 +123,9 @@ export async function saveSettings(actorHrId: string, raw: unknown): Promise<voi
     .update({
       pm_daily_cap: integerIn(body.pmDailyCap, 1, 60, "The PM a day"),
       am_daily_cap: integerIn(body.amDailyCap, 1, 60, "The AM a day"),
+      // 1–20, the column's own CHECK: a shared place's day is one physical queue, so the plan caps'
+      // 60 would be a number no polyclinic could mean.
+      shared_place_daily_cap: integerIn(body.sharedPlaceDailyCap, 1, 20, "The visits one polyclinic or centre holds a day"),
       far_apart_km: Math.round(farApart * 10) / 10,
       visit_far_meters: integerIn(body.visitFarMeters, 50, 20000, "The far visit distance"),
       weak_gps_meters: integerIn(body.weakGpsMeters, 10, 5000, "The weak location accuracy"),

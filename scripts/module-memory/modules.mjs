@@ -227,16 +227,17 @@ export const MODULES = [
   {
     id: "phoenix-crm-validation",
     title: "Phoenix CRM — validating a place: the signboard, the refusal, the merge",
-    scope: "What turns a captured place into a validated one — the signboard read, capture trust, the Place checks page, the closed refusal reasons the rep is told, the customers waiting to be captured again, the validate-first order, the brick lookup and the same-seat duplicate merge.",
+    scope: "What turns a captured place into a validated one — the signboard read, capture trust, the shared place a rep captures once and seats customers in, the timetable read, the Place checks page, the closed refusal reasons the rep is told, the customers waiting to be captured again, the validate-first order, the brick lookup and the same-seat duplicate merge.",
     globs: [
-      "src/lib/phoenix-crm/{signboard-rules,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts",
-      "src/lib/phoenix-crm/server/{signboard-check,signboard-sweep,validation-reviews}.ts",
-      "src/components/phoenix-crm/{refusal-reason-field,reopened-customer-list,validated-place-list,validation-review-queue,validation-reviews-board}.tsx",
+      "src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts",
+      "src/lib/phoenix-crm/server/{signboard-check,signboard-sweep,schedule-check,shared-places,place-location,validation-reviews}.ts",
+      "src/components/phoenix-crm/{refusal-reason-field,reopened-customer-list,shared-place-list,shared-place-screens,validated-place-list,validation-review-queue,validation-reviews-board}.tsx",
       "app/**/field-crm/validation-reviews/**",
+      "app/api/phoenix-crm/{shared-places,validation-reviews}/**",
       "scripts/phoenix-crm-merge-same-seat-duplicates.ts",
-      "tests/phoenix-crm-{signboard-check,capture-trust-place,validation-feedback,place-brick-lookup,duplicate-merge,refuse-validation,validation-review-filters,place-checks-in-overflow}*",
+      "tests/phoenix-crm-{signboard-check,capture-trust-place,validation-feedback,place-brick-lookup,place-location-frozen,shared-place,duplicate-merge,refuse-validation,validation-review-filters,place-checks-in-overflow}*",
     ],
-    keywords: ["signboard", "refusal reason", "validate again", "duplicate merge", "place checks", "capture trust", "brick lookup"],
+    keywords: ["signboard", "refusal reason", "validate again", "duplicate merge", "place checks", "capture trust", "brick lookup", "shared place", "polyclinic", "timetable"],
     tables: [],
   },
   // 🔴 SPLIT, 2026-10-09, FOR THE SAME REASON AS THE THREE ABOVE: `phoenix-crm` reached 33 rules and its

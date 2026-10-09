@@ -888,6 +888,15 @@ export const accessRegistry = [
   // Refusing a validation the check never held — every PM customer, and the AM ones that matched
   // (2026-10-03). The same gate and the same decider; the reject underneath is the one above.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/refuse", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // A polyclinic, medical centre, medical tower or hospital outpatient suite — captured ONCE at its
+  // door, with customers seated inside it (owner, 2026-10-09). GET is the picker, for a reader of the
+  // territory; POST captures one, and the service gates it to the territory's own rep or a manager.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/shared-places", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/shared-places", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // Deciding one of those venues: the Super Admin ALONE — `canDecideSharedPlaces` in the service. A
+  // rejection retires the venue and sends every customer seated in it back to To validate. POST only:
+  // the Polyclinics section is read on the page itself, so there is no GET to gate.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/shared-place", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // Approving a place AFTER it was rejected (owner, 2026-10-03). The same gate and the same decider.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/restore", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // Moving or removing a validated place: the Super Admin and the SFE Manager only (owner, 2026-09-29),

@@ -6,7 +6,7 @@
  * Owner, 2026-10-08: tell the rep why, from a fixed pick-list, worded about his own photo and never
  * naming a person. Both Super Admin decision screens use this one field — the queue of held places and
  * the list of validations the system never questioned — so the two can never offer different lists.
- * The reasons themselves live in `@/lib/phoenix-crm/validation-feedback`, closed at six.
+ * The reasons themselves live in `@/lib/phoenix-crm/validation-feedback`, closed at eight.
  *
  * It is required to refuse and never asked to approve. The free-text note beside it stays the
  * record's, and the rep never reads it — which is why its label says so in words.
@@ -14,20 +14,31 @@
 
 import { CrmSelect } from "@/components/phoenix-crm/ui";
 import {
+  reasonsFor,
   VALIDATION_NOTE_HINT,
   VALIDATION_REASON_LABEL,
   VALIDATION_REASON_PLACEHOLDER,
-  VALIDATION_REFUSAL_REASONS,
+  type ValidationPhotoKind,
   type ValidationRefusalReason,
 } from "@/lib/phoenix-crm/validation-feedback";
 
+/**
+ * 🔴 WHICH OF THE EIGHT ARE OFFERED DEPENDS ON WHAT THE PHOTO IS (owner, 2026-10-09). A customer
+ * seated in a polyclinic is photographed at his TIMETABLE, not at a signboard — so "a photo of paper,
+ * not a building" is wrong by construction about him, and "the timetable does not name this customer"
+ * is meaningless about a signboard. `reasonsFor` keeps the two lists apart; the default is `signboard`,
+ * so every call site that existed before is unchanged.
+ */
 export function RefusalReasonField({
-  id,
-  value,
-  onChange,
   disabled,
+  id,
+  kind = "signboard",
+  onChange,
+  value,
 }: {
   id: string;
+  /** What the photo is. `schedule` is a seated customer's timetable; everything else is a signboard. */
+  kind?: ValidationPhotoKind;
   value: ValidationRefusalReason | "";
   onChange: (next: ValidationRefusalReason | "") => void;
   disabled?: boolean;
@@ -44,7 +55,7 @@ export function RefusalReasonField({
         value={value}
       >
         <option value="">{VALIDATION_REASON_PLACEHOLDER}</option>
-        {VALIDATION_REFUSAL_REASONS.map((reason) => (
+        {reasonsFor(kind).map((reason) => (
           <option key={reason.key} value={reason.key}>
             {reason.label}
           </option>

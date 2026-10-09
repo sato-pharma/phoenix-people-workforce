@@ -218,12 +218,16 @@ export function runPhoenixCrmRefusedReadingsTests() {
     ["src/lib/phoenix-crm/server/visits.ts", 1],
   ] as const) {
     const source = stripComments(readFileSync(file, "utf8"));
-    const calls = [...source.matchAll(/await recordRefusedReading\(\{([\s\S]*?)\n    \}\);\n    throw validationError\(/g)];
+    // Indentation-agnostic since 2026-10-09: both of list.ts's doors sit one block deeper now (the
+    // parse moved inside `if (!seated)`, because a customer seated in a shared place sends no
+    // location to refuse). What is pinned is unchanged — the awaited call, then the throw, nothing
+    // between them.
+    const calls = [...source.matchAll(/await recordRefusedReading\(\{([\s\S]*?)\n\s*\}\);\n\s*throw validationError\(/g)];
     assert.equal(calls.length, doors, `${file}: all ${doors} refusing door(s) file the reading, awaited, before throwing`);
     for (const call of calls) {
-      assert.match(call[1], /\n      subjectKind: "(?:place|visit)",/, `${file}: each call names which door refused it`);
-      assert.match(call[1], /\n      repHrId: viewer\.hrId,/, `${file}: and whose phone it was`);
-      assert.match(call[1], /\n      isTest,/, `${file}: a test-world refusal is filed as one`);
+      assert.match(call[1], /\n\s+subjectKind: "(?:place|visit)",/, `${file}: each call names which door refused it`);
+      assert.match(call[1], /\n\s+repHrId: viewer\.hrId,/, `${file}: and whose phone it was`);
+      assert.match(call[1], /\n\s+isTest,/, `${file}: a test-world refusal is filed as one`);
     }
     // The import may name the module's other entry points beside it (the off-listing refusal and its
     // count, added 2026-10-05); what this pins is that the WRITE comes from the shared module.

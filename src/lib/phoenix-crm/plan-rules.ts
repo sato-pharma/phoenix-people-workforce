@@ -21,6 +21,7 @@ import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
 import { isUuid as isUuidText } from "@/lib/http/uuid";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { editablePlanDays, fieldWeekDays, planDayListTypes, PLAN_DEADLINE_LABEL, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import { sharedPlanCapRefusal, type SharedPlaceNamed } from "@/lib/phoenix-crm/shared-place-rules";
 import { formatTimingWindow, PHOENIX_CRM_WEEKDAY_NAMES, windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmDoctorListType, PhoenixCrmPlanStatus, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -383,7 +384,11 @@ export type PlanRuleCustomer = {
   listType: PhoenixCrmDoctorListType;
   /** Carried over from iReports360 and not validated yet: no place, no timings, and it counts in nothing. */
   pending: boolean;
-  places: ReadonlyArray<{ placeId: string; timings: PhoenixCrmTiming[] }>;
+  /**
+   * `sharedPlaceId` is the polyclinic, centre, tower or hospital outpatient suite a seated place sits
+   * in, and null for a customer with his own clinic. The venue's day cap is counted off it below.
+   */
+  places: ReadonlyArray<{ placeId: string; timings: PhoenixCrmTiming[]; sharedPlaceId?: string | null }>;
 };
 
 export type ResolvedPlanItem = PlanItemDraft & {
@@ -391,6 +396,8 @@ export type ResolvedPlanItem = PlanItemDraft & {
   receives: boolean;
   /** The first window's start that day, for ordering the day. Null when the customer does not receive that day. */
   startMinute: number | null;
+  /** The venue behind the chosen place, or null. Stored on the item so the SEND can re-count the week. */
+  sharedPlaceId: string | null;
 };
 
 /**
@@ -506,8 +513,14 @@ export function resolvePlanItems(input: {
   weekStart: string;
   items: ReadonlyArray<PlanItemDraft>;
   customers: ReadonlyMap<string, PlanRuleCustomer>;
-  settings: Pick<PhoenixCrmSettings, "pmDailyCap" | "amDailyCap">;
+  settings: Pick<PhoenixCrmSettings, "pmDailyCap" | "amDailyCap" | "sharedPlaceDailyCap">;
   isRamadan: (isoDay: string) => boolean;
+  /**
+   * The venues the planned places sit in, `sharedPlaceId → name and kind`, so the refusal can say
+   * "Nile Polyclinic" rather than a code. A venue missing from the map is still COUNTED and named
+   * "Polyclinic or centre" — the cap must never depend on a lookup having succeeded.
+   */
+  sharedPlaces?: ReadonlyMap<string, SharedPlaceNamed>;
   /** The week's public holidays, `day → name`: a day named here holds no customer (owner, 2026-10-02). */
   holidays?: ReadonlyMap<string, string>;
   /** The rep's own full days of approved leave, `day → its name` (server/leave-days.ts): days off too. */
@@ -574,6 +587,7 @@ export function resolvePlanItems(input: {
       listType: customer.listType,
       receives,
       startMinute,
+      sharedPlaceId: place?.sharedPlaceId ?? null,
     });
   }
 
@@ -581,6 +595,19 @@ export function resolvePlanItems(input: {
   // touched cannot slip past them on its way to the manager.
   const overCap = planCapRefusal({ counts: countPlanDays(resolved), settings: input.settings });
   if (overCap) return { ok: false, error: overCap };
+
+  // 🔴 THE VENUE CAP IS ITS OWN FUNCTION AND MUST STAY ONE (owner, 2026-10-09 — three visits a day
+  // inside one polyclinic, at the plan AND at the door). It is NOT a third comparison inside
+  // `planCapRefusal`: that function is pinned to exactly two by
+  // `tests/phoenix-crm-plan-cap-on-send.test.ts`, because its two caps are counts of a DAY while this
+  // one is a count per BUILDING within a day — a different grouping, named with the venue's own name.
+  const overVenue = sharedPlanCapRefusal({
+    cap: input.settings.sharedPlaceDailyCap,
+    dayLabel: planDayLabel,
+    items: resolved,
+    venues: input.sharedPlaces ?? new Map(),
+  });
+  if (overVenue) return { ok: false, error: overVenue };
 
   return { ok: true, value: resolved };
 }

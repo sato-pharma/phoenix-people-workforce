@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   parseValidationRefusalReason,
+  reasonsFor,
   VALIDATION_REFUSAL_REASON_KEYS,
   VALIDATION_REFUSAL_REASONS,
   validationRefusalLabel,
@@ -24,13 +25,53 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
   // ── The closed list ────────────────────────────────────────────────────────────────────────────
   assert.deepEqual(
     [...VALIDATION_REFUSAL_REASON_KEYS],
-    ["no_signboard", "wrong_name", "too_dark", "not_at_door", "photo_of_paper", "point_off"],
-    "six, closed — a seventh needs the owner's word",
+    [
+      "no_signboard",
+      "wrong_name",
+      "too_dark",
+      "not_at_door",
+      "photo_of_paper",
+      "point_off",
+      // The seventh and eighth, the owner's own words on 2026-10-09, about the TIMETABLE inside a
+      // polyclinic rather than a signboard.
+      "schedule_other_name",
+      "schedule_missing",
+    ],
+    "eight, closed — a ninth needs the owner's word",
   );
-  const migration = readFileSync("supabase/migrations/20261008023801_phoenix_crm_validation_refusal_reason.sql", "utf8");
+  // 🔴 THE CHECK THAT IS LIVE IS THE SECOND MIGRATION'S: 20261010013001 DROPS the 2026-10-08 constraint
+  // and recreates it with eight keys. Reading only the older file would pass while the database refused
+  // the two new reasons — which is exactly the shape this assertion exists to catch.
+  const migration = readFileSync("supabase/migrations/20261010013001_phoenix_crm_shared_places.sql", "utf8");
+  const reviewCheck = migration.slice(migration.indexOf("add constraint phoenix_crm_validation_reviews_refusal_reason"));
+  assert.ok(reviewCheck.length > 0, "the shared-places migration recreates the review table's refusal-reason CHECK");
   for (const key of VALIDATION_REFUSAL_REASON_KEYS) {
-    assert.ok(migration.includes(`'${key}'`), `the SQL CHECK holds ${key}`);
+    assert.ok(reviewCheck.includes(`'${key}'`), `the live SQL CHECK holds ${key}`);
   }
+  // The venue's own column carries the same closed list, for a polyclinic the administrator rejects.
+  const venueCheckAt = migration.indexOf("refusal_reason text check (");
+  assert.ok(venueCheckAt > 0, "phoenix_crm_shared_places carries its own refusal_reason CHECK");
+  const venueCheck = migration.slice(venueCheckAt, migration.indexOf("retired_at timestamptz", venueCheckAt));
+  for (const key of VALIDATION_REFUSAL_REASON_KEYS) {
+    assert.ok(venueCheck.includes(`'${key}'`), `phoenix_crm_shared_places.refusal_reason holds ${key}`);
+  }
+
+  // ── Which of the eight are OFFERED depends on what the photo is ───────────────────────────────
+  const signboardKeys = reasonsFor("signboard").map((reason) => reason.key);
+  const scheduleKeys = reasonsFor("schedule").map((reason) => reason.key);
+  assert.ok(!signboardKeys.includes("schedule_other_name"), "a timetable reason is never offered about a signboard");
+  assert.ok(!signboardKeys.includes("schedule_missing"), "nor the other one");
+  assert.ok(
+    !scheduleKeys.includes("photo_of_paper"),
+    "🔴 'a photo of paper, not a building' is NEVER offered on a timetable — a timetable IS paper, so the sentence would send the rep to photograph a building nobody asked him for",
+  );
+  assert.ok(
+    !scheduleKeys.includes("point_off") && !scheduleKeys.includes("not_at_door"),
+    "a seated customer has no reading of his own, so neither can honestly be said about his capture",
+  );
+  assert.ok(scheduleKeys.includes("too_dark"), "the one reason both kinds share: any photo can be unreadable");
+  assert.ok(scheduleKeys.length >= 3, "a timetable refusal has something to choose");
+  assert.ok(signboardKeys.length >= 6, "and a signboard refusal keeps all six it had");
   for (const reason of VALIDATION_REFUSAL_REASONS) {
     assert.doesNotMatch(reason.rep, A_PERSON, `"${reason.key}" is about the photo, never a person`);
     assert.ok(reason.rep.endsWith("."), "a whole sentence");

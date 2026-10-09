@@ -96,6 +96,12 @@ export type PhoenixCrmSettings = {
   pmDailyCap: number;
   /** The most AM accounts one plan day can hold (owner: 5). */
   amDailyCap: number;
+  /**
+   * The visits ONE shared place holds in one visit day, whatever the number of customers seated in it
+   * (owner, 2026-10-09: three). Unlike the two caps above it binds the plan AND the door — the visit
+   * trigger reads this same column — because a polyclinic's day is physically one queue.
+   */
+  sharedPlaceDailyCap: number;
   /** Two customers of one plan day further apart than this are highlighted to the reviewer. */
   farApartKm: number;
   /** A visit saved further than this from the validated place is flagged (it still saves). */
@@ -120,6 +126,10 @@ export type PhoenixCrmSettings = {
 export const PHOENIX_CRM_DEFAULT_SETTINGS: PhoenixCrmSettings = {
   pmDailyCap: 15,
   amDailyCap: 5,
+  // Three (owner, 2026-10-09). The same number as SHARED_PLACE_DAILY_CAP_DEFAULT in
+  // shared-place-rules.ts and as the column's own SQL default — copied, not imported, so this type
+  // module stays free of the rules module; tests/phoenix-crm-shared-place.test.ts keeps all three equal.
+  sharedPlaceDailyCap: 3,
   farApartKm: 10,
   visitFarMeters: 300,
   weakGpsMeters: 100,

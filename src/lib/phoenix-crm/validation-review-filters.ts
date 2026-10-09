@@ -107,6 +107,49 @@ export function matchesValidationReviewFilters(row: ValidationReviewFilterable, 
   return true;
 }
 
+/**
+ * The same shared filters, read against a POLYCLINIC or centre (owner, 2026-10-09).
+ *
+ * 🔴 THE LIST FILTER DELIBERATELY DOES NOT REACH A VENUE. A shared place is on nobody's list — it is a
+ * venue only, takes no visit and counts in no KPI — so narrowing to AM or PM would empty the section
+ * rather than narrow it, and the reader would read an empty section as "no polyclinics". Everything
+ * else (rep, line, region, area, free text) applies exactly as it does to a place, and the venue's own
+ * name is what the free-text box searches in place of a customer name.
+ */
+export function matchesSharedPlaceFilters(
+  row: { name: string; repName: string; line: string | null; region: string | null; territory: string; address: string | null; brickName: string | null; areaName: string | null },
+  filters: ValidationReviewFilters,
+): boolean {
+  if (filters.rep && row.repName !== filters.rep) return false;
+  if (filters.line && (row.line ?? "") !== filters.line) return false;
+  if (filters.region && (row.region ?? "") !== filters.region) return false;
+  if (filters.area && (row.areaName ?? "") !== filters.area) return false;
+  const wanted = filters.text.trim().toLowerCase();
+  if (wanted) {
+    const haystack = [row.name, row.repName, row.territory, row.brickName, row.areaName, row.address];
+    if (!haystack.some((value) => typeof value === "string" && value.toLowerCase().includes(wanted))) return false;
+  }
+  return true;
+}
+
+/**
+ * Which outcomes show a venue. `held` is the one waiting for a decision; `active` is in use, whether he
+ * approved it or the system never questioned it.
+ *
+ * 🔴 "Rejected" shows NONE, and that is not an omission: rejecting a venue retires it, so it is not in
+ * the board read at all — the customers it sent back are in "Waiting to be captured again".
+ */
+export function sharedPlacePassesOutcome(
+  row: { status: "active" | "held" | "retired"; decidedAtText: string | null },
+  outcome: ValidationReviewOutcome,
+): boolean {
+  if (outcome === "pending") return row.status === "held";
+  if (outcome === "approved") return row.status === "active" && row.decidedAtText !== null;
+  if (outcome === "rejected") return false;
+  if (outcome === "unseen") return row.status === "active" && row.decidedAtText === null;
+  return outcome === "all" || outcome === "validated";
+}
+
 /** Whether any narrowing filter is set — the outcome selector alone does not count, since "Clear" also resets it. */
 export function hasActiveValidationReviewFilter(filters: ValidationReviewFilters): boolean {
   return (

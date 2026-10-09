@@ -31,7 +31,13 @@ import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
-import { parseValidationRefusalReason, validationRefusalLabel, VALIDATION_REASON_REQUIRED } from "@/lib/phoenix-crm/validation-feedback";
+import { loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
+import {
+  parseValidationRefusalReason,
+  validationRefusalLabel,
+  VALIDATION_REASON_REQUIRED,
+  type ValidationPhotoKind,
+} from "@/lib/phoenix-crm/validation-feedback";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -285,8 +291,10 @@ export type ValidationReviewRow = {
   photoPath: string | null;
   /**
    * Why the system held it, and every listing Google returned for the name. Since 2026-10-08 a place
-   * can also be held for what its SIGNBOARD says (`sign_other_name` / `sign_no_name`), and the
-   * record then sits in the same `google` column — see `signboardHoldRecord` for why.
+   * can also be held for what its SIGNBOARD says (`sign_other_name` / `sign_no_name`), and since
+   * 2026-10-09 for what the TIMETABLE inside a polyclinic says (`schedule_other_name` /
+   * `schedule_missing`); the record sits in the same `google` column either way — see
+   * `signboardHoldRecord` for why that column's name is the wrong one rather than the code.
    */
   reason:
     | "no_confident_listing"
@@ -296,8 +304,20 @@ export type ValidationReviewRow = {
     | "refused_by_admin"
     | "sign_other_name"
     | "sign_no_name"
+    | "schedule_other_name"
+    | "schedule_missing"
     | null;
-  /** What the system read on the signboard, verbatim — set on a signboard hold only. */
+  /**
+   * WHICH PHOTO this row is about, so the Super Admin is offered only the refusal reasons that can
+   * honestly be said about it (`reasonsFor`): a timetable is paper on purpose, so "a photo of paper,
+   * not a building" must never be offered on one.
+   */
+  photoKind: ValidationPhotoKind;
+  /** The polyclinic or centre the customer is seated in — set on a timetable hold only. */
+  sharedPlaceName: string | null;
+  /** The hours read beside this customer's name on the timetable, as written. Evidence, never parsed. */
+  hoursRead: string | null;
+  /** What the system read on the signboard — or on the timetable — verbatim. */
   signText: string | null;
   /** The names the system read on it, people and places together, for the Super Admin's eye. */
   signNames: string[];
@@ -402,18 +422,32 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       google.reason === "listing_off" ||
       google.reason === "refused_by_admin" ||
       google.reason === "sign_other_name" ||
-      google.reason === "sign_no_name"
+      google.reason === "sign_no_name" ||
+      google.reason === "schedule_other_name" ||
+      google.reason === "schedule_missing"
         ? google.reason
         : null;
     // A signboard hold carries what was read; a Google hold does not, and reads as nothing here.
     const signboard = google.verdict === "signboard";
+    // A TIMETABLE hold rides the same column with `verdict: "schedule"` (scheduleHoldRecord): what was
+    // read is the schedule's text and the people named on it, so it is shown in the same two fields.
+    const schedule = google.verdict === "schedule";
     const signNames = signboard
       ? [...(Array.isArray(google.personNames) ? google.personNames : []), ...(Array.isArray(google.placeNames) ? google.placeNames : [])]
           .map((name) => text(name))
           .filter((name): name is string => name !== null)
-      : [];
+      : schedule
+        ? (Array.isArray(google.personNames) ? google.personNames : []).map((name) => text(name)).filter((name): name is string => name !== null)
+        : [];
+    const venue = schedule && google.sharedPlace && typeof google.sharedPlace === "object" ? (google.sharedPlace as Row) : null;
     return {
-      signText: signboard ? text(google.signText) : null,
+      // 🔴 THE RECORD DECIDES, NEVER THE PLACE ROW. A seating is `point_source = 'shared_place'`, but a
+      // seated place can later be MOVED by the Super Admin, which rewrites that column — and this row
+      // is about the photo that was taken, which does not change when the point does.
+      photoKind: schedule ? "schedule" : "signboard",
+      sharedPlaceName: venue ? text(venue.name) : null,
+      hoursRead: schedule ? text(google.hoursRead) : null,
+      signText: signboard || schedule ? text(signboard ? google.signText : google.scheduleText) : null,
       signNames,
       refusalLabel: status === "rejected" ? validationRefusalLabel(text(row.refusal_reason)) : null,
       reviewId: String(row.id),
@@ -583,6 +617,18 @@ export type ValidatedPlaceRow = {
    * never a decision — the Super Admin decides each one himself (owner, 2026-10-08).
    */
   signboard: { verdict: "match" | "other_name" | "no_name" | "unjudged"; signText: string | null } | null;
+  /**
+   * Which photo this place's evidence IS — the sign on a building, or the timetable of a polyclinic —
+   * so the refusal pick-list offered here matches the one the hold queue offers (`reasonsFor`).
+   *
+   * Read from `shared_place_id`, not from `point_source`: a seated place the Super Admin later MOVES
+   * becomes `point_source = 'moved'`, and its evidence is still a timetable.
+   */
+  photoKind: ValidationPhotoKind;
+  /** The polyclinic or centre this place sits in, when it is seated in one. */
+  sharedPlaceName: string | null;
+  /** What the system read on the timetable: null when this place is not seated or was not read. */
+  schedule: { verdict: "match" | "other_name" | "no_schedule" | "unjudged"; scheduleText: string | null; hoursRead: string | null } | null;
 };
 
 /**
@@ -603,7 +649,10 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
       getSupabaseAdmin()
         .from("phoenix_crm_places")
         .select(
-          "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check",
+          // 🔴 ONE STRING, AND A COLUMN THAT IS NOT THERE YET FAILS THE WHOLE READ. `shared_place_id`
+          // and `schedule_check` arrive with migration 20261010013001, which reaches staging and
+          // production before this file ships.
+          "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check",
         )
         .eq("status", "active")
         .order("created_at", { ascending: false })
@@ -645,7 +694,11 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
     const customerId = String(row.customer_id);
     placesByCustomer.set(customerId, (placesByCustomer.get(customerId) ?? 0) + 1);
   }
-  const names = await loadPeopleNames(places.map((row) => text(row.created_by_hr_id)));
+  const [names, venues] = await Promise.all([
+    loadPeopleNames(places.map((row) => text(row.created_by_hr_id))),
+    // The venue each seated place sits in, by name — the Super Admin reads names, never ids.
+    loadSharedPlaceNames(places.map((row) => text(row.shared_place_id))),
+  ]);
 
   const rows = places
     .filter((row) => !held.has(String(row.id)))
@@ -679,9 +732,21 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
         reviewed: reviewed.has(String(row.id)),
         signboard: signboardOf(row.signboard_check),
+        photoKind: text(row.shared_place_id) ? "schedule" : "signboard",
+        sharedPlaceName: venues.get(String(row.shared_place_id ?? ""))?.name ?? null,
+        schedule: scheduleOf(row.schedule_check),
       };
     });
   return { rows, capped: read.capped };
+}
+
+/** The stored timetable verdict, read as defensively as the signboard's: unrecognised is "not read". */
+function scheduleOf(value: unknown): ValidatedPlaceRow["schedule"] {
+  if (!value || typeof value !== "object") return null;
+  const check = value as Row;
+  const verdict = check.verdict;
+  if (verdict !== "match" && verdict !== "other_name" && verdict !== "no_schedule" && verdict !== "unjudged") return null;
+  return { verdict, scheduleText: text(check.scheduleText), hoursRead: text(check.hoursRead) };
 }
 
 /** The stored signboard verdict, read defensively: anything unrecognised is "not read yet". */

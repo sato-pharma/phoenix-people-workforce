@@ -152,8 +152,12 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   // ── The wiring: every save goes through the check, before anything is written ─
   const list = stripComments(readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8"));
   const validate = /export async function validateCustomer\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
+  // `place`, not `place.value`, since 2026-10-09: the parse result is unwrapped one level earlier so
+  // the seated branch can leave `place` null (a customer seated in a shared place sends no location
+  // at all and is checked on the venue's own capture). The check itself is unmoved and still runs on
+  // every captured place, before the save.
   assert.ok(
-    validate.includes("const google = await googleCheckForSave(subject, place.value, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });"),
+    validate.includes("const google = await googleCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });"),
     "validating checks the place on Google, and hands over who is asking so a repeat refusal can be counted",
   );
   assert.ok(
@@ -175,7 +179,7 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   const subject = /async function validationSubject\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
   assert.doesNotMatch(subject, /label/, "the account is judged on the customer's name on the list — never the place label the rep typed");
   const addPlace = /export async function addPlace\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
-  assert.ok(addPlace.includes("googleCheckForSave(subject, place.value, { seatId: seat.seatId, repHrId: viewer.hrId, isTest })"), "another clinic is checked the same way");
+  assert.ok(addPlace.includes("googleCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest })"), "another clinic is checked the same way");
   const decide = /export async function decideListRequest\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
   assert.ok(decide.includes("await pendingLocationReview(customerId)"), "SFE cannot admit a customer whose place the Super Admin has not decided");
 

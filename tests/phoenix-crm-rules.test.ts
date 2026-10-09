@@ -272,7 +272,11 @@ function resolvePlan(items: PlanItemDraft[], customers = planCustomers(), option
     weekStart: WEEK,
     items,
     customers,
-    settings: { pmDailyCap: options.pmDailyCap ?? PHOENIX_CRM_DEFAULT_SETTINGS.pmDailyCap, amDailyCap: options.amDailyCap ?? PHOENIX_CRM_DEFAULT_SETTINGS.amDailyCap },
+    settings: {
+      pmDailyCap: options.pmDailyCap ?? PHOENIX_CRM_DEFAULT_SETTINGS.pmDailyCap,
+      amDailyCap: options.amDailyCap ?? PHOENIX_CRM_DEFAULT_SETTINGS.amDailyCap,
+      sharedPlaceDailyCap: PHOENIX_CRM_DEFAULT_SETTINGS.sharedPlaceDailyCap,
+    },
     isRamadan: () => options.ramadan ?? false,
   });
 }
@@ -326,9 +330,11 @@ function runPlanRuleTests() {
 
   // ── The week, the list and the timings ──────────────────────────────────────────────────────────
   const kept = valueOf(resolvePlan([item(WEEK, DOCTOR, DOCTOR_PLACE, "by_appointment", "sent twice"), item("2026-10-08", ACCOUNT, ACCOUNT_PLACE)]));
+  // `sharedPlaceId` is null on both: each of these two has his own clinic. It is carried on the
+  // resolved item so the SEND can re-count a venue's day without re-reading the places (2026-10-09).
   assert.deepEqual(kept, [
-    { ...item(WEEK, DOCTOR, DOCTOR_PLACE), listType: "PM", receives: true, startMinute: 1080 },
-    { ...item("2026-10-08", ACCOUNT, ACCOUNT_PLACE), listType: "AM", receives: true, startMinute: 540 },
+    { ...item(WEEK, DOCTOR, DOCTOR_PLACE), listType: "PM", receives: true, sharedPlaceId: null, startMinute: 1080 },
+    { ...item("2026-10-08", ACCOUNT, ACCOUNT_PLACE), listType: "AM", receives: true, sharedPlaceId: null, startMinute: 540 },
   ], "a customer placed on a day they receive carries no exception, whatever the planner sent");
 
   assert.equal(refusalOf(resolvePlan([item("2026-10-09", DOCTOR, DOCTOR_PLACE)])), "2026-10-09 is not a working day of this plan's week.", "Friday is never a plan day");
@@ -354,27 +360,27 @@ function runPlanRuleTests() {
   // rep didn't add his time"). A day his saved hours do not cover is placed and asks nothing.
   assert.deepEqual(
     valueOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE)])),
-    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, startMinute: null }],
+    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, sharedPlaceId: null, startMinute: null }],
     "a day his saved hours do not cover is accepted with no reason",
   );
   assert.deepEqual(
     valueOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE, "other")])),
-    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, startMinute: null }],
+    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, sharedPlaceId: null, startMinute: null }],
     "an Other with no note keeps the customer and drops the empty reason",
   );
   assert.deepEqual(
     valueOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE, "another_place")])),
-    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE, "another_place"), listType: "PM", receives: false, startMinute: null }],
+    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE, "another_place"), listType: "PM", receives: false, sharedPlaceId: null, startMinute: null }],
     "a reason an older caller still sends is kept",
   );
   assert.deepEqual(
     valueOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE)], planCustomers(), { ramadan: true })),
-    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: true, startMinute: 1260 }],
+    [{ ...item("2026-10-04", DOCTOR, DOCTOR_PLACE), listType: "PM", receives: true, sharedPlaceId: null, startMinute: 1260 }],
     "in Ramadan the special visit time decides who receives",
   );
   assert.deepEqual(
     valueOf(resolvePlan([item(WEEK, DOCTOR, DOCTOR_PLACE)], planCustomers(), { ramadan: true })),
-    [{ ...item(WEEK, DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, startMinute: null }],
+    [{ ...item(WEEK, DOCTOR, DOCTOR_PLACE), listType: "PM", receives: false, sharedPlaceId: null, startMinute: null }],
     "and a Ramadan day with no Ramadan hours saved is accepted just the same",
   );
 

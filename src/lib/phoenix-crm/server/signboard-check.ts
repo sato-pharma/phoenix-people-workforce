@@ -89,8 +89,12 @@ function names(value: unknown): string[] {
  *
  * 🔴 NEVER CALL `.stats()` AFTER `.extract()` — it silently measures the SOURCE image, not the
  * extraction, so a measurement taken that way would describe the picture including the stamp.
+ *
+ * Exported for server/schedule-check.ts, which reads a TIMETABLE out of a place photo and has the
+ * identical problem: the stamp burns the customer's own name across the bottom, so an uncropped read
+ * would find that name on a photograph of a blank wall and report a match every time.
  */
-async function cropStampBand(
+export async function cropStampBand(
   bytes: Uint8Array,
 ): Promise<{ jpeg: Buffer; croppedFraction: number } | null> {
   try {

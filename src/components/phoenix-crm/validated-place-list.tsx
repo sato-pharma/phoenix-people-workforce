@@ -47,7 +47,24 @@ const SIGNBOARD_TEXT: Record<NonNullable<ValidatedPlaceRow["signboard"]>["verdic
   unjudged: "The signboard could not be read",
 };
 
+/**
+ * What the system read on the TIMETABLE of a customer seated in a polyclinic (owner, 2026-10-09).
+ * A seated place has no signboard of its own — the sign on the building names the venue — so the
+ * evidence is the schedule hanging inside it, and these are the four things it can say.
+ */
+const SCHEDULE_TEXT: Record<NonNullable<ValidatedPlaceRow["schedule"]>["verdict"], string> = {
+  match: "The timetable names this customer",
+  other_name: "The timetable names somebody else",
+  no_schedule: "No timetable in the photo",
+  unjudged: "The timetable could not be read",
+};
+
 const PAGE = 25;
+
+/** What the photo IS, so a blind reader is never told a timetable is a signboard. */
+function photoAlt(row: ValidatedPlaceRow): string {
+  return `${row.photoKind === "schedule" ? "Timetable" : "Signboard"} photo for ${row.customerName}`;
+}
 
 function readingText(label: string, reading: ValidatedPlaceRow["pin"]): string | null {
   if (!reading) return null;
@@ -74,6 +91,10 @@ function Who({ row }: { row: ValidatedPlaceRow }) {
 }
 
 function Place({ row }: { row: ValidatedPlaceRow }) {
+  // A SEATED customer has no reading of his own: his point is the polyclinic's, frozen when the venue
+  // itself was validated, so `pin` and `photo` are both empty by construction and saying "no reading"
+  // is the honest line rather than an empty space the reader has to interpret.
+  const seated = row.photoKind === "schedule";
   const readings = [readingText("Photo", row.photo), readingText("Capture location", row.pin)].filter((line): line is string => line !== null);
   return (
     <div className="min-w-0 space-y-0.5 text-sm text-slate-700">
@@ -82,29 +103,62 @@ function Place({ row }: { row: ValidatedPlaceRow }) {
           {row.placeLabel}
         </p>
       ) : null}
+      {seated && row.sharedPlaceName ? (
+        <p className="break-words text-xs font-black text-slate-700" dir="auto">
+          Seated in {row.sharedPlaceName}
+        </p>
+      ) : null}
       {row.address ? <p className="break-words text-xs text-slate-500">{row.address}</p> : null}
       {row.brickName || row.areaName ? <p className="break-words text-xs text-slate-500">{[row.brickName, row.areaName].filter(Boolean).join(" · ")}</p> : null}
-      {readings.map((line) => (
-        <p key={line} className="break-words text-xs text-slate-500">
-          {line}
-        </p>
-      ))}
+      {seated ? (
+        <p className="break-words text-xs text-slate-500">No reading of its own — the point is the polyclinic&apos;s, taken when it was validated.</p>
+      ) : (
+        readings.map((line) => (
+          <p key={line} className="break-words text-xs text-slate-500">
+            {line}
+          </p>
+        ))
+      )}
       <a className="inline-block text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
-        Open where they stood in Google Maps
+        {seated ? "Open the building in Google Maps" : "Open where they stood in Google Maps"}
       </a>
       <div className="space-y-0.5 border-t border-slate-100 pt-1">
-        {row.signboard ? (
-          <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
-            {SIGNBOARD_TEXT[row.signboard.verdict]}
-          </CrmPill>
+        {seated ? (
+          <>
+            {row.schedule ? (
+              <CrmPill tone={row.schedule.verdict === "match" ? "good" : row.schedule.verdict === "unjudged" ? "neutral" : "warn"}>
+                {SCHEDULE_TEXT[row.schedule.verdict]}
+              </CrmPill>
+            ) : (
+              <p className="text-xs text-slate-500">The timetable has not been read yet.</p>
+            )}
+            {row.schedule?.hoursRead ? (
+              <p className="break-words text-xs text-slate-700" dir="auto">
+                Hours read: {row.schedule.hoursRead}
+              </p>
+            ) : null}
+            {row.schedule?.scheduleText ? (
+              <p className="break-words text-xs text-slate-700" dir="auto">
+                {row.schedule.scheduleText}
+              </p>
+            ) : null}
+          </>
         ) : (
-          <p className="text-xs text-slate-500">The signboard has not been read yet.</p>
+          <>
+            {row.signboard ? (
+              <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
+                {SIGNBOARD_TEXT[row.signboard.verdict]}
+              </CrmPill>
+            ) : (
+              <p className="text-xs text-slate-500">The signboard has not been read yet.</p>
+            )}
+            {row.signboard?.signText ? (
+              <p className="break-words text-xs text-slate-700" dir="auto">
+                {row.signboard.signText}
+              </p>
+            ) : null}
+          </>
         )}
-        {row.signboard?.signText ? (
-          <p className="break-words text-xs text-slate-700" dir="auto">
-            {row.signboard.signText}
-          </p>
-        ) : null}
       </div>
     </div>
   );
@@ -157,6 +211,7 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
       <RefusalReasonField
         disabled={saving}
         id={`refuse-reason-${row.placeId}`}
+        kind={row.photoKind}
         onChange={(next) => {
           setReason(next);
           setArmed(false);
@@ -251,7 +306,7 @@ export function ValidatedPlaceList({ rows, showSearch = true }: { rows: Validate
             {shown.map((row) => (
               <div key={row.placeId} className="space-y-3 px-4 py-4">
                 <div className="flex min-w-0 gap-3">
-                  <CrmPhotoThumb alt={`Signboard photo for ${row.customerName}`} path={row.photoPath} />
+                  <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
                   <Who row={row} />
                 </div>
                 <Place row={row} />
@@ -272,7 +327,7 @@ export function ValidatedPlaceList({ rows, showSearch = true }: { rows: Validate
               {shown.map((row) => (
                 <tr key={row.placeId} className="even:bg-slate-50/60">
                   <td className={crmTdClassName}>
-                    <CrmPhotoThumb alt={`Signboard photo for ${row.customerName}`} path={row.photoPath} />
+                    <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
                   </td>
                   <td className={crmTdClassName}>
                     <Who row={row} />

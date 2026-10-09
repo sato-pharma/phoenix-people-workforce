@@ -55,6 +55,13 @@ import {
   ramadanHoursNote,
   type PlaceDraftState,
 } from "@/components/phoenix-crm/place-editor";
+import {
+  emptySeatedDraft,
+  type SeatedDraftState,
+  SharedPlaceEditor,
+  seatedDraftProblem,
+  seatedPayload,
+} from "@/components/phoenix-crm/shared-place-screens";
 import { timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import {
   CrmBackBar,
@@ -74,6 +81,7 @@ import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
+import { SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
 import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
@@ -146,7 +154,12 @@ export type ListScreen =
   | { name: "pharmacy-details"; customerId: string }
   | { name: "restore"; customerId: string; from: "customer" | "list" }
   | { name: "add-request"; customerId: string }
-  | { name: "add-place"; customerId: string; draft: PlaceDraftState | null }
+  /**
+   * Another clinic for a customer already on the list. `draft` carries a clinic entered on Add new
+   * customer, `seated` a seating entered there — never both, because the screen it came from offered
+   * one door or the other.
+   */
+  | { name: "add-place"; customerId: string; draft: PlaceDraftState | null; seated?: SeatedDraftState | null }
   | { name: "edit-place"; customerId: string; placeId: string }
   | { name: "move-place"; customerId: string; placeId: string }
   | { name: "grade"; customerId: string }
@@ -243,8 +256,55 @@ function withoutPhoto(photo: CapturedPhoto) {
   return (current: PlaceDraftState): PlaceDraftState => (current.photo?.path === photo.path ? { ...current, photo: null } : current);
 }
 
+/** The same, for the timetable photo of a seating. */
+function withoutSeatedPhoto(photo: CapturedPhoto) {
+  return (current: SeatedDraftState): SeatedDraftState => (current.photo?.path === photo.path ? { ...current, photo: null } : current);
+}
+
 function normalizedName(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+/** Which door this customer is validated at: his own clinic, or a polyclinic already captured. */
+type PlaceDoor = "own" | "shared";
+
+/**
+ * The one choice that opens the polyclinic route.
+ *
+ * 🔴 IT IS HERE AND NOT ON THE LIST ROW, and that is the owner's own rule rather than a preference:
+ * "Validate, or Open — nothing else" (2026-09-29), which `CustomerRowAction` carries as "the row's one
+ * button. Nothing else is ever drawn beside it." A second button on the row would break it for every
+ * customer to serve the few behind a shared door — so the second route is the first question INSIDE the
+ * screen, and it opens on "His own clinic", which is every existing flow unchanged.
+ */
+function PlaceDoorChoice({
+  disabled,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (next: PlaceDoor) => void;
+  value: PlaceDoor;
+}) {
+  return (
+    <CrmBlock className="border-t border-slate-100" title="Where does this customer receive?">
+      <CrmChoice
+        columns={2}
+        label="Where does this customer receive?"
+        onChange={onChange}
+        options={[
+          { value: "own", label: "In their own clinic", note: "You photograph their signboard and capture the location", disabled },
+          {
+            value: "shared",
+            label: `In a ${SHARED_PLACE_TITLE.toLowerCase()}`,
+            note: "Several customers behind one door. You photograph the timetable instead",
+            disabled,
+          },
+        ]}
+        value={value}
+      />
+    </CrmBlock>
+  );
 }
 
 /** A screen whose customer is gone (dropped, decided, or read again) — or still on its way. */
@@ -425,6 +485,7 @@ export function ValidateScreen({
   onAskToDrop,
   onBack,
   onSaved,
+  onSeatInstead,
   onView,
   refreshing,
   reload,
@@ -444,6 +505,8 @@ export function ValidateScreen({
   onAskToDrop?: (customerId: string) => void;
   onBack: () => void;
   onSaved: (saved: SavedPlace, photo: CapturedPhoto) => void;
+  /** The same hand-off as `onAddPlaceInstead`, for a seating in a polyclinic rather than a clinic. */
+  onSeatInstead?: (customerId: string, seated: SeatedDraftState) => void;
   subject: ValidateSubject;
 }) {
   /** The loaded customer this screen is validating, read from the list by id. */
@@ -454,6 +517,11 @@ export function ValidateScreen({
   // same thing at every door. He can change or clear every one, and what the place stores is what he
   // leaves here — the place is still only what he saw, which is the frozen-place rule untouched.
   const [draft, setDraft] = useState<PlaceDraftState>(() => ({ ...emptyPlaceDraft(), timings: listed?.intake?.timings ?? [] }));
+  // Owner, 2026-10-09: a customer behind a shared door brings the venue, a timetable photo and his
+  // hours, and no location at all. The two drafts are held side by side so switching the door back and
+  // forth never loses what he already captured on the other one.
+  const [door, setDoor] = useState<PlaceDoor>("own");
+  const [seated, setSeated] = useState<SeatedDraftState>(() => emptySeatedDraft(listed?.intake?.timings ?? []));
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
   const [speciality, setSpeciality] = useState("");
@@ -487,6 +555,7 @@ export function ValidateScreen({
   function close() {
     if (saving) return;
     releaseCapturedPhoto(draft.photo);
+    releaseCapturedPhoto(seated.photo);
     onBack();
   }
 
@@ -508,16 +577,21 @@ export function ValidateScreen({
     }
     const phoneCheck = parseCustomerPhone(phone);
     if (!phoneCheck.ok) return phoneCheck.error;
-    return placeDraftProblem(draft, { needsPhoto: true });
+    return door === "shared" ? seatedDraftProblem(seated) : placeDraftProblem(draft, { needsPhoto: true });
   }
 
   function payloadFor(photo: CapturedPhoto, allowSameName: boolean): Record<string, unknown> {
-    const place = placePayload(photo, draft);
+    // 🔴 ONE KEY OR THE OTHER, NEVER BOTH. `validateCustomer` reads `body.seated` first and takes the
+    // whole seating branch when it is there — no Google check, no signboard, the venue's own point —
+    // so sending a `place` beside it would be a second answer the server would silently ignore.
+    const at =
+      door === "shared" ? { seated: seatedPayload(photo, seated) } : { place: placePayload(photo, draft) };
     const phoneValue = phone.trim() || null;
-    if (subject.mode === "reference") return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, phone: phoneValue, place };
+    if (subject.mode === "reference")
+      return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, phone: phoneValue, ...at };
     // His name, list and grades were set when the sheet was loaded; the validation adds the place and
     // nothing else, so none of them is sent back and none of them can be changed at the door.
-    if (subject.mode === "listed") return { seatId, test, mode: "listed", customerId: subject.customerId, phone: phoneValue, place };
+    if (subject.mode === "listed") return { seatId, test, mode: "listed", customerId: subject.customerId, phone: phoneValue, ...at };
     return {
       seatId,
       test,
@@ -525,7 +599,7 @@ export function ValidateScreen({
       customer: { listType, name: cleanName, speciality: normalizedName(speciality) || null, proposedGrade: grade },
       allowSameName,
       phone: phoneValue,
-      place,
+      ...at,
     };
   }
 
@@ -543,7 +617,7 @@ export function ValidateScreen({
   async function save(allowSameName: boolean) {
     if (saving) return;
     const gap = clientProblem();
-    const photo = draft.photo;
+    const photo = door === "shared" ? seated.photo : draft.photo;
     if (gap || !photo) {
       setProblem(gap ?? PHOTO_NEEDED);
       return;
@@ -582,7 +656,13 @@ export function ValidateScreen({
       }
       if (code?.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
-        setDraft(withoutPhoto(photo));
+        if (door === "shared") setSeated(withoutSeatedPhoto(photo));
+        else setDraft(withoutPhoto(photo));
+      } else if (code === "phoenix_crm_shared_place_not_found" || code === "phoenix_crm_shared_place_retired") {
+        // The venue went while he was filling this in. The timetable photo and the hours stay; only
+        // the choice is cleared, so he picks again instead of pressing Save against a venue that is
+        // no longer there.
+        setSeated((current) => ({ ...current, sharedPlaceId: null }));
       } else if (code === "phoenix_crm_not_on_reference_list" || code === "phoenix_crm_customer_not_found" || code === "phoenix_crm_archived") {
         reload();
       }
@@ -634,7 +714,9 @@ export function ValidateScreen({
             {subject.mode === "listed"
               ? "The name and grade were set when this list was loaded — the name is yours to correct later from the customer’s page. "
               : "The name and grade are iReports360’s for now — you can change them later from the customer’s page. "}
-            The signboard photo, the location and the days and hours become this customer&apos;s real record, and its visits start counting.
+            {door === "shared"
+              ? "The timetable photo and the days and hours become this customer’s real record, at the location captured for the building, and its visits start counting."
+              : "The signboard photo, the location and the days and hours become this customer’s real record, and its visits start counting."}{" "}
             You validate a customer once.
           </p>
           {/* Owner, 2026-09-30: the phone is asked for here, optional, and saved with the validation. */}
@@ -732,19 +814,36 @@ export function ValidateScreen({
         </CrmBlock>
       ) : null}
 
-      <PlaceEditor
-        capture
-        customerName={customerName}
-        disabled={saving}
-        firstStep={subject.mode === "new" ? 2 : 1}
-        idPrefix="phoenix-crm-validate"
-        onChange={setDraft}
-        photoBlockedReason={subject.mode === "new" && !cleanName ? "Write the customer's full name first. It is printed on the photo." : null}
-        ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
-        seatId={seatId}
-        test={test}
-        value={draft}
-      />
+      <PlaceDoorChoice disabled={saving} onChange={setDoor} value={door} />
+
+      {door === "shared" ? (
+        <SharedPlaceEditor
+          customerName={customerName}
+          disabled={saving}
+          firstStep={subject.mode === "new" ? 2 : 1}
+          idPrefix="phoenix-crm-validate-seated"
+          onChange={setSeated}
+          photoBlockedReason={subject.mode === "new" && !cleanName ? "Write the customer's full name first. It is printed on the photo." : null}
+          ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
+          seatId={seatId}
+          test={test}
+          value={seated}
+        />
+      ) : (
+        <PlaceEditor
+          capture
+          customerName={customerName}
+          disabled={saving}
+          firstStep={subject.mode === "new" ? 2 : 1}
+          idPrefix="phoenix-crm-validate"
+          onChange={setDraft}
+          photoBlockedReason={subject.mode === "new" && !cleanName ? "Write the customer's full name first. It is printed on the photo." : null}
+          ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
+          seatId={seatId}
+          test={test}
+          value={draft}
+        />
+      )}
 
       <SaveBar
         busy={saving}
@@ -777,12 +876,18 @@ export function ValidateScreen({
                       {takesPlace ? (
                         <span className="flex flex-wrap gap-2">
                           <CrmButton
-                            disabled={saving || full}
-                            onClick={() => onAddPlaceInstead(match.customerId, draft)}
+                            disabled={saving || full || (door === "shared" && !onSeatInstead)}
+                            onClick={() =>
+                              door === "shared" ? onSeatInstead?.(match.customerId, seated) : onAddPlaceInstead(match.customerId, draft)
+                            }
                             size="sm"
                             variant="primary"
                           >
-                            {full ? `Has ${view.rules.placesMax} clinics already` : "Add this clinic to this customer"}
+                            {full
+                              ? `Has ${view.rules.placesMax} clinics already`
+                              : door === "shared"
+                                ? "Add this customer in the polyclinic instead"
+                                : "Add this clinic to this customer"}
                           </CrmButton>
                         </span>
                       ) : null}
@@ -895,6 +1000,7 @@ export function AddPlaceScreen({
   cairoToday,
   customerId,
   initialDraft,
+  initialSeated = null,
   onBack,
   onSaved,
   onView,
@@ -907,16 +1013,25 @@ export function AddPlaceScreen({
   customerId: string;
   /** A clinic entered on Add new customer, when that customer turned out to be on the list already. */
   initialDraft: PlaceDraftState | null;
+  /**
+   * A seating entered on Add new customer, the same way. A customer validated at his own clinic who
+   * ALSO receives in a polyclinic legitimately ends with two places — which is why this screen takes
+   * both doors and not only the one the validation used.
+   */
+  initialSeated?: SeatedDraftState | null;
   onBack: () => void;
   onSaved: (saved: SavedPlace, photo: CapturedPhoto) => void;
 }) {
   const [draft, setDraft] = useState<PlaceDraftState>(() => initialDraft ?? emptyPlaceDraft());
+  const [door, setDoor] = useState<PlaceDoor>(initialSeated ? "shared" : "own");
+  const [seated, setSeated] = useState<SeatedDraftState>(() => initialSeated ?? emptySeatedDraft());
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   function close() {
     if (saving) return;
     releaseCapturedPhoto(draft.photo);
+    releaseCapturedPhoto(seated.photo);
     onBack();
   }
 
@@ -938,8 +1053,8 @@ export function AddPlaceScreen({
 
   async function save() {
     if (saving || !customer) return;
-    const gap = placeDraftProblem(draft, { needsPhoto: true });
-    const photo = draft.photo;
+    const gap = door === "shared" ? seatedDraftProblem(seated) : placeDraftProblem(draft, { needsPhoto: true });
+    const photo = door === "shared" ? seated.photo : draft.photo;
     if (gap || !photo) {
       setProblem(gap ?? PHOTO_NEEDED);
       return;
@@ -955,7 +1070,13 @@ export function AddPlaceScreen({
     try {
       const added = await crmPost<{ held?: boolean } | null>(
         "/api/phoenix-crm/list/places",
-        { seatId, test, customerId: customer.customerId, place: placePayload(photo, draft) },
+        {
+          seatId,
+          test,
+          customerId: customer.customerId,
+          // One key or the other, never both — `addPlace` reads `seated` first (see payloadFor above).
+          ...(door === "shared" ? { seated: seatedPayload(photo, seated) } : { place: placePayload(photo, draft) }),
+        },
         "place",
       );
       // A clinic the Google check could not confirm is saved and waits — said as the system's doing.
@@ -976,7 +1097,10 @@ export function AddPlaceScreen({
       }
       if (code?.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
-        setDraft(withoutPhoto(photo));
+        if (door === "shared") setSeated(withoutSeatedPhoto(photo));
+        else setDraft(withoutPhoto(photo));
+      } else if (code === "phoenix_crm_shared_place_not_found" || code === "phoenix_crm_shared_place_retired") {
+        setSeated((current) => ({ ...current, sharedPlaceId: null }));
       } else if (code === "phoenix_crm_customer_dropped" || code === "phoenix_crm_customer_not_found" || code === "phoenix_crm_too_many_places") {
         reload();
       }
@@ -992,23 +1116,40 @@ export function AddPlaceScreen({
           <Detail label="Clinics now">{placesDaysText(customer)}</Detail>
         </CustomerHeading>
         <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
-          A clinic is where the customer receives visits. It is validated the same way — its own signboard photo, location and days and hours — and
-          its location is fixed once saved.
+          {door === "shared"
+            ? "A customer can also receive in a polyclinic or centre. The building's location was captured once at its door, so here you photograph the timetable and enter the hours."
+            : "A clinic is where the customer receives visits. It is validated the same way — its own signboard photo, location and days and hours — and its location is fixed once saved."}
         </p>
       </CrmBlock>
 
-      <PlaceEditor
-        capture
-        customerName={customer.name}
-        disabled={saving}
-        firstStep={1}
-        idPrefix="phoenix-crm-add-place"
-        onChange={setDraft}
-        ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
-        seatId={seatId}
-        test={test}
-        value={draft}
-      />
+      <PlaceDoorChoice disabled={saving} onChange={setDoor} value={door} />
+
+      {door === "shared" ? (
+        <SharedPlaceEditor
+          customerName={customer.name}
+          disabled={saving}
+          firstStep={1}
+          idPrefix="phoenix-crm-add-place-seated"
+          onChange={setSeated}
+          ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
+          seatId={seatId}
+          test={test}
+          value={seated}
+        />
+      ) : (
+        <PlaceEditor
+          capture
+          customerName={customer.name}
+          disabled={saving}
+          firstStep={1}
+          idPrefix="phoenix-crm-add-place"
+          onChange={setDraft}
+          ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
+          seatId={seatId}
+          test={test}
+          value={draft}
+        />
+      )}
 
       <SaveBar busy={saving} label="Save the clinic" onCancel={close} onSave={() => void save()} problem={problem} />
     </CrmPanel>

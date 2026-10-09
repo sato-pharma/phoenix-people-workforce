@@ -1794,6 +1794,7 @@ import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test
 import { runPhoenixCrmSignboardCheckTests } from "./phoenix-crm-signboard-check.test.ts";
 import { runPhoenixCrmCaptureTrustPlaceTests } from "./phoenix-crm-capture-trust-place.test.ts";
 import { runPhoenixCrmValidationFeedbackTests } from "./phoenix-crm-validation-feedback.test.ts";
+import { runPhoenixCrmSharedPlaceTests } from "./phoenix-crm-shared-place.test.ts";
 import { runPhoenixCrmPlaceBrickLookupTests } from "./phoenix-crm-place-brick-lookup.test.ts";
 import { runPhoenixCrmDuplicateMergeTests } from "./phoenix-crm-duplicate-merge.test.ts";
 import { runPhoenixCrmListCustomerFixtureTests } from "./phoenix-crm-list-customer-fixture.test.ts";
@@ -6658,6 +6659,11 @@ await runTest(
 await runTest(
   "Phoenix CRM validation feedback (owner, 2026-10-08): a refusal needs one of six closed reasons, worded about the photo and never a person; the rep is told in-app only, once per refusal, and the notice is taken back when he is validated; his row shows the reason with no second note under it; and the Super Admin sees who is waiting to be captured again and for how long",
   runPhoenixCrmValidationFeedbackTests,
+);
+
+await runTest(
+  "Phoenix CRM shared places (owner, 2026-10-09): a polyclinic is validated ONCE at its own door — live sign photo and both readings inside 250 m, and no Google check, because a building has no list name — then each customer is seated in it with a timetable photo and his hours and NO location of his own; three visits a day per venue at the plan, at the send and at the door, with the cap read from settings; rejecting a venue retires everybody seated in it and sends each back to To validate",
+  runPhoenixCrmSharedPlaceTests,
 );
 
 await runTest(
