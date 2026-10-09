@@ -27,9 +27,12 @@
 #                    region is set explicitly at creation. And `railway service scale <region>=1`
 #                    ADDS a region rather than moving one: it once produced two live replicas writing
 #                    one database. Pass the old region `=0` in the SAME command.
-#   Variables        106 of them on production, 49 on staging. GitHub is the source of truth for 48;
-#                    `scripts/sync-railway-production-secrets.mjs` writes them one way, GitHub →
-#                    Railway, and overwrites a hand fix made in the dashboard.
+#   Variables        107 of them on production and 39 on staging, read 2026-10-10 — plus the dozen
+#                    `RAILWAY_*` names the platform injects, which are not the project's to own.
+#                    GitHub is the source of truth for 48; `scripts/sync-railway-production-secrets.mjs`
+#                    writes them one way, GitHub → Railway, and overwrites a hand fix made in the
+#                    dashboard. The count moves: it was 94 nine days earlier, so read it, never cite
+#                    this line (docs/deployment.md, "Config as Code is deprecated").
 #   Custom domain    `phoenix-hr.satopharma.com`, via an unproxied Cloudflare CNAME.
 #
 # 🔴 THERE ARE DELIBERATELY NO `watchPatterns`, AND THAT IS A DECISION, NOT AN OMISSION. Every merge,
@@ -39,11 +42,17 @@
 # saving is not worth a silent no-deploy. Revisit only with a way to prove the pattern is right.
 
 [build]
-# No builder key on purpose. Railway's own builder detects the root `Dockerfile` and uses it — read
-# off the live build log on 2026-09-30 ("load build definition from Dockerfile", `node:24-alpine`,
-# and the five LegacyKeyValueFormat warnings whose line numbers match this repo's Dockerfile). The
-# service's `builder` field reads RAILPACK, which is why that had to be measured rather than assumed:
-# the two readings look contradictory and only the build log settles it.
+# No builder key on purpose. Railway's own builder detects the root `Dockerfile` and uses it, and the
+# BUILD LOG is the only thing that says so: the service's `builder` field reads RAILPACK, the two
+# readings look contradictory, and nothing but the log settles which one runs. Re-read on 2026-10-10
+# off the build of the revision then serving, `fab743655` — "load build definition from Dockerfile",
+# then `[base 1/1] FROM public.ecr.aws/docker/library/node:24-alpine@sha256:ebfe2f9046…`.
+#
+# That image path is AWS's mirror of the Docker Official Images, not Docker Hub, since #5719 on
+# 2026-10-10 — the Hub's anonymous pull limit belongs to Railway's shared builder IPs, not to this
+# repo, and it failed seven consecutive production builds. Do not shorten it back; the account is
+# docs/deployment.md, "The base image is pulled from AWS's mirror, not Docker Hub", and rule 8 of
+# tests/railway-deploy-config.test.ts refuses a bare one.
 
 [deploy]
 # 🔴 THIS IS THE ONE BEHAVIOUR CHANGE IN THIS FILE, AND IT IS THE REASON IT WAS WRITTEN.

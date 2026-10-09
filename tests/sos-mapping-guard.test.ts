@@ -18,10 +18,14 @@ import {
 import {
   describeMonth,
   formatEgp,
+  decisionForSuggestion,
+  pageHoldIds,
   pickDistributorFacts,
+  planNormalizerAnswers,
   summarizeHoldSales,
   verdictForSuggestion,
   type HoldDistributorFact,
+  type HoldSuggestion,
 } from "../src/lib/sales/mapping-guard-hold-shape.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
@@ -638,6 +642,85 @@ function theScreenCannotPullTheServerLoaderIntoTheBrowser() {
   );
 }
 
+/**
+ * AI suggest answers a row only where the normalizer actually gave an answer one of the two buttons
+ * writes - "press on ai suggest and it mark all its suggestions exactly as normalizer" (owner,
+ * 2026-10-09).
+ *
+ * THE THIRD ANSWER IS THE WHOLE POINT OF THIS TEST. The normalizer naming a brick NEITHER side of
+ * the hold proposes is the one case where both buttons are wrong, so folding it into either one
+ * would file a pharmacy where the normalizer has just said it does not belong - quietly, across a
+ * hundred rows, in a single press.
+ */
+function aiSuggestTakesOnlyTheAnswersTheNormalizerGave() {
+  const suggestion = (verdict: HoldSuggestion["verdict"]): HoldSuggestion => ({
+    brickId: "B209-1",
+    confidence: 92,
+    label: "Girga",
+    source: "address",
+    verdict,
+  });
+
+  assert.equal(decisionForSuggestion(suggestion("agrees-with-change")), "approved");
+  assert.equal(decisionForSuggestion(suggestion("agrees-with-mapping")), "rejected");
+  assert.equal(decisionForSuggestion(suggestion("third-answer")), null, "a third brick is not a click");
+  assert.equal(decisionForSuggestion(suggestion("none")), null);
+  assert.equal(decisionForSuggestion(null), null, "a hold the normalizer could not read is left waiting");
+
+  const byHold = new Map<number, HoldSuggestion | null>([
+    [11, suggestion("agrees-with-change")],
+    [12, suggestion("agrees-with-mapping")],
+    [13, suggestion("third-answer")],
+    [14, suggestion("none")],
+    [15, null],
+  ]);
+  const plan = planNormalizerAnswers([11, 12, 13, 14, 15], (holdId) => byHold.get(holdId));
+  assert.deepEqual(plan.approve, [11]);
+  assert.deepEqual(plan.reject, [12]);
+  assert.deepEqual(plan.thirdAnswer, [13], "a third answer is reported, never decided");
+  assert.deepEqual(plan.unanswered, [14, 15]);
+  assert.equal(
+    plan.approve.length + plan.reject.length + plan.thirdAnswer.length + plan.unanswered.length,
+    5,
+    "every hold lands in exactly one bucket, so the count the button prints is the count it applies",
+  );
+
+  const ordered = planNormalizerAnswers([12, 11], (holdId) => byHold.get(holdId));
+  assert.deepEqual(ordered.reject, [12]);
+  assert.deepEqual(ordered.approve, [11]);
+
+  const pages = pageHoldIds(Array.from({ length: 121 }, (_, index) => index + 1), 60);
+  assert.deepEqual(pages.map((page) => page.length), [60, 60, 1]);
+  assert.equal(pages.flat().length, 121, "no hold is lost or sent twice by the paging");
+  assert.deepEqual(pageHoldIds([], 60), [], "nothing to answer sends no request at all");
+}
+
+/** The button exists, carries his own words, and goes through the same route and lock as the rows. */
+function theAiSuggestButtonAppliesThePlanItPrints() {
+  const screen = readFileSync(REVIEW_SCREEN, "utf8");
+  const stripped = stripComments(screen);
+
+  assert.match(screen, /AI suggest/, "the button must be called what he calls it");
+  assert.ok(stripped.includes("planNormalizerAnswers("), "the plan must be computed, never guessed row by row");
+  assert.ok(stripped.includes("pageHoldIds(plan.approve, MAX_PER_CLICK)"));
+  assert.ok(stripped.includes("pageHoldIds(plan.reject, MAX_PER_CLICK)"));
+  assert.ok(
+    stripped.includes("postDecision(page.ids, page.decision, lock)"),
+    "every page must carry the lock, so the stamp matches a row answered by hand",
+  );
+  assert.ok(
+    stripped.includes("disabled={busy || answerable === 0}"),
+    "nothing to apply must disable the button rather than send an empty request",
+  );
+  assert.match(
+    screen,
+    /names a third brick/,
+    "the rows one press cannot answer must be named back to him, not silently skipped",
+  );
+  assert.ok(!stripped.includes("thirdAnswer.push"), "the screen must not re-derive the plan it imports");
+  assert.ok(!/rounded/.test(stripped), "square edges: no radius on this screen");
+}
+
 function theLockIsOnByDefaultAndSaysWhatItDoes() {
   const screen = readFileSync(REVIEW_SCREEN, "utf8");
   const stripped = stripComments(screen);
@@ -699,4 +782,6 @@ export async function runSosMappingGuardTests() {
   oneClickCannotCarryMoreThanTheRouteWillRecord();
   theScreenCannotPullTheServerLoaderIntoTheBrowser();
   theLockIsOnByDefaultAndSaysWhatItDoes();
+  aiSuggestTakesOnlyTheAnswersTheNormalizerGave();
+  theAiSuggestButtonAppliesThePlanItPrints();
 }

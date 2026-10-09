@@ -8,6 +8,8 @@ import type { HeldMappingChange } from "@/lib/sales/mapping-guard";
 import {
   describeMonth,
   formatEgp,
+  pageHoldIds,
+  planNormalizerAnswers,
   type HoldDetail,
   type HoldDistributorFact,
   type SuggestionVerdict,
@@ -249,6 +251,37 @@ function SalesMovedNotice({ notice }: { notice: SalesNotice }) {
 /** The ceiling the route enforces, repeated here so the screen never sends a request it refuses. */
 const MAX_PER_CLICK = 60;
 
+type DecideResponse = {
+  success?: boolean;
+  error?: string;
+  holds?: HeldMappingChange[];
+  decided?: number;
+  locked?: number;
+  failed?: Array<{ holdId: number; reason?: string }>;
+  brickMoves?: Array<{ holdId: number; brickMove?: unknown }>;
+};
+
+/**
+ * One request to the decide route, parsed.
+ *
+ * Shared by the buttons on a row and by AI suggest, so both carry the lock the same way and both
+ * read the same refusal text: a hold the database refused on purpose (its target brick switched
+ * off) comes back as a named failure rather than a thrown error.
+ */
+async function postDecision(
+  holdIds: number[],
+  decision: "approved" | "rejected",
+  lock: boolean,
+): Promise<{ ok: boolean; payload: DecideResponse }> {
+  const response = await fetch("/api/sales/mapping-guard/decide", {
+    body: JSON.stringify({ decision, holdIds, lock }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const payload = (await response.json().catch(() => ({}))) as DecideResponse;
+  return { ok: response.ok && payload.success === true, payload };
+}
+
 export function MappingGuardReview({
   initialDetails,
   initialHolds,
@@ -301,25 +334,12 @@ export function MappingGuardReview({
     setSalesNotice(null);
     const only = holdIds.length === 1 ? holds.find((hold) => hold.id === holdIds[0]) : undefined;
     try {
-      const response = await fetch("/api/sales/mapping-guard/decide", {
-        body: JSON.stringify({ decision, holdIds, lock }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        success?: boolean;
-        error?: string;
-        holds?: HeldMappingChange[];
-        decided?: number;
-        locked?: number;
-        failed?: Array<{ holdId: number; reason?: string }>;
-        brickMoves?: Array<{ holdId: number; brickMove?: unknown }>;
-      };
+      const { ok, payload } = await postDecision(holdIds, decision, lock);
 
       if (Array.isArray(payload.holds)) setHolds(payload.holds);
       setSelected(new Set());
 
-      if (!response.ok || !payload.success) {
+      if (!ok) {
         setError(payload.error ?? "That did not go through.");
         setFailures(payload.failed ?? []);
         return;
@@ -362,6 +382,110 @@ export function MappingGuardReview({
       setBusyId(null);
     }
   }, [holds, lock, rebuildMovedFiles]);
+
+  // What the normalizer would answer for EVERY row on the screen, not only the ticked ones — the
+  // button below applies exactly this plan, and prints these counts before it runs.
+  const plan = useMemo(
+    () =>
+      planNormalizerAnswers(
+        holds.map((hold) => hold.id),
+        (holdId) => details[holdId]?.suggestion,
+      ),
+    [details, holds],
+  );
+  const answerable = plan.approve.length + plan.reject.length;
+  const nameOfHold = useCallback(
+    (holdId: number) => holds.find((hold) => hold.id === holdId)?.subject ?? "that pharmacy",
+    [holds],
+  );
+
+  /**
+   * "AI suggest" — take the normalizer answer on every row it has one for, in one press.
+   *
+   * 🔴 IT DECIDES NOTHING OF ITS OWN. Each row is sent as the click the normalizer answer implies
+   * (Allow where it backs the change, Keep as is where it backs the mapping) through the SAME route
+   * and the same lock as the buttons beside it, so the mapping is stamped exactly as it would be had
+   * he clicked the rows one at a time. A third answer and a row with no suggestion are never
+   * guessed: they stay on the screen and the notice names them.
+   *
+   * SEQUENTIAL, IN PAGES OF 60. The route decides each hold in its own database round trip and a
+   * released pharmacy moves its open-month sales in that same transaction, so two pages at once
+   * would interleave those moves. A page the route refuses stops the run with everything before it
+   * already recorded — and reported.
+   */
+  const applyNormalizerAnswers = useCallback(async () => {
+    const pages = [
+      ...pageHoldIds(plan.approve, MAX_PER_CLICK).map((ids) => ({ decision: "approved" as const, ids })),
+      ...pageHoldIds(plan.reject, MAX_PER_CLICK).map((ids) => ({ decision: "rejected" as const, ids })),
+    ];
+    if (pages.length === 0) return;
+    setBusy(true);
+    setBusyId(null);
+    setError(null);
+    setDone(null);
+    setFailures([]);
+    setSalesNotice(null);
+    let allowed = 0;
+    let kept = 0;
+    let locked = 0;
+    let stopped = "";
+    const failedRows: Array<{ holdId: number; reason?: string }> = [];
+    const moves: Array<{ holdId: number; move: NonNullable<ReturnType<typeof parseBrickSalesMove>> }> = [];
+    try {
+      for (const page of pages) {
+        const { ok, payload } = await postDecision(page.ids, page.decision, lock);
+        if (Array.isArray(payload.holds)) setHolds(payload.holds);
+        failedRows.push(...(payload.failed ?? []));
+        if (!ok) {
+          stopped = payload.error ?? "That did not go through.";
+          break;
+        }
+        const decided = payload.decided ?? page.ids.length;
+        if (page.decision === "approved") allowed += decided;
+        else kept += decided;
+        locked += payload.locked ?? 0;
+        for (const entry of payload.brickMoves ?? []) {
+          const move = parseBrickSalesMove(entry.brickMove);
+          if (move) moves.push({ holdId: entry.holdId, move });
+        }
+        setDone(
+          `The normalizer answer is going in — ${(allowed + kept).toLocaleString("en-US")} of ${answerable.toLocaleString("en-US")} rows answered so far.`,
+        );
+      }
+      setSelected(new Set());
+      const waiting = [
+        plan.thirdAnswer.length > 0
+          ? `${plan.thirdAnswer.length} where the normalizer names a third brick (${plan.thirdAnswer.slice(0, 3).map(nameOfHold).join(", ")}${plan.thirdAnswer.length > 3 ? " and others" : ""}), which neither button can write`
+          : "",
+        plan.unanswered.length > 0 ? `${plan.unanswered.length} the normalizer has no answer for` : "",
+      ].filter((part) => part.length > 0);
+      setDone(
+        `${(allowed + kept).toLocaleString("en-US")} row(s) answered as the normalizer reads them: ${allowed.toLocaleString("en-US")} allowed, ${kept.toLocaleString("en-US")} kept as they are` +
+          (locked > 0
+            ? `, ${locked.toLocaleString("en-US")} of those mappings locked so no upload can move them again.`
+            : ". Nothing was locked, so an upload may propose the same move again.") +
+          (waiting.length > 0 ? ` Still waiting: ${waiting.join("; ")}.` : "") +
+          (stopped.length > 0 ? ` The run stopped there — ${stopped.replace(/.$/, "")}.` : ""),
+      );
+      setFailures(failedRows);
+      if (stopped.length > 0) setError(stopped);
+      if (moves.length > 0) {
+        setSalesNotice({
+          lines: moves.flatMap(({ holdId, move }) => {
+            const described = describeBrickSalesMove(move);
+            const body = described.length > 0 ? described : ["It had no sales in an open month."];
+            return moves.length === 1 ? body : body.map((line) => `${nameOfHold(holdId)}: ${line}`);
+          }),
+          subject: moves.length === 1 ? nameOfHold(moves[0].holdId) : `${moves.length} pharmacies`,
+        });
+        if (moves.some(({ move }) => move.pendingFiles > 0)) void rebuildMovedFiles();
+      }
+    } catch {
+      setError("That did not go through.");
+    } finally {
+      setBusy(false);
+    }
+  }, [answerable, lock, nameOfHold, plan, rebuildMovedFiles]);
 
   const lockNote = lock
     ? "Your answer will be locked on each customer you decide: it is stamped as your ruling, and the monthly upload skips a locked mapping outright."
@@ -459,6 +583,23 @@ export function MappingGuardReview({
           {selected.size > 0 ? (
             <Decide busy={busy} onDecide={(decision) => void decide(selectedIds, decision)} />
           ) : null}
+        </div>
+
+        {/* The normalizer own answer, applied to the whole screen in one press. Square, and it wraps. */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+          <button
+            className="border border-violet-600 bg-violet-600 px-2 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-white disabled:opacity-50"
+            disabled={busy || answerable === 0}
+            onClick={() => void applyNormalizerAnswers()}
+            type="button"
+          >
+            AI suggest
+          </button>
+          <span className="text-sm text-slate-600">
+            {answerable === 0
+              ? "The normalizer has no answer it can apply to any of these rows — each one needs your own ruling."
+              : `One press answers ${answerable.toLocaleString("en-US")} of ${holds.length.toLocaleString("en-US")} rows the way the normalizer reads them: ${plan.approve.length.toLocaleString("en-US")} allowed, ${plan.reject.length.toLocaleString("en-US")} kept as they are${plan.thirdAnswer.length + plan.unanswered.length > 0 ? `, and ${(plan.thirdAnswer.length + plan.unanswered.length).toLocaleString("en-US")} left waiting for you` : ""}. Your lock setting above travels with every one.`}
+          </span>
         </div>
       </div>
 

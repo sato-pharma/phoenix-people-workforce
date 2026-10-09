@@ -24,7 +24,10 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 const CONFIG = resolve("railway.toml");
+const IAC = resolve(".railway/railway.ts");
 
 export function runRailwayDeployConfigTests() {
   const source = readFileSync(CONFIG, "utf8");
@@ -157,5 +160,111 @@ export function runRailwayDeployConfigTests() {
     "🔴 the Dockerfile lost the note explaining why its base image is mirrored. Without the 429 " +
       "written down, the next reader sees an oddly long registry path and shortens it — which is " +
       "precisely the change this rule exists to stop.",
+  );
+
+  // 9-12. WHAT MUST SURVIVE THE CUTOVER TO `.railway/railway.ts`. Railway deprecated Config as Code
+  //    and prints so in every build log; existing files keep working until 2026-12-01, and the
+  //    authoring file is committed but DELIBERATELY INERT (owner decision 2026-10-01 — see
+  //    docs/deployment.md, "Config as Code is deprecated"). The hazard is not the deadline, it is
+  //    that the three decisions below live in `railway.toml` today and a cutover can drop all three
+  //    WITHOUT FAILING ANYTHING:
+  //
+  //      - the healthcheck is applied at DEPLOY time and is not stored as a service setting, so
+  //        `railway config pull` cannot see it and overwriting the authoring file silently removes
+  //        the only readiness gate production has;
+  //      - `watchPatterns` are a deliberate absence on this service, and a pull from a project where
+  //        someone set one in the dashboard would import it as though it were intended;
+  //      - the app's `builder` field reads RAILPACK while the build log shows the Dockerfile, so a
+  //        pulled `builder` key would pin the WRONG builder as authored fact.
+  //
+  //    Asserted on the app's service block with comments stripped by the shared lexer, because this
+  //    file's own prose names `watchPatterns` and `builder` and a raw search would match that prose.
+  //    `tests/support/comment-strip.ts` exists because the one-line block-comment regex every such
+  //    test used to carry deletes real code from 39 files in this repo.
+  //
+  //    When the cutover finally happens, rules 1-5 above go with `railway.toml` and THESE are what
+  //    is left holding the line. They are deliberately not a mirror of the toml: they pin the three
+  //    things the owner named as having to survive, and the region, which is the one setting that
+  //    puts production on the wrong continent if it is lost.
+  const iac = stripComments(readFileSync(IAC, "utf8"));
+  const appAt = iac.indexOf('service("phoenix-people-workforce"');
+  assert.notEqual(
+    appAt,
+    -1,
+    "🔴 .railway/railway.ts no longer declares a `phoenix-people-workforce` service. That file is " +
+      "the prepared cutover away from railway.toml — if the service is gone from it, the cutover " +
+      "would delete the service that serves every employee.",
+  );
+  const nextAt = iac.indexOf('service("', appAt + 1);
+  const appBlock = iac.slice(appAt, nextAt === -1 ? undefined : nextAt);
+  assert.ok(
+    appBlock.includes("env:") && appBlock.length > 500,
+    `🔴 the phoenix-people-workforce block read out of .railway/railway.ts is ${appBlock.length} ` +
+      "chars and has no `env:` — the slice is wrong, not the file, so every assertion below it " +
+      "would pass for the wrong reason. Check the service-declaration order before trusting this.",
+  );
+
+  // 9. The readiness gate. This is the one behaviour railway.toml exists for, and the one thing a
+  //    `railway config pull` provably cannot see.
+  assert.match(
+    appBlock,
+    /healthcheckPath:\s*"\/api\/readyz"/,
+    "🔴 .railway/railway.ts no longer carries the app's healthcheckPath. A pull cannot see it — it " +
+      "is applied at deploy time, not stored on the service — so regenerating the file drops it in " +
+      "silence, and the cutover would leave production with NO readiness gate: a container that " +
+      "boots and throws on its first request would again take 100% of traffic.",
+  );
+  const iacTimeout = /healthcheckTimeout:\s*(\d+)/.exec(appBlock);
+  assert.ok(
+    Number(iacTimeout?.[1]) >= 120,
+    `🔴 .railway/railway.ts's healthcheckTimeout is ${iacTimeout?.[1] ?? "absent"}. This app ` +
+      "preloads 1,148 route entries in production, so a tight window fails deploys that are fine.",
+  );
+  assert.match(
+    appBlock,
+    /restartPolicyType:\s*"ON_FAILURE"/,
+    "🔴 .railway/railway.ts lost the app's ON_FAILURE restart policy. `railway config migrate` " +
+      "silently dropped exactly this field on 2026-10-01, which is why it is asserted separately.",
+  );
+  assert.match(
+    appBlock,
+    /restartPolicyMaxRetries:\s*10/,
+    "🔴 .railway/railway.ts lost the app's restart retry cap. Without it a genuine configuration " +
+      "failure restarts for ever instead of stopping where the log says what broke.",
+  );
+
+  // 10. NO watchPatterns, deliberately. Every merge — docs-only included — pays a full production
+  //     build, and that is the accepted cost: a watch pattern wrong by one line stops deploying real
+  //     code with nothing red to show it. Only `phoenix-headwind` has one, where it IS load-bearing.
+  assert.doesNotMatch(
+    appBlock,
+    /watchPatterns/,
+    "🔴 .railway/railway.ts now sets watchPatterns on phoenix-people-workforce. That is a decision " +
+      "the owner took the other way: the saving is real, but a pattern wrong by one line stops " +
+      "deploying real code and nothing goes red. If this came from a `config pull`, somebody set it " +
+      "in the dashboard — fix it there, do not author it here. phoenix-headwind's pattern is " +
+      "separate and must stay.",
+  );
+
+  // 11. No builder key. The build log is the only thing that settles which builder runs, and it says
+  //     Dockerfile while the service's own field says RAILPACK.
+  assert.doesNotMatch(
+    appBlock,
+    /builder:/,
+    "🔴 .railway/railway.ts now pins a builder for phoenix-people-workforce. The live service's " +
+      "`builder` field reads RAILPACK while the build log reads `load build definition from " +
+      "Dockerfile` — authoring the field makes the wrong one of those two a fact, and a RAILPACK " +
+      "build of this repo is not the image that serves.",
+  );
+
+  // 12. Europe, one replica. `railway service scale <region>=1` ADDS a region rather than moving
+  //     one, and a new service is born in `sfo` — so the region is the setting that quietly puts
+  //     payroll data on the wrong continent, away from the Frankfurt Supabase project.
+  assert.match(
+    appBlock,
+    /replicas:\s*\{\s*"europe-west4-drams3a":\s*1\s*\}/,
+    "🔴 .railway/railway.ts no longer places phoenix-people-workforce as one replica in " +
+      "europe-west4-drams3a. Production must stay in Europe, colocated with the Frankfurt Supabase " +
+      "project, and two replicas of this app writing one database is not a scale-up.",
   );
 }
