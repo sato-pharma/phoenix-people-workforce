@@ -23,7 +23,11 @@ export const OPENAI_EMAIL_MAX_OUTPUT_TOKENS = 4_096;
 // drafting a short email, and this call happens a handful of times per
 // payroll run — not per-email volume — so accuracy is worth far more than
 // speed/cost here.
-export const OPENAI_COPILOT_DEFAULT_MODEL = "gpt-5.4";
+// The strong tier, named after the TIER for the reason the nano constant above gives: the nightly
+// signboard reader is not a copilot and should not have to import a copilot constant to say "the
+// model that can actually read a faded board".
+export const OPENAI_STRONG_MODEL = "gpt-5.4";
+export const OPENAI_COPILOT_DEFAULT_MODEL = OPENAI_STRONG_MODEL;
 
 export function resolveOpenAiCopilotModel(env: OpenAiEnv = process.env) {
   return env.OPENAI_COPILOT_MODEL?.trim() || env.OPENAI_MODEL?.trim() || OPENAI_COPILOT_DEFAULT_MODEL;

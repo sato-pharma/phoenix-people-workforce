@@ -38,10 +38,24 @@ within 18 minutes of its shutter. It was an instruction-and-feedback problem.
 ## What was built
 
 - **The signboard read** (`signboard-rules.ts`, `server/signboard-check.ts`). A save at the door reads
-  the sign; `judgeSignboard` decides. A confident "no signboard" holds on either list. AM reads place
+  the sign; `judgeSignboards` decides. A confident "no signboard" holds on either list. AM reads place
   names only; PM must name the person. An `unjudged` answer (no key, a failed call, an unreadable sign)
   never holds — the key has run out of credits silently twice, and a hold on no answer would have
   held every validation in the field on both days.
+- **Every sign in the frame, since 2026-10-09** — see "The four false holds" below. The reader returns
+  a LIST of signs, each with its own text, names, box, legibility (`clear` / `partial` / `unreadable`)
+  and trade (`medical` / `other` / `unknown`), and the choosing happens in `signboard-rules.ts`: any
+  sign that names him is a match; only a sign read `clear` may hold; and a frame where something
+  defeated the reader while nothing it did read answers the question (a PERSON for PM, a PLACE for AM)
+  is `unjudged`. The nightly pass reads with the strong model, and when the first look finds nobody it
+  crops the chosen sign out of the frame and reads **that** — which decides, in either direction.
+- **Across the two scripts** (`nameMatchesAcrossScripts`). An Arabic list row and an English board
+  scored 0 against each other, so a hospital that signs itself in English was held for its SCRIPT.
+  The compiler is the house one, `compileArabicWord` in `src/lib/geo/arabic-place-match.ts`. 🔴 A
+  cross-script reading may find a MATCH and may never file a FLAG on a name it cannot pin — a word
+  with a second ال inside it (عبدالعال, عبدالرحمن, نورالدين) compiles to a pattern demanding the
+  inner article's alif as a literal "a" while English writes that syllable "abdel", so such a place
+  is `unjudged` with reason `not_comparable` rather than flagged.
 - **The stamp crop.** The customer's name is burned into the stored photo by `drawStamp` before the
   file exists, so the band is cropped off first, from `drawStamp`'s own arithmetic on the decoded
   image (`stampBandFraction`: 0.18 portrait, 0.4917 landscape). Reading the uncropped photo would
@@ -55,6 +69,99 @@ within 18 minutes of its shutter. It was an instruction-and-feedback problem.
   547 places still waiting and its 120-second budget barely touched. The budget is untouched and is
   now what ends a normal night, so a slow night still costs the same wall clock as before; what the
   raise buys is three nights of backlog instead of nine.
+### The four false holds — what the first night actually proved (2026-10-09)
+
+The pass ran once, read 60 places and flagged five. Read off production the next afternoon, **four of
+the five flags were wrong, and not one of them was wrong about a letter.** Every verdict, transcription
+and note below is the row the single-sign reader wrote:
+
+| Customer | What it transcribed | Its own note | Verdict |
+| --- | --- | --- | --- |
+| احمد صباح الشعراوي | `عيادات / دكتور أحمد الشرباوي` | the board is not fully clear apart from the name at the top | held — other name |
+| اسلام عبدالعال | `Clin ic 4` | the Arabic above the Clinic sign is not clear enough to transcribe | held — no name |
+| رضوان محمد | `DOKANAT / BANAT EL BALAD / WOMEN'S & KIDS' STYLE` | — | held — no name |
+| محمد فرج | *nothing stored*, person read as `محمد فريد` | other lines are not confidently readable | held — other name |
+| مستشفى المنشاوى العام | `TANTA GENERAL HOSPITAL` | — | held — **correct** |
+
+Three failure classes, none of them OCR quality:
+
+1. **The pipeline threw away the reader's own uncertainty.** Three of the four carry a note saying the
+   board was illegible, and the verdict was computed from the names alone. A hedged read became a
+   confident flag.
+2. **One photograph, several signs, one bag of names.** The schema had a single `sign_text`, so the
+   reader picked the biggest, clearest board — a clothes shop, a room number — and the practice's own
+   plate was never considered. At a PM door the nameplate is routinely the SMALLEST thing in frame.
+3. **Script.** مستشفى المنشاوى العام against `TANTA GENERAL HOSPITAL` is a true negative, but the fold
+   compares Arabic letters to Latin ones, so any practice signing itself in English could only ever
+   mismatch.
+
+And one defect: محمد فرج was flagged with `signText` null — a flag carrying no evidence of itself.
+
+### The five verdicts as they now stand on the place rows (2026-10-09, written and read back)
+
+`--apply` wrote each verdict to `phoenix_crm_places.signboard_check`. Read back from production:
+
+| Customer | Stored verdict | What the row holds | Cairo |
+| --- | --- | --- | --- |
+| محمد فرج | **match** | `الدكتور محمد فرج …`, 8 signs kept | 18:34 |
+| احمد صباح الشعراوي | **match** | `معا للصحة — عيادات دكتور احمد الشعراوي` | 18:35 |
+| اسلام عبدالعال | **other_name** | the nameplate `د/ اسلام حشيش`, read `clear` | 18:48 |
+| رضوان محمد | unjudged / unreadable | the clothes shop clear, the practice board partial | 18:35 |
+| مستشفى المنشاوى العام | unjudged / unreadable | `TANTA GENE` and two boards nothing could read | 18:34 |
+
+🔴 **Two things in that table are not what the dry run predicted, and both matter.**
+
+**One write was LOST, silently, and the pass reported it as written.** `recordPlaceSignboard` catches
+and drops its error on purpose — a failed record must never turn a rep's successful validation into an
+error at the door — so "written to the place row" was a statement about a function call, not about a
+row. اسلام عبدالعال kept its old `no_name / "Clin ic 4"` while the pass printed success for all five.
+`jsonb` had refused the payload: Postgres rejects `\u0000` and an unpaired surrogate outright, and a
+model transcribing a half-lit signboard produces them. Three things changed: the recorder answers
+`boolean`, it sends `jsonbSafe(check)`, and the pass reads the row back and prints `NOT WRITTEN` with a
+non-zero exit when the stored verdict is not the one it meant to store. Without the read-back this
+section would have reported five writes and four rows.
+
+**And the same photograph does not read the same twice.** مستشفى المنشاوى العام read the Arabic board
+at 18:12 and `unjudged` at 18:34; اسلام عبدالعال read `unjudged` at 18:35 and `other_name` at 18:48,
+once its nameplate came back `clear` instead of `partial`. Legibility is what moves between runs, and
+legibility is exactly what decides whether a sign may hold a place — so a flag one pass calls
+SUPERSEDED can be correct on the next. **A single re-read is evidence, never a verdict on a flag**,
+which is the second reason the script will not clear one.
+
+### What the same five photographs say when they are read again (2026-10-09, evening)
+
+`scripts/phoenix-crm-reread-signboards.mjs` re-reads every place carrying a signboard flag with the
+reader in the working tree. Run against the five, it is the only evidence that matters:
+
+| Customer | Old flag | Read again | What the board actually says |
+| --- | --- | --- | --- |
+| محمد فرج | other name (`محمد فريد`, no text stored) | **match** | `الدكتور محمد فرج — مدرس واستشاري طب المخ والأعصاب والطب النفسي، كلية الطب جامعة طنطا`. **Eight** signs in that one photograph. |
+| احمد صباح الشعراوي | other name (`أحمد الشرباوي`) | **match** | `عيادات دكتور احمد الشعراوي — استشاري الجراحة العامة والأورام`. The surname was two letters lost to scale. |
+| اسلام عبدالعال | no name (`Clin ic 4`) | `unjudged` | the nameplate reads `د/ اسلام حشيش`, in part — a different surname, but not read well enough to flag. |
+| رضوان محمد | no name (the clothes shop) | `unjudged` | above the shop, in part: `مركز الدكتور رضوان التخصصى لجراحة المسالك البولية`. |
+| مستشفى المنشاوى العام | other name | **other name** | `TANTA GENERAL HOSPITAL`, and the same board in Arabic: `مستشفى طنطا العام`. Still held, correctly. |
+
+Two of the four were real customers standing at their own doors. Two cannot be judged from the
+photograph and go back to the queue rather than onto the board — which is the owner's own rule (no
+answer never holds), and they stay visible with their reason on the Place checks page.
+
+🔴 **The re-read caught a defect the tests could not: the quorum was counted on words that name
+nothing.** Reading that photograph returned the Arabic board too — `مستشفى طنطا العام` — and
+`signNamesCustomer` called it a MATCH for `مستشفى المنشاوى العام`, because a three-token name may lose
+one and the two it kept were `مستشفى` and `العام`, which every general hospital in Egypt shares. The
+one correct flag of the night had only ever been correct because the board was in ENGLISH and the fold
+could not compare scripts at all. The place axis now counts its quorum on `distinctiveWords`, exactly
+as the Google listing comparison always has — only the n-1 half of that rule had been borrowed. Two
+smaller defects came out of the same run: the second look was cropping the sign that had already been
+read CLEARLY instead of the one that defeated the reader, and it was judging that crop ON ITS OWN, so
+a frame correctly left `unjudged` came back as a flag once the crop was the only sign in view.
+
+What the fix does NOT do: it does not loosen either of the owner's rulings. A confident "no signboard
+at all" still holds, an AM board that names nobody is still a match, and nothing is ever un-validated.
+Each of the five rows above is replayed as a test case in `tests/phoenix-crm-signboard-check.test.ts`
+(`checkManySigns`), including the true hold — a change that fixes the four by weakening the check
+breaks the fifth.
+
 - **The refusal reason** (`validation-feedback.ts`). Six closed reasons: no signboard in the photo;
   the sign is not this customer; too dark or blurred to read; not taken at the entrance; a photo of
   paper, not a building; the location is not where the photo was taken. The free note stays on the

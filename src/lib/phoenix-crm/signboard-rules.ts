@@ -1,5 +1,7 @@
 import { isMatchableName, normalizeContactName } from "@/lib/crm/campaign-contact-match";
+import { addressWords, compileArabicWord, type PlaceWord } from "@/lib/geo/arabic-place-match";
 import { jaccardSimilarity, nameTokens } from "@/lib/pharmacy-master/pharmacy-matching";
+import { distinctiveWords } from "@/lib/phoenix-crm/google-place-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -68,7 +70,12 @@ export type SignboardCheckReason =
   /** The signboard names somebody else. */
   | "sign_other_name"
   /** A PM signboard with no person's name on it. */
-  | "sign_no_name";
+  | "sign_no_name"
+  /**
+   * The sign names somebody in the other script and this customer's name cannot be pinned across the
+   * two, so there is nothing to compare. Never re-read: tomorrow's answer is the same one.
+   */
+  | "not_comparable";
 
 export type PhoenixCrmSignboardCheck = {
   verdict: SignboardVerdictKind;
@@ -80,6 +87,12 @@ export type PhoenixCrmSignboardCheck = {
   personNames: string[];
   /** The names on the signboard that read as PLACES — a hospital, a centre, a unit. */
   placeNames: string[];
+  /**
+   * EVERY sign the reader saw in the photograph, not just the one judged. The four false holds of
+   * 2026-10-09 were all a second sign in the frame, so the others are kept as the evidence of what
+   * was chosen and why — and the review queue shows them beside the verdict.
+   */
+  signs: PhoenixCrmSign[];
   /** 0–1. Stored for analysis, NEVER rendered. */
   nameScore: number | null;
   /** One sentence a Super Admin can act on. */
@@ -190,7 +203,22 @@ export function signNamesCustomer(input: {
   const haystacks = [...preferred, ...(input.signText ? [input.signText] : [])];
   if (haystacks.length === 0) return { matches: null, score: null };
 
-  const wantedTokens = wanted.split(" ").filter((token) => token.length >= 3);
+  // 🔴 ON THE PLACE AXIS THE QUORUM IS COUNTED ON THE DISTINCTIVE WORDS, AND THIS COST A FALSE MATCH.
+  // Measured 2026-10-09, re-reading the one flag of that night that was CORRECT: مستشفى المنشاوى
+  // العام against a board reading مستشفى طنطا العام came back MATCHED, because a three-token name may
+  // lose one and the two it kept were "مستشفى" and "العام" — the words that say WHAT the place is,
+  // which every general hospital in Egypt shares. It had only ever been held because the board was in
+  // English and the fold could not compare scripts at all; the moment the reader returned the Arabic
+  // board too, the allowance handed away the one word that identifies it. `distinctiveWords` is the
+  // module's own answer to this (its KIND_WORDS carries مستشفي, عام, hospital, general, clinic,
+  // centre) and the Google listing comparison has counted its quorum that way all along — only the
+  // n-1 half of that rule was borrowed here. The PERSON axis keeps `normalizeContactName`, because
+  // stemming a person's name is what the header of this file warns against.
+  const placeAxis = input.listType !== "PM";
+  // `wanted` being non-empty already proves the name is there; `?? ""` is what says so to the compiler.
+  const wantedTokens = (placeAxis ? distinctiveWords(input.customerName ?? "") : wanted.split(" ")).filter(
+    (token) => token.length >= 3,
+  );
   if (wantedTokens.length === 0) return { matches: null, score: null };
   // A name of three tokens or more survives losing one; two tokens must both be there.
   const allowedMisses = wantedTokens.length >= 3 ? 1 : 0;
@@ -198,7 +226,7 @@ export function signNamesCustomer(input: {
   let best: number | null = null;
   let matched = false;
   for (const candidate of haystacks) {
-    const folded = normalizeContactName(candidate);
+    const folded = placeAxis ? distinctiveWords(candidate).join(" ") : normalizeContactName(candidate);
     if (!folded) continue;
     const have = new Set(folded.split(" ").filter(Boolean));
     const missing = wantedTokens.filter((token) => !have.has(token)).length;
@@ -211,9 +239,449 @@ export function signNamesCustomer(input: {
   return { matches: matched, score: Math.round(best * 100) / 100 };
 }
 
+// ── More than one signboard in the frame ────────────────────────────────────────────────────────
+//
+// 🔴 ONE PHOTOGRAPH, SEVERAL SIGNS, AND THE READER USED TO HAND BACK ONE BAG OF NAMES. Read off
+// production on 2026-10-09, the five places this check had held: FOUR of the five holds were wrong,
+// and not one of them was wrong about a letter.
+//
+//   رضوان محمد           "DOKANAT / BANAT EL BALAD / WOMEN'S & KIDS' STYLE" — the clothes shop beside
+//                        the practice, because it is the biggest and clearest board in the frame.
+//   اسلام عبدالعال        "Clin ic 4" — a room sign — with its own note saying the Arabic above it was
+//                        "not clear enough to transcribe confidently". The nameplate was never read.
+//   احمد صباح الشعراوي   "دكتور أحمد الشرباوي", noting the board was unclear beyond that one line.
+//   محمد فرج             "محمد فريد" off one line, the others "not confidently readable" — and NO board
+//                        text stored at all, so the flag carried no evidence of itself.
+//   مستشفى المنشاوى العام "TANTA GENERAL HOSPITAL". The one true hold of the five.
+//
+// So the reader returns EVERY sign it can see — each with its own text, names, box, legibility and
+// whether it looks medical — and the choosing happens HERE, under three rules:
+//
+//   1. 🔴 ANY SIGN THAT NAMES THE CUSTOMER IS A MATCH. A practice plate beside a clothes shop is
+//      still the practice; an Egyptian doorway carries four boards and the largest is rarely the one.
+//   2. 🔴 A HOLD NEEDS A SIGN THAT WAS READ CLEARLY. When nothing in the frame was, the verdict is
+//      `unjudged` and the night reads it again — the module's own safety property (no answer never
+//      holds) one level down: a PARTIAL answer is not an answer either. It un-files three of the
+//      four above on its own.
+//   3. 🔴 A FLAG CARRIES ITS OWN EVIDENCE OR IT IS NOT A FLAG. محمد فرج was held with `signText`
+//      null: nothing of the board could be put in front of the person adjudicating it.
+//
+// Legibility and kind come from the reader as fields. They are NEVER inferred from its prose note —
+// three of the four hedges above were sitting in that note, and parsing prose would make the verdict
+// depend on which language the note came back in.
+
+/** How much of one sign the reader could actually read. Only `clear` may hold a place. */
+export type SignboardLegibility = "clear" | "partial" | "unreadable";
+
+/**
+ * What the sign is for. `other` is the clothes shop — the only value that can take a sign OUT of the
+ * running; `unknown` counts as possibly the practice's own, because a reader unsure which trade a
+ * board belongs to is not evidence that the place is not a practice.
+ */
+export type SignboardKind = "medical" | "other" | "unknown";
+
+/** One signboard in the photograph. */
+export type PhoenixCrmSign = {
+  /** Verbatim, in its own script. */
+  text: string | null;
+  personNames: string[];
+  placeNames: string[];
+  /** Where it sits in the READ image, as fractions of width and height. Null when none was given. */
+  box: { left: number; top: number; width: number; height: number } | null;
+  legibility: SignboardLegibility;
+  kind: SignboardKind;
+};
+
+const HAS_ARABIC = /[؀-ۿ]/;
+const HAS_LATIN = /[A-Za-z]/;
+
+/** Is there anything on this sign to judge at all? */
+function signCarriesAName(sign: PhoenixCrmSign): boolean {
+  return sign.text !== null || sign.personNames.length > 0 || sign.placeNames.length > 0;
+}
+
+/** A practice's own sign sorts before another trade's, and an unsure one sits between them. */
+function tradeRank(sign: PhoenixCrmSign): number {
+  return sign.kind === "medical" ? 0 : sign.kind === "unknown" ? 1 : 2;
+}
+
+function boxArea(sign: PhoenixCrmSign): number {
+  if (!sign.box) return 0;
+  return Math.max(0, sign.box.width) * Math.max(0, sign.box.height);
+}
+
+/**
+ * The Arabic words of a name, compiled into the English spellings they accept.
+ *
+ * 🔴 AM AND PM TAKE DIFFERENT FOLDS, for the reason the header of this file gives: `distinctiveWords`
+ * stems a facility name correctly ("مستشفى" and "عام" say WHAT it is, never WHICH one) and would stem
+ * a person's; `normalizeContactName` strips the honorifics and nothing else. `compileArabicWord`
+ * takes the article off either way, so المنشاوى and منشاوى compile to the same pattern.
+ */
+type CompiledName = {
+  /** The words that pinned. */
+  words: PlaceWord[];
+  /** How many words of the name were worth pinning at all. */
+  total: number;
+  /**
+   * True when EVERY word pinned — the only state in which a cross-script reading may HOLD a place.
+   * One word that cannot be pinned does not stop a match (the quorum below allows a long name to
+   * lose one), but it does stop a flag, because a word that cannot be expressed in Latin letters
+   * cannot be shown to be ABSENT from a Latin sign.
+   */
+  pinnable: boolean;
+};
+
+/** A second ال inside a word, after the article at the front has been taken off. */
+const INNER_ARTICLE = /^(?:ال|أل)?.*ال/u;
+
+function compiledNameWords(name: string, listType: PhoenixCrmListType): CompiledName {
+  const tokens = (
+    listType === "PM" ? normalizeContactName(name).split(" ").filter(Boolean) : distinctiveWords(name)
+  ).filter((token) => token.length >= 3);
+  const words: PlaceWord[] = [];
+  let pinnable = tokens.length > 0;
+  for (const token of tokens) {
+    // 🔴 THE عبد COMPOUND IS THE COMPILER'S BLIND SPOT, measured 2026-10-09: عبدالعال compiles to a
+    // pattern demanding the inner article's alif as a literal "a", while English writes that syllable
+    // "abdel" — so "Dr Islam Abdelaal" fails a pattern it should satisfy. Every word with a SECOND ال
+    // inside it has the same shape (عبدالرحمن, نورالدين), so none of them is counted either way.
+    // 🔴 Do NOT "fix" this by loosening `compileArabicWord`: that table carries the whole of Egypt's
+    // brick geography and is pinned by the geo module's own tests.
+    if (INNER_ARTICLE.test(token.replace(/^(?:ال|أل)/u, "")) || INNER_ARTICLE.test(token.slice(2))) {
+      pinnable = false;
+      continue;
+    }
+    const one = compileArabicWord(token);
+    if (!one) {
+      pinnable = false;
+      continue;
+    }
+    words.push(one);
+  }
+  return { pinnable, total: tokens.length, words };
+}
+
+/**
+ * Can this customer's name be pinned in Latin letters at all?
+ *
+ * 🔴 ONLY A PINNABLE NAME MAY BE HELD ON A SIGN IN THE OTHER SCRIPT. A cross-script reading is
+ * allowed to find a MATCH on the quorum below, and is never allowed to file a flag on a name whose
+ * own spelling this scheme cannot express — "it is not here" and "I cannot write it down" are not
+ * the same sentence, and the second one is the module's `unjudged`.
+ */
+export function nameIsPinnableAcrossScripts(customerName: string | null, listType: PhoenixCrmListType): boolean {
+  if (!customerName || !HAS_ARABIC.test(customerName)) return false;
+  const compiled = compiledNameWords(customerName, listType);
+  return compiled.pinnable && compiled.words.length > 0;
+}
+
+/** Does any name on this sign's judged axis use the customer's own script? */
+export function signSharesCustomerScript(
+  sign: PhoenixCrmSign,
+  input: { customerName: string | null; listType: PhoenixCrmListType },
+): boolean {
+  if (!input.customerName) return false;
+  const customerIsArabic = HAS_ARABIC.test(input.customerName);
+  const preferred = input.listType === "PM" ? sign.personNames : sign.placeNames;
+  const candidates = [...preferred, ...(sign.text ? [sign.text] : [])];
+  return candidates.some((candidate) => HAS_ARABIC.test(candidate) === customerIsArabic);
+}
+
+/**
+ * Does an Arabic name and a Latin one name the same customer?
+ *
+ * 🔴 WITHOUT THIS, A HOSPITAL THAT SIGNS ITSELF IN ENGLISH CAN NEVER MATCH ITS OWN ARABIC LIST ROW.
+ * `normalizeContactName` and `normalizeName` both leave each script where it is, deliberately — so
+ * مستشفى المنشاوى العام against "EL MENSHAWY GENERAL HOSPITAL" scores 0 and is held for its SCRIPT
+ * rather than for its name. The compiler is the house one, `compileArabicWord` in
+ * src/lib/geo/arabic-place-match.ts, written for exactly this split in Egypt's own geography data —
+ * never a transliteration table of this module's own.
+ *
+ * The quorum is always counted on the CUSTOMER's words, in either direction: every word of his name
+ * must be on the sign, and a name of three words or more may lose one. A sign is free to carry extra
+ * words — "عيادات", "Dr", a floor, a telephone number — and usually does.
+ *
+ * 🔴 IT ANSWERS FALSE RATHER THAN GUESSING, AND ONE SHAPE IT CANNOT PIN IS THE عبد COMPOUND.
+ * Measured 2026-10-09: عبدالعال compiles to a pattern demanding the article's alif as a literal "a",
+ * while English writes that syllable "abdel" — so اسلام عبدالعال against "Dr Islam Abdelaal" answers
+ * false, and the place is then decided by LEGIBILITY rather than by this. That is the safe direction:
+ * a false negative here only ever withholds a match, never invents one, and the alternative — pinning
+ * on اسلام alone — is precisely the shared-first-name match this module refuses everywhere else. Do
+ * not "fix" it by loosening `compileArabicWord`; it is pinned by the geo module's own tests and that
+ * table carries Egypt's whole brick geography.
+ */
+export function nameMatchesAcrossScripts(input: {
+  customerName: string;
+  candidate: string;
+  listType: PhoenixCrmListType;
+}): boolean {
+  const customerIsArabic = HAS_ARABIC.test(input.customerName);
+  const candidateIsArabic = HAS_ARABIC.test(input.candidate);
+  // Same script on both sides is the fold's own job, and it has already answered.
+  if (customerIsArabic === candidateIsArabic) return false;
+
+  const arabicSide = customerIsArabic ? input.customerName : input.candidate;
+  const latinSide = customerIsArabic ? input.candidate : input.customerName;
+  if (!HAS_LATIN.test(latinSide)) return false;
+
+  const compiled = compiledNameWords(arabicSide, input.listType);
+  const latinWords = addressWords(latinSide);
+  if (compiled.words.length === 0 || latinWords.length === 0) return false;
+
+  // Whichever side is Arabic holds the patterns; the CUSTOMER's own side holds the quorum, in either
+  // direction. A name of three words or more may lose one — and a word that could not be pinned at
+  // all spends exactly that allowance, never less.
+  if (customerIsArabic) {
+    const satisfied = compiled.words.filter((word) =>
+      latinWords.some((candidate) => word.pattern.test(candidate)),
+    ).length;
+    const misses = compiled.total - satisfied;
+    return misses <= (compiled.total >= 3 ? 1 : 0);
+  }
+  const satisfied = latinWords.filter((candidate) =>
+    compiled.words.some((word) => word.pattern.test(candidate)),
+  ).length;
+  const misses = latinWords.length - satisfied;
+  return misses <= (latinWords.length >= 3 ? 1 : 0);
+}
+
+/** Does THIS sign name the customer — in his own script, or across the two? */
+export function signNamesCustomerOnSign(
+  sign: PhoenixCrmSign,
+  input: { customerName: string | null; listType: PhoenixCrmListType },
+): { matches: boolean | null; score: number | null } {
+  const sameScript = signNamesCustomer({
+    customerName: input.customerName,
+    listType: input.listType,
+    personNames: sign.personNames,
+    placeNames: sign.placeNames,
+    signText: sign.text,
+  });
+  if (sameScript.matches === true || !input.customerName) return sameScript;
+
+  const preferred = input.listType === "PM" ? sign.personNames : sign.placeNames;
+  for (const candidate of [...preferred, ...(sign.text ? [sign.text] : [])]) {
+    if (nameMatchesAcrossScripts({ candidate, customerName: input.customerName, listType: input.listType })) {
+      return { matches: true, score: sameScript.score };
+    }
+  }
+  return sameScript;
+}
+
+/**
+ * Which sign the stored record shows, when none of them named the customer.
+ *
+ * 🔴 NEVER THE LARGEST BOARD ON A PM CAPTURE. The plate carrying a person's name is the practice's
+ * own, and it is routinely the smallest thing in the photograph — the clothes shop that held رضوان
+ * محمد was both the biggest and the most legible sign in the frame. An AM capture is the other way
+ * round: a hospital's own board IS the big one, so there the largest sign naming a PLACE wins.
+ */
+export function chooseSignboard(
+  signs: readonly PhoenixCrmSign[],
+  listType: PhoenixCrmListType,
+): PhoenixCrmSign | null {
+  if (signs.length === 0) return null;
+  const clear = signs.filter((sign) => sign.legibility === "clear" && signCarriesAName(sign));
+  const pool = clear.length > 0 ? clear : signs.filter(signCarriesAName);
+  if (pool.length === 0) return signs[0] ?? null;
+
+  if (listType === "PM") {
+    const named = pool.filter((sign) => sign.personNames.length > 0);
+    if (named.length > 0) {
+      // A practice's plate before another trade's board, and then the SMALLEST — at an Egyptian door
+      // the nameplate is the small plate and the big board above it belongs to the building or to the
+      // neighbour.
+      return [...named].sort(
+        (left, right) => tradeRank(left) - tradeRank(right) || boxArea(left) - boxArea(right),
+      )[0];
+    }
+    const medical = pool.filter((sign) => sign.kind !== "other");
+    return medical[0] ?? pool[0];
+  }
+
+  const places = pool.filter((sign) => sign.placeNames.length > 0);
+  const ranked = places.length > 0 ? places : pool;
+  return [...ranked].sort((left, right) => boxArea(right) - boxArea(left))[0];
+}
+
+/**
+ * Which sign is worth cropping out of the frame and reading again.
+ *
+ * 🔴 NOT THE SAME QUESTION AS `chooseSignboard`, AND GETTING THEM CONFUSED HELD رضوان محمد A SECOND
+ * TIME. That photograph holds a clothes shop read CLEARLY and, above it, a practice board read only
+ * in part — "مركز الدكتور رضوان القصصي". `chooseSignboard` prefers a sign that was read clearly,
+ * because that is the sign worth QUOTING; the sign worth READING AGAIN is the opposite one, the one
+ * that defeated the reader and that would answer the question if it had not.
+ *
+ * So: a sign that answers the question being asked (a PERSON for PM, a PLACE for AM) first, then the
+ * one NOT already read clearly, then a practice's own board over another trade's, and then the
+ * biggest — it has the most letters to recover. Only a sign with a box can be cropped at all.
+ */
+export function chooseSignToReadAgain(
+  signs: readonly PhoenixCrmSign[],
+  listType: PhoenixCrmListType,
+): PhoenixCrmSign | null {
+  const answers = (sign: PhoenixCrmSign): number =>
+    (listType === "PM" ? sign.personNames.length > 0 : sign.placeNames.length > 0) ? 0 : 1;
+  const unread = (sign: PhoenixCrmSign): number => (sign.legibility === "clear" ? 1 : 0);
+  const candidates = signs.filter((sign) => sign.box !== null);
+  if (candidates.length === 0) return null;
+  return [...candidates].sort(
+    (left, right) =>
+      answers(left) - answers(right) ||
+      unread(left) - unread(right) ||
+      tradeRank(left) - tradeRank(right) ||
+      boxArea(right) - boxArea(left),
+  )[0];
+}
+
+/**
+ * Turn every sign in the photograph into one verdict.
+ *
+ * The owner's two rulings are untouched: a confident "no signboard of any kind" still holds, and an
+ * AM signboard that names nobody is still a match. What changed is everything between — which sign is
+ * read, and what a partially-read frame is allowed to conclude.
+ */
+export function judgeSignboards(input: {
+  customerName: string | null;
+  listType: PhoenixCrmListType;
+  signPresent: boolean | null;
+  signs: readonly PhoenixCrmSign[];
+  note: string | null;
+  croppedFraction: number;
+}): PhoenixCrmSignboardCheck {
+  const signs = [...input.signs];
+  const anythingRead = signs.some(signCarriesAName);
+
+  const record = (
+    chosen: PhoenixCrmSign | null,
+    verdict: SignboardVerdictKind,
+    reason: SignboardCheckReason | null,
+    nameScore: number | null,
+  ): PhoenixCrmSignboardCheck => ({
+    checkedAt: new Date().toISOString(),
+    croppedFraction: input.croppedFraction,
+    nameScore,
+    note: input.note,
+    personNames: chosen ? [...chosen.personNames] : [],
+    placeNames: chosen ? [...chosen.placeNames] : [],
+    reason,
+    signText: chosen?.text ?? null,
+    signs,
+    verdict,
+  });
+
+  const fallback = chooseSignboard(signs, input.listType);
+
+  // 1 · NO SIGNBOARD AT ALL, said confidently — the owner's first ruling, unchanged.
+  if (input.signPresent === false && !anythingRead) return record(fallback, "no_name", "sign_no_name", null);
+
+  // 2 · ANY sign that names him is a match.
+  let best: number | null = null;
+  for (const sign of signs) {
+    const { matches, score } = signNamesCustomerOnSign(sign, input);
+    if (score !== null) best = best === null ? score : Math.max(best, score);
+    if (matches === true) return record(sign, "match", null, score ?? best);
+  }
+
+  // 3 · Nothing in the frame was read CLEARLY, so nothing in it can hold the place.
+  const clearNamed = signs.filter((sign) => sign.legibility === "clear" && signCarriesAName(sign));
+  if (clearNamed.length === 0) return record(fallback, "unjudged", "unreadable", best);
+
+  // 4 · THE AM HALF OF "NEVER A PERSON": an AM frame whose clear signs name no place at all is a
+  //     match — the hospital signs its departments, or only the people holding clinics inside it.
+  if (input.listType !== "PM" && clearNamed.every((sign) => sign.placeNames.length === 0)) {
+    return record(fallback, "match", null, best);
+  }
+
+  // 5 · 🔴 SOMETHING IN THE FRAME DEFEATED THE READER, AND NOTHING IT DID READ ANSWERS THE QUESTION
+  //     BEING ASKED — a PERSON for PM, a PLACE for AM. The sign that would have answered is exactly
+  //     the one it could not read, so the photograph has not been judged yet. This is the rule that
+  //     un-files رضوان محمد (a clothes shop read clearly beside a faded practice board) and
+  //     اسلام عبدالعال (a room sign read clearly under an Arabic nameplate it could not transcribe):
+  //     both carry a PLACE name on a PM capture, which says nothing about whose doorway it is.
+  const couldNotRead = signs.some((sign) => sign.legibility !== "clear");
+  const answersTheQuestion = clearNamed.filter((sign) =>
+    input.listType === "PM" ? sign.personNames.length > 0 : sign.placeNames.length > 0,
+  );
+  if (couldNotRead && answersTheQuestion.length === 0) return record(fallback, "unjudged", "unreadable", best);
+
+  // 5b · Every sign read clearly belongs to another trade while something else could not be read:
+  //      the practice's own board is the one that was missed.
+  if (couldNotRead && clearNamed.every((sign) => sign.kind === "other")) {
+    return record(fallback, "unjudged", "unreadable", best);
+  }
+
+  // 5c · 🔴 A FLAG IS NEVER FILED ACROSS TWO SCRIPTS ON A NAME THIS SCHEME CANNOT WRITE DOWN. Every
+  //      sign that answers the question names in the other script, none matched, and the customer's
+  //      own name does not pin in Latin letters — "it is not here" and "I cannot write it down" are
+  //      different sentences. The first may hold (مستشفى المنشاوى العام against "TANTA GENERAL
+  //      HOSPITAL" pins منشاوى and is a true flag); the second never does.
+  if (
+    answersTheQuestion.length > 0 &&
+    answersTheQuestion.every((sign) => !signSharesCustomerScript(sign, input)) &&
+    !nameIsPinnableAcrossScripts(input.customerName, input.listType)
+  ) {
+    return record(fallback, "unjudged", "not_comparable", best);
+  }
+
+  // 6 · A clear sign names somebody else — or, on PM, names no person at all, which is the owner's
+  //     "no nameplate" case and is held rather than accepted.
+  const namesNobody = input.listType === "PM" && clearNamed.every((sign) => sign.personNames.length === 0);
+  // 🔴 A FLAG CARRIES ITS OWN EVIDENCE, and it is step 3 that guarantees it rather than a check here:
+  // `signCarriesAName` is what makes a sign eligible to be clear-and-named at all, so a frame whose
+  // only clear sign holds no text and no names cannot reach this line. A guard here would be dead
+  // code pretending to be a safety net — محمد فرج was held with `signText` null because its board was
+  // read in PART, which step 3 is what refuses.
+  return record(
+    fallback,
+    namesNobody ? "no_name" : "other_name",
+    namesNobody ? "sign_no_name" : "sign_other_name",
+    best,
+  );
+}
+
+/** One sign, for a reader that answered in the old single-signboard shape. */
+export function asOneSign(input: {
+  signText: string | null;
+  personNames: readonly string[];
+  placeNames: readonly string[];
+}): PhoenixCrmSign {
+  return {
+    box: null,
+    kind: "unknown",
+    legibility: "clear",
+    personNames: [...input.personNames],
+    placeNames: [...input.placeNames],
+    text: input.signText,
+  };
+}
+
 /** A pharmacy is not validated against a person or a practice, so it is not asked this question. */
 export function signboardApplies(listType: PhoenixCrmListType): boolean {
   return listType !== "Pharmacy";
+}
+
+/**
+ * The same value with every character `jsonb` REFUSES taken out of its strings.
+ *
+ * 🔴 ONE SUCH CHARACTER THREW A WHOLE VERDICT AWAY, SILENTLY. Postgres rejects the NUL and a
+ * surrogate left without its pair outright, `recordPlaceSignboard` swallows its error by design, and
+ * the place then stays in the nightly backlog for ever — re-read every night, never recorded. A model
+ * transcribing a damaged or half-lit signboard emits both. Both are DROPPED rather than replaced: they
+ * carry no meaning in a transcription, and a replacement character would read as something the sign
+ * said. Everything else — Arabic, an emoji, an unmatched quote — is kept exactly as it was read.
+ */
+export function jsonbSafe<T>(value: T): T {
+  const clean = (text: string): string =>
+    text
+      .replace(/\u0000/g, "")
+      .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "")
+      .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, "$1");
+  return JSON.parse(
+    JSON.stringify(value, (_key, inner) => (typeof inner === "string" ? clean(inner) : inner)),
+  ) as T;
 }
 
 /**
@@ -236,6 +704,7 @@ export function signboardUnjudged(
     personNames: [],
     placeNames: [],
     reason,
+    signs: [],
     signText: null,
     verdict: "unjudged",
   };
@@ -266,6 +735,7 @@ export function signboardHoldRecord(
     note: check.note,
     nameScore: check.nameScore,
     croppedFraction: check.croppedFraction,
+    signs: check.signs,
     point: { lat: point.lat, lon: point.lon, accuracyMeters: point.accuracyMeters, source: point.source },
     // The queue renders Google's candidate listings from this key. A signboard hold has none, and an
     // empty list is what the loader already treats as "nothing to show" — never a missing key.
@@ -274,9 +744,11 @@ export function signboardHoldRecord(
 }
 
 /**
- * Turn what the model reported into one of the four verdicts.
+ * One signboard, judged. `judgeSignboards` above is the real rule set; this is the one-sign door
+ * through it, kept because a reader that answered in the old shape — and `schedule-rules.ts`, which
+ * reads a TIMETABLE and has one photograph of one sheet by definition — has exactly one sign.
  *
- * 🔴 The AM half of the owner's rule lives here as well as in `signNamesCustomer`: a capture that is
+ * 🔴 The AM half of the owner's rule is in there as well as in `signNamesCustomer`: a capture that is
  * not PM is never given `no_name`, however empty `personNames` is. A hospital that signs itself and
  * nobody else is exactly right, and the check must say so.
  */
@@ -290,61 +762,14 @@ export function judgeSignboard(input: {
   note: string | null;
   croppedFraction: number;
 }): PhoenixCrmSignboardCheck {
-  const base = {
-    checkedAt: new Date().toISOString(),
+  return judgeSignboards({
     croppedFraction: input.croppedFraction,
-    note: input.note,
-    personNames: [...input.personNames],
-    placeNames: [...input.placeNames],
-    signText: input.signText,
-  };
-
-  // 🔴 NO SIGNBOARD AT ALL, said confidently. The owner's first ruling is "require the customer's name
-  // always, no exception for a building with no nameplate", and the commonest failure among the 643
-  // was exactly this — a street, a blank wall, a car window. A model that is merely UNSURE answers
-  // null and lands in `unjudged` below; only an explicit `false` with nothing transcribed holds.
-  const nothingRead = input.personNames.length === 0 && input.placeNames.length === 0 && !input.signText;
-  if (input.signPresent === false && nothingRead) {
-    return { ...base, nameScore: null, reason: "sign_no_name", verdict: "no_name" };
-  }
-
-  // 🔴 THE AM HALF OF "NEVER A PERSON": an AM signboard is read for a PLACE name only. One that names
-  // no place — the hospital signs its departments, or only the people holding clinics inside it — is a
-  // MATCH, because the person's name is the one thing an AM capture is never judged on.
-  if (input.listType !== "PM" && input.placeNames.length === 0 && !nothingRead) {
-    return { ...base, nameScore: null, reason: null, verdict: "match" };
-  }
-
-  // A PM signboard that names a place and no person at all is the "no nameplate" case for a person.
-  if (input.listType === "PM" && input.personNames.length === 0 && !input.signText && input.placeNames.length > 0) {
-    return { ...base, nameScore: null, reason: "sign_no_name", verdict: "no_name" };
-  }
-
-  const { matches, score } = signNamesCustomer({
     customerName: input.customerName,
     listType: input.listType,
-    personNames: input.personNames,
-    placeNames: input.placeNames,
-    signText: input.signText,
+    note: input.note,
+    signPresent: input.signPresent,
+    signs: [asOneSign(input)],
   });
-
-  if (matches === true) return { ...base, nameScore: score, reason: null, verdict: "match" };
-
-  if (matches === false) {
-    // A PM capture with a readable signboard that names no person at all is the "no nameplate" case
-    // the owner ruled on: it is held, not accepted. Everything else that read a name and found the
-    // wrong one is `other_name`.
-    const namesNobody = input.listType === "PM" && input.personNames.length === 0;
-    return {
-      ...base,
-      nameScore: score,
-      reason: namesNobody ? "sign_no_name" : "sign_other_name",
-      verdict: namesNobody ? "no_name" : "other_name",
-    };
-  }
-
-  // null — either side folded away, or nothing was transcribed. Never a pass, never a hold.
-  return { ...base, nameScore: score, reason: "unreadable", verdict: "unjudged" };
 }
 
 /**

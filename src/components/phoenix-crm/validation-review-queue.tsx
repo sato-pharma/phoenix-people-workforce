@@ -121,6 +121,11 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
             Names read: <span dir="auto">{row.signNames.join(" · ")}</span>
           </p>
         ) : null}
+        {row.otherSigns.length > 0 ? (
+          <p className="mt-0.5 break-words text-xs text-slate-500">
+            Also in the photo: <span dir="auto">{row.otherSigns.join(" · ")}</span>
+          </p>
+        ) : null}
         {row.hoursRead ? (
           <p className="mt-0.5 break-words text-xs text-slate-500">
             Hours read: <span dir="auto">{row.hoursRead}</span>
