@@ -193,7 +193,13 @@ function pinServerCode() {
     /if \(\(error as \{ code\?: unknown \} \| null\)\?\.code === "P0001"\) \{\s*return NextResponse\.json\(\{ success: false, error: `\$\{errorMessageOf\(error\)\} Nothing was decided\.` \}, \{ status: 409 \}\);/,
     "a refusal the database wrote reaches the screen, and says nothing was decided",
   );
-  assert.match(decideRoute, /brickMove: result\.brickMove/, "the decide route hands back what moved");
+  // Keyed by HOLD since the route learned to decide a whole selection (2026-10-09): one click can
+  // move the sales of several pharmacies, so there is no single `result.brickMove` any more.
+  assert.match(
+    decideRoute,
+    /brickMoves: decided[\s\S]{0,200}brickMove: outcome\.brickMove, holdId: outcome\.holdId/,
+    "the decide route hands back what moved, for every hold in the click",
+  );
 
   const refreshRoute = read("app/api/sales/brick-moves/refresh/route.ts");
   assert.equal(
@@ -335,8 +341,19 @@ function pinScreens() {
   );
 
   const review = read("src/components/sales/mapping-guard-review.tsx");
-  assert.match(review, /const brickMove = parseBrickSalesMove\(payload\.brickMove\);/, "the Mapping guard reads what an approval moved");
-  assert.match(review, /if \(brickMove\.pendingFiles > 0\) void rebuildMovedFiles\(\);/, "and rebuilds the files the sales moved in");
+  assert.match(
+    review,
+    /const move = parseBrickSalesMove\(entry\.brickMove\);/,
+    "the Mapping guard reads what an approval moved",
+  );
+  // 🔴 ANY of them, not the first. Reading `brickMoves[0]` leaves the other pharmacies' moved
+  // files unrebuilt while the screen still reports a move — invisible until a file is read.
+  assert.match(
+    review,
+    /if \(moves\.some\(\(\{ move \}\) => move\.pendingFiles > 0\)\) void rebuildMovedFiles\(\);/,
+    "and rebuilds the files the sales moved in, for every hold in the click",
+  );
+  assert.doesNotMatch(review, /brickMoves\?\.\[0\]/, "never only the first move of a selection");
 }
 
 function checkBrickArea() {

@@ -15,6 +15,15 @@ import {
   DEFAULT_NOTIFICATION_ROLE_POLICIES,
   notificationRoleKeys,
 } from "../src/lib/notifications/role-recipients.ts";
+import {
+  describeMonth,
+  formatEgp,
+  pickDistributorFacts,
+  summarizeHoldSales,
+  verdictForSuggestion,
+  type HoldDistributorFact,
+} from "../src/lib/sales/mapping-guard-hold-shape.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 const ROOT = process.cwd();
 const MIGRATION = join(ROOT, "supabase/migrations/20260910230000_sos_mapping_guard.sql");
@@ -272,10 +281,25 @@ function theReviewScreenIsGatedOnTheServer() {
   assert.match(page, /accessContext\.role !== "Super Admin" && accessContext\.scope !== "system"/);
 
   const route = readFileSync(join(ROOT, "app/api/sales/mapping-guard/decide/route.ts"), "utf8");
-  const gates = route.match(/access\.role !== "Super Admin" && access\.scope !== "system"/g) ?? [];
-  assert.equal(gates.length, 2, "BOTH the read and the decide must narrow to Super Admin, not just one");
-  const permissions = route.match(/await assertPermission\(access, "sales", "import"\)/g) ?? [];
-  assert.equal(permissions.length, 2, "every handler asserts before it acts");
+  // The narrowing itself, and the permission it rests on, must still be in this file.
+  assert.match(route, /await assertPermission\(access, "sales", "import"\)/);
+  assert.match(route, /access\.role !== "Super Admin" && access\.scope !== "system"/);
+  // Counted at the CALL SITES, not at the comparison. When the route learned to decide a whole
+  // selection (2026-10-09) the check moved into one `assertOwnerAccess` both handlers await, and
+  // counting the literal comparison then reads 1 for a route that gates twice — which is a pin
+  // failing on an improvement. What must never drop below two is the number of handlers that gate.
+  assert.match(route, /async function assertOwnerAccess\(request: Request\)/);
+  const gates = route.match(/await assertOwnerAccess\(request\)/g) ?? [];
+  assert.equal(gates.length, 2, "BOTH the read and the decide must gate, not just one");
+  for (const handler of ["GET", "POST"]) {
+    const opens = route.indexOf(`export async function ${handler}(request: Request)`);
+    assert.ok(opens > 0, `${handler} must exist`);
+    assert.match(
+      route.slice(opens, opens + 300),
+      /assertOwnerAccess\(request\)/,
+      `${handler} must gate before it reads or writes anything`,
+    );
+  }
 }
 
 /** Owner's square-edge golden rule. tokens.css still defaults --phx-radius to 4px, so this is measured. */
@@ -320,6 +344,335 @@ function theSidebarLinkMatchesTheGate() {
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The lock, the money, the distributor's own file and the normalizer's suggestion — 2026-10-09.
+//
+// Owner, that night, after a district manager found a customer in her closing sheet and gone from
+// the next download: "add the lock button and the money on each hold row", then "make me able to
+// multi-select and take decision in the multi. And also add the normalizer to recommend and
+// suggest", then "add the column that have the address that came with the distributor ... get the
+// address, the brick, the government. Very important."
+//
+// 🔴 WHAT THESE PIN IS THAT A DECISION STICKS. Measured on production the same night: 3,242 holds
+// had been allowed and 10 customer holds refused, and NOT ONE of the 186 then pending sat on a row
+// an upload could not move again — because Allow wrote the upload's own `sheet-verified` and Keep as
+// is wrote nothing to the mapping at all. Only confidence 100 is skipped by
+// applyCustomerBrickCorrections. If one of these assertions can be deleted and the suite stays
+// green, the screen is back to collecting answers the next monthly upload quietly overrules.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+const LOCK_MIGRATION = join(ROOT, "supabase/migrations/20261009234500_sos_map_guard_lock_and_impact.sql");
+const DECIDE_ROUTE = join(ROOT, "app/api/sales/mapping-guard/decide/route.ts");
+const REVIEW_SCREEN = join(ROOT, "src/components/sales/mapping-guard-review.tsx");
+const DETAIL_LOADER = join(ROOT, "src/lib/sales/mapping-guard-detail.ts");
+const HOLD_SHAPE = join(ROOT, "src/lib/sales/mapping-guard-hold-shape.ts");
+const GUARD_LIB = join(ROOT, "src/lib/sales/mapping-guard.ts");
+
+function theLockStampsAConfidenceAnUploadCannotOverrule() {
+  const sql = stripSqlComments(readFileSync(LOCK_MIGRATION, "utf8"));
+
+  // Dropped, not replaced. `create or replace` with a fourth parameter creates a SECOND function,
+  // and the 3-argument call already deployed then fails as "function is not unique" — on the one
+  // screen whose whole job is taking his decision.
+  assert.match(
+    sql,
+    /drop function if exists public\.sos_map_guard_decide_and_move_sales\(bigint, text, text\);/,
+    "the 3-argument wrapper must be dropped, or the overload makes every decision fail as 'not unique'",
+  );
+  assert.match(
+    sql,
+    /p_lock\s+boolean default false/,
+    "p_lock must default to false, so the 3-argument call in the deployed code keeps resolving until the deploy catches up",
+  );
+  assert.match(sql, /confidence = 100/, "the lock must stamp confidence 100 — the only value the monthly self-heal skips");
+  assert.match(
+    sql,
+    /'owner-ruling-' \|\| to_char\(now\(\) at time zone 'Africa\/Cairo', 'YYYY-MM-DD'\)/,
+    "the locked source must name him and the Cairo date, the way every ruling before it was stamped by hand",
+  );
+  assert.match(
+    sql,
+    /if p_lock and v_hold\.table_name = 'source_of_sales_customer_map' then/,
+    "only a customer mapping carries a source and a confidence, so only it may be locked",
+  );
+  // The lock changes neither brick nor area, so sos_map_guard_customer returns early and logs
+  // nothing. Without this insert, the one write that makes an answer permanent would be the only
+  // mapping write in the system with no record of itself.
+  assert.match(
+    sql,
+    /insert into public\.sos_map_change_log[\s\S]{0,400}you locked this mapping/,
+    "a lock must write its own change-log row: the guard's own trigger cannot see it",
+  );
+  assert.match(
+    sql,
+    /select \* into v_hold from public\.sos_map_change_holds where id = p_hold_id;[\s\S]{0,400}v_result := public\.sos_map_guard_decide\(/,
+    "the hold must be read BEFORE it is decided, or the row to lock can no longer be found",
+  );
+  assert.match(
+    sql,
+    /'locked', v_locked/,
+    "the answer must say whether it locked, so the screen can tell him when nothing was made final",
+  );
+}
+
+function theImpactReadsTheLinesItIsGivenAndTheRightValidationState() {
+  const sql = stripSqlComments(readFileSync(LOCK_MIGRATION, "utf8"));
+
+  assert.match(sql, /r\.official_line = any\(p_lines\)/, "the tracked lines must arrive as a parameter");
+  // ATTRIBUTION_SPLIT_LINES is the one definition of which lines carry money. A copy in SQL is a
+  // second definition that nothing keeps in step — and Head Office, which has no price at all,
+  // would be one edit away from being added to it.
+  assert.doesNotMatch(
+    sql,
+    /'(CNS|Pedia|Anti Infective|Head Office)'/,
+    "no line may be named in this SQL: ATTRIBUTION_SPLIT_LINES is the only definition of which lines carry money",
+  );
+  assert.match(
+    sql,
+    /r\.validation_state = 'valid'/,
+    "'validated' matches nothing and reads as a customer with no sales — the difference between 'nothing rides on this' and tens of thousands of pounds",
+  );
+  assert.match(
+    sql,
+    /group by h\.id, r\.invoice_period, r\.client_name, r\.client_address, r\.brick_id, b\.brick_name,\s+r\.area_name, r\.region_name/,
+    "the filed facts must group by the filed VALUES, so two different addresses under one code stay two rows",
+  );
+  // 🔴 EVERY new or RECREATED security-definer function here must do BOTH halves. Revoking only
+  // `anon, authenticated` is a no-op, because both inherit EXECUTE through PUBLIC — the recreated
+  // decide function was executable by anon on production for the minutes between the apply and this
+  // fix. And revoking PUBLIC on a default ACL strips service_role with it, which is the only role
+  // the application ever calls as, so the re-grant is not optional either.
+  for (const signature of [
+    "public.sos_map_guard_decide_and_move_sales(bigint, text, text, boolean)",
+    "public.sos_map_hold_sales_impact(bigint[], text[])",
+    "public.sos_map_hold_distributor_facts(bigint[])",
+  ]) {
+    const escaped = signature.replace(/[.()[\]]/g, (char) => `\\${char}`);
+    assert.match(
+      sql,
+      new RegExp(`revoke execute on function ${escaped}\\s*\\n?\\s*from public, anon, authenticated;`),
+      `${signature} must revoke EXECUTE from PUBLIC itself, not just from anon and authenticated`,
+    );
+    assert.match(
+      sql,
+      new RegExp(`grant execute on function ${escaped}\\s*\\n?\\s*to service_role;`),
+      `${signature} must re-grant service_role, which the PUBLIC revoke strips`,
+    );
+  }
+  assert.doesNotMatch(
+    sql,
+    /revoke all on function/,
+    "`revoke all` passes the migration check but hides which privilege was meant; name EXECUTE",
+  );
+  const loader = stripComments(readFileSync(DETAIL_LOADER, "utf8"));
+  assert.match(
+    loader,
+    /p_lines: \[\.\.\.TRACKED_IMPACT_LINES\]/,
+    "the loader must pass the tracked lines, or the function returns nothing and every hold reads as worth zero",
+  );
+  assert.match(loader, /ATTRIBUTION_SPLIT_LINES/, "and take them from the one definition, never a list of its own");
+}
+
+function aClosedMonthIsCountedAsRestated() {
+  const impacts = summarizeHoldSales(
+    [
+      { holdId: 1, period: "2026-10", rowCount: 2, trackedValue: 100 },
+      { holdId: 1, period: "2026-09", rowCount: 3, trackedValue: 51_754.72 },
+      { holdId: 1, period: "2026-08", rowCount: 1, trackedValue: 10 },
+      { holdId: 2, period: "2026-10", rowCount: 1, trackedValue: 7 },
+    ],
+    "2026-10",
+  );
+
+  const first = impacts.get(1);
+  assert.ok(first, "hold 1 must have an impact");
+  assert.equal(first.trackedValue, 51_864.72);
+  assert.equal(first.rowCount, 6);
+  assert.deepEqual(
+    first.months.map((month) => month.period),
+    ["2026-10", "2026-09", "2026-08"],
+    "newest month first, so the row reads the way the sheet he downloads does",
+  );
+  // THE WHOLE POINT. The current month is still open; everything before it is a month a manager has
+  // already downloaded, and releasing the hold re-points those rows to another area.
+  assert.equal(first.restatedValue, 51_764.72);
+  assert.deepEqual(first.restatedMonths.map((month) => month.period), ["2026-09", "2026-08"]);
+  assert.equal(impacts.get(2)?.restatedValue, 0, "a customer that only sold this month restates nothing");
+}
+
+function aThirdAnswerIsNeverReadAsAgreement() {
+  assert.equal(verdictForSuggestion("B209-1", "B209B-1", "B209-1"), "agrees-with-change");
+  assert.equal(
+    verdictForSuggestion("b209b-1", "B209B-1", "B209-1"),
+    "agrees-with-mapping",
+    "the comparison must ignore case: the map holds upper-case brick ids and a suggestion need not",
+  );
+  // Neither side of the hold. Allow and Keep as is are both wrong here — the most useful thing this
+  // column can say, and the easiest to lose by folding it into "does not agree".
+  assert.equal(verdictForSuggestion("B13-16", "B209B-1", "B209-1"), "third-answer");
+  assert.equal(verdictForSuggestion("", "B209B-1", "B209-1"), "none");
+}
+
+function twoAddressesUnderOneCodeStayTwoRows() {
+  const fact = (period: string, address: string, rows: number): HoldDistributorFact => ({
+    filedAddress: address,
+    filedArea: null,
+    filedBrickId: null,
+    filedBrickName: null,
+    filedName: null,
+    filedRegion: null,
+    lastFiled: null,
+    period,
+    rowsFiled: rows,
+  });
+
+  const picked = pickDistributorFacts([
+    fact("2026-07", "El Amria, Alexandria", 4),
+    fact("2026-08", "El Amria, Alexandria", 2),
+    fact("2026-09", "Tanta, Gharbia", 1),
+  ]);
+
+  assert.equal(picked.length, 2, "the same address filed twice is one fact; a different one is its own row");
+  assert.equal(picked[0].filedAddress, "Tanta, Gharbia", "newest month first");
+  assert.equal(picked[1].rowsFiled, 6, "the repeated address keeps the line count of every month it was filed in");
+}
+
+function theMoneyAndTheMonthsAreSpelledOut() {
+  assert.equal(formatEgp(34_029.316), "34,029.32 EGP");
+  assert.equal(formatEgp(Number.NaN), "0.00 EGP", "a missing figure must read as zero, never as NaN on his screen");
+  assert.equal(describeMonth("2026-09"), "September 2026");
+  assert.equal(describeMonth("not a period"), "not a period");
+  // Standing rules: text wraps, it is never cut with an ellipsis — and a month name asked of the
+  // reader's own ICU build renders "Sep" on one browser and "Sept" on another, which React throws
+  // the whole server HTML away over (hydration #418).
+  const screen = readFileSync(REVIEW_SCREEN, "utf8");
+  assert.doesNotMatch(screen, /…/, "nothing on this screen may be shortened with an ellipsis");
+  assert.doesNotMatch(
+    screen,
+    /toLocaleDateString|Intl\.DateTimeFormat/,
+    "the client must not format a month or a date itself",
+  );
+  assert.doesNotMatch(stripComments(screen), /rounded/, "square edges: the screen must not pick up a radius");
+}
+
+function oneClickCannotCarryMoreThanTheRouteWillRecord() {
+  const route = stripComments(readFileSync(DECIDE_ROUTE, "utf8"));
+
+  assert.match(route, /MAX_HOLDS_PER_REQUEST = 60/, "the bulk ceiling must be explicit");
+  assert.match(route, /holdIds\.length > MAX_HOLDS_PER_REQUEST/, "and enforced, not merely documented");
+  assert.match(
+    route,
+    /Array\.isArray\(body\.holdIds\) \? body\.holdIds : \[body\.holdId\]/,
+    "the single-hold body must keep working: a page already open when this deploys still sends holdId",
+  );
+  assert.match(route, /new Set\(requested\.map/, "the same hold sent twice must be decided once");
+  assert.match(route, /lock = body\.lock === true/, "the lock must be explicit, never inferred");
+  assert.match(route, /decideMappingHolds\(\{ actor: actorOf\(access\), decision, holdIds, lock \}\)/);
+  assert.match(route, /failed: outcomes/, "the answers that did not land must be named back to him");
+  assert.match(route, /access\.role !== "Super Admin"/, "the server is the boundary: the page narrowing to him is UX");
+
+  // Each hold stands alone on purpose. One transaction would let a single P0001 — the target brick
+  // switched off — roll back every answer taken before it in the same click.
+  const lib = stripComments(readFileSync(GUARD_LIB, "utf8"));
+  assert.match(
+    lib,
+    /for \(const holdId of input\.holdIds\) \{[\s\S]{0,200}try \{/,
+    "the holds must be decided one by one, each failure recorded against its own hold",
+  );
+  assert.match(lib, /p_lock: input\.lock === true/, "the lock must reach the database function");
+}
+
+function theScreenCannotPullTheServerLoaderIntoTheBrowser() {
+  const screen = stripComments(readFileSync(REVIEW_SCREEN, "utf8"));
+
+  assert.match(
+    screen,
+    /from "@\/lib\/sales\/mapping-guard-hold-shape"/,
+    "the client must take its types and its formatters from the shape module",
+  );
+  // mapping-guard-detail.ts reaches the Supabase admin client and the normalizer, which reach
+  // node:crypto. Webpack refuses a Node builtin in a client bundle and the dev server then 500s
+  // EVERY request — the same split src/lib/sales/weekly/product-units-shape.ts exists for.
+  assert.doesNotMatch(
+    screen,
+    /mapping-guard-detail/,
+    "the client component must never import the loader, not even for one formatter",
+  );
+  const shape = stripComments(readFileSync(HOLD_SHAPE, "utf8"));
+  assert.doesNotMatch(
+    shape,
+    /@\/lib\/supabase|getSupabaseAdmin|from "node:/,
+    "the shape module must stay client-safe",
+  );
+  // The loader must keep failing softly: a hold has to stay decidable when the suggestion pipeline,
+  // the money or the filed addresses cannot be read — and before this migration is applied at all.
+  const detail = stripComments(readFileSync(DETAIL_LOADER, "utf8"));
+  // Each reading catches its OWN failure, by name, so one unreadable panel costs that panel and not
+  // the decision. Counted by the logged event, because the shape of the catch has already changed
+  // once: a `.catch()` hung on the query builder does not compile at all — Supabase's `.then()`
+  // returns a PromiseLike, which has no `.catch` (TS2339, red on this PR's first run), and
+  // `.then(ok, onError)` cannot see the error the `ok` handler throws for `result.error`.
+  for (const event of [
+    "mapping_guard_detail_map_failed",
+    "mapping_guard_detail_impact_failed",
+    "mapping_guard_detail_filed_failed",
+    "mapping_guard_detail_distributors_failed",
+    "mapping_guard_detail_suggest_failed",
+  ]) {
+    assert.match(detail, new RegExp(`event: "${event}"`), `${event} must be logged where it happens`);
+  }
+  assert.ok(
+    (detail.match(/\} catch \(error\) \{/g) ?? []).length >= 4,
+    "each reading must catch its own failure rather than taking the whole screen down with it",
+  );
+  assert.doesNotMatch(
+    detail,
+    /\)\s*\n?\s*\.catch\(/,
+    "a .catch on a Supabase query builder does not compile: its then() returns a PromiseLike",
+  );
+  assert.match(
+    detail,
+    /suggestCustomerBricks\(unknowns, \{ ai: false \}\)/,
+    "opening this screen must never spend money on the AI or hang waiting on a provider",
+  );
+}
+
+function theLockIsOnByDefaultAndSaysWhatItDoes() {
+  const screen = readFileSync(REVIEW_SCREEN, "utf8");
+  const stripped = stripComments(screen);
+
+  assert.match(stripped, /useState\(true\)/, "the lock must start ON: an unlocked answer does not survive the next upload");
+  assert.match(
+    screen,
+    /Lock my answer so no upload can change it again/,
+    "the checkbox must say what it does in his own words, not 'lock'",
+  );
+  assert.match(stripped, /checked=\{lock\}/);
+  assert.match(
+    stripped,
+    /body: JSON\.stringify\(\{ decision, holdIds, lock \}\)/,
+    "the lock must be sent with every decision, single or multiple",
+  );
+  assert.match(
+    screen,
+    /Nothing was locked, so an upload may propose the same move again/,
+    "turning the lock off must be reported back, never silent",
+  );
+  // Both paths, the same two answers: the whole selection in one click, and any single row on its own.
+  assert.match(stripped, /decide\(selectedIds, decision\)/, "the selection must be decidable in one click");
+  assert.match(stripped, /decide\(\[hold\.id\], decision\)/, "a single row must still be decidable on its own");
+  // One answer used to be one pharmacy, so the moved-sales notice read `brickMoves[0]`. A selection
+  // can move several, and the file rebuild must fire if ANY of them left open-month files behind —
+  // the alternative is a rebuild that silently skipped pharmacies the screen said it had moved.
+  assert.doesNotMatch(stripped, /brickMoves\?\.\[0\]/, "never only the first move of a selection");
+  assert.match(
+    stripped,
+    /if \(moves\.some\(\(\{ move \}\) => move\.pendingFiles > 0\)\) void rebuildMovedFiles\(\);/,
+    "every moved pharmacy's files must be rebuilt, not the first one's",
+  );
+}
+
 export async function runSosMappingGuardTests() {
   theReviewScreenIsGatedOnTheServer();
   theScreenHasNoRoundedCorners();
@@ -337,4 +690,13 @@ export async function runSosMappingGuardTests() {
   theMigrationKeepsItsLoadBearingClauses();
   theBypassIsNotSomethingAWriterCanAssertAboutItself();
   aReleasedRulingCarriesItsConfidenceAndAuthor();
+  theLockStampsAConfidenceAnUploadCannotOverrule();
+  theImpactReadsTheLinesItIsGivenAndTheRightValidationState();
+  aClosedMonthIsCountedAsRestated();
+  aThirdAnswerIsNeverReadAsAgreement();
+  twoAddressesUnderOneCodeStayTwoRows();
+  theMoneyAndTheMonthsAreSpelledOut();
+  oneClickCannotCarryMoreThanTheRouteWillRecord();
+  theScreenCannotPullTheServerLoaderIntoTheBrowser();
+  theLockIsOnByDefaultAndSaysWhatItDoes();
 }
