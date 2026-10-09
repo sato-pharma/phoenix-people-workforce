@@ -719,6 +719,8 @@ type LeaveBalancePreviewApi = {
   chargeDays: number;
   salaryDays: number;
   refusal: string | null;
+  alreadyCleared: boolean;
+  uncollectedDays: number;
   withinFirstSixMonths: boolean;
 };
 
@@ -839,8 +841,20 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
                   and <span className="font-black">{daysText(preview.salaryDays)}</span> stay on salary
                 </>
               ) : null}
+              {preview.uncollectedDays > 0 ? (
+                <>
+                  {" "}
+                  and <span className="font-black">{daysText(preview.uncollectedDays)}</span> stay cleared, reaching no salary
+                </>
+              ) : null}
               .
             </p>
+            {preview.alreadyCleared ? (
+              <p className="text-phx-xs font-semibold text-amber-800">
+                This row is already cleared, so nothing is on salary — the charge only takes the day off the leave balance,
+                and the row stays cleared. Return to salary puts it back to Pending.
+              </p>
+            ) : null}
             {preview.withinFirstSixMonths ? (
               <p className="text-phx-xs font-semibold text-amber-800">
                 Still inside the first six months, so this spends days already accrued but not yet available to request.

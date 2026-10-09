@@ -363,4 +363,70 @@ export function runDeductionsLeaveBalanceTests() {
       /Still inside the first six months, so this spends days already accrued but not yet available to request/,
     );
   }
+
+  // 6. AN ALREADY-CLEARED ROW CAN BE CHARGED (owner, 2026-10-09, after he pressed the button and read
+  // "This deduction is already cleared"). 9 of the 16 live September rows are "Do Not Take Action", so
+  // the refusal was the second thing standing between the button and the tab he asked for it on.
+  //
+  // 🔴 The load-bearing half is what a PART-covered cleared row does. Clearing the row stopped the
+  // salary deduction; a charge must not quietly start one again for the days leave could not pay.
+  {
+    const clearedPart = decisionAfterLeaveBalanceCharge({
+      alreadyCleared: true,
+      chargeDays: 1.25,
+      salaryDays: 1.75,
+      dueDays: 3,
+      comment: "Taking what the balance has",
+    });
+    assert.equal(clearedPart.status, "Do Not Take Action", "a cleared row stays cleared after a part charge");
+    assert.equal(clearedPart.appliedValue, null, "the days leave could not pay must NOT be put on salary — the row was waived");
+    assert.match(clearedPart.reason, /stay cleared and reach no salary/);
+    assert.ok(isLeaveBalanceReason(clearedPart.reason), "a return must still recognise its own reason");
+
+    // The same split on a row that was NOT cleared is unchanged: the remainder goes to payroll.
+    const livePart = decisionAfterLeaveBalanceCharge({ chargeDays: 1.25, salaryDays: 1.75, dueDays: 3, comment: "x" });
+    assert.equal(livePart.status, "Approved for Payroll");
+    assert.equal(livePart.appliedValue, 1.75);
+    assert.equal(
+      decisionAfterLeaveBalanceCharge({ alreadyCleared: false, chargeDays: 1.25, salaryDays: 1.75, dueDays: 3, comment: "x" }).appliedValue,
+      1.75,
+      "an explicit false must behave exactly like an absent flag",
+    );
+
+    // Full coverage is the same either way — nothing was on salary to begin with.
+    const clearedFull = decisionAfterLeaveBalanceCharge({ alreadyCleared: true, chargeDays: 1, salaryDays: 0, dueDays: 1, comment: "y" });
+    assert.equal(clearedFull.status, "Do Not Take Action");
+    assert.equal(clearedFull.appliedValue, null);
+
+    const charge = read("src/lib/deductions/leave-balance.ts");
+    assert.ok(
+      !/already cleared — there is nothing to take from the leave balance/.test(charge),
+      "neither the dialog nor the charge may refuse a cleared row any more",
+    );
+    assert.match(charge, /const alreadyCleared = candidate\.decisionStatus === "Do Not Take Action";/);
+    assert.match(
+      charge,
+      /decisionAfterLeaveBalanceCharge\(\{ \.\.\.plan, alreadyCleared, dueDays, comment \}\)/,
+      "the charge must pass the flag, or a part-covered cleared row goes back onto salary",
+    );
+    assert.match(
+      charge,
+      /salaryDays: alreadyCleared \? 0 : plan\.salaryDays,/,
+      "the dialog must not promise salary days on a row that has none",
+    );
+    assert.match(charge, /return \{ chargedDays: plan\.chargeDays, salaryDays: after\.appliedValue \?\? 0,/);
+
+    // The dialog and the save must agree about a released line — the preview used to offer a charge
+    // the save then refused, which is the one failure mode this button is designed against.
+    assert.match(
+      charge,
+      /const pushed = await loadActivePushedLineIdByCandidate\(candidate\.monthKey\);[\s\S]{0,600}already released to the employee — withdraw it first, then take it from the leave balance/,
+      "the preview must run the same released-line check the charge runs",
+    );
+
+    assert.match(
+      read("src/components/admin/deductions-workspace.tsx"),
+      /This row is already cleared, so nothing is on salary[\s\S]{0,160}Return to salary puts it back to Pending/,
+    );
+  }
 }
