@@ -54,6 +54,7 @@ import type { FraudScanCase } from "@/lib/phoenix-crm/fraud-scan-rules";
 import {
   INTEGRITY_NOTE_LIMIT,
   INTEGRITY_NOTE_REQUIRED,
+  isSettledIntegrityRow,
   readIntegritySettlement,
   type IntegritySettlement,
 } from "@/lib/phoenix-crm/integrity-settlement";
@@ -686,7 +687,10 @@ export async function loadIntegrityCasesForWindow(options: {
   // done HERE rather than in the query because the test is `settled_flags = flags`, a column against
   // a column, which PostgREST cannot ask — and asking only for `settled_at is null` would wrongly
   // drop a settled case the detectors have since flagged again.
-  const rows = ((data ?? []) as Row[]).filter((row) => settlementOf(row, new Map()) === null);
+  //
+  // `isSettledIntegrityRow` and not `settlementOf(row, new Map())`: this reader needs only the
+  // yes/no, and that empty Map existed purely to satisfy a name lookup whose answer nobody read.
+  const rows = ((data ?? []) as Row[]).filter((row) => !isSettledIntegrityRow(row));
   if (rows.length === 0) return [];
 
   const people = await loadPeopleNames([...new Set(rows.map((row) => String(row.rep_hr_id ?? "")).filter(Boolean))]);

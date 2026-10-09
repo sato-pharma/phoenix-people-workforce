@@ -123,11 +123,25 @@ retro-rewrites a window that has already closed. `tests/rep-ranks.test.ts` pins 
 rule, and the fact that the READ asks for the columns the rule needs, which the pure function cannot
 prove and the compiler cannot see in a PostgREST select string.
 
-The third reader is **`readStrongCaseReps` in `src/lib/phoenix-crm/server/behaviour.ts`**, where a
-strong case is the company a save-time pattern needs before the board may print it. It was raised in
-the same review and he has not ruled on it, so it still counts a settled case. That is a decision
-about what evidence a pattern needs, not an oversight to be tidied — do not change it without his
-word.
+**And the behaviour board's strong-case gate, the same evening.** The second reader raised in that
+review was `readStrongCaseReps` in `src/lib/phoenix-crm/server/behaviour.ts`, where a strong location
+case is the **company** a save-time pattern needs before the board may print a suspicion about it: one
+rep's odd saves alone say nothing, so the gate asks whether anybody else in the same month carries a
+strong case. He ruled on it in his own words: *"make settling drop the behaviour board's strong-case
+gate too"*. It now selects the four `settled_*` columns alongside `flags` and drops a settled row
+through the shared test, so a case he has closed can no longer be the corroboration that unlocks a new
+suspicion about the same person — which is precisely what settling decided against.
+
+That takes the readers of this table to **four, each going through one of the two shared functions**:
+the board itself needs the settlement to print it (`readIntegritySettlement`), and the weekly fraud
+scan, Phoenix Ranks' nightly score and this gate need only the yes/no (`isSettledIntegrityRow`, which
+takes the database's own snake_case column names so none of them has to restate the rule).
+
+🔴 **A FIFTH READER THAT WRITES ITS OWN `settled_flags = flags` TEST IS THE DEFECT.** A length check in
+place of a set comparison already held one case closed through a genuinely different finding before any
+of this shipped, and `tests/phoenix-crm-integrity-settle.test.ts` §5 refuses a reader that compares
+`settled_flags` itself — asserted against the source of both server files, with comments stripped by
+the shared lexer, because their own prose names the column.
 
 ## 2 · `capture_trust` — the signboard defect, unsprung
 
@@ -192,4 +206,5 @@ because a test importing the server module would pull in `getSupabaseAdmin` — 
 | The routes | `app/api/admin/phoenix-crm/integrity/{settle,reopen}/route.ts` |
 | The page | `app/(admin)/admin/phoenix-crm/integrity/page.tsx` |
 | The migration | `supabase/migrations/20261009190708_phoenix_crm_integrity_settlement.sql` |
+| The three readers that need only the yes/no | `server/integrity-board.ts` (the weekly scan), `src/lib/rep-ranks/server/compute.ts`, `server/behaviour.ts` |
 | Pinned by | `tests/phoenix-crm-integrity-settle.test.ts` |

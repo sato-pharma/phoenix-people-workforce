@@ -34,6 +34,8 @@ import {
   type BehaviourInput,
   type BehaviourVisit,
 } from "@/lib/phoenix-crm/behaviour-integrity";
+// The settled-case test, pure, and the same one the board, the fraud scan and Phoenix Ranks apply.
+import { isSettledIntegrityRow } from "@/lib/phoenix-crm/integrity-settlement";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadClosingBrickSales, upperCode } from "@/lib/sales/closing-brick-sales";
@@ -201,13 +203,30 @@ async function readSeatRows(
  *
  * A failed read answers with an EMPTY set, deliberately: that holds the weak flags back instead of
  * printing them alone, and a missed catch is the right side of this rule to fail on.
+ *
+ * 🔴 A CASE THE SUPER ADMIN HAS SETTLED IS NOT COMPANY (owner, 2026-10-09: "make settling drop the
+ * behaviour board's strong-case gate too" — the third and last reader of this table to honour a
+ * settlement, after the weekly fraud scan and Phoenix Ranks). The gate exists so a save-time pattern
+ * is never printed about a rep on its own; a settled case is one the Super Admin has already looked
+ * at and closed, so letting it unlock a pattern would be the board using a closed case as grounds to
+ * raise a new suspicion about the same person.
+ *
+ * 🔴 AND IT COMES BACK BY ITSELF, because the test is `settled_flags = flags` and nothing else: the
+ * detectors upsert on (subject_kind, subject_id, source), so a fresh finding replaces `flags` in
+ * place, the stored settlement stops describing the row, and the rep is company again on the next
+ * nightly pass. Dropping settled rows can only SHRINK the set, which is the same direction a failed
+ * read fails in — patterns held back, never printed on evidence that is not there.
+ *
+ * The four `settled_*` columns are selected because the test is a column against a column, which
+ * PostgREST cannot ask for; `settled_at is null` would wrongly keep dropping a case the detectors
+ * have since flagged again.
  */
 async function readStrongCaseReps(client: Pick<SupabaseClient, "from">, bounds: { from: string; to: string }): Promise<Set<string>> {
   const read = await readEveryPage<Row>(
     () =>
       client
         .from("phoenix_crm_location_integrity")
-        .select("id, rep_hr_id")
+        .select("id, rep_hr_id, flags, settled_at, settled_by, settled_note, settled_flags")
         .eq("is_test", false)
         .eq("strong", true)
         .in("source", ["gps", "photo"])
@@ -220,7 +239,12 @@ async function readStrongCaseReps(client: Pick<SupabaseClient, "from">, bounds: 
     console.error("[phoenix-crm] strong cases not read; save-time patterns stay held back", { month: bounds.from.slice(0, 7) });
     return new Set<string>();
   }
-  return new Set(read.rows.map((row) => String(row.rep_hr_id ?? "").toUpperCase()).filter(Boolean));
+  return new Set(
+    read.rows
+      .filter((row) => !isSettledIntegrityRow(row))
+      .map((row) => String(row.rep_hr_id ?? "").toUpperCase())
+      .filter(Boolean),
+  );
 }
 
 async function recomputeMonth(month: string, landed: ReadonlySet<string>): Promise<{ reps: number; notChecked: number; flagged: number }> {
