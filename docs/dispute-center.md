@@ -118,6 +118,15 @@ And one on the same path that is not about a figure: a `recordDecision` that fai
 was withdrawn now puts the line back and names the state it leaves behind, instead of reporting a
 plain failure while payroll charges a figure the portal no longer shows.
 
+**The weekly-review side had the same first defect, and it bit harder there.** `digest-money.ts` read
+`chargedBefore = line?.appliedAmount ?? 0` for the month-end fingerprint deduction behind a disputed
+day. On that path "approved, not yet pushed" is the *ordinary* state of a day for days at a time —
+the bridge approves the candidate when the month closes and the push is a separate act — so a day
+upheld inside that window gave back **0.00** while payroll charged it in full. The rule now lives
+once, in `src/lib/dispute-center/charge.ts`, and both paths ask it: two copies of "what does this day
+cost" are two answers to one person's money. `activeLineFor` deliberately no longer returns an amount
+at all — the line says whether the employee can SEE the deduction, nothing more.
+
 ### The refund had to survive the Additions confirm
 
 `confirmStep` persists every visible row, so the first Additions confirm wrote
@@ -181,7 +190,7 @@ holding `attendance:read` opens the page and sees nothing of a rep's pay-affecti
 | `tests/dispute-center-state.test.ts` | a stored state, a case that expires, an employee reopening their own case |
 | `tests/dispute-center-participants.test.ts` | a case readable on `attendance:read` alone; a decide or reopen that does not assert the participant inside the domain helper |
 | `tests/dispute-center-assist-accuracy.test.ts` | a statement with no citation, or with a figure the cited records do not hold; a stale briefing read as current |
-| `tests/dispute-center-digest-revision.test.ts` | a reader of a settled day that answers from the first decision for ever |
+| `tests/dispute-center-digest-revision.test.ts` | a reader of a settled day that answers from the first decision for ever; the day's cost read off the payslip line instead of the decision, a candidate read missing the columns that rule needs, and a line helper carrying a money figure again |
 | `tests/dispute-center-refunds.test.ts` | a refund paid twice, a cancelled refund paid, a published month rewritten, a storage key carrying a file name — and every one of the six money faults above: a charge read off the payslip line, a reduce measured against the detected figure, a reject that records nothing, a second decision with no reopen, a refund recommended over one already paid, a frozen 0.00 in Other Additions |
 
 ## The migration

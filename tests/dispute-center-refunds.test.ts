@@ -14,7 +14,7 @@ import {
   disputeCenterAttachmentUrl,
   DISPUTE_ATTACHMENT_MAX_FILES,
 } from "../src/lib/dispute-center/attachment-rules.ts";
-import { payrollCharge } from "../src/lib/dispute-center/deduction.ts";
+import { payrollCharge } from "../src/lib/dispute-center/charge.ts";
 
 /**
  * MONEY BACK AFTER A DISPUTE IS WON LATE.

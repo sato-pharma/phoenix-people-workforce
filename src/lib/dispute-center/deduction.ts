@@ -1,21 +1,17 @@
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
-import {
-  candidateAmount,
-  chargedDeductionDays,
-  isConfirmedForPayroll,
-} from "@/lib/automated-payroll/deductions-source.ts";
 import { compactDeductionsHrId, normalizeMonthKey } from "@/lib/deductions/candidate-key.ts";
 import { attachCommentAttachments } from "@/lib/deductions/comment-attachments.ts";
 import { isDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
 import { pushDeduction, withdrawDeduction } from "@/lib/deductions/push.ts";
 import { recordDecision } from "@/lib/deductions/service.ts";
-import type { DeductionsCandidateWithDecision, DeductionsComment } from "@/lib/deductions/types.ts";
+import type { DeductionsComment } from "@/lib/deductions/types.ts";
 import { conflictError, notFoundError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { roundCurrency } from "@/lib/payroll/money";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { payrollCharge } from "./charge.ts";
 import { loadDayFacts, loadEmployeeProfileFacts } from "./day-evidence.ts";
 import { compareCasesForReviewer, deriveDisputeCaseState, isDecidedByEvents, lastActivityAt } from "./state.ts";
 import { listCaseEvents, nameFor, recordCaseEvent, resolvePeopleNames } from "./events.ts";
@@ -107,54 +103,6 @@ const LINE_COLUMNS = "id, candidate_id, employee_hr_id, employee_name, month_key
 function num(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-/**
- * WHAT PAYROLL CHARGES FOR THIS DEDUCTION RIGHT NOW — the amount, and the figure in the candidate's
- * own unit behind it.
- *
- * 🔴 THE DECISION IS THE CHARGE, NEVER THE PUBLICATION LINE (owner, 2026-10-07 — see
- * `buildDeductionBuckets` in automated-payroll/deductions-source.ts: "a candidate counts iff its
- * decision is 'Approved for Payroll' … Whether the line was pushed is not read here at all").
- *
- * This path read the LINE's `applied_amount` instead, which is what the employee's portal shows and
- * not what the sheet pays, and every money sentence in this file hung off it:
- *   - a deduction approved but never pushed has no active line, so the dispute read 0.00 as "charged
- *     before" and a won dispute refunded NOTHING while payroll charged the month in full;
- *   - a line an earlier decision withdrew read 0.00 the same way, so a REDUCE then looked like money
- *     going back and recommended a refund of the whole deduction on top of the one already live;
- *   - "Reduce" measured its ceiling against the line (or, with no line, against the DETECTED days),
- *     so a deduction already cut to 1 day in the workspace could be "reduced" to 3 of 4 detected days.
- *
- * Payroll's own two functions answer it, so one employee's money never has a second opinion here.
- * The object is narrowed to the fields those two read: a full candidate row is not available on this
- * screen and inventing the rest would be the second copy this exists to avoid.
- *
- * Exported for tests/dispute-center-refunds.test.ts — every money sentence on this screen is
- * measured from it, so it is pinned directly rather than through a database.
- */
-export function payrollCharge(candidate: CandidateRow, decision: DecisionRow | null): { amount: number; value: number } {
-  const unit = candidate.unit === "amount" ? "amount" : "days";
-  const forPayroll = {
-    category: candidate.category,
-    dates: Array.isArray(candidate.dates) ? (candidate.dates as unknown[]).map(String) : [],
-    decision: decision
-      ? {
-          appliedAmount: decision.applied_amount == null ? null : num(decision.applied_amount),
-          appliedDates: Array.isArray(decision.applied_dates) ? (decision.applied_dates as unknown[]).map(String) : null,
-          appliedValue: decision.applied_value == null ? null : num(decision.applied_value),
-          decisionStatus: decision.decision_status,
-        }
-      : null,
-    estimatedAmount: candidate.estimated_amount == null ? null : num(candidate.estimated_amount),
-    rawValue: num(candidate.raw_value),
-    unit,
-  } as unknown as DeductionsCandidateWithDecision;
-  if (!isConfirmedForPayroll(forPayroll)) return { amount: 0, value: 0 };
-  const amount = roundCurrency(candidateAmount(forPayroll));
-  // For an `amount` candidate the value IS the money (resolveDecisionCharge passes it through
-  // untouched); for a `days` one it is the days that money was scaled from.
-  return { amount, value: unit === "amount" ? amount : chargedDeductionDays(forPayroll) };
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
