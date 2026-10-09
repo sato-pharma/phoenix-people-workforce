@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
-import { buildFullSheetWorkbook, buildPart1SheetWorkbook } from "../src/lib/automated-payroll/exports/sheet.ts";
+import {
+  buildFullSheetWorkbook,
+  buildPart1SheetWorkbook,
+  sheetStateLabel,
+} from "../src/lib/automated-payroll/exports/sheet.ts";
 import type { AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
 import type { MonthlySalaryRun } from "../src/lib/automated-payroll/types.ts";
 import { HOUSE_XLSX_COLORS } from "../src/lib/export/house-xlsx-palette.ts";
@@ -161,5 +165,65 @@ export async function runPayrollPhoenixLookTests() {
     /Reason:/,
     "the reason must travel with the name — the draft row it was read from is not something a " +
       "reviewer opens, so a cover naming who was held without saying why reproduces the gap on paper",
+  );
+
+  // ── THE COVER'S HEADLINE MUST NOT CLAIM A CONFIRM THE RUN HAS NOT HAD ───────
+  // Owner, 2026-10-09: the September full sheet he opened said "September 2026 · HR-confirmed"
+  // while Part 2 was not confirmed at all, and the cover's own rows said "Part 2 confirmed: No"
+  // three lines below. The headline is what a reader quotes, so it was the one line that had to be
+  // true. `run` here is the live shape of that complaint — nothing confirmed, nothing published.
+  const headerCell = String(cover!.getRow(1).getCell(1).value ?? "") + " | " + joined;
+  assert.ok(
+    !/HR-confirmed/.test(headerCell),
+    "an unconfirmed run's sheet must not say HR-confirmed anywhere on its cover — that is the " +
+      "defect: a pre-confirm preview wearing a confirmed label",
+  );
+  assert.match(
+    headerCell,
+    /PREVIEW/,
+    "it must say PREVIEW instead — withholding the download is not the fix, since reviewing the " +
+      "figures before anyone confirms them is exactly what it is for",
+  );
+  assert.match(joined, /Part 2 confirmed | No/, "and the cover rows must still carry the detail");
+
+  // The four states, in their strict order. Published is later than Part 2, which is later than
+  // Part 1 — a run reads as the furthest state it has actually reached.
+  assert.equal(sheetStateLabel(run), "PREVIEW — nothing confirmed yet");
+  assert.equal(
+    sheetStateLabel({ ...run, part1ConfirmedAt: "2026-07-24T10:00:00Z" }),
+    "PREVIEW — Part 1 confirmed, Part 2 still open",
+  );
+  assert.equal(
+    sheetStateLabel({ ...run, part1ConfirmedAt: "2026-07-24T10:00:00Z", part2ConfirmedAt: "2026-08-02T10:00:00Z" }),
+    "HR-confirmed",
+    "only a Part-2 confirm earns the label the fixed string used to hand out unconditionally",
+  );
+  assert.equal(
+    sheetStateLabel({
+      ...run,
+      part1ConfirmedAt: "2026-07-24T10:00:00Z",
+      part2ConfirmedAt: "2026-08-02T10:00:00Z",
+      publishedAt: "2026-08-03T10:00:00Z",
+    }),
+    "published",
+  );
+
+  // And a confirmed run still says so — the fix must not turn every sheet into a preview.
+  const confirmedCover = (
+    await load(
+      await buildFullSheetWorkbook({
+        run: { ...run, part1ConfirmedAt: "2026-07-24T10:00:00Z", part2ConfirmedAt: "2026-08-02T10:00:00Z" },
+        rows,
+      }),
+    )
+  ).getWorksheet("Cover");
+  const confirmedText: string[] = [];
+  confirmedCover!.eachRow((row) => {
+    row.eachCell((cell) => confirmedText.push(String(cell.value ?? "")));
+  });
+  assert.match(
+    confirmedText.join(" | "),
+    /HR-confirmed/,
+    "a run whose Part 2 IS confirmed must still carry the confirmed label on its cover",
   );
 }
