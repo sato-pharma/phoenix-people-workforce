@@ -39,6 +39,7 @@ import type { RepTodayPlan } from "@/lib/phoenix-crm/server/rep-landing";
 import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export function egp(n: number) {
   return new Intl.NumberFormat("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
@@ -46,7 +47,7 @@ export function egp(n: number) {
 
 export function SectionShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
         <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
@@ -112,7 +113,7 @@ export function MarketingToolRow({
       href={href}
       className="group flex min-h-[48px] items-center gap-3 bg-white px-4 py-3 transition-colors hover:bg-slate-50 active:bg-orange-50 sm:min-h-[56px] sm:gap-4 sm:px-5 sm:py-4"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 transition-colors group-hover:border-orange-300 group-hover:bg-orange-50">
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 transition-colors group-hover:border-orange-300 group-hover:bg-orange-50 ${adminControlDepthClassName}`}>
         <Icon className="h-4 w-4 text-slate-500 transition-colors group-hover:text-orange-600" />
       </div>
       <div className="min-w-0 flex-1">
@@ -425,7 +426,7 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
         <Link
           key={i}
           href={action.href}
-          className="flex min-h-[48px] min-w-fit grow basis-[calc(50%-0.25rem)] items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:grow-0 sm:basis-auto sm:px-4 sm:py-2.5 sm:text-phx-xs"
+          className={`flex min-h-[48px] min-w-fit grow basis-[calc(50%-0.25rem)] items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:grow-0 sm:basis-auto sm:px-4 sm:py-2.5 sm:text-phx-xs ${adminControlDepthClassName}`}
         >
           <action.icon className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
           <span className="text-center leading-tight whitespace-normal sm:whitespace-nowrap">{action.label}</span>
@@ -540,14 +541,14 @@ export type DashboardLink = { href: string; icon: React.ElementType; label: stri
 
 export function DashboardsGrid({ items }: { items: readonly DashboardLink[] }) {
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead title="Dashboards" />
       <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-4 sm:gap-2.5 sm:p-2.5">
         {items.map((d) => (
           <Link
             key={d.href}
             href={d.href}
-            className="group flex flex-col items-center justify-center gap-2 border border-slate-200 bg-white px-2 py-4 text-center transition-colors hover:border-orange-300 hover:bg-orange-50"
+            className={`group flex flex-col items-center justify-center gap-2 border border-slate-200 bg-white px-2 py-4 text-center transition-colors hover:border-orange-300 hover:bg-orange-50 ${adminControlDepthClassName}`}
           >
             <span className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-white transition-colors group-hover:bg-orange-600">
               <d.icon className="h-[18px] w-[18px]" />
@@ -614,7 +615,7 @@ export function RankingPanel({
 }) {
   const ranked = rows.slice().sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead title={title} right={<SectionMeta items={[windowLabel, subtitle]} />} />
       {ranked.length === 0 ? (
         <p className="bg-white px-5 py-6 text-sm text-slate-500">No sales data synced for the current period yet.</p>
@@ -827,7 +828,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : null}
 
-      <div className="overflow-hidden border border-slate-200 bg-white">
+      <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
         <SectionHead title="My Workspace" />
         <KeycardGrid cards={cards} />
       </div>
@@ -892,7 +893,7 @@ function RepTile({
   hint?: string | null;
 }) {
   return (
-    <div className="flex min-w-0 flex-col border border-slate-200 bg-white">
+    <div className={`flex min-w-0 flex-col border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <div aria-hidden="true" className={`h-0.5 w-full ${rail ?? "bg-slate-300"}`} />
       {/* A container, so what fits in the tile is decided by the TILE's width, not the window's. */}
       <div className="@container flex flex-1 flex-col p-3">
@@ -1016,7 +1017,7 @@ function RepCallHalf({
 
 function RepPanel({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="min-w-0 border border-slate-200 bg-white">
+    <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">{title}</h2>
         {right && <div className="ml-auto">{right}</div>}

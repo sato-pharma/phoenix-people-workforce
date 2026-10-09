@@ -42,6 +42,7 @@ import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* ── National performance keycards ─────────────────────────────────── */
 
@@ -89,7 +90,7 @@ function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["ns
   ];
 
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead
         title="National Performance"
         right={
@@ -175,7 +176,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       {/* One note for BOTH boards: departedCount spans the reps and the DSMs together, so
           repeating it under each panel would state the same people twice. */}
       {nsmBoard && nsmBoard.departedCount > 0 ? (
-        <div className="border border-slate-200 bg-white">
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           <DepartedFromBoardNote
             count={nsmBoard.departedCount}
             sales={nsmBoard.departedSales}

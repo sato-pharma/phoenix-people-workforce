@@ -7,6 +7,7 @@ import { CircleDashed } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export const portalPanelClassName =
   "rounded border border-slate-200/90 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.07)]";
@@ -159,7 +160,7 @@ export function PortalSegmentedTabs({
   return (
     <div
       className={cn(
-        "flex w-full flex-wrap gap-1 rounded border border-slate-200 bg-slate-50 p-1",
+        `flex w-full flex-wrap gap-1 rounded border border-slate-200 bg-slate-50 p-1 ${adminSoftDepthClassName}`,
         className,
       )}
     >

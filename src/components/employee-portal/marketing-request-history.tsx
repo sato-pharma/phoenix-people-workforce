@@ -37,6 +37,7 @@ import type {
   MarketingApproverHistoryRow,
   MarketingApproverHistoryWorkspace,
 } from "@/lib/marketing-requests/service";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Outcome presentation ------------------------------------------------------------------------------------------------------------------- */
@@ -115,7 +116,7 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
             </p>
             {/* Never truncated. A rejection reason that is cut off is a rejection nobody can act on. */}
             {row.finalDecisionNote ? (
-              <p className="mt-1.5 rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-phx-sm font-medium leading-snug text-slate-700">
+              <p className={`mt-1.5 rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-phx-sm font-medium leading-snug text-slate-700 ${adminSoftDepthClassName}`}>
                 &ldquo;{row.finalDecisionNote}&rdquo;
               </p>
             ) : (
@@ -304,7 +305,7 @@ function HistoryTableRow({
 
 function HistorySkeleton() {
   return (
-    <div className="animate-pulse space-y-2 rounded-sm border border-slate-200 bg-white p-4">
+    <div className={`animate-pulse space-y-2 rounded-sm border border-slate-200 bg-white p-4 ${adminPanelDepthClassName}`}>
       <div className="h-3 w-40 rounded-sm bg-slate-200" />
       <div className="h-2.5 w-56 rounded-sm bg-slate-100" />
       <div className="h-2.5 w-32 rounded-sm bg-slate-100" />
@@ -659,7 +660,7 @@ export function MarketingRequestHistory() {
               label={`Showing ${safePage * HISTORY_PAGE_SIZE + 1}–${safePage * HISTORY_PAGE_SIZE + pagedRows.length} of ${visibleRows.length}`}
             >
               <button
-                className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                className={`min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
                 disabled={safePage === 0}
                 onClick={() => setPage(Math.max(0, safePage - 1))}
                 type="button"
@@ -667,7 +668,7 @@ export function MarketingRequestHistory() {
                 Previous
               </button>
               <button
-                className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                className={`min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
                 disabled={safePage >= pageCount - 1}
                 onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
                 type="button"

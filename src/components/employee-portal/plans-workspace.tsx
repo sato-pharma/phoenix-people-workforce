@@ -84,6 +84,7 @@ import {
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminChipDepthClassName, adminControlDepthClassName, adminPanelDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type PlansWorkspaceProps = {
   access: AccessContext;
@@ -374,7 +375,7 @@ const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
 // Self-explanatory key for the activity colour accents + AM/PM pills.
 function PlanActivityLegend({ showMarketingDoubleVisit = false }: { showMarketingDoubleVisit?: boolean }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border border-slate-200 bg-white px-3 py-2">
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
       <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Legend</span>
       {LEGEND_ACTIVITIES.map((type) => (
         <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-slate-600" key={type}>
@@ -2057,7 +2058,7 @@ export function PlansWorkspace({
             </button>
           ) : null}
           {untouchedCount > 0 ? (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-bold text-slate-500">
+            <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-bold text-slate-500 ${adminChipDepthClassName}`}>
               {untouchedCount} day{untouchedCount === 1 ? "" : "s"} still empty
             </span>
           ) : null}
@@ -2173,7 +2174,7 @@ export function PlansWorkspace({
             />
             {periodLocked && workspace.canSubmitPlans ? (
               <button
-                className="inline-flex h-10 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 active:bg-slate-50"
+                className={`inline-flex h-10 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 active:bg-slate-50 ${adminChipDepthClassName}`}
                 onClick={() => startNewPlan(activeKind)}
                 type="button"
               >
@@ -2191,7 +2192,7 @@ export function PlansWorkspace({
                 Calendar
               </Link>
               <button
-                className="inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50"
+                className={`inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50 ${adminChipDepthClassName}`}
                 onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=xlsx")}
                 type="button"
               >
@@ -2199,7 +2200,7 @@ export function PlansWorkspace({
                 XLSX
               </button>
               <button
-                className="inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50"
+                className={`inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50 ${adminChipDepthClassName}`}
                 onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=pdf")}
                 type="button"
               >
@@ -2489,14 +2490,14 @@ export function PlansWorkspace({
                 {dayGroups.length} selected day{dayGroups.length === 1 ? "" : "s"}
               </span>
               {activeKind === "monthly" ? (
-                  <span className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600">
+                  <span className={`rounded-sm border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600 ${adminSoftDepthClassName}`}>
                   {workingDayCount} working days default
                 </span>
               ) : null}
             </div>
           </div>
           <div className="flex flex-col gap-3 bg-white px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
-            <div className="inline-flex w-full rounded-sm border border-slate-200 bg-slate-50 p-1 sm:w-auto">
+            <div className={`inline-flex w-full rounded-sm border border-slate-200 bg-slate-50 p-1 sm:w-auto ${adminSoftDepthClassName}`}>
               {(["weekly", "monthly"] as const).map((kind) => (
                 <button
                   className={`min-h-10 flex-1 rounded-sm px-4 text-sm font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none ${
@@ -2747,7 +2748,7 @@ export function PlansWorkspace({
                                       <p className="mt-1 text-sm font-black text-slate-900">Day {groupIndex + 1}</p>
                                     </div>
                                   </time>
-                                  <div className="mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5">
+                                  <div className={`mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5 ${adminSoftDepthClassName}`}>
                                     {(["full", "split"] as const).map((mode) => (
                                       <button
                                         className={`h-8 px-2 text-phx-xs font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -2933,7 +2934,7 @@ export function PlansWorkspace({
                                 ) : (
                                   <button
                                     aria-label={`Remove ${formatDate(row.activityDate)} ${slotLabel(row)}`}
-                                    className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    className={`inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
                                     disabled={!canEdit || rows.length <= 1}
                                     onClick={() => deleteRow(row.key)}
                                     type="button"
@@ -3656,7 +3657,7 @@ function DisabledFieldText({
   return (
     // min-h, not h, and wrapping text: in a fitted table cell a long status ("Double Visit - <rep
     // name>") must wrap onto a second line, never run out of the cell and force a horizontal scroll.
-    <div className="flex min-h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3 py-1 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-100">
+    <div className={`flex min-h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3 py-1 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-100 ${adminControlDepthClassName}`}>
       <span className={`min-w-0 break-words text-xs ${textClass}`}>{children}</span>
     </div>
   );
@@ -3861,7 +3862,7 @@ function VisitDetailsModal({
               </div>
               <div className="space-y-3 p-3">
                 {(entries[item.id] ?? []).map((entry, idx) => (
-                  <div key={entry.key} className="border border-slate-200 bg-white p-3 space-y-2">
+                  <div key={entry.key} className={`border border-slate-200 bg-white p-3 space-y-2 ${adminPanelDepthClassName}`}>
                     <div className="flex items-center justify-between">
                       <p className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Visit {idx + 1}</p>
                       {(entries[item.id] ?? []).length > 1 && (
@@ -3977,7 +3978,7 @@ function QueueCard({
 }) {
   if (plans.length === 0) return null;
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <div className="flex items-center gap-2.5 bg-slate-900 px-4 py-3">
         <span aria-hidden className="h-4 w-1 bg-gradient-to-b from-orange-400 to-orange-600" />
         <h3 className="text-sm font-black uppercase tracking-wide text-white">{title}</h3>
@@ -4072,7 +4073,7 @@ function ReviewCard({
 
   if (plans.length === 0) return null;
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <div className="flex items-center justify-between gap-2.5 bg-slate-900 px-4 py-3">
         <div className="flex items-center gap-2.5">
           <span aria-hidden className="h-4 w-1 bg-orange-500" />
@@ -4133,7 +4134,7 @@ function ReviewCard({
                 value={comment}
               />
               {type !== "hr" && type !== "edit_request" ? (
-                <div className="mt-3 max-h-44 space-y-2 overflow-y-auto border border-slate-200 bg-slate-50 p-2">
+                <div className={`mt-3 max-h-44 space-y-2 overflow-y-auto border border-slate-200 bg-slate-50 p-2 ${adminRecessedDepthClassName}`}>
                   {p.items.map((item) => (
                     <label className="block" key={item.id}>
                       <span className="block text-xs font-black text-slate-600">

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // "Score a probationer" — the companion to the "My feedback tasks" inbox above it.
 //
@@ -75,7 +76,7 @@ export function ProbationScorecardLauncher({
   }
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white">
+    <section className={`rounded-lg border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"

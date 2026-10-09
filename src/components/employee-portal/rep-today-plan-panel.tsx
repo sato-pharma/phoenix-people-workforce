@@ -6,6 +6,7 @@ import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import { gradeSpecialityParts } from "@/components/phoenix-crm/labels";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import type { RepTodayPlan, RepTodayBrick, RepTodayStop } from "@/lib/phoenix-crm/server/rep-landing";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * The rep's day on his OVERVIEW — what replaced the Phoenix CRM Today module.
@@ -149,7 +150,7 @@ function StopRow({ canAdd, stop }: { canAdd: boolean; stop: RepTodayStop }) {
         // end with, so the column's right edge keeps one rhythm.
         <Link
           aria-label={`Add a visit for ${stop.name}`}
-          className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center border border-slate-300 bg-white text-slate-600 transition hover:border-orange-400 hover:bg-orange-50 hover:text-orange-800"
+          className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center border border-slate-300 bg-white text-slate-600 transition hover:border-orange-400 hover:bg-orange-50 hover:text-orange-800 ${adminControlDepthClassName}`}
           href={addVisitHref(stop)}
         >
           <Plus aria-hidden="true" className="h-4 w-4" />
@@ -199,7 +200,7 @@ export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
   const showBrickHeadings = plan.bricks.length > 1;
 
   return (
-    <section className="min-w-0 border border-slate-200 bg-white">
+    <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       {/*
         🔴 `flex-wrap` — the ONE place this header parts from the overview's, and the third chip is
         why (measured 2026-09-30 at 320px). The chip rail below is `shrink-0`, which makes its own

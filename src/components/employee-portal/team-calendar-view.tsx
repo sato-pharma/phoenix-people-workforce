@@ -19,6 +19,7 @@ import {
 } from "@/lib/employee-portal/team-calendar-weeks";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const ALL_FILTER = "All";
 
@@ -350,10 +351,10 @@ function WeekStepper({
   if (weeks.length === 0) return null;
   const current = weeks[weekIndex];
   return (
-    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 lg:hidden">
+    <div className={`flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 lg:hidden ${adminSoftDepthClassName}`}>
       <button
         aria-label="Previous week"
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-40"
+        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
         disabled={weekIndex === 0}
         onClick={() => onChange(weekIndex - 1)}
         type="button"
@@ -368,7 +369,7 @@ function WeekStepper({
       </div>
       <button
         aria-label="Next week"
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-40"
+        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
         disabled={weekIndex >= weeks.length - 1}
         onClick={() => onChange(weekIndex + 1)}
         type="button"
@@ -449,7 +450,7 @@ export function TeamCalendarView({
 
   return (
     <div className="space-y-4">
-      <Card className="rounded-xl border border-slate-200 bg-white p-4">
+      <Card className={`rounded-xl border border-slate-200 bg-white p-4 ${adminPanelDepthClassName}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-black text-slate-950">Team Calendar — {heading}</p>
@@ -461,17 +462,17 @@ export function TeamCalendarView({
           <div className="flex items-center gap-1.5">
             <Link
               aria-label="Previous month"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700"
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 ${adminControlDepthClassName}`}
               href={monthHref(previous.month, previous.year)}
             >
               <ChevronLeft className="h-4 w-4" />
             </Link>
-            <span className="min-w-[112px] rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-center text-xs font-black text-slate-700">
+            <span className={`min-w-[112px] rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-center text-xs font-black text-slate-700 ${adminSoftDepthClassName}`}>
               {heading}
             </span>
             <Link
               aria-label="Next month"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700"
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 ${adminControlDepthClassName}`}
               href={monthHref(next.month, next.year)}
             >
               <ChevronRight className="h-4 w-4" />
@@ -524,7 +525,7 @@ export function TeamCalendarView({
       <WeekStepper onChange={setWeekIndex} weekIndex={safeWeekIndex} weeks={weeks} />
 
       {visibleGroups.length === 0 ? (
-        <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        <Card className={`rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 ${adminPanelDepthClassName}`}>
           No one matches the current filter for {heading}.
         </Card>
       ) : (

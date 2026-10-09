@@ -9,6 +9,7 @@ import { SURFACE_CLASS, SectionCard } from "@/components/sales/target-visuals";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { milestoneShareCaption } from "@/lib/share/social-share";
 import type { MyMilestoneEntry } from "@/lib/milestones/service";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = {
   entries: MyMilestoneEntry[];
@@ -481,7 +482,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                       portrait the subject of the panel. The GEOMETRY is untouched: still a fixed 4:5
                       box, still `object-cover` at the same `object-position`, so what is under the
                       cursor is still exactly what the printer cuts. */}
-                  <div className="flex justify-center border border-slate-200 bg-slate-50 p-3">
+                  <div className={`flex justify-center border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
                     <div
                       className="relative w-full max-w-[260px] cursor-grab touch-none select-none overflow-hidden border border-slate-300 bg-slate-100 shadow-[0_10px_28px_rgba(15,23,42,0.12)] active:cursor-grabbing"
                       onPointerCancel={endDrag}
@@ -518,7 +519,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                       readout, it reads as part of the card. The thumb and track are squared and put
                       into the portal's orange by globals.css RULE 1d (the browser draws them from its
                       own shadow tree, so no class on this element can reach them). */}
-                  <label className="flex items-center gap-3 border border-slate-200 bg-white px-3 py-2">
+                  <label className={`flex items-center gap-3 border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
                     <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Zoom</span>
                     <input
                       type="range"

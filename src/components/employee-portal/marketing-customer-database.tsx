@@ -29,6 +29,7 @@ import { linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach
 import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 import { venueCanAttributeSales, venueTypeLabel } from "@/lib/venues/venue-type";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const PAGE_SIZE = 25;
 
@@ -367,7 +368,7 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
         </div>
 
         {survivor && loser ? (
-          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-700">
+          <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-700 ${adminSoftDepthClassName}`}>
             <span className="font-black text-slate-950">{loser.displayName}</span>
             <span className="font-mono text-xs font-black text-slate-600"> ({loser.pharmacyCode})</span>
             {" is retired into "}
@@ -598,7 +599,7 @@ export function MarketingCustomerDatabase() {
         />
         <PortalPagination label={pageLabel}>
           <button
-            className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40"
+            className={`rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
             disabled={safePage <= 1}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
             type="button"
@@ -606,7 +607,7 @@ export function MarketingCustomerDatabase() {
             Previous
           </button>
           <button
-            className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40"
+            className={`rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
             disabled={safePage >= totalPages}
             onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             type="button"

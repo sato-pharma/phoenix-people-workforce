@@ -43,6 +43,7 @@ import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* ── Region performance keycards ───────────────────────────────────── */
 
@@ -97,7 +98,7 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
   ];
 
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead
         title="Region Performance"
         right={
@@ -147,7 +148,7 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
   const unmeasured = rmRegional.dsms.filter((d) => d.totalTarget <= 0);
 
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead
         title="Districts Needing Attention"
         right={<span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">below 90%</span>}
@@ -281,7 +282,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
 
       {/* One note for BOTH boards: departedCount spans the districts and the reps together. */}
       {rmRegional && rmRegional.departedCount > 0 ? (
-        <div className="border border-slate-200 bg-white">
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           <DepartedFromBoardNote
             count={rmRegional.departedCount}
             sales={rmRegional.departedSales}

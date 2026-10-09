@@ -1,4 +1,5 @@
 import type { LineTopAchieversGroup } from "@/lib/employee-portal/service";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /** Achievement-percentage → text color, matching the Medical Reps Performance page. */
 function achievementColor(pct: number): string {
@@ -24,7 +25,7 @@ export function LineTopAchieversCard({
   if (groups.length === 0) return null;
 
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white" role="region" aria-label="Top medical rep achievers per line">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="region" aria-label="Top medical rep achievers per line">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
         <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
         <div className="h-1.5 w-12 bg-orange-500" />

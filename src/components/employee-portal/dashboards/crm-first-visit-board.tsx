@@ -2,6 +2,7 @@ import { AlarmClock, AlertTriangle, CheckCircle2, Clock, Sunrise } from "lucide-
 
 import { SectionHead } from "@/components/employee-portal/portal-command-center";
 import { EARLY_BIRD_LIMIT, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // Shared "who has submitted their first CRM visit today" board. Extracted from the NSM command
 // center so the National (line-scoped) and Regional (region-scoped) dashboards render one
@@ -100,7 +101,7 @@ export function CrmFirstVisitBoard({
   const syncLabel = checkedAt ? `Checked ${cairoTime(checkedAt)}` : "awaiting sync";
 
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead
         title="CRM First Visit"
         right={

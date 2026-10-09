@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import type { FeedbackSlaState } from "@/lib/probation/intelligence/feedback-sla";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // Manager feedback inbox (Enhancement E2; retargeted in module completion C2). A "My feedback tasks"
 // section on the probation portal page. Owner UX rule (2026-07-17): DO NOT list one flat row per
@@ -113,7 +114,7 @@ export function ProbationFeedbackTasksPanel({ tasks }: { tasks: FeedbackTaskView
   const overdue = tasks.filter((t) => !isOptional(t) && t.slaState === "overdue").length;
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white">
+    <section className={`rounded-lg border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"

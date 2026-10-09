@@ -13,6 +13,7 @@ import {
 } from "@/lib/reports/organogram-view-model";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { phxLabelTextClassName } from "@/components/ui/form-tokens";
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -38,7 +39,7 @@ type EmployeeOrganogramDashboardProps = {
 const labelClassName =
   phxLabelTextClassName;
 
-const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.08)]";
+const cardShadow = adminPanelDepthClassName;
 
 // Shorter KPI labels tuned for the narrower portal column. The admin surface keeps
 // the full-length labels from the shared chart defaults.

@@ -21,6 +21,7 @@ import type {
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 function emptyWorkspace(): MarketingControlWorkspace {
@@ -245,15 +246,15 @@ export function MarketingControlWorkspace() {
     <div className="space-y-6">
       <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
         <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-3 ${adminSoftDepthClassName}`}>
             <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Request Types</p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.requestTypes.length}</p>
           </div>
-          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-3 ${adminSoftDepthClassName}`}>
             <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Workflow Steps</p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.workflowSteps.length}</p>
           </div>
-          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-3 ${adminSoftDepthClassName}`}>
             <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Validation Settings</p>
             <p className="mt-1 text-2xl font-black text-slate-950">
               {workspace.canManageValidationRules ? groupedSettings.validation.length : "Admin"}
@@ -760,7 +761,7 @@ export function MarketingControlWorkspace() {
           title="ROI And Finance Rules"
         />
         <div className="grid gap-4 p-5 lg:grid-cols-2">
-          <div className="rounded border border-slate-200 bg-slate-50 p-4">
+          <div className={`rounded border border-slate-200 bg-slate-50 p-4 ${adminPanelDepthClassName}`}>
             <Field label="ROI multiplier">
               <Input
                 className="text-base"
@@ -787,7 +788,7 @@ export function MarketingControlWorkspace() {
             </Button>
           </div>
 
-          <div className="rounded border border-slate-200 bg-slate-50 p-4">
+          <div className={`rounded border border-slate-200 bg-slate-50 p-4 ${adminPanelDepthClassName}`}>
             <Field label="Invoice deadline days">
               <Input
                 className="text-base"
@@ -855,7 +856,7 @@ export function MarketingControlWorkspace() {
           </div>
         ) : (
           <div className="px-5 py-6">
-            <div className="rounded border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-600">
+            <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-600 ${adminSoftDepthClassName}`}>
               Validation settings are available to Super Admin only.
             </div>
           </div>

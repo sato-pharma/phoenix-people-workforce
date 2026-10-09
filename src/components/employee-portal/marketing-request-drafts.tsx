@@ -77,6 +77,7 @@ import {
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -516,7 +517,7 @@ function RoiMetric({ label, value }: { label: string; value: string }) {
 
 function ReadOnlyValue({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex h-10 min-w-0 flex-col justify-center border border-slate-200 bg-white px-3">
+    <div className={`flex h-10 min-w-0 flex-col justify-center border border-slate-200 bg-white px-3 ${adminSoftDepthClassName}`}>
       <span className="text-phx-3xs font-bold uppercase tracking-[0.10em] text-slate-400">
         {label}
       </span>
@@ -539,7 +540,7 @@ function EvidenceUpload({
   onUpload: (file: File | null | undefined) => void;
 }) {
   return (
-    <label className="flex min-w-0 cursor-pointer flex-col gap-1 border border-slate-200 bg-slate-50 px-2.5 py-2 transition hover:border-orange-200 hover:bg-orange-50">
+    <label className={`flex min-w-0 cursor-pointer flex-col gap-1 border border-slate-200 bg-slate-50 px-2.5 py-2 transition hover:border-orange-200 hover:bg-orange-50 ${adminControlDepthClassName}`}>
       <span className="flex items-center gap-1.5 text-phx-xs font-bold text-slate-700">
         {isUploading ? (
           <LoadingSpinner />
@@ -1458,7 +1459,7 @@ function MarketingRequestDraftWorkspaceInner() {
 
       {/* ------ Draft ROI Health + Sparkline ------------------------------------------------------------------------------------------ */}
       {!isLoading && workspace.drafts.length > 0 && (
-        <div className="border border-slate-200 bg-white px-4 py-3">
+        <div className={`border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
               Draft ROI Health
@@ -1492,7 +1493,7 @@ function MarketingRequestDraftWorkspaceInner() {
       ) : null}
 
       {/* ------ Tab Switcher --------------------------------------------------------------------------------------------------------------------------------------- */}
-      <div className="flex gap-1 border border-slate-200 bg-slate-50 p-1">
+      <div className={`flex gap-1 border border-slate-200 bg-slate-50 p-1 ${adminSoftDepthClassName}`}>
         <button
           className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-phx-md font-bold transition ${
             activeView === "create"
@@ -1919,7 +1920,7 @@ function MarketingRequestDraftWorkspaceInner() {
                         )}
                       </div>
                       <button
-                        className="flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                        className={`flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
                         onClick={addProductLine}
                         type="button"
                       >
@@ -1932,7 +1933,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       const product = productMap.get(line.productId);
                       return (
                         <div
-                          className="border border-slate-200 bg-slate-50/50 p-2.5"
+                          className={`border border-slate-200 bg-slate-50/50 p-2.5 ${adminSoftDepthClassName}`}
                           key={line.key}
                         >
                           {/* Desktop layout */}
@@ -2008,7 +2009,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             />
                             <button
                               aria-label="Remove product"
-                              className="flex h-10 w-full items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                              className={`flex h-10 w-full items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${adminControlDepthClassName}`}
                               onClick={() =>
                                 removeProductLine(line.key)
                               }
@@ -2059,7 +2060,7 @@ function MarketingRequestDraftWorkspaceInner() {
                               />
                               <button
                                 aria-label="Remove product"
-                                className="flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                className={`flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${adminControlDepthClassName}`}
                                 onClick={() =>
                                   removeProductLine(line.key)
                                 }
@@ -2308,7 +2309,7 @@ function MarketingRequestDraftWorkspaceInner() {
               productLineMetrics.map((product) => (
                 <div
                   key={product.key}
-                  className="border border-slate-200 bg-slate-50 p-3 space-y-1.5"
+                  className={`border border-slate-200 bg-slate-50 p-3 space-y-1.5 ${adminPanelDepthClassName}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-phx-md font-bold text-slate-950">
@@ -2832,7 +2833,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 const detail = detailCache[request.id];
                 return (
                   <div
-                    className="border border-slate-200 bg-slate-50/50 p-3"
+                    className={`border border-slate-200 bg-slate-50/50 p-3 ${adminSoftDepthClassName}`}
                     key={request.id}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2852,7 +2853,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </div>
                       <button
                         aria-expanded={expanded}
-                        className="flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                        className={`flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
                         onClick={() =>
                           void toggleTrackingExpand(request.id)
                         }
@@ -3107,7 +3108,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     </p>
                   </div>
                   <button
-                    className="flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                    className={`flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
                     onClick={() => setActiveView("create")}
                     type="button"
                   >
@@ -3123,13 +3124,13 @@ function MarketingRequestDraftWorkspaceInner() {
 
       {/* ------ Empty-data hint ------------------------------------------------------------------------------------------------------------------------------ */}
       {!isLoading && !workspace.canCreateDraft ? (
-        <div className="border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500">
+        <div className={`border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500 ${adminSoftDepthClassName}`}>
           You have review access to marketing requests. Draft creation is limited to assigned requesters in the employee directory.
         </div>
       ) : !isLoading &&
         (workspace.customers.length === 0 ||
           workspace.products.length === 0) ? (
-        <div className="border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500">
+        <div className={`border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500 ${adminSoftDepthClassName}`}>
           {workspace.customers.length === 0
             ? "No active marketing customers available. Customer creation is coming next."
             : "No active marketing products available. Run the reference-data seed."}

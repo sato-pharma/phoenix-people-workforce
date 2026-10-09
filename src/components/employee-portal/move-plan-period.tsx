@@ -5,6 +5,7 @@ import { CalendarDays, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * HR / Super Admin control to re-date a whole plan onto a different period.
@@ -66,7 +67,7 @@ export function MovePlanPeriod({
   }
 
   return (
-    <div className="w-full border border-slate-200 bg-slate-50 p-3">
+    <div className={`w-full border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
       <p className="text-sm font-black text-slate-800">
         Move this {planKind} plan off {currentPeriodLabel}
       </p>

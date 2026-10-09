@@ -13,6 +13,7 @@ import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendanc
 import { addDaysToDateOnly, formatDateOnly } from "@/lib/date-only";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { adminControlDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -123,7 +124,7 @@ function lateMinutesOf(value: string | null | undefined) {
 
 // ─── Shared chrome ────────────────────────────────────────────────────────────
 
-const CARD = "border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
+const CARD = `border border-slate-200 bg-white ${adminPanelDepthClassName}`;
 const FIELD = "px-3";
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -262,7 +263,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                     "inline-flex min-h-10 items-center justify-center gap-1.5 px-3 text-phx-sm font-bold uppercase leading-tight tracking-wide transition-colors duration-150 sm:px-4",
                     active
                       ? "bg-orange-500 text-white"
-                      : "border border-slate-300 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700",
+                      : `border border-slate-300 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 ${adminControlDepthClassName}`,
                     isPending && !active ? "cursor-not-allowed opacity-50" : "",
                   ].join(" ")}
                 >

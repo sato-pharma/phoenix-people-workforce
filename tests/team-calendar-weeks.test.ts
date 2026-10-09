@@ -130,7 +130,10 @@ export function runTeamCalendarWeeksTests() {
   );
   assert.match(
     view,
-    /className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 lg:hidden"/,
+    // Not anchored on a closing quote: the stepper's ground took a depth token in the portal's
+    // premium-depth pass (2026-10-09), so the attribute is a template now. Every class this
+    // assertion cares about is still matched, in order, `lg:hidden` included.
+    /className=(?:"|\{`)flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 lg:hidden/,
     "the stepper is hidden from lg up, where the whole month is shown instead",
   );
   // The stepper's own state must never reach the row grids as an index into someone's timeline.

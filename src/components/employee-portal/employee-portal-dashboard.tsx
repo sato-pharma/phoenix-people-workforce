@@ -66,6 +66,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
@@ -604,7 +605,7 @@ export function SalesAchievementRing({
         <p className={`mt-2 text-sm font-medium ${growthNegative ? "text-rose-600" : "text-emerald-600"}`}>
           {growthText}
         </p>
-        <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-4 py-1.5 text-sm text-slate-700">
+        <div className={`mt-3 rounded border border-slate-200 bg-slate-50 px-4 py-1.5 text-sm text-slate-700 ${adminSoftDepthClassName}`}>
           Gap to target: <span className="font-semibold text-orange-600">{egp(gapToTarget)}</span>
         </div>
       </div>
@@ -697,7 +698,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
           </div>
         </div>
       </div>
-      <div className="hidden mb-5 rounded border border-slate-200 bg-slate-50/60 px-4 py-3">
+      <div className={`hidden mb-5 rounded border border-slate-200 bg-slate-50/60 px-4 py-3 ${adminSoftDepthClassName}`}>
         <p className="text-base font-semibold text-slate-900">
           {employee.fullName} <span className="text-slate-500">/</span> {employee.roleLabel}
         </p>
@@ -1453,7 +1454,7 @@ function PediaSplitIncentiveCard({
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded border border-slate-200 bg-slate-50 px-3 py-2.5">
+      <div className={`mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded border border-slate-200 bg-slate-50 px-3 py-2.5 ${adminSoftDepthClassName}`}>
         <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">Semester incentive</p>
         <p className="font-mono text-phx-lg font-black tabular-nums text-slate-900">{money(split.payoutAmount)}</p>
       </div>
@@ -2332,7 +2333,7 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
       title="Performance Overview"
       action={
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+          <span className={`rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500 ${adminSoftDepthClassName}`}>
             {trendData.length} months
           </span>
           <span className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-orange-700">
@@ -2735,7 +2736,7 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
       </div>
 
       {/* Fill rate bar */}
-      <div className="mt-3 rounded border border-slate-200 bg-white/80 p-3">
+      <div className={`mt-3 rounded border border-slate-200 bg-white/80 p-3 ${adminSoftDepthClassName}`}>
         <div className="flex items-center justify-between">
           <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-400">Fill Rate</p>
           <span className="text-xs font-black text-slate-700">{fillRate}%</span>
@@ -2749,7 +2750,7 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
       </div>
 
       {/* Scope label */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+      <div className={`mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50/70 px-3 py-2.5 ${adminSoftDepthClassName}`}>
         <p className="text-sm font-medium text-slate-900">
           {data.orgStructure?.scopeLabel ?? data.workforce.scopeLabel}
         </p>
@@ -2772,7 +2773,7 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {rows.map((row) => (
                   <span
-                    className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-xs font-medium text-slate-600"
+                    className={`rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-xs font-medium text-slate-600 ${adminSoftDepthClassName}`}
                     key={row.id ?? row.vacancyCode}
                   >
                     {row.areaName ?? row.regionName ?? "Unassigned"}
@@ -2855,7 +2856,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <p className="mt-1 text-sm text-slate-500">Track workload, trips, and expense efficiency across AMs & PMs</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
+          <div className={`flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
             <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
             <input className={cn(phxFieldClassName, "w-28 sm:w-32")} placeholder="From" type="date" />
             <span className="text-slate-400">-</span>
@@ -3446,7 +3447,7 @@ function TerritoryComparisonChart({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel
       title="Territory Performance"
       action={
-        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span className={`rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500 ${adminSoftDepthClassName}`}>
           {territories.length} territories
         </span>
       }
@@ -3525,7 +3526,7 @@ function ProductFamilyBreakdown({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel
       title="Product Family Contribution"
       action={
-        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span className={`rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500 ${adminSoftDepthClassName}`}>
           {families.length} families
         </span>
       }
@@ -3604,7 +3605,7 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel
       title="Line Performance"
       action={
-        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span className={`rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500 ${adminSoftDepthClassName}`}>
           {lines.length} line{lines.length === 1 ? "" : "s"}
         </span>
       }

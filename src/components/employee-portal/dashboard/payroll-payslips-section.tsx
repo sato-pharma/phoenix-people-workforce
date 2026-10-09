@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * Where this section renders. The Medical Rep portal page passes "employee-portal" and gets the
@@ -308,7 +309,7 @@ export function PayrollPayslipsSection({
           )}
 
           <div className="grid gap-4 xl:grid-cols-[1.1fr_1.5fr]">
-            <Card className="rounded border border-slate-200 bg-white p-5">
+            <Card className={`rounded border border-slate-200 bg-white p-5 ${adminPanelDepthClassName}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Salary Breakdown</p>
@@ -343,7 +344,7 @@ export function PayrollPayslipsSection({
               </div>
             </Card>
 
-            <Card className="rounded border border-slate-200 bg-white p-4 sm:p-5">
+            <Card className={`rounded border border-slate-200 bg-white p-4 sm:p-5 ${adminPanelDepthClassName}`}>
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-semibold text-slate-900">Payslip History</p>
                 <span className="rounded border border-slate-200 px-3 py-1 text-xs text-slate-500">

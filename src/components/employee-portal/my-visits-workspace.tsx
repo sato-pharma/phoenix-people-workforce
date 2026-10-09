@@ -24,6 +24,7 @@ import type {
   TeamCrmVisitRow,
 } from "@/lib/employee-portal/my-crm-visits";
 import type { VisitTimeSource } from "@/lib/crm/reads";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const PAGE_SIZE = 25;
 
@@ -222,7 +223,7 @@ const OFF_DUTY_TH = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.1
 function DaysNotInFieldGroup({ rows, showRep }: { rows: Array<MyCrmVisitRow & { agentName?: string | null }>; showRep: boolean }) {
   if (rows.length === 0) return null;
   return (
-    <div className="border border-slate-200 bg-white">
+    <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 bg-slate-100 px-4 py-3">
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-600">Days not in the field</h3>
         <p className="text-phx-xs text-slate-500">
@@ -331,7 +332,7 @@ function TabPager({
   return (
     <PortalPagination label={label}>
       <button
-        className="min-h-10 border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 md:min-h-9"
+        className={`min-h-10 border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 md:min-h-9 disabled:shadow-none ${adminControlDepthClassName}`}
         disabled={safePage <= 1}
         onClick={onPrevious}
         type="button"
@@ -339,7 +340,7 @@ function TabPager({
         Previous
       </button>
       <button
-        className="min-h-10 border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 md:min-h-9"
+        className={`min-h-10 border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 md:min-h-9 disabled:shadow-none ${adminControlDepthClassName}`}
         disabled={safePage >= totalPages}
         onClick={onNext}
         type="button"

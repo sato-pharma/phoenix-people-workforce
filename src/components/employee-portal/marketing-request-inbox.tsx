@@ -49,6 +49,7 @@ import type {
   MarketingApproverOversightRow,
   MarketingApproverUpcomingRow,
 } from "@/lib/marketing-requests/service";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Helpers ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
@@ -168,7 +169,7 @@ function QueueHeading({
 
 function RowSkeleton() {
   return (
-    <div className="animate-pulse space-y-2 rounded-sm border border-slate-200 bg-white p-4">
+    <div className={`animate-pulse space-y-2 rounded-sm border border-slate-200 bg-white p-4 ${adminPanelDepthClassName}`}>
       <div className="h-3 w-32 rounded-sm bg-slate-200" />
       <div className="h-2.5 w-48 rounded-sm bg-slate-100" />
       <div className="flex gap-2">
@@ -738,7 +739,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
               approver holding eight requests could previously only read them in submission order,
               in full, one wall of panels after another. */}
           <div className="flex flex-col gap-2 rounded-sm border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:flex-row sm:flex-wrap sm:items-center">
-            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 sm:max-w-xs">
+            <label className={`flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 sm:max-w-xs ${adminSoftDepthClassName}`}>
               <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
               {/* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */}
               <input
@@ -1059,7 +1060,7 @@ function ChainWatchList({
           label={`Showing ${safePage * WATCH_PAGE_SIZE + 1}–${safePage * WATCH_PAGE_SIZE + visible.length} of ${rows.length}`}
         >
           <button
-            className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+            className={`min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
             disabled={safePage === 0}
             onClick={() => setPage(Math.max(0, safePage - 1))}
             type="button"
@@ -1067,7 +1068,7 @@ function ChainWatchList({
             Previous
           </button>
           <button
-            className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+            className={`min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
             disabled={safePage >= pageCount - 1}
             onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
             type="button"

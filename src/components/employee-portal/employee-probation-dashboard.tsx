@@ -22,6 +22,7 @@ import {
   phxFieldClassName,
   phxLabelTextClassName,
 } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 /* ------------------------------------------------------------------ */
@@ -74,7 +75,7 @@ const inputClassName  = phxFieldClassName;
 const labelClassName =
   phxLabelTextClassName;
 
-const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.08)]";
+const cardShadow = adminPanelDepthClassName;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -548,7 +549,7 @@ export function EmployeeProbationDashboard({
           </button>
           <button
             aria-label="Reset all probation filters"
-            className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+            className={`rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 disabled:shadow-none ${adminControlDepthClassName}`}
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             type="button"
@@ -558,13 +559,13 @@ export function EmployeeProbationDashboard({
           {canExport ? (
             <>
               <a
-                className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                className={`rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
                 href="/api/exports?report=probation&format=xlsx"
               >
                 Export Excel
               </a>
               <a
-                className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                className={`rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
                 href="/api/exports?report=probation&format=pdf"
               >
                 Export PDF
@@ -722,7 +723,7 @@ export function EmployeeProbationDashboard({
                                   ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                                   : action === "pass"
                                     ? "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                    : `border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`
                               }`}
                               disabled={Boolean(pendingAction)}
                               key={action}
@@ -831,7 +832,7 @@ export function EmployeeProbationDashboard({
                                 ? "border border-rose-200 bg-rose-50 text-rose-700"
                                 : action === "pass"
                                   ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : "border border-slate-200 bg-white text-slate-600"
+                                  : `border border-slate-200 bg-white text-slate-600 ${adminSoftDepthClassName}`
                             }`}
                             disabled={Boolean(pendingAction)}
                             key={action}
@@ -968,7 +969,7 @@ export function EmployeeProbationDashboard({
               {pendingAction ? "Submitting..." : actionLabel(selectedAction.action)}
             </button>
             <button
-              className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+              className={`rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
               onClick={() => {
                 setSelectedAction(null);
                 setActionForm(emptyActionForm());

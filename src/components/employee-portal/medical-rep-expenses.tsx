@@ -40,6 +40,7 @@ import {
   phxButtonGhostClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 type ActiveTab = "submit" | "history";
@@ -107,7 +108,7 @@ function ReadOnlyField({
   // Wraps, never clips: a home address or a long name does not fit a ~240px phone field on one line,
   // and the card around it is overflow-hidden, so a one-line value was cut off mid-word.
   return (
-    <div className="flex min-h-12 min-w-0 items-center gap-2 rounded-none border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">
+    <div className={`flex min-h-12 min-w-0 items-center gap-2 rounded-none border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 ${adminSoftDepthClassName}`}>
       <Icon className="h-4 w-4 shrink-0 text-orange-500" />
       <span className="min-w-0 break-words" dir="auto">{value}</span>
     </div>

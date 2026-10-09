@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * Shared skeleton building blocks for employee-portal `loading.tsx` files.
@@ -55,7 +56,7 @@ export function HeroSkeleton({ badgeWidth = "max-w-[9rem]" }: { badgeWidth?: str
   );
 }
 
-const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
+const cardShadow = adminPanelDepthClassName;
 
 /* ------------------------------------------------------------------ */
 /*  Template 1 — minimal redirect / thin pages                         */

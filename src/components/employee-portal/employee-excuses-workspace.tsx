@@ -33,6 +33,7 @@ import {
   phxLabelTextClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Types ────────────────────────────────────────────────────────── */
@@ -729,7 +730,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
       {/* ── Tab Bar ────────────────────────────────────────────── */}
       <div
-        className="flex w-full gap-0.5 overflow-x-auto border border-slate-200 bg-slate-50 p-0.5"
+        className={`flex w-full gap-0.5 overflow-x-auto border border-slate-200 bg-slate-50 p-0.5 ${adminSoftDepthClassName}`}
         role="tablist"
         aria-label="Excuse workspace tabs"
       >
@@ -885,7 +886,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                     <h2 className="mt-1 text-base font-extrabold text-slate-900">Excuse requests</h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                    <Badge className={`w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-600 ${adminSoftDepthClassName}`}>
                       {filteredRequests.length === historyTotal
                         ? `${historyTotal} requests`
                         : `${filteredRequests.length} of ${historyTotal}`}
