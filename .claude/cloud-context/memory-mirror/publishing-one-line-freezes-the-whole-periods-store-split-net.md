@@ -1,0 +1,65 @@
+---
+name: publishing-one-line-freezes-the-whole-periods-store-split-net
+description: "isFrozenStoreSplitPeriod matches monthly_closing_publications by PERIOD with no line filter, so publishing one line freezes every line's store-split net for that month — deliberate, and it means a month still receiving uploads silently drifts away from today's rules in a way the units-based drift check cannot see — 2026-09 reached 1,030,551.19 EGP on different areas, CNS 221,712.21 of it, and his 2026-10-09 call is to rebuild September only once its last books are in (the Office book, epda, EPDA-Pharmacies, mec, Direct and the EPDA-BULK sector file)."
+metadata:
+  node_type: memory
+  type: project
+  originSessionId: d5764c39-c02c-4dd4-a40d-70ad08cc490c
+  modified: 2026-10-09T14:13:30.854Z
+---
+
+Only **Anti Infective 2026-09** is published (by him, 2026-10-05 16:25 Cairo, never unpublished).
+That single publication freezes `au.monthly_store_split_net` and the attribution rollup for **the
+whole of 2026-09** — `isFrozenStoreSplitPeriod` queries `monthly_closing_publications` by `period`
+with no line predicate, matching migration `20260927213000`. **This is deliberate** (PR 4848's own
+comment) — do NOT "fix" it to a per-line freeze; that is exactly what 4848 closed.
+
+🔴 **HIS INSTRUCTION, 2026-10-09, in his own words: "rebuild the September store split when
+Marcyrl's Office book lands."** (Earlier the same evening: "rebuild September's split once the last
+books are in, not now.") So the rebuild is AUTHORISED and PARKED on an upload, not a date — and the
+go-ahead is already given, so when the book lands it is reported to him for the unpublish, never
+re-asked as a decision.
+
+🔴 **"Marcyrl's Office book" IS TWO SEPARATE BOOKS IN THE DATA — do not read it as one.** Read live
+2026-10-09 against August, September holds 14 validated books and **five are still missing: `MC`
+(Marcyrl), `Office` (the company's own stock, the respread's input), `DIRECT` (Company), `EP` (epda)
+and `EP-PHS` (EPDA-Pharmacies)** — plus the **EPDA-BULK sector book (`EP-BK`), which has never
+arrived for any month** and which his 2026-10-09 contribution rule needs. Neither `MC` nor `Office`
+had landed, so the trigger had not fired either way. 🔴 **The ambiguity resolves itself at the
+moment it fires**: the rebuild cannot start without his unpublish click, so whichever of the five
+lands first is reported with the other four named — rebuilding on `Office` alone while `MC`,
+`DIRECT`, `EP` and `EP-PHS` are still out means a second rebuild later, and that is his call to make
+with the list in front of him.
+`select distributor_code, max(created_at at time zone 'Africa/Cairo') from source_of_sales_import_batches where period = '2026-09' group by 1`
+is the whole test.
+
+**Measured 2026-10-09, twice, and the second number is the one to quote.** At 09:00 Cairo
+`scripts/check-store-split-drift.ts 2026-09` reported 112 cells over 56 line×area pairs and
+839,283.83 EGP on a different area; after thirteen more September books landed the same evening it
+reported **347 cells over 76 pairs, frozen 139 cells against live 423, and 1,030,551.19 EGP on a
+different area** — the drift GROWS with every upload, so a measurement is good only for the hour it
+was taken. Sum of differences 0.00 — a pure redistribution. Pedia holds 40 pairs, **CNS 36 and
+221,712.21 EGP of it**, and **Anti Infective — the one published line — holds 0**, so nothing he has
+announced has moved. Largest CNS moves that evening: Sharkia 1 −37,234.56 → Sharkia 2 +37,234.56,
+Alex West −36,759.14, Dakahlia 1 −32,160.69, Cairo East 2 +26,495.22, Sohag1 −26,155.39 → Sohag2
++26,155.39; the single biggest anywhere is Pedia Qalubeya −624,623.51.
+Net last computed 2026-10-04 16:52 Cairo — **before thirteen of September's fourteen validated books
+existed** ([[a-closing-rule-that-moves-zero-may-simply-have-no-upload-yet]]), which is the whole
+cause here rather than a re-map ([[office-allocation-goes-stale-when-a-batch-is-remapped-after-it]]).
+
+🔴 **Every line's total net UNITS agree, so the units-based publication drift check is structurally
+blind to all of it** — the money moves between areas while the line totals match. Only
+`check-store-split-drift.ts` sees it.
+
+**Why:** a newly shipped read-time net rule looks like it does nothing on a frozen month, and a
+month that is still being uploaded keeps drifting further from the frozen split with every file.
+
+**How to apply:** check the period's publications before concluding anything about its area split.
+Rebuilding a frozen net restates an announced number, so it is **his** decision at the Monthly
+Closing publication screen, never in chat: unpublish the period → `scripts/backfill-attribution-store-split.ts
+--apply <period>` → `select au.f_refresh_monthly_attribution('<period>')` → re-publish. With
+September still mid-upload there is nothing to gain from rebuilding yet, and Anti Infective's own
+numbers would not move if it were — which is exactly the call he made on 2026-10-09. **Never put the
+unpublish itself in a `Next step:` box**: it is his own click in a screen Claude cannot reach, so it
+belongs in the body with the path, and the box carries the decision he answers in words
+([[never-put-his-physical-actions-in-the-next-step-box]]).
