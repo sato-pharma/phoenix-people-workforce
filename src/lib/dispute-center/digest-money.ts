@@ -144,7 +144,11 @@ export async function applyDigestRevisionToDeduction(input: {
         ref: String(input.lineId),
         sourceMonthKey: monthKey,
       });
-      refundSentence = recommended.sentence;
+      // A refund this case already had, whose own month has since been paid, cannot be replaced —
+      // one live refund per case — so nothing new is recommended, and that goes to the reviewer as
+      // something to settle rather than to the employee as money on the way.
+      if (recommended.refund) refundSentence = recommended.sentence;
+      else notices.push(recommended.sentence);
     }
     return {
       notices,

@@ -126,6 +126,12 @@ export async function cancelLiveRefund(input: {
 /**
  * Recommend `amount` back to the employee in the first open payroll after `sourceMonthKey`. Replaces
  * any live refund on the same case. Returns the refund and a sentence saying where it will appear.
+ *
+ * 🔴 WHEN THE CASE'S EARLIER REFUND HAS ALREADY BEEN PAID, NOTHING NEW IS RECOMMENDED and `refund`
+ * comes back null with a sentence saying so. There is one live refund per case — a partial unique
+ * index — and a paid one cannot be cancelled to make room, so the insert would have raised a 23505
+ * AFTER the decision had already changed the month's money, leaving the decision recorded and the
+ * caller holding a database error. HR is told to settle the difference instead.
  */
 export async function recommendDisputeRefund(input: {
   kind: "deduction" | "digest";
@@ -137,16 +143,26 @@ export async function recommendDisputeRefund(input: {
   reason: string;
   actorHrId: string | null;
   actorRole: string | null;
-}): Promise<{ refund: DisputeRefund; sentence: string }> {
+}): Promise<{ refund: DisputeRefund | null; sentence: string }> {
   const amount = roundCurrency(input.amount);
   if (!(amount > 0)) throw new Error("Validation: a refund must be more than zero.");
-  await cancelLiveRefund({
+  const replaced = await cancelLiveRefund({
     actorHrId: input.actorHrId,
     actorRole: input.actorRole,
     kind: input.kind,
     reason: "Replaced by a newer decision on the same dispute.",
     ref: input.ref,
   });
+  if (replaced.alreadyPaid) {
+    const paid = replaced.alreadyPaid;
+    return {
+      refund: null,
+      sentence:
+        `${monthKeyLabel(paid.targetMonthKey)} payroll already paid ${paid.amount.toFixed(2)} EGP back on this ` +
+        `dispute, so it cannot be replaced and no new refund was recommended. ${amount.toFixed(2)} EGP is what ` +
+        `this decision owes back — settle the ${roundCurrency(amount - paid.amount).toFixed(2)} EGP difference by hand.`,
+    };
+  }
   const targetMonthKey = await nextOpenPayrollMonth(input.sourceMonthKey);
   const { data, error } = await getSupabaseAdmin()
     .from("dispute_refunds")

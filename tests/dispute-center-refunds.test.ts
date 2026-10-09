@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import {
+  additionsCandidatesFromStepRows,
+  assertAdditionsReasonsPresent,
+} from "../src/lib/automated-payroll/additions-reason.ts";
 import { disputeRefundsByCompact, type DisputeRefundRow } from "../src/lib/automated-payroll/dispute-refunds.ts";
+import { MODULE_SOURCED_STEP_KEYS, takeCurrentModuleFigures } from "../src/lib/automated-payroll/module-drift.ts";
 import { recommendAdditions, type PopulationMember } from "../src/lib/automated-payroll/recommend.ts";
-import type { DraftRow } from "../src/lib/automated-payroll/types.ts";
+import type { DraftRow, StepRow } from "../src/lib/automated-payroll/types.ts";
 import {
   buildDisputeCenterAttachmentPath,
   disputeCenterAttachmentUrl,
   DISPUTE_ATTACHMENT_MAX_FILES,
 } from "../src/lib/dispute-center/attachment-rules.ts";
+import { payrollCharge } from "../src/lib/dispute-center/deduction.ts";
 
 /**
  * MONEY BACK AFTER A DISPUTE IS WON LATE.
@@ -102,12 +108,79 @@ export async function runDisputeCenterRefundsTests() {
   // HR's own figure always wins — the Dispute Center recommends, HR decides, exactly like the
   // standing additions register.
   const saved = new Map<string, DraftRow>([
-    ["B77", { employeeHrIdCompact: "B77", otherAdditions: 0, additionsReason: null } as DraftRow],
+    ["B77", { employeeHrIdCompact: "B77", otherAdditions: 250, additionsReason: null } as DraftRow],
   ]);
   const [overridden] = recommendAdditions([member("B-77", "B77")], saved, new Map(), refunds);
-  assert.equal(overridden?.values.otherAdditions, 0, "a figure HR saved is never overwritten by a refund row");
+  assert.equal(overridden?.values.otherAdditions, 250, "a figure HR saved is never overwritten by a refund row");
   assert.equal(overridden?.recommended.otherAdditions, 420.5, "but the recommendation still shows what was owed");
   assert.equal(overridden?.reason, null, "and the refund's reason is not attached to HR's different figure");
+
+  // ---- THE FROZEN ZERO — a refund that falls due AFTER the Additions step was confirmed -----------
+  //
+  // `confirmStep` persists every visible row, so the first Additions confirm writes
+  // `other_additions = 0.00` for the whole population. `pick` then prefers that saved zero over the
+  // feeder for ever: a refund recommended afterwards appeared nowhere, was never paid, and nothing
+  // in the run said so. Being on MODULE_SOURCED_STEP_KEYS is what tells a zero nobody chose from a
+  // figure somebody typed — the confirm records what the feeder was proposing at the time.
+  assert.ok(
+    MODULE_SOURCED_STEP_KEYS.includes("p2_additions"),
+    "the Additions step is module-fed: without this its confirm records no snapshot, and a refund " +
+      "arriving after it stays frozen behind a 0.00 for ever",
+  );
+  const additionsRow = (hrId: string, otherAdditions: number) =>
+    ({
+      fullName: "Test Person",
+      hrId,
+      recommended: { bonus: 0, incentive: 0, otherAdditions: 420.5, overtime: 0 },
+      values: { bonus: 0, incentive: 0, otherAdditions, overtime: 0 },
+    }) as unknown as StepRow;
+  const takenBack = takeCurrentModuleFigures({
+    // Both rows were confirmed while the feeder proposed nothing; the refund arrived afterwards.
+    chargedByCompact: { b1: { otherAdditions: 250 }, b77: { otherAdditions: 0 } },
+    rows: [additionsRow("B-77", 0), additionsRow("B-1", 250)],
+    snapshot: { b1: { otherAdditions: 0 }, b77: { otherAdditions: 0 } },
+    stepKey: "p2_additions",
+  });
+  assert.equal(
+    takenBack[0]?.values.otherAdditions,
+    420.5,
+    "re-confirming the step takes the refund the frozen 0.00 was hiding",
+  );
+  assert.equal(
+    takenBack[1]?.values.otherAdditions,
+    250,
+    "and a figure HR typed against that same proposal is somebody's decision — left exactly alone",
+  );
+
+  // …and the re-confirm the drift block asks for must not then be REFUSED for a missing reason,
+  // which is what a suppressed refund reason did: money with no explanation is rejected at confirm.
+  const frozen = new Map<string, DraftRow>([
+    ["B77", { additionsReason: null, employeeHrIdCompact: "B77", otherAdditions: 0 } as DraftRow],
+  ]);
+  const [frozenRow] = recommendAdditions([member("B-77", "B77")], frozen, new Map(), refunds);
+  assert.match(
+    frozenRow?.reason ?? "",
+    /September 2026/,
+    "a saved ZERO never suppresses the refund's reason — a zero explains nothing and needs no " +
+      "explanation of its own, and the confirm that takes the refund back would otherwise be refused",
+  );
+  assert.doesNotThrow(
+    () =>
+      assertAdditionsReasonsPresent(
+        additionsCandidatesFromStepRows([
+          { hrId: "B-77", reason: frozenRow?.reason ?? null, values: { otherAdditions: 420.5 } },
+        ]),
+      ),
+    "so the swapped-back refund confirms, reason and all",
+  );
+  assert.throws(
+    () =>
+      assertAdditionsReasonsPresent(
+        additionsCandidatesFromStepRows([{ hrId: "B-77", reason: null, values: { otherAdditions: 420.5 } }]),
+      ),
+    /needs a reason/,
+    "the rule itself is unchanged: an unexplained addition is still refused",
+  );
 
   // A refund and a standing addition in the same month never overwrite one another.
   const bothFeeders = recommendAdditions(
@@ -134,6 +207,67 @@ export async function runDisputeCenterRefundsTests() {
     "a read error throws — a refund silently reading as zero is money owed back that nobody pays",
   );
 
+  // ---- WHAT A DEDUCTION CHARGES IS ITS DECISION, NEVER THE PAYSLIP LINE --------------------------
+  //
+  // owner, 2026-10-07 (deductions-source.ts `buildDeductionBuckets`): "a candidate counts iff its
+  // decision is 'Approved for Payroll' … Whether the line was pushed is not read here at all". The
+  // dispute path measured every refund against the LINE instead, and the two disagree in both
+  // directions — each one real money on a real payslip:
+  //   * approved but never pushed → no active line, so "charged before" read 0.00 and a dispute the
+  //     employee WON refunded nothing while payroll charged the month in full;
+  //   * line withdrawn by an earlier decision → 0.00 again, so the next decision read as money going
+  //     back and recommended a second refund on top of the one already live.
+  const asCandidate = (fields: Record<string, unknown>) => fields as unknown as Parameters<typeof payrollCharge>[0];
+  const asDecision = (fields: Record<string, unknown> | null) => fields as unknown as Parameters<typeof payrollCharge>[1];
+  const twoDays = asCandidate({
+    category: "fingerprint",
+    dates: ["2026-09-03", "2026-09-04"],
+    estimated_amount: 2800,
+    raw_value: 2,
+    unit: "days",
+  });
+  assert.deepEqual(
+    payrollCharge(
+      twoDays,
+      asDecision({ applied_amount: 2800, applied_dates: null, applied_value: 2, decision_status: "Approved for Payroll" }),
+    ),
+    { amount: 2800, value: 2 },
+    "an approved deduction charges its decision — no payslip line anywhere in the answer",
+  );
+  assert.deepEqual(
+    payrollCharge(
+      twoDays,
+      asDecision({ applied_amount: 1400, applied_dates: ["2026-09-03"], applied_value: 1, decision_status: "Approved for Payroll" }),
+    ),
+    { amount: 1400, value: 1 },
+    "a decision narrowed to one day charges that one day",
+  );
+  assert.deepEqual(
+    payrollCharge(
+      twoDays,
+      asDecision({ applied_amount: 2800, applied_dates: null, applied_value: 2, decision_status: "Do Not Take Action" })),
+    { amount: 0, value: 0 },
+    "a cancelled deduction charges nothing, whatever figures its row still carries",
+  );
+  assert.deepEqual(
+    payrollCharge(twoDays, asDecision({ applied_amount: null, applied_dates: null, applied_value: null, decision_status: "Pending" })),
+    { amount: 0, value: 0 },
+    "and an undecided one fails CLOSED — payroll charges nothing nobody confirmed",
+  );
+  assert.deepEqual(
+    payrollCharge(twoDays, asDecision(null)),
+    { amount: 0, value: 0 },
+    "no decision row at all is the same answer, never the detected figure",
+  );
+  assert.deepEqual(
+    payrollCharge(
+      asCandidate({ category: "loans", dates: [], estimated_amount: 900, raw_value: 900, unit: "amount" }),
+      asDecision({ applied_amount: 900, applied_dates: null, applied_value: 900, decision_status: "Approved for Payroll" }),
+    ),
+    { amount: 900, value: 900 },
+    "for an amount deduction the value IS the money — the reduce ceiling is read in that same unit",
+  );
+
   // ---- A PAID month is never rewritten -------------------------------------------------------------
   const deduction = readFileSync("src/lib/dispute-center/deduction.ts", "utf8");
   assert.ok(
@@ -158,6 +292,73 @@ export async function runDisputeCenterRefundsTests() {
   assert.ok(
     decide.includes("resolveDecisionCharge") || decide.includes("appliedValue"),
     "a REDUCE decision charges the days he typed, through the deductions module's own charge rule",
+  );
+
+  // Every money figure in the decision comes from payrollCharge, and the LINE is never the basis.
+  assert.ok(
+    decide.includes("const before = payrollCharge(candidate, decisionBefore);") &&
+      decide.includes("const chargedBefore = before.amount;"),
+    "what was charged before the decision is the DECISION's figure — the refund is this minus what " +
+      "is charged after, so a line-shaped basis is a wrong refund every time the two disagree",
+  );
+  assert.ok(
+    !/chargedBefore\s*=\s*.*applied_amount/.test(decide) && !/ceiling\s*=\s*activeLine/.test(decide),
+    "neither the refund basis nor the reduce ceiling may read the publication line again",
+  );
+  assert.ok(
+    decide.includes("const ceiling = before.value;"),
+    "REDUCE is measured against what the deduction charges NOW, so it can only ever lower it — the " +
+      "old ceiling was the DETECTED figure whenever no line was live, which let a deduction already " +
+      "cut to 1 day be 'reduced' to 3 of its 4 detected days",
+  );
+  assert.ok(
+    decide.includes("There is nothing to reduce"),
+    "…and a deduction charging nothing cannot be reduced at all, rather than reduced from zero",
+  );
+
+  // A DECIDED case is decided again only after a reopen — the gate digest.ts has had all along.
+  assert.ok(
+    decide.includes("isDecidedByEvents(events)") && decide.includes("Reopen it first, then decide it again."),
+    "without this a decided case could be decided twice over, and each decision measured what it " +
+      "owed against what the last one left — a second refund stacked on the first",
+  );
+
+  // REJECT is a statement about the money: where an earlier decision on the same dispute lowered the
+  // deduction, rejecting now puts it back, from the figure that decision's own event recorded.
+  assert.ok(
+    decide.includes('details.chargedValueBefore') && decide.includes("chargedValueBefore: before.value"),
+    "the decision records the FIGURE behind the amount, because that is what a later reject restores " +
+      "— an amount alone cannot be restored through recordDecision",
+  );
+  assert.ok(
+    decide.includes("Dispute rejected — the deduction stands as it was charged"),
+    "rejecting after an accept re-charges the deduction; otherwise the employee is told it stands " +
+      "while payroll charges nothing and the earlier refund stays live",
+  );
+  assert.ok(
+    decide.includes('events.find((event) => event.eventType === "decided")'),
+    "and it restores from the FIRST decision's own event — the only record of what this deduction " +
+      "charged before the dispute touched it, since the decision row is overwritten each time",
+  );
+
+  // Half a decision must never pass as a whole one: the line comes off first, and if the decision
+  // then fails the line goes back rather than leaving payroll and the portal disagreeing.
+  assert.ok(
+    decide.includes("The deduction was taken off the payslip but the decision did not save") &&
+      decide.includes("It could NOT be put back"),
+    "a failed recordDecision after a successful withdraw is reported as the state it leaves behind",
+  );
+
+  // One live refund per case is a database rule, and a PAID one cannot be cancelled to make room.
+  assert.ok(
+    /if \(replaced\.alreadyPaid\)/.test(refundsLib) && /refund: null,/.test(refundsLib),
+    "recommending over a refund that was already paid answers with no refund and a sentence — it " +
+      "used to discard cancelLiveRefund's answer and raise a 23505 after the money had moved",
+  );
+  assert.ok(
+    decide.includes("if (recommended.refund) refundSentence = recommended.sentence;") &&
+      decide.includes("else payrollNotices.push(recommended.sentence);"),
+    "…and that sentence reaches HR as something to settle, never the employee as money on the way",
   );
 
   // ---- Pictures: the storage key never carries a file name -----------------------------------------

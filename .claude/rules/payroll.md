@@ -1,9 +1,9 @@
 ---
 paths:
-  - "src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator}/**"
-  - "src/components/{payroll,automated-payroll}/**"
-  - "app/**/{payroll,automated-payroll,m-payroll,payroll-copilot,payroll-management,payslips-center,payslips,daily-deductions,deductions,finance-command-center}/**"
-  - "tests/*{payroll,payslip,salary,deduction,statutory}*"
+  - "src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator,dispute-center}/**"
+  - "src/components/{payroll,automated-payroll,disputes}/**"
+  - "app/**/{payroll,automated-payroll,m-payroll,payroll-copilot,payroll-management,payslips-center,payslips,daily-deductions,deductions,finance-command-center,disputes}/**"
+  - "tests/*{payroll,payslip,salary,deduction,statutory,dispute}*"
   - "supabase/migrations/*{payroll,salary,payslip,deduction}*"
 ---
 
@@ -25,6 +25,8 @@ This file is loaded because this session opened a file of this module (or the mo
 ### Production hooks (moved from AGENTS.md §2.3)
 
 - 🔒 **THE DISPUTE CENTER IS WHERE A DISPUTE IS DECIDED, AND A DECIDED ONE NEVER DISAPPEARS FROM EITHER SIDE** (owner, 2026-10-09: *"dispute closed dispute open but never disappeared from me or the employee side"*). `/admin/disputes` and `/employee-portals/disputes` hold all three kinds — calendar, deduction, weekly review — open and decided; the three module queues stay as they are. A deduction dispute has **three** outcomes, his own words: **accept** cancels it (Do Not Take Action), **reject** keeps it, **reduce** charges the days he types — and a line already on a payslip is **WITHDRAWN FIRST, then re-decided in the same click**, because `recordDecision` refuses a candidate locked by a publication. 🔴 **A PUBLISHED, PAID MONTH IS NEVER REWRITTEN to agree with a later decision** — money owed back becomes a `dispute_refunds` row that pre-fills the next open run's **Other Additions** with its reason (his "in additions , other"), a RECOMMENDATION HR confirms, and deciding the case back the other way CANCELS it rather than clawing a payment. **Nothing closes itself and nothing expires** ("wait, no deadline"), and **only the reviewer reopens** — the employee asks. Account: `docs/dispute-center.md`. Pinned by `tests/dispute-center-refunds.test.ts`, `tests/dispute-center-state.test.ts` and `tests/dispute-center-participants.test.ts`.
+
+- 🔴 **WHAT A DISPUTED DEDUCTION CHARGES IS ITS DECISION, NEVER ITS PAYSLIP LINE** — `payrollCharge` (`src/lib/dispute-center/deduction.ts`, 2026-10-09) asks payroll's own `candidateAmount`/`isConfirmedForPayroll`, because payroll counts a candidate iff its decision is "Approved for Payroll" and never reads the line. A line-shaped basis refunded NOTHING on an approved-but-unpushed deduction and refunded TWICE on a withdrawn one. The **REDUCE ceiling is that same figure** (so reduce can only lower a charge, and one charging nothing cannot be reduced at all); **a decided dispute is re-decided only after a reopen** (`isDecidedByEvents`, and the panel hides the buttons while a reopen is merely requested); **REJECT restores what this dispute's FIRST `decided` event recorded** (`chargedValueBefore`) — otherwise "it stands" is a lie. A refund over one already PAID recommends nothing and hands HR the difference. 🔴 **`p2_additions` IS MODULE-FED** — off that list, the Additions confirm freezes `other_additions = 0.00` over money owed back and nothing can ever pay it. Account: `docs/dispute-center.md`. Pinned by `tests/dispute-center-refunds.test.ts`.
 
 - 🔴 **THE CASE BRIEFING IS CHECKED, NOT TRUSTED — AND IT IS SUPER ADMIN ONLY** (owner, 2026-10-09, asked who should have it: *"only me"*; his condition on it: *"he must be accurate hundred percent"*). Every statement must name the numbered facts it rests on, and any statement whose times or figures are absent from the records it cited is **DROPPED and counted on screen**, never hedged — `src/lib/dispute-center/assist-verify.ts`. Each surviving statement renders beside its records, because the one thing the verifier cannot catch is right numbers with wrong words. A saved briefing carries a fingerprint of the facts it was built from and shows as out of date the moment the case moves. The model is told never to accuse anybody and never to use the words fraud, lying, guilty, innocent or suspect. 🔴 **Never widen the audience and never show an unverified statement.** Account: `docs/dispute-center.md`. Pinned by `tests/dispute-center-assist-accuracy.test.ts`.
 

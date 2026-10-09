@@ -5,11 +5,23 @@ import { PART1_STEP_KEYS, type StepKey } from "./types.ts";
 // module-drift.ts re-exports MODULE_SOURCED_STEP_KEYS for the server side.
 
 /**
- * The steps whose figures come from the Deductions module.
+ * The steps whose figures come from a module OUTSIDE the run — the ones that can change behind the
+ * run's back, which is the whole reason the drift check exists.
  *
- * Exactly the ones that call `loadConfirmedDeductions` in recommend.ts. Every other step proposes
- * from the employee master or from the run itself, and neither can change behind the run's back in
- * the way this check exists to catch.
+ * Exactly the steps that call `loadConfirmedDeductions` or `loadDisputeRefunds` in recommend.ts.
+ * Every other step proposes from the employee master or from the run itself.
+ *
+ * 🔴 `p2_additions` IS ONE OF THEM (owner, 2026-10-09 — a deduction a reopened dispute gives back
+ * after its month was already paid lands in Additions → Other additions). Its feeder is the Dispute
+ * Center rather than Deductions, and leaving it off this list made that refund unpayable in the
+ * commonest order of work: `confirmStep` persists EVERY visible row, so the first Additions confirm
+ * wrote `other_additions = 0.00` for the whole population, `pick` in recommend.ts then preferred
+ * that saved zero over the feeder for ever, and a refund recommended afterwards could never appear
+ * on the step, in the drift report or in the Part 2 gate — the money was owed and nothing could pay
+ * it. On this list the confirm records what the feeder proposed at the time, so a zero nobody chose
+ * is told apart from a figure HR typed: the refund swaps back in (`takeCurrentModuleFigures`), the
+ * Part 2 confirm refuses while confirming would pay the month without it, and a save no longer
+ * stamps an untouched 0.00 as somebody's own figure (saved-figures.ts).
  */
 export const MODULE_SOURCED_STEP_KEYS: readonly StepKey[] = [
   "p1_fingerprint",
@@ -20,6 +32,7 @@ export const MODULE_SOURCED_STEP_KEYS: readonly StepKey[] = [
   "p2_vacation",
   "p2_crm",
   "p2_manual_deductions",
+  "p2_additions",
 ];
 
 /**

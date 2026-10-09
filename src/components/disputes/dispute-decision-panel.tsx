@@ -134,9 +134,16 @@ export function DisputeDecisionPanel({ dispute, onDone }: { dispute: DisputeCase
           </div>
         ) : null}
 
-        {dispute.state === "decided" ? (
+        {/* A DECIDED CASE IS DECIDED AGAIN ONLY AFTER A REOPEN — including one whose reopen has been
+            ASKED FOR and not yet granted. The decision form used to show beside that request, so a
+            second decision could be taken without ever answering it; every module now refuses that
+            server-side (deduction.ts, digest.ts), and a form that posts into a refusal is worse than
+            no form. Answer the request above, then decide. */}
+        {dispute.state === "decided" || reopenRequested ? (
           <p className="text-xs text-slate-500">
-            Nothing is waiting on you. The employee can ask for it to be looked at again, and you decide whether to reopen it.
+            {reopenRequested
+              ? "Answer the request above first. Reopening it brings the decision buttons back."
+              : "Nothing is waiting on you. The employee can ask for it to be looked at again, and you decide whether to reopen it."}
           </p>
         ) : (
           <div className="space-y-3">
