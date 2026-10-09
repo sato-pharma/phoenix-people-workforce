@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 
 import {
+  NEVER_STORE_KEYWORDS,
   STORE_OVERRIDE_NAMES,
   classifyCustomerChannel,
   isStoreCustomerForPeriod,
   legacyIsStoreCustomer,
+  matchedNeverStoreKeywords,
   matchedStoreKeywords,
   nameMatchesAnyKeyword,
 } from "../src/lib/sales/customer-channel.ts";
@@ -173,6 +175,50 @@ const MUST_STAY_PHARMACY: ReadonlyArray<readonly [string, string, string]> = [
   ["شركه أيه ام جروب", "0001535504", "PS"],
 ];
 
+/**
+ * The other half of the same day's ruling, and the only one that STOPS a split: **"the three تامين
+ * الصحي depots are government, never split them"** (owner, 2026-10-09). The deeper audit found them
+ * splitting against his own 17-of-17 «government depot, do NOT split» answers of 2026-09-06, because
+ * the abbreviation stem ت.ص cannot reach a name that spells تامين الصحي out in full — and all three
+ * carry مخزن, so the store word won.
+ *
+ * Measured on production before the word was written: تامين reaches 26 accounts, every one of them
+ * the health-insurance authority, a branch, a depot or a clinic of it, or the unified-procurement
+ * authority buying for it; NOT ONE is a wholesaler. Seven of the 26 split, all seven on مخزن — his
+ * three plus four more of exactly the same kind, which the ruling therefore reaches too.
+ *
+ * WHAT IT MOVES. The never-store words are invisible to `legacyIsStoreCustomer`, so every month
+ * before the cutover is judged by the old rule and nothing published restates. In a gated period
+ * these seven hold exactly two rows, both September 2026 CNS: 23495 in D24 Sharkia 1 (249 units,
+ * 8,889.30 EGP) and 64845 in D11 Qalubeya (200 units, 7,140.00 EGP). Qalubeya is a one-area city,
+ * so its split was already a no-op; Sharkia has two areas, so what actually changes hands is
+ * 124.5 units and 4,444.65 EGP returning from Sharkia 2 to Sharkia 1. The other five carry no row
+ * at or after the cutover at all.
+ */
+const GOVERNMENT_HEALTH_INSURANCE_DEPOTS: ReadonlyArray<readonly [string, string, string]> = [
+  // The three he named. 23495 and 64845 are the only two with a row in a gated period.
+  ["فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي", "23495", "EG-HOS"],
+  // Its own spelling runs the dash onto the word with no space before it — a search for the spaced
+  // form misses it, which is why it was first reported as two depots and not three.
+  ["فرع شرق الدلتا - المخزن الاقليمي القليوبية- تامين الصحي", "64845", "EG-HOS"],
+  ["فرع شرق الدلتا - المخزن الاقليمي شبرا الخيمة - تامين الصحي", "27863", "EG-HOS"],
+  // The four of the same kind the audit found in the same sweep. Last sold 2026-08, 2026-08,
+  // 2026-05 and 2026-08 — all before the CNS cutover, so none of them moves a figure today.
+  ["فرع المنوفية - المخزن الرئيسى بمنوف - تامين الصحي", "139383", "EG-HOS"],
+  ["فرع شمال الصعيد - المخزن الرئيسي بنى سويف - تامين صحي", "66085", "EG-HOS"],
+  ["فرع شمال شرق الدلتا- مخزن ادوية الطلبة الرئيسى بجديلة - تامين الصحي", "139359", "EG-HOS"],
+  ["فرع وسط الصعيد - مخزن العاشر من رمضان سوهاج - تامين صحي", "139062", "EG-HOS"],
+];
+
+/**
+ * A SYNTHETIC control, and deliberately so: the stem must stay تامين and never be shortened to
+ * امين. Broadening it by one letter reaches 257 real customers on production, every one a person
+ * called أمين — and not one of them carries a store word today, so no real name can prove the
+ * difference. This one would: a warehouse whose owner happens to be called أمين. Shorten the stem
+ * and this flips to a pharmacy, taking its city split with it.
+ */
+const WIDENING_CONTROL = ["مخزن امين عبدالكريم للادوية", "SYNTHETIC-AMIN", "IS"] as const;
+
 export function runStoreSplitOwnerRulings20261009Tests() {
   // 1. The twelve are in the list, stem for stem. A tidy that broadens one fails here.
   for (const [label, stem] of RULED_STEMS) {
@@ -247,7 +293,51 @@ export function runStoreSplitOwnerRulings20261009Tests() {
     "August Pedia does take it — Pedia's cutover is 2026-08, and these names carry no Pedia row today",
   );
 
-  // 7. The legacy rule stays genuinely the old one. A name ruling is invisible to it by
+  // 7a. The government health-insurance depots. Each one still carries مخزن, so this asserts the
+  //     never-store word is what refuses the split — delete the word and these go back to splitting
+  //     while every other assertion in this file stays green.
+  const insuranceLabel = "تأمين صحى (هيئة التأمين الصحي)";
+  const insuranceEntry = NEVER_STORE_KEYWORDS.find((candidate) => candidate.label === insuranceLabel);
+  assert.ok(insuranceEntry, `${insuranceLabel} must still be a NEVER_STORE keyword — he ruled it on 2026-10-09`);
+  assert.equal(insuranceEntry.stem, "تامين", "the health-insurance stem must stay تامين, never the bare امين");
+  for (const [depotName, depotCode, depotDistributor] of GOVERNMENT_HEALTH_INSURANCE_DEPOTS) {
+    assert.ok(
+      matchedStoreKeywords(depotName).length > 0,
+      `${depotName} carries a store word — if it ever stops, this test no longer proves anything`,
+    );
+    assert.ok(
+      matchedNeverStoreKeywords(depotName).includes(insuranceLabel),
+      `${depotName} must be refused by «${insuranceLabel}» — he ruled these government, never split`,
+    );
+    assert.equal(
+      classifyCustomerChannel(depotName, depotCode, depotDistributor),
+      "pharmacy",
+      `${depotName} is a government health-insurance depot and must never split`,
+    );
+  }
+
+  // 7b. And a published month does NOT restate: the never-store words are invisible to the legacy
+  //     rule, so August CNS still reads 23495 the way it was published.
+  const [depot, depotCode, depotDistributor] = GOVERNMENT_HEALTH_INSURANCE_DEPOTS[0];
+  assert.equal(
+    isStoreCustomerForPeriod(depot, depotCode, depotDistributor, "2026-09", "CNS"),
+    false,
+    "September CNS stops splitting the 10th of Ramadan depot — the ruling's only live effect",
+  );
+  assert.equal(
+    isStoreCustomerForPeriod(depot, depotCode, depotDistributor, "2026-08", "CNS"),
+    true,
+    "August CNS is published and still judged by the legacy rule, which never reads a never-store word",
+  );
+
+  // 7c. The widening control — see WIDENING_CONTROL.
+  assert.equal(
+    classifyCustomerChannel(...WIDENING_CONTROL),
+    "store",
+    "a warehouse whose owner is called أمين must still split — the stem is تامين, not امين",
+  );
+
+  // 8. The legacy rule stays genuinely the old one. A name ruling is invisible to it by
   //    construction — it reads the code-keyed list — and that is what keeps every published month
   //    reproducible. If one ever leaked, all of 2026 would silently restate.
   for (const [legacyName, legacyCode, legacyDistributor] of RULED_WAREHOUSES) {
