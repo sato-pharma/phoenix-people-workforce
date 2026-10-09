@@ -207,8 +207,14 @@ per 1,000 characters — and the hidden analysis block counts too. Evidence: `~/
   versions); `~/.claude/hooks/scratchpad-guard.mjs` denies delete commands that name them and sweeps
   before any other delete. Never delete anything inside that archive.
 - **Every git repository on this machine too** ("do the same in all repos", same day):
-  `~/.claude/scripts/repo-archive.mjs` copies them from every working tree into `<ext>\_repos\<repo>\`
-  and recovers ones git history shows were deleted into `<ext>\_repos-deleted-in-git\<repo>\`. It runs
+  `~/.claude/scripts/repo-archive.mjs` copies them from every working tree into
+  `_by-source\<ext>\_repos\<repo>\` — 🔴 **under `_by-source\`, NOT `<ext>\_repos\`, which has never
+  existed and read as an empty archive on 2026-10-09** — and recovers ones git history shows were
+  deleted into `_by-source\<ext>\_repos-deleted-in-git\<repo>\`. `node ~/.claude/scripts/repo-archive.mjs
+  --status` prints both roots and counts what is on disk. 🔴 **"Is this document archived?" is answered by
+  `--verify`, which checks CONTENT, and NEVER by looking for a path** — the 2026-09-20 de-duplication
+  left 2,934 of 4,525 recorded destinations pointing at removed duplicates while the day folders hold
+  the content, so a path check reports a lost document that is perfectly safe (0 were ever lost). It runs
   hourly and at session start/stop, and the guard runs it on the touched repository before any delete,
   `git clean`, `stash -u`, `reset --hard`, `checkout -- `/`restore` or worktree removal.
 - Layout he chose: `<type>\<YYYY-MM-DD>\<file>` (hard links, each content once); the by-source copies live

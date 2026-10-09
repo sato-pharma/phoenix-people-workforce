@@ -96,6 +96,7 @@
   "a-server-component-cannot-pass-a-function-to-a-client-one": "platform",
   "a-skipped-ci-step-is-0001-01-01-not-null": "engineering",
   "a-source-assertion-is-satisfied-by-the-comment-explaining-the-call": "notifications",
+  "a-spawn-probe-beside-a-pinned-hook-must-be-pinned-with-it": "sessions",
   "a-squash-merge-makes-a-stacked-branch-rebuild-not-merge": "git-worktrees",
   "a-stale-mirror-report-is-measured-in-your-own-checkout": "sessions",
   "a-superseded-deploy-reached-success-a-withheld-one-never-did": "engineering",

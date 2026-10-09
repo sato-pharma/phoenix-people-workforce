@@ -122,7 +122,7 @@ import {
   readModuleMemoryText,
   readReachabilityTextAtRef,
 } from "./memory-index-reachability.mjs";
-import { cloudMirrorDrift, cloudMirrorDriftReport } from "./cloud-mirror-drift.mjs";
+import { cloudMirrorDrift, cloudMirrorDriftReport, crlfToLf } from "./cloud-mirror-drift.mjs";
 import { readCloudMirror } from "./cloud-mirror-source.mjs";
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { commitDeltaLandedOnMain } from "./delta-landed.mjs";
@@ -1507,6 +1507,55 @@ let autoloadedIndexBytes = null;
     console.log("  " + mirror.label);
     const drift = cloudMirrorDrift({ live: readMd(memoryDir), mirror: mirror.files });
     for (const line of cloudMirrorDriftReport(drift)) console.log(line);
+
+    // ── THE GLOBAL STANDING RULES A CLOUD SESSION READS ──────────────────────────────────────
+    //
+    // `global-standing-rules.md` sits BESIDE the memory mirror, not inside it, so none of the work
+    // above touches it: `cloudMirrorDrift` compares memory files, and the only assertion that
+    // mentions this copy checks that `sync-cloud-context.mjs` writes it through `crlfToLf`. Nothing
+    // compared it to the live file.
+    //
+    // 🔴 WHAT THAT COST, measured 2026-10-09: the copy on `origin/main` was 606 bytes behind
+    // `~/.claude/CLAUDE.md` and still carried an archive path (`<ext>\_repos\`) that had been
+    // corrected hours earlier that morning — after a session read that very path, found nothing
+    // there and reported an archive of 1,666 documents as empty. A cloud session had no way to find
+    // out: it cannot see the live file, and this is the only copy it gets.
+    //
+    // The fail direction is deliberate: when either side cannot be read the line says so. A cloud
+    // runner has no `~/.claude` at all, and a silent "in step" there would be the worst answer.
+    const RULES_IN_MIRROR = ".claude/cloud-context/global-standing-rules.md";
+    const liveRulesPath = process.env.PHX_GLOBAL_RULES || path.join(os.homedir(), ".claude", "CLAUDE.md");
+    const readRules = () => {
+      // Read it from the SAME place the memory mirror was read from, or the label would lie.
+      if (mirror.source === "ref") {
+        try {
+          return execFileSync("git", ["-C", checkoutRoot, "show", `origin/main:${RULES_IN_MIRROR}`],
+            { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+        } catch { return null; }
+      }
+      try { return fs.readFileSync(path.join(checkoutRoot, RULES_IN_MIRROR)); } catch { return null; }
+    };
+    const mirroredRules = readRules();
+    let liveRules = null;
+    try { liveRules = fs.readFileSync(liveRulesPath); } catch { /* no ~/.claude here */ }
+    if (liveRules === null) {
+      console.log("  standing rules  cannot measure — the live " + liveRulesPath + " is not on this machine");
+    } else if (mirroredRules === null) {
+      console.log("  standing rules  MISSING from the mirror — a cloud session wakes with no global rules");
+    } else {
+      const mirrored = crlfToLf(mirroredRules).toString("utf8");
+      const live = crlfToLf(liveRules).toString("utf8");
+      if (mirrored === live) {
+        console.log("  standing rules  in step with the live file");
+      } else {
+        const delta = live.length - mirrored.length;
+        console.log(
+          "  standing rules  STALE by " + Math.abs(delta) + " char(s) — the mirror holds " +
+          mirrored.length + " against the live " + live.length +
+          "; run `node scripts/sync-cloud-context.mjs` and ship the refresh",
+        );
+      }
+    }
   }
 }
 

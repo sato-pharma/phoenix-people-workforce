@@ -338,4 +338,37 @@ export function runCloudMirrorDriftTests() {
     (sync.match(/crlfToLf\(fs\.readFileSync\(/g) ?? []).length,
     `${SYNC}: no file may be read for the mirror without going through crlfToLf`,
   );
+
+  // ── 6. the GLOBAL STANDING RULES copy is measured too ────────────────────────────────────────
+  //
+  // It sits beside the memory mirror, so section 5 above says nothing about it, and until
+  // 2026-10-09 the only assertion naming it was the crlfToLf one further down — which pins how the
+  // refresh WRITES it and not whether the committed copy still matches the live file. It did not:
+  // the copy on origin/main was 606 bytes behind and named an archive path corrected that morning.
+  {
+    const doctor = flat(DOCTOR);
+    assert.ok(
+      /global-standing-rules\.md/.test(doctor),
+      `${DOCTOR}: it must measure the standing-rules copy a cloud session reads, not only the memory mirror`,
+    );
+    assert.ok(
+      /crlfToLf/.test(doctor),
+      `${DOCTOR}: the comparison must normalise line endings, or every CRLF file reports as drift`,
+    );
+    assert.ok(
+      /mirror\.source === "ref"/.test(doctor),
+      `${DOCTOR}: the standing rules must be read from the SAME source as the memory mirror, or the label lies`,
+    );
+    // THE FAIL DIRECTION, the same one section 5 pins for the memory mirror: a cloud runner has no
+    // ~/.claude, and "in step" is the one answer it must never print there.
+    assert.ok(
+      /cannot measure — the live/.test(doctor),
+      `${DOCTOR}: with no live file it must say it cannot measure, never report the mirror in step`,
+    );
+    assert.ok(
+      /MISSING from the mirror/.test(doctor),
+      `${DOCTOR}: a mirror with no standing-rules file at all must report that, not silence`,
+    );
+  }
+
 }
