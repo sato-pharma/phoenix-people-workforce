@@ -147,8 +147,11 @@ The measurements and incidents behind each line: `~/.claude/docs/standing-rules-
 - **Claude desktop app slow? Read `~/.claude/scripts/ram-meter/claude-app-watch.txt` first.** An
   archived session whose worktree the app deleted spins its main thread at a full core. His
   "re-archive the stuck sessions" covers exactly the ARCHIVED sessions it lists:
-  `unarchive_session` then `archive_session` each. Never stop or restart the app yourself. Rebuild
-  the meter with `--restart`.
+  `unarchive_session` then `archive_session` each. Never stop or restart the app yourself — the ONE
+  exception is the RAM meter's own automatic restart (owner, 2026-10-09: "only when idle + I'm away"):
+  window process past its line, no session written to for 10 minutes, no keyboard or mouse for 15,
+  logged to `~/.claude/logs/claude-app-restart.log`. Never widen those conditions. Rebuild the meter
+  with `--restart`.
 - Do not burn wall-clock watching CI or a deploy in the foreground. Background it and report the end.
 - 🔴 **NEVER run a typecheck locally — it no longer FITS on this box; the PR's `typecheck` check is
   the answer.** A cold `tsc` needs 4.0–4.5 GB of heap and `mem-watchdog.ps1` reaps it with no output;
@@ -161,6 +164,17 @@ The measurements and incidents behind each line: `~/.claude/docs/standing-rules-
   `~/.claude/settings.json` AND as a Windows user variable.** Not a duplicate of
   `promptSuggestionEnabled`: only the variable keeps suggestions on near the usage limit and in the
   first session after an update. Never remove either copy.
+
+## Compact Instructions
+
+When this conversation is compacted, write a SHORT summary: about 8,000 characters, never more than
+10,000 (owner, 2026-10-09). The freeze grows about 6 seconds per 1,000 summary characters — 187
+compactions, 6–8 Oct: 79 s under 15k characters, 175 s at 25–35k. Keep word for word: his
+instructions, approvals and decisions with their Cairo times; every open item with its real target
+(PR numbers, branch and worktree names, full SHAs, background and scheduled task IDs, uncommitted
+files); what is proven and the one number that proves it; the exact next step. Leave out: code
+already committed (name the file and the commit), command and tool output, the exploration behind a
+finished result, and any rule already in this file, a repo's AGENTS.md/CLAUDE.md or module memory.
 
 ## Never delete documents (owner rule, 2026-09-14; narrowed 2026-09-20; stand-down added 2026-10-06)
 
