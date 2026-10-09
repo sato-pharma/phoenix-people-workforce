@@ -168,6 +168,16 @@ const ROUTE_GATES: RouteGate[] = [
   post("validation-reviews/refuse", "update"),
   // Approving a place AFTER it was rejected (owner, 2026-10-03): the same gate and the same decider.
   post("validation-reviews/restore", "update"),
+  // Deciding a POLYCLINIC or centre (owner, 2026-10-09: the administrator has the right to review the
+  // schedule and look). The same gate and the same decider as a place's review — `update` at the route
+  // and `canDecideSharedPlaces` in the service, which is the identical predicate — and a rejection
+  // retires every place seated in the venue.
+  post("validation-reviews/shared-place", "update"),
+  // The venues themselves: the list a rep standing in one picks from, and the capture at its door.
+  // `read` and `create`, the same pair a place has, and `territoryForValidation` narrows the capture
+  // in the service exactly as it narrows `list/places`.
+  get("shared-places"),
+  post("shared-places", "create"),
   // The rep drops a customer met outside his list; the SFE Manager brings one back from the Archive.
   post("list/outside/drop", "create"),
   post("list/archive/bring-back", "approve"),
@@ -750,6 +760,13 @@ const LATER_MIGRATIONS = [
   // the same jsonb signature; it replaces no save_visit and creates no table, so it appends safely at
   // the end and cannot disturb the replacement ordering above.
   "supabase/migrations/20261010010000_phoenix_crm_pharmacy_pin_and_phone.sql",
+  // The shared place — a polyclinic, centre, tower or hospital outpatient suite captured once at its
+  // door, with customers seated in it (owner, 2026-10-09). ONE new table, TWO brand-new functions
+  // (create, decide), a trigger function of its own, and phoenix_crm_insert_place replaced with its
+  // live body plus two columns. It replaces no save_visit — the three-a-day cap is a BEFORE INSERT
+  // trigger on phoenix_crm_visits rather than a line in that 27,663-character function, so every door
+  // that writes a visit is held to it — and so it appends safely at the end.
+  "supabase/migrations/20261010013001_phoenix_crm_shared_places.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

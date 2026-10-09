@@ -202,7 +202,12 @@ export function runPhoenixCrmAccuracyGateTests() {
 
   // ── Every save goes through the two parsers ───────────────────────────────────
   const list = stripComments(readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8"));
-  assert.equal((list.match(/const place = parsePlaceDraft\(body\.place\);/g) ?? []).length, 2, "validating and adding a place both parse through the gate");
+  // `const parsed = …` since 2026-10-09, not `const place = …`: a customer SEATED in a shared place
+  // sends no location at all (the venue's point is inherited), so each door parses the draft inside
+  // its own `if (!seated)` branch and assigns `place` after. The gate itself is unchanged — both
+  // doors still go through `parsePlaceDraft`, and a third call would mean a door that skipped it.
+  assert.equal((list.match(/const parsed = parsePlaceDraft\(body\.place\);/g) ?? []).length, 2, "validating and adding a place both parse through the gate");
+  assert.equal((list.match(/parsePlaceDraft\(/g) ?? []).length, 2, "and nothing else in the module parses a place");
   const visits = stripComments(readFileSync("src/lib/phoenix-crm/server/visits.ts", "utf8"));
   assert.ok(visits.includes("const draft = parseVisitDraft(body);"), "the visit save parses through the gate");
 

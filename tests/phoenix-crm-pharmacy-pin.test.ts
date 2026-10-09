@@ -217,15 +217,24 @@ export function runPhoenixCrmPharmacyPinTests() {
 
     // The SAME function resolves a doctor's validated place and a pharmacy's pin. Two resolvers would
     // let a pharmacy and the clinic across the street disagree about which brick the street is in.
-    assert.ok(list.includes("async function resolvePinGeography("), "one shared resolver");
-    assert.equal((list.match(/await resolvePinGeography\(/g) ?? []).length, 2, "and exactly two callers: the validated place, and the pharmacy pin");
+    //
+    // 🔴 IT MOVED INTO `server/place-location.ts` ON 2026-10-09, body unchanged: a shared place (a
+    // polyclinic captured once, with doctors seated in it) is its next caller, and `shared-places.ts`
+    // is itself imported BY `list.ts`, so leaving the resolver here would have made the two modules
+    // import each other. What this section pins is unchanged, and is now asserted ACROSS the two
+    // files — ONE declaration, in that module, and `list.ts` may hold no copy of its own.
+    const resolver = source("src/lib/phoenix-crm/server/place-location.ts");
+    assert.ok(resolver.includes("export async function resolvePinGeography("), "one shared resolver");
+    assert.ok(!list.includes("function resolvePinGeography("), "and list.ts carries no second copy of it");
+    const callers = (resolver.match(/await resolvePinGeography\(/g) ?? []).length + (list.match(/await resolvePinGeography\(/g) ?? []).length;
+    assert.equal(callers, 2, "and exactly two callers: the validated place, and the pharmacy pin");
     assert.ok(list.includes("const geo = await resolvePinGeography(pin);"), "the pharmacy pin is resolved through it");
-    assert.ok(list.includes("const geo = await resolvePinGeography(point);"), "and so is the place");
+    assert.ok(resolver.includes("const geo = await resolvePinGeography(point);"), "and so is the place");
 
     // The governorate is Google's own component, never read out of the address line: a street or
     // district name reads like a governorate, and a wrong one on a pharmacy is worse than none.
-    assert.ok(list.includes("governorate: located?.components.governorate ?? null,"), "the governorate comes from the geocode's components");
-    assert.doesNotMatch(list, /governorate[^\n]*address\.split|split[^\n]*governorate/i, "and is never cut out of the address text");
+    assert.ok(resolver.includes("governorate: located?.components.governorate ?? null,"), "the governorate comes from the geocode's components");
+    assert.doesNotMatch(resolver, /governorate[^\n]*address\.split|split[^\n]*governorate/i, "and is never cut out of the address text");
 
     // What the pin writes: the thirteen fields, snake_case, as the function expects them.
     const payload = list.slice(list.indexOf("async function resolvePharmacyPinPayload("));

@@ -23,13 +23,16 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { CrmButton, CrmField, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
 import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer-list";
+import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
 import {
   distinctValues,
   EMPTY_VALIDATION_REVIEW_FILTERS,
   hasActiveValidationReviewFilter,
+  matchesSharedPlaceFilters,
   matchesValidationReviewFilters,
+  sharedPlacePassesOutcome,
   validatedPassesOutcome,
   validationReviewPeriodCutoff,
   withinValidationReviewPeriod,
@@ -38,7 +41,7 @@ import {
   type ValidationReviewOutcome,
   type ValidationReviewPeriod,
 } from "@/lib/phoenix-crm/validation-review-filters";
-import type { ReopenedCustomerRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
+import type { ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 const OUTCOME_LABELS: Record<ValidationReviewOutcome, string> = {
   all: "Every outcome",
@@ -67,6 +70,7 @@ export function ValidationReviewsBoard({
   decided,
   validated,
   reopened,
+  sharedPlaces,
   capped,
 }: {
   pending: ValidationReviewRow[];
@@ -74,18 +78,32 @@ export function ValidationReviewsBoard({
   validated: ValidatedPlaceRow[];
   /** Customers sent back to To validate and not captured again since — oldest wait first. */
   reopened: ReopenedCustomerRow[];
+  /** Every polyclinic and centre in use or waiting for a decision, newest first. */
+  sharedPlaces: SharedPlaceBoardRow[];
   /** Which reads stopped at their ceiling, so the page says "showing the newest" instead of lying. */
-  capped: { reviews: boolean; validated: boolean; reopened: boolean };
+  capped: { reviews: boolean; validated: boolean; reopened: boolean; sharedPlaces: boolean };
 }) {
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
     setFilters((current) => ({ ...current, [key]: value }));
 
   const everyRow = useMemo<ValidationReviewFilterable[]>(() => [...pending, ...decided, ...validated], [pending, decided, validated]);
-  const reps = useMemo(() => distinctValues(everyRow.map((row) => row.repName)), [everyRow]);
-  const lines = useMemo(() => distinctValues(everyRow.map((row) => row.line)), [everyRow]);
-  const regions = useMemo(() => distinctValues(everyRow.map((row) => row.region)), [everyRow]);
-  const areas = useMemo(() => distinctValues(everyRow.map((row) => row.areaName)), [everyRow]);
+  // A venue's own rep, line, region and area belong in the dropdowns too: a rep who has captured a
+  // polyclinic and nothing else would otherwise be unreachable from the Rep box, and his venue could
+  // only be found by typing in the search field.
+  const reps = useMemo(
+    () => distinctValues([...everyRow.map((row) => row.repName), ...sharedPlaces.map((row) => row.repName)]),
+    [everyRow, sharedPlaces],
+  );
+  const lines = useMemo(() => distinctValues([...everyRow.map((row) => row.line), ...sharedPlaces.map((row) => row.line)]), [everyRow, sharedPlaces]);
+  const regions = useMemo(
+    () => distinctValues([...everyRow.map((row) => row.region), ...sharedPlaces.map((row) => row.region)]),
+    [everyRow, sharedPlaces],
+  );
+  const areas = useMemo(
+    () => distinctValues([...everyRow.map((row) => row.areaName), ...sharedPlaces.map((row) => row.areaName)]),
+    [everyRow, sharedPlaces],
+  );
   const lists = useMemo(() => distinctValues(everyRow.map((row) => row.listType)), [everyRow]);
 
   const cutoff = validationReviewPeriodCutoff(filters.period);
@@ -117,12 +135,25 @@ export function ValidationReviewsBoard({
       reopened.filter((row) => matchesValidationReviewFilters(filterableReopened(row), filters) && withinValidationReviewPeriod(row.reopenedAt, cutoff)),
     [reopened, filters, cutoff],
   );
+  const filteredSharedPlaces = useMemo(
+    () =>
+      sharedPlaces.filter(
+        (row) =>
+          sharedPlacePassesOutcome(row, filters.outcome) &&
+          matchesSharedPlaceFilters(row, filters) &&
+          withinValidationReviewPeriod(row.capturedAt, cutoff),
+      ),
+    [sharedPlaces, filters, cutoff],
+  );
 
   const anyFilter = hasActiveValidationReviewFilter(filters);
   const showWaiting = filters.outcome === "all" || filters.outcome === "pending";
   const showDecided = filters.outcome === "all" || filters.outcome === "approved" || filters.outcome === "rejected";
   const showValidated = filters.outcome === "all" || filters.outcome === "validated" || filters.outcome === "unseen";
   const showReopened = filters.outcome === "all" || filters.outcome === "rejected";
+  // A rejected venue is retired and never read, so "Rejected" is the one outcome that hides the section
+  // rather than emptying it — see `sharedPlacePassesOutcome`.
+  const showSharedPlaces = filters.outcome !== "rejected";
   const validatedTitle = filters.outcome === "unseen" ? "Validations nobody has looked at" : "Validations the system did not question";
   const decidedTitle = filters.outcome === "approved" ? "Approved in the last 14 days" : filters.outcome === "rejected" ? "Rejected in the last 14 days" : "Decided in the last 14 days";
 
@@ -229,7 +260,7 @@ export function ValidationReviewsBoard({
           </div>
         </div>
 
-        {capped.reviews || capped.validated || capped.reopened ? (
+        {capped.reviews || capped.validated || capped.reopened || capped.sharedPlaces ? (
           <AdminCallout tone="warning">
             <span>
               This page is showing the newest rows only: there are more than it can hold in one read. Narrow the period or the
@@ -251,6 +282,23 @@ export function ValidationReviewsBoard({
               </div>
             ) : (
               <ValidationReviewQueue rows={filteredPending} />
+            )}
+          </AdminTableShell>
+        ) : null}
+
+        {showSharedPlaces ? (
+          <AdminTableShell
+            title={`Polyclinics and centres (${filteredSharedPlaces.length})`}
+            description="A polyclinic, medical centre, medical tower or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it without a second capture. It is a venue only: it is on nobody's list, takes no visit and counts in no KPI, and the customer seated in it stays the one who is planned, visited and counted. It is not looked up in Google, because that check reads a customer's own name and a building has none. Rejecting one retires it, retires everybody seated in it, and sends each of them back to To validate."
+          >
+            {filteredSharedPlaces.length === 0 ? (
+              <div className="px-4 py-4">
+                <AdminCallout tone="neutral">
+                  <span>{anyFilter || filters.outcome !== "all" ? "No polyclinic matches these filters." : "No polyclinic or centre has been captured yet."}</span>
+                </AdminCallout>
+              </div>
+            ) : (
+              <SharedPlaceList rows={filteredSharedPlaces} />
             )}
           </AdminTableShell>
         ) : null}

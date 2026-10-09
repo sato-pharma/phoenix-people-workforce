@@ -52,7 +52,7 @@ const GRADES: PhoenixCrmGrade[] = ["A", "B", "C"];
 // ── The numbers ─────────────────────────────────────────────────────────────────────────────────
 
 type TargetKey = `${PhoenixCrmDoctorListType}${PhoenixCrmGrade}`;
-type FieldKey = "pmDailyCap" | "amDailyCap" | "farApartKm" | "visitFarMeters" | "weakGpsMeters" | TargetKey;
+type FieldKey = "pmDailyCap" | "amDailyCap" | "sharedPlaceDailyCap" | "farApartKm" | "visitFarMeters" | "weakGpsMeters" | TargetKey;
 
 /** What is typed, field by field. Kept as text, so a box can be emptied while a new number goes in. */
 type NumbersDraft = Record<FieldKey, string>;
@@ -76,6 +76,24 @@ type FieldSpec = {
 const CAP_FIELDS: FieldSpec[] = [
   { key: "pmDailyCap", label: "PM", ariaLabel: "PM a plan day holds at most", hint: null, unit: null, min: 1, max: 60, decimal: false, blankAllowed: false },
   { key: "amDailyCap", label: "AM", ariaLabel: "AM a plan day holds at most", hint: null, unit: null, min: 1, max: 60, decimal: false, blankAllowed: false },
+];
+
+/**
+ * Its own group, never inside the two above: those two are the PLAN's and say so ("Visits are never
+ * capped"). This one caps the visit itself as well, because a polyclinic's day is one physical queue.
+ */
+const SHARED_PLACE_FIELDS: FieldSpec[] = [
+  {
+    key: "sharedPlaceDailyCap",
+    label: "Visits a day",
+    ariaLabel: "Visits one polyclinic or centre holds a day",
+    hint: null,
+    unit: null,
+    min: 1,
+    max: 20,
+    decimal: false,
+    blankAllowed: false,
+  },
 ];
 
 const DISTANCE_FIELDS: FieldSpec[] = [
@@ -137,7 +155,7 @@ const TARGET_FIELDS: Record<PhoenixCrmDoctorListType, FieldSpec[]> = {
   AM: GRADES.map((grade) => targetSpec("AM", grade)),
 };
 
-const ALL_FIELDS: FieldSpec[] = [...CAP_FIELDS, ...TARGET_FIELDS.PM, ...TARGET_FIELDS.AM, ...DISTANCE_FIELDS];
+const ALL_FIELDS: FieldSpec[] = [...CAP_FIELDS, ...SHARED_PLACE_FIELDS, ...TARGET_FIELDS.PM, ...TARGET_FIELDS.AM, ...DISTANCE_FIELDS];
 
 /**
  * The typed text as plain digits: Arabic-Indic digits read as 0–9, so an Arabic keyboard works. A whole
@@ -186,6 +204,7 @@ function draftOf(settings: PhoenixCrmSettings): NumbersDraft {
   return {
     pmDailyCap: numberText(settings.pmDailyCap),
     amDailyCap: numberText(settings.amDailyCap),
+    sharedPlaceDailyCap: numberText(settings.sharedPlaceDailyCap),
     farApartKm: numberText(settings.farApartKm),
     visitFarMeters: numberText(settings.visitFarMeters),
     weakGpsMeters: numberText(settings.weakGpsMeters),
@@ -209,6 +228,7 @@ function settingsFrom(draft: NumbersDraft): PhoenixCrmSettings | null {
   return {
     pmDailyCap: whole("pmDailyCap"),
     amDailyCap: whole("amDailyCap"),
+    sharedPlaceDailyCap: whole("sharedPlaceDailyCap"),
     farApartKm: whole("farApartKm"),
     visitFarMeters: whole("visitFarMeters"),
     weakGpsMeters: whole("weakGpsMeters"),
@@ -861,6 +881,14 @@ export function SettingsTab({
             <div aria-labelledby={`${idPrefix}-caps`} className="grid min-w-0 gap-3" role="group">
               {groupHeading(`${idPrefix}-caps`, "A plan day holds at most", "The weekly plan only: a full day takes no more. Visits are never capped.")}
               <div className="grid min-w-0 grid-cols-2 gap-3 md:max-w-md">{CAP_FIELDS.map(numberField)}</div>
+            </div>
+            <div aria-labelledby={`${idPrefix}-shared-place`} className="grid min-w-0 gap-3 border-t border-slate-100 pt-5" role="group">
+              {groupHeading(
+                `${idPrefix}-shared-place`,
+                "One polyclinic or centre holds at most",
+                "Several customers receive behind one door. This is the visits that door takes in a day, whatever the number of customers in it — on the weekly plan and when a visit is logged.",
+              )}
+              <div className="grid min-w-0 grid-cols-2 gap-3 md:max-w-md">{SHARED_PLACE_FIELDS.map(numberField)}</div>
             </div>
             <div aria-labelledby={`${idPrefix}-grades`} className="grid min-w-0 gap-3 border-t border-slate-100 pt-5" role="group">
               {groupHeading(

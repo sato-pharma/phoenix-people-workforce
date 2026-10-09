@@ -66,6 +66,7 @@ import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture"
 import { PharmacyDetailsScreen } from "@/components/phoenix-crm/pharmacy-details";
 import { PlaceMoveScreen } from "@/components/phoenix-crm/place-move-screen";
 import type { PlaceDraftState } from "@/components/phoenix-crm/place-editor";
+import type { SeatedDraftState } from "@/components/phoenix-crm/shared-place-screens";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
 import {
   CrmBlock,
@@ -241,6 +242,11 @@ export function ListTab({
     go({ name: "add-place", customerId, draft });
   }
 
+  /** The same hand-off for a seating in a polyclinic: the venue, the timetable photo and the hours. */
+  function seatInstead(customerId: string, seated: SeatedDraftState) {
+    go({ name: "add-place", customerId, draft: null, seated });
+  }
+
   /** The one button on a customer's row: Validate, or Open. */
   function rowAction(customer: ListCustomer, action: ListRowAction) {
     if (action === "validate" && customer.referenceContactCrmId !== null) {
@@ -314,6 +320,7 @@ export function ListTab({
             onAskToDrop={(customerId) => go({ name: "drop", customerId, contactCrmId: null })}
             onBack={home}
             onSaved={placeSaved}
+            onSeatInstead={seatInstead}
             subject={{ mode: "reference", contactCrmId }}
           />
         );
@@ -329,13 +336,24 @@ export function ListTab({
             onAskToDrop={(id) => go({ name: "drop", customerId: id, contactCrmId: null })}
             onBack={home}
             onSaved={placeSaved}
+            onSeatInstead={seatInstead}
             subject={{ mode: "listed", customerId }}
           />
         );
         break;
       }
       case "new":
-        body = <ValidateScreen {...base} key="new" onAddPlaceInstead={addPlaceInstead} onBack={home} onSaved={placeSaved} subject={{ mode: "new" }} />;
+        body = (
+          <ValidateScreen
+            {...base}
+            key="new"
+            onAddPlaceInstead={addPlaceInstead}
+            onBack={home}
+            onSaved={placeSaved}
+            onSeatInstead={seatInstead}
+            subject={{ mode: "new" }}
+          />
+        );
         break;
       case "add-pharmacy":
         // By its name, with no photo and no approval (owner, 2026-10-03): it opens on his list at once.
@@ -421,6 +439,7 @@ export function ListTab({
             {...base}
             customerId={customerId}
             initialDraft={current.draft}
+            initialSeated={current.seated ?? null}
             key={`add-place-${customerId}`}
             onBack={() => {
               // The draft may hold a photo taken on Add new customer; this screen let it go already.

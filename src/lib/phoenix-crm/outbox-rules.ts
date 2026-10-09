@@ -74,6 +74,14 @@ export const OUTBOX_MAX_AGE_HOURS = 7 * 24;
  * Deliberately NOT here: `phoenix_crm_conflict`, the bare 23505 race. It does mean the visit is
  * already stored, but it is minted outside REFUSALS and is rare by construction, and keeping a visit
  * too long is the safe direction while deleting one is not.
+ *
+ * Deliberately NOT here either, for the same reason: `phoenix_crm_shared_place_day_full`, the
+ * three-a-day cap inside one shared place (owner, 2026-10-09). This array is mirrored, and
+ * `tests/phoenix-crm-mobile-mirrors.test.ts` compares the two copies code for code — a code only one
+ * side knows is exactly the drift that test exists to catch. A capped visit therefore retries and
+ * ages out at `OUTBOX_MAX_AGE_HOURS` instead of settling at once, which is the keep-too-long
+ * direction this list already prefers. The rep is told at the door either way: `db.ts` answers the
+ * live save 409 with the cap's own sentence.
  */
 export const OUTBOX_SETTLED_CODES: readonly string[] = [
   "phoenix_crm_already_visited",

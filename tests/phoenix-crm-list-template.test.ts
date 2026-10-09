@@ -235,9 +235,18 @@ function checkRepCanValidate(): void {
   assert.match(tab, /go\(\{ name: "validate-listed", customerId: customer\.customerId \}\);/, "and the press opens the listed subject");
   const screens = read("src/components/phoenix-crm/list-screens.tsx");
   assert.match(screens, /\| \{ mode: "listed"; customerId: string \}/, "which is the third validate subject");
+  // Since the shared places landed (2026-10-09) the evidence is one of TWO doors — a captured `place`
+  // at the customer's own clinic, or a `seated` row inside a validated polyclinic — so the payload
+  // spreads `...at` instead of naming `place`. What this pins is unchanged: the listed save carries
+  // the evidence and the phone and NOTHING the SFE set, and `at` is exactly those two keys.
   assert.match(
     screens,
-    /if \(subject\.mode === "listed"\) return \{ seatId, test, mode: "listed", customerId: subject\.customerId, phone: phoneValue, place \};/,
+    /const at =\s*\n?\s*door === "shared" \? \{ seated: seatedPayload\(photo, seated\) \} : \{ place: placePayload\(photo, draft\) \};/,
+    "the evidence is one door or the other: a captured place, or a seat in a shared place",
+  );
+  assert.match(
+    screens,
+    /if \(subject\.mode === "listed"\) return \{ seatId, test, mode: "listed", customerId: subject\.customerId, phone: phoneValue, \.\.\.at \};/,
     "the save sends the place and the phone, and never the name or the grades the SFE set",
   );
   assert.match(screens, /intake\?\.where/, "and the rep is shown where to find a customer he has never visited");

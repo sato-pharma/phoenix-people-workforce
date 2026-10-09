@@ -12,16 +12,24 @@ import { stripComments } from "./support/comment-strip.ts";
  * the two readers who see measurements.
  */
 export function runPhoenixCrmPlaceBrickLookupTests(): void {
+  // `resolvePlaceLocation` moved out of `server/list.ts` into `server/place-location.ts` on
+  // 2026-10-09, body unchanged, so a shared place could resolve its point through the SAME function
+  // without `list.ts` and `shared-places.ts` importing each other. The reader below follows it; the
+  // one thing that must never happen is a second copy of this ternary, which is why it is still
+  // asserted as one literal and the List's own column list is still read from `list.ts`.
+  const resolver = stripComments(readFileSync("src/lib/phoenix-crm/server/place-location.ts", "utf8"));
+  assert.ok(resolver.includes('centroids.length === 0 || brick === null ? "could_not_look" : trusted ? "matched" : "none_nearby"'), "an empty brick master is read as could_not_look, never inferred");
+  assert.ok(resolver.includes("brickLookup,"), "the resolver returns the verdict");
+  // The verdict is returned by the shared `resolvePinGeography` and mapped onto the column by each
+  // writer, so EVERY mapping is asserted: a verdict that reached only one of them would leave the
+  // other writing a silent null, which is the whole defect this rule exists to stop. The place
+  // mapping sits beside the resolver in `place-location.ts`; the pharmacy's own, which owns that
+  // table's column names, stays in `list.ts`. One mapping each — and `list.ts` carries no second
+  // copy of the JUDGEMENT, only of the write.
+  assert.equal(resolver.split("brick_lookup: geo.brickLookup").length - 1, 1, "the place mapping writes it");
   const list = stripComments(readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8"));
-  assert.ok(list.includes('centroids.length === 0 || brick === null ? "could_not_look" : trusted ? "matched" : "none_nearby"'), "an empty brick master is read as could_not_look, never inferred");
-  // Since 2026-10-09 the verdict is returned by the shared `resolvePinGeography` (extracted so a
-  // pharmacy's own pin and a doctor's validated place cannot disagree about a brick) and mapped onto
-  // the column by each writer. BOTH mappings are asserted: a verdict that reached only one of them
-  // would leave the other writing a silent null, which is the whole defect this rule exists to stop.
-  assert.ok(list.includes("brickLookup,"), "the resolver returns the verdict");
-  for (const write of ["brick_lookup: geo.brickLookup"]) {
-    assert.equal(list.split(write).length - 1, 2, `both the place and the pharmacy mappings write it (${write})`);
-  }
+  assert.equal(list.split("brick_lookup: geo.brickLookup").length - 1, 1, "the pharmacy mapping writes it");
+  assert.ok(!list.includes('? "could_not_look" :'), "and list.ts carries no second copy of the judgement");
   assert.match(list, /const PLACE_COLUMNS =\s*"[^"]*\bbrick_lookup\b/, "the List reads it");
 
   const blind = stripComments(readFileSync("src/lib/phoenix-crm/server/blind-payloads.ts", "utf8"));

@@ -172,11 +172,12 @@ function checkScreens(): void {
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   assert.match(page, /canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "the page stays the Super Admin's alone");
   assert.match(page, /loadValidatedPlaces\(viewer\)/, "and now also loads the validations the system did not question");
-  assert.match(
-    page,
-    /<ValidationReviewsBoard pending=\{waiting\} decided=\{decided\} validated=\{validated\} reopened=\{reopened\} capped=\{capped\} \/>/,
-    "which it hands to the Place checks board, with the queue, the validated list, the customers waiting to be captured again, and which reads hit their ceiling",
-  );
+  // The prop names rather than one literal line: the sixth set (the polyclinics, 2026-10-09) made the
+  // call multi-line, and a single-line fingerprint would go red on formatting alone.
+  for (const prop of ["pending={waiting}", "decided={decided}", "validated={validated}", "reopened={reopened}", "capped={capped}"]) {
+    assert.ok(page.includes(prop), `the Place checks board is handed ${prop}`);
+  }
+  assert.ok(page.includes("<ValidationReviewsBoard"), "the board is what the page draws");
 
   const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
   assert.match(board, /<ValidatedPlaceList key=\{validatedKey\} rows=\{filteredValidated\} showSearch=\{false\} \/>/, "the board draws the validated list under the filters and owns the search");

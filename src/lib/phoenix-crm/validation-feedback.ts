@@ -28,43 +28,66 @@
 // 🔴 No string here may contain "doctor", "doctors", "account" or "accounts" —
 // tests/phoenix-crm-am-pm-words.test.ts sweeps this tree and refuses them. "customer" and "clinic".
 //
-// The long account, with the per-cause counts behind each of the six:
-// docs/phoenix-crm-validation-feedback.md.
+// The long account, with the per-cause counts behind each of the first six:
+// docs/phoenix-crm-validation-feedback.md. The seventh and eighth, and why a timetable refusal is a
+// different pick-list from a signboard one: docs/phoenix-crm-shared-places.md.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * The six things the 643 photos actually failed on, as graded one by one.
+ * WHAT THE PHOTO WAS: the sign on a building, or the TIMETABLE hanging inside a shared place.
  *
- * CLOSED on purpose. A seventh needs the owner's word, because every one of these is a sentence that
+ * Two kinds, because one photograph cannot be wrong in the other's ways. A timetable IS paper, so "a
+ * photo of paper, not a building" is wrong by construction about one; and a customer seated in a
+ * shared place has no location of his own at all — his point is the venue's, taken once at its door —
+ * so neither "point_off" nor "not_at_door" can honestly be said about his capture either.
+ */
+export type ValidationPhotoKind = "signboard" | "schedule";
+
+/**
+ * The six things the 643 photos actually failed on, as graded one by one — and the two the owner
+ * added on 2026-10-09 for the timetable of a shared place.
+ *
+ * CLOSED on purpose. A ninth needs the owner's word, because every one of these is a sentence that
  * reaches a rep's phone, and a list anybody could extend is a list that will eventually tell him
- * something nobody approved. The counts behind them: 57 street shots with no building, 36 blank or
- * featureless walls, 23 too dark to read, 20 taken from a vehicle, 14 photographs of paper.
+ * something nobody approved. The counts behind the first six: 57 street shots with no building, 36
+ * blank or featureless walls, 23 too dark to read, 20 taken from a vehicle, 14 photographs of paper.
+ *
+ * `kinds` is what `reasonsFor` offers and is never a free choice: a reason is listed under every kind
+ * of photo it can honestly be said about, and under no other.
  */
 export const VALIDATION_REFUSAL_REASONS = [
   {
     key: "no_signboard",
     label: "No signboard in the photo",
     rep: "The photo does not show the clinic's signboard. Stand where the sign is readable, then take it again.",
+    kinds: ["signboard"],
   },
   {
     key: "wrong_name",
     label: "The sign is not this customer",
     rep: "The name on the sign in this photo is not this customer's. Take the photo at this customer's own entrance.",
+    kinds: ["signboard"],
   },
   {
     key: "too_dark",
+    // The one reason both kinds share: a photograph can be unreadable whatever it is of.
     label: "Too dark or blurred to read",
     rep: "The photo is too dark or too blurred to read. Take it again with more light, and hold the phone still.",
+    kinds: ["signboard", "schedule"],
   },
   {
     key: "not_at_door",
     label: "Not taken at the entrance",
     rep: "This photo was not taken at the entrance — it looks taken from a distance or from a vehicle. Stand at the door and take it again.",
+    kinds: ["signboard"],
   },
   {
     key: "photo_of_paper",
     label: "A photo of paper, not a building",
     rep: "The photo shows paper or a screen rather than the clinic itself. Take a live photo of the building and its sign.",
+    // 🔴 NEVER on a timetable. A timetable is paper, so this sentence would send a rep back to
+    // photograph a building he was never asked for.
+    kinds: ["signboard"],
   },
   {
     key: "point_off",
@@ -72,6 +95,24 @@ export const VALIDATION_REFUSAL_REASONS = [
     // The one reason that mentions his readings at all. It bends nothing new: PLACE_PRECISION_NOTE
     // already tells him the same thing before he starts, by the owner's own 2026-10-03 amendment.
     rep: "The location saved with this photo is not where the photo was taken. Turn precise location on, wait for it to settle, then take the photo and capture the location again.",
+    kinds: ["signboard"],
+  },
+  {
+    // The seventh (owner, 2026-10-09): the timetable is readable and this customer is not on it.
+    key: "schedule_other_name",
+    label: "The timetable does not name this customer",
+    // No pronoun, deliberately: `A_PERSON` in phoenix-crm-validation-feedback.test.ts refuses "he " in
+    // a reason, because a sentence that reads as being about a PERSON is what golden rule #1 forbids —
+    // so the hours are named beside the name instead.
+    rep: "The timetable in this photo does not show this customer's name. Photograph the timetable that names this customer, with the hours beside the name.",
+    kinds: ["schedule"],
+  },
+  {
+    // The eighth: whatever was photographed, it was not a timetable.
+    key: "schedule_missing",
+    label: "No timetable in the photo",
+    rep: "There is no timetable in this photo. Photograph the schedule on the wall showing who receives and at what hours.",
+    kinds: ["schedule"],
   },
 ] as const;
 
@@ -81,7 +122,17 @@ export type ValidationRefusalReason = (typeof VALIDATION_REFUSAL_REASONS)[number
 export const VALIDATION_REFUSAL_REASON_KEYS: readonly ValidationRefusalReason[] =
   VALIDATION_REFUSAL_REASONS.map((reason) => reason.key);
 
-/** The one parser. A value off the wire is never trusted to be one of the six. */
+/**
+ * The reasons that may be OFFERED about one kind of photo.
+ *
+ * The parser below still accepts any of the eight, deliberately: the kind is a property of the
+ * screen, and a decision already stored keeps rendering whatever reason it carries.
+ */
+export function reasonsFor(kind: ValidationPhotoKind): typeof VALIDATION_REFUSAL_REASONS[number][] {
+  return VALIDATION_REFUSAL_REASONS.filter((reason) => (reason.kinds as readonly string[]).includes(kind));
+}
+
+/** The one parser. A value off the wire is never trusted to be one of the eight. */
 export function parseValidationRefusalReason(value: unknown): ValidationRefusalReason | null {
   const key = String(value ?? "").trim();
   return (

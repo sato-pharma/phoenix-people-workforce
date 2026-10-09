@@ -53,6 +53,25 @@ function runWireTests() {
   for (const banned of [/body\.address/, /body\.zone/, /body\.brick/]) {
     assert.doesNotMatch(parser[0], banned, "the parser reads no location off the body");
   }
+
+  // The same guarantee, one layer further: a customer SEATED in a polyclinic (owner, 2026-10-09) sends
+  // no location AT ALL, not even a coordinate — his point is the venue's, taken once at its door. So
+  // his draft is the strictest case of this rule, and a fix smuggled back onto it would be the defect.
+  const sharedRules = source("src/lib/phoenix-crm/shared-place-rules.ts");
+  const seated = /export type SeatedPlaceDraft = \{([\s\S]*?)\};/.exec(sharedRules);
+  assert.ok(seated, "the seated draft names what a phone may send when it seats a customer");
+  for (const banned of ["address", "zone", "brick", "lat", "lon", "accuracyMeters"]) {
+    assert.doesNotMatch(
+      seated[1],
+      new RegExp(`\\b${banned}\\b`),
+      `a seating cannot send ${banned}: the point, the brick, the area and the region are the venue's own`,
+    );
+  }
+  const seatedParser = /export function parseSeatedPlaceDraft\(raw: unknown\)[\s\S]*?\n\}/.exec(sharedRules);
+  assert.ok(seatedParser, "and it is parsed in one place");
+  for (const banned of [/body\.lat/, /body\.lon/, /body\.address/, /body\.accuracyMeters/]) {
+    assert.doesNotMatch(seatedParser[0], banned, "the seating parser reads no location off the body either");
+  }
 }
 
 function runScreenTests() {
@@ -117,7 +136,14 @@ function runServerTests() {
     assert.ok(payload[1].includes(column), `the capture keeps its raw reading ${column.split(":")[0]}`);
   }
 
-  const resolver = /export async function resolvePlaceLocation\(point: [^)]*\): Promise<Row> \{([\s\S]*?)\n\}/.exec(list);
+  // 🔴 THE RESOLVER MOVED OUT OF `list.ts` ON 2026-10-09 and is read from its own module now:
+  // `server/shared-places.ts` has to call it, and `list.ts` imports that file, so leaving it where it
+  // was would have closed an import cycle. It is still the ONE resolver — a validation, a move and a
+  // venue all call this function — which is the whole point of this assertion.
+  // `Promise<Record<string, unknown>>` holds a `>` of its own, so the return type is matched as "the
+  // rest of the line", never as `<[^>]*>`.
+  const placeLocation = source("src/lib/phoenix-crm/server/place-location.ts");
+  const resolver = /export async function resolvePlaceLocation\(point: \{[\s\S]*?\}\)[^{\n]*\{([\s\S]*?)\n\}/.exec(placeLocation);
   assert.ok(resolver, "the location is resolved in one place");
   assert.match(resolver[1], /resolvePinGeography\(point\)/, "the place row's location comes from the one geography resolver, read with the fixed point");
   for (const column of ["area_code", "area_name", "region_code", "region_name", "brick_distance_km"]) {
@@ -128,10 +154,11 @@ function runServerTests() {
   //
   //     `resolvePinGeography` was extracted from `resolvePlaceLocation` on 2026-10-09, when a rep was
   //     given a pin on a pharmacy too (owner: "cleaned and separated into area, brick, government").
-  //     The protection is unchanged and now shared: BOTH mappings read this one function, which is
-  //     asserted below to be the only caller of the address service in the file — two callers would be
-  //     two answers about which brick a point is in, which is the defect the extraction prevents.
-  const geography = /async function resolvePinGeography\(point: [^)]*\): Promise<PinGeography> \{([\s\S]*?)\n\}/.exec(list);
+  //     The protection is unchanged and now shared: EVERY mapping reads this one function, which is
+  //     asserted below to be the only caller of the address service in its module, and `list.ts` is
+  //     asserted to have stopped calling it at all — two callers would be two answers about which
+  //     brick a point is in, which is the defect the extraction prevents.
+  const geography = /export async function resolvePinGeography\(point: [^)]*\): Promise<PinGeography> \{([\s\S]*?)\n\}/.exec(placeLocation);
   assert.ok(geography, "the geography behind a captured point is resolved in one place");
   // Assert the two ARGUMENTS, not one verbatim call expression: the first version of this test
   // pinned the literal text `{ lat: place.lat, lon: place.lon }` and went green on a call that
@@ -141,10 +168,11 @@ function runServerTests() {
   assert.match(geography[1], /resolveEvidenceLocation\(\{[^}]*\blongitude: point\.lon\b/, "the clean address is resolved from the fixed point's longitude");
   assert.match(geography[1], /resolveBrickForPoint\(point\.lat, point\.lon, centroids\)/, "the brick is resolved from the fixed point");
   assert.equal(
-    list.split("resolveEvidenceLocation(").length - 1,
+    placeLocation.split("resolveEvidenceLocation(").length - 1,
     1,
-    "the address service is called once in this file — every mapping goes through resolvePinGeography",
+    "the address service is called once in the resolver's own module — every mapping goes through resolvePinGeography",
   );
+  assert.equal(list.split("resolveEvidenceLocation(").length - 1, 0, "and list.ts calls it nowhere any more, so no mapping can bypass the resolver");
   // Nothing on any path may read a location off the draft again.
   for (const body of [payload[1], resolver[1], geography[1]]) {
     for (const banned of [/place\.address/, /place\.zone/, /place\.brick\b/]) {

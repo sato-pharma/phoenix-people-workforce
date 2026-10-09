@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { CheckCircle2, EyeOff, Hourglass, MapPinCheck } from "lucide-react";
+import { Building2, CheckCircle2, EyeOff, Hourglass, MapPinCheck } from "lucide-react";
 
 import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
 import { ValidationReviewsBoard } from "@/components/phoenix-crm/validation-reviews-board";
@@ -7,6 +7,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadSharedPlaceBoard } from "@/lib/phoenix-crm/server/shared-places";
 import {
   canDecideValidationReviews,
   loadReopenedCustomers,
@@ -36,19 +37,31 @@ export default async function PhoenixCrmValidationReviewsPage() {
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
   if (!viewer || !canDecideValidationReviews(viewer)) redirect("/admin");
 
-  const [reviews, validatedRead, reopenedRead] = await Promise.all([
+  // `loadSharedPlaceBoard` gates on `canDecideSharedPlaces`, which is the same predicate as
+  // `canDecideValidationReviews` above (Super Admin, `update`, not a test persona) — so it cannot 403 a
+  // viewer this page has already admitted, and it needs no second redirect.
+  const [reviews, validatedRead, reopenedRead, sharedRead] = await Promise.all([
     loadValidationReviews(viewer),
     loadValidatedPlaces(viewer),
     loadReopenedCustomers(viewer),
+    loadSharedPlaceBoard(viewer),
   ]);
   const rows = reviews.rows;
   const validated = validatedRead.rows;
   const reopened = reopenedRead.rows;
-  const capped = { reviews: reviews.capped, validated: validatedRead.capped, reopened: reopenedRead.capped };
+  const sharedPlaces = sharedRead.rows;
+  const capped = {
+    reviews: reviews.capped,
+    validated: validatedRead.capped,
+    reopened: reopenedRead.capped,
+    sharedPlaces: sharedRead.capped,
+  };
   const waiting = rows.filter((row) => row.status === "pending");
   const decided = rows.filter((row) => row.status !== "pending");
   // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
   const unseen = validated.filter((row) => !row.reviewed).length;
+  // Customers seated across every venue. The 3-a-day cap is about the DAY, never about this number.
+  const seated = sharedPlaces.reduce((total, row) => total + row.seated, 0);
 
   return (
     <div className="space-y-5">
@@ -59,7 +72,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
         icon={<MapPinCheck className="h-3.5 w-3.5" />}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <AdminStatCard icon={<Hourglass className="h-5 w-5" />} label="Waiting for you" value={waiting.length} description="Saved at the door, not validated yet" tone="orange" size="compact" />
         <AdminStatCard
           icon={<CheckCircle2 className="h-5 w-5" />}
@@ -93,9 +106,24 @@ export default async function PhoenixCrmValidationReviewsPage() {
           tone="violet"
           size="compact"
         />
+        <AdminStatCard
+          icon={<Building2 className="h-5 w-5" />}
+          label="Polyclinics and centres"
+          value={sharedPlaces.length}
+          description={`${seated} ${seated === 1 ? "customer seated" : "customers seated"} in them`}
+          tone="blue"
+          size="compact"
+        />
       </div>
 
-      <ValidationReviewsBoard pending={waiting} decided={decided} validated={validated} reopened={reopened} capped={capped} />
+      <ValidationReviewsBoard
+        capped={capped}
+        decided={decided}
+        pending={waiting}
+        reopened={reopened}
+        sharedPlaces={sharedPlaces}
+        validated={validated}
+      />
     </div>
   );
 }
