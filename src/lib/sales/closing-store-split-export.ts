@@ -18,6 +18,7 @@
 // reports it, and the workbook states it on the Total sheet as its own reconciliation line, so the
 // Difference row still proves the audit sheet reproduces the headline.
 
+import { buildBulkAllocation, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
 import type { ClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import {
   narrowClosingDetailsToAreas,
@@ -104,5 +105,12 @@ function deriveSplit(
     monthRows.period,
     regions,
   );
-  return { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) };
+  // The EPDA-BULK allocation is folded in HERE TOO (owner, 2026-10-09). This path runs when the
+  // screen's shared split could not be used — a failed read, or a row-level filter that narrowed the
+  // population — and leaving it out would print a workbook whose Pedia areas disagree with the
+  // screen's by exactly the bulk book, on the one path that exists because the two once disagreed.
+  return mergeBulkAllocationIntoSplit(
+    { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
+    buildBulkAllocation(monthRows.rows, monthRows.period, monthRows.line),
+  );
 }

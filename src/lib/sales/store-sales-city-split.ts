@@ -19,6 +19,7 @@
 // untouched. Direct rows carry no area and are already attributed to line+region only, so they
 // are passed through untouched too.
 
+import { isBulkAllocatedRow } from "@/lib/sales/bulk-allocation-channel";
 import { closingAreaOf } from "@/lib/sales/closing-row-area";
 import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 
@@ -1129,6 +1130,19 @@ export function isSplitEligible(
 ): boolean {
   if (row.isDirect) return false;
   if (!row.includedInClosing) return false;
+  // 🔒 THE FOURTH CARVE-OUT FROM THE CITY RULE — the EPDA-BULK sector, from the September 2026
+  // closing (owner, 2026-10-09). Its rows are spread across the line's areas by each area's share
+  // of the other distributors' sales value instead (closing-bulk-allocation.ts), so the city rule
+  // must not share them across their own city first: the bulk sector's customers are wholesalers by
+  // definition, the six keywords classify nearly all of them as stores, and the same units would
+  // then be moved by two rules at once — money moved twice is money invented. It joins EZ
+  // (`evenSplitApplied`), Office and El Qema's warehouses as the exceptions to "the city rule
+  // always wins".
+  //
+  // The PERIOD switches it on, exactly like every other dated rule here, and an omitted period
+  // means the OLD rule — so a pure-arithmetic caller that passes a row alone is untouched and no
+  // published month moves.
+  if (isBulkAllocatedRow(row, period)) return false;
   if (!isSplitEligibleLine(row.officialLine)) return false;
   // The client code is passed so an owner override can be honoured. Without it the override is
   // inert here and an overridden pharmacy's sales would still be scattered across its city.
