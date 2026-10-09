@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -194,8 +195,8 @@ export function DecisionActions({
   }
 
   const toneClass: Record<Action, string> = {
-    approve: "bg-emerald-600 hover:bg-emerald-700 text-white",
-    acknowledge: "bg-slate-900 hover:bg-black text-white",
+    approve: "bg-emerald-600 hover:bg-emerald-700 text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)]",
+    acknowledge: "bg-slate-900 hover:bg-black text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)]",
     return: "border border-amber-500 text-amber-700 hover:bg-amber-50",
     returnPlain: "border border-amber-500 text-amber-700 hover:bg-amber-50",
     reject: "border border-rose-500 text-rose-700 hover:bg-rose-50",
@@ -206,8 +207,8 @@ export function DecisionActions({
 
   return (
     <>
-    <section ref={panelRef} className="border border-phx-line bg-white">
-      <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section ref={panelRef} className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Your response</h3>
       </header>
 
@@ -254,7 +255,7 @@ export function DecisionActions({
                   : `Confirm: ${labelFor(pending)} this request?`}
             </p>
             {IS_OVERRIDE[pending] && overrideNotice ? (
-              <p className="border border-slate-900 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+              <p className="border border-slate-900 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
                 {overrideNotice}
               </p>
             ) : null}
@@ -280,7 +281,7 @@ export function DecisionActions({
                 type="button"
                 onClick={confirm}
                 disabled={busy}
-                className="h-11 flex-1 bg-orange-500 px-4 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60 md:flex-none"
+                className="h-11 flex-1 bg-orange-500 px-4 text-sm font-bold text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)] transition-shadow hover:bg-orange-600 disabled:opacity-60 disabled:shadow-none md:flex-none"
               >
                 {busy ? "Submitting…" : `Confirm ${LABEL[pending].split(" ")[0]}`}
               </button>
@@ -315,7 +316,7 @@ export function DecisionActions({
             // flex-wrap, not a squashed single row: "Approve as System Administrator" beside two
             // more labels cannot fit 375px on one line, and the golden rule says WRAP rather than
             // shrink the type or let it scroll sideways. basis-[48%] puts them two per row.
-            className="fixed inset-x-0 z-30 flex flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
+            className="fixed inset-x-0 z-30 flex flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.1)] backdrop-blur md:hidden"
             style={{ bottom: "env(safe-area-inset-bottom)" }}
           >
             {available.map(([action]) => (

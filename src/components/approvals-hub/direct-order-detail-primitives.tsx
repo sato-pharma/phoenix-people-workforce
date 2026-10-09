@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import type { DirectOrderPricingBreakdown } from "@/lib/direct-orders/approval-fields";
 
 /**
@@ -31,7 +32,7 @@ export function PanelSection({
 }) {
   return (
     <div id={anchorId} className="scroll-mt-4 border border-slate-200">
-      <div className="flex items-center gap-2 bg-slate-900 px-4 py-2.5">
+      <div className={`flex items-center gap-2 ${adminPanelHeaderClassName} px-4 py-2.5`}>
         <span aria-hidden className="h-4 w-1 bg-orange-500" />
         <span className="text-phx-xs font-black uppercase tracking-wide text-white">{title}</span>
       </div>
@@ -161,7 +162,7 @@ export function ApprovalTracker({
   // validation. Saying that in words beats a bar with zero segments, which reads as broken.
   if (emptyNote || steps.length === 0) {
     return (
-      <div className="border border-slate-200 bg-slate-50 px-3 py-2.5">
+      <div className="border border-slate-200 bg-slate-50 px-3 py-2.5 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
         <p className="text-phx-sm font-semibold text-slate-600">{emptyNote ?? "No approval steps recorded yet."}</p>
       </div>
     );

@@ -1,3 +1,4 @@
+import { adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import type { ApprovalScopeData } from "@/lib/approvals-hub/service";
 
 type Props = {
@@ -14,7 +15,7 @@ type Props = {
 export function ApprovalScopeList({ data, moduleLabel }: Props) {
   if (!data || data.totalPeople === 0) {
     return (
-      <p className="border border-phx-line bg-white px-4 py-8 text-center text-sm text-slate-500">
+      <p className={`${adminSoftPanelClassName} px-4 py-8 text-center text-sm text-slate-500`}>
         No one currently routes their {moduleLabel} requests to you for approval.
       </p>
     );
@@ -35,7 +36,7 @@ export function ApprovalScopeList({ data, moduleLabel }: Props) {
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {group.people.map((person) => (
-              <div key={person.hrId} className="min-w-0 border border-phx-line bg-white px-4 py-2.5">
+              <div key={person.hrId} className={`min-w-0 ${adminSoftPanelClassName} px-4 py-2.5`}>
                 {/* min-w-0 above so a long name cannot stretch this card's grid track; break-words
                     so it wraps rather than ending in an ellipsis. These are RECORD names. */}
                 <p className="break-words text-sm font-bold text-slate-900">{person.name}</p>

@@ -36,6 +36,18 @@ export const adminSoftPanelClassName =
 export const adminInsetPanelClassName =
   "border border-phx-line bg-[#FBFCFD] shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)]";
 
+// The dark header band that sits at the top of a panel, naming what the panel is. The Approvals
+// Hub wears it on thirteen panels and was the reason this became a token: thirteen copies of
+// `bg-slate-900` drift the moment one of them is touched.
+//
+// It is the HERO's own treatment at band scale, and for the hero's own stated reason — the warm
+// third stop is what stops a near-black band reading as an unstyled div — with the hairline under
+// it carrying the module accent instead of the grey line that is invisible against black anyway.
+// No radius, by the square-edge rule; the padding stays at the call site, because a band over a
+// table and a band over prose do not want the same one.
+export const adminPanelHeaderClassName =
+  "border-b border-orange-500/25 bg-[linear-gradient(135deg,#0F172A_0%,#0B1220_55%,#1C0E02_100%)]";
+
 // ── Unified dark hero ────────────────────────────────────────────────────────
 // Single source of truth for the black command-center hero used by every admin
 // page header (AdminPageHero), the route loading skeleton, and both command

@@ -1,3 +1,4 @@
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import type { ApprovalTimelineStep } from "@/lib/approvals-hub/service";
 import { SlaAgeBadge, type ApprovalsSlaModule } from "@/components/approvals-hub/sla-badge";
 
@@ -33,8 +34,8 @@ export function RequestTracker({ steps, stageLabel, ageDays, fallbackStatusLabel
   const activeIndex = steps.findIndex((s) => s.status.toLowerCase() === "pending");
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`flex items-center justify-between ${adminPanelHeaderClassName} px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Approval tracker</h3>
         {typeof ageDays === "number" ? <SlaAgeBadge ageDays={ageDays} module={slaModule} /> : null}
       </header>

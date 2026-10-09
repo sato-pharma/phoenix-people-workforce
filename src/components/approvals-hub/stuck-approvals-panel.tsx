@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
+import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import type { StuckApprovalManagerOption } from "@/lib/approvals-hub/service";
 import type { WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import type { ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
@@ -78,7 +79,7 @@ function ReassignRow(props: {
   }
 
   return (
-    <div className="border border-phx-line bg-white px-4 py-3">
+    <div className={`${adminSoftPanelClassName} px-4 py-3`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           {/* `primary` is "<employee record name> (<HR id>)", so it is the longest line here. */}
@@ -165,7 +166,7 @@ function CloseStrandedOrderRow(props: { order: StrandedDirectOrderRow }) {
   }
 
   return (
-    <div className="border border-phx-line bg-white px-4 py-3">
+    <div className={`${adminSoftPanelClassName} px-4 py-3`}>
       <div className="min-w-0">
         <p className="break-words text-sm font-bold text-slate-900">{order.pharmacyName}</p>
         <p className="break-words text-xs text-slate-500">
@@ -213,8 +214,8 @@ function CloseStrandedOrderRow(props: { order: StrandedDirectOrderRow }) {
 
 function Section(props: { title: string; count: number; children: ReactNode }) {
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`flex items-center justify-between ${adminPanelHeaderClassName} px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{props.title}</h3>
         <span className="text-phx-xs font-bold text-slate-300">{props.count}</span>
       </header>
@@ -233,7 +234,7 @@ export function StuckApprovalsPanel({
   const empty = weeklyPlans.length === 0 && excuses.length === 0 && strandedDirectOrders.length === 0;
   if (empty) {
     return (
-      <section className="border border-phx-line bg-white px-4 py-8 text-center">
+      <section className={`${adminSoftPanelClassName} px-4 py-8 text-center`}>
         <p className="text-sm font-bold text-slate-900">No stuck approvals.</p>
         <p className="mt-1 text-xs text-slate-500">
           Every pending plan and excuse currently has an active approver, and no returned direct

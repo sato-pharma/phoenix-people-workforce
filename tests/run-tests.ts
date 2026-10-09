@@ -1022,6 +1022,7 @@ import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
 import { runApprovalsHubTests } from "./approvals-hub.test.ts";
+import { runApprovalsHubPremiumDepthTests } from "./approvals-hub-premium-depth.test.ts";
 import { runNotificationAutoArchiveTests } from "./notification-auto-archive.test.ts";
 import { runVacationApprovalFlowTests } from "./vacation-approval-flow.test.ts";
 import { runVacationCalculationTests } from "./vacation-calculations.test.ts";
@@ -4604,6 +4605,10 @@ await runTest("email control center (aggregator module mapping + restored digest
 await runTest("workflow registry", runWorkflowRegistryTests);
 await runTest("workflow registry enforcement", runWorkflowRegistryEnforcementTests);
 await runTest("approvals hub (vacation + excuse)", runApprovalsHubTests);
+await runTest(
+  "the Approvals Hub carries the owner's premium polish, and its 22 inline-styled files cannot drift back: measured 2026-10-09 it was the largest module in the app with NO depth at all - zero shadows, and its dominant surface was `border border-phx-line bg-white`, which is adminPanelClassName with the shadow taken out, hand-written across thirty places in fifteen files - so that flat shape and the thirteen hand-drawn `bg-slate-900` header bands are both ratcheted at ZERO, the band is one shared token keeping the hero's warm third stop and an accent hairline (a grey line under near-black renders as nothing), and the three tokens the module now leans on are read at their SOURCE for depth and for the absence of a radius, which is the assertion no grep of this folder can make because the folder only ever names the token - the live hazard being that the pre-#3114 tokens carried rounded-[18px] beside the shadows and the employee portal twin zeroes no radius; the mobile thumb bar's shadow must point UP, since it is fixed over the page and a downward one falls on content nobody can see, and a filled action that lifts and can be disabled must carry disabled:shadow-none, because a greyed button that still floats reads as clickable on the screen where money moves",
+  runApprovalsHubPremiumDepthTests,
+);
 await runTest("notification auto-archive (bell)", runNotificationAutoArchiveTests);
 await runTest("vacation approval flow", runVacationApprovalFlowTests);
 await runTest("vacation calculations", runVacationCalculationTests);

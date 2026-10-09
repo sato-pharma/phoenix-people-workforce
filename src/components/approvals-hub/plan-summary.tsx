@@ -1,3 +1,4 @@
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import type { PlanComposition, PlanPeriodStatus } from "@/lib/approvals-hub/service";
 
 // At-a-glance make-up of a plan, so an approver sees its shape before reading day-by-day.
@@ -18,8 +19,8 @@ export function PlanCompositionSummary({ composition }: { composition: PlanCompo
   const showCoverage = composition.totalDays > 0 && composition.emptyDays > 0;
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`flex items-center justify-between ${adminPanelHeaderClassName} px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Plan at a glance</h3>
         <span className="text-phx-xs font-bold text-white/70">
           {composition.total} activit{composition.total === 1 ? "y" : "ies"} · {composition.plannedDays} day

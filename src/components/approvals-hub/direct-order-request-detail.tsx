@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
 import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
 import {
@@ -139,7 +140,7 @@ export function DirectOrderRequestDetail({
         <Link href={backHref} className="text-sm font-bold text-orange-600 hover:text-orange-700">
           ← Back
         </Link>
-        <p className="border border-phx-line bg-white px-4 py-6 text-sm text-slate-500">
+        <p className={`${adminSoftPanelClassName} px-4 py-6 text-sm text-slate-500`}>
           This direct order request was not found, or you do not have access to it.
         </p>
       </div>
@@ -266,8 +267,8 @@ export function DirectOrderRequestDetail({
         ← {backLabel}
       </Link>
 
-      <section className="border border-phx-line bg-white">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-3">
+      <section className={adminPanelClassName}>
+        <header className={`flex flex-wrap items-center justify-between gap-2 ${adminPanelHeaderClassName} px-4 py-3`}>
           <h2 className="flex flex-wrap items-center gap-2 text-base font-black text-white">
             {request.productName} × {request.qty.toLocaleString("en-US")}
             <DirectOrderStatusPill status={request.status} salesMonth={request.salesMonth} variant="solid" />
@@ -343,7 +344,7 @@ export function DirectOrderRequestDetail({
                 ) : null}
               </dl>
               {invoiceSlotsFull ? (
-                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900 shadow-[0_1px_2px_rgba(146,64,14,0.06),0_12px_28px_rgba(146,64,14,0.07)]">
                   The requester already has {shownInvoice.slots?.used} of {shownInvoice.slots?.limit} pharmacies
                   validated by invoice, so approving will not count this one as an invoice validation. Flagged for
                   your attention, not blocked.
@@ -351,7 +352,7 @@ export function DirectOrderRequestDetail({
               ) : null}
             </div>
           ) : (
-            <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
+            <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900 shadow-[0_1px_2px_rgba(146,64,14,0.06),0_12px_28px_rgba(146,64,14,0.07)]">
               {canAttachInvoice
                 ? invoiceExpected
                   ? "No invoice is attached to this order yet. Attach the distributor invoice you used, so the SFE Manager can check the pharmacy on it."
@@ -525,7 +526,7 @@ export function DirectOrderRequestDetail({
                   src={pharmacyEvidence.photoUrl}
                 />
               ) : (
-                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-800">
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-800 shadow-[0_1px_2px_rgba(146,64,14,0.06),0_12px_28px_rgba(146,64,14,0.07)]">
                   No photo on file for this claim.
                 </p>
               )}
@@ -721,7 +722,7 @@ export function DirectOrderRequestDetail({
                   screen printed both at once — "none was entered" directly above "possible match
                   found", with two competing calls to action. */}
               {possibleDistributorMatches.length === 0 ? (
-                <div className="mt-2 border border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="mt-2 border border-amber-200 bg-amber-50 px-3 py-2 shadow-[inset_0_1px_2px_rgba(146,64,14,0.06)]">
                   <p className="text-phx-sm font-bold text-amber-900">
                     No distributor customer code on file for this pharmacy.
                   </p>
@@ -737,7 +738,7 @@ export function DirectOrderRequestDetail({
                 // still visible here was REFUSED by the rule — not merely unnoticed. The block must
                 // therefore lead with the refusal, or it shows the reader a match the system plainly
                 // saw and says nothing about why it declined to act on it.
-                <div className="mt-2 border border-amber-300 bg-amber-50 px-3 py-2">
+                <div className="mt-2 border border-amber-300 bg-amber-50 px-3 py-2 shadow-[inset_0_1px_2px_rgba(146,64,14,0.06)]">
                   <p className="text-phx-sm font-black text-amber-900">
                     This pharmacy&apos;s NAME is a real distributor customer code — and Phoenix did not
                     link it automatically.
@@ -854,7 +855,7 @@ export function DirectOrderRequestDetail({
             rule). Saying so matters: those products are ~81.5% of sales value, so a silently
             filtered table would read as "this pharmacy barely buys" when the opposite is true. */}
         {hiddenConfidentialCount > 0 ? (
-          <p className="mb-2 border border-slate-300 bg-slate-50 px-3 py-2 text-phx-sm font-semibold text-slate-600">
+          <p className="mb-2 border border-slate-300 bg-slate-50 px-3 py-2 text-phx-sm font-semibold text-slate-600 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
             {hiddenConfidentialCount} confidential product{hiddenConfidentialCount === 1 ? "" : "s"} hidden from this
             view. Figures below exclude {hiddenConfidentialCount === 1 ? "it" : "them"}.
           </p>
@@ -1009,7 +1010,7 @@ export function DirectOrderRequestDetail({
                 </dl>
               </article>
             ))}
-            <article className="block border border-slate-300 bg-slate-50 p-3">
+            <article className="block border border-slate-300 bg-slate-50 p-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
               <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">
                 Total — {salesMatrix.products.length.toLocaleString("en-US")} product
                 {salesMatrix.products.length === 1 ? "" : "s"} over {salesMatrix.months.length} month
@@ -1138,7 +1139,7 @@ export function DirectOrderRequestDetail({
                 </p>
               </article>
             ))}
-            <article className="block border border-slate-300 bg-slate-50 p-3">
+            <article className="block border border-slate-300 bg-slate-50 p-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
               <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Total</p>
               <p className="mt-1 text-sm font-black tabular-nums text-slate-900">
                 {directTotals.orders.toLocaleString("en-US")} orders

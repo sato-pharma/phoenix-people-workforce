@@ -10,6 +10,7 @@ import type {
   ApprovalScopeData,
   CompanyRequestItem,
 } from "@/lib/approvals-hub/service";
+import { adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import type { MyRequestItem } from "@/components/action-center/types";
 import { MyRequestsList } from "@/components/action-center/my-requests-list";
 import { SlaAgeChip, type ApprovalsSlaModule } from "@/components/approvals-hub/sla-badge";
@@ -85,7 +86,7 @@ function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boo
   return (
     <Link
       href={card.href}
-      className="flex items-center justify-between gap-3 border border-phx-line bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50/40"
+      className={`flex items-center justify-between gap-3 ${adminSoftPanelClassName} px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50/40`}
     >
       <div className="min-w-0">
         {/* Wraps, never ellipsises. The name is now the employee RECORD name, which runs to four
@@ -189,7 +190,7 @@ export function ApprovalsWorkspace({
       {tab === "pending" ? (
         <div className="space-y-6">
           {sections.every((s) => s.cards.length === 0) ? (
-            <p className="border border-phx-line bg-white px-4 py-8 text-center text-sm text-slate-500">
+            <p className={`${adminSoftPanelClassName} px-4 py-8 text-center text-sm text-slate-500`}>
               Nothing waiting on you right now.
             </p>
           ) : (

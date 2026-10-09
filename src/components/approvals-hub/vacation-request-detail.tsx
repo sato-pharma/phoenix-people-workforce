@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import type { VacationApprovalDetail } from "@/lib/approvals-hub/service";
 import { RequestTracker } from "@/components/approvals-hub/request-tracker";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
@@ -31,7 +32,7 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
         <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
           <ArrowLeft className="h-4 w-4" /> Back to list
         </Link>
-        <p className="border border-phx-line bg-white px-4 py-6 text-sm text-slate-600">
+        <p className={`${adminSoftPanelClassName} px-4 py-6 text-sm text-slate-600`}>
           This request could not be found, or you do not have access to it.
         </p>
       </div>
@@ -57,14 +58,14 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
       </div>
 
       {detail.readOnly && detail.readOnlyReason ? (
-        <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
+        <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
           {detail.readOnlyReason}
         </p>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="border border-phx-line bg-white">
-          <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+        <section className={adminPanelClassName}>
+          <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
             <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Request details</h3>
           </header>
           <dl className="px-4 py-2">
@@ -155,7 +156,7 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
           {detail.adminOverride && !detail.adminOverride.available && detail.adminOverride.reason && detail.adminOverride.availableAt ? (
             // The wait, visible before it unlocks. Without this the button simply is not there and
             // HR cannot tell a request that is merely young from one the rule refuses to touch.
-            <p className="border border-phx-line bg-white px-4 py-3 text-phx-xs font-semibold text-slate-600">
+            <p className={`${adminSoftPanelClassName} px-4 py-3 text-phx-xs font-semibold text-slate-600`}>
               {detail.adminOverride.reason}
             </p>
           ) : null}
