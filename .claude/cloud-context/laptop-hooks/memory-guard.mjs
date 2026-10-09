@@ -267,7 +267,22 @@ if (process.argv[2] === 'selftest') {
   );
   check(
     'a reading over an hour old is NOT trusted for commit',
-    !/commit charge/.test(probed([], { at: ago(61 * 60_000), n: 6, used: 72, lim: 80 }).stdout),
+    (() => {
+      const { stdout } = probed([], { at: ago(61 * 60_000), n: 6, used: 72, lim: 80 });
+      // 🔴 The assertion is the PERCENTAGE, never the bare words "commit charge". It was
+      // !/commit charge/ until 2026-10-09, which measured the MACHINE as much as the code: when
+      // available RAM is under the 1,800 MB floor the low-RAM branch fires and its `unreadable`
+      // clause says "The commit charge could not be read at all this time" — the CORRECT answer for
+      // a stale cache, and the same substring. So this case FAILED at 1.27 GB available and PASSED
+      // at 2.94 GB with not one line of the guard changed, which is a selftest reporting the
+      // weather. What the case means is that no commit PERCENTAGE may be printed from a reading
+      // past CACHE_MAX_AGE_MS, and that is now what it asserts.
+      if (/commit charge at \d+%/.test(stdout)) return false;
+      // Second half, free: whatever it DOES say must admit commit was unreadable rather than
+      // quietly leaving it out. Empty is the healthy machine (no message at all); non-empty is the
+      // low-RAM branch, which must carry the clause. Both states are now a pass for the right reason.
+      return stdout.trim() === '' || /could not be read at all/.test(stdout);
+    })(),
     'CACHE_MAX_AGE_MS is 60 minutes; past it, commit is unknown rather than stale',
   );
   check(

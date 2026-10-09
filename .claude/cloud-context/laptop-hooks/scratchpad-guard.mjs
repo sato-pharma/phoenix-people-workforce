@@ -281,7 +281,7 @@ if (mode === 'pre') {
     }
 
     // Same for a git repository: archive the repository (or worktree) the command or its folder touches.
-    const { repoFor, sweepRepos } = await import(`file:///${REPO_ARCHIVER}`);
+    const { repoFor, sweepRepos, verify } = await import(`file:///${REPO_ARCHIVER}`);
     const places = [cwd, ...[...cmd.matchAll(/"([A-Za-z]:[\\/][^"]*)"|'([A-Za-z]:[\\/][^']*)'|([A-Za-z]:[\\/][^\s"'`;|&)]*)/g)].map((m) => m[1] ?? m[2] ?? m[3])];
     const task = cmd.match(/new-session\.mjs[^\n]*--remove\s+["']?([\w.-]+)/i)?.[1];
     const repos = new Map();
@@ -292,6 +292,49 @@ if (mode === 'pre') {
       if (r && task) { const wt = repoFor(path.join(path.dirname(r.main), `_wt-${task}`)); if (wt) repos.set(wt.dir.toLowerCase(), wt); }
     }
     if (repos.size) sweepRepos({ only: [...repos.values()] });
+
+    // ── AND THEN: IS EVERY DOCUMENT IN THAT TREE ACTUALLY HELD? ────────────────────────────────
+    //
+    // The sweep above copies what is new. It cannot tell you whether the copies are still there —
+    // and a path out of the index is not evidence that they are. On 2026-10-09 a session about to
+    // remove a worktree checked exactly that, looked under a path the archive has never used
+    // (<ext>/_repos/, where the real one is _by-source/<ext>/_repos/), read back nothing, and
+    // reported that the repository half of this guard had never archived a single document in its
+    // life. It had archived 1,666. That reading was wrong in the harmless direction; the same
+    // blindness the other way round is a worktree removed while a document in it is held NOWHERE,
+    // and nothing would ever have said so.
+    //
+    // verify() answers by CONTENT, which is the only honest answer: the copy may sit in a day
+    // folder under another name, as 332 of them did. Only wipes pay for it — a per-file delete is
+    // handled above — and after the sweep the usual answer needs no archive walk at all, about a
+    // second, because verify re-records each copy where it actually is.
+    //
+    // FAIL OPEN on an error (the catch below), FAIL CLOSED on a finding. A bug in this check must
+    // never stop him removing a worktree; a document that exists in one place in the world must
+    // never be taken by a command that was not even about that document.
+    if (wipes && repos.size) {
+      const held = verify({ only: [...repos.values()], quiet: true });
+      if (held.lost.length > 0) {
+        const names = held.lost.slice(0, 8).map((l) => l.file);
+        logLine(`WIPE DENIED in ${input.cwd ?? '?'}: ${held.lost.length} unarchived document(s) ` +
+          `[${names.join(', ')}] :: ${cmd.slice(0, 200)}`);
+        process.stdout.write(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason:
+              `This command destroys working-tree files, and ${held.lost.length} protected document(s) in that ` +
+              'repository are held NOWHERE ELSE — not at their own path in F:/Claude Scratchpad Archive, and not ' +
+              'anywhere else in it under any name (checked by content, not by path): ' +
+              names.join(', ') + (held.lost.length > names.length ? `, and ${held.lost.length - names.length} more` : '') +
+              '. Running it takes the last copy. Archive them first with `node ~/.claude/scripts/repo-archive.mjs`, ' +
+              'then `node ~/.claude/scripts/repo-archive.mjs --verify --repo <the repository>` must report 0 LOST, ' +
+              'and this command goes through. If the documents are meant to go, ask the owner in chat first.',
+          },
+        }));
+        process.exit(0);
+      }
+    }
   } catch (e) {
     if (e?.[Symbol.for('phx.hook-exit')]) throw e; // an exit above ended this hook (hook-dispatch.mjs)
     logLine(`pre-hook error (failed open): ${e.message}`);
