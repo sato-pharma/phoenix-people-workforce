@@ -322,6 +322,66 @@ only in September, which is exactly when a September deduction is being charged.
 owned the right implementation of a date-only column, `hireDateLabel` (Y/M/D parts, UTC, through
 `stableEnGbFormatter`), so the notice uses that and never a formatter of its own.
 
+## The charged leavers reach the Entitlements tab
+
+Owner, 2026-10-09, straight after the notice shipped: **"show the charged leavers on the vacation
+report entitlements tab"** — the gap the dialog could only describe.
+
+The tab was built from `getEmployeeDirectoryRows()`, the active directory, so a day charged against
+someone who had left came off a balance that appeared on **no screen at all**. `loadVacationReportData`
+now adds exactly the leavers whose balance was actually spent:
+
+- a **second, wider** directory read, `getEmployeeDirectoryRows({ includeInactive: true })`, put
+  through the same `filterVacationEmployeesForAccess` so a manager can only ever see their own;
+- kept only when `hasDepartedEmployment` says they left — **not** the complement of `active`, which
+  would drag in production's 15 `historical_payroll_record` and 2 `system_placeholder` rows;
+- and only when their **NET** annual-balance days are **above zero inside their own current balance
+  period** — the same window the Used and Balance columns count.
+
+Both halves of that last rule earn their place. **Net**, because returning a charge to salary writes a
+negative ledger row that nets it out, and a leaver whose charge was given back is not a charged
+leaver — otherwise one undone click would leave a row there for ever. **Inside their own period**,
+because the period moves with today: without it the row would eventually show a departed person with
+Used 0 and a full, untouched entitlement, which is worse than not showing them at all.
+
+### What was deliberately left alone
+
+- **`visibleEmployeeHrIds` still comes from the ACTIVE list.** That set decides which *requests* a
+  viewer may see. Widening it would hand managers rows nobody asked to show them.
+- **The summary still counts the active workforce only** — its first figure is literally
+  `activeEmployees`, and moving a headcount he reads every month to surface a few leaver rows is not
+  a trade worth making.
+- **No new column.** The row says it through `reviewFlags`, the one channel that already reaches all
+  four renderings: the desktop table, the mobile card, the self-only card and the CSV export.
+
+### One thing the charges section was also dropping
+
+`listLeaveBalanceChargesForEmployees` was called with the **active** ids, so a leaver's charge never
+appeared in the charges section either — and the name lookup beside it would have said
+*"Name unavailable"*, against the standing rule of names, never ids. Both now read the wider list.
+That read folds every deduction row and filters in memory, so a longer list of ids costs nothing.
+
+### The guard that had to be re-aimed, not removed
+
+`tests/workforce-hierarchy-continuity.test.ts` pinned the builder's argument as the literal
+`employees: visibleEmployees`, under the heading *"entitlements must be built only from scoped
+visible employees"*, and turned `validate` red the first time this shipped.
+
+The invariant is **scoped**, not that one identifier — and scoping still holds: the leaver list
+comes from a second read put through the same `filterVacationEmployeesForAccess`, so a manager
+still sees only their own people. So the assertion was re-aimed rather than relaxed, with three
+more beside it: the wider read must pass the access filter, the leavers must be taken from **that**
+list, and an unfiltered directory read may never reach the builder. Breaking either of the new
+conditions — a raw directory read for the leavers, or dropping the access filter — fires its own
+assertion, so the guard has more teeth than before, not fewer.
+
+### The date
+
+`Left the company on 17 Sept 2026` — through `stableEnGbFormatter` in UTC, from the date's own Y/M/D
+parts. **"Sept", not "Sep"**, is the point of that formatter: it pins the CLDR 42 spelling for every
+reader instead of asking each browser's own ICU build, which is the React #418 trap the charge
+dialog hit an hour earlier.
+
 ## Proof
 
 `tests/deductions-leave-balance.test.ts`, registered in `tests/run-tests.ts`. Section 5 covers the
