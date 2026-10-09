@@ -15,7 +15,7 @@
 // AFTER the Office file left the Office units on a geography the data no longer supports — measured
 // on the live CNS August 2026 rows on 9 October 2026, 6,834 of the 109,719 Office packs (6.23%,
 // 548,777 EGP, and Office is 61.5% of that month) are credited to a different area from the one the
-// current data gives them, with the Office file's last batch at 10 September 19:15 Cairo and the
+// current data gives them, with the Office file's last batch at 10 September 20:15 Cairo and the
 // month published 10 September 23:22. Nothing reported it, and the only repair was to re-upload the
 // Office file by hand.
 //

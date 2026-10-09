@@ -30,7 +30,7 @@ export function isOfficeDistributorCode(value: unknown): boolean {
  *
  * MEASURED ON THE LIVE AUGUST 2026 CNS ROWS, 9 October 2026, through the repo's own closing loader
  * and this rule: Office is 109,719 of 178,272 units (61.5% of the month), its last batch landed
- * 10 September 19:15 Cairo and the month was published 10 September 23:22 Cairo — and **6,834 of
+ * 10 September 20:15 Cairo and the month was published 10 September 23:22 Cairo — and **6,834 of
  * those packs, 6.23%, worth 548,777 EGP, are today credited to a different area from the one the
  * current data gives them**, over 48 areas with 17 of them short — the sum of the positive legs of
  * today's net over the stored spread, measured through the closing LOADER, after the city-split

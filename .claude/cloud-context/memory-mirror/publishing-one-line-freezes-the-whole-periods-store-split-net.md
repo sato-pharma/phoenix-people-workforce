@@ -1,6 +1,6 @@
 ---
 name: publishing-one-line-freezes-the-whole-periods-store-split-net
-description: "isFrozenStoreSplitPeriod matches monthly_closing_publications by PERIOD with no line filter, so publishing one line freezes every line's store-split net for that month — deliberate, and it means a month still receiving uploads silently drifts away from today's rules in a way the units-based drift check cannot see — 2026-09 reached 1,030,551.19 EGP on different areas, CNS 221,712.21 of it, and his 2026-10-09 instruction — "rebuild the September store split when Marcyrl's Office book lands" — authorises the rebuild on an upload, not a date: `MC`, `Office`, `DIRECT`, `EP` and `EP-PHS` are all still missing, so it reports to him for the unpublish when one lands."
+description: "isFrozenStoreSplitPeriod matches monthly_closing_publications by PERIOD with no line filter, so publishing one line freezes every line's store-split net for that month — deliberate, and it means a month still receiving uploads silently drifts away from today's rules in a way the units-based drift check cannot see — 2026-09 reached 1,030,551.19 EGP on different areas, CNS 221,712.21 of it, and his 2026-10-09 instruction — "rebuild the September store split when Marcyrl's Office book lands" — authorises the rebuild on an upload, not a date: the shipped notice reports five still missing — epda, EPDA-BULK, EPDA-Pharmacies, Marcyrl (`Office`, which IS Marcyrl, one book) and mec, so it reports to him for the unpublish when one lands."
 metadata:
   node_type: memory
   type: project
@@ -20,18 +20,24 @@ books are in, not now.") So the rebuild is AUTHORISED and PARKED on an upload, n
 go-ahead is already given, so when the book lands it is reported to him for the unpublish, never
 re-asked as a decision.
 
-🔴 **"Marcyrl's Office book" IS TWO SEPARATE BOOKS IN THE DATA — do not read it as one.** Read live
-2026-10-09 against August, September holds 14 validated books and **five are still missing: `MC`
-(Marcyrl), `Office` (the company's own stock, the respread's input), `DIRECT` (Company), `EP` (epda)
-and `EP-PHS` (EPDA-Pharmacies)** — plus the **EPDA-BULK sector book (`EP-BK`), which has never
-arrived for any month** and which his 2026-10-09 contribution rule needs. Neither `MC` nor `Office`
-had landed, so the trigger had not fired either way. 🔴 **The ambiguity resolves itself at the
-moment it fires**: the rebuild cannot start without his unpublish click, so whichever of the five
-lands first is reported with the other four named — rebuilding on `Office` alone while `MC`,
-`DIRECT`, `EP` and `EP-PHS` are still out means a second rebuild later, and that is his call to make
-with the list in front of him.
-`select distributor_code, max(created_at at time zone 'Africa/Cairo') from source_of_sales_import_batches where period = '2026-09' group by 1`
-is the whole test.
+🔴 **"Marcyrl's Office book" IS ONE BOOK — `Office` IS Marcyrl.** Every `Office` batch ever
+uploaded (2026-01..2026-08, `office N.xlsx`) carries `distributor_name = Marcyrl`, and the repo
+already says so in `.claude/rules/sales-closing.md` ("Marcyrl IS the Office channel", owner
+2026-10-05). `MC` is a DIFFERENT distributor — its name is **mec**. An earlier version of this note
+read his words as two books and sent a session looking for a second trigger; there is one trigger,
+the September `Office` upload, and it is also the respread's only input.
+
+**What September still owes, from the shipped notice rather than a hand-rolled comparison**
+(`node scripts/check-sos-month-complete.ts 2026-09`, run 2026-10-09 against production):
+`INCOMPLETE 2026-09 missing=5` — **epda (`EP`), EPDA-BULK (`EP-BK`), EPDA-Pharmacies (`EP-PHS`),
+Marcyrl (`Office`), mec (`MC`)**. 🔴 **A raw two-month comparison gets this wrong twice**: it adds
+`DIRECT`, whose absence is CORRECT because DirectReq carries the fold, and it MISSES `EP-BK`, which
+is absent from August too — the notice expects it because another source's file carried it for
+2026-07..2026-08 only. 🔴 **And `EP-BK` has NOT "never arrived"** — it has four batches, 2026-02,
+03, 04 and 06 (ساتو قطاع الجملة), and from July its volume appears inside `EP-PHS`, whose book went
+0.998M EGP in June to 8.16M in July and 12.02M in August. Quote those books by VALUE, never by
+summed units across product codes.
+`node scripts/check-sos-month-complete.ts <period>` is the whole test.
 
 **Measured 2026-10-09, twice, and the second number is the one to quote.** At 09:00 Cairo
 `scripts/check-store-split-drift.ts 2026-09` reported 112 cells over 56 line×area pairs and

@@ -7342,7 +7342,7 @@ and the new rule (so the number is reproducible, not estimated):
 | Weighting base | 4,277,307 EGP of non-Office sell-out across **48 areas** |
 | Sitting in the wrong area today | **6,834 packs — 6.23% — 548,777 EGP** |
 | Areas short of what today's data gives them | **17 of 48** |
-| Office file's last batch | 10 September **19:15** Cairo |
+| Office file's last batch | 10 September **20:15** Cairo — `created_at` is `timestamptz`, UTC 17:15:54, and Cairo is UTC+3 in September; an earlier copy of this table read 19:15 by converting at +2 |
 | Month published | 10 September **23:22** Cairo |
 | Largest single area error | CA1, **+3,119 packs** (+250,488 EGP) on a 4.75% share |
 
