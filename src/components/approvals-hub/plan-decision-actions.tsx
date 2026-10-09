@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, CornerUpLeft, Flag, ListChecks, MessageSquarePlus, XCircle } from "lucide-react";
 
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import type { PlanReturnableActivity } from "@/lib/approvals-hub/service";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import {
@@ -196,8 +197,8 @@ export function PlanDecisionActions({
   // Nothing actionable → render nothing (the page shows a read-only banner instead).
   if (!hasStandard && !canAcknowledge && !isEditRequestDecision && !canRequestVisitDetails) return null;
 
-  const shell = "border border-phx-line bg-white";
-  const headerBar = "border-b border-phx-line bg-slate-900 px-4 py-2.5";
+  const shell = adminPanelClassName;
+  const headerBar = `${adminPanelHeaderClassName} px-4 py-2.5`;
   const headerText = "text-phx-xs font-black uppercase tracking-[0.14em] text-white";
 
   // ── Premium per-activity return composer ─────────────────────────────────────
@@ -401,7 +402,7 @@ export function PlanDecisionActions({
         ) : null}
 
         {canAcknowledge ? (
-          <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "acknowledge" }); }} className="inline-flex items-center gap-1.5 bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-black">
+          <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "acknowledge" }); }} className="inline-flex items-center gap-1.5 bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)] transition-shadow hover:bg-black">
             <CheckCircle2 className="h-4 w-4" /> Acknowledge (HR)
           </button>
         ) : null}

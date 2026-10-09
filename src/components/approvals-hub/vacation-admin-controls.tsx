@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import { Button } from "@/components/ui/button";
 import { FormActions, FormError, FormField } from "@/components/ui/form-kit";
 import { phxButtonDangerDenseClassName, phxSelectClassName } from "@/components/ui/form-tokens";
@@ -106,8 +107,8 @@ export function VacationAdminControls({ backHref, row }: { backHref: string; row
   const typeOptions = VACATION_TYPES;
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
+    <section className={adminPanelClassName}>
+      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Admin controls</h3>
       </header>
       <div className="space-y-3 px-4 py-3">
@@ -192,7 +193,7 @@ export function VacationAdminControls({ backHref, row }: { backHref: string; row
         ) : null}
 
         {mode === "confirm-delete" ? (
-          <div className="space-y-3 border border-rose-200 bg-rose-50 px-3 py-3">
+          <div className="space-y-3 border border-rose-200 bg-rose-50 px-3 py-3 shadow-[0_1px_2px_rgba(127,29,29,0.06),0_12px_28px_rgba(127,29,29,0.08)]">
             <p className="text-phx-sm font-bold text-rose-900">
               Delete {row.requestCode} for {row.employeeName}? This removes the request. The admin audit log keeps the deleted record context.
             </p>
