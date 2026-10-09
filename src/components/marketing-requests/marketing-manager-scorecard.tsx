@@ -156,7 +156,8 @@ export function MarketingManagerScorecard() {
             Marketing requests by manager
           </p>
           <p className="mt-0.5 text-phx-xs text-slate-300">
-            Actual sales attributed up to {monthLabel(data.salesDataAsOf)} · read as of{" "}
+            Distributor sales fully loaded to {monthLabel(data.salesDataAsOf)} — a later month
+            counts as soon as its files arrive · read as of{" "}
             {cairoDateTime(data.generatedAtIso)} Cairo
           </p>
         </div>
@@ -337,7 +338,7 @@ function KpiBand({ data }: { data: MarketingManagerScorecard }) {
       value: money(totals.expectedRoiValue),
     },
     {
-      hint: `${percent(totals.recoveryRatio)} of approved spend · to ${monthLabel(data.salesDataAsOf)}`,
+      hint: `${percent(totals.recoveryRatio)} of approved spend · sales loaded to ${monthLabel(data.salesDataAsOf)}`,
       label: "Actual collected",
       value: money(totals.actualValue),
     },

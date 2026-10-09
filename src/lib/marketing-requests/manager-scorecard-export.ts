@@ -118,7 +118,12 @@ export async function buildMarketingManagerScorecardWorkbook(
   info.addRows([
     { field: "Report", value: "Marketing Manager Scorecard" },
     { field: "Generated", value: `${cairoDateTime(scorecard.generatedAtIso)} Cairo` },
-    { field: "Actual sales attributed up to", value: monthLabel(scorecard.salesDataAsOf) },
+    { field: "Distributor sales fully loaded to", value: monthLabel(scorecard.salesDataAsOf) },
+    {
+      field: "Later months",
+      value:
+        "Counted as soon as a distributor files them, so a part-loaded month is already in these figures",
+    },
     { field: "Managers in scope", value: scorecard.totals.managerCount },
     { field: "Scope", value: "Everyone whose marketing requests the reader of this report can see" },
     {
@@ -223,8 +228,8 @@ export function buildMarketingManagerScorecardPdfDocDefinition(
         margin: [0, 0, 0, 12] as [number, number, number, number],
         style: "subtitle",
         text:
-          `Actual sales attributed up to ${monthLabel(scorecard.salesDataAsOf)} · ` +
-          `read as of ${cairoDateTime(scorecard.generatedAtIso)} Cairo`,
+          `Distributor sales fully loaded to ${monthLabel(scorecard.salesDataAsOf)} — a later month counts ` +
+          `as soon as its files arrive · read as of ${cairoDateTime(scorecard.generatedAtIso)} Cairo`,
       },
       pdfTable(scorecard),
       {
