@@ -25,8 +25,18 @@ export const dynamic = "force-dynamic";
  *   · ROI      — the 10 marketingRequestRoles (canUseEmployeePortalMarketingRoiTracking).
  *   · Coverage — those 10 PLUS Finance Manager and Financial Advisor
  *                (canUseEmployeePortalMarketingCoverageReport, deliberately broader).
- * A Finance Manager / Financial Advisor therefore sees only the Coverage tab. Row visibility stays
- * scoped per viewer inside each component's own service — this page widens nothing.
+ * Row visibility stays scoped per viewer inside each component's own service — this page widens
+ * nothing.
+ *
+ * 🔴 THE COVERAGE SET'S TWO EXTRA ROLES NEVER ARRIVE HERE, and this comment used to say they did
+ * ("a Finance Manager / Financial Advisor therefore sees only the Coverage tab"). Neither is in
+ * `portalShellRoles`, so the shell gate a few lines below — which runs BEFORE either tab predicate
+ * — sends them to /overview. Measured 2026-10-09 by a role sweep against a dev server: a Finance
+ * Manager asking for this page is answered `NEXT_REDIRECT;replace;/overview`, never a Coverage tab.
+ * Their Coverage Report is the ADMIN one, /admin/marketing-requests/coverage-report, which
+ * `coverageReportAdminShellRoles` opened to them for exactly this reason. So the broader predicate
+ * is dead weight HERE and load-bearing THERE — do not "fix" it by widening the shell gate, which
+ * would hand both seats a portal they have no other page in.
  *
  * `isTerritoryScoped` marks the Medical Rep, the one seat whose ROI tab is bounded by his own area
  * AND his own LINE (owner ruling 2026-09-30, after the Pedia rep on Gharbia 2 was shown the CNS
