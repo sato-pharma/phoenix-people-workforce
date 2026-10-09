@@ -1396,6 +1396,7 @@ import { runAutomatedPayrollSplitTests } from "./automated-payroll-split.test.ts
 import { runAutomatedPayrollExportOrderTests } from "./automated-payroll-export-order.test.ts";
 import { runAutomatedPayrollPart1ScopeTests } from "./automated-payroll-part1-scope.test.ts";
 import { runAutomatedPayrollDeductionReconciliationTests } from "./automated-payroll-deduction-reconciliation.test.ts";
+import { runReconcileCountsRetiredApprovalTests } from "./reconcile-counts-retired-approval.test.ts";
 import { runAutomatedPayrollNonEmployeesTests } from "./automated-payroll-non-employees.test.ts";
 import { runAutomatedPayrollFabSheetTests } from "./automated-payroll-fab-sheet.test.ts";
 import { runAutomatedPayrollNotifyGovernanceTests } from "./automated-payroll-notify-governance.test.ts";
@@ -2752,6 +2753,7 @@ await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconci
 await runTest("automated payroll export order (fixed HR-ID sequence)", runAutomatedPayrollExportOrderTests);
 await runTest("automated payroll Part 1/2 scope (no CRM/vacation double-deduction)", runAutomatedPayrollPart1ScopeTests);
 await runTest("automated payroll run vs Deductions module (every bucket compared against the column its routing feeds)", runAutomatedPayrollDeductionReconciliationTests);
+await runTest("reconciliation counts an approval retired AFTER the run was frozen, and never one retired before it or on any money path", runReconcileCountsRetiredApprovalTests);
 await runTest("automated payroll Non-Employees Payroll (inline rows + accurate Executive Summary)", runAutomatedPayrollNonEmployeesTests);
 await runTest("automated payroll FAB bank-transfer sheet (schema + filtering)", runAutomatedPayrollFabSheetTests);
 await runTest("automated payroll notify governance (authorizedRecipient fix)", runAutomatedPayrollNotifyGovernanceTests);

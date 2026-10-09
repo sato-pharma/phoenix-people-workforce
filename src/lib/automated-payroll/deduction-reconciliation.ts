@@ -69,6 +69,19 @@ export type ReconciliationVerdict =
    */
   | "not comparable by design"
   /**
+   * Part of this claim's approved money has since been RETIRED by the module, so the two sides
+   * cannot be scored against each other in either direction — and this is reported rather than
+   * resolved, because only the reader knows which way it should fall.
+   *
+   * It cannot prove an over-charge: the figure WAS approved when the sheet was frozen, which is
+   * what the run was built on. It cannot demand a charge either: the module has withdrawn the
+   * money, and a run that never charged it has the same answer the module now gives. Both shapes
+   * are live on the published August 2026 run — 934.74 EGP that read as over-charged before
+   * retired approvals were counted at all, and 3,597.53 EGP that read as under-charged the moment
+   * they were counted into the total.
+   */
+  | "explained by a retired approval"
+  /**
    * The employee has a draft row but is NOT in this run's population, so no recommender runs for
    * them and no step can route the money anywhere. Not a shortfall: there is nobody to charge.
    * September 2026 had one — somebody terminated on 31 August, inside the cohort the owner closed
@@ -108,10 +121,25 @@ export type ReconciliationReport = {
    * proposal lives, and a report that showed only `differences` would have lost it in silence.
    */
   notComparableGaps: ReconciliationRow[];
+  /**
+   * Claims standing on money the module has since retired. Kept out of `differences` in both
+   * directions — see the `explained by a retired approval` verdict for why neither sign is
+   * evidence. Never dropped: the figures are real and the reader is the one who can judge them.
+   */
+  explainedByRetiredApproval: ReconciliationRow[];
   /** Sum of `difference` over `differences`. Positive means the month under-charges overall. */
   netDifference: number;
   /** How many employees' routing was read live rather than from the Part 1 stamp. */
   provisionalRouting: number;
+  /**
+   * Approvals counted on the MODULE side although the module has since retired them, because they
+   * were live and approved when the run was frozen (`countSupersededApprovedAfter`).
+   *
+   * Reported rather than folded in silently: without this line the module total is a number nobody
+   * can reproduce from the Deductions screen, which is the screen the owner reads. `count` is
+   * claims, `amount` is their money.
+   */
+  retiredApprovalsCounted: { count: number; amount: number };
 };
 
 /**
@@ -218,6 +246,17 @@ export function reconcileDeductions(input: {
   const rows: ReconciliationRow[] = [];
   let provisionalRouting = 0;
 
+  // Read off the LINES the buckets were built from, never recomputed from the candidates: a second
+  // derivation of "which approvals were retired" is a second answer, and this one has to agree with
+  // the module totals the rows below are compared against.
+  const retiredLines = [...input.deductions.values()].flatMap((employee) =>
+    employee.lines.filter((line) => Boolean(line.supersededAt)),
+  );
+  const retiredApprovalsCounted = {
+    count: retiredLines.length,
+    amount: roundCurrency(retiredLines.reduce((sum, line) => sum + line.amount, 0)),
+  };
+
   // Driven by the MODULE's keys: an employee the module approved money for who is not on the run
   // at all is exactly the case worth seeing, and iterating the population would drop them in
   // silence.
@@ -271,13 +310,21 @@ export function reconcileDeductions(input: {
       if (moduleAmount === 0 && runAmount === 0) continue;
 
       const difference = roundCurrency(moduleAmount - runAmount);
+      // Retired money standing behind this claim takes it out of the scoring entirely — see the
+      // "explained by a retired approval" verdict. Checked before the sign of the difference,
+      // because it is wrong in BOTH directions, not just the one that bit first.
+      const retiredAmount = roundCurrency(
+        claim.buckets.reduce((sum, bucket) => sum + (employeeDeductions.retiredBuckets?.[bucket] ?? 0), 0),
+      );
       const verdict: ReconciliationVerdict = !claim.comparable
         ? "not comparable by design"
         : difference === 0
           ? "matches"
-          : difference > 0
-            ? "charged less"
-            : "charged more";
+          : retiredAmount !== 0
+            ? "explained by a retired approval"
+            : difference > 0
+              ? "charged less"
+              : "charged more";
 
       rows.push({
         hrId,
@@ -313,8 +360,12 @@ export function reconcileDeductions(input: {
     notComparableGaps: rows.filter(
       (row) => row.verdict === "not comparable by design" && row.difference !== 0,
     ),
+    explainedByRetiredApproval: rows.filter(
+      (row) => row.verdict === "explained by a retired approval",
+    ),
     netDifference: roundCurrency(differences.reduce((sum, row) => sum + row.difference, 0)),
     provisionalRouting,
+    retiredApprovalsCounted,
   };
 }
 

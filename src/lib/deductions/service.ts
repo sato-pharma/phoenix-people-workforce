@@ -1013,6 +1013,14 @@ export async function listCandidatesForMonth(input: {
   monthKey: string;
   category?: DeductionsCandidate["category"];
   employeeHrIdCompact?: string;
+  /**
+   * Also return RETIRED candidates. Off by default, and it must stay that way: a superseded row is
+   * exactly what the module no longer stands behind, so everything that decides money keeps seeing
+   * only the live ones. The reconciliation report is the single caller that needs them — to compare
+   * a published run against the approvals it was actually built on, not against the module as it
+   * looks weeks later. See `loadConfirmedDeductions`'s `countSupersededApprovedAfter`.
+   */
+  includeSuperseded?: boolean;
 }): Promise<DeductionsCandidateWithDecision[]> {
   const monthKey = normalizeMonthKey(input.monthKey);
   const supabase = getSupabaseAdmin();
@@ -1020,8 +1028,8 @@ export async function listCandidatesForMonth(input: {
     let query = supabase
       .from("deductions_candidates")
       .select("*, deductions_decisions(*)")
-      .eq("month_key", monthKey)
-      .is("superseded_at", null);
+      .eq("month_key", monthKey);
+    if (!input.includeSuperseded) query = query.is("superseded_at", null);
     if (input.category) query = query.eq("category", input.category);
     if (input.employeeHrIdCompact) query = query.eq("employee_hr_id_compact", input.employeeHrIdCompact);
     return query;
