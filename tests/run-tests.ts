@@ -2465,6 +2465,7 @@ import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
 import { runCrmDoubleVisitWithDepartedPartnerTests } from "./crm-double-visit-with-departed-partner.test.ts";
 import { runEmployeeNamesByHrIdTests } from "./employees-names-by-hr-id.test.ts";
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
+import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9681,6 +9682,10 @@ await runTest(
 await runTest(
   "every recruitment read of a person's NAME goes through the shared namesByHrId and the module keeps no second copy — the six folded files import it and call it, none of them reads a name map as `get(canonicalHrIdKey(id) ?? \"\")` (which looks up the empty key), any read of `employees` asking ONLY for name columns is refused as a seventh copy with `candidate-views.ts` exempt in writing for reading full_name alone and throwing, and the bare `.eq(\"hr_id\", …)` count is ratcheted at 3 because that comparison is case-sensitive against a mixed-case column and misses with no error — which is what put a raw HR id into an interview notification",
   runRecruitmentNamesByHrIdFoldTests,
+);
+await runTest(
+  "the CRM test-row sweep stays correct about the schema it deletes from — the plan clears every child before the parent it references for production's real 22 foreign keys, a NEW child table referencing a cleared parent is reported BY NAME rather than failing the run halfway through, a parent cleared before its child is caught the same way, the seven tables with no `is_test` column of their own are reached through a parent and never filtered on a column they do not have (with `request_id` and the uuid `visit_id` pinned, each of which cost a real error against production), `phoenix_crm_countable_visits` is never deleted from because it is a VIEW yet is still proven empty, and the emitted file is ONE transaction whose three guards sit before the first delete, inside the commit, and say in plain words that there is no point-in-time recovery",
+  runCrmClearTestRowsTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
