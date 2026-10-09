@@ -5637,7 +5637,7 @@ await runTest(
   runEpdaPediaWarehouseRulingsTests,
 );
 await runTest(
-  "store-split rulings 2026-10-09 (the twelve stems he ruled off the 10,420-name list, the 24 accounts they reach, the 1.4M neighbours they must not, and طاى جروب held pharmacy until he reconciles it)",
+  "store-split rulings 2026-10-09 (the thirteen stems he ruled off the 10,420-name list, the 29 accounts they reach, the 1.4M neighbours they must not, and the Matay pharmacies a one-word طاي stem would sweep in)",
   runStoreSplitOwnerRulings20261009Tests,
 );
 await runTest(

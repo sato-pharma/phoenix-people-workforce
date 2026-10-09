@@ -18,6 +18,15 @@ import {
  * audit found four more. Twelve stems went in; the twenty customer names below are everything they
  * reach on production.
  *
+ * A THIRTEENTH went in later the same day. He had named «طاى جروب» in column C and had also ruled
+ * its four accounts PHARMACY on the 2026-09-06 decision sheet, so the contradiction went back to
+ * him — and he settled it: **"split طاى جروب too, it overrides the Sep 6 sheet"**. The sixth such
+ * reversal in this rule, handled like the five before it. Measured on production the same day:
+ * «طاي جروب» reaches that ONE business on its SIX accounts and no neighbour at all, which is why
+ * the stem is TWO words — «طاى» is a substring of «مطاى», the town Matay, in 60+ Minia pharmacy
+ * names. All six sell from AB2 (Alex Center) alone, so the split deals them into thirds across
+ * Alexandria; 11 rows and 20,025.30 EGP actually change hands, every one September 2026 CNS.
+ *
  * This file exists for the NEIGHBOURS. `STORE_OVERRIDE_NAMES` is the one list that can CREATE a
  * warehouse from a name — `PHARMACY_OVERRIDE_CHAINS` can only ever refuse one — so an over-wide
  * stem does not merely mislabel a customer: it deals that customer's sales out across a city and
@@ -52,10 +61,13 @@ const RULED_STEMS: ReadonlyArray<readonly [string, string]> = [
   ["صيادلة البحيرة", "صيادله البحيره"],
   ["جمعية العاملين بشركة مصر حلوان", "جمعيه العاملين بشركه مصر حلوان"],
   ["الحمعيه التعاونيه يشركه كيما", "الحمعيه التعاونيه"],
+  // THE THIRTEENTH, later the same day: his override of the 2026-09-06 sheet. Two words, because
+  // «طاى» is a substring of «مطاى» — the town Matay, carried by 60+ Minia pharmacies.
+  ["طاى جروب", "طاي جروب"],
 ];
 
 /**
- * Every (name, code, distributor) the twelve stems reach on production, spelled as the files spell
+ * Every (name, code, distributor) the thirteen stems reach on production, spelled as the files spell
  * it — «مركزالخليل» with no space, «دار الدواء  - اخميم ن» with two, «الحمعيه» with a ح. The
  * misspellings are theirs and are kept, because they are what the uploads carry.
  */
@@ -88,6 +100,14 @@ const RULED_WAREHOUSES: ReadonlyArray<readonly [string, string, string]> = [
   ["جمعية العاملين بشركة مصر حلوان", "334792", "IS-S"],
   ["الحمعيه التعاونيه يشركه كيما", "375342", "IS"],
   ["الحمعيه التعاونيه يشركه كيما", "375342", "IS-S"],
+  // طاى جروب, on the five accounts that were not already stores. The four he had ruled PHARMACY on
+  // 2026-09-06 are the first four: his 2026-10-09 words override that sheet, and
+  // tests/sos-warehouse-owner-rulings.test.ts carries the same four as warehouses now.
+  ["طاى جروب", "433363", "IS"],
+  ["طاى جروب", "433363", "IS-S"],
+  ["شركة طاى جروب", "3080282", "RM"],
+  ["شركة طاى جروب", "1500023301", "SF"],
+  ["طاى جروب - الاسكندرية", "22197684", "EP-PHS"],
 ];
 
 /**
@@ -98,10 +118,16 @@ const RULED_WAREHOUSES: ReadonlyArray<readonly [string, string, string]> = [
 const ALREADY_WAREHOUSES_ON_A_STORE_WORD: ReadonlyArray<readonly [string, string, string]> = [
   ["مخزن الشرق للادوية المنيا", "مخزن الشرق للادوية المنيا", "QM"],
   ["مخزن الشرق للادويه", "1500044288", "SF"],
+  // 437,672.60 EGP. طاى جروب's own warehouse account. It was a store on «مخزن» before he ruled on
+  // the business at all, so the 2026-10-09 override changes nothing for it — and it belongs HERE
+  // rather than among the neighbours a stem must miss, because «طاي جروب» reaches it on purpose:
+  // it is the same business. The assertion below is the one that matters for it — its store word
+  // holds on its own, with the override list taken out of the picture.
+  ["مخزن طاى جروب - طاى", "0001573635", "PS"],
 ];
 
 /**
- * Real production customers the twelve stems must NOT reach. Each is a store for its OWN reason —
+ * Real production customers the stems must NOT reach. Each is a store for its OWN reason —
  * a store word or the trade phrase — so the assertion is about the new list, not the classifier:
  * if one of these starts matching a stem, the stem is too wide even though nothing visibly changed.
  */
@@ -121,9 +147,6 @@ const STORES_FOR_ANOTHER_REASON: ReadonlyArray<readonly [string, string, string]
   ["شركة الصيادلة فارما للتجارة وا", "0001579780", "PS"],
   ["مخزن فاروس", "0001559431", "PS"],
   ["مخزن كومباس", "0001576668", "PS"],
-  // 437,672.60 EGP. طاى جروب's own warehouse account — a store on «مخزن» however the six accounts
-  // below are eventually ruled.
-  ["مخزن طاى جروب - طاى", "0001573635", "PS"],
   // «الحمعيه التعاونيه» is a ح-for-ج typo of this name. This one is already a store on his own
   // «الجمعيه» keyword, and the ح stem must never adopt it — 13 societies ride that keyword, and
   // none of them was in column C.
@@ -144,14 +167,10 @@ const MUST_STAY_PHARMACY: ReadonlyArray<readonly [string, string, string]> = [
   ["الفجر", "348336", "IS"],
   // 3,841.92 EGP — carries «الدوائية» but not «لاستثمارات الدوائيه».
   ["الدوائية", "", "DIRECT"],
-  // طاى جروب. He NAMED it in column C, and it is deliberately absent from the change: he ruled its
-  // four accounts PHARMACY on the 2026-09-06 decision sheet (433363 IS and IS-S, 3080282 RM,
-  // 1500023301 SF) with their value and areas in front of him, and those answers are pinned in
-  // tests/sos-warehouse-owner-rulings.test.ts. A contradiction in this rule goes back to him — the
-  // five before it all did — so 1,060,947.52 EGP across six accounts waits for one word. Until it
-  // comes, these stay pharmacies, and this file is where that is enforced.
-  ["طاى جروب", "433363", "IS"],
-  ["طاى جروب - الاسكندرية", "22197684", "EP-PHS"],
+  // The two neighbours «طاي جروب» must still miss, now that it IS a stem: a pharmacy carrying the
+  // town Matay, and one carrying جروب. Both would fall to a one-word stem.
+  ["هيثم اسامة مطاى", "0001504502", "PS"],
+  ["شركه أيه ام جروب", "0001535504", "PS"],
 ];
 
 export function runStoreSplitOwnerRulings20261009Tests() {
@@ -195,8 +214,7 @@ export function runStoreSplitOwnerRulings20261009Tests() {
     assert.equal(classifyCustomerChannel(name, code, distributor), "store", `${name} stays a store`);
   }
 
-  // 5. The pharmacies stay pharmacies — including طاى جروب, which he named but has not reconciled
-  //    with his own 2026-09-06 sheet.
+  // 5. The pharmacies stay pharmacies — including the two neighbours the «طاي جروب» stem must miss.
   for (const [name, code, distributor] of MUST_STAY_PHARMACY) {
     assert.equal(
       classifyCustomerChannel(name, code, distributor),

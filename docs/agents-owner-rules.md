@@ -7569,30 +7569,59 @@ business on three accounts at two distributors (177,392.03 EGP), which is the ca
 for. Every stem is written long: bare `الشرق` would have taken 184,707.00 EGP of pharmacy sales,
 bare `صيادله` 3,117,937.50 on its two largest neighbours alone, bare `اورينت` 50,220.00.
 
-### 🔴 طاى جروب is NOT in the change, and it is the one thing waiting on him
+### 🔴 طاى جروب — he overrode his own 2026-09-06 sheet, the same day, in his own words
 
-He named it in column C. He also ruled its four accounts **pharmacy** on the 2026-09-06 decision
+He named it in column C. He had also ruled its four accounts **pharmacy** on the 2026-09-06 decision
 sheet — 433363 (IS and IS-S), 3080282 (RM), 1500023301 (SF) — with their value and areas in front
 of him, and those 167 answers are pinned in the required `validate` job by
 `tests/sos-warehouse-owner-rulings.test.ts`. A contradiction in this rule goes back to him instead
-of being resolved in code; the five before it all did. **1,060,947.52 EGP across six accounts waits
-for one word.** Its own warehouse account `مخزن طاى جروب - طاى` (437,672.60 EGP) already splits on
-`مخزن` and is unaffected either way.
+of being resolved in code; the five before it all did, and so did this one. **He settled it on
+2026-10-09: "split طاى جروب too, it overrides the Sep 6 sheet".** The later answer stands, the
+pinned fixture carries it (79 warehouse, 72 pharmacy), and the 2026-09-06 sheet itself is left
+untouched — the sixth such reversal, handled exactly like the five before it.
 
-### Two defects found in the same audit, left for him to rule on
+🔴 **THE STEM IS TWO WORDS, AND THAT IS THE WHOLE RISK OF THIS NAME.** `طاى` is a SUBSTRING of
+`مطاى`, the town Matay, which 60+ Minia pharmacies carry in their name (`الفتح - مطاى`,
+`نشوى - مطاى`, `هيثم اسامة مطاى`), and of `مصطاى` and `نهطاى` besides; bare `جروب` is common on its
+own. Measured on production over every name containing `طاى` / `طاي` / `طى جروب`, the stem
+`طاي جروب` reaches that ONE business on its SIX accounts and not a single neighbour: `طاى جروب`
+(433363 IS and IS-S), `شركة طاى جروب` (3080282 RM, 1500023301 SF), `طاى جروب - الاسكندرية`
+(22197684 EP-PHS) and `مخزن طاى جروب - طاى` (0001573635 PS), which already split on `مخزن` and is
+unaffected either way. The Matay guard was proven by widening the stem to bare `طاي`: the test fails
+with `هيثم اسامة مطاى was never ruled a warehouse and must not be swept in by a neighbour's stem`.
 
-1. Two government health-insurance depots **split today**, against his own 17-of-17 "government
-   depot, do not split" ruling: `فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي` and
-   `فرع شرق الدلتا - المخزن الاقليمي القليوبية - تامين الصحي`. They carry `مخزن` and spell
-   "تامين الصحي" out in full, so the `ت.ص` never-store word misses them.
+**WHAT IT MOVES.** All six accounts sell from ONE area — AB2, Alex Center — so the split deals their
+sales into thirds across Alexandria (AB1 Alex East, AB2 Alex Center, AB3 Alex West). Measured on the
+rollup at the period factory price: 166 rows and 1,057,167.56 EGP all-time across the six accounts,
+113 rows and 620,042.96 on the five that were not already stores, 338,276.36 of that on the tracked
+lines. 🔴 **But the name list is read from the cutover only, so what actually CHANGES HANDS is 11
+rows and 20,025.30 EGP, every one of them September 2026 CNS** — 3080282 (RM) 200 units 14,951.25
+and 433363 (IS) 123 units 5,074.05. Alex Center gives up 13,350.20 and Alex East and Alex West take
+6,675.10 each. 22197684 is Head Office only and never splits; 1500023301 carries no row at or after
+the cutover. The 1,060,947.52 quoted before this was the same six accounts measured over
+`source_of_sales_import_rows` where `validation_state = 'valid'` — a different basis, not a
+correction.
+
+### The other defects found in the same audit, still waiting on his word
+
+1. 🔴 **THREE** government health-insurance depots **split today**, against his own 17-of-17
+   "government depot, do not split" ruling — not the two first reported:
+   `فرع شرق الدلتا - المخزن الاقليمى العاشر من رمضان - تامين الصحي` (23495),
+   `فرع شرق الدلتا - المخزن الاقليمي القليوبية- تامين الصحي` (64845 — **its own spelling runs the
+   dash straight onto the word, with no space before it**, which is why a search for the spaced form
+   misses it) and `فرع شرق الدلتا - المخزن الاقليمي شبرا الخيمة - تامين الصحي` (27863). They carry
+   `مخزن` and spell "تامين الصحي" out in full, so the `ت.ص` never-store word misses all three.
+   🔴 **All three are CNS-only — not one Anti Infective row, ever** — so they can never move an Anti
+   Infective number: 2026-09 holds 23495 in Dakahlia 4 (249 units, 8,889.30 EGP) and 64845 in
+   Qalubeya (200 units, 7,140.00 EGP); 27863 last sold in July.
 2. Four `الطرشوبى` accounts say `مخزن` in the name and are held pharmacy by his chain override —
    correct by his standing ruling, and worth knowing before anyone reads the name as evidence.
 
 ### What holds it
 
 `tests/store-split-owner-rulings-2026-10-09.test.ts`, registered in `tests/run-tests.ts` and
-therefore in the required `validate` job. It pins the twelve stems verbatim, asserts all 24 accounts
-they reach are warehouses, asserts the cutover (September yes, August no, July no), asserts the
+therefore in the required `validate` job. It pins the thirteen stems verbatim, asserts all 29
+accounts they reach are warehouses, asserts the cutover (September yes, August no, July no), asserts the
 legacy rule stays blind to every one of them — and measures the neighbours **against the live
 `STORE_OVERRIDE_NAMES`**, so a stem added next month is checked against them too. The neighbour
 guard was proven by breaking it: an over-wide `صيادله` stem fails with
