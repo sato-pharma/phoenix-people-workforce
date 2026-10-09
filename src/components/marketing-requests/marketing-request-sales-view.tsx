@@ -204,7 +204,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                   <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">View Sales · {data.context.requestCode}</p>
                   <h2 className="mt-1 text-lg font-black tracking-tight text-phx-ink">{data.context.customerName}</h2>
                   <p className="mt-1 text-phx-sm font-semibold text-phx-ink-soft">
-                    {data.context.requesterName ?? data.context.requesterHrId}
+                    {data.context.requesterName ?? "Unknown requester"}
                     {data.context.line ? ` · ${data.context.line}` : ""}
                     {data.context.requestTypeName ? ` · ${data.context.requestTypeName}` : ""}
                     {" · "}{STATUS_LABELS[data.context.status] ?? data.context.status}
@@ -223,7 +223,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                 <StatCard accent="orange" label="Cost" value={money(data.context.estimatedCost)} />
                 <StatCard accent="sky" label="Required ROI" value={money(data.context.requiredRoiValue)} hint="cost × 10" />
                 <StatCard accent="green" label="Actual sales" value={money(data.actualValue)} hint={`${percent(data.coverageRatio)} of required`} />
-                <StatCard accent="slate" label="Matched rows" value={units(data.totals.rows)} hint={`${units(data.totals.units)} units`} />
+                <StatCard accent="slate" label="Matched rows" value={units(data.totals.rows)} hint={data.totals.units === null ? "Several products — read by value" : `${units(data.totals.units)} units`} />
               </div>
               {data.context.products.length > 0 ? (
                 <p className="mt-3 text-phx-xs font-semibold text-phx-ink-faint">

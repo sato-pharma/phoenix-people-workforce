@@ -5,6 +5,7 @@ import type {
   MarketingCoverageRequestIndexEntry,
   RoiFilterOption,
 } from "@/lib/marketing-requests/roi-report-types";
+import { marketingRequestStatusLabel } from "@/lib/marketing-requests/roi-labels";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Smart, cascading (faceted) filter options for the Marketing Coverage Report.
@@ -29,23 +30,27 @@ const pair = (value: string | null | undefined, label: string | null | undefined
   return v ? [{ value: v, label: (label ?? v) || v }] : [];
 };
 
+/** A person dimension: the value stays the HR id (the filter key), the LABEL never shows one. */
+const person = (hrId: string | null | undefined, name: string | null | undefined): ValueLabel[] =>
+  pair(hrId, (name ?? "").trim() || "Name not on file");
+
 /** Broadest-scope-first: management chain, then the requester's own tier, then
  *  geography, then the operational dimensions. */
 const MULTISELECT_SPECS: MultiselectSpec[] = [
-  { key: "nsm", label: "National Sales Manager", extract: (e) => pair(e.nsmHrId, e.nsmName) },
-  { key: "rsm", label: "Regional Manager", extract: (e) => pair(e.rsmHrId, e.rsmName) },
-  { key: "dm", label: "District Manager", extract: (e) => pair(e.dmHrId, e.dmName) },
-  { key: "requester", label: "Requester", extract: (e) => pair(e.requesterHrId, e.requesterName) },
+  { key: "nsm", label: "National Sales Manager", extract: (e) => person(e.nsmHrId, e.nsmName) },
+  { key: "rsm", label: "Regional Manager", extract: (e) => person(e.rsmHrId, e.rsmName) },
+  { key: "dm", label: "District Manager", extract: (e) => person(e.dmHrId, e.dmName) },
+  { key: "requester", label: "Requester", extract: (e) => person(e.requesterHrId, e.requesterName) },
   { key: "requesterTier", label: "Requester tier", extract: (e) => pair(e.requesterTier, e.requesterTier) },
   { key: "line", label: "Line", extract: (e) => pair(e.lineName, e.lineName) },
   { key: "region", label: "Region", extract: (e) => pair(e.regionName, e.regionName) },
   { key: "area", label: "Area", extract: (e) => pair(e.areaName, e.areaName) },
   { key: "approvedBy", label: "Approved by", extract: (e) => e.approverRoleKeys.map((r) => ({ value: r, label: r })) },
-  { key: "distributor", label: "Distributor", extract: (e) => e.distributorCodes.map((c) => ({ value: c, label: c })) },
+  { key: "distributor", label: "Distributor", extract: (e) => e.distributorCodes.map((c, i) => ({ value: c, label: e.distributorNames?.[i] || c })) },
   { key: "product", label: "Product", extract: (e) => e.productCodes.map((c, i) => ({ value: c, label: e.productNames[i] ?? c })) },
   { key: "pharmacy", label: "Target pharmacy", extract: (e) => e.pharmacyKeys.map((k, i) => ({ value: k, label: e.pharmacyNames[i] ?? k })) },
   { key: "requestType", label: "Request type", extract: (e) => (e.requestTypeId ? [{ value: String(e.requestTypeId), label: e.requestTypeName ?? `Type ${e.requestTypeId}` }] : []) },
-  { key: "status", label: "Status", extract: (e) => pair(e.status, e.status) },
+  { key: "status", label: "Status", extract: (e) => pair(e.status, marketingRequestStatusLabel(e.status)) },
 ];
 
 export function selectedCoverageValues(filters: MarketingCoverageFilterState, key: MarketingCoverageFilterKey): string[] {

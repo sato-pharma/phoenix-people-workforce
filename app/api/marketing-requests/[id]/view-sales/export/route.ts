@@ -7,7 +7,7 @@ import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildMarketingRoiViewSalesWorkbook } from "@/lib/export/marketing-roi-workbook";
-import { getMarketingRequestViewSales, writeMarketingRoiExportAudit } from "@/lib/marketing-requests/roi-report-service";
+import { getMarketingRequestViewSales, resolveMarketingExporterName, writeMarketingRoiExportAudit } from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +50,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const exportedBy = access.hrId ?? access.loginId ?? "system";
     const buffer = await buildMarketingRoiViewSalesWorkbook({
       data,
-      meta: { exportedByName: exportedBy, exportedByHrId: exportedBy, role: access.role, exportId, generatedAtIso },
+      meta: { exportedByName: await resolveMarketingExporterName(access), exportedByHrId: exportedBy, role: access.role, exportId, generatedAtIso },
     });
 
     await writeMarketingRoiExportAudit({

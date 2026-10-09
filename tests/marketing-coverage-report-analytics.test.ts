@@ -42,6 +42,7 @@ function row(overrides: Partial<MarketingCoverageReportRow>): MarketingCoverageR
     productCodes: ["GU001"],
     distributorCodes: ["IS"],
     pharmacyKeys: ["12345"],
+    pharmacyIds: ["pharmacy-12345"],
     ...overrides,
   } as MarketingCoverageReportRow;
 }

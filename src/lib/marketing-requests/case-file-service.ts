@@ -320,8 +320,9 @@ export function describeOutcome(row: MarketingRoiReportRow, salesDataAsOf: strin
  *  2. The report itself failed -> `unavailable`. Never a zeroed `ok`.
  *  3. No validated sales data at all -> `unavailable`: with no frontier we cannot even tell
  *     "too early" from "nothing sold", and guessing between those two is the whole defect.
- *  4. The frontier is EARLIER than the window's first month -> `not_applicable`, naming the
- *     frontier month. This is the case the live screen gets wrong.
+ *  4. The frontier is EARLIER than the window's first month, and nothing is attributed yet ->
+ *     `not_applicable`, naming the frontier month. A row that already carries attributed sales
+ *     falls through to `ok`: its figure is real, only its window is partial.
  *  5. Still no row -> `unavailable`. This is the status-scope trap's fingerprint.
  */
 export function resolveOutcomeBlock(input: {
@@ -348,7 +349,10 @@ export function resolveOutcomeBlock(input: {
       "No validated Source-of-Sales data is loaded at all, so nothing can be attributed and 'too early' cannot be told apart from 'nothing sold'.",
     );
   }
-  if (input.salesDataAsOf < windowStart) {
+  // "Too early" only while nothing has been attributed: a distributor's file can land before its
+  // month is validated, and a request already carrying real attributed sales must show them, not
+  // a sentence saying a zero is expected (measured 2026-10-09: EGP 35,751 behind that sentence).
+  if (input.salesDataAsOf < windowStart && !(input.row && input.row.actualSalesValue > 0)) {
     return caseFileNotApplicable(
       `Too early to measure — validated sales data currently ends ${input.salesDataAsOf}, and this campaign's window opens ${windowStart}. Zero attributed sales is expected here and does NOT mean the campaign failed.`,
     );
@@ -763,14 +767,13 @@ export async function getMarketingRequestCaseFile(
   // Composed from the request itself, NOT from the ROI row — the ROI engine never returns a draft,
   // returned or rejected request, and those are exactly the three the case file exists to cover.
   const windowEnd = windowEndMonth(request.payDate, request.roiDurationMonths);
-  const lifecycleStage = roiLifecycleStage(
-    {
-      dataCoverage: roi.row?.dataCoverage ?? "no_validated_data",
-      payDate: request.payDate,
-      status: request.status,
-    },
-    roi.salesDataAsOf,
-  );
+  // "Not yet paid" is decided by the pay date against today (Cairo), never by the sales-data
+  // frontier — see roiLifecycleStage.
+  const lifecycleStage = roiLifecycleStage({
+    dataCoverage: roi.row?.dataCoverage ?? "no_validated_data",
+    payDate: request.payDate,
+    status: request.status,
+  });
   const currentStepName = chainBlock.state === "ok" ? chainBlock.value.currentStepName : null;
 
   const warnings = buildCaseFileWarnings({

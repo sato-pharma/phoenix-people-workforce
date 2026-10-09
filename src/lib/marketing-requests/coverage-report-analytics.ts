@@ -1,5 +1,6 @@
 import { roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
-import type { MarketingCoverageReportRow } from "@/lib/marketing-requests/roi-report-types";
+import { sharedAttributionOverlap } from "@/lib/marketing-requests/roi-attribution-overlap";
+import type { MarketingCoverageReportRow, RoiAttributionLine } from "@/lib/marketing-requests/roi-report-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Marketing Coverage Report — client-side analytical layer.
@@ -61,6 +62,17 @@ export type CoverageDimensionRollupRow = {
 
 const UNASSIGNED_LABEL = "Unassigned";
 
+/**
+ * Value a bucket would count twice: the claimed lines of ITS requests that two of them share.
+ * A bucket's actual is the sum of its requests' actuals, so without this a sale two campaigns in
+ * one region both claim was counted twice there — and the breakdown stopped agreeing with the
+ * headline, which already deducts it (45,153.88 vs 42,433.56 on production, 2026-10-09).
+ */
+function bucketOverlap(requestIds: ReadonlySet<string>, attributionLines: readonly RoiAttributionLine[]): number {
+  if (attributionLines.length === 0 || requestIds.size < 2) return 0;
+  return sharedAttributionOverlap(attributionLines.filter((line) => requestIds.has(line.requestId)));
+}
+
 function dimensionValue(row: MarketingCoverageReportRow, dimension: CoverageRollupDimension): string {
   const raw = row[dimension];
   const trimmed = typeof raw === "string" ? raw.trim() : "";
@@ -75,8 +87,10 @@ function dimensionValue(row: MarketingCoverageReportRow, dimension: CoverageRoll
 export function computeCoverageRollupByDimension(
   rows: MarketingCoverageReportRow[],
   dimension: CoverageRollupDimension,
+  attributionLines: readonly RoiAttributionLine[] = [],
 ): CoverageDimensionRollupRow[] {
   const byKey = new Map<string, CoverageDimensionRollupRow>();
+  const requestIdsByKey = new Map<string, Set<string>>();
 
   for (const row of rows) {
     const key = dimensionValue(row, dimension);
@@ -98,6 +112,9 @@ export function computeCoverageRollupByDimension(
     bucket.totalCost += row.estimatedCost;
     bucket.totalRequiredRoi += row.requiredRoiValue;
     bucket.totalActualValue += row.actualSalesValue;
+    const ids = requestIdsByKey.get(key) ?? new Set<string>();
+    ids.add(row.requestId);
+    requestIdsByKey.set(key, ids);
     if (row.resultStatus === "on_track") bucket.onTrackCount += 1;
     else if (row.resultStatus === "behind") bucket.behindCount += 1;
     else if (row.resultStatus === "awaiting_data") bucket.awaitingDataCount += 1;
@@ -106,18 +123,21 @@ export function computeCoverageRollupByDimension(
     byKey.set(key, bucket);
   }
 
-  const result = Array.from(byKey.values()).map((bucket) => ({
-    ...bucket,
-    totalCost: roundMarketingMoney(bucket.totalCost),
-    totalRequiredRoi: roundMarketingMoney(bucket.totalRequiredRoi),
-    totalActualValue: roundMarketingMoney(bucket.totalActualValue),
-    coverageRatio:
-      bucket.totalRequiredRoi > 0
-        ? roundMarketingRatio(bucket.totalActualValue / bucket.totalRequiredRoi)
-        : bucket.totalActualValue > 0
-          ? 1
-          : 0,
-  }));
+  const result = Array.from(byKey.values()).map((bucket) => {
+    const actual = Math.max(bucket.totalActualValue - bucketOverlap(requestIdsByKey.get(bucket.key) ?? new Set(), attributionLines), 0);
+    return {
+      ...bucket,
+      totalCost: roundMarketingMoney(bucket.totalCost),
+      totalRequiredRoi: roundMarketingMoney(bucket.totalRequiredRoi),
+      totalActualValue: roundMarketingMoney(actual),
+      coverageRatio:
+        bucket.totalRequiredRoi > 0
+          ? roundMarketingRatio(actual / bucket.totalRequiredRoi)
+          : actual > 0
+            ? 1
+            : 0,
+    };
+  });
 
   result.sort((a, b) => a.coverageRatio - b.coverageRatio || b.totalCost - a.totalCost);
   return result;
@@ -134,8 +154,12 @@ export type CoverageTrendPoint = {
 
 /** Groups rows by payDate's YYYY-MM, sums the same three values, sorts ascending by month.
  *  Operates over whatever's currently filtered — not a separate all-time query. */
-export function computeCoverageTrend(rows: MarketingCoverageReportRow[]): CoverageTrendPoint[] {
+export function computeCoverageTrend(
+  rows: MarketingCoverageReportRow[],
+  attributionLines: readonly RoiAttributionLine[] = [],
+): CoverageTrendPoint[] {
   const byMonth = new Map<string, CoverageTrendPoint>();
+  const requestIdsByMonth = new Map<string, Set<string>>();
 
   for (const row of rows) {
     if (!row.payDate) continue;
@@ -154,21 +178,27 @@ export function computeCoverageTrend(rows: MarketingCoverageReportRow[]): Covera
     point.totalCost += row.estimatedCost;
     point.totalRequiredRoi += row.requiredRoiValue;
     point.totalActualValue += row.actualSalesValue;
+    const ids = requestIdsByMonth.get(month) ?? new Set<string>();
+    ids.add(row.requestId);
+    requestIdsByMonth.set(month, ids);
     byMonth.set(month, point);
   }
 
-  const result = Array.from(byMonth.values()).map((point) => ({
-    ...point,
-    totalCost: roundMarketingMoney(point.totalCost),
-    totalRequiredRoi: roundMarketingMoney(point.totalRequiredRoi),
-    totalActualValue: roundMarketingMoney(point.totalActualValue),
-    coverageRatio:
-      point.totalRequiredRoi > 0
-        ? roundMarketingRatio(point.totalActualValue / point.totalRequiredRoi)
-        : point.totalActualValue > 0
-          ? 1
-          : 0,
-  }));
+  const result = Array.from(byMonth.values()).map((point) => {
+    const actual = Math.max(point.totalActualValue - bucketOverlap(requestIdsByMonth.get(point.month) ?? new Set(), attributionLines), 0);
+    return {
+      ...point,
+      totalCost: roundMarketingMoney(point.totalCost),
+      totalRequiredRoi: roundMarketingMoney(point.totalRequiredRoi),
+      totalActualValue: roundMarketingMoney(actual),
+      coverageRatio:
+        point.totalRequiredRoi > 0
+          ? roundMarketingRatio(actual / point.totalRequiredRoi)
+          : actual > 0
+            ? 1
+            : 0,
+    };
+  });
 
   result.sort((a, b) => a.month.localeCompare(b.month));
   return result;

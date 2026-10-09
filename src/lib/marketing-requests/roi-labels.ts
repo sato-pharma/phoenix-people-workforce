@@ -25,16 +25,23 @@ export const ROI_ACTUAL_IN_TRACKING_NOTE = "Actual ROI is available in ROI Track
  * Tri-state data coverage: is the request's ROI window fully / partly / not backed by
  * validated Source-of-Sales data? Pure YYYY-MM string comparison against the latest
  * validated SoS period. Uses only fields already computed by the report service.
+ *
+ * 🔴 `hasAttributedSales` wins over the frontier: a window that starts after the validated
+ * period can still hold attributed sales (a distributor's file lands before the month is
+ * validated), and "No validated SoS data" beside a real attributed figure told the reader the
+ * figure was not there. Measured 2026-10-09: a September request with EGP 35,751 attributed
+ * read "—" on the live tracker. Such a window is PARTIAL — data is arriving — never "none".
  */
 export function resolveRoiDataCoverage(input: {
   windowStart: string | null;
   windowEnd: string | null;
   salesDataAsOf: string | null;
+  hasAttributedSales?: boolean;
 }): MarketingRoiDataCoverage {
-  const { windowStart, windowEnd, salesDataAsOf } = input;
-  if (!salesDataAsOf || !windowStart || !windowEnd) return "no_validated_data";
+  const { windowStart, windowEnd, salesDataAsOf, hasAttributedSales = false } = input;
+  if (!salesDataAsOf || !windowStart || !windowEnd) return hasAttributedSales ? "partial_pending" : "no_validated_data";
   if (windowEnd <= salesDataAsOf) return "complete";
-  if (windowStart <= salesDataAsOf) return "partial_pending";
+  if (windowStart <= salesDataAsOf || hasAttributedSales) return "partial_pending";
   return "no_validated_data";
 }
 
@@ -58,6 +65,31 @@ export function forecastRoiStatusLabel(status: string): string {
     default:
       return `${ROI_FORECAST_LABEL}: not calculated`;
   }
+}
+
+/**
+ * A marketing request's workflow status, as a reader sees it. ONE map for the ROI and Coverage
+ * surfaces: three private copies had drifted — the Coverage workbook's had no "cancelled", so a
+ * cancelled request exported as the raw word, and the Coverage filter showed raw enums.
+ */
+export const MARKETING_REQUEST_STATUS_LABEL: Record<string, string> = {
+  draft: "Draft",
+  pending_validation: "Pending validation",
+  pending_approval: "Pending approval",
+  returned: "Returned",
+  rejected: "Rejected",
+  approved: "Approved",
+  active: "Active",
+  roi_tracking: "ROI tracking",
+  closed: "Closed",
+  finance_hold: "Finance hold",
+  archived: "Archived",
+  cancelled: "Cancelled",
+};
+
+/** Readable status — "Unknown status" for a value no map knows, never the raw enum. */
+export function marketingRequestStatusLabel(status: string | null | undefined): string {
+  return MARKETING_REQUEST_STATUS_LABEL[status ?? ""] ?? "Unknown status";
 }
 
 /** ACTUAL realized-ROI verdict, from attributed sales (never carries "Forecast"). */

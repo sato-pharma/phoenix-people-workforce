@@ -14,7 +14,7 @@ import {
 } from "@/lib/export/phoenix-xlsx-style";
 import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-palette";
-import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
+import { marketingRequestStatusLabel, ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingCoverageExportSalesDetailRow,
   MarketingCoverageFilterState,
@@ -39,19 +39,6 @@ import type {
 // query shape.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  pending_validation: "Pending validation",
-  pending_approval: "Pending approval",
-  returned: "Returned",
-  rejected: "Rejected",
-  approved: "Approved",
-  active: "Active",
-  roi_tracking: "ROI tracking",
-  closed: "Closed",
-  finance_hold: "Finance hold",
-  archived: "Archived",
-};
 
 // Sourced from roi-labels.ts, never re-declared — see the note in marketing-roi-workbook.ts.
 const RESULT_LABELS: Record<string, string> = ROI_RESULT_STATUS_LABEL;
@@ -160,7 +147,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
     confidentialNote: report.includedRestricted ? CONFIDENTIAL_INCLUDED : CONFIDENTIAL_EXCLUDED,
     rows: [
       houseGeneratedRow(meta.generatedAtIso),
-      ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
+      ["Exported by", meta.exportedByName],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
       ["Applied filters", describeCoverageFilters(report.appliedFilters)],
@@ -169,7 +156,10 @@ export async function buildMarketingCoverageReportWorkbook(input: {
       ["Required ROI (EGP)", kpi.totalRequiredRoi.toLocaleString("en-US")],
       ["Actual sales (EGP)", kpi.totalActualValue.toLocaleString("en-US")],
       ["Coverage", `${Math.round(kpi.coverageRatio * 100)}%`],
-      ["On-track / Behind / Awaiting / No-data", `${kpi.onTrackCount} / ${kpi.behindCount} / ${kpi.awaitingDataCount} / ${kpi.noDataCount}`],
+      [
+        `${RESULT_LABELS.on_track} / ${RESULT_LABELS.behind} / ${RESULT_LABELS.awaiting_data} / ${RESULT_LABELS.no_data}`,
+        `${kpi.onTrackCount} / ${kpi.behindCount} / ${kpi.awaitingDataCount} / ${kpi.noDataCount}`,
+      ],
       ["Distinct target pharmacies", String(kpi.distinctPharmacyCount)],
       ["Distinct customers", String(kpi.distinctCustomerCount)],
       ["Sales data as of", kpi.salesDataAsOf ?? "n/a"],
@@ -202,13 +192,13 @@ export async function buildMarketingCoverageReportWorkbook(input: {
   ];
   const requestRows: CellValue[][] = report.rows.map((row) => [
     row.requestCode,
-    row.requesterName ?? row.requesterHrId,
+    row.requesterName ?? "Unknown requester",
     row.requesterTier ?? "—",
     row.line ?? "—",
     row.region ?? "—",
     row.areaName ?? "—",
     row.customerName,
-    STATUS_LABELS[row.status] ?? row.status,
+    marketingRequestStatusLabel(row.status),
     row.requestTypeName ?? "—",
     row.payDate ?? "—",
     row.roiWindow ?? "—",
@@ -225,13 +215,16 @@ export async function buildMarketingCoverageReportWorkbook(input: {
   totals[0] = "TOTAL";
   totals[11] = report.rows.reduce((s, r) => s + r.estimatedCost, 0);
   totals[12] = report.rows.reduce((s, r) => s + r.requiredRoiValue, 0);
-  totals[13] = report.rows.reduce((s, r) => s + r.actualSalesValue, 0);
+  // The headline's DEDUPED actual, not the column sum: two campaigns can claim the same sale, and
+  // each row is right to show it, but a total that adds them counts it twice (45,153.88 vs the
+  // page's 42,433.56 on production, 2026-10-09). The note says why the column does not add up.
+  totals[13] = kpi.totalActualValue;
   writeHouseTable(requestSheet, 1, {
     columns: requestColumns,
     rows: requestRows,
     title: "Requests — filtered coverage",
     totals,
-    note: `${report.rows.length} request(s). Sales data as of ${kpi.salesDataAsOf ?? "n/a"}.`,
+    note: `${report.rows.length} request(s). Sales data as of ${kpi.salesDataAsOf ?? "n/a"}. The actual-sales TOTAL counts a sale claimed by more than one campaign once, so it can be lower than the column added up.`,
   });
 
   if (requestRows.length > 0) {

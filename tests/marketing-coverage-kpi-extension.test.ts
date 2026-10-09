@@ -37,6 +37,7 @@ function row(overrides: Partial<MarketingCoverageReportRow>): MarketingCoverageR
     productCodes: ["P1"],
     distributorCodes: ["IS"],
     pharmacyKeys: ["ph-1"],
+    pharmacyIds: ["ph-1"],
     ...overrides,
   };
 }
@@ -46,9 +47,9 @@ export function runMarketingCoverageKpiExtensionTests() {
   //    overlapping pharmacy must count that customer once and that pharmacy once.
   {
     const rows: MarketingCoverageReportRow[] = [
-      row({ requestId: "a", customerId: "cust-1", pharmacyKeys: ["ph-1", "ph-2"] }),
-      row({ requestId: "b", customerId: "cust-1", pharmacyKeys: ["ph-2", "ph-3"] }),
-      row({ requestId: "c", customerId: "cust-2", pharmacyKeys: ["ph-4"] }),
+      row({ requestId: "a", customerId: "cust-1", pharmacyIds: ["ph-1", "ph-2"] }),
+      row({ requestId: "b", customerId: "cust-1", pharmacyIds: ["ph-2", "ph-3"] }),
+      row({ requestId: "c", customerId: "cust-2", pharmacyIds: ["ph-4"] }),
     ];
     const { distinctPharmacyCount, distinctCustomerCount } = countDistinctCoverage(rows);
     assert.equal(distinctPharmacyCount, 4, "ph-1, ph-2, ph-3, ph-4 — deduped, not summed");
@@ -68,10 +69,24 @@ export function runMarketingCoverageKpiExtensionTests() {
 
   // ── A request with no target pharmacies contributes 0 pharmacies, never throws.
   {
-    const rows: MarketingCoverageReportRow[] = [row({ requestId: "a", pharmacyKeys: [] })];
+    const rows: MarketingCoverageReportRow[] = [row({ requestId: "a", pharmacyKeys: [], pharmacyIds: [] })];
     const { distinctPharmacyCount, distinctCustomerCount } = countDistinctCoverage(rows);
     assert.equal(distinctPharmacyCount, 0);
     assert.equal(distinctCustomerCount, 1);
+  }
+
+  // ── Counted by PHARMACY, not by distributor code (2026-10-09: 55 codes, 49 pharmacies on
+  //    production). One pharmacy holding a code at two distributors is ONE pharmacy.
+  {
+    const rows: MarketingCoverageReportRow[] = [
+      row({ requestId: "a", pharmacyKeys: ["IS-0001", "PS-0001"], pharmacyIds: ["pharmacy-1"] }),
+      row({ requestId: "b", pharmacyKeys: ["MS-0002"], pharmacyIds: ["pharmacy-1"] }),
+    ];
+    assert.equal(
+      countDistinctCoverage(rows).distinctPharmacyCount,
+      1,
+      "three distributor codes of the same pharmacy are one pharmacy, not three",
+    );
   }
 
   // ── Empty input → zero counts.

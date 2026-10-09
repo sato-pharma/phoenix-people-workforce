@@ -51,7 +51,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ requ
     const url = new URL(request.url);
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
-    const pharmacies = await getMarketingCoverageRequestPharmacies(access, requestId, from, to, new Date().toISOString());
+    const includeRestricted = url.searchParams.get("includeRestricted") === "1";
+    const pharmacies = await getMarketingCoverageRequestPharmacies(access, requestId, from, to, new Date().toISOString(), includeRestricted);
     return NextResponse.json({ pharmacies });
   } catch (error) {
     const { code, message, status } = pharmaciesApiError(error);

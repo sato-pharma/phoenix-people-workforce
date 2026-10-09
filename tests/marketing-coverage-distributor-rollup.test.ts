@@ -40,6 +40,7 @@ function row(overrides: Partial<MarketingCoverageReportRow>): MarketingCoverageR
     productCodes: ["GU001"],
     distributorCodes: ["IS"],
     pharmacyKeys: ["12345"],
+    pharmacyIds: ["pharmacy-12345"],
     ...overrides,
   } as MarketingCoverageReportRow;
 }
@@ -74,6 +75,8 @@ function entry(overrides: Partial<MarketingCoverageRequestIndexEntry>): Marketin
     pharmacyNames: ["Pharmacy One"],
     hasRestrictedProduct: false,
     distributorWeights: [{ distributorCode: "IS", weight: 1 }],
+    distributorNames: ["IS"],
+    pharmacyIds: ["ph-1"],
     ...overrides,
   };
 }

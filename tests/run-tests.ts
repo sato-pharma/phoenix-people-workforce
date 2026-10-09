@@ -798,6 +798,7 @@ import { runMarketingRoiLabelingTests } from "./marketing-roi-labeling.test.ts";
 import { runMarketingRequestOverlapTests } from "./marketing-request-overlap.test.ts";
 import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.ts";
 import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
+import { runMarketingRoiCoverageAuditTests } from "./marketing-roi-coverage-audit.test.ts";
 import { runMarketingSubmissionCaptureGateTests } from "./marketing-submission-capture-gates.test.ts";
 import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
 import { runVenueTypeMustBeAskedTests } from "./venue-type-must-be-asked.test.ts";
@@ -4070,6 +4071,7 @@ await runTest(
   runMarketingValidationSaveGateTests,
 );
 await runTest("marketing ROI live lifecycle stages (rejected never counts as committed)", runMarketingRoiLiveStagesTests);
+await runTest("marketing ROI tracker + coverage report audit (2026-10-09): attributed data, shared-sale dedupe, units, access", runMarketingRoiCoverageAuditTests);
 await runTest("marketing ROI confidence score (measurement trust, not performance)", runMarketingRoiConfidenceTests);
 await runTest("marketing ROI explain (diagnostic classifier + read-only guards)", runMarketingRoiExplainTests);
 await runTest("marketing ROI business report (requester/customer + read-only guards)", runMarketingRoiBusinessReportTests);

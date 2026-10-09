@@ -23,6 +23,7 @@ import {
   resolveChainSeats,
   resolveOwnedProductScope,
   resolveRoiResultStatus,
+  resolveRoiStatusScope,
   buildKpiBand,
   loadAttributionLines,
   getMarketingRequestViewSales,
@@ -345,7 +346,7 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
     productsByRequest.set(link.request_id, list);
   }
 
-  const pharmaciesByRequest = new Map<string, Array<{ key: string; name: string; parentCode: string | null }>>();
+  const pharmaciesByRequest = new Map<string, Array<{ key: string; name: string; parentCode: string | null; pharmacyId: string }>>();
   for (const link of pharmacyLinks) {
     const code = codeById.get(link.distributor_code_id);
     if (!code) continue;
@@ -356,6 +357,7 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
       key: code.normalizedCode || code.pharmacyId,
       name: pharmacyNameById.get(code.pharmacyId) || code.normalizedCode || code.pharmacyId,
       parentCode,
+      pharmacyId: code.pharmacyId,
     });
     pharmaciesByRequest.set(link.request_id, list);
   }
@@ -450,7 +452,9 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
       rsmName: seats.rsmName,
       approverRoleKeys: Array.from(approverRolesByRequest.get(request.id) ?? []),
       distributorCodes,
+      distributorNames: distributorCodes.map((code) => distributorNameByCode.get(code) || code),
       distributorWeights,
+      pharmacyIds: Array.from(new Set(pharmacies.map((pharmacy) => pharmacy.pharmacyId).filter(Boolean))),
       productCodes: visibleProducts.map((product) => product.code),
       productNames: visibleProducts.map((product) => product.name || product.code),
       pharmacyKeys,
@@ -499,7 +503,8 @@ async function getLatestCoverageReportExportAudit(): Promise<MarketingCoverageFi
       .maybeSingle();
 
     return {
-      exportedByName: employeeRow ? resolveEmployeeDisplayName(employeeRow.full_name, employeeRow.nickname) : auditRow.exported_by_hr_id,
+      // Names, never ids: an exporter with no employee row reads "Unknown user", not an HR id.
+      exportedByName: employeeRow ? resolveEmployeeDisplayName(employeeRow.full_name, employeeRow.nickname) : "Unknown user",
       exportedAt: auditRow.exported_at,
     };
   } catch {
@@ -541,15 +546,20 @@ export function parseMarketingCoverageFilterState(input: unknown): MarketingCove
   };
 }
 
-/** Distinct target-pharmacy + distinct-customer counts over the final filtered rows. */
-export function countDistinctCoverage(rows: MarketingCoverageReportRow[]): {
+/**
+ * Distinct target-pharmacy + distinct-customer counts over the final filtered rows.
+ *
+ * Pharmacies are counted by PHARMACY, not by distributor code: one pharmacy can hold a code at
+ * several distributors, and counting codes read 55 "pharmacies" where there were 49 (2026-10-09).
+ */
+export function countDistinctCoverage(rows: Array<Pick<MarketingCoverageReportRow, "customerId" | "pharmacyIds">>): {
   distinctPharmacyCount: number;
   distinctCustomerCount: number;
 } {
   const pharmacies = new Set<string>();
   const customers = new Set<string>();
   for (const row of rows) {
-    for (const key of row.pharmacyKeys) pharmacies.add(key);
+    for (const id of row.pharmacyIds) pharmacies.add(id);
     if (row.customerId) customers.add(row.customerId);
   }
   return { distinctPharmacyCount: pharmacies.size, distinctCustomerCount: customers.size };
@@ -682,7 +692,14 @@ export async function getMarketingCoverageReport(
   const supabase = getSupabaseAdmin();
   const customerNameById = ctx.customerNameById;
 
-  const candidates = ctx.entries.filter((entry) => entryMatchesCoverageFilters(entry, filters));
+  // 🔴 The SAME default status scope as the ROI report: no status selected means approved money
+  // (approved, active, ROI tracking, closed, finance hold), never "every status". Without it the
+  // unfiltered page added 27 pending, sent-back, rejected and cancelled requests into its headline —
+  // a cost of 276,057 EGP against 138,107 committed (production, 2026-10-09). An explicit status
+  // selection always wins. `appliedFilters` echoes what the viewer CHOSE (status empty), so the
+  // workspace can say on screen that the default is in force.
+  const scopedFilters: MarketingCoverageFilterState = { ...filters, status: resolveRoiStatusScope(filters.status) };
+  const candidates = ctx.entries.filter((entry) => entryMatchesCoverageFilters(entry, scopedFilters));
 
   const excludeCodes = includeRestricted ? [] : RESTRICTED_CODES_UPPER;
   let actualsByRequest: Map<string, { value: number; units: number; salesRows: number; quality: string }>;
@@ -711,9 +728,11 @@ export async function getMarketingCoverageReport(
   }
 
   const restrictedRequestIds = new Set<string>();
+  const withheldRequestIds = new Set<string>();
   const rows: MarketingCoverageReportRow[] = candidates.map((entry) => {
     const request = ctx.requestById.get(entry.requestId)!;
     const withheld = masked && entry.hasRestrictedProduct;
+    if (withheld) withheldRequestIds.add(entry.requestId);
     const actuals = withheld
       ? { value: 0, units: 0, salesRows: 0, quality: "no_sales" }
       : actualsByRequest.get(entry.requestId) ?? { value: 0, units: 0, salesRows: 0, quality: "no_sales" };
@@ -736,6 +755,7 @@ export async function getMarketingCoverageReport(
       windowStart: entry.payDate ? entry.payDate.slice(0, 7) : null,
       windowEnd: endPeriod,
       salesDataAsOf: ctx.salesDataAsOf,
+      hasAttributedSales: actuals.salesRows > 0,
     });
 
     const resultStatus = resolveRoiResultStatus({
@@ -789,6 +809,7 @@ export async function getMarketingCoverageReport(
       productCodes: entry.productCodes,
       distributorCodes: entry.distributorCodes,
       pharmacyKeys: entry.pharmacyKeys,
+      pharmacyIds: entry.pharmacyIds,
     };
   });
 
@@ -809,9 +830,14 @@ export async function getMarketingCoverageReport(
   // only when it is given the ledger; without this argument the "Actual sales (EGP)" and
   // "Coverage" cards on this page read ~50% high. Withheld rows contribute 0 to the totals, so
   // their lines must not enter the ledger either or the band would deduct value no row added.
+  //
+  // 🔴 The filter is on WITHHELD rows, exactly as getMarketingRoiReport's. It used to drop the
+  // DEGRADED rows instead — requests read from the live engine because their fact row was missing.
+  // Those carry real, non-zero actuals, so leaving their lines out of the ledger let any sale they
+  // share with another campaign be counted twice in the headline.
   const ledgerRequestIds = finalRows
     .map((row) => row.requestId)
-    .filter((requestId) => !degradedRequestIdSet.has(requestId));
+    .filter((requestId) => !withheldRequestIds.has(requestId));
   let coverageAttributionLines: RoiAttributionLine[];
   try {
     coverageAttributionLines = await loadAttributionLines(supabase, ledgerRequestIds, excludeCodes);
@@ -847,6 +873,7 @@ export async function getMarketingCoverageReport(
     includedRestricted: includeRestricted,
     generatedAtIso,
     distributorRollup,
+    attributionLines: coverageAttributionLines,
   };
 }
 
@@ -864,7 +891,7 @@ export async function getMarketingCoverageReport(
  */
 export function mergePharmacyCoverage(
   targetPharmacies: Array<{ code: string; name: string }>,
-  byPharmacy: Map<string, { value: number; units: number }>,
+  byPharmacy: Map<string, { value: number; units: number | null }>,
   distributorNameByCode: Map<string, string | null>,
   parentDistributorCodeByCode: Map<string, string | null>,
   salesDetailByPharmacy: Map<string, MarketingCoveragePharmacySaleRow[]> = new Map(),
@@ -924,8 +951,18 @@ export async function getMarketingCoverageRequestPharmacies(
   fromInput: string | null | undefined,
   toInput: string | null | undefined,
   generatedAtIso: string,
+  includeRestrictedInput = false,
 ): Promise<MarketingCoveragePharmacyRow[]> {
-  const viewSales = await getMarketingRequestViewSales(access, requestId, fromInput, toInput, generatedAtIso);
+  // Admitted by the COVERAGE report's own index, not by View Sales' ROI scope: the two scopes are
+  // not the same (the Finance Manager is wider in ROI), and a drill-down must never open a request
+  // the report itself does not list for this viewer.
+  const includeRestricted = includeRestrictedInput && (access.role === "CEO" || access.role === "Super Admin");
+  const ctx = await getCachedCoverageIndex(access, includeRestricted);
+  if (!ctx.entries.some((entry) => entry.requestId === requestId)) {
+    throw new Error("Forbidden: this request is not in your Marketing Coverage Report.");
+  }
+  // Confidential products follow the report's toggle — a CEO who has it OFF must not see them here.
+  const viewSales = await getMarketingRequestViewSales(access, requestId, fromInput, toInput, generatedAtIso, { includeRestricted });
   const { pharmacies } = viewSales.context;
   if (pharmacies.length === 0) return [];
 
