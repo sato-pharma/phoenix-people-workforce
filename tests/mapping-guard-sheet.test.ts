@@ -7,6 +7,7 @@ import ExcelJS from "exceljs";
 import {
   GUARD_ANSWER_LABEL,
   GUARD_APPLY_PAGE_SIZE,
+  isOwnerRuling,
   type GuardGeo,
 } from "../src/lib/sales/mapping-guard-sheet-shape.ts";
 import {
@@ -308,11 +309,25 @@ function theClientPanelReachesOnlyClientSafeModules() {
   assert.ok(!panel.includes("…") && !/\.\.\.["'`<]/.test(panel), "no ellipsis in the copy");
 }
 
+function aRulingIsReadTheWayTheGuardReadsIt() {
+  // The guard holds a change as "overwrites a mapping decision of yours" on the row's SOURCE, so the
+  // sheet's Your Earlier Ruling column must say yes for the same rows — not only for a locked one.
+  assert.equal(isOwnerRuling("owner-ruling-2026-10-10", 70), true, "an owner- source is his ruling at any confidence");
+  assert.equal(isOwnerRuling("final-new-2026-09", null), true, "a final-new- source is his ruling");
+  assert.equal(isOwnerRuling("sheet-verified", 0), true, "a verified-sheet row is his ruling");
+  assert.equal(isOwnerRuling("distributor-upload", 100), true, "a lock stamps confidence 100");
+  assert.equal(isOwnerRuling("distributor-upload", 80), false, "an ordinary upload row is not a ruling");
+  assert.equal(isOwnerRuling(null, undefined), false);
+  const sheet = stripComments(read("src/lib/sales/mapping-guard-sheet.ts"));
+  assert.ok(sheet.includes("isOwnerRuling(map?.source, map?.confidence)"), "the server reads the ruling through the shared test");
+}
+
 export async function runMappingGuardSheetTests() {
   await theSheetRoundTripsAnswersByHeaderName();
   aSheetThatIsNotOursIsRefusedInWords();
   planAcceptsTheThreeAnswersAndLeavesBlanksAlone();
   planRefusesWhatItCannotCheck();
+  aRulingIsReadTheWayTheGuardReadsIt();
   aMappingAtFullConfidenceIsFlaggedWhenAnswerWouldOverrideIt();
   theDigestPinsExactlyWhatWasPreviewed();
   pagesCarryAtMostTheRoutesCeilingAndEachHasItsOwnDigest();
