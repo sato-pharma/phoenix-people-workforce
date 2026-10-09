@@ -1,11 +1,11 @@
 ---
 name: desktop-slowness-2026-10-08-is-compaction-and-the-window-process
-description: "Claude desktop slowness, measured 8 Oct 2026 across every account: auto-compaction (177 in 3 days, 6.4 h frozen, 132 s each) and the app's window process (1.4-1.6 GB, ~120 MB/h growth, only a restart returns it) — NOT the memory folder; the rules layer is ~a fifth of compactions. Re-measure with `slow-audit.mjs --transcripts`; skillOverrides cannot hide synced anthropic-skills:*."
+description: "Claude desktop slowness, measured 8 Oct 2026 across every account: auto-compaction (177 in 3 days, 6.4 h frozen, 132 s each) and the app's window process (1.4-1.6 GB, ~120 MB/h growth, only a restart returns it) — NOT the memory folder; the rules layer is ~a fifth of compactions. Both were FIXED at the source on 9 Oct: a ~8,000-character compaction summary in `~/.claude/CLAUDE.md` (the freeze grows ~6 s per 1,000 characters) and the RAM meter's own idle-and-away app restart. Re-measure with `slow-audit.mjs --transcripts`; skillOverrides cannot hide synced anthropic-skills:*."
 metadata:
   node_type: memory
   type: project
   originSessionId: 5982cce4-6c8e-413e-8057-637b1996c15d
-  modified: 2026-10-08T19:39:28.480Z
+  modified: 2026-10-08T21:44:58.925Z
 ---
 
 On 2026-10-08 the owner said the Claude Code desktop app was unacceptably slow and suspected the
@@ -37,5 +37,22 @@ real but explains about a fifth of compactions. AGENTS.md was condensed 65.4 →
   switch (`set_session_connector_enabled`) removes them.
 - The hook dispatcher's guards cost 3-75 ms; its p50 under load is node start-up on a RAM-short box —
   do not rebuild a background mode for it without re-measuring.
-- The two levers only he holds: a fresh session per task (≈10 s vs a 132 s compaction) and a daily
-  app restart.
+- The two biggest costs were fixed at the source on 2026-10-09 00:25-00:45 Cairo, both on his word:
+  - **Compaction length.** The freeze is about 7 s + 6.2 s per 1,000 summary characters (187
+    compactions, 6-8 Oct: 79 s under 15k, 135 s at 15-25k, 175 s at 25-35k; the input size before it
+    correlates 0.05, so length is the only lever). `~/.claude/CLAUDE.md` now carries a **Compact
+    instructions** section asking for about 8,000 characters, never over 10,000, keeping his
+    instructions, open items with their real targets and the next step word for word, and dropping
+    committed code, tool output and rules already loaded. He chose "Short, ~8k chars".
+  - **The window process.** The RAM meter restarts the app itself, in `AppRestart.cs`: past its line
+    (1,536 MB, or half a core for 10 min) AND no keyboard or mouse for 15 min AND no transcript or
+    session record written for 10 min AND no session command or Terminal command running AND nothing
+    on ports 3000-3010 AND no enabled scheduled task due in 20 min AND not already restarted in 6
+    hours, confirmed on a second check a minute later. It quits through the app's own
+    session-ending path, relaunches by package id, and logs every attempt and every hold to
+    `~/.claude/logs/claude-app-restart.log`. He chose "Only when idle + I'm away".
+  - Still only his: a fresh session per task (≈10 s against a compaction).
+- **Nothing widens those conditions, and no Claude session ever restarts the app.** The checks and
+  the 6-hour spacing are pinned in `RamMeter.exe --probe` (59/59, break-tested); `RamMeter.exe
+  --restart-check <folder>` prints the live decision read-only. `claude-app-autorestart.off` beside
+  the exe switches it off.
