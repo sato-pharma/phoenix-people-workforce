@@ -1037,6 +1037,7 @@ import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reser
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
 import { runVacationReadsStartedTogetherTests } from "./vacation-reads-started-together.test.ts";
 import { runDeductionsLeaveBalanceTests } from "./deductions-leave-balance.test.ts";
+import { runDeductionsPortalLedgerTests } from "./deductions-portal-ledger.test.ts";
 import { runPortalHomeAnnualLeaveLeftTests } from "./portal-home-annual-leave-left.test.ts";
 import { runPortalHomeAnnualLeaveLeftRmStandardTests } from "./portal-home-annual-leave-left-rm-standard.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
@@ -4663,6 +4664,10 @@ await runTest(
 await runTest(
   "deductions: a CRM / half-day deduction can be taken from annual leave (split, ledger fold, report balance, decision guard, route, migration, screens)",
   runDeductionsLeaveBalanceTests,
+);
+await runTest(
+  "employee portal deductions: every deduction from the September salary on with HR's answer, the three filters, the September floor and the self-only scope",
+  runDeductionsPortalLedgerTests,
 );
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
