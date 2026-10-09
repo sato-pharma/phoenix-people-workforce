@@ -174,3 +174,60 @@ against 1,450.00 approved, AI-0021 vacation 258.33 against 516.67, B-189 vacatio
 
 Correcting any of it is money on an open run: it is decided on the Automated Payroll screen, not by
 a write from here.
+
+## The sweep is a command now (2026-10-09)
+
+Everything above was produced by hand, in SQL, and that is exactly the problem: asked twice on
+2026-10-09 the same question gave two different answers for the same month. The first pass compared
+one employee's unpaid vacation against a single candidate when the module had approved two days, and
+reported a 700.01 gap that was really 941.67.
+
+```bash
+pnpm run payroll:reconcile-deductions -- 2026-09      # or a run id, or nothing for this month
+```
+
+`src/lib/automated-payroll/deduction-reconciliation.ts` holds the comparison as a pure function;
+`scripts/reconcile-payroll-deductions.ts` is a thin caller. It **reports and changes nothing**, and
+a difference is not a defect — the owner trims a proposal deliberately.
+
+🔴 **A plain run exits 0 even when figures differ.** Exit 1 is opt-in behind `--gate`, for a cron
+that needs to alarm; nothing calls it that way today. Exiting 1 by default made pnpm print
+`[ELIFECYCLE] Command failed with exit code 1` underneath a correct answer, which reads as a broken
+tool rather than as a month holding figures he decided himself — he hit exactly that within minutes
+of the command existing.
+
+### The routing is the whole difficulty, and it is `isSettledInPart1`
+
+A deduction bucket does not have one salary column. Compare it against the wrong one and the report
+invents a gap for money that is charged and misses one that is not. `claimsFor` mirrors one
+recommender per entry:
+
+| Bucket | Settled in Part 1 | Not settled (Part 2) |
+| --- | --- | --- |
+| `fingerprint` | `fingerprintValue` | `fingerprintValue` |
+| `crm` | `p1odCrmValue` — but a **leaver's** is not comparable at all | `crm` |
+| `unpaidVacation` | `p1odVacationValue` **+** `unpaidVacations` (assembleRows charges both) | `unpaidVacations` |
+| `loan` | `p1odLoanValue` | **`manualOtherDeductions`, together with `other`** |
+| `other` | `p1odOtherValue` | **the same one column** |
+
+The predicate is read exactly as the steps read it — the frozen Part 1 stamp first, the live rule
+only while Part 1 is unconfirmed — so the report agrees with the sheet instead of forming a second
+opinion about it.
+
+### Four answers that are not shortfalls
+
+- **`not comparable by design`** — a leaver's CRM. `recommendP1Crm` skips leavers; the module prices
+  a day off **BASE** and `recommendResignationCrm` off the leaver's **NET** (owner, 2026-08-04 for
+  which days, 2026-08-30 for what a day is worth). Both sides are shown and the gap kept visible but
+  uncounted in `notComparableGaps`. Printing the run side as `0.00` said the opposite of the truth:
+  B-79's column holds 1,250.00, which the cell history records him typing himself on the `p2_crm`
+  step at 2026-10-09 03:28 Cairo, over the module's 1,450.00. A-28 is the control on the same claim
+  — 1,050.00 both sides, the two rates agreeing.
+- **`not in the population`** — a draft row for somebody no recommender runs for. A-7 carries one on
+  the September run with 733.33 approved, terminated 31 August, inside the cohort closed as settled
+  off-system on 2026-10-07. Nothing can charge him, so it is not an under-charge.
+- **`not on this run`** — approved money with no draft row at all.
+- **anything the owner trimmed** — B-189's 483.33 and AI-0021's 258.34 on this run, his own decision.
+
+Pinned by `tests/automated-payroll-deduction-reconciliation.test.ts`, which runs inside the required
+`validate` job. Twelve assertions, each watched failing with the fix broken and restored from a copy.
