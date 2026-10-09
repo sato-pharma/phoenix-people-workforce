@@ -3663,6 +3663,20 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     description: "Read-only executive report to filter and audit individual marketing requests.",
     roles: ["Super Admin"],
   },
+  // Owner instruction, 2026-10-09: "you will make a new tab in the sidebar … this report will
+  // list all the managers who did marketing requests, approved marketing requests, and show the
+  // total … the total value of the total request … the sum of the total ROI … the sum of the
+  // actual that gained until now." Roles mirror the Coverage Report's row rather than ROI
+  // Tracking's Super-Admin-only one: the CEO and the SFE Manager are exactly the seats that read
+  // spend per manager. The PAGE gate is wider (assertMarketingAdminPageAccess with company
+  // oversight) — this is the discoverability list, not the door.
+  {
+    href: "/admin/marketing-requests/manager-scorecard",
+    icon: Users,
+    label: "Manager Scorecard",
+    description: "Marketing spend per manager: requests raised and approved, their value, the forecast ROI, and the sales that have actually come back.",
+    roles: ["Super Admin", "CEO", "SFE Manager"],
+  },
   {
     href: "/admin/marketing-roi-report",
     icon: ClipboardList,
@@ -5136,6 +5150,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/marketing-roi-tracker",
           "/admin/sales-marketing-intelligence",
           "/admin/marketing-requests/roi-tracking",
+          "/admin/marketing-requests/manager-scorecard",
           "/admin/marketing-roi-report",
           "/admin/pm-products",
         ],
