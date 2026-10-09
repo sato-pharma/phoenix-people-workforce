@@ -14,7 +14,7 @@
 // This module answers that with data the batch table already carries: no new RPC, no new table.
 // Pure functions over a batch list so they are unit-testable; the caller does the one select.
 //
-// TWO KINDS OF ABSENCE ARE NOT HOLES, and reporting them as holes is what makes a banner easy to
+// THREE KINDS OF ABSENCE ARE NOT HOLES, and reporting them as holes is what makes a banner easy to
 // dismiss — which costs the real gaps their audience. `source-coverage.ts` learned the same lesson
 // on the closing screen, where the retired Direct sheet warned every month about a file that will
 // never arrive again.
@@ -29,6 +29,17 @@
 //      while EP-PHS's own value jumped from 998K (June) to 8.16M and 12.02M in exactly those two
 //      months. From the September closing the bulk sector uploads on its own again (owner,
 //      2026-10-09), so a September absence IS a hole and must still be reported — the window ENDS.
+//   3. A source that did not EXIST yet. El Qema was onboarded in September 2026 for its August
+//      book — its master row was created 2026-09-06 and it has never had a batch outside 2026-08
+//      and 2026-09 — so the seven months before it were priced at roughly 10.54M EGP of "missing"
+//      sales that nobody can ever upload. That estimate made it the third-largest hole on the
+//      board and inflated the count of distributors said to have gaps.
+//
+// All three are DECLARED, never inferred from first appearance. "Onboarded in February" and
+// "January was never uploaded" are indistinguishable in this table — the whole history was
+// backfilled over three days — so inferring would have hidden the real January EP-BK / EP-PHS hole
+// (~3.5M EGP) this module exists to surface. A declaration is also outvoted by the data: an upload
+// before the declared first month withdraws it entirely.
 
 import { canonicalDistributorKey, DIRECT_CHANNEL_CODE, DIRECT_CHANNEL_LABEL } from "@/lib/sales/direct-channel";
 
@@ -81,6 +92,45 @@ export function mergedSourceWindowFor(code: string, period: string): MergedSourc
   return null;
 }
 
+/**
+ * A source whose first month as a source is KNOWN — it supplied nothing before it, so the earlier
+ * months are not gaps and no upload can ever close them.
+ */
+export type SourceOnboarding = {
+  /** The source's code, compared folded. */
+  code: string;
+  /** Its first month as a source, inclusive — "YYYY-MM". Nothing before this is expected. */
+  from: string;
+  /** Why, in one line, for the reader of this file. */
+  reason: string;
+};
+
+/**
+ * The onboardings this repo knows about, as measured on production.
+ *
+ * QM (El Qema) from 2026-08: the distributor master row was created 2026-09-06 and the first batch
+ * 2026-09-07, both for the August book, and no El Qema row of any status exists outside 2026-08 and
+ * 2026-09. Declared rather than inferred for the reason in the header, and note that El Qema's NAME
+ * is masked for every viewer but Super Admin — dropping its phantom gap is not a substitute for
+ * `maskSosCoverageReport`, which still guards the day El Qema genuinely misses a month.
+ */
+export const SOURCE_ONBOARDINGS: readonly SourceOnboarding[] = [
+  {
+    code: "QM",
+    from: "2026-08",
+    reason: "El Qema's first month as a source is August 2026 — it supplied nothing before that.",
+  },
+];
+
+/** The declared onboarding for this source, or null. Codes are compared folded. */
+export function sourceOnboardingFor(code: string): SourceOnboarding | null {
+  const key = canonicalDistributorKey(code);
+  for (const onboarding of SOURCE_ONBOARDINGS) {
+    if (canonicalDistributorKey(onboarding.code) === key) return onboarding;
+  }
+  return null;
+}
+
 export type SosDistributorCoverage = {
   /** The FOLDED code — both Direct vintages share one row. */
   distributorCode: string;
@@ -98,6 +148,17 @@ export type SosDistributorCoverage = {
   mergedInto: string | null;
   /** That source's code — what the El Qema mask recognises it by. Null when nothing was merged. */
   mergedIntoCode: string | null;
+  /**
+   * Its declared first month as a source, when one is declared AND the data agrees. Null otherwise,
+   * including when an upload before that month withdrew the declaration.
+   */
+  onboardedAt: string | null;
+  /**
+   * Periods before `onboardedAt`. Absent because the source did not exist yet, so they are excluded
+   * from `missingPeriods` and from the estimate — reported rather than silently dropped. Carries no
+   * name, so the El Qema mask has nothing to strip here.
+   */
+  preOnboardingPeriods: string[];
   /**
    * Missing periods that sit BETWEEN two months this distributor did land in. These are
    * unambiguous holes — the distributor demonstrably existed on both sides.
@@ -268,6 +329,26 @@ export function buildSosCoverageReport(batches: SosCoverageBatch[]): SosCoverage
     return byPeriod.get(period)?.has(canonicalDistributorKey(window.into)) ? window : null;
   };
 
+  /**
+   * The declared onboarding for this source, or null when the DATA outvotes it.
+   *
+   * A batch earlier than the declared first month means the declaration is wrong or stale, and the
+   * safe reading is the strict one: withdraw it and expect the source in every loaded period, so a
+   * genuinely missing month can never hide behind an out-of-date line in this file.
+   */
+  const onboardingOf = (key: string): SourceOnboarding | null => {
+    const declared = sourceOnboardingFor(key);
+    if (!declared) return null;
+    const earliest = firstSeen.get(key);
+    return earliest && earliest < declared.from ? null : declared;
+  };
+
+  /** True when this period is before the source existed at all. */
+  const beforeOnboarding = (key: string, period: string): boolean => {
+    const onboarding = onboardingOf(key);
+    return onboarding != null && period < onboarding.from;
+  };
+
   const periods: SosPeriodCoverage[] = loadedPeriods.map((period) => {
     const perPeriod = byPeriod.get(period) ?? new Map<string, number>();
     // Expected in EVERY loaded period, not only from its first appearance onward.
@@ -279,7 +360,7 @@ export function buildSosCoverageReport(batches: SosCoverageBatch[]): SosCoverage
     // to surface. `firstSeen` is reported alongside so a genuine onboarding is still explainable
     // rather than silently dropped.
     const missingDistributors = [...firstSeen.keys()]
-      .filter((key) => !perPeriod.has(key) && !mergedAwayIn(key, period))
+      .filter((key) => !perPeriod.has(key) && !mergedAwayIn(key, period) && !beforeOnboarding(key, period))
       .map((key) => ({ code: displayCode.get(key) ?? key, name: nameOf(key) }))
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     return {
@@ -300,6 +381,7 @@ export function buildSosCoverageReport(batches: SosCoverageBatch[]): SosCoverage
       // Split the absences BEFORE anything is counted: a merged month is not a hole, so it must
       // leave the missing list, the interior list and the estimate alike.
       const mergedPeriods: string[] = [];
+      const preOnboardingPeriods: string[] = [];
       const missing: string[] = [];
       let mergedWindow: MergedSourceWindow | null = null;
       for (const period of absent) {
@@ -307,6 +389,8 @@ export function buildSosCoverageReport(batches: SosCoverageBatch[]): SosCoverage
         if (window) {
           mergedPeriods.push(period);
           mergedWindow = window;
+        } else if (beforeOnboarding(key, period)) {
+          preOnboardingPeriods.push(period);
         } else {
           missing.push(period);
         }
@@ -336,6 +420,8 @@ export function buildSosCoverageReport(batches: SosCoverageBatch[]): SosCoverage
         mergedPeriods,
         mergedInto,
         mergedIntoCode,
+        onboardedAt: onboardingOf(key)?.from ?? null,
+        preOnboardingPeriods,
         interiorMissingPeriods,
         firstSeen: earliest,
         averageValue: round2(averageValue),

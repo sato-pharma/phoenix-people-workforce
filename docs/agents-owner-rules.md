@@ -7260,6 +7260,20 @@ fields, and the banner is a SENTENCE inside `insights`. The mask follows his clo
 choice of 2026-09-14 — keep the money, drop the name — so every period, estimate and count is
 untouched, and Super Admin still reads the real name.
 
+🔴 **The El Qema gap itself was never real either, and masking a name is not fixing a number.** Read
+on production 2026-10-09: the `source_of_sales_distributors` row for `QM` was created
+**2026-09-06 22:27 UTC**, its first batch **2026-09-07 07:35**, and no El Qema row of any status
+exists outside **2026-08 and 2026-09** — the distributor was onboarded in September for its August
+book. The seven months before it were priced at **10,541,399 EGP** (1.51M mean × 7) of sales nobody
+can ever upload, which made it the third-largest hole on the board and inflated the "and N other
+distributors have gaps too" count behind the headline. `SOURCE_ONBOARDINGS` (`QM` from 2026-08)
+excludes them from the missing list, each month's missing list and the estimate alike, so El Qema
+leaves the ranked list entirely; the mask stays exactly as it is, for the month it genuinely misses.
+Measured against live production before and after: the banner's own headline fell from
+**24,160,764 EGP** (EPDA-BULK, five months) to **14,496,459 EGP** (EPDA-BULK, 2026-01, 2026-05 and
+2026-09 — January and May never arrived, and September's own bulk file is outstanding and is what
+the contribution allocation needs), and the trailing count from 11 other distributors to 10.
+
 
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08
 

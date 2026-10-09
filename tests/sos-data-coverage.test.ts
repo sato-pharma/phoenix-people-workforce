@@ -10,6 +10,8 @@ import {
   enumeratePeriods,
   MERGED_SOURCE_WINDOWS,
   mergedSourceWindowFor,
+  SOURCE_ONBOARDINGS,
+  sourceOnboardingFor,
   type SosCoverageBatch,
 } from "../src/lib/sales/sos-coverage.ts";
 
@@ -334,6 +336,87 @@ export function runSosDataCoverageTests() {
       dashboard.includes('.select("period,distributor_code,distributor_name,total_value")'),
       "the batch NAME must be in the select itself, or the banner falls back to raw codes",
     );
+  }
+
+  // ── A source that did not EXIST yet has no gap to close ────────────────────
+  {
+    // El Qema was onboarded in September 2026 for its August book: master row created 2026-09-06,
+    // first batch 2026-09-07, and no row of any status outside 2026-08 and 2026-09. The seven
+    // earlier months were priced at roughly 10.54M EGP of "missing" sales nobody can ever upload —
+    // the third-largest hole on the board, and it also inflated the "N other distributors have
+    // gaps too" count behind it.
+    assert.deepEqual(
+      SOURCE_ONBOARDINGS.map((o) => `${o.code} ${o.from}`),
+      ["QM 2026-08"],
+      "the declaration this repo ships — a new one belongs here, never inferred from first appearance",
+    );
+    assert.equal(sourceOnboardingFor("qm")?.from, "2026-08", "codes are compared folded");
+    assert.equal(sourceOnboardingFor("EP-PHS"), null, "nothing else is declared");
+
+    const months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"];
+    const report = buildSosCoverageReport([
+      ...months.map((p) => bn(p, "PS", "overseas", 1_000)),
+      bn("2026-08", "PS", "overseas", 1_000), bn("2026-08", "QM", "El Qema", 1_888_898),
+      bn("2026-09", "PS", "overseas", 1_000), bn("2026-09", "QM", "El Qema", 1_122_930),
+    ]);
+    assert.equal(
+      report.distributors.find((d) => d.name === "El Qema"),
+      undefined,
+      "a source with no month before it existed has NO gap, so it leaves the ranked list entirely",
+    );
+    assert.equal(report.hasGaps, false, "and the window is clean — nothing is missing at all");
+    assert.equal(describeSosCoverageGaps(report), null, "so there is no banner to dismiss");
+    for (const period of months) {
+      assert.deepEqual(
+        report.periods.find((p) => p.period === period)?.missingDistributors,
+        [],
+        `${period} must not name a source that did not exist yet`,
+      );
+      assert.equal(report.periods.find((p) => p.period === period)?.incomplete, false);
+    }
+  }
+
+  // ── The excluded months are REPORTED beside a real gap, not silently dropped ─
+  {
+    // Same onboarding, but September's file never came — that absence IS a hole.
+    const report = buildSosCoverageReport([
+      ...["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"]
+        .map((p) => bn(p, "PS", "overseas", 1_000)),
+      bn("2026-08", "QM", "El Qema", 2_000_000),
+    ]);
+    const qm = report.distributors.find((d) => d.name === "El Qema");
+    assert.ok(qm, "a real gap after onboarding is still reported");
+    assert.deepEqual(qm.missingPeriods, ["2026-09"], "only the month it genuinely owes");
+    assert.equal(qm.onboardedAt, "2026-08");
+    assert.deepEqual(
+      qm.preOnboardingPeriods,
+      ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
+      "the excluded months are visible, so the quiet stretch is explainable",
+    );
+    assert.equal(qm.estimatedMissingValue, 2_000_000, "one owed month x the mean, not eight");
+    assert.deepEqual(
+      report.periods.find((p) => p.period === "2026-09")?.missingDistributors,
+      [{ code: "QM", name: "El Qema" }],
+      "September names it; the seven months before do not",
+    );
+  }
+
+  // ── The DATA outvotes a stale declaration ──────────────────────────────────
+  {
+    // An upload before the declared first month means the line in this file is wrong, and the safe
+    // reading is the strict one — expect it everywhere, so a real hole cannot hide behind it. This
+    // is also what keeps the El Qema mask test above exercising a genuine gap.
+    const report = buildSosCoverageReport([
+      bn("2026-01", "PS", "overseas", 1_000), bn("2026-01", "QM", "El Qema", 500),
+      bn("2026-02", "PS", "overseas", 1_000),
+      bn("2026-03", "PS", "overseas", 1_000), bn("2026-03", "QM", "El Qema", 700),
+    ]);
+    const qm = report.distributors.find((d) => d.name === "El Qema");
+    assert.ok(qm, "the declaration is withdrawn, so the gap is reported");
+    assert.deepEqual(qm.missingPeriods, ["2026-02"]);
+    assert.deepEqual(qm.interiorMissingPeriods, ["2026-02"], "and it is an interior hole");
+    assert.equal(qm.onboardedAt, null, "the withdrawal is visible, not silent");
+    assert.deepEqual(qm.preOnboardingPeriods, []);
   }
 
   // ── Malformed rows are ignored rather than corrupting the report ───────────
