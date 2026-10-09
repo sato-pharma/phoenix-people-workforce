@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
@@ -12,6 +13,7 @@ import {
   headlinePeriodLabel,
   scopeLabel,
 } from "../src/lib/sales/closing-performance-review-export.ts";
+import { reviewTotalRowLabel } from "../src/lib/sales/closing-performance-review-regions.ts";
 import { monthlyClosingFilterOptions } from "../src/lib/sales/monthly-closing-filter-options.ts";
 import { parseCodeList } from "../src/lib/sales/monthly-closing-period-merge.ts";
 import {
@@ -40,6 +42,9 @@ import {
 //     reads "September 2026" — one month's name over three months of money (assertion 3).
 //   * A workbook narrowed to one region looks exactly like the whole line, just smaller
 //     (assertion 4).
+//   * Every table that closes with a total row CALLED "NATIONAL TOTAL" says it on the filtered view
+//     too, so three areas of fifty-eight are totalled under a row claiming to be the line's — the
+//     one figure a manager reads off the bottom of the sheet (assertion 6).
 
 const DOT = String.fromCharCode(0x00b7);
 
@@ -341,4 +346,105 @@ export async function runClosingReviewFilterTests() {
   assert.deepEqual(parseCodeList(["CA1,D21"]), ["CA1", "D21"], "and an array holding a comma-joined entry still splits");
   assert.deepEqual(parseCodeList([]), [], "an empty array is an empty filter, never a filter on one blank code");
   assert.deepEqual(parseCodeList(undefined), [], "and a missing value is an empty filter");
+
+  // ── (6) A FILTERED TOTAL ROW IS NEVER CALLED "NATIONAL TOTAL" ──
+  //
+  // The scope label on the masthead (assertion 4) tells a reader who looks UP. The figure they
+  // actually quote is the one at the BOTTOM of the table, and the row it sits in used to say
+  // NATIONAL TOTAL on every view — so a sheet holding one of fifty-eight areas handed back a
+  // national-looking number. Both renderers now ask one helper, and `scopeLabel` gates on the same
+  // predicate, so the masthead and the row cannot disagree.
+  const wholeLine = reviewOf({ selectedPeriods: ["2026-09"] });
+
+  assert.equal(
+    reviewTotalRowLabel(wholeLine),
+    "National total",
+    "an unfiltered review still closes with a NATIONAL total - the wording every unfiltered sheet has always carried is untouched",
+  );
+  assert.equal(
+    reviewTotalRowLabel(cairoOnly),
+    "Filtered total",
+    "one region of two is a FILTERED total, never a national one",
+  );
+  assert.equal(
+    reviewTotalRowLabel(oneProduct),
+    "Filtered total",
+    "and so is one product of three, although every area is still on the sheet - a product filter changes what the areas sold, so their total is not the line's either",
+  );
+
+  // The masthead and the row read ONE fact, so they cannot drift. Today the two conditions happen
+  // to be the same arithmetic, which is exactly why this is pinned on the code and not only on the
+  // fixtures above: the day someone adds a third narrowing to `scopeLabel`'s parts — months, a
+  // search term, a channel — a masthead would start saying "filtered" over a row still claiming to
+  // be national, and no per-fixture assertion here would notice.
+  const exportSource = readFileSync(
+    new URL("../src/lib/sales/closing-performance-review-export.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    /scopeLabel\([^)]*\): string \{\s*if \(!reviewShowsLessThanTheWholeLine\(review\)\) return "";/.test(exportSource),
+    "scopeLabel's first act is to return nothing unless the shared predicate says the view is narrowed - its own parts decide the WORDING, never whether the sheet counts as filtered",
+  );
+  for (const [name, review] of [
+    ["unfiltered", wholeLine],
+    ["one region", cairoOnly],
+    ["one product", oneProduct],
+    ["three months", span],
+  ] as Array<[string, ClosingPerformanceReview]>) {
+    assert.equal(
+      scopeLabel(review) !== "",
+      reviewTotalRowLabel(review) === "Filtered total",
+      `the ${name} review labels its scope and its total row from the same fact - one saying "filtered" while the other says NATIONAL is the drift this pins`,
+    );
+  }
+
+  // The emitted workbook, not the helper: every sheet with a total row must carry the new wording.
+  const wholeLineText = await workbookText(await buildClosingPerformanceReviewWorkbook(wholeLine));
+  assert.ok(
+    wholeLineText.includes("CNS LINE " + DOT + " NATIONAL TOTAL"),
+    "the unfiltered workbook's ranking sheet still closes with CNS LINE " + DOT + " NATIONAL TOTAL",
+  );
+  assert.ok(
+    wholeLineText.filter((entry) => entry === "NATIONAL TOTAL").length >= 2,
+    "and both grid sheets still close with NATIONAL TOTAL",
+  );
+
+  assert.ok(
+    cairoText.includes("CNS LINE " + DOT + " FILTERED TOTAL"),
+    "the Cairo-only workbook's ranking sheet closes with FILTERED TOTAL instead",
+  );
+  assert.ok(
+    cairoText.filter((entry) => entry === "FILTERED TOTAL").length >= 2,
+    "and so do its grid sheets",
+  );
+  assert.ok(
+    !cairoText.some((entry) => entry.includes("NATIONAL TOTAL")),
+    "with the words NATIONAL TOTAL nowhere in the file - that claim over one of two areas is the defect",
+  );
+
+  // The SCREEN renders the same helper. It is a React component, so the pin is on its three total
+  // rows by name: the two grids take the label as a prop and the ranking table prints it beside the
+  // line, and a hard-coded "National total" at any of them would put the screen back out of step
+  // with the file exported from it.
+  const workspace = readFileSync(
+    new URL("../src/components/sales/closing-performance-review-workspace.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    workspace.includes("reviewTotalRowLabel(review)"),
+    "the workspace asks the shared helper what its total rows are called",
+  );
+  assert.equal(
+    workspace.split('row.kind === "grandTotal" ? totalLabel').length - 1,
+    2,
+    "both grids label their bottom row from it - the families grid and the products-by-month grid",
+  );
+  assert.ok(
+    workspace.includes("{line} {DOT} {totalLabel}"),
+    "and so does the medical rep ranking table, beside the line name",
+  );
+  assert.ok(
+    !/\? "National total" :/.test(workspace),
+    "with no total row hard-coded back to National - the fallback for a null review is the only such literal left",
+  );
 }

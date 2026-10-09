@@ -79,3 +79,49 @@ export function regionOrder(regionCode: string): number {
   const index = PERFORMANCE_REVIEW_REGIONS.findIndex((row) => row.regionCode === code);
   return index === -1 ? PERFORMANCE_REVIEW_REGIONS.length : index;
 }
+
+/**
+ * The payload fields that decide whether a review is showing the whole line. Typed structurally so
+ * this module stays dependency-free and a CLIENT component can import it — `ClosingPerformanceReview`
+ * lives in closing-performance-review.ts, which drags `node:crypto` into the browser bundle.
+ */
+export type PerformanceReviewScope = {
+  areas: ReadonlyArray<unknown>;
+  filterOptions?: { areas: ReadonlyArray<unknown>; products: ReadonlyArray<unknown> } | null;
+  matrixByProduct: { columns: ReadonlyArray<unknown> };
+};
+
+/**
+ * Whether what is in hand covers LESS than the whole line.
+ *
+ * Both counts are already in the payload — the rows that survived the filter, and the pickers' full
+ * option lists, which are built from the UNFILTERED matrix on the server for exactly this reason —
+ * so this needs no new field and cannot drift from what was actually filtered.
+ *
+ * A PRODUCT-only filter counts: the areas are all still there, but their figures are no longer the
+ * whole line's, so the total they close is not a national one either.
+ */
+export function reviewShowsLessThanTheWholeLine(review: PerformanceReviewScope): boolean {
+  const allAreas = review.filterOptions?.areas.length ?? 0;
+  const allProducts = review.filterOptions?.products.length ?? 0;
+  return (
+    (allAreas > 0 && review.areas.length < allAreas) ||
+    (allProducts > 0 && review.matrixByProduct.columns.length < allProducts)
+  );
+}
+
+/**
+ * What a total row that closes the whole grid is CALLED.
+ *
+ * "National total" is a claim about coverage, and on a filtered view it is simply false — three
+ * areas of fifty-eight, or one product of twelve, totalled under a row that says NATIONAL is the
+ * number a manager reads as the line's. The export and the screen both ask this, and `scopeLabel`
+ * gates on the same predicate, so the masthead's "filtered · 3 of 58 areas" and the row's own wording
+ * cannot disagree.
+ *
+ * Sentence case, as the screen prints it; the workbook upper-cases it at the cell, the way it already
+ * upper-cases the line name beside it.
+ */
+export function reviewTotalRowLabel(review: PerformanceReviewScope): string {
+  return reviewShowsLessThanTheWholeLine(review) ? "Filtered total" : "National total";
+}
