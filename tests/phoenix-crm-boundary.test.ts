@@ -149,6 +149,10 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/primary-pharmacy", "create"),
   // A pharmacy he adds to his own list by its name (owner, 2026-10-03): his own write, no approval.
   post("list/pharmacy", "create"),
+  // A pharmacy's own location and its responsible person's phone (owner, 2026-10-09), both optional
+  // and both corrected here. `create` on his own pharmacy and nothing more: a pharmacy's pin is a
+  // RECORD, so there is no approval to ask for and nothing is measured against it.
+  post("list/pharmacy-details", "create"),
   // One customer's past Phoenix visits, newest first, on his page (owner, 2026-10-02). Read through the
   // same seat gate as the list (`territoryForRead`), and carrying no location, distance or flag.
   get("list/timeline"),
@@ -740,6 +744,12 @@ const LATER_MIGRATIONS = [
   // functions and three columns on each of two existing tables; it replaces no save_visit and
   // creates no table, so it appends safely at the end.
   "supabase/migrations/20261008190000_phoenix_crm_administrator_reverses.sql",
+  // A pharmacy's own location and its responsible person's phone (owner, 2026-10-09), both optional.
+  // THIRTEEN nullable columns on `phoenix_crm_customers`, three CHECKs of its own, ONE brand-new
+  // function (`phoenix_crm_set_pharmacy_details`) and a REPLACEMENT of `phoenix_crm_add_pharmacy` at
+  // the same jsonb signature; it replaces no save_visit and creates no table, so it appends safely at
+  // the end and cannot disturb the replacement ordering above.
+  "supabase/migrations/20261010010000_phoenix_crm_pharmacy_pin_and_phone.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

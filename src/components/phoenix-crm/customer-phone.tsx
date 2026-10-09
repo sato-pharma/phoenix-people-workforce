@@ -19,6 +19,9 @@ export function CustomerPhoneField({
   disabled,
   hint = "Optional. Leave it empty if you do not have it.",
   id,
+  // A pharmacy's number is its RESPONSIBLE PERSON's, not the pharmacy's own (owner, 2026-10-09), and
+  // the label has to say so where that is what is asked for. Unset reads "Phone", exactly as before.
+  label = "Phone",
   onChange,
   value,
 }: {
@@ -26,11 +29,12 @@ export function CustomerPhoneField({
   disabled?: boolean;
   hint?: string;
   id: string;
+  label?: string;
   onChange: (next: string) => void;
   value: string;
 }) {
   return (
-    <CrmField className={className} hint={hint} htmlFor={id} label="Phone">
+    <CrmField className={className} hint={hint} htmlFor={id} label={label}>
       {/* Left to right whatever the page: a number reads the same way in Arabic and in English. */}
       <input
         autoComplete="off"

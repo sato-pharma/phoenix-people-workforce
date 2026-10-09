@@ -416,8 +416,15 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     const picker = code("src/components/phoenix-crm/visit-customer-picker.tsx");
     assert.match(picker, /\{mode === "pharmacy" && onAddPharmacy \? \(/, "Add a pharmacy sits on Pharmacy visit and nowhere else in the picker");
     const screen = code("src/components/phoenix-crm/add-pharmacy.tsx");
-    assert.match(screen, /crmPost<AddedPharmacy>\("\/api\/phoenix-crm\/list\/pharmacy", \{ seatId, test, name, from \}, "result"\)/);
-    assert.doesNotMatch(screen, /LivePhotoCapture|CaptureLocation|PlaceEditor|TimingsEditor/, "no photo, no location, no hours");
+    // The NAME is all the route needs, and that is the half this rule owns: the body carries seatId,
+    // test, name and from, and the two extras the owner added on 2026-10-09 — an optional pin and an
+    // optional phone — are SPREAD IN ONLY WHEN HE FILLED THEM, so an add with neither is byte for byte
+    // the body this route has always received. (That the extras exist at all is
+    // tests/phoenix-crm-pharmacy-pin.test.ts's rule; what is pinned here is that they are optional.)
+    assert.match(screen, /crmPost<AddedPharmacy>\(\s*"\/api\/phoenix-crm\/list\/pharmacy",\s*\{ seatId, test, name, from, \.\.\.\(phone\.trim\(\) \? \{ phone \} : \{\}\), \.\.\.\(pin \? \{ pin \} : \{\}\) \},\s*"result",\s*\)/);
+    // Still no evidence and no hours: a pharmacy is never validated, so there is no photo to take and
+    // no opening time to agree. The pin is a record the rep may leave empty, not a reading anyone checks.
+    assert.doesNotMatch(screen, /LivePhotoCapture|PlaceEditor|TimingsEditor/, "no photo, no hours");
 
     // Pharmacy visit lists every pharmacy on his list — validated or not: the form reads pending ones too.
     assert.match(list, /query\.in\("status", options\.includeOutside \? \["active", "pending", "outside"\] : \["active", "pending"\]\)/);

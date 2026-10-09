@@ -4722,10 +4722,15 @@ reads `active` and `pending`; 576 of production's 579 pharmacies are `pending`).
 way to ADD one — the screen said "No pharmacy is on your list yet. Name one on a customer's visit" and
 offered nothing, and the List's Add new customer is AM/PM only, with a photo and two approvals.
 
-- **Add a pharmacy** takes the NAME and nothing else — no photo, no location, no hours, no request — on
+- **Add a pharmacy** takes the NAME and needs nothing else — no photo, no hours, no request — on
   the List (beside Add new customer) and on Add visit → Pharmacy visit, where saving opens the visit
   form on it. The territory's own rep only (`territoryForRepWrite`); a manager entering a visit picks
-  from the rep's list.
+  from the rep's list. **Since 2026-10-09 the name is joined by two OPTIONAL extras — a pin on the
+  pharmacy's own location and the responsible person's phone** (his instruction that day: *"make it
+  optional to add its location by a pin button … also make optional to add the responsible person
+  phone number"*). Optional in the full sense: an add with neither sends the body this route has
+  always received. "A pharmacy's own place and its responsible person's phone are optional", below,
+  holds that rule; the photo, the hours and the approvals stay absent.
 - The name is matched EXACTLY by its key (`matchAddedPharmacy`): on his list already → opened, never a
   second row; in his Archive → refused with the way back, as typing never undoes the Archive (rule 3c);
   otherwise `phoenix_crm_add_pharmacy` (`20261003211501`) adds it `pending`, `origin` 'new', repeating
@@ -4745,8 +4750,50 @@ offered nothing, and the List's Add new customer is AM/PM only, with a photo and
 - Never give the linked visit the doctor's people or stock answers back "for completeness".
 - Never widen `pharmacyNameKey` to the Pharmacy Master's stop words.
 - Never split the box on "/" or "-": the first is the reps' "ص/", the second names a branch.
-- Never put a photo, a location, a request or an approval back on Add a pharmacy, and never match its
-  name by half — an exact key or a new pharmacy.
+- Never put a photo, a request or an approval back on Add a pharmacy, and never match its name by
+  half — an exact key or a new pharmacy. 🔴 **The location is the one exception, and only as he set it
+  on 2026-10-09: an OPTIONAL pin, never required, never checked** — see the next account.
+
+## A pharmacy's own place and its responsible person's phone are optional — owner ruling, 2026-10-09
+
+**What he asked**, by voice: *"In Phoenix, CRM. One, visiting pharmacy or adding a new pharmacy, make
+it optional to add its location by a pin button — optional, if you want to save its location do this,
+if you want also don't do this. And also make optional to add the responsible person's phone number.
+And of course, when he captured the location, the location is then cleaned and separated into area,
+brick, government. Area, brick, and government, yes."*
+
+**How it is built.**
+- **Both are optional in the full sense.** `PharmacyExtras` (`src/components/phoenix-crm/pharmacy-details.tsx`)
+  puts the pin button and the phone box under the name on Add a pharmacy, and the request omits each
+  key he left alone — an add with neither is the body `/api/phoenix-crm/list/pharmacy` has always
+  received, taking the path it has always taken.
+- **Correcting them later** is the same two controls on the pharmacy's own page and from the Pharmacy
+  visit picker (`PharmacyDetailsScreen` → `POST /api/phoenix-crm/list/pharmacy-details` →
+  `phoenix_crm_set_pharmacy_details`). A NAMED key sets it, an ABSENT key leaves it, and `pin: null`
+  clears all thirteen columns — so a screen that sends the pin unconditionally would wipe yesterday's
+  reading, which is why the correction screen sends it only after he captured one or pressed Remove.
+  `phoenix_crm_add_pharmacy`, by contrast, fills only what is EMPTY on a pharmacy already on the list.
+- **"Cleaned and separated" is the server's work, from the coordinate alone.** `resolvePinGeography`
+  in `src/lib/phoenix-crm/server/list.ts` — the SAME function a doctor's validated place reads, so a
+  pharmacy and the clinic across the street can never disagree about which brick the street is in —
+  returns the clean address, the governorate, the area and the brick with its distance. The
+  governorate is the geocode's own component, never cut out of the address text: an address line holds
+  district names that read like governorates, and a wrong governorate is worse than none.
+  `brick_lookup` says which kind of nothing a missing brick was — `matched`, `none_nearby`, or
+  `could_not_look` when the brick master itself could not be read.
+- 🔴 **The pin is a RECORD, never a CHECK.** A pharmacy needs no validation (his 2026-10-03 rule), so
+  there is no photo, no second reading, no approval, nothing flagged for being far from it and no KPI
+  that reads it. The rep's screens show WHERE it is — governorate, area, brick — and never how good
+  his reading was. Only a reading wider than 500 m is refused, and that refusal offers to save the
+  pharmacy without it.
+- **Nothing changed** for a doctor's primary pharmacy or for the pharmacies a doctor's visit names.
+
+**What must NOT be "fixed".** Never make either one required. Never measure a pharmacy visit against
+the pin, never let it gate or flag anything, and never show a rep an accuracy or a brick distance.
+Never resolve the geography a second time anywhere — `tests/phoenix-crm-place-location-frozen.test.ts`
+pins `resolvePinGeography` as the file's only caller of the address service for exactly that reason.
+
+Pinned by `tests/phoenix-crm-pharmacy-pin.test.ts`; the module rule is in `.claude/rules/phoenix-crm.md`.
 
 ## Add visit keeps every point, and its optional steps start folded — owner ruling, 2026-10-02 (night)
 

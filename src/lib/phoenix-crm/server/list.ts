@@ -46,12 +46,14 @@ import {
   parseGrade,
   parseNewCustomer,
   parseOutsideCustomer,
+  parsePharmacyPin,
   parsePlaceDraft,
   parsePotentialGrade,
   parseProductAvailability,
   PHARMACY_NAME_MAX,
   PLACE_TEXT_MAX,
   placePoint,
+  type PharmacyPinDraft,
   type PlaceDraft,
   type PotentialGrade,
   type ProductAvailability,
@@ -108,7 +110,7 @@ import {
   withdrawValidationNotConfirmed,
 } from "@/lib/phoenix-crm/server/validation-reviews";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
-import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { countOffListingRefusals, recordOffListingRefusal, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -381,8 +383,45 @@ export type ListCustomer = {
    * types", so the old list's phones are neither copied in nor shown.
    */
   phone: string | null;
+  /**
+   * 🔴 WHERE THIS PHARMACY IS, on the days a rep chose to pin it (owner, 2026-10-09: "visiting
+   * pharmacy or adding a new pharmacy, make it optional to add its location by a pin button …
+   * optional, if you want to save its location do this, if you want also don't do this … and of
+   * course, when he captured the location, the location is then cleaned and separated into area,
+   * brick, government"). Null on every doctor, and on every pharmacy nobody has pinned.
+   *
+   * A RECORD, never a check: no pharmacy visit is measured against it, nothing is refused, held,
+   * approved or scored because of it, and a pharmacy is never "validated" at its door the way a
+   * doctor is. The area, the brick and the governorate are resolved on the SERVER from the
+   * coordinate alone (`resolvePharmacyPinLocation`) — the phone sends a position and nothing else.
+   */
+  pharmacyPin: PharmacyPin | null;
   /** The pharmacies feedback was taken from for this doctor, primary first, then most recent. */
   pharmacies: CustomerPharmacy[];
+};
+
+/**
+ * A pinned pharmacy's own location, as the list and the visit picker read it.
+ *
+ * `brickLookup` keeps the two kinds of nothing apart, exactly as a place's does: `none_nearby` is a
+ * pin that really is far from every Phoenix brick, `could_not_look` is a brick master that could not
+ * be read — a reader deciding whether to trust a blank brick needs to know which.
+ */
+export type PharmacyPin = {
+  lat: number;
+  lon: number;
+  accuracyMeters: number | null;
+  capturedAt: string | null;
+  capturedByName: string | null;
+  /** The clean address Google read for the point; null when the lookup was refused or quota-spent. */
+  address: string | null;
+  governorate: string | null;
+  areaCode: string | null;
+  areaName: string | null;
+  brickId: string | null;
+  brickName: string | null;
+  brickDistanceKm: number | null;
+  brickLookup: "matched" | "none_nearby" | "could_not_look" | null;
 };
 
 export type ListReferenceEntry = {
@@ -563,6 +602,42 @@ function readingOf(lat: unknown, lon: unknown, accuracy: unknown): PlaceReading 
   return latitude === null || longitude === null ? null : { lat: latitude, lon: longitude, accuracyMeters: numberOrNull(accuracy) };
 }
 
+/**
+ * A pharmacy's pin, or null — which is what the overwhelming majority of rows carry, because pinning
+ * one is optional by the owner's own instruction and a doctor never has one at all.
+ *
+ * BOTH coordinates must be present for a pin to exist: a half-written pair is no location, exactly as
+ * `readingOf` treats a place's two readings, and the migration's own check constraint refuses the
+ * half anyway.
+ */
+function mapPharmacyPin(row: Row, names: PeopleNames): PharmacyPin | null {
+  const lat = numberOrNull(row.pharmacy_pin_lat);
+  const lon = numberOrNull(row.pharmacy_pin_lon);
+  if (lat === null || lon === null) return null;
+  const by = text(row.pharmacy_pin_captured_by_hr_id);
+  return {
+    lat,
+    lon,
+    accuracyMeters: numberOrNull(row.pharmacy_pin_accuracy_meters),
+    capturedAt: text(row.pharmacy_pin_captured_at),
+    capturedByName: by ? nameOf(names, by) : null,
+    address: text(row.pharmacy_pin_address),
+    governorate: text(row.pharmacy_pin_governorate),
+    areaCode: text(row.pharmacy_pin_area_code),
+    areaName: text(row.pharmacy_pin_area_name),
+    brickId: text(row.pharmacy_pin_brick_id),
+    brickName: text(row.pharmacy_pin_brick_name),
+    brickDistanceKm: numberOrNull(row.pharmacy_pin_brick_distance_km),
+    // Unknown stays null here rather than becoming `could_not_look`: a place ALWAYS resolved its
+    // brick at validation, so a blank there means the lookup failed; a pharmacy pinned by a build
+    // that predates a later column simply never said.
+    brickLookup:
+      row.pharmacy_pin_brick_lookup === "matched" || row.pharmacy_pin_brick_lookup === "none_nearby" || row.pharmacy_pin_brick_lookup === "could_not_look"
+        ? row.pharmacy_pin_brick_lookup
+        : null,
+  };
+}
+
 // 🔴 A POSTGREST SELECT IS ONE STRING, AND A COLUMN THAT DOES NOT EXIST FAILS THE WHOLE READ WITH
 // 42703 — which here is the rep's list, the planner and the visit form at once. So a column named
 // here must already exist on the database the branch deploys against: `brick_lookup` arrived in
@@ -572,7 +647,10 @@ const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
   "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings";
+  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings, " +
+  // A pinned pharmacy's own location (2026-10-09). Every one is nullable and null on every doctor.
+  "pharmacy_pin_lat, pharmacy_pin_lon, pharmacy_pin_accuracy_meters, pharmacy_pin_captured_at, pharmacy_pin_captured_by_hr_id, pharmacy_pin_address, " +
+  "pharmacy_pin_governorate, pharmacy_pin_area_code, pharmacy_pin_area_name, pharmacy_pin_brick_id, pharmacy_pin_brick_name, pharmacy_pin_brick_distance_km, pharmacy_pin_brick_lookup";
 
 /**
  * Every customer carried over from the territory's iReports360 list has a row here, pending until the
@@ -1066,6 +1144,8 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       ...territoryPeople(viewer.org, [seat]),
       ...requestPeople(requestRows),
       ...customers.map((row) => text(row.validated_by_hr_id)),
+      // The rep who pinned a pharmacy — shown by NAME beside the pin, never his HR id (AGENTS.md §4).
+      ...customers.map((row) => text(row.pharmacy_pin_captured_by_hr_id)),
       ...targetSeats.map((entry) => entry.occupantHrId),
       reference[0]?.source_hr_id ?? null,
     ]),
@@ -1172,6 +1252,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       validateAgainReason: status === "pending" ? (check?.reason ?? null) : null,
       primaryPharmacyName,
       phone: text(row.phone),
+      pharmacyPin: mapPharmacyPin(row, names),
       pharmacies,
       sharedWith: null,
       observed: null,
@@ -1319,11 +1400,31 @@ async function placePayload(place: PlaceDraft): Promise<Row> {
 }
 
 /**
- * A point's clean address, part of town, brick, area and region — the location every place row holds,
- * resolved here and nowhere else (a validation and a move read the same function, so they can never
- * disagree about which brick a point is in).
+ * What a captured coordinate MEANS: the clean address Google read for it, the part of town, the
+ * governorate, and the Phoenix brick / area / region the point falls in.
+ *
+ * ONE resolver, two mappings — a doctor's place (`resolvePlaceLocation`) and the location a rep may
+ * pin on a pharmacy (`resolvePharmacyPinLocation`) both read this and nothing else, so the two can
+ * never disagree about which brick a point is in. The place mapping keeps no governorate because
+ * `phoenix_crm_places` has no column for one; the pharmacy's own columns do, because the owner asked
+ * for a pinned pharmacy to come back "cleaned and separated into area, brick, government"
+ * (2026-10-09).
  */
-export async function resolvePlaceLocation(point: { lat: number; lon: number; accuracyMeters: number | null }): Promise<Row> {
+type PinGeography = {
+  readonly address: string | null;
+  readonly zone: string | null;
+  readonly governorate: string | null;
+  readonly brickLookup: "matched" | "none_nearby" | "could_not_look";
+  readonly brickId: string | null;
+  readonly brickName: string | null;
+  readonly brickDistanceKm: number | null;
+  readonly areaCode: string | null;
+  readonly areaName: string | null;
+  readonly regionCode: string | null;
+  readonly regionName: string | null;
+};
+
+async function resolvePinGeography(point: { lat: number; lon: number; accuracyMeters: number | null }): Promise<PinGeography> {
   const [centroids, located] = await Promise.all([
     loadBrickCentroids(),
     // Best-effort, exactly as the watermark treats it: a pin in the desert, a refused lookup or a
@@ -1342,14 +1443,67 @@ export async function resolvePlaceLocation(point: { lat: number; lon: number; ac
   return {
     address: located?.address ?? null,
     zone: located?.components.area ?? null,
-    brick_lookup: brickLookup,
-    brick_id: trusted?.brickId ?? null,
-    brick_name: trusted?.brickName ?? null,
-    brick_distance_km: brick ? Math.round(brick.distanceKm * 100) / 100 : null,
-    area_code: trusted?.areaCode ?? null,
-    area_name: trusted?.areaName ?? null,
-    region_code: trusted?.regionCode ?? null,
-    region_name: trusted?.regionName ?? null,
+    // Google's own component, never guessed from the address text: an address line holds street,
+    // district and city names that read like governorates, and a wrong governorate on a pharmacy is
+    // worse than none at all.
+    governorate: located?.components.governorate ?? null,
+    brickLookup,
+    brickId: trusted?.brickId ?? null,
+    brickName: trusted?.brickName ?? null,
+    brickDistanceKm: brick ? Math.round(brick.distanceKm * 100) / 100 : null,
+    areaCode: trusted?.areaCode ?? null,
+    areaName: trusted?.areaName ?? null,
+    regionCode: trusted?.regionCode ?? null,
+    regionName: trusted?.regionName ?? null,
+  };
+}
+
+/**
+ * A point's clean address, part of town, brick, area and region — the location every place row holds,
+ * resolved here and nowhere else (a validation and a move read the same function, so they can never
+ * disagree about which brick a point is in).
+ */
+export async function resolvePlaceLocation(point: { lat: number; lon: number; accuracyMeters: number | null }): Promise<Row> {
+  const geo = await resolvePinGeography(point);
+  return {
+    address: geo.address,
+    zone: geo.zone,
+    brick_lookup: geo.brickLookup,
+    brick_id: geo.brickId,
+    brick_name: geo.brickName,
+    brick_distance_km: geo.brickDistanceKm,
+    area_code: geo.areaCode,
+    area_name: geo.areaName,
+    region_code: geo.regionCode,
+    region_name: geo.regionName,
+  };
+}
+
+/**
+ * The pin as the database takes it: the rep's one reading, plus the geography resolved from it.
+ *
+ * The owner asked for a pinned pharmacy to arrive "cleaned and separated into area, brick,
+ * government" (2026-10-09), so the geography is resolved HERE, on the server, from the coordinate
+ * alone — the phone sends a position and nothing else, and no client can name a brick, an area or a
+ * governorate of its own. A pharmacy's pin is a RECORD, not a check: nothing is refused, flagged,
+ * approved or scored against it (a pharmacy needs no validation), and a reading that resolves to no
+ * brick is still saved, with `brick_lookup` saying which kind of nothing it was.
+ */
+async function resolvePharmacyPinPayload(pin: PharmacyPinDraft): Promise<Row> {
+  const geo = await resolvePinGeography(pin);
+  return {
+    lat: pin.lat,
+    lon: pin.lon,
+    accuracy_meters: pin.accuracyMeters,
+    captured_at: pin.capturedAt,
+    address: geo.address,
+    governorate: geo.governorate,
+    area_code: geo.areaCode,
+    area_name: geo.areaName,
+    brick_id: geo.brickId,
+    brick_name: geo.brickName,
+    brick_distance_km: geo.brickDistanceKm,
+    brick_lookup: geo.brickLookup,
   };
 }
 
@@ -1865,8 +2019,14 @@ export async function setPrimaryPharmacy(
 
 /**
  * Add a pharmacy to his own list by its name (owner, 2026-10-03 — pharmacy-call-rules.ts rule 3d): no
- * photo, no location, no hours, no request and no approval. The territory's rep only (the Super Admin in
- * test mode), from the List or from Add visit → Pharmacy visit (`from`).
+ * photo, no hours, no request and no approval. The territory's rep only (the Super Admin in test mode),
+ * from the List or from Add visit → Pharmacy visit (`from`).
+ *
+ * 🔴 ITS LOCATION AND ITS RESPONSIBLE PERSON'S PHONE ARE OPTIONAL EXTRAS, NOT A STEP (owner,
+ * 2026-10-09). Both are saved in the SAME call as the name — never a second write that could fail
+ * after the first one landed and leave a pharmacy whose pin went nowhere — and both are simply absent
+ * for a rep who taps Add without touching them. The pin's geography is resolved here, on the server,
+ * through the same resolver a doctor's place uses.
  *
  * The name is matched against his list FIRST, by its key and exactly (`matchAddedPharmacy`): one already
  * on it is handed back rather than added twice, and one in his Archive is refused with the way back. The
@@ -1882,10 +2042,19 @@ export async function addPharmacy(
   const problem = addedPharmacyNameProblem(typeof body.name === "string" ? body.name : null);
   if (problem) throw validationError(problem);
   const name = collapsePharmacyName(String(body.name));
+  const phone = parseCustomerPhone(body.phone);
+  if (!phone.ok) throw validationError(phone.error);
+  const pin = parsePharmacyPin(body.pin);
+  if (!pin.ok) throw validationError(pin.error);
   const match = matchAddedPharmacy(name, await loadListedPharmacies(seat.seatId, isTest));
-  if (match.kind === "existing") return { customerId: match.customerId, customerName: match.name, created: false };
   if (match.kind === "archived") {
     throw validationError(`${match.name} is in your Archive. Open it there to ask to bring it back to your list.`);
+  }
+  // Already his, and he captured nothing to go with it: hand it back without a write, exactly as before.
+  // 🔴 WITH A PHONE OR A PIN IN HAND IT STILL GOES THROUGH, because dropping what the rep just captured
+  // is the defect — the function fills ONLY the fields that are empty on it and overwrites neither.
+  if (match.kind === "existing" && phone.value === null && pin.value === null) {
+    return { customerId: match.customerId, customerName: match.name, created: false };
   }
   const result = await callPhoenixCrm<Row>("phoenix_crm_add_pharmacy", {
     p: {
@@ -1895,9 +2064,54 @@ export async function addPharmacy(
       is_test: isTest,
       name,
       from: body.from === "visit" ? "visit" : "list",
+      // Omitted entirely when he captured nothing, so the function's own "a body with no phone and no
+      // pin key does exactly what it did" path is the one that runs.
+      ...(phone.value === null ? {} : { phone: phone.value }),
+      ...(pin.value === null ? {} : { pin: await resolvePharmacyPinPayload(pin.value) }),
     },
   });
   return { customerId: String(result.customer_id), customerName: String(result.customer_name), created: result.created === true };
+}
+
+/**
+ * Set or correct a pharmacy's location and its responsible person's phone, on one already on his list
+ * (owner, 2026-10-09). The pharmacy's own screen and the Pharmacy visit picker both call this.
+ *
+ * ABSENT MEANS LEAVE IT, NULL MEANS CLEAR IT — the same contract the phone on "Change the details"
+ * already has, so a screen that sends only the phone can never blank a pin the rep captured yesterday.
+ * The geography is resolved here from the coordinate, never read from the body.
+ */
+export async function setPharmacyDetails(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ customerId: string; customerName: string; phone: string | null; pinned: boolean }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  if (!isUuid(body.customerId)) throw validationError("Choose the pharmacy this belongs to.");
+  const setsPhone = "phone" in body;
+  const setsPin = "pin" in body;
+  if (!setsPhone && !setsPin) throw validationError("Capture the pharmacy's location, or write the phone, then save.");
+  const phone = parseCustomerPhone(body.phone);
+  if (!phone.ok) throw validationError(phone.error);
+  const pin = parsePharmacyPin(body.pin);
+  if (!pin.ok) throw validationError(pin.error);
+  const result = await callPhoenixCrm<Row>("phoenix_crm_set_pharmacy_details", {
+    p: {
+      seat_id: seat.seatId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      customer_id: String(body.customerId).toLowerCase(),
+      // `null` is sent deliberately — it is how he clears one. The KEY is what says "set it".
+      ...(setsPhone ? { phone: phone.value } : {}),
+      ...(setsPin ? { pin: pin.value === null ? null : await resolvePharmacyPinPayload(pin.value) } : {}),
+    },
+  });
+  return {
+    customerId: String(result.customer_id),
+    customerName: String(result.customer_name),
+    phone: text(result.phone),
+    pinned: result.pinned === true,
+  };
 }
 
 export async function addPlace(

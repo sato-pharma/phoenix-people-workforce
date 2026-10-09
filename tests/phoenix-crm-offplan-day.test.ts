@@ -370,8 +370,24 @@ export function runPhoenixCrmOffplanDayTests(): void {
     const steps = /type AddStep =([\s\S]*?);\n/.exec(tab)?.[1] ?? "";
     assert.deepEqual(
       [...steps.matchAll(/name: "([a-z_]+)"/g)].map((match) => match[1]),
-      ["start", "open", "planned", "unplanned", "out_of_plan", "out_of_list", "pharmacy", "pharmacy_new", "reason", "form"],
-      "Add visit has the same screens it had, the Pharmacy visit picker and Add a pharmacy",
+      ["start", "open", "planned", "unplanned", "out_of_plan", "out_of_list", "pharmacy", "pharmacy_new", "pharmacy_details", "reason", "form"],
+      "Add visit has the same screens it had, the Pharmacy visit picker, Add a pharmacy, and the pharmacy's own details beside it",
+    );
+    // `pharmacy_details` (owner, 2026-10-09) is a SIDE screen, not a step: it is reached from a
+    // pharmacy's own row in the picker and leads back to that row, so the walk from Add visit to a
+    // logged visit is the one it has always been. That is what the next two assertions hold — the
+    // path INTO it is the pharmacy row, and the path OUT of it is the pharmacy picker, never the form.
+    assert.ok(
+      tab.includes('{ name: "pharmacy_details", customerId }'),
+      "the pharmacy's details are opened on one named pharmacy",
+    );
+    // The RENDER case, not the one that names the title — `case "pharmacy_details": {`, with its brace.
+    const detailsCase = /case "pharmacy_details": \{([\s\S]*?)\n    \}/.exec(tab)?.[1] ?? "";
+    assert.ok(detailsCase.includes("<PharmacyDetailsScreen"), "the pharmacy's details screen is what that step draws");
+    assert.equal(
+      [...detailsCase.matchAll(/onStep\(\{ name: "([a-z_]+)"/g)].map((match) => match[1]).join(","),
+      "pharmacy,pharmacy,pharmacy",
+      "every way out of it — Back, Save and the shell's own dismiss — returns to the Pharmacy visit picker, never into the form",
     );
     // No field is added: the reason screen still holds one box, and it is his to change.
     const picker = source("src/components/phoenix-crm/visit-customer-picker.tsx");

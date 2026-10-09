@@ -22,12 +22,13 @@
  */
 
 import { useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { MapPin, Plus, Search } from "lucide-react";
 
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import { countText } from "@/components/phoenix-crm/format";
 import { customerMetaText, monthVisitsText, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
+import { pharmacyWhereLine } from "@/components/phoenix-crm/pharmacy-details";
 import {
   CrmBackBar,
   CrmBlock,
@@ -94,9 +95,15 @@ export function customersFor(mode: PickerMode, customers: ReadonlyArray<VisitCus
 /**
  * Where his "Directions" link goes (owner, 2026-10-02): the saved place he receives at today, else his
  * first saved place — null when no place of his has a usable point, and then there is no link.
+ *
+ * 🔴 A PHARMACY HAS NO SAVED PLACE AT ALL, so since 2026-10-09 its own pin answers instead (owner,
+ * the same day he asked for the pin): a pharmacy is validated with no place row — no photo, no
+ * timings — so until it could be pinned there was nothing to drive to and this link never drew for
+ * one. A doctor is untouched: his places are tried first, and a doctor never carries a pharmacy pin.
  */
-export function customerDirectionsUrl(customer: Pick<VisitCustomerOption, "places">): string | null {
-  return directionsUrl(directionsPlace(customer.places, (place) => place.todayWindows !== NOT_RECEIVING));
+export function customerDirectionsUrl(customer: Pick<VisitCustomerOption, "pharmacyPin" | "places">): string | null {
+  const place = directionsPlace(customer.places, (place) => place.todayWindows !== NOT_RECEIVING);
+  return directionsUrl(place) ?? directionsUrl(customer.pharmacyPin);
 }
 
 /** Today's receiving hours at each of his places. */
@@ -126,6 +133,7 @@ export function VisitCustomerPicker({
   onAddPharmacy,
   onBack,
   onChooseUnplanned,
+  onPharmacyDetails,
   onPick,
 }: {
   /** The form's whole customer list: brick hues are keyed off it, so a brick keeps its colour. */
@@ -134,6 +142,11 @@ export function VisitCustomerPicker({
   /** Pharmacy visit: a pharmacy not on his list yet, added by its name with no approval. */
   onAddPharmacy?: () => void;
   onBack: () => void;
+  /**
+   * Pharmacy visit: its own location and its responsible person's phone, both optional (owner,
+   * 2026-10-09). Absent for a manager entering a rep's visit, exactly as Add a pharmacy is.
+   */
+  onPharmacyDetails?: (customerId: string) => void;
   /** Planned with nobody on today's plan: straight to Unplanned. */
   onChooseUnplanned?: () => void;
   onPick: (customerId: string) => void;
@@ -264,6 +277,12 @@ export function VisitCustomerPicker({
                     <ul className="grid gap-1.5">
                       {group.customers.map((customer) => {
                         const directions = customerDirectionsUrl(customer);
+                        // A pharmacy's own place and phone (owner, 2026-10-09). Offered on EVERY
+                        // pharmacy row, pinned or not — the un-pinned one is precisely the one worth
+                        // offering it to — and on no doctor row, which has a validated place already.
+                        const pharmacy = isPharmacyListType(customer.listType);
+                        const where = pharmacy ? pharmacyWhereLine(customer.pharmacyPin) : null;
+                        const pharmacyDetails = pharmacy && onPharmacyDetails ? () => onPharmacyDetails(customer.customerId) : null;
                         return (
                           <li className="min-w-0" key={customer.customerId}>
                             <button
@@ -298,9 +317,27 @@ export function VisitCustomerPicker({
                             {/* The way to his saved place (owner, 2026-10-02) hangs UNDER the card, joined by its
                                 border, never inside it: the card is one button, and a link inside a button is
                                 markup a phone resolves by firing the card. No saved place, no strip. */}
-                            {directions ? (
-                              <div className="flex min-w-0 flex-wrap justify-end border border-t-0 border-slate-200 bg-white px-3 py-1.5">
-                                <DirectionsLink customerName={customer.name} href={directions} />
+                            {/* 🔴 AND A PHARMACY'S OWN PLACE AND PHONE HANG IN THE SAME STRIP (owner,
+                                2026-10-09), for the same reason: this is the screen he is on when he
+                                walks into the shop, and the alternative was a step inside the visit
+                                form, which adds a step for everyone. Where it is reads here; the pin
+                                button and the phone box are on the screen the link opens. */}
+                            {directions || where || pharmacyDetails ? (
+                              <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border border-t-0 border-slate-200 bg-white px-3 py-1.5">
+                                {where ? <span className="min-w-[8rem] flex-1 break-words text-phx-xs font-semibold text-slate-500">{where}</span> : null}
+                                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                                  {pharmacyDetails ? (
+                                    <button
+                                      className="inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 md:min-h-9"
+                                      onClick={pharmacyDetails}
+                                      type="button"
+                                    >
+                                      <MapPin aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                                      {customer.pharmacyPin || customer.pharmacyPhone ? "Its place and phone" : "Save its place and phone"}
+                                    </button>
+                                  ) : null}
+                                  <DirectionsLink customerName={customer.name} href={directions} />
+                                </span>
                               </div>
                             ) : null}
                           </li>

@@ -89,13 +89,19 @@ export function runPhoenixCrmFieldReachTests() {
     // The visit flow's customer card: the link hangs UNDER the card, never inside its button.
     const picker = source("src/components/phoenix-crm/visit-customer-picker.tsx");
     assert.ok(
-      picker.includes("return directionsUrl(directionsPlace(customer.places, (place) => place.todayWindows !== NOT_RECEIVING));"),
+      picker.includes("const place = directionsPlace(customer.places, (place) => place.todayWindows !== NOT_RECEIVING);"),
       "the card's place is the one he receives at today, else his first",
     );
+    // 2026-10-09: a pharmacy has no place row at all, so its own pin answers after his places —
+    // never before them, and a doctor never has one, so a doctor's link is exactly what it was.
+    assert.ok(picker.includes("return directionsUrl(place) ?? directionsUrl(customer.pharmacyPin);"), "and a pharmacy's own pin answers when no place of his does");
     assert.ok(picker.includes("const directions = customerDirectionsUrl(customer);"), "each card asks for its own customer's way");
     const card = picker.slice(picker.indexOf("const directions = customerDirectionsUrl(customer);"), picker.indexOf("</ul>", picker.indexOf("const directions = customerDirectionsUrl(customer);")));
     assertBefore(card, "</button>", "<DirectionsLink customerName={customer.name} href={directions} />", "the link sits after the card's button closes — a link inside a button fires the card on a phone");
-    assert.ok(card.includes("{directions ? ("), "and no strip at all for a customer with no saved place");
+    // A doctor with no saved place still gets NO strip: `where` and `pharmacyDetails` are both
+    // pharmacy-only, so the condition is false for him exactly as `{directions ? (` was.
+    assert.ok(card.includes("{directions || where || pharmacyDetails ? ("), "and no strip at all for a customer with no saved place and nothing of his own to save");
+    assert.ok(card.includes("const pharmacy = isPharmacyListType(customer.listType);"), "the pharmacy half of the strip is keyed off the list type, never off the pin being absent");
 
     // The visit form's header.
     const form = source("src/components/phoenix-crm/visit-log-form.tsx");

@@ -41,6 +41,9 @@ const REFUSALS: Record<string, Refusal> = {
   // The database's own check on the phone (owner, 2026-09-30), in the same words the form uses.
   bad_phone: { status: 400, message: CUSTOMER_PHONE_ERROR },
   customer_dropped: { status: 409, message: "This customer has left the list." },
+  // A pharmacy's own location and its responsible person's phone (owner, 2026-10-09) belong to a
+  // pharmacy alone: a clinic's place is captured at the door with a photo and two readings.
+  not_a_pharmacy: { status: 409, message: "Only a pharmacy keeps its location this way. Reload the list." },
   too_many_places: { status: 409, message: "A customer can have at most five places." },
   place_not_found: { status: 404, message: "This place is no longer on the list. Reload the list." },
   place_retired: { status: 409, message: "This place was already removed." },

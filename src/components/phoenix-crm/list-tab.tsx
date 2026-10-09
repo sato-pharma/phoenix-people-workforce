@@ -63,6 +63,7 @@ import {
 } from "@/components/phoenix-crm/list-screens";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { PharmacyDetailsScreen } from "@/components/phoenix-crm/pharmacy-details";
 import { PlaceMoveScreen } from "@/components/phoenix-crm/place-move-screen";
 import type { PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
@@ -350,6 +351,43 @@ export function ListTab({
           />
         );
         break;
+      case "pharmacy-details": {
+        // A pharmacy already on his list: its location and its responsible person's phone, both
+        // optional (owner, 2026-10-09). The pharmacy's own page opens it.
+        const { customerId } = current;
+        const pharmacy = view.customers.find((customer) => customer.customerId === customerId);
+        body = pharmacy ? (
+          <PharmacyDetailsScreen
+            backLabel="Pharmacy"
+            key={`pharmacy-details-${customerId}`}
+            onBack={() => openCustomer(customerId)}
+            onSaved={(saved) =>
+              customerChanged(customerId, {
+                tone: "good",
+                title: saved.pinned ? `${saved.customerName} is saved with its location.` : `${saved.customerName} is saved.`,
+              })
+            }
+            pharmacy={{
+              customerId,
+              name: pharmacy.name,
+              phone: pharmacy.phone,
+              pin: pharmacy.pharmacyPin,
+            }}
+            seatId={seatId}
+            test={test}
+          />
+        ) : (
+          <CrmPanel eyebrow="List" title="Pharmacy">
+            <CrmBlock>
+              <CrmNote tone="warn">This pharmacy is no longer on your list. Go back to the list and open it again.</CrmNote>
+              <div className="mt-3">
+                <CrmButton onClick={home}>Back to the list</CrmButton>
+              </div>
+            </CrmBlock>
+          </CrmPanel>
+        );
+        break;
+      }
       case "restore": {
         const { customerId, from } = current;
         body = (

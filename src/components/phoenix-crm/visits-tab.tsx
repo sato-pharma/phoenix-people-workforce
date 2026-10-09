@@ -32,6 +32,7 @@ import { cairoClock, dayLabel, dayLabelLong, plural, shiftIsoDay } from "@/compo
 import { listText, territoryLine } from "@/components/phoenix-crm/labels";
 import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { OutOfListEntry } from "@/components/phoenix-crm/out-of-list-entry";
+import { PharmacyDetailsScreen } from "@/components/phoenix-crm/pharmacy-details";
 import {
   CrmBackBar,
   CrmBlock,
@@ -557,6 +558,12 @@ type AddStep =
   | { name: "pharmacy" }
   /** Pharmacy visit → Add a pharmacy: one not on his list yet, by its name, with no approval. */
   | { name: "pharmacy_new" }
+  /**
+   * Pharmacy visit → its location and its responsible person's phone, both optional (owner,
+   * 2026-10-09: "VISITING pharmacy or adding a new pharmacy"). It is reached from the pharmacy's own
+   * row and leads back to it — never a step inside the visit form, which adds no step for anyone.
+   */
+  | { name: "pharmacy_details"; customerId: string }
   | { name: "reason"; customerId: string; reason: string; back: AddStep | null }
   | { name: "form"; customerId: string; visitType: LogVisitType; reason: string | null; back: AddStep | null; part?: VisitFormPart };
 
@@ -592,6 +599,7 @@ function visitChip(step: AddStep): string {
       return "Out of list";
     case "pharmacy":
     case "pharmacy_new":
+    case "pharmacy_details":
       return "Pharmacy visit";
     case "form":
       return logVisitTypeLabel(step.visitType);
@@ -604,7 +612,13 @@ function visitChip(step: AddStep): string {
 function holdsWork(step: AddStep | null): boolean {
   return (
     step !== null &&
-    (step.name === "form" || step.name === "open" || step.name === "reason" || step.name === "out_of_list" || step.name === "pharmacy_new")
+    (step.name === "form" ||
+      step.name === "open" ||
+      step.name === "reason" ||
+      step.name === "out_of_list" ||
+      step.name === "pharmacy_new" ||
+      // He may be standing in the shop with a location captured and not saved yet.
+      step.name === "pharmacy_details")
   );
 }
 
@@ -801,6 +815,8 @@ function AddFlow({
           // The territory's own rep adds one (owner, 2026-10-03); a manager entering a visit picks from his list.
           onAddPharmacy={loaded.enteredAs === "rep" ? () => onStep({ name: "pharmacy_new" }) : undefined}
           onBack={() => onStep({ name: "start" })}
+          // Its location and phone, from its own row (owner, 2026-10-09). The rep's alone, like the add.
+          onPharmacyDetails={loaded.enteredAs === "rep" ? (customerId) => onStep({ name: "pharmacy_details", customerId }) : undefined}
           onPick={(customerId) => onStep({ name: "form", customerId, visitType: "pharmacy", reason: null, back: { name: "pharmacy" } })}
         />,
         () => onStep({ name: "start" }),
@@ -822,6 +838,31 @@ function AddFlow({
         />,
         () => onStep({ name: "pharmacy" }),
       );
+    case "pharmacy_details": {
+      const pharmacy = find(current.customerId);
+      if (!pharmacy) return missing(null);
+      return shell(
+        current,
+        <PharmacyDetailsScreen
+          backLabel="Pharmacy visit"
+          onBack={() => onStep({ name: "pharmacy" })}
+          onSaved={() => {
+            // Back to the pharmacies, with the row carrying what he just saved on the next read.
+            resource.reload();
+            onStep({ name: "pharmacy" });
+          }}
+          pharmacy={{
+            customerId: pharmacy.customerId,
+            name: pharmacy.name,
+            phone: pharmacy.pharmacyPhone,
+            pin: pharmacy.pharmacyPin,
+          }}
+          seatId={seatId}
+          test={test}
+        />,
+        () => onStep({ name: "pharmacy" }),
+      );
+    }
     case "out_of_list":
       return shell(
         current,
