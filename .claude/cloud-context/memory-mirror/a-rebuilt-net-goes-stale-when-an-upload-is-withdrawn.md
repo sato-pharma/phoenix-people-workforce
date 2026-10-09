@@ -119,3 +119,31 @@ stayed 449 and a re-measure from a certified tree read *"no drift. 449 frozen ce
 rule."* So an unattributable rewrite is survivable — but never assume the stamp you read is the one
 you wrote, and re-measure rather than reasoning from your own apply time.
 
+
+🔴 **AND THE FOURTH PATH IS A CODE CHANGE TO THE RULE ITSELF — THE ONE NOTHING IN THE PIPELINE CAN
+EVEN NOTICE.** Re-read on 2026-10-09 at ~22:45 Cairo from a tree holding `origin/main` 6f3debd85,
+after PR 5702 ("September's Office split recalculates like October") merged and after a peer session
+released the six Sohag customer-map holds: **492 stored cells against 732 the rule now says, 490
+cells across 49 line x area pairs, 938,579.63 EGP landing on a different area**, sum of differences
+−0.00 and every line's unit total agreeing — so the units-based publication drift check is blind to
+all of it by construction. Worst pairs CA5 −482,704.23 / CA3 +418,126.96 / CA4 +157,348.48 /
+CA6 +50,884.35 (the Office recalculation) and UE5 −236,479.96 / UE6 +220,361.45 (the Sohag moves),
+D11 −118,520.20.
+
+- 🔴 **A MERGE CAN STALE THE NET, AND NOTHING FIRES BECAUSE THE *RULE* CHANGED — BUT THE NEXT RE-MAP
+  OR UPLOAD DOES REPAIR IT, because every writer recomputes the WHOLE period from production's
+  current code.** Measured 2026-10-09: the 492-cell net left stale by PR 5702 at 22:45 was rewritten
+  to **732 cells at 23:17:22 Cairo** by a customer-map re-resolve (no upload after 21:46:35), the
+  attribution rollup re-stamped 23:17:23, and `check-store-split-drift.ts 2026-09` from a tree at
+  `origin/main` 6bd222830 read *"no drift. 732 frozen cells match the rule."* So after a rule PR
+  **MEASURE before rebuilding** — his "rebuild September's store split" was already satisfied, and a
+  manual `--apply` would have rewritten 732 production rows to identical values. What stays true: with
+  NO further data path firing the staleness is permanent, so the drift script is still the only alarm.
+  The eight writers are all data paths; none of them fires because the *rule* changed. So after any PR that
+  moves the split or the Office respread, `check-store-split-drift.ts <period>` is the only thing
+  that will say so — and it must run from a tree carrying that PR, or it compares the stored net
+  against the OLD rule and reports a clean month.
+- **Harmless until he publishes, by exactly the same mechanism as the withdrawal case:** 2026-09 held
+  0 LIVE publication rows (the one Anti Infective row carries `unpublished_at` 16:12 Cairo), so
+  `isFrozenStoreSplitPeriod` is false and every closing read recomputes live. The exposure is the
+  publish, which freezes whatever is stored.
