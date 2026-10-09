@@ -593,6 +593,10 @@ export type MarketingCoverageReportRow = MarketingRoiReportRow & {
   pharmacyKeys: string[];
   /** Distinct pharmacy ids targeted — the identity the distinct-pharmacy KPI counts. */
   pharmacyIds: string[];
+  /** Display name per `productCodes` entry (same order) — the code itself when no name is on file. */
+  productNames: string[];
+  /** Display name per `distributorCodes` entry (same order) — the code itself when no name is on file. */
+  distributorNames: string[];
 };
 
 /** MarketingRoiKpiBand + the 2 counts unique to this report. */

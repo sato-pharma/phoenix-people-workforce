@@ -60,6 +60,8 @@ export function sampleReport(): MarketingCoverageReport {
         approverRoleKeys: ["National Sales Manager"],
         productCodes: ["GU001"],
         distributorCodes: ["IS"],
+        productNames: ["Gutrin"],
+        distributorNames: ["Ibnsina"],
         pharmacyKeys: ["12345", "67890"],
         pharmacyIds: ["pharmacy-a", "pharmacy-b"],
       },

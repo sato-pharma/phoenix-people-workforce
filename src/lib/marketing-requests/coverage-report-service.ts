@@ -808,6 +808,8 @@ export async function getMarketingCoverageReport(
       approverRoleKeys: entry.approverRoleKeys,
       productCodes: entry.productCodes,
       distributorCodes: entry.distributorCodes,
+      productNames: entry.productNames,
+      distributorNames: entry.distributorNames,
       pharmacyKeys: entry.pharmacyKeys,
       pharmacyIds: entry.pharmacyIds,
     };
