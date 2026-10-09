@@ -13,6 +13,7 @@ import {
   visibleDeductionsCategories,
   type DeductionsCategory,
 } from "@/lib/deductions/types.ts";
+import { findSameDayOverlaps, type SameDayOverlap } from "@/lib/deductions/day-overlap.ts";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
   phxButtonApproveDenseClassName,
@@ -715,12 +716,25 @@ const BULK_DECIDE_CONCURRENCY = 3;
  * stops the others, and only the rows that succeeded are un-ticked, so the failures stay selected
  * for a retry.
  */
+/** Two rows charging one employee on one day — see lib/deductions/day-overlap.ts. */
+function SameDayBadge({ overlap }: { overlap: SameDayOverlap | undefined }) {
+  if (!overlap) return null;
+  const days = overlap.dates.map((date) => dayOfMonth(date)).join(", ");
+  return (
+    <span className="mr-1.5 inline-block whitespace-nowrap rounded-sm border border-red-300 bg-red-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-red-700">
+      Same day on another row · {days}
+    </span>
+  );
+}
+
 function BulkDecideBar({
   selectedRows,
+  overlaps,
   onDecided,
   onFinished,
 }: {
   selectedRows: CandidateApiRow[];
+  overlaps: ReadonlyMap<string, SameDayOverlap>;
   onDecided: (candidateId: string, decision: CandidateApiRow["decision"]) => void;
   onFinished: (succeededIds: string[]) => void;
 }) {
@@ -734,6 +748,15 @@ function BulkDecideBar({
 
   const count = selectedRows.length;
   const totalAmount = selectedRows.reduce((sum, row) => sum + (appliedAmountOf(row) ?? 0), 0);
+  // Employees for whom BOTH rows of a same-day pair are ticked: approving them together double-charges.
+  const selectedIdSet = new Set(selectedRows.map((row) => row.id));
+  const clashingNames = [
+    ...new Set(
+      selectedRows
+        .filter((row) => overlaps.get(row.id)?.otherIds.some((otherId) => selectedIdSet.has(otherId)))
+        .map((row) => employeeLabel(row)),
+    ),
+  ];
 
   async function apply(status: (typeof DECISION_STATUSES)[number]) {
     const rows = selectedRows;
@@ -806,6 +829,11 @@ function BulkDecideBar({
               <p className="text-xs font-semibold text-slate-800">
                 Record “{pendingStatus}” on {count} deduction{count === 1 ? "" : "s"} ({money(totalAmount)} EGP)?
               </p>
+              {clashingNames.length > 0 && pendingStatus === "Approved for Payroll" ? (
+                <p className="text-xs font-semibold text-red-700">
+                  Two of the selected rows charge the same day for {clashingNames.join(", ")}. Approving both charges that day twice — untick one first.
+                </p>
+              ) : null}
               <div className="flex flex-wrap gap-1.5">
                 <button
                   className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
@@ -1319,6 +1347,8 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   // Ticked candidate ids for the bulk decision. Ids that are no longer decidable (a refetch, a
   // push) simply drop out of `selectedRows` below, so a stale tick can never be decided.
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Rows that charge the same employee on the same day as another row on this tab.
+  const overlaps = useMemo(() => findSameDayOverlaps(rows), [rows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1456,8 +1486,14 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
           ) : null}
         </div>
       ) : null}
+      {overlaps.size > 0 ? (
+        <div className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-800">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {overlaps.size} row{overlaps.size === 1 ? "" : "s"} charge an employee on a day another row already charges — marked in red below. Approve one, set the other to Do Not Take Action.
+        </div>
+      ) : null}
       {canDecide ? (
-        <BulkDecideBar onDecided={handleDecided} onFinished={handleBulkFinished} selectedRows={selectedRows} />
+        <BulkDecideBar onDecided={handleDecided} onFinished={handleBulkFinished} overlaps={overlaps} selectedRows={selectedRows} />
       ) : null}
 
       {!loading && rows.length === 0 ? (
@@ -1584,6 +1620,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                               Needs your review
                             </span>
                           ) : null}
+                          <SameDayBadge overlap={overlaps.get(row.id)} />
                           {row.reason ?? "—"}
                         </td>
                         <td className="px-4 py-2.5">
@@ -1659,6 +1696,11 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                   {(row.holidayBridges ?? []).length > 0 ? (
                     <p className="mt-1">
                       <HolidayBridgeCell row={row} />
+                    </p>
+                  ) : null}
+                  {overlaps.has(row.id) ? (
+                    <p className="mt-1">
+                      <SameDayBadge overlap={overlaps.get(row.id)} />
                     </p>
                   ) : null}
                   {row.reason ? <p className="mt-1 text-xs text-slate-600">{row.reason}</p> : null}

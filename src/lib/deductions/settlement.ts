@@ -34,7 +34,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import { DEDUCTION_COLLECTORS, collectorOutputParts, type DeductionCollectorKey } from "./collect.ts";
-import { insertCandidateDrafts, type CandidateDraftInsertResult } from "./service.ts";
+import { splitDraftsByClaimedDays } from "./conflict.ts";
+import { insertCandidateDrafts, listCandidatesForMonth, type CandidateDraftInsertResult } from "./service.ts";
+import type { DeductionsCategory } from "./types.ts";
 
 export type LastWorkingDateParts = { year: number; month: number; day: number };
 
@@ -200,13 +202,53 @@ export async function collectSettlementForLeaver(input: {
     if (mine.length === 0) {
       return { created: 0, skippedExisting: 0, warnings: [] };
     }
+    // THIS PATH CANNOT RETIRE AN EARLIER ROW, so it must never add one beside it. The draft's key
+    // (`leaver_<hr>_<month>`) is not the normal scan's per-day key, so the unique index lets both in —
+    // 2026-09 production: an approved and a pending row for the same employee-day. A live read that
+    // fails holds EVERYTHING back (fail closed): adding a duplicate is the expensive mistake.
+    const sourceLabel = `${collector.label} (final settlement)`;
+    const warnings: string[] = [];
+    const live: Awaited<ReturnType<typeof listCandidatesForMonth>> = [];
+    try {
+      const scopes = new Set(mine.map((draft) => `${draft.monthKey}\u0000${draft.category}`));
+      for (const scope of scopes) {
+        const [monthKey, category] = scope.split("\u0000");
+        live.push(
+          ...(await listCandidatesForMonth({
+            monthKey,
+            category: category as DeductionsCategory,
+            employeeHrIdCompact: wanted,
+          })),
+        );
+      }
+    } catch (error) {
+      return {
+        created: 0,
+        skippedExisting: 0,
+        warnings: [
+          `${sourceLabel}: nothing was added — the existing deductions for ${eligibility.employeeName ?? "this employee"} could not be read to rule out a double charge (${error instanceof Error ? error.message : String(error)}).`,
+        ],
+      };
+    }
+    const { keep, held } = splitDraftsByClaimedDays(mine, live);
+    for (const entry of held) {
+      warnings.push(
+        `${sourceLabel}: ${eligibility.employeeName ?? "this employee"} already has a live deduction on ${entry.claimedDates.join(", ")} — not added again.` +
+          (entry.openDates.length > 0
+            ? ` ${entry.openDates.join(", ")} ${entry.openDates.length === 1 ? "is" : "are"} not covered by it; clear or edit the earlier row, then run the settlement again.`
+            : ""),
+      );
+    }
+    if (keep.length === 0) return { created: 0, skippedExisting: held.length, warnings };
+
     // insertCandidateDrafts, NEVER reconcileCandidateDrafts — see the module
     // header. A one-employee draft set would supersede the whole month.
-    return await insertCandidateDrafts({
+    const inserted = await insertCandidateDrafts({
       createdBy: input.createdBy,
-      drafts: mine,
-      sourceLabel: `${collector.label} (final settlement)`,
+      drafts: keep,
+      sourceLabel,
     });
+    return { ...inserted, skippedExisting: inserted.skippedExisting + held.length, warnings: [...warnings, ...inserted.warnings] };
   } catch (error) {
     return {
       created: 0,
