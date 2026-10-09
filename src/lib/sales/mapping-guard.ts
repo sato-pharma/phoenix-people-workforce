@@ -163,6 +163,7 @@ type HoldRow = {
   db_role: string;
   entity_key: string;
   id: number;
+  row_id: number | null;
   reasons: string[] | null;
   table_name: string;
   before_json: Record<string, unknown> | null;
@@ -290,11 +291,24 @@ export type HeldMappingChange = {
   id: number;
   /** "customer mapping" | "brick" | "area", never a table name. */
   kind: string;
+  /**
+   * The table and row this hold is about.
+   *
+   * Carried because the two things added on 2026-10-09 — the money behind a hold, and the lock that
+   * makes an answer final — both need the row, and neither can be recovered from the reader-facing
+   * fields: `subject` is "IS / 360956" for a customer and a bare brick id for a brick, and `kind`
+   * is a label chosen for him.
+   */
+  tableName: string;
+  rowId: number;
   /** The pharmacy, brick or area this is about, named the way he reads it. */
   subject: string;
   /** Where it sits today, and where the change wanted to put it. */
   from: string;
   to: string;
+  /** The same two sides as bare brick ids, so the normalizer's answer can be compared to them. */
+  fromBrickId: string;
+  toBrickId: string;
   reasons: string[];
   writer: string;
   createdAt: string;
@@ -366,7 +380,7 @@ export async function listHeldMappingChanges(limit = 200): Promise<HeldMappingCh
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("sos_map_change_holds")
-    .select("id,table_name,entity_key,reasons,db_role,app_actor,created_at,notified_at,before_json,after_json")
+    .select("id,row_id,table_name,entity_key,reasons,db_role,app_actor,created_at,notified_at,before_json,after_json")
     .eq("status", "pending")
     .order("created_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 500));
@@ -388,15 +402,22 @@ export async function listHeldMappingChanges(limit = 200): Promise<HeldMappingCh
     brickNames.set(String(row.brick_id).trim().toUpperCase(), String(row.brick_name ?? "").trim());
   }
 
+  const brickIdOf = (side: Record<string, unknown> | null) =>
+    String((side ?? {})["brick_id"] ?? "").trim().toUpperCase();
+
   return rows.map((row) => ({
     createdAt: row.created_at,
     from: describeSide(row.table_name, row.before_json ?? {}, areaNames, brickNames),
+    fromBrickId: brickIdOf(row.before_json),
     id: row.id,
     kind: TABLE_LABEL[row.table_name] ?? row.table_name,
     notified: row.notified_at !== null,
     reasons: row.reasons ?? [],
+    rowId: Number(row.row_id ?? 0),
     subject: row.entity_key,
+    tableName: row.table_name,
     to: describeSide(row.table_name, row.after_json ?? {}, areaNames, brickNames),
+    toBrickId: brickIdOf(row.after_json),
     when: formatCairo(row.created_at),
     writer: row.app_actor ?? `${row.db_role} (direct database access)`,
   }));
@@ -416,18 +437,84 @@ export type MappingHoldDecision = "approved" | "rejected";
  * transaction (owner decision 2026-09-18, "Approving one there also moves its unlocked-month
  * sales"). `brickMove` says what moved; it is null for everything else. The moved files' totals are
  * rebuilt afterwards (brick-moves.ts).
+ *
+ * 🔴 `lock` IS WHAT MAKES THE ANSWER FINAL, AND WITHOUT IT NEITHER BUTTON DECIDES THE CUSTOMER
+ * (owner, 2026-10-09: "add the lock button and the money on each hold row"). An approval writes the
+ * INCOMING source — `sheet-verified` for an upload's self-heal — so the next file that disagrees is
+ * held again; a refusal writes nothing to the mapping at all. Only `confidence = 100` is skipped
+ * outright by the monthly self-heal, and `p_lock` is what stamps it, on either answer.
  */
 export async function decideMappingHold(input: {
   holdId: number;
   decision: MappingHoldDecision;
   actor: string;
-}): Promise<{ ok: boolean; reason?: string; brickMove: BrickSalesMove | null }> {
+  lock?: boolean;
+}): Promise<{ ok: boolean; reason?: string; brickMove: BrickSalesMove | null; locked: boolean }> {
   const { data, error } = await getSupabaseAdmin().rpc("sos_map_guard_decide_and_move_sales", {
     p_actor: input.actor,
     p_decision: input.decision,
     p_hold_id: input.holdId,
+    p_lock: input.lock === true,
   });
   if (error) throw error;
-  const result = (data ?? {}) as { ok?: boolean; reason?: string; brickMove?: unknown };
-  return { brickMove: parseBrickSalesMove(result.brickMove), ok: result.ok === true, reason: result.reason };
+  const result = (data ?? {}) as { ok?: boolean; reason?: string; brickMove?: unknown; locked?: boolean };
+  return {
+    brickMove: parseBrickSalesMove(result.brickMove),
+    locked: result.locked === true,
+    ok: result.ok === true,
+    reason: result.reason,
+  };
+}
+
+export type MappingHoldOutcome = {
+  holdId: number;
+  ok: boolean;
+  reason?: string;
+  locked: boolean;
+  brickMove: BrickSalesMove | null;
+};
+
+/**
+ * Decide several holds in one pass — the multi-select he asked for on 2026-10-09, the same night he
+ * was handed 92 customers to answer one row at a time.
+ *
+ * SEQUENTIAL, AND EACH HOLD STANDS ALONE. Not one transaction: a hold whose target brick was
+ * switched off raises P0001 inside the database on purpose, and inside a single transaction that one
+ * refusal would roll back every decision taken before it in the same click. So each is sent on its
+ * own, a failure is recorded against its own hold and the rest carry on — and the caller reports
+ * what landed rather than a single success or failure for the batch.
+ */
+export async function decideMappingHolds(input: {
+  holdIds: readonly number[];
+  decision: MappingHoldDecision;
+  actor: string;
+  lock?: boolean;
+}): Promise<MappingHoldOutcome[]> {
+  const outcomes: MappingHoldOutcome[] = [];
+  for (const holdId of input.holdIds) {
+    try {
+      const result = await decideMappingHold({
+        actor: input.actor,
+        decision: input.decision,
+        holdId,
+        lock: input.lock,
+      });
+      outcomes.push({ ...result, holdId });
+    } catch (error) {
+      outcomes.push({
+        brickMove: null,
+        holdId,
+        locked: false,
+        ok: false,
+        reason: errorTextOf(error),
+      });
+    }
+  }
+  return outcomes;
+}
+
+/** A refusal the database wrote on purpose reads better than "something went wrong". */
+function errorTextOf(error: unknown): string {
+  const message = String((error as { message?: unknown } | null)?.message ?? "").trim();
+  return message.length > 0 ? message : "That did not go through.";
 }

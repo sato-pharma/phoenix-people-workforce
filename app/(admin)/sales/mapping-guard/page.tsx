@@ -12,6 +12,8 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { listHeldMappingChanges, type HeldMappingChange } from "@/lib/sales/mapping-guard";
+import { loadHoldDetails } from "@/lib/sales/mapping-guard-detail";
+import { type HoldDetail } from "@/lib/sales/mapping-guard-hold-shape";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,10 +39,17 @@ export default async function MappingGuardPage() {
   }
 
   let holds: HeldMappingChange[] = [];
+  // What each hold is worth, what the distributor's own file said about that customer, and what the
+  // normalizer would answer — the three things he asked for on 2026-10-09. Loaded here, once, for
+  // every hold on the page: the suggestion pipeline reads the whole live customer map, so paying it
+  // per row would be unusable at the 92 customers he was handed that night. Each layer fails on its
+  // own inside the loader, so a hold is still decidable when one of them cannot be read.
+  let details: Record<number, HoldDetail> = {};
   let unavailable = false;
   try {
     await assertPermission(accessContext, "sales", "import");
     holds = await listHeldMappingChanges();
+    details = await loadHoldDetails(holds);
   } catch {
     // The table is absent until the migration is applied, and a missing table answers PGRST205
     // rather than 42P01. Say so plainly instead of rendering an empty state that reads as "nothing
@@ -69,7 +78,7 @@ export default async function MappingGuardPage() {
           </p>
         </div>
       ) : (
-        <MappingGuardReview initialHolds={holds} />
+        <MappingGuardReview initialDetails={details} initialHolds={holds} />
       )}
     </div>
   );
