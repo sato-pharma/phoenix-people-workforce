@@ -1,16 +1,26 @@
 /**
  * Phoenix CRM — the integrity board, for the Super Admin and the SFE Manager.
  *
- * THREE DETECTORS FILE HERE, and from 2026-09-27 the row says which. The position checks judge where
+ * FIVE DETECTORS FILE HERE, and from 2026-09-27 the row says which. The position checks judge where
  * the phone said it was; the photo sweep judges whether the picture is a new picture; the signboard
- * pass judges whether the sign on the building names the customer it was validated for. They share
- * this table and nothing else — a capture can carry one verdict from each, which is why `source` is
- * part of the unique key rather than a label bolted on afterwards.
+ * pass judges whether the sign on the building names the customer it was validated for; the
+ * capture-trust check judges a place's two readings against each other; and the behaviour pass judges
+ * a rep's whole month, in its own table. They share this table and nothing else — a capture can carry
+ * one verdict from each, which is why `source` is part of the unique key rather than a label bolted
+ * on afterwards.
  *
- * 🔴 AND THE READER MUST KNOW ALL THREE BY NAME. `signboard` began filing on 2026-10-08 and was not
+ * 🔴 AND THE READER MUST KNOW ALL FIVE BY NAME. `signboard` began filing on 2026-10-08 and was not
  * added to `IntegritySource`, so for a day its cases printed as **Position** on the owner's board and
  * the detector tally hid them — five real cases about five named people, labelled as the one kind of
- * evidence they are not. A fourth detector is a change to this file, never only to the writer's.
+ * evidence they are not. `capture_trust` shipped in the SAME migration with the same omission and
+ * escaped only by having filed nothing yet: it files on a place validation rather than nightly, so
+ * the defect was waiting on the next rep whose two readings disagree. Both are in `INTEGRITY_SOURCES`
+ * now, and the type, the labels, the row's own coercion and the tally are all derived from that one
+ * list — so a sixth detector cannot be half-added again.
+ *
+ * SETTLING ONE IS THE SUPER ADMIN'S, AND IT DELETES NOTHING. He writes why, and the row keeps the
+ * flags it was settled on (`settled_flags`). A case is settled only while those still equal the row's
+ * current flags, so a fresh finding on the same subject reopens it — see `settlementOf`.
  *
  * This is the ONLY reader of `phoenix_crm_location_integrity`. It lives behind `/admin`, which no rep
  * can open at all, so the evidence cannot leak into the field app through a role mistake in a tab or
@@ -36,10 +46,18 @@
  * a thing that is here.
  */
 
-import { notFoundError } from "@/lib/http/api-errors";
+import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { PHOENIX_CRM_BEHAVIOUR_LABELS, type PhoenixCrmBehaviourFlag } from "@/lib/phoenix-crm/behaviour-integrity";
 import { PHOENIX_CRM_PHOTO_LABELS, type PhoenixCrmPhotoFlag } from "@/lib/phoenix-crm/duplicate-photos";
+import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import type { FraudScanCase } from "@/lib/phoenix-crm/fraud-scan-rules";
+import {
+  INTEGRITY_NOTE_LIMIT,
+  INTEGRITY_NOTE_REQUIRED,
+  readIntegritySettlement,
+  type IntegritySettlement,
+} from "@/lib/phoenix-crm/integrity-settlement";
+import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
   judgeLaterSignboardReading,
   PHOENIX_CRM_INTEGRITY_LABELS,
@@ -49,7 +67,7 @@ import {
 } from "@/lib/phoenix-crm/location-integrity";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
-import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -57,14 +75,31 @@ type Row = Record<string, unknown>;
 /**
  * Which detector filed a case. The board is the one place they are read together.
  *
- * 🔴 EVERY DETECTOR THAT WRITES TO THE TABLE BELONGS IN THIS UNION, and `signboard` proves why. It
- * started filing cases on 2026-10-08 and was never added here, so the five it had filed by the 9th
- * fell through `row.source === "photo" || "behaviour" ? … : "gps"` and printed on the owner's board
- * as **Position** — mock-location evidence, which is the one thing they are not. The detector
- * breakdown hid it too: with signboard folded into gps there was only one source in the tally, and
- * the callout that names them renders only when there are two or more.
+ * 🔴 EVERY DETECTOR THAT WRITES TO THE TABLE BELONGS IN THIS LIST, and `signboard` proves why. It
+ * started filing cases on 2026-10-08 and was never added, so the five it had filed by the 9th fell
+ * through `row.source === "photo" || "behaviour" ? … : "gps"` and printed on the owner's board as
+ * **Position** — mock-location evidence, which is the one thing they are not. The detector breakdown
+ * hid it too: with signboard folded into gps there was only one source in the tally, and the callout
+ * that names them renders only when there are two or more.
+ *
+ * 🔴 AND `capture_trust` WAS THE SAME DEFECT, UNSPRUNG. It was allowed by the table's `source` CHECK
+ * in the same migration (20261008023051) and was missing from here too; it had filed 0 rows on
+ * production by 2026-10-09 only because it files on a place validation rather than on a nightly pass,
+ * so the first rep to validate a place whose photo fix and capture pin disagree would have had his
+ * case printed as Position. It is in the list on the evidence that it CAN file, not on a count.
+ *
+ * It is ONE list, exported, and everything else is derived from it — the type, the labels, the
+ * coercion of a row's own `source`, and the tally. Adding a detector to the table and not to this
+ * array is what `tests/phoenix-crm-integrity-settle.test.ts` reads every filer's `source:` literal to
+ * catch, because the compiler cannot: the column is text and the filers write string literals.
  */
-export type IntegritySource = "gps" | "photo" | "behaviour" | "signboard";
+export const INTEGRITY_SOURCES = ["gps", "photo", "behaviour", "signboard", "capture_trust"] as const;
+
+export type IntegritySource = (typeof INTEGRITY_SOURCES)[number];
+
+function isIntegritySource(value: unknown): value is IntegritySource {
+  return typeof value === "string" && (INTEGRITY_SOURCES as readonly string[]).includes(value);
+}
 
 /**
  * The detectors a viewer who is NOT the Super Admin may read — an ALLOW-LIST, never a subtraction.
@@ -93,6 +128,10 @@ const SOURCE_LABELS: Record<IntegritySource, string> = {
   photo: "Photo",
   behaviour: "Pattern",
   signboard: "Signboard",
+  // The place's own two readings against each other — the photo's shutter fix and the capture pin.
+  // "Capture trust" is what the check is called everywhere else in the module; it is not a position
+  // verdict and must never read as one on this screen.
+  capture_trust: "Capture trust",
 };
 
 
@@ -144,9 +183,24 @@ export type IntegrityCase = {
   signText: string | null;
   /** A later reading of the same sign, when one has been taken. Signboard cases only. */
   laterReading: IntegrityLaterReading | null;
+  /**
+   * The Super Admin's own settlement, when this case carries one that still describes it.
+   *
+   * Null for a case nobody has settled AND for one that was settled and has since been flagged
+   * again — the two are the same thing to a reader, because both mean somewhere to look. `byName`
+   * is the person's name; the HR id is kept beside it for the record, never printed.
+   */
+  settlement: IntegritySettlement | null;
   signals: Record<string, unknown>;
   isTest: boolean;
 };
+
+/**
+ * Re-exported so every existing reader of this module keeps one import. The type and the rule behind
+ * it live in `@/lib/phoenix-crm/integrity-settlement`, which the board's own button can import
+ * without pulling the service-role client into the browser bundle.
+ */
+export type { IntegritySettlement };
 
 /**
  * A rep's MONTH, as the behaviour pass judged it. Not a capture, which is why it is its own list.
@@ -183,6 +237,16 @@ export type IntegrityBoard = {
    * flag is not one, and they keep their own section with both readings side by side.
    */
   withdrawn: IntegrityCase[];
+  /**
+   * Cases the Super Admin has looked at and settled, with his reason on each.
+   *
+   * 🔴 OUT OF THE COUNTERS, NEVER OUT OF THE PAGE, AND NEVER DELETED. A settled case keeps its row,
+   * its flags and its evidence; it leaves the counters because a counter is a call to look and a case
+   * he has already looked at is not one. It comes BACK the moment its subject is flagged again —
+   * `settlement` is read as null once the stored flags no longer match the row's, so the case
+   * re-enters `cases` on its own and is counted again.
+   */
+  settled: IntegrityCase[];
   /** How many of the listed cases carry at least one individually damning flag. */
   strongCount: number;
   /** Reps appearing in the list, most cases first — where a pattern shows rather than an incident. */
@@ -214,6 +278,48 @@ export function canReadIntegrityBoard(viewer: PhoenixCrmViewer): boolean {
  */
 export function readsPositionCases(viewer: PhoenixCrmViewer): boolean {
   return viewer.isSuperAdmin;
+}
+
+/**
+ * May this viewer SETTLE a case? The Super Admin alone — the same shape as every other decision in
+ * Phoenix CRM (`canDecideValidationReviews`), and narrower than reading the board.
+ *
+ * 🔴 THE SFE MANAGER READS THIS BOARD AND DOES NOT SETTLE ON IT (owner, 2026-10-09, on keeping the
+ * signboard cases to the Super Admin). Settling is a judgement that a flag about a named person needs
+ * nothing further, which is the one decision on this screen; reading it is not. A test persona is
+ * refused as well, as it is everywhere else — a trial account must not be able to close a real case
+ * about a real rep.
+ */
+export function canSettleIntegrityCases(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
+}
+
+/**
+ * The settlement a row still carries, or null.
+ *
+ * 🔴 NULL IS RETURNED FOR A ROW WHOSE FLAGS HAVE MOVED SINCE, and that is the reopening mechanism.
+ * The filers upsert on (subject_kind, subject_id, source), so a new finding on the same subject
+ * REPLACES `flags` in place and leaves `settled_flags` describing a case that no longer exists. The
+ * board then shows it as standing again, in the counters, exactly as if it had never been settled —
+ * without one filer being taught about settling, and without any job having to go back and clear
+ * settlements.
+ *
+ * A half-written settlement cannot exist (the table's own CHECK), but it is still read defensively:
+ * a missing author or note makes the whole thing null rather than printing a settlement nobody owns.
+ */
+// `PeopleNames` and not `Map<string, string>`: the loader returns a ReadonlyMap, which a mutable Map
+// parameter refuses. Naming the module's own type also says this function never writes to it.
+function settlementOf(row: Row, people: PeopleNames): IntegritySettlement | null {
+  const settlement = readIntegritySettlement({
+    settledAt: row.settled_at,
+    settledBy: row.settled_by,
+    settledNote: row.settled_note,
+    settledFlags: row.settled_flags,
+    flagsNow: Array.isArray(row.flags) ? row.flags : [],
+  });
+  if (!settlement) return null;
+  // The one thing added on top of the pure rule: the person's NAME, never his code.
+  return { ...settlement, byName: nameOf(people, settlement.byHrId) || settlement.byHrId };
 }
 
 /**
@@ -268,7 +374,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("phoenix_crm_location_integrity")
-    .select("id, subject_kind, subject_id, source, seat_id, rep_hr_id, customer_id, captured_at, created_at, visit_date, lat, lon, accuracy_meters, device_mocked, flags, strong, signals, is_test")
+    .select("id, subject_kind, subject_id, source, seat_id, rep_hr_id, customer_id, captured_at, created_at, visit_date, lat, lon, accuracy_meters, device_mocked, flags, strong, signals, is_test, settled_at, settled_by, settled_note, settled_flags")
     .order("strong", { ascending: false })
     .order("captured_at", { ascending: false })
     .limit(BOARD_LIMIT);
@@ -284,12 +390,23 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   throwIfError(error);
   const rows = (data ?? []) as Row[];
   if (rows.length === 0 && behaviourRead.cases.length === 0) {
-    return { cases: [], withdrawn: [], strongCount: 0, byRep: [], bySource: [], behaviour: [], behaviourNotChecked: behaviourRead.notChecked };
+    return { cases: [], withdrawn: [], settled: [], strongCount: 0, byRep: [], bySource: [], behaviour: [], behaviourNotChecked: behaviourRead.notChecked };
   }
 
   const customerIds = [...new Set(rows.map((row) => (row.customer_id ? String(row.customer_id) : null)).filter((id): id is string => Boolean(id)))];
   const [people, customers] = await Promise.all([
-    loadPeopleNames([...new Set([...rows.map((row) => String(row.rep_hr_id ?? "")), ...behaviourRead.repHrIds].filter(Boolean))]),
+    // Whoever SETTLED a case is loaded with the reps, because the board prints his name and never his
+    // HR id — the owner's standing rule holds for the person who closed the case as much as for the
+    // person it is about.
+    loadPeopleNames([
+      ...new Set(
+        [
+          ...rows.map((row) => String(row.rep_hr_id ?? "")),
+          ...rows.map((row) => String(row.settled_by ?? "")),
+          ...behaviourRead.repHrIds,
+        ].filter(Boolean),
+      ),
+    ]),
     customerIds.length === 0
       ? Promise.resolve({ data: [] as Row[] })
       : supabase.from("phoenix_crm_customers").select("id, name").in("id", customerIds),
@@ -374,11 +491,15 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       capturedAt: String(row.captured_at),
       visitDate: row.visit_date ? String(row.visit_date) : null,
       strong: row.strong === true,
-      source: row.source === "photo" || row.source === "behaviour" || row.source === "signboard" ? row.source : "gps",
+      // Every detector in the list by name. The fallback is `gps` only for a value the list does not
+      // hold at all, which is a detector somebody added to the table without adding it here — the one
+      // case the tests refuse.
+      source: isIntegritySource(row.source) ? row.source : "gps",
       flags,
       reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
       signText: typeof signals.signText === "string" && signals.signText.trim() !== "" ? signals.signText : null,
       laterReading: laterReadingFor(row),
+      settlement: settlementOf(row, people),
       placeDistanceMeters: row.subject_kind === "place"
         ? null
         : visitDistances.get(String(row.subject_id))?.distanceMeters ?? null,
@@ -399,8 +520,17 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // is not deleted, not hidden, and not settled on anybody's behalf. Whether to act on one is the
   // owner's decision, exactly as it was before — he now gets to make it knowing the sign was read
   // again and what it said the second time.
-  const cases = allCases.filter((entry) => entry.laterReading === null || entry.laterReading.supportsFlag);
+  //
+  // And a case the Super Admin has settled leaves them too, for a different reason: he has looked.
+  // 🔴 WITHDRAWN WINS OVER SETTLED, deliberately. Whether a later reading still supports the flag is
+  // a fact about the EVIDENCE; settling is a decision about the case. The withdrawn section's claim —
+  // "each of these was read again, to a verdict that does not carry the flag" — has to stay true of
+  // every row in it, so a withdrawn case that also carries a settlement is listed there with the two
+  // readings, not moved out of the one section that explains why it is not a finding.
+  const standing = allCases.filter((entry) => entry.laterReading === null || entry.laterReading.supportsFlag);
   const withdrawn = allCases.filter((entry) => entry.laterReading !== null && !entry.laterReading.supportsFlag);
+  const cases = standing.filter((entry) => entry.settlement === null);
+  const settled = standing.filter((entry) => entry.settlement !== null);
 
   const perRep = new Map<string, { repHrId: string; repName: string; cases: number; strongCases: number }>();
   for (const entry of cases) {
@@ -413,17 +543,101 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   return {
     cases,
     withdrawn,
+    // Most recently settled first: the last decision he took is the one he is most likely to be
+    // coming back to.
+    settled: [...settled].sort((left, right) => String(right.settlement?.at ?? "").localeCompare(String(left.settlement?.at ?? ""))),
     strongCount: cases.filter((entry) => entry.strong).length,
     byRep: [...perRep.values()].sort((left, right) => right.strongCases - left.strongCases || right.cases - left.cases),
-    // Every detector in the union, so adding one can never leave its cases counted under another's
+    // Every detector in the list, so adding one can never leave its cases counted under another's
     // name — the defect that printed five signboard cases as Position until 2026-10-09.
-    bySource: (["gps", "photo", "behaviour", "signboard"] as const).flatMap((source) => {
+    bySource: INTEGRITY_SOURCES.flatMap((source) => {
       const count = cases.filter((entry) => entry.source === source).length;
       return count === 0 ? [] : [{ source, label: integritySourceLabel(source), cases: count }];
     }),
     behaviour: behaviourRead.cases.map((entry) => ({ ...entry, repName: nameOf(people, entry.repHrId) || entry.repHrId })),
     behaviourNotChecked: behaviourRead.notChecked,
   };
+}
+
+/**
+ * Settle one case: the Super Admin has looked at it and it needs nothing further.
+ *
+ * 🔴 IT IS AN UPDATE OF FOUR COLUMNS AND NOTHING ELSE. The row, its flags, its signals and its
+ * evidence are untouched — settling is a note on the record, never a deletion and never a rewrite of
+ * what the detector found. There is no notification: nobody is told they were flagged (Golden Rule
+ * #1), so nobody can be told a flag about them was closed either.
+ *
+ * 🔴 AND IT STAMPS THE FLAGS IT WAS SETTLED ON, read from the row inside this call rather than sent
+ * by the browser. A client-supplied list would let a settlement claim to cover flags the row does not
+ * carry — which is exactly the state that makes a case stay closed through a new finding. Read here,
+ * so the only thing that can ever be stamped is what the row said at the moment he pressed it.
+ *
+ * The note is REQUIRED. A settled case with no reason is indistinguishable from one settled by
+ * accident, and this table's whole point is being able to come back to it months later.
+ */
+export async function settleIntegrityCase(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ caseId: string; settled: true }> {
+  // 🔴 A 404, NEVER A 403 — the same rule the board itself is refused by. A message reading "only the
+  // Super Admin settles these" tells whoever asked that the board exists, that cases can be closed on
+  // it, and who closes them. Nothing on this table ever explains itself to someone who is not its
+  // audience. Pinned by `tests/phoenix-crm-blind-half.test.ts` §6.
+  if (!canSettleIntegrityCases(viewer)) throw notFoundError("Not found.");
+  const body = (raw && typeof raw === "object" ? raw : {}) as Row;
+  if (!isUuid(body.caseId)) throw validationError("Choose the case to settle.");
+  const note = cleanText(body.note, INTEGRITY_NOTE_LIMIT);
+  if (!note) throw validationError(INTEGRITY_NOTE_REQUIRED);
+  const caseId = String(body.caseId).toLowerCase();
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("phoenix_crm_location_integrity")
+    .select("id, flags")
+    .eq("id", caseId)
+    .maybeSingle();
+  throwIfError(error);
+  const row = data as Row | null;
+  if (!row) throw notFoundError("This case is no longer there. Reload the page.");
+
+  const flagsNow = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag));
+  const updated = await supabase
+    .from("phoenix_crm_location_integrity")
+    .update({
+      settled_at: new Date().toISOString(),
+      settled_by: viewer.hrId.toUpperCase(),
+      settled_note: note,
+      settled_flags: flagsNow,
+    })
+    .eq("id", caseId);
+  throwIfError(updated.error);
+  return { caseId, settled: true };
+}
+
+/**
+ * Put a settled case back among the findings — he has changed his mind, or wants another look.
+ *
+ * All four columns go back to null together, because the table's CHECK allows nothing else: a
+ * settlement exists whole or not at all. No note is required to reopen one. Closing a case about a
+ * named person is the decision that needs a reason on the record; deciding to look again is not, and
+ * demanding one would be a reason not to look.
+ */
+export async function reopenIntegrityCase(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ caseId: string; settled: false }> {
+  // A 404 for the same reason as settling: the refusal says nothing about what was asked for.
+  if (!canSettleIntegrityCases(viewer)) throw notFoundError("Not found.");
+  const body = (raw && typeof raw === "object" ? raw : {}) as Row;
+  if (!isUuid(body.caseId)) throw validationError("Choose the case to reopen.");
+  const caseId = String(body.caseId).toLowerCase();
+
+  const { error } = await getSupabaseAdmin()
+    .from("phoenix_crm_location_integrity")
+    .update({ settled_at: null, settled_by: null, settled_note: null, settled_flags: null })
+    .eq("id", caseId);
+  throwIfError(error);
+  return { caseId, settled: false };
 }
 
 /**
@@ -440,6 +654,12 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
  * Visit subjects only: the window is a Sat–Wed range on `visit_date`, and a PLACE validation case has
  * no visit day to fall in it. Behaviour months are deliberately absent — they are a month's shape,
  * recomputed nightly, not a capture in a week.
+ *
+ * 🔴 A SETTLED CASE IS NOT IN THE SCAN EITHER. Settling has to mean the same thing on every surface
+ * that reads this table, or it means nothing: a case he closed on the board would arrive in Saturday's
+ * scan as a fresh finding and he would close it again. The test is the board's own — the stored flags
+ * must still equal the row's — so a case that was settled and has since been flagged again comes back
+ * here too, which is the point.
  */
 export async function loadIntegrityCasesForWindow(options: {
   fromIso: string;
@@ -448,7 +668,7 @@ export async function loadIntegrityCasesForWindow(options: {
 }): Promise<FraudScanCase[]> {
   let query = getSupabaseAdmin()
     .from("phoenix_crm_location_integrity")
-    .select("subject_kind, rep_hr_id, source, flags, strong")
+    .select("subject_kind, rep_hr_id, source, flags, strong, settled_at, settled_by, settled_note, settled_flags")
     .eq("is_test", false)
     .eq("subject_kind", "visit")
     .gte("visit_date", options.fromIso)
@@ -462,7 +682,11 @@ export async function loadIntegrityCasesForWindow(options: {
 
   const { data, error } = await query;
   throwIfError(error);
-  const rows = (data ?? []) as Row[];
+  // A case the Super Admin has already settled is not a finding for this week. The comparison is
+  // done HERE rather than in the query because the test is `settled_flags = flags`, a column against
+  // a column, which PostgREST cannot ask — and asking only for `settled_at is null` would wrongly
+  // drop a settled case the detectors have since flagged again.
+  const rows = ((data ?? []) as Row[]).filter((row) => settlementOf(row, new Map()) === null);
   if (rows.length === 0) return [];
 
   const people = await loadPeopleNames([...new Set(rows.map((row) => String(row.rep_hr_id ?? "")).filter(Boolean))]);

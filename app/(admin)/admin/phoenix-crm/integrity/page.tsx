@@ -1,12 +1,14 @@
 import { redirect } from "next/navigation";
-import { Eye, ShieldAlert, Undo2, Users } from "lucide-react";
+import { CheckCheck, Eye, ShieldAlert, Undo2, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
+import { IntegritySettleControl } from "@/components/crm-integrity/integrity-settle";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import {
   canReadIntegrityBoard,
+  canSettleIntegrityCases,
   integritySourceLabel,
   loadIntegrityBoard,
   readsPositionCases,
@@ -33,17 +35,24 @@ export const dynamic = "force-dynamic";
  * renders, and one wrong role check there would show a rep that he had been caught. Here there is no
  * such tree to get wrong.
  *
- * Nothing on this page acts. There is no button, no decision, no notification and no write — reading
- * it is the entire feature, and what to do about a case is the owner's call, made with the photo and
- * the day in front of him.
+ * THE ONE THING THIS PAGE DOES IS SETTLE A CASE, and only for the Super Admin. He writes why, the
+ * case leaves the counters, and NOTHING is deleted: the row keeps its flags, its signals and its
+ * evidence, and the settlement is four extra columns beside them. No rep is notified, because no rep
+ * is ever told he was flagged in the first place. What to DO about a case — the rep, the day, the
+ * money — is still his call away from this screen; settling only records that he has looked.
  *
- * 🔴 WHICH IS WHY A FLAG A LATER READING NO LONGER SUPPORTS IS SHOWN, NOT CLEARED. A signboard
- * verdict is not stable — the same photograph read a name at 18:12 and nothing at 18:34 on
- * 2026-10-09 — so four of the five signboard flags on this board that evening were already contra-
- * dicted by the place's own stored verdict, and the page said nothing about it. They now sit in their
- * own section with both readings side by side and out of the three counters, because a counter is a
- * call to look. Nothing is deleted and nothing is settled on his behalf: the table has no resolution
- * column, so clearing one would mean destroying the record of what the detector did.
+ * 🔴 AND A SETTLED CASE COMES BACK ON ITS OWN. The settlement stamps the flags it was taken on, and
+ * a case counts as settled only while those still match the row's — so a detector that files a new
+ * finding on the same subject puts it back among the findings with no filer knowing settling exists.
+ * Settled is "he has looked", never "closed for ever".
+ *
+ * 🔴 A FLAG A LATER READING NO LONGER SUPPORTS IS SHOWN, NOT CLEARED, and that is a different thing
+ * again. A signboard verdict is not stable — the same photograph read a name at 18:12 and nothing at
+ * 18:34 on 2026-10-09 — so four of the five signboard flags on this board that evening were already
+ * contradicted by the place's own stored verdict, and the page said nothing about it. They sit in
+ * their own section with both readings side by side and out of the counters, because a counter is a
+ * call to look. Withdrawn is the EVIDENCE giving way; settled is a DECISION. A case that is both is
+ * listed as withdrawn, so that section's claim stays true of every row in it.
  */
 function cairo(value: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -56,6 +65,14 @@ function cairo(value: string): string {
     hour12: false,
   }).format(new Date(value));
 }
+
+/**
+ * The counter row's grid, by how many of the two conditional counters are showing.
+ *
+ * Written out in full because Tailwind reads the SOURCE: a class assembled at runtime is never
+ * generated, so the row would collapse to one column at every width with nothing to see in the diff.
+ */
+const COUNTER_GRID = ["sm:grid-cols-3", "sm:grid-cols-2 xl:grid-cols-4", "sm:grid-cols-2 xl:grid-cols-5"] as const;
 
 function monthName(month: string): string {
   const [year, index] = month.split("-").map((part) => Number(part));
@@ -166,7 +183,15 @@ function Reasons({ entry }: { entry: IntegrityCase }) {
  * print different facts about the same row: the photo audit of 2026-10-02 found the phone card had
  * silently dropped a whole column, and a second copy of this markup is how that happens again.
  */
-function CaseList({ entries }: { entries: IntegrityCase[] }) {
+function CaseList({ canSettle, entries }: { canSettle: boolean; entries: IntegrityCase[] }) {
+  // One component, placed in both lists, so the table and the phone card can never offer different
+  // actions on the same case. It renders nothing at all for a viewer who may not settle — the SFE
+  // Manager reads this board and does not decide on it (owner, 2026-10-09) — and nothing for a
+  // withdrawn case either: the evidence has already given way, so there is no decision left to take.
+  const Settle = ({ entry }: { entry: IntegrityCase }) =>
+    canSettle && (entry.laterReading === null || entry.laterReading.supportsFlag) ? (
+      <IntegritySettleControl caseId={entry.id} settlement={entry.settlement} />
+    ) : null;
   return (
     <>
       {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
@@ -201,6 +226,9 @@ function CaseList({ entries }: { entries: IntegrityCase[] }) {
                 <td className="px-5 py-4 text-sm text-slate-700">{entry.customerName}</td>
                 <td className="px-5 py-4">
                   <Reasons entry={entry} />
+                  {/* The decision sits under the evidence rather than in a sixth column: the table is
+                      `table-fixed` at five and the fits-the-screen rule merges before it shrinks. */}
+                  <Settle entry={entry} />
                 </td>
                 <td className="px-5 py-4 text-sm text-slate-600">
                   <Position entry={entry} />
@@ -231,6 +259,7 @@ function CaseList({ entries }: { entries: IntegrityCase[] }) {
                 <Position entry={entry} />
               </div>
             </div>
+            <Settle entry={entry} />
           </div>
         ))}
       </div>
@@ -251,6 +280,12 @@ export default async function PhoenixCrmIntegrityPage() {
   // The position cases are the Super Admin's alone (owner, 2026-10-02); the service never queries them
   // for the SFE Manager, so his page must not describe a detector whose cases it will never show him.
   const positions = readsPositionCases(viewer);
+  // Settling is the Super Admin's alone, and the button is simply absent for anybody else. The route
+  // and the service each refuse him as well — this is the UX layer of three, never the gate.
+  const canSettle = canSettleIntegrityCases(viewer);
+  // Three counters always; the two that only mean something once a case has reached that state appear
+  // when it has. A withdrawn or settled case is never silently absent — it is counted by name instead.
+  const extraCounters = (board.withdrawn.length > 0 ? 1 : 0) + (board.settled.length > 0 ? 1 : 0);
 
   return (
     <div className="space-y-5">
@@ -265,9 +300,13 @@ export default async function PhoenixCrmIntegrityPage() {
         icon={<ShieldAlert className="h-3.5 w-3.5" />}
       />
 
-      {/* Four counters when a flag has been withdrawn, three when none has. A withdrawn flag is never
-          silently absent from the page — it leaves the findings and is counted by name instead. */}
-      <div className={`grid gap-3 ${board.withdrawn.length > 0 ? "sm:grid-cols-2 xl:grid-cols-4" : "sm:grid-cols-3"}`}>
+      {/* Three, four or five counters. A withdrawn flag and a settled case each leave the findings and
+          are counted by name instead — never silently absent from the page. The grid stays two-up on a
+          phone and never scrolls sideways whichever way it lands. */}
+      {/* 🔴 WHOLE CLASS NAMES, never a built string: Tailwind generates what it can SEE in the source,
+          so `"xl:grid-cols-" + n` compiles to a class that does not exist and the row silently stays
+          one-up at every width. */}
+      <div className={`grid gap-3 ${COUNTER_GRID[extraCounters]}`}>
         <AdminStatCard
           icon={<ShieldAlert className="h-5 w-5" />}
           label="Strong cases"
@@ -302,11 +341,21 @@ export default async function PhoenixCrmIntegrityPage() {
             size="compact"
           />
         ) : null}
+        {board.settled.length > 0 ? (
+          <AdminStatCard
+            icon={<CheckCheck className="h-5 w-5" />}
+            label="Settled"
+            value={board.settled.length}
+            description="Looked at, with the reason on the record"
+            tone="emerald"
+            size="compact"
+          />
+        ) : null}
       </div>
 
-      {/* Both lists, not just the live one: five withdrawn flags beside the words "nothing flagged"
-          would be the page contradicting itself. */}
-      {board.cases.length === 0 && board.withdrawn.length === 0 ? (
+      {/* Every list, not just the live one: five withdrawn flags or a settled case beside the words
+          "nothing flagged" would be the page contradicting itself. */}
+      {board.cases.length === 0 && board.withdrawn.length === 0 && board.settled.length === 0 ? (
         <AdminCallout tone="success">
           <span>
             {positions
@@ -316,11 +365,25 @@ export default async function PhoenixCrmIntegrityPage() {
         </AdminCallout>
       ) : null}
 
-      {board.cases.length === 0 && board.withdrawn.length > 0 ? (
+      {board.cases.length === 0 && board.withdrawn.length > 0 && board.settled.length === 0 ? (
         <AdminCallout tone="neutral">
           <span>
             Nothing stands. Every flag on this board has been read again since it was filed, and the later reading no longer supports it — they are listed
             below with both readings, and none of them has been deleted.
+          </span>
+        </AdminCallout>
+      ) : null}
+
+      {/* The two can be true at once, and the honest line names both rather than picking one. */}
+      {board.cases.length === 0 && board.settled.length > 0 ? (
+        <AdminCallout tone="neutral">
+          <span>
+            Nothing is waiting. {board.settled.length === 1 ? "One case has" : `All ${board.settled.length} cases have`} been looked at and settled, with the
+            reason on each
+            {board.withdrawn.length > 0
+              ? `, and ${board.withdrawn.length === 1 ? "one more flag has" : `${board.withdrawn.length} more flags have`} been read again to a verdict that no longer carries them`
+              : ""}
+            . Nothing has been deleted, and a settled case comes back here by itself the moment the same subject is flagged again.
           </span>
         </AdminCallout>
       ) : null}
@@ -418,16 +481,26 @@ export default async function PhoenixCrmIntegrityPage() {
 
       {board.cases.length > 0 ? (
         <AdminTableShell title="Cases" description="Newest first, strong signals at the top. Open the visit itself to see the photo that was taken with it.">
-          <CaseList entries={board.cases} />
+          <CaseList canSettle={canSettle} entries={board.cases} />
         </AdminTableShell>
       ) : null}
 
       {board.withdrawn.length > 0 ? (
         <AdminTableShell
           title="Flags a later reading no longer supports"
-          description="Each of these was filed by the signboard pass and the same sign has since been read again, to a verdict that does not carry the flag. A signboard verdict is not a fixed property of the photograph — legibility moves, and the same frame has read a clear name and then nothing minutes apart — so a flag is a reading with a date on it. Both readings are below. Nothing here has been deleted and nothing has been settled: they are out of the counts because they are no longer somewhere to look, not because a decision was taken."
+          description="Each of these was filed by the signboard pass and the same sign has since been read again, to a verdict that does not carry the flag. A signboard verdict is not a fixed property of the photograph — legibility moves, and the same frame has read a clear name and then nothing minutes apart — so a flag is a reading with a date on it. Both readings are below. Nothing here has been deleted and no decision was taken on them: they are out of the counts because they are no longer somewhere to look, which is why there is nothing to settle."
         >
-          <CaseList entries={board.withdrawn} />
+          {/* No settle button here, by the same reasoning: the evidence has already given way. */}
+          <CaseList canSettle={false} entries={board.withdrawn} />
+        </AdminTableShell>
+      ) : null}
+
+      {board.settled.length > 0 ? (
+        <AdminTableShell
+          title="Settled"
+          description="Cases the Super Admin has looked at, each with the reason written on it. They are out of the counters because a counter is a call to look, and nothing about them has been deleted — the flags, the evidence and the detector's own verdict are exactly as they were filed. A settled case is not closed for ever: the settlement is held against the flags it was taken on, so the moment a detector files a new finding on the same subject the case leaves this section by itself and is back among the findings. Settled means it has been looked at, never that the subject is cleared."
+        >
+          <CaseList canSettle={canSettle} entries={board.settled} />
         </AdminTableShell>
       ) : null}
     </div>

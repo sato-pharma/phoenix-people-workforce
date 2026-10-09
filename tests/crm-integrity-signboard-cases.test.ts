@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { judgeLaterSignboardReading } from "@/lib/phoenix-crm/location-integrity";
+import { INTEGRITY_SOURCES } from "@/lib/phoenix-crm/server/integrity-board";
 
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -25,9 +26,11 @@ import { stripComments } from "./support/comment-strip.ts";
 //      re-read and the flags would have stood for ever.
 //
 // The fix is a derivation, not a column: the place row's current verdict is read at board time and
-// a flag it no longer supports is listed apart from the findings. Nothing is deleted — the table has
-// no resolution column, so clearing a flag today would mean destroying the record of what the
-// detector did, and acting on one is the owner's decision in any case.
+// a flag it no longer supports is listed apart from the findings. Nothing is deleted — clearing a
+// flag would destroy the record of what the detector did, and acting on one is the owner's decision
+// in any case. 🔴 Withdrawn is NOT settled: settling arrived the same day as four columns that say
+// WHO looked and on WHICH flags (`tests/phoenix-crm-integrity-settle.test.ts`), and a withdrawn case
+// is the evidence giving way with nobody having decided anything — so it offers no settle button.
 
 function read(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
@@ -124,19 +127,26 @@ function runJudgeTests() {
 function runLoaderTests() {
   const board = read("../src/lib/phoenix-crm/server/integrity-board.ts");
 
+  // 🔴 ONE EXPORTED LIST SINCE 2026-10-09, and the type is derived from it. The union used to be
+  // hand-written and the tally hand-written beside it, which is how `signboard` could be in one and
+  // not the other; `capture_trust` was missing from both. Membership is asserted on the real array
+  // rather than on the text of a type, so the pin cannot be satisfied by a comment.
   assert.ok(
-    // No `s` flag: `[^;]*` already crosses newlines, and dotAll needs an ES2018 target (tsconfig is ES2017).
-    /export type IntegritySource =[^;]*"signboard"/.test(board),
+    INTEGRITY_SOURCES.includes("signboard"),
     "signboard must be a source in its own right — the fallback printed it as Position for a day",
+  );
+  assert.ok(
+    /export type IntegritySource = \(typeof INTEGRITY_SOURCES\)\[number\]/.test(board),
+    "IntegritySource must derive from INTEGRITY_SOURCES, never be a second hand-written union",
   );
   assert.ok(/signboard: "Signboard"/.test(board), "the signboard detector needs its own label");
   assert.ok(
-    board.includes('row.source === "signboard" ? row.source : "gps"'),
-    "the row mapper must recognise signboard rather than falling through to gps",
+    board.includes('isIntegritySource(row.source) ? row.source : "gps"'),
+    "the row mapper must read a row's source through the list rather than falling through to gps",
   );
   assert.ok(
-    /bySource: \(\["gps", "photo", "behaviour", "signboard"\] as const\)/.test(board),
-    "every detector in the union must be counted, or its cases are tallied under another's name",
+    /bySource: INTEGRITY_SOURCES\.flatMap/.test(board),
+    "every detector in the list must be counted, or its cases are tallied under another's name",
   );
 
   // The SFE narrowing is an ALLOW-LIST. `.eq("source", "photo")` kept signboard out of his board by
@@ -192,25 +202,39 @@ function runLoaderTests() {
     "the counters must count the cases that stand, not the withdrawn ones",
   );
   assert.ok(
-    !/\.delete\(\)|\.remove\(|"phoenix_crm_location_integrity"\)\s*\.\s*(delete|update|upsert)/.test(board),
-    "this reader must never write to or delete from the evidence table",
+    !/\.delete\(\)|\.remove\(|"phoenix_crm_location_integrity"\)\s*\.\s*(delete|upsert)/.test(board),
+    "this reader must never delete or re-file the evidence — a flag is the record of what a detector did",
   );
+  // 🔴 ONE WRITE EXISTS SINCE 2026-10-09, AND IT IS THE SETTLEMENT (`settled_at/by/note/flags`).
+  // Nothing else on the row may ever be written here: a module that can rewrite `flags`, `strong` or
+  // `signals` can make the evidence agree with a later opinion, which is what deleting the row used
+  // to do more honestly. Every `.update()` in the file is checked, not just the ones expected.
+  const writes = [...board.matchAll(/\.update\(\{([^}]*)\}\)/g)];
+  assert.ok(writes.length >= 2, "the settle and reopen writes must both be found, or this check reads nothing");
+  for (const write of writes) {
+    const columns = [...(write[1] ?? "").matchAll(/([a-z_]+):/g)].map((match) => match[1]);
+    assert.ok(columns.length > 0, "an update with no columns — this check has lost its shape");
+    assert.ok(
+      columns.every((column) => column.startsWith("settled_")),
+      `the board writes ${columns.join(", ")} — only the four settlement columns may ever be written here`,
+    );
+  }
 }
 
 /** The page: both lists shown, the sign's own words shown, and nothing truncated. */
 function runRenderTests() {
   const page = read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx");
 
-  assert.ok(page.includes("<CaseList entries={board.cases} />"), "the live cases must render");
-  assert.ok(page.includes("<CaseList entries={board.withdrawn} />"), "the withdrawn flags must still be shown");
+  assert.ok(page.includes("<CaseList canSettle={canSettle} entries={board.cases} />"), "the live cases must render");
+  assert.ok(page.includes("<CaseList canSettle={false} entries={board.withdrawn} />"), "the withdrawn flags must still be shown");
   assert.equal(
-    (page.match(/<CaseList entries=/g) ?? []).length,
-    2,
-    "one list component for both, so the two can never print different facts about one row",
+    (page.match(/<CaseList canSettle=/g) ?? []).length,
+    3,
+    "one list component for all three, so they can never print different facts about one row",
   );
   assert.ok(
-    page.includes("board.cases.length === 0 && board.withdrawn.length === 0"),
-    "'nothing flagged' must require both lists to be empty",
+    page.includes("board.cases.length === 0 && board.withdrawn.length === 0 && board.settled.length === 0"),
+    "'nothing flagged' must require every list to be empty — a settled case is still a case",
   );
   assert.ok(
     page.includes("The sign read:"),
@@ -236,10 +260,16 @@ function runRenderTests() {
     !pageCode.includes("…") && !/\btruncate\b|\bline-clamp-/.test(pageCode),
     "nothing on this board may be truncated — a half-printed sign names the wrong person",
   );
-  // The withdrawn section must say, in words, that nothing was deleted or settled.
+  // The withdrawn section must say, in words, that nothing was deleted and nobody decided anything.
+  // 🔴 Since settling exists (2026-10-09) it must also say why there is nothing to settle here: the
+  // evidence gave way on its own, which is not a decision and must not read as one.
   assert.ok(
-    /Nothing here has been deleted and nothing has been settled/.test(page),
-    "the section must state that a withdrawn flag is neither deleted nor settled",
+    /Nothing here has been deleted and no decision was taken on them/.test(page),
+    "the section must state that a withdrawn flag is neither deleted nor decided on",
+  );
+  assert.ok(
+    /nothing to settle/.test(page),
+    "the section must say why a withdrawn case offers no settle button",
   );
 }
 
