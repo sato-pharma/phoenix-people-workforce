@@ -9,6 +9,12 @@
 // B-10 is his own employee account, `employees.job_title` has read HR Section Head all along, and
 // every screen showing SUPER ADMIN was printing the permission key at him instead.
 //
+// 🔴 THE TITLE IS NOW HR MANAGER (the owner, 2026-10-09: "update my job title to HR Manager"). He
+// was promoted from HR Section Head, and `positions.title` for his position — id 17 — already read
+// HR Manager, so the record and the organogram had disagreed since the promotion. `employees.
+// job_title` for B-10 was corrected in the same change; the HR Section Head title stays alive
+// elsewhere on purpose, because it is the seat he is RECRUITING for, not a stale copy of his own.
+//
 // IT IS KEYED ON THE ACCOUNT — not on the role, and not on the person.
 //   - Not the role: the same "Super Admin" key belongs to the shared system console (login
 //     admin-HR), which is a console rather than someone with a title.
@@ -28,7 +34,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 
 /** Keys are `canonicalHrIdKey` output — lowercase — because HR ids are stored mixed-case. */
 const ACCOUNT_JOB_TITLES: Readonly<Record<string, string>> = {
-  "b-10": "HR Section Head",
+  "b-10": "HR Manager",
 };
 
 /** The declared title for this account, or null when it has none (almost every account). */

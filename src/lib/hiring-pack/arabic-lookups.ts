@@ -10,12 +10,12 @@
  *
  * ── THESE ARE THE OWNER'S WORDS. DO NOT "TIDY" THEM ──
  * Every seed below was answered by the owner on 2026-09-03, from the workbook
- * `scripts/hr-forms-arabic-questions.ts` generates. Seven he rewrote, and the rewrites are the
+ * `scripts/hr-forms-arabic-questions.ts` generates. Several he rewrote, and the rewrites are the
  * point: a District Sales Manager is contracted as مدير دعاية طبية, not the literal مدير مبيعات
  * منطقة that was proposed, because that is what the trade calls the job and what the Ministry
  * expects to read. An editor who "corrects" one of these back to a more literal translation is
- * changing the wording on a signed employment contract. `tests/hr-forms-readiness.test.ts` pins the
- * seven, so that edit fails CI rather than reaching a contract.
+ * changing the wording on a signed employment contract. `tests/hr-forms-readiness.test.ts` pins
+ * every one of them, so that edit fails CI rather than reaching a contract.
  *
  * `confirmed` stays in the type and is still honoured: anything ADDED later ships false and prints
  * nothing until it is answered the same way. A new job title is a new question, not a free guess.
@@ -81,7 +81,16 @@ export const JOB_TITLE_AR_SEEDS: readonly ArabicSeed[] = [
   { en: "Group Product Manager", ar: "مدير تسويق", confirmed: true, people: 1 }, // his wording, not the proposal
   { en: "HR Business Partner", ar: "مشرف موارد بشرية", confirmed: true, people: 1 }, // his wording, not the proposal
   { en: "HR Operations Coordinator", ar: "اخصائي موارد بشرية", confirmed: true, people: 1 }, // his wording, not the proposal
-  { en: "HR Section Head", ar: "مدير ادارة الموارد البشرية", confirmed: true, people: 1 }, // his wording, not the proposal
+  // His own title, 2026-10-09: "give HR Manager the Arabic مدير ادارة الموارد البشرية". He was
+  // promoted from HR Section Head that day and `employees.job_title` for B-10 moved with it, so the
+  // seed has to move too — this table matches `employees.job_title` exactly, and a title with no
+  // seed prints an HR paper with no المسمى الوظيفي.
+  { en: "HR Manager", ar: "مدير ادارة الموارد البشرية", confirmed: true, people: 1 }, // his wording, not the proposal
+  // Nobody holds this title any more — measured on production the same day, `employees.job_title`
+  // returns ZERO rows for it, which is why the count reads 0 rather than the 1 of 2026-09-03. The
+  // row stays because it is the seat he is RECRUITING for: the next holder's wording is his to give,
+  // and until then carrying the same Arabic as HR Manager is deliberate, not a copy-paste.
+  { en: "HR Section Head", ar: "مدير ادارة الموارد البشرية", confirmed: true, people: 0 }, // his wording, not the proposal
   { en: "Marketing Manager", ar: "مدير التسويق", confirmed: true, people: 1 },
   { en: "Qppv", ar: "المسئول عن التيقظ الدوائي", confirmed: true, people: 1 },
   { en: "R And D Manager", ar: "مدير البحث والتطوير", confirmed: true, people: 1 },

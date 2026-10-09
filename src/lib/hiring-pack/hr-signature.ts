@@ -6,7 +6,8 @@
 // as a data URI, and the routes that reach it are the Super Admin's alone.
 //
 // ONE SIGNATURE, DELIBERATELY. The owner asked for "my signature" — he is the sole Super Admin and
-// the HR Section Head, so the paper that needs signing here needs HIS. A library of named
+// the HR Manager (HR Section Head until his promotion on 2026-10-09), so the paper that needs
+// signing here needs HIS. A library of named
 // signatures is the obvious next thing and is NOT built on a guess: a second signature is a second
 // person's, and whose signature may be printed on whose paper is a decision, not a data model.
 //
