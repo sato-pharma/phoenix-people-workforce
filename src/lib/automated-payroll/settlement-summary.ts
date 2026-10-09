@@ -62,8 +62,10 @@ export const ADDITION_COMPONENT_KEYS = [
  *
  * Flattened DELIBERATELY, not summed server-side into one "deductions" figure:
  * a live edit has to move exactly one component, and it can only do that if
- * each component is addressable by the same key the step field writes. `loans`
- * is absent because assemble.ts hardcodes it to 0.
+ * each component is addressable by the same key the step field writes. There is no
+ * `loans` key because the Loans column IS `p1odLoanValue` — assemble.ts reads the
+ * Part-1 loan straight into it (owner, 2026-10-09), so the component is already
+ * in this list under the name the step writes.
  */
 export const DEDUCTION_COMPONENT_KEYS = [
   "fingerprintValue",

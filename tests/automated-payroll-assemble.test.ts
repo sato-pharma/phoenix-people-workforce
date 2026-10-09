@@ -164,10 +164,25 @@ export function runAutomatedPayrollAssembleTests() {
   assert.equal(rows.length, 1);
   const row = rows[0]!.row;
 
-  // otherDeductions = manual(70) + p1od total(200+300+400=900) + special(80)
-  assert.equal(row.otherDeductions, 1050, "otherDeductions must count each source exactly once");
-  // totalDeductions = crm(50) + fingerprint(100) + vacation(60) + medical(400) + loans(0) + other(1050)
+  // THE LOANS COLUMN IS THE PART-1 LOAN (owner, 2026-10-09). It was `const loans = 0` with the
+  // money folded into Other Deductions, so the September 2026 sheet showed zeros down the whole
+  // Loans column while Mahmoud Ibrahim Ahmed Mohamed (A-1) 1,250.00 and Muhammad AlMinshawy
+  // (B-148) 725.01 sat under Other Deductions with nothing to explain them.
+  //
+  // otherDeductions = manual(70) + p1od EXCEPT the loan(200+300=500) + special(80)
+  assert.equal(row.otherDeductions, 650, "otherDeductions must count each source exactly once");
+  assert.equal(row.loans, 400, "and the Part-1 loan must appear in the Loans column it belongs to");
+  // totalDeductions = crm(50) + fingerprint(100) + vacation(60) + medical(400) + loans(400) + other(650)
+  //
+  // 🔴 STILL 1660 — the figure it was before the loan moved column. That is the whole point: the
+  // loan is counted once, and splitting the presentation moves no money. Counting it in BOTH
+  // columns would read 2060 here.
   assert.equal(row.totalDeductions, 1660, "totalDeductions must count each deduction exactly once");
+  assert.equal(
+    row.loans + row.otherDeductions,
+    1050,
+    "the two columns together must still equal what Other Deductions alone used to carry",
+  );
   // Individually surfaced columns keep their own values (not folded into other).
   assert.equal(row.fingerPrint, 100);
   assert.equal(row.crm, 50);
@@ -176,6 +191,50 @@ export function runAutomatedPayrollAssembleTests() {
 
   // ---- the split always balances -------------------------------------------
   assert.equal(row.firstPart + row.secondPart, row.monthSalary, "First + Second must equal Month Salary");
+
+  // ---- THE LOANS COLUMN MOVES NO MONEY (owner, 2026-10-09) -------------------
+  // The strongest statement of that, without a magic number to maintain: take the SAME amount and
+  // put it once in the Part-1 Loan column and once in the Part-1 Other column. Only the column
+  // showing it may differ — the First Part, Second Part, Month Salary and Total Deductions must be
+  // identical, because `otherPart1DeductionsTotal` still carries the loan and that total is what
+  // `freezeFirstPart` takes off the First Part. Part 1 is left OPEN here on purpose, so the First
+  // Part is computed live and any change in the freeze math shows up instead of being hidden by a
+  // frozen column.
+  const asLoan = assembleRows({
+    members: [member("B-5")],
+    sources: sourceMap("B-5", "two_parts"),
+    period: JUNE,
+    draftRows: [draft("B-5", { p1odLoanValue: 1250 })],
+  })[0]!.row;
+  const asOther = assembleRows({
+    members: [member("B-5")],
+    sources: sourceMap("B-5", "two_parts"),
+    period: JUNE,
+    draftRows: [draft("B-5", { p1odOtherValue: 1250 })],
+  })[0]!.row;
+  assert.equal(asLoan.loans, 1250, "the loan shows in the Loans column");
+  assert.equal(asLoan.otherDeductions, 0, "and not a second time under Other Deductions");
+  assert.equal(asOther.loans, 0, "an Other-column deduction is not a loan");
+  assert.equal(asOther.otherDeductions, 1250);
+  assert.equal(
+    asLoan.totalDeductions,
+    asOther.totalDeductions,
+    "the same amount must deduct the same whichever Part-1 column holds it",
+  );
+  assert.equal(
+    asLoan.firstPart,
+    asOther.firstPart,
+    "🔴 THE FROZEN FIRST PART MUST NOT MOVE — the loan stays inside otherPart1DeductionsTotal, " +
+      "which is what freezeFirstPart takes off; dropping it from there would change money that " +
+      "has already been paid out",
+  );
+  assert.equal(asLoan.secondPart, asOther.secondPart, "nor the Second Part");
+  assert.equal(asLoan.monthSalary, asOther.monthSalary, "nor the month");
+  assert.equal(
+    asLoan.firstPart + asLoan.secondPart,
+    asLoan.monthSalary,
+    "and the split still balances with the loan in its own column",
+  );
 
   // ---- additions counted once too ------------------------------------------
   const withAdditions = assembleRows({
