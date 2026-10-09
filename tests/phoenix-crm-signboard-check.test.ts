@@ -6,6 +6,8 @@ import {
   chooseSignToReadAgain,
   jsonbSafe,
   judgeSignboard,
+  SIGNBOARD_MAX_READ_ATTEMPTS,
+  signboardNextAttempt,
   judgeSignboards,
   nameIsPinnableAcrossScripts,
   SIGNBOARD_CROP_MIN_FRACTION,
@@ -386,6 +388,28 @@ function checkManySigns(): void {
   });
   assert.equal(shopAndPractice.verdict, "unjudged", "and the frame's own unread board keeps it out of the flag list");
 
+  // 11c · 🔴 THE RE-READ IS BOUNDED BY A VALUE A HUMAN CAN SEE IN THE ROW, not by a JSON-number filter.
+  //       The third unreadable reading becomes `unreadable_final`, which no backlog query takes.
+  const unread = signboardUnjudged("unreadable");
+  assert.equal(signboardNextAttempt(unread, 0).attempts, 2, "a first re-read is the second attempt");
+  assert.equal(signboardNextAttempt(unread, 0).reason, "unreadable", "and it is still worth trying again");
+  assert.equal(
+    signboardNextAttempt(unread, SIGNBOARD_MAX_READ_ATTEMPTS - 1).reason,
+    "unreadable_final",
+    "the last attempt makes the answer final, so the place leaves the backlog instead of circling in it",
+  );
+  assert.equal(
+    signboardNextAttempt(signboardUnjudged("call_failed"), SIGNBOARD_MAX_READ_ATTEMPTS).reason,
+    "call_failed",
+    "a lost call is never made final by the counter — the frame was never read at all",
+  );
+  assert.equal(
+    signboardNextAttempt(judgeMany({ customerName: "محمد فرج", signs: [sign({ personNames: ["محمد فرج"], text: "د/ محمد فرج" })] }), 5).verdict,
+    "match",
+    "and an answered place keeps its answer whatever the counter says",
+  );
+  assert.equal(signboardNextAttempt(unread, 0).attempts > unread.attempts, true, "the count only ever rises");
+
   // 11b · 🔴 ONE CHARACTER USED TO THROW THE WHOLE VERDICT AWAY. Postgres rejects the NUL and a lone
   //       surrogate, the recorder swallows the error by design, and the place then sits in the
   //       nightly backlog for ever — re-read every night, never recorded.
@@ -489,6 +513,92 @@ function checkTwoReaders(): void {
     /notWritten\.push\(/.test(pass) && /NOT WRITTEN/.test(pass) && /process\.exitCode = 1/.test(pass),
     "an unproven write is reported as a failure and carried in the exit code",
   );
+
+  // 15 · 🔴 THE NIGHT'S YIELD. Measured on the first night, 2026-10-09: 60 places read, **4** answers.
+  //      42 ended `unreadable`, which was terminal, and 14 lost their model call and waited a day to
+  //      be tried again. All three rules below exist to turn that 6.7% into answers, and each one is
+  //      a thing the pass must still DO, not a number.
+  const sweep = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-sweep.ts", "utf8"));
+
+  // 1 · a lost call is retried inside the same night, and only a lost call.
+  assert.ok(
+    /first\.verdict !== "unjudged" \|\| first\.reason !== "call_failed"\) return first;[\s\S]{0,120}return readStoredPlaceSignboard\(input\)/.test(
+      sweep,
+    ),
+    "a lost model call is retried immediately — 23% of the first night was spent on calls that answered nothing",
+  );
+
+  // 2 · an unreadable frame comes back, bounded, and the structural cases never do.
+  assert.ok(
+    /SIGNBOARD_REREAD_REASONS = \[[\s\S]{0,200}"unreadable",[\s\S]{0,80}"unconfirmed",/.test(sweep),
+    "an unreadable frame and an unconfirmed verdict are both read again — legibility is not a property of the photograph",
+  );
+  assert.ok(
+    !/SIGNBOARD_REREAD_REASONS = \[[\s\S]{0,260}"unreadable_final"/.test(sweep),
+    "but the exhausted reason is NOT in that list, or the re-read never stops",
+  );
+  assert.ok(
+    /signboardApplies\(place\.listType\)\) return signboardUnjudged\("name_unusable"\)/.test(sweep) &&
+      /signboardNameIsUsable\(place\.customerName\)\) return signboardUnjudged\("name_unusable"\)/.test(sweep),
+    "a pharmacy and a name that folds away are `name_unusable`, never `unreadable` — nothing about them changes tomorrow",
+  );
+
+  // 3 · nothing reaches the owner's board on one reading.
+  assert.ok(
+    /if \(first\.verdict !== "other_name" && first\.verdict !== "no_name"\) return first;/.test(sweep),
+    "a match and an unjudged cost no second call — nobody is named by either",
+  );
+  assert.ok(
+    /second\.verdict === first\.verdict\) return second;[\s\S]{0,140}reason: "unconfirmed", verdict: "unjudged"/.test(sweep),
+    "a flaggable verdict is filed only when a second reading of the frame agrees; otherwise it is unconfirmed and read again",
+  );
+  assert.ok(
+    /const check = signboardNextAttempt\(await confirmBeforeFlagging\(place, first\), place\.priorAttempts\)/.test(sweep),
+    "and the confirmation runs BEFORE the verdict is recorded or counted, not after the flag is filed",
+  );
+  assert.ok(
+    /select\(\s*"[^"]*signboard_check[^"]*"/.test(sweep) && /priorAttempts:/.test(sweep),
+    "the backlog reads the stored check, because the attempt count cannot be known without it",
+  );
+
+  // 16 · 🔴 `unjudged` NOW MEANS FOUR DIFFERENT THINGS, AND THE PAGE MAY NOT SAY ONE SENTENCE FOR ALL
+  //      FOUR. "Could not be read" fits a frame waiting for another attempt; it is misleading for a
+  //      verdict two readings disagreed about, it hides that a place has had every attempt it gets,
+  //      and it says nothing about a place there was never anything to compare. Both boards show the
+  //      Super Admin the same four answers, in words — he never reads a reason code (owner's standing
+  //      rule: names, never codes).
+  for (const file of [
+    "src/components/phoenix-crm/validated-place-list.tsx",
+    "src/components/phoenix-crm/shared-place-list.tsx",
+  ] as const) {
+    const board = readFileSync(file, "utf8");
+    const map = board.match(/SIGNBOARD_UNJUDGED_TEXT: Record<string, string> = \{([\s\S]*?)\};/);
+    assert.ok(map, `${file} must tell the four unjudged answers apart`);
+    for (const reason of ["name_unusable", "unconfirmed", "unreadable", "unreadable_final"]) {
+      assert.ok(map[1].includes(`${reason}:`), `${file} must say in words what ${reason} means`);
+    }
+    const sentences = [...map[1].matchAll(/"([^"]+)"/g)].map((hit) => hit[1]);
+    assert.equal(new Set(sentences).size, 4, `${file} must give each of the four its OWN sentence`);
+    for (const sentence of sentences) {
+      assert.ok(!/_/.test(sentence), `${file} must never show a reason code: ${sentence}`);
+      assert.ok(!sentence.includes("…") && !sentence.includes("..."), `${file} must not truncate: ${sentence}`);
+    }
+    assert.ok(
+      board.includes("function signboardText(signboard: NonNullable<") &&
+        board.includes("{signboardText(row.signboard)}"),
+      `${file} must RENDER through that map, not straight off the verdict`,
+    );
+    assert.ok(
+      /SIGNBOARD_UNJUDGED_TEXT\[signboard\.reason \?\? ""\] \?\? SIGNBOARD_TEXT\.unjudged/.test(board),
+      `${file} must fall back to the verdict's sentence, so a reason added later cannot render as a code`,
+    );
+  }
+  assert.ok(
+    /signboard: \{[\s\S]{0,200}reason: string \| null;/.test(
+      readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"),
+    ),
+    "and the row must carry the reason at all — the board cannot tell the four apart without it",
+  );
 }
 
 /**
@@ -538,10 +648,23 @@ function checkSweepRate(): void {
       + `rate is ${Math.round((limit / MEASURED_READS_PER_SECOND) * 1000)} ms against a ${budgetMs} ms budget. `
       + "Below that line the pass stops early with the window unused, which is the state this change undid.",
   );
+  // 🔴 TWO FULL PER-PLACE READS, NOT ONE — the factor this gate multiplies by changed on 2026-10-09
+  // and the gate had to change with it. A place started one instant before the deadline is finished,
+  // and finishing it can now mean reading the whole place a SECOND time: a lost model call is retried
+  // immediately, and a verdict that would put a name on the owner's board is confirmed before it is
+  // filed. The two are mutually exclusive — a lost call is `unjudged`, and only `other_name`/
+  // `no_name` is ever confirmed — so the factor is 2, not 3. Leaving it at 1 would have measured a
+  // worst case 25 s shorter than the real one and passed.
+  const worstPlaceMs = 2 * perReadTimeoutMs;
   assert.ok(
-    budgetMs + perReadTimeoutMs <= 150_000,
-    `the pass may start a read right before the deadline, so its worst case is ${budgetMs + perReadTimeoutMs} ms; `
-      + "the cron's maxDuration is 300 s and the photo and behaviour passes share it, so half is the ceiling",
+    budgetMs + worstPlaceMs <= 150_000,
+    `the pass may start a place right before the deadline and that place may cost two full reads, so its `
+      + `worst case is ${budgetMs + worstPlaceMs} ms; the cron's maxDuration is 300 s and the photo and `
+      + "behaviour passes share it, so half is the ceiling",
+  );
+  assert.ok(
+    /const second = await readOne\(place\)/.test(source) && /2 × PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS/.test(source),
+    "and the source must still be the shape this arithmetic assumes — one place, at most two reads",
   );
   assert.ok(limit <= 500, "the in-function clamp is 500 — a default above it would be silently cut");
   assert.ok(

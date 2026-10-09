@@ -54,6 +54,24 @@ const SIGNBOARD_TEXT: Record<string, string> = {
   unjudged: "The sign could not be read",
 };
 
+/**
+ * The four answers `unjudged` can mean since 2026-10-09 — a frame still waiting for another attempt,
+ * one that has had every attempt it gets, a verdict two readings disagreed about, and a place there
+ * was nothing to compare. A reason not named here falls back to the verdict's sentence, so a reason
+ * added later can never surface as a code on this board.
+ */
+const SIGNBOARD_UNJUDGED_TEXT: Record<string, string> = {
+  name_unusable: "Nothing on a sign to compare",
+  unconfirmed: "Two readings of the sign disagreed",
+  unreadable: "The sign could not be read yet",
+  unreadable_final: "The sign could not be read",
+};
+
+function signboardText(signboard: NonNullable<SharedPlaceBoardRow["signboard"]>): string {
+  if (signboard.verdict !== "unjudged") return SIGNBOARD_TEXT[signboard.verdict] ?? SIGNBOARD_TEXT.unjudged;
+  return SIGNBOARD_UNJUDGED_TEXT[signboard.reason ?? ""] ?? SIGNBOARD_TEXT.unjudged;
+}
+
 function readingText(label: string, reading: SharedPlaceBoardRow["pin"]): string | null {
   if (!reading) return null;
   const accuracy = reading.accuracyMeters === null ? "accuracy unknown" : `within ${Math.round(reading.accuracyMeters)} m`;
@@ -100,7 +118,7 @@ function Where({ row }: { row: SharedPlaceBoardRow }) {
       <div className="space-y-0.5 border-t border-slate-100 pt-1">
         {row.signboard ? (
           <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
-            {SIGNBOARD_TEXT[row.signboard.verdict] ?? "The sign could not be read"}
+            {signboardText(row.signboard)}
           </CrmPill>
         ) : (
           <p className="text-xs text-slate-500">The sign has not been read yet.</p>

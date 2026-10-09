@@ -48,6 +48,25 @@ const SIGNBOARD_TEXT: Record<NonNullable<ValidatedPlaceRow["signboard"]>["verdic
 };
 
 /**
+ * 🔴 `unjudged` BECAME FOUR DIFFERENT ANSWERS ON 2026-10-09, AND ONE SENTENCE IS WRONG FOR THREE OF
+ * THEM. "Could not be read" fits a frame still waiting for another attempt; it is misleading for a
+ * verdict two readings disagreed about, it hides that a place has already had every attempt it gets,
+ * and it says nothing about a place there was never anything to compare. A reason not named here
+ * falls back to the verdict's own sentence, so a reason added later can never render as a code.
+ */
+const SIGNBOARD_UNJUDGED_TEXT: Record<string, string> = {
+  name_unusable: "Nothing on a signboard to compare",
+  unconfirmed: "Two readings of the sign disagreed",
+  unreadable: "The signboard could not be read yet",
+  unreadable_final: "The signboard could not be read",
+};
+
+function signboardText(signboard: NonNullable<ValidatedPlaceRow["signboard"]>): string {
+  if (signboard.verdict !== "unjudged") return SIGNBOARD_TEXT[signboard.verdict];
+  return SIGNBOARD_UNJUDGED_TEXT[signboard.reason ?? ""] ?? SIGNBOARD_TEXT.unjudged;
+}
+
+/**
  * What the system read on the TIMETABLE of a customer seated in a polyclinic (owner, 2026-10-09).
  * A seated place has no signboard of its own — the sign on the building names the venue — so the
  * evidence is the schedule hanging inside it, and these are the four things it can say.
@@ -147,7 +166,7 @@ function Place({ row }: { row: ValidatedPlaceRow }) {
           <>
             {row.signboard ? (
               <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
-                {SIGNBOARD_TEXT[row.signboard.verdict]}
+                {signboardText(row.signboard)}
               </CrmPill>
             ) : (
               <p className="text-xs text-slate-500">The signboard has not been read yet.</p>
