@@ -119,8 +119,8 @@ export function runOfficeAllocationDriftTests() {
     todays,
     officeCommittedAt: "2026-09-10T17:15:00.000Z",
     baseTouchedAfterCommit: [
-      { distributorCode: "PS", updatedAt: "2026-09-13T20:47:00.000Z" },
-      { distributorCode: "IS", updatedAt: "2026-09-13T20:47:00.000Z" },
+      { distributorCode: "PS", distributorName: "overseas", updatedAt: "2026-09-13T20:47:00.000Z" },
+      { distributorCode: "IS", distributorName: "Ibn sina", updatedAt: "2026-09-13T20:47:00.000Z" },
     ],
   });
   assert.deepEqual(

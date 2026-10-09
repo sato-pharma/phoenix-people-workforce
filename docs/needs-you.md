@@ -60,7 +60,9 @@ eight seconds is a source whose contents are unknown, and it renders amber rathe
 `direct-order-approvals` · `direct-order-unbooked` · `direct-order-validations` ·
 `marketing-approvals` · `market-awareness-approvals` · `monthly-closings` · `payroll-publish` ·
 `resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags` ·
-`phoenix-crm-decisions` · `orphaned-requests`
+`phoenix-crm-decisions` · `orphaned-requests` ·
+`uncollected-leaver-deductions` · `calendar-review-requests` · `closing-publication-drift` ·
+`office-allocation-drift`
 
 `orphaned-requests` joined on 2026-10-04: a request in ANY chain (marketing, direct orders, vacation)
 stranded because the one person who must act next has resigned — a `returned` request whose requester
@@ -119,6 +121,44 @@ the tempting shape is a fast band plus a `<Suspense>` band that fills in later. 
 exact hole this module closes: a deferred band that fails renders *nothing*, and a missing source
 becomes invisible again — the under-report, dressed as a performance win. The page is
 `force-dynamic` and a reload is the refresh. There is no polling.
+
+### `office-allocation-drift` — joined 2026-10-09
+
+**The question nothing in the product could ask.** The Office channel carries no geography, so the
+owner's golden rule spreads it: each area takes its share of the line's non-Office **value**. Those
+shares are computed ONCE, when the Office file is committed, and written into the rows —
+`app/api/sales/monthly-sales/office/commit` is the only code anywhere that computes them, and
+nothing re-runs it. A distributor book that lands or is re-mapped AFTER that commit therefore moves
+the value base underneath a spread already frozen into the rows.
+
+🔴 **AND THE PUBLICATION DRIFT CHECK IS STRUCTURALLY BLIND TO IT.** Today's side of the comparison
+is today's shares applied to the line's OWN stored Office total, so both sides hold identical units
+per line by construction — and the published-closing check compares exactly that one scalar. So the
+two rows are not duplicates and must never be "reconciled": measured on production 2026-10-09,
+**August 2026 CNS has 3,698 of its 109,719 Office units (3.37%) sitting in a different area from the
+one the rule gives them today, across 43 areas**, with seven distributor books (ramco,
+EPDA-Pharmacies, EGD, sofico, Ibn Sina-Sato, overseas, Ibn sina) written after the Office commit —
+and every screen in the product read clean through all of it. Until this row existed the only way to
+ask was for a session to remember to run `scripts/check-office-allocation-drift.ts`.
+
+**It reads two periods and no more.** The latest period with an Office batch — the live month, where
+a re-commit still costs nothing — and the latest PUBLISHED month that has one, where the spread is
+already serving and the fix is ruled out. Measured the same day: 656 ms to list the nine periods
+with an Office batch, 1,851–2,182 ms per period, **3,225 ms for the whole adapter** against the
+8-second budget; all nine would be about 18 s. Every other month is the script's question and the
+row says so.
+
+**The published month drops to `worth-knowing`, deliberately.** Re-committing the Office book of an
+announced month restates a published figure, which his 2026-09-07 rule forbids outright — so a
+published row is there to be known, never acted on, and his `yours` lane stays a list of decisions
+that are actually open. The row links to `/sales/import`, the only screen where an Office book is
+re-committed, and **never proposes the upload**. It carries units and no EGP (the report has no
+value side at all), names its cause in distributor NAMES rather than codes, and ages from the FIRST
+base move after the commit — the instant it actually went stale — not from the commit, which was
+correct when it was written.
+
+Pinned by `tests/needs-you-office-allocation-drift.test.ts`. The script it names is itself guarded
+by `scripts/lib/tree-is-current.ts`, because it recomputes the rule from its own checkout.
 
 ## Who produces what
 
