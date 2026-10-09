@@ -26,6 +26,7 @@
 // threw is precisely how the cliff gets crossed while the report reads clean.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 // FAIL OPEN, ALWAYS. The settings.json command ended `2>/dev/null || true` until 2026-09-27; the
@@ -71,6 +72,62 @@ try {
   // no shared resolution in this checkout — no memory directory, no drift reading
 }
 
+// 2026-10-09 (memory-check speed): the checkout position's two commit ids are read off disk, and the
+// answer for a pair of ids is kept, so a start whose HEAD and origin/main are unchanged since the last
+// one starts NO git process. Measured on the owner's laptop: the three git calls were ~110 ms of this
+// hook's 193 ms alone, and inside a real start, where about ten hooks launch at once, the hook took
+// 1.0 s. Imported in its own try: without the module (a partial checkout, the test fixture that copies
+// only this file and its budget module) the position comes from git exactly as before.
+let headAndOriginMain = null;
+try {
+  ({ headAndOriginMain } = await import("../../scripts/lib/git-layout.mjs"));
+} catch {
+  // no disk reader in this checkout — git answers
+}
+
+// One small file for every checkout. The key is the two full commit ids, and the number of commits
+// between two ids never changes — a commit id names its whole history — so a stored answer can never
+// go stale; it simply stops being asked for once HEAD or origin/main moves. A shallow clone, where it
+// could, is refused by headAndOriginMain before this is read.
+const POSITION_CACHE = path.join(os.tmpdir(), "phx-checkout-position.json");
+const POSITION_CACHE_KEEP = 64;
+
+function cachedPosition({ head, main }) {
+  try {
+    const hit = JSON.parse(fs.readFileSync(POSITION_CACHE, "utf8"))?.[`${head}..${main}`];
+    return Number.isInteger(hit?.behind) && typeof hit?.sha === "string" ? { behind: hit.behind, sha: hit.sha } : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberPosition({ head, main }, { behind, sha }) {
+  if (!Number.isInteger(behind) || behind < 0 || !sha) return;
+  const tmp = `${POSITION_CACHE}.${process.pid}.tmp`;
+  try {
+    let all = {};
+    try {
+      all = JSON.parse(fs.readFileSync(POSITION_CACHE, "utf8")) ?? {};
+    } catch {
+      all = {};
+    }
+    all[`${head}..${main}`] = { behind, sha, at: Date.now() };
+    const kept = Object.entries(all)
+      .filter(([, v]) => typeof v?.at === "number")
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, POSITION_CACHE_KEEP);
+    fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(kept)));
+    fs.renameSync(tmp, POSITION_CACHE);
+  } catch {
+    // Unwritable, or another start renamed first: the next start only pays the git calls again.
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      // nothing left to tidy
+    }
+  }
+}
+
 /**
  * Where the checkout these numbers come from sits relative to `origin/main`.
  *
@@ -85,6 +142,26 @@ try {
 function checkoutPosition(dir) {
   const run = (args) =>
     execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 }).trim();
+  // Both ids off disk, then the stored answer for them, then — once per new pair — two git calls
+  // named by id, so what is stored is exactly what was measured even if HEAD moves meanwhile.
+  let ids = null;
+  try {
+    ids = headAndOriginMain === null ? null : headAndOriginMain(dir);
+  } catch {
+    ids = null;
+  }
+  if (ids !== null) {
+    const known = cachedPosition(ids);
+    if (known !== null) return known;
+    try {
+      const sha = run(["rev-parse", "--short", ids.head]);
+      const behind = Number(run(["rev-list", "--count", `${ids.head}..${ids.main}`]));
+      rememberPosition(ids, { behind, sha });
+      return { behind, sha };
+    } catch {
+      // fall through to the reading below, which names what failed
+    }
+  }
   try {
     run(["rev-parse", "--git-dir"]);
   } catch {

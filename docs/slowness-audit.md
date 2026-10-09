@@ -311,6 +311,21 @@ PowerShell spawns are gone — the session-start figure above will show if it is
 for anyone comparing transcripts across this date: Claude Code records no duration for an `async`
 hook, so the rows of the start-up hooks made async disappear rather than shrink.
 
+**After the merge, same day (memory-check speed).** The first real Phoenix start on the merged hooks
+(09:04 Cairo) waited longest for the memory-index guard: 1,030 ms, against ~550–660 ms for every
+other start hook. Its three checkout-position git calls were ~110 ms of its 193 ms alone, and git
+launches slow down sharply when about ten hooks start at once. HEAD's and origin/main's commit ids
+are now read off disk (`headAndOriginMain` in `scripts/lib/git-layout.mjs`: loose ref, then
+packed-refs; git answers for a shallow clone, the reftable format or anything unreadable), and the
+count for a pair of ids is kept in `%TEMP%/phx-checkout-position.json`. A count between two ids
+never changes, so the kept answer cannot go stale; a moved HEAD or origin/main is a new pair, and
+the first start for it makes two git calls named by id. Measured, interleaved medians: the guard
+alone 211 → 94 ms, inside a burst of ten node processes 296 → 175 ms. Both of the owner's Claude
+accounts on the laptop share one Windows user and so one temp folder: a start under either account
+reuses the other's answer. `tests/hook-hot-path.test.ts` pins that a repeat start makes no git call,
+that a moved or packed origin/main is measured again, and that the disk reading matches git in a
+worktree and on a detached HEAD and refuses a shallow clone.
+
 ## Related
 
 - `AGENTS.md` §5, "Machine limits" and the routing golden rule — free RAM binds, not commit charge;

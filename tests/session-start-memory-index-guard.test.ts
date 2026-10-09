@@ -452,11 +452,12 @@ export function runSessionStartMemoryIndexGuardTests() {
     writeFileSync(join(memoryDir, "brand-new.md"), "written since the last refresh\n");
     const cacheFile = driftCacheFor(tmp, memoryDir);
 
-    const CHECKOUT_POSITION_CALLS = new Set([
-      "child_process.execFileSync git rev-parse --git-dir",
-      "child_process.execFileSync git rev-parse --short HEAD",
-      "child_process.execFileSync git rev-list --count HEAD..origin/main",
-    ]);
+    // Since 2026-10-09 (memory-check speed) the two ids are read off disk and the calls name them, so
+    // each call is matched in both shapes; hook-hot-path.test.ts pins that a repeat start makes none.
+    const CHECKOUT_POSITION_CALLS = {
+      has: (call: string) =>
+        /^child_process\.execFileSync git (rev-parse --git-dir|rev-parse --short (HEAD|[0-9a-f]{40})|rev-list --count (HEAD\.\.origin\/main|[0-9a-f]{40}\.\.[0-9a-f]{40}))$/.test(call),
+    };
     const mirrorReads = (calls: Array<{ kind: string; what: string }>) =>
       calls.filter((call) => /\bls-tree\b|\bcat-file\b/.test(call.what));
 

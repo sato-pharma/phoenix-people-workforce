@@ -26,7 +26,10 @@
 //      or an ordinary prompt. Hooks are taken from settings.json itself, so a new one is covered the
 //      day it is wired.
 //   4. A session start may make only the memory-index guard's three bounded checkout-position git
-//      calls (5 s timeout each, no fetch — pinned in session-start-checkout-behind-main.test.ts).
+//      calls (5 s timeout each, no fetch — pinned in session-start-checkout-behind-main.test.ts), and
+//      since 2026-10-09 (memory-check speed) NONE when HEAD and origin/main are the ids it last
+//      measured: the ids are read off disk and the answer for them is kept. That was ~110 ms of the
+//      guard's 193 ms alone, and the guard took 1.0 s inside a real start of ten hooks at once.
 //
 // NOT ordinary, and deliberately not covered: `git push` (the secret scan), `gh pr merge` (the merge
 // checks), a pnpm command in a worktree, folder removals, SessionEnd. Their process starts are the
@@ -242,7 +245,8 @@ export function ordinaryCallsSpawnNothing(): void {
   }
 }
 
-const CHECKOUT_POSITION_CALL = /^git (rev-parse --git-dir|rev-parse --short HEAD|rev-list --count HEAD\.\.origin\/main)$/;
+const CHECKOUT_POSITION_CALL =
+  /^git (rev-parse --git-dir|rev-parse --short (HEAD|[0-9a-f]{40})|rev-list --count (HEAD\.\.origin\/main|[0-9a-f]{40}\.\.[0-9a-f]{40}))$/;
 
 export function sessionStartSpawnsOnlyCheckoutPosition(): void {
   // A throwaway PRIMARY checkout with one commit, and a memory directory for it in a sandboxed config
@@ -291,9 +295,95 @@ export function sessionStartSpawnsOnlyCheckoutPosition(): void {
   }
 }
 
+/**
+ * The checkout position is read off disk and kept per pair of commit ids (2026-10-09, memory-check
+ * speed): the first start for a pair makes two git calls named by id, every later one makes none, and
+ * a moved origin/main — loose or packed — is asked again. The ids reader must agree with git in a
+ * worktree and on a detached HEAD, and refuse a shallow clone.
+ */
+export function sessionStartPositionIsKeptPerCommitPair(): void {
+  const home = mkdtempSync(join(tmpdir(), "phx-hot-position-"));
+  try {
+    const repo = join(home, "repo");
+    mkdirSync(repo, { recursive: true });
+    const git = (cwd: string, ...args: string[]) =>
+      execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    git(repo, "init", "-q", "--initial-branch=main");
+    writeFileSync(join(repo, "CLAUDE.md"), "# claude\n");
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "base");
+    const base = git(repo, "rev-parse", "HEAD");
+    git(repo, "commit", "-q", "--allow-empty", "-m", "one");
+    const one = git(repo, "rev-parse", "HEAD");
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(repo, "reset", "-q", "--hard", base);
+
+    // A sandboxed temp folder, so the stored answers start empty and no real one is touched.
+    const temp = join(home, "tmp");
+    mkdirSync(temp, { recursive: true });
+    const env = { ...sandboxEnv(home, repo), TEMP: temp, TMP: temp, TMPDIR: temp };
+    const guard = resolve(".claude/hooks/memory-index-guard.mjs");
+    const start = { session_id: "hot-position", cwd: repo, hook_event_name: "SessionStart", source: "startup" };
+    const BY_ID = /^git (rev-parse --short [0-9a-f]{40}|rev-list --count [0-9a-f]{40}\.\.[0-9a-f]{40})$/;
+    const position = (stdout: string) =>
+      /(\d+) commit\(s\) BEHIND origin\/main/.exec(
+        (JSON.parse(stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext,
+      )?.[1];
+
+    const first = underProbe(guard, [], start, env, repo);
+    assert.equal(position(first.stdout), "1", `the first start must print the measured position: ${first.stdout.slice(0, 300)}`);
+    assert.equal(first.calls.length, 2, `a new pair of ids costs exactly two git calls, made ${JSON.stringify(first.calls)}`);
+    assert.ok(first.calls.every((c) => BY_ID.test(c.what)), `the two calls must name the ids read off disk: ${JSON.stringify(first.calls)}`);
+
+    const again = underProbe(guard, [], start, env, repo);
+    assert.equal(position(again.stdout), "1", "a repeat start must print the same position");
+    assert.deepEqual(again.calls, [], `a start whose HEAD and origin/main are unchanged must start no git process: ${JSON.stringify(again.calls)}`);
+
+    // origin/main moves, and is then PACKED: the new pair is asked again, read from packed-refs.
+    git(repo, "reset", "-q", "--hard", one);
+    git(repo, "commit", "-q", "--allow-empty", "-m", "two");
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(repo, "reset", "-q", "--hard", base);
+    git(repo, "pack-refs", "--all");
+    const moved = underProbe(guard, [], start, env, repo);
+    assert.equal(position(moved.stdout), "2", "a moved origin/main must be measured again, never answered from the old pair");
+    assert.ok(moved.calls.length === 2 && moved.calls.every((c) => BY_ID.test(c.what)), `packed refs must be read off disk too: ${JSON.stringify(moved.calls)}`);
+    assert.deepEqual(underProbe(guard, [], start, env, repo).calls, [], "and the packed pair is kept like any other");
+
+    // The ids reader agrees with git in a worktree and on a detached HEAD, and refuses a shallow clone.
+    git(repo, "worktree", "add", "-q", "-b", "side", join(home, "wt"), base);
+    git(repo, "worktree", "add", "-q", "--detach", join(home, "wt-detached"), "main");
+    const readIds = () =>
+      JSON.parse(
+        execFileSync(
+          process.execPath,
+          [
+            "--input-type=module",
+            "-e",
+            `import { headAndOriginMain } from ${JSON.stringify(pathToFileURL(resolve("scripts/lib/git-layout.mjs")).href)};
+             process.stdout.write(JSON.stringify(process.argv.slice(1).map((d) => headAndOriginMain(d))));`,
+            repo,
+            join(home, "wt"),
+            join(home, "wt-detached"),
+          ],
+          { encoding: "utf8", env, cwd: home },
+        ),
+      ) as Array<{ head: string; main: string } | null>;
+    const main = git(repo, "rev-parse", "refs/remotes/origin/main");
+    for (const [i, dir] of [repo, join(home, "wt"), join(home, "wt-detached")].entries()) {
+      assert.deepEqual(readIds()[i], { head: git(dir, "rev-parse", "HEAD"), main }, `the ids read off disk must be git's own in ${dir}`);
+    }
+    writeFileSync(join(repo, ".git", "shallow"), `${base}\n`);
+    assert.deepEqual(readIds(), [null, null, null], "a shallow clone must be refused — its counts depend on the clone, not the ids");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 export function runHookHotPathTests(): void {
   settingsShapeTests();
   probeSeesSpawns();
   ordinaryCallsSpawnNothing();
   sessionStartSpawnsOnlyCheckoutPosition();
+  sessionStartPositionIsKeptPerCommitPair();
 }
