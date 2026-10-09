@@ -65,6 +65,13 @@ const LOAD_BEARING = [
   "low RAM with an UNREADABLE commit charge says so", // the fact that had nowhere to go until 2026-10-06
   "low RAM with a READ commit charge does NOT claim it was unreadable", // the clause stays conditional
   "an unreadable commit charge on a HEALTHY machine stays SILENT", // deliberately not warned about
+  // Added 2026-10-09 because of HOW this case broke, not because it broke. It asserted
+  // `!/commit charge/`, and the low-RAM branch's own clause — "The commit charge could not be read
+  // at all this time" — contains that substring, so the case FAILED at 1.27 GB available RAM and
+  // PASSED at 2.94 GB with the hook untouched. A selftest that reads the machine invites the cheap
+  // repair, which is to delete the case; the real one was to assert the PERCENTAGE, which no RAM
+  // state can make a stale reading print. Pinned so the cheap repair goes red instead.
+  "a reading over an hour old is NOT trusted for commit",
 ];
 
 export function runMemoryGuardPinTests() {
