@@ -136,6 +136,66 @@ export function verdictForSuggestion(
   return "third-answer";
 }
 
+/** Allow releases the held change; Keep as is leaves the mapping where it stands. */
+export type NormalizerDecision = "approved" | "rejected";
+
+/**
+ * The click the normalizer own answer implies for one hold, or `null` when it implies none.
+ *
+ * `agrees-with-change` is an Allow and `agrees-with-mapping` is a Keep as is, because those are the
+ * only two bricks a hold stands between. 🔴 A `third-answer` NAMES A BRICK NEITHER BUTTON WRITES, so
+ * it is never answered here: clicking either one would file the pharmacy where the normalizer has
+ * just said it does not belong. That row, and one the normalizer could not read at all, is left
+ * waiting and reported.
+ */
+export function decisionForSuggestion(
+  suggestion: HoldSuggestion | null | undefined,
+): NormalizerDecision | null {
+  if (!suggestion) return null;
+  if (suggestion.verdict === "agrees-with-change") return "approved";
+  if (suggestion.verdict === "agrees-with-mapping") return "rejected";
+  return null;
+}
+
+/**
+ * What one press of AI suggest would do to a whole screen of holds.
+ *
+ * Built in the order the screen lists them, so the counts the button PRINTS are the counts it then
+ * applies. The two it cannot answer are returned rather than dropped: 184 pending holds read on
+ * production on 2026-10-10 split 113 keep, 8 allow, 3 third answer and 60 with no suggestion, so a
+ * third of the screen is left waiting and he has to be told which third.
+ */
+export type NormalizerAnswerPlan = {
+  approve: number[];
+  reject: number[];
+  thirdAnswer: number[];
+  unanswered: number[];
+};
+
+export function planNormalizerAnswers(
+  holdIds: readonly number[],
+  suggestionOf: (holdId: number) => HoldSuggestion | null | undefined,
+): NormalizerAnswerPlan {
+  const plan: NormalizerAnswerPlan = { approve: [], reject: [], thirdAnswer: [], unanswered: [] };
+  for (const holdId of holdIds) {
+    const suggestion = suggestionOf(holdId) ?? null;
+    const decision = decisionForSuggestion(suggestion);
+    if (decision === "approved") plan.approve.push(holdId);
+    else if (decision === "rejected") plan.reject.push(holdId);
+    else if (suggestion?.verdict === "third-answer") plan.thirdAnswer.push(holdId);
+    else plan.unanswered.push(holdId);
+  }
+  return plan;
+}
+
+/** Cut a plan into pages no single request may exceed — the route refuses more than 60. */
+export function pageHoldIds(holdIds: readonly number[], size: number): number[][] {
+  const step = Math.max(1, Math.floor(size));
+  const pages: number[][] = [];
+  for (let index = 0; index < holdIds.length; index += step) pages.push(holdIds.slice(index, index + step));
+  return pages;
+}
+
 /**
  * The filed variants worth showing, newest month first.
  *

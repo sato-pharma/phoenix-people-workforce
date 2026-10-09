@@ -505,11 +505,43 @@ pulled file at all. A cutover that lands the pulled file and clears the Config F
 is exactly what `migrate --apply` does — leaves production with **no readiness gate and no restart
 policy**. Any authored file must add them to `phoenix-people-workforce` explicitly.
 
+Measured again on 2026-10-10, and both halves of that paragraph now have a reading behind them:
+`railway config pull --json` renders the live `phoenix-people-workforce` with **no `healthcheckPath`
+and no restart policy at all**, while the build log of the revision then serving (`fab743655`) reads
+`Starting Healthcheck / Path: /api/readyz / Retry window: 5m0s / [1/1] Healthcheck succeeded!`. So
+the gate is demonstrably in force and demonstrably invisible to a pull, and `railway.toml` is what
+Railway reads today — which is also the answer to "is the new file live yet": it is not, and no
+reading of the repo can make it so.
+
+🔴 **A PULLED AUTHORING FILE IS PERISHABLE, AND NINE DAYS WAS ENOUGH TO MAKE IT DESTRUCTIVE.** The
+same 2026-10-10 read found `phoenix-people-workforce` carrying **107** variable names against the
+**94** in `.railway/railway.ts` as pulled on 2026-10-01. Because variables are `preserve()` and IaC
+owns variable EXISTENCE, an apply from the committed file would have **deleted thirteen live
+production variables**: `RESEND_API_KEY_2`/`_3`, `RESEND_EMAIL_FROM_2`/`_3` and
+`RESEND_WEBHOOK_SECRET_2`/`_3` (the sender rotation), `RECRUITMENT_APPLY_RECAPTCHA_SECRET` and its
+`_MIN_SCORE`, the three `PHOENIX_TURBIFY_*` switches,
+`PHOENIX_NEW_MAILBOX_INITIAL_PASSWORD` and `NEXT_PUBLIC_SMI_USE_FACT_TABLES`. The other three
+services had not drifted by a single name. The list in the file was refreshed from that read, but the
+rule is the point and not the refresh: **thirteen names in nine days is the rate to plan against, so
+the re-pull happens in the same sitting as the plan.** The twelve `RAILWAY_*` names the platform
+injects are correctly absent — `pull` omits them.
+
+One more thing the pull shows and the authoring file does not say: the live source carries
+`branch: "main"`. That is left as the pull rendered it rather than written in by hand — an invented
+field is how `migrate` lost the restart policy — but the source branch is the 2026-08-13 incident, so
+confirm it in the plan output rather than leaving it to a default.
+
 The safe sequence, for whoever does this before the deadline:
 
-1. `railway config pull` into `.railway/railway.ts`, from a directory linked to `Phoenix-HR-Workforce`.
+1. `railway config pull` into `.railway/railway.ts`, from a directory linked to
+   `Phoenix-HR-Workforce` — **immediately before the plan, never trusting the committed list**, for
+   the drift reason above.
 2. Add the app's `deploy` block by hand: `healthcheckPath: "/api/readyz"`, `healthcheckTimeout: 300`,
-   `restartPolicyType: "ON_FAILURE"`, `restartPolicyMaxRetries: 10`.
+   `restartPolicyType: "ON_FAILURE"`, `restartPolicyMaxRetries: 10`. **A `pull` overwrites the file,
+   so this step is not optional after a re-pull** — and since 2026-10-10 it is also not a step you
+   can forget silently: rules 9-12 of `tests/railway-deploy-config.test.ts` assert the block, the
+   absence of `watchPatterns`, the absence of a `builder` key and the Europe/one-replica placement
+   directly against `.railway/railway.ts`, in the required `validate` job.
 3. `npm install railway` at the repo root — the authoring file imports `railway/iac`, so this adds a
    real dependency.
 4. `railway config plan --out railway-plan.json`, and **read it**. A destructive apply in an agent
@@ -517,8 +549,12 @@ The safe sequence, for whoever does this before the deadline:
 5. Apply the reviewed plan only, and prefer CI: `railwayapp/config` with
    `apply --plan railway-plan.json`. **An apply is a production infrastructure change that does not
    pass through the deploy gate**, so it needs the owner's word in the same way a migration does.
-6. Only then delete the two `railway.toml` files, and update `tests/railway-deploy-config.test.ts`,
-   which currently pins the root one.
+6. Only then delete the two `railway.toml` files — **and prove Railway is reading the new
+   configuration first**, which means a `config pull` showing the deploy block now stored on the
+   service, plus one real deploy whose build log still prints `Path: /api/readyz` and whose
+   `/api/healthz` `revision` moves to the merge. Then drop rules 1-5 of
+   `tests/railway-deploy-config.test.ts` (which read the root toml) and leave rules 9-12, which read
+   the authoring file and are what hold the line afterwards.
 
 Two things `pull` confirmed that are worth knowing on their own:
 
