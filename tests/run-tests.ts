@@ -1599,6 +1599,7 @@ import { runWholesalerVenueGuardTests } from "./wholesaler-venue-guard.test.ts";
 import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
 import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-rulings.test.ts";
 import { runStoreSplitOwnerRulings20261009Tests } from "./store-split-owner-rulings-2026-10-09.test.ts";
+import { runStoreSplitStaleTreeGuardTests } from "./store-split-stale-tree-guard.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
@@ -8808,6 +8809,11 @@ await runTest(
 await runTest(
   "bash-guard C11 caps MANUAL dispatches of the production smoke suite at a couple a day, counted machine-wide (measured 2026-09-29: 21 runs, 19 of them by hand against 2 scheduled, ~57 billable minutes against a 6/day cadence that was itself a cost decision) while the stand-down still works at a cap of zero, other workflows are untouched, and an unwritable state dir fails open",
   runSmokeDispatchGuardTests,
+);
+
+await runTest(
+  "a rule-recomputing script refuses to run from a tree BEHIND origin/main (the 2026-10-09 primary at 077e838dd wrote 423 September net rows computed by pre-merge code, 26 cells short on CNS and Anti Infective): a real clone one commit behind a real bare remote is refused with both shas, the count, the way out and the stand-down, a tree AHEAD of main still runs, no origin/main fails open LOUDLY, PHX_STALE_TREE_OK stands it down while saying whose code the numbers carry, the exit code is 69 and not 64, and all three store-split scripts call the guard before they build a production client",
+  runStoreSplitStaleTreeGuardTests,
 );
 
 await runTest(

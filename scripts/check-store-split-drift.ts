@@ -36,6 +36,7 @@
 import { isStoreCitySplitActive } from "@/lib/sales/store-sales-city-split";
 import { loadStoreSplitDrift, type StoreSplitDriftReport } from "@/lib/sales/store-split-drift";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assertTreeIsCurrent } from "./lib/tree-is-current.ts";
 
 const argv = process.argv.slice(2);
 const includeAll = argv.includes("--all");
@@ -49,6 +50,10 @@ if (unknown.length > 0) {
   console.error(`check-store-split-drift: unknown flag(s) ${unknown.join(", ")} — refusing to run`);
   process.exit(64);
 }
+
+// This script recomputes the rule from the code in THIS tree and its verdict gets quoted, so a
+// tree behind origin/main reports drift (or calm) about pre-merge code. Refused, with an override.
+assertTreeIsCurrent("check-store-split-drift");
 
 const supabase = getSupabaseAdmin();
 

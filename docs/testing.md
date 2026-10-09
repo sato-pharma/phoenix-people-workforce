@@ -199,6 +199,44 @@ This is **behavioral, not hook-enforced** — a guard that refused `git push` wo
 scheduled fold and every session when the box is unreachable. If the box does not answer, say so and
 push; never wait on it.
 
+### A rule-recomputing script runs from a tree on `origin/main`
+
+A script that recomputes a business rule — the store-split net, the split half of the publication
+drift — brings **its own copy of the rule** to the comparison, so the checkout it runs in is one of
+its inputs. The primary checkout's local `main` is never fast-forwarded, which makes it the worst
+tree on the machine for this and the easiest one to be sitting in.
+
+Measured on 2026-10-09. Three store-split rulings merged between 19:16 and 19:29 Cairo and were live
+on production at 19:39:58 (#5685's twelve warehouse stems, #5687's طاى جروب, #5689's `تامين`
+government word). At 19:35 a session ran `backfill-attribution-store-split.ts --apply 2026-09` in
+the primary, still at `077e838dd`, and wrote **423 net rows** computed by pre-merge code — Pedia 87
+/ Anti Infective 47 / CNS 289, against the 53 and 309 that current code gives. The figure reached the
+owner before it was caught. The same tree had already read `DRIFTED — 213 cells / 45,021.99 EGP`
+minutes after a correct rebuild. Nothing downstream could have caught either: the split preserves
+every line's unit total, so the units-based publication drift check reads clean by construction.
+
+`scripts/lib/tree-is-current.ts` is the answer, called by `backfill-attribution-store-split.ts`,
+`check-store-split-drift.ts` and `check-closing-publication-drift.ts` before they build a
+production client.
+
+- **It tests ancestry, not equality.** `origin/main` must be an ancestor of HEAD, so a feature
+  branch carrying an unmerged rule change still runs — a guard that refused those would be switched
+  off within a day.
+- **It fetches `origin/main` first** (best effort, 20s): the local remote-tracking ref can itself be
+  hours old, and a comparison against a stale ref is the same defect wearing a check.
+- **A behind tree exits 69** (EX_UNAVAILABLE, distinct from the 64 an unknown flag answers with),
+  naming both shas, how many commits are missing, `node scripts/new-session.mjs <task>` as the way
+  out, and the stand-down.
+- **It fails open only when git cannot answer at all** — no `origin/main` ref, no git — and says so
+  loudly, so a clone without a remote stays usable.
+- **`PHX_STALE_TREE_OK=1 <cmd>`** stands it down for one deliberate pre-merge run, printing that
+  the numbers carry this tree's code rather than main's.
+
+Pinned by `tests/store-split-stale-tree-guard.test.ts`, which builds a real bare remote and a clone
+genuinely one commit behind it, and was proven by breaking it three ways — dropping the fetch,
+allowing a behind tree, and unwiring the call from `check-store-split-drift.ts` — each of which
+fired its own headline assertion.
+
 ### Waiting for the gate: allow-list `SUCCESS`, never deny-list the unfinished states
 
 Measured 2026-10-02 on one pull request, three false verdicts in roughly ten minutes — every one in
