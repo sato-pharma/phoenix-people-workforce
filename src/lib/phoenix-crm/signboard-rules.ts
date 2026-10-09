@@ -75,7 +75,23 @@ export type SignboardCheckReason =
    * The sign names somebody in the other script and this customer's name cannot be pinned across the
    * two, so there is nothing to compare. Never re-read: tomorrow's answer is the same one.
    */
-  | "not_comparable";
+  | "not_comparable"
+  /**
+   * The model could not read this frame, and it has now been given every attempt it gets
+   * (`SIGNBOARD_MAX_READ_ATTEMPTS`). Terminal — the one reason that means *we tried*, as opposed to
+   * `unreadable`, which now means *we will try again*.
+   */
+  | "unreadable_final"
+  /**
+   * Nothing about this place can ever be read: a pharmacy, or a customer name that folds away to
+   * nothing. Terminal, and deliberately NOT `unreadable` — it is the photo that is fine here.
+   */
+  | "name_unusable"
+  /**
+   * A verdict that would have put a name on the owner's board was reached once and the second read of
+   * the same frame did not agree with it. Retryable: one of the two readings is right.
+   */
+  | "unconfirmed";
 
 export type PhoenixCrmSignboardCheck = {
   verdict: SignboardVerdictKind;
@@ -103,6 +119,20 @@ export type PhoenixCrmSignboardCheck = {
    * understood on its own years later without re-deriving the stamp arithmetic below.
    */
   croppedFraction: number | null;
+  /**
+   * How many times a verdict has been recorded for this place, this one included.
+   *
+   * 🔴 IT IS WHAT MAKES A RE-READ BOUNDED RATHER THAN ENDLESS. Measured on the first night,
+   * 2026-10-09: of 60 places read, **4** produced an answer, 42 came back `unreadable` and 14 lost
+   * their model call — and `unreadable` was terminal, so those 42 were parked for ever. They are
+   * worth another look because legibility is not a property of the photograph: the same frame read
+   * `other_name` at 18:12 and `unreadable` at 18:34, and another read `unjudged` at 18:35 and a clear
+   * nameplate at 18:48. So an unread frame is tried `SIGNBOARD_MAX_READ_ATTEMPTS` times and then
+   * recorded `unreadable_final`, which no backlog query takes.
+   *
+   * A row written before this field existed reads as 1 — it has had its first attempt.
+   */
+  attempts: number;
 };
 
 // ── The stamp band ──────────────────────────────────────────────────────────────────────────────
@@ -560,6 +590,7 @@ export function judgeSignboards(input: {
     reason: SignboardCheckReason | null,
     nameScore: number | null,
   ): PhoenixCrmSignboardCheck => ({
+    attempts: 1,
     checkedAt: new Date().toISOString(),
     croppedFraction: input.croppedFraction,
     nameScore,
@@ -697,6 +728,7 @@ export function signboardUnjudged(
   croppedFraction: number | null = null,
 ): PhoenixCrmSignboardCheck {
   return {
+    attempts: 1,
     checkedAt: new Date().toISOString(),
     croppedFraction,
     nameScore: null,
@@ -708,6 +740,34 @@ export function signboardUnjudged(
     signText: null,
     verdict: "unjudged",
   };
+}
+
+/**
+ * How many times one frame is read before the answer "nobody can read this" is made final.
+ *
+ * Three, not more: the first night's 42 unreadable frames cost 42 calls, and three attempts each is
+ * 126 across the whole backlog — a one-off price paid once per place, never a loop. The counter lives
+ * on the row (`attempts`), so a night that crashes cannot reset it.
+ */
+export const SIGNBOARD_MAX_READ_ATTEMPTS = 3;
+
+/**
+ * The next check to store for a place that has been read before.
+ *
+ * It carries the attempt count forward and, when the model has now had every attempt it gets and
+ * still could not read the frame, moves the reason from `unreadable` (which the backlog re-reads) to
+ * `unreadable_final` (which it does not). 🔴 THE TERMINAL REASON IS WHAT STOPS THE LOOP, not the
+ * counter — a backlog query over a JSON number is exactly the kind of filter that reads as empty
+ * when it is wrong, so the stopping condition is a value a human can see in the row.
+ */
+export function signboardNextAttempt(
+  check: PhoenixCrmSignboardCheck,
+  priorAttempts: number,
+): PhoenixCrmSignboardCheck {
+  const attempts = Math.max(1, priorAttempts) + 1;
+  const exhausted = attempts >= SIGNBOARD_MAX_READ_ATTEMPTS;
+  const spent = exhausted && check.verdict === "unjudged" && check.reason === "unreadable";
+  return { ...check, attempts, reason: spent ? "unreadable_final" : check.reason };
 }
 
 /**

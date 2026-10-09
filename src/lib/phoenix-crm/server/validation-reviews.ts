@@ -636,7 +636,17 @@ export type ValidatedPlaceRow = {
    * What the system read on this place's signboard: null when it has not been read yet. A verdict,
    * never a decision — the Super Admin decides each one himself (owner, 2026-10-08).
    */
-  signboard: { verdict: "match" | "other_name" | "no_name" | "unjudged"; signText: string | null } | null;
+  /**
+   * 🔴 `reason` IS CARRIED BECAUSE `unjudged` IS FOUR DIFFERENT ANSWERS SINCE 2026-10-09, and one
+   * sentence for all four would be wrong for three of them: a frame that will be read again, one
+   * that has had every attempt it gets, a verdict two readings disagreed about, and a place there is
+   * nothing to compare at all. Before the re-read existed they were one state and one sentence.
+   */
+  signboard: {
+    verdict: "match" | "other_name" | "no_name" | "unjudged";
+    reason: string | null;
+    signText: string | null;
+  } | null;
   /**
    * Which photo this place's evidence IS — the sign on a building, or the timetable of a polyclinic —
    * so the refusal pick-list offered here matches the one the hold queue offers (`reasonsFor`).
@@ -775,7 +785,7 @@ function signboardOf(value: unknown): ValidatedPlaceRow["signboard"] {
   const check = value as Row;
   const verdict = check.verdict;
   if (verdict !== "match" && verdict !== "other_name" && verdict !== "no_name" && verdict !== "unjudged") return null;
-  return { verdict, signText: text(check.signText) };
+  return { reason: text(check.reason), signText: text(check.signText), verdict };
 }
 
 /**

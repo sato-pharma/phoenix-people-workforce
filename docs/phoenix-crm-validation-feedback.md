@@ -97,6 +97,58 @@ Three failure classes, none of them OCR quality:
 
 And one defect: محمد فرج was flagged with `signText` null — a flag carrying no evidence of itself.
 
+### The night's YIELD was 4 answers out of 60 reads, and that is what the re-read fixes (2026-10-09)
+
+Read off production after the first night and the evening's re-read, over the 652 non-pharmacy places
+— every one of which has a photo:
+
+| | |
+| --- | --- |
+| Places the reader could judge | **652** |
+| Of those, it has produced an answer for | **4** |
+| Never read yet | **592** |
+| Read and ended `unreadable` — and never revisited | **42** |
+| Read and the model call itself failed | **14** |
+
+The first night read exactly 60 places: four answers, 42 `unreadable`, 14 `call_failed`. **A 6.7%
+yield**, and the two losses had different causes with the same shape — a night's work filed as a
+permanent answer on the strength of one reading.
+
+🔴 **`unreadable` was TERMINAL, and the evening proved that was the wrong resting place.** Legibility
+is not a property of the photograph: مستشفى المنشاوى العام read its Arabic board at 18:12 and
+`TANTA GENE` at 18:34, and اسلام عبدالعال read a blank `unjudged` at 18:35 and a clear
+`د/ اسلام حشيش` at 18:48. The same frame, the same reader, minutes apart. So an unread frame is now
+read again — **bounded at `SIGNBOARD_MAX_READ_ATTEMPTS` (3) by a counter on the row**, after which the
+reason becomes `unreadable_final`, which no backlog query takes. The stopping condition is a value in
+the row rather than a filter over a JSON number, because a filter that is wrong reads as an empty
+backlog and nothing goes red.
+
+🔴 **A lost call is retried inside the same night.** 14 of 60 — 23% of the pass — ended `call_failed`,
+which was already re-read, but only on the NEXT night. A quarter of every night was producing rows
+that said nothing and then waiting 24 hours. The budget was never the constraint: those 60 places took
+**42 seconds** of a 120-second window.
+
+🔴 **And nothing reaches the integrity board on one reading any more.** The flag is the only output of
+this pass a human ever sees and it carries a person's name, so a verdict of `other_name` or `no_name`
+is read a second time and filed only if the second reading agrees. On disagreement the place is
+recorded `unjudged` / `unconfirmed`, keeping the first reading's text and signs as evidence, and read
+again on a later night — nothing is flagged and nothing is thrown away. A `match` and an `unjudged`
+cost no extra call at all: nobody is named by either.
+
+**What that costs, measured against the same clock.** One place can now take two full reads, never
+three — a lost call is `unjudged` and only a flaggable verdict is confirmed, so the two are mutually
+exclusive. A place is finished once started, so the pass's worst case became the budget plus
+`2 × 25 s`, and **`SIGNBOARD_SWEEP_BUDGET_MS` came down from 120 s to 100 s** to hold the 150-second
+ceiling the photo and behaviour passes share. The measured night used 42 s of that window, so nothing
+real was given up. `tests/phoenix-crm-signboard-check.test.ts` multiplies by 2 now; asserting 1 would
+have measured a worst case 25 s short and passed.
+
+**And the Place checks page says which of the four it is.** `unjudged` used to be one state and one
+sentence; it is now four, and "the signboard could not be read" is misleading for a verdict two
+readings disagreed about, hides that a place has had every attempt it gets, and says nothing about a
+place there was never anything to compare. Both boards carry the reason and show it in words — never a
+code — with the verdict's own sentence as the fallback, so a reason added later cannot surface as one.
+
 ### The five verdicts as they now stand on the place rows (2026-10-09, written and read back)
 
 `--apply` wrote each verdict to `phoenix_crm_places.signboard_check`. Read back from production:

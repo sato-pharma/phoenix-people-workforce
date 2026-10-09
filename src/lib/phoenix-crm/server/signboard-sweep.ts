@@ -32,6 +32,7 @@ import { readStoredPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-cr
 import {
   signboardApplies,
   signboardNameIsUsable,
+  signboardNextAttempt,
   signboardUnjudged,
   type PhoenixCrmSignboardCheck,
 } from "@/lib/phoenix-crm/signboard-rules";
@@ -66,11 +67,39 @@ export const SIGNBOARD_SWEEP_CONCURRENCY = 4;
 /**
  * Stop STARTING reads after this long, so the pass leaves the cron's 300 s room for the behaviour
  * pass that must follow it. A place not reached tonight is simply first tomorrow.
+ *
+ * 🔴 LOWERED 120 s -> 100 s ON 2026-10-09 BECAUSE ONE PLACE CAN NOW COST TWO FULL READS. A place is
+ * finished once it is started, so the pass's worst case is this budget plus the longest a single
+ * place can take — and that is now `2 × PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS` (25 s each), because
+ * a lost call is retried and a flaggable verdict is confirmed. Those two never both happen (a lost
+ * call is `unjudged`, and only `other_name`/`no_name` is confirmed), so the ceiling is two, not
+ * three: 100 + 50 = 150 s, exactly half the cron's 300 s, which is the line the photo and behaviour
+ * passes share. The measured night used **42 s** of this window, so nothing real is given up.
  */
-export const SIGNBOARD_SWEEP_BUDGET_MS = 120_000;
+export const SIGNBOARD_SWEEP_BUDGET_MS = 100_000;
 
-/** `unjudged` reasons worth a second read: the photo and the sign are the same tomorrow for the rest. */
-export const SIGNBOARD_REREAD_REASONS = ["no_api_key", "call_failed", "held_elsewhere"] as const;
+/**
+ * `unjudged` reasons worth another read. Everything else is the same tomorrow as it was tonight.
+ *
+ * 🔴 `unreadable` AND `unconfirmed` JOINED THIS LIST ON 2026-10-09, AND THAT IS THE WHOLE POINT OF
+ * THE CHANGE. The first night read 60 places and produced **4** answers: 42 ended `unreadable`, which
+ * was terminal, and 14 lost their model call. So 70% of a night's work was being filed as a permanent
+ * "nobody can read this" on the strength of ONE reading of the frame — when the same frame, re-read
+ * that evening, answered differently twice (`other_name` at 18:12 and `unreadable` at 18:34; a blank
+ * `unjudged` at 18:35 and a clear `د/ اسلام حشيش` at 18:48). Legibility is not a property of the
+ * photograph.
+ *
+ * It is bounded, not endless: `signboardNextAttempt` turns the third `unreadable` into
+ * `unreadable_final`, which is deliberately NOT in this list. The structural cases that used to share
+ * `unreadable` — a pharmacy, a name that folds away — are `name_unusable` now and never come back.
+ */
+export const SIGNBOARD_REREAD_REASONS = [
+  "no_api_key",
+  "call_failed",
+  "held_elsewhere",
+  "unreadable",
+  "unconfirmed",
+] as const;
 
 export type SignboardSweepResult = {
   /** Places read this run (a model call made, or an unusable name recorded). */
@@ -79,6 +108,8 @@ export type SignboardSweepResult = {
   flagged: number;
   /** Of those, how many came back with no answer. */
   unjudged: number;
+  /** Of those, how many reached a flaggable verdict that the second reading did not agree with. */
+  unconfirmed: number;
   /** True when the run stopped on its limit or its budget — more is waiting. */
   moreWaiting: boolean;
   /** Set when nothing was read because no key is configured here. */
@@ -97,6 +128,8 @@ type SweepPlace = {
   capturedAt: Date;
   customerName: string;
   listType: PhoenixCrmListType;
+  /** Verdicts recorded for this place so far. A row written before the field existed has had one. */
+  priorAttempts: number;
 };
 
 function toPlace(row: Row): SweepPlace | null {
@@ -104,7 +137,12 @@ function toPlace(row: Row): SweepPlace | null {
   const capturedAt = new Date(String(row.captured_at));
   const photoPath = String(row.photo_path ?? "");
   if (!customer || !photoPath || Number.isNaN(capturedAt.getTime())) return null;
+  const stored = (row.signboard_check ?? null) as Row | null;
+  const storedAttempts = Number(stored?.attempts ?? 0);
   return {
+    // No stored check at all is a first read (0). A check with no `attempts` predates the field and
+    // has had exactly one, so it must count as one or it would get an extra attempt for ever.
+    priorAttempts: Number.isFinite(storedAttempts) && storedAttempts > 0 ? storedAttempts : stored ? 1 : 0,
     placeId: String(row.id),
     customerId: String(row.customer_id),
     seatId: String(row.seat_id ?? ""),
@@ -125,7 +163,7 @@ async function loadBacklog(limit: number): Promise<SweepPlace[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_places")
     .select(
-      "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, customer:phoenix_crm_customers!inner(name, list_type)",
+      "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
     )
     .eq("status", "active")
     .eq("is_test", false)
@@ -139,10 +177,58 @@ async function loadBacklog(limit: number): Promise<SweepPlace[]> {
   return ((data ?? []) as Row[]).map(toPlace).filter((entry): entry is SweepPlace => entry !== null);
 }
 
+/**
+ * Read one place's signboard once, and retry a LOST CALL immediately.
+ *
+ * 🔴 THE RETRY IS WORTH A WHOLE NIGHT'S WORK. On 2026-10-09, 14 of 60 places — 23% of the pass —
+ * ended `call_failed`: a timeout, a connection reset, a rate limit. `call_failed` was already
+ * re-read, but only on the NEXT night, so a quarter of every night was spent producing rows that
+ * said nothing and waiting 24 hours to try again. The budget was never the constraint: those 60
+ * places took 42 seconds of a 120-second window.
+ *
+ * Only a lost call is retried, and only once. An answer that came back and could not be read is a
+ * different thing, bounded by `attempts` across nights rather than hammered inside one.
+ *
+ * The two structural cases are `name_unusable`, not `unreadable`: a pharmacy is never read, and a
+ * customer name that folds away to nothing has nothing to compare a sign to. Neither can change
+ * tomorrow, and calling them `unreadable` would now put them back in the backlog every night.
+ */
 async function readOne(place: SweepPlace): Promise<PhoenixCrmSignboardCheck> {
-  if (!signboardApplies(place.listType)) return signboardUnjudged("unreadable");
-  if (!signboardNameIsUsable(place.customerName)) return signboardUnjudged("unreadable");
-  return readStoredPlaceSignboard({ customerName: place.customerName, listType: place.listType, photoPath: place.photoPath });
+  if (!signboardApplies(place.listType)) return signboardUnjudged("name_unusable");
+  if (!signboardNameIsUsable(place.customerName)) return signboardUnjudged("name_unusable");
+  const input = { customerName: place.customerName, listType: place.listType, photoPath: place.photoPath };
+  const first = await readStoredPlaceSignboard(input);
+  if (first.verdict !== "unjudged" || first.reason !== "call_failed") return first;
+  return readStoredPlaceSignboard(input);
+}
+
+/**
+ * A verdict that would put a name on the owner's board is read a SECOND time, and filed only if the
+ * second reading agrees.
+ *
+ * 🔴 ONE READING IS NOT A VERDICT ABOUT A PLACE, and 2026-10-09 proved it three ways in one evening.
+ * A false match: مستشفى المنشاوى العام scored a MATCH against a board reading مستشفى طنطا العام,
+ * because the two words it kept were the ones every general hospital in Egypt shares. And two flips
+ * on re-reading the same frame: that hospital answered `other_name` at 18:12 and `unjudged` at 18:34,
+ * and اسلام عبدالعال answered `unjudged` at 18:35 and `other_name` at 18:48. The flag is the only
+ * output of this pass that a human ever sees, and it carries a person's name — so it is the one
+ * verdict worth a second call.
+ *
+ * On disagreement the place is recorded `unjudged` / `unconfirmed`, KEEPING the first reading's text
+ * and signs as the evidence, and it is re-read on a later night. Nothing is flagged, and nothing is
+ * thrown away. A match and an `unjudged` cost no extra call at all: nobody is named by either.
+ *
+ * It deliberately ignores the pass's deadline, like every other read of a place already started —
+ * the budget stops the pass STARTING a place, and a place that is started is finished.
+ */
+async function confirmBeforeFlagging(
+  place: SweepPlace,
+  first: PhoenixCrmSignboardCheck,
+): Promise<PhoenixCrmSignboardCheck> {
+  if (first.verdict !== "other_name" && first.verdict !== "no_name") return first;
+  const second = await readOne(place);
+  if (second.verdict === first.verdict) return second;
+  return { ...first, reason: "unconfirmed", verdict: "unjudged" };
 }
 
 /**
@@ -153,7 +239,7 @@ async function readOne(place: SweepPlace): Promise<PhoenixCrmSignboardCheck> {
 export async function runPhoenixCrmSignboardSweep(
   options: { limit?: number; budgetMs?: number } = {},
 ): Promise<SignboardSweepResult> {
-  const result: SignboardSweepResult = { read: 0, flagged: 0, unjudged: 0, moreWaiting: false, skipped: null };
+  const result: SignboardSweepResult = { read: 0, flagged: 0, unjudged: 0, unconfirmed: 0, moreWaiting: false, skipped: null };
   // No key here (a preview, a local run): nothing is read and nothing is written, so the backlog stays
   // exactly as it is for the environment that can read it.
   if (!hasOpenAiApiKey()) return { ...result, skipped: "no_api_key" };
@@ -172,10 +258,12 @@ export async function runPhoenixCrmSignboardSweep(
       }
       const place = backlog[next];
       next += 1;
-      const check = await readOne(place);
+      const first = await readOne(place);
+      const check = signboardNextAttempt(await confirmBeforeFlagging(place, first), place.priorAttempts);
       await recordPlaceSignboard(place.placeId, check);
       result.read += 1;
       if (check.verdict === "unjudged") result.unjudged += 1;
+      if (check.reason === "unconfirmed") result.unconfirmed += 1;
       if (check.verdict === "other_name" || check.verdict === "no_name") {
         await filePlaceSignboardFlag({
           placeId: place.placeId,
