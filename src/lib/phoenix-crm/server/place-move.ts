@@ -21,7 +21,7 @@ import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { assertPlaceMover, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
+import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -92,7 +92,9 @@ export async function movePlace(viewer: PhoenixCrmViewer, raw: unknown): Promise
     point = { lat, lon, accuracyMeters: numberOrNull(place[`${target}_accuracy_meters`]) };
   }
 
-  const location = await resolvePlaceLocation(point);
+  // The mover's own seat territory breaks a near tie exactly as a validation's does — a move and a
+  // capture must never disagree about which brick a point is in.
+  const location = await resolvePlaceLocation(point, territoryOfSeat(seat));
   const result = await callPhoenixCrm<Row>("phoenix_crm_move_place", {
     p: {
       seat_id: seat.seatId,

@@ -110,7 +110,7 @@ import {
 } from "@/lib/phoenix-crm/server/validation-reviews";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
-import { resolvePinGeography, resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
+import { resolvePinGeography, resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
 import { scheduleHoldRecord, scheduleHoldsForReview, type PhoenixCrmScheduleCheck } from "@/lib/phoenix-crm/schedule-rules";
@@ -1390,9 +1390,9 @@ function lineCodeOf(seat: OrgSeat): string {
  * the location above is resolved from `placePoint` (the photo's reading, else the pin), `lat`/`lon`
  * hold that fixed point, and both raw readings are stored beside it for good.
  */
-async function placePayload(place: PlaceDraft): Promise<Row> {
+async function placePayload(place: PlaceDraft, seat: OrgSeat): Promise<Row> {
   const point = placePoint(place);
-  const [issuedAt, located] = await Promise.all([photoSlotIssuedAt(place.photoPath), resolvePlaceLocation(point)]);
+  const [issuedAt, located] = await Promise.all([photoSlotIssuedAt(place.photoPath), resolvePlaceLocation(point, territoryOfSeat(seat))]);
   return {
     photo_path: place.photoPath,
     lat: point.lat,
@@ -1423,8 +1423,8 @@ async function placePayload(place: PlaceDraft): Promise<Row> {
  * approved or scored against it (a pharmacy needs no validation), and a reading that resolves to no
  * brick is still saved, with `brick_lookup` saying which kind of nothing it was.
  */
-async function resolvePharmacyPinPayload(pin: PharmacyPinDraft): Promise<Row> {
-  const geo = await resolvePinGeography(pin);
+async function resolvePharmacyPinPayload(pin: PharmacyPinDraft, seat: OrgSeat): Promise<Row> {
+  const geo = await resolvePinGeography(pin, territoryOfSeat(seat));
   return {
     lat: pin.lat,
     lon: pin.lon,
@@ -1838,7 +1838,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     if (signboard && payload.hold_review === undefined && signboardHoldsForReview(signboard.check)) {
       payload.hold_review = signboard.record;
     }
-    payload.place = await placePayload(place);
+    payload.place = await placePayload(place, seat);
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_validate_customer", { p: payload });
@@ -2059,7 +2059,7 @@ export async function addPharmacy(
       // Omitted entirely when he captured nothing, so the function's own "a body with no phone and no
       // pin key does exactly what it did" path is the one that runs.
       ...(phone.value === null ? {} : { phone: phone.value }),
-      ...(pin.value === null ? {} : { pin: await resolvePharmacyPinPayload(pin.value) }),
+      ...(pin.value === null ? {} : { pin: await resolvePharmacyPinPayload(pin.value, seat) }),
     },
   });
   return { customerId: String(result.customer_id), customerName: String(result.customer_name), created: result.created === true };
@@ -2095,7 +2095,7 @@ export async function setPharmacyDetails(
       customer_id: String(body.customerId).toLowerCase(),
       // `null` is sent deliberately — it is how he clears one. The KEY is what says "set it".
       ...(setsPhone ? { phone: phone.value } : {}),
-      ...(setsPin ? { pin: pin.value === null ? null : await resolvePharmacyPinPayload(pin.value) } : {}),
+      ...(setsPin ? { pin: pin.value === null ? null : await resolvePharmacyPinPayload(pin.value, seat) } : {}),
     },
   });
   return {
@@ -2183,7 +2183,7 @@ export async function addPlace(
       actor_hr_id: viewer.hrId,
       is_test: isTest,
       customer_id: customerId,
-      place: seated && venue ? await seatedPlacePayload(venue, seated) : await placePayload(place as PlaceDraft),
+      place: seated && venue ? await seatedPlacePayload(venue, seated) : await placePayload(place as PlaceDraft, seat),
       ...(matched ? { google: matched } : {}),
       ...(holdRecord ? { hold_review: holdRecord } : {}),
     },

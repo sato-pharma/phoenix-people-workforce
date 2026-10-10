@@ -280,20 +280,47 @@ export async function loadBrickNames(brickIds: readonly string[]): Promise<Map<s
 }
 
 /**
+ * The territory a point was captured IN, when the caller knows it — the area codes of the seat whose
+ * rep took the reading. `withinKm` is the caller's own trust radius: a brick of that territory is
+ * preferred only while it is close enough to be believable on its own.
+ */
+export type PreferredTerritory = {
+  readonly areaCodes: readonly string[];
+  readonly withinKm: number;
+};
+
+/**
  * Nearest brick to one coordinate. Returns null when there are no centroids at all, or the point
  * has no usable coordinates. A cheap bounding-box pre-filter (~1.5°, far wider than any plausible
  * brick) skips the great-circle maths for the vast majority of candidates.
+ *
+ * 🔴 `prefer` MAKES THE CAPTURING SEAT'S OWN AREA WIN A NEAR TIE, AND IT IS THE ONLY DEFENCE AGAINST
+ * A CENTROID THAT IS NOT A BRICK'S CENTRE AT ALL. 68 of the 699 live centroids sit on 25 SHARED
+ * coordinates (a brick name Google could not place falls back to the town's or the governorate's own
+ * point), and 34 of those straddle an AREA boundary — so the nearest-centroid winner among them is
+ * whichever row the array happened to hold first, which is not a geographic fact. Measured on
+ * production 2026-10-10: a place captured at Tabarak hospital on King Faisal Street was filed in
+ * `Imbaba - Imbaba Centers` because تكلا's junk centroid sat 1.26 km away while the real Haram-Faisal
+ * brick sat 1.45 km away, and six Qena 1 captures were filed in Qena 2 on a centroid the two areas
+ * SHARE to thirteen decimals. Preferring the seat's own area inside the same trust radius changed 7
+ * of 631 rows and nothing else: 599 already resolved inside their own area, and the 13 whose own area
+ * has no brick within the radius keep the nearest brick anywhere, which is the honest answer for a
+ * rep genuinely working at the edge of a neighbouring district.
  */
 export function resolveBrickForPoint(
   lat: number | null | undefined,
   lon: number | null | undefined,
   centroids: readonly BrickCentroid[],
+  prefer?: PreferredTerritory | null,
 ): ResolvedBrickPoint | null {
   if (typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (centroids.length === 0) return null;
+  const preferred = new Set(prefer?.areaCodes ?? []);
 
   let best: BrickCentroid | null = null;
   let bestKm = Number.POSITIVE_INFINITY;
+  let own: BrickCentroid | null = null;
+  let ownKm = Number.POSITIVE_INFINITY;
   for (const candidate of centroids) {
     if (Math.abs(candidate.lat - lat) > 1.5 || Math.abs(candidate.lon - lon) > 1.5) continue;
     const km = haversineKm(lat, lon, candidate.lat, candidate.lon);
@@ -301,15 +328,23 @@ export function resolveBrickForPoint(
       bestKm = km;
       best = candidate;
     }
+    if (km < ownKm && candidate.areaCode !== null && preferred.has(candidate.areaCode)) {
+      ownKm = km;
+      own = candidate;
+    }
   }
-  if (!best) return null;
+  // The seat's own area wins only inside the caller's trust radius; outside it the nearest brick
+  // anywhere is returned exactly as before, with its own distance, so nothing is fabricated to put a
+  // capture back inside a territory it is nowhere near.
+  const [chosen, chosenKm] = own && prefer && ownKm <= prefer.withinKm ? [own, ownKm] : [best, bestKm];
+  if (!chosen) return null;
   return {
-    areaCode: best.areaCode,
-    areaName: best.areaName,
-    brickId: best.brickId,
-    brickName: best.brickName,
-    distanceKm: bestKm,
-    regionCode: best.regionCode,
-    regionName: best.regionName,
+    areaCode: chosen.areaCode,
+    areaName: chosen.areaName,
+    brickId: chosen.brickId,
+    brickName: chosen.brickName,
+    distanceKm: chosenKm,
+    regionCode: chosen.regionCode,
+    regionName: chosen.regionName,
   };
 }
