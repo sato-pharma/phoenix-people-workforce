@@ -39,7 +39,7 @@ export function createReadStore(c: Config): ReadStore {
   const sql = postgres(c.databaseUrl, {
     max:2, connect_timeout:5, idle_timeout:10, max_lifetime:60, prepare:false,
     ssl:{rejectUnauthorized:true},
-    connection:{application_name:'phoenix-mcp-read-only',statement_timeout:3000,lock_timeout:500,idle_in_transaction_session_timeout:5000,default_transaction_read_only:'on'},
+    connection:{application_name:'phoenix-mcp-read-only',statement_timeout:3000,lock_timeout:500,idle_in_transaction_session_timeout:5000,default_transaction_read_only:true},
     onnotice:()=>{},
   });
   let running = 0;

@@ -14,7 +14,7 @@ export function fixtureStore(){
     {hrId:'A-2',fullName:'Fixture Leave',employmentStatus:'on_leave'},
     {hrId:'A-3',fullName:'Fixture Departed',employmentStatus:'resigned'},
     {hrId:'A-4',fullName:'Fixture Placeholder',employmentStatus:'system_placeholder'},
-  ].map(row=>employeeSchema.parse({managerHrId:null,jobTitle:'Medical Rep',organogramVisible:true,department:'Sales',line:'CNS',salary:999999,nationalId:'NEVER_RETURN',...row}));
+  ].map(row=>employeeSchema.parse({managerHrId:null,jobTitle:'Medical Rep',positionTitle:null,nodeType:null,recordType:null,businessType:null,employeeType:null,organogramVisible:true,department:'Sales',line:'CNS',salary:999999,nationalId:'NEVER_RETURN',...row}));
   const vacancies=[1,2,3].map(i=>vacancySchema.parse({key:String(i),position:'Medical Representative',department:'Sales',line:'CNS',area:`Fixture area ${i}`,status:'open'}));
   const organization=[1,2,3].map(i=>organizationSchema.parse({key:String(i),parentKey:null,parentPosition:'National Sales Manager',position:'Medical Representative',employeeName:'Fixture Employee',department:'Sales',line:'CNS',area:`Fixture area ${i}`,vacant:false}));
   const sales=[salesSchema.parse({key:'CNS',period:'2026-09',line:'CNS',salesValue:1500,targetValue:2000,currency:'EGP',publishedAt:'2026-10-01T00:00:00+03:00',sourceRevision:'fixture-published'})];

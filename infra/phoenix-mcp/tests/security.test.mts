@@ -74,6 +74,9 @@ test('canonical Phoenix active-directory predicate excludes hidden and system re
     const hidden={...s.employees[0],organogramVisible:false};
     const admin={...s.employees[0],hrId:'ADMIN-HR',fullName:'Phoenix System Administrator',jobTitle:'System Administrator'};
     assert.equal(activeEmployees([hidden,admin,...s.employees],s.identity()).length,2);
+    const explicit=employeeSchema.parse({...s.employees[0],nodeType:'non_login_aggregation_node'});
+    const position=employeeSchema.parse({...s.employees[0],positionTitle:'Vacant position'});
+    assert.equal(activeEmployees([explicit,position],s.identity()).length,0);
   }finally{s.state.close();}
 });
 test('PKCE, redirect URI, resource and single-use authorization codes are enforced',async()=>{
@@ -156,7 +159,7 @@ test('HTTP MCP lists exactly five read-only tools, rejects unauthenticated acces
     const t=await tokens(s);
     await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`),{requestInit:{headers:{Authorization:`Bearer ${t.access_token}`}}}));
     const list=await client.listTools();assert.deepEqual(list.tools.map(t=>t.name).sort(),[...toolNames].sort());assert.ok(list.tools.every(t=>t.annotations?.readOnlyHint===true));
-    const result=await client.callTool({name:'get_active_employee_count',arguments:{}});assert.equal(result.isError,undefined);assert.equal(result.structuredContent?.activeEmployeeCount,2);
+    const result=await client.callTool({name:'get_active_employee_count',arguments:{}});assert.equal(result.isError,undefined);assert.equal((result.structuredContent as Record<string,unknown>)?.activeEmployeeCount,2);
     assert.equal((await fetch(`${base}/mcp`,{method:'POST',headers:{Origin:'https://evil.test'}})).status,403);
     assert.equal((await fetch(`${base}/admin/sql`,{method:'POST'})).status,404);
     assert.equal((await fetch(`${base}/mcp`,{method:'POST',headers:{Authorization:`Bearer ${t.access_token}`,'content-type':'application/json'},body:JSON.stringify({padding:'x'.repeat(17000)})})).status,400);

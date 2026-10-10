@@ -15,6 +15,9 @@ export type Identity = z.infer<typeof identitySchema>;
 export type Principal = Pick<Identity, 'subject' | 'loginId' | 'role' | 'sessionVersion'>;
 export const employeeSchema = z.object({
   hrId: label, managerHrId: label.nullable(), fullName: label, jobTitle: label.nullable(),
+  // Internal classification inputs only; never emitted by a tool.
+  positionTitle: label.nullable(), nodeType: label.nullable(), recordType: label.nullable(),
+  businessType: label.nullable(), employeeType: label.nullable(),
   employmentStatus: z.string().nullable(), organogramVisible: z.boolean().nullable(),
   department: label.nullable(), line: label.nullable(),
 });
