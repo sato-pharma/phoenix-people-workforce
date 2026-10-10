@@ -115,6 +115,7 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
 import { scheduleHoldRecord, scheduleHoldsForReview, type PhoenixCrmScheduleCheck } from "@/lib/phoenix-crm/schedule-rules";
 import {
+  canDecideSharedPlaces,
   effectiveSeatedPhoto,
   seatedDraftOf,
   seatedPlacePayload,
@@ -236,6 +237,13 @@ export type ListPlace = {
    * clinic of his own, which follows the customer's list. Not a measurement, so the rep keeps it.
    */
   session?: "AM" | "PM" | null;
+  /**
+   * Whether the building this place is seated in has its timetable on file — not a measurement, so the
+   * rep keeps it, for the same reason `sharedPlaceId` is kept: a customer the Super Admin moved in is
+   * counted on his visits and held out of the KPIs until the board names him, and the rep has to be
+   * told WHICH of the two he is waiting for. Undefined on a place that stands alone.
+   */
+  venueTimetableOnFile?: boolean;
   /** The two raw readings, kept beside the fixed point for good. Null where one was not measured. */
   pinReading?: PlaceReading | null;
   photoReading?: PlaceReading | null;
@@ -520,6 +528,8 @@ export type TerritoryListView = {
   canReview: boolean;
   /** The viewer may move a validated place: the Super Admin and the SFE Manager, nobody else. */
   canMovePlaces: boolean;
+  /** The Super Admin alone moves standalone customers INTO a validated polyclinic (owner, 2026-10-10). */
+  canSeatInVenue: boolean;
   /**
    * The viewer reads a place's measurements — its accuracy, the phone-clock warning, the raw readings
    * and where the fixed point came from: the Super Admin and the SFE Manager alone (owner, 2026-10-02,
@@ -722,11 +732,22 @@ export async function loadTerritoryCustomers(
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
   ]);
+  // Which of the buildings these places are seated in already have their timetable on file.
+  const venueIds = [...new Set(places.map((row) => text(row.shared_place_id)).filter((id): id is string => id !== null))];
+  const boardOnFile = new Map<string, boolean>();
+  if (venueIds.length > 0) {
+    const venues = await supabase.from("phoenix_crm_shared_places").select("id, schedule_photo_path").in("id", venueIds);
+    throwIfError(venues.error);
+    for (const venue of (venues.data ?? []) as Row[]) boardOnFile.set(String(venue.id), text(venue.schedule_photo_path) !== null);
+  }
   const placesByCustomer = new Map<string, ListPlace[]>();
   for (const row of places) {
     const customerId = String(row.customer_id);
     const list = placesByCustomer.get(customerId) ?? [];
-    list.push(mapPlaceRow(row));
+    const mapped = mapPlaceRow(row);
+    const venueId = text(row.shared_place_id);
+    if (venueId) mapped.venueTimetableOnFile = boardOnFile.get(venueId) === true;
+    list.push(mapped);
     placesByCustomer.set(customerId, list);
   }
   for (const list of placesByCustomer.values()) list.sort((left, right) => left.capturedAt.localeCompare(right.capturedAt));
@@ -1339,6 +1360,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     canValidateReference: canValidateReference(viewer, seat, isTest),
     canReview: canReviewTerritory(viewer, seat, isTest),
     canMovePlaces: canMovePlaces(viewer, seat, isTest),
+    canSeatInVenue: canDecideSharedPlaces(viewer),
     seesMeasurements: readsLocationDetail(viewer),
     canBringBack: canDecideListRequest(viewer, seat, isTest, "sfe"),
     canCurateList: canCurate,

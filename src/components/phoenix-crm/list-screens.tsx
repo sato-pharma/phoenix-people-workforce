@@ -175,6 +175,10 @@ export type ListScreen =
   | { name: "add-place"; customerId: string; draft: PlaceDraftState | null; seated?: SeatedDraftState | null }
   | { name: "edit-place"; customerId: string; placeId: string }
   | { name: "move-place"; customerId: string; placeId: string }
+  /** The Super Admin moves several standalone customers into one validated polyclinic (owner, 2026-10-10). */
+  | { name: "seat-in-venue"; customerId: string }
+  /** A polyclinic's timetable photographed on its own, from the page of a customer waiting for it. */
+  | { name: "venue-timetable"; customerId: string; sharedPlaceId: string }
   | { name: "grade"; customerId: string }
   | { name: "edit-details"; customerId: string }
   | { name: "drop"; customerId: string | null; contactCrmId: number | null }

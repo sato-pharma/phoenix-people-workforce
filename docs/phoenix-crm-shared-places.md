@@ -273,9 +273,54 @@ patching is that the diff is only what this change adds.
 | `phoenix_crm_insert_place` | 6,220 chars, holds `already_seated` and `schedule_photo_path` | 6,220 chars, same |
 | grantees | `{postgres,service_role}` | `{postgres,service_role}` |
 | rows rewritten | none | none; 9 of 18 venues backfilled with their board (the 9 with a seating) |
-| read again 2026-10-10 | — | 18 venues, 8 seated places, 0 `schedule%` columns, index still unconditional |
+| read again 2026-10-10, **before the apply** | — | 18 venues, 8 seated places, 0 `schedule%` columns, index still unconditional — the pre-apply state; the rows above are the after |
 
 Applied to production by the owner on 2026-10-10 from his own terminal through `scripts/apply-sql-file.mjs` (pooler `aws-1`), after `apply_migration` was declined by the MCP server four times over the `drop index` and `revoke` lines and the script was refused for Claude by the auto-mode classifier. Read back from `pg_class` / `pg_proc`, not the ledger: 9 venues with a seating, 9 venues now holding their board.
+
+## Moving a standalone customer into a polyclinic — the Super Admin, 2026-10-10
+
+Reps registered doctors as separate customers before polyclinics existed. Each carries his own
+door photo and point while he actually sits in a building the rep has since validated, so the list
+shows four clinics where there is one, every visit is measured against a point that is not the door,
+and the three-a-day cap on the building cannot see them.
+
+His words, 2026-10-10: *"only the super admin can move a customer in one list … to a polyclinic … add
+the option to the admin to move this doctor to — and the validated polyclinics of the rep I am
+standing in his account appears. And I move the doctors to the polyclinic."* On the doctor's place:
+*"since he is in the polyclinic, he's already in the polyclinic. His only place is mismatched. So he's
+supposed that his location be exactly matching with the polyclinic I'm moving him to."* So the place
+adopts the venue's point, brick and area exactly, and nothing is offered to choose. On the way back he
+chose "Yes, back to To validate" (the Place checks board's existing reject already does it — a seated
+place is an ordinary active row). On a polyclinic with no timetable photo: *"you will count the visit
+normally … but it will not be included in KPIs until the timetable of the doctor in the polyclinic is
+updated … we validate the polyclinic normally as we validate anything, and we validate the customer
+inside the polyclinic by the timetable."* He chose one screen, tick several customers, one written reason.
+
+| Piece | Where |
+| --- | --- |
+| The move | `phoenix_crm_seat_places_in_venue(p)` — one statement sets `shared_place_id`, `photo_path` (the building's board, else his own photo kept) and `point_source = 'shared_place'`, copies point, brick and area, and nulls `pin_*`, `photo_*` and the three `moved_*` fields (the `phoenix_crm_places_moved` check forces that). One `place_seated` event per place, its `before` holding the old photo path |
+| Who | `seatPlacesInVenue` in `server/place-move.ts`, gated on `canDecideSharedPlaces` — the Super Admin alone, never the SFE Manager. The route is `POST /api/phoenix-crm/list/places/seat`, permission `update` |
+| The screen | `seat-in-venue-screen.tsx`, opened from the customer page ("Move into a polyclinic") |
+| The KPI hold-out | a customer seated where no timetable is on file goes back to `pending` with `validated_at = null`; every KPI already reads `customer_validated`, so nothing in the KPI code changed. He can still be planned, sent and visited |
+| The timetable arriving later | `phoenix_crm_set_venue_timetable` and `phoenix_crm_settle_venue_timetable`, reached by the rep's "Photograph the timetable" screen: a pending `match` is validated, `other_name` / `no_schedule` stay held, an approved review is never undone |
+
+🔴 **`unjudged` never holds**, here as everywhere (owner, 2026-10-08): when the timetable read could not
+judge (no key, unreadable, call failed) the customer stays validated. Only a building with no board
+at all, or a board read as another name or no schedule, holds him.
+
+A seated pending customer is not offered "Validate this customer" — capturing his own door again
+would undo the move. He sees "Waiting for this building's timetable" instead.
+
+Applied 2026-10-10 to staging (`cifwmndunmlxjhyjugxa`) and production (`ozucdzovmcqvepbozvqf`, through
+`scripts/apply-sql-file.mjs` with `PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com`); read back
+from `pg_proc` on both: three SECURITY DEFINER functions, grantees `{postgres,service_role}`, no row rewritten.
+A rolled-back seating on staging found a live constraint the plan had missed —
+`phoenix_crm_places_seated_has_session` (`shared_place_id IS NULL OR session IS NOT NULL`) — so a seated
+place carries its customer's AM or PM list as `session`, and a pharmacy (neither) is refused as
+`pharmacy_cannot_be_seated` and never offered on the screen.
+
+Consequence, stated not fixed: plans already sent are not re-checked against the three-a-day cap; the
+cap bites on the next save, the next send and at the door.
 
 ## Verification still owed after the merge
 

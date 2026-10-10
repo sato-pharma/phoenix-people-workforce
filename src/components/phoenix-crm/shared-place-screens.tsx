@@ -180,11 +180,11 @@ function venueProblem(draft: VenueDraft): string | null {
 }
 
 /** "Nile Polyclinic · Maadi · Cairo South" — where a venue is, for the picker and the chosen block. */
-function venueWhere(venue: SharedPlaceChoice): string {
+export function venueWhere(venue: SharedPlaceChoice): string {
   return [venue.address, venue.brickName, venue.areaName].filter(Boolean).join(" · ") || "No address on record";
 }
 
-function seatedNote(venue: SharedPlaceChoice): string {
+export function seatedNote(venue: SharedPlaceChoice): string {
   if (venue.status === "held") return "The system is still checking this one";
   if (venue.seated === 0) return "No customer in it yet";
   return venue.seated === 1 ? "1 customer in it" : `${venue.seated} customers in it`;

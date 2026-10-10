@@ -15,13 +15,15 @@
  * Every visit to the customer is then measured again against the moved place (visit-locations.ts).
  */
 
-import { notFoundError, validationError } from "@/lib/http/api-errors";
+import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { assertPlaceMover, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
+import { canDecideSharedPlaces, sharedPlaceForSeating } from "@/lib/phoenix-crm/server/shared-places";
+import { settleVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -164,4 +166,81 @@ export async function retirePlace(viewer: PhoenixCrmViewer, raw: unknown): Promi
     scope: "all",
   });
   return retired;
+}
+
+export type SeatedInVenueResult = {
+  sharedPlaceId: string;
+  sharedPlaceName: string;
+  seated: { placeId: string; customerId: string; customerName: string }[];
+  timetableOnFile: boolean;
+  /** Customers taken out of the KPIs until the building's timetable names them. */
+  held: number;
+};
+
+/** One hand-ticked list is never longer than this; the database repeats the ceiling. */
+export const SEAT_IN_VENUE_MAX_PLACES = 60;
+
+/**
+ * The Super Admin moves standalone customers INTO a validated polyclinic (owner, 2026-10-10).
+ *
+ * 🔴 SUPER ADMIN ONLY, through `canDecideSharedPlaces` — deliberately NOT `assertPlaceMover`, which also
+ * admits the SFE Manager. Each place takes the venue's point exactly (phoenix_crm_seat_places_in_venue);
+ * nothing about its location is offered to choose. Where the building has a timetable it is read for
+ * each customer, and a confident negative holds him out of the KPIs; `unjudged` NEVER does.
+ */
+export async function seatPlacesInVenue(viewer: PhoenixCrmViewer, raw: unknown): Promise<SeatedInVenueResult> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRead(viewer, body.seatId, readTestFlag(body.test));
+  if (!canDecideSharedPlaces(viewer)) throw forbiddenError("Only the Super Admin moves a customer into a polyclinic.");
+  const ids = Array.isArray(body.placeIds) ? body.placeIds : [];
+  if (ids.length === 0) throw validationError("Tick at least one customer to move into the polyclinic.");
+  if (ids.length > SEAT_IN_VENUE_MAX_PLACES) throw validationError("Move at most 60 customers at a time.");
+  if (!ids.every((id) => isUuid(id))) throw validationError("Reload the list and tick the customers again.");
+  const placeIds = [...new Set(ids.map((id) => String(id).toLowerCase()))];
+  const reason = cleanText(body.reason, PLACE_MOVE_REASON_MAX);
+  if (!reason || reason.length < PLACE_MOVE_REASON_MIN) {
+    throw validationError(`Write why they are moved (at least ${PLACE_MOVE_REASON_MIN} characters).`);
+  }
+  // The venue read gives the three-state refusal and the copied location block; the database repeats
+  // all three under its own lock.
+  const venue = await sharedPlaceForSeating({ seatId: seat.seatId, isTest, sharedPlaceId: String(body.sharedPlaceId ?? "") });
+
+  const result = await callPhoenixCrm<Row>("phoenix_crm_seat_places_in_venue", {
+    p: {
+      seat_id: seat.seatId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      shared_place_id: venue.sharedPlaceId,
+      place_ids: placeIds,
+      reason,
+    },
+  });
+  const seated = (Array.isArray(result.seated) ? result.seated : []).map((entry) => {
+    const row = record(entry);
+    return { placeId: String(row.place_id), customerId: String(row.customer_id), customerName: String(row.customer_name ?? "") };
+  });
+  const timetableOnFile = result.timetable_on_file === true;
+
+  // The building's board, read for each of them and settled — silently, after the commit. Where the
+  // building has none, the database already held them out of the KPIs. `unjudged` NEVER holds.
+  if (timetableOnFile) {
+    await settleVenueTimetable({ viewer, seatId: seat.seatId, isTest, sharedPlaceId: venue.sharedPlaceId, schedulePhotoPath: venue.schedulePhotoPath });
+  }
+  for (const entry of seated) {
+    await restampVisitLocationsQuietly({
+      seatId: seat.seatId,
+      isTest,
+      customerId: entry.customerId,
+      actorHrId: viewer.hrId,
+      settings: viewer.config.settings,
+      scope: "all",
+    });
+  }
+  return {
+    sharedPlaceId: venue.sharedPlaceId,
+    sharedPlaceName: String(result.shared_place_name ?? venue.name),
+    seated,
+    timetableOnFile,
+    held: Array.isArray(result.held) ? result.held.length : 0,
+  };
 }

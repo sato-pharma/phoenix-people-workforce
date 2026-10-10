@@ -65,6 +65,8 @@ import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { PharmacyDetailsScreen } from "@/components/phoenix-crm/pharmacy-details";
 import { PlaceMoveScreen } from "@/components/phoenix-crm/place-move-screen";
+import { VenueTimetableScreen } from "@/components/phoenix-crm/venue-timetable-screen";
+import { SeatInVenueScreen } from "@/components/phoenix-crm/seat-in-venue-screen";
 import type { PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import type { SeatedDraftState } from "@/components/phoenix-crm/shared-place-screens";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
@@ -476,6 +478,35 @@ export function ListTab({
             onBack={() => openCustomer(customerId)}
             onDone={(next) => customerChanged(customerId, next)}
             placeId={placeId}
+          />
+        );
+        break;
+      }
+      case "seat-in-venue": {
+        // The Super Admin's alone: the customer's page offers it only where `view.canSeatInVenue`, and
+        // the screen refuses to draw for anyone else. 🔴 The `default:` branch below renders ListHome, so
+        // a variant with no case here silently shows the list.
+        const { customerId } = current;
+        body = (
+          <SeatInVenueScreen
+            {...base}
+            customerId={customerId}
+            key={`seat-in-venue-${customerId}`}
+            onBack={() => openCustomer(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
+          />
+        );
+        break;
+      }
+      case "venue-timetable": {
+        const { customerId, sharedPlaceId } = current;
+        body = (
+          <VenueTimetableScreen
+            {...base}
+            key={`venue-timetable-${sharedPlaceId}`}
+            onBack={() => openCustomer(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
+            sharedPlaceId={sharedPlaceId}
           />
         );
         break;

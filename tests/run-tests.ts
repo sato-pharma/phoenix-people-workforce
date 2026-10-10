@@ -1821,6 +1821,7 @@ import { runPhoenixCrmListEdgeTests } from "./phoenix-crm-list-edges.test.ts";
 import { runPhoenixCrmListSheetHoursTests } from "./phoenix-crm-list-sheet-hours.test.ts";
 import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
+import { runPhoenixCrmSeatInVenueTests } from "./phoenix-crm-seat-in-venue.test.ts";
 import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
@@ -6808,6 +6809,11 @@ await runTest(
 await runTest(
   "Phoenix CRM moves a validated place only for the Super Admin and the SFE Manager (owner, 2026-09-29: the location is fixed forever): the service checks the mover before it reads anything, a move needs a written reason of ten characters or more, the new point is resolved by the same function a validation uses, every visit to the customer is measured again, a test account never moves one, and the database writes an audited place_moved event with the point before and after",
   runPhoenixCrmPlaceMoveTests,
+);
+
+await runTest(
+  "Phoenix CRM moves a standalone customer into a validated polyclinic only for the Super Admin (owner, 2026-10-10): one statement seats the place and frees its photo, the place takes the building's point exactly, a building with no timetable holds the customer out of the KPIs through validated_at while his visits still count, an unjudged read never holds, and a customer already in a building is never seated twice",
+  runPhoenixCrmSeatInVenueTests,
 );
 
 await runTest(
