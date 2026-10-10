@@ -716,9 +716,28 @@ function runNoDoubleCountTests(code: string): void {
   );
   assert.ok(
     flat(activityBranch).includes(
-      "join public.phoenix_crm_started_team_seats() team on team.seat_id = a.seat_id and a.activity_date >= team.starts_on and (team.stops_on is null or a.activity_date < team.stops_on)",
+      "join ( select t.seat_id, t.team_seat_id, t.starts_on, t.stops_on from public.phoenix_crm_started_team_seats() t union " +
+        "select s.team_seat_id, s.team_seat_id, s.starts_on, s.stops_on from public.phoenix_crm_team_starts s ) team on team.seat_id = a.seat_id",
     ),
-    "and so is a day activity",
+    "and so is a day activity — on a territory, or on the team's own seat where a district manager's day sits",
+  );
+  // Owner, 2026-10-10: Cairo and Giza's go-live training of 7 Oct counts although their start is 10 Oct.
+  // The gate may only move EARLIER than the start (least), never later, and never past the stop.
+  assert.ok(
+    flat(activityBranch).includes(
+      "a.activity_date >= least(team.starts_on, coalesce(run.day_activities_from, team.starts_on)) and (team.stops_on is null or a.activity_date < team.stops_on)",
+    ),
+    "a day activity counts from the team's start, or from its day_activities_from when that is earlier",
+  );
+  assert.ok(
+    flat(activityBranch).includes(
+      "left join public.phoenix_crm_team_starts run on run.team_seat_id = team.team_seat_id and run.starts_on = team.starts_on and run.stops_on is not distinct from team.stops_on",
+    ),
+    "the day_activities_from is read from the SAME start run the territory came from",
+  );
+  assert.ok(
+    !flat(visitBranch).includes("day_activities_from"),
+    "a VISIT never counts before the start — only the recorded day activity does",
   );
   assert.ok(
     flat(functionSql(code, "phoenix_crm_started_team_seats")).includes(
@@ -1082,7 +1101,8 @@ function runRowShapeTests(code: string): void {
   // DAY ACTIVITIES — recorded, real, each under the code the readers already treat as a WORKED day.
   const activity = flat(activityBranch);
   assert.ok(activity.includes("from public.phoenix_crm_day_activities a"), "the recorded day activities — never a planned one");
-  assert.ok(activity.endsWith("where not a.is_test and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel');"), "real only, of a kind the view names");
+  assert.ok(activity.endsWith("and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel');"), "real only, of a kind the view names");
+  assert.ok(activity.includes("where not a.is_test and a.activity_date >= least("), "real only — never a test account's day");
   assert.ok(
     activity.includes(`case a.activity_type ${ACTIVITY_CODES.map((entry) => `when '${entry.kind}' then ${entry.code}`).join(" ")} end`),
     "each kind under its iReports360 code",

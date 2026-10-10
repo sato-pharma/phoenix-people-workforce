@@ -7709,3 +7709,19 @@ AGENTS.md loads on every request and again after every compaction, so on 2026-10
 ### §4 — The Monthly-Closing source-of-truth golden rule
 
 - 🔒 **THE MONTHLY-CLOSING SOURCE-OF-TRUTH GOLDEN RULE — the Monthly Closing module is the ONE source of truth for every SALES *and* every TARGET figure, system-wide** (owner, 2026-08-13; **targets made explicit and the rule ordered locked everywhere 2026-09-27**: "your source of truth to calculate any sales any targets is the monthclosing module, lock this golden rule everywhere in system"). Every surface — Sales vs Target, overviews, portal landings, command centres, incentive achievement, Employee 360, **Business Review** — computes BOTH the sales and the target it divides by through the closing engine, and must equal the **PUBLISHED** closing for that person and month; a page that re-derives either half from its own query, its own table or its own period is the bug, never a variant. Weekly Sales, Marketing ROI and the **Business Review pack** are the carve-outs — never invent a fourth. 🔴 **THE BUSINESS REVIEW READS THE LIVE ENGINE, NOT THE PUBLISHED SNAPSHOT** (owner, 2026-09-28, asked directly and answered *"use the live one"*). It is a REVIEW, not a payout record, and the two diverge for reasons correct on BOTH sides — a direct order counts in the month Finance books it, and the engine resolves geography as of the period — so the snapshot would understate real money and freeze a stale geography. **Never "fix" the Business Review back onto the snapshot, never republish a month to make them agree, and never acknowledge the drift to silence it.** A partial-window or per-page TARGET that inflates an achievement is the same defect on the denominator side. Account — the measured drift, line by line: `docs/agents-owner-rules.md`, "The Business Review reads live". `sos-monthly-closing-is-the-only-sales-truth`
+
+### Cairo and Giza's go-live training day counts — 2026-10-10
+
+On Wed 7 Oct 2026 the Cairo and Giza teams (CNS, Anti Infective, Pedia) sat the Phoenix CRM go-live
+training; their iReports360 → Phoenix start is 10 Oct, so the day was invisible to every reader of
+`crm_visits_unified` (the private calendar, the Deductions "No Records Activity" connector, the weekly
+gap notice). Owner ruling, in chat as multiple choice: **7 October only.** `phoenix_crm_team_starts.day_activities_from`
+(set to 2026-10-07 on the six Cairo/Giza start rows) lets a started team's RECORDED day activities count
+from that day — `least(starts_on, day_activities_from)`, so it can only move the gate earlier, never
+later, and it never touches visits. 15 reps had recorded a Phoenix meeting/training that day; 8 of them
+had no iReports360 row and read "No Activity Recorded" before. Leave stays HR's record (a rep on approved
+leave that day is not given a worked day), and a district manager has no Phoenix territory, so his day sits on his
+team seat — the view's day-activity branch also reads a started team's OWN seat. Owner added the Anti
+Infective Cairo district manager (Momen Abdelhady Shehata) for 7 Oct as a meeting entered by B-10, and
+excluded Samir Saad (annual vacation that day). The Phoenix team calendar grid lists territories, so a
+manager's day has no cell there.
