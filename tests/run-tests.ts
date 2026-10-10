@@ -1262,6 +1262,7 @@ import { runSosDirectCleanupSafetyTests } from "./sos-direct-cleanup-safety.test
 import { runSosOfficeRowAndDuplicateUploadTests } from "./sos-office-row-and-duplicate-upload.test.ts";
 import { runClosingPublicationSnapshotTests } from "./closing-publication-snapshot.test.ts";
 import { runClosingPublishSilentlyTests } from "./closing-publish-silently.test.ts";
+import { runClosingPublishLineWideTests } from "./closing-publish-line-wide.test.ts";
 import { runOfficialNumbersExcludeWeeklyTests } from "./official-numbers-exclude-weekly.test.ts";
 import { runLactoLineFamilyGroupingTests } from "./lacto-line-family-grouping.test.ts";
 import { runIdentityCardSignatureLockTests } from "./identity-card-signature-lock.test.ts";
@@ -5161,6 +5162,7 @@ await runTest('SoS direct cleanup refuses the live vintage and an incomplete bac
 await runTest('Top Customers shows Office as one row; the same workbook cannot load twice', runSosOfficeRowAndDuplicateUploadTests);
 await runTest('Publishing a closing records what was published (insert-only snapshot)', runClosingPublicationSnapshotTests);
 await runTest('A closing can be published silently, and silence is opt-out only', runClosingPublishSilentlyTests);
+await runTest('Publishing a closing tells everyone on the line by email, Telegram and in-app', runClosingPublishLineWideTests);
 await runTest('SALES TRUTH (one area, one number — every surface reconciles to Monthly Closing)', runSalesTruthNoMismatchTests);
 await runTest('SALES TRUTH Source of Sales carries the closing\'s own store split and asks the merge about its own month', runSalesTruthStoreSplitTests);
 await runTest('RULE #1 Monthly Closing is the only truth (the official-number engine never imports the weekly pipeline)', runOfficialNumbersExcludeWeeklyTests);

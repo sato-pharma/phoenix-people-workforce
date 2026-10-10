@@ -4,9 +4,13 @@
 // a literal string except the two owner-NAMED individuals below, which are deliberate: they are
 // not tied to a role, so there is no seat/role lookup that could ever resolve them.
 //
-// TO   — every currently active District Manager (including an acting DM) seated on the
-//        published line, from the live organogram (au_v_org_tree). A vacant seat or an inactive
-//        employee is silently skipped, never sent to and never a blank/broken row.
+// TO   — EVERYONE seated on the published line below its National Sales Manager — District
+//        Managers (acting included), regional managers and every rep — from the live organogram
+//        (au_v_org_tree). Owner, 2026-10-10: "when I publish the closing the email and telegram and
+//        in app goes to all in the published line". A vacant seat or an inactive employee is
+//        silently skipped, never sent to and never a blank/broken row.
+// TEAM — the same people plus the line's NSM and Product/Group Product Manager: the audience of the
+//        in-app notice and the Telegram message, which are per person and need no email address.
 // CC   — CEO, Marketing Manager, SFE Manager (each a company-wide singleton role — resolved by
 //        role, so a personnel change updates the recipient automatically), the published line's
 //        own National Sales Manager and Product/Group Product Manager, and Ahmed Sharaf (named
@@ -22,7 +26,10 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 export type ClosingPublishRecipient = { hrId: string; name: string; email: string };
 
 export type ClosingPublishRecipients = {
+  /** Everyone seated on the line below its NSM, with an active work email. */
   to: ClosingPublishRecipient[];
+  /** Everyone on the line (To + NSM + the line's own PM), active — by HR_ID, for in-app and Telegram. */
+  team: Array<{ hrId: string; name: string }>;
   cc: ClosingPublishRecipient[];
   bcc: ClosingPublishRecipient[];
   /** Human-readable notes on anything skipped (vacant seat, inactive employee, missing email). */
@@ -40,7 +47,6 @@ const NAMED_BCC_HR_IDS = ["B-10"] as const; // Omar Anwar (Super Admin)
  */
 const FIXED_CC_ROLES: readonly PhoenixRole[] = ["CEO", "Marketing Manager", "SFE Manager"];
 const LINE_PRODUCT_MANAGER_ROLES = ["Product Manager", "Group Product Manager"] as const;
-const DM_SEAT_TIERS = new Set(["DM", "ACTING_DM"]);
 
 // Who is skipped regardless of employment_status now lives in sales-notification-exclusions.ts,
 // shared with the weekly upload notification, because the owner extended the same decision about
@@ -76,7 +82,7 @@ function toRecipient(row: EmployeeRow): ClosingPublishRecipient {
 export async function resolveClosingPublishRecipients(officialLine: string): Promise<ClosingPublishRecipients> {
   const warnings: string[] = [];
   const line = String(officialLine ?? "").trim();
-  if (!line) return { to: [], cc: [], bcc: [], warnings: ["No line given."] };
+  if (!line) return { to: [], team: [], cc: [], bcc: [], warnings: ["No line given."] };
 
   const supabase = getSupabaseAdmin();
   const lineCode = resolveTargetLineCode(line);
@@ -111,8 +117,11 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
     // filtered out right here so it applies uniformly to every bucket, not just District Managers.
     const notManuallyExcluded = (hrId: string) => !isSalesNotificationExcluded(hrId);
     const seatRows = (seatResult.data ?? []) as Array<{ seat_tier: string | null; occupant_hr_id: string | null }>;
-    const dmHrIds = seatRows
-      .filter((row) => DM_SEAT_TIERS.has(String(row.seat_tier ?? "").trim().toUpperCase()))
+    // Every seat on the line except the NSM (who is Cc'd, as before). A seat tier is never
+    // whitelisted here: a new tier on the organogram (RSM, an acting seat) must reach the line
+    // without anyone remembering to add it to a list.
+    const lineMemberHrIds = seatRows
+      .filter((row) => String(row.seat_tier ?? "").trim().toUpperCase() !== "NSM")
       .map((row) => String(row.occupant_hr_id ?? "").trim())
       .filter(Boolean)
       .filter(notManuallyExcluded);
@@ -130,7 +139,7 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
       .filter(Boolean)
       .filter(notManuallyExcluded);
 
-    const allHrIds = [...new Set([...dmHrIds, ...nsmHrIds, ...fixedRoleHrIds, ...pmHrIds])];
+    const allHrIds = [...new Set([...lineMemberHrIds, ...nsmHrIds, ...fixedRoleHrIds, ...pmHrIds])];
     const employeeResult = allHrIds.length > 0
       ? await supabase.from("employees").select("hr_id,full_name,work_email,employment_status").in("hr_id", allHrIds)
       : { data: [] as EmployeeRow[], error: null };
@@ -142,14 +151,28 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
 
     const to: ClosingPublishRecipient[] = [];
     const seenTo = new Set<string>();
-    for (const hrId of dmHrIds) {
+    // Active employees on the line whether or not they have an email: the in-app notice and the
+    // Telegram message are addressed by HR_ID, so a rep with no work email is still told there.
+    const team: Array<{ hrId: string; name: string }> = [];
+    const seenTeam = new Set<string>();
+    const addTeam = (hrId: string) => {
+      if (seenTeam.has(hrId)) return;
+      const employee = employeeByHrId.get(hrId);
+      if (!employee || String(employee.employment_status ?? "").trim().toLowerCase() !== "active") return;
+      seenTeam.add(hrId);
+      team.push({ hrId: employee.hr_id, name: employee.full_name });
+    };
+    for (const hrId of lineMemberHrIds) {
+      addTeam(hrId);
       if (seenTo.has(hrId)) continue; // two seats occupied by the same person (rare) — one row
       const employee = employeeByHrId.get(hrId);
-      if (!isActiveEmployee(employee, warnings, `${line} District Manager`)) continue;
+      if (!isActiveEmployee(employee, warnings, `${line} team member`)) continue;
       seenTo.add(hrId);
       to.push(toRecipient(employee));
     }
-    if (to.length === 0) warnings.push(`No active District Manager resolved for ${line} — check the organogram.`);
+    for (const hrId of nsmHrIds) addTeam(hrId);
+    for (const hrId of pmHrIds) addTeam(hrId);
+    if (to.length === 0) warnings.push(`No active team member resolved for ${line} — check the organogram.`);
 
     const cc: ClosingPublishRecipient[] = [];
     const seenCc = new Set<string>(seenTo);
@@ -173,11 +196,11 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
       bcc.push(toRecipient(employee));
     }
 
-    return { to, cc, bcc, warnings };
+    return { to, team, cc, bcc, warnings };
   } catch (error) {
     warnings.push(
       `Closing-publish recipient resolution failed: ${error instanceof Error ? error.message : "unknown error"}`,
     );
-    return { to: [], cc: [], bcc: [], warnings };
+    return { to: [], team: [], cc: [], bcc: [], warnings };
   }
 }
