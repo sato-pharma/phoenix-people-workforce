@@ -19,6 +19,24 @@ import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 // and a startup failure must never break boot, hence the catch.
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // FIRST, before anything can make an outbound call: hold the sockets to Supabase open.
+    // Node closes an idle fetch socket after 4s, and a fresh connection to Frankfurt costs
+    // ~3.2 x RTT against ~1.1 x for a reused one — paid on each of the ~8 PostgREST round
+    // trips a request makes. Dynamic import for the same edge-safety reason as the rest of
+    // this block, and it reports rather than throws: a slower Phoenix beats one that will
+    // not boot. See src/lib/observability/keep-alive.ts.
+    try {
+      const { pinKeepAliveDispatcher } = await import("@/lib/observability/keep-alive");
+      const result = await pinKeepAliveDispatcher();
+      console.log(
+        result.pinned
+          ? `[keep-alive] pinned: idle sockets held ${result.keepAliveTimeoutMs}ms`
+          : `[keep-alive] not pinned: ${result.reason}`,
+      );
+    } catch (error) {
+      console.error("[keep-alive] failed to pin:", error);
+    }
+
     try {
       const { startLiveCrmPoller } = await import("@/lib/crm/live-poller");
       const result = startLiveCrmPoller();

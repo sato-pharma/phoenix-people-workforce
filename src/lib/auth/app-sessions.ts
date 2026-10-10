@@ -124,17 +124,28 @@ export async function createAppSession(input: {
   };
 }
 
-export async function validateAppSession(payload: SessionPayload): Promise<AppSessionValidationResult> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("app_sessions")
-    .select(
-      "id,login_id,hr_id,role,session_version,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at,revoked_reason,supabase_session_required,supabase_session_available",
-    )
-    .eq("id", payload.sid)
-    .maybeSingle();
+/**
+ * The app_sessions columns the session rules need.
+ *
+ * `phx_auth_session_bundle` (supabase/migrations/20261010140000_phx_auth_session_bundle.sql)
+ * selects this same list, so a column added here must be added there too — otherwise the
+ * bundled row arrives without it and the rule reading it silently sees undefined.
+ */
+export const APP_SESSION_COLUMNS =
+  "id,login_id,hr_id,role,session_version,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at,revoked_reason,supabase_session_required,supabase_session_available";
 
-  if (error) throw error;
-  const row = (data as AppSessionRow | null) ?? null;
+/**
+ * Every app_sessions rejection rule, applied to a row that has already been read.
+ *
+ * Split out of validateAppSession() so resolveSessionState() can apply the identical rules in
+ * the identical order to the row that arrives inside the phx_auth_session_bundle RPC — the one
+ * call that replaced the auth trio's three separate round trips. These rules must exist in
+ * exactly ONE place; a second copy is what would let the two paths drift apart.
+ */
+export function evaluateAppSessionRow(
+  row: AppSessionRow | null,
+  payload: SessionPayload,
+): AppSessionValidationResult {
   if (!row) return { ok: false, reason: "missing_app_session" };
   if (row.revoked_at) return { ok: false, reason: "revoked", row };
   if (row.login_id !== payload.loginId) return { ok: false, reason: "login_id_mismatch", row };
@@ -152,6 +163,24 @@ export async function validateAppSession(payload: SessionPayload): Promise<AppSe
   }
 
   return { ok: true, row };
+}
+
+/**
+ * Reads the session row and applies the rules above.
+ *
+ * resolveSessionState() no longer calls this — it gets the same row from
+ * phx_auth_session_bundle and calls evaluateAppSessionRow() directly, saving two round trips.
+ * This stays the single-read entry point for every other caller.
+ */
+export async function validateAppSession(payload: SessionPayload): Promise<AppSessionValidationResult> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_sessions")
+    .select(APP_SESSION_COLUMNS)
+    .eq("id", payload.sid)
+    .maybeSingle();
+
+  if (error) throw error;
+  return evaluateAppSessionRow((data as AppSessionRow | null) ?? null, payload);
 }
 
 export async function refreshAppSessionIdle(input: {

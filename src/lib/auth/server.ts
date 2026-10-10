@@ -9,8 +9,8 @@ import {
 } from "@/lib/auth/permissions";
 import { assertNotTestAccount, assertTestAccountMayRun, canBeMirrored } from "@/lib/auth/test-persona";
 import {
+  evaluateAppSessionRow,
   refreshAppSessionIdle,
-  validateAppSession,
   type AppSessionRow,
   type AppSessionRejectionReason,
 } from "@/lib/auth/app-sessions";
@@ -131,8 +131,48 @@ export type ResolvedSessionState = {
   payload: SessionPayload;
 };
 
+/** The employees columns the lifecycle gate needs, as phx_auth_session_bundle returns them. */
+type BundledEmployeeRow = { employment_status?: string | null; last_working_date?: string | null };
+
+/** One call's worth of the auth trio: three rows, no decisions. */
+export type AuthSessionBundle = {
+  appSession: AppSessionRow | null;
+  authUser: SessionUserRow | null;
+  employee: BundledEmployeeRow | null;
+  /** True when the employees lookup itself failed — the gate must then fail CLOSED. */
+  employeeLookupFailed: boolean;
+  /** The hr_id the RPC actually keyed the employees lookup on, or null if it had none. */
+  employeeKey: string | null;
+};
+
+/**
+ * Reads the phx_auth_session_bundle payload into the three rows.
+ *
+ * A malformed or absent payload is treated as "no rows found", never as "allowed": a missing
+ * app_session is a rejected session two checks later, so the fail-closed direction is kept
+ * without this function needing to know any of the rules.
+ */
+export function parseAuthSessionBundle(payload: unknown): AuthSessionBundle {
+  const bundle = (typeof payload === "object" && payload !== null ? payload : {}) as Record<string, unknown>;
+  const objectOrNull = <T,>(value: unknown): T | null =>
+    typeof value === "object" && value !== null ? (value as T) : null;
+
+  const employeeKey = typeof bundle.employee_key === "string" ? bundle.employee_key.trim() : "";
+  return {
+    appSession: objectOrNull<AppSessionRow>(bundle.app_session),
+    authUser: objectOrNull<SessionUserRow>(bundle.auth_user),
+    employee: objectOrNull<BundledEmployeeRow>(bundle.employee),
+    employeeLookupFailed: bundle.employee_lookup_failed === true,
+    employeeKey: employeeKey === "" ? null : employeeKey,
+  };
+}
+
 /**
  * Read-only evaluation of the linked employee's lifecycle gate.
+ *
+ * Still the entry point when the effective HR id differs from the key the bundle RPC used —
+ * a test account mirroring another employee. The ordinary path never reaches it, because the
+ * RPC already keyed the lookup on the fresh account row's hr_id.
  *
  * Distinguishes three cases so governance fails CLOSED on uncertainty but does
  * not lock out intentionally-supported accounts:
@@ -260,40 +300,65 @@ export async function resolveSessionState(
 
   const supabase = getSupabaseAdmin();
 
-  // Parallelization invariant: the three lookups below (app_sessions via
-  // validateAppSession, app_auth_users, employees lifecycle) are each keyed off
-  // the signed token payload alone (payload.sid / payload.loginId / payload.hrId),
-  // so they can be fired concurrently. All are read-only. Every rejection check
-  // still runs below in EXACTLY the original sequential order with identical
-  // audit logging and error propagation — a speculative result is simply
-  // discarded when an earlier check rejects. The employees lifecycle gate is
-  // only trusted when the fresh app_auth_users row carries the same hr_id the
-  // token was speculatively keyed on; otherwise it is re-run keyed on the row
-  // (the exact key the sequential code used), so gate semantics are unchanged.
-  const [appSessionSettled, userLookupSettled, speculativeLifecycleGate] = await Promise.all([
-    validateAppSession(payload).then(
+  // ONE ROUND TRIP FOR THE THREE READS. These three lookups (app_sessions, app_auth_users,
+  // the employees lifecycle row) are each keyed off the signed token payload alone, are all
+  // read-only, and were 36% of every PostgREST round trip Phoenix makes — 64,032 of 176,110
+  // in a 118-minute production window, for 0.2 ms of SQL — because each was its own HTTPS
+  // call from Railway (europe-west4) to Supabase (eu-central-1).
+  //
+  // Promise.all made them concurrent, which fixed the LATENCY (1 RTT instead of 3) but not
+  // the COUNT. phx_auth_session_bundle returns all three rows in a single call.
+  //
+  // THE RPC RETURNS ROWS, NOT DECISIONS. Every rejection check below still runs in EXACTLY
+  // the original order with identical audit logging — app_sessions first, then the
+  // app_auth_users error/missing/inactive/role/version checks, then the employees lifecycle
+  // gate — using the same rule functions as before (evaluateAppSessionRow is the body
+  // validateAppSession runs, and evaluateEmployeeLifecycleGate is unchanged).
+  //
+  // One behaviour deliberately differs, and it is strictly safer: the gate is keyed on the
+  // FRESH account row's hr_id inside the RPC rather than speculatively on payload.hrId, so
+  // the old "guess, then re-read on a mismatch" fourth round trip is gone for the ordinary
+  // case. The RPC reports the key it actually used, and the check below re-reads only when
+  // the effective HR id differs from it (a test persona mirroring another employee).
+  //
+  // payload.hrId is deliberately NOT passed: the RPC keys on the account row alone, which is
+  // the same expression effectiveHrId uses below. Handing it the token's hr_id as a fallback
+  // made the two keys disagree on 203 of 823 real production sessions (admin accounts whose
+  // app_auth_users.hr_id is NULL) for no change in the decision -- see the migration.
+  const bundleSettled = await supabase
+    .rpc("phx_auth_session_bundle", {
+      p_sid: payload.sid,
+      p_login_id: payload.loginId,
+    })
+    .then(
       (value) => ({ ok: true as const, value }),
       (error: unknown) => ({ ok: false as const, error }),
-    ),
-    supabase
-      .from("app_auth_users")
-      .select("login_id, hr_id, role, is_active, session_version, is_test_persona, test_persona_of_hr_id")
-      .eq("login_id", payload.loginId)
-      .maybeSingle()
-      .then(
-        (value) => ({ ok: true as const, value }),
-        (error: unknown) => ({ ok: false as const, error }),
-      ),
-    // Never rejects — resolveEmployeeLifecycleGate catches internally (fail closed).
-    resolveEmployeeLifecycleGate(supabase, payload.hrId),
-  ]);
+    );
 
-  // Check order below is byte-identical to the previous sequential version:
-  // app_sessions rejection first (its query error also propagates first), then
-  // the app_auth_users error/missing/inactive/role/version checks, then the
-  // employees lifecycle gate.
-  if (!appSessionSettled.ok) throw appSessionSettled.error;
-  const appSession = appSessionSettled.value;
+  // A thrown transport error propagates exactly as the app_sessions read's did: first, before
+  // any other check. A PostgREST-level error on the call is thrown for the same reason.
+  if (!bundleSettled.ok) throw bundleSettled.error;
+  if (bundleSettled.value.error) throw bundleSettled.value.error;
+  const bundle = parseAuthSessionBundle(bundleSettled.value.data);
+
+  // Never rejects: the RPC reports an unreadable employees row as a FLAG, so the gate still
+  // fails CLOSED with employee_lookup_failed instead of throwing. That distinction is what
+  // keeps one unreachable row from reading as a resignation (see the 2026-10-10 logout).
+  const speculativeLifecycleGate: SessionLifecycleGate = bundle.employeeLookupFailed
+    ? { allowed: false, reason: "employee_lookup_failed" }
+    : bundle.employee
+      ? evaluateEmployeeLifecycleGate({
+          lookupFailed: false,
+          employmentStatus: bundle.employee.employment_status ?? null,
+          // A departure dated in the FUTURE has not happened yet — see isEmploymentAccessRevoked.
+          lastWorkingDate: bundle.employee.last_working_date ?? null,
+          todayCairo: currentCairoDateOnlyIso(),
+        })
+      : // No hr_id to look up, or no employees row -> intentionally supported (unlinked/system
+        // account), exactly as resolveEmployeeLifecycleGate returns for both cases.
+        { allowed: true };
+
+  const appSession = evaluateAppSessionRow(bundle.appSession, payload);
   if (!appSession.ok) {
     await auditSessionRejection({
       entityId: payload.loginId,
@@ -309,14 +374,10 @@ export async function resolveSessionState(
     return null;
   }
 
-  if (!userLookupSettled.ok) throw userLookupSettled.error;
-  const { data, error } = userLookupSettled.value;
-
-  if (error) {
-    throw error;
-  }
-
-  const row = data as SessionUserRow | null;
+  // The account row arrived in the same call as the session row. A read error on it was
+  // already thrown above, where the bundle call's error is handled — there is one error for
+  // one call now, instead of one per read.
+  const row = bundle.authUser;
   if (!row) {
     await auditSessionRejection({
       entityId: payload.loginId,
@@ -405,11 +466,15 @@ export async function resolveSessionState(
   // Missing employee row / unset status remain allowed. See
   // src/lib/auth/session-lifecycle.ts. (Read-only; no mutation.)
   // The gate must be evaluated on the FRESH app_auth_users hr_id — for a test account, on the
-  // employee it mirrors, so a test account stops the day that person leaves. The speculative
-  // parallel lookup above was keyed on payload.hrId; reuse it only when both keys
-  // normalize to the same employees lookup key, otherwise re-run on the effective HR id.
+  // employee it mirrors, so a test account stops the day that person leaves.
+  //
+  // The bundle RPC already keyed its employees lookup on the fresh account row's hr_id and
+  // REPORTS that key, so this compares against the key actually used rather than against
+  // payload.hrId, which the old code could only guess with. A mismatch means the effective id
+  // is not what was read — in practice a test persona mirroring someone else — and only then
+  // is a second read paid, keyed on the effective id exactly as the sequential code was.
   const lifecycleGate =
-    String(effectiveHrId ?? "").trim() === String(payload.hrId ?? "").trim()
+    String(effectiveHrId ?? "").trim() === String(bundle.employeeKey ?? "").trim()
       ? speculativeLifecycleGate
       : await resolveEmployeeLifecycleGate(supabase, effectiveHrId);
   if (!lifecycleGate.allowed) {
