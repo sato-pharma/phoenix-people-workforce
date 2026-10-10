@@ -99,6 +99,18 @@ const UNCHECKED =
   "The save may have gone through, but Phoenix could not check. Check the connection, then press Save again.";
 
 /**
+ * A place captured at its OWN door always carries its own photo — the signboard is the evidence that
+ * this is that customer's clinic, and `save` refuses the press before the payload is built when none
+ * was taken. Only a SEATING may carry null, because the building's timetable is already on file
+ * (owner, 2026-10-10). `placePayload` therefore keeps a non-null photo in its signature rather than
+ * accepting a null it must never receive, and this is the one place the two doors are told apart.
+ */
+function photoAtOwnDoor(photo: CapturedPhoto | null): CapturedPhoto {
+  if (!photo) throw new Error("phoenix_crm:photo_needed");
+  return photo;
+}
+
+/**
  * Answers a save can get when an earlier press of Save landed and only its answer was lost: no answer
  * at all, a server failure, or a refusal that the landed save itself caused.
  */
@@ -165,7 +177,10 @@ export type ListScreen =
   | { name: "grade"; customerId: string }
   | { name: "edit-details"; customerId: string }
   | { name: "drop"; customerId: string | null; contactCrmId: number | null }
-  | { name: "saved"; saved: SavedPlace; photo: CapturedPhoto };
+  // 🔴 `photo` IS NULL ON A REUSED TIMETABLE (owner, 2026-10-10: one timetable for the whole
+  // building). From the second doctor behind a door onwards nothing is photographed at the save, so
+  // there is no capture to name on the saved screen.
+  | { name: "saved"; saved: SavedPlace; photo: CapturedPhoto | null };
 
 /** What every List screen reads. */
 export type ListScreenBase = {
@@ -504,7 +519,7 @@ export function ValidateScreen({
    */
   onAskToDrop?: (customerId: string) => void;
   onBack: () => void;
-  onSaved: (saved: SavedPlace, photo: CapturedPhoto) => void;
+  onSaved: (saved: SavedPlace, photo: CapturedPhoto | null) => void;
   /** The same hand-off as `onAddPlaceInstead`, for a seating in a polyclinic rather than a clinic. */
   onSeatInstead?: (customerId: string, seated: SeatedDraftState) => void;
   subject: ValidateSubject;
@@ -580,12 +595,12 @@ export function ValidateScreen({
     return door === "shared" ? seatedDraftProblem(seated) : placeDraftProblem(draft, { needsPhoto: true });
   }
 
-  function payloadFor(photo: CapturedPhoto, allowSameName: boolean): Record<string, unknown> {
+  function payloadFor(photo: CapturedPhoto | null, allowSameName: boolean): Record<string, unknown> {
     // 🔴 ONE KEY OR THE OTHER, NEVER BOTH. `validateCustomer` reads `body.seated` first and takes the
     // whole seating branch when it is there — no Google check, no signboard, the venue's own point —
     // so sending a `place` beside it would be a second answer the server would silently ignore.
     const at =
-      door === "shared" ? { seated: seatedPayload(photo, seated) } : { place: placePayload(photo, draft) };
+      door === "shared" ? { seated: seatedPayload(photo, seated) } : { place: placePayload(photoAtOwnDoor(photo), draft) };
     const phoneValue = phone.trim() || null;
     if (subject.mode === "reference")
       return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, phone: phoneValue, ...at };
@@ -618,7 +633,11 @@ export function ValidateScreen({
     if (saving) return;
     const gap = clientProblem();
     const photo = door === "shared" ? seated.photo : draft.photo;
-    if (gap || !photo) {
+    // 🔴 A SEATING MAY CARRY NO PHOTO AT ALL, and that is the whole point of the 2026-10-10 rule: the
+    // building's timetable is already on file and this customer is saved against it. `clientProblem`
+    // is what asks for one when it is genuinely needed — the first customer in a building, or a rep
+    // who said the board changed — so the blanket `!photo` refusal only stands at the other door.
+    if (gap || (!photo && door !== "shared")) {
       setProblem(gap ?? PHOTO_NEEDED);
       return;
     }
@@ -630,7 +649,14 @@ export function ValidateScreen({
       onSaved(savedFromResult(result), photo);
     } catch (error) {
       const code = errorCodeOf(error);
-      const lookup = code && MAY_HAVE_SAVED.has(code) ? await lookUpPhoto(seatId, test, photo.path) : null;
+      // 🔴 NEVER LOOK A REUSED TIMETABLE UP BY ITS PATH. The recovery asks "was a place saved against
+      // this photo", which answers truthfully only while one photo belongs to one row. A reused board
+      // is shared by every doctor behind that door, so the lookup would find the FIRST one and tell
+      // this rep his save succeeded when it did not. What replaces it is the database's own
+      // `already_seated` refusal, raised under the venue's lock: a second Save of the same customer in
+      // the same building is refused rather than duplicated, which is the idempotence the single-use
+      // photo slot used to provide.
+      const lookup = code && MAY_HAVE_SAVED.has(code) && photo ? await lookUpPhoto(seatId, test, photo.path) : null;
       if (lookup?.found) {
         onView(lookup.view);
         onSaved(
@@ -654,15 +680,15 @@ export function ValidateScreen({
         setProblem(UNCHECKED);
         return;
       }
-      if (code?.startsWith("phoenix_crm_photo_")) {
+      if (photo && code?.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
         if (door === "shared") setSeated(withoutSeatedPhoto(photo));
         else setDraft(withoutPhoto(photo));
       } else if (code === "phoenix_crm_shared_place_not_found" || code === "phoenix_crm_shared_place_retired") {
         // The venue went while he was filling this in. The timetable photo and the hours stay; only
         // the choice is cleared, so he picks again instead of pressing Save against a venue that is
-        // no longer there.
-        setSeated((current) => ({ ...current, sharedPlaceId: null }));
+        // no longer there. Whether the next building has a board on file is unknown until he picks.
+        setSeated((current) => ({ ...current, sharedPlaceId: null, timetableOnFile: false, replacingTimetable: false }));
       } else if (code === "phoenix_crm_not_on_reference_list" || code === "phoenix_crm_customer_not_found" || code === "phoenix_crm_archived") {
         reload();
       }
@@ -818,12 +844,10 @@ export function ValidateScreen({
 
       {door === "shared" ? (
         <SharedPlaceEditor
-          customerName={customerName}
           disabled={saving}
           firstStep={subject.mode === "new" ? 2 : 1}
           idPrefix="phoenix-crm-validate-seated"
           onChange={setSeated}
-          photoBlockedReason={subject.mode === "new" && !cleanName ? "Write the customer's full name first. It is printed on the photo." : null}
           ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
           seatId={seatId}
           test={test}
@@ -948,7 +972,8 @@ export function SavedScreen({
 }: {
   onBack: () => void;
   onOpenCustomer: () => void;
-  photo: CapturedPhoto;
+  /** Null when the customer was seated against a timetable already on file — nothing was captured. */
+  photo: CapturedPhoto | null;
   saved: SavedPlace;
   view: TerritoryListView;
 }) {
@@ -963,7 +988,8 @@ export function SavedScreen({
       <CrmBackBar backLabel="List" onBack={onBack} title={saved.kind === "added" ? "Clinic added" : "Customer saved"} />
       <CrmBlock>
         <CrmNote title={heading} tone="good">
-          {listText(saved.listType)} · {capturedLocationText(photo.address)}
+          {listText(saved.listType)}
+          {photo ? ` · ${capturedLocationText(photo.address)}` : ""}
         </CrmNote>
         {saved.kind === "waiting" ? (
           <CrmNote className="mt-3" title="Waiting outside your list" tone="info">
@@ -1020,7 +1046,7 @@ export function AddPlaceScreen({
    */
   initialSeated?: SeatedDraftState | null;
   onBack: () => void;
-  onSaved: (saved: SavedPlace, photo: CapturedPhoto) => void;
+  onSaved: (saved: SavedPlace, photo: CapturedPhoto | null) => void;
 }) {
   const [draft, setDraft] = useState<PlaceDraftState>(() => initialDraft ?? emptyPlaceDraft());
   const [door, setDoor] = useState<PlaceDoor>(initialSeated ? "shared" : "own");
@@ -1055,7 +1081,8 @@ export function AddPlaceScreen({
     if (saving || !customer) return;
     const gap = door === "shared" ? seatedDraftProblem(seated) : placeDraftProblem(draft, { needsPhoto: true });
     const photo = door === "shared" ? seated.photo : draft.photo;
-    if (gap || !photo) {
+    // A seating against the building's timetable carries no photo — see `save` in ValidateScreen.
+    if (gap || (!photo && door !== "shared")) {
       setProblem(gap ?? PHOTO_NEEDED);
       return;
     }
@@ -1075,7 +1102,9 @@ export function AddPlaceScreen({
           test,
           customerId: customer.customerId,
           // One key or the other, never both — `addPlace` reads `seated` first (see payloadFor above).
-          ...(door === "shared" ? { seated: seatedPayload(photo, seated) } : { place: placePayload(photo, draft) }),
+          ...(door === "shared"
+            ? { seated: seatedPayload(photo, seated) }
+            : { place: placePayload(photoAtOwnDoor(photo), draft) }),
         },
         "place",
       );
@@ -1083,7 +1112,9 @@ export function AddPlaceScreen({
       onSaved(added?.held === true ? { ...saved, kind: "checking" } : saved, photo);
     } catch (error) {
       const code = errorCodeOf(error);
-      const lookup = code && MAY_HAVE_SAVED.has(code) ? await lookUpPhoto(seatId, test, photo.path) : null;
+      // Never by a reused timetable's path — it would find another doctor's row. ValidateScreen's
+      // `save` records why in full.
+      const lookup = code && MAY_HAVE_SAVED.has(code) && photo ? await lookUpPhoto(seatId, test, photo.path) : null;
       if (lookup?.found) {
         onView(lookup.view);
         onSaved(saved, photo);
@@ -1095,12 +1126,12 @@ export function AddPlaceScreen({
         setProblem(UNCHECKED);
         return;
       }
-      if (code?.startsWith("phoenix_crm_photo_")) {
+      if (photo && code?.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
         if (door === "shared") setSeated(withoutSeatedPhoto(photo));
         else setDraft(withoutPhoto(photo));
       } else if (code === "phoenix_crm_shared_place_not_found" || code === "phoenix_crm_shared_place_retired") {
-        setSeated((current) => ({ ...current, sharedPlaceId: null }));
+        setSeated((current) => ({ ...current, sharedPlaceId: null, timetableOnFile: false, replacingTimetable: false }));
       } else if (code === "phoenix_crm_customer_dropped" || code === "phoenix_crm_customer_not_found" || code === "phoenix_crm_too_many_places") {
         reload();
       }
@@ -1126,7 +1157,6 @@ export function AddPlaceScreen({
 
       {door === "shared" ? (
         <SharedPlaceEditor
-          customerName={customer.name}
           disabled={saving}
           firstStep={1}
           idPrefix="phoenix-crm-add-place-seated"

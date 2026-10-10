@@ -239,9 +239,11 @@ function checkRepCanValidate(): void {
   // at the customer's own clinic, or a `seated` row inside a validated polyclinic — so the payload
   // spreads `...at` instead of naming `place`. What this pins is unchanged: the listed save carries
   // the evidence and the phone and NOTHING the SFE set, and `at` is exactly those two keys.
+  // 🔴 And only the SEATING may carry a null photo (owner, 2026-10-10) — the own-door branch goes
+  // through `photoAtOwnDoor`, which keeps a signboard non-null in `placePayload`'s own signature.
   assert.match(
     screens,
-    /const at =\s*\n?\s*door === "shared" \? \{ seated: seatedPayload\(photo, seated\) \} : \{ place: placePayload\(photo, draft\) \};/,
+    /const at =\s*\n?\s*door === "shared" \? \{ seated: seatedPayload\(photo, seated\) \} : \{ place: placePayload\(photoAtOwnDoor\(photo\), draft\) \};/,
     "the evidence is one door or the other: a captured place, or a seat in a shared place",
   );
   assert.match(

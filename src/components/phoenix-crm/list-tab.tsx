@@ -217,7 +217,7 @@ export function ListTab({
   const home = () => go({ name: "home" });
   const openCustomer = (customerId: string, nextNotice: ListNotice | null = null) => go({ name: "customer", customerId }, nextNotice);
 
-  function placeSaved(saved: SavedPlace, photo: CapturedPhoto) {
+  function placeSaved(saved: SavedPlace, photo: CapturedPhoto | null) {
     resource.reload();
     go({ name: "saved", saved, photo });
   }

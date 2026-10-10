@@ -20,6 +20,13 @@
  * hours. Both are read on the server (`readPlaceSchedule`), and the administrator's Polyclinics
  * section is the human gate behind them.
  *
+ * 🔴 THE TIMETABLE IS ASKED FOR ONCE PER BUILDING, NOT ONCE PER DOCTOR (owner, 2026-10-10: "ask him
+ * for only one timetable, not for every doctor"). So this editor's photo step has two faces: the
+ * camera, for the first customer seated in a building, stamped with the VENUE's name because the board
+ * belongs to the building; and a note naming the date it was photographed, with one secondary button
+ * for the only case that reopens the camera — the board on the wall was replaced. The server decides
+ * the same thing again from the venue's stored path, so nothing here is trusted.
+ *
  * 🔴 IT LIVES IN ITS OWN FILE SO `list-screens.tsx` DOES NOT GROW AGAIN: that file is already 1,780
  * lines and carries nine screens. What it exports is the three pure helpers the save path needs
  * (`emptySeatedDraft`, `seatedDraftProblem`, `seatedPayload`) and ONE component — so `ValidateScreen`
@@ -53,6 +60,8 @@ import {
   SEATED_PLACE_NO_PHOTO,
   SEATED_PLACE_NO_VENUE,
   SEATED_PLACE_PHOTO_HINT,
+  SEATED_PLACE_PHOTO_ON_FILE,
+  SEATED_PLACE_PHOTO_REPLACE,
   SHARED_PLACE_KINDS,
   SHARED_PLACE_NAME_LABEL,
   SHARED_PLACE_NAME_MAX,
@@ -77,19 +86,29 @@ export type SharedPlaceChoice = {
   areaName: string | null;
   seated: number;
   capturedAtText: string;
+  /** Set once the building's timetable has been photographed — then the rep is not asked again. */
+  schedulePhotoPath: string | null;
+  schedulePhotoCapturedAtText: string | null;
 };
 
 /** What the rep fills in to seat a customer. No photo of a sign, no pin, no location. */
 export type SeatedDraftState = {
   sharedPlaceId: string | null;
-  /** The clinic's timetable, photographed live. It is this customer's own evidence. */
+  /**
+   * The BUILDING's timetable, photographed live — null when the board is already on file and this
+   * customer is being seated against it, which is the ordinary case from the second doctor onwards.
+   */
   photo: CapturedPhoto | null;
+  /** Whether the chosen building already has its timetable on file. Set from the picker's own rows. */
+  timetableOnFile: boolean;
+  /** He pressed "the timetable changed", so a fresh photograph is required even though one is on file. */
+  replacingTimetable: boolean;
   timings: PhoenixCrmTiming[];
   label: string;
 };
 
 export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = []): SeatedDraftState {
-  return { sharedPlaceId: null, photo: null, timings: [...timings], label: "" };
+  return { sharedPlaceId: null, photo: null, timetableOnFile: false, replacingTimetable: false, timings: [...timings], label: "" };
 }
 
 /**
@@ -100,7 +119,11 @@ export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = []):
  */
 export function seatedDraftProblem(draft: SeatedDraftState): string | null {
   if (!draft.sharedPlaceId) return SEATED_PLACE_NO_VENUE;
-  if (!draft.photo) return SEATED_PLACE_NO_PHOTO;
+  // 🔴 ASKED ONCE PER BUILDING (owner, 2026-10-10). A photo is required of the FIRST customer seated
+  // in a venue, and of a rep who said the board changed — never of the second doctor behind a door
+  // whose timetable is already on file. The server re-decides it from the venue's own stored path, so
+  // a stale `timetableOnFile` here can only ask for one photo too many, never let one too few through.
+  if (!draft.photo && (draft.replacingTimetable || !draft.timetableOnFile)) return SEATED_PLACE_NO_PHOTO;
   const checked = parseTimings(timingsToDrafts(draft.timings));
   return checked.ok ? null : checked.error;
 }
@@ -113,10 +136,13 @@ export function seatedDraftProblem(draft: SeatedDraftState): string | null {
  * venue's whole resolution — point, brick, area, region, address — onto the row. A reading sent from
  * here would be a second answer to a question already answered at the venue's door.
  */
-export function seatedPayload(photo: CapturedPhoto, draft: SeatedDraftState) {
+export function seatedPayload(photo: CapturedPhoto | null, draft: SeatedDraftState) {
   return {
     sharedPlaceId: draft.sharedPlaceId,
-    photoPath: photo.path,
+    // 🔴 NULL MEANS "the board this building already has", and the server resolves it from the VENUE's
+    // own `schedule_photo_path` — never from anything sent here. So a phone cannot name another rep's
+    // photograph, and a photo sent here is always a REPLACEMENT of the board on the wall.
+    photoPath: photo?.path ?? null,
     label: draft.label.trim() || null,
     timings: timingsToDrafts(draft.timings),
   };
@@ -337,25 +363,20 @@ function CaptureVenue({
  * `ValidateScreen` and `AddPlaceScreen`.
  */
 export function SharedPlaceEditor({
-  customerName,
   disabled = false,
   firstStep,
   idPrefix,
   onChange,
-  photoBlockedReason = null,
   ramadanNote,
   seatId,
   test,
   value,
 }: {
-  customerName: string;
   disabled?: boolean;
   /** The number of this editor's first step on the screen ("2 · Polyclinic or centre"). */
   firstStep: number;
   idPrefix: string;
   onChange: (update: (current: SeatedDraftState) => SeatedDraftState) => void;
-  /** Why the camera cannot open yet (the customer's name, printed on the photo, is not written). */
-  photoBlockedReason?: string | null;
   ramadanNote: string | null;
   seatId: string;
   test: boolean;
@@ -366,6 +387,9 @@ export function SharedPlaceEditor({
   const venues = useCrmGet<{ sharedPlaces: SharedPlaceChoice[] }>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
   const list = venues.data?.sharedPlaces ?? [];
   const chosen = list.find((venue) => venue.sharedPlaceId === value.sharedPlaceId) ?? null;
+  // The picker's own answer, which is the live one: `value.timetableOnFile` was written when the
+  // choice was made and a reload can have brought a board in since.
+  const timetableOnFile = Boolean(chosen?.schedulePhotoPath) || value.timetableOnFile;
   const photoStep = firstStep + 1;
   const timingsStep = firstStep + 2;
   const detailsStep = firstStep + 3;
@@ -380,7 +404,8 @@ export function SharedPlaceEditor({
           setJustAdded(held ? sharedPlaceId : null);
           // A venue still being checked cannot be seated in — the server refuses it under its own
           // lock — so it is read back into the picker rather than chosen here.
-          if (!held) onChange((current) => ({ ...current, sharedPlaceId }));
+          // A building nobody has been seated in yet has no timetable on file, so the camera opens.
+          if (!held) onChange((current) => ({ ...current, sharedPlaceId, timetableOnFile: false, replacingTimetable: false }));
           venues.reload();
         }}
         seatId={seatId}
@@ -414,7 +439,16 @@ export function SharedPlaceEditor({
               <CrmChoice
                 columns={2}
                 label={SHARED_PLACE_TITLE}
-                onChange={(sharedPlaceId: string) => onChange((current) => ({ ...current, sharedPlaceId }))}
+                onChange={(sharedPlaceId: string) =>
+                  onChange((current) => ({
+                    ...current,
+                    sharedPlaceId,
+                    // Whether this building's board is already on file travels with the choice, so
+                    // `seatedDraftProblem` can ask for a photo without reading the picker's rows.
+                    timetableOnFile: Boolean(list.find((venue) => venue.sharedPlaceId === sharedPlaceId)?.schedulePhotoPath),
+                    replacingTimetable: false,
+                  }))
+                }
                 options={list.map((venue) => ({
                   value: venue.sharedPlaceId,
                   label: venue.name,
@@ -452,19 +486,48 @@ export function SharedPlaceEditor({
       </CrmBlock>
 
       <CrmBlock className="border-t border-slate-100" title={`${photoStep} · Timetable photo`}>
-        {photoBlockedReason && !value.photo ? (
-          <p className="text-sm font-semibold text-slate-500">{photoBlockedReason}</p>
+        {!chosen ? (
+          // The stamp burned into the photo is the BUILDING's name, so the venue has to be chosen
+          // before the camera can open. It replaces the old "write the customer's name first" gate.
+          <p className="text-sm font-semibold text-slate-500">Choose the polyclinic or centre first. Its name is printed on the photo.</p>
+        ) : timetableOnFile && !value.replacingTimetable && !value.photo ? (
+          // 🔴 ONE TIMETABLE PER BUILDING (owner, 2026-10-10). The board is already photographed, so
+          // this customer is seated against it and the rep is not asked again.
+          <>
+            <CrmNote title={SEATED_PLACE_PHOTO_ON_FILE} tone="info">
+              It was photographed on {chosen.schedulePhotoCapturedAtText ?? chosen.capturedAtText}, and it covers everybody who receives here. This
+              customer is saved against it — enter the hours below.
+            </CrmNote>
+            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+              <CrmButton
+                disabled={disabled}
+                onClick={() => onChange((current) => ({ ...current, replacingTimetable: true }))}
+                size="sm"
+                variant="secondary"
+              >
+                <CalendarClock aria-hidden className="h-4 w-4" />
+                {SEATED_PLACE_PHOTO_REPLACE}
+              </CrmButton>
+            </div>
+          </>
         ) : (
-          <LivePhotoCapture
-            disabled={disabled}
-            hint={SEATED_PLACE_PHOTO_HINT}
-            onChange={(photo) => onChange((current) => ({ ...current, photo }))}
-            purpose="place"
-            seatId={seatId}
-            test={test}
-            title={`Phoenix CRM customer: ${customerName}`}
-            value={value.photo}
-          />
+          <>
+            {value.replacingTimetable || timetableOnFile ? (
+              <CrmNote className="mb-3" title="This replaces the timetable on file" tone="info">
+                The photo you take now becomes this building&rsquo;s timetable, for this customer and for everybody seated here afterwards.
+              </CrmNote>
+            ) : null}
+            <LivePhotoCapture
+              disabled={disabled}
+              hint={SEATED_PLACE_PHOTO_HINT}
+              onChange={(photo) => onChange((current) => ({ ...current, photo }))}
+              purpose="place"
+              seatId={seatId}
+              test={test}
+              title={`Phoenix CRM ${SHARED_PLACE_TITLE.toLowerCase()}: ${chosen.name}`}
+              value={value.photo}
+            />
+          </>
         )}
       </CrmBlock>
 

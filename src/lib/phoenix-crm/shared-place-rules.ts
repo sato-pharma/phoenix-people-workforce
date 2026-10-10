@@ -3,9 +3,17 @@
 //
 // Owner, 2026-10-09, in chat (Arabic): validate the polyclinic itself ONCE, then register each
 // customer's times inside it, "from X to Y and from X to Y", at most THREE a day; he must upload a
-// photo of the timetable showing the names of the people he is adding, at each one; the polyclinic's
-// location is taken once, so seating needs no location; and the administrator has the right to review
-// the timetable afterwards.
+// photo of the timetable showing the names of the people he is adding; the polyclinic's location is
+// taken once, so seating needs no location; and the administrator has the right to review the
+// timetable afterwards.
+//
+// 🔴 ONE TIMETABLE FOR THE BUILDING, NOT ONE PER DOCTOR (owner, 2026-10-10 — his one amendment to the
+// design above: "when he adds the doctors, the three doctors we agreed in the same polyclinic, ask him
+// for only one timetable, not for every doctor"). The board on the wall lists everybody who receives
+// behind that door, which is exactly what makes it the right evidence for each of them, so it is
+// photographed ONCE with the VENUE's name stamped into the image and every customer seated afterwards
+// is saved against that one photograph. The rep is asked again only when he says the timetable
+// changed, and that new photograph becomes the building's.
 //
 // WHY IT EXISTS. A place is validated at the door by a live signboard photo that must carry the
 // CUSTOMER'S OWN NAME. That works for a customer with his own clinic and cannot work for a polyclinic:
@@ -27,8 +35,8 @@
 // against. The timetable's own days and hours are `parseTimings`, which already refuses a seating with
 // no weekday and no start time — the owner's "at least one day and one starting time".
 //
-// The account, his words in full, and why each customer's timetable is photographed at his own row
-// rather than one image pointed at three: docs/phoenix-crm-shared-places.md.
+// The account, his words in full, and why the timetable is the BUILDING's rather than one image per
+// doctor: docs/phoenix-crm-shared-places.md.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 import { isUuid } from "@/lib/http/uuid";
@@ -149,24 +157,41 @@ export function parseSharedPlaceDraft(raw: unknown): EntryRuleResult<SharedPlace
  */
 export type SeatedPlaceDraft = {
   sharedPlaceId: string;
-  /** The clinic's timetable, photographed live. It is this customer's evidence, not the venue's. */
-  photoPath: string;
+  /**
+   * The BUILDING's timetable, photographed live — or null, which means "use the one already on file
+   * for this venue" (owner, 2026-10-10). The server never takes reuse on the phone's word: it reads
+   * the venue's stored path itself and sends that, so a null here can only ever resolve to the
+   * photograph this venue already has.
+   */
+  photoPath: string | null;
   timings: PhoenixCrmTiming[];
   label: string | null;
 };
 
 export const SEATED_PLACE_NO_VENUE = "Choose the polyclinic or centre this customer receives in.";
-export const SEATED_PLACE_NO_PHOTO = "Take a live photo of the timetable showing this customer's hours.";
+/**
+ * Raised only when the venue has NO timetable on file and the phone sent no photograph either — the
+ * first customer seated in a building, where the board still has to be captured.
+ */
+export const SEATED_PLACE_NO_PHOTO = "Take a live photo of the timetable on the wall.";
 /** Under the timetable camera. His instruction, in his own order: the photo, then the hours. */
 export const SEATED_PLACE_PHOTO_HINT =
-  "Photograph the schedule on the wall. It must show this customer's name and the hours they receive.";
+  "Photograph the schedule on the wall. One photo covers everybody who receives in this building — you will not be asked for it again.";
+/** The note that stands in place of the camera once the building's board is on file. */
+export const SEATED_PLACE_PHOTO_ON_FILE = "The timetable of this building is already on file.";
+/** The way back to the camera when the board on the wall has been replaced. */
+export const SEATED_PLACE_PHOTO_REPLACE = "The timetable changed — photograph it again";
 
 export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlaceDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const sharedPlaceId = String(body.sharedPlaceId ?? "").trim();
   if (!isUuid(sharedPlaceId)) return { ok: false, error: SEATED_PLACE_NO_VENUE };
-  const photoPath = String(body.photoPath ?? "").trim();
-  if (!photoPath) return { ok: false, error: SEATED_PLACE_NO_PHOTO };
+  // 🔴 A MISSING PHOTO IS NOT A REFUSAL HERE ANY MORE (owner, 2026-10-10): it is the ordinary shape of
+  // the second, third and fourth doctor in a building whose board is already photographed. The refusal
+  // moved to the server, where the venue's stored timetable is the only thing that can answer it —
+  // effectiveSeatedPhoto() in server/shared-places.ts raises SEATED_PLACE_NO_PHOTO when there is
+  // neither a fresh photograph nor one on file.
+  const photoPath = String(body.photoPath ?? "").trim() || null;
   // His "at least one day and one starting time" is `parseTimings`' own rule — one normal window with
   // a start minute — so it is asked here rather than restated. The end of a window stays optional.
   const timings = parseTimings(body.timings);
