@@ -86,7 +86,7 @@ import {
 import { monthKeyOf } from "@/lib/phoenix-crm/calendar";
 import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { setPlannedStart, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
-import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerGrades, plannerSpecialities, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
+import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerGrades, plannerSpecialities, plannerVenues, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import { isPlanEditable, planTurnSentence, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import { monthPlacements, suggestDay } from "@/lib/phoenix-crm/plan-suggest";
 import {
@@ -1027,6 +1027,7 @@ export function PlanBoard({
     bricks: bricks.map((brick) => ({ value: brick.value, label: `Brick ${brick.label}` })),
     grades: plannerGrades(view.customers),
     specialities: plannerSpecialities(view.customers),
+    venues: plannerVenues(view.customers),
   };
   const monthBusy = busy?.kind === "month" ? busy.action : null;
   const weekBusy = busy?.kind === "week" && selected && busy.weekStart === selected.week.weekStart ? busy.action : null;

@@ -275,6 +275,8 @@ export function PlanWeekPanel({
     bricks: ReadonlyArray<{ value: string; label: string }>;
     grades: ReadonlyArray<PhoenixCrmGrade>;
     specialities: ReadonlyArray<string>;
+    /** Polyclinics and centres customers are seated in; absent or empty hides the picker. */
+    venues?: ReadonlyArray<{ value: string; label: string }>;
   };
   /** The grade numbers (Settings): a validated customer's row reads his month against them. */
   gradeTargets: GradeTargets;

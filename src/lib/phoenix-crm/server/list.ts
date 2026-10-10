@@ -231,6 +231,11 @@ export type ListPlace = {
    * building a call is in — the cap is three visits a DAY inside one of them.
    */
   sharedPlaceId?: string | null;
+  /**
+   * AM or PM — the session a SEATED customer receives in at that building (owner, 2026-10-10). Null on a
+   * clinic of his own, which follows the customer's list. Not a measurement, so the rep keeps it.
+   */
+  session?: "AM" | "PM" | null;
   /** The two raw readings, kept beside the fixed point for good. Null where one was not measured. */
   pinReading?: PlaceReading | null;
   photoReading?: PlaceReading | null;
@@ -609,6 +614,7 @@ export function mapPlaceRow(row: Row): ListPlace {
         ? row.point_source
         : "pin",
     sharedPlaceId: text(row.shared_place_id),
+    session: row.session === "AM" || row.session === "PM" ? row.session : null,
     pinReading: readingOf(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
     photoReading: readingOf(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
     moved: text(row.moved_at) ? { at: String(row.moved_at), reason: text(row.move_reason) } : null,
@@ -661,10 +667,10 @@ function mapPharmacyPin(row: Row, names: PeopleNames): PharmacyPin | null {
 // 42703 — which here is the rep's list, the planner and the visit form at once. So a column named
 // here must already exist on the database the branch deploys against: `brick_lookup` arrived in
 // migration 20261008023051, `reopened_at` in 20261008023801 and `shared_place_id` in
-// 20261010013001, each applied to staging and production before this line shipped.
+// 20261010013001 and `session` in 20261010180118, each applied to staging and production before this line shipped.
 const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
-  "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason, shared_place_id";
+  "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason, shared_place_id, session";
 const CUSTOMER_COLUMNS =
   "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings, " +
   // A pinned pharmacy's own location (2026-10-09). Every one is nullable and null on every doctor.

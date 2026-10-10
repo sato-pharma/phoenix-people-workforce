@@ -97,6 +97,8 @@ export function PlanReviewSteps({
     bricks: ReadonlyArray<{ value: string; label: string }>;
     grades: ReadonlyArray<PhoenixCrmGrade>;
     specialities: ReadonlyArray<string>;
+    /** Polyclinics and centres customers are seated in; absent or empty hides the picker. */
+    venues?: ReadonlyArray<{ value: string; label: string }>;
   };
   idPrefix: string;
   locked: boolean;

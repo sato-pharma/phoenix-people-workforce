@@ -866,9 +866,11 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
 
   const options: VisitCustomerOption[] = customers.map((row) => {
     const customerId = String(row.id);
-    const listType: PhoenixCrmListType = parseListType(row.list_type);
     const grade = parseGrade(row.grade);
     const customerPlaces = placesByCustomer.get(customerId) ?? [];
+    // A customer seated in a polyclinic or centre is AM or PM by his seating (owner, 2026-10-10), and
+    // the visit is filed in that session; every other customer keeps his own list.
+    const listType: PhoenixCrmListType = customerPlaces.find((place) => place.session)?.session ?? parseListType(row.list_type);
     // His first place's brick — a customer with several places is grouped by the one he was captured
     // at first, which is how the List tab groups him too. A customer with no place yet has no brick,
     // and the picker shows him under "Not mapped yet" rather than guessing one.

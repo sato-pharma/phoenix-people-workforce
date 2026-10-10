@@ -475,6 +475,7 @@ export async function seatedPlacePayload(venue: SeatingVenue, seated: SeatedPlac
     // the photo's own, read exactly as it is for a place.
     device_skew_minutes: issuedAt ? deviceClockSkewMinutes(null, new Date(issuedAt)) : null,
     label: seated.label,
+    session: seated.session,
     ...venue.location,
     timings: seated.timings,
   };

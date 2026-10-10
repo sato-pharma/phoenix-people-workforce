@@ -58,6 +58,7 @@ import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, SIGNBOARD_FRAME_NOTE } from "@/lib/phoenix-crm/entry-rules";
 import {
   SEATED_PLACE_NO_PHOTO,
+  SEATED_PLACE_NO_SESSION,
   SEATED_PLACE_NO_VENUE,
   SEATED_PLACE_PHOTO_HINT,
   SEATED_PLACE_PHOTO_ON_FILE,
@@ -105,10 +106,17 @@ export type SeatedDraftState = {
   replacingTimetable: boolean;
   timings: PhoenixCrmTiming[];
   label: string;
+  /** AM or PM: the session he receives in at this building (owner, 2026-10-10). Null until chosen. */
+  session: "AM" | "PM" | null;
 };
 
-export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = []): SeatedDraftState {
-  return { sharedPlaceId: null, photo: null, timetableOnFile: false, replacingTimetable: false, timings: [...timings], label: "" };
+/** The customer's own list as the first answer to "AM or PM here?" — a pharmacy or an unknown list gives none. */
+export function seatedSessionOf(listType: string | null | undefined): "AM" | "PM" | null {
+  return listType === "AM" || listType === "PM" ? listType : null;
+}
+
+export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = [], session: "AM" | "PM" | null = null): SeatedDraftState {
+  return { sharedPlaceId: null, photo: null, timetableOnFile: false, replacingTimetable: false, timings: [...timings], label: "", session };
 }
 
 /**
@@ -119,6 +127,7 @@ export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = []):
  */
 export function seatedDraftProblem(draft: SeatedDraftState): string | null {
   if (!draft.sharedPlaceId) return SEATED_PLACE_NO_VENUE;
+  if (!draft.session) return SEATED_PLACE_NO_SESSION;
   // 🔴 ASKED ONCE PER BUILDING (owner, 2026-10-10). A photo is required of the FIRST customer seated
   // in a venue, and of a rep who said the board changed — never of the second doctor behind a door
   // whose timetable is already on file. The server re-decides it from the venue's own stored path, so
@@ -145,6 +154,7 @@ export function seatedPayload(photo: CapturedPhoto | null, draft: SeatedDraftSta
     photoPath: photo?.path ?? null,
     label: draft.label.trim() || null,
     timings: timingsToDrafts(draft.timings),
+    session: draft.session,
   };
 }
 
@@ -464,6 +474,24 @@ export function SharedPlaceEditor({
                 It is not here — add the building
               </CrmButton>
             </div>
+            {chosen ? (
+              <div className="mt-3">
+                <CrmChoice
+                  columns={2}
+                  label="Does this customer receive here in the AM or the PM?"
+                  onChange={(session: "AM" | "PM") => onChange((current) => ({ ...current, session }))}
+                  options={[
+                    { value: "AM", label: "AM", note: "Morning", disabled },
+                    { value: "PM", label: "PM", note: "Afternoon and evening", disabled },
+                  ]}
+                  value={value.session}
+                />
+                <p className="mt-1.5 break-words text-xs font-semibold text-slate-500">
+                  On the plan, choosing AM shows this building&rsquo;s AM customers and choosing PM shows its PM customers. A building takes three visits a
+                  day, AM and PM together.
+                </p>
+              </div>
+            ) : null}
             {chosen ? (
               <div className="mt-3 border border-slate-200 bg-slate-50/70 px-3 py-2.5">
                 <p className="flex min-w-0 items-start gap-2 text-sm font-black text-slate-950">

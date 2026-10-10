@@ -7,6 +7,7 @@ import {
   parseSharedPlaceDraft,
   parseSharedPlaceKind,
   SEATED_PLACE_NO_PHOTO,
+  SEATED_PLACE_NO_SESSION,
   SEATED_PLACE_NO_VENUE,
   SHARED_PLACE_DAILY_CAP_DEFAULT,
   SHARED_PLACE_DAY_FULL_CODE,
@@ -18,6 +19,11 @@ import {
   type SharedPlaceNamed,
 } from "../src/lib/phoenix-crm/shared-place-rules.ts";
 import { PLACE_MAX_ACCURACY_METERS } from "../src/lib/phoenix-crm/entry-rules.ts";
+import { fieldWeekStart } from "../src/lib/phoenix-crm/calendar.ts";
+import { EMPTY_DOCTOR_FILTER, filterPlannerCustomers, plannerVenues } from "../src/lib/phoenix-crm/plan-filters.ts";
+import { resolvePlanItems, type PlanRuleCustomer } from "../src/lib/phoenix-crm/plan-rules.ts";
+import { effectiveListType, type PlannerCustomer } from "../src/lib/phoenix-crm/suggestions.ts";
+import { PHOENIX_CRM_DEFAULT_SETTINGS } from "../src/lib/phoenix-crm/types.ts";
 import {
   reasonsFor,
   SHARED_PLACE_REFUSED_ACTION,
@@ -207,9 +213,10 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   if (seated.ok) {
     assert.deepEqual(
       Object.keys(seated.value).sort(),
-      ["label", "photoPath", "sharedPlaceId", "timings"],
-      "🔴 FOUR KEYS, NO FIX — a seated draft cannot carry a location even when the body sends one",
+      ["label", "photoPath", "session", "sharedPlaceId", "timings"],
+      "🔴 FIVE KEYS, NO FIX — a seated draft cannot carry a location even when the body sends one",
     );
+    assert.equal(seated.value.session, null, "a build that names no session leaves it null, and the database seats him in his own list");
     assert.equal(seated.value.timings.length, 1);
     assert.equal(seated.value.timings[0].startMinute, 600);
     assert.equal(seated.value.timings[0].endMinute, null, "the end of a window stays optional, as everywhere else");
@@ -549,6 +556,90 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   );
   const waiting = readFileSync("src/components/phoenix-crm/reopened-customer-list.tsx", "utf8");
   assert.ok(waiting.includes("row.sharedPlaceName"), "and the board says the reason is about the polyclinic's photo");
+
+  // ── AM or PM at the building (owner, 2026-10-10) ──────────────────────────────────────────────
+  const seatedBody = {
+    sharedPlaceId: "3f4a1b2c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+    photoPath: "crm/timetables/a.jpg",
+    timings: [{ weekday: 6, start: "10:00" }],
+  };
+  const asAm = parseSeatedPlaceDraft({ ...seatedBody, session: "am" });
+  assert.equal(asAm.ok ? asAm.value.session : null, "AM", "AM is read in either case");
+  const asPm = parseSeatedPlaceDraft({ ...seatedBody, session: "PM" });
+  assert.equal(asPm.ok ? asPm.value.session : null, "PM");
+  const asPharmacy = parseSeatedPlaceDraft({ ...seatedBody, session: "PHARMACY" });
+  assert.equal(asPharmacy.ok === false ? asPharmacy.error : null, SEATED_PLACE_NO_SESSION, "a seating is AM or PM, nothing else");
+
+  const WEEK = fieldWeekStart("2026-09-21");
+  const THURSDAY = "2026-09-24";
+  const SUNDAY = "2026-09-20";
+  const CUSTOMER = "11111111-1111-4111-8111-111111111111";
+  const SEATED_PLACE = "22222222-2222-4222-8222-222222222222";
+  const OWN_PLACE = "33333333-3333-4333-8333-333333333333";
+  const open = [0, 1, 2, 3, 4, 6].map((weekday) => ({ weekday, startMinute: 9 * 60, endMinute: 17 * 60, season: "normal" as const }));
+  const ruleCustomers = (session: "AM" | "PM" | null) =>
+    new Map<string, PlanRuleCustomer>([
+      [
+        CUSTOMER,
+        {
+          customerId: CUSTOMER,
+          name: "Dr Karim Fouad",
+          listType: "PM",
+          pending: false,
+          places: [
+            { placeId: SEATED_PLACE, timings: open, sharedPlaceId: "venue-a", session },
+            { placeId: OWN_PLACE, timings: open, sharedPlaceId: null },
+          ],
+        },
+      ],
+    ]);
+  const plan = (day: string, placeId: string, session: "AM" | "PM" | null) =>
+    resolvePlanItems({
+      weekStart: WEEK,
+      items: [{ planDate: day, customerId: CUSTOMER, placeId, exceptionType: null, exceptionNote: null }],
+      customers: ruleCustomers(session),
+      settings: PHOENIX_CRM_DEFAULT_SETTINGS,
+      isRamadan: () => false,
+    });
+
+  // A PM customer seated as AM is planned on a Thursday morning, filed AM — the day that holds AM only.
+  const seatedAm = plan(THURSDAY, SEATED_PLACE, "AM");
+  assert.ok(seatedAm.ok, `a customer seated as AM can be planned on a morning: ${seatedAm.ok ? "" : seatedAm.error}`);
+  assert.equal(seatedAm.ok ? seatedAm.value[0].listType : null, "AM", "the item is filed in the SEATING's session");
+  // His other place has no session, so it keeps the customer's own PM list and a morning refuses it.
+  const ownOnMorning = plan(THURSDAY, OWN_PLACE, "AM");
+  assert.equal(ownOnMorning.ok, false, "a clinic of his own still follows his list");
+  assert.match(ownOnMorning.ok ? "" : ownOnMorning.error, /morning/);
+  // A seating that names no session (an older row) behaves exactly as before.
+  const legacy = plan(SUNDAY, SEATED_PLACE, null);
+  assert.equal(legacy.ok ? legacy.value[0].listType : null, "PM", "no session on the place: the customer's own list");
+
+  // The planner shows him under the session of his seating, and the building filter narrows to it.
+  const named = (id: string, listType: "AM" | "PM", session: "AM" | "PM" | null, venue: string | null): PlannerCustomer => ({
+    customerId: id,
+    name: id,
+    listType: effectiveListType(listType, [{ session }]),
+    grade: null,
+    speciality: null,
+    visitsThisMonth: 0,
+    pending: false,
+    places: [{ placeId: `${id}-place`, label: null, address: null, lat: 0, lon: 0, brick: null, zone: null, timings: [], sharedPlaceId: venue, sharedPlaceName: venue ? "Nile Polyclinic" : null, session }],
+  });
+  assert.equal(effectiveListType("PM", [{ session: "AM" }]), "AM");
+  assert.equal(effectiveListType("PM", [{ session: null }]), "PM", "a place with no session leaves his list alone");
+  assert.equal(effectiveListType("PM", []), "PM");
+  const building = [named("seated-am", "PM", "AM", "venue-a"), named("seated-pm", "PM", "PM", "venue-a"), named("own-clinic", "PM", null, null)];
+  assert.deepEqual(plannerVenues(building), [{ value: "venue-a", label: "Nile Polyclinic" }], "one entry per building, by name");
+  const inBuildingAm = filterPlannerCustomers(building, { ...EMPTY_DOCTOR_FILTER, session: "AM", venue: "venue-a" }).map((customer) => customer.customerId);
+  assert.deepEqual(inBuildingAm, ["seated-am"], "AM at that building shows only its AM customers");
+  const inBuildingPm = filterPlannerCustomers(building, { ...EMPTY_DOCTOR_FILTER, session: "PM", venue: "venue-a" }).map((customer) => customer.customerId);
+  assert.deepEqual(inBuildingPm, ["seated-pm"], "and PM only its PM customers — never both for one customer");
+
+  // The migration files the session on the seating, the plan item and the visit.
+  const sessionMigration = readFileSync("supabase/migrations/20261010180118_phoenix_crm_seating_session.sql", "utf8");
+  assert.ok(sessionMigration.includes("add column if not exists session text"), "the seating carries the session");
+  assert.ok(sessionMigration.includes("check (shared_place_id is null or session is not null)"), "a seated place always has one");
+  assert.ok(sessionMigration.includes("v_list_type := coalesce("), "a visit counts in its seating's session, which every AM and PM board reads");
 
   console.log("phoenix-crm shared places: OK");
 }
