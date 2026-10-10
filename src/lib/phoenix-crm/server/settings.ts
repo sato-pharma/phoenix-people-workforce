@@ -43,7 +43,7 @@ export async function loadPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
   const [settingsResult, rolloutResult, ramadanResult] = await Promise.all([
     supabase
       .from("phoenix_crm_settings")
-      .select("pm_daily_cap, am_daily_cap, shared_place_daily_cap, far_apart_km, visit_far_meters, weak_gps_meters, grade_targets")
+      .select("pm_daily_cap, am_daily_cap, shared_place_daily_cap, offplan_daily_cap, offplan_weekly_cap, far_apart_km, visit_far_meters, weak_gps_meters, grade_targets")
       .eq("id", 1)
       .maybeSingle(),
     supabase.from("phoenix_crm_line_rollout").select("line_code, opens_on").order("line_code"),
@@ -61,6 +61,9 @@ export async function loadPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
         // A row written before the column existed reads null, which `Number` would turn into 0 — and a
         // cap of 0 refuses every visit inside every shared place. The default is the only safe fallback.
         sharedPlaceDailyCap: Number(row.shared_place_daily_cap ?? PHOENIX_CRM_DEFAULT_SETTINGS.sharedPlaceDailyCap),
+        // Same reason as the polyclinic cap: a null read as 0 would refuse every off-plan visit.
+        offPlanDailyCap: Number(row.offplan_daily_cap ?? PHOENIX_CRM_DEFAULT_SETTINGS.offPlanDailyCap),
+        offPlanWeeklyCap: Number(row.offplan_weekly_cap ?? PHOENIX_CRM_DEFAULT_SETTINGS.offPlanWeeklyCap),
         farApartKm: Number(row.far_apart_km),
         visitFarMeters: Number(row.visit_far_meters),
         weakGpsMeters: Number(row.weak_gps_meters),
@@ -126,6 +129,9 @@ export async function saveSettings(actorHrId: string, raw: unknown): Promise<voi
       // 1–20, the column's own CHECK: a shared place's day is one physical queue, so the plan caps'
       // 60 would be a number no polyclinic could mean.
       shared_place_daily_cap: integerIn(body.sharedPlaceDailyCap, 1, 20, "The visits one polyclinic or centre holds a day"),
+      // 1–20 a day and 1–100 a week, the columns' own CHECKs.
+      offplan_daily_cap: integerIn(body.offPlanDailyCap, 1, 20, "The customers a rep may visit out of plan in a day"),
+      offplan_weekly_cap: integerIn(body.offPlanWeeklyCap, 1, 100, "The customers a rep may visit out of plan in a week"),
       far_apart_km: Math.round(farApart * 10) / 10,
       visit_far_meters: integerIn(body.visitFarMeters, 50, 20000, "The far visit distance"),
       weak_gps_meters: integerIn(body.weakGpsMeters, 10, 5000, "The weak location accuracy"),

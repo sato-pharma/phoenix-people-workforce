@@ -28,6 +28,7 @@ import { AdministratorDecline } from "@/components/phoenix-crm/administrator-dec
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp, countText, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
+import { OffPlanStandingStrip } from "@/components/phoenix-crm/offplan-allowance";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { CrmButton, CrmCard, CrmField, CrmNote, CrmPill, crmTextareaClassName, type NoteTone, type PillTone } from "@/components/phoenix-crm/ui";
 import {
@@ -336,6 +337,8 @@ export function OffPlanDayCard({
           </div>
         )
       ) : null}
+      {/* Where the rep stood that day and that week — the same for every visit on the card, so it is read once. */}
+      <OffPlanStandingStrip standing={day.visits[0].repOffPlan} />
       <div className="grid min-w-0 divide-y divide-slate-100">
         {day.visits.map((visit) => (
           <OffPlanVisitRow

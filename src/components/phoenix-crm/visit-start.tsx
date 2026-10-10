@@ -38,8 +38,10 @@ import {
 
 import { crmPost, useCrmAction } from "@/components/phoenix-crm/api";
 import { countText } from "@/components/phoenix-crm/format";
+import { OffPlanAllowanceCard } from "@/components/phoenix-crm/offplan-allowance";
 import { CrmBackBar, CrmBlock, CrmButton, CrmCheck, CrmField, CrmNote, CrmPanel, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { DAY_ACTIVITY_NOTE_MAX, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import type { OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { plannedStartEmptyNote } from "@/lib/phoenix-crm/today-rules";
 import type { DayActivityRow, VisitFormView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
@@ -297,17 +299,25 @@ export function VisitStart({
  * list is someone who is not on it at all.
  */
 export function UnplannedChoice({
+  offPlan,
   onBack,
   onOutOfList,
   onOutOfPlan,
   outOfPlanCount,
+  outOfPlanOpenCount,
+  voice,
   waitingCount,
 }: {
+  /** What the out-of-plan allowance still holds today and this week (owner, 2026-10-10). */
+  offPlan: OffPlanAllowance;
   onBack: () => void;
   onOutOfList: () => void;
   onOutOfPlan: () => void;
   /** Customers on his list and not on today's plan. */
   outOfPlanCount: number;
+  /** Of those, the ones the allowance still lets him take out of plan. */
+  outOfPlanOpenCount: number;
+  voice: "rep" | "manager";
   /** Customers he met outside his list, waiting to be added. */
   waitingCount: number;
 }) {
@@ -315,11 +325,17 @@ export function UnplannedChoice({
     <CrmPanel>
       <CrmBackBar backLabel="Add visit" onBack={onBack} title="Unplanned visit" />
       <CrmBlock title="Who did you visit?">
+        <OffPlanAllowanceCard allowance={offPlan} className="mb-3" voice={voice} />
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <StartTarget
+            disabled={outOfPlanOpenCount === 0 && outOfPlanCount > 0}
             icon={UserSearch}
             label="Out of plan"
-            note={`Someone on your list who is not on today's plan · ${countText(outOfPlanCount)} on your list`}
+            note={
+              outOfPlanOpenCount === 0 && outOfPlanCount > 0
+                ? "No place is left for a new customer. Plan the next one for another day."
+                : `Someone on your list who is not on today's plan · ${countText(outOfPlanCount)} on your list`
+            }
             onClick={onOutOfPlan}
             primary
           />

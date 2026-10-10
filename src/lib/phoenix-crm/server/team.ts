@@ -44,7 +44,15 @@ import { loadDayStartsBySeat } from "@/lib/phoenix-crm/server/day-start";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { doubleVisitPlanReach, type DoubleVisitPlanReach } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
+import { loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
 import { loadMovedFromDays } from "@/lib/phoenix-crm/server/offplan-day";
+import {
+  offPlanStandingKey,
+  offPlanStandings,
+  offPlanWeekWindow,
+  type OffPlanCaps,
+  type OffPlanStanding,
+} from "@/lib/phoenix-crm/offplan-cap-rules";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { canDecidePlanEditRow, loadPlanEditRows, mapPlanEditRow, planEditPeople, type PlanEditRequestView } from "@/lib/phoenix-crm/server/plan-edits";
@@ -187,6 +195,35 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
   return summarizeTeamToday({ seatIds, seatsWithPlan, planned, visits });
 }
 
+/** The standing of a rep nobody counted anything for: nothing used, against the settings' own numbers. */
+function emptyOffPlanStanding(caps: OffPlanCaps): OffPlanStanding {
+  return { day: { used: 0, cap: caps.offPlanDailyCap }, week: { used: 0, cap: caps.offPlanWeeklyCap } };
+}
+
+/** One read for every waiting off-plan visit: the whole span of weeks they sit in, for their seats. */
+async function loadWaitingOffPlanStandings(
+  asks: ReadonlyArray<{ seatId: string; day: string }>,
+  isTest: boolean,
+  caps: OffPlanCaps,
+): Promise<Map<string, OffPlanStanding>> {
+  if (asks.length === 0) return new Map();
+  const windows = asks.map((ask) => offPlanWeekWindow(ask.day));
+  const from = windows.map((window) => window.from).sort()[0];
+  const to = windows.map((window) => window.to).sort().at(-1) as string;
+  try {
+    const rows = await loadOffPlanRows(
+      asks.map((ask) => ask.seatId),
+      isTest,
+      { from, to },
+    );
+    return offPlanStandings({ rows, asks, caps });
+  } catch (error) {
+    // A line beside a card is never worth the Team tab: the card still decides, and the door still enforces.
+    console.error("phoenix-crm: the out-of-plan standing could not be read", error);
+    return new Map();
+  }
+}
+
 /** `canOverride` on each of the three: the Administrator may decline it — he is no step and is never counted. */
 export type TeamRequest = ListRequest & { seatId: string; territoryName: string; canDecide: boolean; canOverride: boolean };
 
@@ -201,6 +238,12 @@ export type TeamUnplannedVisit = UnplannedVisitView & {
    * the visit was not moved from a day.
    */
   plannedFor: string[];
+  /**
+   * Where the rep stood on the out-of-plan allowance — two doctors a day, eight a week (owner,
+   * 2026-10-10) — on the visit's own day and in its field week, so the decider reads it beside the visit.
+   * Counted from EVERY out-of-plan doctor visit, not only the ones waiting.
+   */
+  repOffPlan: OffPlanStanding;
 };
 
 /** A rep's request to edit a sent week (owner, 2026-10-01), with whether THIS viewer acts at its step. */
@@ -335,6 +378,11 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   ]);
 
   const summaries = new Map(rowSeats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
+  const offPlanStandingsRead = await loadWaitingOffPlanStandings(
+    unplannedRows.map((row) => ({ seatId: String(row.seat_id), day: String(row.visit_date) })),
+    isTest,
+    viewer.config.settings,
+  );
   const territories = rowSeats.map(
     (seat): TeamTerritoryRow => ({
       territory: summaries.get(seat.seatId) as TerritorySummary,
@@ -395,6 +443,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
         canDecide: seat ? canDecideUnplannedRow(viewer, seat, isTest, view.status) : false,
         canOverride: canOverrideDecision(viewer, isTest),
         plannedFor: movedFrom.get(view.visitId) ?? [],
+        repOffPlan: offPlanStandingsRead.get(offPlanStandingKey(view.seatId, view.visitDate)) ?? emptyOffPlanStanding(viewer.config.settings),
       };
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));

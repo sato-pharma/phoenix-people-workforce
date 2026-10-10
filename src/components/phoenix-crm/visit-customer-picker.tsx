@@ -28,6 +28,7 @@ import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import { countText } from "@/components/phoenix-crm/format";
 import { customerMetaText, monthVisitsText, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
+import { OffPlanAllowanceCard } from "@/components/phoenix-crm/offplan-allowance";
 import { pharmacyWhereLine } from "@/components/phoenix-crm/pharmacy-details";
 import {
   CrmBackBar,
@@ -44,6 +45,7 @@ import {
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 import { directionsPlace, directionsUrl } from "@/lib/phoenix-crm/directions";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { offPlanBlock, type OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
@@ -132,13 +134,19 @@ export function VisitCustomerPicker({
   mode,
   onAddPharmacy,
   onBack,
+  offPlan,
   onChooseUnplanned,
   onPharmacyDetails,
   onPick,
+  voice = "rep",
 }: {
   /** The form's whole customer list: brick hues are keyed off it, so a brick keeps its colour. */
   allCustomers: ReadonlyArray<VisitCustomerOption>;
   mode: PickerMode;
+  /** Out of plan: what the allowance still holds (owner, 2026-10-10). A doctor it can no longer take is shown, not offered. */
+  offPlan?: OffPlanAllowance;
+  /** Who is reading the allowance: the rep, or a manager entering for him. */
+  voice?: "rep" | "manager";
   /** Pharmacy visit: a pharmacy not on his list yet, added by its name with no approval. */
   onAddPharmacy?: () => void;
   onBack: () => void;
@@ -197,6 +205,7 @@ export function VisitCustomerPicker({
                 : "Your list, without today’s plan, grouped by brick."}
             {byHours ? " Customers who receive today come first." : ""} Tap the customer you are with.
           </p>
+          {mode === "out_of_plan" && offPlan ? <OffPlanAllowanceCard allowance={offPlan} voice={voice} /> : null}
           {mode === "pharmacy" && onAddPharmacy ? (
             <div>
               <CrmButton onClick={onAddPharmacy}>
@@ -283,11 +292,13 @@ export function VisitCustomerPicker({
                         const pharmacy = isPharmacyListType(customer.listType);
                         const where = pharmacy ? pharmacyWhereLine(customer.pharmacyPin) : null;
                         const pharmacyDetails = pharmacy && onPharmacyDetails ? () => onPharmacyDetails(customer.customerId) : null;
+                        // The allowance holds no place for this doctor: he is listed, with the way out, not offered.
+                        const blocked = mode === "out_of_plan" && offPlan ? offPlanBlock(offPlan, customer.customerId) : null;
                         return (
                           <li className="min-w-0" key={customer.customerId}>
                             <button
                               className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
-                              disabled={customer.visitedToday}
+                              disabled={customer.visitedToday || blocked !== null}
                               onClick={() => onPick(customer.customerId)}
                               type="button"
                             >
@@ -305,6 +316,7 @@ export function VisitCustomerPicker({
                                 <span className="flex max-w-full flex-wrap gap-1">
                                   {customer.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
                                   {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
+                                  {blocked ? <CrmPill tone="warn">{blocked === "day" ? "Plan for another day" : "This week is full"}</CrmPill> : null}
                                 </span>
                               </span>
                               <PlaceWindows customer={customer} />
@@ -374,10 +386,15 @@ export function OutOfPlanReason({
   customer,
   deciders,
   initialReason,
+  offPlan,
   onBack,
   onContinue,
+  voice = "rep",
 }: {
   customer: VisitCustomerOption;
+  /** The allowance as it stands, as a compact reminder under the customer. */
+  offPlan?: OffPlanAllowance;
+  voice?: "rep" | "manager";
   /** "Mona Adel decides it first, then SFE." */
   deciders: string;
   initialReason: string;
@@ -408,6 +425,7 @@ export function OutOfPlanReason({
       <CrmBlock>
         <p className="break-words text-base font-black text-slate-950">{customer.name}</p>
         <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</p>
+        {offPlan ? <OffPlanAllowanceCard allowance={offPlan} className="mt-3" compact voice={voice} /> : null}
       </CrmBlock>
       <CrmBlock className="border-t border-slate-100">
         <CrmNote className="mb-3" title="It counts once it is approved" tone="info">
