@@ -894,6 +894,7 @@ import { runOutstationDistanceFailureTests } from "./outstation-distance-failure
 import { runOutstationEmployeeLookupStatusTests } from "./outstation-employee-lookup-status.test.ts";
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
+import { runSessionUnavailableKeepsSessionTests } from "./session-unavailable-keeps-session.test.ts";
 import { runDepartedAccessRevocationTests } from "./departed-access-revocation.test.ts";
 import { runAuthPageAccessTests } from "./auth-page-access.test.ts";
 import { runLoginPageServerRenderTests } from "./login-page-server-render.test.ts";
@@ -4623,6 +4624,10 @@ await runTest(
 await runTest("probation stabilization", runProbationStabilizationTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("auth session", runAuthSessionTests);
+await runTest(
+  "a Supabase outage keeps the session (unverifiable != departed, heartbeat answers 503 not 401)",
+  runSessionUnavailableKeepsSessionTests,
+);
 await runTest("departure revokes access on the last working day", runDepartedAccessRevocationTests);
 await runTest("auth page access guard (guest-fallback predicate)", runAuthPageAccessTests);
 await runTest("login page server-renders its form (no ssr:false, lazy webauthn)", runLoginPageServerRenderTests);
