@@ -167,18 +167,23 @@ export function runNotificationConfidenceGateTests() {
   );
 
   // ── appliesTo: which overrides survive a pair becoming established ─────────────────────────
-  // sales/closing_published stays first_run-only: its audience DESIGN never changed, so its own
-  // baseline is still a truthful description of it and this entry must not quietly become a
-  // permanent floor under it.
+  // sales/closing_published is `always` since 2026-10-10: its audience DESIGN changed — from a line's
+  // District Managers (about 12 recipients) to everyone seated on the line (about 34 people plus the Cc
+  // roster) — so the baseline of the old shape describes behaviour that was just changed on purpose,
+  // not an incident. Held for the first publish otherwise, which is the failure `always` exists for.
   assert.equal(
     resolveCeilingOverride("sales", "closing_published", "first_run"),
-    20,
-    "a first_run override must apply while the pair has no baseline of its own",
+    60,
+    "the whole-line audience must clear the first-run cap",
   );
   assert.equal(
     resolveCeilingOverride("sales", "closing_published", "established"),
-    undefined,
-    "a first_run override must STOP applying once the pair has real history — that history is the better evidence",
+    60,
+    "an `always` override must survive the pair being established — its 12-recipient baseline is the shape that was replaced",
+  );
+  assert.ok(
+    CEILING_OVERRIDES["sales/closing_published"].ceiling >= 34 + 12,
+    "the ceiling must cover a whole line (34 seated people today) plus the Cc roster",
   );
 
   // market_awareness/market_awareness_decision_pending is the opposite case, and the reason

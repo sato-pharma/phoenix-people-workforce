@@ -365,13 +365,14 @@ export const CEILING_OVERRIDES: Record<string, CeilingOverride> = {
   // plus the same copied workflow. No history at all yet, so first_run is enough — once it has its
   // own baseline, that baseline will already describe the copied shape.
   "market_awareness/market_awareness_activity_approved": { appliesTo: "first_run", ceiling: 12 },
-  // Anti Infective/Pedia/CNS Monthly Closing publish notifies that line's District Managers plus
-  // a fixed Cc/Bcc roster (CEO, Marketing Manager, SFE Manager, the line's NSM and Product
-  // Manager, two named individuals) — routinely 10-15 recipients by design, confirmed live
-  // 2026-08-08 (12 on Anti Infective's first send). Headroom to 20 for normal roster growth.
-  // Stays first_run-only: its audience design has not changed, so its own baseline is still the
-  // truthful description of it, and this entry must not quietly become a permanent floor.
-  "sales/closing_published": { appliesTo: "first_run", ceiling: 20 },
+  // Anti Infective/Pedia/CNS Monthly Closing publish: until 2026-10-10 it notified that line's District
+  // Managers plus a fixed Cc/Bcc roster (CEO, Marketing Manager, SFE Manager, the line's NSM and Product
+  // Manager, two named individuals) — 10-15 recipients, 12 on Anti Infective's first send 2026-08-08.
+  // 2026-10-10: the audience grew from a line's District Managers to EVERYONE seated on it (owner: "goes to
+  // all in the published line") — about 34 people a line plus the Cc roster, so a 60 ceiling. `always`,
+  // because the pair already has a baseline from the old 12-recipient shape, which is exactly the
+  // behaviour that was just changed; without it the first publish after this lands is held.
+  "sales/closing_published": { appliesTo: "always", ceiling: 60 },
   // A job offer went to exactly ONE person — the candidate — until the owner asked for CC and BCC on
   // 2026-09-28. Its baseline therefore reads ~1, ceiling 3, and would hold every offer copied to three
   // or more people: an offer letter sitting in a review queue while a candidate waits. `always`, for

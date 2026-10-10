@@ -199,6 +199,12 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // unless the recipient is provably B-10. Recipients are passed explicitly by the digest builder,
   // hence "cc" rather than a lookup — an admin-editable audience would make "B-10 only" a setting.
   "needs_you.*": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // A Monthly Closing published (owner, 2026-10-10): everyone seated on the line is told by email, Telegram
+  // and in the app. The EMAIL is one shared message sent by closing-publish-notification.ts, so this row
+  // is the per-person notice and carries in-app and Telegram only; the call site passes the same two
+  // channels, and closing-publish-channel-guard.ts stops the Telegram-failure fallback from mailing a
+  // second copy. No sales figure rides in the message: it reaches every rep on the line at once.
+  "sales.closing_published": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "offers.*": { channels: ["in_app", "email", "push"], permissionResource: "offers", priority: "high", recipientStrategy: ["permission_based"] },
   "outstation.*": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
   // Owner request 2026-07-13: no payslip emails to employees — in-app + Telegram + push.

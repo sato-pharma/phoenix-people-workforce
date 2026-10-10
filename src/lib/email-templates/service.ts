@@ -717,8 +717,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Direct Order Probation Report",
   },
   monthly_closing_published: {
-    bodyHtml: "<p>The <strong>{{periodLabel}}</strong> Monthly Closing for <strong>{{line}}</strong> has been published and is now live in Phoenix Workforce.</p><p>District Managers can review their own areas in the employee portal. Admin and product roles can open the full Closing Matrix.</p>{{detailsTable}}",
-    bodyText: "The {{periodLabel}} Monthly Closing for {{line}} has been published and is now live in Phoenix Workforce.\n\nDistrict Managers can review their own areas in the employee portal. Admin and product roles can open the full Closing Matrix.\n\n{{detailsTable}}",
+    bodyHtml: "<p>The <strong>{{periodLabel}}</strong> Monthly Closing for <strong>{{line}}</strong> has been published and is now live in Phoenix Workforce.</p><p>Everyone on the line can review their own figures in the employee portal. Admin and product roles can open the full Closing Matrix.</p>{{detailsTable}}",
+    bodyText: "The {{periodLabel}} Monthly Closing for {{line}} has been published and is now live in Phoenix Workforce.\n\nEveryone on the line can review their own figures in the employee portal. Admin and product roles can open the full Closing Matrix.\n\n{{detailsTable}}",
     closingText: "Please log in to review the details.",
     description: "Tells sales and product managers that a line's monthly closing has been published.",
     greeting: "Dear {{line}} Leaders,",

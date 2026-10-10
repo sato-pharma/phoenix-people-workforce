@@ -96,6 +96,11 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   // decides on, and a generic "you have a notification" ping cannot be approved or rejected — the
   // same reasoning direct_orders carries. These notices hold no salary and no personal data.
   { enabled: true, genericOnly: false, module: "market_awareness", notes: "Awareness activity waiting for a decision, held, returned or approved; full content so the approver and the CEO can act from the message.", optional: false },
+  // Monthly Closing published (owner, 2026-10-10): the whole line is told in-app, by Telegram and by one
+  // shared email. Without this row the unknown-module fail-safe drops the Telegram message silently —
+  // the same miss direct_orders and market_awareness carry above. Not genericOnly: the message names the
+  // line and the month and carries no figure.
+  { enabled: true, genericOnly: false, module: "sales", notes: "Monthly Closing published to everyone seated on the line; names the line and the month, no sales figure.", optional: false },
 ];
 
 function cleanModule(value: unknown) {
