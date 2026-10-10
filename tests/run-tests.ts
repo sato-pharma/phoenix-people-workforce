@@ -2109,6 +2109,7 @@ import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer
 import { runDeltaLandedVerdictTests, runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runSupabaseAdminClientEnvCacheTests } from "./supabase-admin-client-env-cache.test.ts";
+import { runSupabaseGatewayRetryTests } from "./supabase-gateway-retry.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
 import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.ts";
@@ -7942,6 +7943,16 @@ await runTest(
     + "three tests went from 64ms to 252s and the suite from 145s to 419s). Memoization is kept, "
     + "because one request calls getSupabaseAdmin dozens of times",
   runSupabaseAdminClientEnvCacheTests,
+);
+await runTest(
+  "a Cloudflare error page from the hosted Supabase endpoint is RETRIED on a read, never handed "
+    + "back as a broken page (521/520/525 are text/html, so they could never satisfy the "
+    + "application/json check the only retry sat behind — measured 2026-10-10: 21 edge pages on "
+    + "10-07 across nine unrelated routes and 3 more in the 11:03-11:17 Cairo window, while the "
+    + "container sat at 1% of 24 vCPU and the database at 3 active connections of 200), while a "
+    + "WRITE is never retried on a gateway 5xx (it may already have been applied) and a TIMEOUT is "
+    + "never retried (it already cost the whole budget)",
+  runSupabaseGatewayRetryTests,
 );
 await runTest(
   "a deregistered worktree folder holding files is REPORTED, by name and by content, and is never "

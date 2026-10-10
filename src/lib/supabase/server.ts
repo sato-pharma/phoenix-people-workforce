@@ -32,6 +32,51 @@ const supabaseRequestTimeoutMs = 15000;
 const RETRYABLE_PGRST_CODES = new Set(["PGRST002"]);
 const PGRST_RETRY_DELAYS_MS = [200, 400, 800];
 
+/**
+ * Gateway statuses that mean the request never reached PostgREST at all. The hosted Supabase
+ * endpoint sits behind Cloudflare, and when it stops answering the edge serves its OWN HTML error
+ * page: 521 "Web server is down", 520 "unknown error", 525 "SSL handshake failed".
+ *
+ * WHY THIS EXISTS (2026-10-10). The retry below only ever fired on a PGRST002 body, and it looked
+ * for that body behind a `content-type: application/json` check — so a Cloudflare page, which is
+ * `text/html`, fell straight past the check to `break` and was handed to the caller as a hard
+ * failure. A blip of a few hundred milliseconds therefore surfaced as a broken page.
+ *
+ * Measured the same day: 15 "Web server is down" and 6 "unknown error" pages on 10-07 across nine
+ * unrelated routes, and 2 more plus an SSL handshake failure inside the 11:03–11:17 Cairo window,
+ * while the Railway container sat at 1% of 24 vCPU and the database at 3 active connections — so
+ * neither end was busy; the path between them was simply not answering.
+ *
+ * An edge page comes back FAST (the edge answers, it does not hang), so retrying it costs the
+ * backoff and nothing more. A TIMEOUT is deliberately NOT retried here: it has already cost the
+ * whole `supabaseRequestTimeoutMs`, and retrying would multiply the very freeze this exists to
+ * remove (see the AbortError note in `fetchWithTimeout`).
+ *
+ * 🔴 520 AND 503 ARE DELIBERATELY ABSENT, AND ADDING THEM WOULD COMPOUND THE WAIT. postgrest-js
+ * retries those two itself — `RETRYABLE_STATUS_CODES = [520, 503]` in its `executeWithRetry`, for
+ * GET/HEAD/OPTIONS, 3 attempts at 1s/2s/4s. Our wrapper sits INSIDE that loop, so a status handled
+ * in both places is retried 3 times here and then 3 times again outside, each of those re-entering
+ * this wrapper: 16 attempts for one read. This set therefore holds only what the SDK leaves
+ * unretried — and 521 and 525, the two production actually served, are exactly in that gap.
+ */
+const RETRYABLE_TRANSPORT_STATUSES = new Set([502, 504, 521, 522, 523, 524, 525, 526, 530]);
+
+/**
+ * Only a READ is retried on a gateway failure. A gateway 5xx carries NO evidence about whether the
+ * request was applied before the edge dropped the answer, so retrying a write could apply it twice.
+ * PGRST002 is the opposite case and keeps its existing all-method retry: it means PostgREST could
+ * not reach Postgres, so nothing ran.
+ */
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD"]);
+
+/** The HTTP method of a fetch call, however supabase-js phrased it. Defaults to GET, as fetch does. */
+function requestMethod(input: RequestInfo | URL, init: RequestInit | undefined): string {
+  const fromInit = init?.method;
+  if (typeof fromInit === "string" && fromInit.length > 0) return fromInit.toUpperCase();
+  if (typeof Request !== "undefined" && input instanceof Request) return input.method.toUpperCase();
+  return "GET";
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -61,7 +106,22 @@ async function fetchWithTimeout(
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Supabase request timed out.");
+      // The MESSAGE is what every caller reads (`isSupabaseTimeout` in reports/vacancies.ts
+      // matches the words "timed out", and the heartbeat's 503 branch depends on it), so it is
+      // kept exactly as it was.
+      //
+      // 🔴 THE NAME MUST STAY "AbortError", AND REWRITING IT COST UP TO A MINUTE PER HANG.
+      // postgrest-js wraps every request in its own `executeWithRetry`, whose first guard is
+      // `if (fetchError?.name === "AbortError") throw` — a deliberate refusal to retry a request
+      // that already spent its whole budget. This line used to throw a plain `new Error(...)`,
+      // whose name is "Error", so that guard missed and the SDK fell through to its NETWORK-error
+      // path instead: 3 further attempts for a GET, each paying the full `requestTimeoutMs`, with
+      // 1s/2s/4s of backoff between them. One stalled read therefore cost 4 × 15s + 7s ≈ 67
+      // seconds — measured here on 2026-10-10 as four fetch attempts for a single
+      // `.select()` — which is the page that "hangs" rather than merely being slow.
+      const timedOut = new Error("Supabase request timed out.");
+      timedOut.name = "AbortError";
+      throw timedOut;
     }
     throw error;
   } finally {
@@ -80,6 +140,9 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
       },
       global: {
         fetch: async (input, init) => {
+          // A gateway failure is retried only for a read — see IDEMPOTENT_METHODS.
+          const mayRetryTransport = IDEMPOTENT_METHODS.has(requestMethod(input, init));
+
           // First attempt — no delay.
           let response = await fetchWithTimeout(input, init, requestTimeoutMs);
 
@@ -88,6 +151,15 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
           // the response normally on a successful retry or on final failure.
           for (const delayMs of PGRST_RETRY_DELAYS_MS) {
             if (!response.ok) {
+              // The request never reached PostgREST — Cloudflare answered for it. This is checked
+              // BEFORE the JSON branch below, because an edge error page is text/html and so can
+              // never satisfy it; that is exactly how a 521 used to escape every retry.
+              if (mayRetryTransport && RETRYABLE_TRANSPORT_STATUSES.has(response.status)) {
+                await sleep(delayMs);
+                response = await fetchWithTimeout(input, init, requestTimeoutMs);
+                continue;
+              }
+
               // Only attempt to parse JSON error bodies (PostgREST always sends
               // application/json for errors; avoid consuming binary responses).
               const contentType = response.headers.get("content-type") ?? "";
