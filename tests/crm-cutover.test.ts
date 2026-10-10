@@ -219,8 +219,17 @@ function readDoorTests() {
   const planBoard = read("src/lib/crm/plan-board.ts");
   assert.equal(
     (planBoard.match(/\.from\(\s*CRM_PLAN_ENTRIES_UNIFIED_VIEW\s*\)/g) ?? []).length,
-    3,
-    "all three plan-board reads use the unified view — the board summary, one plan's entries, and the monthly planner's last-month reference",
+    5,
+    "all five plan-board reads use the unified view — the board summary's probe, its per-day keyset "
+      + "scan and the single scan it keeps for a named-agent or month window, then one plan's entries "
+      + "and the monthly planner's last-month reference. It was THREE until 2026-10-10, when the "
+      + "summary stopped OFFSET-paging a whole month and became the probe-then-days read (the window "
+      + "sorted by an id the view synthesises, so every page rebuilt the month: 452.6 ms a page, "
+      + "~17.1 s for 44 days, half of all database time left after the roster index). Raising this "
+      + "number is only correct when the new site reads the UNIFIED VIEW — which is the whole point "
+      + "of the guard. The three `.from(CRM_PLAN_ENTRIES_TABLE)` reads below it are deliberate and "
+      + "separate: verification writes back to the vendor, so it resolves the plan's identity from "
+      + "the vendor's own rows.",
   );
   assert.ok(read("src/lib/crm/rep-doctor-lists.ts").includes(".from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)"), "rep doctor lists read the unified plan view");
   const repsList = read("src/lib/crm/reps-list.ts");
