@@ -102,6 +102,13 @@ export type PhoenixCrmSettings = {
    * trigger reads this same column — because a polyclinic's day is physically one queue.
    */
   sharedPlaceDailyCap: number;
+  /**
+   * The most DOCTORS one rep may visit OUT OF PLAN in one visit day (owner, 2026-10-10: two) and in one
+   * field week, Saturday to Thursday (eight). Like the polyclinic cap it binds the DOOR — the visit
+   * trigger reads these same columns — and never the plan, which an off-plan visit is not on.
+   */
+  offPlanDailyCap: number;
+  offPlanWeeklyCap: number;
   /** Two customers of one plan day further apart than this are highlighted to the reviewer. */
   farApartKm: number;
   /** A visit saved further than this from the validated place is flagged (it still saves). */
@@ -130,6 +137,10 @@ export const PHOENIX_CRM_DEFAULT_SETTINGS: PhoenixCrmSettings = {
   // shared-place-rules.ts and as the column's own SQL default — copied, not imported, so this type
   // module stays free of the rules module; tests/phoenix-crm-shared-place.test.ts keeps all three equal.
   sharedPlaceDailyCap: 3,
+  // Two a day and eight a week (owner, 2026-10-10) — the columns' own SQL defaults, copied here so this
+  // type module stays free of the rules module; tests/phoenix-crm-offplan-cap.test.ts keeps them equal.
+  offPlanDailyCap: 2,
+  offPlanWeeklyCap: 8,
   farApartKm: 10,
   visitFarMeters: 300,
   weakGpsMeters: 100,

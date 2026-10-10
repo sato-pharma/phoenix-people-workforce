@@ -52,7 +52,7 @@ const GRADES: PhoenixCrmGrade[] = ["A", "B", "C"];
 // ── The numbers ─────────────────────────────────────────────────────────────────────────────────
 
 type TargetKey = `${PhoenixCrmDoctorListType}${PhoenixCrmGrade}`;
-type FieldKey = "pmDailyCap" | "amDailyCap" | "sharedPlaceDailyCap" | "farApartKm" | "visitFarMeters" | "weakGpsMeters" | TargetKey;
+type FieldKey = "pmDailyCap" | "amDailyCap" | "sharedPlaceDailyCap" | "offPlanDailyCap" | "offPlanWeeklyCap" | "farApartKm" | "visitFarMeters" | "weakGpsMeters" | TargetKey;
 
 /** What is typed, field by field. Kept as text, so a box can be emptied while a new number goes in. */
 type NumbersDraft = Record<FieldKey, string>;
@@ -94,6 +94,12 @@ const SHARED_PLACE_FIELDS: FieldSpec[] = [
     decimal: false,
     blankAllowed: false,
   },
+];
+
+/** The door's own group: how many DOCTORS a rep may visit off his plan. Not the plan's caps, not a venue's. */
+const OFF_PLAN_FIELDS: FieldSpec[] = [
+  { key: "offPlanDailyCap", label: "A day", ariaLabel: "Customers a rep may visit out of plan in a day", hint: null, unit: null, min: 1, max: 20, decimal: false, blankAllowed: false },
+  { key: "offPlanWeeklyCap", label: "A week", ariaLabel: "Customers a rep may visit out of plan in a week", hint: null, unit: null, min: 1, max: 100, decimal: false, blankAllowed: false },
 ];
 
 const DISTANCE_FIELDS: FieldSpec[] = [
@@ -155,7 +161,7 @@ const TARGET_FIELDS: Record<PhoenixCrmDoctorListType, FieldSpec[]> = {
   AM: GRADES.map((grade) => targetSpec("AM", grade)),
 };
 
-const ALL_FIELDS: FieldSpec[] = [...CAP_FIELDS, ...SHARED_PLACE_FIELDS, ...TARGET_FIELDS.PM, ...TARGET_FIELDS.AM, ...DISTANCE_FIELDS];
+const ALL_FIELDS: FieldSpec[] = [...CAP_FIELDS, ...SHARED_PLACE_FIELDS, ...OFF_PLAN_FIELDS, ...TARGET_FIELDS.PM, ...TARGET_FIELDS.AM, ...DISTANCE_FIELDS];
 
 /**
  * The typed text as plain digits: Arabic-Indic digits read as 0–9, so an Arabic keyboard works. A whole
@@ -205,6 +211,8 @@ function draftOf(settings: PhoenixCrmSettings): NumbersDraft {
     pmDailyCap: numberText(settings.pmDailyCap),
     amDailyCap: numberText(settings.amDailyCap),
     sharedPlaceDailyCap: numberText(settings.sharedPlaceDailyCap),
+    offPlanDailyCap: numberText(settings.offPlanDailyCap),
+    offPlanWeeklyCap: numberText(settings.offPlanWeeklyCap),
     farApartKm: numberText(settings.farApartKm),
     visitFarMeters: numberText(settings.visitFarMeters),
     weakGpsMeters: numberText(settings.weakGpsMeters),
@@ -229,6 +237,8 @@ function settingsFrom(draft: NumbersDraft): PhoenixCrmSettings | null {
     pmDailyCap: whole("pmDailyCap"),
     amDailyCap: whole("amDailyCap"),
     sharedPlaceDailyCap: whole("sharedPlaceDailyCap"),
+    offPlanDailyCap: whole("offPlanDailyCap"),
+    offPlanWeeklyCap: whole("offPlanWeeklyCap"),
     farApartKm: whole("farApartKm"),
     visitFarMeters: whole("visitFarMeters"),
     weakGpsMeters: whole("weakGpsMeters"),
@@ -889,6 +899,14 @@ export function SettingsTab({
                 "Several customers receive behind one door. This is the visits that door takes in a day, whatever the number of customers in it — on the weekly plan and when a visit is logged.",
               )}
               <div className="grid min-w-0 grid-cols-2 gap-3 md:max-w-md">{SHARED_PLACE_FIELDS.map(numberField)}</div>
+            </div>
+            <div aria-labelledby={`${idPrefix}-off-plan`} className="grid min-w-0 gap-3 border-t border-slate-100 pt-5" role="group">
+              {groupHeading(
+                `${idPrefix}-off-plan`,
+                "Customers a rep may visit out of plan, at most",
+                "Out-of-plan visits only: a customer on the rep's list who is not on the sent plan for that day. The week runs Saturday to Thursday. A visit past either number is not saved, and the rep is told to log it on another day.",
+              )}
+              <div className="grid min-w-0 grid-cols-2 gap-3 md:max-w-md">{OFF_PLAN_FIELDS.map(numberField)}</div>
             </div>
             <div aria-labelledby={`${idPrefix}-grades`} className="grid min-w-0 gap-3 border-t border-slate-100 pt-5" role="group">
               {groupHeading(

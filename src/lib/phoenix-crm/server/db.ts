@@ -9,6 +9,7 @@
 import { ApiError } from "@/lib/http/api-errors";
 import { CUSTOMER_PHONE_ERROR } from "@/lib/phoenix-crm/entry-rules";
 import { SHARED_PLACE_DAY_FULL_TEXT } from "@/lib/phoenix-crm/shared-place-rules";
+import { OFFPLAN_DAY_FULL_TEXT, OFFPLAN_WEEK_FULL_TEXT } from "@/lib/phoenix-crm/unplanned-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -53,6 +54,10 @@ const REFUSALS: Record<string, Refusal> = {
   // (owner, 2026-10-09). The cap is the database's own BEFORE INSERT trigger on the visits table, so
   // it answers the rep's save, a manager's entry for him and the Super Admin's entry alike.
   shared_place_day_full: { status: 409, message: SHARED_PLACE_DAY_FULL_TEXT },
+  // The off-plan cap (owner, 2026-10-10): two doctors a day, eight a week, out of plan. The database's
+  // own BEFORE INSERT trigger, so it answers the rep's save, a manager's entry and the Super Admin's.
+  offplan_day_full: { status: 409, message: OFFPLAN_DAY_FULL_TEXT },
+  offplan_week_full: { status: 409, message: OFFPLAN_WEEK_FULL_TEXT },
   shared_place_not_found: { status: 404, message: "This polyclinic or centre is no longer there. Reload the page." },
   shared_place_retired: { status: 409, message: "This polyclinic or centre was removed. Reload the page." },
   shared_place_held: {

@@ -94,6 +94,8 @@ import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { ensureReferenceCustomers, loadListedPharmacies, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPlannedOtherDays } from "@/lib/phoenix-crm/server/offplan-day";
+import { loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
+import { offPlanAllowance, offPlanWeekWindow, type OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
@@ -638,6 +640,12 @@ export type VisitFormView = {
   planToday: { status: PhoenixCrmPlanStatus | null; saved: number };
   /** Why no visit can be saved here, in one sentence; null when nothing stops it. */
   blockedReason: string | null;
+  /**
+   * Where this territory stands on the out-of-plan allowance — two doctors a day, eight a week (owner,
+   * 2026-10-10) — shown on the unplanned steps so nobody meets the limit by being refused. The door
+   * enforces it either way (`phoenix_crm_visits_offplan_cap`).
+   */
+  offPlan: OffPlanAllowance;
 };
 
 /**
@@ -848,11 +856,13 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     // 2026-10-02). The same cached list the rep's ask offers, so the two can never disagree about who
     // his product managers are; on the wave because it never blocks anything else.
     loadLineProductManagers(seat),
+    // The out-of-plan doctors of this field week, for the allowance on the unplanned steps.
+    loadOffPlanRows([seat.seatId], isTest, offPlanWeekWindow(today)),
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
   await ensured;
-  const [{ customers, placesByCustomer }, visitCounts, planDay, visitRows, productFamilies, pharmacies, lastVisits, names, plannedOtherDays, lineProductManagers] =
+  const [{ customers, placesByCustomer }, visitCounts, planDay, visitRows, productFamilies, pharmacies, lastVisits, names, plannedOtherDays, lineProductManagers, offPlanRows] =
     await wave;
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
@@ -951,6 +961,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     todayVisits: visitRows.map((row) => mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles })),
     planToday: { status: planDay.status, saved: planDay.customerIds.length },
     blockedReason,
+    offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings }),
   });
 }
 

@@ -68,6 +68,23 @@ export function outOfListVisitNote(customerStatus: string | null): { label: stri
   return { label: "Waiting to be added to your list", note: OUT_OF_LIST_REP_NOTE };
 }
 
+/**
+ * 🔴 THE OFF-PLAN CAP — AT MOST TWO DOCTORS A DAY AND EIGHT A WEEK OUT OF PLAN (owner, 2026-10-10).
+ * The numbers are SETTINGS (`offplan_daily_cap`, `offplan_weekly_cap`), read live by the visit trigger
+ * `phoenix_crm_visits_offplan_cap`; two and eight are only their defaults. It counts DISTINCT doctors
+ * (AM and PM customers) of the `out_of_plan` kind per seat — never an out-of-list visit, never a
+ * pharmacy — in the visit day and in the field week (Saturday to Thursday).
+ *
+ * These sentences sit in `db.ts`'s static REFUSALS table, which knows only the code, so they name no
+ * number. Golden rule #1: they say what to do, never that he is being checked.
+ */
+export const OFFPLAN_DAY_FULL_CODE = "phoenix_crm:offplan_day_full";
+export const OFFPLAN_WEEK_FULL_CODE = "phoenix_crm:offplan_week_full";
+export const OFFPLAN_DAY_FULL_TEXT =
+  "You have reached the most customers you can visit out of your plan in one day. Plan this one for another day.";
+export const OFFPLAN_WEEK_FULL_TEXT =
+  "You have reached the most customers you can visit out of your plan in one week. Plan this one for next week.";
+
 /** Where an off-plan visit's approval has got to. */
 export type UnplannedVisitStatus = "manager_pending" | "sfe_pending" | "approved" | "refused";
 

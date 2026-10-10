@@ -67,6 +67,7 @@ import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import { offPlanBlock } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { outOfListVisitNote, unplannedKindLabel } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, SavedVisit, VisitCustomerOption, VisitDayView, VisitFormView, VisitRow } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
@@ -789,8 +790,11 @@ function AddFlow({
         <UnplannedChoice
           onBack={() => onStep({ name: "start" })}
           onOutOfList={() => onStep({ name: "out_of_list" })}
+          offPlan={loaded.offPlan}
           onOutOfPlan={() => onStep({ name: "out_of_plan" })}
           outOfPlanCount={customersFor("out_of_plan", loaded.customers).length}
+          outOfPlanOpenCount={customersFor("out_of_plan", loaded.customers).filter((customer) => offPlanBlock(loaded.offPlan, customer.customerId) === null).length}
+          voice={loaded.enteredAs === "rep" ? "rep" : "manager"}
           waitingCount={loaded.customers.filter((customer) => customer.outside).length}
         />,
         () => onStep({ name: "start" }),
@@ -801,8 +805,10 @@ function AddFlow({
         <VisitCustomerPicker
           allCustomers={loaded.customers}
           mode="out_of_plan"
+          offPlan={loaded.offPlan}
           onBack={() => onStep({ name: "unplanned" })}
           onPick={(customerId) => onStep({ name: "reason", customerId, reason: filledReason(find(customerId)), back: { name: "out_of_plan" } })}
+          voice={loaded.enteredAs === "rep" ? "rep" : "manager"}
         />,
         () => onStep({ name: "unplanned" }),
       );
@@ -892,6 +898,8 @@ function AddFlow({
           deciders={decidersText(loaded)}
           initialReason={reasonStep.reason}
           key={reasonStep.customerId}
+          offPlan={loaded.offPlan}
+          voice={loaded.enteredAs === "rep" ? "rep" : "manager"}
           onBack={() => (reasonStep.back ? onStep(reasonStep.back) : onClose())}
           onContinue={(reason) =>
             onStep({ name: "form", customerId: customer.customerId, visitType: "out_of_plan", reason, back: { ...reasonStep, reason } })
