@@ -61,7 +61,7 @@ function checkService(): void {
   assert.ok(gate < firstRead, "WHO is checked before anything is read — a rep learns nothing about the clinic from a refused move");
   assert.match(service, /export const PLACE_MOVE_REASON_MIN = 10;/, "a move's reason is at least 10 characters");
   assert.match(move, /if \(!reason \|\| reason\.length < PLACE_MOVE_REASON_MIN\)/, "and a shorter one is refused before the database is asked");
-  assert.match(move, /const location = await resolvePlaceLocation\(point\);/, "the new point is resolved into address, brick, area and region the way a validation is");
+  assert.match(move, /const location = await resolvePlaceLocation\(point, territoryOfSeat\(seat\)\);/, "the new point is resolved into address, brick, area and region the way a validation is");
   assert.match(move, /restampVisitLocationsQuietly\(\{[\s\S]*?scope: "all",[\s\S]*?\}\)/, "every visit to the customer is measured again against the moved clinic");
   // The new point is one of the clinic's own readings, or coordinates held to Egypt's field bounds.
   assert.match(service, /if \(!isUsableFix\(lat, lon\)\) return null;/, "pasted coordinates outside Egypt's field range are refused");

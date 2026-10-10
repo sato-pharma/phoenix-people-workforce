@@ -32,7 +32,7 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readTestFlag, territoryForRead, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
+import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -289,7 +289,7 @@ export async function createSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
     photoSlotIssuedAt(draft.value.photoPath),
     // The one resolver a validation and a move already share, so `brick_lookup` keeps its pessimistic
     // default and a venue can never disagree with a place about which brick a point is in.
-    resolvePlaceLocation(point),
+    resolvePlaceLocation(point, territoryOfSeat(seat)),
     venueSignboard({
       isTest,
       name: draft.value.name,

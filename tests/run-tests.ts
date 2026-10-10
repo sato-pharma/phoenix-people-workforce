@@ -1742,6 +1742,7 @@ import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.t
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmFieldReachTests } from "./phoenix-crm-field-reach.test.ts";
 import { runPhoenixCrmPharmacyPinTests } from "./phoenix-crm-pharmacy-pin.test.ts";
+import { runPhoenixCrmCaptureBrickTerritoryTests } from "./phoenix-crm-capture-brick-territory.test.ts";
 import { runPhoenixCrmAdminSurfaceTests } from "./phoenix-crm-admin-surface.test.ts";
 import { runPhoenixCrmNameBesidePillsTests } from "./phoenix-crm-name-beside-pills.test.ts";
 import { runPhoenixCrmCardTableParityTests } from "./phoenix-crm-card-table-parity.test.ts";
@@ -6500,6 +6501,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lets a rep save a pharmacy's own place and its responsible person's phone, both OPTIONAL (owner, 2026-10-09: \"visiting pharmacy or adding a new pharmacy make it optional to add its location by a pin button, optional if you want to save its location do this if you want also don't do this, and also make optional to add the responsible person phone number, and of course when he captured the location, the location is then cleaned and separated into area, brick, government\"): an absent pin, an empty pin and an empty phone are all null and never a refusal, so a pharmacy saved by its name alone takes exactly the taps it did before, and the ONE refusal is a reading too rough to be a place; the pin is resolved through the SAME function a doctor's validated place uses, so a pharmacy and the clinic across the street can never disagree about the brick, and the governorate is the geocode's own component rather than words cut out of the address; the pin is a RECORD and never a check — no visit measured against it, nothing flagged, no approval, no KPI — and the rep's own screens carry WHERE and never how rough the reading was or how far from its brick it sits; adding a pharmacy already on his list fills only what is EMPTY while phoenix_crm_set_pharmacy_details is the correction path, where a named key means set it and an absent key means leave it; and the thirteen columns are named in the ONE select string that feeds his List, his planner and his visit form alike",
   runPhoenixCrmPharmacyPinTests,
+);
+
+await runTest(
+  "A Phoenix CRM capture is filed in the territory it was taken in (owner, 2026-10-10: \"they capture the location in a place and is saved in another. Example Hana Abdelaziz captured Tabark in Faisal but it is saved in Imbaba\"): the GPS and the photo were never wrong — 68 of production's 699 live brick centroids sit on 25 SHARED coordinates, because a brick named after a street Google cannot place falls back to the town's own point, and 34 of them straddle an AREA boundary, so the nearest-centroid winner among them was whichever row the array held first; the capturing seat's own area now breaks a near tie inside the SAME trust radius the match is judged by, so Tabarak on King Faisal Street takes the Haram-Faisal brick 1.45 km away rather than Imbaba's junk centroid 1.26 km away and six Qena 1 captures stop reading Qena 2, the distance stored is the chosen brick's and never the runner-up's, the answer no longer depends on the order the centroids arrive in, and nothing is dragged home from outside the radius — a Kafr El-Sheikh 1 rep standing 60 m from a Kafr El-Sheikh 2 brick keeps it, an empty or absent territory behaves exactly as before, and no brick is invented where there is none",
+  runPhoenixCrmCaptureBrickTerritoryTests,
 );
 
 await runTest(

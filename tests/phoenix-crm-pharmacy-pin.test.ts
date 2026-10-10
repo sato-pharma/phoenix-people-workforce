@@ -228,8 +228,8 @@ export function runPhoenixCrmPharmacyPinTests() {
     assert.ok(!list.includes("function resolvePinGeography("), "and list.ts carries no second copy of it");
     const callers = (resolver.match(/await resolvePinGeography\(/g) ?? []).length + (list.match(/await resolvePinGeography\(/g) ?? []).length;
     assert.equal(callers, 2, "and exactly two callers: the validated place, and the pharmacy pin");
-    assert.ok(list.includes("const geo = await resolvePinGeography(pin);"), "the pharmacy pin is resolved through it");
-    assert.ok(resolver.includes("const geo = await resolvePinGeography(point);"), "and so is the place");
+    assert.ok(list.includes("const geo = await resolvePinGeography(pin, territoryOfSeat(seat));"), "the pharmacy pin is resolved through it");
+    assert.ok(resolver.includes("const geo = await resolvePinGeography(point, territory);"), "and so is the place");
 
     // The governorate is Google's own component, never read out of the address line: a street or
     // district name reads like a governorate, and a wrong one on a pharmacy is worse than none.

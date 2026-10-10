@@ -126,10 +126,14 @@ function runServerTests() {
   //    reading, else the pin (`placePoint`). The resolving moved into `resolvePlaceLocation`, which a
   //    validation and a move (place-move.ts) both call, so the two can never disagree about a brick.
   //    The protection is unchanged: every part comes from coordinates, none from the phone's words.
-  const payload = /async function placePayload\(place: PlaceDraft\): Promise<Row> \{([\s\S]*?)\n\}/.exec(list);
+  const payload = /async function placePayload\(place: PlaceDraft, seat: OrgSeat\): Promise<Row> \{([\s\S]*?)\n\}/.exec(list);
   assert.ok(payload, "the server builds the place row in one place");
   assert.match(payload[1], /const point = placePoint\(place\);/, "the fixed point is the photo's reading, else the pin — chosen by the one pure rule");
-  assert.match(payload[1], /resolvePlaceLocation\(point\)/, "the whole location is resolved from that fixed point");
+  assert.match(
+    payload[1],
+    /resolvePlaceLocation\(point, territoryOfSeat\(seat\)\)/,
+    "the whole location is resolved from that fixed point, in the capturing seat's own territory",
+  );
   assert.match(payload[1], /\.\.\.located,/, "and every resolved part is written into the row");
   // Both raw readings are kept beside the fixed point, each as it was measured.
   for (const column of ["pin_lat: place.lat", "pin_lon: place.lon", "photo_lat: place.photoLat", "photo_lon: place.photoLon"]) {
@@ -143,9 +147,13 @@ function runServerTests() {
   // `Promise<Record<string, unknown>>` holds a `>` of its own, so the return type is matched as "the
   // rest of the line", never as `<[^>]*>`.
   const placeLocation = source("src/lib/phoenix-crm/server/place-location.ts");
-  const resolver = /export async function resolvePlaceLocation\(point: \{[\s\S]*?\}\)[^{\n]*\{([\s\S]*?)\n\}/.exec(placeLocation);
+  const resolver = /export async function resolvePlaceLocation\([\s\S]*?\n\): Promise<Record<string, unknown>> \{([\s\S]*?)\n\}/.exec(placeLocation);
   assert.ok(resolver, "the location is resolved in one place");
-  assert.match(resolver[1], /resolvePinGeography\(point\)/, "the place row's location comes from the one geography resolver, read with the fixed point");
+  assert.match(
+    resolver[1],
+    /resolvePinGeography\(point, territory\)/,
+    "the place row's location comes from the one geography resolver, read with the fixed point and its territory",
+  );
   for (const column of ["area_code", "area_name", "region_code", "region_name", "brick_distance_km"]) {
     assert.match(resolver[1], new RegExp(`${column}:`), `the capture writes ${column}, so the location is separated into its parts`);
   }
@@ -158,7 +166,7 @@ function runServerTests() {
   //     asserted below to be the only caller of the address service in its module, and `list.ts` is
   //     asserted to have stopped calling it at all — two callers would be two answers about which
   //     brick a point is in, which is the defect the extraction prevents.
-  const geography = /export async function resolvePinGeography\(point: [^)]*\): Promise<PinGeography> \{([\s\S]*?)\n\}/.exec(placeLocation);
+  const geography = /export async function resolvePinGeography\([\s\S]*?\n\): Promise<PinGeography> \{([\s\S]*?)\n\}/.exec(placeLocation);
   assert.ok(geography, "the geography behind a captured point is resolved in one place");
   // Assert the two ARGUMENTS, not one verbatim call expression: the first version of this test
   // pinned the literal text `{ lat: place.lat, lon: place.lon }` and went green on a call that
@@ -166,7 +174,15 @@ function runServerTests() {
   // passes on code typecheck rejects is worse than no test — it says the layer is guarded.
   assert.match(geography[1], /resolveEvidenceLocation\(\{[^}]*\blatitude: point\.lat\b/, "the clean address is resolved from the fixed point's latitude");
   assert.match(geography[1], /resolveEvidenceLocation\(\{[^}]*\blongitude: point\.lon\b/, "the clean address is resolved from the fixed point's longitude");
-  assert.match(geography[1], /resolveBrickForPoint\(point\.lat, point\.lon, centroids\)/, "the brick is resolved from the fixed point");
+  assert.match(geography[1], /resolveBrickForPoint\(point\.lat, point\.lon, centroids,/, "the brick is resolved from the fixed point");
+  // 🔴 AND THE CAPTURING SEAT'S TERRITORY GOES WITH IT. Without this argument the nearest centroid
+  // wins outright, and 34 live centroids sit on coordinates two AREAS share — so a capture's area
+  // would be decided by array order. It filed a Faisal hospital in Imbaba on 2026-10-10.
+  assert.match(
+    geography[1],
+    /resolveBrickForPoint\([^)]*\{ areaCodes: territory\.areaCodes, withinKm: BRICK_TRUST_KM \}\)/,
+    "and the seat's own area breaks a near tie, inside the same trust radius",
+  );
   assert.equal(
     placeLocation.split("resolveEvidenceLocation(").length - 1,
     1,
