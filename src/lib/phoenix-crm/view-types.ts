@@ -32,7 +32,8 @@ export type {
   TerritoryListView,
   ValidateResult,
 } from "@/lib/phoenix-crm/server/list";
-export type { PlaceMoveResult, PlaceMoveTarget } from "@/lib/phoenix-crm/server/place-move";
+export type { AddedVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
+export type { PlaceMoveResult, PlaceMoveTarget, SeatedInVenueResult } from "@/lib/phoenix-crm/server/place-move";
 export type { PlannedActivityDraft, PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
 export type { DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 export type {

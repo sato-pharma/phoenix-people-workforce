@@ -152,7 +152,12 @@ export function CustomerScreen({
   // validate until the check answers.
   const checking = customer.locationCheck === "checking";
   const notConfirmed = customer.locationCheck === "not_confirmed";
+  // 🔴 A customer the Super Admin moved into a polyclinic is waiting for the BUILDING's timetable, never
+  // for a photo of his own door: offering Validate would capture a second place and undo the move.
+  const seatedPending = pending && !checking && !notConfirmed && customer.places.some((place) => place.sharedPlaceId);
+  const seatedBoardOnFile = customer.places.some((place) => place.sharedPlaceId && place.venueTimetableOnFile);
   const canValidateThis = pending && !checking && customer.referenceContactCrmId !== null && view.canValidateReference;
+  const offerValidate = canValidateThis && !seatedPending;
   const requests = sortRequests(
     view.requests.filter(
       (request) =>
@@ -275,7 +280,27 @@ export function CustomerScreen({
             {validationRefusalRepText(customer.validateAgainReason) ?? LOCATION_NOT_CONFIRMED_TEXT}
           </CrmNote>
         ) : null}
-        {pending && !checking && !notConfirmed ? (
+        {seatedPending ? (
+          <CrmNote className="mt-3" title="Waiting for this building's timetable" tone="info">
+            {seatedBoardOnFile
+              ? "This customer is in a polyclinic whose timetable does not name them yet. Their visits are counted, and they join the KPIs once the timetable names them."
+              : "This customer is in a polyclinic with no timetable photo yet. Their visits are counted, and they join the KPIs once the timetable is photographed and names them."}
+          </CrmNote>
+        ) : null}
+        {seatedPending && (view.canEdit || view.canValidateReference) ? (
+          <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+            <CrmButton
+              onClick={() => {
+                const seated = customer.places.find((place) => place.sharedPlaceId);
+                if (seated?.sharedPlaceId) onOpen({ name: "venue-timetable", customerId: customer.customerId, sharedPlaceId: seated.sharedPlaceId });
+              }}
+              variant="primary"
+            >
+              {seatedBoardOnFile ? "The timetable changed — photograph it again" : "Photograph the timetable"}
+            </CrmButton>
+          </div>
+        ) : null}
+        {pending && !checking && !notConfirmed && !seatedPending ? (
           <CrmNote className="mt-3" title={NOT_VALIDATED_YET_TITLE} tone="info">
             {PENDING_COUNTS_NOTE} Validating captures this customer&apos;s signboard photo, the location and the days and hours. It happens once.
           </CrmNote>
@@ -295,9 +320,9 @@ export function CustomerScreen({
           </CrmNote>
         ) : null}
 
-        {view.canEdit || canValidateThis ? (
+        {view.canEdit || offerValidate ? (
           <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-            {canValidateThis ? (
+            {offerValidate ? (
               <CrmButton onClick={() => onOpen({ name: "validate", contactCrmId: customer.referenceContactCrmId as number })} variant="primary">
                 Validate this customer
               </CrmButton>
@@ -333,6 +358,16 @@ export function CustomerScreen({
         {/* The SFE Manager reaches into the list from outside it (owner, 2026-10-06): he drops an
             irrelevant customer himself, or hands him to another rep. On the list only — a customer in
             the Archive has already left it, and one waiting outside it is on nobody's list to hand on. */}
+        {/* The Super Admin seats a customer entered on his own into a validated polyclinic (owner,
+            2026-10-10). On the customer's page, never a second button on a list row. */}
+        {view.canSeatInVenue && customer.listType !== "Pharmacy" && (active || pending) && customer.places.some((place) => !place.sharedPlaceId) ? (
+          <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-100 pt-3">
+            <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Super Admin · polyclinics</p>
+            <div className="grid gap-2 sm:flex sm:flex-wrap">
+              <CrmButton onClick={() => onOpen({ name: "seat-in-venue", customerId: customer.customerId })}>Move into a polyclinic</CrmButton>
+            </div>
+          </div>
+        ) : null}
         {view.canCurateList && (active || pending) ? (
           <CurateFromList customer={customer} onLeave={onLeave ?? onNotice} seatId={seatId} test={test} view={view} />
         ) : null}

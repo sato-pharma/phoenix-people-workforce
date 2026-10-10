@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { createSharedPlace, loadSharedPlacesFor } from "@/lib/phoenix-crm/server/shared-places";
+import { addVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -36,7 +37,13 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "create");
     const viewer = await resolvePhoenixCrmViewer(access);
-    const sharedPlace = await createSharedPlace(viewer, await request.json());
+    const body = (await request.json()) as { action?: unknown } | null;
+    // The building's timetable on its own (owner, 2026-10-10): first photograph, or the board replaced.
+    if (body?.action === "timetable") {
+      const timetable = await addVenueTimetable(viewer, body);
+      return NextResponse.json({ success: true, timetable });
+    }
+    const sharedPlace = await createSharedPlace(viewer, body);
     return NextResponse.json({ sharedPlace, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not save this polyclinic or centre.");

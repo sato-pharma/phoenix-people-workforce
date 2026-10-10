@@ -69,6 +69,13 @@ const REFUSALS: Record<string, Refusal> = {
     status: 409,
     message: "This customer is already registered in this polyclinic or centre. Open the place to change the hours.",
   },
+  // Moving a standalone clinic INTO a polyclinic (owner, 2026-10-10 — "add the option to the admin to
+  // move this doctor to"). A place already inside a building is never re-seated: its point is that
+  // building's, so a second move would overwrite the record of where it came from with a point that was
+  // never its own.
+  already_in_a_venue: { status: 409, message: "This clinic is already inside a polyclinic or centre. Reload the list." },
+  pharmacy_cannot_be_seated: { status: 409, message: "A pharmacy cannot be moved into a polyclinic or centre." },
+  no_places_chosen: { status: 400, message: "Tick at least one customer to move into the polyclinic." },
   note_required: { status: 400, message: "Write a note explaining why." },
   // Removing a clinic is kept on record exactly as a move is (2026-10-02), so the reason has the same
   // bounds and the same sentence: the person refused here is a mover, and he is told the length.

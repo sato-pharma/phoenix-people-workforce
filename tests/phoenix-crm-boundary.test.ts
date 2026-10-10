@@ -160,6 +160,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/places/update", "create"),
   // Moving or removing a validated place (owner, 2026-09-29): the Super Admin and the SFE Manager only.
   post("list/places/move", "approve"),
+  // Seating customers in a validated polyclinic (owner, 2026-10-10): the Super Admin alone — `update` at the route, `canDecideSharedPlaces` in the service.
+  post("list/places/seat", "update"),
   // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
   // Super Admin alone — `update` at the route, `canDecideValidationReviews` in the service.
   post("validation-reviews", "update"),
@@ -767,6 +769,9 @@ const LATER_MIGRATIONS = [
   // trigger on phoenix_crm_visits rather than a line in that 27,663-character function, so every door
   // that writes a visit is held to it — and so it appends safely at the end.
   "supabase/migrations/20261010013001_phoenix_crm_shared_places.sql",
+  // Seating standalone customers in a validated polyclinic (owner, 2026-10-10): three brand-new functions
+  // (seat, set the building's timetable, settle it), replacing nothing, so it appends at the end.
+  "supabase/migrations/20261010210000_phoenix_crm_seat_places_in_venue.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
