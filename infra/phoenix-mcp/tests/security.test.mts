@@ -177,6 +177,9 @@ test('OAuth browser flow binds consent to browser, PKCE, registered callback and
     const cookie=begin.headers.get('set-cookie')!.split(';')[0];assert.match(begin.headers.get('set-cookie')!,/HttpOnly/);assert.match(begin.headers.get('set-cookie')!,/Secure/);
     const state=new URL(begin.headers.get('location')!).searchParams.get('state')!;
     const callback=await fetch(`${base}/oauth/callback?code=fixture&state=${state}`,{headers:{cookie},redirect:'manual'});assert.equal(callback.status,200);
+    // `no-referrer` makes a browser send `Origin: null` on the consent form's same-origin POST, which
+    // consent() refuses; the page must therefore keep the real Origin (measured in Chromium).
+    assert.equal(callback.headers.get('referrer-policy'),'same-origin');
     const html=await callback.text(),ticket=html.match(/name="ticket" value="([A-Za-z0-9_-]+)"/)![1];
     const consent=await fetch(`${base}/oauth/consent`,{method:'POST',headers:{cookie,Origin:config.issuer,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({ticket,decision:'approve'}),redirect:'manual'});assert.equal(consent.status,302);
     const redirect=new URL(consent.headers.get('location')!);assert.equal(redirect.origin,new URL(config.redirectUri).origin);assert.equal(redirect.searchParams.get('state'),'client-state');
@@ -186,6 +189,19 @@ test('OAuth browser flow binds consent to browser, PKCE, registered callback and
     assert.equal((await fetch(`${base}/oauth/consent`,{method:'POST',headers:{Origin:'https://evil.test'},body:new URLSearchParams({ticket,decision:'approve'})})).status,403);
     assert.equal((await fetch(`${base}/oauth/callback?code=fixture&state=${state}`,{redirect:'manual'})).status,403);
   }finally{server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));s.state.close();}
+});
+test('a refresh during a source outage keeps the token usable and never reads as replay',async()=>{
+  const s=setup();try{
+    const client=(await s.provider.clientsStore.getClient(config.clientId))!,resource=new URL(config.resource);
+    const first=await tokens(s);
+    s.fail();
+    await assert.rejects(s.provider.exchangeRefreshToken(client,first.refresh_token,undefined,resource));
+    s.restore();
+    const second=await s.provider.exchangeRefreshToken(client,first.refresh_token,undefined,resource);
+    assert.ok(second.access_token);
+    await assert.rejects(s.provider.exchangeRefreshToken(client,first.refresh_token,undefined,resource),/reused/);
+    await assert.rejects(s.provider.verifyAccessToken(second.access_token),'replay revokes the family');
+  }finally{s.state.close();}
 });
 test('revocation during a business read prevents returned data',async()=>{
   const s=setup();try{

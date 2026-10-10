@@ -30,5 +30,5 @@ export function fixtureStore(){
     async sales(s,p,a,l){guard(s);return projection(sales.filter(r=>r.period===p&&r.key>a).slice(0,l),freshness);},
     async ready(){if(fail)throw Error('offline');},async close(){},
   };
-  return {db,identity:()=>identity,setIdentity:(patch:Partial<typeof identity>)=>{identity={...identity,...patch};},fail:()=>{fail=true;},employees};
+  return {db,identity:()=>identity,setIdentity:(patch:Partial<typeof identity>)=>{identity={...identity,...patch};},fail:()=>{fail=true;},restore:()=>{fail=false;},employees};
 }

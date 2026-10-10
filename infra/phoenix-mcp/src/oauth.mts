@@ -76,6 +76,10 @@ export class OAuthProvider implements OAuthServerProvider {
     const ticket=randomToken();
     this.state.put('consent',ticket,{pending,principal} satisfies Consent,180);
     res.setHeader('Content-Security-Policy',"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+    // The global `no-referrer` makes browsers send `Origin: null` on this page's same-origin form
+    // POST (Fetch spec), which consent()'s exact-origin check would then refuse for every real
+    // owner click. `same-origin` keeps the real Origin and still leaks no referrer cross-site.
+    res.setHeader('Referrer-Policy','same-origin');
     // All interpolated values are locally generated base64url. No identity/database text is HTML.
     res.type('html').send(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Phoenix read-only access</title><main><h1>Connect Phoenix Workforce</h1><p>Allow your private ChatGPT connection to read authorized workforce summaries, active employee counts, vacancies, organizational structure and published sales. Payroll, bank details, national IDs, medical information and attachments are excluded. No business data can be changed.</p><form method="post" action="/oauth/consent"><input type="hidden" name="ticket" value="${ticket}"><button name="decision" value="approve">Approve read-only access</button> <button name="decision" value="deny">Deny</button></form></main></html>`);
   }
@@ -120,6 +124,10 @@ export class OAuthProvider implements OAuthServerProvider {
     if(scopes && scopes.join(' ')!==scope)throw new InvalidGrantError('Invalid scope');
     const replay=this.state.get<Grant>('used-refresh',token);
     if(replay){this.state.revokeFamily(replay.family);throw new InvalidGrantError('Refresh token reused');}
+    // Re-check the owner BEFORE consuming: an unavailable source must not burn the token, because
+    // the client's retry of a burned token would read as replay and revoke the whole family.
+    const peek=this.state.get<Grant>('refresh',token);
+    if(peek)await this.auth.verify(peek.principal.subject,peek.principal);
     const grant=this.state.take<Grant>('refresh',token);
     if(!grant || grant.clientId!==client.client_id || this.state.isRevoked(grant.family))throw new InvalidGrantError('Invalid refresh token');
     this.state.put('used-refresh',token,grant,86400);

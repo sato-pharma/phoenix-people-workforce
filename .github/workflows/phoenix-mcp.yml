@@ -1,6 +1,15 @@
 name: Phoenix MCP security
 on:
   pull_request:
+    # The reader bundles these Phoenix policy files, so a change to one must re-run this check.
+    paths:
+      - 'infra/phoenix-mcp/**'
+      - '.github/workflows/phoenix-mcp.yml'
+      - 'src/lib/auth/permissions.ts'
+      - 'src/lib/auth/session-lifecycle.ts'
+      - 'src/lib/employees/employee-directory.ts'
+      - 'src/lib/reports/organogram.ts'
+      - 'src/lib/sales/monthly-closing-portal.ts'
   workflow_dispatch:
 permissions:
   contents: read

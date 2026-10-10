@@ -6,6 +6,6 @@ export function filterEmployeesForAccess(rows:Employee[],context:Context):Employ
 export function getSalesScope(context:Context):string;
 export function isActiveDirectoryEmployee(row:Employee):boolean;
 export function isEmploymentAccessRevoked(input:{employmentStatus:string|null;lastWorkingDate:string|null;todayCairo:string}):boolean;
-export function seatKeysOfActiveEmployees(rows:any[]):Set<string>;
-export function reconcileVacancyRowsAgainstOccupancy(rows:any[],keys:Set<string>):any[];
-export function stripRestrictedColumns(matrix:any):any;
+export function seatKeysOfActiveEmployees(rows:readonly unknown[]):Set<string>;
+export function reconcileVacancyRowsAgainstOccupancy<T>(rows:T[],keys:Set<string>):T[];
+export function stripRestrictedColumns<T>(matrix:T):T;
