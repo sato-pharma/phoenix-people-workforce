@@ -1,36 +1,23 @@
-# Verification record
+# Verification evidence
 
-Verification uses synthetic data only. No production credentials are loaded by the test process.
+Latest focused local run: **22 tests, 22 passed, 0 failed, 0 skipped** (11 October 2026, Africa/Cairo).
+No live Phoenix environment is used by this suite. PostgreSQL clusters and signing keys are synthetic.
 
-Local final focused run: **18 tests, 18 passed, 0 failed, 0 skipped**. The native PostgreSQL
-fixture and all protocol tests completed in approximately 39 seconds. Primary-checkout preservation
-check: **22 original untracked files, 22 unchanged SHA-256 hashes, 0 missing or changed**.
+- All five tools call createReadStore against a newly initialized PostgreSQL database using the
+  dedicated reader login and verified TLS. The exact proposed installation SQL is applied only there.
+- Atomic publication uses the actual publisher implementation under its own restricted role.
+- Tests cover owner/role rejection, RLS isolation, writes despite read-write settings, dangerous
+  inherited privileges, stale/future metadata, changed-snapshot cursors, and live revocation.
+- createIdentityProvider verifies real signed synthetic RS256 JWTs: bad signatures, issuer, audience,
+  nonce, expiry, old issuance, authorized party, multi-audience ambiguity and JWKS key rotation.
+- Existing tests cover PKCE, consent, replay, token expiry, refresh/account revocation, limits,
+  sensitive-field stripping and official SDK HTTP interoperability.
+- Canonical fixture comparisons execute Phoenix's real eligibility, seat occupancy reconciliation
+  and closing restricted-column policies. Source bindings call the real report entry points but
+  the complete live IO pipeline is not yet rehearsed; SOURCE-INTERFACE.md records that release gate.
+- proposal/query-plans.json records actual synthetic EXPLAIN ANALYZE/BUFFERS as the RLS reader.
+  Tiny fixture timings are not a production capacity claim.
+- Cold typecheck and existing-app regression validation run in the draft PR CI, not on this laptop.
+  The final response/PR body records exact head and CI run evidence.
 
-- Official MCP SDK client initializes Streamable HTTP, lists exactly five read-only tools and calls
-  the employee-count tool successfully. Missing bearer token returns 401, foreign Origin 403 and
-  arbitrary administration paths 404.
-- Browser-flow test traverses authorization, upstream identity stub, consent, code exchange and
-  bearer verification over HTTP. Code reuse returns 400. PKCE, resource, exact redirect, consent
-  cookie/Origin, token expiry, refresh replay, revocation and session-version change are exercised.
-- Authorization tests reject another subject, login, role, disabled account, test persona, lifecycle
-  revocation, live permission denial, module locks and a failed authorization source. A revocation
-  occurring during a business read prevents results from being returned.
-- Pagination, input schema, result projection, sensitive-column exclusion, canonical directory
-  eligibility and the owner rate limit are tested with isolated fixtures.
-- Real PostgreSQL fixture grants reject INSERT, UPDATE, DELETE, TRUNCATE and schema creation.
-  A different session subject sees no rows. A deliberately introduced UPDATE grant triggers the
-  privilege guard; READ ONLY still rejects the UPDATE. Restoring the grant restores the guard's
-  success. A PUBLIC-executable application function is detected as an escalation route.
-- Runtime dependency audit returned `total: 0` vulnerabilities during development.
-
-The initial embedded PostgreSQL fixture could not revoke TEMP on its synthetic database catalog.
-It was replaced with a fresh native PostgreSQL cluster, so the permission test now exercises actual
-database-level grants. Native fixture clusters are stopped in finally blocks and never use an
-existing database connection.
-
-Final local count and CI verdict are recorded in the pull request. Full local Phoenix validation is
-not run under repository rules; cold typechecking and existing regression checks run in CI.
-
-Not verified: production grants/RLS, canonical live vacancy/organization/sales source parity,
-real OIDC login/MFA, real ChatGPT installation, container deployment or Railway operation. These
-are explicit release gates. A green fixture suite must not be described as a working live integration.
+No merge, deployment, production SQL, environment/OAuth mutation or ChatGPT connection was performed.

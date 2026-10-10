@@ -44,12 +44,19 @@ PHOENIX_MCP_OIDC_ISSUER
 PHOENIX_MCP_OIDC_CLIENT_ID
 PHOENIX_MCP_OIDC_CLIENT_SECRET
 PHOENIX_MCP_STATE_PATH
+PHOENIX_MCP_NODE_ID_KEY
+PHOENIX_MCP_DATABASE_CA
+PHOENIX_MCP_AUTHORIZATION_URL
+PHOENIX_MCP_AUTHORIZATION_KEY
 PORT
 ```
 
 No environment file is created. No OpenAI API key or Supabase service-role credential is required
 by this service. The database credential and upstream confidential-client secret stay server-side.
 The ChatGPT client identifier is public. The upstream OIDC client secret is never entered into ChatGPT.
+`PHOENIX_MCP_DATABASE_CA` is optional when the endpoint already chains to a trusted public CA.
+The source publisher uses a separate credential, never the reader's environment or account.
+See `proposal/SOURCE-INTERFACE.md` and `proposal/IDENTITY.md` for concrete approval gates.
 
 ## Exact ChatGPT connection procedure — after approval and staging acceptance
 

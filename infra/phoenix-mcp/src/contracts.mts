@@ -39,12 +39,21 @@ export type Employee = z.infer<typeof employeeSchema>;
 export type Vacancy = z.infer<typeof vacancySchema>;
 export type Organization = z.infer<typeof organizationSchema>;
 export type Sales = z.infer<typeof salesSchema>;
+export const freshnessSchema = z.object({
+  snapshotId:z.string().uuid(), sourceUpdatedAt:z.string().datetime({offset:true}),
+  sourceObservedAt:z.string().datetime({offset:true}),
+});
+export type Freshness = z.infer<typeof freshnessSchema>;
+export type Projection<T> = T[] & {freshness:Freshness};
+export function projection<T>(rows:T[], freshness:Freshness):Projection<T> {
+  return Object.assign(rows,{freshness:freshnessSchema.parse(freshness)});
+}
 export interface ReadStore {
   identity(subject: string): Promise<Identity | null>;
-  employees(subject: string): Promise<Employee[]>;
-  vacancies(subject: string, after: string, limit: number): Promise<Vacancy[]>;
-  organization(subject: string, after: string, limit: number): Promise<Organization[]>;
-  sales(subject: string, period: string, after: string, limit: number): Promise<Sales[]>;
+  employees(subject: string): Promise<Projection<Employee>>;
+  vacancies(subject: string, after: string, limit: number): Promise<Projection<Vacancy>>;
+  organization(subject: string, after: string, limit: number): Promise<Projection<Organization>>;
+  sales(subject: string, period: string, after: string, limit: number): Promise<Projection<Sales>>;
   ready(): Promise<void>;
   close(): Promise<void>;
 }

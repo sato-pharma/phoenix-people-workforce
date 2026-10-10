@@ -4,11 +4,12 @@ import { StateStore } from './state.mts';
 import { createIdentityProvider } from './oauth.mts';
 import { createApp } from './server.mts';
 import type { ReadStore } from './contracts.mts';
+import { createLiveAuthorization } from './live-authorization.mts';
 
 // Startup is deliberately fail-closed. Importing tests never runs this entry point.
 let store:ReadStore|undefined;
 try{
-  const c=configFromEnv(process.env), db=createReadStore(c);store=db;
+  const c=configFromEnv(process.env), db=createReadStore(c,createLiveAuthorization(c));store=db;
   await db.ready();
   const upstream=await createIdentityProvider(c), state=new StateStore(c.statePath);
   const {app}=createApp(c,db,state,upstream,event=>{process.stdout.write(JSON.stringify(event)+'\n');});

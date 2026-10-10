@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { createHmac } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Authorizer, activeEmployees } from './policy.mts';
-import { Denied, Unavailable, scope, toolNames, type ToolName, type Principal, type ReadStore } from './contracts.mts';
+import { Denied, Unavailable, scope, toolNames, freshnessSchema, type Freshness, type ToolName, type Principal, type ReadStore } from './contracts.mts';
 import { StateStore, randomToken, digest } from './state.mts';
 
 const pageFields={limit:z.number().int().min(1).max(50).default(25),cursor:z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional()};
@@ -12,11 +13,16 @@ export const inputs={
   get_organizational_structure:z.strictObject(pageFields),
   get_published_sales_summary:z.strictObject({...pageFields,period:z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/)}),
 };
-type Cursor={subject:string;role:string;version:number;tool:ToolName;period?:string;after:string};
+type Cursor={subject:string;role:string;version:number;tool:ToolName;period?:string;after:string;snapshotId:string};
+export function assertFreshness(value:Freshness,now=Date.now()){
+  const f=freshnessSchema.parse(value), observed=Date.parse(f.sourceObservedAt),updated=Date.parse(f.sourceUpdatedAt);
+  if(observed>now+5000||updated>observed||now-observed>60000)throw new Unavailable();
+  return f;
+}
 export type Audit=(event:{event:'tool';tool:ToolName;actor:string;outcome:'allowed'|'denied'|'unavailable';durationMs:number})=>void;
 export class ToolService {
   private calls:number[]=[];
-  constructor(private readonly db:ReadStore,private readonly auth:Authorizer,private readonly state:StateStore,private readonly audit:Audit){}
+  constructor(private readonly db:ReadStore,private readonly auth:Authorizer,private readonly state:StateStore,private readonly audit:Audit,private readonly nodeIdKey:string){}
   async execute(name:ToolName,raw:unknown,principal:Principal){
     const started=Date.now();
     let outcome:'allowed'|'denied'|'unavailable'='unavailable';
@@ -27,14 +33,19 @@ export class ToolService {
       const args=inputs[name].parse(raw) as {limit?:number;cursor?:string;period?:string};
       const identity=await this.auth.tool(principal,name);
       let after='';
+      let priorSnapshot:string|undefined;
       if(args.cursor){
         const c=this.state.get<Cursor>('cursor',args.cursor);
         if(!c||c.subject!==principal.subject||c.role!==principal.role||c.version!==principal.sessionVersion||c.tool!==name||c.period!==args.period)throw new Denied();
         after=c.after;
+        priorSnapshot=c.snapshotId;
       }
       let result:Record<string,unknown>;
+      let freshness:Freshness;
       if(name==='get_workforce_summary'||name==='get_active_employee_count'){
-        const employees=activeEmployees(await this.db.employees(principal.subject),identity);
+        const source=await this.db.employees(principal.subject);
+        freshness=assertFreshness(source.freshness);
+        const employees=activeEmployees(source,identity);
         result={activeEmployeeCount:employees.length,definition:'Phoenix active directory employees within your authorized scope'};
         if(name==='get_workforce_summary'){
           const groups=new Map<string,number>();
@@ -45,12 +56,15 @@ export class ToolService {
       }else{
         const limit=args.limit!;
         const rows=name==='get_open_vacancies'?await this.db.vacancies(principal.subject,after,limit+1):name==='get_organizational_structure'?await this.db.organization(principal.subject,after,limit+1):await this.db.sales(principal.subject,args.period!,after,limit+1);
+        freshness=assertFreshness(rows.freshness);
+        if(priorSnapshot&&priorSnapshot!==freshness.snapshotId)throw new Unavailable();
+        if(name==='get_published_sales_summary'&&!rows.length&&!after)throw new Unavailable();
         if(rows.length>limit+1)throw new Unavailable();
         const page=rows.slice(0,limit);
         let cursor:string|null=null;
         if(rows.length>limit){
           cursor=randomToken();
-          this.state.put('cursor',cursor,{subject:principal.subject,role:principal.role,version:principal.sessionVersion,tool:name,period:args.period,after:page[page.length-1].key} satisfies Cursor,600);
+          this.state.put('cursor',cursor,{subject:principal.subject,role:principal.role,version:principal.sessionVersion,tool:name,period:args.period,after:page[page.length-1].key,snapshotId:freshness.snapshotId} satisfies Cursor,600);
         }
         // Never return storage keys or spread raw database records.
         const items=page.map(row=>{
@@ -58,7 +72,11 @@ export class ToolService {
             if(row.period!==args.period || /head\s*office/i.test(row.line))throw new Unavailable();
             return {period:row.period,line:row.line,salesValue:row.salesValue,targetValue:row.targetValue,currency:row.currency,achievementPercent:row.targetValue&&row.targetValue>0?row.salesValue/row.targetValue*100:null,publishedAt:row.publishedAt,source:'Published Monthly Closing'};
           }
-          if('employeeName'in row)return {position:row.position,employeeName:row.employeeName,parentPosition:row.parentPosition,department:row.department,line:row.line,area:row.area,vacant:row.vacant};
+          if('employeeName'in row){
+            if(this.nodeIdKey.length<32)throw new Unavailable();
+            const id=(key:string)=>createHmac('sha256',this.nodeIdKey).update(JSON.stringify([principal.subject,'organization',key])).digest('base64url');
+            return {nodeId:id(row.key),parentNodeId:row.parentKey===null?null:id(row.parentKey),position:row.position,employeeName:row.employeeName,parentPosition:row.parentPosition,department:row.department,line:row.line,area:row.area,vacant:row.vacant};
+          }
           return {position:row.position,department:row.department,line:row.line,area:row.area,status:row.status};
         });
         result={items,nextCursor:cursor,hasMore:cursor!==null};
@@ -66,7 +84,8 @@ export class ToolService {
       }
       // Catch revocation/role changes that happened while the business query was running.
       await this.auth.tool(principal,name);
-      result.asOf=new Date().toISOString();result.timeZone='Africa/Cairo';
+      assertFreshness(freshness);
+      result.generatedAt=new Date().toISOString();result.sourceUpdatedAt=freshness.sourceUpdatedAt;result.sourceObservedAt=freshness.sourceObservedAt;result.maximumSourceAgeSeconds=60;result.timeZone='Africa/Cairo';
       if(Buffer.byteLength(JSON.stringify(result))>64_000)throw new Unavailable();
       outcome='allowed';
       return result;

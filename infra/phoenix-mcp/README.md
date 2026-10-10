@@ -3,9 +3,9 @@
 Status: **implemented service and synthetic security tests; NOT production ready or connected**.
 
 This package implements all five approved MCP tools, OAuth authorization, a restricted PostgreSQL
-reader, and Railway container configuration. Live source interfaces and the identity-provider
-registration do not exist yet. In particular, the vacancy, organizational and published-sales
-projections still need implementation and reconciliation against the canonical Phoenix services.
+reader, canonical report adapters, an atomic projection publisher, and Railway container configuration.
+The live source proof/authorization bridge and identity-provider registration are still release gates.
+See [the source proposal](proposal/SOURCE-INTERFACE.md) and [owner identity](proposal/IDENTITY.md).
 There is no fallback to administrative Phoenix APIs or a service-role key.
 
 ## Architecture and baseline
@@ -20,8 +20,9 @@ fresh reconciliation before any release.
 flowchart LR
   C[Owner's private ChatGPT plugin] -->|OAuth access token / Streamable HTTP| M[Separate Node 24 MCP service]
   M -->|Interactive authorization with PKCE| I[Approved Phoenix identity provider]
-  M -->|Restricted TLS connection / fixed SELECTs| D[Approved read interfaces]
-  D --> P[Canonical Phoenix authorization and business data]
+  M -->|Restricted TLS connection / fixed SELECTs| D[Isolated reporting database]
+  P[Canonical Phoenix reports] -->|Whitelisted atomic projections| D
+  M -->|Live authorization before and after reads| A[Owner-only Phoenix authorization bridge]
   M --> S[Separate OAuth state volume]
 ```
 
@@ -38,7 +39,7 @@ optional later infrastructure choice and is not implemented in this package.
 | `get_workforce_summary` | none | Active headcount and department counts |
 | `get_active_employee_count` | none | Active headcount using Phoenix eligibility |
 | `get_open_vacancies` | limit, opaque cursor | Position, department, line, area, open status |
-| `get_organizational_structure` | limit, opaque cursor | Position, occupant name, parent position, department, line, area, vacancy flag |
+| `get_organizational_structure` | limit, opaque cursor | Opaque nodeId/parentNodeId, position, occupant name, parent position, department, line, area, vacancy flag |
 | `get_published_sales_summary` | YYYY-MM period, limit, opaque cursor | Published line sales, target, achievement, EGP currency and publication time |
 
 Every tool is annotated read-only and has strict input validation. No SQL, mutation, attachment,

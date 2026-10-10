@@ -23,6 +23,10 @@ export function configFromEnv(env: NodeJS.ProcessEnv) {
     PHOENIX_MCP_OIDC_CLIENT_ID: z.string().min(1),
     PHOENIX_MCP_OIDC_CLIENT_SECRET: z.string().min(16),
     PHOENIX_MCP_STATE_PATH: z.string().min(1),
+    PHOENIX_MCP_NODE_ID_KEY:z.string().min(32),
+    PHOENIX_MCP_DATABASE_CA:z.string().min(1).optional(),
+    PHOENIX_MCP_AUTHORIZATION_URL:https,
+    PHOENIX_MCP_AUTHORIZATION_KEY:z.string().min(32),
     PORT: z.coerce.number().int().min(1024).max(65535).default(8080),
   }).parse(env);
   const db = new URL(c.PHOENIX_MCP_DATABASE_URL);
@@ -38,6 +42,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv) {
     oidcIssuer:c.PHOENIX_MCP_OIDC_ISSUER, oidcClientId:c.PHOENIX_MCP_OIDC_CLIENT_ID,
     oidcClientSecret:c.PHOENIX_MCP_OIDC_CLIENT_SECRET, callback,
     statePath:c.PHOENIX_MCP_STATE_PATH, port:c.PORT,
+    nodeIdKey:c.PHOENIX_MCP_NODE_ID_KEY, databaseCa:c.PHOENIX_MCP_DATABASE_CA,
+    authorizationUrl:c.PHOENIX_MCP_AUTHORIZATION_URL, authorizationKey:c.PHOENIX_MCP_AUTHORIZATION_KEY,
   };
 }
 export type Config = ReturnType<typeof configFromEnv>;

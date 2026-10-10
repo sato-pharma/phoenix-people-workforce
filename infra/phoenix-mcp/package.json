@@ -6,7 +6,7 @@
   "engines": { "node": ">=24" },
   "scripts": {
     "build": "node build.mjs",
-    "test": "node build.mjs --tests && node --test dist/security.test.mjs",
+    "test": "node build.mjs --tests && node --test dist/security.test.mjs dist/integration.test.mjs",
     "typecheck": "tsc --noEmit --incremental false -p tsconfig.json",
     "start": "node dist/main.mjs"
   },

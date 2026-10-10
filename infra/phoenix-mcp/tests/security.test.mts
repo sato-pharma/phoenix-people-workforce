@@ -17,7 +17,7 @@ import { createApp } from '../src/server.mts';
 const upstream:IdentityProvider={authorization:({state})=>`https://identity.example.test/authorize?state=${state}`,exchange:async()=>subject};
 function setup(){
   const f=fixtureStore(),state=new StateStore(':memory:'),auth=new Authorizer(f.db,config.owner),events:Parameters<Audit>[0][]=[];
-  const service=new ToolService(f.db,auth,state,e=>events.push(e)),provider=new OAuthProvider(config,state,auth,upstream);
+  const service=new ToolService(f.db,auth,state,e=>events.push(e),config.nodeIdKey),provider=new OAuthProvider(config,state,auth,upstream);
   return {...f,state,auth,events,service,provider};
 }
 async function tokens(s:ReturnType<typeof setup>){
@@ -27,10 +27,10 @@ async function tokens(s:ReturnType<typeof setup>){
 }
 test('all five tools execute and return bounded approved results',async()=>{
   const s=setup();try{
-    for(const name of toolNames){const r=await s.service.execute(name,name==='get_published_sales_summary'?{period:'2026-09'}:{},s.identity());assert.ok(r.asOf);}
+    for(const name of toolNames){const r=await s.service.execute(name,name==='get_published_sales_summary'?{period:'2026-09'}:{},s.identity());assert.ok(r.generatedAt);}
     const count=await s.service.execute('get_active_employee_count',{},s.identity());assert.equal(count.activeEmployeeCount,2);
     const sales=await s.service.execute('get_published_sales_summary',{period:'2026-09'},s.identity());assert.equal((sales.items as {achievementPercent:number}[])[0].achievementPercent,75);
-    const none=await s.service.execute('get_published_sales_summary',{period:'2026-08'},s.identity());assert.deepEqual(none.items,[]);
+    await assert.rejects(s.service.execute('get_published_sales_summary',{period:'2026-08'},s.identity()));
   }finally{s.state.close();}
 });
 test('owner binding, account disable, test persona and role changes fail closed',async()=>{

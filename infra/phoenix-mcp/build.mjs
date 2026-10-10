@@ -16,8 +16,11 @@ const denyIo = {
       return {contents:source.replace(/\b(cache|unstable_cache)\s*\(/g,'/* @__PURE__ */ $&'),loader:args.path.endsWith('.tsx')?'tsx':'ts'};
     });
     b.onResolve({filter:/^(next\/cache(?:\.js)?|react)$/},()=>({path:'cache',namespace:'pure-cache',sideEffects:false}));
+    b.onResolve({filter:/^react\/jsx-runtime$/},()=>({path:'jsx',namespace:'no-ui',sideEffects:false}));
+    b.onLoad({filter:/.*/,namespace:'no-ui'},()=>({contents:'export const jsx=()=>{throw Error("UI unavailable in MCP")}; export const jsxs=jsx; export const Fragment=Symbol();',loader:'js'}));
     b.onLoad({filter:/.*/,namespace:'pure-cache'},()=>({contents:'export const cache = f => f; export const unstable_cache = f => f; export const revalidatePath = () => { throw Error("Disabled"); }; export const revalidateTag = revalidatePath;',loader:'js'}));
     b.onResolve({filter:/^exceljs$/},()=>({path:'exceljs',external:true,sideEffects:false}));
+    b.onResolve({filter:/^sanitize-html$/},()=>({path:'sanitize-html',external:true,sideEffects:false}));
     b.onResolve({ filter: /^@\/lib\/(supabase\/server|supabase-rest|observability\/log)$/ }, () => ({ path: 'denied', namespace: 'denied' }));
     b.onLoad({ filter: /.*/, namespace: 'denied' }, () => ({
       contents: `const deny = () => { throw new Error('Phoenix administrative IO is unavailable in MCP'); }; export const getSupabaseAdmin=deny, getSupabaseUserClient=deny, rpcAll=deny, supabaseRest=deny, logError=deny, logWarn=deny, logWarning=deny, logInfo=deny, toQueryError=deny;`, loader: 'js',
@@ -26,7 +29,7 @@ const denyIo = {
 };
 const result=await build({
   absWorkingDir: here,
-  entryPoints: process.argv.includes('--tests') ? ['src/main.mts', 'tests/security.test.mts'] : ['src/main.mts'],
+  entryPoints: process.argv.includes('--tests') ? ['src/main.mts', 'tests/security.test.mts','tests/integration.test.mts'] : ['src/main.mts'],
   outdir: 'dist', outExtension: { '.js': '.mjs' }, outbase: '.',
   entryNames: '[name]', bundle: true, platform: 'node', target: 'node24', format: 'esm',
   packages: 'external', alias: { '@': path.join(root, 'src') },

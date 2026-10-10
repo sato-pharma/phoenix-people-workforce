@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, jwtVerify, customFetch } from 'jose';
 import type { OAuthServerProvider, AuthorizationParams } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { InvalidGrantError, InvalidTokenError, InvalidRequestError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
@@ -15,9 +15,9 @@ export interface IdentityProvider {
   authorization(input:{state:string;nonce:string;challenge:string}): string;
   exchange(code:string,verifier:string,nonce:string):Promise<string>;
 }
-export async function createIdentityProvider(c: Config): Promise<IdentityProvider> {
+export async function createIdentityProvider(c: Config, request:typeof fetch=fetch): Promise<IdentityProvider> {
   const issuer = c.oidcIssuer.replace(/\/$/,'');
-  const response=await fetch(`${issuer}/.well-known/openid-configuration`,{signal:AbortSignal.timeout(5000),redirect:'error'});
+  const response=await request(`${issuer}/.well-known/openid-configuration`,{signal:AbortSignal.timeout(5000),redirect:'error'});
   if(!response.ok) throw new Error('Identity discovery unavailable');
   const metadata=await response.json() as Record<string, unknown>;
   const endpoint=(key:string)=>{
@@ -28,7 +28,7 @@ export async function createIdentityProvider(c: Config): Promise<IdentityProvide
   };
   if(metadata.issuer!==issuer || !Array.isArray(metadata.code_challenge_methods_supported) || !metadata.code_challenge_methods_supported.includes('S256')) throw new Error('PKCE identity provider required');
   const authorize=endpoint('authorization_endpoint'), token=endpoint('token_endpoint');
-  const jwks=createRemoteJWKSet(new URL(endpoint('jwks_uri')),{timeoutDuration:5000});
+  const jwks=createRemoteJWKSet(new URL(endpoint('jwks_uri')),{timeoutDuration:5000,cooldownDuration:1000,[customFetch]:request});
   return {
     authorization({state,nonce,challenge}){
       const u=new URL(authorize);
@@ -36,12 +36,12 @@ export async function createIdentityProvider(c: Config): Promise<IdentityProvide
       return u.href;
     },
     async exchange(code,verifier,nonce){
-      const r=await fetch(token,{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',code,code_verifier:verifier,redirect_uri:c.callback,client_id:c.oidcClientId,client_secret:c.oidcClientSecret})});
+      const r=await request(token,{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',code,code_verifier:verifier,redirect_uri:c.callback,client_id:c.oidcClientId,client_secret:c.oidcClientSecret})});
       if(!r.ok)throw new InvalidGrantError('Identity verification failed');
       const body=await r.json() as {id_token?:string};
       if(typeof body.id_token!=='string')throw new InvalidGrantError('Missing identity proof');
       const {payload}=await jwtVerify(body.id_token,jwks,{issuer,audience:c.oidcClientId,algorithms:['RS256','ES256'],requiredClaims:['sub','exp','iat','nonce'],maxTokenAge:'5m'});
-      if(payload.nonce!==nonce || !payload.sub || (payload.azp!==undefined&&payload.azp!==c.oidcClientId))throw new InvalidGrantError('Identity verification failed');
+      if(payload.nonce!==nonce || !payload.sub || (Array.isArray(payload.aud)&&payload.aud.length>1&&payload.azp!==c.oidcClientId) || (payload.azp!==undefined&&payload.azp!==c.oidcClientId))throw new InvalidGrantError('Identity verification failed');
       // Upstream access/refresh tokens are discarded, never relayed to ChatGPT or used for SQL.
       return payload.sub;
     },

@@ -33,7 +33,7 @@ export function createApp(c:Config,db:ReadStore,state:StateStore,upstream:Identi
   app.use(express.urlencoded({extended:false,limit:'4kb',inflate:false,parameterLimit:20}));
   app.get('/readyz',async(_req,res)=>{try{await db.ready();res.json({status:'ready'});}catch{res.status(503).json({status:'unavailable'});}});
   const auth=new Authorizer(db,c.owner),provider=new OAuthProvider(c,state,auth,upstream);
-  const service=new ToolService(db,auth,state,audit);
+  const service=new ToolService(db,auth,state,audit,c.nodeIdKey);
   app.use(mcpAuthRouter({provider,issuerUrl:new URL(c.issuer),resourceServerUrl:new URL(c.resource),scopesSupported:[scope],resourceName:'Phoenix Workforce — Read Only'}));
   app.get('/oauth/callback',async(req,res)=>{try{await provider.callback(req,res);}catch{res.status(403).json({error:'authentication_failed'});}});
   app.post('/oauth/consent',express.urlencoded({extended:false,limit:'4kb'}),async(req,res)=>{try{await provider.consent(req,res);}catch{res.status(403).json({error:'consent_failed'});}});
