@@ -20,6 +20,11 @@ export type DoctorFilter = {
   session: DoctorSessionFilter;
   /** A normalized brick (normalizeArea), or null for any brick. */
   brick: string | null;
+  /**
+   * One polyclinic, centre or hospital outpatient suite (its id), or null for any (owner, 2026-10-10:
+   * choosing AM there shows only that building's AM customers). Read off a customer's seated places.
+   */
+  venue: string | null;
   /** One grade, or null for any grade. */
   grade: PhoenixCrmGrade | null;
   /** One speciality (exact), or null for any speciality. */
@@ -36,6 +41,7 @@ export type DoctorFilter = {
 export const EMPTY_DOCTOR_FILTER: DoctorFilter = {
   session: "all",
   brick: null,
+  venue: null,
   grade: null,
   speciality: null,
   weekday: null,
@@ -49,6 +55,7 @@ export function doctorFilterActive(filter: DoctorFilter): boolean {
   return (
     filter.session !== "all" ||
     filter.brick !== null ||
+    filter.venue !== null ||
     filter.grade !== null ||
     filter.speciality !== null ||
     filter.weekday !== null
@@ -62,6 +69,17 @@ export function plannerBricks(customers: ReadonlyArray<PlannerCustomer>): Array<
     for (const place of customer.places) {
       const value = normalizeArea(place.brick);
       if (place.brick !== null && value !== null && !byValue.has(value)) byValue.set(value, place.brick.trim());
+    }
+  }
+  return [...byValue.entries()].map(([value, label]) => ({ value, label })).sort((left, right) => left.label.localeCompare(right.label));
+}
+
+/** The polyclinics and centres customers are seated in, for the building picker. Empty when nobody is. */
+export function plannerVenues(customers: ReadonlyArray<PlannerCustomer>): Array<{ value: string; label: string }> {
+  const byValue = new Map<string, string>();
+  for (const customer of customers) {
+    for (const place of customer.places) {
+      if (place.sharedPlaceId && !byValue.has(place.sharedPlaceId)) byValue.set(place.sharedPlaceId, place.sharedPlaceName?.trim() || "Polyclinic or centre");
     }
   }
   return [...byValue.entries()].map(([value, label]) => ({ value, label })).sort((left, right) => left.label.localeCompare(right.label));
@@ -83,6 +101,10 @@ function matchesBrick(customer: PlannerCustomer, brick: string): boolean {
   return customer.places.some((place) => normalizeArea(place.brick) === brick);
 }
 
+function matchesVenue(customer: PlannerCustomer, venue: string): boolean {
+  return customer.places.some((place) => place.sharedPlaceId === venue);
+}
+
 function matchesDay(customer: PlannerCustomer, filter: DoctorFilter): boolean {
   if (filter.weekday === null) return true;
   // A clock range with no real span (missing, or backwards) means "any time that day".
@@ -97,6 +119,7 @@ export function filterPlannerCustomers(customers: ReadonlyArray<PlannerCustomer>
   return customers.filter((customer) => {
     if (filter.session !== "all" && customer.listType !== filter.session) return false;
     if (filter.brick !== null && !matchesBrick(customer, filter.brick)) return false;
+    if (filter.venue !== null && !matchesVenue(customer, filter.venue)) return false;
     if (filter.grade !== null && customer.grade !== filter.grade) return false;
     if (filter.speciality !== null && (customer.speciality?.trim() ?? null) !== filter.speciality) return false;
     if (!matchesDay(customer, filter)) return false;

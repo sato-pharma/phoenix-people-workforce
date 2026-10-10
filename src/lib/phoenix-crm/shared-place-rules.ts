@@ -166,8 +166,14 @@ export type SeatedPlaceDraft = {
   photoPath: string | null;
   timings: PhoenixCrmTiming[];
   label: string | null;
+  /**
+   * AM or PM: the session this customer receives in at the building (owner, 2026-10-10). Null when the
+   * phone names none (a build from before today), and the database then seats him in his own list.
+   */
+  session: "AM" | "PM" | null;
 };
 
+export const SEATED_PLACE_NO_SESSION = "Choose whether this customer receives in the AM or the PM.";
 export const SEATED_PLACE_NO_VENUE = "Choose the polyclinic or centre this customer receives in.";
 /**
  * Raised only when the venue has NO timetable on file and the phone sent no photograph either — the
@@ -196,9 +202,17 @@ export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlace
   // a start minute — so it is asked here rather than restated. The end of a window stays optional.
   const timings = parseTimings(body.timings);
   if (!timings.ok) return { ok: false, error: timings.error };
+  const rawSession = String(body.session ?? "").trim().toUpperCase();
+  if (rawSession !== "" && rawSession !== "AM" && rawSession !== "PM") return { ok: false, error: SEATED_PLACE_NO_SESSION };
   return {
     ok: true,
-    value: { sharedPlaceId, photoPath, timings: timings.timings, label: cleanText(body.label, 80) },
+    value: {
+      sharedPlaceId,
+      photoPath,
+      timings: timings.timings,
+      label: cleanText(body.label, 80),
+      session: rawSession === "" ? null : (rawSession as "AM" | "PM"),
+    },
   };
 }
 

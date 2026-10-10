@@ -124,6 +124,8 @@ export function placeWithoutMeasurements(place: ListPlace): ListPlace {
     photoPath: place.photoPath,
     capturedAt: place.capturedAt,
     sharedPlaceId: place.sharedPlaceId ?? null,
+    // Which session he receives in at that building: his own choice at the door, measuring nothing.
+    session: place.session ?? null,
   };
 }
 

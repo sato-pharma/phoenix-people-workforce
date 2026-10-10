@@ -59,6 +59,7 @@ export function PlanFilterBar({
   /** A screen that fixes the weekday hides its control and the day part of the label. */
   showWeekday = true,
   specialities = [],
+  venues = [],
 }: {
   bricks: ReadonlyArray<{ value: string; label: string }>;
   filter: DoctorFilter;
@@ -73,11 +74,14 @@ export function PlanFilterBar({
   showWeekday?: boolean;
   /** Specialities present on the list, for the speciality picker; empty hides it. */
   specialities?: ReadonlyArray<string>;
+  /** Polyclinics and centres customers are seated in, for the building picker; empty hides it. */
+  venues?: ReadonlyArray<{ value: string; label: string }>;
 }) {
   const weekdayId = `${idPrefix}-filter-weekday`;
   const sessionId = `${idPrefix}-filter-session`;
   const gradeId = `${idPrefix}-filter-grade`;
   const brickId = `${idPrefix}-filter-brick`;
+  const venueId = `${idPrefix}-filter-venue`;
   const specialityId = `${idPrefix}-filter-speciality`;
   const searchId = `${idPrefix}-filter-search`;
   const fromId = `${idPrefix}-filter-from`;
@@ -176,6 +180,24 @@ export function PlanFilterBar({
               {bricks.map((brick) => (
                 <option key={brick.value} value={brick.value}>
                   {brick.label}
+                </option>
+              ))}
+            </CrmSelect>
+          </CrmField>
+        ) : null}
+
+        {venues.length > 0 ? (
+          <CrmField htmlFor={venueId} label="Polyclinic or centre">
+            <CrmSelect
+              disabled={locked}
+              id={venueId}
+              onChange={(event) => onChange({ ...filter, venue: event.target.value || null })}
+              value={filter.venue ?? ""}
+            >
+              <option value="">Every polyclinic and centre</option>
+              {venues.map((venue) => (
+                <option key={venue.value} value={venue.value}>
+                  {venue.label}
                 </option>
               ))}
             </CrmSelect>

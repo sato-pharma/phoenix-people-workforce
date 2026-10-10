@@ -30,7 +30,29 @@ export type PlannerPlace = {
   brick: string | null;
   zone: string | null;
   timings: PhoenixCrmTiming[];
+  /**
+   * The polyclinic, centre or hospital outpatient suite a seated place sits in, with its name, and the
+   * session (AM or PM) this customer receives in there (owner, 2026-10-10). All null/absent on a clinic
+   * of his own, which follows the customer's list.
+   */
+  sharedPlaceId?: string | null;
+  sharedPlaceName?: string | null;
+  session?: PhoenixCrmDoctorListType | null;
 };
+
+/**
+ * The list a customer is PLANNED and COUNTED in (owner, 2026-10-10): the session of the building he is
+ * seated in when he has one, otherwise his own list. A customer in a polyclinic is added as AM or PM,
+ * and choosing AM on the plan shows only that building's AM customers. A customer with several
+ * seatings is read by the first, which is the one the plan sends; the database files each visit under
+ * its own place's session, so this only decides where he is SHOWN.
+ */
+export function effectiveListType(
+  listType: PhoenixCrmDoctorListType,
+  places: ReadonlyArray<{ session?: PhoenixCrmDoctorListType | null }>,
+): PhoenixCrmDoctorListType {
+  return places.find((place) => place.session === "AM" || place.session === "PM")?.session ?? listType;
+}
 
 /**
  * Where a customer not validated yet sits, shown on the plan board in the place a validated customer's

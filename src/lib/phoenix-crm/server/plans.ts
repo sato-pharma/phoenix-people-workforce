@@ -108,7 +108,7 @@ import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
-import type { PlannerCustomer, PlannerInsight } from "@/lib/phoenix-crm/suggestions";
+import { effectiveListType, type PlannerCustomer, type PlannerInsight, type PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -517,31 +517,40 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const plan = planRow ? mapPlan(planRow, names, territory) : null;
   const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave, pendingLeave });
 
+  // The building each seated place sits in, by name, so the plan can say WHICH polyclinic or centre a
+  // customer is in (owner, 2026-10-10). Wording only: the cap never depends on this read.
+  const venueNames = await loadSharedPlaceNames([...placesByCustomer.values()].flatMap((list) => list.map((place) => place.sharedPlaceId ?? null)));
+
   const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
     const customerId = String(row.id);
     // A pharmacy is never planned, so it is not offered to the planner at all.
     const listType = listTypeOf(row.list_type);
     if (listType === null) return [];
+    const places: PlannerPlace[] = (placesByCustomer.get(customerId) ?? []).map((place) => ({
+      placeId: place.placeId,
+      label: place.label,
+      address: place.address,
+      lat: place.lat,
+      lon: place.lon,
+      brick: place.brickName,
+      zone: place.zone,
+      timings: place.timings,
+      sharedPlaceId: place.sharedPlaceId ?? null,
+      sharedPlaceName: place.sharedPlaceId ? (venueNames.get(place.sharedPlaceId)?.name ?? null) : null,
+      session: place.session ?? null,
+    }));
     return {
       customerId,
       name: String(row.name),
-      listType,
+      // A seated customer is planned and counted in the session of his seating (owner, 2026-10-10).
+      listType: effectiveListType(listType, places),
       grade: parseGrade(row.grade),
       speciality: textOrNull(row.speciality),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       pending: row.status === "pending",
       reference: references.get(customerId) ?? null,
       insight: insights.get(customerId) ?? null,
-      places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
-        placeId: place.placeId,
-        label: place.label,
-        address: place.address,
-        lat: place.lat,
-        lon: place.lon,
-        brick: place.brickName,
-        zone: place.zone,
-        timings: place.timings,
-      })),
+      places,
     };
   });
   plannerCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
@@ -691,6 +700,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
             placeId: place.placeId,
             timings: place.timings,
             sharedPlaceId: place.sharedPlaceId ?? null,
+            session: place.session ?? null,
           })),
         },
         ],

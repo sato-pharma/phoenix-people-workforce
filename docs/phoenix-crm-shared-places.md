@@ -221,6 +221,34 @@ its venue, and uses the venue's `refusal_reason` with the rep on the retired sea
 photographed the timetable. The venue's name is shown beside the reason, because a signboard reason
 read against a customer's own capture says he photographed the wrong door.
 
+## AM or PM at the building (owner, 2026-10-10)
+
+His words: a customer in a polyclinic or hospital is added as AM or PM; planning that building as AM
+shows only its AM customers and PM only its PM customers, never both for one customer; a visit counts
+in the AM or PM KPIs by the session it was planned and made in; **three visits a day per building,
+AM and PM together**, as before. Asked directly, his answers: the choice is on the **seating**
+(customer and building), only customers seated in a building get it (a clinic of his own keeps his
+list), and on the plan he sees only that session's customers and ticks them himself.
+
+- **Database** (`20261010180118_phoenix_crm_seating_session.sql`): `phoenix_crm_places.session`
+  ('AM' | 'PM'), required where `shared_place_id` is set. The 9 places seated before it were all PM
+  customers and were backfilled PM, so nothing moved. `phoenix_crm_insert_place` stores it (a caller
+  that names none is seated in the customer's own list, so deploy and migration never have to be
+  simultaneous), `phoenix_crm_save_plan` accepts an item whose `list_type` is its place's session,
+  and `phoenix_crm_save_visit` files the visit under it.
+- **One session per customer per day** needed no new rule: the plan's unique
+  `(plan_id, plan_date, customer_id)` and `already_visited` already hold it.
+- **Plan**: `effectiveListType` (suggestions.ts) puts a seated customer under his seating's session
+  in the planner, `resolvePlanItems` checks the day and files the item by the chosen place's session,
+  and the filter bar gains "Polyclinic or centre" (`plannerVenues`, `DoctorFilter.venue`).
+- **Both migrations recreate `phoenix_crm_insert_place`**, so whichever is applied last used to erase the
+  other's logic (production lost the one-timetable guard that way on 2026-10-10).
+  `20261010190001_phoenix_crm_insert_place_session_and_one_timetable.sql` holds both, applied to staging
+  and production and read back from `pg_proc`: session logic and `already_seated` present, execute
+  granted to `service_role` only. Any later change to that function starts from THIS file's body.
+- **Left as it was**: the review's grade-coverage tally still reads the customer's own list, because
+  coverage is the customer's, not the session's.
+
 ## The one-timetable migration
 
 `supabase/migrations/20261010190000_phoenix_crm_one_timetable_for_a_polyclinic.sql` — one file,

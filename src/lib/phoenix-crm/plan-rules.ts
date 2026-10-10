@@ -387,8 +387,10 @@ export type PlanRuleCustomer = {
   /**
    * `sharedPlaceId` is the polyclinic, centre, tower or hospital outpatient suite a seated place sits
    * in, and null for a customer with his own clinic. The venue's day cap is counted off it below.
+   * `session` is the AM or PM he receives in there (owner, 2026-10-10): the item is filed in it, and a
+   * place with none follows the customer's own list.
    */
-  places: ReadonlyArray<{ placeId: string; timings: PhoenixCrmTiming[]; sharedPlaceId?: string | null }>;
+  places: ReadonlyArray<{ placeId: string; timings: PhoenixCrmTiming[]; sharedPlaceId?: string | null; session?: PhoenixCrmDoctorListType | null }>;
 };
 
 export type ResolvedPlanItem = PlanItemDraft & {
@@ -546,8 +548,10 @@ export function resolvePlanItems(input: {
     if (off) {
       return { ok: false, error: `${planDayLabel(item.planDate)} is ${dayOffPhrase(off)}. Take ${customer.name} off it.` };
     }
+    // A seated customer is planned in the SESSION of his seating, a clinic of his own in his list.
+    const listType = place?.session ?? customer.listType;
     const allowed = planDayListTypes(item.planDate);
-    if (!allowed.includes(customer.listType)) {
+    if (!allowed.includes(listType)) {
       return {
         ok: false,
         error:
@@ -584,7 +588,7 @@ export function resolvePlanItems(input: {
       placeId: place ? place.placeId : null,
       exceptionType,
       exceptionNote,
-      listType: customer.listType,
+      listType,
       receives,
       startMinute,
       sharedPlaceId: place?.sharedPlaceId ?? null,

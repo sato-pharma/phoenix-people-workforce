@@ -57,6 +57,7 @@ import {
 } from "@/components/phoenix-crm/place-editor";
 import {
   emptySeatedDraft,
+  seatedSessionOf,
   type SeatedDraftState,
   SharedPlaceEditor,
   seatedDraftProblem,
@@ -536,7 +537,7 @@ export function ValidateScreen({
   // hours, and no location at all. The two drafts are held side by side so switching the door back and
   // forth never loses what he already captured on the other one.
   const [door, setDoor] = useState<PlaceDoor>("own");
-  const [seated, setSeated] = useState<SeatedDraftState>(() => emptySeatedDraft(listed?.intake?.timings ?? []));
+  const [seated, setSeated] = useState<SeatedDraftState>(() => emptySeatedDraft(listed?.intake?.timings ?? [], seatedSessionOf(listed?.listType)));
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
   const [speciality, setSpeciality] = useState("");
@@ -1050,7 +1051,7 @@ export function AddPlaceScreen({
 }) {
   const [draft, setDraft] = useState<PlaceDraftState>(() => initialDraft ?? emptyPlaceDraft());
   const [door, setDoor] = useState<PlaceDoor>(initialSeated ? "shared" : "own");
-  const [seated, setSeated] = useState<SeatedDraftState>(() => initialSeated ?? emptySeatedDraft());
+  const [seated, setSeated] = useState<SeatedDraftState>(() => initialSeated ?? emptySeatedDraft([], seatedSessionOf(view.customers.find((entry) => entry.customerId === customerId)?.listType)));
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 

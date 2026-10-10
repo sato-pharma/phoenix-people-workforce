@@ -141,7 +141,7 @@ function compareTickRows(left: TickRow, right: TickRow): number {
 
 /** Every word a customer can be found by. */
 function customerWords(customer: PlannerCustomer): Array<string | null> {
-  return [customer.name, customer.speciality, ...customer.places.flatMap((place) => [place.brick, place.label, place.zone])];
+  return [customer.name, customer.speciality, ...customer.places.flatMap((place) => [place.brick, place.label, place.zone, place.sharedPlaceName ?? null])];
 }
 
 export function PlanDayPanel({
@@ -188,6 +188,8 @@ export function PlanDayPanel({
     bricks: ReadonlyArray<{ value: string; label: string }>;
     grades: ReadonlyArray<PhoenixCrmGrade>;
     specialities: ReadonlyArray<string>;
+    /** Polyclinics and centres customers are seated in; absent or empty hides the picker. */
+    venues?: ReadonlyArray<{ value: string; label: string }>;
   };
   /**
    * The rep's step form (owner, 2026-10-02: step 3 "too long, confusing" — he chose all three fixes):
@@ -355,7 +357,8 @@ export function PlanDayPanel({
       speciality: customer.speciality,
       pending: customer.pending,
       brick,
-      placeName: customer.places.length > 1 && fit.place ? (fit.place.label ?? fit.place.zone ?? `Place ${position + 1}`) : null,
+      // A seated customer is shown under the building he receives in, whatever else he has.
+      placeName: fit.place?.sharedPlaceName ?? (customer.places.length > 1 && fit.place ? (fit.place.label ?? fit.place.zone ?? `Place ${position + 1}`) : null),
       placeId: fit.placeId,
       where: [brick ? `Brick ${brick}` : null, area, address].filter(Boolean).join(" · ") || null,
       timings: timings || NO_HOURS,
@@ -370,7 +373,7 @@ export function PlanDayPanel({
     });
   }
   const shownUnplaced = tickRows.filter((row) => !row.placed).length;
-  const filtering = query.trim() !== "" || filter.session !== "all" || filter.brick !== null || filter.grade !== null || filter.speciality !== null || filter.weekday !== null;
+  const filtering = query.trim() !== "" || filter.session !== "all" || filter.brick !== null || filter.venue !== null || filter.grade !== null || filter.speciality !== null || filter.weekday !== null;
   const sections = (["AM", "PM"] as const).filter((listType) => day.listTypes.includes(listType) || tickRows.some((row) => row.listType === listType));
 
   // A tick places him on the day, whatever hours are saved for it — never a reason to ask (owner, 2026-09-30).
@@ -488,6 +491,7 @@ export function PlanDayPanel({
       onQueryChange={onQuery}
       query={query}
       specialities={filterOptions.specialities}
+      venues={filterOptions.venues}
     />
   );
 
