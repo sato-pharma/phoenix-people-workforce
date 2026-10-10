@@ -72,3 +72,21 @@ question.
 
 Related: [[sos-monthly-closing-is-the-only-sales-truth]],
 [[a-price-fix-silently-restates-every-published-closing]].
+
+## Confirmed a third time, 2026-10-10 — and this time he was shown exactly what it costs
+
+**His words:** *"leave July and August as published"* — answering a measured, named remainder, not a
+proposal to rewrite anything. His five Mapping Guard brick approvals of that night re-pointed 38 CNS
+rows (28,762.91 EGP) across January–June and September, and the repair froze three files whole
+because July and August CNS are both locked and published. What stayed deliberately wrong:
+
+- **عاطف جرجس محارب** (Ibn sina / 431648) keeps **688.50 EGP in July and 10,361.25 in August** filed
+  in مدينة قنا - قنا 2, an area that carries no CNS target at all — see
+  [[qena-2-carries-no-cns-target-at-all]]. That money reports against nobody and stays that way.
+- **ص : د . سلوى العجمى** (sofico / 1500018109) keeps **448.54 EGP in August** in البساتين instead of
+  المعادى — same area, same rep, so nothing but the brick label is wrong.
+
+**11,498.29 EGP total, left wrong on purpose.** So the rule holds even when the correction is proven,
+his own approval caused it, the money reports to no one, and the fix is one unlock away. **Never
+re-open this** — and when a repair freezes rows in a published month, report the remainder and
+recommend leaving it rather than offering the unlock.
