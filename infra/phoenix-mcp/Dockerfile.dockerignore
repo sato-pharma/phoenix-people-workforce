@@ -1,0 +1,14 @@
+**
+!src
+!src/**
+!infra
+!infra/phoenix-mcp
+!infra/phoenix-mcp/src
+!infra/phoenix-mcp/src/**
+!infra/phoenix-mcp/package.json
+!infra/phoenix-mcp/package-lock.json
+!infra/phoenix-mcp/build.mjs
+!infra/phoenix-mcp/Dockerfile
+**/.env*
+**/node_modules
+**/.git
