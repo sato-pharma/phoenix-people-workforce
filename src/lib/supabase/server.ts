@@ -21,6 +21,7 @@
 // its own blast radius, not a line to sneak into a security PR. Do it, then add the import.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getRequiredEnv, getOptionalEnv } from "@/lib/env";
+import { recordTiming } from "@/lib/observability/timings";
 
 const supabaseRequestTimeoutMs = 15000;
 
@@ -94,6 +95,22 @@ function isRetryablePostgrestError(body: unknown): boolean {
 /**
  * Executes a single fetch attempt with its own AbortController-based timeout.
  * Throws a user-friendly error on abort; re-throws all other fetch errors.
+ *
+ * EVERY ATTEMPT IS TIMED, because until this existed nothing in Phoenix measured the one thing
+ * that actually dominates a page: the round trip itself. The database's own view
+ * (pg_stat_statements) said 5.0 ms mean per statement and 49 ms of execution per request, against
+ * a 647 ms median page — so ~93% of a request was happening somewhere no number covered.
+ *
+ * The three buckets reach the once-a-minute process-health line (src/lib/observability/
+ * process-health.ts), and each answers a question that was previously guesswork:
+ *   supabase.fetch          count = round trips per minute; p50/p95 = what one costs
+ *   supabase.fetch.failed   a transport error, as opposed to a slow answer
+ *   supabase.fetch.timeout  an attempt that burned the whole 15s budget
+ *
+ * p50 against p95 on `supabase.fetch` is also the connection-reuse readout: a reused socket is
+ * ~1 RTT, a fresh one ~3.2 RTT (measured 2026-10-10 — 70-82 ms reused vs 212-290 ms fresh, from
+ * Egypt). A p95 near three times the p50 means sockets are being re-handshaken, which is what
+ * the keep-alive dispatcher in instrumentation.ts is there to stop.
  */
 async function fetchWithTimeout(
   input: RequestInfo | URL,
@@ -102,10 +119,17 @@ async function fetchWithTimeout(
 ): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  const startedAt = Date.now();
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    recordTiming("supabase.fetch", Date.now() - startedAt);
+    return response;
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    const elapsedMs = Date.now() - startedAt;
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    recordTiming("supabase.fetch", elapsedMs);
+    recordTiming(isTimeout ? "supabase.fetch.timeout" : "supabase.fetch.failed", elapsedMs);
+    if (isTimeout) {
       // The MESSAGE is what every caller reads (`isSupabaseTimeout` in reports/vacancies.ts
       // matches the words "timed out", and the heartbeat's 503 branch depends on it), so it is
       // kept exactly as it was.

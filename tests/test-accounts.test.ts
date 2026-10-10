@@ -179,9 +179,26 @@ export function runTestAccountTests(): void {
       "resolveAccessContext must run the test-account guard before any route gets its context",
     );
     assert.ok(/next-action[\s\S]{0,80}assertNotTestAccount\(access\)/.test(server), "a server action is refused to a test account");
+    // The column list moved out of an inline SELECT in this file and into phx_auth_session_bundle,
+    // which resolves the whole auth trio in ONE round trip (2026-10-10 — the trio was 36% of every
+    // PostgREST call Phoenix made). The gate is unchanged and still worth pinning: a narrowed list
+    // disarms every persona check after it, silently, because a missing column reads as undefined
+    // rather than failing. So it is pinned where the list now lives — in the RPC — and the branch
+    // that consumes it is pinned here.
+    const bundleRpc = source("supabase/migrations/20261010140000_phx_auth_session_bundle.sql");
     assert.ok(
-      server.includes('"login_id, hr_id, role, is_active, session_version, is_test_persona, test_persona_of_hr_id"'),
+      /select login_id, hr_id, role, is_active, session_version,\s+is_test_persona, test_persona_of_hr_id/.test(
+        bundleRpc,
+      ),
       "the session lookup must read the test-account columns — a narrowed SELECT disarms every gate after it",
+    );
+    assert.ok(
+      /row\.is_test_persona === true/.test(server),
+      "resolveSessionState must still branch on the account row's is_test_persona",
+    );
+    assert.ok(
+      /test_persona_of_hr_id/.test(server),
+      "the mirror link must still be read from the account row — without it a persona has no employee",
     );
     assert.ok(/hrId: effectiveHrId,[\s\S]{0,120}testPersona,/.test(server), "the context carries the mirror's HR id AND the test-account link");
   }

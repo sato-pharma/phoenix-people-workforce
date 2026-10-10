@@ -556,7 +556,15 @@ export async function runAuthSessionTests() {
     else process.env.PHOENIX_STRICT_SUPABASE_BRIDGE = originalStrictBridge;
   }
 
-  assert.match(serverSource, /validateAppSession\(payload\)/, "server access resolution must require an active DB app session");
+  // The app_sessions row now arrives inside the phx_auth_session_bundle RPC (one round trip for
+  // the auth trio) instead of from validateAppSession's own read — but it is still READ from the
+  // database and still put through every rejection rule, which is what this has always pinned.
+  assert.match(serverSource, /phx_auth_session_bundle/, "server access resolution must read the DB app session");
+  assert.match(
+    serverSource,
+    /evaluateAppSessionRow\(bundle\.appSession, payload\)/,
+    "server access resolution must apply the app_sessions rejection rules to the row it read",
+  );
   assert.match(serverSource, /appSessionRejectionSummary/, "DB session rejections must be audited with explicit reasons");
   assert.match(serverSource, /refreshAppSessionIdle/, "heartbeat must reuse server session validation before refreshing DB idle expiry");
   assert.match(serverSource, /source:\s*"guest"/, "anonymous context must be explicit guest access");
