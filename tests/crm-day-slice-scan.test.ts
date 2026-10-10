@@ -409,6 +409,63 @@ function runPlanScanWiringGuards() {
   );
 }
 
+// AND SO DID THE PLAN VERIFICATION BOARD — the LAST door still OFFSET-paging the plan view, and by
+// 2026-10-10 the single most expensive statement left in Phoenix. `fetchPlanRows` asked for a whole
+// month with `ORDER BY crm_plan_entry_id LIMIT 1000 OFFSET n`, and `crm_plan_entry_id` cannot be
+// indexed for that sort because the unified view SYNTHESISES it for its Phoenix branch. So every page
+// produced the entire window and quicksorted it to hand back a thousand rows. Measured on production
+// that morning, the month board's real window (weekly, 2026-08-25..2026-10-07, 37,161 rows, 44 days):
+//
+//                        | one request              | the whole window
+//   OFFSET, as it was    | 452.6 ms, 17,790 buffers | 38 pages  ~17.1 s, ~676,000 buffers
+//   probe + keyset days  |  49.1 ms,  1,739 buffers | 1 + 44    ~ 2.2 s, ~ 78,000 buffers
+//
+// The deep page sorted 31,000 rows for its 1,000; one day sorts 1,054. The probe (70.5 ms) has no
+// ORDER BY, so the Append stops at 1,000 rows and never touches the second branch — which is what
+// keeps the Reps Weekly Plans tab, about seventy plans, at exactly one request.
+//
+// End-to-end proof on production before the change shipped: the day-sliced union against the single
+// window scan, 37,161 rows each, 0 rows on either side of an `EXCEPT ALL` in both directions, 438
+// distinct plans both ways. `summarisePlans` is order-independent by construction anyway — it
+// mins/maxes the dates, counts entries, sets the contacts, and takes the status of the latest
+// `synced_at` — but the days are re-sorted by entry id so the rows arrive exactly as the single scan
+// handed them over, and that equivalence is what this guard keeps true.
+//
+// The `month` window is deliberately NOT sliced: a monthly plan carries `plan_month`/`plan_year` and
+// no `plan_date` at all, so there is nothing to cut it on. Nor is a window that names agents.
+function runPlanBoardWiringGuards() {
+  const source = readFileSync("src/lib/crm/plan-board.ts", "utf8");
+  const fetch = functionBody(source, "async function fetchPlanRows");
+  assert.match(
+    fetch,
+    /input\.window\.kind === "dates" && chunks\.length === 1 && chunks\[0\] === null\s+\? dayScanSlices\(input\.window\.start, input\.window\.end\)\s+: null;/,
+    "the board slices only a DATE window that names nobody — a month window has no plan_date to cut on",
+  );
+  assert.match(fetch, /\.eq\("plan_date", day\);/, "each plan-board request is narrowed to its day");
+  assert.match(
+    fetch,
+    /if \(cursor !== null\) query = query\.gt\("crm_plan_entry_id", cursor\);/,
+    "a day pages by keyset on the mirror's primary key, never by OFFSET — the whole point of the change",
+  );
+  assert.match(
+    fetch,
+    /\.gte\("plan_date", dateWindow\.start\)\s+\.lte\("plan_date", dateWindow\.end\)\s+\.limit\(PAGE_SIZE\);/,
+    "the board probe is an UNORDERED page of the whole window, so a small window stays one request",
+  );
+  assert.match(
+    fetch,
+    /order: \(left, right\) => Number\(left\.crm_plan_entry_id\) - Number\(right\.crm_plan_entry_id\),\s+sortDays: true,/,
+    "the joined days come back in the single scan's entry-id order",
+  );
+  // Both scans must keep `plan_kind` — the two kinds are different shapes of plan and the board asks
+  // for exactly one of them. A day scan that dropped it would mix monthly rows into the weekly board.
+  assert.equal(
+    (fetch.match(/\.eq\("plan_kind", input\.kind\)/g) ?? []).length,
+    3,
+    "plan_kind is applied on the probe, on each day scan, and on the single scan that remains",
+  );
+}
+
 export async function runCrmDaySliceScanTests() {
   await runDayScanSlicesTests();
   runNamesPeopleTests();
@@ -419,4 +476,5 @@ export async function runCrmDaySliceScanTests() {
   runCheckinDayBoundaryTests();
   runScanWiringGuards();
   runPlanScanWiringGuards();
+  runPlanBoardWiringGuards();
 }

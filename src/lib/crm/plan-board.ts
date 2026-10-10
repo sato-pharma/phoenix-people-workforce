@@ -30,6 +30,7 @@
 import { CRM_PLAN_ENTRIES_TABLE, CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
+import { dayScanSlices, readCompanyWindow } from "@/lib/crm/reads";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { PLAN_STATUS_NEW, type PlanKind } from "@/lib/crm/plan-verification";
@@ -237,6 +238,15 @@ const SUMMARY_COLUMNS =
   "agent_crm_id, agent_hr_id, contact_crm_id, crm_plan_id, plan_date, plan_month, plan_status, plan_year, synced_at";
 
 /**
+ * The same columns plus the mirror's primary key, for the day-sliced company read below. The key is
+ * the keyset cursor — it is NOT read by `summarisePlans`, which groups on `crm_plan_id`.
+ */
+const SCAN_COLUMNS = `${SUMMARY_COLUMNS}, crm_plan_entry_id`;
+
+/** A scanned row carries the cursor column; everything downstream still sees a {@link RawPlanRow}. */
+type ScannedPlanRow = RawPlanRow & { crm_plan_entry_id: number | string | null };
+
+/**
  * The window of plan rows a fetch asks for.
  *
  * A monthly plan carries a month and a year and no dates at all, so it can only be selected by
@@ -271,6 +281,83 @@ async function fetchPlanRows(input: {
     }
   } else {
     chunks.push(null);
+  }
+
+  // ── The company-wide date window reads one DAY at a time, with a keyset cursor ──────────────
+  //
+  // An OFFSET page over a whole month cannot stop early. Postgres has to produce every row in the
+  // window and SORT them all to hand back one thousand, then the next page does the identical work
+  // and throws a thousand more away — so 26 pages cost 26 full scans of the month to deliver it
+  // once. The view makes that worse than it sounds: it is a UNION ALL with two anti-joins, so each
+  // page re-materialises both branches. Measured on production 2026-10-10, September `weekly`:
+  // 25,862 rows, `limit 1000 offset 24000` = 6,291 buffers and a 17,990 kB quicksort of 25,000 rows
+  // for 1,000 of them, 240.9 ms — and the live mean of this exact statement was 791.7 ms across 192
+  // calls, about half of ALL database time left after the roster index landed that morning.
+  //
+  // `crm_plan_entry_id` cannot be indexed for the sort: the view SYNTHESISES it for its Phoenix
+  // branch. So the window is split into days instead, each read by cursor, which is the posture the
+  // visits and check-in doors already use (`readCompanyWindow` in reads.ts) and which the plan SCAN
+  // in rep-doctor-lists.ts took for this same fault on 2026-10-01. The probe keeps a small window
+  // (the Reps Weekly Plans tab asks for about seventy plans) at exactly one request.
+  //
+  // The days are disjoint and cover `[start, end]` exactly, and a null `plan_date` is excluded by
+  // `.eq("plan_date", day)` precisely as it was by the `gte`/`lte` pair, so the union is the same
+  // rows. Re-sorted by the entry id they are also in the same ORDER as the single scan — though
+  // `summarisePlans` is order-independent by construction: it mins/maxes the dates, counts entries,
+  // sets the contacts and takes the status of the latest `synced_at`.
+  //
+  // A window that NAMES agents keeps the single scan: `agent_hr_id IN (…)` already makes it narrow.
+  // So does the `month` window — a monthly plan has no `plan_date` at all to slice on.
+  const days =
+    input.window.kind === "dates" && chunks.length === 1 && chunks[0] === null
+      ? dayScanSlices(input.window.start, input.window.end)
+      : null;
+  if (days && input.window.kind === "dates") {
+    const dateWindow = input.window;
+    const scanned = await readCompanyWindow<ScannedPlanRow>({
+      days,
+      pageSize: PAGE_SIZE,
+      probe: async () => {
+        const { data, error } = await supabase
+          .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
+          .select(SCAN_COLUMNS)
+          .eq("plan_kind", input.kind)
+          .gte("plan_date", dateWindow.start)
+          .lte("plan_date", dateWindow.end)
+          .limit(PAGE_SIZE);
+        if (error) {
+          if (isPlanSchemaMissing(error)) return null;
+          throw new Error(error.message);
+        }
+        return (data ?? []) as unknown as ScannedPlanRow[];
+      },
+      scanDay: async (day) => {
+        const scanned: ScannedPlanRow[] = [];
+        let cursor: number | string | null = null;
+        for (;;) {
+          let query = supabase
+            .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
+            .select(SCAN_COLUMNS)
+            .eq("plan_kind", input.kind)
+            .eq("plan_date", day);
+          if (cursor !== null) query = query.gt("crm_plan_entry_id", cursor);
+          const { data, error } = await query.order("crm_plan_entry_id", { ascending: true }).limit(PAGE_SIZE);
+          if (error) {
+            if (isPlanSchemaMissing(error)) return null;
+            throw new Error(error.message);
+          }
+          const page = (data ?? []) as unknown as ScannedPlanRow[];
+          scanned.push(...page);
+          const last = page[page.length - 1]?.crm_plan_entry_id ?? null;
+          if (page.length < PAGE_SIZE || last === null) return scanned;
+          cursor = last;
+        }
+      },
+      order: (left, right) => Number(left.crm_plan_entry_id) - Number(right.crm_plan_entry_id),
+      sortDays: true,
+    });
+    // `null` is the missing-plan-mirror answer, which this board degrades to an empty one.
+    return scanned ?? [];
   }
 
   const rows: RawPlanRow[] = [];
