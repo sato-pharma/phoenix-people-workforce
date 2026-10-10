@@ -22,6 +22,7 @@ import {
   isApiRateLimitError,
   rateLimitIdentity,
 } from "@/lib/security/api-rate-limit";
+import { isSessionVerificationUnavailable } from "@/lib/auth/session-lifecycle";
 import { isSupabaseTimeout } from "@/lib/reports/vacancies";
 
 export const runtime = "nodejs";
@@ -63,7 +64,10 @@ export async function POST(request: Request) {
   try {
     sessionState = await resolveSessionState(sessionToken, { refreshIdle: true });
   } catch (error) {
-    if (isSupabaseTimeout(error)) {
+    // 503, never 401: the client signs the person out on a 401 alone, so answering 401 because the
+    // database was briefly unreachable signs out everyone who happens to be working. The session
+    // cookies are deliberately left untouched — the next heartbeat retries about a minute later.
+    if (isSupabaseTimeout(error) || isSessionVerificationUnavailable(error)) {
       return NextResponse.json(
         { error: "db_timeout", message: "Session service temporarily unavailable." },
         { status: 503 },

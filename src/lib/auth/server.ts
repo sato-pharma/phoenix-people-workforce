@@ -30,6 +30,8 @@ import { writeAuthAudit } from "@/lib/auth/audit";
 import { displayTitleForAccount } from "@/lib/auth/account-job-titles";
 import {
   evaluateEmployeeLifecycleGate,
+  sessionGateOutcome,
+  SessionVerificationUnavailableError,
   type SessionLifecycleGate,
 } from "@/lib/auth/session-lifecycle";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
@@ -37,6 +39,7 @@ import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { ApiError } from "@/lib/http/api-errors";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cookies, headers } from "next/headers";
 
@@ -410,6 +413,18 @@ export async function resolveSessionState(
       ? speculativeLifecycleGate
       : await resolveEmployeeLifecycleGate(supabase, effectiveHrId);
   if (!lifecycleGate.allowed) {
+    // "I could not reach the database" is NOT "this person has left". Only a real verdict ends the
+    // session; an outage is raised so the caller can answer "try again" and leave the cookies alone.
+    // Returning null here is what turned one Supabase blip into a platform-wide logout — see
+    // SessionVerificationUnavailableError for the measured incident.
+    if (sessionGateOutcome(lifecycleGate) === "unavailable") {
+      logError("Session verification unavailable — employee lifecycle lookup could not be reached", {
+        labels: { event: "session_verification_unavailable", loginId: row.login_id },
+        context: { hrId: effectiveHrId ?? null, sessionId: payload.sid },
+      });
+      throw new SessionVerificationUnavailableError();
+    }
+
     await auditSessionRejection({
       entityId: row.login_id,
       loginId: row.login_id,
@@ -421,10 +436,7 @@ export async function resolveSessionState(
       oldValues: {
         role,
       },
-      summary:
-        lifecycleGate.reason === "employee_terminal"
-          ? "Session rejected: linked employee is no longer active"
-          : "Session rejected: employee lifecycle lookup failed",
+      summary: "Session rejected: linked employee is no longer active",
     });
     return null;
   }

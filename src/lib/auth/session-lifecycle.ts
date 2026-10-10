@@ -130,6 +130,52 @@ export type SessionLifecycleGate =
   | { allowed: false; reason: "employee_terminal" | "employee_lookup_failed"; employmentStatus?: string };
 
 /**
+ * The gate could not REACH the database, so it cannot say whether the linked employee is still
+ * active. That is an infrastructure failure, NOT a governance verdict, and the two must never be
+ * answered the same way: a verdict ends the session, an outage leaves it exactly as it was.
+ *
+ * Why this exists. `employee_lookup_failed` used to carry the same `allowed: false` a resigned
+ * employee gets, so `resolveSessionState` returned null, the heartbeat read that as "session
+ * expired", cleared all three auth cookies and answered 401 — and the client signs out on a 401
+ * alone. One Supabase blip therefore signed out everyone who was working, and since the heartbeat
+ * repeats about once a minute, signing back in only bought them the next minute. Measured on
+ * 2026-10-10: the hosted Supabase endpoint answered Cloudflare 521/525 between 11:03 and 11:17
+ * Cairo, 10 people hit errors, 9 sessions were created then abandoned inside 5 seconds, one Medical
+ * Representative signed in 3 times in 3 minutes and another managed 8 in 3.
+ *
+ * Keeping the session through an outage grants no extra reach: every page and API read goes through
+ * the same database, so while it is unreachable a session that ought to have ended can do nothing
+ * with it. Exposure is bounded by one heartbeat interval; the alternative was a platform-wide
+ * logout. A `employee_terminal` verdict is unchanged and still ends the session immediately.
+ */
+export class SessionVerificationUnavailableError extends Error {
+  constructor(options: { cause?: unknown } = {}) {
+    super("Session verification is temporarily unavailable.");
+    this.name = "SessionVerificationUnavailableError";
+    if (options.cause !== undefined) this.cause = options.cause;
+  }
+}
+
+export function isSessionVerificationUnavailable(error: unknown) {
+  return error instanceof SessionVerificationUnavailableError;
+}
+
+/**
+ * How a caller must answer the lifecycle gate. The whole point is that `reject` and `unavailable`
+ * are DIFFERENT answers: `reject` ends the session, `unavailable` keeps it and asks the caller to
+ * retry. Collapsing the two is the defect this function exists to make impossible to reintroduce —
+ * pinned by `tests/session-unavailable-keeps-session.test.ts`.
+ */
+export type SessionGateOutcome = "allow" | "reject" | "unavailable";
+
+export function sessionGateOutcome(gate: SessionLifecycleGate): SessionGateOutcome {
+  if (gate.allowed) return "allow";
+  // Could not reach the database — no verdict was ever reached, so there is nothing to reject.
+  if (gate.reason === "employee_lookup_failed") return "unavailable";
+  return "reject";
+}
+
+/**
  * Pure decision for the read-time lifecycle gate. Fail-CLOSED on an unexpected
  * lookup error (governance must not silently allow when it cannot verify the
  * linked employee), but allow the intentionally-supported cases:
