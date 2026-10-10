@@ -30,13 +30,19 @@ import {
   sharedPlacePassesOutcome,
   EMPTY_VALIDATION_REVIEW_FILTERS,
 } from "../src/lib/phoenix-crm/validation-review-filters.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * Phoenix CRM — a polyclinic validated ONCE, with its doctors seated inside it (owner, 2026-10-09 in
  * chat, Arabic): validate the polyclinic once, then register each doctor's times in it, at most three
- * a day; he uploads the timetable photo at each one; the location is taken once, so there is no
- * location when seating; and the administrator reviews the schedule afterwards.
+ * a day; he uploads the timetable photo; the location is taken once, so there is no location when
+ * seating; and the administrator reviews the schedule afterwards.
+ *
+ * 🔴 AND ONE TIMETABLE FOR THE WHOLE BUILDING, NOT ONE PER DOCTOR (his one amendment, 2026-10-10:
+ * "ask him for only one timetable, not for every doctor"). The last block of this suite pins all four
+ * halves of it: the parse that now ALLOWS a missing photo, the server that resolves it from the
+ * VENUE's stored path, the single-use photo slot that no longer makes a seating idempotent and the
+ * database refusal that replaced it, and the screen that stamps the BUILDING's name into the image.
  *
  * What it replaced: a signboard that names the BUILDING can never name the fifth doctor receiving
  * behind it, so each of them stayed unvalidated — and an unvalidated customer's visits save and score
@@ -168,11 +174,18 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   const noVenue = parseSeatedPlaceDraft({ photoPath: "crm/timetables/a.jpg", timings: [{ weekday: 6, start: "10:00" }] });
   assert.equal(noVenue.ok === false ? noVenue.error : null, SEATED_PLACE_NO_VENUE);
 
+  // 🔴 NO PHOTO IS NOT A REFUSAL ANY MORE (owner, 2026-10-10) — it is the ordinary shape of the
+  // second, third and fourth doctor in a building whose board is already photographed.
   const seatedNoPhoto = parseSeatedPlaceDraft({
     sharedPlaceId: "3f4a1b2c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
     timings: [{ weekday: 6, start: "10:00" }],
   });
-  assert.equal(seatedNoPhoto.ok === false ? seatedNoPhoto.error : null, SEATED_PLACE_NO_PHOTO, "the timetable photo is required");
+  assert.equal(seatedNoPhoto.ok, true, "a seating against the board already on file sends no photo at all");
+  assert.equal(
+    seatedNoPhoto.ok === true ? seatedNoPhoto.value.photoPath : "not parsed",
+    null,
+    "and null is how it says 'the timetable this building already has' — the server resolves which one",
+  );
 
   const seatedNoHours = parseSeatedPlaceDraft({
     sharedPlaceId: "3f4a1b2c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
@@ -212,6 +225,101 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   assert.ok(list.includes("readPlaceSchedule("), "and read on the server, never on the phone");
   const places = stripComments(readFileSync("src/lib/phoenix-crm/server/place-location.ts", "utf8"));
   assert.ok(places.length > 0, "the shared resolver still exists");
+
+  // ── ONE TIMETABLE FOR THE BUILDING, NOT ONE PER DOCTOR (owner, 2026-10-10) ───────────────────
+  //
+  // His words: "when he adds the doctors, the three doctors we agreed in the same polyclinic, ask him
+  // for only one timetable, not for every doctor." Four things had to move together, and each half
+  // below is one of them.
+
+  // 1 ─ The server decides reuse, from the VENUE's stored path. A body cannot ask for it.
+  assert.ok(service.includes("export function effectiveSeatedPhoto("), "one function decides which photo a seating is saved against");
+  assert.ok(
+    service.includes("if (seated.photoPath) return { path: seated.photoPath, reused: false };"),
+    "a photo sent from the phone is a REPLACEMENT of the board on the wall",
+  );
+  assert.ok(
+    service.includes("return { path: venue.schedulePhotoPath, reused: true };"),
+    "🔴 and reuse resolves from the VENUE's own column — never from a flag on the body, which is why the seated draft still has exactly four keys",
+  );
+  assert.ok(
+    service.includes("if (!venue.schedulePhotoPath) throw validationError(SEATED_PLACE_NO_PHOTO);"),
+    "the refusal moved HERE, where the venue is the only thing that can answer it: the first customer in a building",
+  );
+  assert.ok(
+    service.includes("schedule_photo_path, schedule_photo_captured_at, schedule_photo_by_hr_id"),
+    "the venue read names the three new columns, or a PostgREST 42703 takes the whole select down",
+  );
+  assert.ok(
+    service.includes("const issuedAt = photo.reused ? null : await photoSlotIssuedAt(photo.path)"),
+    "🔴 no device skew on a reused board — its slot was issued on another day, possibly to another rep, so the gap measures nothing",
+  );
+
+  // 2 ─ The timetable read still runs per customer, through a door that drops ONE condition.
+  assert.ok(list.includes("reusedTimetable: seatedPhoto.reused"), "the schedule read is told whether it is reading the building's own board");
+  const scheduleCheck = stripComments(readFileSync("src/lib/phoenix-crm/server/schedule-check.ts", "utf8"));
+  assert.ok(scheduleCheck.includes("downloadVenueTimetablePhoto({"), "and reads it through the venue door on a reuse");
+  const photos = stripComments(readFileSync("src/lib/phoenix-crm/server/photos.ts", "utf8"));
+  const venueDoor = photos.slice(photos.indexOf("export async function downloadVenueTimetablePhoto("));
+  assert.ok(venueDoor.length > 0, "the venue door exists");
+  for (const kept of ["photoPathTerritory(path)", 'storageSegment(input.seatId)', '.eq("seat_id", input.seatId)', '.eq("purpose", "place")']) {
+    assert.ok(venueDoor.includes(kept), "it keeps " + kept + " — a path this seat never uploaded still never reaches the bucket");
+  }
+  assert.ok(
+    !venueDoor.includes("issued_to_hr_id"),
+    "🔴 and drops exactly one condition: the slot behind a building's board was issued to whoever photographed it, not to the rep seating the next doctor",
+  );
+
+  // 3 ─ What makes a seating idempotent now that no slot is consumed.
+  const oneTimetableSql = stripSqlComments(
+    readFileSync("supabase/migrations/20261010190000_phoenix_crm_one_timetable_for_a_polyclinic.sql", "utf8"),
+  );
+  assert.ok(oneTimetableSql.includes("add column if not exists schedule_photo_path text"), "the venue keeps the building's timetable");
+  // Sliced to the statement rather than matched over the file: the predicate has to sit on THIS
+  // index, and a `where shared_place_id is null` anywhere else in the migration would satisfy a
+  // whole-file assertion while the index stayed unconditional.
+  const photoUidx = oneTimetableSql.slice(oneTimetableSql.indexOf("create unique index if not exists phoenix_crm_places_photo_uidx"));
+  assert.ok(
+    photoUidx.slice(0, photoUidx.indexOf(";")).includes("where shared_place_id is null"),
+    "🔴 the one-photo-one-place index is PARTIAL — it still binds every place captured at its own door, and seated rows share the building's board",
+  );
+  assert.ok(
+    oneTimetableSql.includes("drop index if exists public.phoenix_crm_places_photo_uidx;"),
+    "and the unconditional index it replaces is dropped in the SAME transaction, so no save ever meets neither",
+  );
+  assert.ok(oneTimetableSql.includes("where s.id = v_shared for update"), "the venue's row is LOCKED, which serialises two saves in one building");
+  assert.ok(
+    oneTimetableSql.includes("raise exception 'phoenix_crm:already_seated'"),
+    "🔴 and one customer sits in one building once — the refusal that replaced the single-use photo slot's idempotence",
+  );
+  assert.ok(oneTimetableSql.includes("v_photo = v_venue.schedule_photo_path"), "reuse is recognised by comparing the path against the stored one");
+  assert.ok(oneTimetableSql.includes("where pl.shared_place_id is not null"), "and every venue already seated in is backfilled from its earliest seating");
+  const dbRefusals = stripComments(readFileSync("src/lib/phoenix-crm/server/db.ts", "utf8"));
+  assert.ok(dbRefusals.includes("already_seated: {"), "the refusal carries a sentence the rep can act on");
+  const screens = stripComments(readFileSync("src/components/phoenix-crm/list-screens.tsx", "utf8"));
+  assert.equal(
+    screens.split("MAY_HAVE_SAVED.has(code) && photo ? await lookUpPhoto(").length - 1,
+    2,
+    "🔴 both save paths skip the photo lookup when nothing was captured: a reused board belongs to every doctor behind that door, so it would find the FIRST one and report this save as successful",
+  );
+
+  // 4 ─ The screen asks once per building, and stamps the BUILDING's name into the image.
+  const seatedScreen = stripComments(readFileSync("src/components/phoenix-crm/shared-place-screens.tsx", "utf8"));
+  assert.ok(
+    seatedScreen.includes("title={`Phoenix CRM ${SHARED_PLACE_TITLE.toLowerCase()}: ${chosen.name}`}"),
+    "🔴 the stamp burned into the timetable photo is the BUILDING's name — the old customer stamp is what made one image per doctor unavoidable",
+  );
+  assert.ok(!seatedScreen.includes("photoBlockedReason"), "so the 'write the customer's name first' gate is gone with it");
+  assert.ok(seatedScreen.includes("SEATED_PLACE_PHOTO_REPLACE"), "and the only way back to the camera is the board on the wall having changed");
+  assert.ok(
+    seatedScreen.includes("draft.replacingTimetable || !draft.timetableOnFile"),
+    "the phone asks for a photo of the FIRST customer in a building, and of a rep who said the board changed — nobody else",
+  );
+  assert.equal(
+    SEATED_PLACE_NO_PHOTO,
+    "Take a live photo of the timetable on the wall.",
+    "and that sentence is about the BUILDING's board now, not about this customer's own hours",
+  );
 
   // ── THREE A DAY, and the cap is a SETTING read live on every path ─────────────────────────────
   assert.equal(SHARED_PLACE_DAILY_CAP_DEFAULT, 3, "his number — and only the default");

@@ -265,3 +265,51 @@ export async function downloadIssuedPlacePhoto(input: {
 
   return downloadPhoto(path);
 }
+
+/**
+ * The bytes of a POLYCLINIC's timetable photo — the one the building keeps, which any rep on that
+ * seat may be reading rather than only the one who took it.
+ *
+ * 🔴 WHY IT IS NOT `downloadIssuedPlacePhoto` WITH A WIDER ARGUMENT. That one requires
+ * `issued_to_hr_id = this rep`, and from 2026-10-10 the timetable is photographed ONCE for the
+ * building (owner: "ask him for only one timetable, not for every doctor") — so the second doctor is
+ * seated by reading a photograph a DIFFERENT rep uploaded, on a different day. Passed through the
+ * old door that reads as "no row", which returns null, which the schedule check reports as
+ * `unjudged("no_bytes")`: a verdict silently lost rather than a refusal anybody could see. So the
+ * one condition that has to go is named here, at its own door, and nothing else is loosened.
+ *
+ * WHAT STILL HOLDS, and it is everything else: the path must parse as a `place` slot, its seat
+ * segment must be the seat doing the saving, its test flag must match, and a
+ * `phoenix_crm_photo_uploads` row must exist for that exact path, on that seat, with that purpose
+ * and that test flag. A path the server never issued for THIS territory still never reaches the
+ * bucket — the caller may only name a photo its own seat uploaded.
+ *
+ * 🔴 AND THE CALLER MAY NOT NAME IT FREELY: `effectiveSeatedPhoto` resolves a reused timetable from
+ * the VENUE's stored `schedule_photo_path`, never from the phone, so the only path that ever reaches
+ * this function is one the venue itself holds.
+ */
+export async function downloadVenueTimetablePhoto(input: {
+  path: string;
+  seatId: string;
+  isTest: boolean;
+}): Promise<Uint8Array | null> {
+  const path = String(input.path ?? "").trim();
+  if (!path) return null;
+
+  const owner = photoPathTerritory(path);
+  if (!owner || owner.isTest !== input.isTest) return null;
+  if (owner.seatSegment !== storageSegment(input.seatId)) return null;
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_photo_uploads")
+    .select("path, seat_id, purpose, is_test")
+    .eq("path", path)
+    .eq("seat_id", input.seatId)
+    .eq("purpose", "place")
+    .eq("is_test", input.isTest)
+    .maybeSingle();
+  throwIfError(error);
+  if (!data) return null;
+
+  return downloadPhoto(path);
+}

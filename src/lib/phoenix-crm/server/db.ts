@@ -59,6 +59,16 @@ const REFUSALS: Record<string, Refusal> = {
     status: 409,
     message: "The system is still checking this polyclinic or centre. It confirms it automatically, and then customers can be added in it.",
   },
+  // 🔴 THIS IS WHAT MAKES A SEATING IDEMPOTENT NOW (owner, 2026-10-10 — one timetable for the whole
+  // building). Until that day every seating consumed a single-use photo slot, so a second Save
+  // answered `photo_used`; a customer seated against the board already on file consumes no slot, so
+  // the second Save is refused here instead — checked inside `phoenix_crm_insert_place` while the
+  // venue's row is locked, which also serialises two reps seating the same doctor at the same second.
+  // His hours are windows in the ONE row, so a second row was never how a doctor receives twice.
+  already_seated: {
+    status: 409,
+    message: "This customer is already registered in this polyclinic or centre. Open the place to change the hours.",
+  },
   note_required: { status: 400, message: "Write a note explaining why." },
   // Removing a clinic is kept on record exactly as a move is (2026-10-02), so the reason has the same
   // bounds and the same sentence: the person refused here is a mover, and he is told the length.

@@ -6,7 +6,7 @@ import {
   scheduleUnjudged as unjudged,
 } from "@/lib/phoenix-crm/schedule-rules";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
-import { downloadIssuedPlacePhoto } from "@/lib/phoenix-crm/server/photos";
+import { downloadIssuedPlacePhoto, downloadVenueTimetablePhoto } from "@/lib/phoenix-crm/server/photos";
 import { cropStampBand } from "@/lib/phoenix-crm/server/signboard-check";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -81,7 +81,7 @@ function names(value: unknown): string[] {
 /**
  * Read the timetable in a photo a rep is saving right now, before the place row exists.
  *
- * Reached only through the scoped `downloadIssuedPlacePhoto`, never `downloadPhoto`: this runs inside
+ * Reached only through a scoped download door, never `downloadPhoto`: this runs inside
  * a request, so the path has to be one the server itself issued to this person for this territory.
  */
 export async function readPlaceSchedule(input: {
@@ -90,15 +90,26 @@ export async function readPlaceSchedule(input: {
   seatId: string;
   repHrId: string;
   isTest: boolean;
+  /**
+   * 🔴 The timetable is the BUILDING's and is photographed once (owner, 2026-10-10), so the second
+   * doctor seated in it is read from a photo a DIFFERENT rep uploaded. `downloadIssuedPlacePhoto`
+   * requires the slot to have been issued to the rep saving now and would answer null — reported as
+   * `unjudged("no_bytes")`, a verdict lost in silence. The venue door drops that one condition and
+   * keeps every other.
+   */
+  reusedTimetable?: boolean;
 }): Promise<PhoenixCrmScheduleCheck> {
   if (!hasOpenAiApiKey()) return unjudged("no_api_key");
 
-  const bytes = await downloadIssuedPlacePhoto({
-    hrId: input.repHrId,
-    isTest: input.isTest,
-    path: input.photoPath,
-    seatId: input.seatId,
-  }).catch(() => null);
+  const bytes = await (input.reusedTimetable
+    ? downloadVenueTimetablePhoto({ isTest: input.isTest, path: input.photoPath, seatId: input.seatId })
+    : downloadIssuedPlacePhoto({
+        hrId: input.repHrId,
+        isTest: input.isTest,
+        path: input.photoPath,
+        seatId: input.seatId,
+      })
+  ).catch(() => null);
   if (!bytes) return unjudged("no_bytes");
 
   const cropped = await cropStampBand(bytes);

@@ -3,8 +3,13 @@
  * suite, captured ONCE at its door, with customers seated inside it.
  *
  * Owner, 2026-10-09 (Arabic, in chat): validate the polyclinic once, then register each customer's
- * times in it, at most three a day; he uploads a photo of the timetable naming them, at each one; the
- * location is taken once, so seating needs none; and the administrator reviews the schedule after.
+ * times in it, at most three a day; he uploads a photo of the timetable naming them; the location is
+ * taken once, so seating needs none; and the administrator reviews the schedule after.
+ *
+ * 🔴 ONE TIMETABLE FOR THE BUILDING (his one amendment, 2026-10-10: "ask him for only one timetable,
+ * not for every doctor"). The venue carries it in `schedule_photo_path`; `effectiveSeatedPhoto` is
+ * the one place that decides whether a seating is reusing it or replacing it, and it decides from the
+ * VENUE's stored path rather than from anything the phone claims.
  *
  * WHAT IS HERE: capturing a venue (`createSharedPlace`), the rep's picker (`loadSharedPlacesFor`),
  * the venue a seating is being saved against (`sharedPlaceForSeating`) and the seated place's own
@@ -44,6 +49,7 @@ import {
   parseSeatedPlaceDraft,
   parseSharedPlaceDraft,
   parseSharedPlaceKind,
+  SEATED_PLACE_NO_PHOTO,
   SHARED_PLACE_NAME_MAX,
   sharedPlaceKindLabel,
   type SeatedPlaceDraft,
@@ -88,6 +94,13 @@ export type SharedPlaceRow = {
   capturedAt: string;
   capturedAtText: string;
   photoPath: string | null;
+  /**
+   * The BUILDING's timetable, photographed once (owner, 2026-10-10). Null means nobody has been
+   * seated in this venue yet, which is the one case where the rep is still asked for the board.
+   */
+  schedulePhotoPath: string | null;
+  /** When that board was photographed — the date the rep is shown in place of the camera. */
+  schedulePhotoCapturedAtText: string | null;
 };
 
 function kindOf(value: unknown): SharedPlaceKind {
@@ -116,6 +129,10 @@ function mapSharedPlace(row: Row, seated: number): SharedPlaceRow {
     capturedAt: String(row.captured_at),
     capturedAtText: formatPhoenixDateTime(String(row.captured_at)),
     photoPath: text(row.photo_path),
+    schedulePhotoPath: text(row.schedule_photo_path),
+    schedulePhotoCapturedAtText: text(row.schedule_photo_captured_at)
+      ? formatPhoenixDateTime(String(row.schedule_photo_captured_at))
+      : null,
   };
 }
 
@@ -132,6 +149,7 @@ function mapSharedPlace(row: Row, seated: number): SharedPlaceRow {
 const SHARED_PLACE_COLUMNS =
   "id, seat_id, line_code, name, kind, status, address, zone, brick_id, brick_name, brick_distance_km, brick_lookup, " +
   "area_code, area_name, region_code, region_name, lat, lon, accuracy_meters, photo_path, captured_at, " +
+  "schedule_photo_path, schedule_photo_captured_at, schedule_photo_by_hr_id, " +
   "created_by_hr_id, is_test";
 
 /**
@@ -349,6 +367,8 @@ export type SeatingVenue = {
   lon: number;
   accuracyMeters: number | null;
   location: Row;
+  /** The building's own timetable, or null while nobody has been seated here yet. */
+  schedulePhotoPath: string | null;
 };
 
 /**
@@ -386,6 +406,7 @@ export async function sharedPlaceForSeating(input: {
     lat: numberOrNull(row.lat) ?? 0,
     lon: numberOrNull(row.lon) ?? 0,
     accuracyMeters: numberOrNull(row.accuracy_meters),
+    schedulePhotoPath: text(row.schedule_photo_path),
     // 🔴 COPIED, NEVER RE-RESOLVED. It is the SAME point, so re-resolving would pay for a second brick
     // and map lookup to answer a question already answered at the door — and could answer it
     // differently if the brick master changed in between, leaving two rows at one coordinate in two
@@ -413,10 +434,38 @@ export async function sharedPlaceForSeating(input: {
  * from the venue would be a record claiming a capture that never happened, and `assessCaptureTrust`
  * reads an absence as UNMEASURED, which is exactly what it is.
  */
+/**
+ * Which photograph this seating is actually saved against, and whether it is the building's own.
+ *
+ * 🔴 REUSE IS DECIDED HERE AND NOWHERE ELSE, FROM THE VENUE'S STORED PATH — never from a flag on the
+ * body (owner, 2026-10-10). A phone that sends no photo gets the board the venue already holds; a
+ * phone that sends one is REPLACING the board, which is the "the timetable changed" button. So the
+ * only path a seating can ever reuse is one this venue itself recorded, and a client cannot reach
+ * another rep's photograph by naming it.
+ *
+ * `phoenix_crm_insert_place` makes the same decision again, under the venue's row lock, by comparing
+ * the path it is handed against the stored one: this function is the server's wording of the rule and
+ * that comparison is its enforcement.
+ */
+export type EffectiveSeatedPhoto = { path: string; reused: boolean };
+
+export function effectiveSeatedPhoto(venue: SeatingVenue, seated: SeatedPlaceDraft): EffectiveSeatedPhoto {
+  if (seated.photoPath) return { path: seated.photoPath, reused: false };
+  // The first customer in a building: no board on file and the phone sent none, so this is the one
+  // case where the refusal still belongs.
+  if (!venue.schedulePhotoPath) throw validationError(SEATED_PLACE_NO_PHOTO);
+  return { path: venue.schedulePhotoPath, reused: true };
+}
+
 export async function seatedPlacePayload(venue: SeatingVenue, seated: SeatedPlaceDraft): Promise<Row> {
-  const issuedAt = await photoSlotIssuedAt(seated.photoPath).catch(() => null);
+  const photo = effectiveSeatedPhoto(venue, seated);
+  // 🔴 NO SKEW ON A REUSED BOARD, and null is the honest answer rather than the convenient one: the
+  // slot behind it was issued on another day, possibly to another rep, so the gap between its clock
+  // and this moment measures nothing about the phone saving now. `assessCaptureTrust` reads an
+  // absence as UNMEASURED, which is exactly what it is.
+  const issuedAt = photo.reused ? null : await photoSlotIssuedAt(photo.path).catch(() => null);
   return {
-    photo_path: seated.photoPath,
+    photo_path: photo.path,
     lat: venue.lat,
     lon: venue.lon,
     accuracy_meters: venue.accuracyMeters,

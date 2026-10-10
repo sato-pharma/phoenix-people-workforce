@@ -114,7 +114,12 @@ import { resolvePinGeography, resolvePlaceLocation, territoryOfSeat } from "@/li
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
 import { scheduleHoldRecord, scheduleHoldsForReview, type PhoenixCrmScheduleCheck } from "@/lib/phoenix-crm/schedule-rules";
-import { seatedDraftOf, seatedPlacePayload, sharedPlaceForSeating } from "@/lib/phoenix-crm/server/shared-places";
+import {
+  effectiveSeatedPhoto,
+  seatedDraftOf,
+  seatedPlacePayload,
+  sharedPlaceForSeating,
+} from "@/lib/phoenix-crm/server/shared-places";
 import { countOffListingRefusals, recordOffListingRefusal, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
@@ -1789,6 +1794,11 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   let signboard: { check: PhoenixCrmSignboardCheck; record: Record<string, unknown> } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
   if (seated && venue) {
+    // Which photograph this seating is saved against: the one he just took, or the BUILDING's own
+    // board, already on file (owner, 2026-10-10 — "ask him for only one timetable, not for every
+    // doctor"). It is read from the VENUE, never from the body, and it is the same value
+    // `seatedPlacePayload` writes to the row.
+    const seatedPhoto = effectiveSeatedPhoto(venue, seated);
     // 🔴 NEITHER GOOGLE NOR THE SIGNBOARD RUNS ON A SEATING, and that is the design rather than a gap.
     // Both are judged against the customer's own name at HIS door: the Google check asks whether the
     // listing at this point is him, and the signboard asks whether the sign names him. Inside a
@@ -1803,13 +1813,18 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     // names and could only produce noise. `signboardApplies` is NOT applied — that one answers the
     // owner's AM/PM rule about whose name a SIGN carries, and a timetable names people whatever list
     // the customer is on.
+    //
+    // 🔴 THE READ STILL RUNS PER CUSTOMER, on the one shared image: the question is "does this board
+    // name HIM", so three doctors behind one door are three different questions about the same
+    // photograph — and each one's verdict is kept on his own row.
     schedule =
       subject && signboardNameIsUsable(subject.name)
         ? await readPlaceSchedule({
             customerName: subject.name,
             isTest,
-            photoPath: seated.photoPath,
+            photoPath: seatedPhoto.path,
             repHrId: viewer.hrId,
+            reusedTimetable: seatedPhoto.reused,
             seatId: seat.seatId,
           })
         : null;
@@ -2144,13 +2159,18 @@ export async function addPlace(
   if (seated && venue) {
     // Neither Google nor the signboard, for the reason `validateCustomer`'s seated branch records in
     // full: both are judged on the customer's name at HIS door, and this door is the building's.
+    //
+    // The timetable is the BUILDING's and is read from the venue, not from the body — the same rule,
+    // and the same one call per customer against the one image.
+    const seatedPhoto = effectiveSeatedPhoto(venue, seated);
     schedule =
       subject && signboardNameIsUsable(subject.name)
         ? await readPlaceSchedule({
             customerName: subject.name,
             isTest,
-            photoPath: seated.photoPath,
+            photoPath: seatedPhoto.path,
             repHrId: viewer.hrId,
+            reusedTimetable: seatedPhoto.reused,
             seatId: seat.seatId,
           })
         : null;
