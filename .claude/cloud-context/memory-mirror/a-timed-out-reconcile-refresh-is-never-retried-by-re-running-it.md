@@ -54,3 +54,26 @@ So a retry is worth two or three goes, and after that the fix is serialization, 
 **The split net only exists for the periods the city-split rails cover:** after both refreshes,
 `au.monthly_store_split_net` held **0** cells for 2026-03 and 2026-06 and 732 for 2026-09, so a
 "split net: ok" on an older batch legitimately writes nothing.
+
+🔴 **THE PUBLISHED-MONTH GUARD EXISTS ONLY IN THE SCRIPT, NOT IN `applyHistoricalReconciliation`.**
+The RPC freezes a whole FILE that touches a LOCKED closing
+(`sos_import_batch_touches_locked_closing`), and that is all the protection the screen's path has. A
+lock and a publication are two different tables set from two different screens, so **calling
+`applyHistoricalReconciliation` directly can rewrite a month that is published but not locked** —
+against his rule "never cange a publkished month". Only `scripts/reconcile-month-customer-map.ts`
+reads `monthly_closing_publications` (via `src/lib/sales/published-month-guard.ts`) and refuses.
+**So reconcile through the script, not the function** — it also writes a pre-image CSV of every row
+first and refreshes each file ONCE at the end instead of once per customer.
+
+**And when its refresh loop throws, the AUDIT ENTRY is never written either** — `writeAuditLog` sits
+after the loop, so a run that dies mid-refresh leaves 38 corrected rows with no audit trail at all.
+Finish by hand: refresh the remaining files, then write the same entry (`entityId`
+`source_of_sales_import_rows`, `entityType` `sales_import_batch`, the period/line/pairs/updated_rows,
+the affected and frozen file ids, and the pre-image path).
+
+**Measured 2026-10-10**, the five brick changes from his Mapping Guard approvals (CNS 2026-09, 38
+rows across 14 files): the loop died on file **2 of 14** — not a statement timeout this time but
+`attribution store split: writing the net for 2026-09 failed — Supabase request timed out`. All 13
+remaining files then refreshed serially in **2-46s each**, and one (`b7436b25`) failed its first
+attempt on a bare `TypeError: fetch failed` and succeeded on the second. So the per-file retry earns
+its keep even on files that are not large.

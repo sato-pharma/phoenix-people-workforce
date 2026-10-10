@@ -147,3 +147,24 @@ D11 −118,520.20.
   0 LIVE publication rows (the one Anti Infective row carries `unpublished_at` 16:12 Cairo), so
   `isFrozenStoreSplitPeriod` is false and every closing read recomputes live. The exposure is the
   publish, which freezes whatever is stored.
+
+**Repaired again on his word — *"rebuild the September net now"*, 2026-10-10 ~01:05 Cairo.** Pre-image
+of the 479 live rows to `public.msn_202609_backup_20261010`, dry run, then
+`backfill-attribution-store-split.ts --apply 2026-09` wrote **732 rows at 01:07:42** with
+`sum(net_qty)` and `sum(net_effective_units)` exactly 0, then
+`au.f_refresh_monthly_attribution('2026-09')`, which re-stamped
+`au.monthly_attribution_rollup_meta` at 01:07:46. Post-check: *"no drift. 732 frozen cells match the
+rule."* Cells by line: **cns 549 / pedia 130 / anti_infective 53**.
+
+- 🔴 **492 WAS ALREADY TWO GENERATIONS STALE WHEN TWO SESSIONS WERE QUOTING IT.** The row count read
+  492 at 22:45, **479 at 00:02:25** (written by something neither session did) and 732 after the
+  rebuild. A net count is a reading, not a fact: re-read `count(*)` and
+  `max(computed_at) at time zone 'Africa/Cairo'` in the same breath as quoting one.
+- 🔴 **`computed_at` IS A `timestamptz`, SO `at time zone 'UTC' at time zone 'Africa/Cairo'` READS
+  THREE HOURS EARLY** — it strips the zone and then re-interprets the naive value as Cairo. It
+  printed `18:02:25` for a row written at `00:02:25`, which reads as "nothing has touched this since
+  the evening". One conversion only: `max(computed_at) at time zone 'Africa/Cairo'`.
+- **The column is `computed_at`, never `updated_at`** — and in this MCP a multi-statement call is one
+  transaction, so a `create table … as select` followed by a select naming a wrong column rolls the
+  BACKUP back too and prints only the column error. Take the pre-image in its own call and prove it
+  with its own count.
