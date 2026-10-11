@@ -833,6 +833,29 @@ function trimmed(value: string | null | undefined): string | null {
   return text.length > 0 ? text : null;
 }
 
+/**
+ * The next declaration number (رقم الإقرار) when the handover form leaves it blank — owner, 2026-10-11:
+ * "automate adding the declaration number, I have none". Format `DEC-<year>-<4 digits>`, counting up
+ * per year from the highest one already issued. A number typed by hand is always kept as typed.
+ */
+async function nextDeclarationNo(issuedOn: string | null | undefined): Promise<string> {
+  const year = /^d{4}/.test(issuedOn ?? "")
+    ? String(issuedOn).slice(0, 4)
+    : new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric" }).format(new Date());
+  const prefix = `DEC-${year}-`;
+  const { data, error } = await getSupabaseAdmin()
+    .from("device_assignments")
+    .select("declaration_no")
+    .like("declaration_no", `${prefix}%`);
+  if (error) throw new Error(deviceErrorMessage(error));
+  let highest = 0;
+  for (const row of (data ?? []) as Array<{ declaration_no: string | null }>) {
+    const n = Number(String(row.declaration_no ?? "").slice(prefix.length));
+    if (Number.isInteger(n) && n > highest) highest = n;
+  }
+  return `${prefix}${String(highest + 1).padStart(4, "0")}`;
+}
+
 export async function createDevice(input: CreateDeviceInput, actor: string): Promise<string> {
   const supabase = getSupabaseAdmin();
 
@@ -885,12 +908,13 @@ export async function createDevice(input: CreateDeviceInput, actor: string): Pro
 
 export async function issueDevice(input: IssueDeviceInput, actor: string): Promise<string> {
   const supabase = getSupabaseAdmin();
+  const declarationNo = trimmed(input.declarationNo) ?? (await nextDeclarationNo(input.issuedOn));
 
   const { data, error } = await supabase.rpc("phx_device_issue", {
     p_device_id: input.deviceId,
     p_employee_hr_id: input.employeeHrId,
     p_actor: actor,
-    p_declaration_no: trimmed(input.declarationNo),
+    p_declaration_no: declarationNo,
     p_handover_place: trimmed(input.handoverPlace),
     p_issued_on: input.issuedOn || null,
   });
@@ -905,7 +929,7 @@ export async function issueDevice(input: IssueDeviceInput, actor: string): Promi
     newValues: {
       deviceId: input.deviceId,
       employeeHrId: input.employeeHrId,
-      declarationNo: trimmed(input.declarationNo),
+      declarationNo,
       handoverPlace: trimmed(input.handoverPlace),
     },
   });
@@ -1138,6 +1162,7 @@ export async function revokeReservation(
  */
 export async function reconcileDevice(input: ReconcileDeviceInput, actor: string): Promise<string> {
   const supabase = getSupabaseAdmin();
+  const declarationNo = trimmed(input.declarationNo) ?? (await nextDeclarationNo(input.issuedOn));
 
   const { data: before } = await supabase
     .from("device_assignments")
@@ -1153,7 +1178,7 @@ export async function reconcileDevice(input: ReconcileDeviceInput, actor: string
     oldValues: (before as Record<string, unknown> | null) ?? null,
     newValues: {
       employeeHrId: input.employeeHrId,
-      declarationNo: trimmed(input.declarationNo),
+      declarationNo,
       handoverPlace: trimmed(input.handoverPlace),
       issuedOn: input.issuedOn || null,
     },
@@ -1163,7 +1188,7 @@ export async function reconcileDevice(input: ReconcileDeviceInput, actor: string
     p_assignment_id: input.assignmentId,
     p_employee_hr_id: input.employeeHrId,
     p_actor: actor,
-    p_declaration_no: trimmed(input.declarationNo),
+    p_declaration_no: declarationNo,
     p_handover_place: trimmed(input.handoverPlace),
     p_issued_on: input.issuedOn || null,
   });
