@@ -437,7 +437,12 @@ export function LivePhotoCapture({
     stopLocation();
     // The photo's reading: the fresh one when it came, else the camera's own from a moment before.
     // Either is the PHOTO's — the Capture-location pin is a separate button (owner, 2026-09-30).
-    const photoFix: Fix = hasPosition(shutterFix)
+    // The SHARPER of the two: a one-shot read can come back approximate (iPhone Safari) while the
+    // running watch already holds a precise one, and the worse of them must not become the photo's.
+    const shutterIsSharper =
+      hasPosition(shutterFix) &&
+      (usedFix.accuracyMeters === null || (shutterFix.accuracy !== null && shutterFix.accuracy <= usedFix.accuracyMeters));
+    const photoFix: Fix = hasPosition(shutterFix) && shutterIsSharper
       ? { lat: shutterFix.latitude, lon: shutterFix.longitude, accuracyMeters: shutterFix.accuracy, at: takenAt }
       : usedFix;
 

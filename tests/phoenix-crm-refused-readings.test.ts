@@ -160,13 +160,16 @@ export function runPhoenixCrmRefusedReadingsTests() {
   assert.deepEqual([empty.lat, empty.lon, empty.accuracyMeters], [null, null, null], "nothing is coerced to 0");
 
   // ── 5. Each door's own line, and only its own ─────────────────────────────────
-  // A place is refused at either reading; a visit is judged on the pin alone, as the doors judge it.
+  // A place is judged on the PIN alone since 2026-10-11 (owner, "A"); a visit on the pin, as the doors judge it.
   const roughPhotoOnly = placeBody(40, 2000);
-  assert.equal(parsePlaceDraft(roughPhotoOnly).ok, false, "a sharp pin does not rescue a blurred photo");
-  const photoCase = refusedReadingOf(roughPhotoOnly, "place");
-  assert.ok(photoCase, "and the record says which of the two it was");
-  assert.equal(photoCase.accuracyMeters, 40);
-  assert.equal(photoCase.photoAccuracyMeters, 2000);
+  assert.equal(parsePlaceDraft(roughPhotoOnly).ok, true, "a sharp pin validates beside a blurred photo reading");
+  assert.equal(refusedReadingOf(roughPhotoOnly, "place"), null, "so nothing is recorded about it");
+  const roughPin = placeBody(2000, 40);
+  assert.equal(parsePlaceDraft(roughPin).ok, false, "a rough pin is still refused");
+  const pinCase = refusedReadingOf(roughPin, "place");
+  assert.ok(pinCase, "and the record keeps both numbers");
+  assert.equal(pinCase.accuracyMeters, 2000);
+  assert.equal(pinCase.photoAccuracyMeters, 40);
 
   for (const accuracy of [VISIT_MAX_ACCURACY_METERS + 1, 1414, 2000]) {
     const body = visitBody(accuracy);

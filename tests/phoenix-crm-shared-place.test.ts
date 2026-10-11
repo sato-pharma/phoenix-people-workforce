@@ -128,7 +128,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
     ...atTheDoor({ shutterAccuracyMeters: PLACE_MAX_ACCURACY_METERS + 1 }),
     ...VENUE,
   });
-  assert.equal(roughShutter.ok, false, "and neither is a rough shutter reading — both halves are held to the line");
+  assert.equal(roughShutter.ok, true, "a rough shutter reading beside a sharp pin is taken - the pin decides (owner, 2026-10-11)");
 
   const good = parseSharedPlaceDraft({ ...atTheDoor(), ...VENUE });
   assert.equal(good.ok, true, "a live photo, a name, a kind and two precise readings is a venue");
