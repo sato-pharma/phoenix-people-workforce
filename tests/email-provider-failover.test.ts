@@ -360,6 +360,7 @@ export async function runEmailProviderFailoverTests() {
       "RESEND_API_KEY_2",
       "RESEND_EMAIL_FROM_2",
       "RESEND_API_KEY_3",
+      "RESEND_API_KEY_4",
       "BREVO_API_KEY",
       "BREVO_API_KEY_2",
       "BREVO_EMAIL_FROM",
@@ -385,7 +386,19 @@ export async function runEmailProviderFailoverTests() {
         ["resend", "resend-2", "resend-3", "brevo", "brevo-2"],
         "the third Resend account comes after the second and before any Brevo account",
       );
+      process.env.RESEND_API_KEY_4 = "re_four";
+      assert.deepEqual(
+        resolveEmailProviders().map((p) => p.name),
+        ["resend", "resend-2", "resend-3", "resend-4", "brevo", "brevo-2"],
+        "the fourth Resend account comes after the third and before any Brevo account",
+      );
       delete process.env.RESEND_API_KEY_3;
+      assert.deepEqual(
+        resolveEmailProviders().map((p) => p.name),
+        ["resend", "resend-2", "resend-4", "brevo", "brevo-2"],
+        "an unset account is skipped, the rest keep their order",
+      );
+      delete process.env.RESEND_API_KEY_4;
 
       process.env.EMAIL_FAILOVER_ENABLED = "false";
       assert.deepEqual(resolveEmailProviders().map((p) => p.name), ["resend"], "the kill switch drops every backup account");
