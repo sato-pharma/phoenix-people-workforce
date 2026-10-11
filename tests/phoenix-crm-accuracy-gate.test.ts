@@ -111,7 +111,7 @@ export function runPhoenixCrmAccuracyGateTests() {
   // ── The place's line: 250 m, inclusive ────────────────────────────────────────
   assert.equal(refusalOf(parsePlaceDraft(placeBody(250, 250))), null, "250 m is inside the place's line");
   assert.match(refusalOf(parsePlaceDraft(placeBody(251, 5))) ?? "", /your phone gave 251 m/, "a pin at 251 m is outside it, and 251 is the number she reads");
-  assert.match(refusalOf(parsePlaceDraft(placeBody(5, 251))) ?? "", /your phone gave 251 m/, "a photo at 251 m is outside it, and the PHOTO's number is the one named");
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(5, 251))), null, "a photo at 251 m beside a sharp pin validates (owner, 2026-10-11: the pin decides)");
 
   // ── The nine refusals of 21:30 — the reason the line moved ────────────────────
   // 🔴 THE REGRESSION THIS CHANGE EXISTS FOR. His pin was never the problem; the photo he had already
@@ -124,19 +124,25 @@ export function runPhoenixCrmAccuracyGateTests() {
   assert.equal(refusalOf(parsePlaceDraft(placeBody(101, 5))), null, "101 m, refused on the first night, is taken now");
   assert.equal(refusalOf(parsePlaceDraft(placeBody(200, 5))), null, "so is 200 m, the first line he named");
 
-  // ── BOTH readings must be accurate: neither rescues the other ─────────────────
-  // And the WIDER of the two is the number said: it is the one she has to bring down.
-  assert.match(
-    refusalOf(parsePlaceDraft(placeBody(5, 2000))) ?? "",
-    /your phone gave 2,000 m/,
-    "a rough PHOTO is refused even beside a sharp pin — the system never accepts a rough photo in validation",
-  );
+  // ── THE PIN DECIDES (owner, 2026-10-11, "A") ──────────────────────────────────
+  // 🔴 Production, 11 Oct: Georgette (B-182) stood at the clinic, her Capture-location pin read 11.2 m,
+  // and iPhone Safari handed the camera 2,000 m then 1,414 m - refused eight times. B-158: pin 30 m,
+  // photo 634-1,865 m. A sharp pin validates beside a rough photo reading; a rough pin is still refused.
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(11.2, 1414))), null, "Georgette: pin 11.2 m, photo 1,414 m - validated");
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(11.2, 2000))), null, "Georgette: pin 11.2 m, photo 2,000 m - validated");
+  assert.equal(refusalOf(parsePlaceDraft(placeBody(29.9, 1865))), null, "B-158: pin 29.9 m, photo 1,865 m - validated");
   assert.match(
     refusalOf(parsePlaceDraft(placeBody(1500, 15))) ?? "",
     /your phone gave 1,500 m/,
-    "a rough PIN is refused even beside a sharp photo — the system never accepts a rough location in validation",
+    "a rough PIN is still refused even beside a sharp photo",
   );
-  assert.match(refusalOf(parsePlaceDraft(placeBody(900, 1800))) ?? "", /your phone gave 1,800 m/, "two rough readings name the wider one, never the first one looked at");
+  assert.match(refusalOf(parsePlaceDraft(placeBody(900, 1800))) ?? "", /your phone gave 900 m/, "two rough readings name the PIN, the only one that decides");
+  const roughPhotoSharpPin = parsePlaceDraft(placeBody(11.2, 1414));
+  assert.ok(roughPhotoSharpPin.ok);
+  if (roughPhotoSharpPin.ok) {
+    assert.equal(placePoint(roughPhotoSharpPin.value).source, "pin", "a rough photo reading is never the place's fixed point - the sharp pin is");
+    assert.equal(roughPhotoSharpPin.value.photoAccuracyMeters, 1414, "and the photo's raw reading is still stored, for the integrity board");
+  }
 
   const bothGood = parsePlaceDraft(placeBody(5, 15));
   assert.ok(bothGood.ok, "two accurate readings validate the place");

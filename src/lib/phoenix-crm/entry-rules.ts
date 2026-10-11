@@ -168,10 +168,12 @@ export const NO_FIX_FOR_A_VISIT = `Turn on location for ${BROWSER_PLACEHOLDER}, 
  * later visit there would have read "0 m apart" — a blur compared with itself — and proved nothing.
  * The place gets the tighter line because it is the point every visit is measured against.
  *
- * 🔴 VALIDATION IS STRICT: BOTH readings must be inside the place's line — the photo's own AND the
- * Capture-location pin (owner, the same day: "the system should never accept a photo or location …
- * in validation", "in validation the system can block inaccurate validation"). A sharp pin never
- * rescues a rough photo, nor a sharp photo a rough pin.
+ * 🔴 VALIDATION JUDGES THE CAPTURE-LOCATION PIN ALONE (owner, 2026-10-11, "A" when asked directly). It
+ * was BOTH readings from 2026-10-03 ("the system should never accept a photo or location … in
+ * validation"); on iPhone Safari the camera is handed an approximate position (2,000 m, 650-1,900 m)
+ * while the pin reads 11-30 m, so reps AT the clinic were refused at the end, again and again. A sharp
+ * pin now validates beside a rough photo reading, a rough pin is still refused, and the photo's raw
+ * reading is stored and read by the integrity board, never by the rep. Never restore the photo gate.
  *
  * 🔴 AND THE SETTING IS NAMED BY THE REP'S OWN BROWSER, NEVER "Phoenix" (2026-10-03). These sentences
  * said "Turn on precise location for Phoenix" — a setting no phone has, because the rep is in a
@@ -247,13 +249,8 @@ function metresSaid(accuracyMeters: number): string {
 
 /** The widest reading that put a place outside its line, or null when neither number is to blame. */
 export function roughestPlaceReading(fix: CapturedFix): number | null {
-  const over: number[] = [];
-  if (fix.accuracyMeters !== null && fix.accuracyMeters > PLACE_MAX_ACCURACY_METERS) over.push(fix.accuracyMeters);
-  const photoRead = fix.photoLat !== null && fix.photoLon !== null;
-  if (photoRead && fix.photoAccuracyMeters !== null && fix.photoAccuracyMeters > PLACE_MAX_ACCURACY_METERS) {
-    over.push(fix.photoAccuracyMeters);
-  }
-  return over.length === 0 ? null : Math.max(...over);
+  // The PIN alone decides since 2026-10-11 (`placeReadingsPrecise`), so it is the only number to name.
+  return fix.accuracyMeters !== null && fix.accuracyMeters > PLACE_MAX_ACCURACY_METERS ? fix.accuracyMeters : null;
 }
 
 export function roughFixAtThePlace(fix: CapturedFix): string {
@@ -348,26 +345,33 @@ export type PlaceDraft = CapturedFix & {
  * Both raw readings are stored beside it; this only chooses which one the address, brick, area and
  * region are resolved from, and which one every later visit is measured against.
  *
- * Which reading is chosen never rescues a rough one: `parsePlaceDraft` has refused a place whose photo
- * OR pin is wider than `PLACE_MAX_ACCURACY_METERS` before it gets here (owner, 2026-10-03).
+ * Which reading is chosen never rescues a rough PIN: `parsePlaceDraft` refuses a place whose pin is
+ * wider than `PLACE_MAX_ACCURACY_METERS` before it gets here, and a rough PHOTO reading is never the
+ * fixed point - the pin is (owner, 2026-10-11, replacing the 2026-10-03 both-readings rule).
  */
 export type PlacePoint = { lat: number; lon: number; accuracyMeters: number | null; source: "photo" | "pin" };
 
 export function placePoint(fix: CapturedFix): PlacePoint {
-  if (fix.photoLat !== null && fix.photoLon !== null) {
+  // 🔴 A ROUGH PHOTO READING IS NOT THE FIXED POINT (2026-10-11): it can sit 600+ m from the rep's door
+  // (iPhone Safari's approximate fix) while the pin read 11 m. Its raw reading is still stored beside it.
+  const photoIsRough = fix.photoAccuracyMeters !== null && fix.photoAccuracyMeters > PLACE_MAX_ACCURACY_METERS;
+  if (fix.photoLat !== null && fix.photoLon !== null && !photoIsRough) {
     return { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters, source: "photo" };
   }
   return { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, source: "pin" };
 }
 
 /**
- * Whether BOTH of a place's readings are inside its line — the pin, and the photo's own when the
- * shutter read one. Either one rough refuses the validation (owner, 2026-10-03).
+ * Whether a place's reading is inside its line — decided by the PIN (the Capture-location reading)
+ * ALONE. 🔴 OWNER, 2026-10-11, answering "A" when asked directly: a sharp pin validates the place even
+ * when the photo's own reading is rough. This REPLACES the 2026-10-03 rule that BOTH readings had to be
+ * inside the line. Why: on iPhone Safari the camera is handed an APPROXIMATE position (a flat 2,000 m,
+ * 650-1,900 m) while the same phone's Capture-location button reads 11-30 m, so reps standing at the
+ * clinic were refused at the end, again and again (B-182, B-158). A rough PIN is still refused, and the
+ * photo's raw reading is still stored (and still read by the integrity board, above the rep).
  */
 export function placeReadingsPrecise(fix: CapturedFix): boolean {
-  if (!withinAccuracy(fix.accuracyMeters, PLACE_MAX_ACCURACY_METERS)) return false;
-  const photoRead = fix.photoLat !== null && fix.photoLon !== null;
-  return !photoRead || withinAccuracy(fix.photoAccuracyMeters, PLACE_MAX_ACCURACY_METERS);
+  return withinAccuracy(fix.accuracyMeters, PLACE_MAX_ACCURACY_METERS);
 }
 
 // ── What a REFUSED capture was carrying ─────────────────────────────────────────────────────────

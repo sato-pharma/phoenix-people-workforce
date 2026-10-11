@@ -6043,6 +6043,18 @@ wider line instead. His design is final: **do not move it back, and do not re-pr
 250 m still catches what the gate exists for — an approximate-location phone reports a flat 2,000 m,
 eight times the line — and the visit's own 500 m stays the wider of the two.
 
+### Amended 2026-10-11 — the pin alone decides, a rough photo reading no longer refuses
+
+Asked directly (options A: a sharp pin alone validates; B: keep both readings) after a rep at the
+clinic was refused eight times, the owner answered **"A"**. Production that day, from
+`phoenix_crm_refused_readings`: B-182 pin 11.2 m, photo 2,000 m then 1,414 m (the photo's own position
+sat ~640 m from the pin); B-158 pin 29.9-31.8 m, photo 634-1,865 m. iPhone Safari hands the camera an
+approximate position while the Capture-location button reads a real one, and retaking the photo
+returned the same kind of reading. So `placeReadingsPrecise` judges the PIN only, `placePoint` never
+takes a photo reading wider than the line as the fixed point (the pin is), and the photo's raw reading
+is still stored and read by the integrity board, above the rep. A rough pin is still refused. Never
+restore the photo gate without his word. Pinned by `tests/phoenix-crm-accuracy-gate.test.ts`.
+
 ## The Phoenix CRM touch trail — owner ruling, 2026-10-03
 
 His words, on the evening of 3 October 2026, after a day in which two reps were blocked and both

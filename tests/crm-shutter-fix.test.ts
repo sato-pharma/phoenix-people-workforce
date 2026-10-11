@@ -74,6 +74,12 @@ function runCameraTests() {
     !/Photo carries no location|could not read a position|location check/i.test(camera),
     "the rep is never told a check exists — golden rule #1",
   );
+
+  // 5. 2026-10-11: iPhone Safari hands the camera an APPROXIMATE position (2,000 m, 650-1,900 m). The
+  //    photo keeps the SHARPER of the one-shot read and the running watch. (A rough photo reading no
+  //    longer refuses a place - the pin decides - so the shutter is never held waiting for it.)
+  assert.ok(camera.includes("const shutterIsSharper ="), "the photo keeps the sharper of its two readings");
+  assert.ok(!camera.includes("holdForPreciseFix"), "the shutter is never held: no extra wait in the rep's day");
 }
 
 function runServerTests() {
