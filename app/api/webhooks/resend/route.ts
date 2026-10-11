@@ -21,8 +21,8 @@ export async function POST(request: Request) {
   }
 
   // Each Resend account signs its webhook with its own secret, so the extra sending accounts
-  // (RESEND_API_KEY_2 and _3, see src/lib/email/email-providers.ts) add RESEND_WEBHOOK_SECRET_2 and _3.
-  const secrets = [secret, process.env.RESEND_WEBHOOK_SECRET_2, process.env.RESEND_WEBHOOK_SECRET_3].filter((value): value is string => Boolean(value?.trim()));
+  // (RESEND_API_KEY_2, _3 and _4, see src/lib/email/email-providers.ts) add RESEND_WEBHOOK_SECRET_2, _3 and _4.
+  const secrets = [secret, process.env.RESEND_WEBHOOK_SECRET_2, process.env.RESEND_WEBHOOK_SECRET_3, process.env.RESEND_WEBHOOK_SECRET_4].filter((value): value is string => Boolean(value?.trim()));
   const body = await request.text();
   if (!secrets.some((candidate) => verifyResendWebhookSignature({ body, headers: request.headers, secret: candidate }))) {
     // A spike here means forged/misconfigured webhook traffic — surface for alerting.
