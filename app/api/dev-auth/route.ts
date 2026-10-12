@@ -6,6 +6,7 @@ import {
   isLocalDevelopmentRequest,
   phoenixDevPreviewCookieName,
 } from "@/lib/auth/dev-preview";
+import { devRelativeRedirect } from "@/lib/auth/dev-redirect";
 import { findDevPreviewRoleMismatch } from "@/lib/auth/dev-preview-picker";
 import { parseRoleStrict } from "@/lib/auth/permissions";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
@@ -62,7 +63,7 @@ export async function GET(request: Request) {
     }
   }
 
-  return setPreviewCookie(NextResponse.redirect(new URL(nextPath, url)), createDevPreviewSessionToken({ hrId, loginId, role }));
+  return setPreviewCookie(devRelativeRedirect(new URL(nextPath, url)), createDevPreviewSessionToken({ hrId, loginId, role }));
 }
 
 function setPreviewCookie(response: NextResponse, value: string) {
@@ -113,7 +114,7 @@ async function openTestAccount(url: URL, testLogin: string) {
 
   const nextPath = normalizeNextPath(url.searchParams.get("next"), resolveLandingPathForRole(role));
   return setPreviewCookie(
-    NextResponse.redirect(new URL(nextPath, url)),
+    devRelativeRedirect(new URL(nextPath, url)),
     createDevPreviewSessionToken({ hrId: link.link.mirrorsHrId, loginId: link.link.loginId, role, testPersona: true }),
   );
 }
