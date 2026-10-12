@@ -430,6 +430,73 @@ function checkManySigns(): void {
 }
 
 /**
+ * One name, two spellings: the space inside a compound, and the professor's title (12 Oct 2026).
+ *
+ * Every reading below is a stored production reading. ابراهيم عبدالشافى was filed on the owner's
+ * integrity board at 03:37 Cairo on 11 Oct, two readings agreeing, off a plate read clearly as
+ * "إبراهيم عبد الشافى" — the same person, held as another for one space. Replaying all 389 stored
+ * readings through the fix moved six, and none of them onto the board: five to a match, and one false
+ * match (ابو الدهب on an ابو الوفا plate) to `unjudged`.
+ */
+function checkNameSpelling(): void {
+  const pm = (customerName: string, personNames: string[]) =>
+    signNamesCustomer({ customerName, listType: "PM", personNames, placeNames: [], signText: null }).matches;
+
+  // 1 · 🔴 THE HOLD THAT STARTED IT, as the night read the frame: one clear plate, three partial ones.
+  const shafi = judgeSignboards({
+    croppedFraction: 0.18,
+    customerName: "ابراهيم عبدالشافى",
+    listType: "PM",
+    note: null,
+    signPresent: true,
+    signs: [
+      {
+        box: null,
+        kind: "medical",
+        legibility: "clear",
+        personNames: ["إبراهيم عبد الشافى"],
+        placeNames: [],
+        text: "الأستاذ الدكتور\nإبراهيم عبد الشافى\nأستاذ واستشارى\nالأنف والأذن والحنجرة\nوجراحة الرأس والرقبه\nبكلية الطب",
+      },
+      { box: null, kind: "medical", legibility: "partial", personNames: ["إبراهيم الأعمر"], placeNames: [], text: null },
+      { box: null, kind: "medical", legibility: "partial", personNames: ["إبراهيم الأحمر"], placeNames: [], text: null },
+    ],
+  });
+  assert.equal(shafi.verdict, "match", "عبد الشافى on the plate is عبدالشافى on the list — one space is not another person");
+  assert.equal(signboardHoldsForReview(shafi), false);
+  assert.equal(pm("عبدالعزيز القاضي", ["عبد العزيز القاضي محمد"]), true, "and the other way round, list split, plate joined");
+  assert.equal(pm("اسامة عبد الله", ["أسامة عبدالله"]), true);
+  assert.equal(pm("محمد نور الدين", ["د. محمد نورالدين"]), true, "a tail joins the word before it");
+  assert.equal(pm("احمد ابو عبد الله", ["احمد ابوعبدالله"]), true, "a head swallowed by an open compound keeps it open");
+
+  // 2 · 🔴 THE SAME SPACE MADE FALSE MATCHES. عبد and ابو counted as words of the name and spent the
+  //      allowance a three-word name gets, so the head and the first name were enough.
+  assert.equal(pm("د.هشام ابو الدهب", ["د/ هشام أحمد أبو الوفا"]), false, "ابو الدهب is not ابو الوفا");
+  assert.equal(pm("عبد الله محمد", ["محمد عبد الرحمن"]), false, "عبد الله is not عبد الرحمن");
+  assert.equal(pm("عبد الله محمد", ["عبد الله حسن"]), false, "a compound first name is still only a first name");
+
+  // 3 · 🔴 A READER THAT DROPS THE HEAD HAS STILL READ THE NAME. Joining strictly turned the first of
+  //      these from a match into a FLAG, filed by the other doctors' plates in the same frame.
+  assert.equal(pm("عبد الله عفيفي", ["الله عفيفي"]), true, "the reader dropped عبد");
+  assert.equal(pm("النعماني ابو نار", ["النعماني نار"]), true, "the reader dropped ابو");
+  assert.equal(pm("اسامه العيلة", ["اسامة ابراهيم ابو العيلة"]), true, "the list dropped ابو");
+  assert.equal(pm("محمد عبد الله", ["محمد جاد الله"]), false, "but only ALONE: the الله inside جاد الله is not عبد الله");
+
+  // 4 · The title. The shared fold already strips د, دكتور and الدكتور; الأستاذ is the one it keeps,
+  //     and on a list row it would spend the allowance and match any professor with the first name.
+  assert.equal(pm("الأستاذ الدكتور محمد علي", ["الأستاذ الدكتور محمد حسن"]), false, "الأستاذ is not a word of the name");
+  assert.equal(pm("أ.د. محمد علي", ["الأستاذ الدكتور محمد علي"]), true);
+  assert.equal(pm("محمد علي", ["الاستاذة الدكتورة محمد علي"]), true);
+
+  // 5 · A facility name is untouched: its quorum is the stemmed distinctive words, as before.
+  assert.equal(
+    signNamesCustomer({ customerName: "مستشفى ابو كبير المركزي", listType: "AM", personNames: [], placeNames: ["مستشفى أبو كبير"], signText: null }).matches,
+    true,
+    "a three-word hospital name still survives losing one",
+  );
+}
+
+/**
  * How the two readers are asked, and what one place may cost the night.
  *
  * The door and the night are deliberately different callers of the same code: 8 s and the cheap
@@ -680,6 +747,7 @@ export function runPhoenixCrmSignboardCheckTests(): void {
   checkRecords();
   checkServerAndSweep();
   checkManySigns();
+  checkNameSpelling();
   checkTwoReaders();
   checkSweepRate();
   console.log("phoenix-crm signboard check: OK");

@@ -196,6 +196,96 @@ export function stampBandFraction(width: number, height: number): number {
 
 // ── The name ────────────────────────────────────────────────────────────────────────────────────
 
+// 🔴 ONE NAME, TWO SPELLINGS: THE SPACE INSIDE A COMPOUND, AND THE PROFESSOR'S TITLE. Filed on the
+// owner's integrity board at 03:37 Cairo on 11 Oct 2026, after two readings agreed: ابراهيم عبدالشافى
+// on the list, and a plate read CLEARLY as "الأستاذ الدكتور / إبراهيم عبد الشافى". One person, held as
+// another, because the fold keeps each script's spaces where they are — the list's one word
+// عبدالشافي was missing from a sign that wrote it as two, and a two-word name may miss nothing.
+//
+// The same space also made FALSE matches. عبد and ابو fold to three letters, so each counted as a
+// word of the name and spent the allowance a long name gets: د.هشام ابو الدهب was MATCHED on a plate
+// reading "د/ هشام أحمد أبو الوفا" because هشام and ابو were both there — a different family. So a
+// compound is ONE word on both sides — its head (عبد, ابو) takes the next word, its tail (الدين,
+// الله) joins the word before it — and the quorum counts it once, whichever way it was written.
+//
+// 🔴 BUT A READER THAT DROPS THE HEAD HAS STILL READ THE NAME, and joining alone threw that away. The
+// same replay held two such plates: "الله عفيفي" for عبد الله عفيفي, and "النعماني نار" for النعماني
+// ابو نار — joined strictly, the first turned from a match into a FLAG on the owner's board, filed by
+// the other doctors' plates in the same frame. So a compound's CORE (عبدالشافي → الشافي, ابونار →
+// نار, نورالدين → نور) also answers for it when it stands ALONE on the other side, in either
+// direction — and only alone: the الله inside جاد الله is not عبد الله.
+//
+// The title half is the shared fold's own list (د, دكتور, الدكتور, prof and the rest), plus the one
+// honorific every professor's plate starts with and that list does not carry: الأستاذ. On the sign it
+// is harmless — only the CUSTOMER's words are counted — but on a list row it would be a word of the
+// name, and "الأستاذ الدكتور محمد علي" would spend its allowance on علي and match any professor
+// called محمد. Measured the same day: 0 of 9,215 PM list rows carry it, so this changes nothing
+// today and guards the next import.
+//
+// 🔴 PERSON NAMES ONLY. A facility's quorum is `distinctiveWords`, stemmed, and none of the 389 stored
+// readings replayed on 12 Oct 2026 moved on the PLACE axis; joining there would also take the
+// allowance off "مستشفى ابو كبير المركزي", whose three words today may lose one.
+//
+// 🔴 These are WORD steps on top of `normalizeContactName`, never a third character fold, and they
+// stay here: the shared fold also keys `public.phoenix_crm_fold_name`, which the duplicate and
+// customer-name checks read, and joining compounds there would move every one of those keys.
+
+/** The two words that open an Arabic compound name, as the fold writes them — عبد الشافي, ابو الفتوح. */
+const COMPOUND_HEADS: ReadonlySet<string> = new Set(["عبد", "ابو"]);
+/** The two words that close one — نور الدين, جاد الله. Neither is a family name on its own. */
+const COMPOUND_TAILS: ReadonlySet<string> = new Set(["الدين", "الله"]);
+/** Honorifics `normalizeContactName` keeps, folded the way it folds them. */
+const PLATE_TITLES: ReadonlySet<string> = new Set([
+  "استاذ",
+  "الاستاذ",
+  "استاذه",
+  "الاستاذه",
+  "بروفيسور",
+  "البروفيسور",
+]);
+
+/** One word of a person's name. `core` is set only on a compound: the part that says WHICH one. */
+type NameWord = { word: string; core: string | null };
+
+/** What is left of a compound once its head and tail are taken off — never empty. */
+function compoundCore(parts: readonly string[]): string {
+  let rest = [...parts];
+  while (rest.length > 1 && COMPOUND_HEADS.has(rest[0])) rest = rest.slice(1);
+  while (rest.length > 1 && COMPOUND_TAILS.has(rest[rest.length - 1])) rest = rest.slice(0, -1);
+  return rest.join("");
+}
+
+/** A person's name as the signboard check counts it: folded, untitled, each compound one word. */
+function personNameWords(text: string): NameWord[] {
+  const groups: string[][] = [];
+  let open = false;
+  for (const word of normalizeContactName(text).split(" ")) {
+    if (word.length === 0 || PLATE_TITLES.has(word)) continue;
+    const last = groups[groups.length - 1];
+    if (last && (open || COMPOUND_TAILS.has(word))) {
+      // "ابو عبد الله" is one name: a head swallowed by an open compound keeps it open.
+      open = open && COMPOUND_HEADS.has(word);
+      last.push(word);
+      continue;
+    }
+    groups.push([word]);
+    open = COMPOUND_HEADS.has(word);
+  }
+  return groups.map((parts) => ({ word: parts.join(""), core: parts.length > 1 ? compoundCore(parts) : null }));
+}
+
+/** Is this word of the customer's name among the words read off one candidate? */
+function nameWordIsThere(wanted: NameWord, read: readonly NameWord[]): boolean {
+  return read.some(
+    (candidate) =>
+      candidate.word === wanted.word ||
+      // The reader dropped the head or the tail: "الله عفيفي" for عبد الله عفيفي.
+      (wanted.core !== null && candidate.core === null && candidate.word === wanted.core) ||
+      // The list dropped it: اسامه العيلة for a plate reading "اسامة ابراهيم ابو العيلة".
+      (wanted.core === null && candidate.core === wanted.word),
+  );
+}
+
 /**
  * Is the customer's name on this signboard?
  *
@@ -206,6 +296,8 @@ export function stampBandFraction(width: number, height: number): number {
  * `normalizeArabicPharmacyName` would call that a partial match on a coin toss. It also already has
  * a SQL twin, `public.phoenix_crm_fold_name`, which tests/phoenix-crm-customer-name-fold.test.ts
  * compares against it literally, so a THIRD fold is the precise drift that test exists to refuse.
+ * On a PERSON's name two WORD steps sit on top of it, never a character fold — the compound and the
+ * professor's title, `personNameWords` above — applied to both sides alike.
  *
  * `listingIsAccount` in google-place-rules.ts is the near miss: its stemWord and KIND_WORDS are
  * built for facility names and would stem a person's. Its QUORUM is sound, though, and is borrowed —
@@ -246,20 +338,19 @@ export function signNamesCustomer(input: {
   // stemming a person's name is what the header of this file warns against.
   const placeAxis = input.listType !== "PM";
   // `wanted` being non-empty already proves the name is there; `?? ""` is what says so to the compiler.
-  const wantedTokens = (placeAxis ? distinctiveWords(input.customerName ?? "") : wanted.split(" ")).filter(
-    (token) => token.length >= 3,
-  );
-  if (wantedTokens.length === 0) return { matches: null, score: null };
+  const wordsOf = (text: string): NameWord[] =>
+    placeAxis ? distinctiveWords(text).map((word) => ({ core: null, word })) : personNameWords(text);
+  const wantedWords = wordsOf(input.customerName ?? "").filter((name) => name.word.length >= 3);
+  if (wantedWords.length === 0) return { matches: null, score: null };
   // A name of three tokens or more survives losing one; two tokens must both be there.
-  const allowedMisses = wantedTokens.length >= 3 ? 1 : 0;
+  const allowedMisses = wantedWords.length >= 3 ? 1 : 0;
 
   let best: number | null = null;
   let matched = false;
   for (const candidate of haystacks) {
-    const folded = placeAxis ? distinctiveWords(candidate).join(" ") : normalizeContactName(candidate);
-    if (!folded) continue;
-    const have = new Set(folded.split(" ").filter(Boolean));
-    const missing = wantedTokens.filter((token) => !have.has(token)).length;
+    const read = wordsOf(candidate);
+    if (read.length === 0) continue;
+    const missing = wantedWords.filter((name) => !nameWordIsThere(name, read)).length;
     if (missing <= allowedMisses) matched = true;
     const score = jaccardSimilarity(nameTokens(candidate), nameTokens(input.customerName));
     best = best === null ? score : Math.max(best, score);
