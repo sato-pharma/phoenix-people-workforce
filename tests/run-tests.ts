@@ -736,6 +736,8 @@ import { runCoverageMappingHealthTests } from "./coverage-mapping-health.test.ts
 import { runOfficePivotTests } from "./office-pivot.test.ts";
 import { runOfficeAllocationTests } from "./office-allocation.test.ts";
 import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts";
+import { runPortalUnpublishedKeycardsTests } from "./portal-unpublished-keycards.test.ts";
+import { runPortalServingRosterTests } from "./portal-serving-roster.test.ts";
 import { runClosingOfficeDifferentiationTests } from "./closing-office-differentiation.test.ts";
 import { runOfficeColumnIsCnsOnlyTests } from "./office-column-is-cns-only.test.ts";
 import { runClosingTargetInkTests } from "./closing-target-ink.test.ts";
@@ -3924,6 +3926,14 @@ await runTest(
 await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
 await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRuleLockTests);
+await runTest(
+  "manager keycards WITHHOLD their figures when no closing is published (owner, 2026-08-13)",
+  runPortalUnpublishedKeycardsTests,
+);
+await runTest(
+  "a manager's team roster comes from the ORG TREE, never from published sales",
+  runPortalServingRosterTests,
+);
 await runTest('closing "of which Office" (Office units told apart from distributor sell-out)', runClosingOfficeDifferentiationTests);
 await runTest(
   'closing "of wh. Office" is CNS ONLY (owner, 2026-08-25: the column and the Office Allocation '

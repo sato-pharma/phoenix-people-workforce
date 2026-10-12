@@ -45,6 +45,7 @@ import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service"
 import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 import { loadRepRankStanding, type RepRankStanding } from "@/lib/employee-portal/rep-rank";
+import { resolveServingRoster } from "@/lib/employee-portal/serving-roster";
 import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { logError } from "@/lib/observability/log";
@@ -638,9 +639,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       return { ...emptyRoleExtras, mmOverview: { ...overview, upcoming, asOf: Date.now() } };
     }
     if (role === "District Manager") {
-      const [team, directoryRows] = await Promise.all([
+      // servingRoster is the ORG TREE's answer to "who is on my team today", resolved alongside the
+      // sales call and never from it. getDsmTeamPerformance is membership-by-sales-history, so it is
+      // gated on a published closing — see serving-roster.ts for the day that blanked a whole
+      // district's head count and CRM board.
+      const [team, directoryRows, servingRoster] = await Promise.all([
         getDsmTeamPerformance(access, {}),
         getEmployeeDirectoryRows().catch(() => []),
+        resolveServingRoster({ viewerHrId: hrId, label: "your district" }),
       ]);
       if (!team) return emptyRoleExtras;
 
@@ -654,7 +660,9 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       // "dsm-direct" mode), and the board is uncapped so nobody on a team this size drops off the
       // ranking.
       const crmInput = {
-        reps: people.crmReps,
+        // The org tree's roster, falling back to the sales roster only when no seat could be
+        // resolved. "Who started work today" must never go quiet because a closing is unpublished.
+        reps: servingRoster?.reps ?? people.crmReps,
         dsms: [],
         limit: Number.POSITIVE_INFINITY,
       };
@@ -670,7 +678,8 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         ...emptyRoleExtras,
         dsmTeam: {
           achievementPercent: team.teamAchievementPercent,
-          memberCount: people.memberCount,
+          // The head count is a fact about her team, not about a closing.
+          memberCount: servingRoster?.reps.length ?? people.memberCount,
           totalSales: team.teamTotalSales,
           totalTarget: team.teamTotalTarget,
           windowLabel: salesWindowLabel(team.periods),
@@ -682,10 +691,13 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       };
     }
     if (role === "National Sales Manager") {
-      const [national, repTeam, directoryRows] = await Promise.all([
+      // See the District Manager branch: servingRoster answers "who is in my line today" from the
+      // org tree, so the daily board and the head count never ride on a published closing.
+      const [national, repTeam, directoryRows, servingRoster] = await Promise.all([
         getNsmDsmPerformance(access, {}),
         getDsmTeamPerformance(access, {}),
         getEmployeeDirectoryRows().catch(() => []),
+        resolveServingRoster({ viewerHrId: hrId, label: "your line" }),
       ]);
       if (!national) return emptyRoleExtras;
 
@@ -727,16 +739,22 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           managerName: m.managerName ? display(m.managerHrId, m.managerName) : m.managerName,
         }));
 
-      // CRM first-visit compliance over the full line roster (all reps + DSMs), not just the top 10.
+      // CRM first-visit compliance over the full line roster (all reps + DSMs), not just the top 10,
+      // and off the org tree rather than the sales rows — the sales fallback stays for a seat the
+      // tree cannot resolve.
       const crmInput = {
-        reps: activeRosterOnly(
-          repMembers.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
-          directoryRows,
-        ),
-        dsms: activeRosterOnly(
-          dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
-          directoryRows,
-        ),
+        reps:
+          servingRoster?.reps ??
+          activeRosterOnly(
+            repMembers.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+            directoryRows,
+          ),
+        dsms:
+          servingRoster?.dsms ??
+          activeRosterOnly(
+            dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+            directoryRows,
+          ),
       };
       const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
         logPortalFailure(
@@ -750,7 +768,8 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         ...emptyRoleExtras,
         nsmNational: {
           achievementPercent: national.lineAchievementPercent,
-          dsmCount: dsmRoster.active.length,
+          // A count of his districts, not of the districts that booked published sales.
+          dsmCount: servingRoster?.dsms.length ?? dsmRoster.active.length,
           totalSales: national.lineTotalSales,
           totalTarget: national.lineTotalTarget,
           windowLabel: salesWindowLabel(national.periods),
@@ -765,9 +784,11 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       };
     }
     if (role === "Regional Manager") {
-      const [regional, directoryRows] = await Promise.all([
+      // See the District Manager branch: the org tree, not the sales rows, says who is in the region.
+      const [regional, directoryRows, servingRoster] = await Promise.all([
         getRmRegionalPerformance(access, {}),
         getEmployeeDirectoryRows().catch(() => []),
+        resolveServingRoster({ viewerHrId: hrId, label: "your region" }),
       ]);
       if (!regional) return emptyRoleExtras;
 
@@ -807,14 +828,18 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       // not just the top 10 shown in the leaderboard. getNsmCrmCompliance is roster-driven, so
       // passing the region-scoped roster reuses it as-is without widening access.
       const crmInput = {
-        reps: activeRosterOnly(
-          regional.topReps.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
-          directoryRows,
-        ),
-        dsms: activeRosterOnly(
-          dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
-          directoryRows,
-        ),
+        reps:
+          servingRoster?.reps ??
+          activeRosterOnly(
+            regional.topReps.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+            directoryRows,
+          ),
+        dsms:
+          servingRoster?.dsms ??
+          activeRosterOnly(
+            dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+            directoryRows,
+          ),
       };
       const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
         logPortalFailure(
@@ -828,7 +853,8 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         ...emptyRoleExtras,
         rmRegional: {
           achievementPercent: regional.regionAchievementPercent,
-          dsmCount: dsmRoster.active.length,
+          // A count of his districts, not of the districts that booked published sales.
+          dsmCount: servingRoster?.dsms.length ?? dsmRoster.active.length,
           totalSales: regional.regionTotalSales,
           totalTarget: regional.regionTotalTarget,
           unattributedSales: regional.unattributedSales,

@@ -100,6 +100,15 @@ export function CrmFirstVisitBoard({
   const checkedAt = crm?.lastSyncRunAt ?? crm?.lastSyncAt ?? null;
   const syncLabel = checkedAt ? `Checked ${cairoTime(checkedAt)}` : "awaiting sync";
 
+  // A ROSTER OF NOBODY IS NOT A CLEAN BOARD, and it used to render as one. With no reps and no DSMs
+  // the counts read "0/0", the early-bird list read "No visits submitted yet today", and — because
+  // nobody can be missing from an empty list — the alarm block below printed its GREEN all-clear,
+  // "Every rep on your team has submitted their first visit." All three sat on one screen on
+  // 2026-10-12, when the rosters were still derived from published sales (serving-roster.ts).
+  // The roster is org-tree-derived now, so this state should be unreachable for an occupied seat —
+  // which is exactly why it must say what it is rather than imitate a compliant day.
+  const rosterSize = (crm?.reps.total ?? 0) + (crm?.dsms.total ?? 0);
+
   return (
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead
@@ -121,6 +130,14 @@ export function CrmFirstVisitBoard({
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
           <p className="text-sm text-slate-500">
             CRM data is temporarily unavailable — this is a fetch issue, not a compliance gap. Try again shortly.
+          </p>
+        </div>
+      ) : rosterSize === 0 ? (
+        <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+          <p className="text-sm text-slate-500">
+            Nobody is attached to your team right now, so there is nothing to check here. This is a
+            roster problem rather than a compliance result — no rep has been marked as missing.
           </p>
         </div>
       ) : !crm || (!crm.synced && !crm.polled) ? (

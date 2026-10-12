@@ -42,6 +42,14 @@ import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import {
+  NO_PUBLISHED_CLOSING_NOTE,
+  NO_PUBLISHED_CLOSING_SUB,
+  achievementTone,
+  closingSalesSub,
+  hasPublishedWindow,
+  publishedFigure,
+} from "@/lib/employee-portal/published-window";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -56,16 +64,18 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
   const gapTo90 = Math.max(0, threshold90 - sales);
   const pctNum = pct ?? 0;
 
-  const achAccent =
-    pctNum >= 100 ? "bg-emerald-500" : pctNum >= 90 ? "bg-amber-400" : pctNum >= 70 ? "bg-orange-500" : "bg-rose-500";
-  const achValueClass =
-    pctNum >= 100 ? "text-emerald-600" : pctNum >= 90 ? "text-amber-600" : pctNum >= 70 ? "text-orange-600" : "text-rose-600";
+  // 🔒 A null windowLabel means NOTHING is published in this region's scope, so every money tile is
+  // WITHHELD rather than printed as zero (owner, 2026-08-13). See lib/employee-portal/published-window.ts.
+  const windowLabel = rmRegional?.windowLabel ?? null;
+  const published = hasPublishedWindow(windowLabel);
+  const figureInk = published ? "text-slate-900" : "text-slate-500";
+  const { accent: achAccent, valueClass: achValueClass } = achievementTone(windowLabel, pctNum);
 
   const cards: Keycard[] = [
     {
       icon: TrendingUp,
       label: "Achievement",
-      value: pct !== null ? `${pct}%` : "—",
+      value: pct !== null ? publishedFigure(windowLabel, () => `${pct}%`) : "—",
       sub: "vs region target",
       accent: achAccent,
       valueClass: achValueClass,
@@ -73,27 +83,27 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
     {
       icon: Wallet,
       label: "Region Sales",
-      value: egpCompact(sales),
+      value: publishedFigure(windowLabel, () => egpCompact(sales)),
       // Names the closing month rather than "this period" — see SectionMeta.
-      sub: rmRegional?.windowLabel ? `${rmRegional.windowLabel} closing` : "published closing sales",
+      sub: closingSalesSub(windowLabel),
       accent: "bg-slate-900",
-      valueClass: "text-slate-900",
+      valueClass: figureInk,
     },
     {
       icon: Target,
       label: "Target",
-      value: egpCompact(target),
+      value: publishedFigure(windowLabel, () => egpCompact(target)),
       sub: "region target",
       accent: "bg-slate-900",
-      valueClass: "text-slate-900",
+      valueClass: figureInk,
     },
     {
       icon: eligible ? CheckCircle2 : Flag,
       label: "Gap to 90%",
-      value: target <= 0 ? "—" : eligible ? "Eligible" : egpCompact(gapTo90),
-      sub: eligible ? "incentive threshold cleared" : "sales to reach incentive",
-      accent: eligible ? "bg-emerald-500" : "bg-orange-500",
-      valueClass: eligible ? "text-emerald-600" : "text-orange-600",
+      value: publishedFigure(windowLabel, () => (target <= 0 ? "—" : eligible ? "Eligible" : egpCompact(gapTo90))),
+      sub: published ? (eligible ? "incentive threshold cleared" : "sales to reach incentive") : NO_PUBLISHED_CLOSING_SUB,
+      accent: published && eligible ? "bg-emerald-500" : published ? "bg-orange-500" : "bg-slate-900",
+      valueClass: published ? (eligible ? "text-emerald-600" : "text-orange-600") : "text-slate-500",
     },
   ];
 
@@ -113,6 +123,9 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
       {rmRegional ? (
         <>
           <KeycardGrid cards={cards} />
+          {!published && (
+            <p className="bg-white px-5 pb-4 text-phx-2xs text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
+          )}
           {/* Region Sales counts vacant-district reps + in-region direct orders no DSM row below carries */}
           <PerformanceReconciliationNote
             className="mx-4 mb-4"
