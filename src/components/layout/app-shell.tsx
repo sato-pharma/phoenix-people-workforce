@@ -78,7 +78,17 @@ export async function AppShell({
     // because a guessed target here is how a redirect loop starts.
     const requestedPath = requestHeaders.get(PATH_HEADER);
     if (requestedPath) {
-      redirect(toHrNamespacePath(requestedPath));
+      // 🔴 NEVER redirect to the address we are already on. This block's whole job is to ADD the
+      // prefix, so a path already inside the namespace needs nothing — and the one time the header
+      // above went missing on an `/hr` address (the dev server re-running proxy.ts on its own
+      // rewrite, 2026-10-12), redirecting anyway made every `/hr` page 307 to ITSELF until the
+      // browser gave up. The comment above says a guessed target is how a redirect loop starts;
+      // this line is what makes that true rather than merely hoped for. The worst case now is a
+      // page rendered under the wrong chrome, which is visible and recoverable.
+      const target = toHrNamespacePath(requestedPath);
+      if (target !== requestedPath) {
+        redirect(target);
+      }
     }
   }
 
@@ -86,10 +96,21 @@ export async function AppShell({
   // A page the owner left out of a seat that one of its keys would otherwise open
   // (src/lib/auth/seat-page-fences.ts — the Talent Acquisition seat today). The sidebar never
   // offers it; this is what stops a typed address, a bookmark or a notification link. Sent to the
-  // seat's own landing page, which is never itself fenced.
+  // seat's own landing page.
+  //
+  // 🔴 That landing page being outside the seat's own fence is what makes this terminate, and until
+  // 2026-10-12 nothing here checked it — the invariant lived in an assertion in
+  // tests/hr-resourcing-seat.test.ts. So fencing a seat's landing page, or opening a seat whose
+  // landing page sits behind a fence, would have sent every address to a fenced page that this very
+  // block fences again: an infinite redirect with no circuit breaker. Checked here now, in the code
+  // that depends on it, and a seat that somehow has nowhere to go renders the page rather than
+  // looping.
   const fencedPath = requestHeaders.get(PATH_HEADER);
   if (fencedPath && isPageFencedForRole(access.role, fencedPath)) {
-    redirect(resolveLandingPathForRole(access.role));
+    const landing = resolveLandingPathForRole(access.role);
+    if (!isPageFencedForRole(access.role, landing)) {
+      redirect(landing);
+    }
   }
 
   // What this viewer's navigation renders from: their own saved arrangement if they have one,
