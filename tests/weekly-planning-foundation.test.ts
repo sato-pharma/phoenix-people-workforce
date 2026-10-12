@@ -15,6 +15,7 @@ import {
   buildWeekKey,
   ceoApprovalDeadlineForWeek,
   deriveMonthKey,
+  getSundayOfWeek,
   getWeekRange,
   isPlanWorkingDay,
   managerApprovalDeadlineForWeek,
@@ -121,24 +122,30 @@ export async function runWeeklyPlanningFoundationTests(): Promise<void> {
 
   // 7. submissionDeadlineForWeek: Thursday of the prior week at 17:00 Africa/Cairo.
   {
-    // 2026-W24: Sunday of W24 = 2026-06-07. Prior Thursday = 2026-06-04 at 17:00 Cairo.
+    // 🔴 The Sunday of 2026-W24 is 2026-06-14, NOT 2026-06-07. buildWeekKey labels a week by
+    // the ISO week that ENDS on its Sunday, so buildWeekKey("2026-06-14") === "2026-W24" while
+    // buildWeekKey("2026-06-07") === "2026-W23". These three blocks asserted the week-early
+    // values this file used to pin before sundayFromWeekKey was made the true inverse.
+    assert.equal(buildWeekKey("2026-06-14"), "2026-W24", "W24's Sunday is 14 June, by the stored-key convention");
+    assert.equal(buildWeekKey("2026-06-07"), "2026-W23", "7 June is the Sunday of W23, not W24");
+    // Prior Thursday = 2026-06-11 at 17:00 Cairo.
     // June is Cairo EEST (UTC+3), so 17:00 Cairo = 14:00 UTC (DST-safe, not a flat UTC hour).
     const deadline = submissionDeadlineForWeek("2026-W24");
     assert.ok(deadline instanceof Date, "must return a Date");
     assert.equal(deadline.getUTCFullYear(), 2026, "year must be 2026");
     assert.equal(deadline.getUTCMonth(), 5, "month must be June (index 5)");
-    assert.equal(deadline.getUTCDate(), 4, "date must be 4 (Thursday before W24 Sunday)");
+    assert.equal(deadline.getUTCDate(), 11, "date must be 11 (Thursday before W24's Sunday, 14 June)");
     assert.equal(deadline.getUTCHours(), 14, "must be 17:00 Cairo (EEST, UTC+3) = 14:00 UTC");
     assert.equal(deadline.getUTCMinutes(), 0, "must be 00 minutes");
   }
 
   // 8. managerApprovalDeadlineForWeek: Saturday noon of the prior week, Africa/Cairo.
   {
-    // 2026-W24: Sunday = 2026-06-07. Saturday before = 2026-06-06 at 12:00 Cairo.
+    // 2026-W24: Sunday = 2026-06-14. Saturday before = 2026-06-13 at 12:00 Cairo.
     // June is Cairo EEST (UTC+3), so 12:00 Cairo = 09:00 UTC.
     const deadline = managerApprovalDeadlineForWeek("2026-W24");
     assert.ok(deadline instanceof Date, "must return a Date");
-    assert.equal(deadline.getUTCDate(), 6, "date must be 6 (Saturday before W24)");
+    assert.equal(deadline.getUTCDate(), 13, "date must be 13 (Saturday before W24)");
     assert.equal(deadline.getUTCMonth(), 5, "month must be June");
     assert.equal(deadline.getUTCHours(), 9, "must be 12:00 Cairo (EEST, UTC+3) = 09:00 UTC");
     assert.equal(deadline.getUTCMinutes(), 0, "must be 00 minutes");
@@ -146,14 +153,63 @@ export async function runWeeklyPlanningFoundationTests(): Promise<void> {
 
   // 9. ceoApprovalDeadlineForWeek: Sunday 10:00 AM of the plan's week, Africa/Cairo.
   {
-    // 2026-W24: Sunday = 2026-06-07 at 10:00 Cairo.
+    // 2026-W24: Sunday = 2026-06-14 at 10:00 Cairo.
     // June is Cairo EEST (UTC+3), so 10:00 Cairo = 07:00 UTC.
     const deadline = ceoApprovalDeadlineForWeek("2026-W24");
     assert.ok(deadline instanceof Date, "must return a Date");
-    assert.equal(deadline.getUTCDate(), 7, "date must be 7 (Sunday of W24)");
+    assert.equal(deadline.getUTCDate(), 14, "date must be 14 (Sunday of W24)");
     assert.equal(deadline.getUTCMonth(), 5, "month must be June");
     assert.equal(deadline.getUTCHours(), 7, "must be 10:00 Cairo (EEST, UTC+3) = 07:00 UTC");
     assert.equal(deadline.getUTCMinutes(), 0, "must be 00 minutes");
+  }
+
+  // 9b. 🔴 THE ROUND TRIP: sundayFromWeekKey must be the exact inverse of buildWeekKey.
+  //
+  // The private sundayFromWeekKey read a week key's Sunday as the day BEFORE that ISO week's
+  // Monday, while buildWeekKey labels a week by the ISO week that ENDS on its Sunday — so the
+  // two disagreed by exactly one week and every deadline helper fired seven days early
+  // (2026-W41's submission deadline landed on Thursday 1 October, ten days before the week it
+  // gates). The stored keys define the convention: production's employee_plan_headers has
+  // 2026-W41 running 11–15 October 2026 (read live 2026-10-12), which is buildWeekKey's answer,
+  // so sundayFromWeekKey was the side that had to move.
+  //
+  // sundayFromWeekKey is module-private, so it is read through ceoApprovalDeadlineForWeek, which
+  // returns that Sunday at 10:00 Cairo — 07:00 (EEST) or 08:00 (EET) UTC, always on the same UTC
+  // calendar day as the Sunday itself.
+  {
+    const sundayOfKey = (weekKey: string): string => {
+      const d = ceoApprovalDeadlineForWeek(weekKey);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    };
+    const iso = (d: Date): string =>
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+
+    // Production's own anchor: 2026-W41 is the week of Sunday 11 October 2026.
+    assert.equal(buildWeekKey("2026-10-11"), "2026-W41", "11 Oct 2026 (Sunday) files under 2026-W41");
+    assert.equal(buildWeekKey("2026-10-12"), "2026-W41", "12 Oct 2026 (Monday) files under the same week");
+    assert.equal(sundayOfKey("2026-W41"), "2026-10-11", "and 2026-W41 must resolve BACK to Sunday 11 October");
+
+    // A full year of dates, padded either side so both year boundaries and ISO week 53 are
+    // covered: 2026 starts on a Thursday, so it carries a W53 whose Sunday is 3 January 2027.
+    let checked = 0;
+    const seenWeek53 = new Set<string>();
+    for (let t = Date.UTC(2025, 11, 1); t <= Date.UTC(2027, 0, 31); t += 24 * 60 * 60 * 1000) {
+      const day = new Date(t);
+      const dateStr = iso(day);
+      const key = buildWeekKey(dateStr);
+      assert.equal(validateWeekKey(key), true, `buildWeekKey("${dateStr}") produced an invalid key: ${key}`);
+      assert.equal(
+        sundayOfKey(key),
+        iso(getSundayOfWeek(day)),
+        `sundayFromWeekKey(buildWeekKey("${dateStr}")) must be that date's Sunday, via key ${key}`,
+      );
+      // The Sunday a key resolves to must also be the Sunday the week range starts on.
+      assert.equal(sundayOfKey(key), getWeekRange(dateStr).weekStartDate, `week range start must match for ${dateStr}`);
+      if (key.endsWith("-W53")) seenWeek53.add(key);
+      checked += 1;
+    }
+    assert.equal(checked, 427, "must have walked every date from 2025-12-01 to 2027-01-31 inclusive");
+    assert.equal(seenWeek53.has("2026-W53"), true, "the walk must cross 2026-W53, the 53-week year's extra week");
   }
 
   // 10. assertWeeklyPlanTransition: valid, invalid, terminal, reason-required.
