@@ -526,8 +526,14 @@ export function PhoenixIdentityNotices({ className = "" }: { className?: string 
   // The remembered preference is read AFTER mount, never during render: the server has no
   // `localStorage`, so reading it in the initial state would hydrate a different tree than it
   // rendered. Collapsed is the server's answer and the honest default.
+  // It is also DEFERRED rather than called in the effect body: `setState` called synchronously
+  // inside an effect is a lint ERROR in this repo (cascading renders), which is the same deferral
+  // the command centre uses to restore its collapsed groups.
   useEffect(() => {
-    if (readOpenPreference()) setExpanded(true);
+    const id = setTimeout(() => {
+      if (readOpenPreference()) setExpanded(true);
+    }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const toggle = () => {
