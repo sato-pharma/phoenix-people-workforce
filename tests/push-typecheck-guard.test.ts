@@ -14,6 +14,13 @@
 //   - a recorded typecheck FAIL for the EXACT pushed sha still stops the push — and a FAIL recorded for
 //     ANY OTHER sha (a parent, a stale record) never does, so an older run cannot speak for this commit.
 //
+// 🔴 AND THE NEW-TEST-FILE REMINDER IS PINNED AS A NOTE, NEVER A DENY (owner, 2026-10-12: *"make
+// remote-check test mandatory before a push that adds a test file"*). A push whose commits add a
+// `tests/**.test.ts(x)` file with no recorded `test` PASS for that sha is told the rule, with the files
+// and the command — and is ALLOWED. The ruling it respects is also the owner's word: offered a hook that
+// REFUSES a push over the suite on 2026-10-04, he answered *"keep the pre-push test as a rule, no
+// guard"*. The deny arm stays typecheck-only, and the cases below fail if it ever grows.
+//
 // It drives the real hook as a subprocess, exactly as settings.json runs it, and writes the record with
 // the real `mergeVerdictRecord`, so the writer's format and the reader cannot drift apart.
 
@@ -221,11 +228,14 @@ export function runPushTypecheckGuardTests() {
     assert.match(passed.context, new RegExp(passedSha.slice(0, 9)), "a pass must name the commit it proved");
     assert.match(passed.context, /merge gate/, "it must say the PR's checks are still the gate");
 
-    // A FAIL in another stage is reported, not used to block — only the typecheck record blocks.
+    // A FAIL in another stage is reported, not used to block — only the typecheck record blocks. A push
+    // that adds no test file hears nothing about the suite beyond that line (the reminder has its own
+    // fixture below), because the rule the owner made mandatory is about a push that ADDS one.
     const testFailSha = fx.commit("src/lib/example/rules.ts");
     fx.record(testFailSha, { typecheck: "PASS", test: "FAIL" });
     const testFail = expect(fx, "git push origin feat/x", "allow");
     assert.match(testFail.context, /FAIL test/, `a recorded test FAIL must be reported.\n${testFail.context}`);
+    assert.doesNotMatch(testFail.context, /THE RULE/, `no new test file, so no reminder.\n${testFail.context}`);
 
     // ── A push chained after a HEAD-moving command sends a commit the hook cannot see: allowed ───────
     const chainSha = fx.commit("src/lib/example/rules.ts");
@@ -260,6 +270,88 @@ export function runPushTypecheckGuardTests() {
     // ── Nothing new to send: origin already holds this commit ────────────────────────────────────────
     git(fx.work, "push", "-q", "origin", "feat/x");
     expect(fx, "git push origin feat/x", "allow");
+  } finally {
+    rmSync(fx.root, { recursive: true, force: true });
+  }
+
+  runNewTestFileReminderTests();
+}
+
+/**
+ * The 2026-10-12 rule, in its own fixture because an unpushed branch's whole history is new to the
+ * remote — so one added test file would otherwise ride along in every later case.
+ */
+function runNewTestFileReminderTests() {
+  const fx = makeFixture();
+  try {
+    // ── A push that adds no test file says nothing about the suite ───────────────────────────────────
+    fx.commit("src/lib/example/rules.ts");
+    const plain = expect(fx, "git push -u origin feat/x", "allow");
+    assert.equal(plain.context, "", `a push adding no test file must stay silent.\n${plain.context}`);
+
+    // ── A push that ADDS one is told the rule — and is ALLOWED, because a guard over the suite is
+    //    the one thing the owner ruled out (2026-10-04, "keep the pre-push test as a rule, no guard") ─
+    const addedSha = fx.commit("tests/door-caps.test.ts");
+    const reminded = expect(fx, "git push -u origin feat/x", "allow");
+    assert.match(reminded.context, /THE RULE \(owner, 2026-10-12\)/, `the rule must be said.\n${reminded.context}`);
+    assert.match(reminded.context, /remote-check\.mjs test/, "it must name the command to run");
+    assert.match(reminded.context, /run_in_background/, "it must say to run it in the background — C15 refuses a foreground run");
+    assert.match(reminded.context, /tests\/door-caps\.test\.ts/, "it must name the test file that was added");
+    assert.match(reminded.context, /adds 1 test file\b/, `one file reads in the singular.\n${reminded.context}`);
+    assert.match(reminded.context, /no `test` verdict is recorded/, "it must say why it is reminding");
+    assert.match(reminded.context, new RegExp(addedSha.slice(0, 9)), "it must name the sha the verdict must be about");
+    // Every spelling of that push reminds, and NONE of them refuses.
+    for (const command of ["git push", "git push origin HEAD", "git push --force-with-lease origin feat/x"]) {
+      const spelled = expect(fx, command, "allow");
+      assert.match(spelled.context, /THE RULE/, `the reminder must not depend on the spelling: ${command}`);
+    }
+
+    // ── A recorded `test` PASS for this exact sha IS the rule satisfied: no reminder ─────────────────
+    fx.record(addedSha, { test: "PASS" });
+    const satisfied = expect(fx, "git push -u origin feat/x", "allow");
+    assert.match(satisfied.context, /PASS test/, `the reused verdict must still be reported.\n${satisfied.context}`);
+    assert.doesNotMatch(satisfied.context, /THE RULE/, `a test PASS must silence the reminder.\n${satisfied.context}`);
+
+    // A PASS recorded for the PARENT never satisfies this commit — the record is per sha, always.
+    const secondSha = fx.commit("tests/fold-name.test.ts");
+    const stale = expect(fx, "git push -u origin feat/x", "allow");
+    assert.match(stale.context, /THE RULE/, `a parent's PASS cannot speak for this commit.\n${stale.context}`);
+    assert.match(stale.context, /adds 2 test files/, `both unpushed added files count.\n${stale.context}`);
+
+    // ── A recorded `test` FAIL is named as what it is, and still does not refuse ─────────────────────
+    fx.record(secondSha, { test: "FAIL" });
+    const failed = expect(fx, "git push -u origin feat/x", "allow");
+    assert.match(failed.context, /the record holds `test` FAIL/, `a FAIL must be named.\n${failed.context}`);
+    assert.match(failed.context, /THE RULE/, "a FAIL is the rule unmet, so the reminder stands");
+
+    // ── A recorded typecheck FAIL still wins: the deny arm is unchanged by the reminder ──────────────
+    fx.record(secondSha, { typecheck: "FAIL", test: "FAIL" }, TSC_LINES);
+    const denied = expect(fx, "git push -u origin feat/x", "deny");
+    assert.match(denied.reason, /PUSH REFUSED/, "a recorded typecheck FAIL is still a deny");
+    assert.match(denied.reason, /TS2322/, "and still carries tsc's lines");
+
+    // ── Once the branch is pushed, only what is NEW to the remote counts ─────────────────────────────
+    git(fx.work, "push", "-q", "-u", "origin", "feat/x");
+    fx.commit("tests/fold-name.test.ts"); // a MODIFIED test file is not an added one
+    const modified = expect(fx, "git push origin feat/x", "allow");
+    assert.equal(modified.context, "", `editing an existing test file is not adding one.\n${modified.context}`);
+    fx.commit("src/lib/example/rules.ts");
+    const after = expect(fx, "git push origin feat/x", "allow");
+    assert.equal(after.context, "", `and neither is a push with no test file at all.\n${after.context}`);
+    // A new test file after the branch is known to the remote still reminds.
+    fx.commit("tests/venue-picker.test.tsx"); // .tsx counts too
+    const tsx = expect(fx, "git push origin feat/x", "allow");
+    assert.match(tsx.context, /tests\/venue-picker\.test\.tsx/, `a .tsx test file counts.\n${tsx.context}`);
+    assert.match(tsx.context, /adds 1 test file\b/, `only what is new to the remote counts.\n${tsx.context}`);
+
+    // ── A file that merely LOOKS like a test is not one ──────────────────────────────────────────────
+    git(fx.work, "push", "-q", "origin", "feat/x");
+    for (const near of ["tests/support/comment-strip.ts", "src/lib/example/rules.test.helper.ts", "docs/tests.md"]) {
+      fx.commit(near);
+      const quiet = expect(fx, "git push origin feat/x", "allow");
+      assert.equal(quiet.context, "", `${near} is not a test file of this repo.\n${quiet.context}`);
+      git(fx.work, "push", "-q", "origin", "feat/x");
+    }
   } finally {
     rmSync(fx.root, { recursive: true, force: true });
   }

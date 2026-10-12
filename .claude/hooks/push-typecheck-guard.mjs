@@ -20,6 +20,15 @@
 //   - A recorded PASS → a one-line note. Nothing recorded → allow, silently and at once.
 //   - It never reads a record for any other sha, so an older run's verdict can never speak for this one.
 //
+// 🔴 THE NEW-TEST-FILE REMINDER (owner, 2026-10-12: *"make remote-check test mandatory before a push that
+// adds a test file"*) IS A NOTE, NEVER A DENY. A push whose commits ADD a `tests/**.test.ts(x)` file and
+// have no recorded `test` PASS for that exact sha gets the rule said back to it, naming the files and the
+// command. It still allows: on 2026-10-04 the owner was offered a hook that REFUSES a push over the suite
+// and answered *"keep the pre-push test as a rule, no guard"* — that ruling stands until he lifts it in
+// his own words, so this hook may remind and may not refuse. Measured 12 Oct 2026: 4 of 25 red PR runs
+// that day were the comment-strip ratchet firing on a newly added test file, which the suite catches in
+// ~125s on the box. Account: `docs/testing.md`, "Before every push".
+//
 // WHAT IT DECIDES ABOUT (unchanged): a `git push` that sends the CHECKED-OUT commit. A push of another
 // ref, a delete, a tag, a dry run, `--all`/`--mirror`, a push to a non-branch ref or one that sends
 // nothing new is none of its business. A push chained after a commit, merge, rebase, reset or checkout
@@ -36,6 +45,12 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 
 /** remote-check-plan.mjs `VERDICT_DIR_NAME` — tests/push-typecheck-guard.test.ts pins the two together. */
 const VERDICT_DIR_NAME = 'phx-remote-check';
+
+/** A test file of this repo. A NEW one is what makes `remote-check test` mandatory before the push. */
+const TEST_FILE_RE = /^tests\/.+\.test\.tsx?$/;
+
+/** How many added test files the note names before it stops listing them. */
+const NAMED_TEST_FILES = 5;
 
 const SHA_RE = /^[0-9a-f]{40}$/;
 
@@ -265,6 +280,62 @@ function recordFor(commonDir, sha) {
   }
 }
 
+/**
+ * The commit this push would land on, read so the diff covers only what is NEW to the remote. A branch
+ * the remote already knows → its tracking ref; a first push → the merge base with the remote's default
+ * branch. `null` when git can answer neither, which says nothing and so reminds of nothing.
+ */
+function pushBase(root, remote, branch, sha) {
+  const resolveRef = (ref) => {
+    try {
+      return gitOut(root, ['rev-parse', '--verify', '-q', `${ref}^{commit}`]);
+    } catch {
+      return null;
+    }
+  };
+  const tracking = resolveRef(`refs/remotes/${remote}/${branch}`);
+  const defaults = [`refs/remotes/${remote}/HEAD`, `refs/remotes/${remote}/main`, `refs/remotes/${remote}/master`];
+  const candidate = tracking ?? defaults.map(resolveRef).find(Boolean) ?? null;
+  if (!candidate) return null;
+  // A rebase or a force-push moves the tracking ref off this history, so ask for the shared ancestor.
+  try {
+    return gitOut(root, ['merge-base', candidate, sha]);
+  } catch {
+    return null;
+  }
+}
+
+/** The `tests/**.test.ts(x)` files this push ADDS, sorted. Empty when it adds none, or git cannot say. */
+function addedTestFiles(root, remote, branch, sha) {
+  const base = pushBase(root, remote, branch, sha);
+  if (!base || base === sha) return [];
+  try {
+    return gitOut(root, ['diff', '--name-only', '--diff-filter=A', base, sha])
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((path) => TEST_FILE_RE.test(path))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** The rule said back, naming the files and the command — informative, never a refusal. */
+function newTestFileReminder(added, short, recorded) {
+  const listed = added.slice(0, NAMED_TEST_FILES).map((path) => `  ${path}`);
+  if (added.length > NAMED_TEST_FILES) listed.push(`  …and ${added.length - NAMED_TEST_FILES} more`);
+  return (
+    `THE RULE (owner, 2026-10-12): a push that ADDS a test file runs \`node scripts/remote-check.mjs test\` ` +
+    `FIRST — once, with \`run_in_background: true\`, acting on the notification (bash-guard C15 refuses a ` +
+    `foreground run) — and pushes on a final \`remote-check: PASS — ${short}\`.\n` +
+    `This push adds ${added.length} test file${added.length === 1 ? '' : 's'} and ${recorded} for ${short}:\n` +
+    `${listed.join('\n')}\n` +
+    `The suite is ~125s on the box and is the only thing that sees a new test before \`validate\` does — ` +
+    `on 12 Oct 2026 four red PR runs were one repo-wide ratchet firing on a newly added test file. ` +
+    `If the box answers NO VERDICT (exit 2-9), say so and push: the PR's \`validate\` is still the gate.`
+  );
+}
+
 function main() {
   let input;
   try {
@@ -341,9 +412,8 @@ function main() {
   }
 
   const record = recordFor(commonDir, sha);
-  if (!record) return allow();
   const short = sha.slice(0, 9);
-  const typecheck = record.stages.typecheck;
+  const typecheck = record?.stages?.typecheck;
 
   if (typecheck?.verdict === 'FAIL') {
     const excerpt = typeof typecheck.excerpt === 'string' && typecheck.excerpt.trim() ? `\n\n${stripAnsi(typecheck.excerpt)}` : '';
@@ -357,18 +427,31 @@ function main() {
     );
   }
 
-  const passed = Object.entries(record.stages)
-    .filter(([, v]) => v && v.verdict === 'PASS')
-    .map(([name]) => name);
-  const failed = Object.entries(record.stages)
-    .filter(([, v]) => v && v.verdict === 'FAIL')
-    .map(([name]) => name);
-  if (passed.length === 0 && failed.length === 0) return allow();
-  return note(
-    `remote-check already has a verdict for ${short}: ` +
-      [passed.length ? `PASS ${passed.join(', ')}` : '', failed.length ? `FAIL ${failed.join(', ')}` : ''].filter(Boolean).join('; ') +
-      ` — reused, nothing was re-run. The PR's \`validate\` + \`checks\` remain the merge gate.`,
-  );
+  const stages = Object.entries(record?.stages ?? {});
+  const passed = stages.filter(([, v]) => v && v.verdict === 'PASS').map(([name]) => name);
+  const failed = stages.filter(([, v]) => v && v.verdict === 'FAIL').map(([name]) => name);
+
+  const said = [];
+  if (passed.length || failed.length) {
+    said.push(
+      `remote-check already has a verdict for ${short}: ` +
+        [passed.length ? `PASS ${passed.join(', ')}` : '', failed.length ? `FAIL ${failed.join(', ')}` : ''].filter(Boolean).join('; ') +
+        ` — reused, nothing was re-run. The PR's \`validate\` + \`checks\` remain the merge gate.`,
+    );
+  }
+
+  // The suite verdict this push needs, and the reminder when it is not there. A recorded test PASS is
+  // the rule satisfied, so it says nothing further; a recorded FAIL is named as what it is.
+  const testVerdict = record?.stages?.test?.verdict;
+  if (testVerdict !== 'PASS') {
+    const added = addedTestFiles(root, read.remote, pushed.branch, sha);
+    if (added.length) {
+      said.push(newTestFileReminder(added, short, testVerdict === 'FAIL' ? 'the record holds `test` FAIL' : 'no `test` verdict is recorded'));
+    }
+  }
+
+  if (!said.length) return allow();
+  return note(said.join('\n\n'));
 }
 
 try {

@@ -54,13 +54,16 @@ Nothing heavy touches the 16 GB laptop, no Actions minutes are billed, and no PR
 the **commit**, so it prints any uncommitted files it is ignoring. Pinned by
 `tests/remote-check.test.ts`.
 
-🔴 **THE PR'S OWN CI IS THE VERDICT — `remote-check` IS OPTIONAL, NEVER A STEP BEFORE EVERY PUSH**
-(owner, 2026-10-08, performance recovery; it retires the 2026-10-04 standing step, which put a
-single-lane 7-9 minute box pass in front of a ~3 minute hosted CI). Commit, push and open the PR;
-its `validate` + `checks` decide. When an earlier answer is worth it, run `remote-check` **once with
+🔴 **THE PR'S OWN CI IS THE VERDICT — `remote-check` IS OPTIONAL, WITH ONE EXCEPTION: A PUSH THAT
+*ADDS* A TEST FILE RUNS `remote-check test` FIRST** (owner, 2026-10-12, after 26 of 59 PR runs went
+red in one day and 13 of them were repo-wide contract gates — 4 the comment-strip ratchet on a newly
+added test file; it narrows his 2026-10-08 recovery, which had retired the 2026-10-04 before-every-push
+step, a single-lane 7-9 minute box pass in front of a ~3 minute hosted CI). Otherwise commit, push and
+open the PR; its `validate` + `checks` decide. Either way run `remote-check` **once with
 `run_in_background: true` and act on the notification** — exit 0 PASS, 1 FAIL, 2-9 NO VERDICT, and
-only `remote-check: PASS|FAIL — <sha9>` for the sha you pushed counts. Never a poll loop (bash-guard
-**C14**), never a foreground run (**C15**), never a sleep on a task output file (**C16**). The push guard only reads a recorded verdict for the exact sha and starts nothing. Rule and
+only `remote-check: PASS|FAIL — <sha9>` for the sha you pushed counts; a NO VERDICT is never a pass —
+say so and push. Never a poll loop (bash-guard
+**C14**), never a foreground run (**C15**), never a sleep on a task output file (**C16**). The push guard only reads a recorded verdict for the exact sha, starts nothing, and says the new-test-file rule back without ever refusing over the suite (owner, 2026-10-04: "no guard"). Rule and
 account: `.claude/rules/engineering.md` (Validation), `docs/testing.md`.
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
