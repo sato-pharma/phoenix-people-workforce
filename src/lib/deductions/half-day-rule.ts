@@ -2,9 +2,17 @@
 //
 // THE QUESTION (owner, 2026-10-08): which district managers and medical reps worked only the
 // morning, or only the afternoon, of a full working day — and had nothing on file for the other
-// half: no approved vacation, no approved plan item, no pending request, no calendar review
-// request. Each such half day is its own deduction row at 0.5 day, and nothing is charged until
-// he sets it "Approved for Payroll" himself.
+// half: no approved vacation, no pending request, no calendar review request. Each such half day is
+// its own deduction row at 0.5 day, and nothing is charged until he sets it "Approved for Payroll"
+// himself.
+//
+// 🔴 AN APPROVED WEEKLY PLAN IS NOT ON THAT LIST, AND NEVER GOES BACK ON IT (owner, 2026-10-12:
+// *"NEVER COUNT WEEKLY PLAN AS COVERAGE WHAT IF HE PLANNED BUT DIDNT GO WORK?"*). A planned
+// Meeting, Training or Travel half cleared a half day between 2026-10-08 and that ruling; it no
+// longer does, whatever the activity title. The ONE connector that may read a plan at all is
+// `no_weekly_plan` — a head office employee who filed no weekly plan by the Monday of that week
+// (owner, same day) — and it charges the missing plan rather than excusing a day with one.
+// Account: docs/private-calendar-plan-is-never-coverage.md.
 //
 // THE DAY. The field week is Saturday to Wednesday, all full days. THURSDAY IS A MORNING-ONLY DAY
 // for the field force (owner rule 2026-08-02, restated 2026-10-08), so it has no afternoon to
@@ -113,8 +121,9 @@ export type HalfDayCover = {
   vacationPm?: boolean;
   /** An approved full-day vacation, an undecided/returned request, or an open review request. */
   leaveTheDayAlone?: boolean;
-  planAm?: boolean;
-  planPm?: boolean;
+  // 🔴 NO PLAN FIELD LIVES HERE. An approved weekly plan item used to fill `planAm`/`planPm` and
+  // clear that half; the owner ended that on 2026-10-12 (the file header carries his words), so the
+  // cover a half day is judged against holds captured records only.
 };
 
 export type HalfDayVerdict =
@@ -125,7 +134,7 @@ export type HalfDayVerdict =
       kind: "half_day";
       missing: HalfDaySlot;
       /** What covers the half that WAS accounted for. */
-      coveredBy: Array<"crm" | "approved_vacation" | "approved_plan">;
+      coveredBy: Array<"crm" | "approved_vacation">;
     };
 
 const CRM_CAMPAIGN_VISIT_TYPE = -8;
@@ -453,8 +462,8 @@ export function judgeHalfDay(evidence: HalfDayEvidence | undefined, cover: HalfD
   if (cover.leaveTheDayAlone) return { kind: "left_alone", why: "request_on_file" };
   if (crm.unattributedRow) return { kind: "left_alone", why: "unattributed_row" };
 
-  const amCovered = crm.am || Boolean(cover.vacationAm) || Boolean(cover.planAm);
-  const pmCovered = crm.pm || Boolean(cover.vacationPm) || Boolean(cover.planPm);
+  const amCovered = crm.am || Boolean(cover.vacationAm);
+  const pmCovered = crm.pm || Boolean(cover.vacationPm);
   // Both halves accounted for is a full day; neither is a whole-day absence, which the CRM
   // no-activity and district-manager connectors own. Only exactly one is a half day.
   if (amCovered === pmCovered) return { kind: "not_a_half_day" };
@@ -464,31 +473,21 @@ export function judgeHalfDay(evidence: HalfDayEvidence | undefined, cover: HalfD
   if (missing === "PM" && crm.eveningProof) return { kind: "cleared", missing, by: "evening_trace" };
 
   const half = missing === "AM" ? "pm" : "am";
-  const coveredBy: Array<"crm" | "approved_vacation" | "approved_plan"> = [];
+  const coveredBy: Array<"crm" | "approved_vacation"> = [];
   if (crm[half]) coveredBy.push("crm");
   if (half === "am" ? cover.vacationAm : cover.vacationPm) coveredBy.push("approved_vacation");
-  if (half === "am" ? cover.planAm : cover.planPm) coveredBy.push("approved_plan");
   return { kind: "half_day", missing, coveredBy };
-}
-
-/** The approved plan item's half(s): before 14:00 is the morning, from 14:00 (or running past it) the afternoon. */
-export function planItemHalves(item: { start_time: string | null; end_time: string | null }): { am: boolean; pm: boolean } {
-  const start = trimmed(item.start_time).slice(0, 5);
-  const end = trimmed(item.end_time).slice(0, 5);
-  if (!start) return { am: true, pm: true };
-  return { am: start < "14:00", pm: start >= "14:00" || !end || end > "14:00" };
 }
 
 /** The reason line a reviewer reads on the row. */
 export function halfDayReason(verdict: Extract<HalfDayVerdict, { kind: "half_day" }>): string {
   const worked = verdict.missing === "AM" ? "afternoon" : "morning";
   const missing = verdict.missing === "AM" ? "morning" : "afternoon";
+  // Only two things can account for the half that WAS covered now, so there is no third branch.
   const cover = verdict.coveredBy.includes("crm")
     ? `Worked the ${worked} only`
-    : verdict.coveredBy.includes("approved_vacation")
-      ? `${worked === "morning" ? "AM" : "PM"} off approved`
-      : `Approved plan covers the ${worked} only`;
-  return `${cover} — nothing recorded for the ${missing}: no visit, check-in, approved vacation, approved plan or request`;
+    : `${worked === "morning" ? "AM" : "PM"} off approved`;
+  return `${cover} — nothing recorded for the ${missing}: no visit, check-in, approved vacation or request`;
 }
 
 /**

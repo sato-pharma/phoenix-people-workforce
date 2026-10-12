@@ -81,7 +81,7 @@ const SOURCE_PROFILES: Record<string, SourceProfile> = {
   crm_half_day: {
     detectedBy: "Field CRM — a half day left unaccounted for",
     explanation:
-      "On a working day exactly one half (morning or afternoon) was accounted for, and nothing covers the other half: no visit, GPS check-in, approved vacation or approved plan item.",
+      "On a working day exactly one half (morning or afternoon) was accounted for, and nothing covers the other half: no visit, GPS check-in, approved vacation or request. An approved weekly plan is not coverage — owner, 2026-10-12.",
   },
   crm_vacation_signal: {
     detectedBy: "CRM vacation record against the leave balance",
@@ -206,8 +206,11 @@ const FACT_SPECS: Record<string, FactSpec[]> = {
     { key: "creditedAsDoubleVisitPartner", label: "Credited as a double-visit partner" },
     { key: "approvedVacation", label: "Approved vacation", whenEmpty: "None on record" },
     {
+      // Historic only — the half-day connector stopped writing this on 2026-10-12, when an approved
+      // weekly plan stopped covering a half. Kept so a dispute on a row raised before that still
+      // shows the fact it was decided on; `whenEmpty` never fires, because absent keys are skipped.
       key: "approvedPlan",
-      label: "Approved plan item",
+      label: "Approved plan item (no longer coverage)",
       whenEmpty: "None on record",
       format: (value) => {
         if (!value || typeof value !== "object") return null;

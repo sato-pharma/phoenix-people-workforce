@@ -5,7 +5,7 @@ import {
   APPROVED_PLAN_STATUSES,
   PLAN_ACTIVITY_TYPES_RECORDED_NOWHERE_ELSE,
   mapPlanRowToPrivateCalendarItem,
-  plannedActivityCoversTheDay,
+  plannedActivityIsRecordedNowhereElse,
 } from "../src/lib/private-calendar/plan-items.ts";
 import {
   derivePrivateCalendarExceptions,
@@ -28,19 +28,22 @@ import {
 // The four properties this pins, because each one wrong is a specific, costly defect:
 //   1. APPROVED ONLY. A draft, submitted, returned, rejected or cancelled plan is an intention
 //      nobody signed, and it must not take a single day off the exceptions board.
-//   2. THE PLAN COVERS THE DAY ONLY WHERE PHOENIX RECORDS IT NOWHERE ELSE. A planned Field or
-//      Double Visit day with no logged visit, a planned Office day with no punch, a planned Vacation
-//      with no approved leave request — each of those is a REAL gap, and this engine's output
-//      becomes payroll deduction candidates (getCompanyNoActivityDays → the Deductions module's No
-//      Records Activity connector). Measured on production for 1 Aug – 7 Oct 2026: excusing every
-//      planned type would have erased 364 genuine gaps, 318 of them planned double visits with
-//      nothing logged.
+//   2. 🔴 THE PLAN COVERS NO DAY AT ALL, WHATEVER THE ACTIVITY TITLE. Owner, 2026-10-12: *"NEVER
+//      COUNT WEEKLY PLAN AS COVERAGE WHAT IF HE PLANNED BUT DIDNT GO WORK?"* — and then *"Do not
+//      ever touch a weekly plan ... compare the plan versus the actual, any title."* This engine's
+//      output becomes payroll deduction candidates (getCompanyNoActivityDays → the Deductions
+//      module's No Records Activity connector), so a plan excusing a day took real gaps off that
+//      board: measured on production for 1 Aug – 7 Oct 2026, excusing every planned type would
+//      have erased 364 genuine gaps, and the seven "recorded nowhere else" titles erased their own
+//      share between 2026-10-07 and his ruling. The flag survives as a DISPLAY fact only, so the
+//      reader comparing plan against actual knows there is nothing else to look for.
 //   3. A PLAN NEVER SUPPRESSES AN ATTENDANCE PROBLEM. A Late or Short-day flag is about a punch that
 //      exists; only a CRM-verified double visit suppresses one. A plan that silenced those would hide
 //      a second class of real finding behind a document the employee wrote himself.
 //   4. BOTH ENGINES READ IT. The employee's own calendar and the company no-activity engine share
-//      derivePrivateCalendarExceptions precisely so that a day the employee sees as covered can never
-//      arrive in Deductions as a candidate.
+//      derivePrivateCalendarExceptions, so what the employee is shown and what Deductions
+//      adjudicates are the same day by construction — now including that a plan alone leaves the
+//      day flagged.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
@@ -147,9 +150,13 @@ export function runPrivateCalendarPlanSourceTests() {
   })();
 
   // ── 2 · Which planned activity stands on its own ────────────────────────────────────────────────
-  (function onlyAnActivityRecordedNowhereElseCoversTheDay() {
+  (function theFlagMarksWhatIsRecordedNowhereElseAndCoversNothing() {
     for (const type of ["Travel", "Admin", "Meeting", "Meeting with Team", "Training", "Event", "Other"]) {
-      assert.equal(plannedActivityCoversTheDay(type), true, `an approved ${type} day produces no other record, so the plan is its only evidence`);
+      assert.equal(
+        plannedActivityIsRecordedNowhereElse(type),
+        true,
+        `a planned ${type} day produces no other record, so the reader comparing plan against actual expects nothing beside it`,
+      );
     }
     // THE LOAD-BEARING HALF. Each of these has its own system of record, and the plan proves only
     // that the day was expected — which is the opposite of proving it happened.
@@ -162,15 +169,23 @@ export function runPrivateCalendarPlanSourceTests() {
       ["National Vacation", "the holiday calendar"],
     ] as const) {
       assert.equal(
-        plannedActivityCoversTheDay(type),
+        plannedActivityIsRecordedNowhereElse(type),
         false,
         `a planned ${type} day is proven by ${record}, never by the plan — excusing it would erase a real gap that becomes a deduction candidate`,
       );
     }
     // A type nobody has taught this rule about must not start excusing days on its own.
     for (const unknown of ["", "   ", "Something New", null, undefined]) {
-      assert.equal(plannedActivityCoversTheDay(unknown), false, "an unknown or blank activity type covers nothing");
+      assert.equal(plannedActivityIsRecordedNowhereElse(unknown), false, "an unknown or blank activity type says nothing");
     }
+    // 🔴 THE RULE ITSELF, at the source: the engine's covered-day test may not name the plan at all.
+    // Owner, 2026-10-12 — a planned day that was never worked is exactly what he asked about.
+    const engine = read("src/lib/private-calendar/logic.ts");
+    const isCoveredBlock = engine.slice(engine.indexOf("const isCovered ="), engine.indexOf("for (const item of attendance)"));
+    assert.ok(
+      !/plan/i.test(isCoveredBlock),
+      "no plan term may appear in the covered-day test — a weekly plan is never coverage (owner, 2026-10-12)",
+    );
     assert.ok(
       !(PLAN_ACTIVITY_TYPES_RECORDED_NOWHERE_ELSE as readonly string[]).some((type) => ["Field", "Double Visit", "Office"].includes(type)),
       "the covering list never grows to include a type with its own record",
@@ -178,29 +193,34 @@ export function runPrivateCalendarPlanSourceTests() {
   })();
 
   // ── 3 · The exception engine ────────────────────────────────────────────────────────────────────
-  (function anApprovedTravelDayStopsReadingNoActivity() {
+  (function anApprovedTravelDayStillReadsNoActivityAndSaysWhatWasPlanned() {
     // Weaam Mahmoud's actual 4 October 2026: hr_acknowledged weekly plan 2026-W40, Travel · Upper
     // Egypt 2, approved by her National Sales Manager — and nothing else on the calendar.
     const travel = planItem("2026-10-04", "Travel");
-    assert.equal(travel.plannedActivityCoversTheDay, true, "the mapper carries the coverage decision onto the item");
+    assert.equal(travel.plannedActivityIsRecordedNowhereElse, true, "the mapper carries the display fact onto the item");
     assert.equal(travel.source, "plan");
     assert.equal(travel.severity, "info", "an approved plan is news, never something to review");
-    // No Activity Recorded is gone, and a plain `info` note takes its place — so the day SAYS the plan
-    // is why it is not flagged, instead of going quietly blank and reading like a day nobody judged.
+    // 🔴 THE DAY STAYS FLAGGED, and the plan is reported BESIDE the finding rather than instead of
+    // it (owner, 2026-10-12). Between 2026-10-07 and that ruling this same day read only "Covered by
+    // the approved plan" and carried no finding at all.
     const travelDay = exceptionsFor([travel], "2026-10-04");
     assert.deepEqual(
       travelDay.map((exception) => exception.title),
-      ["Covered by the approved plan"],
-      "an approved Travel day no longer reads No Activity Recorded, and says what covers it instead",
+      ["No Activity Recorded", "Planned, but nothing recorded"],
+      "an approved Travel day with nothing recorded is still a No Activity day, with the plan named next to it",
     );
-    assert.equal(travelDay[0]?.severity, "info", "it is news, never a finding — every counter on the screen excludes info");
-    assert.equal(travelDay[0]?.code, "covered_by_approved_plan");
-    assert.deepEqual(travelDay[0]?.relatedItemIds, [travel.id], "the note points at the plan item that covers the day");
-    assert.match(travelDay[0]?.description ?? "", /records this day as Travel/, "the note names the planned activity");
+    const [finding, note] = travelDay;
+    assert.equal(finding?.severity, "danger", "the finding is the finding — a plan does not soften it");
+    assert.equal(finding?.code, "no_activity_recorded");
+    assert.equal(note?.severity, "info", "the comparison is news, never a finding — every counter on the screen excludes info");
+    assert.equal(note?.code, "planned_but_nothing_recorded");
+    assert.deepEqual(note?.relatedItemIds, [travel.id], "the note points at the plan item it is comparing against");
+    assert.match(note?.description ?? "", /plan says Travel/, "the note names what was planned");
+    assert.match(note?.description ?? "", /not what happened/, "and says plainly that a plan is not a record");
 
     // And the day the same plan says is Field work: nothing was logged, so the gap stands.
     const field = planItem("2026-10-07", "Field");
-    assert.equal(field.plannedActivityCoversTheDay, false);
+    assert.equal(field.plannedActivityIsRecordedNowhereElse, false);
     assert.deepEqual(
       exceptionsFor([field], "2026-10-07").map((exception) => exception.title),
       ["No Activity Recorded"],
@@ -219,7 +239,7 @@ export function runPrivateCalendarPlanSourceTests() {
     assert.deepEqual(
       exceptionsFor([travel, punchAndPlan], "2026-10-04").map((exception) => exception.title),
       [],
-      "a planned day that also has a punch says nothing extra",
+      "a planned day that also has a punch is covered by the PUNCH, and needs no comparison line",
     );
 
     // The same, for the two other types that have their own record and are the bulk of the volume.

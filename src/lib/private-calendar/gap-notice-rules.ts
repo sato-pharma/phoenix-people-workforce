@@ -16,10 +16,11 @@
  * shows them, and the day that can become a payroll deduction candidate are then the same day by
  * construction, and cannot drift apart.
  *
- * A day covered by an approved plan is NOT named here. The engine files that as a separate `info`
- * exception titled "Covered by the approved plan", and the connector filter keeps only
- * "No Activity Recorded" — so a travel or admin day the manager approved stays silent, which is the
- * whole point of the 2026-10-07 plan source.
+ * 🔴 A day whose only entry is an approved plan IS named here now (owner, 2026-10-12: a weekly plan
+ * is never coverage). The engine flags it "No Activity Recorded" like any other empty workday and
+ * files a separate `info` note, "Planned, but nothing recorded", carrying what was planned; the
+ * connector filter keeps only the "No Activity Recorded" title, so the note itself still reaches
+ * nothing. Between 2026-10-07 and his ruling such a day was silent here.
  */
 
 /** The dead-man's-switch slug and the cron-job.org job name. */

@@ -87,6 +87,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | Module | Loads when a session touches |
 | --- | --- |
 | `payroll` — Payroll, salaries and deductions | `src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator,dispute-center}/**` and 4 more |
+| `payroll-disputes` — Payroll — disputes and the Dispute Center | `src/lib/dispute-center/**` and 3 more |
 | `sales-closing` — Monthly Closing, the Office and El Qema money rules, the Business Review | `src/lib/sales/*` and 6 more |
 | `sales-imports` — Source of Sales — distributor imports, customer mapping and rollups | `src/lib/sales/{normalizer,master-data,master-map,ai}/**` and 5 more |
 | `sales-attribution` — Attribution, achievement, targets and sales territory | `src/lib/sales/territory/**` and 5 more |

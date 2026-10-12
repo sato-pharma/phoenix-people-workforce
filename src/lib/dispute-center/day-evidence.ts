@@ -85,7 +85,9 @@ export async function loadDayFacts(employeeHrId: string, dates: readonly string[
       const parts = [item.title, detail].filter((part): part is string => Boolean(part && String(part).trim()));
       facts.push({
         label: [dayLabel(date), item.sourceLabel, item.time].filter(Boolean).join(" · "),
-        tone: item.plannedActivityCoversTheDay === true ? "success" : item.severity,
+        // An approved plan was toned "success" here until 2026-10-12, which read as "this day is
+        // settled". It is not: the plan is the intention, and the day is judged on its records.
+        tone: item.severity,
         value: parts.join(" — ") || item.sourceLabel,
       });
     }

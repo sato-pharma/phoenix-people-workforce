@@ -46,6 +46,27 @@ export const MODULES = [
     keywords: ["payroll", "salary", "salaries", "payslip", "payslips", "deduction", "deductions", "net pay", "gross pay", "basic salary", "social insurance", "salary batch", "مرتب", "مرتبات", "رواتب"],
     tables: ["salary_records", "salary_batches", "automated_payroll", "payroll_", "payslip", "deduction"],
   },
+  // 🔴 SPLIT 2026-10-12, FOR THE REASON `phoenix-crm-approvals` BELOW RECORDS: `payroll` reached 32
+  // rules and its injected pointer measured 4,067 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the weekly-plan-is-never-coverage rule landed. The
+  // DISPUTE family is the clean cut: the Dispute Center has its own folders, its own three outcomes and
+  // its own charge rule, and none of its rules are read while editing a deduction connector. `payroll`
+  // KEEPS EVERY GLOB IT HAD, so a dispute file loads the PAIR and nothing that used to arrive stops
+  // arriving. The file itself was nowhere near its 72,000-byte cap — two different limits, and this is
+  // the small one.
+  {
+    id: "payroll-disputes",
+    title: "Payroll — disputes and the Dispute Center",
+    scope: "An employee's dispute of a deduction: where it is decided, what a decision charges, the case briefing, and which disputes each side still sees.",
+    globs: [
+      "src/lib/dispute-center/**",
+      "src/components/disputes/**",
+      "app/**/disputes/**",
+      "tests/*dispute*",
+    ],
+    keywords: ["dispute", "dispute center", "disputed deduction", "case briefing", "accept the dispute", "reject the dispute", "refund the deduction", "اعتراض"],
+    tables: ["deduction_disputes", "dispute_"],
+  },
   // ── The sales area is THREE modules, and the split is deliberately LOPSIDED ──
   //
   // One file held all of it until 2026-10-02, when it reached 87% of MODULE_FILE_MAX_BYTES. The cap

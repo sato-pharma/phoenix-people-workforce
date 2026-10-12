@@ -29,7 +29,6 @@ import { isCrmCutoverMonth, readCrmCutoverSetting } from "@/lib/crm/cutover.ts";
 import { logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import { isFieldWorkforceThursday } from "@/lib/field-workforce-compliance/weekend-policy.ts";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
-import { loadApprovedCoveringPlanItems } from "@/lib/private-calendar/plan-items.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 
@@ -42,7 +41,6 @@ import {
   countGpsTracesByDate,
   halfDayReason,
   judgeHalfDay,
-  planItemHalves,
   type HalfDayCheckinRow,
   type HalfDayCover,
   type HalfDayVisitRow,
@@ -135,7 +133,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
   const { monthKey, start, end, days } = monthBounds(input.month, input.year);
   const supabase = getSupabaseAdmin();
 
-  const [holidays, suspectDates, baseSalaryByCompact, employees, visits, checkins, vacations, disputes, planItems, ledger] =
+  const [holidays, suspectDates, baseSalaryByCompact, employees, visits, checkins, vacations, disputes, ledger] =
     await Promise.all([
       holidayDates(input.month, input.year),
       // Throws on a CRM outage; a day the whole feed looks broken is nobody's half day.
@@ -187,7 +185,6 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
             .range(from, to),
         "calendar review requests",
       ),
-      loadApprovedCoveringPlanItems(start, end),
       readAll<LedgerClaimRow & { employee_name: string | null }>(
         (from, to) =>
           supabase
@@ -264,15 +261,6 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
     if (!compact || !date || String(dispute.status ?? "").trim().toLowerCase() === "rejected") continue;
     coverFor(`${compact}:${date}`).leaveTheDayAlone = true;
   }
-  for (const item of planItems) {
-    const compact = compactDeductionsHrId(item.employeeHrId);
-    if (!compact) continue;
-    const halves = planItemHalves({ start_time: item.startTime, end_time: item.endTime });
-    const entry = coverFor(`${compact}:${item.activityDate}`);
-    if (halves.am) entry.planAm = true;
-    if (halves.pm) entry.planPm = true;
-  }
-
   // Days another live deduction already charges — the publish guard allows one row per
   // employee-day, so those are reported below rather than raised. This run's own unpublished rows
   // do NOT claim their days; otherwise every second re-run would retract the first.
@@ -382,7 +370,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
             : ""),
         evidence: {
           rule:
-            "Saturday-Wednesday working day with exactly one half accounted for, and no visit, GPS check-in, save time, approved vacation, approved plan item or request in the other half. Thursday (a morning-only day), Friday and national holidays are never judged.",
+            "Saturday-Wednesday working day with exactly one half accounted for, and no visit, GPS check-in, save time, approved vacation or request in the other half. An approved weekly plan never accounts for a half (owner, 2026-10-12). Thursday (a morning-only day), Friday and national holidays are never judged.",
           role: role === "district_manager" ? "District manager" : "Medical representative",
           missingHalf: verdict.missing,
           coveredBy: verdict.coveredBy,
@@ -393,7 +381,6 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
           creditedAsDoubleVisitPartner: evidence?.partnerVisits ?? 0,
           phoenixVisitsWithoutLocationNotCounted: evidence?.visitsWithoutLocation ?? 0,
           approvedVacation: dayCover.vacationAm ? "AM off" : dayCover.vacationPm ? "PM off" : null,
-          approvedPlan: dayCover.planAm || dayCover.planPm ? { am: Boolean(dayCover.planAm), pm: Boolean(dayCover.planPm) } : null,
           deductionDays: 0.5,
           dayRateBasis: "Base salary ÷ calendar days in the month × 0.5",
           holidaysExcluded: [...holidays].filter((date) => date.startsWith(`${monthKey}-`)).sort(),
