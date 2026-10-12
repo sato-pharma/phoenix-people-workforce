@@ -43,6 +43,7 @@ import {
   judgeHalfDay,
   type HalfDayCheckinRow,
   type HalfDayCover,
+  halfDayContractOf,
   type HalfDayVisitRow,
 } from "../half-day-rule.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
@@ -118,6 +119,8 @@ type EmployeeRow = {
   last_working_date: string | null;
   employment_status: string | null;
   crm_id: string | number | null;
+  /** The contracted working pattern — full_day, am_only or pm_only. */
+  work_half: string | null;
 };
 
 /** The connector's result: the rows, plus what it could NOT raise and why — never dropped silently. */
@@ -143,7 +146,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
         (from, to) =>
           supabase
             .from("employees")
-            .select("hr_id, full_name, job_title, hire_date, last_working_date, employment_status, crm_id")
+            .select("hr_id, full_name, job_title, hire_date, last_working_date, employment_status, crm_id, work_half")
             .order("hr_id", { ascending: true })
             .range(from, to),
         "the employee directory",
@@ -305,6 +308,9 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
     if (!compact || !role) continue;
     const status = String(employee.employment_status ?? "").trim().toLowerCase();
     if (status === "declined_offer") continue;
+    // 🔴 A part-half contract means the other half was never owed. Read before any day is judged,
+    // so a PM-only rep is not charged for a morning his contract does not include.
+    const contractHalf = halfDayContractOf(employee.work_half);
     const hireDate = employee.hire_date ? employee.hire_date.slice(0, 10) : null;
     const lastDay = employee.last_working_date ? employee.last_working_date.slice(0, 10) : null;
     // A leaver is judged up to his last working day; one with no last day on file is not judged at all.
@@ -328,7 +334,9 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
       // which also feed `firstSignalByPerson` — and a person whose only record is Phoenix must stay
       // unjudged rather than become chargeable.
       if (provenWorked.keys.has(key)) continue;
-      const verdict = judgeHalfDay(byPersonDay.get(key), cover.get(key) ?? {});
+      // The contracted half travels with the person, not with the day, so it is merged onto
+      // whatever else is on file for this day rather than stored per day.
+      const verdict = judgeHalfDay(byPersonDay.get(key), { ...(cover.get(key) ?? {}), contractHalf });
       if (verdict.kind !== "half_day") continue;
       if (claimed.has(key)) {
         const category = claimingCategory.get(key);
