@@ -105,6 +105,20 @@ const PORTRAIT_GLOW =
 const PORTRAIT_RING = "0 0 0 2px rgba(244,123,32,0.16), 0 4px 12px rgba(15,35,55,0.16)";
 
 /**
+ * DESKTOP, THE STANDING PORTRAIT. The in-bar ring above is a 136px tile's shadow and it does not
+ * carry a 188x248 column: a 12px blur under a frame that size reads as a sticker, because the
+ * shadow is shorter than the thing casting it. This is the same light from the same direction, just
+ * spent at the column's own scale — a 1px ink hairline so the gold edge is crisp against cream, a
+ * tight contact shadow at the foot, and one long low-alpha cast that actually reaches the page.
+ *
+ * NO ORANGE GLOW HERE, deliberately. The glow belongs to the frameless phone portrait, where it
+ * replaces an edge; this frame HAS an edge — doubling it would halo the gold.
+ */
+const PORTRAIT_STANDING_SHADOW =
+  "0 0 0 1px rgba(35,30,24,0.22), 0 2px 5px rgba(15,35,55,0.12),"
+  + " 0 18px 36px -10px rgba(15,35,55,0.34)";
+
+/**
  * MOBILE, FRAMELESS. The owner, 2026-09-04, with the Phoenix banner artwork attached: "in mobile
  * view i want the photo frameless fading exactly like this". In that reference the portrait is not
  * a tile sitting ON the card — it IS the card's leading edge: full height, flush left, no bezel, no
@@ -203,7 +217,7 @@ export function PhoenixIdentityStrip({
   }, [sigName]);
 
   return (
-    <div className={["relative w-full min-w-0", photoSrc ? "sm:pb-[88px]" : ""].join(" ")}>
+    <div className={["relative w-full min-w-0", photoSrc ? "sm:pb-[104px]" : ""].join(" ")}>
     <section
       aria-label="Your identity"
       className={[
@@ -623,14 +637,25 @@ export function PhoenixIdentityStrip({
         IT IS A SIBLING OF THE BAR, NOT A CHILD OF IT, AND THAT IS THE WHOLE TRICK. The bar is
         `overflow-hidden` (the watermark and the wave both rely on it), so a portrait taller than
         160px inside it would simply be cut at the bar's foot. Rendering it beside the section, in
-        a wrapper that positions it, is what lets it stand 80px proud of the bar while the bar
+        a wrapper that positions it, is what lets it stand 88px proud of the bar while the bar
         itself keeps every number it had — "NEVER TOUCH THE BANNER", his words.
 
-        THE WRAPPER RESERVES THE OVERHANG (`sm:pb-[88px]`) INSTEAD OF FLOATING OVER THE PAGE. A
+        THE WRAPPER RESERVES THE OVERHANG (`sm:pb-[104px]`) INSTEAD OF FLOATING OVER THE PAGE. A
         portrait hanging over the first task card would cover live work and would move with it on
         every scroll; the padding keeps the column's own column of air and nothing below has to
         know the strip is there. It is spent only when there IS a photo — the initials tile stays
         inside the bar at both widths.
+
+        104 IS 88 OF OVERHANG PLUS 16 OF AIR, and the 16 is the polish, not slack. At 88 the
+        portrait's foot landed on y=333 and the next section's top border landed on y=333 — the
+        frame and the card below it shared one line, which reads as a collision rather than a
+        column standing on the page. Measured on the branch before the change.
+
+        THE FRAME IS HEAVIER THAN THE IN-BAR TILE'S ON PURPOSE. 3px of gold around a 136px tile is
+        the same ANGLE as 4px around a 188px one; held at 3 the bezel thinned out as the portrait
+        grew and the big photo lost its mount. The well also carries a 1px ink hairline inside the
+        gold, which is what a mounted print has and what stops a bright photo from bleeding into
+        its own frame.
 
         MOBILE KEEPS THE FRAMELESS BLEED. This is a `sm:` element only; on a phone the photo is
         still the bar's own leading edge, which is his 2026-09-04 instruction and is untouched. */}
@@ -639,9 +664,9 @@ export function PhoenixIdentityStrip({
         <span
           aria-hidden="true"
           className="absolute inset-0"
-          style={{ background: PORTRAIT_BEZEL, boxShadow: PORTRAIT_RING }}
+          style={{ background: PORTRAIT_BEZEL, boxShadow: PORTRAIT_STANDING_SHADOW }}
         />
-        <span className="absolute inset-[3px] overflow-hidden bg-[#f8efe5]">
+        <span className="absolute inset-[4px] overflow-hidden bg-[#f8efe5]">
           <Image
             alt={`${name} portrait`}
             className="object-cover object-top"
@@ -649,6 +674,14 @@ export function PhoenixIdentityStrip({
             sizes="188px"
             src={photoSrc}
             unoptimized
+          />
+          {/* OVER the photo, not under it. An `inset` box-shadow on the well itself paints on the
+              well's own background layer, which a `fill` image covers completely — the hairline
+              would be in the file and invisible on the page. */}
+          <span
+            aria-hidden="true"
+            className="absolute inset-0"
+            style={{ boxShadow: "inset 0 0 0 1px rgba(35,30,24,0.26)" }}
           />
         </span>
       </span>
