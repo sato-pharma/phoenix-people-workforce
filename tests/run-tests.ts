@@ -2488,6 +2488,7 @@ import { runCrmDoubleVisitWithDepartedPartnerTests } from "./crm-double-visit-wi
 import { runEmployeeNamesByHrIdTests } from "./employees-names-by-hr-id.test.ts";
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
+import { runMcpSourceTests } from "./mcp-source.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9793,6 +9794,10 @@ await runTest(
 await runTest(
   "the CRM test-row sweep stays correct about the schema it deletes from — the plan clears every child before the parent it references for production's real 22 foreign keys, a NEW child table referencing a cleared parent is reported BY NAME rather than failing the run halfway through, a parent cleared before its child is caught the same way, the seven tables with no `is_test` column of their own are reached through a parent and never filtered on a column they do not have (with `request_id` and the uuid `visit_id` pinned, each of which cost a real error against production), `phoenix_crm_countable_visits` is never deleted from because it is a VIEW yet is still proven empty, and the emitted file is ONE transaction whose three guards sit before the first delete, inside the commit, and say in plain words that there is no point-in-time recovery",
   runCrmClearTestRowsTests,
+);
+await runTest(
+  "the owner-only MCP source proves a report complete and consistent instead of trusting that it returned — the read recorder logs every PostgREST request from underneath the loaders, so a swallowed failure, a transport error, an unpaged read at the row cap, a read nobody watermarked, a required read that never happened (a cache answered) and a change between the before and after watermark each refuse with a named reason, a retried request is judged by its last attempt, a snapshot identity is a pure function of the rows so an unchanged refresh keeps it, the watermark registry and the proposed SQL stay in step, the live authorization decision denies on a missing account, a banned or deleted Auth user, a role moved off Super Admin/CEO, a departed employee, an effective read denial and a module lock, throws on anything it cannot decide, and its route is off unless enabled, bearer-only with no development bypass, single-owner, no-store, and answers 503 with no detail when a source cannot be read",
+  runMcpSourceTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

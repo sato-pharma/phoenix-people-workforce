@@ -1,0 +1,12 @@
+import type { Employee } from './contracts.mts';
+type Context = { role:string; scope:string; hrId:string|null; loginId:string|null; source:string };
+export const permissionMatrix: Record<string,Partial<Record<string,string[]>>>;
+export function createAccessContext(input:{role:string;hrId:string|null;loginId:string;source:string}):Context;
+export function filterEmployeesForAccess(rows:Employee[],context:Context):Employee[];
+export function getSalesScope(context:Context):string;
+export function isActiveDirectoryEmployee(row:Employee):boolean;
+export function isEmploymentAccessRevoked(input:{employmentStatus:string|null;lastWorkingDate:string|null;todayCairo:string}):boolean;
+export function seatKeysOfActiveEmployees(rows:readonly unknown[]):Set<string>;
+export function reconcileVacancyRowsAgainstOccupancy<T>(rows:T[],keys:Set<string>):T[];
+export function stripRestrictedColumns<T>(matrix:T):T;
+

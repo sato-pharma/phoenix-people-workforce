@@ -1,0 +1,40 @@
+name: Phoenix MCP security
+on:
+  pull_request:
+    # The reader bundles these Phoenix policy files, so a change to one must re-run this check.
+    paths:
+      - 'infra/phoenix-mcp/**'
+      - 'src/lib/mcp-source/**'
+      - 'app/api/mcp-source/**'
+      - '.github/workflows/phoenix-mcp.yml'
+      - 'src/lib/auth/permissions.ts'
+      - 'src/lib/auth/session-lifecycle.ts'
+      - 'src/lib/employees/employee-directory.ts'
+      - 'src/lib/reports/organogram.ts'
+      - 'src/lib/sales/monthly-closing-portal.ts'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mcp-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - name: Locate isolated PostgreSQL fixture binaries
+        run: echo "$(pg_config --bindir)" >> "$GITHUB_PATH"
+      - name: Install only the isolated integration dependencies
+        working-directory: infra/phoenix-mcp
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Cold typecheck
+        working-directory: infra/phoenix-mcp
+        run: node node_modules/typescript/bin/tsc --noEmit --incremental false -p tsconfig.json
+      - name: Synthetic security and protocol tests
+        working-directory: infra/phoenix-mcp
+        run: npm test
+      - name: Audit isolated runtime dependencies
+        working-directory: infra/phoenix-mcp
+        run: npm audit --omit=dev --audit-level=high

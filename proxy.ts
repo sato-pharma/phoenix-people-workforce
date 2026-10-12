@@ -206,6 +206,10 @@ function securityProxy(request: NextRequest): NextResponse | null {
       // POST with no Origin header, authorised by FTP_VIDEO_HANDOFF_SECRET inside the route, so it
       // is CSRF-exempt by the same shared-secret pattern as the provider webhooks above.
       request.nextUrl.pathname === "/api/integrations/ftp-videos" ||
+      // The owner-only MCP source: the reporting reader POSTs server-to-server with no Origin header,
+      // authorised by a dedicated bearer secret inside the route (which is also disabled unless
+      // PHOENIX_MCP_SOURCE_ENABLED is "true"), so it is CSRF-exempt like the other shared-secret routes.
+      request.nextUrl.pathname === "/api/mcp-source/authorize" ||
       // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
       // signed token (not a session) authorises it, so it is CSRF-exempt by design.
       request.nextUrl.pathname.startsWith("/api/email/unsubscribe/") ||

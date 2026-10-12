@@ -36,6 +36,7 @@
     "**/*.mts"
   ],
   "exclude": [
+    "infra/phoenix-mcp",
     ".railway", "node_modules",
     ".next",
     "phoenix-architecture",
