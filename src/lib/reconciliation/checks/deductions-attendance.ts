@@ -369,7 +369,7 @@ const absenceNeverCountedOnAnOutageDay: ReconciliationCheck = {
   severity: "critical",
   expectation: "known-open",
   openDefect:
-    "Verified on production 2026-08-04: the last punch in attendance_raw_punches is 2026-07-30 06:40 UTC and none exist after it, so every expected working day of August is a company-wide outage while the summary counts each one as absence for the whole 17-person device-mapped roster. It will go green on its own once ingestion resumes AND the summary excludes outage days.",
+    "Verified on production 2026-08-04: the last punch in attendance_raw_punches was 2026-07-30 06:40 UTC and none existed after it, so every expected working day of August was a company-wide outage while the summary counted each one as absence for the whole 17-person device-mapped roster. INGESTION HAS SINCE RESUMED and that half of the condition is met — re-read on production 2026-10-12: 575 punches / 16 people in August, 647 / 16 in September, 171 / 15 in October, the last at 2026-10-12 11:44 Cairo. Do not read the 2026-08 sentence as the feed's current state (it was read that way during the CRM audit); the open half is the summary still counting absence on a day the device recorded nothing for anybody. The roster on the feed is head office only — no medical rep and no district manager punches at all, which is why a field deduction can never be checked against it (docs/deductions-half-day-trace-independence.md).",
   async run(): Promise<ReconciliationOutcome> {
     const month = cairoTodayIso().slice(0, 7);
     const summary = await getMonthlyAttendanceSummary({ month });

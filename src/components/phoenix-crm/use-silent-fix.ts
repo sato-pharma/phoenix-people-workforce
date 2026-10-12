@@ -136,13 +136,23 @@ export function useSilentFix(): SilentFixReader {
  * `deviceCapturedAt` is the phone's clock at the TAP, which the server compares with its own clock on
  * arrival — a manager's fact, never the rep's. `deviceMocked` is null: a browser cannot ask the
  * question, and null is "not asked", never "clean".
+ *
+ * `fixTakenAt` is `fix.at` — the instant the PHONE took the reading, which this file has always read
+ * from `position.timestamp` and then dropped. Sending it is what stops the server's receipt being the
+ * only clock on a one-tap visit: the two together say how old the reading already was when he pressed,
+ * both ends measured by the same phone, so a wrong phone clock cancels out of the answer.
  */
 export function silentFixPayload(fix: SilentFix, tappedAt: number) {
+  // A reading with no usable clock sends none. `new Date(NaN).toISOString()` throws, and a throw here
+  // would cost a rep standing at a door the visit he actually made — the one thing this file may
+  // never do.
+  const takenAt = Number.isFinite(fix.at) ? new Date(fix.at) : null;
   return {
     lat: fix.lat,
     lon: fix.lon,
     accuracyMeters: fix.accuracyMeters === null ? null : Math.round(fix.accuracyMeters * 10) / 10,
     deviceCapturedAt: new Date(tappedAt).toISOString(),
+    fixTakenAt: takenAt !== null && !Number.isNaN(takenAt.getTime()) ? takenAt.toISOString() : null,
     deviceMocked: null,
   };
 }

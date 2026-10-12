@@ -73,6 +73,7 @@ import {
   crmTextareaClassName,
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
+import { deviceInstallId } from "@/lib/phoenix-crm/device-install";
 import { appendDictated } from "@/lib/phoenix-crm/dictation";
 import {
   NO_FIX_FOR_A_VISIT,
@@ -693,7 +694,14 @@ export function VisitLogForm({
       return;
     }
     try {
-      const saved = await crmPost<SavedVisit>("/api/phoenix-crm/visits", { ...next.payload, ...silentFixPayload(fix, savedAt) }, "visit");
+      // 🔴 SILENT, and read HERE for the same reason the stopwatch is: `draft` runs where React will
+      // not allow an impure call, and reading this one writes to browser storage the first time. It
+      // answers null wherever there is no storage to keep it in, and the save is identical either way.
+      const saved = await crmPost<SavedVisit>(
+        "/api/phoenix-crm/visits",
+        { ...next.payload, ...silentFixPayload(fix, savedAt), deviceInstallId: deviceInstallId() },
+        "visit",
+      );
       // 🔴 HIS DAY ON THE LANDING PAGE GOES GREEN WHEN HE PRESSES BACK (owner, 2026-09-30: "if it is
       // submitted from those visits in the overview landing page, it is automatically marked as
       // done"). The server side was never wrong — `done` is read from the day's saved visits, and a

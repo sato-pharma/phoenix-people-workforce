@@ -120,6 +120,14 @@ const SILENT_COLUMNS: ReadonlyArray<string> = [
   "capture_source",
   "offline_seconds",
   "synced_at",
+  // Capture provenance (2026-10-12). `fix_taken_at` and `device_install_id` are SENT by the phone, so
+  // they are here for the same reason `form_open_seconds` is: the line is the READ, never the file.
+  // `fix_age_seconds` and `app_revision` are derived and read on the SERVER and the phone never names
+  // them at all — they are listed so a later change cannot start answering them back to a rep.
+  "fix_taken_at",
+  "fix_age_seconds",
+  "device_install_id",
+  "app_revision",
 ];
 
 /** Tables only the blind readers may touch. */
@@ -127,6 +135,9 @@ const SILENT_TABLES: ReadonlyArray<string> = [
   "phoenix_crm_location_integrity",
   "phoenix_crm_photo_fingerprints",
   "phoenix_crm_behaviour_integrity",
+  // When the phone took the position it sent, and which browser install sent it (2026-10-12). Written
+  // after the save and read by nothing a rep can reach.
+  "phoenix_crm_visit_capture_provenance",
 ];
 
 /** Modules only the blind readers may import. */
@@ -152,6 +163,11 @@ const BLIND_READERS: ReadonlyArray<string> = [
   "src/lib/phoenix-crm/server/photo-dupes.ts",
   "src/lib/phoenix-crm/server/behaviour.ts",
   "app/(admin)/admin/phoenix-crm/integrity/page.tsx",
+  // The capture-provenance writer (2026-10-12). It is a declared reader because it NAMES the table —
+  // check 5 searches the text, and the write is what keeps that check from going vacuous. It is not
+  // held to check 6's audience rules, which are specific to the board: this file answers nobody at
+  // all, which is a stronger position than gating a read.
+  "src/lib/phoenix-crm/server/capture-provenance.ts",
 ];
 
 /**
@@ -164,7 +180,13 @@ const BLIND_READERS: ReadonlyArray<string> = [
  * a silent success. What keeps it away from a rep is check 4 below, which refuses the import from
  * every route his app can call; the invariant is the same and it is proved in a different place.
  */
-const SILENT_RUNNERS: ReadonlyArray<string> = ["src/lib/phoenix-crm/server/location-integrity.ts"];
+const SILENT_RUNNERS: ReadonlyArray<string> = [
+  "src/lib/phoenix-crm/server/location-integrity.ts",
+  // The capture-provenance writer belongs here and the photo sweep does not, by exactly the test the
+  // note above states: this one runs INSIDE a rep's own save, one line after the judgement, so a throw
+  // here would turn a saved visit into a failed one for a rep standing in front of a doctor.
+  "src/lib/phoenix-crm/server/capture-provenance.ts",
+];
 
 function read(path: string): string {
   return readFileSync(new URL(path, ROOT), "utf8");
