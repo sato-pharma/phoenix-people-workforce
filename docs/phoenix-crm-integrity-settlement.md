@@ -505,6 +505,85 @@ The board as a whole, read through `loadIntegrityBoard` with a Super Admin viewe
 hand-rolled SQL: **157 standing cases, 10 strong, 3 withdrawn, 0 settled, `capped` false.** It is 10
 and not 11 because the 12 October re-read withdrew three signboard cases (§3, §4).
 
+## 8 · An unknown accuracy was being judged as a good one (2026-10-12)
+
+The second-pass audit listed "unknown accuracy passes the 250 m gate" as gap 15. The gate itself is
+the owner's own decision and was not touched — `entry-rules.ts` says so in as many words, *"an
+UNKNOWN accuracy is still taken, as it always was"*, so that a handset which reports no accuracy
+figure never costs a rep his visit. Reading the two sides of that decision together found a real
+sub-defect underneath it, fixed on his instruction: *"fix the unknown-accuracy hole in the precision
+detectors"*.
+
+### The two sides disagreed about what "unknown" means
+
+`isCoarse` required a non-null accuracy:
+
+```
+accuracyMeters !== null && Number.isFinite(accuracyMeters) && accuracyMeters >= COARSE_ACCURACY_METERS
+```
+
+So a reading with **no accuracy figure at all** returned `false` — not coarse — and the four
+precision detectors (`coordinate_replay` and `zero_jitter`, both STRONG, plus `constant_accuracy`
+and `typed_coordinate`) judged it in full. The capture gate admitted the reading *because* its
+precision cannot be measured, and the detectors then drew precise conclusions from it. The gate was
+right and the detectors were wrong about the same reading.
+
+### What it was worth, measured before the change
+
+| On production, 12 October | Count |
+| --- | --- |
+| Visits carrying no accuracy figure | **18** of 1,598 |
+| Places carrying no accuracy figure | **7** of 1,418 |
+| Photo fixes present but with no accuracy | 2 |
+| Of the 163 integrity rows, those carrying a precision flag | 5 |
+| **Of those 5, how many had a null accuracy** | **0** |
+
+All five precision flags standing report a real accuracy — 18.7, 18.7, 100.0, 54.9 and 100.0 m — so
+**the hole had not yet accused anybody.** 25 captures were eligible for all four detectors and none
+had tripped one. It is closed before it bites rather than after, which is the opposite of how the
+coarse case was found: that one was already flagging Yasmeen Samy when he caught it.
+
+### The fix, and the two things it deliberately does not do
+
+`isCoarse` keeps its meaning — measured, and at or past the 500 m line — because `coarse_location`
+is a true statement only about such a reading. Beside it:
+
+- `isUnmeasured` — null, or any non-finite value.
+- `cannotSupportPrecision` — either of the two. It gates `addPrecisionFlag` **and** filters the
+  history, so an unmeasured reading is neither judged nor judged against. Both halves are needed: a
+  precise fix must not be flagged for "replaying" a point nobody ever measured.
+
+🔴 **No flag is filed for an unmeasured reading.** `coarse_location` would be a false statement
+about it, and a flag of its own would raise a standing board case against all 25 — against every rep
+whose handset is simply quiet about accuracy, which is the false-accusation cost this whole file
+exists to avoid. The suppression is recorded in `signals.unmeasuredAccuracy` instead, and
+`coarseHistoryIgnored` and `unmeasuredHistoryIgnored` are counted apart, because reading one as the
+other sends the next session to the wrong rule.
+
+🔴 **`mock_provider` and `impossible_travel` still fire**, per the owner's 2026-10-05 ruling. Neither
+is a claim about precision. Travel is in fact *stricter* on an unmeasured reading, not kinder: it
+subtracts both readings' error bars from the distance first, and a null contributes no slack, so a
+missing accuracy can never buy immunity from a trip nobody could have made.
+
+### The test pinned the hole, so the assertion was edited rather than added to
+
+`tests/phoenix-crm-location-integrity.test.ts` asserted the opposite until this change — *"an older
+build that sends no accuracy must keep being judged as before"*, with
+`assert.ok(silent.flags.includes("coordinate_replay"))`. That line **was** the hole, written down and
+guarded, so it was edited in place rather than contradicted by a second assertion beside it.
+
+🔴 **The replacement pins the two halves as SEPARATE cases, and it must stay that way.** Written
+first as one case with a null accuracy on *both* the fix and the prior, it passed with the old gate
+restored — each half suppressed the verdict the other half was supposed to be proving, so the break
+fired nothing. Half one is an unmeasured fix over an ordinary 20 m prior; half two is an ordinary fix
+over an unmeasured prior. Breaking the gate fires the first, breaking the history filter fires the
+second, and both were watched to fail before the fix was restored from a copy.
+
+### Who moves when this merges: nobody, again
+
+`judgeCapture` runs only on save, so no filed row is re-judged, and no existing row was filed through
+this hole in any case. The change alters what the *next* save concludes.
+
 ## Where the code is
 
 | What | Where |

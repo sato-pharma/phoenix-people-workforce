@@ -403,16 +403,36 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
 
   // ── Is this fix precise enough to be judged on precision at all? ──────────────────────────────
   //
-  // A coarse reading is evidence of nothing precise on EITHER side of a comparison, so it is taken
-  // out of both: this fix stops being judged, and a coarse fix already on record stops being
-  // something to judge against. Without that second half an honest precise fix gets flagged for
-  // "replaying" the tile centre its own phone handed back an hour earlier — the same false
-  // accusation, one reading later.
+  // Two readings cannot support a conclusion about precision: one too coarse to locate anything,
+  // and one that reported NO accuracy at all. Either is evidence of nothing precise on EITHER side
+  // of a comparison, so both come out of both: this fix stops being judged, and such a reading
+  // already on record stops being something to judge against. Without that second half an honest
+  // precise fix gets flagged for "replaying" the tile centre its own phone handed back an hour
+  // earlier — the same false accusation, one reading later.
+  //
+  // 🔴 AN UNKNOWN ACCURACY IS NOT A GOOD ACCURACY. It is deliberately ACCEPTED at the capture gate
+  // (`entry-rules.ts`: "an UNKNOWN accuracy is still taken, as it always was") — the owner's
+  // decision, so that a handset that reports no figure never costs a rep his visit. The hole the
+  // second-pass audit found was that `isCoarse` then returned false for it, so the same reading the
+  // gate waved through on the grounds that we cannot measure it was handed to all four precision
+  // detectors and judged as though we had. Measured on production 2026-10-12: 18 of 1,598 visits and
+  // 7 of 1,418 places carry no accuracy figure, every one of them eligible for all four. None had
+  // actually tripped one — the five precision flags standing all report a real accuracy — so this
+  // closes the hole before it accuses anybody rather than after.
   const isCoarse = (accuracyMeters: number | null): boolean =>
     accuracyMeters !== null && Number.isFinite(accuracyMeters) && accuracyMeters >= COARSE_ACCURACY_METERS;
 
+  /** No usable accuracy figure at all. A missing measurement, never a perfect one. */
+  const isUnmeasured = (accuracyMeters: number | null): boolean =>
+    accuracyMeters === null || !Number.isFinite(accuracyMeters);
+
+  /** Too coarse, or never measured — either way nothing precise may be concluded from it. */
+  const cannotSupportPrecision = (accuracyMeters: number | null): boolean =>
+    isCoarse(accuracyMeters) || isUnmeasured(accuracyMeters);
+
   const fixIsCoarse = isCoarse(fix.accuracyMeters);
-  const measured = history.filter((prior) => !isCoarse(prior.accuracyMeters));
+  const fixIsUnmeasured = isUnmeasured(fix.accuracyMeters);
+  const measured = history.filter((prior) => !cannotSupportPrecision(prior.accuracyMeters));
 
   if (fixIsCoarse) {
     flags.add("coarse_location");
@@ -422,13 +442,33 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
       suppressed: [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS],
     };
   }
-  if (measured.length !== history.length) {
-    signals.coarseHistoryIgnored = history.length - measured.length;
+  // 🔴 NO FLAG for an unmeasured reading, only this signal. `coarse_location` would be a false
+  // statement about it, and a flag of its own would file a standing board case against every rep
+  // whose handset is quiet about accuracy — 25 captures already — which is the opposite of the
+  // point. The suppression is recorded so the Super Admin can see WHY a row says little.
+  if (fixIsUnmeasured) {
+    signals.unmeasuredAccuracy = {
+      accuracyMeters: fix.accuracyMeters,
+      suppressed: [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS],
+    };
   }
+  // Counted apart, because "ignored as coarse" and "ignored as unmeasured" are different facts
+  // about the rep's history and reading one as the other sends the next session to the wrong rule.
+  const coarseIgnored = history.filter((prior) => isCoarse(prior.accuracyMeters)).length;
+  const unmeasuredIgnored = history.filter((prior) => isUnmeasured(prior.accuracyMeters)).length;
+  if (coarseIgnored > 0) signals.coarseHistoryIgnored = coarseIgnored;
+  if (unmeasuredIgnored > 0) signals.unmeasuredHistoryIgnored = unmeasuredIgnored;
 
-  /** Publish a precision-dependent flag — unless this fix is too coarse to support one. */
+  /**
+   * Publish a precision-dependent flag — unless this fix cannot support one.
+   *
+   * 🔴 `mock_provider` and `impossible_travel` do NOT come through here, by the owner's 2026-10-05
+   * ruling: the phone's own mock answer and a trip nobody could have made are not claims about
+   * precision, and travel takes both readings' error bars off the distance before judging, so a
+   * reading with no accuracy figure contributes no slack and cannot invent a trip either.
+   */
   const addPrecisionFlag = (flag: PhoenixCrmIntegrityFlag): void => {
-    if (!fixIsCoarse) flags.add(flag);
+    if (!fixIsCoarse && !fixIsUnmeasured) flags.add(flag);
   };
 
   // ── Replay — this coordinate has been used before ─────────────────────────────────────────────
