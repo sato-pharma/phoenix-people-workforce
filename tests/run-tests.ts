@@ -1456,6 +1456,7 @@ import { runTerritoryRepRegionLabelTests } from "./territory-rep-region-label.te
 import { runTerritoryAreaFoldHardeningTests } from "./territory-area-fold-hardening.test.ts";
 import { runAntiInfectiveIsmailiaSuezOneAreaTests } from "./anti-infective-ismailia-suez-one-area.test.ts";
 import { runAuSeatOccupantResolverTests } from "./au-seat-occupant-resolver.test.ts";
+import { runAuResignVacatesDayAfterLastWorkingDayTests } from "./au-resignation-vacates-day-after-last-working-day.test.ts";
 import { runAuHireIntoSeatWiringTests } from "./au-hire-into-seat-wiring.test.ts";
 import { runSalesImsRatioTests } from "./sales-ims-ratio.test.ts";
 import { runHrIdCoreHelpersTests } from "./hrid-core-helpers.test.ts";
@@ -5330,6 +5331,10 @@ await runTest(
 await runTest("territory / coverage area-fold hardening (Pedia's merged option appears for either GZ6 or UE9 alone; bricks scope by REAL code so a partner-only viewer never sees the survivor's own bricks)", runTerritoryAreaFoldHardeningTests);
 await runTest("Anti Infective Delta (3): Ismailia and Suez are ONE area from 2026-09 (fold, closing sum, vacancy name); July and August keep two", runAntiInfectiveIsmailiaSuezOneAreaTests);
 await runTest("au seat-occupant resolution (period-aware, no newest-row wins)", runAuSeatOccupantResolverTests);
+await runTest(
+  "au resignation vacates the seat the DAY AFTER the last working day (half-open spans; a month-end leaver kept their own month)",
+  runAuResignVacatesDayAfterLastWorkingDayTests,
+);
 await runTest("au hire_into_seat wiring (replacement-hire vacancy fill trigger)", runAuHireIntoSeatWiringTests);
 await runTest("sales IMS ratio integrity (non-OT areas + OT region total exactly 1)", runSalesImsRatioTests);
 await runTest("HR_ID core helpers (canonical alias, cross-format match, lookup keys)", runHrIdCoreHelpersTests);
