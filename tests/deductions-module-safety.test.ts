@@ -460,12 +460,16 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
       "signal must be checked on BOTH the hr-id and the crm_id — visits carry either",
     );
   }
-  // The visible category list must stay a strict subset of the canonical one, and the
-  // ONLY thing it may hide is no_records_activity — whose connector was retired once it
-  // lost its population (field workforce -> crm, Head Office has no CRM obligation,
-  // which is everybody). Narrowing `deductionsCategories` itself would break the DB enum
-  // and every historical row, so the two lists are deliberately separate and this pins
-  // the relationship between them.
+  // The visible category list must stay a strict subset of the canonical one, and it may hide
+  // exactly TWO things, each for its own stated reason:
+  //   · no_records_activity — its connector was retired once it lost its population (field
+  //     workforce -> crm, Head Office has no CRM obligation, which is everybody);
+  //   · no_weekly_plan — it is a DAILY-module connector and is deliberately absent from
+  //     DEDUCTION_COLLECTORS, so the month workspace would show a permanently empty tab. Nothing
+  //     is charged without the Super Admin releasing the daily line (owner, 2026-10-12: "never
+  //     fired automatic always under the approval of system admin").
+  // Narrowing `deductionsCategories` itself would break the DB enum and every historical row, so
+  // the two lists are deliberately separate and this pins the relationship between them.
   {
     const canonical = new Set<string>(deductionsCategories);
     const visible = new Set<string>(visibleDeductionsCategories);
@@ -475,12 +479,20 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
     const hidden = [...canonical].filter((category) => !visible.has(category));
     assert.deepEqual(
       hidden,
-      ["no_records_activity"],
+      ["no_records_activity", "no_weekly_plan"],
       "a new category must be shown in the workspace or its exclusion justified here — silently hiding one is how a whole deduction category goes unreviewed",
     );
     assert.ok(
       !DEDUCTION_COLLECTORS.some((collector) => collector.key === "no_records_activity"),
       "no_records_activity must not be a live collector: its connector returns nothing, so a registered step reports created=0 forever and is indistinguishable from a broken connector",
+    );
+    // Widened to `string` deliberately. `DeductionCollectorKey` does not contain "no_weekly_plan"
+    // today, so a direct comparison is a TS2367 "no overlap" error — the type system already
+    // enforces half of this rule. The runtime check is what survives someone widening that union
+    // later, which is the moment this assertion has to fire rather than stop compiling.
+    assert.ok(
+      !DEDUCTION_COLLECTORS.some((collector) => (collector.key as string) === "no_weekly_plan"),
+      "no_weekly_plan must not be a live collector: it is the DAILY module's connector, and registering it here would let a month scan write the ledger automatically — the one thing the owner ruled out",
     );
   }
 }

@@ -32,6 +32,10 @@ export const deductionsCategories = [
   "no_records_activity",
   "unpaid_vacation",
   "insufficient_balance_vacation",
+  // A head-office week with no weekly plan submitted by that Monday (owner, 2026-10-12). A
+  // DAILY-module connector only, never in DEDUCTION_COLLECTORS, so it can never charge on a
+  // month scan — see src/lib/daily-deductions/no-weekly-plan-select.ts.
+  "no_weekly_plan",
   "loan",
   "other",
 ] as const;

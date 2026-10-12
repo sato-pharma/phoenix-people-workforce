@@ -26,6 +26,7 @@ export const dailyDeductionCategories = [
   "unpaid_vacation",
   "insufficient_balance_vacation",
   "no_records_activity",
+  "no_weekly_plan",
 ] as const;
 export type DailyDeductionCategory = (typeof dailyDeductionCategories)[number];
 
@@ -46,6 +47,7 @@ export const dailyDeductionConnectors = [
   "unpaid_vacation",
   "insufficient_balance_vacation",
   "no_records_activity",
+  "no_weekly_plan",
 ] as const;
 export type DailyDeductionConnector = (typeof dailyDeductionConnectors)[number];
 
@@ -59,6 +61,7 @@ export const dailyDeductionConnectorLabels: Record<DailyDeductionConnector, stri
   unpaid_vacation: "Unpaid vacation",
   insufficient_balance_vacation: "Insufficient balance vacation",
   no_records_activity: "No records (no punch, no activity)",
+  no_weekly_plan: "No weekly plan (head office)",
 };
 
 /** A from/to date window in ISO YYYY-MM-DD, inclusive both ends. */

@@ -220,7 +220,10 @@ function bucketFor(category: DeductionsCategory): keyof DeductionBuckets {
       return "loan";
     // no_records_activity is retired but historical rows remain valid payroll
     // history, and its salary column was always other_deductions.
+    // no_weekly_plan is a DAILY-module connector that writes no candidate here at all, but its
+    // column is other_deductions — so this is where it would land if it ever reached payroll.
     case "no_records_activity":
+    case "no_weekly_plan":
     case "other":
       return "other";
   }
