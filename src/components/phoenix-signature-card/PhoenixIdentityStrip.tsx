@@ -37,7 +37,17 @@ import { useEffect, useRef, useState } from "react";
  * DO NOT "RESTORE" THE THIN VERSION on the strength of the 09-03 quote — that quote is older, and
  * it is the one this paragraph exists to overrule. What he has never wanted back is the ORIGINAL
  * block, the full `PhoenixSignatureCard` at aspectRatio 1875/420, which is ~243px on this width:
- * "WITHOUT THIS BUFFENK THIVK BANNER BLOCK". 136px sits deliberately between the two.
+ * "WITHOUT THIS BUFFENK THIVK BANNER BLOCK". 136px sat deliberately between the two.
+ *
+ * THE DESKTOP BAR IS 160px SINCE 2026-10-12, AND THE PHOTO IS WHAT BOUGHT IT. Looking at the
+ * Talent Acquisition landing he asked for one thing: "i want the photo bigger clear obvious". The
+ * portrait could not grow inside a 136px bar — the content row is the bar minus the wave's 24px,
+ * so 110px of portrait was already filling 112px of room, and anything larger clipped against
+ * `overflow-hidden`. So the bar grew by the 24px the portrait needed and the portrait took it:
+ * 110 -> 136px, which is 53% more face on the same page. It is still well under the ~243px block
+ * he threw out, and the THIN version is still the thing never to restore. MOBILE IS UNTOUCHED at
+ * 120px: there the photo already bleeds the full height of the bar frameless, so it is as big as
+ * the bar allows and growing the bar would only cost a phone the space he asked to keep.
  *
  * THE PORTRAIT IS TWO DIFFERENT THINGS BY BREAKPOINT, AND THAT IS THE OWNER'S OWN SPLIT.
  * On 2026-09-04 he sent the Phoenix banner artwork and said: "in mobile view i want the photo
@@ -196,7 +206,7 @@ export function PhoenixIdentityStrip({
     <section
       aria-label="Your identity"
       className={[
-        "relative isolate h-[120px] w-full min-w-0 overflow-hidden shadow-[0_8px_26px_rgba(16,35,61,0.13)] sm:h-[136px]",
+        "relative isolate h-[120px] w-full min-w-0 overflow-hidden shadow-[0_8px_26px_rgba(16,35,61,0.13)] sm:h-[160px]",
         className,
       ].join(" ")}
       style={{ background: "#fdf8f3" }}
@@ -400,7 +410,7 @@ export function PhoenixIdentityStrip({
       >
         <span
           className={[
-            "relative h-[80px] w-[80px] shrink-0 sm:h-[110px] sm:w-[110px]",
+            "relative h-[80px] w-[80px] shrink-0 sm:h-[136px] sm:w-[136px]",
             // Mobile hands the portrait over to the frameless bleed above — but only when there
             // IS one to hand over.
             photoSrc ? "hidden sm:block" : "block",
@@ -425,7 +435,7 @@ export function PhoenixIdentityStrip({
                 alt={`${name} portrait`}
                 className="object-cover object-top"
                 fill
-                sizes="110px"
+                sizes="136px"
                 src={photoSrc}
                 unoptimized
               />
