@@ -83,3 +83,35 @@ it was never put as quoted words in a box. Related:
 [[sos-monthly-closing-is-the-only-sales-truth]], [[never-fix-a-published-and-announced-month]],
 [[a-customer-map-re-resolve-stales-a-pre-october-office-spread]],
 [[the-sohag-brick-structure-is-correct-as-it-stands]].
+
+## The recorded reading — 173.4%, confirmed again on 2026-10-12
+
+**His instruction, 2026-10-12 15:08 Cairo:** *"record 173.4% for Sohag 1 and let it move"* — the
+same ruling as 2026-10-10, restated, so the figure below is the RECORD and the movement is expected.
+
+Measured the same minute through `scripts/restate-area-month.ts --area="Sohag 1" --line=CNS
+--period=2026-09`, in a tree whose `src/lib/sales`, `src/lib/closing` and `src/config` are
+byte-identical to `origin/main` (checked before the run, because the engine code IS an input):
+
+| | 2026-10-10 01:15 | 2026-10-12 15:08 |
+| --- | ---: | ---: |
+| own sales (everything but Office) | 234,689.69 | 234,689.69 |
+| Office credit as the closing READS it | 350,685.17 / 4,053 u | **350,685.17 / 4,053 u** |
+| Office credit as the rows are STORED | 591,889.51 / 6,840 u | 597,636.28 / 6,907 u |
+| what the respread moves | −241,204.34 | −246,951.11 |
+| target | — | 337,595.66 |
+| **achievement** | **173.4%** | **173.4%** |
+| achievement on the stored spread | 245.9% | 246.5% |
+| achievement on its own sales alone | — | 69.5% |
+
+🔴 **The STORED Office book grew (more September rows landed) and the read-time credit did not move
+at all** — which is the respread doing its job: the credit Sohag 1 keeps is set by its share of the
+line's non-Office VALUE, not by how many Office rows were stamped on it. So a growing stored book
+moves the *stored* figure (245.9% → 246.5%) and leaves the real one alone.
+
+Conservation re-checked at the same reading: 374,206.12 EGP leaves and 374,206.12 EGP arrives across
+**48** areas, **net 0.00**, on national CNS September sales of 11,885,444.55 (Sohag 1 is 4.93% of
+it). The largest movers are still Sohag1 −246,951.11 and Sohag2 +232,440.80.
+
+September is still **unpublished** — every `monthly_closing_publications` row carries an
+`unpublished_at` — so nothing pins this figure and nothing may be offered to pin it.
