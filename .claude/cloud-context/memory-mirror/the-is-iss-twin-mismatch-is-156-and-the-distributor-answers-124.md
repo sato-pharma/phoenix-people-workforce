@@ -1,6 +1,6 @@
 ---
 name: the-is-iss-twin-mismatch-is-156-and-the-distributor-answers-124
-description: "IS and IS-S are ONE distributor, so a code brick must match on both copies - 156 of 2,975 broke that on 2026-10-12 (262,695 EGP); the distributor OWN territory column answered 124, and 80 were applied that day, leaving 76: 30 nobody has ruled, 45 he ruled on one side, and code 431648, a PER-LINE EXCEPTION that must stay split."
+description: "IS and IS-S are ONE distributor, so a code brick must match on both copies - 156 of 2,975 broke that on 2026-10-12 (262,695 EGP); the distributor OWN territory column answered 124, and 80 were applied that day, leaving 76: 30 nobody has ruled, 45 he ruled on one side, and code 431648, a PER-LINE EXCEPTION that must stay split - which LATER THE SAME DAY became 115 codes, not one, when his Qena town lists moved 204 Pedia/AI rows and the checks jumped to 411/161/115/113/159."
 metadata:
   node_type: memory
   type: project
@@ -78,7 +78,7 @@ with differing lines and only 431648 crossed an area boundary; the other three (
 customers** and disagrees on 1,317 — 1,283 of those his own rulings, leaving **16 safe-to-apply (2,459
 EGP)** and 18 weak.
 
-**The skill is now clean: `resources/verify.sql` reads 78 checks, 78 PASS / 0 FAIL** (re-proved against production 2026-10-12 after the revert, which moved checks 80, 81, 88, 91 and 97 each by +1 - re-baselined to 308, 76, 26, 26 and 76). It
+**The skill is clean: `resources/verify.sql` reads 78 checks, 78 PASS / 0 FAIL** (re-proved against production 2026-10-12; the revert moved checks 80, 81, 88, 91 and 97 each by +1 to 308/76/26/26/76, and the Qena re-map that evening moved them again to **411/161/115/113/159**, plus check 53 to 701 and check 93 to 302|302 - see the section below). It
 was 68/10: checks **94, 95 and 96 were false alarms** because the Mapping Guard was **retired
 completely in #5731** — `sos_map_guard_decide` does not exist (so 96 read NULL, not "no") and the
 "184 pending holds" read 0. 🔴 **Never fix those by rebuilding the guard.** `sos_map_change_holds`
@@ -93,3 +93,47 @@ two managers at once, which is exactly what produces the complaints.
 [[a-customer-map-move-finishes-itself-overnight-but-never-for-a-published-month]], and run nothing by
 hand. Related: [[territory-is-not-geography]] ·
 [[apply-sql-file-default-pooler-host-is-wrong-for-production]].
+
+🔴 **LATER THE SAME DAY THE PER-LINE EXCEPTION BECAME 115 CODES, NOT ONE — AND A SAME-NAME BRICK
+DISAGREEMENT IS NO LONGER EVIDENCE OF A DEFECT BY ITSELF.** His Qena town lists moved 204
+customer-map rows carrying Pedia or Anti Infective sales from `B209-1`/UE7 to `B209B-1`/UE8
+(`source = 'owner-ruling-2026-10-12-qena-town-lists'`, confidence 100), leaving 813 rows with no
+Pedia/AI sales behind — so مدينة قنا now sits in BOTH areas by his design.
+
+**115 of the 204 have a sibling on another brick, and the shape of all 114 IS/IS-S ones is
+UNANIMOUS:** the copy that moved is always **IS-S** (Pedia and/or Anti Infective — the Sato lines
+where the Qena split is real) and the copy that stayed is always **IS** carrying **CNS only** (94
+codes) or **no sales at all** (20). Not one is the reverse, and not one stay-side sells Pedia or Anti
+Infective. Every one is the 431648 pattern above. The 115th is `164239` فاروق 20 - فيرت قنا, EP-BK
+moved / EP-PHS stayed — a different distributor pair, not a twin, so only check 80 sees it; and
+`374323` went the other way, its IS copy already on `B209B-1`, so the move made them AGREE.
+
+**Every delta reconciles exactly** against `sos_backup_20261012.customer_map_b209_1_pre` — replay the
+204 rows back and all five checks read their old baselines 308/76/26/26/76:
+80 → **411** (+104 new splits, −1 that now agrees) · 81 → **161** (+85) · 88 → **115** (+89) ·
+91 → **113** (+87) · 97 → **159** (+83). Only **89** of the 114 reach checks 81/88/97: the other 25
+carry DIFFERENT names on the two copies, and those three checks require one normalized name.
+
+🔴 **SO SUBTRACT BEFORE YOU REPAIR.** The real backlog is still the **76** that predate that evening
+(30 unruled, 45 ruled one side, 431648). Before proposing any twin repair, check whether the two
+copies sell different lines across one of the 8 split areas (CA5, GZ3, GZ6, GZ7, OT2, OT9, UE8, UE9)
+— if they do, moving it would undo his ruling. The 20 stay-side rows with **no sales at all** are the
+only arguable ones; an IS row with zero sales is not a "Pedia/AI customer", so they were left alone
+and reported to him, not acted on.
+
+Also moved by that evening's work, both re-baselined with their causes in `verify.sql`:
+**check 53, active bricks 699 → 701** — `sos_relocate_brick` CREATES the brick in the target block
+(`B209B-2` قوص, `B209B-3` أبنود) and leaves the original ACTIVE in UE7, renamed "قوص - Qena 1" and
+"أبنود - Qena 1" so name-uniqueness still holds. 🔴 **Those two are empty husks (0 customer-map rows,
+0 import rows) and MUST STAY ACTIVE** — they exist so `historicalNameCandidates` can still resolve the
+old text; deactivating them to tidy UE7 back to his 9 towns would break that. The aliases did follow
+the move (قوص → `B209B-2`, ابنود → `B209B-3`, nothing points at `B209-8`/`B209-2`).
+**Check 93, 305|305 → 302|302** — codes `374436`, `376282`, `377148` (all IS-S, all مدينة قنا) were
+re-stamped from the brick-348 sheet to the town-list ruling; both sources are his own at confidence
+100, so the newer correctly overwrote the older.
+
+🔴 **The one thing the aliases CANNOT encode is his per-line rule.** `قنا`, `QENA CITY` and `مدينه قنا`
+still resolve to `B209-1` (Qena 1), because an alias is keyed by text alone and the right answer now
+depends on the line. So a NEW Pedia or Anti Infective customer in مدينة قنا arriving with that brick
+text lands in **Qena 1 and is wrong** until it gets a customer-map row. That is the mechanism by which
+this will drift back.
