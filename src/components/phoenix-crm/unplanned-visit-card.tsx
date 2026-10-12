@@ -178,10 +178,20 @@ function OffPlanVisitRow({
             </p>
           ) : null}
           {location ? <p className="break-words text-xs font-semibold text-amber-800">{location}</p> : null}
+          {/* Who was with him. Added 2026-10-12: the card carried only the evidence, so a manager
+              deciding a visit he had been on himself read nothing that said so. It is a fact about the
+              visit, not a mark against anybody, and it changes no step of the chain. */}
+          {visit.companions.length > 0 ? (
+            <p className="break-words text-xs font-semibold text-slate-600">
+              <span className="font-black text-slate-800">On the visit: </span>
+              {visit.companions.map((companion) => `${companion.name} (${companion.role})`).join(", ")}
+            </p>
+          ) : null}
           {/* The first step, once it is past. The SFE reads who already said yes before saying it too. */}
           {visit.managerDecidedByName ? (
             <p className="break-words text-xs font-semibold text-slate-600">
               Approved by {visit.managerDecidedByName}
+              {visit.managerDecidedByWasOnTheVisit ? ", who was on the visit" : ""}
               {visit.managerNote ? ` · ${visit.managerNote}` : ""}
             </p>
           ) : null}

@@ -110,6 +110,7 @@ import {
   isUnplannedVisitStatus,
   outOfListVisitNote,
   OUT_OF_LIST_REP_NOTE,
+  reviewerWasOnTheVisit,
   unplannedFirstStatus,
   unplannedVisitRepNote,
   unplannedVisitStatusLabel,
@@ -258,7 +259,11 @@ const VISIT_COLUMNS =
   // `validated_at` is the other half of "does this count" (`visitCountsInKpi`): the approval half is
   // the embedded `unplanned` row, and a reader of the raw table has to ask for both by name.
   "customer:phoenix_crm_customers!customer_id(name, status, validated_at), " +
-  "unplanned:phoenix_crm_unplanned_visits!visit_id(status, clarification)";
+  // `manager_decided_at` is read for the REP's own sentence, not for a manager's screen: `sfe_pending`
+  // is reached either by a manager approving it or by his step never having been available, and only
+  // this column tells the two apart. Without it the rep is told "your manager approved it" about a
+  // step nobody took. It is a timestamp, never a name — Golden Rule #1 keeps people off his screen.
+  "unplanned:phoenix_crm_unplanned_visits!visit_id(status, clarification, manager_decided_at)";
 
 function visitKind(value: unknown): PhoenixCrmVisitKind {
   return value === "double" || value === "chain" || value === "product_manager" ? value : "single";
@@ -281,7 +286,7 @@ function visitUnplanned(row: Row): VisitRow["unplanned"] {
   return {
     status,
     statusLabel: unplannedVisitStatusLabel(status),
-    note: unplannedVisitRepNote(status),
+    note: unplannedVisitRepNote(status, entry.manager_decided_at != null),
     clarification: textOrNull(entry.clarification) ?? "",
   };
 }
@@ -1158,6 +1163,16 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // Right after validating a customer, the place's photo can stand for the visit (the database allows it
   // only for the same person's photo of that customer, taken in the last 30 minutes).
   const reusePlacePhoto = body.reusePlacePhoto === true;
+  // 🔴 Was the manager who would decide this visit one of the people ON it (owner, 2026-10-12)? If he
+  // was, his step is unavailable and the visit starts at SFE — `unplannedFirstStatus` holds the rule
+  // and the reasoning. It is resolved HERE, beside the reviewer himself, because this is the only
+  // place that has both the organogram's answer and the companions the rep just recorded; the phone
+  // never chooses a stage, exactly as it never chooses one for a vacant chain.
+  const reviewerOnTheVisit = reviewerWasOnTheVisit(reviewer?.hrId ?? null, [
+    participants.value.managerHrId,
+    participants.value.seniorHrId,
+    participants.value.productManagerHrId,
+  ]);
   const result = await callPhoenixCrm<Row>("phoenix_crm_save_visit", {
     p: {
       id: visitId,
@@ -1209,7 +1224,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       // elapsed time itself; this is only what the phone claims, kept because a forged one is
       // constant. It never reaches the rep and can never refuse him a visit.
       form_open_seconds: visit.formOpenSeconds,
-      unplanned_first_status: unplannedFirstStatus(reviewer !== null),
+      unplanned_first_status: unplannedFirstStatus(reviewer !== null, reviewerOnTheVisit),
       reviewer_hr_id: reviewer?.hrId ?? null,
       lat: visit.lat,
       lon: visit.lon,
@@ -1329,7 +1344,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       unplannedKind === "out_of_list"
         ? OUT_OF_LIST_REP_NOTE
         : unplannedKind === "out_of_plan"
-          ? unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null))
+          ? // No manager has decided anything the instant the visit saves, so the note must not claim
+            // one did — which is what `sfe_pending` would otherwise say to a rep whose manager step
+            // was never available.
+            unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null, reviewerOnTheVisit), false)
           : null,
     visitAskNote: visitAskSavedNote(visitAsk),
     pharmacyNote: savedPharmacyNote(result),

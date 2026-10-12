@@ -404,7 +404,12 @@ export function runPhoenixCrmOffplanDayTests(): void {
     assert.match(team, /plannedFor: movedFrom\.get\(view\.visitId\) \?\? \[\],/, "and each visit carries the server's answer");
 
     const service = source("src/lib/phoenix-crm/server/unplanned.ts");
-    assert.match(service, /visit:phoenix_crm_visits!visit_id\([^)]*\bcaptured_at\)/, "the visit's own captured_at rides on the row");
+    // 🔴 A BOUNDARY EACH SIDE, AND THE LEFT ONE OPTIONAL. Closing the regex on `captured_at\)` also
+    // demanded that it be the LAST column inside the join, and it went red on 2026-10-12 the moment
+    // the companion columns were added after it. That the column is SELECTED is the rule; where it
+    // sits in the list is nobody's. A longer name merely ending in it is still refused — that is what
+    // the right-hand `\b` does, because `photo_captured_at` carries no boundary on the left.
+    assert.match(service, /visit:phoenix_crm_visits!visit_id\(([^)]*[,\s])?captured_at\b/, "the visit's own captured_at rides on the row");
     const ref = functionBody(service, "export function unplannedVisitRef(");
     assert.ok(ref.includes("capturedAt: textOrNull(visit.captured_at),"), "the instant the plan is read at is the visit's own");
     assert.doesNotMatch(ref, /clarification/, "and the rep's reason is not handed to the read at all");

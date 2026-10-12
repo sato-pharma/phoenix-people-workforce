@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 import { normalizeContactName, TITLE_TOKENS } from "../src/lib/crm/campaign-contact-match.ts";
 
@@ -41,6 +42,8 @@ import { normalizeContactName, TITLE_TOKENS } from "../src/lib/crm/campaign-cont
  */
 
 const MIGRATION = "supabase/migrations/20261006002000_phoenix_crm_customer_name_fold.sql";
+/** 2026-10-12 — the same fold reaching the door the rep's own phone comes through, and the place cap. */
+const DOOR_MIGRATION = "supabase/migrations/20261012090000_phoenix_crm_door_name_fold_and_place_cap.sql";
 
 /** The honorific array inside `phoenix_crm_fold_name`, as the migration actually writes it. */
 function sqlTitleTokens(sql: string): string[] {
@@ -103,6 +106,93 @@ function checkBothGuardsFold(sql: string): void {
   assert.doesNotMatch(loader, /update\s+public\.phoenix_crm_customers\s+set\s+name/i, "nothing here may rewrite a customer's name");
 }
 
+/**
+ * 5. THE DOOR AND THE RENAME FOLD TOO — 2026-10-12.
+ *
+ * The rule above was written about the LOADER, and the loader was the only thing the change touched.
+ * The two places a rep's own phone creates or renames a customer went on comparing `lower()`, so the
+ * system still disagreed with itself — one door further in. Measured on production 2026-10-12 inside
+ * the door's own scope (seat + is_test + list_type + active/pending/outside, 12,272 customers): 183
+ * fold-groups already hold more than one live row, and 7 groups / 9 rows are ones the fold catches
+ * and `lower()` could not — every one the same doctor with a `د.` honorific or an alef/yeh spelling.
+ *
+ * The same fences apply here as to the loader, and they are asserted rather than trusted: it only
+ * ever SKIPS by raising the existing `same_name` — no merge, no delete, no unique index — the scope
+ * stays the seat, and the key is never the identity key.
+ */
+function checkTheDoorAndTheRenameFold(): void {
+  // 🔴 THE COMMENTS COME OFF FIRST, AND THAT IS NOT TIDINESS. Every `doesNotMatch` below asks whether
+  // the migration DOES something, and a migration explaining why it does not do that thing names it in
+  // prose: the file's own comment says the key is never `identityNameKey`, and a raw read of it failed
+  // this very assertion on the sentence promising the opposite. A banned-token check that reads
+  // comments can only be satisfied by never discussing the ban, which is the opposite of what these
+  // files are for.
+  //
+  // 🔴 AND IT IS `stripSqlComments`, NEVER A LINE FILTER. This read began as a filter on lines
+  // starting `--`, which `tests/comment-strip-ratchet.test.ts` refuses by name: a line is judged by how
+  // it STARTS, so a `--` written after code survives and a block comment survives entirely. The shared
+  // parser tracks the dollar-quoted body too, so the comments inside this migration's function bodies
+  // come off as well, and it blanks each span in place -- the offsets the slices below take are unmoved.
+  const sql = stripSqlComments(readFileSync(DOOR_MIGRATION, "utf8"));
+
+  for (const [what, fn] of [
+    ["the door", "phoenix_crm_validate_customer"],
+    ["the rename", "phoenix_crm_rename_customer"],
+  ] as const) {
+    const start = sql.indexOf(`create or replace function public.${fn}`);
+    assert.ok(start >= 0, `${DOOR_MIGRATION} must carry ${fn} in full — it replaces the live function`);
+    const body = sql.slice(start, sql.indexOf("$$;", start));
+
+    assert.doesNotMatch(body, /lower\(c\.name\)/, `no raw-lower name comparison may survive in ${what}`);
+    assert.match(
+      body,
+      /and public\.phoenix_crm_fold_name\(c\.name\) = v_name_key/,
+      `${what} must compare the FOLDED name — the same key the loader and the board already use`,
+    );
+    // An empty fold is not a key. Without this guard the check would collide every name that folds
+    // away to nothing onto one customer; the fold's own header says so, and the loader reads it so.
+    assert.match(body, /v_name_key <> ''/, `${what} must skip the duplicate check when the name folds away to nothing`);
+    // It only ever skips.
+    assert.match(body, /raise exception 'phoenix_crm:same_name'/, `${what} must still refuse by raising same_name, never by merging`);
+    assert.doesNotMatch(body, /delete\s+from\s+public\.phoenix_crm_customers/i, `nothing in ${what} may delete a customer`);
+  }
+
+  assert.doesNotMatch(sql, /create\s+unique\s+index/i, "no unique index — 183 live fold-groups could not satisfy one");
+  // Never widened past the seat: 594 of 624 production pairs straddle two lines and are CORRECT.
+  const door = sql.slice(sql.indexOf("create or replace function public.phoenix_crm_validate_customer"));
+  assert.match(door.slice(0, door.indexOf("$$;")), /c\.seat_id = v_seat/, "the door's duplicate check stays scoped to the seat");
+  // And never `identityNameKey`, which collapses محمود onto محمد.
+  assert.doesNotMatch(sql, /identity_name_key|identityNameKey/, "the key is phoenix_crm_fold_name, never the identity key");
+}
+
+/**
+ * 6. THE FIVE-PLACE CAP REACHES THE VALIDATE PATH — 2026-10-12.
+ *
+ * `phoenix_crm_add_place` has checked `>= 5` all along, but `phoenix_crm_validate_customer` called
+ * `phoenix_crm_insert_place` DIRECTLY and checked nothing, so validating a listed customer who
+ * already held five clinics added a sixth. Nothing pinned its absence. It is asserted here because
+ * the same migration carries it, and the ORDER is the whole fix: a cap checked after the insert is
+ * not a cap.
+ */
+function checkTheValidatePathChecksTheCap(): void {
+  const sql = readFileSync(DOOR_MIGRATION, "utf8");
+  const door = sql.slice(sql.indexOf("create or replace function public.phoenix_crm_validate_customer"));
+  const body = door.slice(0, door.indexOf("$$;"));
+
+  const cap = /count\(\*\) from public\.phoenix_crm_places pl where pl\.customer_id = v_customer\.id and pl\.status = 'active'\) >= 5/;
+  assert.match(body, cap, "the validate path must count the customer's ACTIVE places and stop at five");
+  assert.match(
+    body,
+    /raise exception 'phoenix_crm:too_many_places'/,
+    "and raise the SAME error add_place raises, which the API already explains to the rep",
+  );
+
+  const capAt = body.search(cap);
+  const insertAt = body.indexOf("v_place := public.phoenix_crm_insert_place(");
+  assert.ok(capAt >= 0 && insertAt >= 0, "both the cap and the insert must be present");
+  assert.ok(capAt < insertAt, "the cap must be checked BEFORE the place is inserted");
+}
+
 function checkTheRealProductionPairs(): void {
   // The eight pairs that existed on production because the raw key could not see them. Each one is
   // the same customer; the fold must put them on one key.
@@ -133,6 +223,8 @@ export function runPhoenixCrmCustomerNameFoldTests(): void {
   checkTheHonorificsAreOneList(sql);
   checkTheSqlCarriesEveryFoldStep(sql);
   checkBothGuardsFold(sql);
+  checkTheDoorAndTheRenameFold();
+  checkTheValidatePathChecksTheCap();
   checkTheRealProductionPairs();
 
   console.log("phoenix-crm customer name fold: OK");
