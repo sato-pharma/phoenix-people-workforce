@@ -1,3 +1,5 @@
+import { isSalesVacancyAreaCode } from "@/lib/workforce-classification";
+
 function normalize(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -23,6 +25,17 @@ export function isSalesOthersBucket(source: {
   employeeName?: string | null;
   line?: string | null;
 }) {
+  // A VACANT AREA IS NOT A LINE TOTAL. linkSalesRecordAgainstDirectory recognises a vacancy area
+  // code, moves it to the lookup key and deliberately leaves the uploaded display name alone
+  // ("display name can stay as uploaded" — tests/sales-linkage.test.ts), so a vacant area whose
+  // sheet reads "Others" arrives here still carrying its code. Matching on the display name alone
+  // would file that area under the line's aggregate bucket: service.ts drops an Others record from
+  // every scoped read, labels it "Unassigned DSM" and excludes it from district attribution — so
+  // the territory's sales would vanish from the manager who owns the vacancy.
+  if (isSalesVacancyAreaCode(source.employeeHrId) || isSalesVacancyAreaCode(source.employeeLookupKey)) {
+    return false;
+  }
+
   const expectedHrId = otherBucketForLine(source.line);
   const hrId = normalize(source.employeeHrId);
   const lookup = normalize(source.employeeLookupKey);

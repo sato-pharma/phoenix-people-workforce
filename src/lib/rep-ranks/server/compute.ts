@@ -219,7 +219,14 @@ async function readIntegrityFlags(seatIds: readonly string[], from: string, to: 
  * no visit to join to, so there is no row for it in `readFieldSaves`; it is counted per rep instead,
  * and `field-quality.ts` adds it to the numerator while the denominator stays field saves.
  *
- * `rep_hr_id` is upper-cased to match the roster's `hrIdKey`, as every other per-rep index here does.
+ * 🔴 `rep_hr_id` GOES THROUGH `keyOf`, LIKE EVERY OTHER PER-REP INDEX IN THIS FILE, AND THAT IS THE
+ * WHOLE JOIN. The roster, the saves and the starts are all keyed by `normalizeHrIdForAccess` — lower
+ * case with every dash and symbol stripped (`ai0020`, `b170`). This reader upper-cased the raw id
+ * instead, so it emitted `AI-0020` and `B-170`: a key that matches no rep on the roster, for every
+ * row, which left the pillar widened on paper and counting NOTHING for 9 live cases. The fixture in
+ * `tests/rep-ranks.test.ts` could not catch it — it passes canonical keys straight into the pure
+ * function, so only the reader's own key was ever wrong.
+ *
  * The `settled_*` columns are read for the same column-against-column reason as above.
  */
 async function readIntegrityPlaceCases(seatIds: readonly string[], from: string, to: string): Promise<RankPlaceCase[]> {
@@ -249,7 +256,7 @@ async function readIntegrityPlaceCases(seatIds: readonly string[], from: string,
       { cursorColumn: "id", cursorOf: (row) => row.id },
     );
     for (const row of rows) {
-      const repKey = String(row.rep_hr_id ?? "").toUpperCase();
+      const repKey = keyOf(row.rep_hr_id);
       const day = row.visit_date === null ? "" : String(row.visit_date).slice(0, 10);
       // A case with no rep or no day belongs to nobody's window; it stays on the board, where a human
       // reads it, and never silently lands on the nearest rep.
