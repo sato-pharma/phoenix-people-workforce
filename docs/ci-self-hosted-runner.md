@@ -1848,6 +1848,17 @@ given, **hold it and open ONE PR when the feature is whole**, saying in one line
 so he can override. Widening a PR his approval already sits on is allowed — say so plainly and let
 him re-confirm; it is no longer a reason to open a second.
 `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
+🔴 **AND A SMALL PR IS NEVER PUT TO HIM AT ALL — NOT EVEN WHEN IT IS THE ONLY ONE OPEN** (owner,
+2026-10-12, 21:4x Cairo: *"i will not merge a small pr"*). #5802 — three files, a regenerated
+cloud-context mirror — was put to him as the only open PR and therefore as one clean merge, which is
+exactly the sentence this rule refuses: he did not ask which PR or weigh it, he refused the shape.
+The 09-27 and 09-30 rules govern how the work is BUILT; this one governs what REACHES him. So a small
+diff never appears in a `Next step:` line or in quoted words, and **`rollup-prs.mjs` reporting
+"nothing to roll up" is not permission to hand the single PR over** — that is the exact gap, since
+the script needs two or more open PRs with disjoint files and is silent by design when one is open.
+The answer is to **widen it** — commit the work already in hand onto that same branch so the PR
+stops being small — or to park it and say in one line what it is waiting for. What counts as small
+is Claude's judgement, never his, exactly as it has been since 2026-09-30.
 🔴 **NEVER HAND HIM MORE THAN ONE MERGE AT A TIME — TRIAGING OPEN PRs IS NEVER HIS JOB, AND
 CONSOLIDATING THEM IS YOURS** (owner, 2026-09-30: *"i till now donot know what to do with small open
 prs"*). He does nothing: he never decides which to merge, which to close, or what counts as small.

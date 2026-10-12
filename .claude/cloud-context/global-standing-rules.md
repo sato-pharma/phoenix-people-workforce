@@ -163,7 +163,9 @@ The measurements and incidents behind each line: `~/.claude/docs/standing-rules-
 - **Keep `"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"` in the `env` block of
   `~/.claude/settings.json` AND as a Windows user variable.** Not a duplicate of
   `promptSuggestionEnabled`: only the variable keeps suggestions on near the usage limit and in the
-  first session after an update. Never remove either copy.
+  first session after an update. Never remove either copy. **Suggestions are ALWAYS ON, NEVER OFF**
+  (owner, 2026-10-12): `~/.claude/hooks/suggestion-context.mjs` switches both back on at every
+  session start if anything flipped them. Never disable that heal or turn suggestions off.
 
 ## Compact Instructions
 

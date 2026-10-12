@@ -351,6 +351,15 @@ a protected rule) or one part is urgent. **The only authority on cost is his inv
 measured minutes into a bill.** 🔴 **A FEATURE ARRIVING IN INSTALMENTS IS STILL ONE FEATURE — HOLD THE
 PARTS** (owner, 2026-09-29) and open ONE PR when it is whole, saying in one line that you are holding.
 `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
+🔴 **AND A SMALL PR IS NEVER PUT TO HIM AT ALL — NOT EVEN WHEN IT IS THE ONLY ONE OPEN** (owner,
+2026-10-12: *"i will not merge a small pr"*). It never reaches a `Next step:` line, and "it is the
+only open PR, so it is one merge" is the mistake itself — `rollup-prs.mjs` reporting nothing to roll
+up is not permission to hand it over. **WIDEN it** (commit the work already in hand onto that same
+branch) or park it, saying in one line what it waits for. 🔴 **SMALL IS MEASURED IN PATHS, NOT IN
+FILES — a PR that changes only `docs/`, `.claude/` and root markdown is small however many files it
+touches** (he refused #5802 at three files and again at seven, where `rollup-prs.mjs`'s `<= 4 files`
+called it wide). `scripts/needs-you.mjs` now demotes such a PR out of his lane with what to do about
+it, pinned by `tests/needs-you-board.test.ts`; an unreadable file list is never a demotion.
 🔴 **NEVER HAND HIM MORE THAN ONE MERGE AT A TIME — TRIAGING OPEN PRs IS NEVER HIS JOB** (owner,
 2026-09-30). **Before asking him to merge anything, run `node scripts/rollup-prs.mjs`**: it groups the
 open PRs whose files are disjoint, names the SUPERSEDED and the SEPARATE ones, and `--apply` opens ONE
