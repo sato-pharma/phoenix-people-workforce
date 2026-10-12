@@ -191,6 +191,18 @@ function testEveryCurrentPaperWearsThePremiumIdentity(): void {
     assert.ok(PREMIUM_BAND.test(html), `${name}: the band must be drawn as an inline vector, never a CSS tile`);
     assert.ok(html.includes('<svg class="pm-frame"'), `${name}: the security frame is missing`);
     assert.ok(html.includes('class="pm-watermark"'), `${name}: the watermark is missing`);
+    // THE ARABIC LOGO IS THE WATERMARK AND NOTHING ELSE — never the masthead (owner, 2026-10-12:
+    // "make the arabic sato logo only as water mark … everywhere", then "watermark and footer only").
+    const mastheads = html.match(/<header class="pm-mast[ "][\s\S]*?<\/header>/g) ?? [];
+    assert.ok(mastheads.length > 0, `${name}: the masthead was read, so the next check tests something`);
+    for (const mast of mastheads) {
+      assert.ok(!mast.includes("sato-pharma-arabic"), `${name}: the Arabic logo is never in the masthead`);
+    }
+    assert.equal(
+      (html.match(/sato-pharma-arabic/g) ?? []).length,
+      (html.match(/<img class="pm-watermark" src="\/brand\/sato-pharma-arabic-on-light\.png"/g) ?? []).length,
+      `${name}: every Arabic logo on the paper is a watermark`,
+    );
     assert.ok(html.includes(PREMIUM_IDENTITY_CODE), `${name}: the running foot must carry the identity code`);
     assert.ok(html.includes("/brand/phoenix-login-emblem.png"), `${name}: the Phoenix emblem leads the foot`);
     assert.ok(html.includes("/brand/sato-pharma-logo-on-light.svg"), `${name}: always the on-light mark`);

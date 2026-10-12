@@ -28,6 +28,11 @@
 // 🔴 NOTHING RASTERISES. Chromium turns a CSS gradient or a repeating background into a page-sized
 // layer per page. Fills are flat colours and both marks are single base64 data URIs referenced by
 // every page — the raster discipline the Spotlight sheet records at length.
+//
+// THE ARABIC MARK IS IN THE FOOT AND IN A 5% WATERMARK, NEVER A MASTHEAD (owner, 2026-10-12:
+// "watermark and footer only", keeping the foot mark and adding the watermark). The watermark sits low
+// on the right of the content column, above the foot, contained so the whole name shows. It is the
+// foot's own data URI referenced a second time, so it adds no image object.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -331,6 +336,7 @@ function pageShell(pack: SalesReviewPack, body: string, page: number, total: num
       <div class="bracket bracket--tr">${BRACKET_SVG}</div>
       <div class="bracket bracket--bl">${BRACKET_SVG}</div>
       <div class="bracket bracket--br">${BRACKET_SVG}</div>
+      ${arabicMark() ? `<div class="arabic-wm">${arabicMark()}</div>` : ""}
       <div class="inner">
         ${body}
         <footer class="foot">
@@ -570,6 +576,10 @@ const CSS = `
   .bracket--tr { top:4mm; right:9mm; transform:scaleX(-1); }
   .bracket--bl { bottom:4mm; left:9mm; transform:scaleY(-1); }
   .bracket--br { bottom:4mm; right:9mm; transform:scale(-1,-1); }
+  /* The Arabic mark at 5%, low on the right of the content column and clear of the foot (owner,
+     2026-10-12). Before .inner in the markup, so the text paints over it with no z-index. */
+  .arabic-wm { position:absolute; right:15mm; bottom:24mm; width:112mm; opacity:.05; pointer-events:none; }
+  .arabic-wm img { display:block; width:100%; height:auto; }
   .inner { position:relative; height:100%; display:flex; flex-direction:column; }
   .inner > *:not(.gap):not(.tbl):not(.cover) { flex:0 0 auto; }
   .gap { flex:1 1 0; min-height:0; }

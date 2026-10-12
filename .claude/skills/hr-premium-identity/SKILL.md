@@ -22,7 +22,7 @@ was taken from that file.
 ```
 assets/
   sato-pharma-logo-on-light.svg   the house mark (SATO black, PHARMA blue), vector; masthead left
-  sato-pharma-arabic-on-light.png the Arabic calligraphy (placeholder art, see below); masthead right + watermark
+  sato-pharma-arabic-on-light.png the Arabic calligraphy (placeholder art, see below); watermark only
   sato-pharma-reverse.png         reverse mark, for the navy closing page
   sato-pharma-arabic-gold.png     the Arabic mark flattened to gold #D8B872, for the navy page
   phoenix-login-emblem.png        the ringed Phoenix emblem over rising bars; running foot + seal window
@@ -45,6 +45,11 @@ examples/
 - **Arabic legal text stays exactly as he supplied it.**
 - **If you are unsure whether a change alters the meaning or the layout of a legal paper, ask
   first.**
+- 🔴 **The Arabic Sato logo goes in the watermark and the footer ONLY, never a masthead.** The owner,
+  12 October 2026 (about 23:50 Cairo): "make the arabic sato logo only as water mark … everywhere",
+  then "watermark and footer only". The specimen's masthead still shows it on the right; that is the
+  one part of the specimen you do NOT copy. Papers that already sign their foot with it (the
+  Spotlight sheet, the Sales Review pack) keep the foot mark and carry the watermark as well.
 
 ## What it is, and what it is not
 
@@ -150,7 +155,8 @@ Both come from `reference/tint-assets.mjs`.
    - Left: the on-light mark at 34 mm.
    - Centre: the document title, then a rule ornament (two 9 mm hairlines around a 1.3 mm light
      diamond), then the subtitle (`Human Resources · Head Office · October 2026`).
-   - Right: the Arabic mark at 28 mm.
+   - Right: **empty.** The specimen put the Arabic mark here; the owner took it out (Rule zero). Keep
+     the column at its width, so the title wraps exactly as before and no page grows.
 4. **Band.** The engine-turned band sits 3.5 mm under the masthead.
    - It is 1.5 mm tall, 176 mm wide, with a 6 mm wave, a 0.26 mm stroke, in deep.
    - It is an **inline vector SVG** (`band()`).
@@ -187,7 +193,8 @@ or rounded boxes.
 Use a closing page to end a part or a pack. On the specimen it is page 7.
 
 - **Ground and frame.** The ground is navy. The frame uses the gold palette (`GOLD_FRAME`). The
-  masthead uses the reverse mark at 36 mm and the gold Arabic mark. The band is gold.
+  masthead uses the reverse mark at 36 mm. The gold Arabic mark, if used, is the page's watermark,
+  never in the masthead (Rule zero). The band is gold.
 - **Kicker.** A gold diamond, then `PART ONE · COMPLETE`, then a gold-hair rule.
 - **Headline.** 30 pt light in `text`, then a 60 pt bold line in gold.
 - **Stamp.** A 29 mm square stamp on the right: a 0.7 pt gold keyline plus an inner deep-gold

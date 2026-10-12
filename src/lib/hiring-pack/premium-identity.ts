@@ -10,8 +10,8 @@
 // of them every page gets:
 //   · a double-keyline FRAME with a line of security microtext between the keylines and a square
 //     tile at each corner;
-//   · the Arabic calligraphy as a 5% WATERMARK;
-//   · a CENTRED MASTHEAD — the Latin mark, the title over a diamond rule, the Arabic mark;
+//   · the Arabic calligraphy as a 5% WATERMARK, and NOWHERE ELSE on the paper;
+//   · a CENTRED MASTHEAD — the Latin mark, the title over a diamond rule, an empty right cell;
 //   · a PHOENIX RUNNING FOOT carrying the identity code.
 //
 // DRESS ONLY. A paper keeps every word, field, clause, table and signature cell it had. A renderer
@@ -22,6 +22,11 @@
 // labour exit forms and the official pack forms print as the Authority issues them. Never import
 // this module into `render-form1.ts`, `render-form6.ts`, `render-labour-exit.ts`,
 // `render-official-form.ts` or `render-placement.ts`.
+//
+// THE ARABIC MARK IS NEVER IN THE MASTHEAD. The specimen set it at the masthead's right; the owner
+// took it out the same evening — "make the arabic sato logo only as water mark … everywhere", then
+// "watermark and footer only" (2026-10-12, about 23:50 Cairo). The right column keeps its width, so
+// the title block wraps exactly as it did and no paper can gain a line.
 //
 // NO SEAL, as in `house-identity.ts`. Nothing below draws a company stamp; the frame's corner tiles
 // and the diamond rule are ornaments, not a seal, and they sit on no signature cell.
@@ -202,8 +207,12 @@ export interface PremiumMastheadInput {
 }
 
 /**
- * The premium masthead: the Latin mark LEFT, the title block CENTRED, the Arabic mark RIGHT, and the
- * engine-turned band under all three.
+ * The premium masthead: the Latin mark LEFT, the title block CENTRED, the right column EMPTY, and the
+ * engine-turned band under them.
+ *
+ * NO ARABIC MARK HERE (owner, 2026-10-12: the Arabic logo goes in the watermark and the footer only).
+ * The third grid column stays at its old width with nothing in it: the title block keeps the room it
+ * had, so it wraps on the same words and the masthead can only get shorter, never taller.
  *
  * PINNED LEFT-TO-RIGHT like the house letterhead, so the marks sit on the same sides of an Arabic
  * paper and an English one; each line inside keeps its own direction.
@@ -245,7 +254,6 @@ export function premiumMasthead(input: PremiumMastheadInput): string {
         <div class="pm-rule" aria-hidden="true"><i></i><b></b><i></i></div>
         ${subtitles}
       </div>
-      <img class="pm-mast__arabic" src="${PREMIUM_ARABIC_MARK_SRC}" alt="ساتو فارما" width="1100" height="813">
     </header>
     ${premiumBandSvg()}`;
 }
@@ -415,7 +423,6 @@ export const PREMIUM_IDENTITY_CSS = `
     direction: ltr;
   }
   .pm-mast__latin { display: block; width: 32mm; height: auto; }
-  .pm-mast__arabic { display: block; width: 24mm; height: auto; justify-self: end; }
   .pm-mast__mid { text-align: center; min-width: 0; }
   .pm-mast__names {
     display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: .4mm 2mm;
@@ -448,7 +455,6 @@ export const PREMIUM_IDENTITY_CSS = `
 
   .pm-mast--compact { grid-template-columns: 28mm 1fr 20mm; }
   .pm-mast--compact .pm-mast__latin { width: 28mm; }
-  .pm-mast--compact .pm-mast__arabic { width: 20mm; }
   .pm-mast--compact .pm-mast__t { margin-top: .2mm; font-size: 12.5pt; }
   .pm-mast--compact .pm-rule { margin: .5mm 0 .3mm; }
   .pm-mast--compact + .pm-band { margin-top: 1.4mm; }

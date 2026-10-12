@@ -4224,8 +4224,8 @@ The same evening, while it was being rolled out: *"the contract keep corporate a
 The shared module is `src/lib/hiring-pack/premium-identity.ts`, built once beside
 `house-identity.ts` and never pasted per renderer. It is the house identity `SATO-DIS-2026-01 v1.0`
 raised to premium — the same three blues, the same ink rule — plus a page frame with Latin security
-microtext, the Arabic mark as a 5% watermark, a masthead with both marks and the engine-turned band
-drawn as an inline vector, and the Phoenix running foot carrying the identity code.
+microtext, the Arabic mark as a 5% watermark, a masthead with the Latin mark and the engine-turned
+band drawn as an inline vector, and the Phoenix running foot carrying the identity code.
 
 - **Wears it:** both clearances, both custody receipts, the worker data form, the English certificate
   of experience, the English salary letter, and the CURRENT version of every one of the HR papers
@@ -4243,6 +4243,28 @@ drawn as an inline vector, and the Phoenix running foot carrying the identity co
   byte-pinned by `tests/payslip-document.test.ts`, so the payslip and the other papers that call it
   keep the house dress until he says otherwise.
 - **No seal**, as on every hiring paper: the seal is the job offer's alone.
+
+### The Arabic logo: watermark and footer only
+
+At about 23:50 Cairo the same evening, looking at the premium papers: *"make the arabic sato logo only
+as water mark"*, then *"everywhere"*. Asked about the two papers that sign their foot with it, he
+answered *"ok watermark and footer only"*, and then chose to keep their foot mark and add the
+watermark.
+
+- **The HR premium papers:** the Arabic mark left the masthead. The right column of the masthead keeps
+  its width with nothing in it, so the title wraps on the same words and no paper can grow a line.
+  The 5% watermark is now the only Arabic mark on these papers.
+- **The Spotlight sheet** (and the Phoenix Ranks certificate, which shares its sheet frame so the two
+  cannot drift apart) and **the Sales Review pack PDF:** the foot keeps the Arabic mark, and every
+  sheet now carries it as a 5% watermark too, low on the right of the content column and above the
+  foot. It is contained, so the whole name shows. That is none of the four Spotlight placements he
+  struck on 2026-09-12 (a wash behind the figure, a bleed off the right edge, low under the gauge, over
+  the figure's left shoulder). The rep's own Spotlight sheet already had its centred watermark
+  (2026-09-30) and keeps it instead of getting a second one.
+- **Already a watermark, unchanged:** the milestone cards, the award cheque and the joining form's
+  band.
+- Pinned by `tests/hr-premium-identity.test.ts`, `tests/spotlight-sheet-design.test.ts`,
+  `tests/spotlight-rep-self.test.ts` and `tests/business-review-pack-model.test.ts`.
 
 ### What it cost to get right on paper
 
