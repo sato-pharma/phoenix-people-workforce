@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { JOB_SCHEDULES } from "@/lib/observability/job-schedule";
 import {
@@ -33,11 +35,17 @@ import {
  *      against shipping either half alone.
  */
 
+// `sfeVisible` is stamped by the board's reader from its own `SFE_SOURCES` allow-list, so these
+// helpers mirror what that one list says: `photo` is the SFE's, everything else is the Super Admin's.
+// The agreement between the two is pinned on the real source in `crm-integrity-signboard-cases`.
 function gps(repHrId: string, repName: string, strong: boolean, reasons: string[]): FraudScanCase {
-  return { repHrId, repName, source: "gps", strong, reasons };
+  return { repHrId, repName, source: "gps", sfeVisible: false, strong, reasons };
 }
 function photo(repHrId: string, repName: string, strong: boolean, reasons: string[]): FraudScanCase {
-  return { repHrId, repName, source: "photo", strong, reasons };
+  return { repHrId, repName, source: "photo", sfeVisible: true, strong, reasons };
+}
+function signboard(repHrId: string, repName: string, strong: boolean, reasons: string[]): FraudScanCase {
+  return { repHrId, repName, source: "signboard", sfeVisible: false, strong, reasons };
 }
 
 export function runPhoenixCrmFraudScanTests() {
@@ -97,6 +105,37 @@ export function runPhoenixCrmFraudScanTests() {
   assert.ok(sfeCases.every((entry) => entry.source === "photo"), "and no GPS case reaches the SFE copy");
   const sfeSummary = summarizeFraudCases(sfeCases, thursday);
   assert.equal(sfeSummary.strongVisits, 0, "the SFE copy carries no strong GPS flag");
+
+  // 🔴 AND THE CUT IS AN ALLOW-LIST, NOT A SUBTRACTION. It was `source !== "gps"` until 2026-10-12,
+  // which excluded every detector added after `photo` only by accident: the board's reader was
+  // collapsing them into `gps` to satisfy a two-value type. The moment that collapse was corrected so
+  // a signboard case is labelled honestly, a subtraction here would have put the Super Admin's own
+  // signboard evidence — about a named rep — into the SFE Manager's weekly report, against the
+  // owner's 2026-10-09 decision.
+  const withSignboard = [...cases, signboard("PD-0031", "Mahmoud Fathi", true, ["The signboard in the photo names somebody else"])];
+  const sfeWithSignboard = sfeVisibleCases(withSignboard);
+  assert.equal(sfeWithSignboard.length, 2, "a signboard case must not reach the SFE copy");
+  assert.ok(
+    !sfeWithSignboard.some((entry) => entry.source === "signboard"),
+    "the signboard cases are the Super Admin's alone (owner, 2026-10-09)",
+  );
+  assert.equal(
+    summarizeFraudCases(sfeWithSignboard, thursday).strongVisits,
+    0,
+    "and the strong signboard case never reaches his counts either",
+  );
+  // The Super Admin's own copy still carries it: this is a tier, never a filter on the evidence.
+  assert.equal(summarizeFraudCases(withSignboard, thursday).strongVisits, 2, "the Super Admin reads both strong cases");
+
+  const rules = readFileSync("src/lib/phoenix-crm/fraud-scan-rules.ts", "utf8");
+  assert.ok(
+    /cases\.filter\(\(entry\) => entry\.sfeVisible\)/.test(rules),
+    "the SFE cut must read the stamped tier, never re-derive one from `source`",
+  );
+  assert.ok(
+    !/entry\.source !== "gps"/.test(stripComments(rules)),
+    "no narrowing may be written as 'everything but gps' — a detector added later would walk straight in",
+  );
 
   // ---------------------------------------------------------------------------
   // 5. The line cap names the first N reps and counts the rest, never truncates with an ellipsis.

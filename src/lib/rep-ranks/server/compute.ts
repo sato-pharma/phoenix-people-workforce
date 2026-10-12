@@ -35,7 +35,7 @@ import { PHOENIX_CRM_DEFAULT_SETTINGS } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
-import { rankCountedFlags, type RankFieldSave } from "@/lib/rep-ranks/field-quality";
+import { rankCountedFlags, type RankFieldSave, type RankPlaceCase } from "@/lib/rep-ranks/field-quality";
 import {
   factsForWindow,
   indexRankData,
@@ -147,8 +147,15 @@ async function readVisits(seatIds: readonly string[], from: string, to: string):
 }
 
 /**
- * The strong integrity flags on each of the reps' saves, keyed by visit id, after the
+ * The strong integrity flags on each of the reps' saves, keyed by VISIT id, after the
  * approximate-location rule AND after the Super Admin's settlements.
+ *
+ * 🔴 `subject_kind = "visit"` IS CORRECT HERE AND IS NOT THE WHOLE STORY. The map is keyed by visit
+ * id because `readFieldSaves` joins it to the visit row, so a place case has nothing to join to and
+ * cannot be widened into this read — it would key on a place id that matches no save and be dropped
+ * silently. The place cases are read separately by `readIntegrityPlaceCases` below and counted
+ * per-rep; before 2026-10-12 they were not read at all, which is why two detectors never touched a
+ * score.
  *
  * 🔴 THE FOUR `settled_*` COLUMNS ARE READ HERE BECAUSE THE TEST IS A COLUMN AGAINST A COLUMN.
  * `settled_flags = flags` is not a filter PostgREST can ask for, and asking only for
@@ -194,6 +201,70 @@ async function readIntegrityFlags(seatIds: readonly string[], from: string, to: 
       if (counted.length === 0) continue;
       const key = String(row.subject_id);
       out.set(key, [...new Set([...(out.get(key) ?? []), ...counted])]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The strong integrity cases filed against a PLACE each rep validated — one row per case, keyed by
+ * rep, after the same approximate-location rule and the same settlements a visit case gets.
+ *
+ * 🔴 THESE REACHED NO SCORE AT ALL UNTIL 2026-10-12. The pillar read `subject_kind = "visit"` only,
+ * so the `signboard` and `capture_trust` detectors — both of which file ONLY against places — were
+ * silent in Phoenix Ranks for their whole lives: a rep whose validation evidence did not hold up kept
+ * a clean Integrity score while a rep flagged on a single visit lost marks.
+ *
+ * 🔴 KEYED BY REP, NOT BY SUBJECT, AND THAT IS THE WHOLE REASON IT IS A SECOND READ. A place case has
+ * no visit to join to, so there is no row for it in `readFieldSaves`; it is counted per rep instead,
+ * and `field-quality.ts` adds it to the numerator while the denominator stays field saves.
+ *
+ * `rep_hr_id` is upper-cased to match the roster's `hrIdKey`, as every other per-rep index here does.
+ * The `settled_*` columns are read for the same column-against-column reason as above.
+ */
+async function readIntegrityPlaceCases(seatIds: readonly string[], from: string, to: string): Promise<RankPlaceCase[]> {
+  const out: RankPlaceCase[] = [];
+  for (const part of chunk([...seatIds], 100)) {
+    const rows = await fetchAllRowsKeyset<{
+      id: string;
+      rep_hr_id: string | null;
+      visit_date: string | null;
+      flags: string[] | null;
+      accuracy_meters: number | string | null;
+      settled_at: string | null;
+      settled_by: string | null;
+      settled_note: string | null;
+      settled_flags: string[] | null;
+    }>(
+      () =>
+        db()
+          .from("phoenix_crm_location_integrity")
+          .select("id, rep_hr_id, visit_date, flags, accuracy_meters, settled_at, settled_by, settled_note, settled_flags")
+          .in("seat_id", part)
+          .eq("subject_kind", "place")
+          .eq("strong", true)
+          .eq("is_test", false)
+          .gte("visit_date", from)
+          .lte("visit_date", to),
+      { cursorColumn: "id", cursorOf: (row) => row.id },
+    );
+    for (const row of rows) {
+      const repKey = String(row.rep_hr_id ?? "").toUpperCase();
+      const day = row.visit_date === null ? "" : String(row.visit_date).slice(0, 10);
+      // A case with no rep or no day belongs to nobody's window; it stays on the board, where a human
+      // reads it, and never silently lands on the nearest rep.
+      if (!repKey || !day) continue;
+      const accuracy = row.accuracy_meters === null ? null : Number(row.accuracy_meters);
+      const counted = rankCountedFlags({
+        accuracyMeters: accuracy !== null && Number.isFinite(accuracy) ? accuracy : null,
+        flags: row.flags,
+        settledAt: row.settled_at,
+        settledBy: row.settled_by,
+        settledFlags: row.settled_flags,
+        settledNote: row.settled_note,
+      });
+      if (counted.length === 0) continue;
+      out.push({ repKey, day, flags: counted });
     }
   }
   return out;
@@ -454,9 +525,10 @@ export async function loadRankData(from: string, to: string, todayIso: string): 
     }
   }
 
-  const [visits, saves, customers, planDays, starts] = await Promise.all([
+  const [visits, saves, placeCases, customers, planDays, starts] = await Promise.all([
     readVisits(seatIds, from, to),
     readFieldSaves(seatIds, from, to),
+    readIntegrityPlaceCases(seatIds, from, to),
     readCustomers(seatIds),
     readPlanDays(seatIds, from, to, leaveBySeatDay),
     readStarts(seatIds, from, to),
@@ -466,6 +538,7 @@ export async function loadRankData(from: string, to: string, todayIso: string): 
     roster,
     visits,
     saves,
+    placeCases,
     customers,
     planDays,
     starts,
@@ -511,6 +584,10 @@ function metricsOf(standing: RankStanding): Record<string, unknown> {
     gpsMedianMeters: facts.quality.gps.medianMeters,
     fieldSaves: facts.quality.integrity.saves,
     flaggedSaves: facts.quality.integrity.flagged,
+    // Kept beside `flaggedSaves` rather than folded into it: the two are different acts — a visit
+    // saved somewhere it was not, and a place validated on evidence that did not hold up — and the
+    // admin twin says which, so a number on his screen is never a sum of two unlike things.
+    flaggedPlaces: facts.quality.integrity.places,
     integrityFlags: facts.quality.integrity.flags,
   };
 }

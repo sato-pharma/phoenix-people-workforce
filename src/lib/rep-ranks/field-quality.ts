@@ -50,6 +50,30 @@ export type RankFieldSave = {
   integrityFlags: readonly string[];
 };
 
+/**
+ * A strong integrity case filed against a PLACE the rep validated, rather than against a visit.
+ *
+ * 🔴 THE INTEGRITY PILLAR COUNTED ONLY VISIT CASES UNTIL 2026-10-12, so two whole detectors reached
+ * nobody's score. `signboard` and `capture_trust` file against a place and never against a visit —
+ * the signboard pass asks whether the sign on the building names the customer it was validated for,
+ * and the capture-trust check judges a place's two readings against each other — so a rep whose
+ * validation evidence did not hold up kept a clean Integrity score, while a rep flagged on one visit
+ * lost marks for it.
+ *
+ * 🔴 AND IT IS A NUMERATOR, NEVER A DENOMINATOR. The score divides by field SAVES, and a place
+ * validation is not a save: counting it in both halves would make a flagged place improve the ratio
+ * of a rep who makes few visits. It is counted as one more thing the detectors found, against the
+ * same number of saves — and `clamp100` already stops the score going below zero when a rep has more
+ * cases than saves.
+ */
+export type RankPlaceCase = {
+  repKey: string;
+  /** The day the case was filed against, as the place filers write `visit_date`. */
+  day: string;
+  /** The strong flags, after the same settlement and approximate-location rules a visit case gets. */
+  flags: readonly string[];
+};
+
 // ── The owner's gap model ───────────────────────────────────────────────────────────────────────
 export const WALK_KMH = 5;
 export const ROAD_FACTOR = 1.3;
@@ -97,7 +121,16 @@ export type RankQualityFacts = {
   products: { visits: number; total: number };
   notes: { visits: number; withNote: number };
   gps: { fixes: number; scoreSum: number; medianMeters: number | null };
-  integrity: { saves: number; flagged: number; flags: Record<string, number> };
+  integrity: {
+    saves: number;
+    flagged: number;
+    /**
+     * Strong cases filed against a PLACE this rep validated, inside the window. Counted alongside
+     * `flagged` in the score and never added to `saves` — see `RankPlaceCase`.
+     */
+    places: number;
+    flags: Record<string, number>;
+  };
 };
 
 const clamp100 = (value: number): number => (value < 0 ? 0 : value > 100 ? 100 : value);
@@ -245,8 +278,15 @@ function gapFacts(saves: readonly RankFieldSave[]): RankGapFacts {
   };
 }
 
-/** The deeper facts for one rep's saves inside one window. The caller has already filtered to the rep and the window. */
-export function qualityFacts(saves: readonly RankFieldSave[]): RankQualityFacts {
+/**
+ * The deeper facts for one rep's saves inside one window. The caller has already filtered to the rep
+ * and the window — for the place cases as well as the saves.
+ *
+ * The place cases' flags land in the SAME `flags` breakdown the admin twin prints, so a signboard or
+ * capture-trust finding is named there rather than hidden inside a number: the breakdown answers
+ * "which check flagged how many", and a flag's own label already says which detector it came from.
+ */
+export function qualityFacts(saves: readonly RankFieldSave[], placeCases: readonly RankPlaceCase[] = []): RankQualityFacts {
   const doctorVisits = saves.filter((save) => save.listType !== "Pharmacy");
   const fixes = doctorVisits.filter((save) => save.accuracyMeters !== null).map((save) => save.accuracyMeters as number);
   const flags: Record<string, number> = {};
@@ -256,13 +296,19 @@ export function qualityFacts(saves: readonly RankFieldSave[]): RankQualityFacts 
     flagged += 1;
     for (const flag of save.integrityFlags) flags[flag] = (flags[flag] ?? 0) + 1;
   }
+  let places = 0;
+  for (const place of placeCases) {
+    if (place.flags.length === 0) continue;
+    places += 1;
+    for (const flag of place.flags) flags[flag] = (flags[flag] ?? 0) + 1;
+  }
   const medianFix = median(fixes);
   return {
     gaps: gapFacts(saves),
     products: { visits: doctorVisits.length, total: doctorVisits.reduce((sum, save) => sum + save.products, 0) },
     notes: { visits: doctorVisits.length, withNote: doctorVisits.filter((save) => save.hasNote).length },
     gps: { fixes: fixes.length, scoreSum: round1(fixes.reduce((sum, meters) => sum + gpsScore(meters), 0)), medianMeters: medianFix === null ? null : round1(medianFix) },
-    integrity: { saves: saves.length, flagged, flags },
+    integrity: { saves: saves.length, flagged, places, flags },
   };
 }
 
@@ -280,9 +326,16 @@ export function qualityScores(facts: RankQualityFacts): {
       facts.products.visits > 0 ? Math.round(clamp100((facts.products.total / facts.products.visits / PRODUCTS_FULL_MARKS) * 100)) : null,
     visitNotes: facts.notes.visits > 0 ? Math.round(clamp100((facts.notes.withNote / facts.notes.visits) * 100)) : null,
     gpsPrecision: facts.gps.fixes > 0 ? Math.round(clamp100(facts.gps.scoreSum / facts.gps.fixes)) : null,
+    // 🔴 THE NUMERATOR IS VISIT CASES PLUS PLACE CASES; THE DENOMINATOR IS SAVES ONLY. A place
+    // validation is not a save, so adding it to both halves would let a flagged place IMPROVE the
+    // ratio of a rep who makes few visits. And a rep with no saves at all stays null rather than
+    // scoring zero off a place case: there is genuinely nothing to divide by, and a null measure
+    // leaves the average instead of inventing a verdict out of one row.
     integrity:
       facts.integrity.saves > 0
-        ? Math.round(clamp100((1 - (INTEGRITY_PENALTY * facts.integrity.flagged) / facts.integrity.saves) * 100))
+        ? Math.round(
+            clamp100((1 - (INTEGRITY_PENALTY * (facts.integrity.flagged + facts.integrity.places)) / facts.integrity.saves) * 100),
+          )
         : null,
   };
 }
@@ -292,5 +345,5 @@ export const EMPTY_QUALITY_FACTS: RankQualityFacts = {
   products: { visits: 0, total: 0 },
   notes: { visits: 0, withNote: 0 },
   gps: { fixes: 0, scoreSum: 0, medianMeters: null },
-  integrity: { saves: 0, flagged: 0, flags: {} },
+  integrity: { saves: 0, flagged: 0, places: 0, flags: {} },
 };

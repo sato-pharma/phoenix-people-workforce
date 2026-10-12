@@ -706,7 +706,7 @@ function checkSweepRate(): void {
   assert.ok(
     limit >= 200,
     `the nightly limit is ${limit}: at the measured 1.4 places a second the pass used 42 s of its `
-      + "120 s budget and then stopped on this number, leaving 547 places for nine more nights "
+      + `${budgetMs / 1000} s budget and then stopped on this number, leaving 547 places for nine more nights `
       + "(owner, 2026-10-09 — raise it)",
   );
   assert.ok(
@@ -741,6 +741,43 @@ function checkSweepRate(): void {
   assert.equal(concurrency, 4, "reads in flight are unchanged — the raise buys nights, never parallel load");
 }
 
+/**
+ * A SEATED PLACE IS NEVER IN THE SIGNBOARD BACKLOG — its photo is the building's TIMETABLE.
+ *
+ * 🔴 THE SWEEP SWEPT THEM UNTIL 2026-10-12. Under the owner's 2026-10-10 amendment ("ask him for only
+ * one timetable, not for every doctor"), a customer seated in a shared venue carries `shared_place_id`
+ * and a photo of the entrance timetable — the board of clinic hours and doctors' names — captured once
+ * for the venue. Its check is `schedule_check`. The backlog applied no `shared_place_id` filter, so the
+ * pass was asking a timetable "does the sign name this customer?", a question the photo was never taken
+ * to answer, and a confident negative FILES A CASE about a named rep.
+ *
+ * Measured on production the same day: 8 seated places, every one of them in the backlog and NONE yet
+ * read — the pass takes 200 a night oldest-first against a 552-place backlog, so the fix landed with
+ * roughly three nights to spare. The door never had the defect: `validateCustomer` and `addPlace` both
+ * call the signboard read inside an `else if (place)`, with the seated branch reading the timetable
+ * instead, and `validation-reviews.ts` tells the two apart the same way.
+ */
+function checkSeatedRowsAreNotSwept(): void {
+  const sweep = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-sweep.ts", "utf8"));
+  assert.ok(
+    /\.is\("shared_place_id", null\)/.test(sweep),
+    "the signboard backlog must exclude seated rows — their photo is the venue's timetable, not a signboard",
+  );
+  // At the DATABASE, not in `toPlace`: a seated row filtered in memory would still be counted against
+  // the night's limit, so the pass would read fewer real places for no reason.
+  assert.ok(
+    /\.from\("phoenix_crm_places"\)[\s\S]{0,600}?\.is\("shared_place_id", null\)[\s\S]{0,400}?\.limit\(limit\)/.test(sweep),
+    "it must be excluded in the query, before the limit, or a seated row still spends a read",
+  );
+  // The two kinds of photo stay told apart by the same column everywhere that judges one.
+  assert.ok(
+    /photoKind: text\(row\.shared_place_id\) \? "schedule" : "signboard"/.test(
+      stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8")),
+    ),
+    "the review board must keep telling a timetable from a signboard by `shared_place_id`",
+  );
+}
+
 export function runPhoenixCrmSignboardCheckTests(): void {
   checkStampBand();
   checkVerdicts();
@@ -750,5 +787,6 @@ export function runPhoenixCrmSignboardCheckTests(): void {
   checkNameSpelling();
   checkTwoReaders();
   checkSweepRate();
+  checkSeatedRowsAreNotSwept();
   console.log("phoenix-crm signboard check: OK");
 }

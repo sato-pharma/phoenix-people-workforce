@@ -355,9 +355,22 @@ export default async function PhoenixCrmIntegrityPage() {
         ) : null}
       </div>
 
+      {/* 🔴 SAID BEFORE ANY COUNT, because every counter above is a count of what was READ. The board
+          ran on a flat `.limit(200)` with no tiebreaker until 2026-10-12: past that it showed the
+          newest cases and said nothing, and "nothing flagged" could have meant "nothing in the first
+          200". It pages now, and this is what it says when it still reaches its ceiling. */}
+      {board.capped ? (
+        <AdminCallout tone="warning">
+          <span>
+            This board is showing the strongest and newest cases only: there are more than one read can hold. Settle what is here, or
+            narrow the board, to reach the older ones — every count on this page is a count of what was read.
+          </span>
+        </AdminCallout>
+      ) : null}
+
       {/* Every list, not just the live one: five withdrawn flags or a settled case beside the words
           "nothing flagged" would be the page contradicting itself. */}
-      {board.cases.length === 0 && board.withdrawn.length === 0 && board.settled.length === 0 ? (
+      {!board.capped && board.cases.length === 0 && board.withdrawn.length === 0 && board.settled.length === 0 ? (
         <AdminCallout tone="success">
           <span>
             {positions

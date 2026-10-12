@@ -19,8 +19,12 @@ import type { CapturedFix } from "../src/lib/phoenix-crm/entry-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phoenix CRM validates a place only on readings within 250 m — the photo's own AND the Capture-location
-// pin — and takes a visit on a reading within 500 m (owner, 2026-10-03: "accept up to max 500 m in
+// Phoenix CRM validates a place only on a Capture-location pin within 250 m — THE PIN ALONE DECIDES
+// (owner, 2026-10-11, answering "A" when asked directly; it replaced the both-readings rule this
+// header still described until 2026-10-12, after iPhone Safari handed the camera an approximate
+// position — 2,000 m, 650-1,900 m — while the pin read 11-30 m and refused two named reps standing at
+// the clinic. A rough pin is still refused and a rough photo reading never becomes the fixed point) —
+// and takes a visit on a reading within 500 m (owner, 2026-10-03: "accept up to max 500 m in
 // visits and 200 m in validation"; then "the system should never accept a photo or location … in
 // validation", "in validation the system can block inaccurate validation", and "inform the rep that
 // validation must be accurate minimum accepted 100m accuracy"; then, that evening, "make the 100m 250m").

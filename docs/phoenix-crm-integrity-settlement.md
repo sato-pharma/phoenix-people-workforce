@@ -229,6 +229,99 @@ Pinned by `tests/crm-integrity-signboard-cases.test.ts`, whose three new asserti
 their own break: the board split put back to `!supportsFlag`, `withdrawsFlag` defined as
 `!supportsFlag`, and the settle gate put back to `supportsFlag`.
 
+## 5 · The four readers of this table, audited (2026-10-12)
+
+The second-pass CRM audit of 3–11 Oct listed 23 gaps in the checks. Gap 23 shipped as PR 5764. Of
+the 22 that remained, nine were the owner's own decisions (recorded in the plan, not implemented),
+and four of the real defects are in the READERS of `phoenix_crm_location_integrity` — all of them
+present since the table's own detectors grew past `gps` and `photo`.
+
+### D1 · The board silently dropped cases past 200, and under-reported its own blind spot
+
+`BOARD_LIMIT = 200` with `.order("strong", desc).order("captured_at", desc)` and **no unique
+tiebreaker**, so paging that order would skip and repeat at a seam. Nothing pinned it:
+`BOARD_LIMIT` appeared in no test, and `tests/phoenix-crm-sweep-paging.test.ts`'s `.limit()` ban
+scopes to two other files with a regex (`[0-9_]{4,}`) that cannot match `200`.
+
+Worse than a truncation on the evidence read: `behaviourNotChecked` counts the unmeasured months
+**among the rows returned**, so a truncated read made the board's own "not checked" number smaller
+than the truth — the one number on the page whose job is to say what it cannot see.
+
+Both reads now use `readEveryPage` with `whenFull: "stop"` (this read presents, it does not judge),
+`uniqueBy: row => row.id` and `.order("id")` last for a total order. `capped` reaches the page, and
+the "nothing flagged" line is suppressed on a capped read.
+
+🔴 **A `uniqueBy` assertion written with `includes` is not an assertion.** The first version was
+satisfied by EITHER paged read, so deleting `uniqueBy` from the capture read left the gate green. It
+is a count of 2 now, re-broken and watched to fire.
+
+### D2 · The weekly fraud scan had never seen a place case, and its stated reason was false
+
+`loadIntegrityCasesForWindow` carried `.eq("subject_kind", "visit")` with the comment *"a PLACE case
+has no visit day"*. **Both place filers write `visit_date`** (`server/location-integrity.ts:271`,
+`:323`), so `signboard` and `capture_trust` — which file ONLY against places — were invisible to
+every Thursday scan for their whole lives.
+
+Dropping the filter exposed a second defect the audit did not list: **`sfeVisibleCases` narrowed by
+SUBTRACTION** (`source !== "gps"`), which equals the `SFE_SOURCES` allow-list only while `photo` is
+the only other detector — and it has not been since 2026-10-08. Nothing had leaked only because the
+board's reader was collapsing every non-photo source into `gps`; correcting that collapse so a
+signboard case is labelled honestly would have put the Super Admin's own evidence into the SFE
+Manager's weekly report. Resolved by keeping ONE read and stamping `sfeVisible` on each row from the
+already-pinned allow-list, so `.in("source", SFE_SOURCES)` still appears exactly twice (pinned at
+`tests/crm-integrity-signboard-cases.test.ts`) and no second copy of the list exists.
+
+### D3 · Phoenix Ranks counted visit cases only — and the who-moves list
+
+The integrity pillar read `subject_kind = "visit"`, keyed by `subject_id` = visit id, which
+`readFieldSaves` joins to. A place case has no visit to join to, so widening that filter would key
+on a place id matching no save and drop silently; it needs a second per-seat read
+(`readIntegrityPlaceCases`), counted per rep. The numerator is visit cases **plus** place cases; the
+denominator stays field saves, because a validation is not a save and adding it to both halves would
+let a flagged place IMPROVE a low-volume rep's ratio.
+
+🔴 **The owner's condition, 2026-10-12: "Count place cases, and tell me who moves" — the list from
+production reaches him before it ships.** Read read-only the same day, against the standings the
+04:17 run wrote (scoring version 4, windows through Thursday 11 Oct):
+
+- **10 strong place cases exist in all**, 7 `signboard` (all 3 Oct, `sign_other_name`) and 3 `gps`
+  (`coordinate_replay`, 6/10/12 Oct). None is settled; every accuracy is under 500 m, so the
+  coarse-location rule suppresses nothing. The 12 Oct case is outside every window until the next run.
+- **The live month ladder (1–11 Oct) moves 7 reps' Integrity and swaps 2 pairs of positions:** Sara
+  Mohy Eldeen 100 → 95, Nada Saied 94 → 83 (one visit case and two place cases), Mohamed Ahmed
+  100 → 94 (10th → 11th), Esraa fotooh 100 → 92 (14th → 15th), Khaled Saied 100 → 93, Ahmed Farag
+  100 → 91, Ebtissam Alaa 100 → 90. Radwa Ahmed and Fatma Gharib rise a place without changing.
+- **Quarter and semester** hold the same five ranked reps and one swap; **the week of 10 Oct and the
+  day of 11 Oct do not move at all.**
+- 🔴 **The penalty is five saves' worth per case, so the DAY window is a cliff, and that is the
+  pillar's existing design rather than anything this change introduced.** A single case against a
+  12-save day costs 42 points: on the stored day window of 3 Oct, Mohamed Ahmed would lose the top of
+  the day to Hassan Mohamed, and Ahmed Farag's 6 saves would score 17. Those older day and week
+  windows are only rewritten by a deliberate `rebuildMonth`, never by the nightly anchor run.
+- **One rep is wiped by the denominator:** Mahmoud Abdelreheem has 4 field saves in the whole
+  semester against one case, so `1 − 5 × 1 ⁄ 4` clamps his Integrity to **0**. He is `too_few_days`
+  and therefore unranked in every window he appears in, so nobody sees it today.
+
+### D4 · A seated place's timetable was about to be read as a signboard
+
+`signboardBacklog` applied no `shared_place_id` filter, so seated rows were swept — and a seated
+row's `photo_path` **is the building's timetable** (the owner's 2026-10-10 amendment: one timetable
+per venue, not a photo per doctor). Reading a timetable in signboard mode is wrong by construction.
+
+Caught with a number: production holds **8 seated places and 0 signboard verdicts on any of them**.
+The sweep reads 200 a night oldest-first against a 552-place backlog, so the fix landed roughly
+three nights before the first timetable would have been read. The door never had the defect — both
+call sites sit inside `else if (place)`.
+
+### Three stale comments, two of them worse than the audit said
+
+`server/signboard-check.ts` claimed a *"120 s … 145 s"* budget: it was lowered to **100 s** on
+2026-10-09 and the real worst case is exactly **150 s**, outside it. The accuracy-gate titles in the
+test file and in `tests/run-tests.ts` still described the both-readings rule that **#5751 superseded
+on 2026-10-11 with pin-alone**. And `integrity-board.ts`'s header claimed to be the table's *"ONLY
+reader"* — three modules select from it (this file for the evidence, `server/behaviour.ts` and
+`rep-ranks/server/compute.ts` for `rep_hr_id` + `flags`).
+
 ## Where the code is
 
 | What | Where |
