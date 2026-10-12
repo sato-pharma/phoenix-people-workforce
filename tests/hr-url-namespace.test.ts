@@ -29,6 +29,7 @@ import {
   isHrRewritablePath,
   isHrNamespacePath,
   toHrNamespacePath,
+  hrNamespaceRedirectTarget,
 } from "../src/lib/navigation/shell-headers.ts";
 import {
   hrNamespaceRoles,
@@ -141,6 +142,17 @@ export function runHrUrlNamespaceTests() {
   // Idempotent: the layout redirect must not be able to build /hr/hr/probation on a retry.
   assert.equal(toHrNamespacePath("/hr/probation"), "/hr/probation");
   assert.equal(toHrNamespacePath(toHrNamespacePath("/probation")), "/hr/probation");
+
+  // 1b ── The loop guard. A bare address is sent into the namespace; an address ALREADY in it is
+  // never redirected, because toHrNamespacePath returns it unchanged and that is a 307 to itself
+  // (ERR_TOO_MANY_REDIRECTS, seen 2026-10-12 on /hr/admin/hr-command-center behind the phx-live tunnel).
+  assert.equal(hrNamespaceRedirectTarget("/probation"), "/hr/probation");
+  assert.equal(hrNamespaceRedirectTarget("/probation?tab=due"), "/hr/probation?tab=due");
+  assert.equal(hrNamespaceRedirectTarget("/hr/admin/hr-command-center"), null, "inside the namespace there is nothing to redirect to");
+  assert.equal(hrNamespaceRedirectTarget("/hr/admin/hr-command-center?hiredFrom=2026-10-01"), null);
+  assert.equal(hrNamespaceRedirectTarget("/hr"), null);
+  assert.equal(hrNamespaceRedirectTarget("/hr?x=1"), null, "a query on the bare namespace root must not become /hr/hr");
+  assert.equal(hrNamespaceRedirectTarget("/hr-calendar"), "/hr/hr-calendar", "/hr-calendar is a page, not the namespace");
 
   // 2 ── Every NavigationMode resolves to a real home path, asserted at RUNTIME.
   // `navigationHomePathByMode` is a Record over the union, and an exhaustive Record does NOT gate
@@ -513,16 +525,8 @@ export function runHrUrlNamespaceTests() {
     "AppShell must send an HR seat on a bare address into the namespace",
   );
   assert.ok(
-    shellSource.includes(`const target = toHrNamespacePath(requestedPath);`),
-    "the redirect target must be built with toHrNamespacePath, which is idempotent — a hand-built `/hr` + path is how a redirect loop starts",
-  );
-  // 🔴 And it must never fire when the target IS the address we are already on. Without this, the
-  // one time the shell header went missing on an `/hr` address, every `/hr` page 307'd to ITSELF
-  // until the browser gave up — measured on the dev server 2026-10-12, six hops deep, for both HR
-  // seats. The header's absence is now a wrong-chrome render, not an infinite redirect.
-  assert.ok(
-    shellSource.includes(`if (target !== requestedPath) {`),
-    "AppShell must not redirect an /hr address to itself — that is the redirect loop this guard exists to stop",
+    shellSource.includes(`hrNamespaceRedirectTarget(requestedPath)`) && shellSource.includes(`redirect(hrTarget)`),
+    "the redirect target must come from hrNamespaceRedirectTarget, which is null inside the namespace — a hand-built `/hr` + path, or toHrNamespacePath alone (idempotent, so it returns the page you are on), is how a redirect loop starts",
   );
   // The fence bounce, same class. Its termination rested entirely on the landing page happening not
   // to be fenced, an invariant asserted only in tests/hr-resourcing-seat.test.ts. Now checked where

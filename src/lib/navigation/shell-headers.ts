@@ -38,6 +38,23 @@ export function toHrNamespacePath(pathname: string): string {
 }
 
 /**
+ * Where to send an HR seat that arrived on a BARE address, or null when it is already inside the
+ * namespace.
+ *
+ * Null is the loop guard. `toHrNamespacePath` is idempotent, which keeps it from building
+ * `/hr/hr/x` — but it also means that for an address already under `/hr` it returns the address
+ * itself, so a redirect built from it sends the browser to the page it is on. That happens whenever
+ * the shell header is missing from a request the proxy DID rewrite (a dev server behind a tunnel, a
+ * build that lost the header), and it shows as ERR_TOO_MANY_REDIRECTS with no page at all. Rendering
+ * the page under the wrong chrome is a smaller failure than rendering nothing.
+ */
+export function hrNamespaceRedirectTarget(requestedPath: string): string | null {
+  const pathname = requestedPath.split("?")[0] ?? requestedPath;
+  if (isHrNamespacePath(pathname)) return null;
+  return toHrNamespacePath(requestedPath);
+}
+
+/**
  * The part of an `/hr` address that names the real page. `/hr` itself resolves to `/`, which is
  * never an empty string — an empty pathname is not valid and throws inside NextURL.
  */

@@ -32,7 +32,7 @@ import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
 import { resolveShellNavigationMode } from "@/lib/navigation/shell-mode";
-import { PATH_HEADER, SHELL_HEADER, toHrNamespacePath } from "@/lib/navigation/shell-headers";
+import { PATH_HEADER, SHELL_HEADER, hrNamespaceRedirectTarget } from "@/lib/navigation/shell-headers";
 
 export async function AppShell({
   accessContext,
@@ -77,18 +77,17 @@ export async function AppShell({
     // case there is no path to redirect TO — fall through to the admin shell rather than guess,
     // because a guessed target here is how a redirect loop starts.
     const requestedPath = requestHeaders.get(PATH_HEADER);
-    if (requestedPath) {
-      // 🔴 NEVER redirect to the address we are already on. This block's whole job is to ADD the
-      // prefix, so a path already inside the namespace needs nothing — and the one time the header
-      // above went missing on an `/hr` address (the dev server re-running proxy.ts on its own
-      // rewrite, 2026-10-12), redirecting anyway made every `/hr` page 307 to ITSELF until the
-      // browser gave up. The comment above says a guessed target is how a redirect loop starts;
-      // this line is what makes that true rather than merely hoped for. The worst case now is a
-      // page rendered under the wrong chrome, which is visible and recoverable.
-      const target = toHrNamespacePath(requestedPath);
-      if (target !== requestedPath) {
-        redirect(target);
-      }
+    // 🔴 Null when the address is ALREADY under /hr, and that null is the circuit breaker: this
+    // block's whole job is to ADD the prefix, so a path already inside the namespace needs nothing.
+    // The one time the header above went missing on an `/hr` address — the dev server re-running
+    // proxy.ts on its own rewrite, fixed in proxy.ts in this same change — redirecting anyway made
+    // every `/hr` page 307 to ITSELF until the browser gave up (measured six hops deep on both HR
+    // seats, 2026-10-12). The comment above says a guessed target is how a redirect loop starts;
+    // this is what makes that true rather than merely hoped for, and it turns the worst case into a
+    // page rendered under the wrong chrome, which is visible and recoverable.
+    const hrTarget = requestedPath ? hrNamespaceRedirectTarget(requestedPath) : null;
+    if (hrTarget) {
+      redirect(hrTarget);
     }
   }
 
