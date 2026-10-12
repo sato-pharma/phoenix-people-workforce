@@ -655,6 +655,125 @@ different person or place"**. 🔴 **It may not say "doctor":** the first wordin
 never doctor or account — turned the required `validate` job RED on that one line. Any later rewording
 of a Phoenix CRM label is swept the same way.
 
+## 10 · The board nobody could judge from (2026-10-13)
+
+The owner's own words, that morning: *"first of all me abl to filter by everypossible thing secoond
+make me ble to multi slect and settle third put more شرح للcase fouth show me live the difference in
+locations sixth if pics avaulable show me 7th make every case a story tellling in clear simple
+english"* — and, asked which of the fifth item he wanted, *"all above"*.
+
+### The measurement
+
+Read on production that morning: **165 cases, 13 strong, 0 ever settled**, over 20 reps and 3–12
+October. The settle click had shipped on 9 October (§1) and had been used **not once**.
+
+That is not a board nobody needs. It is a board nobody can decide on. It showed five columns and a
+per-row button, and judging a single case meant leaving the page:
+
+| What the row said | What judging it actually needed |
+| --- | --- |
+| "The signboard names somebody else" | Which name is on the sign, and which is on the list |
+| "The photo and the pin are 2,768 m apart" | Where either point is |
+| 130 of the 165 rows, identical | The 13 that stand on their own, first |
+| No photograph, no history, no filter, no export | All four |
+
+### His four answers on shape
+
+Put to him as multiple choice before anything was built:
+
+- **Strong first, the weak folded** into a counted band — nothing hidden; the band says how many and
+  opens, and the strength filter reaches them directly.
+- **One line per case, expand for the rest** — the headline sentence on the row; the story, the
+  photograph, the map, the evidence and the timeline on opening it.
+- **A note stays REQUIRED for a bulk settle**, with ready-made reasons he can send as they are or
+  edit. Both halves matter: "settled" with no words is a decision nobody can check, and typing the
+  same sentence forty times is why nothing had ever been settled at all.
+- **Every filter group** — sixteen of them plus a free-text box, instant in the screen and mirrored
+  into the address.
+
+### Four pure modules, so the rules are testable away from the screen
+
+| Module | What it owns |
+| --- | --- |
+| `src/lib/crm-integrity/integrity-board-filters.ts` | The sixteen groups, the distance bands, the dropdown values derived from the rows, and the URL round trip |
+| `src/lib/crm-integrity/integrity-case-story.ts` | One headline sentence and a paragraph per detector — the measured fact, then the ordinary innocent explanation. Also the one copy of the detector and subject-kind names |
+| `src/lib/crm-integrity/integrity-case-map.ts` | Web-Mercator tiles on free OpenStreetMap, the markers, the leader lines and the metres between every pair of readings |
+| `src/lib/crm-integrity/integrity-settle-presets.ts` | The seven ready-made reasons, as starting text |
+| `src/lib/crm-integrity/integrity-board-rows.ts` | One case prepared once — its standing, its story, its map and everything the filters read |
+
+The loader (`src/lib/phoenix-crm/server/integrity-board.ts`) widened three chunked reads and added
+two, all non-fatal, all failing towards an empty field rather than a blank board. 🔴 **It still
+measures no distance at all** — it hands over the *points*, and the metres between them are measured
+in `integrity-case-map.ts`. Two derivations of one number drift, and then this board and the
+place-vs-actual report disagree about the same visit with no way for a reader to know which is right.
+
+### The one thing that keeps "download what I am looking at" true
+
+The export route rebuilds its rows from the SAME loaded board with `integrityBoardRows`, narrows them
+with the SAME `matchesIntegrityFilters`, and reads the filters out of the query string the screen
+wrote with `integrityFiltersFromParams`. That is the entire reason `integrity-board-rows.ts` is a
+module and not part of the view.
+
+🔴 **A second copy in the route would have drifted the first time a filter learned a new field, and
+nothing would have gone red** — each half would still have been self-consistent. The same reasoning
+moved `INTEGRITY_SUBJECT_KINDS` and its labels into `integrity-case-story.ts`: the view may not import
+a runtime symbol from the server loader (the service-role Supabase client would go into the browser
+bundle with it), so the first draft of the view carried its own copy of that map — which is exactly
+how a kind added later prints as `shared_place` on one screen and reads properly on the other.
+
+### Two things on the screen that are not obvious
+
+- **The URL mirror is `window.history.replaceState`, never `router.replace`.** The page is one server
+  render of about ten chunked reads; a `router.replace` per keystroke re-runs every one of them.
+- **The acted-on selection is intersected with what is on screen** (`selectableIds.filter(id =>
+  selected.has(id))`), so a tick left behind by a filter change or a fold can never reach the route —
+  and only the ids the route reports as settled are un-ticked, so a failure stays selected for a retry.
+
+### The bulk settle: one note, each case's own flags
+
+`settleManyIntegrityCases` stamps one note on every selected case and runs **one `.update()` per
+row**, with `flagsNow` read from the row.
+
+🔴 **A single statement over an `.in()` would stamp one case's flags onto the whole batch.** Because
+`settled_flags` *is* the reopening mechanism (§1), that is precisely the state that holds a case closed
+through a genuinely different finding — the one failure this table was shaped to avoid.
+
+🔴 **It is the last function in the loader, and it is deliberately not called
+`settleIntegrityCases`.** `tests/phoenix-crm-integrity-settle.test.ts` slices the file from
+`settleIntegrityCase` to `reopenIntegrityCase` by `indexOf` to read the single settle in isolation; a
+`settleIntegrityCase*` prefix would move that slice onto the wrong function, and every assertion in it
+would then be read against this one.
+
+A failure on one row never stops the others and each comes back named — being told only "it failed"
+after ticking forty cases is how nobody settles anything again. Capped at
+`INTEGRITY_BULK_SETTLE_CAP` (200). Nothing is deleted and nobody is notified.
+
+### Both new routes refuse with a 404
+
+`/api/admin/phoenix-crm/integrity/settle-many` mirrors the single settle's gate exactly, and
+`/api/admin/phoenix-crm/integrity/export` reads `loadIntegrityBoard(viewer)` rather than the table —
+so the SFE's detector allow-list, the `device_mocked` tiering and `is_test = false` all apply for
+free, and no new paged read lands in a loader whose read shapes are pinned at exactly two occurrences
+each.
+
+🔴 **The export's own template, `app/api/admin/activity/export/route.ts`, ends in an
+`isForbiddenError` branch answering 403 with the resource named.** Copying it would tell whoever asked
+that a location-integrity board exists and that they are not allowed on it. Both routes go through
+`phoenixCrmFailure`, which passes the service's own `notFoundError` through untouched. Pinned.
+
+### Five pins moved with the markup, none deleted
+
+Moving the three case lists out of the page re-pointed, never removed, the assertions that were
+reading them: the signboard test's render sweep and its `settleCode` slice (which now reads **both**
+files for the no-truncation rule, because the story paragraph is the longest string this board has ever
+printed), the place-distance render test (plus a new assertion that the view never re-measures a
+visit's distance from its place), `card-table-parity`'s `<Position entry={row.entry} />` count of 2,
+and the settle test's `CaseList` and `integritySubjectKindLabel` counts.
+
+`tests/neutral-wording.test.ts` caught a real string on the way through: a section heading reading
+"Every group he asked for" became "Sixteen groups and a free-text box". The sweep strips comments, so a
+comment may say "he"; a screen string may not.
+
 ## Where the code is
 
 | What | Where |
@@ -671,5 +790,9 @@ of a Phoenix CRM label is swept the same way.
 | Its four pure judgements and the five weak flags | `src/lib/phoenix-crm/location-integrity.ts` |
 | The four filers it writes through | `src/lib/phoenix-crm/server/location-integrity.ts` |
 | The full-day leave read | `getFullDayApprovedLeaveMap`, `src/lib/attendance/working-days.ts` |
-| The subject-kind list the board derives from | `INTEGRITY_SUBJECT_KINDS`, `server/integrity-board.ts` |
+| The subject-kind list the board derives from | `INTEGRITY_SUBJECT_KINDS`, `src/lib/crm-integrity/integrity-case-story.ts` (re-exported by `server/integrity-board.ts`) |
+| The board's filters, stories, map, presets and row mapping | `src/lib/crm-integrity/integrity-{board-filters,case-story,case-map,settle-presets,board-rows}.ts` |
+| The board itself | `src/components/crm-integrity/integrity-board-view.tsx` |
+| Settling several cases with one reason | `settleManyIntegrityCases`, the LAST function in `server/integrity-board.ts` |
+| Its route, and the filtered XLSX export | `app/api/admin/phoenix-crm/integrity/{settle-many,export}/route.ts` |
 | The two widened CHECKs | `supabase/migrations/20261012210000_phoenix_crm_silent_detectors.sql` |

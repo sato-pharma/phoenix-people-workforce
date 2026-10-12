@@ -899,6 +899,14 @@ export const accessRegistry = [
   // is where the board's own decisions belong — the board page itself is `(admin)`.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/phoenix-crm/integrity/settle", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/phoenix-crm/integrity/reopen", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Settling SEVERAL cases with one reason (owner, 2026-10-13: "make me able to multi select and
+  // settle"). The same gate as the single settle, the same `canSettleIntegrityCases` 404 underneath,
+  // and one note stamped on every selected case — with each case's OWN flags, never the batch's.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/phoenix-crm/integrity/settle-many", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // The board as an XLSX, narrowed by the filters the screen wrote into the address. `read`, not
+  // `update` — the SFE Manager reads this board and may download the part of it he reads, which is
+  // what `loadIntegrityBoard` hands back for him and nothing more. A GET, so no CSRF.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/phoenix-crm/integrity/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // A polyclinic, medical centre, medical tower or hospital outpatient suite — captured ONCE at its
   // door, with customers seated inside it (owner, 2026-10-09). GET is the picker, for a reader of the
   // territory; POST captures one, and the service gates it to the territory's own rep or a manager.

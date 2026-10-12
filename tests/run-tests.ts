@@ -1248,6 +1248,7 @@ import { runCaptureTrustReadoutTests } from "./capture-trust-readout.test.ts";
 import { runCaptureTrustTests } from "./capture-trust.test.ts";
 import { runVenueDistanceRuleTests } from "./venue-distance-rule.test.ts";
 import { runPharmacyCodeSuggestionTests } from "./pharmacy-code-suggestions.test.ts";
+import { runCrmIntegrityBoardViewTests } from "./crm-integrity-board-view.test.ts";
 import { runCrmIntegrityPlaceDistanceTests } from "./crm-integrity-place-distance.test.ts";
 import { runCrmIntegritySignboardCaseTests } from "./crm-integrity-signboard-cases.test.ts";
 import { runPhoenixCrmIntegritySettleTests } from "./phoenix-crm-integrity-settle.test.ts";
@@ -5193,6 +5194,7 @@ await runTest(
   runPublishedMonthGuardTests,
 );
 await runTest('crm integrity board (how far a visit was saved from its place, read never recomputed)', runCrmIntegrityPlaceDistanceTests);
+await runTest('crm integrity board (every case a story, every filter group, one mapping for the screen and the export, and a bulk settle that stamps each case with its own flags)', runCrmIntegrityBoardViewTests);
 await runTest('crm integrity board (a signboard case is its own detector, and a flag a later reading no longer supports leaves the findings)', runCrmIntegritySignboardCaseTests);
 await runTest(
   "settling a location-integrity case records that the Super Admin has looked, and deletes nothing: four columns hold when, who, why and the flags it was settled ON, read from the row rather than sent by the browser, so a case counts as settled only while those still equal the row's flags — a detector filing a new finding on the same subject (the filers upsert on subject_kind, subject_id, source and replace flags in place) reopens it by itself, in the counters and in the weekly fraud scan, with no filer taught that settling exists; the note is required to settle and never to reopen, the Super Admin alone may do either (the SFE Manager reads this board and does not decide on it), nobody is notified because no rep is ever told he was flagged, a withdrawn case offers no decision at all, and `capture_trust` — allowed by the table's source CHECK since 2026-10-08 with 0 rows filed, so the signboard defect was waiting unsprung — is now in the one INTEGRITY_SOURCES list that the type, the labels, a row's own coercion and the detector tally all derive from, pinned against every filer's string literal because the column is text and the compiler cannot see it",

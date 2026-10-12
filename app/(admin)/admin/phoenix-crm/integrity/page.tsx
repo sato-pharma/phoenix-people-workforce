@@ -2,19 +2,16 @@ import { redirect } from "next/navigation";
 import { CheckCheck, Eye, ShieldAlert, Undo2, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
-import { IntegritySettleControl } from "@/components/crm-integrity/integrity-settle";
+import { IntegrityBoardView } from "@/components/crm-integrity/integrity-board-view";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import {
   canReadIntegrityBoard,
   canSettleIntegrityCases,
-  integritySourceLabel,
-  integritySubjectKindLabel,
   loadIntegrityBoard,
   readsPositionCases,
   type BehaviourCase,
-  type IntegrityCase,
 } from "@/lib/phoenix-crm/server/integrity-board";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +44,14 @@ export const dynamic = "force-dynamic";
  * finding on the same subject puts it back among the findings with no filer knowing settling exists.
  * Settled is "he has looked", never "closed for ever".
  *
+ * 🔴 THE CASES THEMSELVES ARE IN `IntegrityBoardView`, AND THIS PAGE IS THE FRAME AROUND THEM. It
+ * reads the board, gates it, and renders the hero, the counters, every callout, the behaviour table
+ * and the By-rep list — everything whose answer is one number. The three case lists are a client
+ * component because what he asked for on 2026-10-13 is all interaction: filter by everything,
+ * multi-select, open one case into its own story, see the readings on a map. Narrowing 164 cases in
+ * the browser costs nothing; narrowing them on the server would re-run ten chunked reads per
+ * keystroke.
+ *
  * 🔴 A FLAG A LATER READING NO LONGER SUPPORTS IS SHOWN, NOT CLEARED, and that is a different thing
  * again. A signboard verdict is not stable — the same photograph read a name at 18:12 and nothing at
  * 18:34 on 2026-10-09 — so four of the five signboard flags on this board that evening were already
@@ -55,17 +60,6 @@ export const dynamic = "force-dynamic";
  * call to look. Withdrawn is the EVIDENCE giving way; settled is a DECISION. A case that is both is
  * listed as withdrawn, so that section's claim stays true of every row in it.
  */
-function cairo(value: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Africa/Cairo",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(value));
-}
 
 /**
  * The counter row's grid, by how many of the two conditional counters are showing.
@@ -91,182 +85,6 @@ function BehaviourReasons({ entry }: { entry: BehaviourCase }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-/**
- * Where the capture was read, how sure the phone was, and how far it fell from the place it names.
- * One component for the table cell AND the phone card, so the two can never print different facts
- * (Phoenix CRM audit, 2026-10-02: the card dropped this whole column).
- */
-function Position({ entry }: { entry: IntegrityCase }) {
-  return (
-    <>
-      {entry.lat !== null && entry.lon !== null ? (
-        <span className="tabular-nums">
-          {entry.lat.toFixed(5)}, {entry.lon.toFixed(5)}
-        </span>
-      ) : (
-        "—"
-      )}
-      {entry.accuracyMeters !== null ? <div className="text-xs text-slate-500">within {Math.round(entry.accuracyMeters)} m</div> : null}
-      {/* How far the visit was saved from the place it names. Read from the visit
-          row, so this board and the place-vs-actual report can never print two
-          different numbers for one visit. Null is UNKNOWN and is simply absent -
-          it must not render as 0 m, which is a rep standing exactly on the pin. */}
-      {entry.placeDistanceMeters !== null ? (
-        <div className="text-xs text-slate-500">
-          {entry.placeDistanceMeters < 1000
-            ? `${Math.round(entry.placeDistanceMeters)} m from the place`
-            : `${(entry.placeDistanceMeters / 1000).toFixed(1)} km from the place`}
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-/**
- * A signboard case's own evidence: what the sign said when it was flagged, and what it says now.
- *
- * The words of the sign were kept on the row from the first day and never shown, so "the signboard
- * names somebody else" named nobody — the one thing a Super Admin needs in order to judge the case
- * was a database query away. `dir="auto"` per line, because a sign is in Arabic, Latin or both and
- * direction belongs to the line rather than to the block. Never truncated.
- */
-function SignEvidence({ entry }: { entry: IntegrityCase }) {
-  if (entry.source !== "signboard") return null;
-  const later = entry.laterReading;
-  return (
-    <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-      {entry.signText ? (
-        <p className="break-words text-xs text-slate-600" dir="auto">
-          The sign read: {entry.signText}
-        </p>
-      ) : (
-        <p className="text-xs text-slate-500">Nothing was transcribed from the sign.</p>
-      )}
-      {later ? (
-        <p className="break-words text-xs text-slate-600">
-          Read again on {cairo(later.checkedAt)} and {later.sameFinding ? "it still says this" : later.words}.
-        </p>
-      ) : (
-        <p className="text-xs text-slate-500">The sign has not been read again since.</p>
-      )}
-      {later?.signText && later.signText !== entry.signText ? (
-        <p className="break-words text-xs text-slate-600" dir="auto">
-          That reading read: {later.signText}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function Reasons({ entry }: { entry: IntegrityCase }) {
-  return (
-    <>
-      <ul className="space-y-1">
-        {entry.reasons.map((reason) => (
-          <li key={reason} className="flex items-start gap-2 text-sm leading-6 text-slate-700">
-            <span className={`mt-2 h-1.5 w-1.5 shrink-0 ${entry.strong ? "bg-rose-500" : "bg-amber-500"}`} />
-            <span>{reason}</span>
-          </li>
-        ))}
-      </ul>
-      <SignEvidence entry={entry} />
-    </>
-  );
-}
-
-/**
- * One list of cases — the desktop table and the phone's cards, from the same entries.
- *
- * ONE component for both lists on this page, so the live cases and the withdrawn ones can never
- * print different facts about the same row: the photo audit of 2026-10-02 found the phone card had
- * silently dropped a whole column, and a second copy of this markup is how that happens again.
- */
-function CaseList({ canSettle, entries }: { canSettle: boolean; entries: IntegrityCase[] }) {
-  // One component, placed in both lists, so the table and the phone card can never offer different
-  // actions on the same case. It renders nothing at all for a viewer who may not settle — the SFE
-  // Manager reads this board and does not decide on it (owner, 2026-10-09) — and nothing for a
-  // withdrawn case either: the evidence has already given way, so there is no decision left to take.
-  // 🔴 `withdrawsFlag`, not `!supportsFlag`: a sign that merely could not be read again has given
-  // nothing away, and that case must keep the button it needs in order to be decided at all.
-  const Settle = ({ entry }: { entry: IntegrityCase }) =>
-    canSettle && (entry.laterReading === null || !entry.laterReading.withdrawsFlag) ? (
-      <IntegritySettleControl caseId={entry.id} settlement={entry.settlement} />
-    ) : null;
-  return (
-    <>
-      {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
-      <div className="hidden lg:block">
-        <table className="w-full table-fixed border-collapse">
-          <colgroup>
-            <col className="w-[16%]" />
-            <col className="w-[17%]" />
-            <col className="w-[17%]" />
-            <col className="w-[36%]" />
-            <col className="w-[14%]" />
-          </colgroup>
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
-              <th className="px-5 py-3">When</th>
-              <th className="px-5 py-3">Rep</th>
-              <th className="px-5 py-3">Customer</th>
-              <th className="px-5 py-3">What is wrong</th>
-              <th className="px-5 py-3">Position</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => (
-              <tr key={entry.id} className="border-b border-slate-100 align-top even:bg-slate-50/60">
-                <td className="px-5 py-4 text-sm text-slate-700">
-                  <div className="font-semibold text-slate-900">{cairo(entry.capturedAt)}</div>
-                  <div className="text-xs text-slate-500">
-                    {integritySubjectKindLabel(entry.subjectKind)} · {integritySourceLabel(entry.source).toLowerCase()}
-                  </div>
-                </td>
-                <td className="px-5 py-4 text-sm font-semibold text-slate-900">{entry.repName}</td>
-                <td className="px-5 py-4 text-sm text-slate-700">{entry.customerName}</td>
-                <td className="px-5 py-4">
-                  <Reasons entry={entry} />
-                  {/* The decision sits under the evidence rather than in a sixth column: the table is
-                      `table-fixed` at five and the fits-the-screen rule merges before it shrinks. */}
-                  <Settle entry={entry} />
-                </td>
-                <td className="px-5 py-4 text-sm text-slate-600">
-                  <Position entry={entry} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile: the same cases as cards. */}
-      <div className="space-y-3 px-5 py-4 lg:hidden sm:px-6">
-        {entries.map((entry) => (
-          <div key={entry.id} className="border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="text-sm font-bold text-slate-900">{entry.repName}</span>
-              <span className="text-xs text-slate-500">{cairo(entry.capturedAt)}</span>
-            </div>
-            <p className="mt-1 text-sm text-slate-700">
-              {entry.customerName} · {integritySubjectKindLabel(entry.subjectKind).toLowerCase()} · {integritySourceLabel(entry.source).toLowerCase()}
-            </p>
-            <div className="mt-3">
-              <Reasons entry={entry} />
-            </div>
-            <div className="mt-3 border-t border-slate-100 pt-3 text-sm text-slate-600">
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Position</div>
-              <div className="mt-1 break-words">
-                <Position entry={entry} />
-              </div>
-            </div>
-            <Settle entry={entry} />
-          </div>
-        ))}
-      </div>
-    </>
   );
 }
 
@@ -495,29 +313,11 @@ export default async function PhoenixCrmIntegrityPage() {
         </AdminTableShell>
       ) : null}
 
-      {board.cases.length > 0 ? (
-        <AdminTableShell title="Cases" description="Newest first, strong signals at the top. Open the visit itself to see the photo that was taken with it.">
-          <CaseList canSettle={canSettle} entries={board.cases} />
-        </AdminTableShell>
-      ) : null}
-
-      {board.withdrawn.length > 0 ? (
-        <AdminTableShell
-          title="Flags a later reading no longer supports"
-          description="Each of these was filed by the signboard pass and the same sign has since been read again, to a verdict that does not carry the flag. A signboard verdict is not a fixed property of the photograph — legibility moves, and the same frame has read a clear name and then nothing minutes apart — so a flag is a reading with a date on it. Both readings are below. Nothing here has been deleted and no decision was taken on them: they are out of the counts because they are no longer somewhere to look, which is why there is nothing to settle."
-        >
-          {/* No settle button here, by the same reasoning: the evidence has already given way. */}
-          <CaseList canSettle={false} entries={board.withdrawn} />
-        </AdminTableShell>
-      ) : null}
-
-      {board.settled.length > 0 ? (
-        <AdminTableShell
-          title="Settled"
-          description="Cases the Super Admin has looked at, each with the reason written on it. They are out of the counters because a counter is a call to look, and nothing about them has been deleted — the flags, the evidence and the detector's own verdict are exactly as they were filed. A settled case is not closed for ever: the settlement is held against the flags it was taken on, so the moment a detector files a new finding on the same subject the case leaves this section by itself and is back among the findings. Settled means it has been looked at, never that the subject is cleared."
-        >
-          <CaseList canSettle={canSettle} entries={board.settled} />
-        </AdminTableShell>
+      {/* The three case lists, with the filter bar, the fold, the stories, the photographs, the maps
+          and the bulk settle. One component for all three, so they can never print different facts
+          about one row — and `canSettle` is passed through rather than re-derived there. */}
+      {board.cases.length > 0 || board.withdrawn.length > 0 || board.settled.length > 0 ? (
+        <IntegrityBoardView canSettle={canSettle} cases={board.cases} settled={board.settled} withdrawn={board.withdrawn} />
       ) : null}
     </div>
   );

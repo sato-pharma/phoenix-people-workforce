@@ -39,6 +39,10 @@ function read(relativePath: string): string {
 
 const BOARD = read("../src/lib/phoenix-crm/server/integrity-board.ts");
 const PAGE = read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx");
+// The three case lists, with the filter bar, the stories, the maps and the BULK settle. They left
+// the page on 2026-10-13 because every one of those is interaction; the page keeps the counters, the
+// callouts and the gate whose answer it passes through.
+const VIEW = read("../src/components/crm-integrity/integrity-board-view.tsx");
 // 🔴 OUTSIDE `src/components/phoenix-crm/`, WHICH IS THE REP'S OWN BUNDLE. Every file under that
 // directory is swept by `tests/phoenix-crm-blind-half.test.ts` and may not say "integrity" at all —
 // the rep must never learn the judging exists. The admin board's own button therefore lives with the
@@ -205,20 +209,30 @@ function subjectKindTests(): void {
     "integrity-board.ts still decides a subject by what it is NOT — the shape that would read a customer id as a visit",
   );
 
-  // And the PAGE prints the label rather than its own two-way guess.
-  const page = stripComments(PAGE);
+  // And the BOARD prints the label rather than its own two-way guess. The markup moved to the client
+  // view on 2026-10-13 and this pin moved with it; the loader's map moved too, into the pure story
+  // module, so there is still exactly ONE of them (a client component cannot import this server
+  // file, and the view's first draft had carried a second copy).
+  const view = stripComments(VIEW);
   // 🔴 BOTH SITES, COUNTED — the desktop table row and the mobile card each print the kind. A
   // `match` here was satisfied by either one, so a break that left the other as its own
   // place-or-visit guess passed on 2026-10-12. The same hole as `getLeaveDayMap`'s two branches.
   assert.equal(
-    [...page.matchAll(/integritySubjectKindLabel\(entry\.subjectKind\)/g)].length,
+    [...view.matchAll(/integritySubjectKindLabel\(row\.entry\.subjectKind\)/g)].length,
     2,
     "both the desktop row and the mobile card must print the subject kind through its label",
   );
+  for (const [name, code] of [["the board page", stripComments(PAGE)], ["the board view", view]] as const) {
+    assert.equal(
+      /\bsubjectKind === "place"/.test(code),
+      false,
+      `${name} still carries its own place-or-visit guess, so a venue or a customer would print as a visit`,
+    );
+  }
   assert.equal(
-    /entry\.subjectKind === "place"/.test(page),
-    false,
-    "the board page still carries its own place-or-visit guess, so a venue or a customer would print as a visit",
+    [...view.matchAll(/const INTEGRITY_SUBJECT_KIND_LABELS|SUBJECT_KIND_LABELS: Record/g)].length,
+    0,
+    "the view must read the one subject-kind map, never keep a copy that a new kind would not reach",
   );
 }
 
@@ -440,8 +454,9 @@ function boardAndPageTests(): void {
   // state has a counter rather than vanishing.
   const page = stripComments(PAGE);
   assert.match(page, /const canSettle = canSettleIntegrityCases\(viewer\)/, "the page asks the same predicate the service does");
-  assert.match(page, /<CaseList canSettle=\{false\} entries=\{board\.withdrawn\}/, "a withdrawn case has nothing to settle");
-  assert.match(page, /<CaseList canSettle=\{canSettle\} entries=\{board\.settled\}/);
+  const view = stripComments(VIEW);
+  assert.match(view, /<CaseList canSettle=\{false\} entries=\{filtered\.filter/, "a withdrawn case has nothing to settle");
+  assert.match(view, /<CaseList canSettle=\{canSettle\} entries=\{filtered\.filter\(\(row\) => row\.standing === "settled"\)\}/);
   assert.match(page, /label="Settled"/, "a settled case is counted by name, never silently absent");
   // 🔴 WHOLE TAILWIND CLASSES. A grid class assembled at runtime is never generated, and the row
   // would quietly stay one-up at every width.
@@ -456,7 +471,11 @@ function boardAndPageTests(): void {
   assert.equal(INTEGRITY_NOTE_LIMIT, 500);
   // 🔴 NOBODY IS NOTIFIED. No rep is ever told he was flagged, so none can be told a flag about him
   // was closed — not from the control, and not from the service.
-  for (const [name, source] of [["the settle control", control], ["integrity-board.ts", board]] as const) {
+  for (const [name, source] of [
+    ["the settle control", control],
+    ["the board view", view],
+    ["integrity-board.ts", board],
+  ] as const) {
     assert.ok(!/createSystemNotification|sendEmail|notifyRep/.test(source), `${name} must not notify anybody about a settlement`);
   }
 }

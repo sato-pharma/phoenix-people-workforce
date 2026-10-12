@@ -54,12 +54,18 @@
  * a thing that is here.
  */
 
+import {
+  INTEGRITY_SUBJECT_KINDS,
+  integritySubjectKindLabel,
+  type IntegritySubjectKind,
+} from "@/lib/crm-integrity/integrity-case-story";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { PHOENIX_CRM_BEHAVIOUR_LABELS, type PhoenixCrmBehaviourFlag } from "@/lib/phoenix-crm/behaviour-integrity";
 import { PHOENIX_CRM_PHOTO_LABELS, type PhoenixCrmPhotoFlag } from "@/lib/phoenix-crm/duplicate-photos";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import type { FraudScanCase } from "@/lib/phoenix-crm/fraud-scan-rules";
 import {
+  INTEGRITY_BULK_SETTLE_CAP,
   INTEGRITY_NOTE_LIMIT,
   INTEGRITY_NOTE_REQUIRED,
   isSettledIntegrityRow,
@@ -123,31 +129,17 @@ function isIntegritySource(value: unknown): value is IntegritySource {
  * kind: a cadence finding is about a CUSTOMER and the shared-venue capture-trust case is about a
  * venue in `phoenix_crm_shared_places`.
  *
- * ONE list, exported, and everything is derived from it — the type, the labels, the coercion, and the
- * positive test that decides whose id may be looked up as a visit. `tests/phoenix-crm-integrity-settle.test.ts`
- * reads it against the migration's own CHECK, because the column is text and the compiler cannot.
+ * ONE list, and everything is derived from it — the type, the labels, the coercion, and the positive
+ * test that decides whose id may be looked up as a visit. 🔴 IT LIVES IN
+ * `@/lib/crm-integrity/integrity-case-story` AND IS RE-EXPORTED HERE, because the board's own client
+ * view needs the same words and may not import this module at all (the service-role client would go
+ * into the browser bundle with it). Every existing reader keeps its one import from here.
  */
-export const INTEGRITY_SUBJECT_KINDS = ["visit", "place", "shared_place", "customer"] as const;
-
-export type IntegritySubjectKind = (typeof INTEGRITY_SUBJECT_KINDS)[number];
+export { INTEGRITY_SUBJECT_KINDS, integritySubjectKindLabel };
+export type { IntegritySubjectKind };
 
 function isIntegritySubjectKind(value: unknown): value is IntegritySubjectKind {
   return typeof value === "string" && (INTEGRITY_SUBJECT_KINDS as readonly string[]).includes(value);
-}
-
-/**
- * Each kind in the owner's own words, as the board prints it. Sentence case, because the page writes
- * it at the head of a line and lowercases it where it writes it mid-sentence.
- */
-const SUBJECT_KIND_LABELS: Record<IntegritySubjectKind, string> = {
-  visit: "A visit",
-  place: "Validating a place",
-  shared_place: "A shared venue",
-  customer: "A customer",
-};
-
-export function integritySubjectKindLabel(kind: IntegritySubjectKind): string {
-  return SUBJECT_KIND_LABELS[kind] ?? kind;
 }
 
 /**
@@ -162,6 +154,83 @@ export function integritySubjectKindLabel(kind: IntegritySubjectKind): string {
 const SFE_SOURCES: IntegritySource[] = ["photo"];
 
 export type IntegrityBoardFlag = PhoenixCrmIntegrityFlag | PhoenixCrmPhotoFlag;
+
+/**
+ * One point this case has — a pin, a photograph's own fix, the place on the list.
+ *
+ * 🔴 THE POINTS TRAVEL AND THE METRES DO NOT. `tests/crm-integrity-place-distance.test.ts` refuses
+ * every spelling of a great-circle calculation in this file — including in a comment, which is how
+ * this line was first written — and that is the right place to draw it: a distance computed here
+ * would be a second derivation of a number the visit row already carries, and the two drift. So the
+ * loader hands the view the readings, and the view measures between them with `distanceMeters` from
+ * the module's own `geo.ts` — one implementation, used once.
+ *
+ * `label` is what the reader sees beside the marker, in plain words. `atIso` is when that reading
+ * was taken, when the row records it; null is UNKNOWN and never a zero.
+ */
+export type CaseReading = {
+  label: string;
+  lat: number;
+  lon: number;
+  accuracyMeters: number | null;
+  atIso: string | null;
+};
+
+/**
+ * One line of the case's own history — what happened to this customer or this place, and who did it.
+ *
+ * Read from `phoenix_crm_list_events`, the module's own trail of decisions. `byName` is the person's
+ * NAME and never an HR id (the owner's standing rule); null when the row names nobody, which is what
+ * an automated pass leaves behind.
+ */
+export type CaseEvent = {
+  atIso: string;
+  what: string;
+  byName: string | null;
+};
+
+/**
+ * Every `phoenix_crm_list_events.event_type` the module has written, in plain English (27 of them on
+ * production, read 2026-10-13).
+ *
+ * Written out rather than prettified from the code, because a reader of this board is deciding about
+ * a named person and `customer_merged_out` is not a sentence. A type this map does not hold falls
+ * back to its own words with the underscores opened out — visible, never hidden, and never a code
+ * printed as if it were English.
+ */
+const EVENT_LABELS: Record<string, string> = {
+  customer_pending: "Added to the list, waiting to be validated",
+  customer_loaded: "Loaded onto the list",
+  customer_validated: "Validated at a place",
+  customer_admitted: "Admitted to the list",
+  customer_dropped: "Dropped from the list",
+  customer_archived: "Archived",
+  customer_renamed: "Renamed",
+  customer_merged_in: "Another record was merged into this one",
+  customer_merged_out: "Merged into another record",
+  customer_met_outside: "Met away from the place",
+  grade_changed: "Grade changed",
+  list_type_changed: "Moved between the AM and PM lists",
+  list_loaded: "The whole list was loaded",
+  pharmacy_added: "A pharmacy was added",
+  place_added: "A place was captured",
+  place_updated: "The place was edited",
+  place_moved: "The place was moved",
+  place_retired: "The place was retired",
+  place_restored: "The place was put back",
+  request_created: "A request was raised",
+  request_decided: "The request was decided",
+  request_moved_on: "The request moved to the next reviewer",
+  request_withdrawn: "The request was withdrawn",
+  validation_held: "The validation was held for review",
+  validation_review_approved: "The validation was approved",
+  validation_review_rejected: "The validation was sent back",
+  visit_locations_restamped: "The visits were re-stamped against the place",
+};
+
+export function integrityEventLabel(eventType: string): string {
+  return EVENT_LABELS[eventType] ?? eventType.replace(/_/g, " ");
+}
 
 /**
  * Every flag's plain English, from both detectors.
@@ -204,6 +273,14 @@ export type IntegrityCase = {
   customerName: string;
   seatId: string;
   capturedAt: string;
+  /**
+   * When the nightly pass FILED the case, which is not when the capture happened.
+   *
+   * The two differ by hours or by days — a sign read again a week later files a case about a
+   * capture from the 3rd — and the filter bar offers both, because "what did the pass find last
+   * night" and "what happened on the 3rd" are different questions a reader asks.
+   */
+  filedAt: string | null;
   visitDate: string | null;
   strong: boolean;
   /** Which detector filed it — the position, the photo, or the pattern. */
@@ -248,6 +325,35 @@ export type IntegrityCase = {
   settlement: IntegritySettlement | null;
   signals: Record<string, unknown>;
   isTest: boolean;
+  /**
+   * The photograph this case is about, as a storage PATH — signed by the scoped photo route when the
+   * reader opens the case, never read from the bucket here.
+   *
+   * Null is "none kept", which is a real and ordinary answer: the one-tap visit (2026-09-29) keeps no
+   * door photograph at all, so all three visit cases on the board have none while every one of the
+   * 162 place cases has one. The panel says so in words rather than drawing an empty frame.
+   */
+  photoPath: string | null;
+  /** Every point this case has, each already named in the words the reader sees. */
+  readings: CaseReading[];
+  /** The colleagues the visit named who were recorded off duty that day, BY NAME. */
+  companionNames: string[];
+  /** Whose earlier reading a replayed coordinate matches, BY NAME. Null when it was the rep's own. */
+  replayByName: string | null;
+  /** The place or venue the case is about, by its own name. Null for a visit or a customer. */
+  subjectLabel: string | null;
+  /** The rep's line, area and region BY NAME, from the organogram — the filter bar's own groups. */
+  repLine: string | null;
+  repArea: string | null;
+  repRegion: string | null;
+  /** The customer's own list (AM or PM) and speciality, for the filter bar and the story. */
+  customerList: string | null;
+  customerSpeciality: string | null;
+  /** The brick the place resolved to, and how far outside it the capture fell. */
+  brickName: string | null;
+  brickDistanceKm: number | null;
+  /** What has happened to this customer or this place, oldest first. */
+  history: CaseEvent[];
 };
 
 /**
@@ -513,22 +619,36 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   }
 
   const customerIds = [...new Set(rows.map((row) => (row.customer_id ? String(row.customer_id) : null)).filter((id): id is string => Boolean(id)))];
+  /** The evidence names people by HR id, deliberately — a name written into a row goes stale. Resolve here. */
+  const signalsOf = (row: Row): Record<string, unknown> =>
+    (row.signals && typeof row.signals === "object" ? row.signals : {}) as Record<string, unknown>;
+  const hrIdsInSignals = (row: Row): string[] => {
+    const signals = signalsOf(row);
+    const companions = Array.isArray(signals.offDutyCompanionHrIds) ? signals.offDutyCompanionHrIds : [];
+    const replay = signals.replay && typeof signals.replay === "object" ? (signals.replay as Record<string, unknown>) : {};
+    return [...companions.map((entry) => String(entry ?? "")), String(replay.byRepHrId ?? "")].filter(Boolean);
+  };
   const [people, customers] = await Promise.all([
-    // Whoever SETTLED a case is loaded with the reps, because the board prints his name and never his
+    // Whoever SETTLED a case is loaded with the reps, because the board prints the name and never the
     // HR id — the owner's standing rule holds for the person who closed the case as much as for the
-    // person it is about.
+    // person it is about. The two people the EVIDENCE names come with them: the colleague recorded as
+    // off duty on a visit, and whoever used a replayed coordinate first.
     loadPeopleNames([
       ...new Set(
         [
           ...rows.map((row) => String(row.rep_hr_id ?? "")),
           ...rows.map((row) => String(row.settled_by ?? "")),
+          ...rows.flatMap((row) => hrIdsInSignals(row)),
           ...behaviourRead.repHrIds,
         ].filter(Boolean),
       ),
     ]),
+    // The customer's own list and speciality ride along with the name: both are filter groups the
+    // owner asked for, and the story says "on the PM list" rather than printing a code. There is no
+    // `ampm` column on this table — `list_type` is the AM/PM answer.
     customerIds.length === 0
       ? Promise.resolve({ data: [] as Row[] })
-      : supabase.from("phoenix_crm_customers").select("id, name").in("id", customerIds),
+      : supabase.from("phoenix_crm_customers").select("id, name, speciality, list_type").in("id", customerIds),
   ]);
   // The distance a visit was saved from its place already exists on the visit row, written at
   // capture. Read it rather than recompute it: recomputing would let this board and the
@@ -590,8 +710,212 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       stored: placeSignboards.get(String(row.subject_id)) ?? null,
     });
 
+  // ── The evidence that turns a case into something a reader can judge ──────────────────────────
+  //
+  // Four more reads, each in the shape of the two above: chunked at 50, non-fatal, failing towards a
+  // field the panel simply does not draw rather than towards a blank board.
+  //
+  // 🔴 THEY ARE SEPARATE READS, AND THE TWO ABOVE ARE LEFT EXACTLY AS THEY ARE. Each of those asks
+  // one narrow question — what distance was written at capture, what does the sign read now — and
+  // both selects are pinned byte-for-byte by the tests that own those rules. Widening one to carry
+  // the photograph and the pin as well would make a single read answer two questions, and the next
+  // session to change the story's evidence would be editing the line that holds the distance rule.
+  const readByIds = async (table: string, columns: string, ids: string[]): Promise<Row[]> => {
+    const out: Row[] = [];
+    for (let index = 0; index < ids.length; index += 50) {
+      const { data, error } = await supabase.from(table).select(columns).in("id", ids.slice(index, index + 50));
+      // Non-fatal, like every other lookup on this board: the case itself is already read, and a
+      // missing photograph or a missing pin must never take the finding off the screen.
+      if (error) break;
+      // A DOUBLE cast only because `table` is a plain string: supabase-js can give a literal
+      // table name a row type and widens a dynamic one to `GenericStringError[]`, which does not
+      // overlap `Row`. The sibling reads in this file name their table literally and need one cast.
+      for (const found of (data ?? []) as unknown as Row[]) out.push(found);
+    }
+    return out;
+  };
+
+  const placeKindIds = [...new Set(rows.filter((row) => row.subject_kind === "place").map((row) => String(row.subject_id)).filter(Boolean))];
+  const sharedKindIds = [...new Set(rows.filter((row) => row.subject_kind === "shared_place").map((row) => String(row.subject_id)).filter(Boolean))];
+
+  const visitEvidenceRows = await readByIds(
+    "phoenix_crm_visits",
+    "id, photo_path, lat, lon, accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, captured_at, place_id",
+    visitIds,
+  );
+  const visitEvidence = new Map<string, Row>();
+  for (const found of visitEvidenceRows) visitEvidence.set(String(found.id), found);
+
+  // The places read here are the place CASES plus the place each flagged visit was saved against —
+  // a visit case's story is "the pin you saved and the place on the list are N apart", which needs
+  // the place's own point and cannot be told from the visit row alone.
+  const placeEvidenceIds = [
+    ...new Set([
+      ...placeKindIds,
+      ...visitEvidenceRows.map((found) => (found.place_id ? String(found.place_id) : "")).filter(Boolean),
+    ]),
+  ];
+  const placeEvidence = new Map<string, Row>();
+  for (const found of await readByIds(
+    "phoenix_crm_places",
+    "id, label, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, photo_captured_at, captured_at, brick_name, brick_distance_km, area_name, region_name",
+    placeEvidenceIds,
+  )) {
+    placeEvidence.set(String(found.id), found);
+  }
+
+  const sharedEvidence = new Map<string, Row>();
+  for (const found of await readByIds(
+    "phoenix_crm_shared_places",
+    "id, name, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, photo_captured_at, captured_at, brick_name, brick_distance_km, area_name, region_name",
+    sharedKindIds,
+  )) {
+    sharedEvidence.set(String(found.id), found);
+  }
+
+  // What has happened to this customer and to this place, from the module's own trail of decisions.
+  // Two reads because the trail is keyed two ways — a case about a place and a case about a customer
+  // each has its own column — and `.in()` on the wrong one returns nothing without saying so.
+  const historyRows: Row[] = [];
+  const eventColumns = "created_at, event_type, actor_hr_id, customer_id, place_id";
+  const readEventsBy = async (column: string, ids: string[]): Promise<void> => {
+    for (let index = 0; index < ids.length; index += 50) {
+      const { data, error } = await supabase
+        .from("phoenix_crm_list_events")
+        .select(eventColumns)
+        .in(column, ids.slice(index, index + 50))
+        .order("created_at", { ascending: true });
+      if (error) break;
+      for (const found of (data ?? []) as Row[]) historyRows.push(found);
+    }
+  };
+  const historyPlaceIds = [...new Set([...placeKindIds, ...visitEvidenceRows.map((found) => (found.place_id ? String(found.place_id) : "")).filter(Boolean)])];
+  await readEventsBy("customer_id", customerIds);
+  await readEventsBy("place_id", historyPlaceIds);
+
+  // Whoever acted is named, never numbered — the owner's standing rule, which is why this is a
+  // second people read: the actors are only known once the trail has been read.
+  const actorNames = await loadPeopleNames([
+    ...new Set(historyRows.map((found) => String(found.actor_hr_id ?? "")).filter(Boolean)),
+  ]).catch(() => null);
+
+  const eventOf = (found: Row): CaseEvent => ({
+    atIso: String(found.created_at ?? ""),
+    what: integrityEventLabel(String(found.event_type ?? "")),
+    byName: found.actor_hr_id
+      ? (actorNames ? nameOf(actorNames, String(found.actor_hr_id)) : "") || String(found.actor_hr_id)
+      : null,
+  });
+
+  const historyByCustomer = new Map<string, CaseEvent[]>();
+  const historyByPlace = new Map<string, CaseEvent[]>();
+  for (const found of historyRows) {
+    if (!found.created_at) continue;
+    const event = eventOf(found);
+    if (found.customer_id) {
+      const key = String(found.customer_id);
+      historyByCustomer.set(key, [...(historyByCustomer.get(key) ?? []), event]);
+    }
+    if (found.place_id) {
+      const key = String(found.place_id);
+      historyByPlace.set(key, [...(historyByPlace.get(key) ?? []), event]);
+    }
+  }
+
   const customerNames = new Map<string, string>();
-  for (const row of ((customers as { data?: Row[] }).data ?? []) as Row[]) customerNames.set(String(row.id), String(row.name ?? ""));
+  const customerLists = new Map<string, string>();
+  const customerSpecialities = new Map<string, string>();
+  for (const row of ((customers as { data?: Row[] }).data ?? []) as Row[]) {
+    customerNames.set(String(row.id), String(row.name ?? ""));
+    if (row.list_type) customerLists.set(String(row.id), String(row.list_type));
+    if (row.speciality) customerSpecialities.set(String(row.id), String(row.speciality));
+  }
+
+  /** A number only when the row really carries one — `0` is a coordinate and `null` is not a zero. */
+  const num = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  /** The row this case is ABOUT — the visit, the place or the shared venue. Nothing for a customer. */
+  const subjectRowFor = (row: Row): Row | undefined => {
+    const id = String(row.subject_id);
+    if (row.subject_kind === "visit") return visitEvidence.get(id);
+    if (row.subject_kind === "place") return placeEvidence.get(id);
+    if (row.subject_kind === "shared_place") return sharedEvidence.get(id);
+    return undefined;
+  };
+
+  /**
+   * The PLACE behind this case — itself when the case is about a place, and the place the visit was
+   * saved against when it is about a visit. A visit row carries no brick and no name of its own, so
+   * reading the subject row for either would print a blank where there is a real answer.
+   */
+  const placeContextFor = (row: Row): Row | undefined => {
+    if (row.subject_kind === "place") return placeEvidence.get(String(row.subject_id));
+    if (row.subject_kind === "shared_place") return sharedEvidence.get(String(row.subject_id));
+    if (row.subject_kind === "visit") {
+      const placeId = visitEvidence.get(String(row.subject_id))?.place_id;
+      return placeId ? placeEvidence.get(String(placeId)) : undefined;
+    }
+    return undefined;
+  };
+
+  /**
+   * The rep's line, area and region BY NAME, keyed on the case's own seat — four of the filter groups
+   * the owner asked for, and the three facts that say whether a finding is one rep or one area.
+   *
+   * The organogram is already on the viewer (`viewer.org`, built once per request behind the module's
+   * own five-minute cache), so this costs no query at all: no read to widen, and nothing that can
+   * fail and leave the board half-drawn.
+   */
+  const seatFacts = (seatId: string): { line: string | null; area: string | null; region: string | null } => {
+    const seat = seatId !== "" ? viewer.org.seats.get(seatId) : undefined;
+    return { line: seat?.lineName ?? null, area: seat?.areaName ?? null, region: seat?.regionName ?? null };
+  };
+
+  /**
+   * Every point this case has, each already named in the words the reader sees.
+   *
+   * 🔴 NOTHING IS MEASURED HERE. The metres between any two of these are the view's to compute, with
+   * the module's one `distanceMeters` — see the note on `CaseReading`.
+   *
+   * Two readings at the same coordinates are not a duplicate to be tidied away: *the photograph and
+   * the pin are the same reading* is the single commonest finding on this board (130 of 165 cases
+   * read on production, 13 October), and the panel can only say so by drawing both.
+   */
+  const readingsFor = (row: Row): CaseReading[] => {
+    const readings: CaseReading[] = [];
+    const add = (label: string, lat: unknown, lon: unknown, accuracy: unknown, atIso: unknown): void => {
+      const latitude = num(lat);
+      const longitude = num(lon);
+      if (latitude === null || longitude === null) return;
+      if (readings.some((reading) => reading.label === label)) return;
+      readings.push({
+        label,
+        lat: latitude,
+        lon: longitude,
+        accuracyMeters: num(accuracy),
+        atIso: typeof atIso === "string" && atIso !== "" ? atIso : null,
+      });
+    };
+
+    const kind = isIntegritySubjectKind(row.subject_kind) ? row.subject_kind : "visit";
+    const subject = subjectRowFor(row);
+
+    if (kind === "visit") {
+      add("Where the visit was saved", row.lat ?? subject?.lat, row.lon ?? subject?.lon, row.accuracy_meters ?? subject?.accuracy_meters, row.captured_at ?? subject?.captured_at);
+      add("Where the photograph was taken", subject?.photo_lat, subject?.photo_lon, subject?.photo_accuracy_meters, subject?.photo_captured_at);
+      const place = placeContextFor(row);
+      add("The place on the list", place?.lat, place?.lon, place?.accuracy_meters, place?.captured_at);
+    } else {
+      add("Where the place was captured", row.lat ?? subject?.lat, row.lon ?? subject?.lon, row.accuracy_meters ?? subject?.accuracy_meters, row.captured_at ?? subject?.captured_at);
+      add("The pin saved for the place", subject?.pin_lat, subject?.pin_lon, subject?.pin_accuracy_meters, subject?.captured_at);
+      add("Where the photograph was taken", subject?.photo_lat, subject?.photo_lon, subject?.photo_accuracy_meters, subject?.photo_captured_at);
+    }
+    return readings;
+  };
 
   const allCases: IntegrityCase[] = rows.map((row) => {
     const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)) as IntegrityBoardFlag[];
@@ -610,6 +934,10 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       customerName: (customerId ? customerNames.get(customerId) : null) ?? "—",
       seatId: String(row.seat_id ?? ""),
       capturedAt: String(row.captured_at),
+      // When the nightly pass FILED it, which is not when the capture happened — his filter bar
+      // offers both days, so a case that answers `null` here is a case the filed-on group can
+      // never match. Pinned, because a field nothing sets is a silently dead filter.
+      filedAt: row.created_at ? String(row.created_at) : null,
       visitDate: row.visit_date ? String(row.visit_date) : null,
       strong: row.strong === true,
       // Every detector in the list by name. The fallback is `gps` only for a value the list does not
@@ -636,6 +964,64 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       deviceMocked: positions && typeof row.device_mocked === "boolean" ? row.device_mocked : null,
       signals,
       isTest: row.is_test === true,
+      // 🔴 THE PATH, NEVER THE IMAGE. The bucket is private and the scoped photo route signs each
+      // path for the reader who asks — which is also why the panel must be given only paths that
+      // reader's own scope covers (one path it may not read refuses the whole batch).
+      photoPath: typeof signals.photoPath === "string" && signals.photoPath !== ""
+        ? signals.photoPath
+        : (() => {
+            const subject = subjectRowFor(row);
+            return typeof subject?.photo_path === "string" && subject.photo_path !== "" ? subject.photo_path : null;
+          })(),
+      readings: readingsFor(row),
+      companionNames: (Array.isArray(signals.offDutyCompanionHrIds) ? signals.offDutyCompanionHrIds : [])
+        .map((entry) => String(entry ?? ""))
+        .filter(Boolean)
+        .map((hrId) => nameOf(people, hrId) || hrId),
+      replayByName: (() => {
+        const replay = signals.replay && typeof signals.replay === "object" ? (signals.replay as Record<string, unknown>) : {};
+        // The rep's own earlier reading is not somebody else, and saying "used before by Nada Saied"
+        // of Nada Saied's own fix would read as an accusation about two people.
+        if (replay.sameRep === true) return null;
+        const hrId = String(replay.byRepHrId ?? "");
+        return hrId === "" ? null : nameOf(people, hrId) || hrId;
+      })(),
+      subjectLabel: (() => {
+        const place = placeContextFor(row);
+        const label = place?.label ?? place?.name;
+        return typeof label === "string" && label.trim() !== "" ? label : null;
+      })(),
+      repLine: seatFacts(String(row.seat_id ?? "")).line,
+      repArea: seatFacts(String(row.seat_id ?? "")).area,
+      repRegion: seatFacts(String(row.seat_id ?? "")).region,
+      customerList: (customerId ? customerLists.get(customerId) : null) ?? null,
+      customerSpeciality: (customerId ? customerSpecialities.get(customerId) : null) ?? null,
+      brickName: (() => {
+        const place = placeContextFor(row);
+        return typeof place?.brick_name === "string" && place.brick_name !== "" ? place.brick_name : null;
+      })(),
+      brickDistanceKm: num(placeContextFor(row)?.brick_distance_km),
+      // The customer's trail and the place's trail are one story to the reader: what happened to this
+      // name, oldest first. Nothing is collapsed — a line repeated on both keys is one row read twice
+      // and is dropped, but two real events at the same second are two lines.
+      history: (() => {
+        const fromCustomer = customerId ? historyByCustomer.get(customerId) ?? [] : [];
+        const subjectKey = row.subject_kind === "visit"
+          ? (visitEvidence.get(String(row.subject_id))?.place_id ? String(visitEvidence.get(String(row.subject_id))?.place_id) : null)
+          : row.subject_kind === "place"
+            ? String(row.subject_id)
+            : null;
+        const fromPlace = subjectKey ? historyByPlace.get(subjectKey) ?? [] : [];
+        const seen = new Set<string>();
+        return [...fromCustomer, ...fromPlace]
+          .filter((event) => {
+            const key = `${event.atIso}|${event.what}|${event.byName ?? ""}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .sort((left, right) => left.atIso.localeCompare(right.atIso));
+      })(),
     };
   });
 
@@ -851,4 +1237,94 @@ export async function loadIntegrityCasesForWindow(options: {
       reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
     };
   });
+}
+
+/**
+ * Settle SEVERAL cases with one reason — the owner's second request of 2026-10-13.
+ *
+ * 🔴 IT IS THE LAST FUNCTION IN THIS FILE DELIBERATELY, AND IT IS NOT CALLED
+ * `settleIntegrityCases`. `tests/phoenix-crm-integrity-settle.test.ts` slices this file from
+ * `settleIntegrityCase` to `reopenIntegrityCase` to read the single settle in isolation, by
+ * `indexOf` — so a name beginning `settleIntegrityCase` would move that slice onto the wrong
+ * function and every assertion in it would then be read against this one.
+ *
+ * 🔴 ONE `.update()` PER ROW, AND THAT IS THE WHOLE REASON THIS IS NOT A SINGLE STATEMENT OVER AN
+ * `.in()`. `settled_flags` is THAT ROW'S OWN FLAGS: it is what reopens the case by itself when a
+ * detector files a different finding on the same subject. A single update would stamp one case's
+ * flags onto every other case in the batch, which is precisely the state that holds a case closed
+ * through a genuinely different finding — the defect a set comparison was written to catch.
+ * `flagsNow` is read from the ROW, never from the request.
+ *
+ * 🔴 A FAILURE ON ONE ROW NEVER STOPS THE OTHERS, and each one comes back named. Settling forty
+ * cases and being told only "it failed" is how nobody settles anything again.
+ *
+ * A note is still REQUIRED (owner, 2026-10-13, when the bulk settle was put to him), and the board
+ * offers ready-made reasons rather than letting it through empty. Nothing is deleted and nobody is
+ * notified — no rep is ever told a flag was filed, so none can be told one was closed.
+ */
+export async function settleManyIntegrityCases(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ settled: string[]; failed: { caseId: string; message: string }[] }> {
+  // A 404, never a 403 — the same rule the board and the single settle are refused by. A message
+  // reading "only the Super Admin settles these" tells whoever asked that the board exists.
+  if (!canSettleIntegrityCases(viewer)) throw notFoundError("Not found.");
+  const body = (raw && typeof raw === "object" ? raw : {}) as { caseIds?: unknown; note?: unknown };
+  const note = cleanText(body.note, INTEGRITY_NOTE_LIMIT);
+  if (!note) throw validationError(INTEGRITY_NOTE_REQUIRED);
+
+  const asked = Array.isArray(body.caseIds) ? body.caseIds : [];
+  // Every id is checked, and a malformed one is a refusal rather than a silently shorter batch: a
+  // reader who ticked forty rows and was told thirty-nine were settled would never find the fortieth.
+  const failed: { caseId: string; message: string }[] = [];
+  const caseIds: string[] = [];
+  for (const entry of asked) {
+    const given = String(entry ?? "");
+    if (!isUuid(given)) {
+      failed.push({ caseId: given, message: "This case is not one of ours. Reload the page." });
+      continue;
+    }
+    const caseId = given.toLowerCase();
+    if (!caseIds.includes(caseId)) caseIds.push(caseId);
+  }
+  if (caseIds.length === 0) throw validationError("Choose the cases to settle.");
+  if (caseIds.length > INTEGRITY_BULK_SETTLE_CAP) {
+    throw validationError(`Settle at most ${INTEGRITY_BULK_SETTLE_CAP} cases at a time.`);
+  }
+
+  const supabase = getSupabaseAdmin();
+  // Chunked for the same reason every `.in()` in this file is: an over-long one returns an empty set
+  // with no error at all, and an empty set here would read as "every case has gone".
+  const rows: Row[] = [];
+  for (let index = 0; index < caseIds.length; index += 50) {
+    const { data, error } = await supabase
+      .from("phoenix_crm_location_integrity")
+      .select("id, flags")
+      .in("id", caseIds.slice(index, index + 50));
+    throwIfError(error);
+    rows.push(...((data ?? []) as Row[]));
+  }
+  const byId = new Map(rows.map((row) => [String(row.id ?? "").toLowerCase(), row]));
+
+  const at = new Date().toISOString();
+  const by = viewer.hrId.toUpperCase();
+  const settled: string[] = [];
+  for (const caseId of caseIds) {
+    const row = byId.get(caseId);
+    if (!row) {
+      failed.push({ caseId, message: "This case is no longer there." });
+      continue;
+    }
+    const flagsNow = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag));
+    const updated = await supabase
+      .from("phoenix_crm_location_integrity")
+      .update({ settled_at: at, settled_by: by, settled_note: note, settled_flags: flagsNow })
+      .eq("id", caseId);
+    if (updated.error) {
+      failed.push({ caseId, message: updated.error.message });
+      continue;
+    }
+    settled.push(caseId);
+  }
+  return { settled, failed };
 }

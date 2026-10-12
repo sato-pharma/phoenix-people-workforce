@@ -291,7 +291,10 @@ function runLoaderTests() {
   // false on `supportsFlag` too, so `!supportsFlag` withdraws a case whose sign merely stopped being
   // legible — and legibility is the one thing known to move from one night to the next.
   const boardCode = stripComments(board);
-  const settleCode = stripComments(read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx"));
+  // 🔴 THE SETTLE BUTTON'S GATE MOVED WITH THE CASE LISTS (2026-10-13) — the three lists are a client
+  // component now, and this pin follows the markup rather than the file it used to sit in. The page
+  // keeps the gate's INPUT (`canSettleIntegrityCases`) and passes it through.
+  const settleCode = stripComments(read("../src/components/crm-integrity/integrity-board-view.tsx"));
   // 🔴 THE THIRD READER IS PHOENIX RANKS, AND IT MUST AGREE WITH THE BOARD. A withdrawn case has no
   // settle button by design — nobody has anything left to decide — so a pillar that still charges it
   // charges a rep for a finding his own evidence has overturned, with no click anywhere that could
@@ -339,14 +342,22 @@ function runLoaderTests() {
   }
 }
 
-/** The page: both lists shown, the sign's own words shown, and nothing truncated. */
+/** The board: all three lists shown, the sign's own words shown, and nothing truncated. */
 function runRenderTests() {
+  // 🔴 TWO FILES SINCE 2026-10-13, AND THE SPLIT IS THE POINT. The PAGE still owns everything whose
+  // answer is one number — the counters, the callouts, the capped warning — and the VIEW owns the
+  // three case lists, because filtering, opening a case and selecting several are all interaction.
+  // Every assertion below reads whichever file now holds the markup it is about; not one was dropped.
   const page = read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx");
+  const view = read("../src/components/crm-integrity/integrity-board-view.tsx");
 
-  assert.ok(page.includes("<CaseList canSettle={canSettle} entries={board.cases} />"), "the live cases must render");
-  assert.ok(page.includes("<CaseList canSettle={false} entries={board.withdrawn} />"), "the withdrawn flags must still be shown");
+  assert.ok(view.includes("<CaseList canSettle={canSettle} entries={shownCases} selection={selection} />"), "the live cases must render");
+  assert.ok(
+    view.includes('<CaseList canSettle={false} entries={filtered.filter((row) => row.standing === "withdrawn")} selection={null} />'),
+    "the withdrawn flags must still be shown",
+  );
   assert.equal(
-    (page.match(/<CaseList canSettle=/g) ?? []).length,
+    (view.match(/<CaseList canSettle=/g) ?? []).length,
     3,
     "one list component for all three, so they can never print different facts about one row",
   );
@@ -355,38 +366,45 @@ function runRenderTests() {
     "'nothing flagged' must require every list to be empty — a settled case is still a case",
   );
   assert.ok(
-    page.includes("The sign read:"),
+    view.includes("The sign read:"),
     "a signboard case must show the words of the sign — the evidence was on the row and never rendered",
   );
   assert.ok(
-    page.includes("Read again on {cairo(later.checkedAt)}"),
+    view.includes("Read again on {cairo(later.checkedAt)}"),
     "the later reading must carry its Cairo date, not a bare claim",
   );
   // Arabic and Latin on the same board: direction belongs to the LINE, never to the block — and it
   // is pinned per paragraph rather than by counting, because a count passes while the one paragraph
   // that carries Arabic is the one that lost it.
   assert.ok(
-    /dir="auto">\s*The sign read:/.test(page),
+    /dir="auto">\s*The sign read:/.test(view),
     "the transcribed sign needs its own direction",
   );
   assert.ok(
-    /dir="auto">\s*That reading read:/.test(page),
+    /dir="auto">\s*That reading read:/.test(view),
     "the later reading's transcription needs its own direction too",
   );
-  const pageCode = stripComments(page);
-  assert.ok(
-    !pageCode.includes("…") && !/\btruncate\b|\bline-clamp-/.test(pageCode),
-    "nothing on this board may be truncated — a half-printed sign names the wrong person",
-  );
+  // 🔴 BOTH FILES, because the story paragraph is the longest string this board has ever printed and
+  // it lives in the view. A sweep that still read only the page would pass while the one paragraph
+  // that must never be cut short was being cut short.
+  for (const [label, code] of [
+    ["the page", stripComments(page)],
+    ["the board view", stripComments(view)],
+  ] as const) {
+    assert.ok(
+      !code.includes("…") && !/\btruncate\b|\bline-clamp-/.test(code),
+      `nothing on ${label} may be truncated — a half-printed sign names the wrong person`,
+    );
+  }
   // The withdrawn section must say, in words, that nothing was deleted and nobody decided anything.
   // 🔴 Since settling exists (2026-10-09) it must also say why there is nothing to settle here: the
   // evidence gave way on its own, which is not a decision and must not read as one.
   assert.ok(
-    /Nothing here has been deleted and no decision was taken on them/.test(page),
+    /Nothing here has been deleted and no decision was taken on them/.test(view),
     "the section must state that a withdrawn flag is neither deleted nor decided on",
   );
   assert.ok(
-    /nothing to settle/.test(page),
+    /nothing to settle/.test(view),
     "the section must say why a withdrawn case offers no settle button",
   );
 }
