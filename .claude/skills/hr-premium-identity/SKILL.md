@@ -155,8 +155,10 @@ Both come from `reference/tint-assets.mjs`.
    - Left: the on-light mark at 34 mm.
    - Centre: the document title, then a rule ornament (two 9 mm hairlines around a 1.3 mm light
      diamond), then the subtitle (`Human Resources · Head Office · October 2026`).
-   - Right: **empty.** The specimen put the Arabic mark here; the owner took it out (Rule zero). Keep
-     the column at its width, so the title wraps exactly as before and no page grows.
+   - Right: **empty.** The specimen put the Arabic mark here; the owner took it out (Rule zero). Make
+     the right column as wide as the left so the title is centred on the page, and close the gaps by
+     the same amount so the title column keeps its width (the repository uses `32mm 1fr 32mm` with a
+     1 mm gap, in place of `32mm 1fr 24mm` with 5 mm).
 4. **Band.** The engine-turned band sits 3.5 mm under the masthead.
    - It is 1.5 mm tall, 176 mm wide, with a 6 mm wave, a 0.26 mm stroke, in deep.
    - It is an **inline vector SVG** (`band()`).

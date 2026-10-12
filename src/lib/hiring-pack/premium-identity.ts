@@ -25,8 +25,9 @@
 //
 // THE ARABIC MARK IS NEVER IN THE MASTHEAD. The specimen set it at the masthead's right; the owner
 // took it out the same evening — "make the arabic sato logo only as water mark … everywhere", then
-// "watermark and footer only" (2026-10-12, about 23:50 Cairo). The right column keeps its width, so
-// the title block wraps exactly as it did and no paper can gain a line.
+// "watermark and footer only" (2026-10-12, about 23:50 Cairo). The right column now MIRRORS the left,
+// so the title sits on the page's centre line, and the title column is exactly as wide as it was —
+// it wraps on the same words and no paper can gain a line.
 //
 // NO SEAL, as in `house-identity.ts`. Nothing below draws a company stamp; the frame's corner tiles
 // and the diamond rule are ornaments, not a seal, and they sit on no signature cell.
@@ -211,8 +212,10 @@ export interface PremiumMastheadInput {
  * engine-turned band under them.
  *
  * NO ARABIC MARK HERE (owner, 2026-10-12: the Arabic logo goes in the watermark and the footer only).
- * The third grid column stays at its old width with nothing in it: the title block keeps the room it
- * had, so it wraps on the same words and the masthead can only get shorter, never taller.
+ * The third grid column is empty and as wide as the Latin mark's, so the title is centred on the page.
+ * The gaps closed by exactly what the right column grew: 32 + 1 + 1 + 32 = 32 + 5 + 5 + 24 = 66 mm of
+ * fixed width either way, so the title column keeps the room it had, wraps on the same words, and the
+ * masthead can only get shorter, never taller. `tests/hr-premium-identity.test.ts` holds that sum.
  *
  * PINNED LEFT-TO-RIGHT like the house letterhead, so the marks sit on the same sides of an Arabic
  * paper and an English one; each line inside keeps its own direction.
@@ -419,7 +422,7 @@ export const PREMIUM_IDENTITY_CSS = `
 
   /* ---------- the masthead ---------- */
   .pm-mast {
-    display: grid; grid-template-columns: 32mm 1fr 24mm; align-items: center; column-gap: 5mm;
+    display: grid; grid-template-columns: 32mm 1fr 32mm; align-items: center; column-gap: 1mm;
     direction: ltr;
   }
   .pm-mast__latin { display: block; width: 32mm; height: auto; }
@@ -453,7 +456,7 @@ export const PREMIUM_IDENTITY_CSS = `
   .pm-mast__ref .hp-ref { margin: 0; color: ${HOUSE_COLORS.muted}; font-size: 6.5pt; line-height: 1.35; }
   .pm-band { display: block; width: 100%; height: ${HOUSE_BAND_HEIGHT_MM}mm; margin-top: 2.6mm; overflow: hidden; }
 
-  .pm-mast--compact { grid-template-columns: 28mm 1fr 20mm; }
+  .pm-mast--compact { grid-template-columns: 28mm 1fr 28mm; }
   .pm-mast--compact .pm-mast__latin { width: 28mm; }
   .pm-mast--compact .pm-mast__t { margin-top: .2mm; font-size: 12.5pt; }
   .pm-mast--compact .pm-rule { margin: .5mm 0 .3mm; }

@@ -4251,8 +4251,9 @@ as water mark"*, then *"everywhere"*. Asked about the two papers that sign their
 answered *"ok watermark and footer only"*, and then chose to keep their foot mark and add the
 watermark.
 
-- **The HR premium papers:** the Arabic mark left the masthead. The right column of the masthead keeps
-  its width with nothing in it, so the title wraps on the same words and no paper can grow a line.
+- **The HR premium papers:** the Arabic mark left the masthead. Its empty right column now mirrors the
+  Latin mark's, so the title sits on the page's centre line, and the gaps closed by the same amount, so
+  the title column is exactly as wide as before: it wraps on the same words and no paper grows a line.
   The 5% watermark is now the only Arabic mark on these papers.
 - **The Spotlight sheet** (and the Phoenix Ranks certificate, which shares its sheet frame so the two
   cannot drift apart) and **the Sales Review pack PDF:** the foot keeps the Arabic mark, and every

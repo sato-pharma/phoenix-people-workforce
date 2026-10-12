@@ -198,6 +198,17 @@ function testEveryCurrentPaperWearsThePremiumIdentity(): void {
     for (const mast of mastheads) {
       assert.ok(!mast.includes("sato-pharma-arabic"), `${name}: the Arabic logo is never in the masthead`);
     }
+    // Its empty right column MIRRORS the left, so the title sits on the page's centre line — and the
+    // fixed widths still add up to what they were with the mark there (66 mm, 58 mm compact), so the
+    // title column is exactly as wide and wraps on the same words: no paper can grow a line.
+    for (const [rule, fixed] of [[/\.pm-mast \{[^}]*\}/, 66], [/\.pm-mast--compact \{[^}]*\}/, 58]] as const) {
+      const css = rule.exec(html)?.[0] ?? "";
+      const cols = /grid-template-columns:\s*([\d.]+)mm 1fr ([\d.]+)mm/.exec(css);
+      const gap = Number(/column-gap:\s*([\d.]+)mm/.exec(/\.pm-mast \{[^}]*\}/.exec(html)?.[0] ?? "")?.[1]);
+      assert.ok(cols && Number.isFinite(gap), `${name}: the masthead grid was read, so the next checks test something`);
+      assert.equal(cols[1], cols[2], `${name}: the masthead's right column mirrors the left, so the title is centred on the page`);
+      assert.equal(Number(cols[1]) + Number(cols[2]) + 2 * gap, fixed, `${name}: the title column keeps its old width, so no title rewraps`);
+    }
     assert.equal(
       (html.match(/sato-pharma-arabic/g) ?? []).length,
       (html.match(/<img class="pm-watermark" src="\/brand\/sato-pharma-arabic-on-light\.png"/g) ?? []).length,
