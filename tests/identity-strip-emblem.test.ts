@@ -39,6 +39,10 @@ const NOTICES = "src/components/phoenix-signature-card/PhoenixIdentityNotices.ts
  * rule kept on one of them and lost on the other is exactly the split-document look he rejected.
  */
 const DAY_PANEL = "src/components/hr/hr-today-panel.tsx";
+/** The page the deck sits on — it decides WHERE the day panel renders, which is now a rule too. */
+const COMMAND_CENTER = "src/components/hr/hr-command-center.tsx";
+/** The bell's own route — the band reads it, and asks it for 20 rather than its default 8. */
+const NOTICE_ROUTE = "app/api/notifications/in-app/route.ts";
 const SATO_BAND = "src/components/admin/ceo-command-center.tsx";
 
 /**
@@ -585,10 +589,20 @@ export function runIdentityStripEmblemTests() {
   );
 
   const notices = read(NOTICES);
+  // BOTH calls are pinned SEPARATELY, and that is not belt-and-braces. The band makes two: a GET
+  // carrying `?limit=` and the read-marking PATCH. A single assertion for "the endpoint appears
+  // somewhere" was written first and broken to check it — and it stayed GREEN with the GET pointed
+  // at a different route, because the PATCH alone satisfied it. One assertion per call is what
+  // actually holds the band to the bell.
   assert.ok(
-    notices.includes('fetch("/api/notifications/in-app"'),
-    "the notice band must read the BELL's endpoint — a second query against notification_events is "
+    /fetch\(`\/api\/notifications\/in-app\?limit=\$\{FETCH_LIMIT\}`/.test(notices),
+    "the notice band must READ the BELL's endpoint — a second query against notification_events is "
       + "a second place to get the personal-bell allowlist and the test-login fence wrong",
+  );
+  assert.ok(
+    /fetch\("\/api\/notifications\/in-app", \{/.test(notices),
+    "reading a notice must MARK it read through the bell's own route — the badge above and the band "
+      + "below would otherwise disagree until the next refresh",
   );
   assert.ok(
     !/from "@\/lib\/supabase/.test(notices),
@@ -722,10 +736,143 @@ export function runIdentityStripEmblemTests() {
   //    below are what buy that, so they are pinned.
   assert.ok(
     /py-\[5px\] pl-3 pr-2/.test(noticesCode)
-      && /className=\{\["flex min-w-0 flex-col pt-2"/.test(noticesCode),
+      && /className=\{\["@container flex min-w-0 flex-col pt-2"/.test(noticesCode),
     "the notice rows or the band's top padding grew — measured at 803px, a row at py-[7px] and a "
       + "band at pt-3 put the ledger at 136px against the portrait's 120px reserve, which pushes "
       + "the whole dashboard down the page",
+  );
+
+  //    AND THE ROWS SWITCH ON THE BAND'S OWN WIDTH, NEVER ON THE VIEWPORT. The band sits beside the
+  //    standing portrait inside a shell with a sidebar, so it is 510px across at a 768px viewport
+  //    and 545px at 803px — a `md:` breakpoint reveals the module tag at exactly the width that
+  //    cannot hold it, and the title wraps to a second line 15px past the portrait's reserve.
+  //    Measured both ways on the page before this was written; `@container` is the locked rule for
+  //    a component that can sit in a column.
+  assert.ok(
+    /@container flex/.test(noticesCode)
+      && /block: "hidden @min-\[540px\]:inline"/.test(noticesCode)
+      && !/\b(?:sm|md|lg|xl):inline\b/.test(noticesCode),
+    "a notice row went back to a viewport breakpoint — the band is 510px wide at a 768px viewport, "
+      + "so `md:` shows the module tag exactly where the title then wraps and the band outgrows the "
+      + "portrait's reserve; the thresholds are the band's own width (@min-[540px] / @min-[380px])",
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // 9. ONE BLOCK PER KIND, AND PRESSING IT DROPS THE LIST — the owner's second instruction on the
+  //    band, taken partition by partition: "the first partition, which is the new CV received, the
+  //    new WhatsApp message, the four CVs received today. We can make it this as one block. And when
+  //    I press on this block, a drop list appears ... I press on it, I get the resources."
+  //
+  //    He was reading a real repetition, not a layout quirk. Measured on production the same day:
+  //    `New CV received` fired 9 times that Cairo day and 97 in seven; `New WhatsApp message — no CV
+  //    attached` 8 and 53 — every one under the SAME subject, because the sender and the preview live
+  //    in the message body. A ledger of three rows was spending the whole band on near-identical
+  //    lines. These are the four things a later session would undo without meaning to.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  assert.ok(
+    /function groupByKind/.test(noticesCode)
+      && /`\$\{notice\.module \?\? ""\}::\$\{notice\.title\}`/.test(noticesCode),
+    "the band stopped grouping, or started grouping on the title alone — notices collapse into one "
+      + "block per MODULE AND TITLE, so a CRM visit can never land inside a recruitment block and a "
+      + "title naming a person stays its own row",
+  );
+  assert.ok(
+    /aria-expanded=\{open\}/.test(noticesCode) && /aria-controls=\{listId\}/.test(noticesCode),
+    "a kind block must stay a real disclosure — `aria-expanded` and `aria-controls` on a <button> "
+      + "are what make the drop list reachable by keyboard and announceable; a div that responds to "
+      + "a click is not",
+  );
+  assert.ok(
+    /onClick=\{\(\) => setOpen\(/.test(noticesCode),
+    "pressing a kind block must do nothing but open it — marking nine CVs read because he pressed a "
+      + "disclosure would empty the badge for arrivals he has not looked at",
+  );
+
+  //    THE FIGURE ON A BLOCK IS "THIS MANY IN THE BAND", AND SAYS `today` ONLY WHEN IT CAN SEE THE
+  //    WHOLE DAY. The endpoint serves at most 20 rows, so a count taken at that cap may be short —
+  //    and recruitment already ships a real digest titled `4 CVs arrived today` (15:04 Cairo), so a
+  //    block inventing its own day total would contradict a notice sitting in the same band.
+  assert.ok(
+    /const FETCH_LIMIT = 20/.test(noticesCode) && /limit=\$\{FETCH_LIMIT\}/.test(noticesCode),
+    "the band must ask the endpoint for its full 20 — at the service default of 8 a kind that fired "
+      + "nine times today would be counted as eight, and the count is the whole point of a block",
+  );
+  assert.ok(
+    /const payloadAtCap = loaded\.length >= FETCH_LIMIT/.test(noticesCode)
+      && /kind\.allToday && !payloadAtCap/.test(noticesCode),
+    "a block said `today` without checking that the payload came back under the endpoint's cap — at "
+      + "the cap the count is a floor, not a day total, and the Cairo stamp is the honest alternative",
+  );
+
+  //    THE MEMBER ROWS ARE THE PROOF OF THE FIGURE. The message is where the sender and their words
+  //    are, so it is the line that identifies a member — and it wraps, because the house rule
+  //    forbids an ellipsis and a truncated applicant's name is the one thing a recruiter cannot act
+  //    on. The list scrolls on the VERTICAL axis only; the fits-the-screen rule bans the other one.
+  assert.ok(
+    /\{notice\.message \|\| notice\.title\}/.test(noticesCode)
+      && !/line-clamp|truncate|text-ellipsis/.test(noticesCode),
+    "a member row must show its own message, wrapped and never clipped — the title is identical "
+      + "across the whole block, so the message is the only thing that tells one arrival from another",
+  );
+  assert.ok(
+    /overflow-y-auto overflow-x-hidden/.test(noticesCode) && /max-h-\[\d+px\]/.test(noticesCode),
+    "the drop list lost its vertical cap or gained a horizontal scroll — a kind that fired nine "
+      + "times must not push the dashboard off the screen, and no surface on this page scrolls sideways",
+  );
+
+  // 10. THE ROUTE SERVES THE LIMIT THE BAND ASKS FOR, AND IT IS NOT A TRUST BOUNDARY. The viewer,
+  //     the personal-bell allowlist and the test-login fence are resolved server-side from the
+  //     access context; the service clamps its own limit to 20. A malformed value must fall back to
+  //     the default rather than erroring, because a bad URL must not cost the caller its notices.
+  const routeCode = stripComments(read(NOTICE_ROUTE));
+  assert.ok(
+    /searchParams\.get\("limit"\)/.test(routeCode) && /Math\.min\(parsed, 20\)/.test(routeCode),
+    "the in-app notifications route stopped honouring `?limit=` or stopped clamping it — the band "
+      + "needs 20 to count a repeating kind, and the ceiling is what keeps the query from asking for "
+      + "the whole table",
+  );
+  assert.ok(
+    /return undefined/.test(routeCode) && /limit === undefined/.test(routeCode),
+    "a bad or missing `?limit=` must fall through to the service's own default — the bell sends no "
+      + "limit at all, and a 400 there would empty its panel",
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // 11. THE PENDINGS LIVE BEHIND THE BUTTON, NOT ABOVE THE TOOLBAR (owner, 2026-10-13: "the needs
+  //     attentions button is fair enough make it show all pendings when clicked on and remove the
+  //     upper part"). "Your day" stood open as the page's first block; it is now what the toolbar's
+  //     "Needs attention" button opens, with every waiting task already expanded.
+  //
+  //     THE RESTORATION THIS CATCHES is a kind one: a session reading hr-today-panel.tsx's own
+  //     header — "the page's opening answer to what do I do today", "the most urgent opens by
+  //     default" — would put the panel back at the top in good faith, because the file still says
+  //     that is what it is for. It renders perfectly either way.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  const centerCode = stripComments(read(COMMAND_CENTER));
+  assert.ok(
+    /\{attentionOnly \? \(\s*<div id=\{PENDINGS_PANEL_ID\}>\s*<HrTodayPanel icons=\{GROUP_ICONS\} openAll tasks=\{data\.tasks\} \/>/
+      .test(centerCode),
+    "the day panel is standing open on the page again, or it opens without `openAll` — it renders "
+      + "ONLY inside the attention toggle, and someone who pressed a button for the pendings must "
+      + "not get four of the five tasks still shut",
+  );
+  assert.ok(
+    (centerCode.match(/<HrTodayPanel/g) ?? []).length === 1,
+    "the day panel is rendered more than once — the upper block he removed is back beside the one "
+      + "behind the button",
+  );
+  assert.ok(
+    /aria-controls=\{PENDINGS_PANEL_ID\}/.test(centerCode)
+      && /aria-expanded=\{attentionOnly\}/.test(centerCode),
+    "the attention button must announce the panel it opens — it is a disclosure now as well as a "
+      + "filter, and `aria-controls` pointing at a literal that drifts from the panel's id is a "
+      + "dangling reference nothing in the browser reports",
+  );
+  assert.ok(
+    /const waitingKeys = ordered\.filter\(\(task\) => task\.urgency !== "clear"\)\.map\(\(task\) => task\.key\);/
+      .test(dayCode) && /new Set\(openAll \? waitingKeys : waitingKeys\.slice\(0, 1\)\)/.test(dayCode),
+    "`openAll` stopped opening every waiting task — the panel is only reached by pressing the button "
+      + "that asks for all the pendings, so opening one of them is answering a narrower question",
   );
 
   // The other half of the coupling: the logo the desktop numbers were measured against.
