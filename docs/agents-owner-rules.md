@@ -7737,3 +7737,41 @@ team seat — the view's day-activity branch also reads a started team's OWN sea
 Infective Cairo district manager (Momen Abdelhady Shehata) for 7 Oct as a meeting entered by B-10, and
 excluded Samir Saad (annual vacation that day). The Phoenix team calendar grid lists territories, so a
 manager's day has no cell there.
+
+## Qena per line — owner rulings, 2026-10-12
+
+His words: *"in cns line its only a single qena"*, *"in cns the both qenas are counted to qena rep"*,
+and — after asking for an audit of the Upper Egypt organogram — that in Anti Infective and Pedia there
+are two reps, one for Qena 1 and one for Qena 2, each counted on his own part. His answers to the two
+in-chat questions the same day: *"All nine months"* (CNS Qena 2 rolls up from 1 January, orphan
+targets included) and *"Qena 1 rep covers it"* (Pedia's Qena 2 before its own seat existed).
+
+**CNS — one Qena rep.** `cns / UE8` is `occupied` on `SEAT-CNS-REP-UE7` in ALL NINE months: rows
+2026-01-01→07-13 and 07-14→open, with a one-day 07-13 Others row kept as dated history (monthly
+attribution reads the period END, so that row never applies). January and February are the only two
+months carrying a CNS Qena 2 target (92,163.59 and 41,509.20); because `carries_target` is a generated
+column, the Qena 1 rep carries those two orphan targets — that is his answer, not a defect. The CNS
+target template LISTS Qena 2; never upload a target into it from March on (October's CNS upload has
+Qena 1 only, 337,469.87).
+
+**Pedia — two reps from 1 September.** `SEAT-PED-REP-UE8` was born on 2026-09-01. Before it the
+Qena 1 seat covers Qena 2, through `pedia / UE8` rows on `SEAT-PED-REP-UE7` for 01-01→07-13 and
+07-14→09-01; February's Pedia Qena 2 target of 104,252.74 counts to that seat. From September each
+area scores its own seat.
+
+**Anti Infective — two reps in every month.** `anti_infective / UE8` is occupied on
+`SEAT-AIF-REP-UE8` from the structure's first row (2026-07-13, which `f_line_area_map_asof` falls
+back to for earlier months); its holder has held the seat since 2026-05-02.
+
+**The towns** (his lists, applied to the brick master the same day): Qena 1 = أبو تشت · نجع حمادى ·
+الأشراف · فرشوط · دشنا · القناويه · اولاد عمرو · الطوابيه · قريه الكلاحين; Qena 2 = مدينة قنا · قوص ·
+الطويرات · الصالحية · نقادة · قفط · كامولا · الزينى · العشى · الدير · أبنود. مدينة قنا also keeps a
+Qena 1 brick (`B209-1`) for the CNS and Head Office customers, which is harmless because CNS rolls
+both Qenas to one rep; `B209-2` and `B209-8` are empty placeholders that must stay active.
+
+**Read the seat, not the person, for a back month.** `au.f_seat_occupant_asof` credits a seat's whole
+history to today's holder, so Qena figures for January–September name the reps hired in late
+September and October, not the people who sold them. Measured 2026-10-12: every Qena row in all
+nine months and three lines credits the right seat, nothing sits in Others, and the only negative
+area-month is Pedia Qena 1 September (−13,113.84, the Office allocation — see the zero-sum roll-up
+note in `org`).

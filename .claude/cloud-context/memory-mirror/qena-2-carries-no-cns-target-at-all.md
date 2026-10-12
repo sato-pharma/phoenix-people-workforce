@@ -1,11 +1,18 @@
 ---
 name: qena-2-carries-no-cns-target-at-all
-description: "Qena 2 is `other_line_specific` on CNS — `carries_target false`, staffed in Anti Infective only, no rep seat and no DM — so CNS sales filed there report against NO target and NO person; 33,324.75 EGP of one customer's CNS sat in it unnoticed."
+description: "SUPERSEDED 2026-10-12 — CNS Qena 2 is no longer an Others bucket: his \"in cns line its only a single qena\" put `cns / UE8` on the Qena 1 rep seat in all nine months, so its sales now credit the CNS Qena rep; what survives is the lesson — an area with `carries_target false` sits OUTSIDE an achievement, so check it before trusting any area total (33,324.75 EGP of one customer's CNS sat in one unnoticed)."
 metadata:
   node_type: memory
   type: project
   originSessionId: d5764c39-c02c-4dd4-a40d-70ad08cc490c
 ---
+
+🔴 **SUPERSEDED 2026-10-12 — the structure below no longer exists.** On his words *"in cns line its
+only a single qena"* and *"in cns the both qenas are counted to qena rep"*, `cns / UE8` became
+`occupied` on `SEAT-CNS-REP-UE7` in ALL NINE months (his answer *"All nine months"*, January and
+February's orphan Qena 2 targets included). CNS Qena 2 sales now credit the CNS Qena rep; the rule
+lives in `sales-attribution.md`. The lesson about `carries_target` still holds for every OTHER
+`other_*` area. What follows is the 2026-10-10 reading, kept as history.
 
 Read live 2026-10-10 from `au_v_line_area_map_all` for `line_code='cns'`: **Qena 2** has
 `area_state = other_line_specific`, `other_type = line_specific`, `staffed_in_line_code =
