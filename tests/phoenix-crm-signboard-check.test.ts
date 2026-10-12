@@ -134,6 +134,15 @@ function checkRecords(): void {
 function checkServerAndSweep(): void {
   const server = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8"));
   assert.ok(server.includes("PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS = 8_000"), "a rep at the door waits eight seconds at most");
+  assert.ok(
+    /maxRetries: 0,\s*\n\s*model: input\.model/.test(server),
+    "readSigns must pass maxRetries: 0 — the SDK retries a timeout with a fresh copy of the budget, so the 8-second door waited 16.4 s, five times in three days (production, 2026-10-12)",
+  );
+  const client = stripComments(readFileSync("src/lib/ai/openai-client.ts", "utf8"));
+  assert.ok(
+    client.includes("openAiClient(undefined, params.timeoutMs, params.maxRetries)"),
+    "createOpenAiResponseText must hand a caller's maxRetries to the client, or the signboard's 0 is ignored",
+  );
   assert.ok(server.includes('await import("sharp")'), "sharp is loaded lazily, never at the top of a route-reachable file");
   assert.ok(server.includes("downloadIssuedPlacePhoto"), "a save reads only a path the server issued to this person");
   assert.ok(/Set sign_present to false only when/.test(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8")), "the prompt asks for false only when sure");

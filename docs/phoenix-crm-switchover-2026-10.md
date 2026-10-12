@@ -195,3 +195,48 @@ own id into a report, so a month somebody has already read can never be restated
 The hourly refresh gives each one its `crm_contacts` name row with `source = 'phoenix'` — the only
 value that CHECK allows, `'phoenix_crm'` is rejected — and never overwrites a name the vendor already
 carries.
+
+## A doctor added twice stopped the hourly refresh for a day
+
+Found 2026-10-12. From Sun 11 Oct 15:00 Cairo until it was fixed, `crm_contact_master_refresh` aborted ten to
+thirteen times an hour with `duplicate key value violates unique constraint "crm_contact_assignments_open_uidx"`.
+It runs as ONE transaction, so every abort rolled back the vendor passes, the region and brick resolution and the
+Phoenix fifth pass together: nobody's doctor list refreshed for about 26 hours. Earlier occurrences were sporadic
+(10 Oct 11:00, 14:00, 21:00).
+
+**Why four static checks found nothing.** The collision exists only inside the run — after the rollback no
+colliding row persists, so every query of committed state came back empty. What found it was running the function
+inside a `DO` block that catches `unique_violation`, reads `pg_exception_detail` and `pg_exception_context`,
+and always ends in a `RAISE EXCEPTION` so nothing is kept:
+
+    Key (contact_crm_id, agent_crm_id, list_type)=(1000038395, 1542, PM) already exists
+    at the insert in step 5b
+
+**The cause.** A rep added a doctor on 10 Oct (own contact id 1000038395), and on 11 Oct added him again BY
+REFERENCE to the first (reference 1000038395, own id 1000038463). Two live customer rows, one doctor. The unique
+key under `crm_contact_assignments` is the doctor and the rep's CRM account, not the customer, and the fifth
+pass was written as if a doctor were one row: its source was `select distinct` over a set that includes
+`grade` and `starts_on`, so two rows differing by creation day both survived and 5b inserted one key twice.
+Measured the same day: 158 doctor/list keys held more than one live customer row, 140 of them differing in grade or
+creation day — the next one would have aborted the run as well. 28 keys held a dropped and a live row, which 5b
+opened and 5c closed again inside the same run.
+
+**The fix** (migration `20261012184500`). The fifth pass collapses `phoenix_crm_customers` to one row per
+(rep, doctor, list) before 5b-5e touch it: a live row beats a dropped one, active beats pending, the earliest start
+wins. 5b also skips a key an open row already holds under another hr id, because the index is on
+`agent_crm_id`. Proven on production inside one transaction that was rolled back: the old function failed with
+the same key; the new one ran, opened 135 periods, closed 148, touched 4,135, and a second run changed nothing.
+
+**Not fixed here.** The add path that lets a rep add a doctor he already has. The refresh now holds whatever the
+table contains; the duplicates themselves still sit on the integrity board.
+
+**Logs.** `refreshCrmContactMaster` kept only `error.message`, so the line said which constraint and never which
+doctor. `describeContactMasterError` now adds the PostgREST `code`, `details` and `hint`.
+
+## The signboard read waited twice its budget
+
+`PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS` is 8 s, and every signboard timeout between 11 and 12 Oct landed at 16.4 s.
+`OPENAI_MAX_RETRIES` is 1 and the SDK retries a timeout with a fresh copy of the same timeout. `readSigns` now
+passes `maxRetries: 0` (new optional parameter on `createOpenAiResponseText`), because the `timeoutMs` it hands
+over is the time left on that check's deadline. A timeout still returns `unjudged("call_failed")` — the rep is
+never held for it.
