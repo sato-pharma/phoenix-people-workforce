@@ -40,9 +40,10 @@
 // value that silently does nothing — which is worse than not passing one, because the next person
 // to read it would believe it.
 
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import { PREMIUM_PAGE_NUMBER_SLOT } from "@/lib/hiring-pack/premium-identity";
 import { ARABIC_FONT_STACK } from "@/lib/hiring-pack/render-shared";
 import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
@@ -108,6 +109,57 @@ export const PAGE_NUMBER_FOOTER = `<div style='width:100%;padding:0 10.2mm;font-
 /** Chrome insists on both templates once header/footer are on; an empty one keeps the head clear. */
 const EMPTY_HEADER = '<span style="font-size:0"></span>';
 
+/** Whether a paper wears the HR premium identity — it carries the premium page chrome. */
+export function isPremiumPaper(html: string): boolean {
+  return html.includes('class="pm-chrome"');
+}
+
+/**
+ * "N / M" in the premium running foot, drawn onto pages Chromium has already laid out.
+ *
+ * WHY NOT CHROME'S FOOTER, as the house papers use. A premium paper prints on `@page { margin: 0 }` —
+ * its frame and foot are drawn by the page itself, edge to edge — and Chrome draws a footer template
+ * INSIDE the bottom margin. With no margin there is nowhere for it to go and the number silently
+ * vanishes. So Chromium lays the pages out, `totalPages` is read off the result, and the number is
+ * written into the slot the foot leaves for it.
+ *
+ * DIGITS AND A SLASH ONLY, in Helvetica. A PDF library cannot shape Arabic (see the note on
+ * `PAGE_NUMBER_FOOTER`), so the premium number carries no words — it is a number in a foot, which
+ * reads the same in both languages.
+ *
+ * EXPORTED for the two landscape papers that are printed by their own route rather than filed — the
+ * interview calendar and the Field Activity report. Each keeps its own Chromium page and its own
+ * print options; both set `data-pm-numbered` on the document before printing, exactly as below, so
+ * the foot's diamond steps aside, and then hand the bytes here.
+ */
+export async function stampPremiumPageNumbers(pdf: Uint8Array): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(pdf);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const pages = doc.getPages();
+  const mm = 72 / 25.4;
+  const hex = PREMIUM_PAGE_NUMBER_SLOT.color.replace("#", "");
+  const color = rgb(
+    parseInt(hex.slice(0, 2), 16) / 255,
+    parseInt(hex.slice(2, 4), 16) / 255,
+    parseInt(hex.slice(4, 6), 16) / 255,
+  );
+  const size = PREMIUM_PAGE_NUMBER_SLOT.sizePt;
+  pages.forEach((page, index) => {
+    const text = `${index + 1} / ${pages.length}`;
+    const width = font.widthOfTextAtSize(text, size);
+    const { width: pageWidth } = page.getSize();
+    page.drawText(text, {
+      x: pageWidth - PREMIUM_PAGE_NUMBER_SLOT.rightMm * mm - width,
+      // The foot row is centred on the emblem; the baseline sits half a cap height below that line.
+      y: PREMIUM_PAGE_NUMBER_SLOT.centreFromBottomMm * mm - (font.heightAtSize(size, { descender: false }) / 2),
+      size,
+      font,
+      color,
+    });
+  });
+  return doc.save();
+}
+
 export type HiringPaperPdfOptions = {
   /**
    * How many copies of this paper to stamp out.
@@ -142,6 +194,9 @@ export async function renderHiringPaperPdf(
   const { html, missing } = inlineLocalAssets(printHtml);
   if (missing.length > 0) throw new PaperArtworkMissingError(missing);
 
+  // A premium paper is numbered by `stampPremiumPageNumbers` after layout, never by Chrome's footer.
+  const premium = isPremiumPaper(html);
+
   return withChromiumPage(async (page) => {
     // `domcontentloaded` is sufficient and `networkidle0` would be wrong: after the inlining above
     // the document makes NO network requests at all, so waiting for the network to fall idle would
@@ -159,6 +214,10 @@ export async function renderHiringPaperPdf(
       "(async () => { try { await document.fonts.ready; } catch {} "
         + "await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))); })()",
     );
+    // The foot's diamond steps aside for the number that will be written where it stood.
+    if (premium && options.pageNumbers) {
+      await page.evaluate("document.documentElement.setAttribute('data-pm-numbered', '')");
+    }
 
     const single = await page.pdf({
       // The artwork IS a background in CSS terms on some sheets, and every form's rules, boxes and
@@ -169,7 +228,7 @@ export async function renderHiringPaperPdf(
       // The footer draws INSIDE the sheet's own bottom margin, which is why this rides with
       // `preferCSSPageSize` rather than against it: the paper keeps the geometry it declares, and
       // the number sits below the content in space the document already reserved.
-      ...(options.pageNumbers
+      ...(options.pageNumbers && !premium
         ? {
             displayHeaderFooter: true,
             headerTemplate: EMPTY_HEADER,
@@ -179,12 +238,15 @@ export async function renderHiringPaperPdf(
       timeout: 30_000,
     });
 
+    // Numbered BEFORE the copies are stamped out, so each copy counts its own pages, as below.
+    const numbered = premium && options.pageNumbers ? await stampPremiumPageNumbers(single) : single;
+
     const wanted = Math.max(1, Math.trunc(options.copies ?? 1));
-    if (wanted === 1) return single;
+    if (wanted === 1) return numbered;
 
     // Stamp out the remaining copies. `copyPages` is a page-tree copy, so each one carries the
     // footer Chromium already drew — including its per-copy numbering.
-    const source = await PDFDocument.load(single);
+    const source = await PDFDocument.load(numbered);
     const out = await PDFDocument.create();
     for (let copy = 0; copy < wanted; copy += 1) {
       const pages = await out.copyPages(source, source.getPageIndices());

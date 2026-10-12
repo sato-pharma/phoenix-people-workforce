@@ -824,6 +824,49 @@ async function runExportTests() {
   assert.ok(html.includes("border-radius: 0 !important"), "square edges, the house rule");
   assert.doesNotMatch(html, /border-radius:\s*[1-9]/, "and no corner is rounded anywhere");
 
+  // THE PREMIUM DRESS (owner, 13 Oct 2026: "change to the premium look"). Dress only — every word, column,
+  // row and name link asserted above is still there — so these pin the new masthead, sheet and foot
+  // where the old hand-rolled letterhead and Chrome's "Page N of M" used to be asserted by omission.
+  assert.ok(html.includes('<header class="pm-mast pm-mast--compact">'), "the premium masthead heads the sheet, compact so the grid keeps its height");
+  assert.ok(html.includes('<h1 class="pm-mast__t pm-mast__t--en" dir="ltr" lang="en">Interview Calendar</h1>'), "and its title is the one the old letterhead carried");
+  assert.ok(
+    html.includes("Week of: 20 September · 20 – 24 September 2026 · generated 18 September 2026 at 15:00 (Cairo)"),
+    "the old letterhead's one subtitle line is the masthead's subtitle, word for word",
+  );
+  assert.ok(!html.includes('class="lh"') && !html.includes("rpt__title"), "the hand-rolled letterhead is gone, not hidden");
+  assert.ok(html.includes("@page { size: A4 landscape; margin: 0; }"), "the sheet is the turned A4 with no page margin, so the frame and foot reach the edge");
+  assert.equal(html.split('class="pm-chrome pm-chrome--landscape"').length - 1, 1, "one landscape chrome, which print repeats on every page");
+  const foot = /<div class="pm-foot__code" dir="ltr">([^<]*)<\/div>/.exec(html)?.[1] ?? "";
+  assert.equal(
+    foot,
+    "Sato Pharma · Interview Calendar · 20 – 24 September 2026 · SATO-DIS-2026-01 v1.0",
+    "the running foot names the company, the paper and its week — what Chrome's footer used to say — and the identity code",
+  );
+  assert.ok(!/phoenix/i.test(foot), "a company paper's foot says Sato Pharma, never Phoenix");
+  assert.ok(html.includes('<div class="pm-foot__ph"></div>'), "the foot's left slot is empty — a Sato-only foot, with no Phoenix label or emblem");
+  assert.ok(!/phoenix/i.test(html.slice(html.indexOf('<div class="pm-chrome'))), "nothing in the chrome — label, emblem or microtext — names Phoenix");
+  assert.ok(html.includes('class="pm-foot__page"'), "the foot keeps the slot the page count is written into after layout");
+  assert.ok(!/Page \d+ of \d+|pageNumber|totalPages/.test(html), "and no page count is printed by the page itself — Chrome's footer is off and the stamped count is the only one");
+  {
+    // The ink rule: no filled area except the 6% zebra row. Every rule that paints a background must be an even row.
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    const fills = [...css.matchAll(/([^{}]+)\{([^{}]*\bbackground(?:-color)?\s*:[^{}]*)\}/g)].map((match) => match[1].trim());
+    assert.ok(fills.length >= 2, "the zebra rows are still there to be found, so this scan is not blind");
+    assert.ok(fills.every((selector) => /nth-child\(even\)/.test(selector)), `only the zebra row is filled — ${fills.join(" | ")}`);
+  }
+  assert.ok(!/box-shadow|text-shadow|gradient\(/.test(html), "no shadow and no gradient anywhere on the sheet");
+
+  // THE ROUTE prints it that way: margin 0 and no Chrome header or footer, the brand artwork inlined, and the
+  // page count stamped afterwards. A unit test cannot run Chromium, so the wiring is read at the source.
+  {
+    const route = stripComments(readFileSync("app/api/recruitment/interview-calendar/export/route.ts", "utf8"));
+    assert.ok(!route.includes("displayHeaderFooter") && !route.includes("footerTemplate"), "Chrome's own header and footer are off");
+    assert.ok(/margin:\s*\{\s*bottom:\s*"0",\s*left:\s*"0",\s*right:\s*"0",\s*top:\s*"0"\s*\}/.test(route), "the page margin is zero — the premium sheet draws its own");
+    assert.ok(route.includes("landscape: true") && route.includes("preferCSSPageSize: true"), "the paper stays A4 landscape");
+    assert.ok(route.includes("inlineLocalAssets(buildInterviewCalendarPdfHtml(model))"), "the /brand artwork is inlined, since setContent has no base URL");
+    assert.ok(route.includes("data-pm-numbered") && route.includes("stampPremiumPageNumbers(bytes)"), "the page count is stamped into the foot after Chromium has counted");
+  }
+
   // THE WORKBOOK — every name a real hyperlink, in the grid AND in the list.
   const workbook = new ExcelJS.Workbook();
   const buffer = await buildInterviewCalendarWorkbook(model);

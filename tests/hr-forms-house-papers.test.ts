@@ -632,6 +632,21 @@ function testTheJobTitleIsArabicOnly(): void {
 // The emitted artifact
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The engine-turned band as the page DRAWS it.
+ *
+ * A paper in the HR premium identity (2026-10-12) draws it as an inline vector under its masthead —
+ * Chrome rasterised the CSS tile into the PDF and it printed soft — while an archived version keeps the
+ * house CSS tile it was signed with. A premium page still carries the house stylesheet for its
+ * archived versions, so the tile's CSS is on it too; that is why a premium page must show the ELEMENT,
+ * never merely the stylesheet.
+ */
+const PREMIUM_BAND = /<svg class="pm-band"[^>]*>[\s\S]*?<path d="M[^"]*Q[\s\S]*?<\/svg>/;
+const HOUSE_BAND = /url\(data:image\/svg\+xml,[^)]*Q[^)]*\)/;
+function drawsTheBand(html: string): boolean {
+  return html.includes('class="pm-chrome"') ? PREMIUM_BAND.test(html) : HOUSE_BAND.test(html);
+}
+
 function testEveryPaperRendersOnTheHouseIdentity(): void {
   for (const paper of HR_PAPERS) {
     const html = renderHrPaperHtml(packFixture(), 1, paper);
@@ -641,7 +656,7 @@ function testEveryPaperRendersOnTheHouseIdentity(): void {
     // Was `border-bottom: 0.7mm solid #0A6BA6` until 2026-09-09, when the owner replaced the filled
     // brand rule with the engine-turned band on every Sato template.
     assert.ok(
-      /url\(data:image\/svg\+xml,[^)]*Q[^)]*\)/.test(html),
+      drawsTheBand(html),
       `${paper.id}: the engine-turned band is the one element on every house document`,
     );
     assert.ok(
@@ -1050,8 +1065,9 @@ function testTheEnglishSpanCountsTheLastDay(): void {
  *     roughly forty elements. The facts belong in the sentence here, which is how an English
  *     certificate of experience is written anyway.
  *   · ONE ARTICLE PER COPY, so one copy is one page and one page is one artboard.
- *   · REAL TEXT — no `<img>` carrying content, and nothing that would rasterise. The mark is the one
- *     image on the page and it is identity, not content.
+ *   · REAL TEXT — no `<img>` carrying content, and nothing that would rasterise. The marks are the
+ *     only images on the page — the masthead's, and since 2026-10-12 the premium page chrome's
+ *     watermark and emblem — and they are identity, not content.
  *
  * Verified beyond this on the real PDF, which needs Chromium and so is not run here: single A4 page,
  * three embedded fonts, and 818 characters of English recovered by `pdfjs` — the same extraction an
@@ -1069,7 +1085,8 @@ function testTheEnglishCertificateStaysImportable(): void {
     "the English certificate must not use a table — every cell border becomes its own element when " +
       "the PDF is imported into a design tool, which is what this page is shaped to survive",
   );
-  assert.ok(!/<img/i.test(html.split("</header>")[1] ?? ""), "no image below the letterhead carries content");
+  const content = (html.split("</header>")[1] ?? "").split('<div class="pm-chrome"')[0];
+  assert.ok(!/<img/i.test(content), "no image below the letterhead carries content");
 
   const page = renderExperienceCertificateEnHtml(
     packFixture({ departed: true, lastWorkingDate: "2026-08-31" }),
@@ -1279,10 +1296,13 @@ function testEveryMastheadCarriesTheBand(): void {
   ];
 
   for (const [name, html] of rendered) {
+    // The three HR papers wear the HR premium identity (2026-10-12) and draw the band as an inline
+    // vector under the premium masthead; the contract keeps the corporate dress by the owner's word the
+    // same day, and with it the house band. `tests/hr-premium-identity.test.ts` pins which is which.
     assert.ok(
-      /url\(data:image\/svg\+xml,[^)]*Q[^)]*\)/.test(html),
-      `The ${name} does not carry the engine-turned band. It draws its own masthead, so styling `
-        + "the shared .lh__rule does not reach it — take the value from houseBandBackground().",
+      drawsTheBand(html),
+      `The ${name} does not carry the engine-turned band. A paper drawing its own masthead must take `
+        + "it from houseBandBackground(), or from premiumMasthead() in premium-identity.ts.",
     );
     assert.ok(
       !/border-bottom:\s*0\.7mm solid/.test(html),

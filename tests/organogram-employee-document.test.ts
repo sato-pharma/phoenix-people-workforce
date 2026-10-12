@@ -13,7 +13,8 @@
 
 import assert from "node:assert/strict";
 
-import { houseLetterhead } from "../src/lib/hiring-pack/house-identity.ts";
+import { HOUSE_IDENTITY_CSS, houseLetterhead } from "../src/lib/hiring-pack/house-identity.ts";
+import { premiumDocumentStylesheet } from "../src/lib/hiring-pack/premium-identity.ts";
 import type { OrganogramEmployeeDetail } from "../src/lib/reports/organogram-employee-detail.ts";
 import {
   buildOrganogramEmployeeDocument,
@@ -106,19 +107,66 @@ export function runOrganogramEmployeeDocumentTests() {
   assert.doesNotMatch(RESTRICTED_SHEET, /phoenix/i, "No Phoenix branding may appear on a company document.");
   assert.match(RESTRICTED_SHEET, /SATO-DIS-2026-01 v1\.0/, "The sheet states the standard it is drawn to.");
 
+  // ── the premium dress (owner, 2026-10-13: "change to the premium look") ────────────────────────
+  // The whole-sheet no-Phoenix check above now covers the chrome too, because the chrome is part of
+  // the sheet; it is kept as it was and pinned separately below so that a chrome that DOES name the
+  // app fails here by name, not as an unrelated word match. The foot says Sato Pharma alone — a
+  // company record's own rule — which is `PREMIUM_COMPANY_DOCUMENT_BRAND`, never "phoenix".
+  const chromeAt = RESTRICTED_SHEET.indexOf('<div class="pm-chrome"');
+  assert.ok(chromeAt > -1, "The record wears the premium identity: the frame, watermark and running foot are on the sheet.");
+  const chrome = RESTRICTED_SHEET.slice(chromeAt);
+  assert.match(
+    chrome,
+    /<\/div>\s*<\/article>\s*$/,
+    "The chrome is the LAST child of the sheet, so it can shift no cell and no heading.",
+  );
+  assert.doesNotMatch(chrome, /<(?:section|footer|header|table)\b/, "Nothing of the record's own lives inside the chrome.");
+  assert.doesNotMatch(chrome, /phoenix/i, "The chrome names Sato Pharma alone — no Phoenix emblem, no Phoenix wording.");
+  assert.match(chrome, /<div class="pm-foot__ph"><\/div>/, "The foot's left slot is empty: it carries no app brand.");
+  assert.ok(
+    chrome.includes("SATO PHARMA L.L.C. · HUMAN RESOURCES · HEAD OFFICE")
+      && !chrome.includes("PHOENIX WORKFORCE"),
+    "The frame's microtext is the Sato phrase, without the app's name.",
+  );
+  assert.ok(
+    chrome.includes("Sato Pharma · Human Resources · SATO-DIS-2026-01 v1.0"),
+    "The running foot carries the identity code, as every premium paper's does.",
+  );
+  assert.ok(
+    chrome.includes('src="/brand/sato-pharma-arabic-on-light.png"')
+      && !RESTRICTED_SHEET.slice(0, chromeAt).includes("sato-pharma-arabic"),
+    "The Arabic Sato logo is the watermark in the chrome and appears nowhere else — never in the masthead.",
+  );
+  assert.doesNotMatch(RESTRICTED_SHEET, /sato-hr-seal/, "No company seal on a record: a computer-generated extract needs no stamp.");
+  assert.equal(
+    (RESTRICTED_SHEET.match(/<header class="pm-mast pm-mast--compact">/g) ?? []).length,
+    1,
+    "The masthead is the premium compact one — a fully populated record must not gain a page.",
+  );
+  assert.doesNotMatch(RESTRICTED_SHEET, /class="lh"|lh__rule/, "The old house letterhead is gone from the sheet.");
+
   // ── bilingual, two lines, never one mixed line ─────────────────────────────────────────────────
-  assert.match(RESTRICTED_SHEET, /<h1 dir="ltr">Employee Record<\/h1>/, "English leads on an English-facing paper.");
   assert.match(
     RESTRICTED_SHEET,
-    /<p class="lh__ar" dir="rtl" lang="ar">بيانات الموظف<\/p>/,
+    /<h1 class="pm-mast__t pm-mast__t--en" dir="ltr" lang="en">Employee Record<\/h1>/,
+    "English leads on an English-facing paper.",
+  );
+  assert.match(
+    RESTRICTED_SHEET,
+    /<p class="pm-mast__tar" dir="rtl" lang="ar">بيانات الموظف<\/p>/,
     "…and the paper's Arabic name sits under it, on its own line with its own direction.",
   );
   // The subtitle names the job title and area, and states LTR so a trailing area name is not painted
   // at the wrong end of the run.
   assert.match(
     RESTRICTED_SHEET,
-    /<p dir="ltr">Medical Representative · Cairo 1<\/p>/,
+    /<p class="pm-mast__s" dir="ltr" lang="en">Medical Representative · Cairo 1<\/p>/,
     "The subtitle carries the person's job title and area.",
+  );
+  assert.match(
+    RESTRICTED_SHEET,
+    /<p class="lh__purpose" dir="ltr">Confidential · HR record<\/p>/,
+    "…and the purpose band still says what kind of record this is.",
   );
 
   // ── the person, named once ─────────────────────────────────────────────────────────────────────
@@ -207,6 +255,40 @@ export function runOrganogramEmployeeDocumentTests() {
     ORGANOGRAM_RECORD_CSS,
     /@media screen and \(max-width: 800px\)[\s\S]*?\.rec__cell \{ flex-basis: 100%/,
     "The sheet must reflow to one column on a phone rather than scroll sideways.",
+  );
+
+  // THE FRAME AND THE FOOT ARE ONE SET PER PRINTED PAGE. In print they are `position: fixed`, which
+  // Chrome repeats on every printed page, so a record that runs to a second page (a fully populated
+  // HR/finance one does) carries the frame and the running foot on both without a second copy.
+  assert.match(
+    ORGANOGRAM_RECORD_CSS,
+    /\.pm-chrome \.pm-frame \{ position: fixed; top: 0; left: 0; \}/,
+    "In print the frame is fixed to the page, so every printed page has one.",
+  );
+  // The sheet's own page inset is the premium identity's: a padding of the record's own on the sheet
+  // would fight it, so the only `.rec` padding left is the phone's.
+  // Read from the record's OWN rules, with the house and premium sheets taken out: the premium
+  // stylesheet declares the inset itself, on the very selector this checks.
+  const ownCss = ORGANOGRAM_RECORD_CSS.replace(HOUSE_IDENTITY_CSS, "").replace(premiumDocumentStylesheet(".rec"), "");
+  const sheetRule = /\n\.rec \{([^}]*)\}/.exec(ownCss);
+  assert.ok(sheetRule, "The sheet's own rule must be found.");
+  assert.doesNotMatch(sheetRule[1], /padding/, "The page inset is the premium identity's — a padding here would silently fight it.");
+  // A sheet is a whole 297 mm on a wide screen so its frame and foot sit on it; on paper that same
+  // min-height is how a blank page is born, so it is screen-only. On a phone the chrome is hidden.
+  assert.equal(
+    (ORGANOGRAM_RECORD_CSS.match(/min-height: 297mm/g) ?? []).length,
+    1,
+    "One min-height of a whole sheet, and only the one on screen.",
+  );
+  assert.match(
+    ORGANOGRAM_RECORD_CSS,
+    /@media screen and \(min-width: 801px\) \{\s*\.rec \{ min-height: 297mm; \}\s*\}/,
+    "The whole-sheet height is scoped to a screen wide enough to show the sheet.",
+  );
+  assert.match(
+    ORGANOGRAM_RECORD_CSS,
+    /@media screen and \(max-width: 800px\)[\s\S]*?\.rec \.pm-chrome \{ display: none; \}/,
+    "On a phone the 210 mm frame is hidden — it must not push the page sideways.",
   );
 
   // ── the saved file's name (the payslip's format, applied to a record) ──────────────────────────

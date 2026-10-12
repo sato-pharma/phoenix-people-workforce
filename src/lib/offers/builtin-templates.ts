@@ -26,6 +26,13 @@ import {
   OFFER_HOUSE_THEME,
   houseOfferBlocks,
 } from "@/lib/offers/house-template";
+import {
+  OFFER_PREMIUM_FONT,
+  OFFER_PREMIUM_FONT_SIZE_PT,
+  OFFER_PREMIUM_TEMPLATE_NAME,
+  OFFER_PREMIUM_THEME,
+  premiumOfferBlocks,
+} from "@/lib/offers/premium-template";
 import type { OfferBlock, OfferBuiltinKey, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
 
 /**
@@ -39,7 +46,10 @@ import type { OfferBlock, OfferBuiltinKey, OfferTemplateVariant, OfferTheme } fr
  *
  * Adding a design is one entry here plus its own `*-template.ts`. Nothing else in the module
  * enumerates them — the seeder, the restore route and the designer all read this list. The third,
- * `sato`, was added beside the two frozen uploaded letters and changes neither of them.
+ * `sato`, was added beside the two frozen uploaded letters and changes neither of them; the fourth,
+ * `house`, and the fifth, `premium` (13 Oct 2026), were added the same way and change none of the
+ * four before them. Each new key also has to be allowed by the `offer_templates` CHECK constraints in
+ * the database BEFORE the code that registers it deploys — see the migration that added `premium`.
  */
 export type OfferBuiltinTemplate = {
   blocks: () => OfferBlock[];
@@ -100,6 +110,17 @@ export const OFFER_BUILTIN_TEMPLATES: OfferBuiltinTemplate[] = [
     theme: OFFER_HOUSE_THEME,
     variant: "house",
   },
+  {
+    blocks: premiumOfferBlocks,
+    description: "The HR premium identity — centred masthead over the engine-turned band, double-keyline frame, Arabic watermark, Sato-only foot, ink rule (no filled areas), a 6% zebra salary table.",
+    fontFamily: OFFER_PREMIUM_FONT,
+    fontSizePt: OFFER_PREMIUM_FONT_SIZE_PT,
+    key: "premium",
+    name: OFFER_PREMIUM_TEMPLATE_NAME,
+    seedAsDefault: false,
+    theme: OFFER_PREMIUM_THEME,
+    variant: "premium",
+  },
 ];
 
 export function offerBuiltinTemplate(key: string): OfferBuiltinTemplate | null {
@@ -111,5 +132,5 @@ export function isOfferBuiltinKey(value: unknown): value is OfferBuiltinKey {
 }
 
 export function isOfferTemplateVariant(value: unknown): value is OfferTemplateVariant {
-  return value === "classic" || value === "executive" || value === "sato" || value === "house";
+  return value === "classic" || value === "executive" || value === "sato" || value === "house" || value === "premium";
 }

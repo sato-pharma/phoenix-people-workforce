@@ -4,7 +4,7 @@
  * WHY IT IS A SYSTEM DOCUMENT AND NOT A FILE SOMEBODY KEEPS. It was first built as a one-off page in
  * a scratchpad, which is exactly how a company document rots: the app's wording changes, the guide
  * does not, and a rep is sent looking for a button that was renamed a month ago. Here the guide sits
- * beside the screens it describes, wears the house identity from the one module that owns it, and is
+ * beside the screens it describes, wears the HR premium identity from the module that owns it, and is
  * regenerated on every request.
  *
  * 🔴 IT IS UPDATED IN THE SAME PR AS THE FLOW IT DESCRIBES — BOTH LANGUAGES, NEVER ONE (owner,
@@ -35,12 +35,14 @@
  * can match it against his screen — and matching it is the ONLY reason these are in English at all.
  */
 
+import { HOUSE_IDENTITY_CSS, HOUSE_TYPE, type HouseLetterheadInput } from "@/lib/hiring-pack/house-identity";
 import {
-  HOUSE_IDENTITY_CSS,
-  HOUSE_TYPE,
-  houseLetterhead,
-  type HouseLetterheadInput,
-} from "@/lib/hiring-pack/house-identity";
+  PREMIUM_COMPANY_DOCUMENT_BRAND,
+  PREMIUM_IDENTITY_CSS,
+  premiumLetterhead,
+  premiumPageChrome,
+  premiumSheetCss,
+} from "@/lib/hiring-pack/premium-identity";
 import { systemLegalEntity } from "@/config/system-settings";
 // 🔴 THE DEADLINE IS INTERPOLATED, NEVER TYPED (owner, 2026-10-02 — the hour goes on every due date a
 // rep reads). Both halves of this guide said "the Thursday before it" with no hour, and the guide is
@@ -226,16 +228,33 @@ export function startGuideDownloadName(language: StartGuideLanguage): string {
  * HTML rather than a server-rendered PDF because this app has no server-side PDF renderer and is not
  * gaining one for a single page: every house paper here is HTML the browser prints, and a guide that
  * dragged in a headless browser would add a large dependency to a Railway container to save one
- * keystroke. The print stylesheet is A4 with the house margins, so "Save as PDF" gives exactly the
- * page this function describes.
+ * keystroke. The print stylesheet is A4, so "Save as PDF" gives exactly the page this function
+ * describes.
+ *
+ * WEARS THE HR PREMIUM IDENTITY since 2026-10-13, when the owner ticked "change to the premium look"
+ * for it on the review page. DRESS ONLY: the masthead, the frame, the watermark and the running foot
+ * are `premium-identity.ts`'s, and every step, sentence, label and note below is exactly what it was.
+ * The foot names Sato Pharma and carries the identity code (`PREMIUM_COMPANY_DOCUMENT_BRAND`), so the
+ * old in-flow footer keeps only the guide's own words — the code would otherwise print twice.
+ *
+ * 🔴 THE BROWSER PRINTS THIS, NOT A SERVER, AND IT IS READ ON PHONES. Two consequences. `@page` has
+ * `margin: 0` (the premium frame and foot are `position: fixed` and need the whole sheet), which also
+ * removes the browser's own header and footer text from the printout; the sheet's padding is what
+ * keeps the content clear of them, so the usable height is 297 - 12.5 - 19.5 = 265 mm and the one
+ * page is held by measurement, not by a test. And the 210 mm frame, watermark and foot exist for
+ * paper and for a desktop that is at least that wide: below 830 px they are not drawn and the
+ * masthead stacks, so a phone gets the content reflowing exactly as it did, with no sideways scroll.
  */
 export function buildPhoenixCrmStartGuide(language: StartGuideLanguage): string {
   const c = CONTENT[language];
-  const letterhead = houseLetterhead({
-    legalNameAr: systemLegalEntity.legalNameAr,
-    legalNameEn: systemLegalEntity.legalNameEn,
-    ...c.head,
-  });
+  const masthead = premiumLetterhead(
+    {
+      legalNameAr: systemLegalEntity.legalNameAr,
+      legalNameEn: systemLegalEntity.legalNameEn,
+      ...c.head,
+    },
+    { compact: true },
+  );
 
   const stepRows = c.steps
     .map(([head, text], i) => `<li><span class="n">${i + 1}</span><div><h2>${head}</h2><p>${text}</p></div></li>`)
@@ -257,19 +276,28 @@ export function buildPhoenixCrmStartGuide(language: StartGuideLanguage): string 
 <title>Phoenix CRM — ${titleText}</title>
 <style>
 ${HOUSE_IDENTITY_CSS}
-  @page { size: A4; margin: 14mm 16mm; }
+${premiumSheetCss(".guide")}
+${PREMIUM_IDENTITY_CSS}
   /* THE SQUARE-EDGE GOLDEN RULE. No round or semi-round corners, anywhere. */
   * { box-sizing: border-box; border-radius: 0; }
   body {
-    margin: 0 auto; padding: 14mm 16mm; max-width: 210mm;
+    margin: 0 auto; max-width: 210mm;
     color: var(--phx-doc-body);
     font-family: ${bodyFont};
     font-size: 10pt; line-height: ${c.dir === "rtl" ? 1.6 : 1.45};
   }
-  /* On paper the @page margin already provides the frame, so the screen padding is removed rather
-     than doubled. */
-  @media print { body { padding: 0; max-width: none; } }
-  h1, .lh__title h1 { font-family: ${c.dir === "rtl" ? bodyFont : `"${HOUSE_TYPE.display}", ${bodyFont}`}; }
+  /* The sheet's own padding is the page's inset, so on paper the body only has to stop being capped. */
+  @media print { body { max-width: none; } }
+  /* A desktop wide enough for the whole sheet shows it as a sheet, so the foot sits at the bottom of
+     it. Below that the frame is not drawn, the masthead stacks, and the page reflows as a phone
+     always has. */
+  @media screen and (min-width: 831px) { .guide { min-height: 297mm; } }
+  @media screen and (max-width: 830px) {
+    .pm-chrome { display: none; }
+    .guide { padding-bottom: 14mm; }
+    .pm-mast.pm-mast--compact { grid-template-columns: 1fr; row-gap: 1.5mm; }
+    .pm-mast.pm-mast--compact .pm-mast__latin { margin: 0 auto; }
+  }
 
   .lead {
     margin: 4mm 0 0; padding-bottom: 2.4mm;
@@ -303,26 +331,27 @@ ${HOUSE_IDENTITY_CSS}
      spilling onto a second page. Shortening the third note's WORDS bought nothing, because the height came from the
      extra row, not the sentence; the phone went into the validation note instead. So a new fact
      belongs in an existing note, and a genuinely new note means dropping one. No test here can see
-     this — it needs a browser at 210mm. */
+     this — it needs a browser at 210mm. Since the premium sheet (2026-10-13) the usable height is
+     265mm and the two pages end at 238mm (English) and 226mm (Arabic) of it, 40.7mm and 52.6mm
+     above the foot rule, so the arithmetic above still holds with room for one more row. */
   .notes { display: flex; flex-wrap: wrap; gap: 7mm; margin-top: 4.5mm; }
   .note { flex: 1 1 60mm; border-top: 1.2pt solid var(--phx-doc-blue); padding-top: 2.2mm; }
   .note h3 { margin: 0 0 .9mm; color: var(--phx-doc-deep); font-size: 9.5pt; font-weight: 700; }
   .note p { margin: 0; font-size: 9pt; }
 
-  footer {
-    margin-top: 6mm; padding-top: 2mm; border-top: .5pt solid var(--phx-doc-hair);
-    display: flex; flex-wrap: wrap; gap: 2mm 6mm; justify-content: space-between;
-    color: var(--phx-doc-muted); font-size: 7pt;
+  .closing {
+    margin: 6mm 0 0; padding-top: 2mm; border-top: .5pt solid var(--phx-doc-hair);
+    color: var(--phx-doc-muted); font-size: 7pt; text-align: center;
   }
-  /* The document code is matched character by character against the standard, so it is monospace and
-     pinned LTR on both pages. */
-  footer .code { font-family: "${HOUSE_TYPE.mono}", monospace; direction: ltr; }
 </style></head>
 <body>
-${letterhead}
+<div class="guide">
+${masthead}
 <p class="lead">${c.lead}</p>
 <ol class="steps">${stepRows}</ol>
 <div class="notes">${noteRows}</div>
-<footer><span>${c.footer}</span><span class="code">${START_GUIDE_DOCUMENT_CODE}</span></footer>
+<p class="closing">${c.footer}</p>
+${premiumPageChrome({ brand: PREMIUM_COMPANY_DOCUMENT_BRAND })}
+</div>
 </body></html>`;
 }

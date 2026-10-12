@@ -1,5 +1,9 @@
 import { strict as assert } from "node:assert";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+import { inlineLocalAssets } from "../src/lib/hiring-pack/paper-artwork.ts";
 import { OFFER_BLOCK_DEFS } from "../src/lib/offers/block-schema.ts";
 import {
   OFFER_BUILTIN_TEMPLATES,
@@ -7,6 +11,7 @@ import {
   isOfferTemplateVariant,
   offerBuiltinTemplate,
 } from "../src/lib/offers/builtin-templates.ts";
+import { PREMIUM_OFFER_SKIN } from "../src/lib/offers/premium-skin.ts";
 import { buildOfferTokens, offerPageFooterHtml, renderOfferDocument } from "../src/lib/offers/render.ts";
 import { renderOfferEmail } from "../src/lib/offers/render-email.ts";
 import type { OfferBlockType, OfferFields } from "../src/lib/offers/types.ts";
@@ -15,8 +20,9 @@ import type { OfferBlockType, OfferFields } from "../src/lib/offers/types.ts";
  * The designs that ship with the job-offer module.
  *
  * The owner uploaded two letters and asked for both, both editable, and switching between them, then
- * asked for a third in Sato's own corporate identity and a fourth in the HR-forms house identity,
- * each added beside the last. All four are implemented as ONE block list plus a skin — so the
+ * asked for a third in Sato's own corporate identity, a fourth in the HR-forms house identity and
+ * (13 Oct 2026) a fifth in the HR premium identity, each added beside the last. All five are
+ * implemented as ONE block list plus a skin — so the
  * failures worth pinning are the ones that would let a design ship looking right and behave wrongly:
  *
  *   1. A BLOCK TYPE THE SANITIZER DOES NOT KNOW. `sanitizeTemplateBlocks` drops unknown types, so a
@@ -83,8 +89,8 @@ export function runOfferBuiltinTemplateTests() {
   // ------------------------------------------------------------------ the registry --
   assert.equal(
     OFFER_BUILTIN_TEMPLATES.length,
-    4,
-    "four designs ship: the classic letter, the executive one, the Sato corporate one, and the HR-forms house one — each added beside the last, none changed",
+    5,
+    "five designs ship: the classic letter, the executive one, the Sato corporate one, the HR-forms house one and the HR premium one — each added beside the last, none changed",
   );
 
   const keys = OFFER_BUILTIN_TEMPLATES.map((entry) => entry.key);
@@ -92,7 +98,7 @@ export function runOfferBuiltinTemplateTests() {
 
   const variants = OFFER_BUILTIN_TEMPLATES.map((entry) => entry.variant);
   assert.equal(new Set(variants).size, variants.length, "two built-ins that share a skin would look identical");
-  assert.equal(new Set(variants).size, 4, "each shipped design carries its own skin — classic, executive, sato, house");
+  assert.equal(new Set(variants).size, 5, "each shipped design carries its own skin — classic, executive, sato, house, premium");
 
   assert.equal(
     OFFER_BUILTIN_TEMPLATES.filter((entry) => entry.seedAsDefault).length,
@@ -103,16 +109,23 @@ export function runOfferBuiltinTemplateTests() {
   assert.equal(offerBuiltinTemplate("executive")?.key, "executive", "a built-in is found by key");
   assert.equal(offerBuiltinTemplate("nope"), null, "an unknown key must not resolve to a design");
   assert.ok(
-    isOfferBuiltinKey("classic") && isOfferBuiltinKey("executive") && isOfferBuiltinKey("sato") && isOfferBuiltinKey("house"),
-    "all four keys are recognised",
+    isOfferBuiltinKey("classic")
+      && isOfferBuiltinKey("executive")
+      && isOfferBuiltinKey("sato")
+      && isOfferBuiltinKey("house")
+      && isOfferBuiltinKey("premium"),
+    "all five keys are recognised",
   );
   assert.equal(offerBuiltinTemplate("sato")?.key, "sato", "the Sato corporate design is found by key");
   assert.equal(offerBuiltinTemplate("house")?.key, "house", "the HR-forms house design is found by key");
+  assert.equal(offerBuiltinTemplate("premium")?.key, "premium", "the HR premium design is found by key");
   assert.ok(!isOfferBuiltinKey("default"), "a plausible-looking key that does not exist must be rejected");
   assert.ok(isOfferTemplateVariant("executive"), "the executive skin is a known variant");
   assert.ok(isOfferTemplateVariant("sato"), "the Sato corporate skin is a known variant");
   assert.ok(isOfferTemplateVariant("house"), "the HR-forms house skin is a known variant");
-  assert.ok(!isOfferTemplateVariant("premium"), "an unknown skin must be rejected, not passed through");
+  assert.ok(isOfferTemplateVariant("premium"), "the HR premium skin is a known variant");
+  assert.ok(!isOfferTemplateVariant("galaxy"), "an unknown skin must be rejected, not passed through");
+  assert.ok(!isOfferBuiltinKey("galaxy"), "an unknown built-in key must be rejected, not passed through");
 
   // --------------------------------------------------- every block type is editable --
   const definedTypes = new Set(OFFER_BLOCK_DEFS.map((def) => def.type));
@@ -143,12 +156,13 @@ export function runOfferBuiltinTemplateTests() {
     assert.equal(new Set(ids).size, ids.length, `${builtin.name}: block ids must be unique within a design`);
   }
 
-  // ----------------------------------------------------------------- the four skins --
+  // ----------------------------------------------------------------- the five skins --
   const classic = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "classic");
   const executive = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "executive");
   const sato = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "sato");
   const house = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "house");
-  assert.ok(classic && executive && sato && house, "all four designs must be in the registry");
+  const premium = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "premium");
+  assert.ok(classic && executive && sato && house && premium, "all five designs must be in the registry");
 
   const classicDoc = renderOfferDocument(
     { blocks: classic.blocks(), fontFamily: classic.fontFamily, fontSizePt: classic.fontSizePt, theme: classic.theme, variant: classic.variant },
@@ -165,6 +179,11 @@ export function runOfferBuiltinTemplateTests() {
   );
   const houseDoc = renderOfferDocument(
     { blocks: house.blocks(), fontFamily: house.fontFamily, fontSizePt: house.fontSizePt, theme: house.theme, variant: house.variant },
+    SAMPLE,
+    { logoUrl: "data:image/png;base64,DDDD" },
+  );
+  const premiumDoc = renderOfferDocument(
+    { blocks: premium.blocks(), fontFamily: premium.fontFamily, fontSizePt: premium.fontSizePt, theme: premium.theme, variant: premium.variant },
     SAMPLE,
     { logoUrl: "data:image/png;base64,DDDD" },
   );
@@ -253,7 +272,16 @@ export function runOfferBuiltinTemplateTests() {
   assert.ok(!houseDoc.body.includes("lh-reverse"), "the house design draws on white and needs no reverse mark");
   assert.ok(!/class="welcome/.test(houseDoc.body), "the house letter ends on the signature, like the HR forms — no welcome band");
 
-  for (const [name, doc] of [["classic", classicDoc], ["executive", executiveDoc], ["sato", satoDoc], ["house", houseDoc]] as const) {
+  premiumSkinTests({ classic, house, premium }, { classicDoc, houseDoc, premiumDoc });
+  frozenDesignTests();
+
+  for (const [name, doc] of [
+    ["classic", classicDoc],
+    ["executive", executiveDoc],
+    ["sato", satoDoc],
+    ["house", houseDoc],
+    ["premium", premiumDoc],
+  ] as const) {
     assert.ok(doc.html.startsWith("<!doctype html>"), `${name}: the document is standalone`);
     assert.ok(doc.html.includes("SAMAA SHALABY"), `${name}: the candidate is named`);
     assert.ok(doc.html.includes("@page"), `${name}: the print page size must be declared`);
@@ -482,4 +510,304 @@ export function runOfferBuiltinTemplateTests() {
     !unsigned.body.includes('class="sigink"'),
     "an empty leftSignature is a deliberate clearing and must NOT fall back to the signature on file",
   );
+}
+
+// =====================================================================================================
+// The fifth design — HR premium — and the lock on the four before it.
+// =====================================================================================================
+
+type BuiltinDesign = (typeof OFFER_BUILTIN_TEMPLATES)[number];
+type OfferDocument = ReturnType<typeof renderOfferDocument>;
+type RenderOptions = Parameters<typeof renderOfferDocument>[2];
+
+function renderDesign(design: BuiltinDesign, fields: OfferFields, options: RenderOptions = {}): OfferDocument {
+  return renderOfferDocument(
+    { blocks: design.blocks(), fontFamily: design.fontFamily, fontSizePt: design.fontSizePt, theme: design.theme, variant: design.variant },
+    fields,
+    options,
+  );
+}
+
+/** Every run of visible text in a document, entities decoded — the WORDS, whatever the markup around them. */
+function textChunks(html: string): string[] {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/g, "")
+    .replace(/<svg[\s\S]*?<\/svg>/g, " ")
+    .split(/<[^>]*>/)
+    .map((chunk) =>
+      chunk
+        .replace(/&middot;/g, "·")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter((chunk) => chunk !== "");
+}
+
+/** A stylesheet as flat rules — selectors and declaration bodies, comments gone. */
+function cssRules(css: string): { body: string; selectors: string[] }[] {
+  return [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+    body: match[2] ?? "",
+    selectors: (match[1] ?? "").split(",").map((selector) => selector.trim()),
+  }));
+}
+
+/** The last value a rule body gives a property — the one that wins inside that rule. */
+function lastValue(body: string, property: "background" | "display"): string | null {
+  const found = [...body.matchAll(new RegExp(`(?:^|;)\\s*${property}(?:-color)?\\s*:\\s*([^;]+)`, "g"))];
+  const last = found[found.length - 1];
+  return last ? (last[1] ?? "").trim() : null;
+}
+
+/** A background that paints an area: anything but nothing, transparent, or the page's own white. */
+function paints(value: string | null): boolean {
+  return value !== null && !/^(none|transparent|#fff|#ffffff|white)$/i.test(value);
+}
+
+const PREMIUM_ZEBRA = ".comp tbody tr:not(.total):nth-child(odd) td";
+
+function premiumSkinTests(
+  designs: { classic: BuiltinDesign; house: BuiltinDesign; premium: BuiltinDesign },
+  docs: { classicDoc: OfferDocument; houseDoc: OfferDocument; premiumDoc: OfferDocument },
+): void {
+  const { classic, house, premium } = designs;
+  const { classicDoc, houseDoc, premiumDoc } = docs;
+
+  // ── It is a design of its own, on its own skin ───────────────────────────────────────────────────
+  assert.equal(premium.variant, "premium", "the fifth design carries its own skin");
+  assert.equal(premium.seedAsDefault, false, "a new offer still opens on the classic letter — premium is chosen, never seeded as the default");
+  assert.equal(premium.name, "SATO Premium Offer", "the design is named for the company, never the app");
+  assert.ok(!/phoenix/i.test(`${premium.name} ${premium.description}`), "nothing the designer lists for the design says Phoenix");
+  assert.equal(premiumDoc.pageSize, "A4", "the premium letter prints A4, portrait");
+  assert.ok(!premiumDoc.css.includes("size:letter"), "the premium design must not carry the executive skin");
+  assert.ok(premiumDoc.css.includes(PREMIUM_OFFER_SKIN), "the premium skin is appended to the base sheet, whole");
+  assert.ok(
+    !classicDoc.css.includes(PREMIUM_OFFER_SKIN) && !houseDoc.css.includes(PREMIUM_OFFER_SKIN),
+    "the premium skin must not reach the classic or house design",
+  );
+  // The premium sheet geometry: the page has no margin of its own, the sheet carries the padding, and
+  // the frame and foot are fixed so they repeat on every printed page.
+  const pageRules = [...premiumDoc.css.matchAll(/@page\s*\{[^}]*\}/g)].map((match) => match[0]);
+  assert.match(
+    pageRules[pageRules.length - 1] ?? "",
+    /margin:\s*0\s*[;}]/,
+    "premium prints edge to edge: the @page rule that wins has margin 0, and the sheet owns the padding",
+  );
+  assert.ok(/position:\s*fixed/.test(premiumDoc.css), "the frame and the foot are fixed, so they print on every page");
+  assert.equal(premiumDoc.pageHeaderHtml, "", "premium draws its own chrome — no Chromium header");
+  assert.equal(premiumDoc.pageFooterHtml, "", "premium draws its own foot — no Chromium footer to print the date and title over a letter");
+  assert.ok(premiumDoc.css.includes(".rail{display:none}"), "the premium skin drops the filled top brand bar");
+
+  // ── It says what the other designs say: the dress changes, never the words ───────────────────────
+  const stripIds = (blocks: { id: string }[]) => JSON.stringify(blocks.map(({ id: _id, ...rest }) => rest));
+  assert.equal(
+    stripIds(premium.blocks()),
+    stripIds(classic.blocks()),
+    "the premium blocks are the classic blocks word for word — only the ids differ, so the two never collide in the designer",
+  );
+  assert.ok(premium.blocks().every((block) => block.id.endsWith("-p")), "premium block ids carry their own suffix");
+  const wordedFields = { ...SAMPLE, roleSummary: "You will lead the people who sell across {{territory}}.", territory: "Alex East" };
+  const premiumWorded = textChunks(renderDesign(premium, wordedFields).body).join(" ");
+  assert.ok(
+    premiumWorded.includes("You will lead the people who sell across Alex East."),
+    "the premium letter prints the job title's own {{roleSummary}}, with {{territory}} resolved inside it",
+  );
+  assert.ok(!premiumWorded.includes("{{"), "no token reaches the premium letter unresolved");
+  // Every run of words the classic and the house letters print is in the premium letter — the legal
+  // wording included. The masthead joins the company name and unit onto one line and the title row
+  // moves into it, so the check is on the words, not on where they stand.
+  const premiumText = textChunks(premiumDoc.body).join(" ");
+  for (const [name, doc] of [["classic", classicDoc], ["house", houseDoc]] as const) {
+    const chunks = textChunks(doc.body);
+    assert.ok(chunks.length > 60, `the ${name} letter's words were found (${chunks.length} runs) — a sweep that finds none proves nothing`);
+    for (const chunk of chunks) {
+      assert.ok(premiumText.includes(chunk), `the ${name} letter says "${chunk}" and the premium letter must say it too`);
+    }
+  }
+
+  // ── The company seal and the two signature cells, exactly as the offer draws them today ──────────
+  const signedOptions = {
+    logoUrl: "data:image/png;base64,DDDD",
+    sealUrl: "data:image/svg+xml;base64,SEAL",
+    signatureUrl: "data:image/png;base64,BBBB",
+  };
+  const premiumSigned = renderDesign(premium, SAMPLE, signedOptions);
+  assert.equal((premiumSigned.body.match(/class="offer-seal"/g) ?? []).length, 1, "the seal is drawn exactly once on the premium letter");
+  const [companyCell, candidateCell] = premiumSigned.body.split('<div class="micro k">Accepted By</div>');
+  assert.ok(
+    companyCell !== undefined && /<div class="sigcell"><img class="offer-seal"[^>]*><div class="sigink-box">/.test(companyCell),
+    "the seal sits in the company's signature cell and nowhere else — over its own rule",
+  );
+  assert.ok(candidateCell !== undefined && !candidateCell.includes("offer-seal"), "the candidate's cell is never stamped");
+  assert.ok(candidateCell !== undefined && !candidateCell.includes('class="sigink"'), "the candidate's cell is never pre-signed");
+  assert.equal(
+    (candidateCell?.match(/<div class="sigink-box"><\/div>/g) ?? []).length,
+    2,
+    "the candidate's signature and date boxes are blank",
+  );
+  const acceptBlock = (doc: OfferDocument): string =>
+    doc.body.slice(doc.body.indexOf('<div class="accept keep">'), doc.body.indexOf('<footer class="foot">'));
+  const classicSigned = renderDesign(classic, SAMPLE, signedOptions);
+  const houseSigned = renderDesign(house, SAMPLE, signedOptions);
+  assert.ok(acceptBlock(premiumSigned).includes("offer-seal"), "the acceptance block was found, with the seal in it");
+  assert.equal(acceptBlock(premiumSigned), acceptBlock(classicSigned), "premium's acceptance block is the classic letter's, byte for byte");
+  assert.equal(acceptBlock(premiumSigned), acceptBlock(houseSigned), "premium's acceptance block is the house letter's, byte for byte");
+  for (const selector of [/\.offer-seal\{[^}]*\}/, /\.sigcell\{[^}]*\}/]) {
+    const base = selector.exec(classicDoc.css)?.[0];
+    assert.ok(base, `the base sheet defines ${selector}`);
+    assert.ok(premiumDoc.css.includes(base), `the premium letter keeps the base's own ${base.split("{")[0]} rule, untouched`);
+  }
+  assert.ok(
+    !PREMIUM_OFFER_SKIN.includes("offer-seal") && !PREMIUM_OFFER_SKIN.includes("sigcell") && !PREMIUM_OFFER_SKIN.includes("sigink"),
+    "the premium skin never touches the seal or the signature cells",
+  );
+
+  // ── Nothing in the letter says Phoenix: it is a company paper, in Sato's name ────────────────────
+  assert.ok(
+    !/\bphoenix\b/i.test(premiumSigned.html),
+    "no word of the premium letter — masthead, foot, watermark alt text, document title — says Phoenix",
+  );
+  assert.ok(premiumSigned.html.includes("SATO-DIS-2026-01"), "the premium foot carries the company document identity");
+  assert.ok(premiumSigned.html.includes("Sato Pharma"), "the premium foot is Sato's own, Sato only");
+  assert.ok(premiumSigned.body.includes("pm-mast"), "the premium masthead is drawn");
+  assert.ok(
+    !premiumSigned.body.includes('lang="ar"'),
+    "the English offer prints no Arabic run — and so no empty one with a stray diamond before the names",
+  );
+  assert.ok(!premiumSigned.body.includes("pm-dia"), "no diamond leads the names line when there is no Arabic name before it");
+
+  // ── Ink rule, square corners, no shadows ─────────────────────────────────────────────────────────
+  for (const [place, text] of [["css", premiumSigned.css], ["document", premiumSigned.html]] as const) {
+    for (const match of text.matchAll(/border-radius\s*:\s*([^;}"]+)/g)) {
+      assert.match(match[1] ?? "", /^0(px)?$/, `premium ${place}: every corner is square (found border-radius: ${match[1]})`);
+    }
+    assert.ok(!/box-shadow|text-shadow|drop-shadow/.test(text), `premium ${place}: no shadows`);
+    assert.ok(!/gradient\(/.test(text), `premium ${place}: no gradients`);
+  }
+  assert.ok(!/\brx=/.test(premiumSigned.html), "premium draws no rounded SVG shape");
+  // Inside the skin, the only background that is not nothing is the 6% zebra on the salary table.
+  const skinRules = cssRules(PREMIUM_OFFER_SKIN);
+  const painted = skinRules.filter((rule) => paints(lastValue(rule.body, "background")));
+  assert.deepEqual(
+    painted.map((rule) => rule.selectors),
+    [[PREMIUM_ZEBRA]],
+    "the premium skin paints exactly one area — the salary table's zebra row",
+  );
+  assert.equal(lastValue(painted[0]?.body ?? "", "background"), "var(--tint)", "the zebra is the 6% tint");
+  assert.ok(!/url\(/.test(PREMIUM_OFFER_SKIN), "the premium skin tiles no image — the band is a vector inside the masthead");
+  // And every area the BASE sheet paints is either switched off or turned to nothing by the skin,
+  // under the very same selector — so nothing the base fills survives into the premium letter.
+  const skinFinal = new Map<string, { background: string | null; display: string | null }>();
+  for (const rule of skinRules) {
+    for (const selector of rule.selectors) {
+      const earlier = skinFinal.get(selector);
+      skinFinal.set(selector, {
+        background: lastValue(rule.body, "background") ?? earlier?.background ?? null,
+        display: lastValue(rule.body, "display") ?? earlier?.display ?? null,
+      });
+    }
+  }
+  let baseFills = 0;
+  for (const rule of cssRules(classicDoc.css)) {
+    if (!paints(lastValue(rule.body, "background"))) continue;
+    for (const selector of rule.selectors) {
+      baseFills += 1;
+      const answer = skinFinal.get(selector);
+      assert.ok(
+        answer !== undefined && (answer.display === "none" || !paints(answer.background)),
+        `the base sheet paints ${selector} and the premium skin must switch it off or clear it`,
+      );
+    }
+  }
+  assert.ok(baseFills >= 8, `the base sheet's painted selectors were found (${baseFills}) — a sweep that finds none proves nothing`);
+
+  // ── Escaped once: a name with an ampersand in it prints one `&amp;`, never `&amp;amp;` ───────────
+  const ampersand = renderDesign(premium, { ...SAMPLE, territory: "Alex & Delta" }, signedOptions);
+  assert.ok(ampersand.body.includes("Alex &amp; Delta"), "the territory reaches the premium masthead escaped once");
+  assert.ok(
+    !ampersand.html.includes("&amp;amp;") && !ampersand.html.includes("&amp;middot;"),
+    "the premium masthead must not escape its words a second time",
+  );
+
+  // ── The two images the chrome names by /brand/ path reach both the preview and the PDF ───────────
+  assert.ok(/src="\/brand\//.test(premiumSigned.html), "the premium chrome names its mark and watermark by /brand/ path");
+  const inlined = inlineLocalAssets(premiumSigned.html);
+  assert.deepEqual(inlined.missing, [], "every /brand/ image the premium letter names exists on disk to be inlined");
+  assert.ok(
+    !/src="\/brand\//.test(inlined.html) && inlined.html.includes('src="data:image/'),
+    "once inlined, no premium image is left for the page to resolve",
+  );
+  assert.ok(
+    !/src="\/(brand|forms)\//.test(classicSigned.html) && !/src="\/(brand|forms)\//.test(houseSigned.html),
+    "the older designs name no /brand/ image, so inlining them would change nothing",
+  );
+  const pdfSource = stripComments(readFileSync("src/lib/offers/pdf.ts", "utf8"));
+  assert.ok(
+    /premium\s*\?\s*inlineLocalAssets\(rendered\.html\)\.html\s*:\s*rendered\.html/.test(pdfSource),
+    "the PDF path inlines the premium design's images and hands every other design's html over unchanged",
+  );
+  assert.ok(
+    /premium\s*\?\s*await stampPremiumPageNumbers\(printed\)\s*:\s*printed/.test(pdfSource),
+    "the premium PDF is numbered N / M after layout; every other design's bytes are returned as printed",
+  );
+  const previewSource = stripComments(readFileSync("app/api/offers/preview/route.ts", "utf8"));
+  assert.ok(
+    /premium\s*\?\s*inlineLocalAssets\(rendered\.html\)\.html\s*:\s*rendered\.html/.test(previewSource)
+      && /premium\s*\?\s*inlineLocalAssets\(rendered\.body\)\.html\s*:\s*rendered\.body/.test(previewSource),
+    "the designer's preview inlines the premium design's images, and returns every other design as it always has",
+  );
+}
+
+/**
+ * THE FOUR OLDER DESIGNS ARE FROZEN — owner rule, 2026-09-05. Their rendered letter is fingerprinted
+ * against the bytes measured BEFORE the premium design was added: the whole document (html, body,
+ * css, page size, running header and foot) for a fixed fixture with every image supplied.
+ *
+ * A red here means a change reached classic, executive, sato or house. If it was meant to, the owner
+ * has to have said so, and the digest below is the thing to update with his word in the commit; if
+ * it was not meant to, the change belongs behind `variant === "premium"` where it cannot reach them.
+ */
+function frozenDesignTests(): void {
+  const fixture: OfferFields = {
+    candidateEmail: "samaa@example.com",
+    candidateName: "SAMAA SHALABY",
+    contractTerm: "One year, renewable",
+    costOfLiving: 3500,
+    dateOfIssue: "27-Aug-26",
+    reference: "SP-HR-DSM-2026-019",
+    reportsTo: "National Sales Manager",
+    roleSummary: "",
+    salutationName: "Dr SAMAA SHALABY",
+    startDate: "1 September 2026",
+    territory: "Delta (3)",
+    title: "District Sales Manager",
+    totalMonthly: 30000,
+    validUntil: "1 September 2026",
+  };
+  const everyImage = {
+    logoReverseUrl: "data:image/png;base64,CCCC",
+    logoUrl: "data:image/png;base64,AAAA",
+    sealUrl: "data:image/svg+xml;base64,SEAL",
+    signatureUrl: "data:image/png;base64,BBBB",
+  };
+  const frozen: Record<string, string> = {
+    classic: "9b59b7b4efa20da29ce79f2fb96644438fa3f0901df706250b789593701574db",
+    executive: "17da5f733a4bd1d0d5b355be8f697c8ffd299b21f45dbe0f1a34acf782888325",
+    house: "71e00e67a41e5b8e4796a4ab60b50780207d9eaab69c07c19efcb63b6c6508a1",
+    sato: "0e2613161bd24a73ed50fc3d6efe67b4454e1c080b29cb4ee71e9b1a6e5aa014",
+  };
+  for (const [key, digest] of Object.entries(frozen)) {
+    const design = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === key);
+    assert.ok(design, `${key} is in the registry`);
+    const actual = createHash("sha256").update(JSON.stringify(renderDesign(design, fixture, everyImage))).digest("hex");
+    assert.equal(
+      actual,
+      digest,
+      `the ${key} design is FROZEN by the owner (2026-09-05) and its rendered letter has changed — a premium change must stay behind variant === "premium"`,
+    );
+  }
 }

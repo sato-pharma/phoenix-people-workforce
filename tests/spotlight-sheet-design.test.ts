@@ -386,9 +386,34 @@ export function runSpotlightSheetDesignTests() {
 
   assert.equal(
     countOf(long, "<img"),
-    sheets * 2,
-    "two <img> per sheet and no more — the crest mark and the Arabic mark, each embedded once and "
-      + "referenced by every page",
+    sheets * 3,
+    "three <img> per sheet and no more — the crest mark, the Arabic mark in the foot and the same "
+      + "Arabic mark as the watermark, each embedded once and referenced by every page",
+  );
+
+  // ── AND A 5% WATERMARK, LOW ON THE RIGHT, ON EVERY SHEET (owner, 2026-10-12) ──────────────
+  // "watermark and footer only": the Arabic logo is never a masthead, and this sheet keeps its foot
+  // mark AND carries the watermark. Contained, so the whole name shows; before the content, so the
+  // text paints over it; and none of the four placements struck on 2026-09-12 — not a wash behind
+  // the figure, not bled off the edge, not under the gauge, not over the figure's left shoulder.
+  assert.equal(
+    countOf(long, '<div class="arabic-wm"><img alt="" src="data:image/png;base64,'),
+    sheets,
+    "one watermark on EVERY sheet, the Arabic mark's own data URI",
+  );
+  for (const sheet of long.split('<div class="sheet').slice(1)) {
+    assert.ok(
+      sheet.indexOf('class="arabic-wm"') > 0 && sheet.indexOf('class="arabic-wm"') < sheet.indexOf('<div class="inner">'),
+      "the watermark sits before the content on each sheet, so the text paints over it",
+    );
+  }
+  const wmRule = /\.arabic-wm\s*\{([^}]*)\}/.exec(heroHtml)?.[1] ?? "";
+  assert.match(wmRule, /opacity:\s*\.05/, "at 5%, the strength the HR papers carry it at");
+  assert.match(wmRule, /right:\s*\d/, "anchored on the RIGHT, where the HR papers carry it");
+  assert.match(wmRule, /bottom:\s*\d/, "and LOW, above the foot — never centred behind the figure");
+  assert.ok(
+    !/(top|right|bottom|left):\s*-/.test(wmRule),
+    "never bled off an edge — Arabic starts on the right, so a bleed cuts the company name's first word",
   );
 
   const markRule = /\.foot__block--mark img\s*\{([^}]*)\}/.exec(heroHtml)?.[1] ?? "";

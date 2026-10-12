@@ -1,5 +1,5 @@
 /**
- * GET /api/admin/field-activity/pdf?hrId=&from=&to= — the same report, as a house document.
+ * GET /api/admin/field-activity/pdf?hrId=&from=&to= — the same report, as a premium-identity document.
  *
  * Same scope gate, same loader, same model as the screen — the PDF is a second RENDERING of one
  * report, never a second query. That is what keeps the paper and the page saying the same thing
@@ -16,6 +16,8 @@ import { fetchBasemap, fitZoom, renderRouteSvg, stopsToMapPoints } from "@/lib/f
 import { resolvePeriod } from "@/lib/field-activity/period";
 import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { loadFieldActivityReport } from "@/lib/field-activity/report";
+import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
+import { stampPremiumPageNumbers } from "@/lib/hiring-pack/paper-pdf";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
 
 export const runtime = "nodejs";
@@ -104,24 +106,32 @@ export async function GET(request: Request) {
       year: "numeric",
     }).format(new Date());
 
-    const html = buildFieldActivityDocument({ generatedOn, maps, report });
+    // `setContent` gives the page no origin, so the premium chrome's `/brand/...` images are inlined
+    // first. A file that cannot be read is not fatal: this report is read and forwarded, not filed, and
+    // the mark falls back to its alt text.
+    const { html } = inlineLocalAssets(buildFieldActivityDocument({ generatedOn, maps, report }));
 
     const pdf = await withChromiumPage(async (page) => {
       await page.setContent(html, { timeout: 30_000, waitUntil: "domcontentloaded" });
       // Chromium applies `@media screen` by default even when producing a PDF; the paper rules live
       // under print.
       await page.emulateMediaType("print");
+      // The "N / M" is written into the premium foot after layout, once Chromium has counted the
+      // pages, and the foot's diamond steps aside for it (the same two steps as `renderHiringPaperPdf`).
+      // The old in-page footer counted its own pages by hand and got a day that spills onto a second
+      // page wrong.
+      await page.evaluate("document.documentElement.setAttribute('data-pm-numbered', '')");
       const bytes = await page.pdf({
         format: "A4",
         landscape: true,
         margin: { bottom: "0", left: "0", right: "0", top: "0" },
         preferCSSPageSize: true,
-        // The zebra row and the brand rule are CSS backgrounds — without this the house look is
+        // The premium frame, watermark and zebra row are CSS backgrounds — without this the look is
         // lost on paper.
         printBackground: true,
         timeout: 60_000,
       });
-      return Buffer.from(bytes);
+      return Buffer.from(await stampPremiumPageNumbers(bytes));
     });
 
     const slug = report.subject.name.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");

@@ -2155,6 +2155,7 @@ import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
 import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
 import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
+import { runHrPremiumIdentityTests } from "./hr-premium-identity.test.ts";
 import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts";
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
@@ -8164,6 +8165,10 @@ await runTest(
 await runTest(
   "Sato house HR papers (absence threshold is MORE THAN ten days; the second notice declares a deemed resignation rather than accepting one; checklist boxes and service-ending dates stay blank)",
   runHrFormsHousePapersTests,
+);
+await runTest(
+  "HR premium identity (every current normal paper wears the frame, band, masthead and foot; archived versions and the Authority's forms never do; the chrome is the last child of a copy, so placed stamps keep their anchors; no seal, no filled area, no rounded corner)",
+  runHrPremiumIdentityTests,
 );
 await runTest("closing workbook Export PDF link origin (allow-list validated, never the 0.0.0.0 bind address)", runClosingWorkbookLinkOriginTests);
 await runTest(

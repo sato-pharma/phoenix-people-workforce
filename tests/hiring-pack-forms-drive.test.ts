@@ -142,6 +142,8 @@ const LETTERHEAD =
   '<html><head><title>x</title></head><body><div class="lh__id"><strong>Sato Pharma</strong><span dir="ltr">Cairo</span></div><p>body</p></body></html>';
 const MAST =
   '<html><head></head><body><table><thead><tr><th><span class="doc-mast__side doc-mast__id"><strong>ساتو فارما</strong><span dir="ltr">Sato Pharma</span></span></th></tr></thead></table></body></html>';
+const PREMIUM =
+  '<html><head></head><body><article class="copy"><header class="pm-mast"><div class="pm-mast__mid"><div class="pm-mast__names"><span class="pm-mast__name" dir="rtl" lang="ar">شركة ساتو فارما</span><span class="pm-mast__ref" dir="rtl"></span></div><h1 class="pm-mast__t">عقد عمل</h1></div></header></article></body></html>';
 const CONTRACT_TITLE =
   '<html><head></head><body><div class="masthead__title"><h1>عقد عمل</h1><p>محدد المدة</p></div></body></html>';
 const ARTWORK = '<html><head></head><body><img src="page-1.png"></body></html>';
@@ -158,6 +160,12 @@ function testReferenceStamping() {
 
   const mast = stampPaperReference(MAST, reference, "clearanceEmployee");
   assert.match(mast, /<span dir="ltr">Sato Pharma<\/span><span class="hp-ref" data-hp-ref="HR-2026-000123">/);
+
+  // The HR premium masthead (2026-10-12): the number goes INTO the empty slot at the end of the name
+  // line, and the slot's own direction keeps the colon on the Arabic label's side.
+  const premium = stampPaperReference(PREMIUM, reference, "nda");
+  assert.match(premium, /<span class="pm-mast__ref" dir="rtl"><span class="hp-ref" data-hp-ref="HR-2026-000123">رقم المرجع: <bdi>HR-2026-000123<\/bdi><\/span><\/span>/);
+  assert.doesNotMatch(premium, /hp-ref--fixed"/, "a premium paper is not also stamped in the corner");
 
   const contract = stampPaperReference(CONTRACT_TITLE, reference, "contract");
   assert.match(contract, /<p>محدد المدة<\/p><p class="hp-ref" data-hp-ref="HR-2026-000123">/);
