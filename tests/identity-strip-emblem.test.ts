@@ -57,11 +57,15 @@ const BREAKPOINTS = {
     wrapperPr: 16,
   },
   sm: {
-    barHeight: 136,
+    // 160px since 2026-10-12 — the portrait grew to 136px on the owner's "i want the photo bigger
+    // clear obvious", and the bar grew by exactly what it needed. The wave is a fixed 30px band at
+    // the bottom, so its box starts 30px above the bar's foot and the mark has MORE room than it
+    // had at 136, not less.
+    barHeight: 160,
     marginPattern: /\bsm:mr-\[(\d+)px\]/,
     pinned: { height: 128, right: 25, top: -11 },
     visibility: "hidden sm:block",
-    waveTop: 106,
+    waveTop: 130,
     wrapperPr: 24,
   },
 } as const;

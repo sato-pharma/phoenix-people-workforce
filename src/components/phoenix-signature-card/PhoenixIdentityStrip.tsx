@@ -37,7 +37,17 @@ import { useEffect, useRef, useState } from "react";
  * DO NOT "RESTORE" THE THIN VERSION on the strength of the 09-03 quote — that quote is older, and
  * it is the one this paragraph exists to overrule. What he has never wanted back is the ORIGINAL
  * block, the full `PhoenixSignatureCard` at aspectRatio 1875/420, which is ~243px on this width:
- * "WITHOUT THIS BUFFENK THIVK BANNER BLOCK". 136px sits deliberately between the two.
+ * "WITHOUT THIS BUFFENK THIVK BANNER BLOCK". 136px sat deliberately between the two.
+ *
+ * THE DESKTOP BAR IS 160px SINCE 2026-10-12, AND THE PHOTO IS WHAT BOUGHT IT. Looking at the
+ * Talent Acquisition landing he asked for one thing: "i want the photo bigger clear obvious". The
+ * portrait could not grow inside a 136px bar — the content row is the bar minus the wave's 24px,
+ * so 110px of portrait was already filling 112px of room, and anything larger clipped against
+ * `overflow-hidden`. So the bar grew by the 24px the portrait needed and the portrait took it:
+ * 110 -> 136px, which is 53% more face on the same page. It is still well under the ~243px block
+ * he threw out, and the THIN version is still the thing never to restore. MOBILE IS UNTOUCHED at
+ * 120px: there the photo already bleeds the full height of the bar frameless, so it is as big as
+ * the bar allows and growing the bar would only cost a phone the space he asked to keep.
  *
  * THE PORTRAIT IS TWO DIFFERENT THINGS BY BREAKPOINT, AND THAT IS THE OWNER'S OWN SPLIT.
  * On 2026-09-04 he sent the Phoenix banner artwork and said: "in mobile view i want the photo
@@ -93,6 +103,20 @@ const PORTRAIT_GLOW =
 
 /** DESKTOP. The flat ring the strip has always had; the glow was asked for on mobile only. */
 const PORTRAIT_RING = "0 0 0 2px rgba(244,123,32,0.16), 0 4px 12px rgba(15,35,55,0.16)";
+
+/**
+ * DESKTOP, THE STANDING PORTRAIT. The in-bar ring above is a 136px tile's shadow and it does not
+ * carry a 188x248 column: a 12px blur under a frame that size reads as a sticker, because the
+ * shadow is shorter than the thing casting it. This is the same light from the same direction, just
+ * spent at the column's own scale — a 1px ink hairline so the gold edge is crisp against cream, a
+ * tight contact shadow at the foot, and one long low-alpha cast that actually reaches the page.
+ *
+ * NO ORANGE GLOW HERE, deliberately. The glow belongs to the frameless phone portrait, where it
+ * replaces an edge; this frame HAS an edge — doubling it would halo the gold.
+ */
+const PORTRAIT_STANDING_SHADOW =
+  "0 0 0 1px rgba(35,30,24,0.22), 0 2px 5px rgba(15,35,55,0.12),"
+  + " 0 18px 36px -10px rgba(15,35,55,0.34)";
 
 /**
  * MOBILE, FRAMELESS. The owner, 2026-09-04, with the Phoenix banner artwork attached: "in mobile
@@ -193,10 +217,11 @@ export function PhoenixIdentityStrip({
   }, [sigName]);
 
   return (
+    <div className={["relative w-full min-w-0", photoSrc ? "sm:pb-[104px]" : ""].join(" ")}>
     <section
       aria-label="Your identity"
       className={[
-        "relative isolate h-[120px] w-full min-w-0 overflow-hidden shadow-[0_8px_26px_rgba(16,35,61,0.13)] sm:h-[136px]",
+        "relative isolate h-[120px] w-full min-w-0 overflow-hidden shadow-[0_8px_26px_rgba(16,35,61,0.13)] sm:h-[160px]",
         className,
       ].join(" ")}
       style={{ background: "#fdf8f3" }}
@@ -400,10 +425,12 @@ export function PhoenixIdentityStrip({
       >
         <span
           className={[
-            "relative h-[80px] w-[80px] shrink-0 sm:h-[110px] sm:w-[110px]",
-            // Mobile hands the portrait over to the frameless bleed above — but only when there
-            // IS one to hand over.
-            photoSrc ? "hidden sm:block" : "block",
+            "relative h-[80px] w-[80px] shrink-0 sm:h-[136px] sm:w-[136px]",
+            // Mobile hands the portrait over to the frameless bleed above and desktop hands it to
+            // the standing portrait at the trailing edge — so with a photo this tile draws at
+            // NEITHER width. It survives as the no-photo fallback, where initials still need a
+            // frame of their own.
+            photoSrc ? "hidden" : "block",
           ].join(" ")}
         >
           {/* TWO RINGS, MUTUALLY EXCLUSIVE BY BREAKPOINT. One element would be neater, but an
@@ -425,7 +452,7 @@ export function PhoenixIdentityStrip({
                 alt={`${name} portrait`}
                 className="object-cover object-top"
                 fill
-                sizes="110px"
+                sizes="136px"
                 src={photoSrc}
                 unoptimized
               />
@@ -469,6 +496,13 @@ export function PhoenixIdentityStrip({
               phone and 128.75px in from `sm` up, so the box ends 68px / 141px in — which is 52px
               of margin on a phone (`pr-4`) and 117px from `sm` up (`pr-6`).
 
+              FROM `sm` UP IT IS THE PORTRAIT THAT SETS THIS MARGIN NOW, not the phoenix. The
+              standing portrait is 188px wide against the bar's trailing edge, so the text column
+              has to stop 200px in (12px of air); net of the wrapper's own `pr-6` that is 196px,
+              and 196 clears the watermark's ink edge at 128.75px by a wide margin — which is why
+              `tests/identity-strip-emblem.test.ts` still passes on a number it did not derive. The
+              PHONE margin is untouched at 52px: there is no standing portrait on a phone.
+
               THE MARGIN IS A CLASS AND THE RESET IS INLINE, and they must stay split that way. An
               inline style beats any class, so the `margin: 0` that used to sit in the style object
               would silently swallow `mr-[52px]` and put the name back under the mark with nothing
@@ -483,7 +517,7 @@ export function PhoenixIdentityStrip({
               the phone mark again, this margin grows with it and the name shrinks again, so
               measure the name at 375px before accepting that trade. */}
           <p
-            className="italic font-medium text-[#3f3a33] mr-[52px] sm:mr-[117px]"
+            className="italic font-medium text-[#3f3a33] mr-[52px] sm:mr-[196px]"
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
@@ -522,7 +556,7 @@ export function PhoenixIdentityStrip({
               it: the column is ~223px at 375px and already carries four lines, so the title would
               wrap a third time and clip against `overflow-hidden`. The name carries its own copy
               of the margin, for the same reason. */}
-          <span aria-hidden="true" className="mt-[2px] mr-[52px] flex items-center sm:mr-[117px]">
+          <span aria-hidden="true" className="mt-[2px] mr-[52px] flex items-center sm:mr-[196px]">
             <span className="h-[2px] flex-1" style={{ background: "#f47b20" }} />
             <span className="mx-[5px] h-[7px] w-[7px]" style={{ background: "#f47b20" }} />
             <span
@@ -593,5 +627,65 @@ export function PhoenixIdentityStrip({
         <path d="M0 38C420 58 1030 58 1875 4" fill="none" stroke="#f47b20" strokeWidth="11" />
       </svg>
     </section>
+
+    {/* DESKTOP: THE PORTRAIT STANDS AT THE TRAILING EDGE AND HANGS BELOW THE BAR — the owner,
+        2026-10-12, drawing the shape himself: "MAKE THE PHOTO ON THE RIGHT OF THE BANNER AND MAKE
+        IT BIGGER WHILE NEVER TOUCH THE BANNER SO THE BANNER AND THE PHOTO LOOKS LIKE REVERTED L
+        LETTER", then "L MA2LOOB -------| KDA TEB2A BASA L TAHT KDA" — a bar with a column dropping
+        from its right end.
+
+        IT IS A SIBLING OF THE BAR, NOT A CHILD OF IT, AND THAT IS THE WHOLE TRICK. The bar is
+        `overflow-hidden` (the watermark and the wave both rely on it), so a portrait taller than
+        160px inside it would simply be cut at the bar's foot. Rendering it beside the section, in
+        a wrapper that positions it, is what lets it stand 88px proud of the bar while the bar
+        itself keeps every number it had — "NEVER TOUCH THE BANNER", his words.
+
+        THE WRAPPER RESERVES THE OVERHANG (`sm:pb-[104px]`) INSTEAD OF FLOATING OVER THE PAGE. A
+        portrait hanging over the first task card would cover live work and would move with it on
+        every scroll; the padding keeps the column's own column of air and nothing below has to
+        know the strip is there. It is spent only when there IS a photo — the initials tile stays
+        inside the bar at both widths.
+
+        104 IS 88 OF OVERHANG PLUS 16 OF AIR, and the 16 is the polish, not slack. At 88 the
+        portrait's foot landed on y=333 and the next section's top border landed on y=333 — the
+        frame and the card below it shared one line, which reads as a collision rather than a
+        column standing on the page. Measured on the branch before the change.
+
+        THE FRAME IS HEAVIER THAN THE IN-BAR TILE'S ON PURPOSE. 3px of gold around a 136px tile is
+        the same ANGLE as 4px around a 188px one; held at 3 the bezel thinned out as the portrait
+        grew and the big photo lost its mount. The well also carries a 1px ink hairline inside the
+        gold, which is what a mounted print has and what stops a bright photo from bleeding into
+        its own frame.
+
+        MOBILE KEEPS THE FRAMELESS BLEED. This is a `sm:` element only; on a phone the photo is
+        still the bar's own leading edge, which is his 2026-09-04 instruction and is untouched. */}
+    {photoSrc ? (
+      <span className="pointer-events-none absolute right-0 top-0 z-20 hidden h-[248px] w-[188px] sm:block">
+        <span
+          aria-hidden="true"
+          className="absolute inset-0"
+          style={{ background: PORTRAIT_BEZEL, boxShadow: PORTRAIT_STANDING_SHADOW }}
+        />
+        <span className="absolute inset-[4px] overflow-hidden bg-[#f8efe5]">
+          <Image
+            alt={`${name} portrait`}
+            className="object-cover object-top"
+            fill
+            sizes="188px"
+            src={photoSrc}
+            unoptimized
+          />
+          {/* OVER the photo, not under it. An `inset` box-shadow on the well itself paints on the
+              well's own background layer, which a `fill` image covers completely — the hairline
+              would be in the file and invisible on the page. */}
+          <span
+            aria-hidden="true"
+            className="absolute inset-0"
+            style={{ boxShadow: "inset 0 0 0 1px rgba(35,30,24,0.26)" }}
+          />
+        </span>
+      </span>
+    ) : null}
+    </div>
   );
 }
