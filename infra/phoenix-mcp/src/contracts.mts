@@ -42,6 +42,7 @@ export type Sales = z.infer<typeof salesSchema>;
 export const freshnessSchema = z.object({
   snapshotId:z.string().uuid(), sourceUpdatedAt:z.string().datetime({offset:true}),
   sourceObservedAt:z.string().datetime({offset:true}),
+  sourceWatermark:z.string().max(300).optional(),
 });
 export type Freshness = z.infer<typeof freshnessSchema>;
 export type Projection<T> = T[] & {freshness:Freshness};
