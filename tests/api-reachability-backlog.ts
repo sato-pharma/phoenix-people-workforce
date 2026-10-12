@@ -378,6 +378,14 @@ export const API_REACHABILITY_BACKLOG: readonly ApiReachabilityGap[] = [
     recorded: "2026-10-08",
   },
   {
+    route: "/api/admin/daily-deductions/publish",
+    authMode: "session",
+    kind: "no-caller-anywhere",
+    reason:
+      "The replace-everything publish that /admin/daily-deductions used before 2026-10-12. The page now releases one deduction at a time through /api/admin/daily-deductions/release and /withdraw, so nothing calls this route. It is kept (with phx_publish_daily_deductions behind it) rather than swept: deleting a live permissioned write endpoint is the owner's call. docs/daily-deductions-release.md.",
+    recorded: "2026-10-12",
+  },
+  {
     route: "/api/attendance/agent/health",
     authMode: "session",
     kind: "no-caller-anywhere",

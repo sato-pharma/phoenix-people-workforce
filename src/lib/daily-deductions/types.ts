@@ -148,6 +148,12 @@ export type DailyDeductionsLine = {
   reason: string | null;
   hrNote: string;
   createdAt: string;
+  /** When THIS line was released into the snapshot (a re-release refreshes it). */
+  releasedAt: string;
+  releasedBy: string | null;
+  /** The window THIS line was counted over; null on a line written before per-line release. */
+  rangeStart: string | null;
+  rangeEnd: string | null;
 };
 
 /** The employee-portal display line (self-only). Latent surface: the RLS self-read
