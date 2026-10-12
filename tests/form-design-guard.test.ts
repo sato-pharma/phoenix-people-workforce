@@ -27,7 +27,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
+  commentMask,
   EXEMPT,
+  fileConstants,
   isSweptFormFile,
   paintsItsOwnBox,
   scanControls,
@@ -280,9 +282,75 @@ function oneDetectorTests(): void {
   assert.ok(/\d+ cases, 0 failed/.test(selftest), `the guard's selftest must pass in full:\n${selftest.slice(-800)}`);
 }
 
+/**
+ * THE SHARED DETECTOR STAYS LINEAR — a budget, not an output.
+ *
+ * Until 2026-10-12 all three patterns in `fileConstants` spelled one whitespace run as
+ * `\s*\n?\s*`, which matches exactly the same text as `\s*` and only multiplies the ways to split
+ * it; inside the string chain's `(… + …)*` loop those multiply again. It cost 194,342ms of the
+ * 313s unit-test step on EVERY PR and every `main` push — 209,644ms of it from ONE 26-term chain
+ * in `src/lib/phoenix-crm/server/signboard-check.ts`, whose strings carry escaped quotes that
+ * `"[^"]*"` cannot match, so the chain fails mid-way and the engine walks every partition.
+ *
+ * Nothing in the suite noticed, because the sweep still returned the right answer — only slowly.
+ * Now the hook shares this resolver and follows up to 14 imported files at the Write, so the same
+ * shape would hang the owner's keystroke rather than a CI job. Hence a BUDGET: readability is
+ * exactly the argument that re-adds the pair, and this is what answers it.
+ */
+function constantSweepIsLinearTests(): void {
+  // The detonating shape, in miniature: a `+` chain of double-quoted terms, one per line, where a
+  // later term carries an ESCAPED quote. Measured with the old spelling — this exact 11-term chain
+  // 4,688ms, one term longer 146,041ms — so do not lengthen it to make the point harder.
+  const term = '  "the quick brown fox jumps over the lazy dog and keeps running for a while " +\n';
+  const pathological =
+    "const PATHOLOGICAL =\n" +
+    term.repeat(10) +
+    '  "then it said \\"stop\\" and the chain can no longer match";\n';
+
+  const started = performance.now();
+  fileConstants(pathological, commentMask(pathological));
+  const elapsed = performance.now() - started;
+  assert.ok(
+    elapsed < 500,
+    `fileConstants() spent ${Math.round(elapsed)}ms on ONE 11-term string chain — the budget is ` +
+      "500ms and the fixed cost is under 1ms, so this is not a slow machine. It now backtracks " +
+      "exponentially: look for a whitespace run written twice over, such as `\\s*\\n?\\s*`. `\\n` " +
+      "is already inside `\\s`, so the pair matches the same text and only adds O(k²) splits per " +
+      "gap — 4,688ms on these 11 terms, 146,041ms on 12, and 209,644ms on the real 26-term chain " +
+      "in src/lib/phoenix-crm/server/signboard-check.ts, which was 194s of every PR's test step.",
+  );
+
+  // …and the collapse must not have narrowed what the resolver can SEE. All three patterns lost the
+  // same doubled run, so all three are exercised here across a line break: the string chain, the
+  // alias, and the `cn(…)` call. A narrowing here does not fail loudly — it silently reports
+  // several hundred already-swept controls as unswept, and makes the hook refuse what CI accepts.
+  const spanning = [
+    "const CHAIN =",
+    '  "one " +',
+    '  "two";',
+    "const ALIAS =",
+    "  CHAIN;",
+    "const CALL =",
+    '  cn("a", "b");',
+    "",
+  ].join("\n");
+  assert.deepEqual(
+    [...fileConstants(spanning, commentMask(spanning)).entries()],
+    [
+      ["CHAIN", "one two"],
+      ["ALIAS", "CHAIN"],
+      ["CALL", 'cn("a", "b")'],
+    ],
+    "fileConstants() no longer reads a constant whose value begins on the NEXT line — " +
+      "scope-filter.client.tsx wraps its field exactly that way, and portal-primitives.tsx " +
+      "aliases one, which is how 341 swept controls once read as unswept",
+  );
+}
+
 export async function runFormDesignGuardTests(): Promise<void> {
   hookTests();
   scopeTests();
   wiringTests();
   oneDetectorTests();
+  constantSweepIsLinearTests();
 }

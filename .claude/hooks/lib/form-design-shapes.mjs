@@ -223,8 +223,20 @@ export function classNameExpr(attrs) {
 export function fileConstants(src, mask) {
   const map = new Map();
   const str = '(?:"[^"]*"|`[^`]*`)';
+  // 🔴 NEVER WRITE `\s*\n?\s*` IN THESE THREE PATTERNS — IT IS `\s*` WITH AN EXPONENT ON IT. `\n`
+  // is already inside `\s`, so the pair matches exactly the same text; what it adds is O(k²) ways
+  // to split every whitespace run, and inside the `(… + …)*` chain below those multiply.
+  // `src/lib/phoenix-crm/server/signboard-check.ts` is a 26-term `+` chain whose strings carry
+  // ESCAPED quotes — `"[^"]*"` cannot match one, so the chain fails mid-way and the engine walks
+  // every partition. Measured 2026-10-12: that ONE file cost 209,644ms of the CI sweep's
+  // 210,151ms and 194,342ms of the 313s unit-test step, on every PR and every `main` push;
+  // collapsed to `\s*` it is 0ms and the whole sweep is 369ms. The capture language is UNCHANGED —
+  // proven over 3,916 files and 4,275 constants, zero differences — so the ratchet counts this
+  // feeds are untouched, and the Write-time guard stops being able to hang on one import.
+  // Pinned by `constantSweepIsLinearTests` in tests/form-design-guard.test.ts: a BUDGET, because
+  // nothing noticed the old cost — the sweep returned the right answer, slowly.
   const re = new RegExp(
-    `(?:^|\\n)[ \\t]*(?:export\\s+)?const\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*(?::\\s*string\\s*)?=\\s*\\n?\\s*(${str}(?:\\s*\\+\\s*\\n?\\s*${str})*)\\s*;`,
+    `(?:^|\\n)[ \\t]*(?:export\\s+)?const\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*(?::\\s*string\\s*)?=\\s*(${str}(?:\\s*\\+\\s*${str})*)\\s*;`,
     'g',
   );
   let m;
@@ -238,7 +250,7 @@ export function fileConstants(src, mask) {
     map.set(m[1], value);
   }
   const alias =
-    /(?:^|\n)[ \t]*(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*string\s*)?=\s*\n?\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*;/g;
+    /(?:^|\n)[ \t]*(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*string\s*)?=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*;/g;
   while ((m = alias.exec(src))) {
     if (mask[m.index + 1] || map.has(m[1])) continue;
     map.set(m[1], m[2]);
@@ -248,7 +260,7 @@ export function fileConstants(src, mask) {
   // reading only string constants would stop following exactly the form it mandates — and would
   // then report ~200 swept controls as unswept, which is how a guard quietly loses its teeth.
   const call =
-    /(?:^|\n)[ \t]*(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*string\s*)?=\s*\n?\s*(cn\([^;]*?\))\s*;/g;
+    /(?:^|\n)[ \t]*(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*string\s*)?=\s*(cn\([^;]*?\))\s*;/g;
   while ((m = call.exec(src))) {
     if (mask[m.index + 1] || map.has(m[1])) continue;
     map.set(m[1], m[2]);
