@@ -14,7 +14,7 @@
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
-import type { OrgSeat } from "@/lib/phoenix-crm/scope";
+import { personKey, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { assertUnplannedVisitApprover, canDecideUnplannedVisit, canOverrideDecision, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
@@ -24,6 +24,7 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
   isUnplannedVisitStatus,
   isUnplannedVisitWaiting,
+  reviewerWasOnTheVisit,
   UNPLANNED_DECISION_NOTE_MAX,
   unplannedVisitStageOf,
   unplannedVisitStatusLabel,
@@ -40,11 +41,32 @@ function record(raw: unknown): Row {
 
 // `captured_at` rides on the visit for the moved day (offplan-day.ts): the plan is read as it stood at
 // the instant the visit was logged, which is the instant the database judged it off the plan.
+//
+// 🔴 `manager_hr_id`, `senior_hr_id` and `product_manager_hr_id` are WHO WAS ON THE VISIT, and they are
+// read for ONE reason: until 2026-10-12 this read loaded only the evidence, so a manager deciding a
+// ride-along he had been on himself saw no sign of it on the card. Measured on production that day: of
+// the 31 off-plan visits that carried a companion, 27 were decided by that companion — every one the
+// named manager, and every one approved. That is a missing piece of INFORMATION, never a finding
+// against anybody, so the card states it and the decision itself is unchanged.
 const UNPLANNED_COLUMNS =
   "visit_id, seat_id, rep_hr_id, entered_by_hr_id, customer_id, visit_date, clarification, status, version, created_at, " +
   "manager_decided_by_hr_id, manager_decided_at, manager_note, sfe_decided_by_hr_id, sfe_decided_at, sfe_note, " +
   "customer:phoenix_crm_customers!customer_id(name, list_type, speciality), " +
-  "visit:phoenix_crm_visits!visit_id(photo_path, location_flag, distance_meters, products, comment, captured_at)";
+  "visit:phoenix_crm_visits!visit_id(photo_path, location_flag, distance_meters, products, comment, captured_at, " +
+  "manager_hr_id, senior_hr_id, product_manager_hr_id)";
+
+/** Who the rep recorded as being with him, in the order the card reads them. A null column drops out. */
+const COMPANION_ROLES = [
+  { column: "manager_hr_id", label: "Manager" },
+  { column: "senior_hr_id", label: "Senior" },
+  { column: "product_manager_hr_id", label: "Product manager" },
+] as const;
+
+/** The companion hr ids on one row, read off the joined visit. */
+function companionHrIds(row: Row): Array<string | null> {
+  const visit = record(Array.isArray(row.visit) ? row.visit[0] : row.visit);
+  return COMPANION_ROLES.map((role) => textOrNull(visit[role.column]));
+}
 
 export type UnplannedVisitView = {
   visitId: string;
@@ -74,6 +96,15 @@ export type UnplannedVisitView = {
   managerNote: string | null;
   sfeDecidedByName: string | null;
   sfeNote: string | null;
+  /** Who the rep recorded as being with him on the visit, named, longest-standing role first. */
+  companions: Array<{ role: string; name: string }>;
+  /**
+   * Did the person who took a step on this visit go on it? Stated, never enforced: the approval chain
+   * is the owner's (direct manager, then SFE; one refusal ends it; a vacant chain starts at SFE; the
+   * Administrator is not a step), and nothing here skips, adds or blocks a step.
+   */
+  managerDecidedByWasOnTheVisit: boolean;
+  sfeDecidedByWasOnTheVisit: boolean;
 };
 
 /** One PostgREST page of this read — `max_rows` in supabase/config.toml, which it cannot exceed. */
@@ -130,6 +161,9 @@ export function unplannedPeople(rows: ReadonlyArray<Row>): Array<string | null> 
     textOrNull(row.rep_hr_id),
     textOrNull(row.manager_decided_by_hr_id),
     textOrNull(row.sfe_decided_by_hr_id),
+    // The companions, so the card can NAME them. A missing name here would print an hr id, which
+    // Golden Rule #1 forbids on any screen.
+    ...companionHrIds(row),
   ]);
 }
 
@@ -156,6 +190,20 @@ export function mapUnplannedRow(row: Row, names: PeopleNames): UnplannedVisitVie
     const hrId = textOrNull(value);
     return hrId ? nameOf(names, hrId) : null;
   };
+
+  // Who was with him, named. `personKey` is what compares two hr ids anywhere in this module — the
+  // raw strings differ in case and padding between the columns that store them.
+  const companionIds = companionHrIds(row);
+  const companions = COMPANION_ROLES.flatMap((role, index) => {
+    const hrId = companionIds[index];
+    return hrId ? [{ role: role.label, name: nameOf(names, hrId) }] : [];
+  });
+  const companionKeys = new Set(companionIds.map((hrId) => personKey(hrId)).filter((key): key is string => key !== null));
+  const wasOnTheVisit = (value: unknown): boolean => {
+    const key = personKey(textOrNull(value));
+    return key !== null && companionKeys.has(key);
+  };
+
   return {
     visitId: String(row.visit_id),
     seatId: String(row.seat_id),
@@ -179,6 +227,9 @@ export function mapUnplannedRow(row: Row, names: PeopleNames): UnplannedVisitVie
     managerNote: textOrNull(row.manager_note),
     sfeDecidedByName: person(row.sfe_decided_by_hr_id),
     sfeNote: textOrNull(row.sfe_note),
+    companions,
+    managerDecidedByWasOnTheVisit: wasOnTheVisit(row.manager_decided_by_hr_id),
+    sfeDecidedByWasOnTheVisit: wasOnTheVisit(row.sfe_decided_by_hr_id),
   };
 }
 
@@ -216,7 +267,12 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
     .select(
       // `clarification` rides along for the notice the SFE step gets when a manager passes the visit
       // on (notifications.ts): the reason he wrote is what SFE is being asked to judge.
-      "visit_id, seat_id, rep_hr_id, customer_id, visit_date, status, clarification, is_test, customer:phoenix_crm_customers!customer_id(name)",
+      // The three companion columns are read for the fence below: this read, unlike the board's, has
+      // no visit join at all, so without them the decision cannot tell whether the person clicking
+      // was on the visit he is deciding.
+      "visit_id, seat_id, rep_hr_id, customer_id, visit_date, status, clarification, is_test, " +
+        "customer:phoenix_crm_customers!customer_id(name), " +
+        "visit:phoenix_crm_visits!visit_id(manager_hr_id, senior_hr_id, product_manager_hr_id)",
     )
     .eq("visit_id", visitId)
     .maybeSingle();
@@ -236,6 +292,15 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
     if (decision !== "refuse") throw validationError("The Administrator can only decline a visit.");
   } else {
     assertUnplannedVisitApprover(viewer, seat, isTest, stage);
+    // 🔴 THE THIRD FENCE ON THE OWNER'S 2026-10-12 RULING, and the only one that reads the person
+    // actually clicking rather than the organogram. `unplannedFirstStatus` sends a visit whose
+    // reviewer was on it to SFE at save time, and the migration moved the rows already waiting, so
+    // nothing should ever reach here — this closes the deploy window, and the case where a visit
+    // gains a companion after its approval row was raised. It is a REFUSAL of this step, never of the
+    // visit: the rep loses nothing, nothing is flagged, and the SFE step is untouched.
+    if (stage === "manager" && reviewerWasOnTheVisit(viewer.hrId, companionHrIds(row))) {
+      throw forbiddenError("You were on this visit, so SFE decides it rather than you.");
+    }
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_unplanned_visit", {

@@ -27,6 +27,11 @@
  * and never be unplanned. See the migration's header.
  */
 
+// The one import this file has, and it is still no I/O: `personKey` is the comparison rule for two hr
+// ids across Phoenix CRM, and `scope.ts` is a pure module (it reads `hrIdForStorage` and a type).
+// Needed by `reviewerWasOnTheVisit` below, where a raw `===` would miss on case and padding alone.
+import { personKey } from "@/lib/phoenix-crm/scope";
+
 /** What the rep picks on the first step of Add Visit, before he picks the doctor. */
 export type VisitTypeChoice = "planned" | "unplanned";
 
@@ -125,17 +130,66 @@ export function unplannedVisitStatusLabel(status: UnplannedVisitStatus): string 
   return "Refused — it does not count";
 }
 
-/** What the rep is told on his own visit. The same words whichever screen he is on. */
-export function unplannedVisitRepNote(status: UnplannedVisitStatus): string {
+/**
+ * What the rep is told on his own visit. The same words whichever screen he is on.
+ *
+ * `managerStepTaken` exists because `sfe_pending` reaches that stage two different ways, and only one
+ * of them means a manager approved anything. A visit whose manager step was never available — a
+ * vacant chain, or a reviewer who was on the visit himself (below) — starts AT the SFE stage, and
+ * telling that rep "your manager approved it" would be a plain untruth about his own visit. It
+ * defaults to true so the generic single-argument form still reads as it always did; the two callers
+ * that can tell pass what is actually on the row.
+ */
+export function unplannedVisitRepNote(status: UnplannedVisitStatus, managerStepTaken = true): string {
   if (status === "manager_pending") return "Off the plan. It counts once your manager and then SFE approve it.";
-  if (status === "sfe_pending") return "Off the plan. Your manager approved it; it counts once SFE does.";
+  if (status === "sfe_pending") {
+    return managerStepTaken
+      ? "Off the plan. Your manager approved it; it counts once SFE does."
+      : "Off the plan. It counts once SFE approves it.";
+  }
   if (status === "approved") return "Off the plan, approved — it counts like a planned visit.";
   return "Off the plan and refused, so it does not count.";
 }
 
-/** Where the approval starts: with the territory's own manager when it has one, else with SFE. */
-export function unplannedFirstStatus(hasReviewer: boolean): Extract<UnplannedVisitStatus, "manager_pending" | "sfe_pending"> {
-  return hasReviewer ? "manager_pending" : "sfe_pending";
+/**
+ * Where the approval starts: with the territory's own manager when it has one, else with SFE.
+ *
+ * 🔴 AND WITH SFE WHEN THAT MANAGER WAS ON THE VISIT HIMSELF (owner, 2026-10-12). Measured on
+ * production that day: of the 31 off-plan visits carrying a companion, 27 were decided by that
+ * companion — every one the named manager, every one approved — because nothing at any layer compared
+ * the approver against who went. His ruling is that the manager's step is then UNAVAILABLE and the
+ * visit goes straight to the SFE, which is not a new rule so much as the one already here: a territory
+ * whose manager chain is vacant starts at SFE for exactly the same reason, that there is no one at
+ * that step who can honestly take it.
+ *
+ * 🔴 WHAT THIS IS NOT. It adds no step, removes none, and blocks nobody: his chain is untouched —
+ * direct manager, then SFE; one refusal ends it; the Administrator is not a step and may only refuse.
+ * It raises no flag, is never called fraud, and no rep is told anything about it. The manager keeps
+ * every other visit he has always decided.
+ */
+export function unplannedFirstStatus(
+  hasReviewer: boolean,
+  reviewerWasOnTheVisit = false,
+): Extract<UnplannedVisitStatus, "manager_pending" | "sfe_pending"> {
+  return hasReviewer && !reviewerWasOnTheVisit ? "manager_pending" : "sfe_pending";
+}
+
+/**
+ * Was the manager who would decide this visit one of the people on it?
+ *
+ * `personKey` is what compares two hr ids anywhere in Phoenix CRM — the raw strings differ in case and
+ * padding between the columns that store them, so a raw `===` would quietly answer "no" and hand the
+ * step straight back to the companion. A null reviewer is not on anything: a vacant chain is already
+ * answered by `hasReviewer` above, and reading null as a match would send every such visit to SFE for
+ * the wrong reason.
+ */
+export function reviewerWasOnTheVisit(
+  reviewerHrId: string | null | undefined,
+  companionHrIds: ReadonlyArray<string | null | undefined>,
+): boolean {
+  const reviewer = personKey(reviewerHrId);
+  if (reviewer === null) return false;
+  return companionHrIds.some((hrId) => personKey(hrId) === reviewer);
 }
 
 /**
