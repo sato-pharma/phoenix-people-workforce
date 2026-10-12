@@ -79,7 +79,7 @@ import {
   type NoteTone,
 } from "@/components/phoenix-crm/ui";
 import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
-import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
+import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
@@ -1656,8 +1656,9 @@ export function DropScreen({
       return;
     }
     const trimmed = note.trim();
-    if (reason === "other" && !trimmed) {
-      setProblem("Write why this customer should leave your list.");
+    // Owner, 2026-10-12: the comment is required on every reason, not only "Other".
+    if (!trimmed) {
+      setProblem(DROP_COMMENT_REQUIRED);
       return;
     }
     setSaving(true);
@@ -1740,7 +1741,7 @@ export function DropScreen({
           </CrmBlock>
           <CrmBlock className="border-t border-slate-100" title="2 · Note">
             <CrmField
-              hint={`${reason === "other" ? "Needed for Other" : "Optional"} · ${noteLength} of ${DROP_REASON_MAX} characters`}
+              hint={`Required · ${noteLength} of ${DROP_REASON_MAX} characters`}
               htmlFor="phoenix-crm-drop-note"
               label="What happened"
             >

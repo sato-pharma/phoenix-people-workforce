@@ -657,11 +657,22 @@ function roughPinAtThePharmacy(accuracyMeters: number | null): string {
 
 export type DropDraft = { reason: DropReason; note: string | null };
 
-export function parseDropDraft(raw: unknown): EntryRuleResult<DropDraft> {
+/**
+ * Owner, 2026-10-12: a rep's ask to drop a customer always carries a comment — the SFE Manager reads it
+ * before he drops anyone, alone or in bulk. A reason from the list is not enough on its own.
+ */
+export const DROP_COMMENT_REQUIRED = "Write why this customer should leave your list — the comment is required.";
+
+/**
+ * `requireNote` is the REP's own ask (`createListRequest`). The SFE Manager dropping a customer off a
+ * list himself (`sfeDropFromList`) is not the rep's ask and keeps its comment optional.
+ */
+export function parseDropDraft(raw: unknown, options: { requireNote?: boolean } = {}): EntryRuleResult<DropDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const reason = String(body.reason ?? "").trim();
   if (!DROP_REASON_KEYS.has(reason)) return { ok: false, error: "Choose why this customer should leave your list." };
   const note = cleanText(body.note, DROP_REASON_MAX);
+  if (options.requireNote && !note) return { ok: false, error: DROP_COMMENT_REQUIRED };
   if (reason === "other" && !note) return { ok: false, error: "Write why this customer should leave your list." };
   return { ok: true, value: { reason: reason as DropReason, note } };
 }

@@ -23,7 +23,7 @@ import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import { AdministratorDecline } from "@/components/phoenix-crm/administrator-decline";
-import { CrmButton, CrmCard, CrmChoice, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCard, CrmCheck, CrmChoice, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { DROP_REASON_MAX, POTENTIAL_GRADES, type PotentialGrade } from "@/lib/phoenix-crm/entry-rules";
 import { isTwoStepKind, requestStageLabel, setsAdmissionGrades } from "@/lib/phoenix-crm/list-request-rules";
 import type { PhoenixCrmGrade, PhoenixCrmRequestStatus } from "@/lib/phoenix-crm/types";
@@ -118,6 +118,7 @@ export function RequestCard({
   onChanged,
   request,
   seatId,
+  selection,
   territoryName,
   test,
 }: {
@@ -131,6 +132,8 @@ export function RequestCard({
   onChanged: (message: string) => void;
   request: ListRequest;
   seatId: string;
+  /** The Team tab's bulk drop: a tick box on a drop waiting at the viewer's step. Absent everywhere else. */
+  selection?: { checked: boolean; disabled: boolean; onChange: (next: boolean) => void };
   /** Shown on the Team tab, where requests from several territories sit together. */
   territoryName?: string | null;
   test: boolean;
@@ -237,6 +240,11 @@ export function RequestCard({
       title={request.customerName}
     >
       <div className="grid min-w-0 gap-1.5 text-sm leading-6">
+        {selection ? (
+          <CrmCheck checked={selection.checked} disabled={selection.disabled} onChange={selection.onChange}>
+            Select to drop with the others
+          </CrmCheck>
+        ) : null}
         <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{request.kindLabel}</p>
         <p className="break-words font-black text-slate-900">{requestSubject(request)}</p>
         {request.note ? (

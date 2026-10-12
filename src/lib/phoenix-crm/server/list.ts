@@ -2333,7 +2333,7 @@ export async function createListRequest(
     if (!proposedGrade) throw validationError("Choose the grade you propose (A, B or C).");
     payload.proposed_grade = proposedGrade;
   } else if (kind === "drop") {
-    const drop = parseDropDraft(body);
+    const drop = parseDropDraft(body, { requireNote: true });
     if (!drop.ok) throw validationError(drop.error);
     dropReason = drop.value.reason;
     payload.drop_reason = drop.value.reason;
