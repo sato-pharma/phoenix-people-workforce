@@ -394,8 +394,11 @@ export function SharedPlaceEditor({
 }) {
   const [adding, setAdding] = useState(false);
   const [justAdded, setJustAdded] = useState<string | null>(null);
-  const venues = useCrmGet<{ sharedPlaces: SharedPlaceChoice[] }>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
-  const list = venues.data?.sharedPlaces ?? [];
+  // 🔴 THE VALUE, NEVER THE ENVELOPE. `crmGet(url, key)` returns `body[key]`, so the answer here IS
+  // the array: typing it `{ sharedPlaces: … }` and reading `data?.sharedPlaces` asks an array for a
+  // property it has never had, and the picker is empty for ever (production, 2026-10-12).
+  const venues = useCrmGet<SharedPlaceChoice[]>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
+  const list = venues.data ?? [];
   const chosen = list.find((venue) => venue.sharedPlaceId === value.sharedPlaceId) ?? null;
   // The picker's own answer, which is the live one: `value.timetableOnFile` was written when the
   // choice was made and a reload can have brought a board in since.
