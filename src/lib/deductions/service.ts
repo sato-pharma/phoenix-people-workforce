@@ -21,6 +21,7 @@ import {
   scaleDeductionAmountToDays,
 } from "./calculations.ts";
 import { findDayCollisions } from "./conflict.ts";
+import { dropDeductionExemptDrafts } from "./exempt-employees.ts";
 import { computeHolidayBridgeDays, isFieldForceWorkingDay, type HolidayBridgeDay } from "./holiday-bridge.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { effectiveSettlement } from "@/lib/attendance/digest-rules.ts";
@@ -392,7 +393,10 @@ export async function insertCandidateDrafts(input: {
 
   // 1. Validate locally first — no I/O at all in this pass.
   const payloads: CandidateInsertPayload[] = [];
-  for (const draft of input.drafts) {
+  // Owner-exempt people are never raised by an AUTOMATED writer. A manual HR entry
+  // (autoDecideStatus set) is the owner's own deliberate act and passes through.
+  const writable = input.autoDecideStatus ? input.drafts : dropDeductionExemptDrafts(input.drafts).kept;
+  for (const draft of writable) {
     try {
       payloads.push(prepareCandidateInsertPayload(draft, { createdBy: input.createdBy }));
     } catch (error) {

@@ -11,6 +11,7 @@ import {
   collectInsufficientBalanceVacationCandidates,
   collectUnpaidVacationCandidates,
 } from "@/lib/deductions/connectors/vacation.ts";
+import { dropDeductionExemptDrafts } from "@/lib/deductions/exempt-employees.ts";
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
 import { aggregateClippedLines, clipDraftToRange, type ClippedDraftLine } from "./compute.ts";
 import { collectNoRecordsDailyCandidates } from "./no-records.ts";
@@ -78,7 +79,7 @@ export async function runConnectorForRange(input: {
   for (const period of monthsInRange(resolved.from, resolved.effectiveTo)) {
     try {
       const drafts = await runner({ month: period.month, year: period.year });
-      for (const draft of drafts) {
+      for (const draft of dropDeductionExemptDrafts(drafts).kept) {
         const line = clipDraftToRange(draft, resolved.from, resolved.effectiveTo);
         if (line) clipped.push(line);
       }
