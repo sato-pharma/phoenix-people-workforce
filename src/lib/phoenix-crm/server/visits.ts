@@ -88,6 +88,7 @@ import {
 } from "@/lib/phoenix-crm/server/access";
 import { blindVisitForm } from "@/lib/phoenix-crm/server/blind-payloads";
 import { type CaptureClient } from "@/lib/phoenix-crm/server/capture-client";
+import { recordCaptureProvenance } from "@/lib/phoenix-crm/server/capture-provenance";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
@@ -1264,6 +1265,22 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         isTest,
         fix: { lat: visit.lat, lon: visit.lon, accuracyMeters: visit.accuracyMeters, capturedAt },
         deviceMocked: visit.deviceMocked,
+      });
+      // And WHEN the phone took that position, and which install sent it. Written here for the same
+      // three reasons as the judgement above — after the save, answering nothing, swallowing its own
+      // failures — and written here rather than onto the visit itself because the save is a database
+      // function nothing in this module may put at risk for evidence the save does not read
+      // (server/capture-provenance.ts says why in full). A repeat save is skipped with the judgement.
+      await recordCaptureProvenance({
+        visitId,
+        seatId: seat.seatId,
+        repHrId: participants.value.repHrId ?? viewer.hrId,
+        visitDate: String(result.visit_date),
+        capturedAt,
+        fixTakenAt: visit.fixTakenAt,
+        deviceCapturedAt: visit.deviceCapturedAt,
+        deviceInstallId: visit.deviceInstallId,
+        isTest,
       });
     }
   }

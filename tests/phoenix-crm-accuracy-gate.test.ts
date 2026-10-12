@@ -58,6 +58,9 @@ const BENHA = { lat: 30.4684684684685, lon: 31.1899555209043 };
 const BARE_FIX: CapturedFix = {
   accuracyMeters: null,
   deviceCapturedAt: null,
+  // When the phone took the reading. Nothing here reads it — these sentences read no coordinate and
+  // no clock — and null is NOT MEASURED, which is what a body with no such key means.
+  fixTakenAt: null,
   deviceMocked: null,
   lat: 30.4657861755584,
   lon: 31.1863753029889,
