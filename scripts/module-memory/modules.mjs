@@ -384,9 +384,10 @@ export const MODULES = [
       "src/lib/{hiring-pack,hiring-documents,contracts,business-cards,spotlight,pdf,export}/**",
       "src/components/{hiring-pack,hiring-documents,contracts,business-cards,spotlight,phoenix-signature-card}/**",
       "app/**/{hiring-pack,hiring-documents,contracts,business-cards,business-card-requests,spotlight,print}/**",
-      "tests/*{hiring-pack,hiring-document,contract,hr-forms,business-card,spotlight,house-identity,document-mark,pdf}*",
+      "tests/*{hiring-pack,hiring-document,contract,hr-forms,business-card,spotlight,house-identity,premium-identity,document-mark,pdf}*",
+      ".claude/skills/hr-premium-identity/**",
     ],
-    keywords: ["hiring pack", "hiring documents", "contract", "contracts", "hr forms", "business card", "business cards", "spotlight", "seal", "stamp", "document identity", "عقد"],
+    keywords: ["hiring pack", "hiring documents", "contract", "contracts", "hr forms", "business card", "business cards", "spotlight", "seal", "stamp", "document identity", "premium identity", "عقد"],
     tables: ["hiring_", "contract", "business_card", "spotlight"],
   },
   {

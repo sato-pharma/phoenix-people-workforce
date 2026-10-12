@@ -109,6 +109,12 @@ function readAsset(publicPath: string): string | null {
       return png(read(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.png")));
     case "/brand/sato-pharma-logo.png":
       return png(read(join(process.cwd(), "public", "brand", "sato-pharma-logo.png")));
+    // THE HR PREMIUM IDENTITY (2026-10-12): the Arabic calligraphy (masthead and watermark) and the
+    // Phoenix emblem (running foot). Without them here a filed premium paper would refuse to file.
+    case "/brand/sato-pharma-arabic-on-light.png":
+      return png(read(join(process.cwd(), "public", "brand", "sato-pharma-arabic-on-light.png")));
+    case "/brand/phoenix-login-emblem.png":
+      return png(read(join(process.cwd(), "public", "brand", "phoenix-login-emblem.png")));
     default:
       return null;
   }

@@ -1,9 +1,13 @@
 import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import {
-  houseLetterhead,
   HOUSE_COLORS,
   HOUSE_IDENTITY_CSS,
 } from "@/lib/hiring-pack/house-identity";
+import {
+  premiumDocumentStylesheet,
+  premiumLetterhead,
+  premiumPageChrome,
+} from "@/lib/hiring-pack/premium-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   ARABIC_FONT_STACK,
@@ -222,7 +226,7 @@ function renderCopy(
   return `<article class="copy">
     <table class="sheet">
       <tbody><tr><td class="sheet__body">
-        ${houseLetterhead({
+        ${premiumLetterhead({
           titleAr: template.titleAr,
           subtitleAr: template.subtitleAr,
           legalNameAr: company.legalNameAr,
@@ -242,7 +246,7 @@ function renderCopy(
         ${signatureHtml(template, values)}
       </td></tr></tbody>
       <tfoot><tr><td class="sheet__foot">${fillLine(template.footerAr, values)}</td></tr></tfoot>
-    </table>
+    </table>${premiumPageChrome()}
   </article>`;
 }
 
@@ -411,6 +415,7 @@ export function renderWorkerFormHtml(
     .copy { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
+${premiumDocumentStylesheet(".copy")}
 </style>
 </head>
 <body>

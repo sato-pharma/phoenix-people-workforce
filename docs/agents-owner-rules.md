@@ -4210,6 +4210,65 @@ feature cannot be quietly deleted in a tidy-up. But nothing stops a session from
 alone, concluding that hiring papers must carry no seal mechanism at all, and proposing to rip it
 out as a rule violation — which is why the hook now names this account.
 
+## The HR premium identity — owner instructions, 2026-10-12
+
+### What he said
+
+At about 22:20 Cairo, after approving the Talent Acquisition New Starter Handbook page by page:
+*"Save this identity as the HR premium identity … make all the normal templates or forms in Sato
+Pharma follow this perfect template. But not the governmental, the governmental as they are."*
+The same evening, while it was being rolled out: *"the contract keep corporate as it was"*.
+
+### What wears it
+
+The shared module is `src/lib/hiring-pack/premium-identity.ts`, built once beside
+`house-identity.ts` and never pasted per renderer. It is the house identity `SATO-DIS-2026-01 v1.0`
+raised to premium — the same three blues, the same ink rule — plus a page frame with Latin security
+microtext, the Arabic mark as a 5% watermark, a masthead with both marks and the engine-turned band
+drawn as an inline vector, and the Phoenix running foot carrying the identity code.
+
+- **Wears it:** both clearances, both custody receipts, the worker data form, the English certificate
+  of experience, the English salary letter, and the CURRENT version of every one of the HR papers
+  (the confidentiality undertaking, the warnings, the Arabic salary letter, the handover record, the
+  exit interview and the rest).
+- **Keeps the corporate dress, by his word:** the employment contract, every version of it. The
+  renewal annex goes with it — it is read stapled to the contract, and `tests/hr-forms-renewal.test.ts`
+  pins its masthead identical to the contract's — and so does the non-renewal notice, drawn by the
+  same renderer from the same furniture.
+- **An archived version keeps the dress it was signed in.** Only the current version of a paper wears
+  the premium identity, so a reprint from the Archive screen still matches the paper on file.
+- **Never touched:** the Authority's forms (Form 1, Form 6, the labour exit forms, the official pack
+  forms, the field-layout overlays), and the designs he decided one by one — the job offer letter,
+  the Spotlight sheet, the business card and the workbooks. `houseLetterhead()` is unchanged and
+  byte-pinned by `tests/payslip-document.test.ts`, so the payslip and the other papers that call it
+  keep the house dress until he says otherwise.
+- **No seal**, as on every hiring paper: the seal is the job offer's alone.
+
+### What it cost to get right on paper
+
+- **Nothing in the fixed frame may carry an SVG `transform`.** The frame is `position: fixed` in
+  print, which is how Chrome repeats it on every page, and Chrome paints a fixed element's
+  transformed SVG children on the first page only. With rotated side runs and turned corner pips,
+  page two of the contract printed with empty side channels and hollow corner tiles. The side runs
+  now lie on `<textPath>`s and the pips are four-point polygons. CSS rotation on HTML (the foot's
+  diamond) is not affected.
+- **The reference number rides the masthead's name line, never a line of its own.** Measured on the
+  numbered renders: a line of its own cost 3.2 mm and pushed the contract (then premium) to a fourth
+  sheet and the employee clearance to a second. On the name line it costs no height on any paper.
+- **The sheet prints on `@page { margin: 0 }`**, because a fixed frame is clipped to the page area.
+  Chrome draws its footer template inside the bottom margin, so with no margin a premium paper's
+  filed PDF is numbered by `paper-pdf.ts` after layout ("N / M" in the foot's right end, per copy).
+- **Every page count held**: all papers, numbered and not, print on the same number of sheets as in
+  the house dress, with at least 1.3 mm between the last line and the foot rule.
+
+### What he has not decided yet
+
+Put to him on the review page the same evening, keep or change per item: the frozen designs, the
+other `houseLetterhead()` papers, the Latin face for papers rendered on the server (Segoe UI exists
+only on Windows; the stack falls back to Noto Sans there), and whether the foot keeps
+`SATO-DIS-2026-01 v1.0` or the premium identity gets its own code. Until he answers, each stays as it
+is today.
+
 ## The UE Direct split is retired with the Excel-import direct orders — owner, 2026-09-30
 
 **What he was asked.** A select-audit of the sales code found `au_v_direct_region_allocation`: the

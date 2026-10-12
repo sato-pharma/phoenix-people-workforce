@@ -40,6 +40,11 @@ import {
   houseBandBackground,
 } from "@/lib/hiring-pack/house-identity";
 import {
+  premiumDocumentStylesheet,
+  premiumMasthead,
+  premiumPageChrome,
+} from "@/lib/hiring-pack/premium-identity";
+import {
   escapeHtml,
   formatLongDateEn,
   PRINT_BANNER_CSS,
@@ -249,26 +254,26 @@ function renderCopy(values: SalaryLetterEnValues, company: CompanyDetails): stri
 
   const number = (text: string) => `<span class="fill">${escapeHtml(text)}</span>`;
 
-  // THE MARK FIRST, THE NAME BLOCK LAST — the mirror of the Arabic masthead, so on both papers the
-  // mark sits at the left and the company's name at the right. The name block keeps
-  // `doc-mast__side doc-mast__id` with a strong then a dir="ltr" span: that is the shape
-  // `paper-reference.ts` looks for, and it writes the reference number under it.
+  // THE HR PREMIUM MASTHEAD (2026-10-12): the Latin mark at the left and the Arabic mark at the right,
+  // exactly as on the Arabic papers. The subtitle's two scripts are two lines, never one mixed run:
+  // the English line is letter-spaced and Arabic never is. `paper-reference.ts` writes the reference
+  // number into the masthead's `pm-mast__ref` slot.
+  const masthead = premiumMasthead({
+    legalNameAr: company.legalNameAr,
+    legalNameEn: company.legalNameEn,
+    title: "HR Letter",
+    titleLang: "en",
+    subtitles: [
+      { text: "Salary certificate", lang: "en" },
+      { text: "شهادة راتب", lang: "ar" },
+    ],
+    // One sheet, with a 36 mm signature box: the tighter cut.
+    compact: true,
+  });
   return `<article class="copy copy--document copy--salaryLetter">
     <table class="doc-sheet">
       <thead><tr><td class="doc-mastcell">
-        <header class="doc-mast">
-          <span class="doc-mast__side doc-mast__mark">
-            <img src="${HOUSE_MARK_SRC}" alt="" width="401" height="158">
-          </span>
-          <span class="doc-mast__title">
-            <strong>HR Letter</strong>
-            <em>Salary certificate · شهادة راتب</em>
-          </span>
-          <span class="doc-mast__side doc-mast__id">
-            <strong>${companyName}</strong>
-            <span dir="ltr">${escapeHtml(company.legalNameAr)}</span>
-          </span>
-        </header>
+        ${masthead}
         <p class="doc-purpose">Issued in two copies — one handed to the employee at ${p.possessive} request, one retained in the service file.</p>
       </td></tr></thead>
       <tbody><tr><td class="doc-body">
@@ -291,7 +296,7 @@ function renderCopy(values: SalaryLetterEnValues, company: CompanyDetails): stri
         ${signatureTable()}
       </td></tr></tbody>
       <tfoot><tr><td class="doc-foot"><div class="doc-foot__row"><span>HR Letter · Salary certificate</span><span>Issued by Human Resources</span></div></td></tr></tfoot>
-    </table>
+    </table>${premiumPageChrome()}
   </article>`;
 }
 
@@ -445,6 +450,7 @@ export function renderSalaryLetterEnHtml(
     .copy { width: auto; min-height: 0; margin: 0; box-shadow: none; }
   }
 ${PRINT_BANNER_CSS}
+${premiumDocumentStylesheet(".copy")}
 </style>
 </head>
 <body>

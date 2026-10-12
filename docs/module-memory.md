@@ -105,7 +105,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `crm` — Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans | `src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**` and 10 more |
 | `marketing` — Marketing requests, venues, pharmacies and ROI | `src/lib/{marketing-requests,venues,pharmacy-master,pharmacy-search,customer-pharmacy-mapping,verified-captures,market-awareness,sales-marketing-intelligence,evidence}/**` and 4 more |
 | `recruitment` — Recruitment, CVs and offers | `src/lib/{recruitment,cv,offers,whatsapp-inbox,mailbox-monitor,zoom}/**` and 4 more |
-| `hiring-documents` — Hiring documents, contracts and company papers | `src/lib/{hiring-pack,hiring-documents,contracts,business-cards,spotlight,pdf,export}/**` and 3 more |
+| `hiring-documents` — Hiring documents, contracts and company papers | `src/lib/{hiring-pack,hiring-documents,contracts,business-cards,spotlight,pdf,export}/**` and 4 more |
 | `employees` — Employees and the HR lifecycle | `src/lib/{employees,employee-lifecycle,employee-360,hr,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**` and 4 more |
 | `probation` — Probation and employee milestones | `src/lib/{probation,milestones}/**` and 4 more |
 | `time-off` — Vacations, attendance and calendars | `src/lib/{vacation,attendance,excuses,early-birds,hr-calendar,private-calendar,calendar}/**` and 5 more |
