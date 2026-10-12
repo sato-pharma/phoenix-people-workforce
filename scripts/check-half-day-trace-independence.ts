@@ -56,6 +56,8 @@ import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import {
   buildHalfDayEvidence,
   buildHalfDayIdentity,
+  halfDayContractOf,
+  halfOutsideContract,
   type HalfDayCheckinRow,
   type HalfDayEvidence,
   type HalfDayVisitRow,
@@ -135,7 +137,7 @@ async function main(): Promise<void> {
       dateTo: addDay(end),
       includeResignedAgents: true,
     }),
-    supabase.from("employees").select("hr_id, full_name, job_title, crm_id, employment_status").order("hr_id"),
+    supabase.from("employees").select("hr_id, full_name, job_title, crm_id, employment_status, work_half").order("hr_id"),
     supabase
       .from("attendance_raw_punches")
       .select("employee_hr_id")
@@ -148,11 +150,13 @@ async function main(): Promise<void> {
 
   const nameOf = new Map<string, string>();
   const titleOf = new Map<string, string>();
+  const contractOf = new Map<string, "full_day" | "am_only" | "pm_only">();
   for (const row of employees.data ?? []) {
     const compact = compactDeductionsHrId(String(row.hr_id ?? ""));
     if (!compact) continue;
     nameOf.set(compact, String(row.full_name ?? row.hr_id));
     titleOf.set(compact, String(row.job_title ?? ""));
+    contractOf.set(compact, halfDayContractOf(row.work_half));
   }
 
   const punchedBy = new Set<string>();
@@ -176,7 +180,8 @@ async function main(): Promise<void> {
   const selfCleared: Finding[] = [];
   let oneHalfDays = 0;
   let clearedIndependently = 0;
-  let notCleared = 0;
+  let outsideContract = 0;
+  const noTrace: Finding[] = [];
   const phoenixDays = new Set<string>();
   const peopleWithActivity = new Set<string>();
 
@@ -193,10 +198,17 @@ async function main(): Promise<void> {
     if (!allDays && (!isFieldForceWorkingDay(date) || isFieldWorkforceThursday(date))) continue;
     const missing = missingHalf(evidence);
     if (!missing) continue;
+    // 🔴 A half the contract does not cover was never owed, so it is not a thin-evidence day and
+    // the live rule leaves it alone (`outside_contract_half`). Counting it here would report a
+    // part-timer's every working day as a morning he failed to record.
+    if (missing === halfOutsideContract(contractOf.get(compact) ?? "full_day")) {
+      outsideContract += 1;
+      continue;
+    }
     oneHalfDays += 1;
     const proven = proofFor(evidence, missing);
     if (!proven) {
-      notCleared += 1;
+      noTrace.push({ compact, date, missing, phoenix: phoenixVisitDays.has(key) });
       continue;
     }
     const provenWithoutWitness = proofFor(withoutWitness.byPersonDay.get(key) ?? evidence, missing);
@@ -226,7 +238,11 @@ async function main(): Promise<void> {
   console.log(`Person-days with exactly one half covered: ${oneHalfDays}`);
   console.log(`  cleared by an INDEPENDENT iReports360 check-in: ${clearedIndependently}`);
   console.log(`  cleared ONLY by the rep's own save time:        ${selfCleared.length}  (${phoenixDays.size} of them on Phoenix visits)`);
-  console.log(`  not cleared by any trace:                      ${notCleared}`);
+  console.log(`  not cleared by any trace:                      ${noTrace.length}`);
+  console.log(
+    `Person-days left alone because the half is OUTSIDE the contract: ${outsideContract}`
+    + "  (a part-half contract never owed that half)",
+  );
 
   if (selfCleared.length > 0) {
     console.log("\nThe days whose clearing trace is not independent (name · day · missing half · source):");
@@ -237,6 +253,21 @@ async function main(): Promise<void> {
       console.log(`  ${finding.date}  ${who}${title ? ` (${title})` : ""}  missing ${finding.missing}  ${finding.phoenix ? "Phoenix" : "iReports360"}`);
     }
     if (selfCleared.length > limit) console.log(`  … and ${selfCleared.length - limit} more (--limit ${selfCleared.length} to print them all)`);
+  }
+
+  // 🔴 This is the group the live rule actually RAISES, so it is named and not merely counted. It
+  // was a bare number until 2026-10-12, which made the report read as though the weakly-cleared
+  // days were its finding — they are the safer half of it.
+  if (noTrace.length > 0) {
+    console.log("");
+    console.log("The days no trace clears at all — what the rule would raise (name · day · missing half · source):");
+    noTrace.sort((a, b) => (a.date === b.date ? a.compact.localeCompare(b.compact) : a.date.localeCompare(b.date)));
+    for (const finding of noTrace.slice(0, limit)) {
+      const who = nameOf.get(finding.compact) ?? finding.compact;
+      const title = titleOf.get(finding.compact);
+      console.log(`  ${finding.date}  ${who}${title ? ` (${title})` : ""}  missing ${finding.missing}  ${finding.phoenix ? "Phoenix" : "iReports360"}`);
+    }
+    if (noTrace.length > limit) console.log(`  … and ${noTrace.length - limit} more (--limit ${noTrace.length} to print them all)`);
   }
 
   console.log(

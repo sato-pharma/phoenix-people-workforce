@@ -84,7 +84,7 @@ state, and silently ignoring it would be the under-report direction again.
 | Section | What lands there |
 | --- | --- |
 | **NEEDS YOU** | Green on every required check. Printed as `merge <n>` — the exact words he would type. |
-| **CLAUDE'S WORK, NOT YOURS** | Red, conflicted, draft, or waiting on CI. Named so he does *not* act on it. |
+| **CLAUDE'S WORK, NOT YOURS** | Red, conflicted, draft, waiting on CI — **or green and made only of words**. Named so he does *not* act on it. |
 | **WORTH KNOWING** | What production is serving, and how far behind `main` it is. |
 | **COULD NOT READ** | Every unknown, with the reason in words. |
 
@@ -92,6 +92,27 @@ The production line names a redeploy and a re-merge as **forbidden**, because AG
 that the next green merge carries a withheld deploy forward by itself — a board that hinted at
 either would walk him into the one remedy the rule forbids. `tests/needs-you-board.test.ts` pins
 that sentence.
+
+## A green PR made only of words is not his row
+
+Owner, 2026-10-12: *"i will not merge a small pr"* — said twice about #5802, first at three changed
+files and again at seven, after it had been handed to him as the only open PR and therefore as one
+clean merge. AGENTS.md §6 now forbids putting such a PR to him at all, and this board is where that
+stops being discipline and becomes behaviour: a `CLEAN` or `HAS_HOOKS` PR whose every changed path
+is `docs/`, `.claude/` or root markdown is sorted into **CLAUDE'S WORK** with the reason and the
+remedy — *widen the branch with real work, or hold it for a roll-up*.
+
+**The measure is the PATHS, not a file count.** `rollup-prs.mjs` calls a PR small at `<= 4 changed
+files`, which would have called the seven-file #5802 wide; what both refusals had in common is that
+nothing an employee can see moves. One file of running code anywhere in the diff makes it his merge
+again, however much documentation rides along.
+
+**The demotion fails toward his lane, never away from it.** `isDocsOnly` returns false for an empty,
+absent or unparseable file list, so a PR whose files gh declined to return stays printed as
+`merge <n>`. That direction is deliberate and pinned: a row he dismisses costs two seconds, a row
+that never appeared costs a deploy. Both halves are proven in `tests/needs-you-board.test.ts`, and
+the demotion itself was break-tested — removing it made *"a CLEAN docs-and-rules-only PR is never
+put to him"* fire by name before the file was restored from a copy.
 
 ## What it deliberately does not do
 
@@ -108,7 +129,7 @@ that sentence.
 
 ## Where it is pinned
 
-`tests/needs-you-board.test.ts`, registered in `tests/run-tests.ts` and therefore a step of the
-required `checks` job. It drives the real exported functions, not a restatement of them. The
+`tests/needs-you-board.test.ts`, registered in `tests/run-tests.ts` and therefore part of the unit
+suite, which has run inside the required `validate` job since 2026-09-30 (AGENTS.md §7). It drives the real exported functions, not a restatement of them. The
 under-report guard was proven by breaking it: forcing the unmodelled-state branch to return `yours`
 made the first assertion fire with its own message before the file was restored from a copy.

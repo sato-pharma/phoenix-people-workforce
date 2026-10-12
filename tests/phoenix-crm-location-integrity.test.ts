@@ -133,6 +133,56 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
     assert.equal(verdict.flags.includes("coordinate_replay"), false, "a fix that moved 40 cm is a real fix");
   }
 
+  {
+    // 🔴 THE PRODUCTION FALSE POSITIVE, VERBATIM — the pair that retired the rounded match.
+    // One rep, the same hospital, 22 minutes apart (so past REPLAY_MIN_GAP_MINUTES), two readings
+    // 1.3 cm apart carrying DIFFERENT accuracies — 49.9 m and 54.9 m — which is what proves neither
+    // is a cached copy of the other. Inside REPLAY_DECIMALS these round to the same six decimals, so
+    // the old test called it a replay and charged him a STRONG flag on the Integrity board and in
+    // Phoenix Ranks. A receiver solving for position twice lands near itself; it does not repeat.
+    const verdict = judge({
+      lat: 30.0323547138734,
+      lon: 31.0041319110873,
+      accuracyMeters: 54.9,
+      capturedAt: "2026-10-11T08:45:43.161Z",
+      history: [
+        prior({
+          lat: 30.032354829736,
+          lon: 31.0041317788402,
+          accuracyMeters: 49.9,
+          capturedAt: at("2026-10-11T08:23:33.961Z"),
+        }),
+      ],
+    });
+    assert.equal(
+      verdict.flags.includes("coordinate_replay"),
+      false,
+      "two honest readings 1.3 cm apart are not a replayed coordinate",
+    );
+    assert.equal(verdict.strong, false, "and nothing else on that pair may make it a strong case either");
+  }
+
+  {
+    // …while the shape it exists to catch is untouched: the SAME coordinate to the last digit, which
+    // is what a fake-GPS preset hands back. Mahmoud's and Nada's production rows are both this.
+    const verdict = judge({
+      lat: 30.5602031056426,
+      lon: 31.0106195072006,
+      accuracyMeters: 18.7,
+      capturedAt: "2026-10-06T12:40:29.294Z",
+      history: [
+        prior({
+          lat: 30.5602031056426,
+          lon: 31.0106195072006,
+          accuracyMeters: 18.7,
+          capturedAt: at("2026-10-06T12:09:13.989Z"),
+        }),
+      ],
+    });
+    assert.ok(verdict.flags.includes("coordinate_replay"), "an exactly repeated coordinate is still a replay");
+    assert.equal(verdict.strong, true);
+  }
+
   // ── Travel — physics ──────────────────────────────────────────────────────────────────────────
 
   {
@@ -337,15 +387,86 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
   }
 
   {
-    // A fix that never reported an accuracy is "not asked", never "coarse" — the same reading the
-    // mock flag gets. An older build that sends no accuracy must keep being judged as before.
-    const silent = judge({
+    // 🔴 THIS BLOCK ASSERTED THE OPPOSITE UNTIL 2026-10-12, and the old wording — "an older build
+    // that sends no accuracy must keep being judged as before" — WAS the hole the second-pass audit
+    // found under gap 15. The capture gate deliberately ACCEPTS a reading with no accuracy figure
+    // (`entry-rules.ts`: "an UNKNOWN accuracy is still taken, as it always was") precisely because
+    // we cannot measure it, and `isCoarse` then returned false for null, so the very same reading
+    // was handed to all four precision detectors and judged as though we could. Fixed on the
+    // owner's instruction: "fix the unknown-accuracy hole in the precision detectors".
+    //
+    // Measured on production the same day: 18 of 1,598 visits and 7 of 1,418 places report no
+    // accuracy, every one of them eligible for all four detectors; none had tripped one, so this
+    // closes the hole before it accused anybody rather than after.
+    //
+    // 🔴 THE TWO HALVES ARE PINNED SEPARATELY AND MUST STAY THAT WAY. A single case with a null
+    // accuracy on BOTH sides passes whichever half is broken, because the other half suppresses it
+    // — written that way first, it went green with the old gate restored.
+
+    // Half one: THIS fix reported no accuracy. The prior is an ordinary 20 m reading at the same
+    // point, so the only thing stopping a replay verdict is the gate.
+    const silentFix = judge({
       accuracyMeters: null,
+      capturedAt: "2026-09-24T12:00:00.000Z",
+      history: [prior({ capturedAt: at("2026-09-24T09:00:00.000Z") })],
+    });
+    assert.equal(silentFix.flags.includes("coarse_location"), false, "a missing accuracy is not an approximate fix");
+    assert.equal(
+      silentFix.flags.includes("coordinate_replay"),
+      false,
+      "a reading that reported no accuracy cannot support a precision verdict: the gate takes it on trust, so the detectors may not judge it",
+    );
+    assert.deepEqual(silentFix.flags, [], "and it earns no flag of its own — 25 quiet handsets are not 25 standing cases");
+    const unmeasured = silentFix.signals.unmeasuredAccuracy as { suppressed: string[] } | undefined;
+    assert.deepEqual(
+      [...(unmeasured?.suppressed ?? [])].sort(),
+      [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS].sort(),
+      "the row records WHICH detectors went quiet, as a coarse row does",
+    );
+
+    // Half two: a perfectly good fix, over a PRIOR that reported no accuracy. Without this half an
+    // honest reading is flagged for replaying a point nobody ever measured — the same false
+    // accusation as the coarse case, one reading later.
+    const silentPrior = judge({
+      accuracyMeters: 18,
       capturedAt: "2026-09-24T12:00:00.000Z",
       history: [prior({ accuracyMeters: null, capturedAt: at("2026-09-24T09:00:00.000Z") })],
     });
-    assert.equal(silent.flags.includes("coarse_location"), false, "a missing accuracy is not an approximate fix");
-    assert.ok(silent.flags.includes("coordinate_replay"), "and it is still judged on its coordinates");
+    assert.equal(
+      silentPrior.flags.includes("coordinate_replay"),
+      false,
+      "an unmeasured prior is not a coordinate anyone can be accused of replaying",
+    );
+    assert.equal(silentPrior.signals.unmeasuredHistoryIgnored, 1, "and the row counts the unmeasured priors");
+    assert.equal(
+      silentPrior.signals.coarseHistoryIgnored,
+      undefined,
+      "apart from the coarse ones — reading one as the other sends the next session to the wrong rule",
+    );
+    assert.equal(
+      silentPrior.signals.unmeasuredAccuracy,
+      undefined,
+      "and says nothing about THIS fix, which measured itself perfectly well",
+    );
+  }
+
+  {
+    // The two that still fire on it, by the owner's 2026-10-05 ruling: neither is a claim about
+    // precision. A missing accuracy contributes no slack to the distance, so it cannot invent a
+    // trip either — the travel check is stricter on it, not kinder.
+    const mocked = judge({ accuracyMeters: null, deviceMocked: true });
+    assert.ok(
+      mocked.flags.includes("mock_provider"),
+      "an unknown accuracy is no shelter from the phone's own confession",
+    );
+    const flown = judge({
+      accuracyMeters: null,
+      lat: 31.2001187,
+      lon: 29.9001116,
+      capturedAt: "2026-09-24T09:20:00.000Z",
+      history: [prior({ capturedAt: at("2026-09-24T09:00:00.000Z") })],
+    });
+    assert.ok(flown.flags.includes("impossible_travel"), "nor from physics");
   }
 
   // ── An honest visit is completely clean ───────────────────────────────────────────────────────

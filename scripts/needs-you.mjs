@@ -101,6 +101,17 @@ export function classifyPr(pr, contexts) {
   const flags = [];
   if (pr.isDraft) return { bucket: 'claude', reason: 'draft — not offered for merge', flags };
 
+  // A green PR that changes nothing but words is not a decision only he can make — AGENTS.md §6,
+  // owner 2026-10-12: "i will not merge a small pr". It stays on the board, in Claude's lane, with
+  // what to do about it; it is never dropped, because that would be the under-report this file
+  // exists to prevent.
+  const docsOnly = isDocsOnly(pr.files);
+  const docsRow = () => ({
+    bucket: 'claude',
+    reason: 'green, but it changes only docs and repo rules — he will not merge a small PR (AGENTS.md §6): widen the branch with real work, or hold it for a roll-up',
+    flags,
+  });
+
   const rollup = normalizeRollup(pr.statusCheckRollup);
   const state = String(pr.mergeStateStatus || '').toUpperCase();
 
@@ -111,6 +122,7 @@ export function classifyPr(pr, contexts) {
 
   switch (state) {
     case 'CLEAN':
+      if (docsOnly) return docsRow();
       return { bucket: 'yours', reason: 'green on every required check', flags };
 
     case 'UNSTABLE': {
@@ -141,6 +153,7 @@ export function classifyPr(pr, contexts) {
       return { bucket: 'claude', reason: 'draft — not offered for merge', flags };
 
     case 'HAS_HOOKS':
+      if (docsOnly) return docsRow();
       return { bucket: 'yours', reason: 'green, and a repository hook will run on merge', flags };
 
     default:
@@ -204,6 +217,29 @@ export function buildBoard({ prs, protection, production, now }) {
 }
 
 // --- the small pure helpers the two functions above lean on -----------------------------------
+
+/**
+ * Is every changed path words rather than running code?
+ *
+ * This is what "small" means to him, and it is NOT a file count: #5802 was refused at three files
+ * and again at seven, while `rollup-prs.mjs`'s `<= 4 changed files` would have called the second
+ * one wide. What the two have in common is that nothing an employee can see moves — so the measure
+ * is the PATHS, not how many of them there are.
+ *
+ * 🔴 UNKNOWN IS NEVER A DEMOTION. An empty or unreadable file list returns false, which leaves a
+ * green PR in his lane. Over-reporting costs him two seconds; a merge that never reached the board
+ * costs a deploy (see the header of `tests/needs-you-board.test.ts`).
+ */
+export function isDocsOnly(files) {
+  if (!Array.isArray(files) || files.length === 0) return false;
+  return files.every((entry) => {
+    const p = String(entry?.path ?? entry ?? '');
+    if (!p) return false;
+    if (p.startsWith('docs/') || p.startsWith('.claude/')) return true;
+    // A repo-root markdown file: AGENTS.md, CLAUDE.md, README.md, MEMORY.md.
+    return !p.includes('/') && p.toLowerCase().endsWith('.md');
+  });
+}
 
 /** gh returns CheckRun rows keyed `name`/`conclusion` and StatusContext rows keyed `context`/`state`. */
 export function normalizeRollup(rollup) {
@@ -296,7 +332,9 @@ async function collectPrs() {
   try {
     const raw = await gh([
       'pr', 'list', '--repo', REPO, '--state', 'open', '--limit', '60',
-      '--json', 'number,title,isDraft,mergeStateStatus,headRefName,updatedAt,statusCheckRollup',
+      // `files` is what decides docs-only, so a PR whose file list gh declines to return simply
+      // stays in his lane rather than being demoted on a missing field.
+      '--json', 'number,title,isDraft,mergeStateStatus,headRefName,updatedAt,statusCheckRollup,files',
     ]);
     const parsed = JSON.parse(raw || '[]');
     if (!Array.isArray(parsed)) return { unknown: 'gh returned something that is not a list of PRs' };

@@ -232,16 +232,29 @@ export const BRICK_FAR_KM = 3;
 // a measurement in front of you: they are the line between catching a cheat and accusing a rep.
 
 /**
- * Two fixes are "the same coordinate" at six decimals — about 11 cm. A GNSS receiver reporting the
- * same 11 cm twice, ever, does not happen: even a phone lying still on a table walks several metres
- * over an afternoon.
+ * The band the HISTORY QUERY fetches candidates in — six decimals, about 11 cm — and nothing more.
+ *
+ * 🔴 IT IS NOT THE TEST ANY MORE, AND THE REASON IT USED TO BE IS FALSE. This comment read "a GNSS
+ * receiver reporting the same 11 cm twice, ever, does not happen: even a phone lying still on a
+ * table walks several metres over an afternoon." Production disproved it on 2026-10-11: one rep's
+ * two readings, 22 minutes apart in the same hospital, came back 30.032354829736 and
+ * 30.0323547138734 — about 1.3 cm apart, well inside the band — carrying DIFFERENT accuracies,
+ * 49.9 m and 54.9 m, so neither was a cached copy of the other. Two honest readings. The board
+ * called it "this exact coordinate was used before", and a strong flag is charged to the rep's
+ * Integrity score by `countedIntegrityFlags` in rep-ranks/field-quality.ts.
+ *
+ * `sameCoordinate` now asks the coordinate to REPEAT — identical to its last stored digit, which is
+ * what a preset in a fake-GPS app does and what a receiver computing a fresh solution does not. The
+ * constant stays because `server/location-integrity.ts` still needs an index-friendly equality band
+ * to pull candidates with (`COORDINATE_BAND`), and narrowing the comparison inside that band can
+ * only ever drop a case, never add one.
  */
 export const REPLAY_DECIMALS = 6;
 
 /**
- * …but a phone CAN hand back a cached fix to two readings taken minutes apart, so a repeat by the
- * same rep only counts once the readings are this far apart. A repeat by a DIFFERENT rep counts
- * immediately — two people cannot occupy the same 11 cm, and a shared coordinate is a shared preset.
+ * …and a phone CAN hand the same reading back twice, so a repeat by the same rep only counts once
+ * the readings are this far apart. A repeat by a DIFFERENT rep counts immediately — two people
+ * cannot share a coordinate to the last digit, and one they do share is a shared preset.
  */
 export const REPLAY_MIN_GAP_MINUTES = 20;
 
@@ -335,8 +348,16 @@ function roundTo(value: number, decimals: number): number {
   return Math.round(value * factor) / factor;
 }
 
+/**
+ * The same coordinate REPEATED — identical to its last stored digit, not merely nearby.
+ *
+ * 🔴 NEVER WIDEN THIS BACK TO A ROUNDED MATCH. Rounding to `REPLAY_DECIMALS` is what the history
+ * query bands on, and it read two honest readings 1.3 cm apart as one replayed coordinate — see that
+ * constant's comment for the production pair and what it cost the rep. A fake-GPS preset repeats
+ * exactly; a receiver solving for position again does not.
+ */
 function sameCoordinate(left: GeoPoint, right: GeoPoint): boolean {
-  return roundTo(left.lat, REPLAY_DECIMALS) === roundTo(right.lat, REPLAY_DECIMALS) && roundTo(left.lon, REPLAY_DECIMALS) === roundTo(right.lon, REPLAY_DECIMALS);
+  return left.lat === right.lat && left.lon === right.lon;
 }
 
 function minutesBetween(left: Date, right: Date): number {
@@ -382,16 +403,36 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
 
   // ── Is this fix precise enough to be judged on precision at all? ──────────────────────────────
   //
-  // A coarse reading is evidence of nothing precise on EITHER side of a comparison, so it is taken
-  // out of both: this fix stops being judged, and a coarse fix already on record stops being
-  // something to judge against. Without that second half an honest precise fix gets flagged for
-  // "replaying" the tile centre its own phone handed back an hour earlier — the same false
-  // accusation, one reading later.
+  // Two readings cannot support a conclusion about precision: one too coarse to locate anything,
+  // and one that reported NO accuracy at all. Either is evidence of nothing precise on EITHER side
+  // of a comparison, so both come out of both: this fix stops being judged, and such a reading
+  // already on record stops being something to judge against. Without that second half an honest
+  // precise fix gets flagged for "replaying" the tile centre its own phone handed back an hour
+  // earlier — the same false accusation, one reading later.
+  //
+  // 🔴 AN UNKNOWN ACCURACY IS NOT A GOOD ACCURACY. It is deliberately ACCEPTED at the capture gate
+  // (`entry-rules.ts`: "an UNKNOWN accuracy is still taken, as it always was") — the owner's
+  // decision, so that a handset that reports no figure never costs a rep his visit. The hole the
+  // second-pass audit found was that `isCoarse` then returned false for it, so the same reading the
+  // gate waved through on the grounds that we cannot measure it was handed to all four precision
+  // detectors and judged as though we had. Measured on production 2026-10-12: 18 of 1,598 visits and
+  // 7 of 1,418 places carry no accuracy figure, every one of them eligible for all four. None had
+  // actually tripped one — the five precision flags standing all report a real accuracy — so this
+  // closes the hole before it accuses anybody rather than after.
   const isCoarse = (accuracyMeters: number | null): boolean =>
     accuracyMeters !== null && Number.isFinite(accuracyMeters) && accuracyMeters >= COARSE_ACCURACY_METERS;
 
+  /** No usable accuracy figure at all. A missing measurement, never a perfect one. */
+  const isUnmeasured = (accuracyMeters: number | null): boolean =>
+    accuracyMeters === null || !Number.isFinite(accuracyMeters);
+
+  /** Too coarse, or never measured — either way nothing precise may be concluded from it. */
+  const cannotSupportPrecision = (accuracyMeters: number | null): boolean =>
+    isCoarse(accuracyMeters) || isUnmeasured(accuracyMeters);
+
   const fixIsCoarse = isCoarse(fix.accuracyMeters);
-  const measured = history.filter((prior) => !isCoarse(prior.accuracyMeters));
+  const fixIsUnmeasured = isUnmeasured(fix.accuracyMeters);
+  const measured = history.filter((prior) => !cannotSupportPrecision(prior.accuracyMeters));
 
   if (fixIsCoarse) {
     flags.add("coarse_location");
@@ -401,13 +442,33 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
       suppressed: [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS],
     };
   }
-  if (measured.length !== history.length) {
-    signals.coarseHistoryIgnored = history.length - measured.length;
+  // 🔴 NO FLAG for an unmeasured reading, only this signal. `coarse_location` would be a false
+  // statement about it, and a flag of its own would file a standing board case against every rep
+  // whose handset is quiet about accuracy — 25 captures already — which is the opposite of the
+  // point. The suppression is recorded so the Super Admin can see WHY a row says little.
+  if (fixIsUnmeasured) {
+    signals.unmeasuredAccuracy = {
+      accuracyMeters: fix.accuracyMeters,
+      suppressed: [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS],
+    };
   }
+  // Counted apart, because "ignored as coarse" and "ignored as unmeasured" are different facts
+  // about the rep's history and reading one as the other sends the next session to the wrong rule.
+  const coarseIgnored = history.filter((prior) => isCoarse(prior.accuracyMeters)).length;
+  const unmeasuredIgnored = history.filter((prior) => isUnmeasured(prior.accuracyMeters)).length;
+  if (coarseIgnored > 0) signals.coarseHistoryIgnored = coarseIgnored;
+  if (unmeasuredIgnored > 0) signals.unmeasuredHistoryIgnored = unmeasuredIgnored;
 
-  /** Publish a precision-dependent flag — unless this fix is too coarse to support one. */
+  /**
+   * Publish a precision-dependent flag — unless this fix cannot support one.
+   *
+   * 🔴 `mock_provider` and `impossible_travel` do NOT come through here, by the owner's 2026-10-05
+   * ruling: the phone's own mock answer and a trip nobody could have made are not claims about
+   * precision, and travel takes both readings' error bars off the distance before judging, so a
+   * reading with no accuracy figure contributes no slack and cannot invent a trip either.
+   */
   const addPrecisionFlag = (flag: PhoenixCrmIntegrityFlag): void => {
-    if (!fixIsCoarse) flags.add(flag);
+    if (!fixIsCoarse && !fixIsUnmeasured) flags.add(flag);
   };
 
   // ── Replay — this coordinate has been used before ─────────────────────────────────────────────
