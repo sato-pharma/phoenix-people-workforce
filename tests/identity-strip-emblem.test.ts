@@ -30,6 +30,7 @@ import { readFileSync } from "node:fs";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STRIP = "src/components/phoenix-signature-card/PhoenixIdentityStrip.tsx";
+const NOTICES = "src/components/phoenix-signature-card/PhoenixIdentityNotices.tsx";
 const SATO_BAND = "src/components/admin/ceo-command-center.tsx";
 
 /**
@@ -76,11 +77,24 @@ const BREAKPOINTS = {
 
 type BreakpointKey = keyof typeof BREAKPOINTS;
 
+/**
+ * `style` is an inline object on one mark and a NAMED CONSTANT on the other, since 2026-10-12: the
+ * desktop mark's ink became `var()`-driven (filter, blend and opacity as well as the three
+ * positions), and an inline object that long sat between the comment and the tag it belongs to. Both
+ * spellings are matched here, and `styleBody` resolves the named one, so neither shape can quietly
+ * drop out of this test by being refactored.
+ */
 const EMBLEM_TAG =
-  /<img\b[^>]*?className="([^"]*)"[^>]*?src="\/brand\/identity-strip-emblem\.png"[^>]*?style=\{\{([^}]*)\}\}/g;
+  /<img\b[^>]*?className="([^"]*)"[^>]*?src="\/brand\/identity-strip-emblem\.png"[^>]*?style=\{(\{[^}]*\}|[A-Z][A-Z_]+)\}/g;
 
 function read(file: string) {
   return readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+}
+
+/** The inline object itself, or the body of the `as CSSProperties` constant the tag names. */
+function styleBody(strip: string, token: string): string {
+  if (token.startsWith("{")) return token;
+  return new RegExp(`const ${token} = \\{([\\s\\S]*?)\\} as CSSProperties;`).exec(strip)?.[1] ?? "";
 }
 
 /**
@@ -126,10 +140,16 @@ export function runIdentityStripEmblemTests() {
         + "then draw at once, one on top of the other",
     );
     assert.ok(!drawn.has(key), `two emblems claim the same breakpoint (${key})`);
+    const body = styleBody(strip, style);
+    assert.ok(
+      body.length > 0,
+      `the ${key} emblem's style is a constant this test cannot resolve (${style}) — its numbers `
+        + "are then unpinned, which is the whole point of this file",
+    );
     drawn.set(key, {
-      height: styleNumber(style, "height"),
-      right: styleNumber(style, "right"),
-      top: styleNumber(style, "top"),
+      height: styleNumber(body, "height"),
+      right: styleNumber(body, "right"),
+      top: styleNumber(body, "top"),
     });
   }
 
@@ -330,14 +350,123 @@ export function runIdentityStripEmblemTests() {
       + "mark, which is exactly what the owner asked to stop. Re-derive the gap from the mark.",
   );
 
-  // The portrait, the air under it and the frame are one chain of arithmetic; a spacer that stops
-  // matching the portrait's height either overlaps the next section or leaves a hole.
-  const spacer = /style=\{\{ height: "calc\(var\(--phx-portrait-h\) - (\d+)px\)" \}\}/.exec(strip);
+  // The portrait, the air under it and the frame are one chain of arithmetic; a reserve that stops
+  // matching the portrait's height either overlaps the next section or leaves a hole. Since
+  // 2026-10-12 the same element also reserves the portrait's WIDTH, because the band beside it
+  // carries the notice centre and would otherwise run under the photo — one element, both jobs.
+  const column =
+    /height: "calc\(var\(--phx-portrait-h\) - (\d+)px\)",\s*width: "var\(--phx-portrait-w\)"/.exec(strip);
   assert.ok(
-    spacer && Number(spacer[1]) < BREAKPOINTS.sm.barHeight,
-    "the overhang spacer must be the portrait's height minus LESS than the bar's own height — "
+    column,
+    "the overhang reserve must state BOTH the portrait's height minus the bar and the portrait's "
+      + "own width — the height is the air under the photo and the width is what keeps the notice "
+      + "band clear of it. One without the other breaks a layout nothing else measures.",
+  );
+  assert.ok(
+    Number(column?.[1]) < BREAKPOINTS.sm.barHeight,
+    "the overhang reserve must be the portrait's height minus LESS than the bar's own height — "
       + `anything at or above ${BREAKPOINTS.sm.barHeight} leaves the portrait's foot sitting on the `
-      + "next section's top border, which is the collision this spacer exists to prevent",
+      + "next section's top border, which is the collision this reserve exists to prevent",
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // THE WATERMARK IS PRINTED INTO THE PAPER, NOT LAID ON IT.
+  //
+  // The owner, 2026-10-12, on the shipped version: "the watermark is not fitting good it feels like
+  // its not real or extra zeyada msh mazboota". The geometry was right and the INK was wrong — a
+  // full-colour badge composited over cream reads as a third object however low its alpha. So with a
+  // photo the mark is greyscaled and multiplied INTO the paper, and the fallbacks — the no-photo
+  // SATO column, which is a different instruction from 2026-09-04 — stay exactly as they were.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  const markStyle = styleBody(strip, "MARK_DESKTOP_STYLE");
+  assert.ok(markStyle.length > 0, "MARK_DESKTOP_STYLE is gone — the mark's ink is unpinned");
+
+  for (const [property, fallback] of [
+    ["filter", "none"],
+    ["mixBlendMode", "normal"],
+  ] as const) {
+    assert.ok(
+      new RegExp(`${property}: "var\\(--phx-mark-[a-z-]+, ?${fallback}\\)"`).test(markStyle),
+      `the desktop mark's ${property} must fall back to \`${fallback}\` — that fallback IS the `
+        + "no-photo path, and hard-coding the with-photo treatment there would rewrite the owner's "
+        + "2026-09-04 SATO-column mark as a side effect of a different instruction",
+    );
+  }
+  const plainOpacity = Number(
+    /opacity: "var\(--phx-mark-opacity, ?([\d.]+)\)"/.exec(markStyle)?.[1] ?? NaN,
+  );
+  assert.equal(
+    plainOpacity,
+    0.2,
+    "the no-photo mark must stay at opacity 0.2 — its own instruction, unchanged since 2026-09-04",
+  );
+
+  const blend = /"--phx-mark-blend": "([a-z-]+)"/.exec(scale)?.[1];
+  const filter = /"--phx-mark-filter": "([^"]+)"/.exec(scale)?.[1] ?? "";
+  const photoOpacity = Number(/"--phx-mark-opacity": "([\d.]+)"/.exec(scale)?.[1] ?? NaN);
+  assert.equal(
+    blend,
+    "multiply",
+    "with a photo the mark must composite with `multiply` — alpha alone leaves it sitting ON the "
+      + "page in its own hue, which is the 'extra, not real' the owner rejected",
+  );
+  assert.match(
+    filter,
+    /grayscale\(1\)/,
+    "with a photo the mark must be greyscaled — multiply alone still carries the emblem's orange "
+      + "and teal, and a second colour scheme on the cream is what reads as a pasted-on logo",
+  );
+  assert.ok(
+    photoOpacity < plainOpacity,
+    `multiplied ink is far heavier than overlaid ink at the same number, so the with-photo opacity `
+      + `(${photoOpacity}) must come DOWN from the plain one (${plainOpacity}) — kept level, the `
+      + "watermark lands darker than the version he turned down",
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // THE RESERVED BAND CARRIES THE NOTICE CENTRE — "the market space donot leave it like this make
+  // use of it for example for a notification center" (owner, 2026-10-12).
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  assert.ok(
+    strip.includes("<PhoenixIdentityNotices"),
+    "the band under the bar is empty again — the owner circled that space and asked for it to be "
+      + "used; the notice centre is what fills it",
+  );
+  assert.ok(
+    strip.indexOf("<PhoenixIdentityNotices") > strip.lastIndexOf("</section>"),
+    "the notice band must render OUTSIDE the bar's section — that section is `overflow-hidden` for "
+      + "the watermark and the wave, so a band inside it is simply cut off",
+  );
+
+  const notices = read(NOTICES);
+  assert.ok(
+    notices.includes('fetch("/api/notifications/in-app"'),
+    "the notice band must read the BELL's endpoint — a second query against notification_events is "
+      + "a second place to get the personal-bell allowlist and the test-login fence wrong",
+  );
+  assert.ok(
+    !/from "@\/lib\/supabase/.test(notices),
+    "the notice band must not reach the database directly — it is a client component, and the "
+      + "route it calls is what resolves the viewer server-side",
+  );
+  assert.ok(
+    notices.includes("could not be loaded") && notices.includes("Nothing is waiting"),
+    "a failure and an empty inbox must read as DIFFERENT facts — a band that says 'nothing waiting' "
+      + "when it means 'could not load' is the misleading zero AGENTS.md §7 forbids",
+  );
+
+  // The reveal ladder and the grid must agree: a tile revealed at a width whose grid has no column
+  // for it lands on a second row and the band doubles in height, silently.
+  const reveal = /const TILE_REVEAL = \[([^\]]*)\]/.exec(notices)?.[1] ?? "";
+  assert.ok(
+    reveal.includes('"hidden sm:flex"') && reveal.includes('"hidden xl:flex"'),
+    "the notice tiles must stay a 1 / 2 / 3 ladder — measured at 803px, three tiles wrap every "
+      + "title onto three lines and the band outgrows the air the portrait reserves",
+  );
+  assert.ok(
+    (notices.match(/sm:grid-cols-2 xl:grid-cols-3/g) ?? []).length >= 2,
+    "the grid's columns must match the reveal ladder at BOTH the loading and the loaded state — "
+      + "they are the same band and a viewer sees them one after the other",
   );
 
   // The other half of the coupling: the logo the desktop numbers were measured against.

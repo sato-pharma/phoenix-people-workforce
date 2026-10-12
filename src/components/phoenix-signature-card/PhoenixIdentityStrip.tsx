@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
+import { PhoenixIdentityNotices } from "@/components/phoenix-signature-card/PhoenixIdentityNotices";
+
 /**
  * The signature card's identity, as a THIN STRIP.
  *
@@ -175,12 +177,52 @@ const PORTRAIT_STANDING_SHADOW =
  * on that path.
  */
 const PORTRAIT_SCALE = {
+  // THE MARK IS PRINTED INTO THE PAPER, NOT LAID ON IT — see THE WATERMARK READS AS PRINT below.
+  "--phx-mark-blend": "multiply",
+  "--phx-mark-filter": "grayscale(1)",
   "--phx-mark-height": "162px",
+  "--phx-mark-opacity": "0.13",
   "--phx-mark-right": "calc(var(--phx-portrait-w) - 47px)",
   "--phx-mark-top": "-5px",
   "--phx-portrait-h": "calc(var(--phx-portrait-w) * 1.32)",
   "--phx-portrait-w": "clamp(200px, 17vw, 268px)",
   "--phx-text-gap": "calc(var(--phx-portrait-w) + 72px)",
+} as CSSProperties;
+
+/**
+ * THE WATERMARK READS AS PRINT, NOT AS A SECOND LOGO. The owner, 2026-10-12, looking at the shipped
+ * version: "the watermark is not fitting good it feels like its not real or extra zeyada msh
+ * mazboota".
+ *
+ * WHAT WAS WRONG WAS THE INK, NOT THE PLACE. It was the full-colour emblem — Phoenix orange, the
+ * teal bars, a hard white-free edge — drawn at opacity 0.28 and composited OVER the cream. Alpha
+ * alone cannot make a coloured badge belong to a page: it stays its own hue, so the eye reads a
+ * third object sitting between the name and the photo. That is the "extra" he saw, and it is why
+ * every number around it measured correct while the picture still looked wrong.
+ *
+ * SO IT IS NOW A MONOCHROME MULTIPLY. `grayscale(1)` drops the mark's own hue, and `multiply`
+ * composites it INTO the paper instead of onto it: the result takes the cream's warmth
+ * (#fdf8f3 x grey is a warm grey, never a cold one), it darkens rather than overlays, and the two
+ * radial washes under it still show through the mark exactly as they show through bare paper.
+ * Opacity comes down to 0.13 because multiply is a far stronger operator than normal at the same
+ * number — at 0.28 multiplied the emblem was heavier than it had been before.
+ *
+ * THE GEOMETRY DID NOT MOVE, DELIBERATELY. The 15px bite, the 84px standing clear, the height and
+ * the -5px wave clearance are all still the numbers `tests/identity-strip-emblem.test.ts` pins; his
+ * complaint was that it looked unreal, and the arithmetic behind "from behind" was not what made it
+ * look unreal. Changing both at once would have left no way to know which one answered him.
+ *
+ * NO PHOTO, NO CHANGE AT ALL. The three fallbacks keep the mark exactly as his 2026-09-04
+ * instruction left it in the SATO column — normal compositing, no filter, opacity 0.2.
+ */
+const MARK_DESKTOP_STYLE = {
+  filter: "var(--phx-mark-filter, none)",
+  height: "var(--phx-mark-height, 128px)",
+  mixBlendMode: "var(--phx-mark-blend, normal)",
+  opacity: "var(--phx-mark-opacity, 0.2)",
+  right: "var(--phx-mark-right, 25px)",
+  top: "var(--phx-mark-top, -11px)",
+  width: "auto",
 } as CSSProperties;
 
 /**
@@ -237,6 +279,12 @@ export type PhoenixIdentityStripProps = {
   photoSrc?: string | null;
   /** Optional honorific, e.g. "Dr." */
   prefix?: string;
+  /**
+   * The notice band under the bar. On by default: the band is the answer to the owner's "make use
+   * of it", and a landing that opted out silently would be the one page where the reserved air came
+   * back. It exists so a surface that genuinely must not fetch (a print or export view) can say so.
+   */
+  showNotices?: boolean;
   /** Job title, not the permission key — the caller resolves that. */
   title: string;
 };
@@ -247,6 +295,7 @@ export function PhoenixIdentityStrip({
   name,
   photoSrc = null,
   prefix,
+  showNotices = true,
   title,
 }: PhoenixIdentityStripProps) {
   const titleLabel = title.trim().toUpperCase() || "PHOENIX WORKFORCE";
@@ -454,20 +503,12 @@ export function PhoenixIdentityStrip({
         aria-hidden="true"
         className="pointer-events-none absolute z-0 hidden sm:block"
         src="/brand/identity-strip-emblem.png"
-        style={{
-          // WITH A PHOTO the three vars put the mark half behind the standing portrait, which is
-          // "SHOW THE PHX LOGO FROM BEHIND AS A WATERMARK" — see PORTRAIT_SCALE for the arithmetic.
-          // WITHOUT one the fallbacks are the originals: 128 / 25 / -11 are the SATO logo's 79px of
-          // ink and its 50px column, each minus this file's own transparent margin. Read the
-          // paragraphs above before touching one.
-          height: "var(--phx-mark-height, 128px)",
-          // 0.28 with a photo's worth of mark on cream; it was 0.2 when the mark was pure
-          // background texture and he has now asked for it to be SHOWN.
-          opacity: 0.28,
-          right: "var(--phx-mark-right, 25px)",
-          top: "var(--phx-mark-top, -11px)",
-          width: "auto",
-        }}
+        // WITH A PHOTO the vars put the mark half behind the standing portrait and print it into the
+        // paper — "SHOW THE PHX LOGO FROM BEHIND AS A WATERMARK", then "it feels like its not real".
+        // See PORTRAIT_SCALE for the geometry and MARK_DESKTOP_STYLE for the ink. WITHOUT a photo
+        // every fallback is the 2026-09-04 original: 128 / 25 / -11 in the SATO column, no filter,
+        // no blend, opacity 0.2. Read both paragraphs before touching one number.
+        style={MARK_DESKTOP_STYLE}
       />
 
       {/* MOBILE ONLY: the portrait as the card's own leading edge — see PORTRAIT_FADE_MASK.
@@ -758,13 +799,31 @@ export function PhoenixIdentityStrip({
 
         MOBILE KEEPS THE FRAMELESS BLEED. This is a `sm:` element only; on a phone the photo is
         still the bar's own leading edge, which is his 2026-09-04 instruction and is untouched. */}
-    {photoSrc ? (
-      <span
-        aria-hidden="true"
-        className="hidden sm:block"
-        style={{ height: "calc(var(--phx-portrait-h) - 144px)" }}
-      />
-    ) : null}
+    {/* THE RESERVED BAND IS WORKING SPACE NOW, NOT AIR — the owner, 2026-10-12, with the empty
+        band circled in red: "the market space donot leave it like this make use of it for example
+        for a notification center or any other idea workable". So the overhang the portrait opened
+        carries the viewer's own notices; `PhoenixIdentityNotices` reads the bell's endpoint, so the
+        band and the bell can never disagree.
+
+        ONE ELEMENT STILL DOES BOTH JOBS, AND IT IS THE SAME ELEMENT AS BEFORE. As a flex row, the
+        reserving column's own height sets the row's minimum — which is what the bare spacer did —
+        and its width keeps the notices clear of the portrait standing over them. `hidden sm:block`
+        is still how a viewport-derived `calc` reaches a breakpoint without an inline media query,
+        and the row grows past the minimum when a long notice needs it, which is why the band has a
+        min-height and never a fixed one. The 16px of air is `gap-4`.
+
+        NO PHOTO, NO COLUMN: there is no standing portrait, nothing is reserved, and the notices take
+        the full width under the bar. */}
+    <div className="flex items-stretch gap-4">
+      {showNotices ? <PhoenixIdentityNotices className="flex-1" /> : <span className="flex-1" />}
+      {photoSrc ? (
+        <span
+          aria-hidden="true"
+          className="hidden shrink-0 sm:block"
+          style={{ height: "calc(var(--phx-portrait-h) - 144px)", width: "var(--phx-portrait-w)" }}
+        />
+      ) : null}
+    </div>
     {photoSrc ? (
       <span
         className="pointer-events-none absolute right-0 top-0 z-20 hidden sm:block"
