@@ -429,7 +429,7 @@ export function HrCommandCenter({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      {/* THE IDENTITY IS BACK, AS A 92px STRIP — and the size is the whole point.
+      {/* THE IDENTITY IS BACK, AS A STRIP — and the size is the whole point.
 
           History, because both halves of it were the owner's own instruction and a session that
           knows only one half will undo the other:
@@ -446,10 +446,14 @@ export function HrCommandCenter({
                set the height himself, under 96px.
 
           So the rule that survived both instructions is HEIGHT, not presence. `PhoenixIdentityStrip`
-          is a fixed 88px on a phone and 92px from `sm` up — about a third of what the old band took
-          and a quarter of the portal card it borrows from. Anything added here later is measured
-          against that, not against how the CEO and Finance pages look: those keep their own heroes
-          on purpose, and this divergence is still the instruction.
+          is a fixed 120px on a phone and 160px from `sm` up — still a fraction of what the old band
+          took and of the portal card it borrows from. THOSE NUMBERS ARE NOT THE ONES HE SET ON
+          2026-09-03: he raised them himself on 09-04 ("make it taller and its weak") and again on
+          2026-10-12 ("i want the photo bigger clear obvious"), which is what the desktop 160 buys.
+          Read the height paragraphs in `PhoenixIdentityStrip` before quoting the 09-03 figure at
+          anyone. Anything added here later is measured against the strip, not against how the CEO
+          and Finance pages look: those keep their own heroes on purpose, and this divergence is
+          still the instruction.
 
           It reads its seat from `resolveViewerIdentityFromPage`, the same source as the topbar
           chip, so the two can never disagree — including on the JOB TITLE, which that resolver
