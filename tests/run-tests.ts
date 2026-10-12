@@ -1472,6 +1472,7 @@ import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
+import { runPhxLiveBannerTests } from "./phx-live-banner.test.ts";
 import { runRemoteCheckLintCacheTests } from "./remote-check-lint-cache.test.ts";
 import { runSelectCensusTests } from "./select-census.test.ts";
 import { runCiTypecheckLockTests } from "./ci-typecheck-lock.test.ts";
@@ -5379,6 +5380,10 @@ await runTest(
 await runTest(
   "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, the remote exit code, and a private tree per invocation (own ref, own git worktree, removed on exit) re-verified after every check so a tree swapped mid-run exits 3 with NO VERDICT, proven by running two overlapping invocations on two commits; and one run owns the whole box, because a per-stage lock left lint and test unguarded and that contention OOM-killed a build - the run takes its own lock around every stage and, if it cannot get it within 120s, runs NOTHING and exits 9 as NO VERDICT (FUP-010, 2026-10-08 — never 'running anyway'), exit 137 is reported as NO VERDICT rather than a failure, `all` includes the build, and before anything is pushed the box itself is asked whether another run is already live, a probe that fails CLOSED so an unreadable answer can never read as an idle box - a busy box with no open PR is NO VERDICT (exit 6) and dispatches GitHub Actions only on --actions/--urgent (2026-10-08) - a branch that already has an open PR has that PR's own run READ by head sha rather than a second one dispatched beside it, graded by the pull_request job map because ci.yml runs the suite in validate there and never builds at all, both routes settling through one allow-list whose whole-run success is a pass only when that run ran every stage asked for - and a dropped ssh connection (255) is NO VERDICT rather than FAIL with keepalives to stop the silent-stage drop that caused it",
   runRemoteCheckTests,
+);
+await runTest(
+  "phx-live's PRODUCTION DATA banner renders only under PHX_LIVE=1 (never on production or staging, which have no PHX_LIVE), stays server-rendered and square, and app/layout.tsx renders it",
+  runPhxLiveBannerTests,
 );
 await runTest(
   "remote-check's persistent ESLint cache only ever changes how long lint takes (2026-10-08, box lint 182s cold): the store sits outside the per-run tree with the run's path swapped for a placeholder, seeded back with THIS tree's path, keyed by the lockfile, manifests, eslint config, tsconfig and node version so a config or dependency change starts cold in a new store, a corrupt store is a cold run, lint's exit code passes through untouched, and unsafe paths are refused; the run sits under the box's own `timeout` ceiling sized from its stages (under 45 min for `all`) with a later local deadline that TERMs then KILLs ssh, and a ceiling, SIGKILL, lost status or unprinted verdict is NO VERDICT; the per-sha verdict record stores only PASS/FAIL stages and never merges another sha's",

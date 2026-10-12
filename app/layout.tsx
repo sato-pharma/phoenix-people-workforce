@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
 import { GlobalErrorReporter } from "@/components/layout/global-error-reporter";
+import { PhxLiveBanner } from "@/components/layout/phx-live-banner";
 import { ReportingErrorBoundary } from "@/components/layout/reporting-error-boundary";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { systemIdentity } from "@/config/system-settings";
@@ -131,6 +132,7 @@ export default function RootLayout({
         {/* React 19 / Next.js hoists <style> to <head> automatically */}
         <style dangerouslySetInnerHTML={{ __html: SCRIPT_FONT_CSS }} />
         <GlobalErrorReporter />
+        <PhxLiveBanner />
         <ThemeProvider>
           <ReportingErrorBoundary>{children}</ReportingErrorBoundary>
         </ThemeProvider>

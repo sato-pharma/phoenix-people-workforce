@@ -27,6 +27,7 @@ import {
   stageJobsFor,
   stagesNotRunBy,
   stoppedNoVerdictLine,
+  PHX_LIVE_RUN_ID,
 } from "../scripts/remote-check-plan.mjs";
 
 // scripts/remote-check.mjs runs the heavy checks on the self-hosted CI box instead of this laptop.
@@ -271,6 +272,18 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.ok(
       !/pgrep|lsof|fuser/.test(probe),
       "the probe must not depend on a lock file or a process-name match — neither sees a run from an older branch",
+    );
+
+    // 🔴 phx-live's dev server (production data, capped at 5.5 GB) is a run too: a `next build`
+    // started beside it wants ~7.4 GB on a 7.7 GB box and OOMs both.
+    assert.match(
+      probe,
+      /systemctl is-active --quiet phx-preview-3100\.scope/,
+      "the probe no longer counts phx-live's dev server as busy — a remote-check build would start beside it and OOM the box",
+    );
+    assert.ok(
+      parseBusyProbe("RUN " + PHX_LIVE_RUN_ID + " 0\nPROBE_OK\n").runs.includes(PHX_LIVE_RUN_ID),
+      "the phx-live marker line must parse as a run",
     );
 
     // An idle box: the marker, no runs.

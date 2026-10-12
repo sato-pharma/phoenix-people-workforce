@@ -62,6 +62,15 @@ export function runPaths(remoteRoot, runId) {
 // this code: every version of this script `cd`s into its own run directory, so a process whose CWD
 // is under runs/ IS a live run. A stale directory left by `kill -9` has no process and is invisible
 // here — which is the point, since STALE_RUN_MINUTES keeps such directories around for six hours.
+//
+// 🔴 phx-live's DEV SERVER COUNTS AS A RUN. The owner's live dev server (`phx-live`, scope
+// `phx-preview-3100.scope`, capped at 5.5 GB) shares this 7,740 MB box, and a `next build` wants
+// ~7.4 GB — starting one beside it OOM-kills one of the two. So while that scope is active the probe
+// reports it as the run `phx-live-dev-server`, and every busy route (read the PR's run, or NO VERDICT)
+// applies exactly as it does to another session's check. Account: docs/agents-worktree-and-machine-limits.md, "phx-live".
+export const PHX_LIVE_RUN_ID = "phx-live-dev-server";
+export const PHX_LIVE_SCOPE = "phx-preview-3100.scope";
+
 export function buildBusyProbeScript(remoteRoot) {
   const runs = runPaths(remoteRoot, "x").runsDir;
   return [
@@ -75,6 +84,7 @@ export function buildBusyProbeScript(remoteRoot) {
     "      ;;",
     "  esac",
     "done",
+    "if systemctl is-active --quiet " + PHX_LIVE_SCOPE + " 2>/dev/null; then echo \"RUN " + PHX_LIVE_RUN_ID + " 0\"; fi",
     "echo PROBE_OK",
   ].join("\n") + "\n";
 }

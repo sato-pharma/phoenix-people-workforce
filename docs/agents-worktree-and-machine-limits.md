@@ -1220,6 +1220,98 @@ The box is 4 vCPU / 7.7 GB, idle ~97% of the day, loopback-bound behind `ufw` wi
 holding 13 Supabase/auth/Maps keys and never `SUPABASE_DB_URL`, the mailbox password, Resend,
 Telegram or OpenAI.
 
+## phx-live — the owner's dev server on the box, live edits, PRODUCTION data
+
+**What it is for** (owner, 2026-10-12): the old `pnpm run dev` in the main folder — edit, see it
+live before the merge, and use `/admin/dev-preview` (Dev Preview — Real Data) to open the system as
+any real person — but with the server on the Hetzner box, because the local one costs ~4–6 GB and
+stalled the laptop. `phx-preview` stays as it is: pushed branches only, staging data.
+
+**How it runs.** `phx-live` in his PowerShell (`~/.claude/scripts/phx-live.ps1`; `-Folder`,
+`-DevAuth`, `-Resync`, `-Stop`, `-InstallEnv`) opens `http://localhost:3000`.
+
+- `phx-live-sync.mjs` watches the folder and sends each saved file over ssh as `phxlive`, whose
+  forced command is `/opt/phx-live/live-receiver.mjs`. The receiver refuses any path outside the
+  checkout, and anything under `.git/`, `node_modules/`, `.next/` or named `.env*`. The sync
+  reconciles against a hash manifest every 60 s and does a full resync when `HEAD` moves.
+- The browser reaches the server through an ssh tunnel as `phxtunnel` (`permitopen="127.0.0.1:3100"`,
+  no shell). The `Host` header is `localhost`, so `/admin/dev-preview`'s loopback gate passes.
+- The server is `next dev` in `phx-preview-3100.scope` as `phxlive` (no sudo), capped at
+  `MemoryHigh=5G MemoryMax=5632M MemorySwapMax=2G`. `/home/phx/live-ctl.sh` controls it (`prepare`,
+  `serve`, `stop`, `status`, `install-env`, `install-env-staging`). The base checkout comes from the
+  read-only mirror.
+- `PHX_LIVE=1` puts the red **PRODUCTION DATA — emails & notifications NOT sent** strip on every page
+  (`src/components/layout/phx-live-banner.tsx`). Production and staging never set it, which
+  `tests/phx-live-banner.test.ts` pins.
+
+**The drawbacks, and how each one is handled.**
+
+| # | Drawback | Handling |
+|---|---|---|
+| 1 | Unmerged code makes **real writes to production**, and production has no PITR (7 daily backups). | The same exposure as the old local `pnpm run dev`, not a new one. The red strip is on every page. No `SUPABASE_DB_URL` is on the box, so it can run no migrations and no raw SQL. |
+| 2 | A notification or email started from phx-live is **lost for good**: the `notification_deliveries` row is marked `skipped`, which burns its idempotency key, so neither the production drain nor a re-run sends it. | No email, OneSignal or Telegram keys, plus `PHOENIX_EMAIL_FORCE_TESTING=true`. The strip says so. **Rule: actions that notify people (approve, publish, nudge) are done on the real site, never from phx-live.** |
+| 3 | `/api/dev-auth` gives **Super Admin with no login** to any loopback request, so any process on the box would become Super Admin on production. That includes branch code as `phxci` or `phxpreview`, and the runner as `phx`. | `phx-live-firewall.service` runs `/opt/phx-live/firewall.sh`: an iptables and ip6tables `OUTPUT -o lo --dport 3100` chain that RETURNs only for uids `phxtunnel` and `phxlive` and REJECTs everyone else. |
+| 4 | The **service-role key** sits on the box. A compromised box means the whole database. | The env is an allowlist, mode 600, owned by `phxlive` (no sudo). `ufw` opens SSH only. The only code that runs is his own files. If compromise is suspected, rotate the production secret key in Supabase, then update it in Railway, the GitHub secrets and the laptop `.env.local` copies. |
+| 5 | The GitHub runner runs as `phx`, which has sudo. With `CI_SELF_HOSTED` on, PR code could read the env. | `phx-live` refuses to start unless `gh variable get CI_SELF_HOSTED` is `off`. Do not switch it on while the production env is on the box, unless the runner first moves to a user with no sudo. |
+| 6 | Production's `PHOENIX_AUTH_SECRET` on the box would let anyone forge sessions on the real site. | The box gets its own random secret from `openssl rand`. The cost: a password-reset code made from phx-live does not work on production, so **do not do password resets from phx-live**. |
+| 7 | The box has 7.7 GB. phx-live (≤5.5 GB) plus a preview (≤4 GB) plus a remote-check build (~7.4 GB) means an OOM. | Every scope is capped. `remote-check`'s busy probe counts `phx-preview-3100.scope` as a run (`PHX_LIVE_RUN_ID`, pinned in `tests/remote-check.test.ts` 7b), so no build starts beside it. If the server is killed, the laptop side restarts it. |
+| 8 | No internet, or the box is down, means no dev server at all. | Fallback: `node scripts/dev-server.mjs --port 3000` locally, as before (heavy, but it works). |
+| 9 | Sync drift: `fs.watch` can miss events (a git checkout, a mass rename). | The 60 s manifest reconcile, a full resync on a `HEAD` change, and `-Resync` by hand. |
+| 10 | It serves one folder at a time. | `-Folder` switches it. The start line says which folder it is syncing. |
+| 11 | A lockfile change runs `pnpm install` on the box, which takes 1–2 minutes. | The window says "installing", and HMR resumes after. |
+| 12 | Errors raised in phx-live land in production `app_error_events`. | The same as before. `APP_ENV=development` keeps them separable in the Error Monitor. |
+| 13 | Dev-preview drops the real session (by design, `app/api/dev-auth/preview/route.ts`) and writes an audit row to production. | By design, as before. Log in again after a preview. |
+| 14 | With `-DevAuth` on, any request to the port can become any role. | It is off by default. The port is firewalled (#3). The window says so when it is on. |
+| 15 | A page's first compile is slow (30–60 s on the laptop). | Measured on the box 2026-10-12: `/api/healthz` answers **6 s** after `serve`, a cold `/login` through the tunnel is **1.2 s** and a warm one **0.22 s**, because `.next` survives a restart. `dev-preview` also has a replay guard for this. |
+
+**The env.** `phx-live -InstallEnv` reads his `.env.local` and sends it on stdin to
+`live-ctl.sh install-env`. That keeps only the Supabase URL, the anon, publishable and service-role
+keys, the project id and ref, the Maps keys and the Google Calendar keys. It adds `APP_ENV=development`,
+`PHOENIX_APP_URL=http://localhost:3000`, `PHOENIX_EMAIL_FORCE_TESTING=true`,
+`PHOENIX_ENABLE_DEV_AUTH_HEADERS=false`, a random `PHOENIX_AUTH_SECRET` and `PHX_LIVE=1`, and prints
+key NAMES only. Never on the box: `SUPABASE_DB_URL`, Resend, `EMAIL_NOTIFICATIONS_ENABLED`, Telegram,
+OneSignal, OpenAI, the mailbox, iReports360, cron-job, Cloudflare, Action1 or the Sentry auth token.
+`install-env-staging` builds the same file from the box's staging preview env, for testing.
+
+**Idle stop.** `/home/phx/preview-idle-reaper.sh` maps port 3100 to `/home/phx/live.log`, and stops
+phx-live like any preview: after 60 minutes with no request and no connection. It writes
+`/home/phx/preview-state/3100.stopped`, and the laptop side then does not restart it.
+
+### Installed and proven on the box, 2026-10-12 (owner: "install phx-live on the Hetzner box")
+
+The box-side scripts are kept on the laptop at `~/.claude/scripts/phx-live-box/`; `install.sh` there
+is idempotent and is what created all of this. Measured the same evening, on staging keys:
+
+- **The port is closed to everyone else.** `curl 127.0.0.1:3100/api/healthz` answers **200** as
+  `phxlive` and as `phxtunnel`, and **000** as `phxci`, `phxpreview`, `phx` and `root`.
+- **The receiver refuses every way out of the checkout** — `../escape.txt`, `.git/hooks/pre-commit`,
+  `.env.local`, `node_modules/x.js` and `/etc/passwd` all come back `refused`. `ssh phxlive … id`
+  prints nothing (the forced command runs instead) and `ssh phxtunnel … id` answers "This account is
+  currently not available".
+- **The env is only the allowlist**: 15 keys, zero matches for Resend, Telegram, OneSignal, OpenAI,
+  `SUPABASE_DB_URL`, `EMAIL_NOTIFICATIONS_ENABLED`, the mailbox, iReports360, cron-job, Cloudflare,
+  Action1 or the Sentry token. The `PHOENIX_AUTH_SECRET` hashes differently from the preview env's.
+- **`/admin/dev-preview` answers 200** through the tunnel with dev-auth headers, and renders "Dev
+  Preview — Real Data"; the same request with `Host: phoenix-hr.satopharma.com` is redirected (307),
+  so the loopback gate is what opens it.
+- **A saved edit reaches the box in well under a second** (1,455 ms end to end, including the ssh
+  round trip of the check itself), and reverting it propagates the same way.
+- **remote-check refuses to run beside it**: the probe, run as `phxci`, prints
+  `RUN phx-live-dev-server 0` + `PROBE_OK`, and `decideBusyAction` returns poll → refuse, where an
+  idle box returns run.
+- **The cost.** Box: 1,440 MB resident, 2,484 MB peak under browsing, against the 5.5 GB cap, with
+  5.7 GB still available. Laptop: **62 MB** (the sync) + **13 MB** (the tunnel) — against ~4,100 MB
+  for the local dev server it replaces.
+
+🔴 **A FINDING THAT ALSO HIT phx-preview: 15 of that day's mirror objects were group `phx`, not
+`phxpreview`, so a clone from `/srv/phx-preview-mirror.git` died with "unable to open loose object …
+Permission denied".** `objects/<xx>` directories git had created without the setgid bit gave their
+new objects the creator's primary group, and neither `phxpreview` nor `phxlive` could read them — so
+a **phx-preview of a fresh commit would have failed the same way**. Fixed on the box (`chgrp -R
+phxpreview`, `chmod 2750` on every directory), and `live-ctl.sh prepare` re-applies it each time.
+`preview-scope.sh` itself was NOT changed: it is shared with phx-preview, and that edit is the
+owner's call.
+
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08
 
 AGENTS.md loads on every request and again after every compaction, so on 2026-10-08 these lines were shortened to their rule. Nothing was dropped: each block below is the wording as it stood, word for word, and the rule it carries is still in AGENTS.md. Search here for the evidence, the owner's words and the measurements behind a rule.
