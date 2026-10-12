@@ -29,7 +29,6 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
-  canDecideListRequest,
   canOverrideDecision,
   canReviewTerritory,
   isLocationBlind,
@@ -43,7 +42,7 @@ import { offPlanLocationFlag } from "@/lib/phoenix-crm/server/blind-payloads";
 import { loadDayStartsBySeat } from "@/lib/phoenix-crm/server/day-start";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { doubleVisitPlanReach, type DoubleVisitPlanReach } from "@/lib/phoenix-crm/server/double-visit-plans";
-import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
+import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, requestRights, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
 import { loadMovedFromDays } from "@/lib/phoenix-crm/server/offplan-day";
 import {
@@ -417,7 +416,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
         // The step it is ON decides who may press the button (2026-09-29): a grade change and the
         // first step of a drop, an add or a bring-back are the territory's reviewer's; the second step
         // is the SFE Manager's. Everyone else in scope reads it and no more.
-        canDecide: canDecideListRequest(viewer, seat, isTest, request.stage),
+        // A request SFE returned for a comment is with the rep: nobody decides it, and the bulk drop skips it.
+        ...requestRights(viewer, seat, isTest, request),
         canOverride: canOverrideDecision(viewer, isTest),
       };
     })

@@ -59,12 +59,19 @@ import {
 } from "@/lib/phoenix-crm/entry-rules";
 import {
   archiveReasonLabel,
+  canReturnForComment,
   firstRequestStage,
   isRequestStage,
+  isWithRep,
   listSectionOf,
+  RETURN_NOTE_MAX,
+  RETURN_NOTE_REQUIRED,
+  RETURN_REPLY_REQUIRED,
   requestKindLabel,
   requestStageLabel,
   setsAdmissionGrades,
+  stageAfterReply,
+  WITH_REP_LABEL,
   type ListSection,
 } from "@/lib/phoenix-crm/list-request-rules";
 import { planWeekdays, type PlanWeekday } from "@/lib/phoenix-crm/plan-pattern";
@@ -497,6 +504,25 @@ export type ListRequest = {
   managerDecision: { byName: string; at: string; note: string | null } | null;
   /** The viewer decides the step this request is on (the caller sets it; the mapper cannot know). */
   canDecide: boolean;
+  /**
+   * Which customer it is about — the same for two requests on one customer, so the bulk drop can tell a
+   * repeat ask (the database closes it itself once the first is approved). Never printed.
+   */
+  customerKey: string | null;
+  /**
+   * SFE sent it back to the rep to explain (owner, 2026-10-12). It is still pending, nobody can decide it
+   * as an approval until the rep answers, and `stage` then reads the step it returns to.
+   */
+  withRep: boolean;
+  /** What SFE asked, who asked it and when; kept after the rep answers. */
+  returnNote: string | null;
+  returnedByName: string | null;
+  returnedAt: string | null;
+  /** The rep's answer to the return, once given. */
+  repReply: string | null;
+  repliedAt: string | null;
+  /** The viewer may return it for a comment (the caller sets it, like `canDecide`). */
+  canReturn: boolean;
 };
 
 /**
@@ -1032,15 +1058,24 @@ function requestKindOf(value: unknown): PhoenixCrmRequestKind {
 
 /** The people a request row names, for one names read. */
 export function requestPeople(rows: ReadonlyArray<Row>): Array<string | null> {
-  return rows.flatMap((row) => [text(row.requested_by_hr_id), text(row.decided_by_hr_id), text(row.manager_decided_by_hr_id)]);
+  return rows.flatMap((row) => [
+    text(row.requested_by_hr_id),
+    text(row.decided_by_hr_id),
+    text(row.manager_decided_by_hr_id),
+    text(row.returned_by_hr_id),
+  ]);
 }
 
 export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): ListRequest {
   const dropReason = text(row.drop_reason);
   const kind = requestKindOf(row.kind);
   const status = String(row.status) as PhoenixCrmRequestStatus;
-  const stage = status === "pending" && isRequestStage(row.stage) ? row.stage : null;
+  // With the rep, the stored stage is 'rep'; the request's `stage` then reads the step it returns to, so
+  // the screens that group by step keep working, and `withRep` is what stops anyone approving it.
+  const withRep = status === "pending" && isWithRep(row.stage);
+  const stage = withRep ? stageAfterReply(kind) : status === "pending" && isRequestStage(row.stage) ? row.stage : null;
   const managerBy = text(row.manager_decided_by_hr_id);
+  const returnedBy = text(row.returned_by_hr_id);
   return {
     requestId: String(row.id),
     kind,
@@ -1066,7 +1101,7 @@ export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): Lis
     decisionNote: text(row.decision_note),
     kindLabel: requestKindLabel(kind),
     stage,
-    stageLabel: requestStageLabel(stage),
+    stageLabel: withRep ? WITH_REP_LABEL : requestStageLabel(stage),
     approvedGrade: parseGrade(row.approved_grade),
     potentialGrade: parsePotentialGrade(row.potential_grade),
     managerDecision:
@@ -1074,13 +1109,46 @@ export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): Lis
         ? { byName: nameOf(names, managerBy), at: String(row.manager_decided_at), note: text(row.manager_note) }
         : null,
     canDecide: false,
+    customerKey: text(row.customer_id) ?? (text(row.reference_contact_crm_id) ? `reference:${text(row.seat_id)}:${text(row.reference_contact_crm_id)}` : null),
+    withRep,
+    returnNote: text(row.return_note),
+    returnedByName: returnedBy ? nameOf(names, returnedBy) : null,
+    returnedAt: text(row.returned_at),
+    repReply: text(row.rep_reply),
+    repliedAt: text(row.replied_at),
+    canReturn: false,
   };
+}
+
+/**
+ * What the viewer may do with a request on this seat: decide it, or return it for a comment. One place,
+ * so the List and the Team tab can never disagree. A request with the rep reads `canDecide: false`, so
+ * no Approve or Refuse is drawn on it and the bulk drop cannot pick it; the database refuses an approval
+ * of it too (`request_with_rep`). The Administrator's decline does not depend on this and still works.
+ */
+export function requestRights(
+  viewer: PhoenixCrmViewer,
+  seat: OrgSeat,
+  isTest: boolean,
+  request: Pick<ListRequest, "kind" | "status" | "stage" | "withRep">,
+): { canDecide: boolean; canReturn: boolean } {
+  const pending = request.status === "pending";
+  const canDecide = pending && !request.withRep && canDecideListRequest(viewer, seat, isTest, request.stage);
+  const canReturn = canReturnForComment({
+    kind: request.kind,
+    status: request.status,
+    stage: request.stage,
+    withRep: request.withRep,
+    canDecide,
+    hasReviewer: territoryReviewer(viewer.org, seat.seatId) !== null,
+  });
+  return { canDecide, canReturn };
 }
 
 const REQUEST_COLUMNS =
   "id, seat_id, kind, status, stage, customer_id, reference_contact_crm_id, customer_name, list_type, current_grade, proposed_grade, " +
   "approved_grade, potential_grade, drop_reason, note, requested_by_hr_id, requested_at, manager_decided_by_hr_id, manager_decided_at, " +
-  "manager_note, decided_by_hr_id, decided_at, decision_note, is_test";
+  "manager_note, decided_by_hr_id, decided_at, decision_note, is_test, return_note, returned_by_hr_id, returned_at, rep_reply, replied_at";
 
 /** Waiting requests, and the ones decided lately, for some territories. */
 export async function loadRequestRows(seatIds: string[], isTest: boolean, options: { pendingOnly?: boolean } = {}): Promise<Row[]> {
@@ -1201,7 +1269,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   ]);
   const requests = requestRows.map((row) => {
     const request = mapRequestRow(row, names);
-    return { ...request, canDecide: request.status === "pending" && canDecideListRequest(viewer, seat, isTest, request.stage) };
+    return { ...request, ...requestRights(viewer, seat, isTest, request) };
   });
   const pendingByCustomer = new Map<string, Partial<Record<PhoenixCrmRequestKind, ListRequest>>>();
   const pendingDropByContact = new Map<number, ListRequest>();
@@ -2533,6 +2601,104 @@ export async function withdrawListRequest(viewer: PhoenixCrmViewer, raw: unknown
 }
 
 /**
+ * SFE sends the request SFE holds back to the rep for a comment (owner, 2026-10-12). It is not a
+ * decision: the request stays pending, with the rep, and returns to SFE the moment he answers. The note is
+ * required, and only the step SFE holds can be returned — the district manager's own step never is.
+ */
+export async function returnListRequestForComment(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ requestId: string; stage: "rep" }> {
+  const body = record(raw);
+  if (!isUuid(body.requestId)) throw validationError("Choose the request to return.");
+  const note = cleanText(body.note, RETURN_NOTE_MAX);
+  if (!note) throw validationError(RETURN_NOTE_REQUIRED);
+
+  const requestId = String(body.requestId).toLowerCase();
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_list_requests")
+    .select("id, seat_id, is_test, kind, status, stage, customer_id")
+    .eq("id", requestId)
+    .maybeSingle();
+  throwIfError(error);
+  const request = data as Row | null;
+  if (!request) throw notFoundError("This request is no longer there. Reload the page.");
+  const seat = viewer.org.seats.get(String(request.seat_id));
+  if (!seat) throw notFoundError("This territory is no longer in the organogram. Reload the page.");
+  const isTest = request.is_test === true;
+  const kind = requestKindOf(request.kind);
+  if (request.status !== "pending") throw validationError("This request has already been decided. Reload the page.");
+  if (isWithRep(request.stage)) throw validationError("This request has already been returned to the rep.");
+  const stage = isRequestStage(request.stage) ? request.stage : null;
+  // The Administrator only declines (owner, 2026-10-08); returning is a step in SFE's hands.
+  assertListRequestApprover(viewer, seat, isTest, stage);
+  const allowed = canReturnForComment({
+    kind,
+    status: "pending",
+    stage,
+    withRep: false,
+    canDecide: true,
+    hasReviewer: territoryReviewer(viewer.org, seat.seatId) !== null,
+  });
+  if (!allowed) throw validationError("Only the step SFE holds can be returned for a comment.");
+
+  const result = await callPhoenixCrm<Row>("phoenix_crm_return_request", {
+    p: { request_id: requestId, actor_hr_id: viewer.hrId, is_test: isTest, note, stage },
+  });
+  const requesterHrId = text(result.requested_by_hr_id);
+  if (requesterHrId) {
+    await notifyPhoenixCrm(
+      {
+        kind: "request_returned",
+        seat,
+        requestId,
+        requestKind: kind,
+        returnerHrId: viewer.hrId,
+        requesterHrId,
+        customerName: String(result.customer_name),
+        note,
+        returnedAt: text(result.returned_at) ?? new Date().toISOString(),
+      },
+      isTest,
+    );
+  }
+  return { requestId, stage: "rep" };
+}
+
+/** The rep's comment on a request SFE returned. It goes straight back to SFE, at the step it left. */
+export async function answerReturnedRequest(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ requestId: string; stage: PhoenixCrmRequestStage | null }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  if (!isUuid(body.requestId)) throw validationError("Choose the request to answer.");
+  const reply = cleanText(body.reply, RETURN_NOTE_MAX);
+  if (!reply) throw validationError(RETURN_REPLY_REQUIRED);
+  const result = await callPhoenixCrm<Row>("phoenix_crm_answer_request", {
+    p: { seat_id: seat.seatId, actor_hr_id: viewer.hrId, is_test: isTest, request_id: String(body.requestId).toLowerCase(), reply },
+  });
+  const returnerHrId = text(result.returned_by_hr_id);
+  if (returnerHrId) {
+    await notifyPhoenixCrm(
+      {
+        kind: "request_answered",
+        seat,
+        requestId: String(result.request_id),
+        requestKind: requestKindOf(result.kind),
+        requesterHrId: text(result.requested_by_hr_id) ?? viewer.hrId,
+        returnerHrId,
+        customerName: String(result.customer_name),
+        reply,
+        answeredAt: text(result.replied_at) ?? new Date().toISOString(),
+      },
+      isTest,
+    );
+  }
+  return { requestId: String(result.request_id), stage: isRequestStage(result.stage) ? result.stage : null };
+}
+
+/**
  * A decision on a list request. Refusing needs a note for the rep.
  *
  * A grade change is the district manager's alone. A drop, an add or a bring-back takes two steps — the
@@ -2564,7 +2730,15 @@ export async function decideListRequest(
   const seat = viewer.org.seats.get(String(request.seat_id));
   if (!seat) throw notFoundError("This territory is no longer in the organogram. Reload the page.");
   const isTest = request.is_test === true;
-  const rowStage = isRequestStage(request.stage) ? request.stage : null;
+  const kind = requestKindOf(request.kind);
+  // A request SFE returned for a comment is still pending but is NOT at a step anybody approves. Who may
+  // refuse it is the holder of the step it returns to (`stageAfterReply`), and it cannot be approved at
+  // all until the rep has answered (owner, 2026-10-12).
+  const withRep = isWithRep(request.stage);
+  if (withRep && decision === "approve") {
+    throw validationError("This request is waiting for the rep's comment. It can be approved once the rep has answered.");
+  }
+  const rowStage = isRequestStage(request.stage) ? request.stage : withRep ? stageAfterReply(kind) : null;
   // The Administrator declines at whichever step it waits at; he never approves (owner, 2026-10-08).
   if (canOverrideDecision(viewer, isTest)) {
     if (decision !== "refuse") throw validationError("The Administrator can only decline a request.");
@@ -2572,7 +2746,6 @@ export async function decideListRequest(
     assertListRequestApprover(viewer, seat, isTest, rowStage);
   }
 
-  const kind = requestKindOf(request.kind);
   const approvedGrade = kind === "add" ? parseGrade(body.approvedGrade) : null;
   const potentialGrade = kind === "add" ? parsePotentialGrade(body.potentialGrade) : null;
   // Whoever takes the GRADING step of an add must set the potential — the district manager, or SFE on a
@@ -2582,8 +2755,9 @@ export async function decideListRequest(
   if (decision === "approve" && grading && !potentialGrade) {
     throw validationError("Choose the customer's potential (AA to BC) before approving.");
   }
-  // The step the phone saw, when it names one; otherwise the row's own — both guard the same race.
-  const stage = isRequestStage(body.stage) ? body.stage : rowStage;
+  // The step the phone saw, when it names one; otherwise the row's own — both guard the same race. A
+  // request with the rep is at the stored stage 'rep', whatever step the card named.
+  const stage = withRep ? "rep" : isRequestStage(body.stage) ? body.stage : rowStage;
   // SFE's step admits him to the list. While his place is still with the Super Admin it waits: only the
   // Super Admin approves or rejects a place the Google check could not confirm (owner, 2026-10-03).
   const customerId = text(request.customer_id);

@@ -34,6 +34,7 @@ import {
   type WaitingApproval,
 } from "@/lib/phoenix-crm/approval-nudge-rules";
 import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
+import { isWithRep } from "@/lib/phoenix-crm/list-request-rules";
 import { seatIdIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
@@ -115,6 +116,8 @@ async function loadWaitingApprovals(raisedBefore: string, cairoToday: string): P
     const seatId = textOrNull(row.seat_id);
     const raisedAt = textOrNull(row.requested_at);
     if (!seatId || !raisedAt) continue;
+    // Returned to the rep for a comment: it waits for HIM, not for a manager, so nobody is nudged for it.
+    if (isWithRep(row.stage)) continue;
     const stage = listRequestStage(row.stage);
     items.push({ kind: "list_request", seatId, stage, waitingSince: waitingSinceOf(stage, raisedAt, textOrNull(row.manager_decided_at)) });
   }

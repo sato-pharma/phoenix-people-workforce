@@ -126,7 +126,7 @@ export function runPhoenixCrmBulkDropTests(): void {
     const team = source("src/components/phoenix-crm/team-tab.tsx");
     assert.match(team, /const droppable = bulkDropTargets\(requests\);/, "the tab ticks only what the rule allows");
     assert.match(team, /const chosen = pruneSelection\(selected, requests\);/, "and acts on the selection after pruning it");
-    assert.match(team, /for \(const request of batch\) \{\s*try \{\s*const result = await crmPost<\{ final: boolean \}>\("\/api\/phoenix-crm\/list\/requests\/decide", bulkDropDecisionBody\(request\)/, "one decision per request through the one decide route, in a loop that awaits each");
+    assert.match(team, /for \(const request of batch\) \{[^]*?try \{\s*const result = await crmPost<\{ final: boolean \}>\("\/api\/phoenix-crm\/list\/requests\/decide", bulkDropDecisionBody\(request\)/, "one decision per request through the one decide route, in a loop that awaits each");
     assert.doesNotMatch(team, /Promise\.all\(batch|Promise\.all\(chosen/, "never all at once");
     assert.match(team, /Select all \$\{countText\(droppable\.length\)\} drop requests/, "a select-all above the cards");
     assert.match(team, /confirming \? \(/, "behind a confirm");
