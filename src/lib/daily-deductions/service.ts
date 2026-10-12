@@ -161,6 +161,10 @@ export function mapDailyLineRow(row: Record<string, unknown>): DailyDeductionsLi
     reason: (row.reason as string | null) ?? null,
     hrNote: String(row.hr_note ?? ""),
     createdAt: String(row.created_at),
+    releasedAt: String(row.released_at ?? row.created_at),
+    releasedBy: (row.released_by as string | null) ?? null,
+    rangeStart: (row.range_start as string | null) ?? null,
+    rangeEnd: (row.range_end as string | null) ?? null,
   };
 }
 
