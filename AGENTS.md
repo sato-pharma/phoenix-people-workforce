@@ -369,11 +369,14 @@ deploy gate and is not reclaimable, and the Actions runs API silently truncates 
 **CI is the gate. Do not run a local full validation.**
 
 `check:harden` and the `ask-before-validation` hook are retired — do not reintroduce them or a
-replacement. 🔴 **No step stands in front of the push: commit, push, open the PR, and its checks are
-the verdict** (owner, 2026-10-08). `node scripts/remote-check.mjs <check>` is optional — once, with
-`run_in_background: true`, acting on the notification, never a poll loop or a foreground run
-(bash-guard C14, C15); `.claude/hooks/push-typecheck-guard.mjs` only reads a recorded verdict for the
-exact sha (`docs/testing.md`, "Before every push"). The two **required** checks are `validate` (the
+replacement. 🔴 **One step stands in front of one push: a push that ADDS a test file runs
+`node scripts/remote-check.mjs test` FIRST and pushes on its `PASS — <sha9>`** (owner, 2026-10-12).
+Otherwise commit, push, open the PR, and its checks are the verdict (owner, 2026-10-08) —
+`remote-check` optional, once, with `run_in_background: true`, acting on the notification, never a
+poll loop or a foreground run (bash-guard C14, C15). NO VERDICT (exit 2-9) is never a pass: say so
+and push. `.claude/hooks/push-typecheck-guard.mjs` only reads a recorded verdict for the exact sha —
+it says that rule back when the push adds a test file and **never refuses over the suite** (owner,
+2026-10-04: "keep the pre-push test as a rule, no guard") (`docs/testing.md`, "Before every push"). The two **required** checks are `validate` (the
 `check:*` contracts, **the unit suite**, the build when the diff can change it) and `checks` (lint,
 `next typegen`, typecheck); either red blocks the merge. 🔴 **The unit suite runs inside `validate`
 since 2026-09-30 — a pinned test belongs there.** The retired check names stay retired: no job may

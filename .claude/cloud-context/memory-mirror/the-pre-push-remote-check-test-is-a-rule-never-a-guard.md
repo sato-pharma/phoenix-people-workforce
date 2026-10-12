@@ -1,50 +1,54 @@
 ---
 name: the-pre-push-remote-check-test-is-a-rule-never-a-guard
-description: "SUPERSEDED 2026-10-08 (owner, performance recovery) — the PR's own validate + checks are the verdict and `remote-check` is OPTIONAL, run once in the background, never before every push; the push guard only READS a recorded per-sha verdict and starts nothing. The 2026-10-04 \"no guard over the SUITE\" ruling still stands: never build a hook that refuses `git push` over the test run."
+description: "A push that ADDS a test file runs `node scripts/remote-check.mjs test` FIRST and goes out on its `PASS — <sha9>` (owner, 2026-10-12); every other push stays commit-push-PR with remote-check optional (2026-10-08). It is still a RULE, never a guard: the 2026-10-04 \"keep the pre-push test as a rule, no guard\" stands until he lifts it, so push-typecheck-guard.mjs prints the rule with the added files and ALLOWS the push, and refuses only on a recorded typecheck FAIL for that exact sha."
 metadata:
   node_type: memory
   type: feedback
   originSessionId: e39a8848-5059-4305-a1d5-83e9c4ec9c6f
-  modified: 2026-10-08T11:01:25.346Z
+  modified: 2026-10-12T15:41:28.084Z
 ---
 
-**🔴 SUPERSEDED IN PART, 2026-10-08 — read this first.** The owner approved the performance-recovery
-plan (branch `codex/perf-recovery`): the standing step below is RETIRED. Commit, push and open the
-PR; its `validate` + `checks` are the verdict. `remote-check` is optional — run it once with
-`run_in_background: true` and act on the notification (exit 0 PASS, 1 FAIL, 2-9 NO VERDICT), never
-in a poll loop (bash-guard C14). The push guard no longer runs anything: it reads
-`<git-common-dir>/phx-remote-check/<sha>.json` and refuses only on a recorded typecheck FAIL for that
-exact sha. What still stands from 2026-10-04: **no hook may refuse a push over the SUITE.** The
-account of the change: `docs/testing.md` "Before every push", `docs/ci-self-hosted-runner.md`.
+**🔴 NARROWED BACK IN, 2026-10-12 — read this first.** The owner typed **"make remote-check test
+mandatory before a push that adds a test file"** (18:12 Cairo), after being shown that day's CI
+reading. So: a push whose commits ADD a `tests/**.test.ts(x)` file runs `node
+scripts/remote-check.mjs test` first — once, with `run_in_background: true` — and goes out on its
+final `remote-check: PASS — <sha9>`. **Every other push is unchanged** by this: commit, push, open the
+PR, `remote-check` optional.
 
-`node scripts/remote-check.mjs test` before every push that opens or updates a PR is a standing step
-(`all` when the change adds a route, a file or a closed-union member), shipped in PR #5287 (merge
-`4b72d1d71`, live 2026-10-04 01:07 Cairo). Where it is written: `CLAUDE.md` and `AGENTS.md` §7 (the
-"no pre-push ritual" lines were edited to carve it out), `.claude/rules/engineering.md` Validation,
-the CI and PRs trap cluster, and `docs/testing.md` "Before every push".
+**What he was shown (12 Oct 2026, measured from the Actions API):** 26 of the 59 PR CI runs that
+finished went red — **44%**, against 19-23% on 7-11 Oct and 6% on the 6th — with 116 minutes of wall
+clock inside red runs and `main` itself green on all 34 push runs. Of the 25 reds enumerated, **13
+were repo-wide contract gates with nothing to do with the change being shipped**: 6 the
+AGENTS.md/rules hook-length gate, **4 the zero-tolerance `comment-strip-ratchet`, which fires on a
+newly added test file that hand-rolls comment stripping**, 2 the API reverse-guard backlog, 1 the
+access registry. Four branches ate 16 of the 25; one went red seven times, a different gate each
+round, because the PR run was the first thing that ever looked.
 
-**Why:** the friction notes of 2026-09-17..10-03 showed 8 red-CI sessions from a stale or broken test
-or guard against 3 from a type error. On 2026-10-04 the owner was offered a hard guard (a hook that
-refuses `git push` unless a green run exists for that sha) and answered **"keep the pre-push test as
-a rule, no guard."** My reason for recommending a rule over a guard: a guard would also block the scheduled fold and
-every session whenever the box is unreachable, and `remote-check` has no way to say "box down" other
-than a failure.
+**🔴 IT IS STILL A RULE, NOT A GUARD, AND THAT HALF DID NOT CHANGE.** On 2026-10-04 he was offered a
+hook that REFUSES `git push` unless a green suite exists for that sha and answered **"keep the
+pre-push test as a rule, no guard."** That ruling stands until he lifts it in his own words: never
+build, propose or "just suggest" one, in a `Next step:` line or anywhere else. What
+`.claude/hooks/push-typecheck-guard.mjs` does instead, shipped 2026-10-12: when the pushed commits add
+a test file and hold no `test` PASS for that exact sha, it prints the rule, the files it saw and the
+command — and **allows** the push. It still refuses only on a recorded typecheck FAIL. Pinned by
+`tests/push-typecheck-guard.test.ts`, whose cases fail if the deny arm ever grows past the typecheck.
+Where the rule is written: `CLAUDE.md`, `AGENTS.md` §7, `.claude/rules/engineering.md` (Validation),
+the CI-and-PRs trap cluster, and `docs/testing.md` "Before every push".
 
-**It earned its keep on its first outing.** Later the same night, on `codex/app-password-capture`,
-`remote-check all` answered `FAIL — e38895cc7` with **`lint PASS` and `test PASS in 218s`** and two
-`TS2322`s: adding `describeAppPasswords` as a required member of `JoinerConsoleDriver` broke the
-hand-rolled driver literals in `tests/new-hire-mailbox-adopt.test.ts` and
-`tests/new-hire-mailbox-runner.test.ts`. The local suite was GREEN over the same code, which is
-[[a-green-test-run-carries-no-type-signal-at-all]] — so the step caught, before the push, exactly
-the red CI round it exists to prevent. Note which half fired: the TEST run passed, and the
-**typecheck** is what failed, so the separate push guard would have caught this one too.
+**The 2026-10-08 half that still governs every other push** (owner, performance recovery): commit,
+push and open the PR; its `validate` + `checks` are the verdict. Measured from 1,230 transcripts, the
+2026-10-04 before-every-push step cost 6.5 session-hours a day plus 17.6 hours of foreground poll
+loops on 4-8 Oct, because one 7.7 GB box served ~9 sessions one run at a time. Exit 0 PASS, 1 FAIL,
+2-9 NO VERDICT — and a NO VERDICT is never a pass: say so and push, never wait on the box.
 
-**How to apply:** run the step yourself and push only on a final `remote-check: PASS — <sha>` line,
-read from the output file (the background notification's exit code is not the verdict — see
-[[remote-check-background-exit-code-is-not-the-check-verdict]]). Never propose, build or "just
-suggest" a push guard for the TEST run, in a `Next step:` line or anywhere else; the ruling stands
-until he lifts it in his own words. **Scope, so it is not over-read:** the typecheck-only hook
-`.claude/hooks/push-typecheck-guard.mjs` (PR #5288, merged the same night at his own request, "add a
-remote typecheck before every push") is a different thing — it refuses a push only on a FAILED
-typecheck verdict, allows when the box gives none, and does not run the suite, so `remote-check test`
-stays a manual step beside it. If the box does not answer, say so and push; never wait on it.
+**Why the step earned its place on 2026-10-04, kept for the evidence.** On
+`codex/app-password-capture`, `remote-check all` answered `FAIL — e38895cc7` with **`lint PASS` and
+`test PASS in 218s`** and two `TS2322`s: adding `describeAppPasswords` as a required member of
+`JoinerConsoleDriver` broke the hand-rolled driver literals in `tests/new-hire-mailbox-adopt.test.ts`
+and `tests/new-hire-mailbox-runner.test.ts`. The local suite was GREEN over the same code, which is
+[[a-green-test-run-carries-no-type-signal-at-all]].
+
+**How to apply:** run it yourself and push only on a final `remote-check: PASS — <sha>` line read
+from the output file — the background notification's exit code is not the verdict
+([[remote-check-background-exit-code-is-not-the-check-verdict]]). A foreground run is refused by
+bash-guard C15, a poll loop by C14, a sleep on the task's output file by C16.
