@@ -1,11 +1,11 @@
 ---
 name: cannot-remove-the-worktree-you-are-running-in
-description: "git worktree remove on your OWN worktree half-succeeds: registry entry and every file go, but the directory itself survives as a zero-file husk because the harness pins the session cwd back to it on every tool call"
+description: "git worktree remove on your OWN worktree half-succeeds: the registry entry goes (exit 255, Permission denied) but what stays on disk varies - an empty husk on 12 Aug 2026, the WHOLE 12,039-file payload on 13 Oct 2026 - because the harness pins the session cwd back to the folder on every tool call"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 02c71e47-935f-4697-b5b8-8eabc82249b3
-  modified: 2026-08-12T14:22:25.855Z
+  modified: 2026-10-12T22:39:30.174Z
 ---
 
 Hit live 2026-08-12 cleaning up `.claude/worktrees/ecstatic-mclaren-31e9fe` from the session that
@@ -70,3 +70,22 @@ a claim, not proof, and it is the one thing this repository's rules ask you hard
 worktree, package-manager commands resolve upward unpredictably, and
 [[pnpm-run-in-worktree-tries-to-purge-junctioned-node-modules]] is what that costs. Run
 `repo:doctor` from the primary checkout in a different session.
+
+**Measured again 13 Oct 2026 (Cairo 01:37), retiring `.claude/worktrees/eager-northcutt-ed9091` from
+inside it, on his word.** Same exit 255 and the registry entry went, but the files did NOT: all 12,039
+entries (11,166 tracked files, the 43 documents among them, plus 15 untracked env and settings copies,
+every one identical to the primary's) were still on disk, and the folder's `.git` file now pointed at a
+deleted admin directory. So the leftover is a full unregistered copy, not an empty husk, and
+`repo:doctor --fix` (zero-file husks only) will not touch it. The order that worked up to that point:
+gates (PR by number merged, 64 of 64 files in the squash commit, remote branch gone, no holder, no
+phx-live sync), `git update-ref refs/deleted-branches/<date>-<name> <tip>`, `cmd /c rmdir` the
+`node_modules` junction, `git -C <primary> worktree remove --force`, then `git -C <primary> branch -D`.
+The 43 tracked documents are why the folder was left for a session that is not running inside it: the
+delete guard wants his yes for protected types, and git holds every one.
+
+**Measured 13 Oct 2026 (Cairo about 02:00), the sweep from INSIDE the same session.** After the payload
+was gone, `node scripts/repo-doctor.mjs --fix --no-auth` listed the empty folder as a proven husk but
+aborted ("9 Claude Code sessions are running"); on his word `--fix --force --no-auth` got further and
+then failed `EPERM, Permission denied` on the folder itself and printed `Removed 0 husk(s)`. So the
+last empty folder cannot be cleared from the session pinned inside it, with or without `--force`:
+it waits until that session is archived, then one `--fix --force` from another session.

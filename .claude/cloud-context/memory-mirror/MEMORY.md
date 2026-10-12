@@ -29,10 +29,28 @@
 
 
 ## Inbox — new notes land here
-- [HR premium identity](hr-premium-identity.md) - the owner's template for every NORMAL Sato document (12 Oct 2026), saved as the skill `hr-premium-identity`. Government forms stay as issued; frozen designs need his word first.
+- [HR premium identity](hr-premium-identity.md) - worn ONLY by the papers he ticked change on 13 Oct 2026 (the rest print as before, `PREMIUM_DRESS`); skill `hr-premium-identity`. Government forms stay as issued.
 
 - [a `<rev>:<dot-path>` reads as ABSENT on main](a-rev-colon-dot-path-reads-as-absent-on-main.md) - MSYS mangles the colon; ask with `git ls-tree <rev> <path>`.
+
+- 🔴 [production's signature is his ORIGINAL SCAN](the-approved-signature-master-is-the-svg-in-downloads.md) - he revoked the rebuilt one 12 Oct 2026; never put redrawn signature artwork there again.
+
+- 🔴 [a page redirect can answer 200 with a meta-refresh](a-page-redirect-answers-200-with-a-meta-refresh.md) - a status-only role sweep reads that denial as access granted; read the refresh target and a page marker too.
+
+- [a rescue branch's real size is measured AFTER merging main in](a-rescue-branchs-real-size-is-measured-after-merging-main-in.md) - 49 files/4,959 insertions became 12/332, and the remainder was still the discarded architecture.
+
+- 🔴 [a worktree can be held by his phx-live sync](a-worktree-can-be-held-by-his-phx-live-sync.md) - check the `--folder` match AND `live-ctl.sh status` before retiring one; a missing `session.lock` in an `_wt-*` folder never proves the session left.
+
+- [a UTF-8 em dash breaks a PowerShell 5.1 script](a-utf8-em-dash-breaks-a-powershell-5-1-script.md) - a BOM-less `.ps1` is read as ANSI, so one em dash is a ParserError; keep scripts ASCII-only.
 
 
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
+
+- 🔴 [the Ibn Sina LACTO MISR export is a SECOND supplier feed in the IS-S template](the-ibn-sina-lacto-misr-export-is-a-second-supplier-feed-in-the-is-s-template.md) - never upload it under `IS-S`: the next Sato week then de-cumulates against a sheet with no Sato products and double-counts the month.
+
+- 🔴 [a governorate's city is ONE brick in ONE area](qena-city-is-qena-2-on-every-line.md) - مدينة قنا is one brick in Qena 2 like مدينة سوهاج in Sohag 1; Qena 1 is exactly nine bricks with no city brick, and the fold is by hand because no merge path exists.
+
+- 🔴 [a brick move leaves its rollup files pending with nothing draining them](a-brick-move-leaves-its-rollup-files-pending-with-nothing-draining-them.md) - only an open Database Mapping page drains the queue; two moves sat a full day, so every Qena figure on screen was pre-move.
+
+- [a bash `GROUPS=( … )` array is silently ignored](assigning-to-groups-in-bash-is-silently-ignored.md) - it is bash's own array of the user's group ids, so the sweep looped once over `197609` and every hit read 000; rename it `PAGE_GROUPS`.
