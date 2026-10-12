@@ -41,12 +41,34 @@ export const NO_SHUTTER_FIX: ShutterFix = Object.freeze({
 /**
  * How long the shutter waits for its own fix before giving up.
  *
- * Short on purpose (see above). The browser is also asked to accept a cached position no older
- * than this, so an indoor handset that already holds a recent fix answers instantly instead of
- * burning the whole window on a fresh satellite lock — and a cached fix from within the last few
- * seconds is still a genuinely independent reading of where the camera is now.
+ * Short on purpose (see above): the worst case is one null, and a null is honest.
  */
 export const SHUTTER_FIX_TIMEOUT_MS = 8000;
+
+/**
+ * 🔴 ZERO, AND IT MUST STAY ZERO: THIS READING IS ONLY WORTH TAKING IF IT IS A SECOND READING.
+ *
+ * Until 2026-10-12 this was `SHUTTER_FIX_TIMEOUT_MS`, on the reasoning that "a cached fix from
+ * within the last few seconds is still a genuinely independent reading of where the camera is
+ * now". It is not. The Capture-location pin is taken moments earlier with `maximumAge: 0`
+ * (src/components/phoenix-crm/capture-location.tsx), the browser caches that result as the last
+ * known position, and `getCurrentPosition` with an 8-second grace then handed the SAME position
+ * straight back — so the shutter's "own" reading was a copy of the pin, down to the 13-decimal
+ * accuracy figure.
+ *
+ * MEASURED ON PRODUCTION, the day the comparison first had enough rows to speak: of 141 places
+ * whose two readings were compared, 127 carried `photo_pin_identical` — bit-for-bit the same
+ * reading — and 119 of those 127 had their two timestamps EIGHT SECONDS OR LESS apart, exactly
+ * this window. 105 of the 127 reported an accuracy better than 100 m, so it was not coarse-fix
+ * handsets: it was this option. The photo-versus-pin detector, built on 2026-10-08 to catch a
+ * place whose two readings disagree, was comparing one reading with itself on 89% of places.
+ *
+ * It is the same defect #4781 removed one layer up — defaulting the photo fix to the pin when the
+ * shutter read nothing — surviving in the browser's cache instead of in our own code. A fresh read
+ * that times out resolves to {@link NO_SHUTTER_FIX}, and the caller treats that as "not measured"
+ * rather than as corroboration, which is the outcome this file's header asks for.
+ */
+export const SHUTTER_FIX_MAX_AGE_MS = 0;
 
 export function readShutterFix(): Promise<ShutterFix> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -78,7 +100,7 @@ export function readShutterFix(): Promise<ShutterFix> {
       },
       {
         enableHighAccuracy: true,
-        maximumAge: SHUTTER_FIX_TIMEOUT_MS,
+        maximumAge: SHUTTER_FIX_MAX_AGE_MS,
         timeout: SHUTTER_FIX_TIMEOUT_MS,
       },
     );
