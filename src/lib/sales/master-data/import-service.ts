@@ -56,6 +56,12 @@ const SYSTEM_DISTRIBUTORS = [
   { distributor_code: "RM-T", distributor_name: "Ramco Tender", normalized_distributor_name: "ramco tender" },
   { distributor_code: "SF-T", distributor_name: "Sofico Tender", normalized_distributor_name: "sofico tender" },
   { distributor_code: "EG-HOS", distributor_name: "EGD Hospital", normalized_distributor_name: "egd hospital" },
+  // "IS-L" — Ibn Sina Lacto, the third Ibn Sina feed (owner's ruling 2026-10-13). Ibn Sina exports one
+  // workbook per SUPPLIER, so LACTO MISR EG arrives as its own channel. Unlike IS and IS-S, which the
+  // owner's distributor-master file carries, IS-L exists only in code and in its seed migration
+  // (20261013012846_sos_ibn_sina_lacto_channel_seed.sql) — so without this line the next master import
+  // plus a data reset would drop it out of the Upload Sales dropdown.
+  { distributor_code: "IS-L", distributor_name: "Ibn Sina-Lacto", normalized_distributor_name: "ibn sina-lacto" },
 ] as const;
 
 // Re-ensure the code-defined system channels exist + are active. Non-fatal: a failure here must never

@@ -50,6 +50,12 @@ const WEEKLY_SHEET_MATCHERS: Readonly<Record<string, Partial<Record<WeeklyContra
   "IS-S": {
     combined: { name: "SalesAndStockReport2_DataHub", includes: "DataHub", firstSheetFallback: true },
   },
+  // Ibn Sina Lacto is the same Ibn Sina export for a different supplier — same sheet name, so the
+  // same rule, first-sheet fallback included (measured on the real
+  // Weekly_Sales_And_Stock_For_LACTO_MISR_EG20261011120032.xlsx: one sheet, named exactly).
+  "IS-L": {
+    combined: { name: "SalesAndStockReport2_DataHub", includes: "DataHub", firstSheetFallback: true },
+  },
   IS: {
     combined: { name: "Sheet2", includes: "Sheet2", firstSheetFallback: true },
   },

@@ -477,6 +477,32 @@ const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
   },
 };
 
+// Ibn Sina "Lacto" supplier feed — its own distributor (code IS-L), by the owner's ruling of
+// 2026-10-13: Ibn Sina exports one workbook PER SUPPLIER, so LACTO MISR EG (supplier 111399, the four
+// Lacto SKUs) arrives separately from the Sato (PAS) one and must not share IS-S's code. Same coded
+// format as IS and IS-S, so the template mirrors them; "Quantity" is paid units only, "Total
+// Quantity" (paid+free) is never used, per the system-wide bonus-neglect policy.
+const IBN_SINA_LACTO_ISL_TEMPLATE: DistributorSalesTemplateDef = {
+  customerFields: { address: ["Address_En", "Address_Ar"], code: ["Client Code"], name: ["Client Name"] },
+  discountField: "Discount%",
+  distributorCodes: ["IS-L"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
+    distributorCode: "Distrub ID",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
+    productCode: "Product ID",
+    qty: QTY_HEADER_ALIASES,
+    regionCode: "Region ID",
+  },
+  key: "ibn_sina_lacto_isl",
+  name: "Ibn Sina Lacto IS-L coded template",
+  optionalFields: {
+    brickName: ["Brick Name"],
+    productName: ["Item Name"],
+  },
+};
+
 // EGD Branch (code EG-BR) — a separate branch of EGD (parent code EG). Fully-coded EGD monthly sheet:
 // EGD's raw export with the Phoenix coded columns (Product ID / Brick ID / Area ID / Region ID /
 // Distrub ID, where Distrub ID = "EG-BR") appended. Date is "Invoice Date", qty the net "Qty",
@@ -637,6 +663,7 @@ const DISTRIBUTOR_SALES_TEMPLATES = [
   OVERSEAS_PS_TEMPLATE,
   IBN_SINA_IS_TEMPLATE,
   IBN_SINA_SATO_ISS_TEMPLATE,
+  IBN_SINA_LACTO_ISL_TEMPLATE,
   EGD_PH_TEMPLATE,
   MEC_MC_TEMPLATE,
   SOFICO_SF_TEMPLATE,
@@ -732,6 +759,17 @@ function templateForDistributor(distributorCode: string): DistributorSalesTempla
   // own template), so a coded sheet validates under any distributor. Raw/hand-coded sheets still match
   // their dedicated template first; raw (uncoded) sheets match none and stay blocked as before.
   return [...base, NORMALIZER_TEMPLATE];
+}
+
+/** The keys of the DEDICATED coded templates a distributor has — the unified Normalizer fallback,
+ *  which applies to every code, excluded. Empty means "no template of its own": a coded sheet for
+ *  that distributor still validates, but under the generic "Normalized coded sheet" rather than its
+ *  own named one. Read by tests/sales-profiles.test.ts to pin the three Ibn Sina feeds. */
+export function dedicatedCodedTemplateKeys(distributorCode: string): string[] {
+  const code = normalizeCode(distributorCode);
+  return DISTRIBUTOR_SALES_TEMPLATES.filter((template) =>
+    template.distributorCodes.map(normalizeCode).includes(code),
+  ).map((template) => template.key);
 }
 
 function aliasList(spec: FieldSpec | undefined): string[] {
