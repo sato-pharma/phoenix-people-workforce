@@ -57,6 +57,7 @@ const ALL_CATEGORIES: DeductionsCategory[] = [
   "crm",
   "crm_half_day",
   "no_records_activity",
+  "no_weekly_plan",
   "unpaid_vacation",
   "insufficient_balance_vacation",
   "loan",

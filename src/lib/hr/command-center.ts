@@ -727,6 +727,7 @@ export const DEDUCTION_CATEGORY_LABELS: Record<DeductionsCategory, string> = {
   insufficient_balance_vacation: "Insufficient balance",
   loan: "Loan",
   no_records_activity: "No records activity",
+  no_weekly_plan: "No weekly plan",
   other: "Other",
   unpaid_vacation: "Unpaid vacation",
 };

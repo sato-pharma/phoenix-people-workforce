@@ -15,6 +15,7 @@ import { dropDeductionExemptDrafts } from "@/lib/deductions/exempt-employees.ts"
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
 import { aggregateClippedLines, clipDraftToRange, type ClippedDraftLine } from "./compute.ts";
 import { collectNoRecordsDailyCandidates } from "./no-records.ts";
+import { collectNoWeeklyPlanCandidates } from "./no-weekly-plan.ts";
 import { monthsInRange, resolveDailyRange } from "./range.ts";
 import {
   dailyDeductionConnectorLabels,
@@ -35,6 +36,7 @@ const CONNECTOR_RUNNERS: Record<DailyDeductionConnector, ConnectorRunner> = {
   unpaid_vacation: (input) => collectUnpaidVacationCandidates(input),
   insufficient_balance_vacation: (input) => collectInsufficientBalanceVacationCandidates(input),
   no_records_activity: (input) => collectNoRecordsDailyCandidates(input),
+  no_weekly_plan: (input) => collectNoWeeklyPlanCandidates(input),
 };
 
 /**

@@ -212,6 +212,29 @@ export function submissionDeadlineForWeek(weekKey: string): Date {
 }
 
 /**
+ * The DEDUCTION grace deadline: 23:59 Africa/Cairo on the given Monday.
+ *
+ * Owner, 2026-10-12: "if not submitted a weekly plan till monday of this week a 1 day deduction".
+ * Deliberately LATER and more forgiving than `submissionDeadlineForWeek` above (Thursday 17:00 of
+ * the PRIOR week), which is the planning module's own on-time rule: being late there is a planning
+ * flag, while missing THIS one costs a day's pay. Two different questions, so two deadlines — never
+ * collapse them into one.
+ *
+ * 🔴 IT TAKES THE MONDAY DATE, NOT A WEEK KEY, ON PURPOSE. The caller already holds the Monday it
+ * is charging — src/lib/daily-deductions/no-weekly-plan.ts derives both the Monday and its week key
+ * from one calendar walk — so a week key here would mean deriving the date back out again. That
+ * round trip was a real defect and not merely redundant: `sundayFromWeekKey`, which the three
+ * deadline helpers above use, was a whole week out until #5768 made it a true inverse of
+ * `buildWeekKey`, and going through it would have charged the day on the Monday of the WRONG week.
+ *
+ * DST-safe through cairoWallClockUtcInstant.
+ */
+export function planDeductionGraceDeadlineForMonday(mondayIso: string): Date {
+  const [year, month, day] = mondayIso.split("-").map(Number);
+  return cairoWallClockUtcInstant(year, month - 1, day, 23, 59);
+}
+
+/**
  * Manager approval deadline: Saturday 12:00 noon Africa/Cairo of the prior week.
  * Saturday = Sunday of the plan's week - 1 day. Returns the correct UTC instant for
  * that Cairo wall-clock time (DST-safe via cairoWallClockUtcInstant).

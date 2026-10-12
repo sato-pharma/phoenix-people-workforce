@@ -136,8 +136,10 @@ export function payrollStepsForCategory(
         ? [{ stepKey: "p1_other_deductions", columns: ["p1od_loan_days", "p1od_loan_value"] }]
         : [{ stepKey: "p2_manual_deductions", columns: ["manual_other_deductions"] }];
     // no_records_activity is retired, but historical rows remain valid payroll history and its
-    // salary column was always the Other one.
+    // salary column was always the Other one. no_weekly_plan is daily-module-only and writes no
+    // candidate here, but its column is other_deductions too.
     case "no_records_activity":
+    case "no_weekly_plan":
     case "other":
       return settledInPart1
         ? [{ stepKey: "p1_other_deductions", columns: ["p1od_other_days", "p1od_other_value"] }]

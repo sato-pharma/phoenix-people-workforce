@@ -77,6 +77,7 @@ export async function runDeductionsModulePublishTests(): Promise<void> {
       "fingerprint",
       "crm_half_day",
       "no_records_activity",
+      "no_weekly_plan",
       "unpaid_vacation",
       "insufficient_balance_vacation",
       "loan",

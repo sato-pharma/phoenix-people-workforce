@@ -90,6 +90,18 @@ export const DEDUCTIONS_CATEGORY_CONFIG: Record<DeductionsCategory, DeductionsCa
     salaryRecordsColumn: "other_deductions",
     sortOrder: 8,
   },
+  // Owner, 2026-10-12: a head-office week with no weekly plan submitted by that Monday — one day,
+  // charged on the Monday. A DAILY-module connector only: it is deliberately absent from
+  // DEDUCTION_COLLECTORS, so the month scan never writes it, and nothing is charged until the Super
+  // Admin releases the line. Mirrors 20261012120000_deductions_no_weekly_plan_category.sql.
+  no_weekly_plan: {
+    category: "no_weekly_plan",
+    label: "No Weekly Plan",
+    detectionEngine: "weekly_plan_submission",
+    requiresApproval: true,
+    salaryRecordsColumn: "other_deductions",
+    sortOrder: 9,
+  },
 };
 
 export function deductionsCategoryLabel(category: DeductionsCategory): string {
