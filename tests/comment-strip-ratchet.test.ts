@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
+import {
+  NAIVE_STRIP_TEXT,
+  SANCTIONED_TEST_FILES,
+  lineWiseStripSites,
+} from "../.claude/hooks/lib/comment-strip-shapes.mjs";
 import { codeEatenByNaiveStrip, stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -110,83 +115,16 @@ import { codeEatenByNaiveStrip, stripComments } from "./support/comment-strip.ts
 const TESTS_DIR = "tests";
 
 /**
- * The two files allowed to contain the naive pattern: the sanctioned implementation that exists to
- * measure it, and this ratchet, which must describe what it forbids in order to detect it.
+ * The shapes, the sanctioned list and the line-wise detector now live in
+ * `.claude/hooks/lib/comment-strip-shapes.mjs`, imported above — ONE definition, read by this
+ * ratchet and by `.claude/hooks/comment-strip-guard.mjs`, which refuses the same shape at the
+ * Write or Edit that introduces it instead of here, five minutes into `validate`. Nothing is
+ * redefined in this file: `tests/comment-strip-guard.test.ts` fails if either side grows its own
+ * copy back, because a hook that refuses what CI accepts — or stays quiet about what CI rejects —
+ * is worse than no hook. The constants' own accounts (what each spelling cost, and the three
+ * negatives that must stay quiet) travel with them in that module.
  */
-const SANCTIONED = new Set(["tests/support/comment-strip.ts", "tests/comment-strip-ratchet.test.ts"]);
-
-/**
- * Matches the TEXT of a naive block-comment strip inside another file's source — `\/\*` and `\*\/`
- * close together, which covers the `[\s\S]*?` spelling and the `[^]*?` one alike. Deliberately
- * loose: a variant this misses is a variant that escapes the ratchet.
- */
-const NAIVE_STRIP_TEXT = /\\\/\\\*[\s\S]{0,24}?\\\*\\\//;
-
-/**
- * A comment-prefix test applied to one line, in either spelling.
- *
- * `startsWith("//")`, `startsWith("/*")`, `startsWith("{/*")`, `startsWith("*")` and the SQL
- * `startsWith("--")`, in any of three quote styles — and the same test written as a regex,
- * `/^\s*\/\//`, `/^\s*(\/\/|\*|\/\*)/`, `/^\s*--/`.
- *
- * The regex arm and the `--` arm were added on 2026-09-25, after the `startsWith`-only version
- * reported a clean tree while 26 sites in 24 files were still stripping comments by hand: 20 SQL
- * filters keyed on `--`, and six JavaScript ones written with a regex instead. A detector that
- * sees one spelling of a shape measures nothing but fashion.
- *
- * The quote must CLOSE immediately after the marker. `name.startsWith("--phx-")` in
- * `design-tokens-contract` is a CSS custom-property test, not a comment test, and flagging it
- * would be the first false alarm — which is how a ratchet gets switched off.
- */
-const COMMENT_PREFIX_TEST = new RegExp(
-  [
-    String.raw`startsWith\(\s*(["'\`])(?:\/\/|\/\*|\{\/\*|\*|--)\1\s*\)`,
-    String.raw`\^\\s\*\(?(?:\\\/\\\/|\\\*|--)`,
-  ].join("|"),
-);
-
-/**
- * The same test, for the `if (…) continue` shape, WITHOUT the bare `*` arm.
- *
- * That shape carries no `.split(`/`.join(` to corroborate it (see {@link SPLIT_LOOKBEHIND}), so it
- * is judged on the marker alone — and a bare `"*"` is a markdown bullet as often as a comment
- * continuation. The four unambiguous openers are enough: every real site found on 2026-09-25 used
- * one.
- */
-const COMMENT_SKIP_PREFIX = /startsWith\(\s*(["'`])(?:\/\/|\/\*|\{\/\*|--)\1\s*\)/;
-
-/**
- * `.replace(/^\s*\/\/.*$/gm, "")` — a whole-line comment strip with no `.filter` anywhere.
- *
- * The `$` is load-bearing. `marketing-config-grants` writes `.replace(/^\s*--/gm, "")` to strip the
- * MARKER and read the comment prose it then asserts on: that keeps the text, and folding it onto a
- * stripper would delete the very thing under test. Removing the marker is not removing the comment.
- */
-const WHOLE_LINE_COMMENT_REPLACE = new RegExp(
-  String.raw`\.replace\(\s*\/\^\\s\*\(?(?:\\\/\\\/|--)[^/\n]*\$\/gm`,
-);
-
-/** How far past `if (…)` the `continue` or `return` may sit. A brace and a newline, no more. */
-const SKIP_LOOKAHEAD = 40;
-
-/**
- * How far either side of the `.filter(` the line-splitting may sit.
- *
- * A `.filter(` testing a comment prefix is only a STRIPPER when the lines came from a split or go
- * back into a join — otherwise it is counting comment lines, or picking them out to assert on, both
- * of which are fine. Measured 2026-09-25 across the 47 real sites: all 47 have a `.split(` behind
- * them within 300 characters, and 45 a `.join(` ahead within 200. The two without a join keep the
- * array and scan it with `.some(...)` / `.find(...)`, which is the identical bug, so either signal
- * alone is enough.
- */
-const SPLIT_LOOKBEHIND = 300;
-const JOIN_LOOKAHEAD = 200;
-
-/**
- * A runaway paren scan would swallow the rest of the file and report whatever it found there, so
- * the argument matcher gives up past this. No real filter body comes close.
- */
-const MAX_ARGUMENT_CHARS = 2_000;
+const SANCTIONED = SANCTIONED_TEST_FILES;
 
 /** `tests/` holds 1,835 `.ts` files today. A sweep that has stopped reading them must fail. */
 const SWEPT_FILE_FLOOR = 1_200;
@@ -312,83 +250,6 @@ function resolveStrippedPairs(): Pair[] {
   }
 
   return [...pairs.values()];
-}
-
-/**
- * The balanced text of the call argument whose `(` sits at `open`, and the index just past its `)`.
- *
- * Paren counting, with no notion of string state — a `(` or `)` written inside a string literal in
- * the filter body would misread where the argument ends. All 47 real sites parse correctly today
- * and the fixtures below pin the shapes, so the cost of that simplification is bounded: a mis-parse
- * that ends early drops the site (the sweep goes quiet on one file, which the live control catches
- * if it ever becomes general), and {@link MAX_ARGUMENT_CHARS} stops one that ends late from reading
- * the rest of the file as a filter body.
- */
-function parenthesisedArgument(
-  source: string,
-  open: number,
-): { readonly text: string; readonly end: number } | null {
-  const limit = Math.min(source.length, open + MAX_ARGUMENT_CHARS);
-  let depth = 0;
-  for (let i = open; i < limit; i += 1) {
-    const c = source[i];
-    if (c === "(") depth += 1;
-    else if (c === ")") {
-      depth -= 1;
-      if (depth === 0) return { text: source.slice(open + 1, i), end: i + 1 };
-    }
-  }
-  return null;
-}
-
-/**
- * The 1-based line numbers in `source` where a hand-rolled LINE-WISE comment stripper sits.
- *
- * `.filter(…)` whose body tests a comment prefix on a line, with the line-splitting either behind
- * it or the re-join ahead of it. That is the whole shape, and it is reported wherever it appears:
- * unlike the naive block regex, a line filter is not safe on any file, because it tracks no block
- * state at all — so there is no file to resolve and no measurement that could make one instance
- * benign. The remedy is always the same one-line import of {@link stripComments}.
- */
-function lineWiseStripSites(source: string): number[] {
-  const lineOf = (index: number) => source.slice(0, index).split("\n").length;
-  const sites = new Set<number>();
-
-  // 1 · the filter shape: `.split(…).filter(<comment prefix test>).join(…)`, or `.some`/`.find`
-  //     over the array it keeps.
-  for (const hit of source.matchAll(/\.(?:filter|some|find)\s*\(/g)) {
-    const open = hit.index + hit[0].length - 1;
-    const argument = parenthesisedArgument(source, open);
-    if (!argument || !COMMENT_PREFIX_TEST.test(argument.text)) continue;
-
-    const behind = source.slice(Math.max(0, hit.index - SPLIT_LOOKBEHIND), hit.index);
-    const ahead = source.slice(argument.end, argument.end + JOIN_LOOKAHEAD);
-    if (!/\.split\s*\(/.test(behind) && !/\.join\s*\(/.test(ahead)) continue;
-
-    sites.add(lineOf(hit.index));
-  }
-
-  // 2 · the loop shape: `if (line.startsWith("//")) continue;` inside a walk over split lines. It
-  //     strips nothing and allocates nothing, which is exactly why a `.filter`-only detector cannot
-  //     see it — the comment is skipped rather than removed, with the identical blindness.
-  for (const hit of source.matchAll(/\bif\s*\(/g)) {
-    const open = hit.index + hit[0].length - 1;
-    const argument = parenthesisedArgument(source, open);
-    if (!argument || !COMMENT_SKIP_PREFIX.test(argument.text)) continue;
-
-    const ahead = source.slice(argument.end, argument.end + SKIP_LOOKAHEAD);
-    if (!/^\s*\{?\s*(?:continue|return)\b/.test(ahead)) continue;
-
-    sites.add(lineOf(hit.index));
-  }
-
-  // 3 · the replace shape: `.replace(/^\s*\/\/.*$/gm, "")`, which is the line filter written as one
-  //     regex. No split, no filter, no join — nothing for the first two passes to find.
-  for (const hit of source.matchAll(new RegExp(WHOLE_LINE_COMMENT_REPLACE.source, "g"))) {
-    sites.add(lineOf(hit.index));
-  }
-
-  return [...sites].sort((a, b) => a - b);
 }
 
 /**

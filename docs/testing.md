@@ -159,7 +159,12 @@ red runs. Grouped by what actually failed, **13 of the 25 were repo-wide contrac
 nothing to do with the change being shipped**: 6 the AGENTS.md/rules hook-length gate
 (`agents-long-hooks-cite-docs`, which read `56 of 540 hooks exceed 1200 bytes` mid-morning until
 #5779 at 14:49 Cairo), **4 the zero-tolerance `comment-strip-ratchet`, which fires on a newly added
-test file that strips comment lines by hand instead of importing `stripComments`**, 2 the API
+test file that strips comment lines by hand instead of importing `stripComments`** — those four are
+the ones that no longer reach CI at all: on his instruction the same evening
+(*"fix the comment-strip ratchet so new test files use the shared stripper"*),
+`.claude/hooks/comment-strip-guard.mjs` refuses the shape at the Write or Edit that introduces it and
+names the import, sharing ONE detector with the ratchet
+(`.claude/hooks/lib/comment-strip-shapes.mjs`; account: `docs/hook-dispatcher.md`) — 2 the API
 reverse-guard backlog and 1 the access registry. Seven were the PR's own new assertions, three the
 typecheck and two the same migration rule twice. Four branches ate 16 of the 25, one of them going
 red seven times on a different gate each round — serial discovery, because the PR run was the first
