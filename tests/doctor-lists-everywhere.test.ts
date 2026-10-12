@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { lastDefinerRaw, liveFunctionBody } from "./support/sql-definer.ts";
+import { liveFunctionBody } from "./support/sql-definer.ts";
 
 // A STARTED REP'S DOCTOR LIST IS HIS PHOENIX CRM LIST — in the same table, as a new dated period.
 //
@@ -246,7 +247,13 @@ export function runDoctorListsEverywhereTests() {
   // ── 14. THE THIRD SOURCE VALUE AND ITS IDENTITY RULE MOVE TOGETHER ────────────────────────────────
   // The identity CHECK ends in `else false`, so allowing 'phoenix_crm' in one constraint and not the
   // other would reject every insert the fifth pass makes — and the hourly refresh would fail in silence.
-  const migration = lastDefinerRaw(/create or replace function public\.crm_contact_master_refresh\(/, "crm_contact_master_refresh");
+  // PINNED TO THE MIGRATION THAT INTRODUCED THE FIFTH PASS, not to the newest definer of the refresh: the
+  // constraints, the ROLLBACK recipe and the no-PITR sentence live in that file, and a later migration that
+  // only recreates the function body (20261012184500, a doctor added twice) rightly carries none of them.
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20261007200000_started_reps_doctor_list_is_phoenix_own.sql", import.meta.url),
+    "utf8",
+  );
   assert.match(
     migration,
     /check \(source = any \(array\['ireports360'::text, 'phoenix'::text, 'phoenix_crm'::text\]\)\)/,

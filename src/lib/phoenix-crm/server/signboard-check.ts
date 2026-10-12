@@ -347,6 +347,9 @@ async function readSigns(input: {
       instructions: INSTRUCTIONS,
       // Several signs, each with a box, do not fit in the 400 one sign needed.
       maxOutputTokens: 1_400,
+      // `timeoutMs` is the time LEFT on this check's deadline. The SDK would retry a timeout with a fresh
+      // copy of it, and the rep stands at the door for the doubled wait (16.4 s against an 8 s budget).
+      maxRetries: 0,
       model: input.model,
       purpose: "phoenix-crm-signboard",
       reasoning: { effort: "low" },

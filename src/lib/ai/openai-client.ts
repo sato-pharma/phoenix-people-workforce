@@ -154,13 +154,17 @@ export function normalizeOpenAiError(error: unknown, context = "request") {
   return new PhoenixOpenAiError("failed", messageFrom(error), { requestId, status });
 }
 
-function openAiClient(apiKey = process.env.OPENAI_API_KEY?.trim(), timeoutMs = OPENAI_EMAIL_TIMEOUT_MS) {
+function openAiClient(
+  apiKey = process.env.OPENAI_API_KEY?.trim(),
+  timeoutMs = OPENAI_EMAIL_TIMEOUT_MS,
+  maxRetries = OPENAI_MAX_RETRIES,
+) {
   if (!apiKey) {
     throw new PhoenixOpenAiError("not_configured", "OPENAI_API_KEY is not configured.");
   }
   return new OpenAI({
     apiKey,
-    maxRetries: OPENAI_MAX_RETRIES,
+    maxRetries,
     timeout: timeoutMs,
   });
 }
@@ -196,6 +200,12 @@ export async function createOpenAiResponseText(params: {
    * previously declared but never actually wired into a client timeout anywhere).
    */
   timeoutMs?: number;
+  /**
+   * Overrides OPENAI_MAX_RETRIES for ONE call. The SDK retries a timed-out request with the same timeout,
+   * so a caller that budgets its own deadline (`timeoutMs` IS the budget) gets twice the budget unless it
+   * passes 0: the signboard read at the door budgeted 8 s and waited 16.4 s, five times in three days.
+   */
+  maxRetries?: number;
 }) {
   const model = params.model?.trim() || resolveOpenAiEmailModel();
   const component = params.component ?? "openai_client";
@@ -211,7 +221,7 @@ export async function createOpenAiResponseText(params: {
       store: false,
       text: params.text,
     } satisfies ResponseCreateInput;
-    const { data, request_id: requestId } = await openAiClient(undefined, params.timeoutMs).responses.create(request).withResponse();
+    const { data, request_id: requestId } = await openAiClient(undefined, params.timeoutMs, params.maxRetries).responses.create(request).withResponse();
 
     recordAiCall({
       component,
