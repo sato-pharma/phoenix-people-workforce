@@ -249,7 +249,7 @@ export const MODULES = [
     scope: "Location, behaviour and photo integrity, mock-location detection, the touch trail, refused readings and duplicate customers — the evidence a rep is never shown, and the admin boards that read it and who may open each.",
     globs: [
       "src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts",
-      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,touch-trail,touch-trail-reader}.ts",
+      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,silent-detectors,touch-trail,touch-trail-reader}.ts",
       "src/components/phoenix-crm/touch-trail-{board,collector}.tsx",
       "app/**/phoenix-crm/{integrity,duplicates,refused-readings}/**",
       "app/**/field-crm/touch-trail/**",

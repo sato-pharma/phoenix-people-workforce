@@ -322,6 +322,98 @@ on 2026-10-11 with pin-alone**. And `integrity-board.ts`'s header claimed to be 
 reader"* — three modules select from it (this file for the evidence, `server/behaviour.ts` and
 `rep-ranks/server/compute.ts` for `rep_hr_id` + `flags`).
 
+## 6 · The silent detectors — the four checks nobody was making (2026-10-12)
+
+Phase 3 of the second-pass audit. Three new `source` values and two new `subject_kind` values, one
+nightly pass (`server/silent-detectors.ts`, 21-day window), and **not one refusal added anywhere**.
+
+| Source | What it asks | Measured on production, 12 Oct 2026 |
+| --- | --- | --- |
+| `roster` | Was the rep in the field at all that day? | **22** visits by **3** reps on full-day away activities; **0** on full-day leave; **0** with an off-duty companion |
+| `cadence` | One customer called 3+ times inside a rolling 7 days | **14** customers |
+| `coverage` | An active place further from its own brick than any brick is wide (3 km) | **71** places |
+| `capture_trust` over `shared_place` | The venue's two independent fixes, compared | **24** active venues, all 24 with both fixes, worst gap **62 m**, none over 150 m |
+
+### Every flag it files is weak, and that is the design
+
+`visit_on_leave`, `visit_on_full_day_activity`, `companion_off_duty`, `customer_revisited_fast` and
+`place_brick_far` are **none of them in `PHOENIX_CRM_STRONG_INTEGRITY_FLAGS`**. Two independent gates
+sit between this pass and anything a rep can read: `countedIntegrityFlags`
+(`rep-ranks/field-quality.ts`) filters to the strong list, and the nightly ranks reader asks the
+table for `strong = true` as well. **So Phase 3 needed no who-moves list** — the condition the owner
+set on D3 (gap 10) does not arise, because no rep-visible number moves. A rep on a conference day
+very often was at a conference *and* at a doctor.
+
+### Full-day only — and that is what made the audit's own counts wrong
+
+The audit reported "1 visit inside approved leave" and 8 companion hits. Restricted to
+`day_part = 'full_day'`, **all nine disappear**: every one was a half-day leave, where a visit in the
+other half is exactly right. `v2_vacation_requests.day_part` is NOT NULL on production (514
+`full_day`, 85 `pm_only`, 56 `am_only`), and `phoenix_crm_day_activities.half_day` is a boolean, so
+both halves of the roster read narrow to the full day. 🔴 **The narrowing is in the QUERY, not in the
+rows** — `getLeaveDayMap` has a batched branch and an unbatched one, and the CRM sweep uses the
+batched one; a filter applied to only one of them reads as working.
+
+🔴 **And the money path is untouched.** `getApprovedLeaveDayMap` — absence counting and pay — still
+asks for every day part. `getFullDayApprovedLeaveMap` is the new, narrower caller, and the
+`dayParts` argument is optional for exactly that reason.
+
+### Gap 5 as the audit framed it is unbuildable
+
+It asked for the named companion's **own position** on the day. Of the 15 distinct companions named
+on production visits, **zero have ever saved a CRM visit themselves** — managers do not use the rep
+app, so there is no fix of theirs to compare. What is buildable, and is what shipped, is whether the
+companion was **off duty**: the same full-day leave and away-activity read, run over the companion's
+HR id. `companion_off_duty` says that and its label says that.
+
+### Gap 8 needed the CHECK widened, and reuses the detector that already exists
+
+`phoenix_crm_shared_places` reached no detector of any kind, while carrying the same two independent
+fixes an ordinary place does — the photo's shutter reading and the capture pin. So the **existing**
+capture-trust comparison is run over it, through one filer parameterised with `subjectKind`; nothing
+new was invented for venues. 🔴 **`CaptureFix` is `latitude` / `longitude` / `capturedAt: string | null`
+and every field is OPTIONAL** — a `fixOf` helper spelled `lat` / `lon` / `Date` type-checks perfectly
+and builds a fix with no coordinates, so every venue answers "unmeasured" while the pass looks like
+it worked. That is why the counter is named `venuesMeasured` and not `venuesFlagged`: the capture-trust
+filer is void by this module's own rule, so the pass cannot know how many venues it filed on.
+
+### `INTEGRITY_SUBJECT_KINDS` — a latent defect, not tidying
+
+Before Phase 3 the board coerced `subject_kind` two ways (`row.subject_kind === "place" ? "place" : "visit"`)
+and gathered visit ids with `subject_kind !== "place"`. A `customer` row would therefore have had its
+customer id looked up in `phoenix_crm_visits`, found nothing, and **printed on the owner's board as a
+visit**. One exported list now drives the type, the labels, the coercion and a POSITIVE
+`=== "visit"` test for the id gather, and the page prints the label at **both** its sites — the
+desktop row and the mobile card. An assertion written as a single `match` is satisfied by either one
+of those two, which is how a missing mobile label would pass; both are counted.
+
+### Only this table's CHECK is widened
+
+`phoenix_crm_photo_fingerprints` and `phoenix_crm_refused_readings` carry the same
+`('visit','place')` CHECK and are **left exactly as they are**: they never receive the new kinds, and
+a CHECK is the only record a column has of what may be in it. Widening one that nothing writes throws
+that record away for nothing. The settle test's migration pin had to move from `20261008023051` to
+`20261012210000` — a `drop` + `add` pair means only the newest migration describes the constraint, so
+repointing the pin is part of widening a CHECK, not an afterthought.
+
+### Two checks the audit asked for and this file refuses
+
+Both measured on production the same day, both recorded in `silent-detectors.ts` beside the refusal,
+so a later session does not re-chase them out of the workbook. A comment-stripped assertion in
+`tests/phoenix-crm-integrity-settle.test.ts` refuses a half-built one — read from the stripped source
+deliberately, so the explanation of the refusal cannot satisfy the check that the refusal holds.
+
+- **A shared phone number across customers.** Keyed on the last nine digits: 15 shared numbers over
+  88 customers, worst group 30 doctors on one number — and the groups plainly contain
+  مستشفي النفسيه والعصبيه and الوحده الصحيه بزناره, i.e. hospital and polyclinic switchboards, which
+  is the correct number for every doctor in the building. Only **one** of the 15 crosses a seat. It
+  would file 88 customers of noise to find nothing. The duplicate-**name** pairs the same sweep
+  surfaced belong to the duplicate customers board and the name fold, which already have them.
+- **A customer with no place to compare a visit against.** **10,397 of 11,560** live customers (90%)
+  have no active place, 286 of them visited across 26 reps. That is the ordinary state of a module
+  about 10% of the way through its validation drive — a coverage number for the validation board to
+  chase. Naming 286 rows as integrity cases would bury the 11 real ones.
+
 ## Where the code is
 
 | What | Where |
@@ -334,3 +426,9 @@ reader"* — three modules select from it (this file for the evidence, `server/b
 | The migration | `supabase/migrations/20261009190708_phoenix_crm_integrity_settlement.sql` |
 | The three readers that need only the yes/no | `server/integrity-board.ts` (the weekly scan), `src/lib/rep-ranks/server/compute.ts`, `server/behaviour.ts` |
 | Pinned by | `tests/phoenix-crm-integrity-settle.test.ts` |
+| The nightly silent pass (roster, cadence, coverage, shared venues) | `src/lib/phoenix-crm/server/silent-detectors.ts` |
+| Its four pure judgements and the five weak flags | `src/lib/phoenix-crm/location-integrity.ts` |
+| The four filers it writes through | `src/lib/phoenix-crm/server/location-integrity.ts` |
+| The full-day leave read | `getFullDayApprovedLeaveMap`, `src/lib/attendance/working-days.ts` |
+| The subject-kind list the board derives from | `INTEGRITY_SUBJECT_KINDS`, `server/integrity-board.ts` |
+| The two widened CHECKs | `supabase/migrations/20261012210000_phoenix_crm_silent_detectors.sql` |

@@ -10,6 +10,7 @@ import {
   canReadIntegrityBoard,
   canSettleIntegrityCases,
   integritySourceLabel,
+  integritySubjectKindLabel,
   loadIntegrityBoard,
   readsPositionCases,
   type BehaviourCase,
@@ -221,7 +222,7 @@ function CaseList({ canSettle, entries }: { canSettle: boolean; entries: Integri
                 <td className="px-5 py-4 text-sm text-slate-700">
                   <div className="font-semibold text-slate-900">{cairo(entry.capturedAt)}</div>
                   <div className="text-xs text-slate-500">
-                    {entry.subjectKind === "place" ? "Validating a place" : "A visit"} · {integritySourceLabel(entry.source).toLowerCase()}
+                    {integritySubjectKindLabel(entry.subjectKind)} · {integritySourceLabel(entry.source).toLowerCase()}
                   </div>
                 </td>
                 <td className="px-5 py-4 text-sm font-semibold text-slate-900">{entry.repName}</td>
@@ -250,7 +251,7 @@ function CaseList({ canSettle, entries }: { canSettle: boolean; entries: Integri
               <span className="text-xs text-slate-500">{cairo(entry.capturedAt)}</span>
             </div>
             <p className="mt-1 text-sm text-slate-700">
-              {entry.customerName} · {entry.subjectKind === "place" ? "validating a place" : "a visit"} · {integritySourceLabel(entry.source).toLowerCase()}
+              {entry.customerName} · {integritySubjectKindLabel(entry.subjectKind).toLowerCase()} · {integritySourceLabel(entry.source).toLowerCase()}
             </p>
             <div className="mt-3">
               <Reasons entry={entry} />

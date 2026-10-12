@@ -101,7 +101,46 @@ export type PhoenixCrmIntegrityFlag =
    * no person, which is exactly why an AM capture judged against its place name treats a sign naming
    * nobody as a MATCH. On a PM capture it is worth looking at and is never on its own an accusation.
    */
-  | "sign_no_name";
+  | "sign_no_name"
+  // ── What the roster, the calendar and the brick master already knew (2026-10-12) ─────────────
+  //
+  // The second-pass CRM audit found three checks nobody was making, and all three are answered from
+  // data Phoenix already holds — no new capture, no new field on any screen, nothing asked of a rep.
+  //
+  // 🔴 ALL FIVE ARE WEAK AND MUST STAY WEAK. None of them is evidence of anything on its own: a rep
+  // on a conference day very often WAS at a conference and at a doctor, a popular doctor really is
+  // seen three times in a week when a launch is on, and a place far from its brick is usually a
+  // brick master that has never been drawn for that governorate. They corroborate a position case;
+  // they do not open one. Adding any of them to PHOENIX_CRM_STRONG_INTEGRITY_FLAGS would move a
+  // number the rep can read, because that list is the one gate `countedIntegrityFlags` and the
+  // nightly ranks score share.
+  /** The rep had approved FULL-DAY leave on the day he saved this visit. */
+  | "visit_on_leave"
+  /**
+   * The day is recorded as a full day away from the field — a meeting, a conference, a health day,
+   * training or travel. `sales_day` and `admin_work` are NOT away: a sales day IS field work and
+   * admin work is routinely a half day at a desk and a half day on the road.
+   */
+  | "visit_on_full_day_activity"
+  /**
+   * The manager, senior or product manager NAMED on this visit was himself off duty that day.
+   *
+   * 🔴 THIS IS THE ROSTER HALF, AND IT IS THE ONLY HALF THERE IS. The audit asked for the companion's
+   * own POSITION on the day to be compared with the visit's — and that cannot be built: of the 15
+   * distinct companions named on production visits, ZERO have ever saved a CRM visit themselves
+   * (measured 2026-10-12), because managers do not save calls. There is no fix of theirs to compare
+   * with. What the roster can answer is whether the named person was on leave or away at all.
+   */
+  | "companion_off_duty"
+  /** One rep called the same customer three or more times inside a rolling seven days. */
+  | "customer_revisited_fast"
+  /**
+   * The place sits further from the brick it is filed under than BRICK_FAR_KM.
+   *
+   * Weak twice over: it is a finding about the DATA and not about a person. 71 active places on
+   * 12 Oct 2026, and the usual cause is a brick master with no polygon drawn anywhere near the town.
+   */
+  | "place_brick_far";
 
 export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
   "mock_provider",
@@ -140,7 +179,53 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   photo_pin_identical: "The photo and the pin are the same reading, to the bit",
   sign_other_name: "The signboard in the photo names somebody else",
   sign_no_name: "No name could be read on the signboard in the photo",
+  visit_on_leave: "The rep had approved full-day leave on this day",
+  visit_on_full_day_activity: "The day is recorded as a full day away from the field",
+  companion_off_duty: "The manager named on the visit was off duty that day",
+  customer_revisited_fast: "This customer was called three times inside a week",
+  place_brick_far: "The place sits far outside the brick it is filed under",
 };
+
+/**
+ * Which full-day activities mean the rep was AWAY from the field, for `visit_on_full_day_activity`.
+ *
+ * 🔴 `sales_day` AND `admin_work` ARE NOT HERE, AND THAT IS THE WHOLE POINT OF THE LIST. A sales day
+ * IS field work — flagging it would accuse every rep who records one — and admin work is routinely
+ * half a day at a desk and half a day on the road. Measured on production 2026-10-12: the five below
+ * account for 22 visits by 3 reps; adding those two would have swept in far more honest days than
+ * questionable ones.
+ *
+ * The keys are `PhoenixCrmDayActivity`'s own, and `tests/phoenix-crm-location-integrity.test.ts`
+ * refuses a key that is not one of them — a typo here is a silently dead branch.
+ */
+export const PHOENIX_CRM_AWAY_DAY_ACTIVITIES: readonly string[] = [
+  "meeting",
+  "conference",
+  "health_day",
+  "training",
+  "travel",
+];
+
+/**
+ * How many calls on one customer by one rep inside a rolling week is worth a look.
+ *
+ * Three, not two: a doctor seen twice in a week is ordinary — a morning clinic and an afternoon one,
+ * or a follow-up after a sample drop — and 14 customers reach three on production (measured
+ * 2026-10-12) against a far larger number that reach two. A weak flag that fires on a quarter of the
+ * customer base is a flag nobody reads.
+ */
+export const REVISIT_WINDOW_DAYS = 7;
+export const REVISIT_WINDOW_VISITS = 3;
+
+/**
+ * How far from its own brick a place has to sit before the row is worth looking at, in kilometres.
+ *
+ * 3 km is `BRICK_TRUST_KM`'s own neighbourhood: a place inside it was matched to the brick, so this
+ * flag is only ever raised on a place the brick lookup ALREADY recorded as `none_nearby` — the
+ * distance is read from the row, never recomputed, so this board and the brick report cannot print
+ * two different numbers for one place.
+ */
+export const BRICK_FAR_KM = 3;
 
 // ── Thresholds ──────────────────────────────────────────────────────────────────────────────────
 // Every one of these is pinned by tests/phoenix-crm-location-integrity.test.ts. Loosen one only with
@@ -550,4 +635,81 @@ export function judgeLaterSignboardReading(input: {
     words: laterReadingWords(input.stored.verdict, input.stored.reason),
     signText: input.stored.signText,
   };
+}
+
+// ── The three silent detectors (2026-10-12) — pure, and each the whole rule ─────────────────────
+//
+// 🔴 EVERY ONE OF THESE RETURNS FLAGS AND NOTHING ELSE. No refusal, no hold, no message, no number
+// a rep can read: the owner's standing ruling on this module is "flag it, never stop the rep", and
+// all five flags they can return are weak. They are here rather than in `server/silent-detectors.ts`
+// so the arithmetic can be tested without a database, exactly as `checkLocationIntegrity` is.
+
+/** One day's roster facts for the rep who saved a visit, and for whoever is named beside him. */
+export type RosterDayInput = {
+  /** True when the rep has approved leave covering the WHOLE day. A half day is not one. */
+  repOnFullDayLeave: boolean;
+  /** The full-day day-activity kinds recorded against the rep for that date. */
+  repFullDayActivities: readonly string[];
+  /** True when any companion named on the visit was on full-day leave or a full-day away activity. */
+  companionOffDuty: boolean;
+};
+
+/**
+ * What the roster says about the day a visit was saved on.
+ *
+ * 🔴 A HALF DAY IS NEVER A FINDING, AND THAT IS THE MEASUREMENT THAT SHAPED THIS. The audit reported
+ * "1 visit inside approved leave" and 8 companion hits; read with `day_part = 'full_day'` all nine
+ * vanish — every one was a half-day leave, and a rep with a morning excuse who calls a doctor in the
+ * afternoon has done nothing at all. `repOnFullDayLeave` is therefore the caller's promise that the
+ * whole day was covered, never "a leave row overlaps this date".
+ */
+export function judgeRosterDay(input: RosterDayInput): PhoenixCrmIntegrityFlag[] {
+  const flags: PhoenixCrmIntegrityFlag[] = [];
+  if (input.repOnFullDayLeave) flags.push("visit_on_leave");
+  if (input.repFullDayActivities.some((activity) => PHOENIX_CRM_AWAY_DAY_ACTIVITIES.includes(activity))) {
+    flags.push("visit_on_full_day_activity");
+  }
+  if (input.companionOffDuty) flags.push("companion_off_duty");
+  return flags;
+}
+
+/**
+ * Was this customer called too often in too few days by one rep?
+ *
+ * The dates are the visits' own business days, in any order; duplicates on one day count once,
+ * because two calls on one doctor in one day is the double-visit rule's question and not this one.
+ * A ROLLING window: the test is whether any REVISIT_WINDOW_DAYS-wide span holds
+ * REVISIT_WINDOW_VISITS of them, never whether a calendar week does — a Thursday-and-Sunday pair
+ * either side of a week boundary is the shape a calendar window misses.
+ */
+export function judgeRevisitCadence(businessDays: readonly string[]): PhoenixCrmIntegrityFlag[] {
+  const days = [...new Set(businessDays.filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)))].sort();
+  if (days.length < REVISIT_WINDOW_VISITS) return [];
+  for (let start = 0; start + REVISIT_WINDOW_VISITS - 1 < days.length; start += 1) {
+    const first = Date.parse(`${days[start]}T00:00:00Z`);
+    const last = Date.parse(`${days[start + REVISIT_WINDOW_VISITS - 1]}T00:00:00Z`);
+    if (!Number.isFinite(first) || !Number.isFinite(last)) continue;
+    // Inclusive: Sunday to the following Saturday is seven days apart by the calendar and is one
+    // week to a human, so `< REVISIT_WINDOW_DAYS` would miss exactly the span the rule names.
+    if ((last - first) / 86_400_000 <= REVISIT_WINDOW_DAYS - 1) return ["customer_revisited_fast"];
+  }
+  return [];
+}
+
+/**
+ * Is this place filed under a brick it is nowhere near?
+ *
+ * `brickDistanceKm` is read from the place row — `resolvePlaceLocation` wrote it when the place was
+ * saved or moved — and is null when nobody ever looked. 🔴 NULL IS UNKNOWN AND FILES NOTHING: a row
+ * written before the brick lookup existed has not been measured, and an unmeasured place is not a
+ * far one. `brickMatched` is the row's own `brick_lookup = 'matched'` answer, and a matched place is
+ * never flagged whatever the distance says — the lookup is the authority on its own verdict.
+ */
+export function judgePlaceBrickDistance(input: {
+  brickDistanceKm: number | null;
+  brickMatched: boolean;
+}): PhoenixCrmIntegrityFlag[] {
+  if (input.brickMatched) return [];
+  if (input.brickDistanceKm === null || !Number.isFinite(input.brickDistanceKm)) return [];
+  return input.brickDistanceKm > BRICK_FAR_KM ? ["place_brick_far"] : [];
 }
