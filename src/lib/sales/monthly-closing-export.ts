@@ -53,6 +53,7 @@ import {
   type SplitRegions,
 } from "@/lib/sales/store-sales-city-split";
 import type { MonthlySourceCoverage, SourceCoverageEntry } from "@/lib/sales/source-coverage";
+import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
 
 // Phoenix-branded Monthly Closing workbook. A hidden "Calc" sheet holds the pre-aggregated facts;
 // EVERY number in the report sheets is a live Excel formula (SUMIFS / COUNTIFS / division)
@@ -3925,6 +3926,10 @@ export async function buildMonthlyClosingWorkbook(
   // Last, now that every sheet exists: fill tab 1 with what this particular export contains.
   writeDashboardSheet(dashboard, workbook, matrix.line, matrix.period);
 
+  // Read-only for good: every tab, hidden ones included (owner, 2026-10-13).
+
+  lockExcelWorkbook(workbook);
+
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
@@ -3972,6 +3977,10 @@ export async function buildClosingDetailsWorkbook(details: ClosingDetailsResult)
       details.period,
     );
   }
+
+  // Read-only for good: every tab, hidden ones included (owner, 2026-10-13).
+
+  lockExcelWorkbook(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
@@ -4117,6 +4126,10 @@ export async function buildPortalClosingWorkbook(
   // Last, now that every sheet exists: fill tab 1 with what this export actually contains — same
   // order as buildMonthlyClosingWorkbook.
   writeDashboardSheet(dashboard, workbook, details.line, details.period);
+
+  // Read-only for good: every tab, hidden ones included (owner, 2026-10-13).
+
+  lockExcelWorkbook(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

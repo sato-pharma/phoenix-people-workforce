@@ -110,10 +110,10 @@ export const MODULES = [
     title: "Monthly Closing — the exports, the premium workbook and the Performance Review pack",
     scope: "The surfaces a closing is READ from rather than computed in: the premium executive workbook and the frozen old export, the Closing Matrix (No Office) tab, the Rankings tab, and the Performance Review pack — its series, its per-rep units-by-month block, its shared pipeline with the consolidated closing, and the total it is allowed to call national.",
     globs: [
-      "src/lib/sales/{closing-consolidated-premium-export,closing-export-filename,closing-export-payload,closing-matrix-without-office,closing-performance-review,closing-performance-review-access,closing-performance-review-export,closing-performance-review-regions,closing-review-sheets,monthly-closing-consolidated-export,monthly-closing-export,rankings,rankings-page,sales-workbook-kit}.ts",
+      "src/lib/sales/{closing-consolidated-premium-export,closing-export-filename,closing-export-payload,closing-matrix-without-office,closing-performance-review,closing-performance-review-access,closing-performance-review-export,closing-performance-review-regions,closing-review-sheets,closing-workbook-lock,monthly-closing-consolidated-export,monthly-closing-export,rankings,rankings-page,sales-workbook-kit}.ts",
       "src/components/sales/{closing-matrix-table,closing-performance-review-workspace}.tsx",
       "src/components/sales/rankings/**",
-      "tests/closing-{consolidated-export,engine-export,export-filename,export-matches-screen,export-organogram-region-labels,filtered-export-keeps-direct,matrix-no-office,performance-review,performance-review-export-gate,performance-review-series-reuse,total-sheet-matches-matrix}*",
+      "tests/closing-{consolidated-export,engine-export,export-filename,export-matches-screen,export-organogram-region-labels,filtered-export-keeps-direct,matrix-no-office,performance-review,performance-review-export-gate,performance-review-series-reuse,total-sheet-matches-matrix,workbook-lock}*",
       "tests/monthly-closing-export-*",
     ],
     keywords: ["closing export", "premium closing", "performance review", "rankings tab", "no office matrix", "consolidated closing", "national total", "filtered total", "workbook"],
