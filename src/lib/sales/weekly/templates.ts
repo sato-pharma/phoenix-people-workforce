@@ -34,6 +34,7 @@ export type WeeklyDistributorLayout = {
 const WEEKLY_DISTRIBUTOR_FALLBACK_NAMES: Record<string, string> = {
   IS: "Ibn Sina",
   "IS-S": "Ibn Sina Sato",
+  "IS-L": "Ibn Sina Lacto",
   PS: "Overseas",
   POS: "POS Purchasing Sales",
   EG: "EGD",
@@ -55,7 +56,7 @@ export function weeklyDistributorSplitsSalesStock(distributorCode: string): bool
 }
 
 // All weekly-enabled distributor codes (drives the branch-map admin dropdown).
-const ALL_WEEKLY_DISTRIBUTOR_CODES = ["IS-S", "IS", "PS", "POS", "EG", "RM"];
+const ALL_WEEKLY_DISTRIBUTOR_CODES = ["IS-S", "IS", "IS-L", "PS", "POS", "EG", "RM"];
 
 /** Distributors shown in the Branch Mapping admin tab dropdown. */
 export function weeklyBranchMapDistributors(): { code: string; name: string; splitsSalesStock: boolean }[] {
@@ -70,6 +71,7 @@ export function weeklyBranchMapDistributors(): { code: string; name: string; spl
 // distributor needs mapping, so this is an explicit list rather than auto-derived.
 const WEEKLY_MAPPING_DISTRIBUTOR_LIST: { code: string; name: string }[] = [
   { code: "IS-S", name: "Ibn Sina Sato" },
+  { code: "IS-L", name: "Ibn Sina Lacto" },
   { code: "RM", name: "Ramco" },
   { code: "PS", name: "POS" },
   { code: "POS", name: "POS Purchasing Sales" },

@@ -276,7 +276,9 @@ export function WeeklyUploadWorkspace({
   }
 
   const isPS = distributorCode === "PS";
-  const needsPeriodDate = distributorCode !== "IS-S";
+  // Both Ibn Sina supplier feeds (IS-S Sato, IS-L Lacto) carry the sheet's own Date in column 1, so
+  // the parser auto-detects the period and the picker must not be demanded of the operator.
+  const needsPeriodDate = distributorCode !== "IS-S" && distributorCode !== "IS-L";
   const filesReady = isPS ? Boolean(salesFile && stockFile) : Boolean(file);
   const canProceed = Boolean(distributorCode) && filesReady && (!needsPeriodDate || Boolean(periodDate));
   const busy = verifying || validating || uploadBusy;

@@ -74,6 +74,30 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     discountColumns: ["Discount%"],
     fingerprintColumns: ["Item Code", "Client Code"],
   },
+  // Ibn Sina "Lacto" supplier feed (code IS-L) — the third Ibn Sina channel, by the owner's ruling of
+  // 2026-10-13. Ibn Sina exports one workbook PER SUPPLIER, so LACTO MISR EG (supplier 111399, the
+  // four Lacto SKUs) arrives separately from the Sato (PAS) one. Byte-identical column set to IS-S,
+  // so this profile mirrors it exactly; the separate code is what keeps the two feeds' weeks from
+  // de-cumulating against each other (weekly/distributors.ts). No monthly Lacto sheet has arrived
+  // yet — this is the open lane for the first one, not a description of existing data.
+  {
+    distributorCode: "IS-L",
+    distributorName: "Ibn Sina-Lacto",
+    productCodeColumns: ["Item Code"],
+    productNameColumns: ["Item Name"],
+    productColumns: ["Item Code", "Item Name"],
+    qtyColumns: ["Quantity"],
+    valueColumns: ["Net"],
+    valueSource: "recompute",
+    dateColumns: ["Date"],
+    dateFormat: "day-first",
+    customerCodeColumns: ["Client Code"],
+    customerNameColumns: ["Client Name"],
+    customerAddressColumns: ["Address_En", "Address_Ar"],
+    territoryColumns: ["Brick Name"],
+    discountColumns: ["Discount%"],
+    fingerprintColumns: ["Item Code", "Client Code"],
+  },
   {
     distributorCode: "SF",
     distributorName: "sofico",

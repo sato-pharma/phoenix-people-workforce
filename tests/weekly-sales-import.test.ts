@@ -47,6 +47,7 @@ function references(overrides?: Partial<SalesReferenceData["products"][number]>[
       { code: "RM", name: "RAMCO" },
       { code: "IS", name: "Ibn Sina" },
       { code: "IS-S", name: "Ibn Sina Sato" },
+      { code: "IS-L", name: "Ibn Sina Lacto" },
       { code: "PS", name: "Overseas" },
     ],
     products,
@@ -272,6 +273,62 @@ async function issWorkbook(): Promise<ExcelJS.Buffer> {
     sheet.addRow(mkRow("ISS-SAG", "B01", "Cairo Branch", 30, 10)); // sale 10
     sheet.addRow(mkRow("ISS-SAG", "B01", "Cairo Branch", 0, -3)); // inline return 3
     sheet.addRow(new Array(10).fill("")); // footer / blank row → skipped
+  });
+}
+
+// ── IS-L (Ibn Sina Lacto) single sheet — the same export for supplier LACTO MISR EG ─────────────
+// Shaped on the real Weekly_Sales_And_Stock_For_LACTO_MISR_EG20261011120032.xlsx: 13 columns, title
+// row 1, header row 2, and — unlike the Sato export's blank footer — a TOTALS row whose figures sit
+// in the same quantity columns the data rows use. `driftFooter` moves the stated sales total off the
+// rows so the advisory path is exercised too.
+async function islWorkbook(opts?: { driftFooter?: boolean }): Promise<ExcelJS.Buffer> {
+  return bufferOf((wb) => {
+    const sheet = wb.addWorksheet("SalesAndStockReport2_DataHub");
+    sheet.addRow(["Weekly Sales And Stock For LACTO MISR EG Sales and Stock"]); // title row 1
+    sheet.addRow([
+      "Date",
+      "Supplier Code",
+      "Supplier Name",
+      "Item Code",
+      "Item name",
+      "Branch Code",
+      "Branch Name",
+      "Stock",
+      "Stock Value",
+      "Sales Quantity",
+      "Free Unit",
+      "Sales Value",
+      "Total Sales",
+    ]);
+    const d = new Date(Date.UTC(2026, 9, 11)); // 2026-10-11, the real export's single Date
+    const mkRow = (stock: number, stockValue: number, signedSales: number, salesValue: number) => {
+      const r = new Array(13).fill("");
+      r[0] = d;
+      r[1] = "111399";
+      r[2] = "LACTO MISR EG";
+      r[3] = "684795";
+      r[4] = "LACTO 1 ADVANCED 400 GM";
+      r[5] = "B01";
+      r[6] = "Cairo Branch";
+      r[7] = stock;
+      r[8] = stockValue;
+      r[9] = signedSales;
+      r[10] = 0; // Free Unit — never counted as a sale
+      r[11] = salesValue;
+      r[12] = signedSales; // "Total Sales" repeats the QUANTITY, not money
+      return r;
+    };
+    sheet.addRow(mkRow(30, 6277, 10, 2970)); // sale 10
+    sheet.addRow(mkRow(0, 0, -3, -891)); // inline return 3
+    // Footer: blank Date/Supplier/Item/Branch, totals in the value columns. Signed sales total = 7.
+    const footer = new Array(13).fill("");
+    footer[7] = 30; // Stock total
+    footer[8] = 6277; // Stock Value total (not read)
+    footer[9] = opts?.driftFooter ? 9 : 7; // Sales Quantity total
+    footer[10] = 0;
+    footer[11] = 2079; // Sales Value total (not read — weekly re-prices at factory price)
+    footer[12] = opts?.driftFooter ? 9 : 7;
+    sheet.addRow(footer);
   });
 }
 
@@ -707,6 +764,69 @@ export async function runWeeklySalesImportTests() {
       assert.equal(fact?.stockQty, 30, "IS-S stock captured");
       // Footer/blank row produced no extra fact row.
       assert.equal(iss.rows.length, 1, "IS-S footer row skipped (one fact row)");
+    }
+  }
+
+  // ════════════ IS-L (Ibn Sina Lacto) ════════════
+  // The third Ibn Sina feed (owner's ruling, 2026-10-13): one supplier workbook per feed, so IS-L
+  // shares adaptISS with IS-S and must behave identically — auto date from column 1, signed sales,
+  // footer skipped — while being its OWN distributor code so de-cumulation never mixes the cycles.
+  {
+    const branch = branchIndex({ branches: [{ key: "B01", fileType: "sales", region: "CA" }, { key: "B01", fileType: "stock", region: "CA" }] });
+    const aliases = aliasIndex("IS-L", { "684795": "SA001" });
+    const isl = await parseWeeklyWorkbookBuffer({
+      buffer: await islWorkbook(),
+      distributorCode: "IS-L",
+      distributorName: "Ibn Sina Lacto",
+      fileName: "Weekly_Sales_And_Stock_For_LACTO_MISR_EG.xlsx",
+      references: references(),
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+    });
+    assert.equal(isl.ok, true, "IS-L parses");
+    if (isl.ok) {
+      assert.equal(isl.result.status, "validated", "IS-L single auto date validates (no period picker)");
+      assert.equal(isl.result.weekStart, "2026-10-11", "IS-L single Date auto-used");
+      const fact = isl.rows.find((row) => row.productCode === "SA001");
+      assert.ok(fact, "IS-L fact present");
+      assert.equal(fact?.salesQty, 10, "IS-L gross = +10 line");
+      assert.equal(fact?.returnQty, 3, "IS-L inline negative -3 becomes a return");
+      assert.equal(fact?.netQty, 7, "IS-L net = 10 - 3");
+      // The sheet's own Sales Value (2,970 / -891) is never read — weekly re-prices at factory price.
+      assert.equal(fact?.salesValue, round2(7 * PRICES.SA001), "IS-L value = net * factory_price, not the sheet's money");
+      assert.equal(fact?.stockQty, 30, "IS-L stock captured");
+      assert.equal(isl.rows.length, 1, "IS-L totals footer row skipped (one fact row)");
+      // The footer states both totals, so the import is cross-checked rather than trusted.
+      const checks = isl.result.fileTotals?.checks ?? [];
+      assert.equal(isl.result.fileTotals?.absence, null, "IS-L declares its own totals, so no absence note");
+      assert.equal(checks.length, 2, "IS-L footer gives a sales-quantity and a stock check");
+      assert.ok(
+        checks.every((check) => check.status === "ok"),
+        "IS-L footer totals reconcile against the rows the import read",
+      );
+      assert.ok(
+        checks.every((check) => check.severity === "report"),
+        "a footer gap reports, never blocks — the footer is the distributor's own arithmetic",
+      );
+    }
+
+    // A footer that disagrees with its own rows advises, and still imports.
+    const drifted = await parseWeeklyWorkbookBuffer({
+      buffer: await islWorkbook({ driftFooter: true }),
+      distributorCode: "IS-L",
+      distributorName: "Ibn Sina Lacto",
+      fileName: "Weekly_Sales_And_Stock_For_LACTO_MISR_EG.xlsx",
+      references: references(),
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+    });
+    assert.equal(drifted.ok, true, "IS-L parses with a drifted footer");
+    if (drifted.ok) {
+      assert.equal(drifted.result.status, "validated", "a footer gap does not block the batch");
+      const sales = (drifted.result.fileTotals?.checks ?? []).find((check) => check.label.includes("Sales Quantity"));
+      assert.equal(sales?.status, "mismatch", "the stated sales total (9) is flagged against the rows (7)");
+      assert.equal(sales?.declared, 9, "the file's own figure is reported as stated");
+      assert.equal(sales?.parsed, 7, "against the signed total the import actually read");
     }
   }
 

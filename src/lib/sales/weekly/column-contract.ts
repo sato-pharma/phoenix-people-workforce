@@ -184,6 +184,37 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
       },
     ],
   },
+  // IS-L / Ibn Sina Lacto — the SAME Ibn Sina export for supplier LACTO MISR EG, so the same sheet
+  // and the same columns as IS-S, read by the same adaptISS. Verified column by column against the
+  // real Weekly_Sales_And_Stock_For_LACTO_MISR_EG20261011120032.xlsx (13 columns: Date, Supplier
+  // Code, Supplier Name, Item Code, Item name, Branch Code, Branch Name, Stock, Stock Value, Sales
+  // Quantity, Free Unit, Sales Value, Total Sales). Columns 9, 11, 12 and 13 are deliberately not
+  // pinned: Stock Value and Sales Value are the distributor's own money (93% of selling price for
+  // stock, selling price for sales) and weekly re-prices units at the master factory price instead,
+  // Free Unit is never counted as a sale, and "Total Sales" repeats Sales Quantity in UNITS — a
+  // money-sounding name over a unit figure, so pinning it would invite exactly the wrong read.
+  {
+    code: "IS-L",
+    name: "Ibn Sina Lacto",
+    splitFiles: false,
+    sheets: [
+      {
+        role: "combined",
+        ...weeklyContractSheetNames("IS-L", "combined"),
+        headerRowNumber: 2,
+        formField: "file",
+        fields: [
+          { field: "date", label: "Date", columnIndex: 1, expectedHeaderHint: "date (auto-detected — no period needed)", role: "context" },
+          { field: "itemCode", label: "Product code", columnIndex: 4, expectedHeaderHint: "item / product code", role: "key" },
+          { field: "itemName", label: "Product name", columnIndex: 5, expectedHeaderHint: "item / product name", role: "context" },
+          { field: "branchCode", label: "Branch code", columnIndex: 6, expectedHeaderHint: "branch code", role: "key" },
+          { field: "branchName", label: "Branch name", columnIndex: 7, expectedHeaderHint: "branch name", role: "context" },
+          { field: "stockQty", label: "Stock quantity", columnIndex: 8, expectedHeaderHint: "stock / balance quantity", role: "value" },
+          { field: "signedSales", label: "Sales quantity (signed)", columnIndex: 10, expectedHeaderHint: "sales quantity (negative = return)", role: "value" },
+        ],
+      },
+    ],
+  },
   // IS / Ibn Sina ISP — single sheet "Sheet2", header row 1 (parser.ts adaptIS ~:444-476)
   {
     code: "IS",

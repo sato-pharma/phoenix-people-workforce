@@ -676,15 +676,30 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
   return { observations, sheetDates, sheetName: names.join(" + ") || "RAMCO", blockingReasons: [], fileTotalChecks };
 }
 
-// IS-S (Ibn Sina Sato) — single sheet "SalesAndStockReport2_DataHub", title row 1, header row 2,
-// data row 3+. Single Date in col1. Sales Quantity (col10) is signed (negative = inline return).
+// IS-S (Ibn Sina Sato) and IS-L (Ibn Sina Lacto) — single sheet "SalesAndStockReport2_DataHub",
+// title row 1, header row 2, data row 3+. Single Date in col1. Sales Quantity (col10) is signed
+// (negative = inline return). ONE adapter, both codes: Ibn Sina exports this workbook per supplier,
+// so the shape is identical and only the distributor code differs (distributors.ts).
 function adaptISS(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
   const combinedC = contractSheet(ctx.contract, "combined");
-  const sheet = findSheet(workbook, "IS-S", "combined");
+  // The sheet rule is looked up by the CALLER's code, not a literal — IS-S and IS-L have the same
+  // rule today, and a literal would quietly read IS-S's rule if one of them ever moved.
+  const sheet = findSheet(workbook, ctx.distributorCode, "combined");
   const observations: WeeklyObservation[] = [];
   const sheetDates = new Set<string>();
-  if (!sheet) return { observations, sheetDates, sheetName: "Ibn Sina Sato", blockingReasons: [] };
+  const fileTotalChecks: WeeklyFileTotalCheck[] = [];
+  if (!sheet) return { observations, sheetDates, sheetName: "Ibn Sina", blockingReasons: [] };
+
+  // The footer row — blank Item Code AND blank Branch — carries the sheet's own grand totals in the
+  // very quantity columns the data rows use: Stock in col8, Sales Quantity in col10. The Sato export
+  // has closed with an all-blank row (nothing to check), while the LACTO MISR one states both
+  // (measured 2026-10-11: stock 27,815 and sales 7,583, each exact against the 177 data rows). So
+  // capture whatever the footer holds and cross-check only where a figure was actually declared.
+  let declaredStock: number | null = null;
+  let declaredSignedSales: number | null = null;
+  let parsedStock = 0;
+  let parsedSignedSales = 0;
 
   for (let r = dataStartRow(combinedC, 3); r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
@@ -692,12 +707,18 @@ function adaptISS(ctx: AdapterContext): AdapterResult {
     const itemName = cellText(at(row, colOf(combinedC, "itemName", 5)));
     const branchCode = cellText(at(row, colOf(combinedC, "branchCode", 6)));
     const branchName = cellText(at(row, colOf(combinedC, "branchName", 7)));
-    // Skip totals/footer row (blank Item Code + blank Branch).
-    if (!itemCode && !branchCode) continue;
-    const date = cellDateIso(at(row, colOf(combinedC, "date", 1)));
-    if (date) sheetDates.add(date);
     const stock = cellNumber(at(row, colOf(combinedC, "stockQty", 8)));
     const signedSales = cellNumber(at(row, colOf(combinedC, "signedSales", 10)));
+    // Totals/footer row — never a fact, but its figures are what the file says it contains.
+    if (!itemCode && !branchCode) {
+      if (stock !== 0) declaredStock = (declaredStock ?? 0) + stock;
+      if (signedSales !== 0) declaredSignedSales = (declaredSignedSales ?? 0) + signedSales;
+      continue;
+    }
+    const date = cellDateIso(at(row, colOf(combinedC, "date", 1)));
+    if (date) sheetDates.add(date);
+    parsedStock += stock;
+    parsedSignedSales += signedSales;
     pushSignedSales(observations, r, { itemCode, itemName, branchCode, branchName }, signedSales);
     if (stock !== 0 || itemCode || branchCode) {
       observations.push({
@@ -712,7 +733,37 @@ function adaptISS(ctx: AdapterContext): AdapterResult {
       });
     }
   }
-  return { observations, sheetDates, sheetName: sheet.name, blockingReasons: [] };
+
+  // Reports rather than blocks: the footer is the distributor's own arithmetic, and an export that
+  // states it for the first time must not be able to stop a legitimate upload on a shape nobody has
+  // measured yet. A gap still shows on the screen before Import.
+  if (declaredSignedSales != null) {
+    fileTotalChecks.push(
+      fileTotalCheck({
+        label: "footer Sales Quantity total, summed over every product and branch",
+        where: `${sheet.name}, the blank-key footer row against the ${observations.length ? "data rows above it" : "empty data range"}`,
+        declared: declaredSignedSales,
+        parsed: parsedSignedSales,
+        severity: "report",
+        hint:
+          "Both sides are SIGNED quantities, so an inline return (a negative Sales Quantity) is " +
+          "subtracted in each — a gap means rows were missed, not that returns were handled twice.",
+      }),
+    );
+  }
+  if (declaredStock != null) {
+    fileTotalChecks.push(
+      fileTotalCheck({
+        label: "footer Stock total, summed over every product and branch",
+        where: `${sheet.name}, the blank-key footer row against the data rows above it`,
+        declared: declaredStock,
+        parsed: parsedStock,
+        severity: "report",
+      }),
+    );
+  }
+
+  return { observations, sheetDates, sheetName: sheet.name, blockingReasons: [], fileTotalChecks };
 }
 
 // IS (Ibn Sina, "ISP" file) — single sheet "Sheet2", header row 1, data row 2+. NO Date column.
@@ -1920,7 +1971,10 @@ export async function parseWeeklyWorkbookBuffer(input: {
           ? adaptEG(ctx)
           : canonicalCode === "RM"
             ? adaptRM(ctx)
-            : canonicalCode === "IS-S"
+            : // IS-S (Sato Pharma) and IS-L (LACTO MISR EG) are the same Ibn Sina export for two
+              // different suppliers — one adapter, two distributor codes so de-cumulation keeps
+              // their cycles apart (distributors.ts).
+              canonicalCode === "IS-S" || canonicalCode === "IS-L"
               ? adaptISS(ctx)
               : canonicalCode === "IS"
                 ? adaptIS(ctx)

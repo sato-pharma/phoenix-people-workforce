@@ -33,6 +33,24 @@ export type WeeklyDistributorDef = {
 export const WEEKLY_DISTRIBUTORS: readonly WeeklyDistributorDef[] = [
   { code: "IS", name: "Ibn Sina", cadence: "weekly" },
   { code: "IS-S", name: "Ibn Sina Sato", cadence: "weekly" },
+  // Ibn Sina exports one SalesAndStockReport2_DataHub workbook PER SUPPLIER, so it reaches us as
+  // THREE feeds by the owner's ruling of 2026-10-13: IS for the outsourced products, IS-S for Sato
+  // Pharma (PAS), and IS-L for LACTO MISR EG (supplier 111399 — the four Lacto SKUs 684793/684794
+  // plain and 684795/684796 ADVANCED). Identical sheet shape to IS-S, so it shares adaptISS and an
+  // identical column contract — but it MUST be its own code, because de-cumulation groups by
+  // (distributor, cycle_month) and subtracts the previous week_start's (product × branch) cell.
+  // Filed under IS-S, a Lacto sheet becomes that group's latest week while carrying none of the Sato
+  // cells, so the NEXT Sato file subtracts zero instead of its predecessor's month-to-date and books
+  // the whole cumulative month as one week — a silent double count one week later.
+  //
+  // NOT weeklyOnly — the owner's follow-up the same day was "every where in mapping and upload and
+  // normalizer and every where", so IS-L is wired on the MONTHLY side exactly like IS-S too: a
+  // RAW_DISTRIBUTOR_PROFILES entry for Ibn Sina's raw export and IBN_SINA_LACTO_ISL_TEMPLATE for the
+  // coded one. No monthly Lacto sheet has arrived yet (production, 2026-10-13:
+  // source_of_sales_fact_rollup carries LA001–LA004 from PS, EP-PHS, EP-BK, Direct, DirectReq, QM and
+  // Office, and from no Ibn Sina code at all) — the lane is open so the first one imports instead of
+  // being rejected as an unknown channel.
+  { code: "IS-L", name: "Ibn Sina Lacto", cadence: "weekly" },
   { code: "PS", name: "Overseas", cadence: "weekly", separateSalesStockFiles: true },
   { code: "POS", name: "POS Purchasing Sales", cadence: "weekly", weeklyOnly: true },
   { code: "EG", name: "EGD", cadence: "twice-monthly" },
@@ -43,7 +61,7 @@ export const WEEKLY_DISTRIBUTORS: readonly WeeklyDistributorDef[] = [
   // DIRECT_TEMPLATE). No branch/area: region-only, with a "NATIONAL" sentinel bucket. Value is read
   // straight from the sheet's own Value column (never recomputed from factory price). Has no monthly
   // flat-file equivalent of its own raw-export kind, but DOES have a monthly Direct counterpart — kept
-  // out of weeklyOnly since that flag means "no monthly import at all" (POS-only today).
+  // out of weeklyOnly since that flag means "no monthly import at all" (POS alone today).
   //
   // NOT cumulative. Every other distributor exports a running month-to-date sheet; Direct is keyed by
   // invoice, so each week's sheet holds only that week's own orders. Proven on prod 2026-08-15 from
