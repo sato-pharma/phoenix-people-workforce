@@ -6131,6 +6131,25 @@ drop and the kept comment, the descriptor that never carries a class list, the t
 blindness of the collector and the route, the session-resolved actor and test flag, both layouts,
 the registry declaration, and the unkeyed locked table).
 
+### Gap 16 — the trail stays unkeyed, by his own ruling
+
+The second-pass CRM audit (3–11 October 2026) listed as **gap 16** that the touch trail carries no
+visit id, so a press cannot be tied to the visit it belongs to. Reading the code showed the table is
+unkeyed on purpose, so the question went to him rather than being implemented, and he answered on
+**12 October 2026**: *"leave gap 16 as it is — the touch trail stays unkeyed."*
+
+Why that is the right answer, and not merely his preference: the trail exists to answer "a rep is
+blocked and the system will not let her through", and a refusal that saved nothing leaves no row
+anywhere else in the system. Those are precisely the touches that have no visit to be keyed to. A
+`visit_id` column would be populated for the presses that became a visit and null for the ones that
+matter most, and a reader that joined on it would quietly drop the evidence it was built to find —
+the failure the trail already caught once, when an empty venue picker cost two days of polyclinic
+seating and the HTTP log proved nothing.
+
+Keyset paging on the `bigint` identity already gives every read a total order, so nothing about
+reading the trail needs a visit id. **Never add the column, never derive one on read, and never
+re-raise gap 16 as a defect.** Rule: `.claude/rules/phoenix-crm-boards.md`.
+
 ### The label is the control's words, never the card's — the first hour of real data
 
 Owner, 2026-10-03, after reading the first hour: *"trim the touch trail label to the control, not the

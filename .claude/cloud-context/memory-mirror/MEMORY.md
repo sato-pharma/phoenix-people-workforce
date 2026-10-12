@@ -32,6 +32,7 @@
 
 - [Everything reads zero → check the publication gate FIRST](every-sales-dashboard-reads-zero-when-no-closing-is-published.md) — one unpublish blanks every rep and manager on that line; a re-publish re-sends the announcement email.
 - [phx-live is installed on the box — and the mirror-group bug it exposed](phx-live-is-installed-and-the-mirror-group-bug-it-exposed.md) — "unable to open loose object … Permission denied" from the preview mirror is a GROUP problem, and it breaks phx-preview too.
+- [Two duplicate sets in Phoenix CRM, one merge function](the-double-add-duplicates-are-not-the-duplicates-board-set.md) — the board folds NAMES, the double-add set keys on the CONTACT id; `phoenix_crm_merge_duplicate_customer` clears both and never deletes a row.
 - [A dropped target month leaves NO ledger trace](a-dropped-target-month-leaves-no-ledger-trace.md) — look for `au.monthly_targets_<line>_<mon><yr>_backup_<date>`, the only surviving copy; and the template only offers areas whose seat existed at download time.
 
 
