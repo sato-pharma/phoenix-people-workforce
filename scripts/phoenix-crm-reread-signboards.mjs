@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// Re-read the signboard of every place that currently carries a signboard FLAG, with the reader in
-// this working tree, and say what each one becomes.
+// Re-read the signboard of every place that currently carries a signboard FLAG — or of the places
+// named with `--place`, flagged or not — with the reader in this working tree, and say what each
+// one becomes.
 //
 //   node scripts/phoenix-crm-reread-signboards.mjs                  read and print. Writes NOTHING.
 //   node scripts/phoenix-crm-reread-signboards.mjs --apply          also keep the new verdict on the place row
-//   node scripts/phoenix-crm-reread-signboards.mjs --place <uuid>   one place (repeatable)
+//   node scripts/phoenix-crm-reread-signboards.mjs --place <uuid>   one place (repeatable), flagged
+//                                                                  or not — see the note in main()
 //
 // WHY IT EXISTS. The nightly pass does not re-read a place it has already HELD — `loadBacklog` takes
 // rows whose `signboard_check` is null or `unjudged` with a retryable reason, and a held place is
@@ -84,7 +86,20 @@ async function main() {
     .eq("subject_kind", "place");
   if (flagError) throw new Error(`integrity board: ${flagError.message}`);
 
-  const wanted = (flags ?? []).filter((flag) => ONLY.length === 0 || ONLY.includes(flag.subject_id));
+  // 🔴 A NAMED PLACE IS RE-READ WHETHER OR NOT IT CARRIES A FLAG. The board is the right DEFAULT
+  // scope, but it is not the set of places a wrong reader has damaged: a verdict of `match` raises
+  // no flag at all, and `other_name` raises one only where the detector met the place in a visit.
+  // Measured 2026-10-12, when the compound-name fix (#5756) moved six places: only ONE of the six
+  // was on the board, so five were unreachable by the one tool that can correct them — among them
+  // a false `match`, which no automatic path re-reads either, the nightly taking only the reasons
+  // in `SIGNBOARD_REREAD_REASONS`. So `--place <uuid>` now means "re-read THIS place", and only a
+  // run with no `--place` is board-driven.
+  const onBoard = (flags ?? []).filter((flag) => ONLY.length === 0 || ONLY.includes(flag.subject_id));
+  const flagByPlace = new Map(onBoard.map((flag) => [flag.subject_id, flag]));
+  const wanted =
+    ONLY.length > 0
+      ? [...new Set(ONLY)].map((placeId) => ({ placeId, flag: flagByPlace.get(placeId) ?? null }))
+      : onBoard.map((flag) => ({ placeId: flag.subject_id, flag }));
   if (wanted.length === 0) {
     console.log("No signboard flags on the board — nothing to re-read.");
     return;
@@ -93,19 +108,26 @@ async function main() {
   const { data: places, error: placeError } = await db
     .from("phoenix_crm_places")
     .select("id, photo_path, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
-    .in("id", wanted.map((flag) => flag.subject_id));
+    .in("id", wanted.map((entry) => entry.placeId));
   if (placeError) throw new Error(`places: ${placeError.message}`);
 
   const byId = new Map((places ?? []).map((place) => [place.id, place]));
-  console.log(`${wanted.length} flagged place(s); ${APPLY ? "WRITING the new verdict" : "DRY RUN — writing nothing"}.`);
+  const offBoard = wanted.filter((entry) => !entry.flag).length;
+  console.log(
+    `${wanted.length} place(s) to re-read — ${wanted.length - offBoard} carrying a flag, ${offBoard} with no flag on the board; ` +
+      `${APPLY ? "WRITING the new verdict" : "DRY RUN — writing nothing"}.`,
+  );
   console.log("");
 
   const superseded = [];
   const notWritten = [];
-  for (const flag of wanted) {
-    const place = byId.get(flag.subject_id);
+  for (const entry of wanted) {
+    const flag = entry.flag;
+    const place = byId.get(entry.placeId);
     if (!place) {
-      console.log(`- ${flag.subject_id}: the place row is gone; flag ${flag.id} left exactly as it is.`);
+      console.log(
+        `- ${entry.placeId}: the place row is gone; ${flag ? `flag ${flag.id} left exactly as it is.` : "it carries no flag either."}`,
+      );
       continue;
     }
     const customer = Array.isArray(place.customer) ? place.customer[0] : place.customer;
@@ -123,7 +145,11 @@ async function main() {
     for (const sign of check.signs) {
       console.log(`         sign [${sign.legibility}/${sign.kind}] ${JSON.stringify(sign.text)} people=${JSON.stringify(sign.personNames)} places=${JSON.stringify(sign.placeNames)}`);
     }
-    if (!stillHolds) {
+    if (!flag) {
+      console.log(
+        `    -> no flag on the board for this place; the new verdict ${stillHolds ? "HOLDS it for review" : "does not hold it"}`,
+      );
+    } else if (!stillHolds) {
       superseded.push({ customer: customer?.name ?? place.id, flagId: flag.id, placeId: place.id, verdict: check.verdict });
       console.log(`    -> this flag is SUPERSEDED (${check.verdict} does not hold a place)`);
     } else {
