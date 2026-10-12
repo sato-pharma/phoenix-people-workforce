@@ -491,6 +491,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | RESEND_EMAIL_FROM_2 | Sender verified on the second Resend account (a bare address keeps each email's display name). A domain verifies in one Resend account only, so this is usually a different sending subdomain |
 | RESEND_WEBHOOK_SECRET_2 | Signing secret of the second Resend account's webhook (same `/api/webhooks/resend` URL) |
 | RESEND_API_KEY_3 / RESEND_EMAIL_FROM_3 / RESEND_WEBHOOK_SECRET_3 | Third Resend account, tried after the second — same rules as the second (its own subdomain, `send3.satopharma.com`) |
+| RESEND_API_KEY_4 / RESEND_EMAIL_FROM_4 / RESEND_WEBHOOK_SECRET_4 | Fourth Resend account (added 2026-10-11), tried after the third and before Brevo — same rules (its own subdomain, e.g. `send4.satopharma.com`) |
 | BREVO_API_KEY | First Brevo account — tried after every Resend account |
 | BREVO_EMAIL_FROM | Sender verified on the first Brevo account |
 | BREVO_API_KEY_2 | Second Brevo account — the last in the chain. Pinged monthly by the Brevo keepalive with the first |

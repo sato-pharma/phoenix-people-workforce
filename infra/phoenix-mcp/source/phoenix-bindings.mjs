@@ -1,29 +1,54 @@
-import { getEmployeeDirectory } from '../../../src/lib/employees/employee-directory.ts';
+// Source-side ONLY. This is not imported/bundled into the MCP reader or deployed.
+// It binds Phoenix's EXISTING report loaders to the completeness-aware collector. Every loader runs
+// under the read recorder and a before/after change watermark (src/lib/mcp-source), so a report that
+// merely "returned" is never enough: swallowed failures, caches, truncation, unwatched reads and
+// concurrent changes are refused. Never give the reader the source process's credentials.
+import { getEmployeeDirectory,invalidateEmployeeDirectoryCache } from '../../../src/lib/employees/employee-directory.ts';
 import { getOrganogramReport,getScopedVacancyReport } from '../../../src/lib/reports/organogram.ts';
 import { loadPortalMonthlyClosing,resolvePortalClosingScope } from '../../../src/lib/sales/monthly-closing-portal.ts';
+import { normalizeClosingLine } from '../../../src/lib/sales/monthly-closing-publication.ts';
+import { getSupabaseAdmin } from '../../../src/lib/supabase/server.ts';
+import { loadPermissionMatrixUncached } from '../../../src/lib/auth/permissions.ts';
 import { context } from '../src/policy.mts';
-import { workforceAdapter,organizationAdapter,vacancyAdapter,salesAdapter } from '../src/source-adapters.mts';
+import { identitySchema } from '../src/contracts.mts';
+import { createCollector } from '../src/source-collect.mts';
+import { createRpcWatermarkReader,withChangeClock,loadLiveIdentity } from '../src/phoenix-source.mjs';
+import { createSupabaseLiveSources } from '../../../src/lib/mcp-source/live-authorization.ts';
 
-export async function collectCanonicalDataset(identity,dataset,period,transport){
+// The owner's identity, read LIVE every cycle through the same decision the reader's bridge uses. A
+// denied or undecidable owner means nothing is collected at all.
+export async function liveOwnerIdentity(subject){
+ const db=getSupabaseAdmin();
+ const identity=await loadLiveIdentity(subject,createSupabaseLiveSources(db,loadPermissionMatrixUncached));
+ return identity===null?null:identitySchema.parse(identity);
+}
+
+export function createPhoenixCollector(identity){
  const access=context(identity);
- const required={employees:['employees'],vacancies:['au_v_org_tree','position_vacancies'],organization:['au_v_org_tree','employees'],published_sales:['monthly_closing_publications','rpc/phx_closing_distributor_product','rpc/phx_monthly_closing_direct']};
- const proof=transport.proof(required[dataset]);
- const {value,freshness}=await proof.collect(async()=>{
-  if(dataset==='employees')return (await getEmployeeDirectory()).employees;
-  if(dataset==='vacancies')return getScopedVacancyReport(access);
-  if(dataset==='organization')return getOrganogramReport(access);
-  const scope=await resolvePortalClosingScope(access);
-  const now=new Date().toISOString(),placeholder={snapshotId:'11111111-1111-4111-8111-111111111111',sourceUpdatedAt:now,sourceObservedAt:now};
-  return salesAdapter(period,scope.allowedLines,{
-   publication:async(line,month)=>{
-    const rows=await transport.json('monthly_closing_publications?'+new URLSearchParams({select:'line,period,published_at',normalized_line:'eq.'+line.trim().toLowerCase(),period:'eq.'+month,unpublished_at:'is.null'}));
-    if(rows.length===0)return null;if(rows.length!==1)throw Error('Ambiguous publication');
-    return {publishedAt:rows[0].published_at,revision:JSON.stringify(rows[0])};
-   },closing:(line,month)=>loadPortalMonthlyClosing({access,line,period:month}),
-  },placeholder);
- });
- if(dataset==='employees')return workforceAdapter(value,identity,freshness);
- if(dataset==='vacancies')return vacancyAdapter(value,freshness);
- if(dataset==='organization')return organizationAdapter(value,freshness);
- value.freshness=freshness;return value;
+ const db=getSupabaseAdmin();
+ const loaders={
+  async employees(){
+   // Uncached by construction: drop the 30-second directory cache so the read is issued, and with the
+   // cache empty there is no stale copy to fall back to. The proof independently refuses a cache hit.
+   invalidateEmployeeDirectoryCache();
+   const directory=await getEmployeeDirectory();
+   return directory.employees.map(e=>({...e,department:e.department??e.departmentName??null,line:e.line??e.lineName??null,
+    positionTitle:e.positionTitle??null,nodeType:e.nodeType??null,recordType:e.recordType??null,businessType:e.businessType??null,employeeType:e.employeeType??null}));
+  },
+  organization:()=>getOrganogramReport(access),
+  // getScopedVacancyReport already reconciles occupied seats, replacements and offers.
+  vacancies:()=>getScopedVacancyReport(access),
+  async lines(){return (await resolvePortalClosingScope(access)).allowedLines;},
+  // STRICT, unlike isClosingPublished (which answers false for any database error): null only when
+  // the read succeeded and there is no live publication row.
+  async publication(line,period){
+   const {data,error}=await db.from('monthly_closing_publications').select('id,published_at').eq('normalized_line',normalizeClosingLine(line)).eq('period',period).is('unpublished_at',null).limit(2);
+   if(error)throw new Error('publication read failed');
+   if(data.length>1)throw new Error('ambiguous publication');
+   return data[0]?{publishedAt:new Date(data[0].published_at).toISOString(),revision:String(data[0].id)}:null;
+  },
+  closing:(line,period)=>loadPortalMonthlyClosing({access,line,period}),
+ };
+ const watermark=withChangeClock(createRpcWatermarkReader(db));
+ return createCollector({loaders,identity,watermark});
 }

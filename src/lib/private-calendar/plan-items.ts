@@ -38,9 +38,17 @@ export const APPROVED_PLAN_STATUSES = ["manager_approved", "final_approved", "hr
 
 /**
  * The planned activity types Phoenix records in no other system, so an approved plan item is the only
- * evidence the day will ever have — and therefore the only thing that can excuse it.
+ * thing the day will ever carry.
  *
- * Deliberately NOT here, and each for a named reason:
+ * 🔴 **A WEEKLY PLAN NEVER EXCUSES A DAY — ANY ACTIVITY TITLE.** Owner, 2026-10-12: *"NEVER COUNT
+ * WEEKLY PLAN AS COVERAGE WHAT IF HE PLANNED BUT DIDNT GO WORK?"*, and then *"Do not ever touch a
+ * weekly plan. All what you do that you see the weekly plan and the daily reports and compare the
+ * plan versus the actual, any title."* So this list is a DISPLAY and COMPARISON fact — it says the
+ * day will have nothing else to show next to the plan — and it is read by nothing that clears an
+ * exception or suppresses a deduction. From 2026-10-07 to 2026-10-12 these seven types did excuse a
+ * No Activity day and did clear a half day; that is what his ruling reversed.
+ *
+ * Deliberately NOT here either, and each for a named reason — the records that DO excuse a day:
  *   · `Field`, `Double Visit` — the CRM is the record. Nothing logged on a planned visit day is the
  *     exact gap the exceptions board exists to surface.
  *   · `Office` — the fingerprint is the record; the plan's own office lookup says so in as many words
@@ -61,17 +69,21 @@ export const PLAN_ACTIVITY_TYPES_RECORDED_NOWHERE_ELSE = [
   "Travel",
 ] as const;
 
-const coveringTypes = new Set<string>(PLAN_ACTIVITY_TYPES_RECORDED_NOWHERE_ELSE.map((type) => type.toLowerCase()));
+const typesRecordedNowhereElse = new Set<string>(PLAN_ACTIVITY_TYPES_RECORDED_NOWHERE_ELSE.map((type) => type.toLowerCase()));
 
 /**
- * Whether an approved plan item of this activity type is itself the day's proof of work.
+ * Whether Phoenix records this kind of planned activity nowhere else — so the reader comparing the
+ * plan against the actual should expect no punch and no logged visit beside it.
+ *
+ * 🔴 It is NOT coverage and never was meant to be read as proof of work (owner, 2026-10-12). The name
+ * says what it is for that reason: the previous name, `plannedActivityCoversTheDay`, is exactly how a
+ * display fact came to suppress a deduction.
  *
  * Pure, and exported so the rule above is asserted on plain strings rather than inferred from a
- * database read. An unknown or blank activity type answers false: a type nobody has taught this rule
- * about must not silently start excusing days.
+ * database read. An unknown or blank activity type answers false.
  */
-export function plannedActivityCoversTheDay(activityType: string | null | undefined): boolean {
-  return coveringTypes.has(String(activityType ?? "").trim().toLowerCase());
+export function plannedActivityIsRecordedNowhereElse(activityType: string | null | undefined): boolean {
+  return typesRecordedNowhereElse.has(String(activityType ?? "").trim().toLowerCase());
 }
 
 type PlanItemRow = {
@@ -136,7 +148,7 @@ export function mapPlanRowToPrivateCalendarItem(
   const date = cleanText(item.activity_date).slice(0, 10);
   const activityType = cleanText(item.activity_type) || "Planned activity";
   const title = cleanText(item.activity_title) || activityType;
-  const covers = plannedActivityCoversTheDay(item.activity_type);
+  const recordedNowhereElse = plannedActivityIsRecordedNowhereElse(item.activity_type);
   const place = nullableText(item.area) ?? nullableText(item.location_text);
   const detailLines = [`Activity: ${activityType}`];
   if (place) detailLines.push(`Where: ${place}`);
@@ -153,8 +165,11 @@ export function mapPlanRowToPrivateCalendarItem(
   return {
     // The plan is an intention, never a visit, so it carries no visit colour of its own.
     activityKind: "plan",
-    approvalImpact: covers
-      ? "Approved by the manager, and the only record this kind of day produces — so it stands in for attendance on it."
+    // Neither branch excuses the day any more (owner, 2026-10-12): a plan is what was intended, and
+    // the day is still judged on what was recorded. The two lines differ only in what the reader
+    // should expect to find beside the plan.
+    approvalImpact: recordedNowhereElse
+      ? "Approved by the manager, and the only thing this kind of day produces — so compare it against what was actually recorded; it does not stand in for attendance."
       : "Approved by the manager. The day still needs its own record: a punch, a logged visit or an approved request.",
     chipLines: [activityType === title ? activityType : `${activityType} · ${title}`, ...(place ? [place] : [])],
     description: nullableText(item.notes),
@@ -168,7 +183,7 @@ export function mapPlanRowToPrivateCalendarItem(
     exceptionFlags: [],
     id: `plan-${item.id}`,
     managerName: nullableText(header.manager_name),
-    plannedActivityCoversTheDay: covers,
+    plannedActivityIsRecordedNowhereElse: recordedNowhereElse,
     // An APPROVED plan is news, never something to review — the same reasoning as an approved excuse.
     severity: "info",
     source: "plan",
@@ -238,60 +253,3 @@ export async function loadPlanPrivateCalendarItems(
   }
 }
 
-/** One approved weekly plan item whose activity type is itself the day's proof of work. */
-export type ApprovedCoveringPlanItem = {
-  employeeHrId: string;
-  activityDate: string;
-  activityType: string;
-  startTime: string | null;
-  endTime: string | null;
-};
-
-/**
- * Every approved WEEKLY plan item inside [start, end] whose type Phoenix records nowhere else
- * (PLAN_ACTIVITY_TYPES_RECORDED_NOWHERE_ELSE), company-wide, with its clock times.
- *
- * The Deductions module's Half Day (CRM) connector reads this to tell WHICH half of a day an
- * approved Meeting or Training stands in for — the calendar shape above flattens the times into a
- * display string. Same statuses, same weekly-only rule and the same covering-type test as
- * loadPlanPrivateCalendarItems, so the two can never disagree about what a plan excuses.
- *
- * Throws on a read error rather than returning nothing: a half day charged because the plan that
- * excused it could not be read is the failure this exists to prevent. A missing plan table (a
- * fresh database) is the one empty answer, because then no plan can exist either.
- */
-export async function loadApprovedCoveringPlanItems(start: string, end: string): Promise<ApprovedCoveringPlanItem[]> {
-  try {
-    const headers = await readAllPrivateCalendarRows<PlanHeaderRow>((from, to) => getSupabaseAdmin()
-      .from("employee_plan_headers")
-      .select(PLAN_SELECT)
-      .eq("plan_kind", "weekly")
-      .in("status", APPROVED_PLAN_STATUSES)
-      .lte("period_start_date", end)
-      .gte("period_end_date", start)
-      .order("period_start_date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, to));
-    const items: ApprovedCoveringPlanItem[] = [];
-    for (const header of headers) {
-      const employeeHrId = cleanText(header.employee_hr_id);
-      if (!employeeHrId) continue;
-      for (const item of header.employee_plan_items ?? []) {
-        const date = cleanText(item.activity_date).slice(0, 10);
-        if (!date || date < start || date > end) continue;
-        if (!plannedActivityCoversTheDay(item.activity_type)) continue;
-        items.push({
-          employeeHrId,
-          activityDate: date,
-          activityType: cleanText(item.activity_type),
-          startTime: nullableText(item.start_time),
-          endTime: nullableText(item.end_time),
-        });
-      }
-    }
-    return items;
-  } catch (error) {
-    if (schemaMissing(error)) return [];
-    throw error;
-  }
-}

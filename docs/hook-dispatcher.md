@@ -215,3 +215,94 @@ is a look-around too, it adds one short reminder to send the next reads together
   1 MB of the transcript and parses only the assistant and prompt lines), and at most six reminders of
   about 450 characters per session.
 - **Stand-down:** `PHX_BATCH_NUDGE_OFF=1`. Pinned by `tests/batch-nudge.test.ts`.
+
+## comment-strip-guard — the ratchet's verdict, at the write instead of in CI
+
+Added 2026-10-12, at the owner's instruction (*"fix the comment-strip ratchet so new test files use
+the shared stripper"*), after four of that day's twenty-five red PR runs were one zero-tolerance gate
+firing on a newly added test file.
+
+`tests/comment-strip-ratchet.test.ts` refuses every hand-rolled line-wise comment strip under
+`tests/` — a `.filter` on a comment prefix, an `if (line.startsWith("//")) continue`, a whole-line
+`.replace` — because a line judged by how it STARTS cannot know a block comment is already open. The
+rule is right; the **timing** was the cost. It is the last assertion of a 977-test shard inside the
+required `validate` job: on PR 5700 (2026-10-09) it named its offender after **5m34s** with `checks`
+already green, so the run reads healthy until the final second. Each firing is a full CI round that
+ends in a one-line import.
+
+`.claude/hooks/comment-strip-guard.mjs` is a PreToolUse hook on Write, Edit and MultiEdit. It reads
+the text the call would **introduce** — `content`, `new_string`, each MultiEdit `new_string` — and
+when that text carries a shape, it denies the call and hands over the remedy:
+
+    import { stripComments } from "./support/comment-strip.ts";
+
+- **Why it denies rather than warns**, unlike `test-registration-check.mjs` beside it: registration is
+  legitimately a two-step (write the test, register it one edit later), so its first warning is a
+  nudge. A hand-rolled strip is wrong the moment it is written, the budget is 0 and the grandfather
+  list is empty, so no later edit makes it acceptable. It refuses an **edit**, never a push — the
+  owner's 2026-10-04 "keep the pre-push test as a rule, no guard" is about the test SUITE, and this
+  hook neither runs nor waits for one.
+- **Only the text being introduced**, never the file on disk: a pre-existing site elsewhere must not
+  block an unrelated edit, and an edit that REMOVES a strip has to pass, or the guard would block its
+  own remedy.
+- **Scope is exactly the sweep's:** every `.ts` file under `tests/`, at any depth, minus the three
+  sanctioned ones (the stripper, the ratchet, this guard's test — their fixtures ARE the shapes).
+  `.tsx` is deliberately out, because the sweep reads `.ts` only and a hook stricter than the check it
+  fronts for refuses work CI accepts.
+- **One detector, not two copies.** It lives in `.claude/hooks/lib/comment-strip-shapes.mjs`; the
+  ratchet imports it and defines none of its own, and `tests/comment-strip-guard.test.ts` fails if
+  either side grows a copy back. A hook that drifts into refusing what CI accepts — or into silence
+  about what CI rejects — is worse than no hook. A fourth file that must spell the shape out joins
+  `SANCTIONED_TEST_FILES` in that module, never a list inside the hook.
+- **Stand-down:** `PHX_COMMENT_STRIP_OFF=1`. Fails open on any error, like every guard here. Its own
+  `--selftest` runs 36 cases; `tests/comment-strip-guard.test.ts` drives the hook as a subprocess over
+  every shape and every measured negative, pins its wiring, and runs that selftest.
+
+## form-design-guard — the form ratchet's two zero-tolerance shapes, at the write
+
+Added 2026-10-12, at the owner's instruction (*"guard the form-design ratchet at the Write too"*),
+the same day and for the same reason as `comment-strip-guard` above: thirteen of that day's
+twenty-six red PR runs were repo-wide contract gates, each a full CI round that ends in a one-line
+import.
+
+`tests/form-design-system.test.ts` holds his 2026-10-06 rule that **every form wears the Adverse Drug
+Reaction wizard's skin**, and two of its assertions have no grandfather list at all:
+
+1. **`SELF_SKINNED_CAP = 0`** — a form control whose className paints a radius, a full border or a
+   white ground without ever reaching `phxFieldClassName` / `phxSelectClassName` /
+   `phxTextareaClassName`. Any number above zero is a new form that did not use the kit, which is the
+   one thing the ratchet exists to catch, and 🔴 **the cap is never raised.**
+2. **The merge-semantics check** — `` `${phxFieldClassName} h-9` `` ships *both* heights in one class
+   attribute, because `cn()` is tailwind-merge and a template literal is plain concatenation. The
+   override silently loses to the token (on a numeric scale the larger utility wins), so the source
+   says 36px and the DOM renders 40px, with nothing in lint, typecheck or the browser saying so. 177
+   of these existed the day the design was swept.
+
+`.claude/hooks/form-design-guard.mjs` is a PreToolUse hook on Write, Edit and MultiEdit that hands
+down the same two verdicts at the moment the shape is typed — which is also the moment the author
+still has the design in mind. Each refusal writes the remedy out: the `form-tokens` import, the
+`FormField` assembly, or the exact `cn(<token>, "<override>")` call.
+
+- **Only the text being introduced** — `content`, `new_string`, each MultiEdit `new_string`. A
+  pre-existing control elsewhere in the file must not block an unrelated edit, and an edit that
+  REMOVES an offender has to pass or the guard would block its own remedy.
+- **The file on disk and its imports are read for ONE purpose: resolving a className that is a
+  reference**, so a control wearing an imported alias of the token is recognised as on-design instead
+  of reported as unresolvable. Bounded at 14 small reads (plus `form-tokens.ts` and `form-kit.tsx`,
+  always in scope), never a sweep of `src/`, and it spawns nothing — hot-path safe.
+- **Two scopes, because the two sweeps differ:** the control check reads `.tsx` under
+  `src/components/` and `app/`; the template check reads every `.ts`/`.tsx` under `src/` and `app/`.
+  A hook wider than the check it fronts for would refuse work CI accepts.
+- **Every exemption comes from the sweep's own `EXEMPT` list**, his rulings included — the login
+  screen, every dark ground, `hiring-pack/` and `offers/` — and so do the `h-8`/`h-9` dense table and
+  filter controls, which are legitimate through `cn()`. **An unresolvable reference paints nothing and
+  is allowed:** the guard is deliberately no stricter than the ratchet.
+- **One detector, not two copies.** Both shapes live in `.claude/hooks/lib/form-design-shapes.mjs`
+  with the exemption list and the owner's rulings that used to sit in the test's doc comments; the
+  ratchet imports `commentMask`, `EXEMPT`, `fileConstants`, `scanControls` and `templateConcatSites`
+  from it and defines none of them, and `tests/form-design-guard.test.ts` fails if either side grows a
+  copy back. A new exemption is added to that module, never to a list inside the hook.
+- **Stand-down:** `PHX_FORM_DESIGN_OFF=1`. Fails open on any error. Its own `--selftest` runs 57
+  cases; `tests/form-design-guard.test.ts` drives the hook as a subprocess over 8 painted shapes and
+  11 measured negatives, both template directions, Edit/MultiEdit arrival, the removal edit, both
+  scopes, every entry of `EXEMPT`, the dispatch wiring and the one-detector pin.

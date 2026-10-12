@@ -38,6 +38,12 @@
 
 import { queryVisits, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import {
+  describePhoenixWorkEvidence,
+  indexPhoenixWorkEvidence,
+  loadPhoenixWorkEvidenceDays,
+  phoenixWorkEvidenceProvesWorkedDay,
+} from "@/lib/crm/phoenix-work-evidence";
+import {
   CRM_CLASSIFIED_NON_REGULAR_VISIT_TYPES,
   CRM_LEAVE_VISIT_TYPE_CODES,
   CRM_REGULAR_VISIT_TYPE,
@@ -255,7 +261,17 @@ export async function getCrmActivityDayMaps(input: {
   dateToIso: string;
   employeeHrIds: string[];
 }): Promise<CrmActivityDayMaps> {
-  const byEmployee = await scanCompanyVisitsByEmployee(input);
+  // PHOENIX CRM, WHETHER OR NOT THE TEAM WAS STARTED. Everything above reads the CRM door, whose
+  // Phoenix branches are inner-joined to the STARTED teams — so a rep on an unstarted team who spent
+  // the day logging real visits reads here as a day with no CRM activity, and a fingerprint
+  // deduction that his field day should have cancelled stands. Added to `fieldVisitMap` only, which
+  // is a universal CANCEL in reconcileDay: this can only ever excuse a day, never flag one.
+  const [byEmployee, phoenixEvidence] = await Promise.all([
+    scanCompanyVisitsByEmployee(input),
+    isIsoDate(input.dateFromIso) && isIsoDate(input.dateToIso)
+      ? loadPhoenixWorkEvidenceDays({ end: input.dateToIso, start: input.dateFromIso })
+      : Promise.resolve([]),
+  ]);
   const leaveMap = new Map<string, Set<string>>();
   const fieldVisitMap = new Map<string, Set<string>>();
   const detailMap = new Map<string, Map<string, string>>();
@@ -283,6 +299,26 @@ export async function getCrmActivityDayMaps(input: {
     if (leaveDates.size > 0) leaveMap.set(hrId, leaveDates);
     if (fieldDates.size > 0) fieldVisitMap.set(hrId, fieldDates);
     if (dayDetails.size > 0) detailMap.set(hrId, dayDetails);
+  }
+
+  // Phoenix work-evidence days join `fieldVisitMap` — the day's own cancel — and name themselves in
+  // `detailMap`, so a report showing "CRM field visit" says WHAT it was instead of a bare boolean.
+  // A day Phoenix only STARTED (the GPS press, nothing recorded after it) is deliberately not a
+  // cancel: phoenixWorkEvidenceProvesWorkedDay draws that line in one place.
+  const wantedAttendanceKeys = new Set(
+    input.employeeHrIds.map((id) => normalizeAttendanceHrId(id)).filter((value): value is string => Boolean(value)),
+  );
+  for (const [key, day] of indexPhoenixWorkEvidence(phoenixEvidence, normalizeAttendanceHrId)) {
+    if (!phoenixWorkEvidenceProvesWorkedDay(day)) continue;
+    const hrId = key.slice(0, key.lastIndexOf("|"));
+    if (!wantedAttendanceKeys.has(hrId)) continue;
+    const fieldDates = fieldVisitMap.get(hrId) ?? new Set<string>();
+    fieldDates.add(day.date);
+    fieldVisitMap.set(hrId, fieldDates);
+    // Only where the vendor read named nothing: a real iReports360 entry stays the day's label.
+    const dayDetails = detailMap.get(hrId) ?? new Map<string, string>();
+    if (!dayDetails.has(day.date)) dayDetails.set(day.date, describePhoenixWorkEvidence(day));
+    detailMap.set(hrId, dayDetails);
   }
 
   return { detailMap, fieldVisitMap, leaveMap };

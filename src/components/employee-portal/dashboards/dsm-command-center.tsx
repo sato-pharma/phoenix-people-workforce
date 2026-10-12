@@ -32,6 +32,13 @@ import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import {
+  NO_PUBLISHED_CLOSING_NOTE,
+  achievementTone,
+  closingSalesSub,
+  hasPublishedWindow,
+  publishedFigure,
+} from "@/lib/employee-portal/published-window";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -55,21 +62,24 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
   const pct = dsmTeam ? Math.max(0, Math.round(dsmTeam.achievementPercent)) : null;
   const pctNum = pct ?? 0;
 
-  const achAccent =
-    pctNum >= 100 ? "bg-emerald-500" : pctNum >= 90 ? "bg-amber-400" : pctNum >= 70 ? "bg-orange-500" : "bg-rose-500";
-  const achValueClass =
-    pctNum >= 100 ? "text-emerald-600" : pctNum >= 90 ? "text-amber-600" : pctNum >= 70 ? "text-orange-600" : "text-rose-600";
-
   // Which closing month these figures cover. Published closings only, so on 3 September the
   // newest is July's — see SectionMeta for why every one of these headers now says so.
+  //
+  // 🔒 A null label means NOTHING is published in this district's scope, so the three money tiles
+  // are WITHHELD rather than printed as zero (owner, 2026-08-13 — "a blank keycard is the correct
+  // state until a period is published, never a live-but-unclosed number"). Team Size still counts:
+  // it does not come from a closing. See lib/employee-portal/published-window.ts.
   const windowLabel = dsmTeam?.windowLabel ?? null;
-  const salesSub = windowLabel ? `${windowLabel} closing` : "published closing sales";
+  const published = hasPublishedWindow(windowLabel);
+  const figureInk = published ? "text-slate-900" : "text-slate-500";
+  const salesSub = closingSalesSub(windowLabel);
+  const { accent: achAccent, valueClass: achValueClass } = achievementTone(windowLabel, pctNum);
 
   const cards: Keycard[] = [
     { icon: Users, label: "Team Size", value: dsmTeam ? String(dsmTeam.memberCount) : "—", sub: "medical reps", accent: "bg-slate-900", valueClass: "text-slate-900" },
-    { icon: Wallet, label: "Sales", value: dsmTeam ? egpCompact(dsmTeam.totalSales) : "—", sub: salesSub, accent: "bg-slate-900", valueClass: "text-slate-900" },
-    { icon: Target, label: "Target", value: dsmTeam ? egpCompact(dsmTeam.totalTarget) : "—", sub: "district target", accent: "bg-slate-900", valueClass: "text-slate-900" },
-    { icon: TrendingUp, label: "Achievement", value: pct !== null ? `${pct}%` : "—", sub: "vs district target", accent: achAccent, valueClass: achValueClass },
+    { icon: Wallet, label: "Sales", value: dsmTeam ? publishedFigure(windowLabel, () => egpCompact(dsmTeam.totalSales)) : "—", sub: salesSub, accent: "bg-slate-900", valueClass: figureInk },
+    { icon: Target, label: "Target", value: dsmTeam ? publishedFigure(windowLabel, () => egpCompact(dsmTeam.totalTarget)) : "—", sub: "district target", accent: "bg-slate-900", valueClass: figureInk },
+    { icon: TrendingUp, label: "Achievement", value: pct !== null ? publishedFigure(windowLabel, () => `${pct}%`) : "—", sub: "vs district target", accent: achAccent, valueClass: achValueClass },
   ];
 
   return (
@@ -92,7 +102,16 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
             />
           }
         />
-        {dsmTeam ? <KeycardGrid cards={cards} /> : <p className="bg-white px-5 py-6 text-sm text-slate-500">No team sales data synced for the current period yet.</p>}
+        {dsmTeam ? (
+          <>
+            <KeycardGrid cards={cards} />
+            {!published && (
+              <p className="bg-white px-5 pb-4 text-phx-2xs text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
+            )}
+          </>
+        ) : (
+          <p className="bg-white px-5 py-6 text-sm text-slate-500">No team sales data synced for the current period yet.</p>
+        )}
       </div>
 
       <DashboardsGrid items={DASHBOARDS} />

@@ -39,10 +39,18 @@ function runLoaderTests() {
     "CRM stores one position per visit, so there is no photo-vs-pin pair to assess here",
   );
 
-  // A PLACE case has no place to be far from.
+  // A case that is not about a VISIT has no place to be far from. Asserted POSITIVELY since the
+  // silent detectors landed: `subject_kind` now also admits `shared_place` and `customer`, and the
+  // old negative form (`=== "place" ? null : read it`) would have handed a venue and a cadence
+  // finding whatever the distance map happened to hold under their ids. Only a visit's own row
+  // carries the figure, so only a visit may read it.
   assert.ok(
-    board.includes('placeDistanceMeters: row.subject_kind === "place"'),
-    "a place case must carry a null distance, not a borrowed one",
+    board.includes('placeDistanceMeters: row.subject_kind === "visit"'),
+    "only a visit may read the stored distance — every other subject kind carries null",
+  );
+  assert.ok(
+    !board.includes('row.subject_kind === "place" ? null'),
+    "the distance must not be excluded by naming `place` — that borrows a distance for a venue or a customer",
   );
 
   // Chunked, or a long board silently reads as "everyone was at their place".

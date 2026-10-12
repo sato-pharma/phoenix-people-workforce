@@ -74,6 +74,12 @@ function runCameraTests() {
     !/Photo carries no location|could not read a position|location check/i.test(camera),
     "the rep is never told a check exists — golden rule #1",
   );
+
+  // 5. 2026-10-11: iPhone Safari hands the camera an APPROXIMATE position (2,000 m, 650-1,900 m). The
+  //    photo keeps the SHARPER of the one-shot read and the running watch. (A rough photo reading no
+  //    longer refuses a place - the pin decides - so the shutter is never held waiting for it.)
+  assert.ok(camera.includes("const shutterIsSharper ="), "the photo keeps the sharper of its two readings");
+  assert.ok(!camera.includes("holdForPreciseFix"), "the shutter is never held: no extra wait in the rep's day");
 }
 
 function runServerTests() {
@@ -110,7 +116,42 @@ function runServerTests() {
   );
 }
 
+/**
+ * 6. THE CACHE — defect #3 one layer down, in the browser instead of in our code.
+ *
+ * The reader asked `getCurrentPosition` to accept a position up to `SHUTTER_FIX_TIMEOUT_MS` old.
+ * The Capture-location pin is taken moments earlier with `maximumAge: 0`, the browser keeps that
+ * result as the last known position, and the shutter's "own" reading was then handed the very same
+ * one — identical down to the 13-decimal accuracy figure. Measured on production 2026-10-12: 127 of
+ * the 141 places whose two readings were compared were bit-identical, and 119 of those 127 had their
+ * timestamps 8 seconds or less apart. The detector was comparing one reading with itself.
+ *
+ * Asserted on the source because a geolocation option cannot be executed under Node, and this is the
+ * one line that decides whether the second reading exists at all.
+ */
+function runReaderTests() {
+  const reader = read("../src/lib/evidence/read-shutter-fix.ts");
+
+  assert.ok(
+    reader.includes("export const SHUTTER_FIX_MAX_AGE_MS = 0;"),
+    "the shutter fix must be read FRESH: a cached position is the pin again, not a second reading",
+  );
+  assert.ok(
+    reader.includes("maximumAge: SHUTTER_FIX_MAX_AGE_MS,"),
+    "the option must read the zero constant, not a number inlined beside it that can drift",
+  );
+  assert.ok(
+    !/maximumAge:\s*SHUTTER_FIX_TIMEOUT_MS/.test(reader),
+    "the timeout is how long we WAIT, never how stale a position may be — they are not interchangeable",
+  );
+  assert.ok(
+    !/maximumAge:\s*[1-9]/.test(reader),
+    "no grace period at all: any window wide enough to be useful is wide enough to return the pin",
+  );
+}
+
 export function runCrmShutterFixTests() {
   runCameraTests();
   runServerTests();
+  runReaderTests();
 }

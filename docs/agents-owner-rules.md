@@ -6043,6 +6043,18 @@ wider line instead. His design is final: **do not move it back, and do not re-pr
 250 m still catches what the gate exists for — an approximate-location phone reports a flat 2,000 m,
 eight times the line — and the visit's own 500 m stays the wider of the two.
 
+### Amended 2026-10-11 — the pin alone decides, a rough photo reading no longer refuses
+
+Asked directly (options A: a sharp pin alone validates; B: keep both readings) after a rep at the
+clinic was refused eight times, the owner answered **"A"**. Production that day, from
+`phoenix_crm_refused_readings`: B-182 pin 11.2 m, photo 2,000 m then 1,414 m (the photo's own position
+sat ~640 m from the pin); B-158 pin 29.9-31.8 m, photo 634-1,865 m. iPhone Safari hands the camera an
+approximate position while the Capture-location button reads a real one, and retaking the photo
+returned the same kind of reading. So `placeReadingsPrecise` judges the PIN only, `placePoint` never
+fixes the place on the SHARPER of the two readings (the photo's on a tie; `pickPlacePoint`, also used by the capture screen so the address shown is the address saved - a 2026-10-11 follow-up after a rep read a wrong address), and the photo's raw reading
+is still stored and read by the integrity board, above the rep. A rough pin is still refused. Never
+restore the photo gate without his word. Pinned by `tests/phoenix-crm-accuracy-gate.test.ts`.
+
 ## The Phoenix CRM touch trail — owner ruling, 2026-10-03
 
 His words, on the evening of 3 October 2026, after a day in which two reps were blocked and both
@@ -6118,6 +6130,25 @@ Rule: `.claude/rules/phoenix-crm.md`. Pinned by `tests/phoenix-crm-touch-trail.t
 drop and the kept comment, the descriptor that never carries a class list, the total parse, the
 blindness of the collector and the route, the session-resolved actor and test flag, both layouts,
 the registry declaration, and the unkeyed locked table).
+
+### Gap 16 — the trail stays unkeyed, by his own ruling
+
+The second-pass CRM audit (3–11 October 2026) listed as **gap 16** that the touch trail carries no
+visit id, so a press cannot be tied to the visit it belongs to. Reading the code showed the table is
+unkeyed on purpose, so the question went to him rather than being implemented, and he answered on
+**12 October 2026**: *"leave gap 16 as it is — the touch trail stays unkeyed."*
+
+Why that is the right answer, and not merely his preference: the trail exists to answer "a rep is
+blocked and the system will not let her through", and a refusal that saved nothing leaves no row
+anywhere else in the system. Those are precisely the touches that have no visit to be keyed to. A
+`visit_id` column would be populated for the presses that became a visit and null for the ones that
+matter most, and a reader that joined on it would quietly drop the evidence it was built to find —
+the failure the trail already caught once, when an empty venue picker cost two days of polyclinic
+seating and the HTTP log proved nothing.
+
+Keyset paging on the `bigint` identity already gives every read a total order, so nothing about
+reading the trail needs a visit id. **Never add the column, never derive one on read, and never
+re-raise gap 16 as a defect.** Rule: `.claude/rules/phoenix-crm-boards.md`.
 
 ### The label is the control's words, never the card's — the first hour of real data
 
@@ -7725,3 +7756,41 @@ team seat — the view's day-activity branch also reads a started team's OWN sea
 Infective Cairo district manager (Momen Abdelhady Shehata) for 7 Oct as a meeting entered by B-10, and
 excluded Samir Saad (annual vacation that day). The Phoenix team calendar grid lists territories, so a
 manager's day has no cell there.
+
+## Qena per line — owner rulings, 2026-10-12
+
+His words: *"in cns line its only a single qena"*, *"in cns the both qenas are counted to qena rep"*,
+and — after asking for an audit of the Upper Egypt organogram — that in Anti Infective and Pedia there
+are two reps, one for Qena 1 and one for Qena 2, each counted on his own part. His answers to the two
+in-chat questions the same day: *"All nine months"* (CNS Qena 2 rolls up from 1 January, orphan
+targets included) and *"Qena 1 rep covers it"* (Pedia's Qena 2 before its own seat existed).
+
+**CNS — one Qena rep.** `cns / UE8` is `occupied` on `SEAT-CNS-REP-UE7` in ALL NINE months: rows
+2026-01-01→07-13 and 07-14→open, with a one-day 07-13 Others row kept as dated history (monthly
+attribution reads the period END, so that row never applies). January and February are the only two
+months carrying a CNS Qena 2 target (92,163.59 and 41,509.20); because `carries_target` is a generated
+column, the Qena 1 rep carries those two orphan targets — that is his answer, not a defect. The CNS
+target template LISTS Qena 2; never upload a target into it from March on (October's CNS upload has
+Qena 1 only, 337,469.87).
+
+**Pedia — two reps from 1 September.** `SEAT-PED-REP-UE8` was born on 2026-09-01. Before it the
+Qena 1 seat covers Qena 2, through `pedia / UE8` rows on `SEAT-PED-REP-UE7` for 01-01→07-13 and
+07-14→09-01; February's Pedia Qena 2 target of 104,252.74 counts to that seat. From September each
+area scores its own seat.
+
+**Anti Infective — two reps in every month.** `anti_infective / UE8` is occupied on
+`SEAT-AIF-REP-UE8` from the structure's first row (2026-07-13, which `f_line_area_map_asof` falls
+back to for earlier months); its holder has held the seat since 2026-05-02.
+
+**The towns** (his lists, applied to the brick master the same day): Qena 1 = أبو تشت · نجع حمادى ·
+الأشراف · فرشوط · دشنا · القناويه · اولاد عمرو · الطوابيه · قريه الكلاحين; Qena 2 = مدينة قنا · قوص ·
+الطويرات · الصالحية · نقادة · قفط · كامولا · الزينى · العشى · الدير · أبنود. مدينة قنا also keeps a
+Qena 1 brick (`B209-1`) for the CNS and Head Office customers, which is harmless because CNS rolls
+both Qenas to one rep; `B209-2` and `B209-8` are empty placeholders that must stay active.
+
+**Read the seat, not the person, for a back month.** `au.f_seat_occupant_asof` credits a seat's whole
+history to today's holder, so Qena figures for January–September name the reps hired in late
+September and October, not the people who sold them. Measured 2026-10-12: every Qena row in all
+nine months and three lines credits the right seat, nothing sits in Others, and the only negative
+area-month is Pedia Qena 1 September (−13,113.84, the Office allocation — see the zero-sum roll-up
+note in `org`).

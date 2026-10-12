@@ -62,3 +62,24 @@ half of a two-part composition, and it contradicted a memory written eleven days
 `phx_monthly_closing_direct`**. Query BOTH before calling any manual-vs-Phoenix gap an error, and
 never quote the distributor rollup on its own as "what the closing shows". See
 [[direct-orders-are-counted-in-the-month-finance-books-them]].
+
+## A hand re-stamp runs the WHOLE chain, never a subset (2026-10-12)
+
+The chain is `rebuildSourceOfSalesRollupsForBatch` in
+`src/lib/sales/source-of-sales-rollup-rebuild.ts`: fact → customer directory → marketing ROI →
+channel → **distributor × product** → (store-split net) → monthly attribution → import summaries.
+Call that function, or every RPC in it in that order, for each batch you touched.
+
+**Why:** on 12 Oct 2026, 13:41–13:44 Cairo, after moving about 5,255 import rows from Qena 1 to
+Qena 2 (January to September, 1,104 of them CNS), I looped 54 batches through attribution, fact and
+summaries only. `source_of_sales_distributor_product_rollup` stayed on the old Qena split in 22
+batches, so the Monthly Closing screen showed CNS Qena 1 at 117,069.17 for July while Sales vs Target
+read 99,406.70 (−17,662.46; August −10,400.47, September −13,227.22). The pair total was equal, so
+no line or month total gave it away; only `scripts/check-sales-truth.ts` caught it. The repair was a
+pre-image and `phx_refresh_sos_distributor_product_rollup` over those 22 batches: units
+564,528.500 before and after.
+
+**How to apply:** after any hand re-stamp, run `check-sales-truth` for every month you touched.
+"Line totals unchanged" proves nothing about the area split. The store-split net
+(`au.monthly_store_split_net`) is computed from the closing details, so rebuild it only after
+distributor × product is current.

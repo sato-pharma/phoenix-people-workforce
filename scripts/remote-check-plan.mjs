@@ -62,6 +62,15 @@ export function runPaths(remoteRoot, runId) {
 // this code: every version of this script `cd`s into its own run directory, so a process whose CWD
 // is under runs/ IS a live run. A stale directory left by `kill -9` has no process and is invisible
 // here — which is the point, since STALE_RUN_MINUTES keeps such directories around for six hours.
+//
+// 🔴 phx-live's DEV SERVER COUNTS AS A RUN. The owner's live dev server (`phx-live`, scope
+// `phx-preview-3100.scope`, capped at 5.5 GB) shares this 7,740 MB box, and a `next build` wants
+// ~7.4 GB — starting one beside it OOM-kills one of the two. So while that scope is active the probe
+// reports it as the run `phx-live-dev-server`, and every busy route (read the PR's run, or NO VERDICT)
+// applies exactly as it does to another session's check. Account: docs/agents-worktree-and-machine-limits.md, "phx-live".
+export const PHX_LIVE_RUN_ID = "phx-live-dev-server";
+export const PHX_LIVE_SCOPE = "phx-preview-3100.scope";
+
 export function buildBusyProbeScript(remoteRoot) {
   const runs = runPaths(remoteRoot, "x").runsDir;
   return [
@@ -75,6 +84,7 @@ export function buildBusyProbeScript(remoteRoot) {
     "      ;;",
     "  esac",
     "done",
+    "if systemctl is-active --quiet " + PHX_LIVE_SCOPE + " 2>/dev/null; then echo \"RUN " + PHX_LIVE_RUN_ID + " 0\"; fi",
     "echo PROBE_OK",
   ].join("\n") + "\n";
 }
@@ -797,7 +807,8 @@ function gradeConclusion(conclusion) {
  * Grade ONLY the stages that were asked for, from a completed run's job list.
  *
  * 🔴 A STAGE THAT DID NOT RUN IS NO VERDICT, NEVER FAIL. A job missing from the run, one still
- * going, one cancelled, and a step skipped because an earlier step in the same job died are all
+ * going, one cancelled, one that reports `failure` with NO STEPS because it was never started
+ * (an Actions billing block), and a step skipped because an earlier step in the same job died are all
  * "nobody looked at your stage" — the same call the box script makes for an OOM kill. Only an
  * explicit `failure` on the stage itself is a FAIL.
  *
@@ -844,6 +855,24 @@ export function gradeActionsStages(names, jobs, stageJobs = STAGE_JOBS) {
     }
     if (job.status && job.status !== "completed") {
       graded.push({ name, verdict: "no-verdict", why: "`" + spec.job + "` is still " + job.status });
+      continue;
+    }
+    // 🔴 A JOB THAT NEVER STARTED REPORTS `completed/failure` WITH NO STEPS AT ALL, AND THAT IS NO
+    // VERDICT. Measured 2026-10-12: GitHub stopped starting jobs account-wide ("recent account
+    // payments have failed or your spending limit needs to be increased"), so #5792's `validate` and
+    // `checks` both ended `failure` in three seconds with `steps: []`. Falling through to
+    // `job.conclusion` graded all three stages FAIL and RECORDED them for a commit nothing had
+    // compiled — a verdict saying "your code is broken" about an unpaid invoice, which is the one
+    // thing this file exists to prevent. A job that really ran always carries its own setup steps, so
+    // an empty list means nobody looked at the code (`ci-jobs-failing-in-seconds-means-billing-not-code`).
+    if (!Array.isArray(job.steps) || job.steps.length === 0) {
+      graded.push({
+        name,
+        verdict: "no-verdict",
+        why: "`" + spec.job + "` ended " + String(job.conclusion ?? "unknown") +
+          " with no steps at all, so the job never started (an Actions billing block, or a startup failure) and " +
+          name + " never produced a verdict",
+      });
       continue;
     }
     const step = Array.isArray(job.steps) ? job.steps.find((s) => s && s.name === spec.step) : undefined;

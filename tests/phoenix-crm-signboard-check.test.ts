@@ -134,6 +134,15 @@ function checkRecords(): void {
 function checkServerAndSweep(): void {
   const server = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8"));
   assert.ok(server.includes("PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS = 8_000"), "a rep at the door waits eight seconds at most");
+  assert.ok(
+    /maxRetries: 0,\s*\n\s*model: input\.model/.test(server),
+    "readSigns must pass maxRetries: 0 — the SDK retries a timeout with a fresh copy of the budget, so the 8-second door waited 16.4 s, five times in three days (production, 2026-10-12)",
+  );
+  const client = stripComments(readFileSync("src/lib/ai/openai-client.ts", "utf8"));
+  assert.ok(
+    client.includes("openAiClient(undefined, params.timeoutMs, params.maxRetries)"),
+    "createOpenAiResponseText must hand a caller's maxRetries to the client, or the signboard's 0 is ignored",
+  );
   assert.ok(server.includes('await import("sharp")'), "sharp is loaded lazily, never at the top of a route-reachable file");
   assert.ok(server.includes("downloadIssuedPlacePhoto"), "a save reads only a path the server issued to this person");
   assert.ok(/Set sign_present to false only when/.test(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8")), "the prompt asks for false only when sure");
@@ -430,6 +439,73 @@ function checkManySigns(): void {
 }
 
 /**
+ * One name, two spellings: the space inside a compound, and the professor's title (12 Oct 2026).
+ *
+ * Every reading below is a stored production reading. ابراهيم عبدالشافى was filed on the owner's
+ * integrity board at 03:37 Cairo on 11 Oct, two readings agreeing, off a plate read clearly as
+ * "إبراهيم عبد الشافى" — the same person, held as another for one space. Replaying all 389 stored
+ * readings through the fix moved six, and none of them onto the board: five to a match, and one false
+ * match (ابو الدهب on an ابو الوفا plate) to `unjudged`.
+ */
+function checkNameSpelling(): void {
+  const pm = (customerName: string, personNames: string[]) =>
+    signNamesCustomer({ customerName, listType: "PM", personNames, placeNames: [], signText: null }).matches;
+
+  // 1 · 🔴 THE HOLD THAT STARTED IT, as the night read the frame: one clear plate, three partial ones.
+  const shafi = judgeSignboards({
+    croppedFraction: 0.18,
+    customerName: "ابراهيم عبدالشافى",
+    listType: "PM",
+    note: null,
+    signPresent: true,
+    signs: [
+      {
+        box: null,
+        kind: "medical",
+        legibility: "clear",
+        personNames: ["إبراهيم عبد الشافى"],
+        placeNames: [],
+        text: "الأستاذ الدكتور\nإبراهيم عبد الشافى\nأستاذ واستشارى\nالأنف والأذن والحنجرة\nوجراحة الرأس والرقبه\nبكلية الطب",
+      },
+      { box: null, kind: "medical", legibility: "partial", personNames: ["إبراهيم الأعمر"], placeNames: [], text: null },
+      { box: null, kind: "medical", legibility: "partial", personNames: ["إبراهيم الأحمر"], placeNames: [], text: null },
+    ],
+  });
+  assert.equal(shafi.verdict, "match", "عبد الشافى on the plate is عبدالشافى on the list — one space is not another person");
+  assert.equal(signboardHoldsForReview(shafi), false);
+  assert.equal(pm("عبدالعزيز القاضي", ["عبد العزيز القاضي محمد"]), true, "and the other way round, list split, plate joined");
+  assert.equal(pm("اسامة عبد الله", ["أسامة عبدالله"]), true);
+  assert.equal(pm("محمد نور الدين", ["د. محمد نورالدين"]), true, "a tail joins the word before it");
+  assert.equal(pm("احمد ابو عبد الله", ["احمد ابوعبدالله"]), true, "a head swallowed by an open compound keeps it open");
+
+  // 2 · 🔴 THE SAME SPACE MADE FALSE MATCHES. عبد and ابو counted as words of the name and spent the
+  //      allowance a three-word name gets, so the head and the first name were enough.
+  assert.equal(pm("د.هشام ابو الدهب", ["د/ هشام أحمد أبو الوفا"]), false, "ابو الدهب is not ابو الوفا");
+  assert.equal(pm("عبد الله محمد", ["محمد عبد الرحمن"]), false, "عبد الله is not عبد الرحمن");
+  assert.equal(pm("عبد الله محمد", ["عبد الله حسن"]), false, "a compound first name is still only a first name");
+
+  // 3 · 🔴 A READER THAT DROPS THE HEAD HAS STILL READ THE NAME. Joining strictly turned the first of
+  //      these from a match into a FLAG, filed by the other doctors' plates in the same frame.
+  assert.equal(pm("عبد الله عفيفي", ["الله عفيفي"]), true, "the reader dropped عبد");
+  assert.equal(pm("النعماني ابو نار", ["النعماني نار"]), true, "the reader dropped ابو");
+  assert.equal(pm("اسامه العيلة", ["اسامة ابراهيم ابو العيلة"]), true, "the list dropped ابو");
+  assert.equal(pm("محمد عبد الله", ["محمد جاد الله"]), false, "but only ALONE: the الله inside جاد الله is not عبد الله");
+
+  // 4 · The title. The shared fold already strips د, دكتور and الدكتور; الأستاذ is the one it keeps,
+  //     and on a list row it would spend the allowance and match any professor with the first name.
+  assert.equal(pm("الأستاذ الدكتور محمد علي", ["الأستاذ الدكتور محمد حسن"]), false, "الأستاذ is not a word of the name");
+  assert.equal(pm("أ.د. محمد علي", ["الأستاذ الدكتور محمد علي"]), true);
+  assert.equal(pm("محمد علي", ["الاستاذة الدكتورة محمد علي"]), true);
+
+  // 5 · A facility name is untouched: its quorum is the stemmed distinctive words, as before.
+  assert.equal(
+    signNamesCustomer({ customerName: "مستشفى ابو كبير المركزي", listType: "AM", personNames: [], placeNames: ["مستشفى أبو كبير"], signText: null }).matches,
+    true,
+    "a three-word hospital name still survives losing one",
+  );
+}
+
+/**
  * How the two readers are asked, and what one place may cost the night.
  *
  * The door and the night are deliberately different callers of the same code: 8 s and the cheap
@@ -639,7 +715,7 @@ function checkSweepRate(): void {
   assert.ok(
     limit >= 200,
     `the nightly limit is ${limit}: at the measured 1.4 places a second the pass used 42 s of its `
-      + "120 s budget and then stopped on this number, leaving 547 places for nine more nights "
+      + `${budgetMs / 1000} s budget and then stopped on this number, leaving 547 places for nine more nights `
       + "(owner, 2026-10-09 — raise it)",
   );
   assert.ok(
@@ -674,13 +750,52 @@ function checkSweepRate(): void {
   assert.equal(concurrency, 4, "reads in flight are unchanged — the raise buys nights, never parallel load");
 }
 
+/**
+ * A SEATED PLACE IS NEVER IN THE SIGNBOARD BACKLOG — its photo is the building's TIMETABLE.
+ *
+ * 🔴 THE SWEEP SWEPT THEM UNTIL 2026-10-12. Under the owner's 2026-10-10 amendment ("ask him for only
+ * one timetable, not for every doctor"), a customer seated in a shared venue carries `shared_place_id`
+ * and a photo of the entrance timetable — the board of clinic hours and doctors' names — captured once
+ * for the venue. Its check is `schedule_check`. The backlog applied no `shared_place_id` filter, so the
+ * pass was asking a timetable "does the sign name this customer?", a question the photo was never taken
+ * to answer, and a confident negative FILES A CASE about a named rep.
+ *
+ * Measured on production the same day: 8 seated places, every one of them in the backlog and NONE yet
+ * read — the pass takes 200 a night oldest-first against a 552-place backlog, so the fix landed with
+ * roughly three nights to spare. The door never had the defect: `validateCustomer` and `addPlace` both
+ * call the signboard read inside an `else if (place)`, with the seated branch reading the timetable
+ * instead, and `validation-reviews.ts` tells the two apart the same way.
+ */
+function checkSeatedRowsAreNotSwept(): void {
+  const sweep = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-sweep.ts", "utf8"));
+  assert.ok(
+    /\.is\("shared_place_id", null\)/.test(sweep),
+    "the signboard backlog must exclude seated rows — their photo is the venue's timetable, not a signboard",
+  );
+  // At the DATABASE, not in `toPlace`: a seated row filtered in memory would still be counted against
+  // the night's limit, so the pass would read fewer real places for no reason.
+  assert.ok(
+    /\.from\("phoenix_crm_places"\)[\s\S]{0,600}?\.is\("shared_place_id", null\)[\s\S]{0,400}?\.limit\(limit\)/.test(sweep),
+    "it must be excluded in the query, before the limit, or a seated row still spends a read",
+  );
+  // The two kinds of photo stay told apart by the same column everywhere that judges one.
+  assert.ok(
+    /photoKind: text\(row\.shared_place_id\) \? "schedule" : "signboard"/.test(
+      stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8")),
+    ),
+    "the review board must keep telling a timetable from a signboard by `shared_place_id`",
+  );
+}
+
 export function runPhoenixCrmSignboardCheckTests(): void {
   checkStampBand();
   checkVerdicts();
   checkRecords();
   checkServerAndSweep();
   checkManySigns();
+  checkNameSpelling();
   checkTwoReaders();
   checkSweepRate();
+  checkSeatedRowsAreNotSwept();
   console.log("phoenix-crm signboard check: OK");
 }

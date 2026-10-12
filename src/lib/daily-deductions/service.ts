@@ -11,8 +11,11 @@ import {
   collectInsufficientBalanceVacationCandidates,
   collectUnpaidVacationCandidates,
 } from "@/lib/deductions/connectors/vacation.ts";
+import { dropDeductionExemptDrafts } from "@/lib/deductions/exempt-employees.ts";
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
 import { aggregateClippedLines, clipDraftToRange, type ClippedDraftLine } from "./compute.ts";
+import { collectNoRecordsDailyCandidates } from "./no-records.ts";
+import { collectNoWeeklyPlanCandidates } from "./no-weekly-plan.ts";
 import { monthsInRange, resolveDailyRange } from "./range.ts";
 import {
   dailyDeductionConnectorLabels,
@@ -32,12 +35,14 @@ const CONNECTOR_RUNNERS: Record<DailyDeductionConnector, ConnectorRunner> = {
   crm: (input) => collectCrmCandidates(input),
   unpaid_vacation: (input) => collectUnpaidVacationCandidates(input),
   insufficient_balance_vacation: (input) => collectInsufficientBalanceVacationCandidates(input),
+  no_records_activity: (input) => collectNoRecordsDailyCandidates(input),
+  no_weekly_plan: (input) => collectNoWeeklyPlanCandidates(input),
 };
 
 /**
  * Authoritative compute for ONE connector over a range. One connector per call, by design:
  * each is a company-wide scan, and running the whole set in one request is what put the month
- * module over the 300s Cloud Run limit (#1377). The admin UI steps through the four connectors,
+ * module over the 300s Cloud Run limit (#1377). The admin UI steps through the five connectors,
  * one request each, exactly as the month module's collection screen does.
  *
  * Read-only: the connectors return drafts; nothing is written. A connector that throws (a
@@ -76,7 +81,7 @@ export async function runConnectorForRange(input: {
   for (const period of monthsInRange(resolved.from, resolved.effectiveTo)) {
     try {
       const drafts = await runner({ month: period.month, year: period.year });
-      for (const draft of drafts) {
+      for (const draft of dropDeductionExemptDrafts(drafts).kept) {
         const line = clipDraftToRange(draft, resolved.from, resolved.effectiveTo);
         if (line) clipped.push(line);
       }
@@ -159,6 +164,10 @@ export function mapDailyLineRow(row: Record<string, unknown>): DailyDeductionsLi
     reason: (row.reason as string | null) ?? null,
     hrNote: String(row.hr_note ?? ""),
     createdAt: String(row.created_at),
+    releasedAt: String(row.released_at ?? row.created_at),
+    releasedBy: (row.released_by as string | null) ?? null,
+    rangeStart: (row.range_start as string | null) ?? null,
+    rangeEnd: (row.range_end as string | null) ?? null,
   };
 }
 

@@ -29,7 +29,6 @@ import { isCrmCutoverMonth, readCrmCutoverSetting } from "@/lib/crm/cutover.ts";
 import { logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import { isFieldWorkforceThursday } from "@/lib/field-workforce-compliance/weekend-policy.ts";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
-import { loadApprovedCoveringPlanItems } from "@/lib/private-calendar/plan-items.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 
@@ -42,12 +41,13 @@ import {
   countGpsTracesByDate,
   halfDayReason,
   judgeHalfDay,
-  planItemHalves,
   type HalfDayCheckinRow,
   type HalfDayCover,
+  halfDayContractOf,
   type HalfDayVisitRow,
 } from "../half-day-rule.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
+import { loadProvenWorkedDays } from "../proven-worked-days.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory } from "../types.ts";
 import { DeductionsConnectorDegradedError, assertBaseSalaryMapLoaded } from "./health.ts";
 import { detectSuspectDatesFromCounts, getSuspectDatesForMonth } from "./crm.ts";
@@ -119,6 +119,8 @@ type EmployeeRow = {
   last_working_date: string | null;
   employment_status: string | null;
   crm_id: string | number | null;
+  /** The contracted working pattern — full_day, am_only or pm_only. */
+  work_half: string | null;
 };
 
 /** The connector's result: the rows, plus what it could NOT raise and why — never dropped silently. */
@@ -134,7 +136,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
   const { monthKey, start, end, days } = monthBounds(input.month, input.year);
   const supabase = getSupabaseAdmin();
 
-  const [holidays, suspectDates, baseSalaryByCompact, employees, visits, checkins, vacations, disputes, planItems, ledger] =
+  const [holidays, suspectDates, baseSalaryByCompact, employees, visits, checkins, vacations, disputes, ledger] =
     await Promise.all([
       holidayDates(input.month, input.year),
       // Throws on a CRM outage; a day the whole feed looks broken is nobody's half day.
@@ -144,7 +146,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
         (from, to) =>
           supabase
             .from("employees")
-            .select("hr_id, full_name, job_title, hire_date, last_working_date, employment_status, crm_id")
+            .select("hr_id, full_name, job_title, hire_date, last_working_date, employment_status, crm_id, work_half")
             .order("hr_id", { ascending: true })
             .range(from, to),
         "the employee directory",
@@ -186,7 +188,6 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
             .range(from, to),
         "calendar review requests",
       ),
-      loadApprovedCoveringPlanItems(start, end),
       readAll<LedgerClaimRow & { employee_name: string | null }>(
         (from, to) =>
           supabase
@@ -263,15 +264,6 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
     if (!compact || !date || String(dispute.status ?? "").trim().toLowerCase() === "rejected") continue;
     coverFor(`${compact}:${date}`).leaveTheDayAlone = true;
   }
-  for (const item of planItems) {
-    const compact = compactDeductionsHrId(item.employeeHrId);
-    if (!compact) continue;
-    const halves = planItemHalves({ start_time: item.startTime, end_time: item.endTime });
-    const entry = coverFor(`${compact}:${item.activityDate}`);
-    if (halves.am) entry.planAm = true;
-    if (halves.pm) entry.planPm = true;
-  }
-
   // Days another live deduction already charges — the publish guard allows one row per
   // employee-day, so those are reported below rather than raised. This run's own unpublished rows
   // do NOT claim their days; otherwise every second re-run would retract the first.
@@ -303,6 +295,8 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
       !gpsGapDates.has(day),
   );
 
+  const provenWorked = await loadProvenWorkedDays({ end, start });
+
   const drafts: DeductionsCandidateDraft[] = [];
   const notes: string[] = [];
   const unpriced: string[] = [];
@@ -314,6 +308,9 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
     if (!compact || !role) continue;
     const status = String(employee.employment_status ?? "").trim().toLowerCase();
     if (status === "declined_offer") continue;
+    // 🔴 A part-half contract means the other half was never owed. Read before any day is judged,
+    // so a PM-only rep is not charged for a morning his contract does not include.
+    const contractHalf = halfDayContractOf(employee.work_half);
     const hireDate = employee.hire_date ? employee.hire_date.slice(0, 10) : null;
     const lastDay = employee.last_working_date ? employee.last_working_date.slice(0, 10) : null;
     // A leaver is judged up to his last working day; one with no last day on file is not judged at all.
@@ -331,7 +328,15 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
       if (lastDay && day > lastDay) continue;
       if (day < firstSignal) continue;
       const key = `${compact}:${day}`;
-      const verdict = judgeHalfDay(byPersonDay.get(key), cover.get(key) ?? {});
+      // PHOENIX CRM, WHETHER OR NOT THE TEAM WAS STARTED. On an unstarted team his Phoenix visits
+      // never reach the read door, so `byPersonDay` holds neither half of his day and the rule reads
+      // the worked half as uncovered. Suppressed here rather than fed into `cover` or `byPersonDay`,
+      // which also feed `firstSignalByPerson` — and a person whose only record is Phoenix must stay
+      // unjudged rather than become chargeable.
+      if (provenWorked.keys.has(key)) continue;
+      // The contracted half travels with the person, not with the day, so it is merged onto
+      // whatever else is on file for this day rather than stored per day.
+      const verdict = judgeHalfDay(byPersonDay.get(key), { ...(cover.get(key) ?? {}), contractHalf });
       if (verdict.kind !== "half_day") continue;
       if (claimed.has(key)) {
         const category = claimingCategory.get(key);
@@ -373,7 +378,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
             : ""),
         evidence: {
           rule:
-            "Saturday-Wednesday working day with exactly one half accounted for, and no visit, GPS check-in, save time, approved vacation, approved plan item or request in the other half. Thursday (a morning-only day), Friday and national holidays are never judged.",
+            "Saturday-Wednesday working day with exactly one half accounted for, and no visit, GPS check-in, save time, approved vacation or request in the other half. An approved weekly plan never accounts for a half (owner, 2026-10-12). Thursday (a morning-only day), Friday and national holidays are never judged.",
           role: role === "district_manager" ? "District manager" : "Medical representative",
           missingHalf: verdict.missing,
           coveredBy: verdict.coveredBy,
@@ -384,7 +389,6 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
           creditedAsDoubleVisitPartner: evidence?.partnerVisits ?? 0,
           phoenixVisitsWithoutLocationNotCounted: evidence?.visitsWithoutLocation ?? 0,
           approvedVacation: dayCover.vacationAm ? "AM off" : dayCover.vacationPm ? "PM off" : null,
-          approvedPlan: dayCover.planAm || dayCover.planPm ? { am: Boolean(dayCover.planAm), pm: Boolean(dayCover.planPm) } : null,
           deductionDays: 0.5,
           dayRateBasis: "Base salary ÷ calendar days in the month × 0.5",
           holidaysExcluded: [...holidays].filter((date) => date.startsWith(`${monthKey}-`)).sort(),

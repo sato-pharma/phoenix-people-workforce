@@ -29,7 +29,7 @@ const denyIo = {
 };
 const result=await build({
   absWorkingDir: here,
-  entryPoints: process.argv.includes('--tests') ? ['src/main.mts', 'tests/security.test.mts','tests/integration.test.mts'] : ['src/main.mts'],
+  entryPoints: process.argv.includes('--tests') ? ['src/main.mts', 'tests/security.test.mts','tests/integration.test.mts','tests/pipeline.test.mts'] : ['src/main.mts'],
   outdir: 'dist', outExtension: { '.js': '.mjs' }, outbase: '.',
   entryNames: '[name]', bundle: true, platform: 'node', target: 'node24', format: 'esm',
   packages: 'external', alias: { '@': path.join(root, 'src') },
@@ -43,15 +43,3 @@ for(const output of Object.values(result.metafile.outputs)){
   }
 }
 await writeFile(path.join(here,'dist/build-manifest.json'),JSON.stringify(result.metafile,null,2));
-// Source-only build. Original Phoenix loaders outside this artifact retain their behavior.
-const sourceIo={name:'strict-source-io',setup(b){
- b.onResolve({filter:/(supabase\/server|\/env|employee-directory)(\.ts)?$/},args=>{
-  const name=args.path.replaceAll('\\','/');
-  if(args.importer.replaceAll('\\','/').endsWith('/source/runtime.mjs'))return;
-  if(name.endsWith('/supabase/server')||name.endsWith('/supabase/server.ts')||name.endsWith('/env')||name.endsWith('/env.ts'))return {path:'runtime',namespace:'source-io'};
-  if(!args.importer.endsWith('employee-original'))return {path:'employee-original',namespace:'source-io'};
- });
- b.onLoad({filter:/.*/,namespace:'source-io'},args=>({contents:args.path==='runtime'?`export * from ${JSON.stringify(path.join(here,'source/runtime.mjs'))};`:
-  `export * from ${JSON.stringify(path.join(root,'src/lib/employees/employee-directory.ts'))}; export {getSourceDirectory as getEmployeeDirectory} from ${JSON.stringify(path.join(here,'source/runtime.mjs'))};`,loader:'js',resolveDir:here}));
-}};
-await build({absWorkingDir:here,entryPoints:{'source-main':'source/main.mts','source-worker':'source/worker.mjs',...(process.argv.includes('--tests')?{'source-pipeline.test':'tests/source-pipeline.test.mjs'}:{})},outdir:'dist',outExtension:{'.js':'.mjs'},bundle:true,platform:'node',target:'node24',format:'esm',packages:'external',alias:{'@':path.join(root,'src')},plugins:[sourceIo,denyIo],logLevel:'warning'});

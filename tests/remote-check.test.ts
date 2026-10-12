@@ -27,6 +27,7 @@ import {
   stageJobsFor,
   stagesNotRunBy,
   stoppedNoVerdictLine,
+  PHX_LIVE_RUN_ID,
 } from "../scripts/remote-check-plan.mjs";
 
 // scripts/remote-check.mjs runs the heavy checks on the self-hosted CI box instead of this laptop.
@@ -271,6 +272,18 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.ok(
       !/pgrep|lsof|fuser/.test(probe),
       "the probe must not depend on a lock file or a process-name match — neither sees a run from an older branch",
+    );
+
+    // 🔴 phx-live's dev server (production data, capped at 5.5 GB) is a run too: a `next build`
+    // started beside it wants ~7.4 GB on a 7.7 GB box and OOMs both.
+    assert.match(
+      probe,
+      /systemctl is-active --quiet phx-preview-3100\.scope/,
+      "the probe no longer counts phx-live's dev server as busy — a remote-check build would start beside it and OOM the box",
+    );
+    assert.ok(
+      parseBusyProbe("RUN " + PHX_LIVE_RUN_ID + " 0\nPROBE_OK\n").runs.includes(PHX_LIVE_RUN_ID),
+      "the phx-live marker line must parse as a run",
     );
 
     // An idle box: the marker, no runs.
@@ -990,6 +1003,33 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.equal(gradeActionsStages(["typecheck"], [job("checks", "cancelled", [])]).verdict, "no-verdict");
     assert.equal(gradeActionsStages(["typecheck"], null).verdict, "no-verdict", "an unreadable job list is not a verdict");
     assert.equal(gradeActionsStages(["typecheck"], []).verdict, "no-verdict");
+
+    // 🔴 AND THE ONE THAT COST A FALSE VERDICT: a job GitHub never started reports `completed` /
+    // `failure` with `steps: []`. On 2026-10-12 jobs stopped starting account-wide ("recent account
+    // payments have failed or your spending limit needs to be increased") and #5792's `validate` and
+    // `checks` both ended failure in three seconds with no steps; grading fell through to
+    // `job.conclusion`, so `lint`, `typecheck` and `test` were all recorded FAIL for a commit nothing
+    // had compiled. A FAIL is reported to the owner as "your code is broken" and blocks a push, so a
+    // billing block must never wear one.
+    const neverStarted = job("checks", "failure", []);
+    const billingBlocked = gradeActionsStages(["lint", "typecheck"], [neverStarted, job("validate", "failure", [])]);
+    assert.equal(
+      billingBlocked.verdict,
+      "no-verdict",
+      "a job that reported failure with NO steps was never started — that is NO VERDICT, never FAIL",
+    );
+    assert.deepEqual(billingBlocked.stages, {}, "a never-started job must record no per-stage verdict at all");
+    assert.match(billingBlocked.why, /never started/, "the reason must say the job never started, not that a check failed");
+    assert.equal(
+      gradeActionsStages(["test"], [job("validate", "failure", [])], STAGE_JOBS_PR).verdict,
+      "no-verdict",
+      "the same on a pull_request run, which is the route the open-PR fallback reads",
+    );
+    assert.equal(
+      gradeActionsStages(["typecheck"], [{ name: "checks", status: "completed", conclusion: "failure" }]).verdict,
+      "no-verdict",
+      "a job whose steps could not be read at all is not a verdict either",
+    );
 
     // A real failure still outranks an unknown, exactly as it does in the box script.
     assert.equal(

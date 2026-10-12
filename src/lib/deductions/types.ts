@@ -32,10 +32,48 @@ export const deductionsCategories = [
   "no_records_activity",
   "unpaid_vacation",
   "insufficient_balance_vacation",
+  // A head-office week with no weekly plan submitted by that Monday (owner, 2026-10-12). A
+  // DAILY-module connector only, never in DEDUCTION_COLLECTORS, so it can never charge on a
+  // month scan — see src/lib/daily-deductions/no-weekly-plan-select.ts.
+  "no_weekly_plan",
   "loan",
   "other",
 ] as const;
 export type DeductionsCategory = (typeof deductionsCategories)[number];
+
+/**
+ * The human NAME of each deduction category — the reason line the employee reads.
+ *
+ * Added 2026-10-12 with the owner's decision that a released deduction is emailed with its amount
+ * and its reason: an email reading `crm_half_day` names nothing to the person it charges, and the
+ * standing rule is names, never codes. Typed as a FULL `Record`, so adding a category without
+ * naming it here does not compile — a missing entry would otherwise mail the raw code.
+ *
+ * It lives in this file for the same reason `LEAVE_BALANCE_CATEGORIES` does: `deductions/types.ts`
+ * imports nothing, so the notifier, a client component and a server route can all read one list.
+ * The per-category config row in the database carries the admin-screen label; this is the sentence
+ * an EMPLOYEE is told, and a best-effort notifier must not depend on a database read to say it.
+ */
+export const deductionsCategoryNames: Record<DeductionsCategory, string> = {
+  crm: "CRM — no visit activity recorded",
+  crm_half_day: "CRM — half day",
+  fingerprint: "Fingerprint attendance — no punch recorded",
+  insufficient_balance_vacation: "Vacation with insufficient leave balance",
+  loan: "Loan instalment",
+  no_records_activity: "No records — no punch and no other activity recorded",
+  // Head-office only, a DAILY-module connector (owner, 2026-10-12): a week whose weekly plan
+  // was not submitted by that Monday. It reaches this map because a released daily line is
+  // emailed like any other, and the mail must name a reason rather than the code.
+  no_weekly_plan: "No weekly plan submitted for that week",
+  other: "Other deduction",
+  unpaid_vacation: "Unpaid vacation",
+};
+
+/** The category's human name, or the raw value when something unknown reaches here. */
+export function deductionCategoryName(category: string | null | undefined): string {
+  const key = String(category ?? "").trim();
+  return deductionsCategoryNames[key as DeductionsCategory] ?? (key || "Deduction");
+}
 
 /**
  * The categories "Deduct from leave balance" exists for. CRM and CRM half day on 2026-10-09, widened

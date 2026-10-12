@@ -125,6 +125,31 @@ export type PhoenixCrmNotice =
       reversed?: boolean;
     }
   | {
+      /** SFE sent a waiting request back to the rep for a comment (owner, 2026-10-12). Told to the rep alone. */
+      kind: "request_returned";
+      seat: OrgSeat;
+      requestId: string;
+      requestKind: PhoenixCrmRequestKind;
+      returnerHrId: string;
+      requesterHrId: string;
+      customerName: string;
+      note: string;
+      /** When it was returned — a request can be returned again after the rep answers, so it keys the notice. */
+      returnedAt: string;
+    }
+  | {
+      /** The rep answered a request SFE returned (owner, 2026-10-12). Told to the SFE who returned it. */
+      kind: "request_answered";
+      seat: OrgSeat;
+      requestId: string;
+      requestKind: PhoenixCrmRequestKind;
+      requesterHrId: string;
+      returnerHrId: string;
+      customerName: string;
+      reply: string;
+      answeredAt: string;
+    }
+  | {
       kind: "plan_submitted";
       org: OrgIndex;
       seat: OrgSeat;
@@ -834,6 +859,38 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
     };
   }
 
+  if (notice.kind === "request_returned") {
+    const names = await loadPeopleNames([notice.returnerHrId]);
+    const returner = deciderNameOf(names, notice.returnerHrId, "SFE");
+    const subject = { grade: "grade change", drop: "drop request", add: "request to add", restore: "request to bring back" }[notice.requestKind];
+    return {
+      recipients: [notice.requesterHrId],
+      eventType: "request_returned",
+      title: `Comment needed: ${subject} for ${notice.customerName}`,
+      message: `${returner} sent your ${subject} for ${bidiIsolate(notice.customerName)} on ${territory} back for a comment. Note: ${notice.note} Open it in Phoenix CRM and write your comment — it then goes straight back to SFE.`,
+      tab: "list",
+      recordId: notice.requestId,
+      idempotencyKey: `phoenix_crm:request:${notice.requestId}:returned:${notice.returnedAt}`,
+      subjectHrId: notice.requesterHrId,
+    };
+  }
+
+  if (notice.kind === "request_answered") {
+    const names = await loadPeopleNames([notice.requesterHrId]);
+    const rep = nameOf(names, notice.requesterHrId, "The rep");
+    const subject = { grade: "grade change", drop: "drop request", add: "request to add", restore: "request to bring back" }[notice.requestKind];
+    return {
+      recipients: [notice.returnerHrId],
+      eventType: "request_answered",
+      title: `Comment received: ${subject} for ${notice.customerName}`,
+      message: `${rep} answered your question on the ${subject} for ${bidiIsolate(notice.customerName)} on ${territory}: ${notice.reply} It is back with you in Phoenix CRM to approve or refuse.`,
+      tab: "team",
+      recordId: notice.requestId,
+      idempotencyKey: `phoenix_crm:request:${notice.requestId}:answered:${notice.answeredAt}`,
+      subjectHrId: notice.requesterHrId,
+    };
+  }
+
   if (notice.kind === "validation_not_confirmed") {
     // 🔴 EVERY WORD HERE IS ABOUT HIS PICTURE. No name of a decider, no "rejected", no "admin", no
     // "review", no metres: `validationRefusalRepText` is the only sentence that varies, and a regex
@@ -1138,6 +1195,10 @@ function activityMirrorPeopleIds(notice: PhoenixCrmNotice): string[] {
     case "request_decided":
       ids.push(notice.requesterHrId, notice.deciderHrId);
       break;
+    case "request_returned":
+    case "request_answered":
+      ids.push(notice.requesterHrId, notice.returnerHrId);
+      break;
     case "plan_submitted":
     case "monthly_plan_submitted":
       ids.push(notice.submitterHrId);
@@ -1175,6 +1236,10 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
   const territory = territoryName(notice.seat);
   switch (notice.kind) {
     case "first_visit":
+      return null;
+    // A return is a step between SFE and one rep: not a feed line for the NSM, and SFE did it himself.
+    case "request_returned":
+    case "request_answered":
       return null;
     case "request_created": {
       const rep = nameOf(names, notice.requesterHrId, "A rep");
@@ -1393,6 +1458,10 @@ function activityMirrorActorHrId(notice: PhoenixCrmNotice): string | null {
     case "monthly_plan_decided":
     case "unplanned_visit_decided":
       return notice.deciderHrId;
+    case "request_returned":
+      return notice.returnerHrId;
+    case "request_answered":
+      return notice.requesterHrId;
     case "plan_edit":
       return notice.actorHrId;
     case "visit_ask":

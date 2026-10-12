@@ -2107,6 +2107,15 @@ async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
   return permissionMatrixPromise;
 }
 
+/**
+ * The effective matrix read straight from `role_permission_overrides`: no cache, and NO last-known-good
+ * fallback. Any load failure throws. Only the owner-only MCP source's live authorization uses this;
+ * the web app keeps `getPermissionMatrix`, whose fallback is deliberate for a page render.
+ */
+export async function loadPermissionMatrixUncached(): Promise<PermissionMatrix> {
+  return getPermissionMatrixFromDb();
+}
+
 export function clearPermissionMatrixCache() {
   permissionCache = null;
 }

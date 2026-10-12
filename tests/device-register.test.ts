@@ -1041,6 +1041,22 @@ export function runDeviceRegisterTests(): void {
   testTheCorrectionRouteIsGuardedBeforeAnyWrite();
   testTheCorrectionIsDeclaredInTheAccessRegistry();
   testOnlyTheSuperAdminMayCorrect();
+  testABlankDeclarationNumberIsNumberedAutomatically();
+}
+
+/** A blank declaration number is numbered by the system on a signed handover; a typed one is kept. */
+function testABlankDeclarationNumberIsNumberedAutomatically(): void {
+  const service = readFileSync("src/lib/devices/service.ts", "utf8");
+  assert.ok(service.includes("async function nextDeclarationNo"), "the numbering helper must exist");
+  assert.ok(service.includes("`DEC-${year}-`"), "numbers read DEC-<year>-NNNN");
+  const numbered = service.split("trimmed(input.declarationNo) ?? (await nextDeclarationNo(input.issuedOn))").length - 1;
+  assert.equal(numbered, 2, "issueDevice and reconcileDevice both keep a typed number and number a blank one");
+  const reserveStart = service.indexOf("export async function reserveDevice");
+  const reserve = service.slice(reserveStart, service.indexOf("\n}\n", reserveStart));
+  assert.ok(
+    reserve.includes("trimmed(input.declarationNo)") && !reserve.includes("nextDeclarationNo"),
+    "a reservation is not a signed custody, so it takes no automatic number",
+  );
 }
 
 // Silences the unused-import lint for a type used only in a cast above.

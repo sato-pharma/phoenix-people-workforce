@@ -13,7 +13,8 @@ import { Authorizer } from '../src/policy.mts';
 import { StateStore } from '../src/state.mts';
 import { toolNames } from '../src/contracts.mts';
 import { publishProjection } from '../src/publisher.mts';
-import { workforceAdapter,vacancyAdapter,organizationAdapter,salesAdapter,sourceMetadata } from '../src/source-adapters.mts';
+import { workforceAdapter,vacancyAdapter,organizationAdapter,salesAdapter,seal } from '../src/source-adapters.mts';
+import { proofFor } from './proofs.mts';
 import { seatKeysOfActiveEmployees,reconcileVacancyRowsAgainstOccupancy,stripRestrictedColumns } from '../src/phoenix-policy.mjs';
 
 test('real createReadStore over verified TLS PostgreSQL: all tools, RLS, freshness, writes, live revocation',async()=>{
@@ -29,7 +30,7 @@ test('real createReadStore over verified TLS PostgreSQL: all tools, RLS, freshne
    ['organization','',await fixture.db.organization(subject,'',50)],['published_sales','2026-09',await fixture.db.sales(subject,'2026-09','',50)],
   ] as const){
    await admin.unsafe('set role phoenix_mcp_publisher');
-   await publishProjection(admin,config,dataset,period,rows);
+   await publishProjection(admin,config,dataset,period,seal(dataset,period,[...rows],proofFor(dataset,period)));
    await admin.unsafe('reset role');
   }
   await db.ready();assertFreshness((await db.employees(subject)).freshness);const auth=new Authorizer(db,config.owner),service=new ToolService(db,auth,state,()=>{},config.nodeIdKey);
@@ -101,26 +102,26 @@ test('freshness rejects missing, stale, future and inconsistent metadata; live a
 });
 
 test('canonical workforce, occupancy and closing policies agree with source adapters on synthetic reports',async()=>{
- const fixture=fixtureStore(),f=sourceMetadata({complete:true,sourceUpdatedAt:new Date().toISOString(),sourceObservedAt:new Date().toISOString()});
- assert.equal(workforceAdapter(fixture.employees,fixture.identity(),f).length,2);
- assert.throws(()=>sourceMetadata({complete:false,sourceUpdatedAt:f.sourceUpdatedAt,sourceObservedAt:f.sourceObservedAt}));
+ const fixture=fixtureStore();
+ assert.equal(workforceAdapter(fixture.employees,fixture.identity()).length,2);
+ assert.throws(()=>seal('employees','',[],{} as never),'a hand-built proof is refused');
  const org=[{hrId:'root',seatId:'seat-root',managerHrId:null,jobTitle:'District Manager',positionTitle:'District Manager',fullName:'Fixture Manager',displayName:'Fixture Manager',departmentName:'Sales',lineName:'CNS',areaName:'Fixture',type:'employee'},
   {hrId:'rep',seatId:'seat-rep',managerHrId:'root',jobTitle:'Medical Rep',positionTitle:'Medical Rep',fullName:'Fixture Rep',displayName:'Fixture Rep',departmentName:'Sales',lineName:'CNS',areaName:'Fixture',type:'employee'}];
  const raw=[{id:1,status:'open',jobTitle:'Medical Rep',positionTitle:'Medical Rep',departmentName:'Sales',lineName:'CNS',areaName:'Fixture',managerHrId:'root'},
   {id:2,status:'open',jobTitle:'Medical Rep',positionTitle:'Medical Rep',departmentName:'Sales',lineName:'CNS',areaName:'Unoccupied',managerHrId:'root'}];
  const canonical=reconcileVacancyRowsAgainstOccupancy(raw,seatKeysOfActiveEmployees(org));
  assert.equal(canonical.length,1,'actual Phoenix report reconciliation removes the occupied seat');
- assert.deepEqual(vacancyAdapter({rows:canonical},f).map(r=>r.area),['Unoccupied']);
- const hierarchy=organizationAdapter({organogramRows:org},f);assert.equal(hierarchy.find(r=>r.key==='seat:seat-rep')?.parentKey,'seat:seat-root');
- assert.throws(()=>organizationAdapter({organogramRows:[...org,{...org[0],seatId:'ambiguous-parent'}]},f));
- assert.throws(()=>organizationAdapter({organogramRows:org.map(r=>({...r,managerHrId:'missing'}))},f));
+ assert.deepEqual(vacancyAdapter({rows:canonical}).map(r=>r.area),['Unoccupied']);
+ const hierarchy=organizationAdapter({organogramRows:org});assert.equal(hierarchy.find(r=>r.key==='seat:seat-rep')?.parentKey,'seat:seat-root');
+ assert.throws(()=>organizationAdapter({organogramRows:[...org,{...org[0],seatId:'ambiguous-parent'}]}));
+ assert.throws(()=>organizationAdapter({organogramRows:org.map(r=>({...r,managerHrId:'missing'}))}));
  const cell={salesUnits:10,salesValue:1500,targetUnits:20,targetValue:2000,achievementPct:75};
  const matrix={line:'CNS',period:'2026-09',availableLines:['CNS'],availablePeriods:['2026-09'],columns:[],regions:[],grandTotal:{kind:'grandTotal',cells:[],rowTotal:cell}};
  const canonicalMatrix=stripRestrictedColumns(matrix);
  const source={publication:async()=>({publishedAt:'2026-10-01T00:00:00Z',revision:'fixture-1'}),closing:async()=>({line:'CNS',selectedPeriod:'2026-09',awaitingPublish:false,matrix:canonicalMatrix})};
- const sales=await salesAdapter('2026-09',['CNS'],source,f);
+ const sales=await salesAdapter('2026-09',['CNS'],source);
  assert.equal(sales[0].salesValue,canonicalMatrix.grandTotal.rowTotal.salesValue);assert.equal(sales[0].targetValue,canonicalMatrix.grandTotal.rowTotal.targetValue);
- await assert.rejects(salesAdapter('2026-08',['CNS'],source,f),'fallback month refused');
- let called=false;await assert.rejects(salesAdapter('2026-09',['CNS'],{publication:async()=>null,closing:async()=>{called=true;return matrix;}},f));assert.equal(called,false);
- await assert.rejects(salesAdapter('2026-09',['Pedia'],source,f),'fallback line refused');
+ await assert.rejects(salesAdapter('2026-08',['CNS'],source),'fallback month refused');
+ let called=false;await assert.rejects(salesAdapter('2026-09',['CNS'],{publication:async()=>null,closing:async()=>{called=true;return matrix;}}));assert.equal(called,false);
+ await assert.rejects(salesAdapter('2026-09',['Pedia'],source),'fallback line refused');
 });

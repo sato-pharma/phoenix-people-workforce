@@ -3,11 +3,13 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import { isPlanEditable, isPlanSentForReview } from "../src/lib/phoenix-crm/plan-rules.ts";
 import { emptyPlanCounts, emptyVisitCounts, groupPlanByTerritory, groupVisitsByRep, planKeptPercent } from "../src/lib/phoenix-crm/report-rules.ts";
+import { mapUnplannedRow } from "../src/lib/phoenix-crm/server/unplanned.ts";
 import { plannedStartEmptyNote } from "../src/lib/phoenix-crm/today-rules.ts";
 import {
   isUnplannedVisitStatus,
   isUnplannedVisitWaiting,
   parseUnplannedReason,
+  reviewerWasOnTheVisit,
   UNPLANNED_REASON_MAX,
   UNPLANNED_REASON_MIN,
   unplannedFirstStatus,
@@ -285,6 +287,182 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
     const visits = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/visits.ts", import.meta.url), "utf8"));
     assert.match(visits, /planToday: \{ status: planDay\.status, saved: planDay\.customerIds\.length \}/, "the form carries today's plan state");
     assert.match(visits, /isPlanSentForReview\(planDay\.status\) \? planDay\.customerIds : \[\]/, "and the picker is still fed the SENT set alone");
+  }
+
+  // ── 🔴 WHO WAS ON THE VISIT IS ON THE CARD — 2026-10-12 ──────────────────────────────────────
+  //
+  // The decider's card carried the evidence and nothing else, so a manager deciding a ride-along he
+  // had been on himself read nothing that said so. Measured on production that day: of the 31
+  // off-plan visits that carried a companion, 27 were decided by that companion — every one the
+  // NAMED manager, and every one approved, 0 refused. That is a missing piece of INFORMATION, never
+  // a finding against anybody: this half states it and changes no step of the chain.
+  //
+  // The chain itself is NOT touched here and must not be: direct manager, then SFE; one refusal ends
+  // it; a vacant chain starts at SFE; the Administrator is not a step. Whether a participant's own
+  // step should be skipped is the owner's ruling to make, not this test's.
+  {
+    const unplanned = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/unplanned.ts", import.meta.url), "utf8"));
+    const columns = /const UNPLANNED_COLUMNS =([\s\S]*?);\n/.exec(unplanned)?.[1] ?? "";
+    // 🔴 A PLAIN SUBSTRING CANNOT ASK THIS QUESTION: "product_manager_hr_id" ENDS IN "manager_hr_id",
+    // so includes("manager_hr_id") stayed true with the manager’s own column deleted and the check could
+    // not fail. Caught by breaking it on 2026-10-12; both reads now ask with a boundary on each side.
+    for (const column of ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"]) {
+      assert.match(
+        columns,
+        new RegExp(`(^|[^a-z_])${column}\\b`),
+        `the read must load ${column} itself — the card cannot show a companion it never read`,
+      );
+    }
+    // The names have to be loaded too, or the card would print an HR id, which Golden Rule #1 forbids.
+    assert.match(unplanned, /\.\.\.companionHrIds\(row\)/, "unplannedPeople must ask for the companions' names");
+
+    const names = new Map([
+      ["AI0001", "Khaled Saied"],
+      ["AI0002", "Nermeen Salah"],
+      ["AI0003", "Mahmoud Fathy"],
+    ]);
+    const row: Record<string, unknown> = {
+      visit_id: "11111111-1111-4111-8111-111111111111",
+      seat_id: "seat-1",
+      rep_hr_id: "AI0001",
+      customer_id: "22222222-2222-4222-8222-222222222222",
+      visit_date: "2026-10-07",
+      clarification: "He asked me to come in while I was at the hospital.",
+      status: "sfe_pending",
+      version: 1,
+      created_at: "2026-10-07T09:00:00.000Z",
+      manager_decided_by_hr_id: "AI0002",
+      customer: { name: "محمود سعد", list_type: "doctor", speciality: "Paediatrics" },
+      visit: {
+        photo_path: null,
+        location_flag: null,
+        products: [],
+        comment: null,
+        captured_at: "2026-10-07T08:40:00.000Z",
+        manager_hr_id: "AI0002",
+        senior_hr_id: null,
+        product_manager_hr_id: "AI0003",
+      },
+    };
+
+    const view = mapUnplannedRow(row, names);
+    assert.deepEqual(
+      view.companions,
+      [
+        { role: "Manager", name: "Nermeen Salah" },
+        { role: "Product manager", name: "Mahmoud Fathy" },
+      ],
+      "the companions are NAMED, in role order, and a null column drops out rather than printing a blank",
+    );
+    assert.equal(view.managerDecidedByWasOnTheVisit, true, "the manager who approved it was on it — the card says so");
+    assert.equal(view.sfeDecidedByWasOnTheVisit, false, "and the step nobody has taken yet claims nothing");
+    // It is a statement, never a refusal: the step it waits on is untouched by it.
+    assert.equal(view.stage, "sfe", "stating who was on the visit must not move the step it is waiting on");
+
+    const alone = mapUnplannedRow(
+      { ...row, visit: { ...(row.visit as Record<string, unknown>), manager_hr_id: null, product_manager_hr_id: null } },
+      names,
+    );
+    assert.deepEqual(alone.companions, [], "a rep who went alone shows no companion line at all");
+    assert.equal(alone.managerDecidedByWasOnTheVisit, false, "and nothing is claimed about the manager who approved it");
+
+    // The card prints it, and the owner's rule holds: this is the DECIDER's Team tab, never a rep's
+    // screen — `tests/phoenix-crm-blind-half.test.ts` sweeps the rep-facing roots for exactly that.
+    const card = stripComments(readFileSync(new URL("../src/components/phoenix-crm/unplanned-visit-card.tsx", import.meta.url), "utf8"));
+    assert.match(card, /visit\.companions\.length > 0/, "the card shows the companions when there are any");
+    assert.match(card, /visit\.managerDecidedByWasOnTheVisit/, "and says plainly when the approver was one of them");
+  }
+
+  // 🔴 THE OWNER'S 2026-10-12 RULING — A MANAGER WHO WAS ON THE VISIT DOES NOT APPROVE IT; SFE DOES.
+  //
+  // He was shown the measurement (of the 31 off-plan visits carrying a companion, 27 were decided by
+  // that companion, every one the named manager, every one approved) and chose: "No — the SFE approves
+  // it instead", because that manager's step is unavailable exactly as a vacant chain's already is.
+  //
+  // What is pinned here is as much what did NOT change as what did: no stage is added, no step is
+  // removed, no flag is raised, and the rep is told nothing about any of it.
+  {
+    assert.equal(
+      unplannedFirstStatus(true, true),
+      "sfe_pending",
+      "a manager who was ON the visit does not decide it — it starts at the SFE step",
+    );
+    assert.equal(
+      unplannedFirstStatus(true, false),
+      "manager_pending",
+      "and every other off-plan visit still starts with the territory's own manager, untouched",
+    );
+    assert.equal(
+      unplannedFirstStatus(false),
+      "sfe_pending",
+      "the vacant-chain rule this one reuses is itself unchanged, and the new argument is optional",
+    );
+    assert.equal(unplannedFirstStatus(false, true), "sfe_pending", "a vacant chain cannot also have been on the visit");
+
+    // The comparison has to fold: these hr ids differ in case and padding between the columns that
+    // store them, and a raw `===` would answer "not on the visit" and hand the step straight back.
+    assert.equal(
+      reviewerWasOnTheVisit(" b-1 ", [null, "B-1", null]),
+      true,
+      "the reviewer is matched through personKey — case and padding alone must not miss him",
+    );
+    assert.equal(reviewerWasOnTheVisit("B-1", ["B-2", null, "B-3"]), false, "a manager who was not on it is not matched");
+    assert.equal(reviewerWasOnTheVisit(null, [null, null, null]), false, "a vacant reviewer is on nothing — hasReviewer answers that case");
+    assert.equal(reviewerWasOnTheVisit("", ["", null, null]), false, "and an EMPTY key must never match an empty companion column");
+
+    // The rep's own sentence. `sfe_pending` is reached two ways and only one of them means a manager
+    // approved something; telling this rep otherwise would be a plain untruth about his own visit.
+    assert.equal(
+      unplannedVisitRepNote("sfe_pending", false),
+      "Off the plan. It counts once SFE approves it.",
+      "a visit whose manager step was never available must not tell the rep his manager approved it",
+    );
+    assert.match(
+      unplannedVisitRepNote("sfe_pending", true),
+      /manager approved it/,
+      "and where a manager really did approve it, the sentence he has always read is unchanged",
+    );
+    for (const note of [unplannedVisitRepNote("sfe_pending", false), unplannedVisitRepNote("sfe_pending", true)]) {
+      assert.doesNotMatch(note, /B-\d|was on (the|this) visit/i, "nothing a rep reads names a person or mentions who was on it");
+    }
+
+    // The decision path is the third fence, and the only one that reads whoever is actually clicking.
+    // It needs the companion columns on its OWN read — the board's select is a different string.
+    const decide = stripCommentsCompact(readFileSync(new URL("../src/lib/phoenix-crm/server/unplanned.ts", import.meta.url), "utf8"));
+    for (const column of ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"]) {
+      assert.match(
+        decide,
+        new RegExp(`visit:phoenix_crm_visits!visit_id\\(([^)]*(,|\\s))?${column}\\b`),
+        `the decision's own read must load ${column} — it cannot compare a companion it never read`,
+      );
+    }
+    assert.match(
+      decide,
+      /stage === "manager" && reviewerWasOnTheVisit\(viewer\.hrId, companionHrIds\(row\)\)/,
+      "the fence tests the VIEWER against the visit, at the manager stage only",
+    );
+    assert.doesNotMatch(
+      decide,
+      /stage === "sfe" && reviewerWasOnTheVisit/,
+      "and never the SFE step — the SFE Manager holds no sales seat and is on no rep's ride-along",
+    );
+
+    // The rows that were ALREADY waiting are moved by a migration, because the application only ever
+    // chooses a first status as a visit saves. Without it the new fence would strand them for good.
+    const move = readFileSync(
+      new URL("../supabase/migrations/20261012140000_phoenix_crm_offplan_reviewer_on_the_visit.sql", import.meta.url),
+      "utf8",
+    );
+    assert.match(move, /set status = 'sfe_pending'/, "the waiting rows are moved to the SFE step");
+    assert.match(move, /u\.status = 'manager_pending'/, "and only the ones still waiting on a manager — a settled visit is never reopened");
+    assert.match(move, /btrim\(u\.manager_hr_id\) <> ''/, "an empty reviewer key must not match the coalesce('') arms");
+    assert.doesNotMatch(
+      stripComments(move),
+      /manager_decided_at\s*=|manager_decided_by_hr_id\s*=/,
+      "nobody took that step, so no decision may be written for one",
+    );
+    assert.doesNotMatch(stripComments(move), /delete\s+from/i, "nothing is deleted");
+    assert.match(move, /version = u\.version \+ 1/, "the optimistic lock is bumped so a page loaded before this is told to reload");
   }
 
   console.log("phoenix-crm unplanned visit: OK");

@@ -162,6 +162,11 @@ function AdminMetricsLine({ row }: { row: RankBoardRow }) {
         ];
   // Integrity in detail — the admin's alone (owner, 2026-10-05: "admin sees detail").
   const flagged = metrics.flaggedSaves ?? 0;
+  // Cases against a PLACE he validated, counted since 2026-10-12. Stated separately and never added
+  // into the "of N saves" ratio: a place validation is not a save, so a sum would print a fraction
+  // whose two halves count different things.
+  const flaggedPlaces = metrics.flaggedPlaces ?? 0;
+  const placeDetail = flaggedPlaces > 0 ? ` · ${flaggedPlaces} validated ${flaggedPlaces === 1 ? "place" : "places"} flagged` : "";
   const flagDetail = Object.entries(metrics.integrityFlags ?? {})
     .map(([flag, count]) => `${PHOENIX_CRM_INTEGRITY_LABELS[flag as PhoenixCrmIntegrityFlag] ?? flag} (${count})`)
     .join(" · ");
@@ -170,8 +175,10 @@ function AdminMetricsLine({ row }: { row: RankBoardRow }) {
       <p className="break-words text-phx-sm font-semibold text-slate-500">{parts.join(" · ")}</p>
       {deeper.length > 0 ? <p className="break-words text-phx-sm font-semibold text-slate-500">{deeper.join(" · ")}</p> : null}
       {metrics.fieldSaves !== undefined ? (
-        <p className={`break-words text-phx-sm font-bold ${flagged > 0 ? "text-red-700" : "text-emerald-700"}`}>
-          {flagged > 0 ? `Integrity: ${flagged} of ${metrics.fieldSaves} saves flagged — ${flagDetail}` : `Integrity: ${metrics.fieldSaves} saves, none flagged`}
+        <p className={`break-words text-phx-sm font-bold ${flagged > 0 || flaggedPlaces > 0 ? "text-red-700" : "text-emerald-700"}`}>
+          {flagged > 0 || flaggedPlaces > 0
+            ? `Integrity: ${flagged} of ${metrics.fieldSaves} saves flagged${placeDetail} — ${flagDetail}`
+            : `Integrity: ${metrics.fieldSaves} saves, none flagged`}
         </p>
       ) : null}
     </div>

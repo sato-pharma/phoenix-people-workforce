@@ -42,10 +42,11 @@ export type Sales = z.infer<typeof salesSchema>;
 export const freshnessSchema = z.object({
   snapshotId:z.string().uuid(), sourceUpdatedAt:z.string().datetime({offset:true}),
   sourceObservedAt:z.string().datetime({offset:true}),
-  sourceWatermark:z.string().max(300).optional(),
 });
 export type Freshness = z.infer<typeof freshnessSchema>;
-export type Projection<T> = T[] & {freshness:Freshness};
+// `proof` exists only on projections sealed by the source host (source-adapters.mts `seal`); a
+// projection read back from the reporting database carries freshness alone.
+export type Projection<T> = T[] & {freshness:Freshness; proof?:unknown};
 export function projection<T>(rows:T[], freshness:Freshness):Projection<T> {
   return Object.assign(rows,{freshness:freshnessSchema.parse(freshness)});
 }
@@ -60,3 +61,5 @@ export interface ReadStore {
 }
 export class Denied extends Error { constructor() { super('Access denied'); } }
 export class Unavailable extends Error { constructor() { super('Phoenix data is unavailable'); } }
+// A source that was READ SUCCESSFULLY and holds no publication. Distinct from Unavailable, which is "could not tell".
+export class NotPublished extends Unavailable {}

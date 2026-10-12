@@ -146,9 +146,42 @@ commit's checks finish. So the merge gate and the deploy gate are the same two c
 gate hard-coded to a count from a doc does not merely wait — it waits for checks that no longer exist.
 **Count passes against `branches/main/protection/required_status_checks`, read live.**
 
-### Before every push: the PR's own CI is the verdict; `remote-check` is optional (owner, 2026-10-08)
+### Before every push: the PR's own CI is the verdict; `remote-check` is optional — except on a push that ADDS a test file (owner, 2026-10-12)
 
-🔴 **The standing step below was RETIRED on 2026-10-08** by the owner's performance-recovery plan.
+🔴 **ONE STEP CAME BACK, FOR ONE KIND OF PUSH (owner, 2026-10-12: _"make remote-check test mandatory
+before a push that adds a test file"_).** A push whose commits add a `tests/**.test.ts(x)` file runs
+`node scripts/remote-check.mjs test` first — once, in the background — and pushes on its
+`remote-check: PASS — <sha9>`. Every other push is unchanged: commit, push, open the PR.
+
+**What was measured on 12 Oct 2026**, the day he asked: **26 of the 59 PR CI runs that finished went
+red — 44%, against 19-23% on 7-11 Oct and 6% on the 6th** — and 116 minutes of wall clock went into
+red runs. Grouped by what actually failed, **13 of the 25 were repo-wide contract gates that had
+nothing to do with the change being shipped**: 6 the AGENTS.md/rules hook-length gate
+(`agents-long-hooks-cite-docs`, which read `56 of 540 hooks exceed 1200 bytes` mid-morning until
+#5779 at 14:49 Cairo), **4 the zero-tolerance `comment-strip-ratchet`, which fires on a newly added
+test file that strips comment lines by hand instead of importing `stripComments`** — those four are
+the ones that no longer reach CI at all: on his instruction the same evening
+(*"fix the comment-strip ratchet so new test files use the shared stripper"*),
+`.claude/hooks/comment-strip-guard.mjs` refuses the shape at the Write or Edit that introduces it and
+names the import, sharing ONE detector with the ratchet
+(`.claude/hooks/lib/comment-strip-shapes.mjs`; account: `docs/hook-dispatcher.md`) — 2 the API
+reverse-guard backlog and 1 the access registry. Seven were the PR's own new assertions, three the
+typecheck and two the same migration rule twice. Four branches ate 16 of the 25, one of them going
+red seven times on a different gate each round — serial discovery, because the PR run was the first
+thing that ever looked. The suite answers all of that in ~125s on the box; `validate` answers it only
+after the push, ~3 minutes later and one CI round each time.
+
+🔴 **AND IT IS A RULE, NOT A GUARD — `push-typecheck-guard.mjs` REMINDS AND NEVER REFUSES OVER THE
+SUITE.** Offered exactly that hook on 2026-10-04, the owner answered _"keep the pre-push test as a
+rule, no guard"_, and that ruling stands until he lifts it in his own words: never build, propose or
+"just suggest" one. What the hook does instead, when the pushed commits add a test file and hold no
+`test` PASS for that sha: it prints the rule, the files it saw and the command, and allows the push.
+Pinned by `tests/push-typecheck-guard.test.ts`, whose cases fail if the deny arm ever grows past the
+typecheck.
+
+The 2026-10-08 account follows — every line of it still holds for every other push.
+
+🔴 **The 2026-10-04 standing step was RETIRED on 2026-10-08** by the owner's performance-recovery plan.
 Measured from 1,230 session transcripts: on 4-8 Oct sessions spent **6.5 session-hours a day** in
 `remote-check` and **17.6 hours** in foreground loops polling its output, because one 7.7 GB box
 served ~9 sessions one run at a time (lint alone took 182s cold), while the hosted PR CI it ran in
@@ -172,7 +205,9 @@ What replaces it:
   2026: ~1 session-hour and 50 session-minutes in 6 hours).
 - **One result per sha, reused.** A run that ends in a printed PASS or FAIL records each stage in
   `<git-common-dir>/phx-remote-check/<sha>.json`. The push guard only READS it — it refuses a push
-  solely when that record holds a typecheck FAIL for the exact commit, and starts nothing.
+  solely when that record holds a typecheck FAIL for the exact commit, and starts nothing. A recorded
+  `test` PASS for the exact sha is also what satisfies the 2026-10-12 rule above, so a re-push of the
+  same commit never re-runs the suite.
 - **A busy or unreachable box never bills by default:** with an open PR it reads that PR's run by sha;
   without one it ends NO VERDICT (exit 6). `--actions`/`--urgent` still dispatch on request.
 

@@ -114,6 +114,24 @@ export type CapturedFix = {
   /** The phone's clock when the photo was taken, compared with the server's on save. */
   deviceCapturedAt: string | null;
   /**
+   * The phone's clock when it TOOK the position above — not when the rep pressed.
+   *
+   * Two different instants, and the gap between them is the only honest answer to "when was he at the
+   * door". A one-tap visit keeps the sharpest reading it has seen and replaces it only with a sharper
+   * one or once it is 15 seconds old (`STALE_MS`, use-silent-fix.ts), so a form left open sends a
+   * reading older than the tap — while `captured_at`, the server's receipt, has been the only clock on
+   * the row.
+   *
+   * 🔴 BOTH ENDS ON THE PHONE'S OWN CLOCK, deliberately: `deviceCapturedAt` minus this is the age of
+   * the reading at the tap, and a handset whose clock is an hour out still reports that age correctly
+   * because the error cancels. The skew against the SERVER stays where it already is, on
+   * `device_skew_minutes`.
+   *
+   * Null is NOT MEASURED — an older bundle, or a phone that reported no timestamp. Never refused, and
+   * never read as "taken at the tap", which is the one reading that would matter most.
+   */
+  fixTakenAt: string | null;
+  /**
    * Android's own mark on a fix that came from a mock provider — a "Fake GPS" app — as
    * `expo-location` reports it. Null where the question cannot be asked: the web, and iOS.
    *
@@ -168,10 +186,12 @@ export const NO_FIX_FOR_A_VISIT = `Turn on location for ${BROWSER_PLACEHOLDER}, 
  * later visit there would have read "0 m apart" — a blur compared with itself — and proved nothing.
  * The place gets the tighter line because it is the point every visit is measured against.
  *
- * 🔴 VALIDATION IS STRICT: BOTH readings must be inside the place's line — the photo's own AND the
- * Capture-location pin (owner, the same day: "the system should never accept a photo or location …
- * in validation", "in validation the system can block inaccurate validation"). A sharp pin never
- * rescues a rough photo, nor a sharp photo a rough pin.
+ * 🔴 VALIDATION JUDGES THE CAPTURE-LOCATION PIN ALONE (owner, 2026-10-11, "A" when asked directly). It
+ * was BOTH readings from 2026-10-03 ("the system should never accept a photo or location … in
+ * validation"); on iPhone Safari the camera is handed an approximate position (2,000 m, 650-1,900 m)
+ * while the pin reads 11-30 m, so reps AT the clinic were refused at the end, again and again. A sharp
+ * pin now validates beside a rough photo reading, a rough pin is still refused, and the photo's raw
+ * reading is stored and read by the integrity board, never by the rep. Never restore the photo gate.
  *
  * 🔴 AND THE SETTING IS NAMED BY THE REP'S OWN BROWSER, NEVER "Phoenix" (2026-10-03). These sentences
  * said "Turn on precise location for Phoenix" — a setting no phone has, because the rep is in a
@@ -247,13 +267,8 @@ function metresSaid(accuracyMeters: number): string {
 
 /** The widest reading that put a place outside its line, or null when neither number is to blame. */
 export function roughestPlaceReading(fix: CapturedFix): number | null {
-  const over: number[] = [];
-  if (fix.accuracyMeters !== null && fix.accuracyMeters > PLACE_MAX_ACCURACY_METERS) over.push(fix.accuracyMeters);
-  const photoRead = fix.photoLat !== null && fix.photoLon !== null;
-  if (photoRead && fix.photoAccuracyMeters !== null && fix.photoAccuracyMeters > PLACE_MAX_ACCURACY_METERS) {
-    over.push(fix.photoAccuracyMeters);
-  }
-  return over.length === 0 ? null : Math.max(...over);
+  // The PIN alone decides since 2026-10-11 (`placeReadingsPrecise`), so it is the only number to name.
+  return fix.accuracyMeters !== null && fix.accuracyMeters > PLACE_MAX_ACCURACY_METERS ? fix.accuracyMeters : null;
 }
 
 export function roughFixAtThePlace(fix: CapturedFix): string {
@@ -281,6 +296,9 @@ export function parseCapturedFix(raw: Record<string, unknown>, noFixMessage = NO
   // perfect 0 m fix and shown to the manager as "within 0 m". A blank accuracy is unknown.
   const accuracy = readAccuracyInput(raw.accuracyMeters);
   const deviceCapturedAt = typeof raw.deviceCapturedAt === "string" && !Number.isNaN(Date.parse(raw.deviceCapturedAt)) ? raw.deviceCapturedAt : null;
+  // The same guard, for the same reason: a junk value is NOT MEASURED, never a date, and never a
+  // refusal. A phone one release behind sends nothing here and saves its visit exactly as before.
+  const fixTakenAt = typeof raw.fixTakenAt === "string" && !Number.isNaN(Date.parse(raw.fixTakenAt)) ? raw.fixTakenAt : null;
   // Strictly a boolean or nothing. A body that omits it — an older build, the web, iOS — is
   // "not asked", never "clean", and is never refused for the omission.
   const deviceMocked = typeof raw.deviceMocked === "boolean" ? raw.deviceMocked : null;
@@ -291,6 +309,7 @@ export function parseCapturedFix(raw: Record<string, unknown>, noFixMessage = NO
       lon: Number(raw.lon),
       accuracyMeters: accuracy !== null && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
       deviceCapturedAt,
+      fixTakenAt,
       deviceMocked,
       // Read through the SAME guards as the pin, and independently of it: a body carrying only
       // half a shutter pair contributes no coordinate at all rather than a lopsided one. Never
@@ -348,26 +367,55 @@ export type PlaceDraft = CapturedFix & {
  * Both raw readings are stored beside it; this only chooses which one the address, brick, area and
  * region are resolved from, and which one every later visit is measured against.
  *
- * Which reading is chosen never rescues a rough one: `parsePlaceDraft` has refused a place whose photo
- * OR pin is wider than `PLACE_MAX_ACCURACY_METERS` before it gets here (owner, 2026-10-03).
+ * Which reading is chosen never rescues a rough PIN: `parsePlaceDraft` refuses a place whose pin is
+ * wider than `PLACE_MAX_ACCURACY_METERS` before it gets here, and the SHARPER reading fixes the place
+ * (`pickPlacePoint`; owner, 2026-10-11, replacing the 2026-10-03 both-readings rule).
  */
 export type PlacePoint = { lat: number; lon: number; accuracyMeters: number | null; source: "photo" | "pin" };
 
-export function placePoint(fix: CapturedFix): PlacePoint {
-  if (fix.photoLat !== null && fix.photoLon !== null) {
-    return { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters, source: "photo" };
+/** One reading of a place: a coordinate and the radius the phone claimed for it (null when unknown). */
+export type PlaceReading = { lat: number; lon: number; accuracyMeters: number | null };
+
+/**
+ * Which of a place's two readings fixes it: THE SHARPER ONE, the photo's on a tie (owner, 2026-10-11,
+ * "perfect fix" after a rep read a wrong address on a place she validated).
+ *
+ * The photo's reading stays the fixed point whenever it is at least as sharp as the pin, as ruled on
+ * 2026-09-29 ("the photo + the location of photo is the more trustable"), and when the photo's accuracy
+ * is unknown. But a place is fixed FOR GOOD and its address, brick and area are resolved from this one
+ * point, so a photo reading with a wide radius must never beat a pin that is plainly tighter: iPhone
+ * Safari hands the camera an approximate position (up to the 250 m line, or 2,000 m) while the same
+ * phone's Capture-location button reads 11-30 m, and the address of a point 200 m off is the wrong
+ * street. Pure, so the capture screen shows the address of the SAME point the server will save.
+ */
+export function pickPlacePoint(photo: PlaceReading | null, pin: PlaceReading): PlacePoint {
+  const pinIsSharper =
+    photo !== null && photo.accuracyMeters !== null && pin.accuracyMeters !== null && pin.accuracyMeters < photo.accuracyMeters;
+  if (photo !== null && !pinIsSharper) {
+    return { lat: photo.lat, lon: photo.lon, accuracyMeters: photo.accuracyMeters, source: "photo" };
   }
-  return { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, source: "pin" };
+  return { lat: pin.lat, lon: pin.lon, accuracyMeters: pin.accuracyMeters, source: "pin" };
+}
+
+export function placePoint(fix: CapturedFix): PlacePoint {
+  const photo: PlaceReading | null =
+    fix.photoLat !== null && fix.photoLon !== null
+      ? { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters }
+      : null;
+  return pickPlacePoint(photo, { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters });
 }
 
 /**
- * Whether BOTH of a place's readings are inside its line — the pin, and the photo's own when the
- * shutter read one. Either one rough refuses the validation (owner, 2026-10-03).
+ * Whether a place's reading is inside its line — decided by the PIN (the Capture-location reading)
+ * ALONE. 🔴 OWNER, 2026-10-11, answering "A" when asked directly: a sharp pin validates the place even
+ * when the photo's own reading is rough. This REPLACES the 2026-10-03 rule that BOTH readings had to be
+ * inside the line. Why: on iPhone Safari the camera is handed an APPROXIMATE position (a flat 2,000 m,
+ * 650-1,900 m) while the same phone's Capture-location button reads 11-30 m, so reps standing at the
+ * clinic were refused at the end, again and again (B-182, B-158). A rough PIN is still refused, and the
+ * photo's raw reading is still stored (and still read by the integrity board, above the rep).
  */
 export function placeReadingsPrecise(fix: CapturedFix): boolean {
-  if (!withinAccuracy(fix.accuracyMeters, PLACE_MAX_ACCURACY_METERS)) return false;
-  const photoRead = fix.photoLat !== null && fix.photoLon !== null;
-  return !photoRead || withinAccuracy(fix.photoAccuracyMeters, PLACE_MAX_ACCURACY_METERS);
+  return withinAccuracy(fix.accuracyMeters, PLACE_MAX_ACCURACY_METERS);
 }
 
 // ── What a REFUSED capture was carrying ─────────────────────────────────────────────────────────
@@ -631,11 +679,22 @@ function roughPinAtThePharmacy(accuracyMeters: number | null): string {
 
 export type DropDraft = { reason: DropReason; note: string | null };
 
-export function parseDropDraft(raw: unknown): EntryRuleResult<DropDraft> {
+/**
+ * Owner, 2026-10-12: a rep's ask to drop a customer always carries a comment — the SFE Manager reads it
+ * before he drops anyone, alone or in bulk. A reason from the list is not enough on its own.
+ */
+export const DROP_COMMENT_REQUIRED = "Write why this customer should leave your list — the comment is required.";
+
+/**
+ * `requireNote` is the REP's own ask (`createListRequest`). The SFE Manager dropping a customer off a
+ * list himself (`sfeDropFromList`) is not the rep's ask and keeps its comment optional.
+ */
+export function parseDropDraft(raw: unknown, options: { requireNote?: boolean } = {}): EntryRuleResult<DropDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const reason = String(body.reason ?? "").trim();
   if (!DROP_REASON_KEYS.has(reason)) return { ok: false, error: "Choose why this customer should leave your list." };
   const note = cleanText(body.note, DROP_REASON_MAX);
+  if (options.requireNote && !note) return { ok: false, error: DROP_COMMENT_REQUIRED };
   if (reason === "other" && !note) return { ok: false, error: "Write why this customer should leave your list." };
   return { ok: true, value: { reason: reason as DropReason, note } };
 }
@@ -717,10 +776,43 @@ export type VisitDraft = CapturedFix & {
    * see `clampFormOpenSeconds`.
    */
   formOpenSeconds: number | null;
+  /**
+   * Which browser install sent this visit — a random id that install keeps in its own storage, or
+   * null when there was no storage to keep one in (`device-install.ts`).
+   *
+   * 🔴 SILENT (Golden Rule #1), and it travels exactly as `formOpenSeconds` above does: the phone has
+   * to SEND it or the fact never exists at all, and nothing reads it back out towards the rep.
+   *
+   * It names a BROWSER INSTALL and nothing more — never a person, never a handset serial, and 🔴 never
+   * a package or APK scan, which the owner forbids by name. Two saves carrying the same id came from
+   * one browser profile, which is the whole question it exists to make answerable; two carrying
+   * different ids say nothing either way.
+   */
+  deviceInstallId: string | null;
 };
 
 /** A photo slot lasts 2 hours, so nothing legitimate is longer than that between opening and saving. */
 export const FORM_OPEN_SECONDS_MAX = 7200;
+
+/**
+ * The install id, read strictly.
+ *
+ * Shaped like the id `device-install.ts` writes and nothing else, so a body that puts a sentence, a
+ * person's name or 4 KB of junk in this key lands as null rather than filing it as a device. Never
+ * refused, for the same reason as the stopwatch: the rep is at a door, and this is a field he is not
+ * even told exists.
+ *
+ * The shape test is the repo's one `isUuid`, never a regex written here — `tests/malformed-uuid-id-guards.test.ts`
+ * refuses a second copy of that pattern anywhere under `src/`, because identical regexes never
+ * disagree until one of them is edited. Trimming and lowercasing happen HERE, before the guard,
+ * since `isUuid` deliberately does neither: this is a body field being normalised for storage, not
+ * an id about to be handed to a uuid column.
+ */
+export function parseDeviceInstallId(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim().toLowerCase();
+  return isUuid(value) ? value : null;
+}
 
 /**
  * The phone's stopwatch, clamped.
@@ -860,6 +952,7 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       outcome: parseVisitOutcome(body),
       samplesGiven: parseSamplesGiven(body.samplesGiven),
       formOpenSeconds: clampFormOpenSeconds(body.formOpenSeconds),
+      deviceInstallId: parseDeviceInstallId(body.deviceInstallId),
     },
   };
 }

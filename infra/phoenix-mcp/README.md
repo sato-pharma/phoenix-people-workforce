@@ -4,7 +4,8 @@ Status: **implemented service and synthetic security tests; NOT production ready
 
 This package implements all five approved MCP tools, OAuth authorization, a restricted PostgreSQL
 reader, canonical report adapters, an atomic projection publisher, and Railway container configuration.
-The live source proof/authorization bridge and identity-provider registration are still release gates.
+The source proof and live authorization bridge are implemented and fixture-tested; the non-production
+source rehearsal and identity-provider registration are still release gates.
 See [the source proposal](proposal/SOURCE-INTERFACE.md) and [owner identity](proposal/IDENTITY.md).
 There is no fallback to administrative Phoenix APIs or a service-role key.
 
@@ -126,11 +127,17 @@ Created in `infra/phoenix-mcp/`:
 - `src/config.mts`, `src/contracts.mts`, `src/database.mts`, `src/main.mts`
 - `src/oauth.mts`, `src/phoenix-policy.mjs`, `src/phoenix-policy.d.mts`, `src/policy.mts`
 - `src/server.mts`, `src/state.mts`, `src/tools.mts`
-- `tests/fixtures.mts`, `tests/postgres-fixture.mts`, `tests/security.test.mts`
+- `src/phoenix-source.mjs`/`.d.mts`, `src/source-adapters.mts`, `src/source-collect.mts`, `src/publish-cycle.mts`, `src/publisher.mts`
+- `source/phoenix-bindings.mjs`, `source/run-publisher.mjs` (source side only, never bundled into the reader)
+- `proposal/source-watermark.sql` (review only)
+- `tests/fixtures.mts`, `tests/postgres-fixture.mts`, `tests/security.test.mts`, `tests/integration.test.mts`, `tests/pipeline.test.mts`, `tests/source-host.mts`, `tests/proofs.mts`
 - `README.md`, `SECURITY.md`, `RUNBOOK.md`, `VERIFICATION.md`
 
 Created outside this package: `.github/workflows/phoenix-mcp.yml` (isolated checks, no deployment).
 
 Modified: root `tsconfig.json` excludes this independent service from the Next.js project; the
-service has its own typecheck. Existing Phoenix business source files are unchanged. Generated
+service has its own typecheck. Existing Phoenix behaviour is unchanged: new opt-in code lives in `src/lib/mcp-source/` and
+`app/api/mcp-source/authorize` (disabled unless `PHOENIX_MCP_SOURCE_ENABLED=true`), with one-line touches to
+`proxy.ts` (CSRF shared-secret exemption), `src/lib/security/access-registry.ts` and one added export in
+`src/lib/auth/permissions.ts`. Generated
 `dist/` and package-local `node_modules/` are ignored and not committed.

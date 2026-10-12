@@ -121,12 +121,12 @@ function DayRecord({ context }: { context: DisputeContext | undefined }) {
               <span className="text-sm font-bold text-slate-900">{fact.title}</span>
               {fact.time ? <span className="font-mono text-phx-xs font-semibold text-slate-500">{fact.time}</span> : null}
               {fact.detail ? <span className="text-sm font-medium text-slate-600">{fact.detail}</span> : null}
-              {/* The one fact that usually settles a "no activity" dispute on its own: an approved
-                  Travel / Admin / Meeting day IS the record of that day, because Phoenix keeps it
-                  nowhere else. */}
-              {fact.coversTheDay ? (
-                <span className="border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-emerald-800">
-                  Approved plan — this activity is the day&apos;s own record
+              {/* Phoenix keeps an approved Travel / Admin / Meeting day nowhere else, so there is
+                  nothing else to look for beside it — but the plan is what was INTENDED and never
+                  settles the day (owner, 2026-10-12). Neutral, not green, for exactly that reason. */}
+              {fact.plannedWithNoOtherRecord ? (
+                <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-700">
+                  Approved plan — what was intended, not a record of the day
                 </span>
               ) : null}
             </li>

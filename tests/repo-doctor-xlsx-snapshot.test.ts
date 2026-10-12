@@ -247,8 +247,8 @@ export async function runRepoDoctorXlsxSnapshotTests() {
 
   assert.deepEqual(
     BACKED_UP_SUBDIRS,
-    [SUPERSEDED_DIR],
-    "🔴 the backed-up subfolder is the one the printer actually archives into — this is what catches a rename of it",
+    [SUPERSEDED_DIR, "scratch-map-unmapped"],
+    "🔴 the backed-up subfolders are the one the printer actually archives into, plus the mapping run's pre-images — this is what catches a rename of the first",
   );
 
   const archiveRepo = mkdtempSync(join(tmpdir(), "phx-xlsx-arch-src-"));

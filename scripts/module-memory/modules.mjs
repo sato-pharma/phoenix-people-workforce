@@ -46,6 +46,27 @@ export const MODULES = [
     keywords: ["payroll", "salary", "salaries", "payslip", "payslips", "deduction", "deductions", "net pay", "gross pay", "basic salary", "social insurance", "salary batch", "مرتب", "مرتبات", "رواتب"],
     tables: ["salary_records", "salary_batches", "automated_payroll", "payroll_", "payslip", "deduction"],
   },
+  // 🔴 SPLIT 2026-10-12, FOR THE REASON `phoenix-crm-approvals` BELOW RECORDS: `payroll` reached 32
+  // rules and its injected pointer measured 4,067 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the weekly-plan-is-never-coverage rule landed. The
+  // DISPUTE family is the clean cut: the Dispute Center has its own folders, its own three outcomes and
+  // its own charge rule, and none of its rules are read while editing a deduction connector. `payroll`
+  // KEEPS EVERY GLOB IT HAD, so a dispute file loads the PAIR and nothing that used to arrive stops
+  // arriving. The file itself was nowhere near its 72,000-byte cap — two different limits, and this is
+  // the small one.
+  {
+    id: "payroll-disputes",
+    title: "Payroll — disputes and the Dispute Center",
+    scope: "An employee's dispute of a deduction: where it is decided, what a decision charges, the case briefing, and which disputes each side still sees.",
+    globs: [
+      "src/lib/dispute-center/**",
+      "src/components/disputes/**",
+      "app/**/disputes/**",
+      "tests/*dispute*",
+    ],
+    keywords: ["dispute", "dispute center", "disputed deduction", "case briefing", "accept the dispute", "reject the dispute", "refund the deduction", "اعتراض"],
+    tables: ["deduction_disputes", "dispute_"],
+  },
   // ── The sales area is THREE modules, and the split is deliberately LOPSIDED ──
   //
   // One file held all of it until 2026-10-02, when it reached 87% of MODULE_FILE_MAX_BYTES. The cap
@@ -76,6 +97,27 @@ export const MODULES = [
     ],
     keywords: ["monthly closing", "closing", "el qema", "qema", "office rule", "city rule", "business review", "factory price", "تقفيل", "مبيعات"],
     tables: ["phx_closing", "phx_monthly", "monthly_closing"],
+  },
+  // 🔴 SPLIT, 2026-10-12, BY THE SAME HOOK-SHORTENING PASS AS `phoenix-crm-visits` ABOVE: splitting the two
+  // longest sales-closing bullets at their clause boundaries took the module from 31 rules at 3,699 bytes to
+  // 36 at 4,114, over the 4,000 pointer margin. The surfaces a closing is READ from are one family — the
+  // premium workbook and the frozen old export, the Closing Matrix (No Office) tab, the Rankings tab and the
+  // Performance Review pack — and NONE of them decides a number, which is why they are the safe half to move:
+  // every money and golden rule stays in `sales-closing`, which keeps every glob it had, so an export file
+  // loads the pair. Account: `docs/module-memory.md`, "Limits".
+  {
+    id: "sales-closing-exports",
+    title: "Monthly Closing — the exports, the premium workbook and the Performance Review pack",
+    scope: "The surfaces a closing is READ from rather than computed in: the premium executive workbook and the frozen old export, the Closing Matrix (No Office) tab, the Rankings tab, and the Performance Review pack — its series, its per-rep units-by-month block, its shared pipeline with the consolidated closing, and the total it is allowed to call national.",
+    globs: [
+      "src/lib/sales/{closing-consolidated-premium-export,closing-export-filename,closing-export-payload,closing-matrix-without-office,closing-performance-review,closing-performance-review-access,closing-performance-review-export,closing-performance-review-regions,closing-review-sheets,monthly-closing-consolidated-export,monthly-closing-export,rankings,rankings-page,sales-workbook-kit}.ts",
+      "src/components/sales/{closing-matrix-table,closing-performance-review-workspace}.tsx",
+      "src/components/sales/rankings/**",
+      "tests/closing-{consolidated-export,engine-export,export-filename,export-matches-screen,export-organogram-region-labels,filtered-export-keeps-direct,matrix-no-office,performance-review,performance-review-export-gate,performance-review-series-reuse,total-sheet-matches-matrix}*",
+      "tests/monthly-closing-export-*",
+    ],
+    keywords: ["closing export", "premium closing", "performance review", "rankings tab", "no office matrix", "consolidated closing", "national total", "filtered total", "workbook"],
+    tables: [],
   },
   {
     id: "sales-imports",
@@ -207,7 +249,7 @@ export const MODULES = [
     scope: "Location, behaviour and photo integrity, mock-location detection, the touch trail, refused readings and duplicate customers — the evidence a rep is never shown, and the admin boards that read it and who may open each.",
     globs: [
       "src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts",
-      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,touch-trail,touch-trail-reader}.ts",
+      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,silent-detectors,touch-trail,touch-trail-reader}.ts",
       "src/components/phoenix-crm/touch-trail-{board,collector}.tsx",
       "app/**/phoenix-crm/{integrity,duplicates,refused-readings}/**",
       "app/**/field-crm/touch-trail/**",
@@ -261,6 +303,29 @@ export const MODULES = [
     ],
     keywords: ["exceptions board", "working day", "call rate denominator", "brick coverage", "plan vs actual", "tracking sheet", "reports workbook", "report catalogue", "report guide", "daily digest figures"],
     tables: [],
+  },
+  // 🔴 SPLIT, 2026-10-12, FOR THE SAME REASON AS THE FOUR ABOVE — but this time the pointer was pushed over
+  // by SHORTENING rules, not by adding one. The ten longest rule bullets in the repo were split at their own
+  // clause boundaries so the 1,200-byte gate has real headroom again (52 long of 538 → 42 of 559, against a
+  // ceiling of 55), and every new bullet contributes its own headline: `phoenix-crm` went from 30 rules at
+  // 3,707 bytes to 37 at 4,303, over the 4,000 margin `tests/module-memory.test.ts` holds. What a rep
+  // RECORDS on a visit is one family — the form and its folded steps, the 02:00 day, the pharmacy call, who
+  // was on a double, the Super Admin's correction and the call prep that reads it back — so it moves
+  // together. `phoenix-crm` keeps every glob it had, so a visit file loads the pair and nothing that used to
+  // arrive stops arriving. Account: `docs/module-memory.md`, "Limits".
+  {
+    id: "phoenix-crm-visits",
+    title: "Phoenix CRM — the visit a rep records: the form, the day, the pharmacy call",
+    scope: "What a rep records on a visit and when: the Add-visit form and its folded steps, the start-work confirmation, the 02:00 visit-day boundary and the no-past-day rule, the objection and next step, the pharmacy visit and the pharmacy he adds himself, who was on a double visit, the Super Admin's correction, and the call prep that reads it all back.",
+    globs: [
+      "src/lib/phoenix-crm/{call-prep,day-activities,day-detail,day-start-rules,last-visit-products,pharmacy-call-rules,today-rules,visit-ask-rules,visit-company,visit-edit-rules,visit-kind-labels,visit-location-words,visit-outcome,visit-rollup-rules}.ts",
+      "src/lib/phoenix-crm/server/{call-prep,visit-asks,visit-edit,visit-locations,visit-rollup,visits}.ts",
+      "src/components/phoenix-crm/{add-pharmacy,call-prep-panel,pharmacy-details,unplanned-visit-card,visit-asks,visit-company-picker,visit-customer-picker,visit-edit-panel,visit-log-form,visit-start,visits-tab}.tsx",
+      "app/api/phoenix-crm/{call-prep,visit-asks,visit-edit,visits}/**",
+      "tests/phoenix-crm-{call-prep,countable-visits,first-visit,last-visit-products,one-tap-visit,pharmacy-calls,pharmacy-pin,pharmacy-visit-logged,visit-asks,visit-company,visit-dating,visit-dwell,visit-form-ease,visit-organogram-titles,visit-outcome,visit-product-manager,visit-rollup,visits-everywhere}*",
+    ],
+    keywords: ["add visit", "visit form", "visit day", "pharmacy visit", "add a pharmacy", "call prep", "next step", "objection", "double visitor", "correct a visit", "started working"],
+    tables: ["phoenix_crm_visits", "phoenix_crm_pharmacies"],
   },
   {
     id: "crm",

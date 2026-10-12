@@ -330,3 +330,59 @@ post-merge check: `/api/healthz` `revision` must carry the merge commit before a
 deployed, and the rep-side walk-through (capture a venue, seat three customers, confirm the fourth
 visit of a day is refused at the door and the fourth planned call is refused on save and on send)
 belongs on a dev server with dev-auth headers, not on a green CI run.
+
+## The picker was EMPTY on every phone — the envelope read twice, 2026-10-12
+
+The rule is one line in `.claude/rules/phoenix-crm.md`. This is what it cost.
+
+**The defect.** `crmGet(url, key)` ends in `return body[key] as T` — the hook's answer IS the value,
+never the envelope. All three screens that read `/api/phoenix-crm/shared-places` typed it
+`useCrmGet<{ sharedPlaces: SharedPlaceChoice[] }>(…, "sharedPlaces")` and then read
+`data?.sharedPlaces`: a property an array has never carried. `undefined`, `?? []`, and **the venue
+picker was empty on every phone from the moment the feature shipped (#5670)**. Because the generic is
+an *assertion* and not a check, neither `tsc` nor typescript-eslint could see it, and the screen then
+renders "No polyclinic or centre is on this territory yet" — which reads exactly like a territory that
+has none.
+
+**Why it only became fatal on 2026-10-10.** #5743 (merged 18:34) added the `!chosen` gate on the
+timetable camera and #5745 added the AM/PM step. Both are rendered only once a venue resolves out of
+that empty list, while `seatedDraftProblem` still returns `SEATED_PLACE_NO_SESSION`. So from 18:34
+that evening the save was unreachable: **the last successful seating anywhere in the company was
+2026-10-10 16:35:52**, against 55 venues of which only 9 carry a timetable — all 9 photographed
+before 18:34 that same day.
+
+**What it did to one rep.** B-161, Sherif Medhat, Medical Representative, seat `SEAT-AIF-REP-CA4`
+(Anti-Infective / Cairo East 2 / brick المرج):
+
+| Cairo time, 2026-10-12 | `phoenix_crm_touch_trail` |
+| --- | --- |
+| 15:24:51 | picks "In a polyclinic or centre" → "No polyclinic or centre is on this territory yet", with 8 of his own buildings in the table |
+| 15:25:16 | "Save this building" — مستشفى الكرمه stored |
+| 15:30:56 – 15:31:41 | **nine taps on "Save the customer"**, each answered by `div[role=alert]` "Choose whether this customer receives in the AM…" — a question not drawn on his screen |
+| 15:31:14, 15:31:48 | the empty-territory line again |
+| 15:34:39 | photographs the same building a fourth time, believing each save had been lost |
+
+He ended with **12 venue rows and 0 seated places**. Every photo slot ever issued to him became a
+venue signboard photo; not one became a timetable.
+
+**What the evidence could and could not say.** The touch trail named it. Ruled out first, each with a
+live read: all 26 `SHARED_PLACE_COLUMNS` exist in production (no 42703); 12 rows match
+`loadSharedPlacesFor`'s exact filter; `territory()` resolves his seat (the POST, through the same
+gate, wrote those rows); `read` is granted (`/api/phoenix-crm/list` → 200 in 2,235 ms); no 500 in
+`app_error_events`. 🔴 **The HTTP log carries no identity and the read answered 200 — a 200 on the
+list proves nothing about what the screen did with it.** And `railway logs --http --since <N>m`
+silently returns only the last ~1 minute whatever N is: it showed zero `shared-places` requests in a
+window that provably contained four. Do not trust it for a past window.
+
+**The fix.** Three call sites now `useCrmGet<SharedPlaceChoice[]>(…)`, read as `venues.data ?? []`
+and `venues.data?.find(…)`. `tests/phoenix-crm-shared-place.test.ts` sweeps **every** `useCrmGet` in
+`src/components/phoenix-crm` (comments stripped, `hooksChecked >= 30`) and refuses a generic that
+wraps the key the hook has already unwrapped. Broken and watched: reintroducing the wrap in
+`venue-timetable-screen.tsx` → exit 1, "venue-timetable-screen.tsx: useCrmGet already unwraps the
+envelope"; restored → exit 0.
+
+**Left for the owner, not done here.** Those 12 rows of his are 11 duplicates — 7 × الراهبات plus
+السلام (الراهبات) from 2026-10-10 22:49–23:14, and 4 × مستشفى الكرمه / الكرمه التخصصي from
+2026-10-12 14:36:37, 15:25:16, 15:30:46 and 15:34:39 — all `active`, all with `schedule_photo_path`
+NULL. They will every one appear in his picker once this ships. Retiring the extras is a bulk
+production data change and waits for his word.

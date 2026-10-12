@@ -14,10 +14,17 @@
  *
  * ## Two tiers, one read
  *
- * The position (GPS) cases are the Super Admin's alone (owner, 2026-10-02). So the week is read once
- * WITH the GPS cases for the Super Admin, and the SFE's copy is that same list minus the GPS cases
- * (`sfeVisibleCases`) — never a second query that could drift from the first. A person who holds both
- * roles is given the Super Admin's wider view.
+ * The position (GPS) cases are the Super Admin's alone (owner, 2026-10-02), and so are the signboard
+ * and capture-trust cases (owner, 2026-10-09). So the week is read ONCE, with everything, for the
+ * Super Admin, and the SFE's copy is that same list kept to the cases the board's reader stamped as
+ * his (`sfeVisibleCases`) — never a second query that could drift from the first. A person who holds
+ * both roles is given the Super Admin's wider view.
+ *
+ * 🔴 THE TIER IS DECIDED BY THE BOARD'S OWN `SFE_SOURCES`, NOT HERE AND NOT IN THE RULES FILE. One
+ * read is only safe while the in-memory cut means exactly what the query would have meant: until
+ * 2026-10-12 it did not — the cut was `source !== "gps"`, a subtraction, and every detector added
+ * after `photo` was excluded from the SFE's copy by an accident of labelling rather than by the
+ * decision. The row now carries `sfeVisible`, stamped from that one allow-list.
  *
  * ## Channels, and why it is never email or push
  *

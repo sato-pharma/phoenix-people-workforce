@@ -9,3 +9,4 @@ export function isEmploymentAccessRevoked(input:{employmentStatus:string|null;la
 export function seatKeysOfActiveEmployees(rows:readonly unknown[]):Set<string>;
 export function reconcileVacancyRowsAgainstOccupancy<T>(rows:T[],keys:Set<string>):T[];
 export function stripRestrictedColumns<T>(matrix:T):T;
+

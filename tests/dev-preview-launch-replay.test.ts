@@ -62,6 +62,38 @@ export function runDevPreviewLaunchReplayTests() {
     assert.ok(!helper.includes(minted), `a replay grants nothing: the replay path never touches ${minted}`);
   }
 
+  // Every dev-auth hop redirects RELATIVELY, or the launch dies on a port the browser cannot reach.
+  //
+  // `next dev` builds `request.url` from the address it is BOUND to, not from the `Host` header, so
+  // `NextResponse.redirect(new URL(path, request.url))` emits an absolute Location on the server's
+  // own port. On a laptop that is invisible — bound port and browser port are both 3000. Under
+  // `phx-live` the server is bound to 127.0.0.1:3100 on the Hetzner box and the browser reaches it
+  // through an SSH tunnel on localhost:3000, so the launch sent the tab to http://localhost:3100/admin
+  // where nothing listens: an empty error page, with the real session already revoked by hop one
+  // (owner, 2026-10-12 — measured `Location: http://localhost:3100/admin` through the tunnel).
+  const devAuthRoute = readFileSync("app/api/dev-auth/route.ts", "utf8");
+  for (const [name, source] of [
+    ["app/api/dev-auth/preview/route.ts", route],
+    ["app/api/dev-auth/route.ts", devAuthRoute],
+  ] as const) {
+    assert.doesNotMatch(
+      source,
+      /NextResponse\.redirect\(/,
+      `${name} must not use NextResponse.redirect — it emits the SERVER's origin, which is the wrong port whenever the browser reaches the dev server through a tunnel (phx-live).`,
+    );
+    assert.match(
+      source,
+      /devRelativeRedirect\(/,
+      `${name} must redirect through devRelativeRedirect, whose Location the browser resolves against the origin it actually used.`,
+    );
+  }
+  const devPreviewLib = readFileSync("src/lib/auth/dev-redirect.ts", "utf8");
+  assert.match(
+    devPreviewLib,
+    /headers: \{ Location: `\$\{target\.pathname\}\$\{target\.search\}` \}/,
+    "devRelativeRedirect must send path+query only — an origin of any kind reintroduces the wrong port.",
+  );
+
   const picker = readFileSync("src/components/admin/dev-preview-picker.tsx", "utf8");
   assert.match(picker, /if \(launching\) \{\s*event\.preventDefault\(\);/, "a second click on Launch does nothing");
   assert.match(picker, /setLaunching\(true\);/, "the first click locks the button");

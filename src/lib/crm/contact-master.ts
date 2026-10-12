@@ -70,6 +70,25 @@ export function isContactMasterMissingError(error: { code?: string | null; messa
   return /could not find the function public\.crm_contact_master_refresh/i.test(error.message ?? "");
 }
 
+/**
+ * The text a failed refresh is logged with. PostgREST puts the part that names the cause in `details` —
+ * for a unique violation that is `Key (contact_crm_id, agent_crm_id, list_type)=(…) already exists` — and
+ * keeping only `message` logged "duplicate key value violates unique constraint" every five minutes for a
+ * day with nothing to say WHICH doctor. Production, 2026-10-12.
+ */
+export function describeContactMasterError(error: {
+  code?: string | null;
+  details?: string | null;
+  hint?: string | null;
+  message?: string | null;
+}): string {
+  const parts = [error.message?.trim() || "unknown error"];
+  if (error.code) parts.push(`[code ${error.code}]`);
+  if (error.details?.trim()) parts.push(error.details.trim());
+  if (error.hint?.trim()) parts.push(`hint: ${error.hint.trim()}`);
+  return parts.join(" ");
+}
+
 function count(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -110,7 +129,7 @@ export async function refreshCrmContactMaster(input: { includeActivity: boolean 
     });
     if (error) {
       if (isContactMasterMissingError(error)) return { status: "not_provisioned" };
-      return { error: error.message, status: "failed" };
+      return { error: describeContactMasterError(error), status: "failed" };
     }
     return { result: parseContactMasterRefreshResult(data), status: "refreshed" };
   } catch (error) {

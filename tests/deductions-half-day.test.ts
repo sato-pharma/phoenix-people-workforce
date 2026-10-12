@@ -22,7 +22,8 @@ import {
   halfDaySlotOfRow,
   isUnlocatedPhoenixVisit,
   judgeHalfDay,
-  planItemHalves,
+  halfDayContractOf,
+  halfOutsideContract,
   type HalfDayCheckinRow,
   type HalfDayVisitRow,
 } from "../src/lib/deductions/half-day-rule.ts";
@@ -156,6 +157,66 @@ export async function runDeductionsHalfDayTests(): Promise<void> {
 
     const morningOnly = verdictFor({ visits: [visit({ ampm: "AM", crm_save_date: `${SUNDAY}T11:00:00Z` })] });
     assert.deepEqual(morningOnly, { kind: "half_day", missing: "PM", coveredBy: ["crm"] });
+  }
+
+  // ── A half OUTSIDE the contract was never owed, so no trace is asked for ──
+  // Owner, 2026-10-12: "ahmed farag is part time he works pm only" — said after the October trace
+  // report listed five of his afternoons as mornings he had failed to record. The block above is
+  // the SAME day and it charges; the only difference here is that the contract is on file.
+  {
+    const afternoon = [visit({ ampm: "PM", crm_save_date: `${SUNDAY}T15:00:00Z` })];
+    assert.deepEqual(
+      verdictFor({ visits: afternoon, cover: { contractHalf: "pm_only" } }),
+      { kind: "left_alone", why: "outside_contract_half" },
+      "a PM-only contract never owed the morning, so the afternoon is a whole contracted day and not a half day",
+    );
+    // LEFT ALONE, never "cleared". A cleared day found a trace; here there is no trace and none is
+    // owed, and collapsing the two would hide a part-timer inside the witnessed days.
+    assert.notEqual(
+      verdictFor({ visits: afternoon, cover: { contractHalf: "pm_only" } }).kind,
+      "cleared",
+      "the half was never owed, which is a different fact from a half somebody witnessed",
+    );
+    // 🔴 THE ORDER IS THE POINT, and it needs a morning something DOES witness to show it. With a
+    // trace present the two readings differ: read the contract first and the day was never owed;
+    // read the trace first and the same day comes back "cleared", which credits his afternoon with
+    // morning evidence and quietly keeps a part-timer inside the witnessed days. These were five of
+    // Ahmed Farag's October afternoons.
+    assert.deepEqual(
+      verdictFor({
+        visits: afternoon,
+        checkins: [checkin({ check_date: `${SUNDAY}T10:20:00Z` })],
+        cover: { contractHalf: "pm_only" },
+      }),
+      { kind: "left_alone", why: "outside_contract_half" },
+      "a PM-only contract is read BEFORE any morning trace, so the day is not owed rather than cleared",
+    );
+
+    // The half he IS contracted to work still charges when nothing records it.
+    assert.deepEqual(
+      verdictFor({ visits: [visit({ ampm: "AM", crm_save_date: `${SUNDAY}T11:00:00Z` })], cover: { contractHalf: "pm_only" } }),
+      { kind: "half_day", missing: "PM", coveredBy: ["crm"] },
+      "a PM-only rep who recorded only a morning is still missing the afternoon his contract does cover",
+    );
+    assert.equal(
+      verdictFor({ visits: [visit({ ampm: "AM", crm_save_date: `${SUNDAY}T11:00:00Z` })], cover: { contractHalf: "am_only" } }).kind,
+      "left_alone",
+      "an AM-only contract is the mirror image",
+    );
+    assert.equal(
+      verdictFor({ visits: afternoon, cover: { contractHalf: "full_day" } }).kind,
+      "half_day",
+      "a whole-day contract is untouched by this change",
+    );
+    // The column is free text, so the reading is normalized — and anything that does not NAME a
+    // half is a whole day, so a mis-typed contract can never become a free pass.
+    assert.equal(halfDayContractOf("PM only"), "pm_only");
+    assert.equal(halfDayContractOf("pm-ONLY"), "pm_only");
+    assert.equal(halfDayContractOf("part time"), "full_day", "a contract naming no half is a whole day");
+    assert.equal(halfDayContractOf(null), "full_day");
+    assert.equal(halfOutsideContract("pm_only"), "AM");
+    assert.equal(halfOutsideContract("am_only"), "PM");
+    assert.equal(halfOutsideContract("full_day"), null);
   }
 
   // ── The tag is not the clock: every timed trace clears the missing half ───
@@ -294,7 +355,7 @@ export async function runDeductionsHalfDayTests(): Promise<void> {
       const day = built.byPersonDay.get(`${compactHalfDayHrId(who)}:${SUNDAY}`);
       assert.equal(day?.am, false, "an ambiguous row is never credited to either person");
       assert.deepEqual(
-        judgeHalfDay(day, { planPm: true }),
+        judgeHalfDay(day, { vacationPm: true }),
         { kind: "left_alone", why: "unattributed_row" },
         "and neither person's day is judged on half the evidence",
       );
@@ -320,7 +381,7 @@ export async function runDeductionsHalfDayTests(): Promise<void> {
     );
   }
 
-  // ── Vacations, plans and requests ─────────────────────────────────────────
+  // ── Vacations, requests, and the plan that covers nothing ────────────────
   {
     const amOff = judgeHalfDay(undefined, { vacationAm: true });
     assert.deepEqual(amOff, { kind: "half_day", missing: "PM", coveredBy: ["approved_vacation"] }, "AM off approved and an empty afternoon");
@@ -330,10 +391,17 @@ export async function runDeductionsHalfDayTests(): Promise<void> {
       "not_a_half_day",
       "AM off approved + afternoon visits is a full day accounted for",
     );
+    // 🔴 THE PLAN COVERS NOTHING (owner, 2026-10-12: *"NEVER COUNT WEEKLY PLAN AS COVERAGE WHAT IF HE
+    // PLANNED BUT DIDNT GO WORK?"*). Between 2026-10-08 and that ruling an approved afternoon plan
+    // item cleared the afternoon here, and this very case asserted it. The cover shape no longer has
+    // a field to carry one, and the rule's own source may not name one either.
+    const ruleSource = readFileSync(new URL("../src/lib/deductions/half-day-rule.ts", import.meta.url), "utf8");
+    const judge = ruleSource.slice(ruleSource.indexOf("export function judgeHalfDay"), ruleSource.indexOf("export function halfDayReason"));
+    assert.ok(!/plan/i.test(judge), "judgeHalfDay may not read a plan of any kind");
     assert.equal(
-      verdictFor({ visits: [visit({ ampm: "AM", crm_save_date: `${SUNDAY}T11:00:00Z` })], cover: { planPm: true } }).kind,
-      "not_a_half_day",
-      "an approved afternoon plan item covers the afternoon",
+      verdictFor({ visits: [visit({ ampm: "AM", crm_save_date: `${SUNDAY}T11:00:00Z` })] }).kind,
+      "half_day",
+      "a worked morning and an empty afternoon is a half day — and no approved plan can clear it",
     );
     assert.deepEqual(
       verdictFor({ visits: [visit({ ampm: "AM" })], cover: { leaveTheDayAlone: true } }),
@@ -342,11 +410,13 @@ export async function runDeductionsHalfDayTests(): Promise<void> {
     );
     assert.equal(judgeHalfDay(undefined, {}).kind, "not_a_half_day", "a whole empty day belongs to the no-activity connectors, not here");
 
-    assert.deepEqual(planItemHalves({ start_time: "09:00", end_time: "11:00" }), { am: true, pm: false });
-    assert.deepEqual(planItemHalves({ start_time: "15:00:00", end_time: "17:00:00" }), { am: false, pm: true });
-    assert.deepEqual(planItemHalves({ start_time: "13:00", end_time: "16:00" }), { am: true, pm: true }, "running past 14:00 covers the afternoon too");
-    assert.deepEqual(planItemHalves({ start_time: "10:00", end_time: null }), { am: true, pm: true }, "no end time cannot prove the afternoon was free");
-    assert.deepEqual(planItemHalves({ start_time: null, end_time: null }), { am: true, pm: true });
+    // The connector may not read a plan table at all any more — `no_weekly_plan` is the one
+    // connector in the module that touches a plan, and it CHARGES a missing one (owner, 2026-10-12).
+    const connector = readFileSync(new URL("../src/lib/deductions/connectors/half-day.ts", import.meta.url), "utf8");
+    assert.ok(
+      !/plan-items|employee_plan_headers|planAm|planPm/.test(connector),
+      "the half-day connector reads no plan source",
+    );
   }
 
   // ── Who is judged, and which days ─────────────────────────────────────────

@@ -1,7 +1,8 @@
 # Security review — release HOLD
 
-The reader, adapters, publisher and synthetic integration tests are implemented. No live source
-bridge, reporting service or OAuth configuration has been provisioned. This is not live-ready.
+The reader, adapters, publisher, source proof, live authorization bridge and synthetic end-to-end tests
+are implemented. Nothing has been run against a real environment; no reporting service, source route
+setting or OAuth configuration has been provisioned. This is not live-ready.
 
 The current concrete proposal is [SOURCE-INTERFACE.md](proposal/SOURCE-INTERFACE.md).
 Owner/provider verification and exact registrations are in [IDENTITY.md](proposal/IDENTITY.md).
@@ -33,17 +34,19 @@ fallback. Source-only bindings are not bundled into the reader.
 
 ## Remaining release gates
 
-1. Approve the isolated reporting database plus trusted source-host architecture.
-2. Implement uncached live account/RBAC and completeness-aware report source proofs on that host.
-   Existing cached/fail-open report loaders alone cannot satisfy this contract. Do not substitute
-   a broad database login or service-role key into MCP to bypass this missing dependency.
-3. Compare complete canonical report pipelines against production-shaped synthetic fixtures,
-   including acting roles, replacement offers, restricted products, direct and Office allocations.
-   Current tests exercise actual pure policies and adapter boundaries, not this entire IO pipeline.
-4. Rehearse the exact SQL and actual Supabase OIDC sign-in in an approved non-production environment.
-   B-10's existing Auth mapping and role were verified read-only; hosted OAuth setup remains unverified.
-5. Measure realistic query/refresh load, build the container, review deployment configuration and get
-   separate approval before provisioning/deployment/production connection. No merge is authorized.
+Implemented and fixture-tested on this branch: per-dataset decoupled publication, content-derived
+snapshot identity, owner-only live authorization (uncached account, Auth status, session version,
+lifecycle, effective read denial and module locks; every source error fails closed), and a derived
+read-completeness proof with a before/after change watermark. See SOURCE-INTERFACE.md.
+
+Still gated, each needing separate approval (exact list in SOURCE-INTERFACE.md):
+
+1. A non-production Phoenix rehearsal: apply and measure `source-watermark.sql`, prove its mutation
+   matrix, run the real loaders to complete the read registry, and compare all five outputs with
+   canonical reports for acting, replacement, direct and Office cases.
+2. Non-production OAuth/OIDC registration and the owner's real sign-in.
+3. Provisioning, secrets, query-load measurement and container acceptance.
+4. Only then, production SQL, production OAuth, and an owner-only ChatGPT connection. No merge is authorized.
 
 ## Residual risks
 

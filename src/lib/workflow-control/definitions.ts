@@ -495,7 +495,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             notificationRecipients: [],
             emailRecipients: [],
             sideEffects:
-              "Terminates the employee and opens the position vacancy through resignEmployeeAndOpenVacancy — the same helper every other termination uses — stamping the reason \"Contract not renewed (request <id>)\" so the termination is attributable to this flow. The employee then drops out of v_active_organogram and v_payroll_eligible_employees. No resignation notice is sent, deliberately (suppressWorkflowNotification): a non-renewal is a COMPANY decision, and the resignation notice would frame it to recipients as voluntary. Live behind the WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED kill switch (src/lib/contracts/feature-flags.ts), with the schema confirmed on staging and production.",
+              "Terminates the employee and opens the position vacancy through resignEmployeeAndOpenVacancy — the same helper every other termination uses — stamping the reason \"Contract not renewed (request <id>)\" so the termination is attributable to this flow. The employee then loses organogram_visible, has their EU-organogram seat released by au.resign_occupant, and drops out of v_payroll_eligible_employees. No resignation notice is sent, deliberately (suppressWorkflowNotification): a non-renewal is a COMPANY decision, and the resignation notice would frame it to recipients as voluntary. Live behind the WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED kill switch (src/lib/contracts/feature-flags.ts), with the schema confirmed on staging and production.",
           },
         ],
       },

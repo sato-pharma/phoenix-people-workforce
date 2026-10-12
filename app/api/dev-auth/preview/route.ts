@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { revokeAppSession } from "@/lib/auth/app-sessions";
 import { writeAuthAudit } from "@/lib/auth/audit";
 import { isDevPreviewReplay, isLocalDevelopmentRequest } from "@/lib/auth/dev-preview";
+import { devRelativeRedirect } from "@/lib/auth/dev-redirect";
 import { findDevPreviewCandidate, findDevPreviewCandidateByHrId } from "@/lib/auth/dev-preview-picker";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { parseRoleStrict, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
@@ -73,7 +74,7 @@ export async function GET(request: Request) {
   const access = await resolveAccessContext(request);
   if (access.role !== "Super Admin") {
     const replay = await replayLandingUrl(access, new URL(request.url));
-    if (replay) return NextResponse.redirect(replay);
+    if (replay) return devRelativeRedirect(replay);
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -95,7 +96,7 @@ export async function GET(request: Request) {
     if (line) backUrl.searchParams.set("line", line);
     if (region) backUrl.searchParams.set("region", region);
     if (area) backUrl.searchParams.set("area", area);
-    return NextResponse.redirect(backUrl);
+    return devRelativeRedirect(backUrl);
   }
 
   const targetUrl = new URL("/api/dev-auth", url);
@@ -103,7 +104,7 @@ export async function GET(request: Request) {
   targetUrl.searchParams.set("hrId", candidate.hrId);
   targetUrl.searchParams.set("loginId", candidate.fullName);
 
-  const response = NextResponse.redirect(targetUrl);
+  const response = devRelativeRedirect(targetUrl);
 
   // The real session cookie is checked before the dev-preview cookie
   // (see resolveAccessContextInner in src/lib/auth/server.ts), so it must be

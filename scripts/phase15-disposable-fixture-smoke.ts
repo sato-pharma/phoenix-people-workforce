@@ -310,21 +310,26 @@ async function enforceTerminalFlagsForFixture(hrId: string, status: "resigned" |
 }
 
 async function assertTerminalEffectiveExclusion(hrId: string, status: "resigned" | "terminated", label: string) {
-  const [employee, organogram, payroll] = await Promise.all([
+  // THE ORGANOGRAM LEG IS THE FLAG NOW, AND THAT IS THE HONEST SHAPE. This read
+  // `v_active_organogram` until it was dropped on 2026-10-12 at the owner's instruction: the EU
+  // organogram (the `au_v_*` seat model) is the only source of truth for an employee's
+  // distribution. The seat model's own answer cannot be asserted from here — a disposable fixture
+  // never holds a seat, so "holds no current seat" would pass BEFORE the termination exactly as it
+  // does after, and a vacuous assertion reads as proof while proving nothing. Seat release on
+  // termination is proven where it actually happens: `au.resign_occupant`, called by
+  // `phx_resign_employee_and_open_vacancy`.
+  const [employee, payroll] = await Promise.all([
     selectMaybeSingle("employees", "hr_id,employment_status,organogram_visible,payroll_eligible", "hr_id", hrId),
-    supabase.from("v_active_organogram").select("hr_id").eq("hr_id", hrId).limit(1),
     supabase.from("v_payroll_eligible_employees").select("hr_id").eq("hr_id", hrId).limit(1),
   ]);
-  if (organogram.error) throw organogram.error;
   if (payroll.error) throw payroll.error;
   addCheck(
     label,
     employee?.employment_status === status &&
-      (organogram.data ?? []).length === 0 &&
+      employee?.organogram_visible === false &&
       (payroll.data ?? []).length === 0,
     {
       employee,
-      organogramRows: organogram.data ?? [],
       payrollRows: payroll.data ?? [],
     },
   );

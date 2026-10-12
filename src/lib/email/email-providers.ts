@@ -14,11 +14,12 @@
 // The layer is INERT until the backup is configured (BREVO_API_KEY): with only Resend present it
 // behaves exactly as before — a 429 becomes a RetryableEmailError the outbox retries later.
 //
-// EXTRA ACCOUNTS (owner, 2026-10-08 — Resend's daily quota runs out every day): a second Resend
-// account, a third Resend account and a second Brevo account join the chain the moment their key
-// is set, in this order:
+// EXTRA ACCOUNTS (owner, 2026-10-08 — Resend's daily quota runs out every day; a fourth Resend
+// account added 2026-10-11): a second, third and fourth Resend account and a second Brevo account
+// join the chain the moment their key is set, in this order:
 //
-//   resend → resend-2 (RESEND_API_KEY_2) → resend-3 (RESEND_API_KEY_3) → brevo (BREVO_API_KEY) → brevo-2 (BREVO_API_KEY_2)
+//   resend → resend-2 (RESEND_API_KEY_2) → resend-3 (RESEND_API_KEY_3) → resend-4 (RESEND_API_KEY_4)
+//     → brevo (BREVO_API_KEY) → brevo-2 (BREVO_API_KEY_2)
 //
 // Each extra account may send from its own verified address (RESEND_EMAIL_FROM_<n> /
 // BREVO_EMAIL_FROM_2), because one sending domain can be verified in only one Resend account. Every
@@ -233,8 +234,8 @@ export function applySenderOverride(from: string, override: string | undefined):
   return name ? `${name} <${value}>` : value;
 }
 
-/** Extra accounts beyond the first, by env suffix: RESEND_API_KEY_2 and _3, BREVO_API_KEY_2. */
-export const extraResendAccountSuffixes = ["2", "3"] as const;
+/** Extra accounts beyond the first, by env suffix: RESEND_API_KEY_2, _3 and _4, BREVO_API_KEY_2. */
+export const extraResendAccountSuffixes = ["2", "3", "4"] as const;
 export const extraBrevoAccountSuffixes = ["2"] as const;
 
 type AccountLabel = { keyEnv: string; label: string };

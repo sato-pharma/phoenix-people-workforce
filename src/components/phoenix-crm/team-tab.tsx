@@ -20,7 +20,7 @@
 import { useId, useRef, useState, type ReactNode } from "react";
 
 import { AdministratorReversalsPanel } from "@/components/phoenix-crm/administrator-reversals-panel";
-import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { DoubleVisitPlanSection } from "@/components/phoenix-crm/double-visit-plan-section";
 import { cairoDayOf, cairoStamp, countText, dayLabel, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
 import { matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
@@ -34,6 +34,7 @@ import {
   CrmButton,
   CrmCard,
   CrmCardsOnPhone,
+  CrmCheck,
   CrmChoice,
   CrmEmpty,
   CrmField,
@@ -51,6 +52,16 @@ import {
   type NoteTone,
   type PillTone,
 } from "@/components/phoenix-crm/ui";
+import {
+  BULK_DROP_FROM,
+  bulkDropDecisionBody,
+  bulkDropFailureText,
+  bulkDropNotice,
+  bulkDropTargets,
+  repeatOfDropped,
+  pruneSelection,
+  type BulkDropOutcome,
+} from "@/lib/phoenix-crm/bulk-drop";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { splitOffPlanDays, type OffPlanDay } from "@/lib/phoenix-crm/offplan-day";
 import { planStatusLine, withPlanDeadline } from "@/lib/phoenix-crm/plan-rules";
@@ -613,7 +624,9 @@ export function TeamTab({
             <UnplannedSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={team.data} test={test} />
           ) : null}
 
-          {current === "requests" && team.data ? <RequestsSection idPrefix={idPrefix} onChanged={requestDecided} team={team.data} test={test} /> : null}
+          {current === "requests" && team.data ? (
+            <RequestsSection idPrefix={idPrefix} onBatchDone={showNotice} onChanged={requestDecided} team={team.data} test={test} />
+          ) : null}
 
           {current === "decided" && reversible ? <AdministratorReversalsPanel items={reversible} onChanged={requestDecided} /> : null}
 
@@ -1206,11 +1219,14 @@ function UnplannedSection({
 
 function RequestsSection({
   idPrefix,
+  onBatchDone,
   onChanged,
   team,
   test,
 }: {
   idPrefix: string;
+  /** The bulk drop has run: what went through, and by name what did not. */
+  onBatchDone: (notice: TeamNotice) => void;
   onChanged: (message: string) => void;
   team: TeamView;
   test: boolean;
@@ -1218,6 +1234,13 @@ function RequestsSection({
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
   const [othersLimit, setOthersLimit] = useState(PAGE);
+  // The drops ticked for the bulk drop. Read through `pruneSelection` below, so a tick on a request that
+  // left the screen (decided elsewhere, filtered out by the search) is never acted on.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  const [confirming, setConfirming] = useState(false);
+  // How many of the selected drops are finished, while the bulk runs; null when it is not running.
+  const [done, setDone] = useState<number | null>(null);
+  const running = done !== null;
 
   if (team.requests.length === 0) {
     return (
@@ -1247,7 +1270,81 @@ function RequestsSection({
       )
     : team.requests;
   const forYou = requests.filter((request) => request.canDecide);
-  const others = requests.filter((request) => !request.canDecide);
+  // Returned to the rep for a comment: it waits for HIM, so it is neither yours to decide nor another manager's.
+  const withRep = requests.filter((request) => request.withRep);
+  const others = requests.filter((request) => !request.canDecide && !request.withRep);
+
+  // Bulk drop (owner, 2026-10-12): every drop waiting at this viewer's step can be ticked, or all at once.
+  // Each is approved through the one decide route its own Approve uses, one at a time.
+  const droppable = bulkDropTargets(requests);
+  const bulkOffered = droppable.length >= BULK_DROP_FROM;
+  const chosen = pruneSelection(selected, requests);
+  const chosenRequests = droppable.filter((request) => chosen.has(request.requestId));
+  const allChosen = droppable.length > 0 && chosen.size === droppable.length;
+  const chosenCount = countText(chosen.size);
+  const chosenStep = chosenRequests.every((request) => request.stage === "sfe")
+    ? "sfe"
+    : chosenRequests.every((request) => request.stage === "manager")
+      ? "manager"
+      : "mixed";
+
+  function toggle(requestId: string, next: boolean) {
+    const copy = new Set(chosen);
+    if (next) copy.add(requestId);
+    else copy.delete(requestId);
+    setSelected(copy);
+    setConfirming(false);
+  }
+
+  function chooseAll(next: boolean) {
+    setSelected(next ? new Set(droppable.map((request) => request.requestId)) : new Set());
+    setConfirming(false);
+  }
+
+  async function dropChosen() {
+    const batch = [...chosenRequests];
+    setConfirming(false);
+    setDone(0);
+    const outcomes: BulkDropOutcome[] = [];
+    // One at a time, longest waiting first: each is its own decision through its own route, and a refusal
+    // of one is named while the rest go on.
+    // Dropping a customer closes every other request waiting on him, so a rep's repeat ask for the same
+    // customer is not sent after the first one went through: it would only come back "already decided".
+    const dropped = new Set<string>();
+    for (const request of batch) {
+      if (repeatOfDropped(request, dropped)) {
+        outcomes.push({ customerName: request.customerName, ok: true, final: true, repeat: true });
+        setDone(outcomes.length);
+        continue;
+      }
+      try {
+        const result = await crmPost<{ final: boolean }>("/api/phoenix-crm/list/requests/decide", bulkDropDecisionBody(request), "request");
+        if (result.final && request.customerKey) dropped.add(request.customerKey);
+        outcomes.push({ customerName: request.customerName, ok: true, final: result.final });
+      } catch (error) {
+        outcomes.push({ customerName: request.customerName, ok: false, why: bulkDropFailureText(errorCodeOf(error), messageOf(error)) });
+      }
+      setDone(outcomes.length);
+    }
+    setDone(null);
+    setSelected(new Set());
+    const notice = bulkDropNotice(outcomes);
+    onBatchDone({
+      tone: notice.tone,
+      title: notice.title,
+      message:
+        notice.failures.length > 0 ? (
+          <span className="grid gap-0.5">
+            <span className="block">Not approved:</span>
+            {notice.failures.map((line, index) => (
+              <span className="block" dir="auto" key={index}>
+                {line}
+              </span>
+            ))}
+          </span>
+        ) : null,
+    });
+  }
 
   function card(request: TeamRequest) {
     return (
@@ -1259,6 +1356,11 @@ function RequestsSection({
         onChanged={onChanged}
         request={request}
         seatId={request.seatId}
+        selection={
+          bulkOffered && droppable.includes(request)
+            ? { checked: chosen.has(request.requestId), disabled: running, onChange: (next) => toggle(request.requestId, next) }
+            : undefined
+        }
         territoryName={request.territoryName}
         test={test}
       />
@@ -1294,10 +1396,62 @@ function RequestsSection({
           <CrmBlock className="border-t border-slate-100" title={`Waiting for your decision · ${countText(forYou.length)}`}>
             <p className="break-words text-sm font-medium leading-6 text-slate-600">
               The longest waiting first. Approve a request, or refuse it with a note the rep reads.
+              {bulkOffered ? " Tick the drops you want gone, or select them all, and approve them in one go." : ""}
             </p>
+            {bulkOffered ? (
+              <div className="mt-3 grid min-w-0 gap-2">
+                <CrmCheck checked={allChosen} disabled={running} onChange={chooseAll}>
+                  {`Select all ${countText(droppable.length)} drop requests`}
+                </CrmCheck>
+                {chosen.size > 0 ? (
+                  confirming ? (
+                    <div className="grid min-w-0 gap-2 border border-orange-200 bg-orange-50/40 px-3.5 py-3">
+                      <p className="break-words text-sm font-black text-slate-950">{`Approve ${chosenCount} drop ${chosen.size === 1 ? "request" : "requests"}?`}</p>
+                      <p className="break-words text-sm font-medium leading-6 text-slate-600">
+                        Each one is approved on its own, as your decision, exactly as its own Approve does, and the rep is told of each.{" "}
+                        {chosenStep === "manager"
+                          ? "They go on to SFE, who decides the last step."
+                          : chosenStep === "sfe"
+                            ? "Each customer leaves the rep’s list for the Archive."
+                            : "Those at SFE’s step leave the list for the Archive; the others go on to SFE."}{" "}
+                        One that cannot be approved is named, and the others stand.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                        <CrmButton onClick={() => void dropChosen()} variant="danger">
+                          {`Approve ${chosenCount}`}
+                        </CrmButton>
+                        <CrmButton onClick={() => setConfirming(false)}>Not yet</CrmButton>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <CrmButton busy={running} disabled={running} onClick={() => setConfirming(true)} variant="danger">
+                        {running
+                          ? `Approving ${countText(Math.min((done ?? 0) + 1, chosen.size))} of ${chosenCount}…`
+                          : `Drop the ${chosenCount} selected`}
+                      </CrmButton>
+                      <CrmButton disabled={running} onClick={() => chooseAll(false)} size="sm">
+                        Clear selection
+                      </CrmButton>
+                    </div>
+                  )
+                ) : null}
+              </div>
+            ) : null}
           </CrmBlock>
           <div className="divide-y divide-slate-100 border-t border-slate-100">{forYou.slice(0, limit).map(card)}</div>
           <CrmShowMore left={forYou.length - limit} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
+        </>
+      ) : null}
+
+      {withRep.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`With the rep for a comment · ${countText(withRep.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              SFE asked the rep to explain. Each comes back to SFE the moment the rep answers.
+            </p>
+          </CrmBlock>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">{withRep.map(card)}</div>
         </>
       ) : null}
 

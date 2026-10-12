@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   countSharedPlaceDays,
@@ -128,7 +128,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
     ...atTheDoor({ shutterAccuracyMeters: PLACE_MAX_ACCURACY_METERS + 1 }),
     ...VENUE,
   });
-  assert.equal(roughShutter.ok, false, "and neither is a rough shutter reading — both halves are held to the line");
+  assert.equal(roughShutter.ok, true, "a rough shutter reading beside a sharp pin is taken - the pin decides (owner, 2026-10-11)");
 
   const good = parseSharedPlaceDraft({ ...atTheDoor(), ...VENUE });
   assert.equal(good.ok, true, "a live photo, a name, a kind and two precise readings is a venue");
@@ -640,6 +640,60 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   assert.ok(sessionMigration.includes("add column if not exists session text"), "the seating carries the session");
   assert.ok(sessionMigration.includes("check (shared_place_id is null or session is not null)"), "a seated place always has one");
   assert.ok(sessionMigration.includes("v_list_type := coalesce("), "a visit counts in its seating's session, which every AM and PM board reads");
+
+  // ── The picker read its own envelope twice, and was EMPTY for ever ───────────────────────────
+  //
+  // 🔴 `crmGet(url, key)` RETURNS `body[key]` — THE VALUE, NEVER THE ENVELOPE. So a hook typed
+  // `useCrmGet<{ sharedPlaces: … }>(…, "sharedPlaces")` whose answer is read as `data?.sharedPlaces`
+  // asks an ARRAY for a property it has never carried: undefined, `?? []`, and an empty picker on
+  // every phone. The compiler cannot see it — `request()` ends in `body[key] as T`, so the generic
+  // is an assertion and not a check — and the screen then says "No polyclinic or centre is on this
+  // territory yet", which reads exactly like a territory that has none.
+  //
+  // It cost Sherif Medhat two field days (production, 2026-10-12). With no venue in the picker
+  // `chosen` stays null, so the AM/PM step and the timetable camera are never rendered and
+  // "Save the customer" refuses with SEATED_PLACE_NO_SESSION — a question that is not on the screen.
+  // His touch trail holds nine taps on Save against that one alert; he photographed the same
+  // building 11 times believing each save had been lost, and nobody in the company was seated in a
+  // polyclinic for two days.
+  //
+  // So the sweep is over EVERY useCrmGet in the module, not only the three venue screens: the
+  // generic may never be an object wrapping the key the hook has already unwrapped.
+  const crmComponents = "src/components/phoenix-crm";
+  let hooksChecked = 0;
+  for (const file of readdirSync(crmComponents).filter((name) => name.endsWith(".tsx") || name.endsWith(".ts"))) {
+    const code = stripComments(readFileSync(`${crmComponents}/${file}`, "utf8"));
+    for (const line of code.split("\n")) {
+      const opened = line.indexOf("useCrmGet<");
+      if (opened < 0) continue;
+      const closed = line.indexOf(">(", opened);
+      const quoted = line.slice(closed).split('"');
+      if (closed < 0 || quoted.length < 3) continue;
+      const generic = line.slice(opened + "useCrmGet<".length, closed).trim();
+      const key = quoted[quoted.length - 2];
+      hooksChecked += 1;
+      const wrappedIn = generic.startsWith("{") ? generic.slice(1).split(":")[0].trim().replace("?", "") : null;
+      assert.notEqual(
+        wrappedIn,
+        key,
+        `${file}: useCrmGet already unwraps the envelope — type it as the value, never as { ${key}: … }: ${line.trim()}`,
+      );
+    }
+  }
+  assert.ok(hooksChecked >= 30, `the useCrmGet sweep read ${hooksChecked} hooks — it must see the whole module`);
+
+  // And the three screens that read the venues read the value itself.
+  for (const screen of ["shared-place-screens", "seat-in-venue-screen", "venue-timetable-screen"]) {
+    const code = stripComments(readFileSync(`${crmComponents}/${screen}.tsx`, "utf8"));
+    assert.ok(
+      code.includes(`useCrmGet<SharedPlaceChoice[]>(crmUrl("/api/phoenix-crm/shared-places"`),
+      `${screen}: the venues hook is typed as the array the route answers with`,
+    );
+    assert.ok(!code.includes("data?.sharedPlaces"), `${screen}: nothing reads .sharedPlaces off the unwrapped array`);
+  }
+  // The route it reads: one key, one value, and the key is the one the hook is given.
+  const venuesRoute = stripComments(readFileSync("app/api/phoenix-crm/shared-places/route.ts", "utf8"));
+  assert.ok(venuesRoute.includes("NextResponse.json({ sharedPlaces, success: true })"), "the GET answers { sharedPlaces, success }");
 
   console.log("phoenix-crm shared places: OK");
 }

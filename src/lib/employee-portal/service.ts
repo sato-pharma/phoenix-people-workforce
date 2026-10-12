@@ -4812,7 +4812,7 @@ function uniqueVacancyRows<T extends {
   });
 }
 
-function isDistrictManagerEmployee(
+export function isDistrictManagerEmployee(
   employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
 ) {
   return isDistrictManagerVacancyTitle(

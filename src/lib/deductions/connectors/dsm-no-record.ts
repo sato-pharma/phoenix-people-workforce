@@ -58,6 +58,7 @@ import {
   type LeavePart,
 } from "../half-day-rule.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
+import { loadProvenWorkedDays } from "../proven-worked-days.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 // The rep pipeline's own company-wide CRM data-gap detector, reused here so both
 // paths agree on which days a sync outage made unmeasurable — and so the DSM run
@@ -388,6 +389,13 @@ export async function collectDsmNoRecordCandidates(input: {
     ),
   );
 
+  // PHOENIX CRM, WHETHER OR NOT THE TEAM WAS STARTED. A manager's Phoenix visits reach the read door
+  // only from the Saturday the Super Admin pressed Start on his team, so on an unstarted team his
+  // real double visits are invisible to `activity` above. Read as a SUPPRESSOR in the `missing`
+  // filter below and deliberately NOT folded into `activity`, which feeds `anySignal`: doing that
+  // would turn the zero-signal mapping-gap skip into a charge. See ../phoenix-worked-days.ts.
+  const provenWorked = await loadProvenWorkedDays({ end: monthEnd, start: allMonthDays[0]! });
+
   const drafts: DeductionsCandidateDraft[] = [];
   for (const [compact, manager] of roster) {
     // Zero CRM signal for the WHOLE month is a mapping or onboarding gap, not a
@@ -440,6 +448,8 @@ export async function collectDsmNoRecordCandidates(input: {
       // Never charge a day before the person was hired.
       if (manager.hireDate && day < manager.hireDate) return false;
       if (activity.has(`${compact}:${day}`)) return false;
+      // A day Phoenix CRM proves he worked is never charged, started team or not.
+      if (provenWorked.keys.has(`${compact}:${day}`)) return false;
       if (claimed.has(`${compact}:${day}`)) return false;
       // Never charge a day the company itself approved them to be away — but a half-day vacation
       // clears only its half (fullDayCheckLeaveVerdict).

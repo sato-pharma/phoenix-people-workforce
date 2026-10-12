@@ -56,7 +56,7 @@ function portalLine(overrides: Partial<DeductionsPortalLine> = {}): DeductionsPo
 }
 
 export async function runDeductionsModulePortalTests(): Promise<void> {
-  // 1. mapPublicationLine — every one of the 8 categories maps to a distinct,
+  // 1. mapPublicationLine — every one of the 9 categories maps to a distinct,
   // valid payrollColumn (widened DeductionsSalaryRecordsColumn), never falls
   // through to the "else -> Unpaid Vacations" trap the legacy 3-value enum would hit.
   {
@@ -65,6 +65,9 @@ export async function runDeductionsModulePortalTests(): Promise<void> {
       crm: "crm",
       crm_half_day: "crm",
       no_records_activity: "other_deductions",
+      // Daily-module only (owner, 2026-10-12) — it writes no candidate here, but its column is
+      // Other, so a line that ever did reach payroll must not fall through to Unpaid Vacations.
+      no_weekly_plan: "other_deductions",
       unpaid_vacation: "unpaid_vacations",
       insufficient_balance_vacation: "unpaid_vacations",
       loan: "loans",

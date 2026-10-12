@@ -5,6 +5,7 @@ import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runClosingFrozenSplitNetTests } from "./closing-frozen-split-net.test.ts";
 import { runClosingBulkAllocationTests } from "./closing-bulk-allocation.test.ts";
 import { runClosingOfficeRespreadTests } from "./closing-office-respread.test.ts";
+import { runClosingStoreSplitGeographyStampTests } from "./closing-store-split-geography-stamp.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
 import { runRepTargetsTests } from "./rep-targets.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
@@ -386,6 +387,9 @@ import { runAttendanceHolidayOverridesTests } from "./attendance-holiday-overrid
 import { runDeductionsModuleFoundationTests } from "./deductions-module-foundation.test.ts";
 import { runDeductionsModulePublishTests } from "./deductions-module-publish.test.ts";
 import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guards.test.ts";
+import { runDailyDeductionsReleaseNoticeTests } from "./daily-deductions-release-notice.test.ts";
+import { runDeductionsOutstationTripDaysTests } from "./deductions-outstation-trip-days.test.ts";
+import { runDeductionsPhoenixWorkEvidenceTests } from "./deductions-phoenix-work-evidence.test.ts";
 import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.ts";
 import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.ts";
 import { runDeductionsReadGateTests } from "./deductions-read-gate.test.ts";
@@ -401,9 +405,14 @@ import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
 import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-and-clip.test.ts";
+import { runDailyDeductionsReleaseTests } from "./daily-deductions-release.test.ts";
+import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
+import { runDailyDeductionsNoWeeklyPlanTests } from "./daily-deductions-no-weekly-plan.test.ts";
+import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees.test.ts";
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
 import { runDeductionsHalfDayTests } from "./deductions-half-day.test.ts";
+import { runDeductionsPlanIsNeverCoverageTests } from "./deductions-plan-is-never-coverage.test.ts";
 import { runDeductionsDmVisitIdentityTests } from "./deductions-dm-visit-identity.test.ts";
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
 import { runDeductionsCrmVacationEmploymentJoinTests } from "./deductions-crm-vacation-employment-join.test.ts";
@@ -729,6 +738,8 @@ import { runCoverageMappingHealthTests } from "./coverage-mapping-health.test.ts
 import { runOfficePivotTests } from "./office-pivot.test.ts";
 import { runOfficeAllocationTests } from "./office-allocation.test.ts";
 import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts";
+import { runPortalUnpublishedKeycardsTests } from "./portal-unpublished-keycards.test.ts";
+import { runPortalServingRosterTests } from "./portal-serving-roster.test.ts";
 import { runClosingOfficeDifferentiationTests } from "./closing-office-differentiation.test.ts";
 import { runOfficeColumnIsCnsOnlyTests } from "./office-column-is-cns-only.test.ts";
 import { runClosingTargetInkTests } from "./closing-target-ink.test.ts";
@@ -1453,6 +1464,7 @@ import { runTerritoryRepRegionLabelTests } from "./territory-rep-region-label.te
 import { runTerritoryAreaFoldHardeningTests } from "./territory-area-fold-hardening.test.ts";
 import { runAntiInfectiveIsmailiaSuezOneAreaTests } from "./anti-infective-ismailia-suez-one-area.test.ts";
 import { runAuSeatOccupantResolverTests } from "./au-seat-occupant-resolver.test.ts";
+import { runAuResignVacatesDayAfterLastWorkingDayTests } from "./au-resignation-vacates-day-after-last-working-day.test.ts";
 import { runAuHireIntoSeatWiringTests } from "./au-hire-into-seat-wiring.test.ts";
 import { runSalesImsRatioTests } from "./sales-ims-ratio.test.ts";
 import { runHrIdCoreHelpersTests } from "./hrid-core-helpers.test.ts";
@@ -1461,6 +1473,7 @@ import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
+import { runPhxLiveBannerTests } from "./phx-live-banner.test.ts";
 import { runRemoteCheckLintCacheTests } from "./remote-check-lint-cache.test.ts";
 import { runSelectCensusTests } from "./select-census.test.ts";
 import { runCiTypecheckLockTests } from "./ci-typecheck-lock.test.ts";
@@ -1739,6 +1752,7 @@ import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-direct
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
 import { runPhoenixCrmBlindHalfTests } from "./phoenix-crm-blind-half.test.ts";
+import { runPhoenixCrmCaptureProvenanceTests } from "./phoenix-crm-capture-provenance.test.ts";
 import { runPhoenixCrmFitsTheScreenTests } from "./phoenix-crm-fits-the-screen.test.ts";
 import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
@@ -1772,6 +1786,7 @@ import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.te
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmCustomerNameFoldTests } from "./phoenix-crm-customer-name-fold.test.ts";
+import { runPhoenixCrmDoctorOnceTests } from "./phoenix-crm-doctor-once.test.ts";
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
@@ -2031,6 +2046,7 @@ import {
 } from "./module-locks.test.ts";
 import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.test.ts";
 import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-browser-token-split.test.ts";
+import { runAttendanceAgentSelfRepublishTests } from "./attendance-agent-self-republish.test.ts";
 import { runCandidateBackgroundEligibilityTests } from "./candidate-background-eligibility.test.ts";
 import { runCandidateOfferPointerTests } from "./candidate-offer-pointer.test.ts";
 import { runHrProvisioningGuardTests } from "./hr-provisioning-guard.test.ts";
@@ -2108,8 +2124,11 @@ import { runCloudMirrorDriftTests } from "./cloud-mirror-drift.test.ts";
 import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-gate.test.ts";
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
+import { runCommentStripGuardTests } from "./comment-strip-guard.test.ts";
+import { runFormDesignGuardTests } from "./form-design-guard.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
+import { runRepoDoctorCacheEntriesLinkTests } from "./repo-doctor-cache-entries-link.test.ts";
 import { runDeltaLandedVerdictTests, runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runSupabaseAdminClientEnvCacheTests } from "./supabase-admin-client-env-cache.test.ts";
@@ -2438,6 +2457,8 @@ import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywh
 import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-admin-reports.test.ts";
 import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
+import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
+import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
 import { runVacationSickAttachmentsTests } from "./vacation-sick-attachments.test.ts";
@@ -2474,6 +2495,7 @@ import { runCrmDoubleVisitWithDepartedPartnerTests } from "./crm-double-visit-wi
 import { runEmployeeNamesByHrIdTests } from "./employees-names-by-hr-id.test.ts";
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
+import { runMcpSourceTests } from "./mcp-source.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -2569,6 +2591,10 @@ await runTest(
 await runTest(
   "Office read-time respread (from the 2026-10 closing CNS Office units are respread on TODAY's value shares, an aligned month nets to exactly zero, the shares equal the LOCKED Office rule's, the total cannot move, and every matrix, workbook, attribution net and Office grid takes it)",
   runClosingOfficeRespreadTests,
+);
+await runTest(
+  "closing store-split cache keys on the geography version stamp (a direct SQL geography re-stamp changes the key, a missing stamp falls back to the hour bucket, and every table the split reads bumps it)",
+  runClosingStoreSplitGeographyStampTests,
 );
 await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
 await runTest("rep targets (a Medical Rep's own targets: self-bounded, published sales only, units within one product)", runRepTargetsTests);
@@ -3451,6 +3477,9 @@ await runTest("company holidays", runCompanyHolidaysTests);
 await runTest("deductions module foundation (unified module — candidate key, calculations, conflicts, validation)", runDeductionsModuleFoundationTests);
 await runTest("deductions module publish eligibility (mandatory-vs-approval-gated selection rule)", runDeductionsModulePublishTests);
 await runTest("deductions module CRM guards (suspect-date sync-gap detection + exclusion)", runDeductionsModuleCrmGuardsTests);
+await runTest("deductions Phoenix CRM work evidence (no day the rep provably worked is charged, started team or not)", runDeductionsPhoenixWorkEvidenceTests);
+await runTest("deductions outstation trip days (any trip not rejected spares the day; a rejected one does not)", runDeductionsOutstationTripDaysTests);
+await runTest("daily deductions release notice (the employee is told when a line is released, in-app and Telegram)", runDailyDeductionsReleaseNoticeTests);
 await runTest("deductions module portal read path (single-source publications: line mapping + sort order)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
@@ -3481,6 +3510,22 @@ await runTest(
   runDailyDeductionsRangeAndClipTests,
 );
 await runTest(
+  "daily deductions release (one deduction at a time: line state, what a click sends, validation, merge-not-replace migration)",
+  runDailyDeductionsReleaseTests,
+);
+await runTest(
+  "daily deductions no-records connector (skips reps, district managers and the SFE Manager; never charges an outage day or a person with no base salary)",
+  runDailyDeductionsNoRecordsTests,
+);
+await runTest(
+  "daily deductions no-weekly-plan connector (head office only, one day on that Monday, NEVER an automatic month collector)",
+  runDailyDeductionsNoWeeklyPlanTests,
+);
+await runTest(
+  "deductions exempt employees (Samaa Mosaad and Reham Mahmoud are dropped from every automated deduction writer; manual HR entries are spared)",
+  runDeductionsExemptEmployeesTests,
+);
+await runTest(
   "deductions leaver settlement (a finished employment settles mid-month; insert-only, never reconcile)",
   runDeductionsLeaverSettlementTests,
 );
@@ -3489,8 +3534,12 @@ await runTest(
   runDeductionsDsmNoRecordTests,
 );
 await runTest(
-  "deductions half day (a morning or afternoon with nothing on file is half a day; every check-in, save time, vacation, plan and request clears it first)",
+  "deductions half day (a morning or afternoon with nothing on file is half a day; every check-in, save time, vacation and request clears it first — a weekly plan never does)",
   runDeductionsHalfDayTests,
+);
+await runTest(
+  "deductions never read a weekly plan as coverage (the one connector that may touch a plan CHARGES the missing one — owner, 2026-10-12)",
+  runDeductionsPlanIsNeverCoverageTests,
 );
 await runTest(
   "deductions DM visit identity (a district manager is credited by EITHER id, on his own single visit or on a double — the mirror leaves the hr id null for weeks and three managers were charged a full day each inside that window)",
@@ -3894,6 +3943,14 @@ await runTest(
 await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
 await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRuleLockTests);
+await runTest(
+  "manager keycards WITHHOLD their figures when no closing is published (owner, 2026-08-13)",
+  runPortalUnpublishedKeycardsTests,
+);
+await runTest(
+  "a manager's team roster comes from the ORG TREE, never from published sales",
+  runPortalServingRosterTests,
+);
 await runTest('closing "of which Office" (Office units told apart from distributor sell-out)', runClosingOfficeDifferentiationTests);
 await runTest(
   'closing "of wh. Office" is CNS ONLY (owner, 2026-08-25: the column and the Office Allocation '
@@ -5312,6 +5369,10 @@ await runTest(
 await runTest("territory / coverage area-fold hardening (Pedia's merged option appears for either GZ6 or UE9 alone; bricks scope by REAL code so a partner-only viewer never sees the survivor's own bricks)", runTerritoryAreaFoldHardeningTests);
 await runTest("Anti Infective Delta (3): Ismailia and Suez are ONE area from 2026-09 (fold, closing sum, vacancy name); July and August keep two", runAntiInfectiveIsmailiaSuezOneAreaTests);
 await runTest("au seat-occupant resolution (period-aware, no newest-row wins)", runAuSeatOccupantResolverTests);
+await runTest(
+  "au resignation vacates the seat the DAY AFTER the last working day (half-open spans; a month-end leaver kept their own month)",
+  runAuResignVacatesDayAfterLastWorkingDayTests,
+);
 await runTest("au hire_into_seat wiring (replacement-hire vacancy fill trigger)", runAuHireIntoSeatWiringTests);
 await runTest("sales IMS ratio integrity (non-OT areas + OT region total exactly 1)", runSalesImsRatioTests);
 await runTest("HR_ID core helpers (canonical alias, cross-format match, lookup keys)", runHrIdCoreHelpersTests);
@@ -5329,6 +5390,10 @@ await runTest(
 await runTest(
   "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, the remote exit code, and a private tree per invocation (own ref, own git worktree, removed on exit) re-verified after every check so a tree swapped mid-run exits 3 with NO VERDICT, proven by running two overlapping invocations on two commits; and one run owns the whole box, because a per-stage lock left lint and test unguarded and that contention OOM-killed a build - the run takes its own lock around every stage and, if it cannot get it within 120s, runs NOTHING and exits 9 as NO VERDICT (FUP-010, 2026-10-08 — never 'running anyway'), exit 137 is reported as NO VERDICT rather than a failure, `all` includes the build, and before anything is pushed the box itself is asked whether another run is already live, a probe that fails CLOSED so an unreadable answer can never read as an idle box - a busy box with no open PR is NO VERDICT (exit 6) and dispatches GitHub Actions only on --actions/--urgent (2026-10-08) - a branch that already has an open PR has that PR's own run READ by head sha rather than a second one dispatched beside it, graded by the pull_request job map because ci.yml runs the suite in validate there and never builds at all, both routes settling through one allow-list whose whole-run success is a pass only when that run ran every stage asked for - and a dropped ssh connection (255) is NO VERDICT rather than FAIL with keepalives to stop the silent-stage drop that caused it",
   runRemoteCheckTests,
+);
+await runTest(
+  "phx-live's PRODUCTION DATA banner renders only under PHX_LIVE=1 (never on production or staging, which have no PHX_LIVE), stays server-rendered and square, and app/layout.tsx renders it",
+  runPhxLiveBannerTests,
 );
 await runTest(
   "remote-check's persistent ESLint cache only ever changes how long lint takes (2026-10-08, box lint 182s cold): the store sits outside the per-run tree with the run's path swapped for a placeholder, seeded back with THIS tree's path, keyed by the lockfile, manifests, eslint config, tsconfig and node version so a config or dependency change starts cold in a new store, a corrupt store is a cold run, lint's exit code passes through untouched, and unsafe paths are refused; the run sits under the box's own `timeout` ceiling sized from its stages (under 45 min for `all`) with a later local deadline that TERMs then KILLs ssh, and a ceiling, SIGKILL, lost status or unprinted verdict is NO VERDICT; the per-sha verdict record stores only PASS/FAIL stages and never merges another sha's",
@@ -5525,7 +5590,7 @@ await runTest("blank GPS accuracy on a direct-order pharmacy claim (the route's 
 await runTest("blank GPS accuracy on an outstation claim and an evidence stamp (Number(null), Number(\"\") and Number(\" \") are 0, so a claim with no accuracy passed the policy's GPS limit as a perfect 0 m fix; all four outstation routes read it with the shared one-value reader, the claim is saved with no accuracy and held for Super Admin review (owner, 2026-09-18) — never refused, and never held for a National Sales Manager — while 0 stays the manual-entry marker; the evidence stamp reads a blank accuracy as none)", runOutstationAccuracyInputTests);
 await runTest("blank latitude and longitude on an evidence photo stamp (Number(null), Number(\"\") and Number(\" \") are 0, so the four evidence-location endpoints stamped a blank pair at 0°N 0°E and the phone burned that fake pin into the photo; the shared parser now reads each coordinate with the one-value reader, so a blank pair or half-pair takes the same refusal a missing one always did and the phone keeps its photo with the lookup-unavailable stamp)", runEvidenceStampBlankCoordinatesTests);
 await runTest("blank GPS accuracy on a Phoenix CRM live photo (Number(\"\") and Number(\" \") are 0, so a place or visit photo whose phone sent a blank accuracy was saved as a perfect 0 m fix and shown to the manager as \"within 0 m\"; the capture parser now reads the accuracy with the shared one-value reader, so a blank accuracy is unknown, as a missing one always was)", runPhoenixCrmCaptureAccuracyBlankTests);
-await runTest("Phoenix CRM validates a place only when its photo's reading AND its pin are both within 250 m, and takes a visit within 500 m (owner, 2026-10-03; on 3 Oct a phone on approximate location fixed four Benha hospitals on one point at 2,000 m, so every later visit read 0 m apart — then, that evening, \"make the 100m 250m\", after the old 100 m line refused a rep nine times in 67 seconds on a photo stuck at 220 m that no retry could improve); the rep is told the 250 m rule on the validation screen and in the refusal, the visit's line is never put into words, an unknown accuracy is still taken, and Log visit waits for a sharper reading before sending a rough one", runPhoenixCrmAccuracyGateTests);
+await runTest("Phoenix CRM validates a place on its Capture-location PIN ALONE, within 250 m (owner, 2026-10-11, answering \"A\" — it replaced the both-readings rule this title described until 2026-10-12, after iPhone Safari handed the camera a 2,000 m position while the pin read 11-30 m and refused reps standing at the clinic; a rough pin is still refused and a rough photo reading never becomes the fixed point), and takes a visit within 500 m (owner, 2026-10-03; on 3 Oct a phone on approximate location fixed four Benha hospitals on one point at 2,000 m, so every later visit read 0 m apart — then, that evening, \"make the 100m 250m\", after the old 100 m line refused a rep nine times in 67 seconds on a photo stuck at 220 m that no retry could improve); the rep is told the 250 m rule on the validation screen and in the refusal, the visit's line is never put into words, an unknown accuracy is still taken, and Log visit waits for a sharper reading before sending a rough one", runPhoenixCrmAccuracyGateTests);
 await runTest("Phoenix CRM names the rep's OWN browser in every location and permission message, never \"Phoenix\" — no phone has an app by that name, and on 3 Oct 2026 a rep hunted the setting for seven hours, tried a second browser, and lost 18 planned visits; Chrome, Firefox, Safari, Edge, Opera and Samsung Internet are each read before the generic names they also claim, an unknown agent keeps a sentence that is already finished, and the name is read after mount so the server's render and the phone's agree", runPhoenixCrmBrowserNameTests);
 await runTest("the Phoenix CRM field day papers wear the house identity SATO-DIS-2026-01 — the ink rule with the 6 per cent zebra row as its only fill, square corners, no ellipsis, A4, both marks — and the running footer rides in a tfoot because a fixed one paints over the text below it; the CEO page names no rep, a rep who recorded nothing still appears on the line paper, and no note guesses a pronoun", runFieldDayReportTests);
 await runTest("Phoenix CRM checks every AM validation against the account's own Google Maps listing (owner, 2026-10-03): the listing must BE the account and the rep must stand within 150 m of it, a mismatch is refused at the door, and an account Google has no listing for is held for the Super Admin alone while the rep reads only that the system is checking", runPhoenixCrmGooglePlaceCheckTests);
@@ -6319,6 +6384,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM puts a doctor on a seat once (owner, 2026-10-12: “stop a rep adding a doctor who is already on his list” — the SYSTEM minted the second row: the refresh gives a rep-added doctor under his OWN id, the reference list looked the customer up by the vendor id only and returned nothing, and the minting function copied every nothing; the lookup now matches either id, the minting skips an own id, an insert trigger refuses the copy, and no existing row is touched)",
+  runPhoenixCrmDoctorOnceTests,
+);
+
+await runTest(
   "Phoenix CRM records a day that was not a call (E1 — owner, 2026-09-26: a meeting, training, a conference, admin work, travelling or a health day, so a rep at a training day stops looking like a rep who did nothing; a RECORD ONLY that no report, no coverage and no call rate reads; LEAVE IS NOT HERE because HR's vacation module is the only leave record; an unknown kind is refused rather than coerced; one row a day, replaced not piled up; and the date is the server's Cairo today, never the body's)",
   runPhoenixCrmDayActivitiesTests,
 );
@@ -6331,6 +6401,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM GOLDEN RULE #1, the BLIND half (owner, 2026-09-26: \"never make the medical rep feel that the system is here to catch him … never informed of any violation … recorded in the admin and the SFE account\" — the rep-facing surface is DERIVED and swept rather than listed, JSX text is read as well as string literals, no rep-callable route reaches the evidence, every reader of it is declared, the board's audience is one predicate naming the Super Admin and the SFE Manager, and it refuses with a 404 because a 403 naming the board is itself the disclosure)",
   runPhoenixCrmBlindHalfTests,
+);
+
+await runTest(
+  "Phoenix CRM: the two things a one-tap visit knew and threw away (gaps 1 and 3 of the second-pass audit — WHEN the phone took the position it sent, and WHICH browser install sent it. The age is measured phone-clock to phone-clock, so a handset an hour out still answers correctly and a reading stamped after the tap is NOT MEASURED rather than a clamped 0; the install id names a browser install, never a person and never a handset, and it is 🔴 NOT a package or APK scan; a browser with storage blocked saves exactly as it always did; the row is written after the save by a function that answers nothing and swallows its own failures, into one new table locked to the service role, and phoenix_crm_save_visit is deliberately NOT re-emitted)",
+  runPhoenixCrmCaptureProvenanceTests,
 );
 
 await runTest(
@@ -7766,6 +7841,10 @@ await runTest(
   runAttendanceAgentBrowserTokenSplitTests,
 );
 await runTest(
+  "the attendance agent rebuilds its published folder when a file the apphost needs is missing",
+  runAttendanceAgentSelfRepublishTests,
+);
+await runTest(
   "paramedical split: veterinary and dental medicine never read as medicine, and no exclusion auto-files",
   runCandidateBackgroundEligibilityTests,
 );
@@ -7918,8 +7997,11 @@ await runTest(
   runWorktreeRemoveHeadShaGateTests,
 );
 await runTest("no source-pinning test strips comments unsafely — a regex that eats the code it pins, or a line filter blind to a comment block", runCommentStripRatchetTests);
+await runTest("a new test file that strips comments by hand is refused at the Write, by the same detector the ratchet uses", runCommentStripGuardTests);
+await runTest("a form control that paints its own box, or a token override written as a template, is refused at the Write by the same detector the form-design ratchet uses", runFormDesignGuardTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest("repo-doctor counts a node_modules junction as one path entry, not the primary's whole tree", runRepoDoctorCacheEntriesLinkTests);
 await runTest(
   "repo-doctor never offers a worktree a live session is standing in",
   runRepoDoctorSessionHoldTests,
@@ -9576,6 +9658,14 @@ await runTest(
   runPhoenixCrmOffplanDayTests,
 );
 await runTest(
+  "Phoenix CRM bulk drop (owner, 2026-10-12): a rep's request to drop a customer always carries a written comment — on every reason, refused on the server and on the screen — while the SFE Manager's own drop keeps it optional; the Team tab lets the viewer tick the drops waiting at HIS step or select them all (never an add, a grade, a bring-back, another manager's or a decided one), behind a confirm, and approves each through the one decide route one at a time with the step the screen showed, naming any that fail while the rest stand",
+  runPhoenixCrmBulkDropTests,
+);
+await runTest(
+  "Phoenix CRM return for comment (owner, 2026-10-12): SFE can send the step it holds — a drop, an add, a bring-back, or a grade change on a territory with no manager — back to the rep with a required note; it stays pending with the rep (stored stage rep), nothing can approve it until the rep answers, the answer goes straight back to SFE, no manager is nudged meanwhile, and the bulk drop closes a rep's repeat ask with its customer instead of sending a call that is refused",
+  runPhoenixCrmReturnForCommentTests,
+);
+await runTest(
   "which team is READY to start in Phoenix CRM, beside the Start button: the headline is REPS WITH A LIST and never seats filled (Pedia Upper Egypt 1 read 6 of 6 seats filled with five reps hired in four days and one list), the new hires are named so an empty list explains itself, and one person on two seats is ONE person — his visits taken once, never summed per seat, and a district manager sitting in his own team's rep seat named rather than folded away; test customers filtered at the read, the 'Others' pseudo-DM buckets dropped, a failed read unreadable rather than zeros, the visits through the CRM door, and the board square-edged, table-fixed, desktop-table / phone-cards with nothing truncated",
   runPhoenixCrmTeamReadinessTests,
 );
@@ -9732,6 +9822,10 @@ await runTest(
 await runTest(
   "the CRM test-row sweep stays correct about the schema it deletes from — the plan clears every child before the parent it references for production's real 22 foreign keys, a NEW child table referencing a cleared parent is reported BY NAME rather than failing the run halfway through, a parent cleared before its child is caught the same way, the seven tables with no `is_test` column of their own are reached through a parent and never filtered on a column they do not have (with `request_id` and the uuid `visit_id` pinned, each of which cost a real error against production), `phoenix_crm_countable_visits` is never deleted from because it is a VIEW yet is still proven empty, and the emitted file is ONE transaction whose three guards sit before the first delete, inside the commit, and say in plain words that there is no point-in-time recovery",
   runCrmClearTestRowsTests,
+);
+await runTest(
+  "the owner-only MCP source proves a report complete and consistent instead of trusting that it returned — the read recorder logs every PostgREST request from underneath the loaders, so a swallowed failure, a transport error, an unpaged read at the row cap, a read nobody watermarked, a required read that never happened (a cache answered) and a change between the before and after watermark each refuse with a named reason, a retried request is judged by its last attempt, a snapshot identity is a pure function of the rows so an unchanged refresh keeps it, the watermark registry and the proposed SQL stay in step, the live authorization decision denies on a missing account, a banned or deleted Auth user, a role moved off Super Admin/CEO, a departed employee, an effective read denial and a module lock, throws on anything it cannot decide, and its route is off unless enabled, bearer-only with no development bypass, single-owner, no-store, and answers 503 with no detail when a source cannot be read",
+  runMcpSourceTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   contactMasterRefreshIncludesActivity,
+  describeContactMasterError,
   isContactMasterMissingError,
   parseContactMasterRefreshResult,
 } from "../src/lib/crm/contact-master.ts";
@@ -256,4 +257,43 @@ export function runCrmContactMasterTests() {
       "the refresh must never throw — the mirror rows are already written, and a 500 would misreport a successful sync",
     );
   }
+
+  // ── 8. A failed refresh names its cause, and a doctor on a seat twice cannot abort it ─────────────────
+  // Production, 2026-10-12: ten to thirteen failures an hour for a day, logged as only "duplicate key
+  // value violates unique constraint" — the key was in PostgREST's `details` and was dropped.
+  assert.equal(
+    describeContactMasterError({
+      code: "23505",
+      details: "Key (contact_crm_id, agent_crm_id, list_type)=(1000038395, 1542, PM) already exists.",
+      message: 'duplicate key value violates unique constraint "crm_contact_assignments_open_uidx"',
+    }),
+    'duplicate key value violates unique constraint "crm_contact_assignments_open_uidx" [code 23505] ' +
+      "Key (contact_crm_id, agent_crm_id, list_type)=(1000038395, 1542, PM) already exists.",
+    "the colliding key must reach the log line",
+  );
+  assert.equal(describeContactMasterError({ message: "boom" }), "boom", "a bare message stays a bare message");
+  assert.equal(describeContactMasterError({}), "unknown error");
+  assert.match(master, /error: describeContactMasterError\(error\)/, "refreshCrmContactMaster must log the described error, never error.message alone");
+
+  {
+    const dedupe = stripSqlComments(read("supabase/migrations/20261012184500_contact_refresh_survives_a_doctor_added_twice.sql"));
+    assert.match(
+      dedupe,
+      /partition by x\.hr_key, x\.contact_crm_id, x\.list_type\s*\n/,
+      "the fifth pass must hold ONE row per (rep, doctor, list): a doctor on a seat as two customer rows made 5b insert the same key twice",
+    );
+    assert.match(dedupe, /\) ranked\s+where ranked\.rn = 1/, "only the ranked first row of each key may reach 5b-5e");
+    assert.match(
+      dedupe,
+      /order by \(x\.status in \('active', 'pending'\)\) desc/,
+      "a live customer must beat a dropped one, or 5c closes a doctor who still has a live row",
+    );
+    assert.match(
+      dedupe,
+      /k\.agent_crm_id = l\.agent_crm_id/,
+      "5b must also refuse a key an open row holds under another hr id — the unique index is on agent_crm_id, not the rep",
+    );
+    assert.doesNotMatch(dedupe, /security\s+definer/i, "the refresh keeps running as its caller");
+  }
+
 }

@@ -234,6 +234,18 @@ export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
  */
 export async function filePlaceCaptureTrust(input: {
   placeId: string;
+  /**
+   * Which kind of subject `placeId` names. Defaults to an ordinary place.
+   *
+   * 🔴 `"shared_place"` IS THE SAME CHECK OVER A DIFFERENT TABLE, AND IT IS ON PURPOSE THAT THERE IS
+   * ONLY ONE FILER. `phoenix_crm_shared_places` carries the identical pair of independent fixes — the
+   * photo's shutter reading and the capture pin — and the second-pass audit found the 24 active
+   * venues reached NO detector at all. A second filer would have been a second place for the
+   * threshold, the flags and the upsert key to drift. `subject_kind` is part of
+   * UNIQUE (subject_kind, subject_id, source), so a venue's case cannot collide with a place's even
+   * if the two tables ever shared an id.
+   */
+  subjectKind?: "place" | "shared_place";
   seatId: string;
   repHrId: string;
   customerId: string | null;
@@ -260,7 +272,7 @@ export async function filePlaceCaptureTrust(input: {
     const strong = flags.some((flag) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag));
     const { error } = await getSupabaseAdmin().from("phoenix_crm_location_integrity").upsert(
       {
-        subject_kind: "place",
+        subject_kind: input.subjectKind ?? "place",
         subject_id: input.placeId,
         source: "capture_trust",
         seat_id: input.seatId,
@@ -346,5 +358,161 @@ export async function filePlaceSignboardFlag(input: {
     }
   } catch (error) {
     console.error("[phoenix-crm] signboard flag failed", { placeId: input.placeId, error });
+  }
+}
+
+// ── The three silent detectors' filers (2026-10-12) ─────────────────────────────────────────────
+//
+// 🔴 EACH IS ITS OWN `source`, NEVER `"gps"`. `source` is part of UNIQUE (subject_kind, subject_id,
+// source), so filing a roster finding under `"gps"` would REPLACE `judgeCapture`'s own verdict on the
+// same visit — the write succeeds, the row is there, and the flags are somebody else's. That is the
+// mistake `capture_trust`'s own comment above records, and these three repeat the shape, not the bug.
+//
+// 🔴 AND EVERY FLAG THEY CARRY IS WEAK, so `strong` is computed from the one shared list rather than
+// written false by hand: the day one of these is promoted the row must follow, and the day one is
+// NOT promoted a hand-written `false` would hide it.
+//
+// All three are void and never throw, by rule 2 of this file's header.
+
+/**
+ * File what the ROSTER says about the day a visit was saved on — leave, an away day, or a companion
+ * who was himself off duty.
+ *
+ * `visitId` is the subject, because the finding is about one capture and not about the rep's month.
+ */
+export async function fileVisitRosterFlags(input: {
+  visitId: string;
+  seatId: string;
+  repHrId: string;
+  customerId: string | null;
+  isTest: boolean;
+  capturedAt: Date;
+  visitDate: string;
+  flags: PhoenixCrmIntegrityFlag[];
+  /** What the roster actually said, so a reader sees the day rather than taking the flag on trust. */
+  signals: Record<string, unknown>;
+}): Promise<void> {
+  if (input.flags.length === 0) return;
+  try {
+    const { error } = await getSupabaseAdmin().from("phoenix_crm_location_integrity").upsert(
+      {
+        subject_kind: "visit",
+        subject_id: input.visitId,
+        source: "roster",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        captured_at: input.capturedAt.toISOString(),
+        visit_date: input.visitDate,
+        // No position is claimed: the roster knows nothing about where anybody stood, and a lat/lon
+        // copied off the visit here would read on the board as this detector's own evidence.
+        lat: null,
+        lon: null,
+        accuracy_meters: null,
+        device_mocked: null,
+        flags: input.flags,
+        strong: input.flags.some((flag) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag)),
+        signals: input.signals,
+        is_test: input.isTest,
+      },
+      { onConflict: "subject_kind,subject_id,source" },
+    );
+    if (error) console.error("[phoenix-crm] roster flags not recorded", { visitId: input.visitId, message: error.message });
+  } catch (error) {
+    console.error("[phoenix-crm] roster check failed", { visitId: input.visitId, error });
+  }
+}
+
+/**
+ * File that one rep called one CUSTOMER too often in too few days.
+ *
+ * 🔴 THE SUBJECT IS THE CUSTOMER, NOT A VISIT, and that is what `subject_kind: "customer"` is for.
+ * Picking one of the three visits would make the finding look like a judgement on that call, and the
+ * upsert key would then file the same pattern again under the next visit every night.
+ */
+export async function fileCustomerCadenceFlag(input: {
+  customerId: string;
+  seatId: string;
+  repHrId: string;
+  isTest: boolean;
+  /** The last of the calls, so the row sorts on the board with the rest of this week's evidence. */
+  capturedAt: Date;
+  visitDate: string;
+  flags: PhoenixCrmIntegrityFlag[];
+  signals: Record<string, unknown>;
+}): Promise<void> {
+  if (input.flags.length === 0) return;
+  try {
+    const { error } = await getSupabaseAdmin().from("phoenix_crm_location_integrity").upsert(
+      {
+        subject_kind: "customer",
+        subject_id: input.customerId,
+        source: "cadence",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        // The same id in both columns deliberately: `customer_id` is what the board joins to print a
+        // NAME instead of a uuid, and a customer case has to read as a name like every other row.
+        customer_id: input.customerId,
+        captured_at: input.capturedAt.toISOString(),
+        visit_date: input.visitDate,
+        lat: null,
+        lon: null,
+        accuracy_meters: null,
+        device_mocked: null,
+        flags: input.flags,
+        strong: input.flags.some((flag) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag)),
+        signals: input.signals,
+        is_test: input.isTest,
+      },
+      { onConflict: "subject_kind,subject_id,source" },
+    );
+    if (error) console.error("[phoenix-crm] cadence flag not recorded", { customerId: input.customerId, message: error.message });
+  } catch (error) {
+    console.error("[phoenix-crm] cadence check failed", { customerId: input.customerId, error });
+  }
+}
+
+/**
+ * File that a place sits far outside the brick it is filed under.
+ *
+ * A finding about the DATA, which is why it carries the place's own fixed point as its evidence: the
+ * reader's first question is "where is it then", and the answer is on the row.
+ */
+export async function filePlaceCoverageFlag(input: {
+  placeId: string;
+  seatId: string;
+  repHrId: string;
+  customerId: string | null;
+  isTest: boolean;
+  flags: PhoenixCrmIntegrityFlag[];
+  signals: Record<string, unknown>;
+  fixed: { lat: number; lon: number; accuracyMeters: number | null; capturedAt: Date };
+}): Promise<void> {
+  if (input.flags.length === 0) return;
+  try {
+    const { error } = await getSupabaseAdmin().from("phoenix_crm_location_integrity").upsert(
+      {
+        subject_kind: "place",
+        subject_id: input.placeId,
+        source: "coverage",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        captured_at: input.fixed.capturedAt.toISOString(),
+        visit_date: cairoBusinessDay(input.fixed.capturedAt),
+        lat: input.fixed.lat,
+        lon: input.fixed.lon,
+        accuracy_meters: input.fixed.accuracyMeters,
+        device_mocked: null,
+        flags: input.flags,
+        strong: input.flags.some((flag) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag)),
+        signals: input.signals,
+        is_test: input.isTest,
+      },
+      { onConflict: "subject_kind,subject_id,source" },
+    );
+    if (error) console.error("[phoenix-crm] coverage flag not recorded", { placeId: input.placeId, message: error.message });
+  } catch (error) {
+    console.error("[phoenix-crm] coverage check failed", { placeId: input.placeId, error });
   }
 }

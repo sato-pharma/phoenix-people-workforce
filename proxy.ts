@@ -20,6 +20,7 @@ import {
   SHELL_HEADER,
   hrNamespaceRemainder,
   isHrRewritablePath,
+  toHrNamespacePath,
 } from "@/lib/navigation/shell-headers";
 
 const builderPreviewOrigin = "https://builder.io";
@@ -206,6 +207,10 @@ function securityProxy(request: NextRequest): NextResponse | null {
       // POST with no Origin header, authorised by FTP_VIDEO_HANDOFF_SECRET inside the route, so it
       // is CSRF-exempt by the same shared-secret pattern as the provider webhooks above.
       request.nextUrl.pathname === "/api/integrations/ftp-videos" ||
+      // The owner-only MCP source: the reporting reader POSTs server-to-server with no Origin header,
+      // authorised by a dedicated bearer secret inside the route (which is also disabled unless
+      // PHOENIX_MCP_SOURCE_ENABLED is "true"), so it is CSRF-exempt like the other shared-secret routes.
+      request.nextUrl.pathname === "/api/mcp-source/authorize" ||
       // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
       // signed token (not a session) authorises it, so it is CSRF-exempt by design.
       request.nextUrl.pathname.startsWith("/api/email/unsubscribe/") ||
@@ -291,8 +296,51 @@ function isSecurityProxyPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Whether this invocation is `next dev` running us a SECOND time, on the path our own `/hr` rewrite
+ * pointed at — in which case the two headers on the request are the ones we wrote on the first run
+ * and must be left exactly as they are.
+ *
+ * 🔴 `next dev` (Next 16.3.8) re-runs the proxy on a rewrite's destination; `next start` on Railway
+ * does not. So the second run arrived on `/admin/hr-command-center`, deleted the `x-phoenix-shell:
+ * hr` IT HAD JUST WRITTEN, and overwrote `x-phoenix-path` with the bare path — after which AppShell
+ * believed the browser had asked for the bare address and redirected it back onto `/hr/…`, which was
+ * rewritten, which re-ran the proxy: **every `/hr` page 307'd to itself forever** for HR Operations
+ * and HR Resourcing, and every other role silently got ADMIN chrome on an `/hr` address. Production
+ * was never affected — measured the same day: 1,566 `/hr/%` page views for HR Operations, the last
+ * at 17:02 Cairo, and 42 for HR Resourcing on this very page (2026-10-12).
+ *
+ * This is NOT a hole in the anti-forgery delete below, because the inbound pair is honoured only
+ * when `x-phoenix-path` is EXACTLY this path with the `/hr` prefix on it — the one value our own
+ * rewrite could have produced:
+ *  - the seat fences normalize the `/hr` prefix away before they test a path
+ *    (`normalizePagePath`), so a forged pair cannot move a page out of its fence;
+ *  - `SHELL_HEADER` selects CHROME and never access (`resolveShellNavigationMode`), and every page
+ *    behind the shell re-asserts its own grant server-side;
+ *  - GET/HEAD only, so no mutation can skip `securityProxy` — every guard in there except the root
+ *    redirect is scoped to mutating methods, and the root redirect is exactly what must not run a
+ *    second time (it is what turned `/hr` into a 307 to `/login`);
+ *  - `/hr/api/**` is not rewritable, so an API path can never claim re-entry at all.
+ */
+function isOwnRewriteReentry(request: NextRequest, pathname: string, search: string): boolean {
+  const method = request.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return false;
+  if (request.headers.get(SHELL_HEADER) !== "hr") return false;
+
+  const namespaced = toHrNamespacePath(pathname);
+  if (!isHrRewritablePath(namespaced)) return false;
+
+  return request.headers.get(PATH_HEADER) === `${namespaced}${search}`;
+}
+
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+
+  // Our own rewrite, handed back to us by the dev server. Everything below has already run once on
+  // the address the browser actually asked for; running it again on the rewritten path is the bug.
+  if (isOwnRewriteReentry(request, pathname, search)) {
+    return NextResponse.next();
+  }
 
   // A client can set any header it likes. These two are ours, and the shell trusts them to decide
   // which navigation to render — so delete whatever arrived and write our own. Done for EVERY

@@ -76,9 +76,12 @@ export const isLockFile = (name) => name.startsWith("~$");
  * and below. `tests/repo-doctor-xlsx-snapshot.test.ts` asserts this list still matches the printer's
  * own `SUPERSEDED_DIR`, which is what catches a rename of that folder.
  *
+ * `scratch-map-unmapped` joined on 2026-10-12 (owner: "add scratch-map-unmapped to the xlsx backup
+ * list"): the pre-images and plans of the unmapped-customer mapping run, the only way to undo it.
+ *
  * Only named folders, never a recursive walk: `xlsx/` also holds whatever a session left behind.
  */
-export const BACKED_UP_SUBDIRS = ["field-day-superseded"];
+export const BACKED_UP_SUBDIRS = ["field-day-superseded", "scratch-map-unmapped"];
 
 export function snapshotRootFor(env = process.env) {
   const override = env.PHOENIX_XLSX_SNAPSHOT_ROOT;

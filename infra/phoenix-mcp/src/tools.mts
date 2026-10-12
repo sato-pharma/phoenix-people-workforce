@@ -22,9 +22,9 @@ export function assertFreshness(value:Freshness,now=Date.now()){
 export type Audit=(event:{event:'tool';tool:ToolName;actor:string;outcome:'allowed'|'denied'|'unavailable';durationMs:number})=>void;
 export class ToolService {
   private calls:number[]=[];
-  constructor(private readonly db:ReadStore,private readonly auth:Authorizer,private readonly state:StateStore,private readonly audit:Audit,private readonly nodeIdKey:string){}
+  constructor(private readonly db:ReadStore,private readonly auth:Authorizer,private readonly state:StateStore,private readonly audit:Audit,private readonly nodeIdKey:string,private readonly now:()=>number=()=>Date.now()){}
   async execute(name:ToolName,raw:unknown,principal:Principal){
-    const started=Date.now();
+    const started=this.now();
     let outcome:'allowed'|'denied'|'unavailable'='unavailable';
     try{
       this.calls=this.calls.filter(t=>t>started-60000);
@@ -44,7 +44,7 @@ export class ToolService {
       let freshness:Freshness;
       if(name==='get_workforce_summary'||name==='get_active_employee_count'){
         const source=await this.db.employees(principal.subject);
-        freshness=assertFreshness(source.freshness);
+        freshness=assertFreshness(source.freshness,this.now());
         const employees=activeEmployees(source,identity);
         result={activeEmployeeCount:employees.length,definition:'Phoenix active directory employees within your authorized scope'};
         if(name==='get_workforce_summary'){
@@ -56,7 +56,7 @@ export class ToolService {
       }else{
         const limit=args.limit!;
         const rows=name==='get_open_vacancies'?await this.db.vacancies(principal.subject,after,limit+1):name==='get_organizational_structure'?await this.db.organization(principal.subject,after,limit+1):await this.db.sales(principal.subject,args.period!,after,limit+1);
-        freshness=assertFreshness(rows.freshness);
+        freshness=assertFreshness(rows.freshness,this.now());
         if(priorSnapshot&&priorSnapshot!==freshness.snapshotId)throw new Unavailable();
         if(name==='get_published_sales_summary'&&!rows.length&&!after)throw new Unavailable();
         if(rows.length>limit+1)throw new Unavailable();
@@ -84,8 +84,8 @@ export class ToolService {
       }
       // Catch revocation/role changes that happened while the business query was running.
       await this.auth.tool(principal,name);
-      assertFreshness(freshness);
-      result.generatedAt=new Date().toISOString();result.sourceUpdatedAt=freshness.sourceUpdatedAt;result.sourceObservedAt=freshness.sourceObservedAt;result.maximumSourceAgeSeconds=60;result.timeZone='Africa/Cairo';
+      assertFreshness(freshness,this.now());
+      result.generatedAt=new Date(this.now()).toISOString();result.sourceUpdatedAt=freshness.sourceUpdatedAt;result.sourceObservedAt=freshness.sourceObservedAt;result.maximumSourceAgeSeconds=60;result.timeZone='Africa/Cairo';
       if(Buffer.byteLength(JSON.stringify(result))>64_000)throw new Unavailable();
       outcome='allowed';
       return result;
@@ -94,7 +94,7 @@ export class ToolService {
       throw new Unavailable();
     }finally{
       // No input values, returned data, tokens, login IDs or exception messages.
-      this.audit({event:'tool',tool:name,actor:digest(principal.subject),outcome,durationMs:Date.now()-started});
+      this.audit({event:'tool',tool:name,actor:digest(principal.subject),outcome,durationMs:this.now()-started});
     }
   }
 }

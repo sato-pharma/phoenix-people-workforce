@@ -101,7 +101,46 @@ export type PhoenixCrmIntegrityFlag =
    * no person, which is exactly why an AM capture judged against its place name treats a sign naming
    * nobody as a MATCH. On a PM capture it is worth looking at and is never on its own an accusation.
    */
-  | "sign_no_name";
+  | "sign_no_name"
+  // ── What the roster, the calendar and the brick master already knew (2026-10-12) ─────────────
+  //
+  // The second-pass CRM audit found three checks nobody was making, and all three are answered from
+  // data Phoenix already holds — no new capture, no new field on any screen, nothing asked of a rep.
+  //
+  // 🔴 ALL FIVE ARE WEAK AND MUST STAY WEAK. None of them is evidence of anything on its own: a rep
+  // on a conference day very often WAS at a conference and at a doctor, a popular doctor really is
+  // seen three times in a week when a launch is on, and a place far from its brick is usually a
+  // brick master that has never been drawn for that governorate. They corroborate a position case;
+  // they do not open one. Adding any of them to PHOENIX_CRM_STRONG_INTEGRITY_FLAGS would move a
+  // number the rep can read, because that list is the one gate `countedIntegrityFlags` and the
+  // nightly ranks score share.
+  /** The rep had approved FULL-DAY leave on the day he saved this visit. */
+  | "visit_on_leave"
+  /**
+   * The day is recorded as a full day away from the field — a meeting, a conference, a health day,
+   * training or travel. `sales_day` and `admin_work` are NOT away: a sales day IS field work and
+   * admin work is routinely a half day at a desk and a half day on the road.
+   */
+  | "visit_on_full_day_activity"
+  /**
+   * The manager, senior or product manager NAMED on this visit was himself off duty that day.
+   *
+   * 🔴 THIS IS THE ROSTER HALF, AND IT IS THE ONLY HALF THERE IS. The audit asked for the companion's
+   * own POSITION on the day to be compared with the visit's — and that cannot be built: of the 15
+   * distinct companions named on production visits, ZERO have ever saved a CRM visit themselves
+   * (measured 2026-10-12), because managers do not save calls. There is no fix of theirs to compare
+   * with. What the roster can answer is whether the named person was on leave or away at all.
+   */
+  | "companion_off_duty"
+  /** One rep called the same customer three or more times inside a rolling seven days. */
+  | "customer_revisited_fast"
+  /**
+   * The place sits further from the brick it is filed under than BRICK_FAR_KM.
+   *
+   * Weak twice over: it is a finding about the DATA and not about a person. 71 active places on
+   * 12 Oct 2026, and the usual cause is a brick master with no polygon drawn anywhere near the town.
+   */
+  | "place_brick_far";
 
 export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
   "mock_provider",
@@ -140,23 +179,82 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   photo_pin_identical: "The photo and the pin are the same reading, to the bit",
   sign_other_name: "The signboard in the photo names somebody else",
   sign_no_name: "No name could be read on the signboard in the photo",
+  visit_on_leave: "The rep had approved full-day leave on this day",
+  visit_on_full_day_activity: "The day is recorded as a full day away from the field",
+  companion_off_duty: "The manager named on the visit was off duty that day",
+  customer_revisited_fast: "This customer was called three times inside a week",
+  place_brick_far: "The place sits far outside the brick it is filed under",
 };
+
+/**
+ * Which full-day activities mean the rep was AWAY from the field, for `visit_on_full_day_activity`.
+ *
+ * 🔴 `sales_day` AND `admin_work` ARE NOT HERE, AND THAT IS THE WHOLE POINT OF THE LIST. A sales day
+ * IS field work — flagging it would accuse every rep who records one — and admin work is routinely
+ * half a day at a desk and half a day on the road. Measured on production 2026-10-12: the five below
+ * account for 22 visits by 3 reps; adding those two would have swept in far more honest days than
+ * questionable ones.
+ *
+ * The keys are `PhoenixCrmDayActivity`'s own, and `tests/phoenix-crm-location-integrity.test.ts`
+ * refuses a key that is not one of them — a typo here is a silently dead branch.
+ */
+export const PHOENIX_CRM_AWAY_DAY_ACTIVITIES: readonly string[] = [
+  "meeting",
+  "conference",
+  "health_day",
+  "training",
+  "travel",
+];
+
+/**
+ * How many calls on one customer by one rep inside a rolling week is worth a look.
+ *
+ * Three, not two: a doctor seen twice in a week is ordinary — a morning clinic and an afternoon one,
+ * or a follow-up after a sample drop — and 14 customers reach three on production (measured
+ * 2026-10-12) against a far larger number that reach two. A weak flag that fires on a quarter of the
+ * customer base is a flag nobody reads.
+ */
+export const REVISIT_WINDOW_DAYS = 7;
+export const REVISIT_WINDOW_VISITS = 3;
+
+/**
+ * How far from its own brick a place has to sit before the row is worth looking at, in kilometres.
+ *
+ * 3 km is `BRICK_TRUST_KM`'s own neighbourhood: a place inside it was matched to the brick, so this
+ * flag is only ever raised on a place the brick lookup ALREADY recorded as `none_nearby` — the
+ * distance is read from the row, never recomputed, so this board and the brick report cannot print
+ * two different numbers for one place.
+ */
+export const BRICK_FAR_KM = 3;
 
 // ── Thresholds ──────────────────────────────────────────────────────────────────────────────────
 // Every one of these is pinned by tests/phoenix-crm-location-integrity.test.ts. Loosen one only with
 // a measurement in front of you: they are the line between catching a cheat and accusing a rep.
 
 /**
- * Two fixes are "the same coordinate" at six decimals — about 11 cm. A GNSS receiver reporting the
- * same 11 cm twice, ever, does not happen: even a phone lying still on a table walks several metres
- * over an afternoon.
+ * The band the HISTORY QUERY fetches candidates in — six decimals, about 11 cm — and nothing more.
+ *
+ * 🔴 IT IS NOT THE TEST ANY MORE, AND THE REASON IT USED TO BE IS FALSE. This comment read "a GNSS
+ * receiver reporting the same 11 cm twice, ever, does not happen: even a phone lying still on a
+ * table walks several metres over an afternoon." Production disproved it on 2026-10-11: one rep's
+ * two readings, 22 minutes apart in the same hospital, came back 30.032354829736 and
+ * 30.0323547138734 — about 1.3 cm apart, well inside the band — carrying DIFFERENT accuracies,
+ * 49.9 m and 54.9 m, so neither was a cached copy of the other. Two honest readings. The board
+ * called it "this exact coordinate was used before", and a strong flag is charged to the rep's
+ * Integrity score by `countedIntegrityFlags` in rep-ranks/field-quality.ts.
+ *
+ * `sameCoordinate` now asks the coordinate to REPEAT — identical to its last stored digit, which is
+ * what a preset in a fake-GPS app does and what a receiver computing a fresh solution does not. The
+ * constant stays because `server/location-integrity.ts` still needs an index-friendly equality band
+ * to pull candidates with (`COORDINATE_BAND`), and narrowing the comparison inside that band can
+ * only ever drop a case, never add one.
  */
 export const REPLAY_DECIMALS = 6;
 
 /**
- * …but a phone CAN hand back a cached fix to two readings taken minutes apart, so a repeat by the
- * same rep only counts once the readings are this far apart. A repeat by a DIFFERENT rep counts
- * immediately — two people cannot occupy the same 11 cm, and a shared coordinate is a shared preset.
+ * …and a phone CAN hand the same reading back twice, so a repeat by the same rep only counts once
+ * the readings are this far apart. A repeat by a DIFFERENT rep counts immediately — two people
+ * cannot share a coordinate to the last digit, and one they do share is a shared preset.
  */
 export const REPLAY_MIN_GAP_MINUTES = 20;
 
@@ -250,8 +348,16 @@ function roundTo(value: number, decimals: number): number {
   return Math.round(value * factor) / factor;
 }
 
+/**
+ * The same coordinate REPEATED — identical to its last stored digit, not merely nearby.
+ *
+ * 🔴 NEVER WIDEN THIS BACK TO A ROUNDED MATCH. Rounding to `REPLAY_DECIMALS` is what the history
+ * query bands on, and it read two honest readings 1.3 cm apart as one replayed coordinate — see that
+ * constant's comment for the production pair and what it cost the rep. A fake-GPS preset repeats
+ * exactly; a receiver solving for position again does not.
+ */
 function sameCoordinate(left: GeoPoint, right: GeoPoint): boolean {
-  return roundTo(left.lat, REPLAY_DECIMALS) === roundTo(right.lat, REPLAY_DECIMALS) && roundTo(left.lon, REPLAY_DECIMALS) === roundTo(right.lon, REPLAY_DECIMALS);
+  return left.lat === right.lat && left.lon === right.lon;
 }
 
 function minutesBetween(left: Date, right: Date): number {
@@ -297,16 +403,36 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
 
   // ── Is this fix precise enough to be judged on precision at all? ──────────────────────────────
   //
-  // A coarse reading is evidence of nothing precise on EITHER side of a comparison, so it is taken
-  // out of both: this fix stops being judged, and a coarse fix already on record stops being
-  // something to judge against. Without that second half an honest precise fix gets flagged for
-  // "replaying" the tile centre its own phone handed back an hour earlier — the same false
-  // accusation, one reading later.
+  // Two readings cannot support a conclusion about precision: one too coarse to locate anything,
+  // and one that reported NO accuracy at all. Either is evidence of nothing precise on EITHER side
+  // of a comparison, so both come out of both: this fix stops being judged, and such a reading
+  // already on record stops being something to judge against. Without that second half an honest
+  // precise fix gets flagged for "replaying" the tile centre its own phone handed back an hour
+  // earlier — the same false accusation, one reading later.
+  //
+  // 🔴 AN UNKNOWN ACCURACY IS NOT A GOOD ACCURACY. It is deliberately ACCEPTED at the capture gate
+  // (`entry-rules.ts`: "an UNKNOWN accuracy is still taken, as it always was") — the owner's
+  // decision, so that a handset that reports no figure never costs a rep his visit. The hole the
+  // second-pass audit found was that `isCoarse` then returned false for it, so the same reading the
+  // gate waved through on the grounds that we cannot measure it was handed to all four precision
+  // detectors and judged as though we had. Measured on production 2026-10-12: 18 of 1,598 visits and
+  // 7 of 1,418 places carry no accuracy figure, every one of them eligible for all four. None had
+  // actually tripped one — the five precision flags standing all report a real accuracy — so this
+  // closes the hole before it accuses anybody rather than after.
   const isCoarse = (accuracyMeters: number | null): boolean =>
     accuracyMeters !== null && Number.isFinite(accuracyMeters) && accuracyMeters >= COARSE_ACCURACY_METERS;
 
+  /** No usable accuracy figure at all. A missing measurement, never a perfect one. */
+  const isUnmeasured = (accuracyMeters: number | null): boolean =>
+    accuracyMeters === null || !Number.isFinite(accuracyMeters);
+
+  /** Too coarse, or never measured — either way nothing precise may be concluded from it. */
+  const cannotSupportPrecision = (accuracyMeters: number | null): boolean =>
+    isCoarse(accuracyMeters) || isUnmeasured(accuracyMeters);
+
   const fixIsCoarse = isCoarse(fix.accuracyMeters);
-  const measured = history.filter((prior) => !isCoarse(prior.accuracyMeters));
+  const fixIsUnmeasured = isUnmeasured(fix.accuracyMeters);
+  const measured = history.filter((prior) => !cannotSupportPrecision(prior.accuracyMeters));
 
   if (fixIsCoarse) {
     flags.add("coarse_location");
@@ -316,13 +442,33 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
       suppressed: [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS],
     };
   }
-  if (measured.length !== history.length) {
-    signals.coarseHistoryIgnored = history.length - measured.length;
+  // 🔴 NO FLAG for an unmeasured reading, only this signal. `coarse_location` would be a false
+  // statement about it, and a flag of its own would file a standing board case against every rep
+  // whose handset is quiet about accuracy — 25 captures already — which is the opposite of the
+  // point. The suppression is recorded so the Super Admin can see WHY a row says little.
+  if (fixIsUnmeasured) {
+    signals.unmeasuredAccuracy = {
+      accuracyMeters: fix.accuracyMeters,
+      suppressed: [...PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS],
+    };
   }
+  // Counted apart, because "ignored as coarse" and "ignored as unmeasured" are different facts
+  // about the rep's history and reading one as the other sends the next session to the wrong rule.
+  const coarseIgnored = history.filter((prior) => isCoarse(prior.accuracyMeters)).length;
+  const unmeasuredIgnored = history.filter((prior) => isUnmeasured(prior.accuracyMeters)).length;
+  if (coarseIgnored > 0) signals.coarseHistoryIgnored = coarseIgnored;
+  if (unmeasuredIgnored > 0) signals.unmeasuredHistoryIgnored = unmeasuredIgnored;
 
-  /** Publish a precision-dependent flag — unless this fix is too coarse to support one. */
+  /**
+   * Publish a precision-dependent flag — unless this fix cannot support one.
+   *
+   * 🔴 `mock_provider` and `impossible_travel` do NOT come through here, by the owner's 2026-10-05
+   * ruling: the phone's own mock answer and a trip nobody could have made are not claims about
+   * precision, and travel takes both readings' error bars off the distance before judging, so a
+   * reading with no accuracy figure contributes no slack and cannot invent a trip either.
+   */
   const addPrecisionFlag = (flag: PhoenixCrmIntegrityFlag): void => {
-    if (!fixIsCoarse) flags.add(flag);
+    if (!fixIsCoarse && !fixIsUnmeasured) flags.add(flag);
   };
 
   // ── Replay — this coordinate has been used before ─────────────────────────────────────────────
@@ -418,6 +564,25 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
 /** The two signboard verdicts that put a name on the integrity board. Anything else is not a flag. */
 const FLAGGABLE_SIGNBOARD_VERDICTS = new Set(["other_name", "no_name"]);
 
+/**
+ * The only verdicts that take a filed flag OFF the board. A failure to read is not one of them.
+ *
+ * 🔴 "COULD NOT BE READ" IS NOT AN ANSWER, AND IT MUST NOT WITHDRAW A CASE. The flag stands on the
+ * reading that FILED it, and a later reading either overturns it (`match`), confirms it
+ * (`other_name`, `no_name`) or says nothing at all (`unjudged`) — and saying nothing leaves the
+ * filing exactly where it was. This is the same principle the dates already follow below: null is
+ * "nothing read it again", never "it was withdrawn".
+ *
+ * Measured 2026-10-12 on the owner's board: مستشفى المنشاوى العام was filed STRONG `sign_other_name`
+ * on 9 Oct, the 12 Oct 03:36 pass could not read the sign, and the case left the standing list with
+ * nobody having decided anything — and a withdrawn case offers no settle button, so it could never
+ * be decided either. Worse, `SIGNBOARD_REREAD_REASONS` keeps retrying exactly those unreadable
+ * places, so a case judged this way flickers on and off the board with each night's luck rather
+ * than on its evidence. The board's own counter text ("read again to a verdict that no longer
+ * carries them") is untrue of a reading that reached no verdict.
+ */
+const WITHDRAWING_SIGNBOARD_VERDICTS = new Set(["match"]);
+
 /** Which filed flag each of those verdicts corresponds to, so "still the same finding" is a test. */
 const SIGNBOARD_VERDICT_FLAG: Record<string, string> = {
   other_name: "sign_other_name",
@@ -473,6 +638,14 @@ export type IntegrityLaterReading = {
   checkedAt: string;
   /** Does the later reading still reach a verdict that would put a name on the board? */
   supportsFlag: boolean;
+  /**
+   * Does it take the flag off the board? Only a reading that ANSWERS the flag does.
+   *
+   * 🔴 NOT `!supportsFlag` — that was the defect. An `unjudged` reading supports nothing and
+   * answers nothing, so it is false on both: the case keeps standing and keeps its settle button,
+   * and the board still prints "read again on <date> and the sign could not be read".
+   */
+  withdrawsFlag: boolean;
   /** Is it the SAME finding as the one filed, and not merely still a finding? */
   sameFinding: boolean;
   /** What it says, in plain English, ready to print after "read again on <date>". */
@@ -493,6 +666,12 @@ export type IntegrityLaterReading = {
  * 🔴 AND A MISSING OR UNPARSEABLE DATE LEAVES THE FLAG STANDING. Null is "nothing read it again",
  * never "it was withdrawn" — a board that quietly drops findings it cannot date is worse than one
  * that shows a stale finding, because the stale one can be read and judged.
+ *
+ * 🔴 A READING THAT REACHED NO VERDICT LEAVES IT STANDING FOR THE SAME REASON. `supportsFlag` says
+ * whether the newest reading is itself a finding; `withdrawsFlag` says whether it takes the filed
+ * one away, and only `match` does (`WITHDRAWING_SIGNBOARD_VERDICTS`). The board must read
+ * `withdrawsFlag` — reading `!supportsFlag` withdrew every case whose sign had merely become
+ * unreadable, which is the one thing legibility is known to do from one night to the next.
  */
 export function judgeLaterSignboardReading(input: {
   source: string;
@@ -512,8 +691,86 @@ export function judgeLaterSignboardReading(input: {
   return {
     checkedAt: input.stored.checkedAt,
     supportsFlag,
+    withdrawsFlag: WITHDRAWING_SIGNBOARD_VERDICTS.has(input.stored.verdict),
     sameFinding: supportsFlag && input.flags.includes(SIGNBOARD_VERDICT_FLAG[input.stored.verdict] ?? ""),
     words: laterReadingWords(input.stored.verdict, input.stored.reason),
     signText: input.stored.signText,
   };
+}
+
+// ── The three silent detectors (2026-10-12) — pure, and each the whole rule ─────────────────────
+//
+// 🔴 EVERY ONE OF THESE RETURNS FLAGS AND NOTHING ELSE. No refusal, no hold, no message, no number
+// a rep can read: the owner's standing ruling on this module is "flag it, never stop the rep", and
+// all five flags they can return are weak. They are here rather than in `server/silent-detectors.ts`
+// so the arithmetic can be tested without a database, exactly as `checkLocationIntegrity` is.
+
+/** One day's roster facts for the rep who saved a visit, and for whoever is named beside him. */
+export type RosterDayInput = {
+  /** True when the rep has approved leave covering the WHOLE day. A half day is not one. */
+  repOnFullDayLeave: boolean;
+  /** The full-day day-activity kinds recorded against the rep for that date. */
+  repFullDayActivities: readonly string[];
+  /** True when any companion named on the visit was on full-day leave or a full-day away activity. */
+  companionOffDuty: boolean;
+};
+
+/**
+ * What the roster says about the day a visit was saved on.
+ *
+ * 🔴 A HALF DAY IS NEVER A FINDING, AND THAT IS THE MEASUREMENT THAT SHAPED THIS. The audit reported
+ * "1 visit inside approved leave" and 8 companion hits; read with `day_part = 'full_day'` all nine
+ * vanish — every one was a half-day leave, and a rep with a morning excuse who calls a doctor in the
+ * afternoon has done nothing at all. `repOnFullDayLeave` is therefore the caller's promise that the
+ * whole day was covered, never "a leave row overlaps this date".
+ */
+export function judgeRosterDay(input: RosterDayInput): PhoenixCrmIntegrityFlag[] {
+  const flags: PhoenixCrmIntegrityFlag[] = [];
+  if (input.repOnFullDayLeave) flags.push("visit_on_leave");
+  if (input.repFullDayActivities.some((activity) => PHOENIX_CRM_AWAY_DAY_ACTIVITIES.includes(activity))) {
+    flags.push("visit_on_full_day_activity");
+  }
+  if (input.companionOffDuty) flags.push("companion_off_duty");
+  return flags;
+}
+
+/**
+ * Was this customer called too often in too few days by one rep?
+ *
+ * The dates are the visits' own business days, in any order; duplicates on one day count once,
+ * because two calls on one doctor in one day is the double-visit rule's question and not this one.
+ * A ROLLING window: the test is whether any REVISIT_WINDOW_DAYS-wide span holds
+ * REVISIT_WINDOW_VISITS of them, never whether a calendar week does — a Thursday-and-Sunday pair
+ * either side of a week boundary is the shape a calendar window misses.
+ */
+export function judgeRevisitCadence(businessDays: readonly string[]): PhoenixCrmIntegrityFlag[] {
+  const days = [...new Set(businessDays.filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)))].sort();
+  if (days.length < REVISIT_WINDOW_VISITS) return [];
+  for (let start = 0; start + REVISIT_WINDOW_VISITS - 1 < days.length; start += 1) {
+    const first = Date.parse(`${days[start]}T00:00:00Z`);
+    const last = Date.parse(`${days[start + REVISIT_WINDOW_VISITS - 1]}T00:00:00Z`);
+    if (!Number.isFinite(first) || !Number.isFinite(last)) continue;
+    // Inclusive: Sunday to the following Saturday is seven days apart by the calendar and is one
+    // week to a human, so `< REVISIT_WINDOW_DAYS` would miss exactly the span the rule names.
+    if ((last - first) / 86_400_000 <= REVISIT_WINDOW_DAYS - 1) return ["customer_revisited_fast"];
+  }
+  return [];
+}
+
+/**
+ * Is this place filed under a brick it is nowhere near?
+ *
+ * `brickDistanceKm` is read from the place row — `resolvePlaceLocation` wrote it when the place was
+ * saved or moved — and is null when nobody ever looked. 🔴 NULL IS UNKNOWN AND FILES NOTHING: a row
+ * written before the brick lookup existed has not been measured, and an unmeasured place is not a
+ * far one. `brickMatched` is the row's own `brick_lookup = 'matched'` answer, and a matched place is
+ * never flagged whatever the distance says — the lookup is the authority on its own verdict.
+ */
+export function judgePlaceBrickDistance(input: {
+  brickDistanceKm: number | null;
+  brickMatched: boolean;
+}): PhoenixCrmIntegrityFlag[] {
+  if (input.brickMatched) return [];
+  if (input.brickDistanceKm === null || !Number.isFinite(input.brickDistanceKm)) return [];
+  return input.brickDistanceKm > BRICK_FAR_KM ? ["place_brick_far"] : [];
 }

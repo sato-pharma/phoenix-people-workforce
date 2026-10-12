@@ -4,6 +4,8 @@ on:
     # The reader bundles these Phoenix policy files, so a change to one must re-run this check.
     paths:
       - 'infra/phoenix-mcp/**'
+      - 'src/lib/mcp-source/**'
+      - 'app/api/mcp-source/**'
       - '.github/workflows/phoenix-mcp.yml'
       - 'src/lib/auth/permissions.ts'
       - 'src/lib/auth/session-lifecycle.ts'

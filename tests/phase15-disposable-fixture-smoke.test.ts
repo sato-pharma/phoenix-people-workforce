@@ -67,9 +67,16 @@ export function runPhase15DisposableFixtureSmokeTests() {
     /organogram_visible:\s*false[\s\S]*payroll_eligible:\s*false/,
     "Resignation and termination must remove employees from organogram and payroll eligibility.",
   );
+  // The ratchet forbids READING the dropped view, not naming it: the comment that explains why it
+  // is gone has to be allowed to say its name.
+  assert.doesNotMatch(
+    phase15SmokeSource,
+    /from\("v_active_organogram"\)/,
+    "Phase 15 smoke must not read v_active_organogram — it was dropped on 2026-10-12 and the EU organogram (au_v_*) is the source of truth.",
+  );
   assert.match(
     phase15SmokeSource,
-    /v_active_organogram[\s\S]*v_payroll_eligible_employees/,
-    "Phase 15 smoke must prove terminal employees leave effective organogram and payroll eligibility views.",
+    /v_payroll_eligible_employees[\s\S]*organogram_visible === false/,
+    "Phase 15 smoke must still prove terminal employees lose the organogram flag and leave payroll eligibility.",
   );
 }
