@@ -177,51 +177,68 @@ const PORTRAIT_STANDING_SHADOW =
  * on that path.
  */
 const PORTRAIT_SCALE = {
-  // THE MARK IS PRINTED INTO THE PAPER, NOT LAID ON IT — see THE WATERMARK READS AS PRINT below.
-  "--phx-mark-blend": "multiply",
-  "--phx-mark-filter": "grayscale(1)",
-  "--phx-mark-height": "162px",
-  "--phx-mark-opacity": "0.13",
-  "--phx-mark-right": "calc(var(--phx-portrait-w) - 47px)",
-  "--phx-mark-top": "-5px",
   "--phx-portrait-h": "calc(var(--phx-portrait-w) * 1.32)",
   "--phx-portrait-w": "clamp(200px, 17vw, 268px)",
-  "--phx-text-gap": "calc(var(--phx-portrait-w) + 72px)",
+  "--phx-text-gap": "calc(var(--phx-portrait-w) + 104px)",
+  "--phx-wash-right": "calc(var(--phx-portrait-w) - 138px)",
 } as CSSProperties;
 
 /**
- * THE WATERMARK READS AS PRINT, NOT AS A SECOND LOGO. The owner, 2026-10-12, looking at the shipped
- * version: "the watermark is not fitting good it feels like its not real or extra zeyada msh
- * mazboota".
+ * WITH A PHOTO THE WATERMARK IS THE PORTAL BANNER'S OWN PHOENIX WASH — A DIFFERENT FILE FROM THE
+ * CORNER MARK, AND THAT IS THE WHOLE FIX.
  *
- * WHAT WAS WRONG WAS THE INK, NOT THE PLACE. It was the full-colour emblem — Phoenix orange, the
- * teal bars, a hard white-free edge — drawn at opacity 0.28 and composited OVER the cream. Alpha
- * alone cannot make a coloured badge belong to a page: it stays its own hue, so the eye reads a
- * third object sitting between the name and the photo. That is the "extra" he saw, and it is why
- * every number around it measured correct while the picture still looked wrong.
+ * The owner, 2026-10-12, twice in a row. First at the full-colour emblem enlarged behind the
+ * portrait: "the watermark is not fitting good it feels like its not real or extra zeyada msh
+ * mazboota". Then at the same emblem greyscaled and multiplied into the paper: "watermark mo2ref".
  *
- * SO IT IS NOW A MONOCHROME MULTIPLY. `grayscale(1)` drops the mark's own hue, and `multiply`
- * composites it INTO the paper instead of onto it: the result takes the cream's warmth
- * (#fdf8f3 x grey is a warm grey, never a cold one), it darkens rather than overlays, and the two
- * radial washes under it still show through the mark exactly as they show through bare paper.
- * Opacity comes down to 0.13 because multiply is a far stronger operator than normal at the same
- * number — at 0.28 multiplied the emblem was heavier than it had been before.
+ * BOTH REJECTIONS WERE OF THE SAME ARTWORK, NOT OF TWO TREATMENTS OF IT.
+ * `identity-strip-emblem.png` is a BADGE — a ring, a phoenix and bar-chart bars, in Phoenix orange
+ * and teal, ink across 62% of its box. A badge enlarged is a LOGO sitting on the page whatever is
+ * done to its colour: at full saturation it reads as a third object, and greyscaled-and-multiplied
+ * it reads as a smudge, because a hard-edged round mark pressed into cream paper looks like dirt
+ * rather than print. There was no third treatment of that file worth trying.
  *
- * THE GEOMETRY DID NOT MOVE, DELIBERATELY. The 15px bite, the 84px standing clear, the height and
- * the -5px wave clearance are all still the numbers `tests/identity-strip-emblem.test.ts` pins; his
- * complaint was that it looked unreal, and the arithmetic behind "from behind" was not what made it
- * look unreal. Changing both at once would have left no way to know which one answered him.
+ * `identity-watermark.png` IS A WATERMARK ALREADY, IN THE FILE. Measured off its own alpha channel:
+ * 1350x900, corners fully transparent, and the ink is rgba(255,238,222,0.18) — a pale warm cream
+ * phoenix with no ring, no bars and no second colour, drawn to be laid on #fdf8f3 at full opacity.
+ * It needs no filter and no blend mode, which is why it cannot look like a treatment applied to a
+ * logo: it is not a logo.
  *
- * NO PHOTO, NO CHANGE AT ALL. The three fallbacks keep the mark exactly as his 2026-09-04
- * instruction left it in the SATO column — normal compositing, no filter, opacity 0.2.
+ * AND IT IS THE SIBLING'S OWN MARK, WHICH IS THE OWNER'S STANDING INSTRUCTION FOR THIS FAMILY.
+ * `PhoenixSignatureCard` — the employee portal identity banner he pointed at on 2026-09-03 ("check
+ * the employee portal one") — draws THIS file at `height: 145%`, `top: -15%`, opacity 1, bleeding
+ * past the bar and under the wave. The strip now does the same thing at the same proportions, so
+ * the two surfaces finally carry one watermark instead of two different ideas of one.
+ *
+ * THE BLEED IS NOT THE THING HE TURNED DOWN IN SEPTEMBER. That refusal — "too embedded, too big,
+ * needs to go inside the banner itself" — was the BADGE cropped by the bar's trailing edge, a
+ * severed ring. This mark is whole horizontally and dissolves into its own transparency vertically,
+ * exactly as it does on the banner beside it. Do not "correct" it back inside the bar's height: a
+ * phoenix wash scaled to fit between the bar's top and the wave is 72px of ink across, which is the
+ * ghost the owner has already rejected once at this size.
+ *
+ * THE PORTRAIT COVERS ITS TRAILING THIRD, WHICH IS "FROM BEHIND" — `--phx-wash-right` is stated
+ * against the portrait's own width, so ~40px of ink stays behind the frame at every viewport while
+ * the body of the bird stands on the cream.
+ *
+ * NO PHOTO, NO WASH. There is no standing portrait to come out from behind, so that path keeps the
+ * corner badge in the SATO column exactly as his 2026-09-04 instruction left it — 128px at
+ * `right: 25px`, `top: -11px`, opacity 0.2, untouched by any of this.
  */
-const MARK_DESKTOP_STYLE = {
-  filter: "var(--phx-mark-filter, none)",
-  height: "var(--phx-mark-height, 128px)",
-  mixBlendMode: "var(--phx-mark-blend, normal)",
-  opacity: "var(--phx-mark-opacity, 0.2)",
-  right: "var(--phx-mark-right, 25px)",
-  top: "var(--phx-mark-top, -11px)",
+const WASH_STYLE = {
+  height: "232px",
+  opacity: 1,
+  right: "var(--phx-wash-right)",
+  top: "-24px",
+  width: "auto",
+} as CSSProperties;
+
+/** The no-photo desktop mark: the 2026-09-04 SATO column, unchanged. Read the paragraphs below. */
+const EMBLEM_DESKTOP_STYLE = {
+  height: "128px",
+  opacity: 0.2,
+  right: "25px",
+  top: "-11px",
   width: "auto",
 } as CSSProperties;
 
@@ -497,19 +514,29 @@ export function PhoenixIdentityStrip({
           width: "auto",
         }}
       />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        alt=""
-        aria-hidden="true"
-        className="pointer-events-none absolute z-0 hidden sm:block"
-        src="/brand/identity-strip-emblem.png"
-        // WITH A PHOTO the vars put the mark half behind the standing portrait and print it into the
-        // paper — "SHOW THE PHX LOGO FROM BEHIND AS A WATERMARK", then "it feels like its not real".
-        // See PORTRAIT_SCALE for the geometry and MARK_DESKTOP_STYLE for the ink. WITHOUT a photo
-        // every fallback is the 2026-09-04 original: 128 / 25 / -11 in the SATO column, no filter,
-        // no blend, opacity 0.2. Read both paragraphs before touching one number.
-        style={MARK_DESKTOP_STYLE}
-      />
+      {/* DESKTOP, WITH A PHOTO: the portal banner's own phoenix wash, rising from behind the
+          standing portrait — "SHOW THE PHX LOGO FROM BEHIND AS A WATERMARK", then "watermark
+          mo2ref" at the badge that was doing that job. Read WASH_STYLE before changing a number;
+          the file, not the CSS, is what makes this read as a watermark. */}
+      {photoSrc ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute z-0 hidden sm:block"
+          src="/brand/identity-watermark.png"
+          style={WASH_STYLE}
+        />
+      ) : (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute z-0 hidden sm:block"
+          src="/brand/identity-strip-emblem.png"
+          style={EMBLEM_DESKTOP_STYLE}
+        />
+      )}
 
       {/* MOBILE ONLY: the portrait as the card's own leading edge — see PORTRAIT_FADE_MASK.
 

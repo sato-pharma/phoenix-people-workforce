@@ -40,6 +40,16 @@ const SATO_BAND = "src/components/admin/ceo-command-center.tsx";
  */
 const INK = { bottom: 403 / 512, left: 97 / 512, right: 412 / 512, top: 76 / 512 };
 
+/**
+ * `/public/brand/identity-watermark.png` — the WITH-PHOTO mark, and a different file from the badge
+ * above it. 1350x900, corners fully transparent, ink at x 361..969 and y 114..746, drawn in
+ * rgba(255,238,222,0.18). Measured from its own alpha channel in the browser on 2026-10-12, not
+ * assumed: the box is 55% empty across and 29% empty down, so a CSS `height` here is not the size of
+ * the phoenix anyone sees. It is the same file `PhoenixSignatureCard` draws.
+ */
+const WASH_INK = { bottom: 747 / 900, left: 361 / 1350, right: 970 / 1350, top: 114 / 900 };
+const WASH_ASPECT = 1350 / 900;
+
 /** The name and the rule have to stop clear of the mark, not merely short of it. */
 const MIN_GAP_PX = 8;
 
@@ -290,19 +300,15 @@ export function runIdentityStripEmblemTests() {
       + `read ${minW}px / ${vw}vw / ${maxW}px. He asked for bigger, not merely different.`,
   );
 
-  const markHeight = Number(/"--phx-mark-height": "(\d+)px"/.exec(scale)?.[1] ?? NaN);
-  const markTop = Number(/"--phx-mark-top": "(-?\d+)px"/.exec(scale)?.[1] ?? NaN);
-  const markBack = Number(
-    /"--phx-mark-right": "calc\(var\(--phx-portrait-w\) - (\d+)px\)"/.exec(scale)?.[1] ?? NaN,
-  );
   const textGap = Number(
     /"--phx-text-gap": "calc\(var\(--phx-portrait-w\) \+ (\d+)px\)"/.exec(scale)?.[1] ?? NaN,
   );
+  const washBack = Number(
+    /"--phx-wash-right": "calc\(var\(--phx-portrait-w\) - (\d+)px\)"/.exec(scale)?.[1] ?? NaN,
+  );
   for (const [label, value] of [
-    ["--phx-mark-height", markHeight],
-    ["--phx-mark-top", markTop],
-    ["--phx-mark-right", markBack],
     ["--phx-text-gap", textGap],
+    ["--phx-wash-right", washBack],
   ] as const) {
     assert.ok(
       Number.isFinite(value),
@@ -311,25 +317,70 @@ export function runIdentityStripEmblemTests() {
     );
   }
 
-  // The mark stays WHOLE and clear of the wave at its with-photo size, exactly as at its old one.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // THE WITH-PHOTO WATERMARK IS A DIFFERENT FILE, AND THAT IS THE FIX ITSELF.
+  //
+  // The owner rejected the enlarged badge twice on 2026-10-12 — "it feels like its not real or
+  // extra zeyada msh mazboota" at full colour, then "watermark mo2ref" greyscaled and multiplied
+  // into the paper. Both were the same artwork: `identity-strip-emblem.png` is a hard-edged round
+  // BADGE, and a badge enlarged behind a photo reads as a logo or as dirt, never as print.
+  // `identity-watermark.png` is a watermark in the file — a pale warm phoenix wash, no ring, no
+  // bars, rgba(255,238,222,0.18) ink on full transparency — and it is the mark the employee portal
+  // banner draws, which is the surface he pointed this family at in the first place.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  const washTag =
+    /photoSrc \? \(\s*(?:\/\*[\s\S]*?\*\/\s*)?<img[\s\S]{0,400}?src="\/brand\/identity-watermark\.png"/.exec(strip);
   assert.ok(
-    markTop + markHeight * INK.top >= 0,
-    `the standing-photo emblem's top (${markTop}px) clips the phoenix's crown against the bar's `
-      + "overflow-hidden — a cropped mark is the one thing the owner has already turned down",
+    washTag,
+    "the with-photo watermark must be `/brand/identity-watermark.png`, drawn only when there IS a "
+      + "photo. The badge enlarged behind the portrait is the thing the owner turned down twice — "
+      + "at full colour and greyscaled — and no third treatment of that file is the answer.",
+  );
+  const washStyle = styleBody(strip, "WASH_STYLE");
+  assert.ok(washStyle.length > 0, "WASH_STYLE is gone — the watermark's whole geometry is unpinned");
+  assert.ok(
+    !/filter|mixBlendMode/.test(washStyle),
+    "the wash must carry NO filter and NO blend mode — the file is already pale warm ink on "
+      + "transparency, and a treatment applied to it is how the badge versions came to look wrong",
+  );
+  assert.equal(
+    /opacity: (\d+)/.exec(washStyle)?.[1],
+    "1",
+    "the wash draws at opacity 1, exactly as PhoenixSignatureCard draws the same file — the alpha "
+      + "that makes it a watermark is IN the PNG, and dimming it further is what made it a ghost",
+  );
+  const washHeight = Number(/height: "(\d+)px"/.exec(washStyle)?.[1] ?? NaN);
+  const washTop = Number(/top: "(-?\d+)px"/.exec(washStyle)?.[1] ?? NaN);
+  assert.ok(
+    Number.isFinite(washHeight) && Number.isFinite(washTop),
+    "the wash's height and top must stay literal pixels on a bar that is itself a literal height",
   );
   assert.ok(
-    markTop + markHeight * INK.bottom <= BREAKPOINTS.sm.waveTop,
-    `the standing-photo emblem's feet (y=${(markTop + markHeight * INK.bottom).toFixed(1)}px) `
-      + `stand behind the wave, which starts at y=${BREAKPOINTS.sm.waveTop}`,
+    washHeight >= BREAKPOINTS.sm.barHeight,
+    `the wash must stand at least as tall as the bar (${washHeight}px against `
+      + `${BREAKPOINTS.sm.barHeight}px). Scaled to fit between the bar's top and the wave it draws `
+      + "72px of ink across, which is the ghost-sized mark he has already rejected once.",
+  );
+  assert.ok(
+    washTop + washHeight * WASH_INK.top >= 0,
+    `the wash's crown (y=${(washTop + washHeight * WASH_INK.top).toFixed(1)}px) is cut off by the `
+      + "bar's top edge — it bleeds at the FOOT, under the wave, exactly as the sibling card does, "
+      + "and nowhere else",
   );
 
   // "FROM BEHIND" IS TWO FACTS AT ONCE, and one without the other is a different picture: part of
   // the mark must be COVERED by the portrait, and part of it must be CLEAR of it. Both are stated
   // against W, so W cancels and the test is viewport-free.
-  const inkRightOfMark = markHeight * (1 - INK.right); // inside its own box, from the box's right
-  const inkWidthOfMark = markHeight * (INK.right - INK.left);
-  const coveredByPortrait = markBack - inkRightOfMark; // px of ink hidden behind the frame
+  const washBoxWidth = washHeight * WASH_ASPECT;
+  const inkRightOfMark = washBoxWidth * (1 - WASH_INK.right); // inside its own box, from the right
+  const inkWidthOfMark = washBoxWidth * (WASH_INK.right - WASH_INK.left);
+  const coveredByPortrait = washBack - inkRightOfMark; // px of ink hidden behind the frame
   const clearOfPortrait = inkWidthOfMark - coveredByPortrait; // px of ink standing on the cream
+  assert.ok(
+    washBack - inkRightOfMark < inkWidthOfMark,
+    "the portrait covers the whole watermark — nothing shows from behind it, which is the state "
+      + "the owner asked to end",
+  );
   assert.ok(
     coveredByPortrait > 8,
     `the mark is not actually BEHIND the portrait — only ${coveredByPortrait.toFixed(1)}px of its `
@@ -369,58 +420,21 @@ export function runIdentityStripEmblemTests() {
       + "next section's top border, which is the collision this reserve exists to prevent",
   );
 
-  // ───────────────────────────────────────────────────────────────────────────────────────────
-  // THE WATERMARK IS PRINTED INTO THE PAPER, NOT LAID ON IT.
-  //
-  // The owner, 2026-10-12, on the shipped version: "the watermark is not fitting good it feels like
-  // its not real or extra zeyada msh mazboota". The geometry was right and the INK was wrong — a
-  // full-colour badge composited over cream reads as a third object however low its alpha. So with a
-  // photo the mark is greyscaled and multiplied INTO the paper, and the fallbacks — the no-photo
-  // SATO column, which is a different instruction from 2026-09-04 — stay exactly as they were.
-  // ───────────────────────────────────────────────────────────────────────────────────────────
-  const markStyle = styleBody(strip, "MARK_DESKTOP_STYLE");
-  assert.ok(markStyle.length > 0, "MARK_DESKTOP_STYLE is gone — the mark's ink is unpinned");
-
-  for (const [property, fallback] of [
-    ["filter", "none"],
-    ["mixBlendMode", "normal"],
-  ] as const) {
-    assert.ok(
-      new RegExp(`${property}: "var\\(--phx-mark-[a-z-]+, ?${fallback}\\)"`).test(markStyle),
-      `the desktop mark's ${property} must fall back to \`${fallback}\` — that fallback IS the `
-        + "no-photo path, and hard-coding the with-photo treatment there would rewrite the owner's "
-        + "2026-09-04 SATO-column mark as a side effect of a different instruction",
-    );
-  }
-  const plainOpacity = Number(
-    /opacity: "var\(--phx-mark-opacity, ?([\d.]+)\)"/.exec(markStyle)?.[1] ?? NaN,
-  );
+  // THE NO-PHOTO PATH IS A DIFFERENT INSTRUCTION AND MUST NOT MOVE WITH THIS ONE. With initials
+  // there is no standing portrait for a mark to come out from behind, so that path keeps the badge
+  // in the SATO column exactly as 2026-09-04 left it — and it keeps its own opacity, which is the
+  // one number the two paths could silently share.
+  const plainStyle = styleBody(strip, "EMBLEM_DESKTOP_STYLE");
+  assert.ok(plainStyle.length > 0, "EMBLEM_DESKTOP_STYLE is gone — the no-photo mark is unpinned");
   assert.equal(
-    plainOpacity,
-    0.2,
+    /opacity: ([\d.]+)/.exec(plainStyle)?.[1],
+    "0.2",
     "the no-photo mark must stay at opacity 0.2 — its own instruction, unchanged since 2026-09-04",
   );
-
-  const blend = /"--phx-mark-blend": "([a-z-]+)"/.exec(scale)?.[1];
-  const filter = /"--phx-mark-filter": "([^"]+)"/.exec(scale)?.[1] ?? "";
-  const photoOpacity = Number(/"--phx-mark-opacity": "([\d.]+)"/.exec(scale)?.[1] ?? NaN);
-  assert.equal(
-    blend,
-    "multiply",
-    "with a photo the mark must composite with `multiply` — alpha alone leaves it sitting ON the "
-      + "page in its own hue, which is the 'extra, not real' the owner rejected",
-  );
-  assert.match(
-    filter,
-    /grayscale\(1\)/,
-    "with a photo the mark must be greyscaled — multiply alone still carries the emblem's orange "
-      + "and teal, and a second colour scheme on the cream is what reads as a pasted-on logo",
-  );
   assert.ok(
-    photoOpacity < plainOpacity,
-    `multiplied ink is far heavier than overlaid ink at the same number, so the with-photo opacity `
-      + `(${photoOpacity}) must come DOWN from the plain one (${plainOpacity}) — kept level, the `
-      + "watermark lands darker than the version he turned down",
+    !/filter|mixBlendMode/.test(plainStyle),
+    "the no-photo badge must carry no filter and no blend — the treatments tried on the with-photo "
+      + "mark were both rejected, and applying one here would change a mark he never complained of",
   );
 
   // ───────────────────────────────────────────────────────────────────────────────────────────
