@@ -44,9 +44,20 @@
 --      nobody loses credit in any month.
 --
 --      THIS MIGRATION CHANGES NO ROW. It fixes the writers, so the next
---      resignation is recorded correctly. The 51 historical boundaries are a
+--      resignation is recorded correctly. The 51 historical boundaries were a
 --      separate correction and the owner's decision, because moving one changes
 --      who is credited in a month.
+--
+--      HE DECIDED: "correct all 51", 2026-10-12, and the correction was applied
+--      to production the same day in ONE transaction, OUTSIDE this file, with
+--      the pre-image kept in au_backup_20261012.occupancy_resign_boundary (51
+--      preimage_role='person' rows + 51 'vacant' rows). Verified after it: 0
+--      boundaries left on a last working day, 51 person rows and 51 vacant rows
+--      moved exactly +1 day, 0 person start dates touched, 0 inverted rows, 0
+--      overlapping person spans — and exactly the forecast 10 (seat, period)
+--      pairs now read the person who worked the month, 1,524,288.04 EGP of
+--      actual value, nobody losing credit anywhere. It is deliberately NOT in
+--      this migration: a replay must never shift those rows a second time.
 --
 -- WHY THE ARITHMETIC IS AT THE THREE CALL SITES AND NOT INSIDE
 -- au.resign_occupant: that primitive is ALSO what the transfer path calls, and
