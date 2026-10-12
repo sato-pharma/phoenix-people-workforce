@@ -81,7 +81,7 @@ function SeatInVenueForm({
   onBack: () => void;
   onDone: (notice: ListNotice) => void;
 }) {
-  const venues = useCrmGet<{ sharedPlaces: SharedPlaceChoice[] }>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
+  const venues = useCrmGet<SharedPlaceChoice[]>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
   const [venueId, setVenueId] = useState<string | null>(null);
   // The customer whose page he came from starts ticked — the likely reason he opened this screen.
   const [picked, setPicked] = useState<string[]>([customerId]);
@@ -90,7 +90,7 @@ function SeatInVenueForm({
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  const list = venues.data?.sharedPlaces ?? [];
+  const list = venues.data ?? [];
   const chosen = list.find((venue) => venue.sharedPlaceId === venueId) ?? null;
   const candidates = useMemo(() => standaloneCustomers(view.customers), [view.customers]);
   const shown = useMemo(() => {

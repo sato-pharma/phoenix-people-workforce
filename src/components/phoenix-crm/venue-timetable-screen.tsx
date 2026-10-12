@@ -31,8 +31,8 @@ export function VenueTimetableScreen({
   onDone: (notice: ListNotice) => void;
   sharedPlaceId: string;
 }) {
-  const venues = useCrmGet<{ sharedPlaces: SharedPlaceChoice[] }>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
-  const venue = venues.data?.sharedPlaces.find((entry) => entry.sharedPlaceId === sharedPlaceId) ?? null;
+  const venues = useCrmGet<SharedPlaceChoice[]>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
+  const venue = venues.data?.find((entry) => entry.sharedPlaceId === sharedPlaceId) ?? null;
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
