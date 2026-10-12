@@ -68,7 +68,7 @@ function healthyShape(): SchemaShape {
       // The nine anon-granted views, inert because they are all security_invoker.
       view("v_employee_portal_payslips", { anon: true, invoker: true }),
       view("v_payroll_eligible_employees", { anon: true, invoker: true }),
-      view("v_active_organogram", { anon: true, invoker: true }),
+      view("v_employee_portal_sales", { anon: true, invoker: true }),
       // The one live `true` policy — allowlisted with a reason, so it must NOT fire.
       table("deductions_categories", { auth: true, policies: 1, openPolicy: "authenticated" }),
       // An ordinary authenticated-granted table behind a real policy.

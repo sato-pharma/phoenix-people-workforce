@@ -96,8 +96,9 @@ export async function runContractNonRenewalTerminalTests() {
   // (f2) effectiveDate fallback chain, reason format, and workflowNotes format —
   // exercised end-to-end (with this exact string shape) against a disposable
   // fixture on staging (cifwmndunmlxjhyjugxa) on 2026-07-18: employee terminated,
-  // vacancy opened, resignation traceable, correctly excluded from
-  // v_active_organogram / v_payroll_eligible_employees. Locking these strings so
+  // vacancy opened, resignation traceable, correctly excluded from the organogram
+  // (organogram_visible, plus the EU-organogram seat release) and from
+  // v_payroll_eligible_employees. Locking these strings so
   // a future edit can't silently drift from the verified shape.
   assert.match(
     service,

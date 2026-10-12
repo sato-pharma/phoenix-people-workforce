@@ -204,11 +204,13 @@ async function verifyTerminalFlags(hrId: string) {
     "hr_id",
     hrId,
   );
-  const organogram = await supabase.from("v_active_organogram").select("hr_id").eq("hr_id", hrId).limit(1);
+  // No organogram view is read here any more: `v_active_organogram` was dropped on 2026-10-12 and
+  // the EU organogram (`au_v_*`) is the source of truth. `organogram_visible` below IS the
+  // organogram exclusion for a seatless fixture — see the note in phase15.
   const payroll = await supabase.from("v_payroll_eligible_employees").select("hr_id").eq("hr_id", hrId).limit(1);
 
   addCheck("terminal raw flags are false", employee?.organogram_visible === false && employee?.payroll_eligible === false, employee);
-  addCheck("terminal employee is excluded from effective views", (organogram.data ?? []).length === 0 && (payroll.data ?? []).length === 0, { organogram: organogram.data, payroll: payroll.data });
+  addCheck("terminal employee is excluded from payroll eligibility", (payroll.data ?? []).length === 0, { payroll: payroll.data });
 }
 
 async function findAvailablePayrollPeriod() {

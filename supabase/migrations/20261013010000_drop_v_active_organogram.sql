@@ -1,0 +1,46 @@
+-- DROP THE V ORGANOGRAM — the EU organogram is the only source of truth for distribution.
+--
+-- Owner instruction, 2026-10-12: "source of trust for employees' distribution is the EU
+-- organogram. The old V organogram, if it is still available, drop it and depend only on the EU
+-- organogram and link anything to the EU organogram." It repeats his 2026-10-10 ruling
+-- ("eu organogram fucken drop the v-organo") after that view answered a question about September
+-- with "nobody".
+--
+-- WHAT IT WAS, AND WHY IT COULD NOT STAY
+-- `public.v_active_organogram` was a flat join on `employees` filtered to organogram_visible AND
+-- employment_status = 'active' — an AS-OF-TODAY projection, not an organogram. An area whose seat
+-- is vacant now vanished from it entirely, with no error, no null and no empty string marking the
+-- omission, so it could not answer any question about a past month. It listed 48 areas with no
+-- "Down town" while Down town's CNS rep seat was occupied for the whole of September.
+--
+-- WHAT REPLACES IT: the EU organogram, the `au_v_*` seat model —
+--   au_v_org_tree              the tree
+--   au_v_line_area_map_all     per (line, area): state, carries_target, dm/rep seat, region
+--   au_v_seat_occupancy_all    who held a seat and WHEN (effective_from / effective_to)
+--   au_v_employee_seat_drift   where `employees` disagrees with the seat model
+--
+-- SAFE TO DROP, measured on production (ozucdzovmcqvepbozvqf) immediately before this ran:
+--   * zero dependent views, matviews or rules (pg_depend via pg_rewrite)
+--   * zero anon-granted public views at all, so no browser reachability is lost
+--   * no application code reads it — pinned from now on by the sweep in
+--     tests/organogram-hardening.test.ts, which fails if any file under src/, app/ or scripts/
+--     calls .from("v_active_organogram")
+--
+-- TO RESTORE IT, if it is ever wanted back, this was its exact definition:
+--   create view public.v_active_organogram with (security_invoker = 'true') as
+--     select e.hr_id, e.full_name, e.name_ar, e.job_title, e.manager_hr_id,
+--            m.full_name as manager_name, e.department_id, d.name as department_name,
+--            e.line_id, l.name as line_name, e.area_id, a.name as area_name,
+--            e.team_id, t.name as team_name, e.position_id, p.title as position_title,
+--            e.hire_date, e.employment_status, e.payroll_eligible, e.organogram_visible
+--       from employees e
+--       left join employees m on m.hr_id = e.manager_hr_id
+--       left join departments d on d.id = e.department_id
+--       left join lines l on l.id = e.line_id
+--       left join areas a on a.id = e.area_id
+--       left join teams t on t.id = e.team_id
+--       left join positions p on p.id = e.position_id
+--      where coalesce(e.organogram_visible, true) = true
+--        and coalesce(e.employment_status, 'active') = 'active';
+
+drop view if exists public.v_active_organogram;
