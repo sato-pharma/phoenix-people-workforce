@@ -29,7 +29,9 @@
 
 
 ## Inbox — new notes land here
+- [HR premium identity](hr-premium-identity.md) - the owner's template for every NORMAL Sato document (12 Oct 2026), saved as the skill `hr-premium-identity`. Government forms stay as issued; frozen designs need his word first.
 
+- [a `<rev>:<dot-path>` reads as ABSENT on main](a-rev-colon-dot-path-reads-as-absent-on-main.md) - MSYS mangles the colon; ask with `git ls-tree <rev> <path>`.
 
 
 
