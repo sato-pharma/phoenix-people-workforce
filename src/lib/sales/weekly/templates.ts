@@ -55,39 +55,24 @@ export function weeklyDistributorSplitsSalesStock(distributorCode: string): bool
   return WEEKLY_SPLIT_SALES_STOCK_DISTRIBUTORS.includes((distributorCode ?? "").trim().toUpperCase());
 }
 
-// All weekly-enabled distributor codes (drives the branch-map admin dropdown).
+// All weekly-enabled distributor codes.
 const ALL_WEEKLY_DISTRIBUTOR_CODES = ["IS-S", "IS", "IS-L", "PS", "POS", "EG", "RM"];
 
-/** Distributors shown in the Branch Mapping admin tab dropdown. */
+/** Weekly distributors with each one's split-sales/stock flag — read by the POS region-mapping
+ *  screens (`pos-region-mappings.ts`), which need that flag.
+ *
+ *  🔴 This is NOT where the Weekly Mapping tab's dropdowns come from. Both of its tabs — Branch →
+ *  Region and Products — are served by `weeklyDistributorOptions()` straight off the
+ *  `WEEKLY_DISTRIBUTORS` registry, through `branch-region-map.ts` and `product-aliases.ts`. A
+ *  hand-written list beside the registry is exactly what went wrong here before: the curated
+ *  `WEEKLY_MAPPING_DISTRIBUTOR_LIST` that used to sit below carried a wrong CODE (`EGD` for `EG`)
+ *  and a wrong NAME (`POS` for `PS`/Overseas) from the day it was written, reached no screen at all,
+ *  and was deleted on the owner's instruction (2026-10-13: "delete weeklyMappingDistributors, it has
+ *  no caller"). Add a distributor to the registry, never to a second list. */
 export function weeklyBranchMapDistributors(): { code: string; name: string; splitsSalesStock: boolean }[] {
   return ALL_WEEKLY_DISTRIBUTOR_CODES.map((code) => ({
     code,
     name: weeklyTemplateDistributorFallbackName(code) ?? code,
     splitsSalesStock: weeklyDistributorSplitsSalesStock(code),
   }));
-}
-
-// Fixed list for the Weekly Mapping admin tab. Curated by the business — not every
-// distributor needs mapping, so this is an explicit list rather than auto-derived.
-const WEEKLY_MAPPING_DISTRIBUTOR_LIST: { code: string; name: string }[] = [
-  { code: "IS-S", name: "Ibn Sina Sato" },
-  { code: "IS-L", name: "Ibn Sina Lacto" },
-  { code: "RM", name: "Ramco" },
-  // PS is "Overseas". It read "POS" from the day this list was written, sitting one line above the
-  // SEPARATE real POS channel — so the dropdown offered the same label twice and an operator picking
-  // either one could not tell which distributor they were mapping (owner, 2026-10-13: "fix the PS
-  // name in the Weekly Mapping list to Overseas").
-  { code: "PS", name: "Overseas" },
-  { code: "POS", name: "POS Purchasing Sales" },
-  // The CODE is "EG" — EGD is the distributor's NAME. It read `code: "EGD"` from the day this list
-  // was written: a code no weekly table, mapping row or upload has ever carried, so a dropdown built
-  // from it would have offered an entry that matched nothing (owner, 2026-10-13: "fix the EGD code in
-  // the Weekly Mapping list to EG"). Every code here is now pinned against WEEKLY_DISTRIBUTORS by
-  // tests/weekly-sales-import.test.ts, so the next typo fails CI instead of sitting here.
-  { code: "EG", name: "EGD" },
-];
-
-/** Distributors shown in the Weekly Mapping admin tab dropdown. */
-export function weeklyMappingDistributors(): { code: string; name: string }[] {
-  return WEEKLY_MAPPING_DISTRIBUTOR_LIST.map((d) => ({ ...d }));
 }
