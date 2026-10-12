@@ -22,9 +22,17 @@
  * flags it was settled on (`settled_flags`). A case is settled only while those still equal the row's
  * current flags, so a fresh finding on the same subject reopens it — see `settlementOf`.
  *
- * This is the ONLY reader of `phoenix_crm_location_integrity`. It lives behind `/admin`, which no rep
- * can open at all, so the evidence cannot leak into the field app through a role mistake in a tab or
- * a component: the rep-facing bundle does not import this file and has no route that reaches it.
+ * This is the only reader of the EVIDENCE on `phoenix_crm_location_integrity` — the coordinates, the
+ * signals, the flags in words. It lives behind `/admin`, which no rep can open at all, so the evidence
+ * cannot leak into the field app through a role mistake in a tab or a component: the rep-facing bundle
+ * does not import this file and has no route that reaches it.
+ *
+ * 🔴 IT IS NOT THE ONLY READER OF THE TABLE, which this comment claimed until 2026-10-12 and which a
+ * session believed. Two others read it, both for a yes/no about a rep and neither for the evidence:
+ * `server/behaviour.ts` (`readStrongCaseReps` — which reps carry a strong case this month, so a
+ * save-time pattern is held back) and `rep-ranks/server/compute.ts` (the Integrity score). Both ask
+ * for `rep_hr_id` and `flags` and nothing a rep could be shown. A fourth read — anything that selects
+ * `lat`, `lon`, `signals` or the labels — belongs HERE, behind this file's audience check.
  *
  * WHO READS IT (owner, 2026-09-26, Golden Rule #1): "every violation is then recorded in the admin
  * and the SFE account". The SFE Manager joined the Super Admin that day. It is still the narrowest
@@ -68,6 +76,7 @@ import {
 } from "@/lib/phoenix-crm/location-integrity";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -258,9 +267,39 @@ export type IntegrityBoard = {
   behaviour: BehaviourCase[];
   /** Months the sweep could not judge at all — too few visits. NOT CHECKED, never clean. */
   behaviourNotChecked: number;
+  /**
+   * True when either read stopped at its ceiling, so the page can say so instead of presenting a
+   * part of the board as the whole of it. The same honesty `ValidationBoardRead` carries.
+   */
+  capped: boolean;
 };
 
-const BOARD_LIMIT = 200;
+/**
+ * The ceilings on the two paged reads. A bound on memory, not a bound on the board.
+ *
+ * 🔴 BOTH READS RAN ON `.limit(200)` UNTIL 2026-10-12, AND EACH DROPPED ROWS SILENTLY. The capture
+ * read is ordered `strong desc, captured_at desc`, so past 200 the board stopped showing the oldest
+ * cases — and nothing said so: there was no `capped`, and the counters counted what had been read.
+ * The behaviour read was worse than cosmetic: `behaviourNotChecked` counts the unmeasured months
+ * among the rows it got back, so a truncated read UNDER-REPORTED how much of the field the pass
+ * cannot speak about — the one number on the board whose whole job is to admit a blind spot.
+ *
+ * `whenFull: "stop"` on both, because this read PRESENTS: strongest and newest first means a ceiling
+ * loses the oldest and least damning, and `capped` then says it out loud. A read that JUDGED would
+ * have to refuse instead (`server/paged-read.ts`).
+ */
+const BOARD_READ_MAX = 5_000;
+const BEHAVIOUR_READ_MAX = 5_000;
+
+/**
+ * One page for the weekly scan's window — a Sat–Wed week, never the whole table.
+ *
+ * Left as a single page deliberately: a working week has never come near 200 capture cases (the board
+ * carried 11 standing on 2026-10-12), and the scan has no channel to admit a truncation through — it
+ * sends counts, and `summarizeFraudCases` has no `capped`. If a week ever reaches this, the honest fix
+ * is to page it AND give the summary somewhere to say so, not to raise the number quietly.
+ */
+const WEEK_WINDOW_LIMIT = 200;
 
 /**
  * May this viewer read the evidence at all? The Super Admin and the SFE Manager, and nobody else.
@@ -328,17 +367,31 @@ function settlementOf(row: Row, people: PeopleNames): IntegritySettlement | null
  *
  * Read separately from the captures because it IS separate: a behaviour verdict is about a rep and a
  * month, not about a visit, and it is recomputed whole every night as more of the month lands.
+ *
+ * 🔴 IT PAGES, AND `id` IS THE TIEBREAKER THAT MAKES THE WALK SAFE. `strong desc, month desc` is not
+ * a total order — a rep and a month share both keys with every other rep in that month — so an offset
+ * walk over it would skip and repeat at a page seam. `notChecked` is counted from the complete read,
+ * which is the point: it is the board's admission of what the pass could not judge.
  */
-async function loadBehaviourCases(): Promise<{ cases: BehaviourCase[]; notChecked: number; repHrIds: string[] }> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_behaviour_integrity")
-    .select("id, month, rep_hr_id, seat_id, visits, measured, flags, strong, signals")
-    .eq("is_test", false)
-    .order("strong", { ascending: false })
-    .order("month", { ascending: false })
-    .limit(BOARD_LIMIT);
-  throwIfError(error);
-  const rows = (data ?? []) as Row[];
+async function loadBehaviourCases(): Promise<{ cases: BehaviourCase[]; notChecked: number; repHrIds: string[]; capped: boolean }> {
+  const read = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_behaviour_integrity")
+        .select("id, month, rep_hr_id, seat_id, visits, measured, flags, strong, signals")
+        .eq("is_test", false)
+        .order("strong", { ascending: false })
+        .order("month", { ascending: false })
+        .order("id", { ascending: true }),
+    {
+      maxRows: BEHAVIOUR_READ_MAX,
+      whenFull: "stop",
+      what: "Phoenix CRM behaviour months",
+      uniqueBy: (row) => String(row.id),
+    },
+  );
+  throwIfError(read.error);
+  const rows = read.rows;
   // A month with nothing wrong is not a case, but a month that could not be JUDGED is counted, so
   // the page can say how much of the field this pass is actually able to speak about.
   const notChecked = rows.filter((row) => row.measured !== true).length;
@@ -362,6 +415,7 @@ async function loadBehaviourCases(): Promise<{ cases: BehaviourCase[]; notChecke
     }),
     notChecked,
     repHrIds: [...new Set(flagged.map((row) => String(row.rep_hr_id ?? "")).filter(Boolean))],
+    capped: read.capped,
   };
 }
 
@@ -373,25 +427,44 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   if (!canReadIntegrityBoard(viewer)) throw notFoundError("Not found.");
 
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from("phoenix_crm_location_integrity")
-    .select("id, subject_kind, subject_id, source, seat_id, rep_hr_id, customer_id, captured_at, created_at, visit_date, lat, lon, accuracy_meters, device_mocked, flags, strong, signals, is_test, settled_at, settled_by, settled_note, settled_flags")
-    .order("strong", { ascending: false })
-    .order("captured_at", { ascending: false })
-    .limit(BOARD_LIMIT);
-  // Test captures stay the Super Admin's, as they are everywhere else in the module: the SFE reads
-  // the real field, never the Super Admin's own trial entries.
-  if (options.includeTest !== true || !viewer.isSuperAdmin) query = query.eq("is_test", false);
   // The position cases are the Super Admin's alone (owner, 2026-10-02): for anyone else the query asks
   // only for the detectors on the allow-list, so a case he may not read never leaves the database.
   const positions = readsPositionCases(viewer);
-  if (!positions) query = query.in("source", SFE_SOURCES);
+  // 🔴 BUILT FRESH PER PAGE, AND EVERY NARROWING LIVES INSIDE IT. `readEveryPage` calls this once for
+  // each page and adds its own `.range()`, so a builder that leaked a filter — the audience cut most
+  // of all — would narrow the first page and open the rest. The tier is decided here, once, and the
+  // walk cannot widen it.
+  const buildQuery = () => {
+    let query = supabase
+      .from("phoenix_crm_location_integrity")
+      .select("id, subject_kind, subject_id, source, seat_id, rep_hr_id, customer_id, captured_at, created_at, visit_date, lat, lon, accuracy_meters, device_mocked, flags, strong, signals, is_test, settled_at, settled_by, settled_note, settled_flags")
+      .order("strong", { ascending: false })
+      .order("captured_at", { ascending: false })
+      // The tiebreaker that makes the walk a total order. `strong desc, captured_at desc` is not one:
+      // two captures in the same second — exactly the shape the behaviour rules look for — share both
+      // keys, and an order that wobbles between pages both drops rows and repeats them.
+      .order("id", { ascending: true });
+    // Test captures stay the Super Admin's, as they are everywhere else in the module: the SFE reads
+    // the real field, never the Super Admin's own trial entries.
+    if (options.includeTest !== true || !viewer.isSuperAdmin) query = query.eq("is_test", false);
+    if (!positions) query = query.in("source", SFE_SOURCES);
+    return query;
+  };
 
-  const [{ data, error }, behaviourRead] = await Promise.all([query, loadBehaviourCases()]);
-  throwIfError(error);
-  const rows = (data ?? []) as Row[];
+  const [read, behaviourRead] = await Promise.all([
+    readEveryPage<Row>(buildQuery, {
+      maxRows: BOARD_READ_MAX,
+      whenFull: "stop",
+      what: "Phoenix CRM integrity cases",
+      uniqueBy: (row) => String(row.id),
+    }),
+    loadBehaviourCases(),
+  ]);
+  throwIfError(read.error);
+  const rows = read.rows;
+  const capped = read.capped || behaviourRead.capped;
   if (rows.length === 0 && behaviourRead.cases.length === 0) {
-    return { cases: [], withdrawn: [], settled: [], strongCount: 0, byRep: [], bySource: [], behaviour: [], behaviourNotChecked: behaviourRead.notChecked };
+    return { cases: [], withdrawn: [], settled: [], strongCount: 0, byRep: [], bySource: [], behaviour: [], behaviourNotChecked: behaviourRead.notChecked, capped };
   }
 
   const customerIds = [...new Set(rows.map((row) => (row.customer_id ? String(row.customer_id) : null)).filter((id): id is string => Boolean(id)))];
@@ -561,6 +634,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     }),
     behaviour: behaviourRead.cases.map((entry) => ({ ...entry, repName: nameOf(people, entry.repHrId) || entry.repHrId })),
     behaviourNotChecked: behaviourRead.notChecked,
+    capped,
   };
 }
 
@@ -656,9 +730,17 @@ export async function reopenIntegrityCase(
  * (owner, 2026-10-02), so the SFE's copy asks with `includeGps: false` and a GPS case never leaves
  * the database for it — exactly as the board's own query narrows for an SFE viewer.
  *
- * Visit subjects only: the window is a Sat–Wed range on `visit_date`, and a PLACE validation case has
- * no visit day to fall in it. Behaviour months are deliberately absent — they are a month's shape,
- * recomputed nightly, not a capture in a week.
+ * 🔴 PLACE CASES ARE IN IT, AND WERE WRONGLY EXCLUDED UNTIL 2026-10-12. The query carried
+ * `.eq("subject_kind", "visit")` on the stated ground that "a PLACE validation case has no visit day
+ * to fall in the window" — which is simply false: both place filers write `visit_date`
+ * (`server/location-integrity.ts`, `filePlaceSignboardFlag` and the capture-trust filer). So the
+ * signboard and capture-trust detectors, which file ONLY against places, were invisible to the weekly
+ * scan for its whole life: every Thursday reported a week with no signboard cases in it, including the
+ * weeks that had them. The window is still a range on `visit_date`, and a row without one is still out
+ * of it — but by not matching the week, not by its subject.
+ *
+ * Behaviour months are deliberately absent — they are a month's shape, recomputed nightly, not a
+ * capture in a week.
  *
  * 🔴 A SETTLED CASE IS NOT IN THE SCAN EITHER. Settling has to mean the same thing on every surface
  * that reads this table, or it means nothing: a case he closed on the board would arrive in Saturday's
@@ -675,11 +757,10 @@ export async function loadIntegrityCasesForWindow(options: {
     .from("phoenix_crm_location_integrity")
     .select("subject_kind, rep_hr_id, source, flags, strong, settled_at, settled_by, settled_note, settled_flags")
     .eq("is_test", false)
-    .eq("subject_kind", "visit")
     .gte("visit_date", options.fromIso)
     .lte("visit_date", options.toIso)
     .order("captured_at", { ascending: false })
-    .limit(BOARD_LIMIT);
+    .limit(WEEK_WINDOW_LIMIT);
   // The position cases are the Super Admin's alone: the SFE copy asks only for the detectors on the
   // allow-list, so a case a recipient may not see is never read for him — and a detector added later
   // is kept out of his copy by the same rule rather than by `photo` happening to be the only other.
@@ -701,10 +782,22 @@ export async function loadIntegrityCasesForWindow(options: {
   return rows.map((row) => {
     const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)) as IntegrityBoardFlag[];
     const repHrId = String(row.rep_hr_id ?? "");
+    // 🔴 THE DETECTOR BY NAME, AND THE TIER STAMPED FROM THE ONE ALLOW-LIST. This read collapsed
+    // every source that was not `photo` into `gps` until 2026-10-12 — the same defect that printed
+    // five signboard cases as **Position** on the board in October, repeated in the scan. And the
+    // collapse was load-bearing in the wrong direction: `sfeVisibleCases` narrowed by SUBTRACTION
+    // (`source !== "gps"`), so widening the source here without stamping the tier would have leaked
+    // signboard and capture-trust evidence into the SFE Manager's copy — against the owner's
+    // 2026-10-09 decision that those stay the Super Admin's.
+    //
+    // `SFE_SOURCES` is that decision, and it is read HERE so the scan's two tiers and the board's own
+    // query cannot drift: one allow-list, one meaning, whoever asks.
+    const source = isIntegritySource(row.source) ? row.source : "gps";
     return {
       repHrId,
       repName: nameOf(people, repHrId) || repHrId,
-      source: row.source === "photo" ? "photo" : "gps",
+      source,
+      sfeVisible: SFE_SOURCES.includes(source),
       strong: row.strong === true,
       reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
     };

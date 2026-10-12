@@ -157,7 +157,23 @@ function toPlace(row: Row): SweepPlace | null {
   };
 }
 
-/** The backlog, oldest first, pharmacies and test entries excluded at the database. */
+/**
+ * The backlog, oldest first, pharmacies and test entries excluded at the database.
+ *
+ * 🔴 A SEATED PLACE IS NOT IN IT, AND WAS UNTIL 2026-10-12. A place with `shared_place_id` set is a
+ * customer seated in a shared venue, and under the owner's 2026-10-10 amendment ("ask him for only
+ * one timetable, not for every doctor") its `photo_path` IS THE BUILDING'S TIMETABLE — the board of
+ * clinic hours and doctors' names at the entrance — captured once for the venue and reused for every
+ * doctor seated in it. Its check is `schedule_check`, not `signboard_check`, and
+ * `server/validation-reviews.ts` already tells the two apart that way
+ * (`photoKind: shared_place_id ? "schedule" : "signboard"`).
+ *
+ * So the sweep was reading a timetable and asking "does the sign name this customer?" — a question
+ * the photo was never taken to answer. The verdicts it produced were wrong by construction, and a
+ * confident negative FILES A CASE about a named rep (`filePlaceSignboardFlag`), so the cost was not
+ * only a wasted model call. It is excluded at the database rather than in `toPlace`, so a seated row
+ * is never counted in the night's limit either.
+ */
 async function loadBacklog(limit: number): Promise<SweepPlace[]> {
   const reread = SIGNBOARD_REREAD_REASONS.join(",");
   const { data, error } = await getSupabaseAdmin()
@@ -167,6 +183,7 @@ async function loadBacklog(limit: number): Promise<SweepPlace[]> {
     )
     .eq("status", "active")
     .eq("is_test", false)
+    .is("shared_place_id", null)
     .neq("customer.list_type", "Pharmacy")
     .or(`signboard_check.is.null,and(signboard_check->>verdict.eq.unjudged,signboard_check->>reason.in.(${reread}))`)
     .order("captured_at", { ascending: true })

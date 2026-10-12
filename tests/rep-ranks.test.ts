@@ -73,7 +73,7 @@ function facts(overrides: Partial<RankRepFacts> & { hrIdKey: string }): RankRepF
       products: { visits: 240, total: 720 },
       notes: { visits: 240, withNote: 240 },
       gps: { fixes: 240, scoreSum: 24000, medianMeters: 10 },
-      integrity: { saves: 240, flagged: 0, flags: {} },
+      integrity: { saves: 240, flagged: 0, places: 0, flags: {} },
     },
     ...overrides,
   };
@@ -196,9 +196,23 @@ export function runRepRanksTests() {
   );
 
   assert.equal(
-    qualityScores({ ...facts({ hrIdKey: "q" }).quality, integrity: { saves: 20, flagged: 1, flags: { mock_provider: 1 } } }).integrity,
+    qualityScores({ ...facts({ hrIdKey: "q" }).quality, integrity: { saves: 20, flagged: 1, places: 0, flags: { mock_provider: 1 } } }).integrity,
     75,
     "each flagged save costs five times its share",
+  );
+  // A strong case against a PLACE he validated costs the same, on the same denominator (2026-10-12).
+  assert.equal(
+    qualityScores({ ...facts({ hrIdKey: "q" }).quality, integrity: { saves: 20, flagged: 0, places: 1, flags: { sign_other_name: 1 } } })
+      .integrity,
+    75,
+    "a flagged place costs what a flagged save costs — the signboard and capture-trust detectors reach the score",
+  );
+  // And a rep with nothing to divide by stays NULL rather than scoring zero off one place case.
+  assert.equal(
+    qualityScores({ ...facts({ hrIdKey: "q" }).quality, integrity: { saves: 0, flagged: 0, places: 1, flags: { sign_other_name: 1 } } })
+      .integrity,
+    null,
+    "no field save means no ratio — a measure with nothing to judge leaves the average",
   );
   const integrityPillar = RANK_PILLARS.find((pillar) => pillar.key === "integrity");
   assert.ok(integrityPillar && !integrityPillar.bonus, "integrity is in the score");
@@ -323,6 +337,7 @@ export function runRepRanksTests() {
   const raw: RankRawData = {
     roster: [{ hrIdKey: "r1", repName: "Aya", lineName: "CNS", areaName: "Delta", regionName: null, seatIds: ["S1"], startDay: "2026-10-03" }],
     saves,
+    placeCases: [],
     visits: [
       visit("2026-10-03", "d1", "PM"),
       visit("2026-10-03", "d1", "PM", true, false),
@@ -369,8 +384,42 @@ export function runRepRanksTests() {
   assert.equal(weekScores.productsPerVisit, 67, "14 products over 7 doctor visits, against 3 a visit");
   assert.equal(weekScores.visitNotes, 71, "5 of 7 doctor visits carry a note");
   assert.equal(weekScores.gpsPrecision, 83);
-  assert.deepEqual(week.quality.integrity, { saves: 8, flagged: 1, flags: { mock_provider: 1 } });
+  assert.deepEqual(week.quality.integrity, { saves: 8, flagged: 1, places: 0, flags: { mock_provider: 1 } });
   assert.equal(weekScores.integrity, 38, "one flagged save of eight costs five eighths");
+
+  // ── a strong case against a PLACE he validated costs exactly what a flagged visit costs ───────
+  // 🔴 THE PILLAR COUNTED VISIT CASES ONLY UNTIL 2026-10-12, so `signboard` and `capture_trust` —
+  // which file against a place and never against a visit — reached nobody's score at all. Here the
+  // visit flag is removed and one place case put in its stead: same rep, same week, same eight
+  // saves, and the score must land on the same 38. Before the fix this read 100.
+  const placeCaseWeek = factsForWindow(
+    {
+      ...raw,
+      saves: saves.map((entry) => ({ ...entry, integrityFlags: [] })),
+      placeCases: [
+        { repKey: "r1", day: "2026-10-03", flags: ["sign_other_name"] },
+        // Outside the window: a case is counted against the day it was filed for, exactly as a visit
+        // case is, so this one must not reach the week.
+        { repKey: "r1", day: "2026-10-20", flags: ["sign_other_name"] },
+        // Another rep's case must never land on his row.
+        { repKey: "r2", day: "2026-10-03", flags: ["sign_other_name"] },
+      ],
+    },
+    { from: "2026-10-03", to: "2026-10-09" },
+  )[0];
+  assert.deepEqual(
+    placeCaseWeek.quality.integrity,
+    { saves: 8, flagged: 0, places: 1, flags: { sign_other_name: 1 } },
+    "one place case in the window, counted and named — the other rep's and the later day's stay out",
+  );
+  assert.equal(
+    qualityScores(placeCaseWeek.quality).integrity,
+    38,
+    "a flagged place costs the same as a flagged visit — it is a numerator, and the denominator stays field saves",
+  );
+  // 🔴 A NUMERATOR, NEVER A DENOMINATOR. Counting the place among the saves as well would read
+  // 1 - 5/9 = 44 and make a flagged place IMPROVE a rep who makes few visits.
+  assert.notEqual(qualityScores(placeCaseWeek.quality).integrity, 44, "a place case must never be added to the saves it is divided by");
   // A whole month at full pace is Phoenix CRM's own coverage figure: 5 of 11.
   const [month] = factsForWindow(
     { ...raw, leave: new Set<string>(), roster: [{ ...raw.roster[0], startDay: "2026-10-01" }] },

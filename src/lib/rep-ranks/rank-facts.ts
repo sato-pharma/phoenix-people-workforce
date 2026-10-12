@@ -14,7 +14,7 @@
 // for coverage; a week asks for a week's share of it.
 
 import { isCallRateWorkingDay } from "@/lib/crm/call-rate";
-import { qualityFacts, type RankFieldSave } from "@/lib/rep-ranks/field-quality";
+import { qualityFacts, type RankFieldSave, type RankPlaceCase } from "@/lib/rep-ranks/field-quality";
 import { startScore, type RankRepFacts } from "@/lib/rep-ranks/scoring";
 import { daysBetween, monthSegments } from "@/lib/rep-ranks/windows";
 
@@ -60,6 +60,11 @@ export type RankRawData = {
   visits: readonly RankRawVisit[];
   /** Every save the rep made in the field, any list, for the deeper measures (field-quality.ts). */
   saves: readonly RankFieldSave[];
+  /**
+   * Strong integrity cases filed against a PLACE the rep validated — the signboard and capture-trust
+   * detectors, which never file against a visit and so reached no score at all until 2026-10-12.
+   */
+  placeCases: readonly RankPlaceCase[];
   customers: readonly RankRawCustomer[];
   /** Plan against actual per seat per day, leave days already taken out. */
   planDays: readonly RankPlanDay[];
@@ -95,6 +100,7 @@ function median(values: readonly number[]): number | null {
 type Indexed = {
   visitsByRep: Map<string, RankRawVisit[]>;
   savesByRep: Map<string, RankFieldSave[]>;
+  placeCasesByRep: Map<string, RankPlaceCase[]>;
   visitsBySeat: Map<string, RankRawVisit[]>;
   customersBySeat: Map<string, RankRawCustomer[]>;
   planBySeat: Map<string, RankPlanDay[]>;
@@ -106,12 +112,20 @@ export function indexRankData(data: RankRawData): Indexed {
     if (list) list.push(value);
     else map.set(key, [value]);
   };
-  const indexed: Indexed = { visitsByRep: new Map(), savesByRep: new Map(), visitsBySeat: new Map(), customersBySeat: new Map(), planBySeat: new Map() };
+  const indexed: Indexed = {
+    visitsByRep: new Map(),
+    savesByRep: new Map(),
+    placeCasesByRep: new Map(),
+    visitsBySeat: new Map(),
+    customersBySeat: new Map(),
+    planBySeat: new Map(),
+  };
   for (const visit of data.visits) {
     push(indexed.visitsByRep, visit.repKey, visit);
     push(indexed.visitsBySeat, visit.seatId, visit);
   }
   for (const save of data.saves) push(indexed.savesByRep, save.repKey, save);
+  for (const place of data.placeCases) push(indexed.placeCasesByRep, place.repKey, place);
   for (const customer of data.customers) push(indexed.customersBySeat, customer.seatId, customer);
   for (const day of data.planDays) push(indexed.planBySeat, day.seatId, day);
   return indexed;
@@ -229,7 +243,12 @@ export function repFactsForWindow(
       scoreSum: startMinutes.reduce((sum, minutes) => sum + startScore(minutes), 0),
     },
     accuracy: { located, atPlace },
-    quality: qualityFacts((indexed.savesByRep.get(rep.hrIdKey) ?? []).filter((save) => save.day >= from && save.day <= window.to)),
+    quality: qualityFacts(
+      (indexed.savesByRep.get(rep.hrIdKey) ?? []).filter((save) => save.day >= from && save.day <= window.to),
+      // The same window, on the same `visit_date` the place filers write — so a case follows the day
+      // it was filed against, exactly as a visit case does.
+      (indexed.placeCasesByRep.get(rep.hrIdKey) ?? []).filter((place) => place.day >= from && place.day <= window.to),
+    ),
   };
 }
 

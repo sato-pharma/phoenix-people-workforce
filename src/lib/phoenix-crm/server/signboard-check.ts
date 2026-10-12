@@ -53,8 +53,16 @@ export const PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS = 8_000;
  * silently double. Each call gets what is LEFT of this.
  *
  * 25 s against the door's 8 s because nobody is standing in the street at 03:35, and
- * `SIGNBOARD_SWEEP_BUDGET_MS` (120 s) plus this is 145 s — inside the 150 s half of the cron's 300 s
- * that `tests/phoenix-crm-signboard-check.test.ts` holds the pass to.
+ * `SIGNBOARD_SWEEP_BUDGET_MS` (100 s) plus the longest one place can take is 100 + 2 × 25 = 150 s —
+ * EXACTLY the 150 s half of the cron's 300 s that `tests/phoenix-crm-signboard-check.test.ts` holds
+ * the pass to, which is the line the photo and behaviour passes share.
+ *
+ * 🔴 THIS SUM SAID "120 s … 145 s" UNTIL 2026-10-12, AND BOTH NUMBERS WERE WRONG. The budget was
+ * lowered 120 → 100 s on 2026-10-09 in the same change that made one place able to cost two full
+ * reads, and this comment kept the old figure while adding only ONE read to it — so it read as 5 s of
+ * headroom where there is none. The real worst case is exactly the limit, not inside it: anything that
+ * lets a place make a third read, or raises either constant, breaks the cron's half and must be
+ * measured against `signboard-sweep.ts`'s own account of why the ceiling is two.
  */
 export const PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS = 25_000;
 

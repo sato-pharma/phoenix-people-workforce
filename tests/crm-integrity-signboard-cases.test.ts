@@ -200,6 +200,61 @@ function runLoaderTests() {
     "both readers — the board and the weekly scan's copy — must narrow through the allow-list",
   );
 
+  // 🔴 AND THE WEEKLY SCAN'S IN-MEMORY TIER COMES FROM THAT SAME LIST. The scan reads the week ONCE
+  // and derives the SFE's copy from the rows, so the cut is only safe while it means exactly what the
+  // query would have meant. Until 2026-10-12 it did not: `sfeVisibleCases` was `source !== "gps"`.
+  // The row carries the answer now, stamped here, so there is one list and no second copy to rot.
+  assert.ok(
+    code.includes("sfeVisible: SFE_SOURCES.includes(source)"),
+    "the week's rows must carry the tier stamped from SFE_SOURCES, not leave the scan to re-derive one",
+  );
+
+  // 🔴 THE WEEKLY SCAN MUST SEE PLACE CASES. It carried `.eq("subject_kind", "visit")` until
+  // 2026-10-12, on the stated ground that a place case has no visit day — which is false: both place
+  // filers write `visit_date`. `signboard` and `capture_trust` file ONLY against places, so every
+  // Thursday reported a week with no signboard cases in it, including the weeks that had them.
+  assert.ok(
+    !/\.eq\("subject_kind", "visit"\)/.test(code),
+    "the week's read must not be narrowed to visit subjects — it would hide two whole detectors",
+  );
+
+  // 🔴 THE BOARD PAGES, AND SAYS SO WHEN IT STILL REACHES ITS CEILING. Both reads ran on a flat
+  // `.limit(200)` until 2026-10-12: the capture read silently dropped the oldest cases, and the
+  // behaviour read under-reported `behaviourNotChecked` — the one number on the board whose job is to
+  // admit a blind spot.
+  assert.equal(
+    (code.match(/readEveryPage<Row>\(/g) ?? []).length,
+    2,
+    "both the capture read and the behaviour read must page",
+  );
+  // 🔴 COUNTED, NOT MERELY PRESENT. Written as `includes`, this pin was satisfied by EITHER read
+  // carrying `uniqueBy` — dropping it from the capture read left the gate green, which was measured
+  // on 2026-10-12 by deleting exactly that line.
+  assert.equal(
+    (code.match(/uniqueBy: \(row\) => String\(row\.id\)/g) ?? []).length,
+    2,
+    "BOTH walks must keep a row they met twice once — a repeated capture reads as two captures in the same second",
+  );
+  assert.equal(
+    (code.match(/\.order\("id", \{ ascending: true \}\)/g) ?? []).length,
+    2,
+    "each paged read needs `id` last for a TOTAL order — `strong desc, captured_at desc` is not one",
+  );
+  assert.ok(
+    /whenFull: "stop"/.test(code) && !/whenFull: "refuse"/.test(code),
+    "this board PRESENTS: strongest and newest first means a ceiling loses the oldest, and `capped` says so",
+  );
+  assert.ok(/capped: boolean;/.test(board) && /\n    capped,\n/.test(code), "the board must carry `capped` out to the page");
+  const page = read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx");
+  assert.ok(
+    page.includes("board.capped ?"),
+    "the page must say when the read was capped — every counter on it is a count of what was READ",
+  );
+  assert.ok(
+    page.includes("!board.capped && board.cases.length === 0"),
+    "and 'nothing flagged' must never be printed on a capped read",
+  );
+
   // The place verdicts are read in chunks, for the reason the visit distances are.
   assert.ok(
     board.includes("signboardPlaceIds.slice(index, index + 50)"),

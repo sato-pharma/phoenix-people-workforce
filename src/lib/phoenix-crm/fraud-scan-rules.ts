@@ -29,9 +29,10 @@
  *
  * The integrity board is the Super Admin's and the SFE Manager's (`integrity-board.ts`). This scan
  * carries the same evidence, so it goes to exactly those two roles and nowhere else — never a rep,
- * never a district manager, never a manager chain. And the tiers hold: the position (GPS) cases are
- * the Super Admin's alone, so the SFE's copy is built from the photo cases only (`sfeVisibleCases`),
- * the same split `loadIntegrityBoard` enforces on the screen.
+ * never a district manager, never a manager chain. And the tiers hold: the position, signboard and
+ * capture-trust cases are the Super Admin's alone, so the SFE's copy keeps only the detectors on the
+ * board's `SFE_SOURCES` allow-list (`sfeVisibleCases`) — the same split `loadIntegrityBoard` enforces
+ * on the screen, decided by that one list and not by a second copy of it here.
  *
  * ## Why it sends even on a clean week (unlike the 06:55 digest)
  *
@@ -62,8 +63,25 @@ export type FraudScanWindow = {
 export type FraudScanCase = {
   repHrId: string;
   repName: string;
-  /** Which detector filed it. `gps` is the Super Admin's alone; `photo` both roles may read. */
-  source: "gps" | "photo";
+  /**
+   * Which detector filed it — every one of the five by name, mirroring `INTEGRITY_SOURCES` in
+   * `server/integrity-board.ts`, which is the authority. It was `"gps" | "photo"` until 2026-10-12,
+   * which is why the board's reader collapsed signboard and capture-trust cases into `gps` to satisfy
+   * it: a case labelled as the one kind of evidence it is not.
+   */
+  source: "gps" | "photo" | "behaviour" | "signboard" | "capture_trust";
+  /**
+   * May a reader who is NOT the Super Admin see this case? Stamped by the board's reader from its own
+   * `SFE_SOURCES` allow-list — never decided in this file, and never re-derived from `source` here.
+   *
+   * 🔴 THIS FIELD EXISTS BECAUSE THE CUT USED TO BE A SUBTRACTION. `sfeVisibleCases` was
+   * `source !== "gps"`, which equals the allow-list only for as long as `photo` is the only other
+   * detector — and it has not been since 2026-10-08. The board's own query was written as an
+   * allow-list for exactly that reason (owner, 2026-10-02 and 2026-10-09: the position, signboard and
+   * capture-trust cases are the Super Admin's alone). Carrying the answer on the row makes the scan
+   * obey that ONE list instead of a second copy of it in a file that cannot import it.
+   */
+  sfeVisible: boolean;
   strong: boolean;
   /** The flags in plain English, already resolved by the board's label maps. */
   reasons: string[];
@@ -104,10 +122,18 @@ function labelOf(date: Date): string {
 }
 
 /**
- * The cases an SFE Manager may read: the photo detector's only. The position (GPS) cases — mock
- * provider and impossible travel among them — are the Super Admin's alone (owner, 2026-10-02), so
- * they never enter the SFE's copy. This is the same cut `loadIntegrityBoard` makes for an SFE viewer.
+ * The cases an SFE Manager may read — AN ALLOW-LIST, NEVER A SUBTRACTION.
+ *
+ * It reads the tier the board's reader already stamped on each row from its `SFE_SOURCES` list, so
+ * this is the same cut `loadIntegrityBoard` makes for an SFE viewer, decided by the same one line.
+ *
+ * 🔴 IT WAS `source !== "gps"` UNTIL 2026-10-12 — the exact pattern `SFE_SOURCES` was written as an
+ * allow-list to avoid. Nothing leaked, only because the board's reader was collapsing every other
+ * detector into `gps` and so excluding them by accident; the moment that collapse was corrected to
+ * label a signboard case honestly, a subtraction here would have put the Super Admin's own evidence
+ * in the SFE Manager's weekly report. A detector added later is the Super Admin's until somebody
+ * decides otherwise — the safe direction for a report that names a person.
  */
 export function sfeVisibleCases(cases: ReadonlyArray<FraudScanCase>): FraudScanCase[] {
-  return cases.filter((entry) => entry.source !== "gps");
+  return cases.filter((entry) => entry.sfeVisible);
 }

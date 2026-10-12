@@ -45,6 +45,12 @@ export type RankAdminMetrics = {
   gpsMedianMeters?: number | null;
   fieldSaves?: number;
   flaggedSaves?: number;
+  /**
+   * Strong cases against a PLACE this rep validated — the signboard and capture-trust detectors,
+   * which file against no visit. Absent on a row written before 2026-10-12, when the Integrity pillar
+   * counted visit cases only and those two detectors reached no score at all.
+   */
+  flaggedPlaces?: number;
   /** Which silent check flagged how many saves — the admin's detail, never a portal answer. */
   integrityFlags?: Record<string, number>;
 };
