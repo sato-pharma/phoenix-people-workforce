@@ -214,6 +214,40 @@ Each of the five rows above is replayed as a test case in `tests/phoenix-crm-sig
 (`checkManySigns`), including the true hold — a change that fixes the four by weakening the check
 breaks the fifth.
 
+### One name, two spellings: the compound and the professor's title (2026-10-12)
+
+The CRM integrity audit of 3–11 Oct found seven strong "sign names another person" places on the
+board. Replayed through the judge on `main`, one of them was the matcher's own fault:
+`ابراهيم عبدالشافى` on the list, filed at 03:37 Cairo on 11 Oct off a plate the night read CLEARLY
+as `الأستاذ الدكتور / إبراهيم عبد الشافى`, with two readings agreeing. The fold keeps each script's
+spaces where they are, so the list's one word `عبدالشافي` was missing from a plate that wrote it as
+two — and a two-word name may miss nothing. The other six were not spelling: a misread surname, two
+later reads that already match, and three AM boards for other buildings.
+
+The same space was also making FALSE matches. `عبد` and `ابو` fold to three letters, so each counted
+as a word of the name and spent the one-word allowance of a three-word name: `د.هشام ابو الدهب` was
+MATCHED on a plate reading `د/ هشام أحمد أبو الوفا`. The owner asked for the fix the same day ("fix the
+signboard reader's name matching for titles and spaces"). `personNameWords` in `signboard-rules.ts`
+now counts each compound as ONE word on both sides — a head (`عبد`, `ابو`) takes the next word, a
+tail (`الدين`, `الله`) joins the word before it — and drops `الأستاذ`, the one honorific on every
+professor's plate that `normalizeContactName`'s title list does not carry (0 of 9,215 PM list rows
+carry it today; on a list row it would spend the allowance and match any professor with the same
+first name).
+
+Joining strictly was tried first and replayed badly: a reader that drops the head has still read the
+name. `الله عفيفي` for `عبد الله عفيفي` turned from a match into a FLAG — filed by the other plates
+in the same frame — and `النعماني نار` for `النعماني ابو نار` went to `unjudged`. So a compound's core
+(`الشافي`, `نار`, `نور`) also answers for it when it stands ALONE on the other side, in either
+direction, and never inside another compound: the `الله` of `جاد الله` is not `عبد الله`.
+
+Replayed over all 389 stored readings: **six** move, none onto the board — `ابراهيم عبدالشافى` and
+`عبدالعزيز القاضي` (both stored `other_name`) and three stored `unjudged` become matches, and the
+`ابو الدهب` match becomes `unjudged` (its plate was read only in part). A stored verdict does not
+change until the place is read again; the held `ابراهيم عبدالشافى` row stays on the owner's board for
+him to settle. The place axis is untouched — its quorum is `distinctiveWords`, no AM reading moved,
+and joining there would take the allowance off `مستشفى ابو كبير المركزي`. Pinned by
+`checkNameSpelling` in `tests/phoenix-crm-signboard-check.test.ts`, each half broken and seen to fail.
+
 - **The refusal reason** (`validation-feedback.ts`). Six closed reasons: no signboard in the photo;
   the sign is not this customer; too dark or blurred to read; not taken at the entrance; a photo of
   paper, not a building; the location is not where the photo was taken. The free note stays on the
