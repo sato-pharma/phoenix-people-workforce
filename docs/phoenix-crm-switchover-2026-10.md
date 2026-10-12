@@ -240,3 +240,38 @@ doctor. `describeContactMasterError` now adds the PostgREST `code`, `details` an
 passes `maxRetries: 0` (new optional parameter on `createOpenAiResponseText`), because the `timeoutMs` it hands
 over is the time left on that check's deadline. A timeout still returns `unjudged("call_failed")` — the rep is
 never held for it.
+
+## A doctor the system added twice
+
+Asked 2026-10-12: "stop a rep adding a doctor who is already on his list". The refresh outage above was the
+symptom; this is the cause of the second row.
+
+**Who made it.** Not the rep. On seat SEAT-AIF-REP-CA2 a rep added a doctor on 10 Oct (own id 1000038395, origin
+`new`). The next morning a second row existed: reference 1000038395, own id 1000038463, origin `reference`,
+status `pending`, created by the system. The chain, read from the live definitions:
+
+1. The hourly refresh (fifth pass) gives a started rep's Phoenix list as assignments keyed on
+   `coalesce(reference_contact_crm_id, own_contact_crm_id)`, so the doctor he added is an assignment under his OWN id.
+2. `phoenix_crm_seat_reference` found the customer behind an entry by `reference_contact_crm_id` alone. For the
+   doctor the rep added, that column is NULL, so the entry came back with no customer: "carried over, not minted yet".
+3. `phoenix_crm_ensure_reference_customers` runs on every read of the list, the planner and the visit form, and
+   mints a pending reference row for every entry with no customer. It minted the copy.
+
+The unique index `(seat_id, reference_contact_crm_id, is_test)` could not stop it: the original's reference id is
+NULL and the copy's is the original's OWN id, which sits in a different column.
+
+**The fix** (migration `20261012200000`). `phoenix_crm_seat_reference` matches either id and returns one customer per
+entry (live beats dropped, active beats pending, earliest wins). The minting function also skips a contact that is a
+customer's own id. A BEFORE INSERT trigger `phoenix_crm_customers_no_double_add` refuses a row whose reference id is
+another customer's own id on the same seat (`doctor_already_on_list`, a 409 with words in `db.ts`).
+
+**Proven on production, inside a block that always rolled back.** 10,767 reference entries before and 10,767 after.
+13 entries that had no customer but an own id (the ones the next read would have copied) resolve to their own customer
+afterwards. 200 entries change their customer or state, all of them seats that already held a pair: the reference list
+now reads the live row instead of the copy. SEAT-AIF-REP-CA2 contact 1000038395 now resolves to the original, validated.
+The trigger itself could not be probed on production or staging (the insert probe was declined), so it is pinned by
+`tests/phoenix-crm-doctor-once.test.ts` only.
+
+**Not done.** The 158 pairs already on production are untouched (no merge, no drop, no unique index over the doctor).
+Which row of a pair keeps the visits is the owner's decision. The rep's `new` door already refuses a same-name customer
+(`same_name`, 409) unless the rep confirms it is a different person; that confirmation was left as it is.

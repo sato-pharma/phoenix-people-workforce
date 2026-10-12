@@ -1785,6 +1785,7 @@ import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.te
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmCustomerNameFoldTests } from "./phoenix-crm-customer-name-fold.test.ts";
+import { runPhoenixCrmDoctorOnceTests } from "./phoenix-crm-doctor-once.test.ts";
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
@@ -6376,6 +6377,11 @@ await runTest(
 await runTest(
   "Phoenix CRM asks one question about a customer's name (owner, 2026-10-05: “fix the customer name match” — the duplicate board folded the name and the loader compared raw lower(), so the loader created the second row and the board then reported it; 2,708 of 9,137 production names change under the fold and 8 groups held the same customer twice where the raw key could not see it, every one a hamza, final ya or final ta pair; the honorific list is now literally the same set in SQL and TypeScript, both of the loader's comparisons fold, and a folded hit only ever SKIPS — nothing merges, deletes or renames a customer)",
   runPhoenixCrmCustomerNameFoldTests,
+);
+
+await runTest(
+  "Phoenix CRM puts a doctor on a seat once (owner, 2026-10-12: “stop a rep adding a doctor who is already on his list” — the SYSTEM minted the second row: the refresh gives a rep-added doctor under his OWN id, the reference list looked the customer up by the vendor id only and returned nothing, and the minting function copied every nothing; the lookup now matches either id, the minting skips an own id, an insert trigger refuses the copy, and no existing row is touched)",
+  runPhoenixCrmDoctorOnceTests,
 );
 
 await runTest(
