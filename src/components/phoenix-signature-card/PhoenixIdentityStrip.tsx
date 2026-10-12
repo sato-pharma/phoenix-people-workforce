@@ -198,11 +198,16 @@ const PORTRAIT_SCALE = {
  * it reads as a smudge, because a hard-edged round mark pressed into cream paper looks like dirt
  * rather than print. There was no third treatment of that file worth trying.
  *
- * `identity-watermark.png` IS A WATERMARK ALREADY, IN THE FILE. Measured off its own alpha channel:
- * 1350x900, corners fully transparent, and the ink is rgba(255,238,222,0.18) — a pale warm cream
- * phoenix with no ring, no bars and no second colour, drawn to be laid on #fdf8f3 at full opacity.
- * It needs no filter and no blend mode, which is why it cannot look like a treatment applied to a
- * logo: it is not a logo.
+ * `identity-watermark.png` IS A WATERMARK ALREADY, IN THE FILE. Measured off its own alpha channel
+ * in the browser: 1350x900, ink across 188,400 px (15.5% of the box), corners fully transparent,
+ * the ink a near-white warm cream — brightest pixel rgb(254,238,221) — at a MEAN ALPHA OF 134 and a
+ * MAXIMUM OF 255. A phoenix with no ring, no bars and no second colour.
+ *
+ * 🔴 IT IS FAINT BECAUSE OF ITS COLOUR, NOT ITS ALPHA — and an earlier note in this file that read
+ * "the ink is rgba(255,238,222,0.18)" was wrong on exactly that point. 254/238/221 against the
+ * paper's #fdf8f3 is a difference of (1, -10, -22): tone on tone. The alpha is nearly solid. That
+ * distinction is the whole of the next paragraph, because a near-solid alpha channel is something
+ * you can PAINT THROUGH, and a 0.18 one would not have been.
  *
  * AND IT IS THE SIBLING'S OWN MARK, WHICH IS THE OWNER'S STANDING INSTRUCTION FOR THIS FAMILY.
  * `PhoenixSignatureCard` — the employee portal identity banner he pointed at on 2026-09-03 ("check
@@ -226,11 +231,163 @@ const PORTRAIT_SCALE = {
  * `right: 25px`, `top: -11px`, opacity 0.2, untouched by any of this.
  */
 const WASH_STYLE = {
+  // THE GLOW, IN THE BRAND'S OWN ORANGE. The owner, 2026-10-12, twice: "I want it to be more more
+  // appearing ... glossy and uh, shiny, glowing", then at a champagne version of exactly that —
+  // "the logo is awful like this. I mean, make it glowing by by its original color, the orange. The,
+  // its color is so bad, and make it also its ملامح باينة." A drop-shadow reads the ALPHA of
+  // everything inside this box, so the halo is the phoenix's own outline rather than a rectangle
+  // behind it: the wide one is the glow, the tight one is the burn that makes the edge read.
+  filter:
+    "drop-shadow(0 0 30px rgba(244,123,32,0.34)) drop-shadow(0 0 10px rgba(255,186,110,0.30))"
+    + " drop-shadow(0 0 16px rgba(127,191,189,0.20))",
+  // GEOMETRY UNCHANGED — "its place is perfect". 232px at top -24px against `--phx-wash-right` are
+  // the numbers he accepted. The `<img>` took its width from the file; a div has to be given one,
+  // and it is STATED as the file's own ratio rather than as 348 so the box cannot drift away from
+  // the artwork. `aspect-ratio` alone measured 0px wide here — an absolutely positioned box with
+  // only `right` set and nothing but absolute children has no content to shrink-wrap — so the
+  // width is explicit and the ratio stays beside it as the derivation.
+  aspectRatio: "1350 / 900",
   height: "232px",
-  opacity: 1,
+  width: "calc(232px * 1350 / 900)",
+  // LIGHTER. "No, no, no, what the fuck? It is awful like this. Make it lighter, make it lighter"
+  // (owner, 2026-10-12, at the mark painted in solid brand orange). The gradients below are already
+  // pale; this is the last stop that keeps the whole thing a WATERMARK rather than a logo on the
+  // page, and it is the number to move first if he asks for lighter or stronger again.
+  opacity: 0.62,
   right: "var(--phx-wash-right)",
   top: "-24px",
-  width: "auto",
+} as CSSProperties;
+
+/**
+ * THE GLOSS IS PAINTED THROUGH THE WATERMARK'S OWN ALPHA — the artwork is not altered at all.
+ *
+ * "its design is perfect and its place is perfect, but I want it to be more more appearing ...
+ * glossy and uh, shiny, glowing" (owner, 2026-10-12).
+ *
+ * 🔴 SO IT IS A MASK NOW, NOT AN `<img>`, AND THAT IS WHY THE DESIGN SURVIVES. Every earlier
+ * attempt changed how the mark was COMPOSITED — opacity down, greyscale, multiply — and he turned
+ * each one down. A mask changes nothing about the drawing: the same 188,400 ink pixels at the same
+ * alpha decide, per pixel, how much of whatever is behind them shows through. The silhouette, the
+ * feathering and the position are byte-for-byte the file's. Only the INK is ours.
+ *
+ * AND IT ONLY WORKS BECAUSE THE ALPHA IS NEARLY SOLID (mean 134, max 255). Painting through an
+ * 0.18 channel would have been the dimmed-logo failure again at one remove.
+ *
+ * 🔴 THE INK IS PHOENIX ORANGE, AND CHAMPAGNE WAS TRIED AND REJECTED. The first gloss painted the
+ * mark in the paper's own family (#fffdf8 -> #c9a97c) on the reasoning that a coloured phoenix would
+ * read as a second logo. He answered: "the logo is awful like this. I mean, make it glowing by by
+ * its original color, the orange. The, its color is so bad, and make it also its ملامح باينة. خلي
+ * ملامحها باينة." So the ink is #f47b20 — the brand's own orange, the colour the emblem has always
+ * been — and the brief's last clause is its own requirement: the bird's FEATURES have to read.
+ *
+ * WHY ORANGE MAKES THE FEATURES APPEAR, WHICH TONE-ON-TONE COULD NOT. The detail in this artwork is
+ * carried entirely by variation in its alpha — the histogram runs from 32 to 224 across the wing —
+ * and alpha variation only becomes visible in proportion to how far the ink sits from the paper it
+ * is laid on. Champagne on cream is a few points of difference, so every feather collapsed into one
+ * pale shape. #f47b20 on #fdf8f3 is a wide separation, so the same alpha steps that were invisible
+ * now draw the feathers, the crest and the plinth.
+ *
+ * 🔴 THE MASK IS DECLARED ONCE, ON A WRAPPER, AND EVERY LAYER IS ITS CHILD. "make it have a live
+ * shading, live shading, but without uh, without decreasing the performance of the page" (owner,
+ * 2026-10-12). A mask on each of six layers is six decodes of the same PNG and six masked
+ * composites; a mask on their parent is one of each, and `mask-image` makes its own stacking
+ * context, so the `multiply` and `screen` layers still blend against each other inside it and never
+ * against the page.
+ *
+ * AND NOTHING ANIMATES EXCEPT `transform` AND `opacity`. Those two are the only properties a
+ * browser can run on the compositor without re-running layout or re-painting: the layers are
+ * rasterised once and then moved and faded on the GPU. An animated `background-position` — which is
+ * how the first sweep was written — repaints a 348x232 masked surface every frame instead, which is
+ * exactly the cost he asked not to pay. Measured on this page with the animations running: see the
+ * PR. Do not animate a gradient's stops, a filter, a width or a position; move a layer instead.
+ *
+ * SIX LAYERS, AND EACH ONE HAS A JOB:
+ *   · BLOOM — a soft warm core, static, so the bird is lit from inside rather than evenly tinted.
+ *   · BODY — the orange ramp, light amber at the crest down to a burnt edge at the foot. A single
+ *     flat orange reads as a sticker; the ramp is what makes it a lit object.
+ *   · CARVE — a multiply shoulder down the trailing diagonal. This is the "ملامح باينة" layer: it
+ *     deepens where the alpha is already high and leaves the thin feather-tips alone, so the
+ *     separations between feathers darken instead of blurring together. It blends against the body
+ *     INSIDE this box, never against the page, because `filter` on the box makes its own stacking
+ *     context.
+ *   · LIFT — a `screen` highlight along the leading upper edge, which is the gloss: a polished
+ *     surface is a bright edge and a dark shoulder on one object, never overall brightness.
+ *   · STRIKE — the lightning. Read the next paragraph; it is the only thing here that moves.
+ *
+ * 🔴 "LIVE SHADING" IS A STRIKE EVERY FIVE SECONDS, NOT A SURFACE THAT KEEPS MOVING. The first
+ * reading of it put the whole mark in constant motion — a core breathing on a 7.5s cycle and a
+ * highlight drifting on a 13s one — and he corrected it: "I didn't mean by live shading like this.
+ * I mean the logo as it is, and every, for example, uh, five seconds, um, like رعد uh, وبرق" —
+ * thunder and lightning. So the mark is STILL. Once every five seconds a bright band crosses it in
+ * about six tenths of a second, flickering twice on the way exactly as lightning does, and then
+ * there is nothing at all for four and a half seconds. Do not re-add a continuous animation here:
+ * he has now rejected that reading in his own words, and a watermark that never stops moving is
+ * also the version that pulls the eye off the page it is behind.
+ *
+ * THE STRIKE RESPECTS `prefers-reduced-motion` — `app/globals.css` turns `.phx-wash-strike` off
+ * under it, and the mark keeps every static layer it has. Do not move the keyframes inline; they
+ * cannot be inline, which is the only reason any of this lives in a stylesheet.
+ */
+const WASH_MASK = {
+  maskImage: "url(/brand/identity-watermark.png)",
+  maskPosition: "center",
+  maskRepeat: "no-repeat",
+  maskSize: "100% 100%",
+  WebkitMaskImage: "url(/brand/identity-watermark.png)",
+  WebkitMaskPosition: "center",
+  WebkitMaskRepeat: "no-repeat",
+  WebkitMaskSize: "100% 100%",
+} as CSSProperties;
+
+const WASH_BLOOM_STYLE = {
+  background:
+    "radial-gradient(62% 62% at 44% 44%, rgba(255,201,133,0.46) 0%, rgba(249,162,90,0.22) 58%,"
+    + " rgba(244,123,32,0) 100%)",
+} as CSSProperties;
+
+/**
+ * THE UPPER WING IS THE FIRST STOP OF THIS RAMP, AND IT WAS TOO PALE. "the part of the upper wing
+ * is very is very light" (owner, 2026-10-12). The gradient runs top-left to bottom-right, so stop
+ * 0% IS the wing — at #ffe4bd it was four points off the paper and the feathers there vanished,
+ * while the body and the bars below read perfectly. The ramp now starts with colour in it and the
+ * pale cream is gone; the LIFT layer above was also lightening the same corner and has come down
+ * with it. The three merged colours he approved — warm gold, orange, teal — are unchanged.
+ */
+const WASH_BODY_STYLE = {
+  background:
+    "linear-gradient(138deg, #ffb878 0%, #fda862 16%, #fa9a55 32%, #f58d4e 50%, #f2c49e 66%,"
+    + " #a8d4d0 84%, #7fc3c0 100%)",
+} as CSSProperties;
+
+const WASH_CARVE_STYLE = {
+  background:
+    "linear-gradient(138deg, rgba(150,86,34,0) 40%, rgba(150,86,34,0.10) 74%,"
+    + " rgba(84,104,104,0.16) 100%)",
+  mixBlendMode: "multiply",
+} as CSSProperties;
+
+const WASH_LIFT_STYLE = {
+  background:
+    "linear-gradient(138deg, rgba(255,245,228,0.30) 0%, rgba(255,222,176,0.14) 26%,"
+    + " rgba(255,255,255,0) 48%)",
+  mixBlendMode: "screen",
+} as CSSProperties;
+
+/**
+ * THE LIGHTNING. Its own element, a third of the box wide, crossed by `translate3d` and flickered
+ * by `opacity` — the two compositor properties — so the strike costs no repaint and no layout.
+ *
+ * IT IS BRIGHT ON PURPOSE, UNLIKE THE CONSTANT SWEEP IT REPLACES. A band strong enough to read as
+ * lightning would bleach the phoenix if it crossed continuously, which is exactly what the 9s sweep
+ * did and why it was turned down to a glint. At one pass every five seconds the mark is unlit 88%
+ * of the time, so the strike can carry real light and the features still stand still between them.
+ */
+const WASH_STRIKE_STYLE = {
+  background:
+    "linear-gradient(112deg, rgba(255,255,255,0) 0%, rgba(255,250,236,0.92) 44%,"
+    + " rgba(255,236,206,0.52) 58%, rgba(255,255,255,0) 100%)",
+  mixBlendMode: "screen",
+  opacity: 0,
 } as CSSProperties;
 
 /** The no-photo desktop mark: the 2026-09-04 SATO column, unchanged. Read the paragraphs below. */
@@ -519,14 +676,22 @@ export function PhoenixIdentityStrip({
           mo2ref" at the badge that was doing that job. Read WASH_STYLE before changing a number;
           the file, not the CSS, is what makes this read as a watermark. */}
       {photoSrc ? (
-        /* eslint-disable-next-line @next/next/no-img-element */
-        <img
-          alt=""
+        <div
           aria-hidden="true"
           className="pointer-events-none absolute z-0 hidden sm:block"
-          src="/brand/identity-watermark.png"
           style={WASH_STYLE}
-        />
+        >
+          <div className="absolute inset-0 overflow-hidden" style={WASH_MASK}>
+            <div className="absolute inset-0" style={WASH_BODY_STYLE} />
+            <div className="absolute inset-0" style={WASH_BLOOM_STYLE} />
+            <div className="absolute inset-0" style={WASH_CARVE_STYLE} />
+            <div className="absolute inset-0" style={WASH_LIFT_STYLE} />
+            <div
+              className="phx-wash-strike absolute bottom-[-20%] left-[-8%] top-[-20%] w-[34%]"
+              style={WASH_STRIKE_STYLE}
+            />
+          </div>
+        </div>
       ) : (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img

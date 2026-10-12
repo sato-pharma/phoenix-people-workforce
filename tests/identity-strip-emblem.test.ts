@@ -329,26 +329,150 @@ export function runIdentityStripEmblemTests() {
   // banner draws, which is the surface he pointed this family at in the first place.
   // ───────────────────────────────────────────────────────────────────────────────────────────
   const washTag =
-    /photoSrc \? \(\s*(?:\/\*[\s\S]*?\*\/\s*)?<img[\s\S]{0,400}?src="\/brand\/identity-watermark\.png"/.exec(strip);
+    /photoSrc \? \(\s*(?:\/\*[\s\S]*?\*\/\s*)?<div[\s\S]{0,600}?style=\{WASH_STYLE\}/.exec(strip);
   assert.ok(
     washTag,
-    "the with-photo watermark must be `/brand/identity-watermark.png`, drawn only when there IS a "
-      + "photo. The badge enlarged behind the portrait is the thing the owner turned down twice — "
-      + "at full colour and greyscaled — and no third treatment of that file is the answer.",
+    "the with-photo watermark must be the WASH_STYLE box, drawn only when there IS a photo. The "
+      + "badge enlarged behind the portrait is the thing the owner turned down twice — at full "
+      + "colour and greyscaled — and no third treatment of that file is the answer.",
+  );
+  const maskDeclarations = strip.match(/maskImage: "url\(\/brand\/identity-watermark\.png\)"/g) ?? [];
+  assert.equal(
+    maskDeclarations.length,
+    1,
+    `the watermark's alpha must be declared as a mask ONCE, on a wrapper the paint layers sit `
+      + `inside — read ${maskDeclarations.length}. One mask is one decode and one masked composite; `
+      + "one per layer is six of each, every frame the strike runs, which is the cost the owner "
+      + 'asked not to pay ("without decreasing the performance of the page").',
+  );
+  assert.ok(
+    /WebkitMaskImage: "url\(\/brand\/identity-watermark\.png\)"/.test(strip),
+    "the mask needs its `-webkit-` twin for Safari, exactly as the portrait's fade mask has one — "
+      + "without it the gloss is an unmasked RECTANGLE of orange on the banner, not a phoenix",
   );
   const washStyle = styleBody(strip, "WASH_STYLE");
   assert.ok(washStyle.length > 0, "WASH_STYLE is gone — the watermark's whole geometry is unpinned");
+
+  // THE GLOW IS HIS, IN HIS OWN WORDS — "glossy and uh, shiny, glowing", then "make it glowing by
+  // by its original color, the orange". A drop-shadow is how a glow follows the phoenix's outline
+  // instead of boxing it; `grayscale` and a whole-mark `multiply` are the two treatments he
+  // rejected by name, and neither may come back here.
   assert.ok(
-    !/filter|mixBlendMode/.test(washStyle),
-    "the wash must carry NO filter and NO blend mode — the file is already pale warm ink on "
-      + "transparency, and a treatment applied to it is how the badge versions came to look wrong",
+    /drop-shadow\(/.test(washStyle),
+    "the watermark has lost its glow — he asked for it glowing, twice, and a drop-shadow on this "
+      + "box is what makes the halo the bird's own shape rather than a rectangle behind it",
   );
-  assert.equal(
-    /opacity: (\d+)/.exec(washStyle)?.[1],
-    "1",
-    "the wash draws at opacity 1, exactly as PhoenixSignatureCard draws the same file — the alpha "
-      + "that makes it a watermark is IN the PNG, and dimming it further is what made it a ghost",
+  assert.ok(
+    !/grayscale\(|blur\(/.test(washStyle),
+    "greyscale is the treatment the owner answered with `watermark mo2ref`, and a blur on the whole "
+      + "box throws away the feature definition he asked for in the same breath as the colour",
   );
+  const washOpacity = Number(/opacity: ([\d.]+)/.exec(washStyle)?.[1] ?? NaN);
+  assert.ok(
+    washOpacity >= 0.4 && washOpacity <= 0.9,
+    `the mark draws at opacity ${washOpacity}. Above 0.9 it is a LOGO sitting on the banner — "it `
+      + 'is awful like this. Make it lighter, make it lighter" — and below 0.4 it is the ghost he '
+      + "asked to end. It is a watermark, and it has to stay one.",
+  );
+
+  // "the part of the upper wing is very is very light" (owner, 2026-10-12). The body ramp runs
+  // top-left to bottom-right, so its FIRST stop is the upper wing, and a first stop within a few
+  // points of the paper is the complaint itself — restated as arithmetic so it cannot drift back.
+  const bodyRamp = styleBody(strip, "WASH_BODY_STYLE");
+  const firstStop = /#([0-9a-f]{6})/i.exec(bodyRamp)?.[1];
+  assert.ok(firstStop, "WASH_BODY_STYLE no longer starts with a hex stop — the ramp is unreadable");
+  const paper = [0xfd, 0xf8, 0xf3];
+  const wing = [0, 2, 4].map((i) => Number.parseInt(firstStop!.slice(i, i + 2), 16));
+  const wingDistance = Math.max(...paper.map((channel, i) => Math.abs(channel - wing[i])));
+  assert.ok(
+    wingDistance >= 32,
+    `the body ramp starts at #${firstStop}, only ${wingDistance} points off the #fdf8f3 paper on `
+      + "its widest channel — that is the washed-out upper wing the owner pointed at. The ramp's "
+      + "first stop is the wing, and it has to carry colour.",
+  );
+  const rampStops = bodyRamp.match(/#[0-9a-f]{6}/gi) ?? [];
+  assert.ok(
+    rampStops.length >= 3,
+    `the ramp has ${rampStops.length} stops. He asked for "two or three colors merged in with each `
+      + 'other" and approved the gold -> orange -> teal ramp; a single flat fill is the version '
+      + "before that note.",
+  );
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // THE LIGHTNING, AND THE PRICE OF IT.
+  //
+  // "Make it have a live shading, live shading, but without uh, without decreasing the performance
+  // of the page", then, at a first reading that had the whole surface breathing and drifting: "I
+  // didn't mean by live shading like this. I mean the logo as it is, and every, for example, uh,
+  // five seconds, um, like رعد uh, وبرق." So: the mark is still, one strike crosses it every five
+  // seconds, and the only properties that move are the two the compositor can run without a repaint.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  assert.ok(
+    /className="phx-wash-strike /.test(strip),
+    "the strike layer is gone from the markup — the mark no longer has the lightning he asked for",
+  );
+  for (const retired of ["phx-wash-breathe", "phx-wash-glint", "phx-wash-sheen"]) {
+    assert.ok(
+      !strip.includes(retired),
+      `\`${retired}\` is back. That is the continuous movement the owner corrected in his own `
+        + 'words — "I didn\'t mean by live shading like this. I mean the logo as it is" — and a '
+        + "watermark that never stops moving also pulls the eye off the page it sits behind.",
+    );
+  }
+
+  const css = read("app/globals.css");
+  const strikeRule = /\.phx-wash-strike \{([\s\S]*?)\}/.exec(css)?.[1] ?? "";
+  const strikeSeconds = Number(/animation: phx-wash-strike ([\d.]+)s/.exec(strikeRule)?.[1] ?? NaN);
+  assert.ok(
+    strikeSeconds >= 3 && strikeSeconds <= 8,
+    `the strike runs every ${strikeSeconds}s. He named the interval himself — "every, for example, `
+      + 'uh, five seconds" — and outside this band it is either a flicker or a thing you never see.',
+  );
+
+  const strikeFrames = /@keyframes phx-wash-strike \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+  assert.ok(strikeFrames.length > 0, "the `phx-wash-strike` keyframes are gone from app/globals.css");
+  const animated = [...strikeFrames.matchAll(/^\s{4}([a-z-]+):/gm)].map((match) => match[1]);
+  assert.ok(animated.length > 0, "the strike's keyframes declare nothing — it cannot animate");
+  const offCompositor = [...new Set(animated)].filter(
+    (property) => property !== "opacity" && property !== "transform",
+  );
+  assert.deepEqual(
+    offCompositor,
+    [],
+    `the strike animates ${offCompositor.join(", ")}. Only \`transform\` and \`opacity\` run on the `
+      + "compositor — every other property re-paints a 348x232 masked surface on every frame of "
+      + 'every strike, for as long as the page is open, which is the one thing he ruled out: '
+      + '"without decreasing the performance of the page".',
+  );
+
+  // A STRIKE, NOT A SHIMMER: it has to be dark at the end of the cycle, so the four-and-a-half
+  // quiet seconds are real. A keyframe list that never returns to 0 is a permanent highlight.
+  assert.ok(
+    /100% \{\s*opacity: 0;/.test(strikeFrames),
+    "the strike never goes dark — its last keyframe leaves the band lit, which is a permanent "
+      + "sheen across the phoenix rather than lightning that comes and goes",
+  );
+  const litUntil = Math.max(
+    ...[...strikeFrames.matchAll(/^\s{2}(\d+)% \{/gm)]
+      .map((match) => Number(match[1]))
+      .filter((percent) => percent < 100),
+  );
+  assert.ok(
+    litUntil <= 20,
+    `the strike is still running ${litUntil}% into its cycle — at ${strikeSeconds}s that is `
+      + `${((litUntil / 100) * strikeSeconds).toFixed(1)}s of light. Lightning is a flash and then `
+      + "nothing; a pass that fills a fifth of the cycle reads as a sweep, which he turned down.",
+  );
+
+  const reducedMotion = /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g;
+  const reducedBlocks = css.match(reducedMotion) ?? [];
+  assert.ok(
+    reducedBlocks.some(
+      (block) => block.includes(".phx-wash-strike") && /animation: none/.test(block),
+    ),
+    "nothing turns the lightning off under `prefers-reduced-motion` — a repeating flash is exactly "
+      + "the motion that setting exists to stop, and the mark reads perfectly without it",
+  );
+
   const washHeight = Number(/height: "(\d+)px"/.exec(washStyle)?.[1] ?? NaN);
   const washTop = Number(/top: "(-?\d+)px"/.exec(washStyle)?.[1] ?? NaN);
   assert.ok(
