@@ -122,6 +122,10 @@ export type HrCommandCenterIdentity = {
 /** Per-browser, per-viewer. See the header — this is a convenience, not a saved preference. */
 const COLLAPSE_STORAGE_KEY = "phoenix.hr-command-center.collapsed-groups";
 
+/** The pendings panel the "Needs attention" button opens — named once, so the button's
+ *  `aria-controls` and the panel's `id` can never drift apart into a dangling reference. */
+const PENDINGS_PANEL_ID = "hr-pendings";
+
 /**
  * Tailwind cannot build a class name at runtime — `lg:grid-cols-${n}` is purged and silently
  * renders as one column. So the column counts are literals, looked up by tile count.
@@ -467,15 +471,9 @@ export function HrCommandCenter({
 
       <PushOptInNudge />
 
-      {/* ── Your day. The page's opening answer to "what do I do today", as a list of real
-          tasks that open into the actual named rows behind them. This replaced a ring reading
-          "5 of 18 waiting" whose denominator counted TILES rather than work — see the header of
-          hr-today-panel.tsx and of src/lib/hr/today-tasks.ts. ── */}
-      <HrTodayPanel icons={GROUP_ICONS} tasks={data.tasks} />
-
-      {/* ── Who is on a vacation today, by name (owner, 2026-09-29). Directly under "Your day"
-          because it is the same kind of fact — today's reality rather than a monthly figure — and
-          above the toolbar because the toolbar filters the COMPANY FIGURES below it, not this.
+      {/* ── Who is on a vacation today, by name (owner, 2026-09-29). It is the same kind of fact as
+          the day panel — today's reality rather than a monthly figure — and it sits above the
+          toolbar because the toolbar filters the COMPANY FIGURES below it, not this.
           Renders nothing at all when the source did not answer; see hr-on-vacation-today.tsx. ── */}
       <HrOnVacationToday rows={data.onVacationToday} />
 
@@ -526,7 +524,15 @@ export function HrCommandCenter({
             )}
           </div>
 
+          {/* THE ONE ENTRY POINT TO THE WORK (owner, 2026-10-13: "the needs attentions button is
+              fair enough make it show all pendings when clicked on and remove the upper part").
+              It carries BOTH halves of "what needs me": pressing it opens every pending task below
+              this toolbar AND narrows the figures to the ones carrying a queue. It is a disclosure
+              as well as a filter, so it says both — `aria-expanded` for the panel it opens and
+              `aria-pressed` for the filter it applies. */}
           <button
+            aria-controls={PENDINGS_PANEL_ID}
+            aria-expanded={attentionOnly}
             aria-pressed={attentionOnly}
             className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
               attentionOnly
@@ -583,6 +589,23 @@ export function HrCommandCenter({
           </p>
         ) : null}
       </div>
+
+      {/* ── EVERY PENDING, BEHIND THAT ONE BUTTON.
+
+          "Your day" used to stand open here, above the toolbar, and it was the first thing on the
+          page after the identity strip. On 2026-10-13 the owner removed that whole upper block in
+          his own words — "the needs attentions button is fair enough make it show all pendings when
+          clicked on and remove the upper part" — so the panel is unchanged in LOOK and moved in
+          PLACE: it is now what the button opens, with every waiting task already expanded
+          (`openAll`), rather than a standing block the page opens on.
+
+          Nothing was dropped to make room: the same tasks, the same real named rows inside them and
+          the same links are one press away. The page itself now opens on the figures. ── */}
+      {attentionOnly ? (
+        <div id={PENDINGS_PANEL_ID}>
+          <HrTodayPanel icons={GROUP_ICONS} openAll tasks={data.tasks} />
+        </div>
+      ) : null}
 
       {data.unavailableSources.length > 0 ? (
         <UnavailableNotice sources={data.unavailableSources} />
