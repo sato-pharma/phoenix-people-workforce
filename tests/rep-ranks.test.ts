@@ -524,6 +524,21 @@ export function runRepRanksTests() {
   for (const column of ["settled_at", "settled_by", "settled_note", "settled_flags"]) {
     assert.ok(integritySelect.includes(column), `the integrity read must select ${column} — a settled case cannot be seen without it`);
   }
+  // 🔴 EVERY PER-REP KEY IN THIS FILE GOES THROUGH `keyOf` — the roster, the saves, the starts and
+  // the place cases. The roster is keyed by `normalizeHrIdForAccess`, which lower-cases and strips
+  // every dash, so an upper-cased raw `rep_hr_id` ("AI-0020", "B-170") matches NO rep and the case
+  // lands on nobody. The place reader did exactly that from the day the pillar was widened, and the
+  // fixtures above could never see it: they hand canonical keys straight to the pure function, so
+  // the reader's own key is the one thing only the source can pin.
+  const repKeyAssignments = [...computeCode.matchAll(/const repKey = ([^;]+);/g)].map((match) => match[1].trim());
+  assert.ok(repKeyAssignments.length >= 4, "the per-rep readers are still here to check");
+  for (const assignment of repKeyAssignments) {
+    assert.ok(
+      assignment.startsWith("keyOf("),
+      `every per-rep key goes through keyOf, the roster's own normalizer — an upper-cased HR id matches no rep on the roster: ${assignment}`,
+    );
+  }
+
   assert.ok(computeCode.includes("rankCountedFlags("), "the rank penalty goes through the one function that honours a settlement");
   assert.ok(
     !/\bcountedIntegrityFlags\(/.test(computeCode),
