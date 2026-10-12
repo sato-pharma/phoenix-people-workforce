@@ -2031,6 +2031,7 @@ import {
 } from "./module-locks.test.ts";
 import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.test.ts";
 import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-browser-token-split.test.ts";
+import { runAttendanceAgentSelfRepublishTests } from "./attendance-agent-self-republish.test.ts";
 import { runCandidateBackgroundEligibilityTests } from "./candidate-background-eligibility.test.ts";
 import { runCandidateOfferPointerTests } from "./candidate-offer-pointer.test.ts";
 import { runHrProvisioningGuardTests } from "./hr-provisioning-guard.test.ts";
@@ -7765,6 +7766,10 @@ await runTest(
 await runTest(
   "the attendance page ships the weak browser token, never the raw-punches credential",
   runAttendanceAgentBrowserTokenSplitTests,
+);
+await runTest(
+  "the attendance agent rebuilds its published folder when a file the apphost needs is missing",
+  runAttendanceAgentSelfRepublishTests,
 );
 await runTest(
   "paramedical split: veterinary and dental medicine never read as medicine, and no exclusion auto-files",

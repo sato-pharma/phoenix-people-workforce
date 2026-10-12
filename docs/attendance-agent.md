@@ -65,6 +65,14 @@ the old around-the-clock schedule those fires produced 0 successes in 69 attempt
 each successful sync reads the device's whole buffer, so one good run catches the day up. Override
 with `-SyncWindowStart` / `-SyncWindowHours`.
 
+**The agent rebuilds its own `publish\win-x86\` when files are missing.** `start-agent.ps1` calls
+`ensure-published.ps1` before it launches: if the `.exe`, `.dll`, `runtimeconfig.json` or `deps.json`
+is absent it runs `publish-agent.ps1`, behind a named mutex (the logon task and the startup shortcut
+both start the agent at logon), and refuses to launch if the folder is still incomplete. Each repair
+is written to `logs\agent-republish.log`. Why: on 2026-10-12 the folder held only the `.exe` and
+`.dll`, every start died with "hostpolicy.dll ... was not found", and no punches were read between
+2026-10-06 17:00 and 2026-10-12 13:18 Cairo. Pinned by `tests/attendance-agent-self-republish.test.ts`.
+
 ## Environment Variables (Phoenix Side)
 
 See the "Attendance Agent" section in [docs/environment.md](environment.md) for the Phoenix-side variables (`ATTENDANCE_AGENT_LOCAL_URL`, `ATTENDANCE_AGENT_TOKEN`, etc.).

@@ -69,6 +69,15 @@ if (-not $SkipPrereqInstall) {
   & (Join-Path $AgentRoot "install-prereqs.ps1")
 }
 
+# A published folder with only the .exe and .dll (no runtimeconfig/deps) passes `Test-Path
+# $PublishedExe` below and then dies at launch - rebuild it first. Placed after the port guard on
+# purpose: a running agent means the folder is in use, and a republish deletes it.
+& (Join-Path $AgentRoot "ensure-published.ps1") -Runtime $Runtime
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "[attendance-agent] The published agent could not be rebuilt - see logs\agent-republish.log. Not starting."
+  exit 1
+}
+
 if (Test-Path $PublishedExe) {
   # KEEP THE AGENT'S OWN OUTPUT.
   #
