@@ -4,6 +4,11 @@ import ExcelJS from "exceljs";
 
 import type { SalesReferenceData } from "../src/lib/sales/monthly-distributor-import.ts";
 import { weeklyContractByCode } from "../src/lib/sales/weekly/column-contract.ts";
+import { WEEKLY_DISTRIBUTORS } from "../src/lib/sales/weekly/distributors.ts";
+import {
+  weeklyBranchMapDistributors,
+  weeklyMappingDistributors,
+} from "../src/lib/sales/weekly/templates.ts";
 import type { WeeklyBranchRegionIndex } from "../src/lib/sales/weekly/branch-region-map.ts";
 import { normalizeCode, normalizeKey } from "../src/lib/sales/weekly/mapping-normalize.ts";
 import { parseWeeklyWorkbookBuffer } from "../src/lib/sales/weekly/parser.ts";
@@ -1480,5 +1485,46 @@ export async function runWeeklySalesImportTests() {
     });
     assert.equal(unsupported.ok, false, "unknown distributor has no weekly adapter");
     if (!unsupported.ok) assert.equal(unsupported.error.code, "unsupported_template");
+  }
+
+  // ════════════ the curated mapping list agrees with the registry, code AND name ════════════
+  // WEEKLY_MAPPING_DISTRIBUTOR_LIST is hand-curated, so nothing that builds it ever checked it. It
+  // carried TWO defects from the day it was written, and neither a typecheck nor a test could see
+  // either one. Both fixed on the owner's instruction, 2026-10-13:
+  //   • `code: "EGD"` — the distributor's NAME where its code is `EG`. Every weekly table is keyed by
+  //     distributor_code, so that entry matched no weekly row, mapping or upload anywhere.
+  //   • `name: "POS"` on code `PS`, whose name is "Overseas", one line above the SEPARATE real POS
+  //     channel — the dropdown showed the same label twice, for two different distributors.
+  // So the pin is both halves now. Names are compared case-insensitively on purpose: `RM` is "RAMCO"
+  // in the registry and "Ramco" here, which is a casing choice in the business's own label and not a
+  // defect — while "POS" against "Overseas" is caught whatever the casing.
+  {
+    const nameByCode = new Map(WEEKLY_DISTRIBUTORS.map((d) => [normalizeCode(d.code), d.name]));
+    const mapping = weeklyMappingDistributors();
+    assert.ok(mapping.length > 0, "the curated Weekly Mapping list must not be empty");
+    for (const entry of mapping) {
+      const registryName = nameByCode.get(normalizeCode(entry.code));
+      assert.ok(
+        registryName !== undefined,
+        `Weekly Mapping list offers "${entry.code}", which is not a weekly distributor code`,
+      );
+      assert.equal(
+        normalizeKey(entry.name),
+        normalizeKey(registryName!),
+        `Weekly Mapping list calls ${entry.code} "${entry.name}"; the registry calls it "${registryName}"`,
+      );
+    }
+    assert.ok(
+      mapping.some((d) => normalizeCode(d.code) === "EG"),
+      "EGD is listed under its real code EG",
+    );
+
+    // The Branch Mapping list is derived from codes rather than hand-typed, so the same guard holds.
+    for (const entry of weeklyBranchMapDistributors()) {
+      assert.ok(
+        nameByCode.has(normalizeCode(entry.code)),
+        `Branch Mapping list offers "${entry.code}", which is not a weekly distributor code`,
+      );
+    }
   }
 }

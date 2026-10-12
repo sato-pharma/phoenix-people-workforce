@@ -73,9 +73,18 @@ const WEEKLY_MAPPING_DISTRIBUTOR_LIST: { code: string; name: string }[] = [
   { code: "IS-S", name: "Ibn Sina Sato" },
   { code: "IS-L", name: "Ibn Sina Lacto" },
   { code: "RM", name: "Ramco" },
-  { code: "PS", name: "POS" },
+  // PS is "Overseas". It read "POS" from the day this list was written, sitting one line above the
+  // SEPARATE real POS channel — so the dropdown offered the same label twice and an operator picking
+  // either one could not tell which distributor they were mapping (owner, 2026-10-13: "fix the PS
+  // name in the Weekly Mapping list to Overseas").
+  { code: "PS", name: "Overseas" },
   { code: "POS", name: "POS Purchasing Sales" },
-  { code: "EGD", name: "EGD" },
+  // The CODE is "EG" — EGD is the distributor's NAME. It read `code: "EGD"` from the day this list
+  // was written: a code no weekly table, mapping row or upload has ever carried, so a dropdown built
+  // from it would have offered an entry that matched nothing (owner, 2026-10-13: "fix the EGD code in
+  // the Weekly Mapping list to EG"). Every code here is now pinned against WEEKLY_DISTRIBUTORS by
+  // tests/weekly-sales-import.test.ts, so the next typo fails CI instead of sitting here.
+  { code: "EG", name: "EGD" },
 ];
 
 /** Distributors shown in the Weekly Mapping admin tab dropdown. */
