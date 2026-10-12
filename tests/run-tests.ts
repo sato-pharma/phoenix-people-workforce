@@ -2438,6 +2438,7 @@ import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywh
 import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-admin-reports.test.ts";
 import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
+import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
 import { runVacationSickAttachmentsTests } from "./vacation-sick-attachments.test.ts";
@@ -9574,6 +9575,10 @@ await runTest(
 await runTest(
   "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",
   runPhoenixCrmOffplanDayTests,
+);
+await runTest(
+  "Phoenix CRM bulk drop (owner, 2026-10-12): a rep's request to drop a customer always carries a written comment — on every reason, refused on the server and on the screen — while the SFE Manager's own drop keeps it optional; the Team tab lets the viewer tick the drops waiting at HIS step or select them all (never an add, a grade, a bring-back, another manager's or a decided one), behind a confirm, and approves each through the one decide route one at a time with the step the screen showed, naming any that fail while the rest stand",
+  runPhoenixCrmBulkDropTests,
 );
 await runTest(
   "which team is READY to start in Phoenix CRM, beside the Start button: the headline is REPS WITH A LIST and never seats filled (Pedia Upper Egypt 1 read 6 of 6 seats filled with five reps hired in four days and one list), the new hires are named so an empty list explains itself, and one person on two seats is ONE person — his visits taken once, never summed per seat, and a district manager sitting in his own team's rep seat named rather than folded away; test customers filtered at the read, the 'Others' pseudo-DM buckets dropped, a failed read unreadable rather than zeros, the visits through the CRM door, and the board square-edged, table-fixed, desktop-table / phone-cards with nothing truncated",
