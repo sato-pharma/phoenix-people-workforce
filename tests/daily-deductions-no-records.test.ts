@@ -57,12 +57,15 @@ function select(input: {
   titleEntries: Array<[string, string | null]>;
   salaryEntries: Array<[string, number | null]>;
   outage?: string[];
+  /** `${compact}:${date}` — days Phoenix CRM or an outstation trip proves were worked. */
+  provenWorked?: string[];
 }) {
   return selectNoRecordsDrafts({
     days: input.days,
     jobTitleByCanonicalKey: titles(input.titleEntries),
     outageDates: new Set(input.outage ?? []),
     baseSalaryByCompact: salaries(input.salaryEntries),
+    provenWorkedDayKeys: new Set(input.provenWorked ?? []),
     month: MONTH,
     year: YEAR,
   });
