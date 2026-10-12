@@ -257,3 +257,52 @@ when that text carries a shape, it denies the call and hands over the remedy:
 - **Stand-down:** `PHX_COMMENT_STRIP_OFF=1`. Fails open on any error, like every guard here. Its own
   `--selftest` runs 36 cases; `tests/comment-strip-guard.test.ts` drives the hook as a subprocess over
   every shape and every measured negative, pins its wiring, and runs that selftest.
+
+## form-design-guard — the form ratchet's two zero-tolerance shapes, at the write
+
+Added 2026-10-12, at the owner's instruction (*"guard the form-design ratchet at the Write too"*),
+the same day and for the same reason as `comment-strip-guard` above: thirteen of that day's
+twenty-six red PR runs were repo-wide contract gates, each a full CI round that ends in a one-line
+import.
+
+`tests/form-design-system.test.ts` holds his 2026-10-06 rule that **every form wears the Adverse Drug
+Reaction wizard's skin**, and two of its assertions have no grandfather list at all:
+
+1. **`SELF_SKINNED_CAP = 0`** — a form control whose className paints a radius, a full border or a
+   white ground without ever reaching `phxFieldClassName` / `phxSelectClassName` /
+   `phxTextareaClassName`. Any number above zero is a new form that did not use the kit, which is the
+   one thing the ratchet exists to catch, and 🔴 **the cap is never raised.**
+2. **The merge-semantics check** — `` `${phxFieldClassName} h-9` `` ships *both* heights in one class
+   attribute, because `cn()` is tailwind-merge and a template literal is plain concatenation. The
+   override silently loses to the token (on a numeric scale the larger utility wins), so the source
+   says 36px and the DOM renders 40px, with nothing in lint, typecheck or the browser saying so. 177
+   of these existed the day the design was swept.
+
+`.claude/hooks/form-design-guard.mjs` is a PreToolUse hook on Write, Edit and MultiEdit that hands
+down the same two verdicts at the moment the shape is typed — which is also the moment the author
+still has the design in mind. Each refusal writes the remedy out: the `form-tokens` import, the
+`FormField` assembly, or the exact `cn(<token>, "<override>")` call.
+
+- **Only the text being introduced** — `content`, `new_string`, each MultiEdit `new_string`. A
+  pre-existing control elsewhere in the file must not block an unrelated edit, and an edit that
+  REMOVES an offender has to pass or the guard would block its own remedy.
+- **The file on disk and its imports are read for ONE purpose: resolving a className that is a
+  reference**, so a control wearing an imported alias of the token is recognised as on-design instead
+  of reported as unresolvable. Bounded at 14 small reads (plus `form-tokens.ts` and `form-kit.tsx`,
+  always in scope), never a sweep of `src/`, and it spawns nothing — hot-path safe.
+- **Two scopes, because the two sweeps differ:** the control check reads `.tsx` under
+  `src/components/` and `app/`; the template check reads every `.ts`/`.tsx` under `src/` and `app/`.
+  A hook wider than the check it fronts for would refuse work CI accepts.
+- **Every exemption comes from the sweep's own `EXEMPT` list**, his rulings included — the login
+  screen, every dark ground, `hiring-pack/` and `offers/` — and so do the `h-8`/`h-9` dense table and
+  filter controls, which are legitimate through `cn()`. **An unresolvable reference paints nothing and
+  is allowed:** the guard is deliberately no stricter than the ratchet.
+- **One detector, not two copies.** Both shapes live in `.claude/hooks/lib/form-design-shapes.mjs`
+  with the exemption list and the owner's rulings that used to sit in the test's doc comments; the
+  ratchet imports `commentMask`, `EXEMPT`, `fileConstants`, `scanControls` and `templateConcatSites`
+  from it and defines none of them, and `tests/form-design-guard.test.ts` fails if either side grows a
+  copy back. A new exemption is added to that module, never to a list inside the hook.
+- **Stand-down:** `PHX_FORM_DESIGN_OFF=1`. Fails open on any error. Its own `--selftest` runs 57
+  cases; `tests/form-design-guard.test.ts` drives the hook as a subprocess over 8 painted shapes and
+  11 measured negatives, both template directions, Edit/MultiEdit arrival, the removal edit, both
+  scopes, every entry of `EXEMPT`, the dispatch wiring and the one-detector pin.

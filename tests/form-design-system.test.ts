@@ -3,6 +3,20 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// 🔴 ONE DEFINITION, SHARED WITH THE WRITE-TIME GUARD. Every shape this file scans for — the
+// exemptions, the comment mask, the control scanner, the className resolver, the paint test and the
+// template-override test — lives in `.claude/hooks/lib/form-design-shapes.mjs`, because
+// `.claude/hooks/form-design-guard.mjs` refuses the same shapes at the Write that introduces them,
+// and a second copy is how a hook starts refusing what CI accepts. Each function's measurements
+// travel with it, there. `tests/form-design-guard.test.ts` fails if either side grows a copy back.
+import {
+  commentMask,
+  EXEMPT,
+  fileConstants,
+  scanControls,
+  templateConcatSites,
+} from "../.claude/hooks/lib/form-design-shapes.mjs";
+
 // ─── The one form design, pinned ──────────────────────────────────────────────
 //
 // 🔒 OWNER RULE, 2026-10-06: "sweep the system wide everywhere admin or emp any
@@ -266,245 +280,10 @@ function singleSourceTests(): void {
  */
 const SELF_SKINNED_CAP = 0;
 
-/**
- * Printed-document editors follow the house document identity, not the form
- * design, and two menus render on a DARK ground where a white field would punch
- * a light box through the panel.
- *
- * 🔴 The AUTH screens are the same dark case, and the sweep got them wrong before this
- * exemption existed: the login page and the password-setup page are a deliberate dark
- * glass identity (`border-white/14`, `bg-white/[0.045]`, white text, the brand's own
- * `#ff7900` focus) at `h-12`/`h-14` and `text-base`. Given the light token they became
- * white boxes on a dark panel — on the app's FRONT DOOR, and inconsistently, because one
- * of the login page's two fields kept its dark overrides and the other did not. They are
- * restored to their own strings byte for byte. 🔴 AND THAT IS HIS OWN RULING, NOT THE SWEEP'S
- * JUDGEMENT: asked directly whether the front door should wear the form design too, he answered
- * *"keep the login screen out of the form design"* (2026-10-06). Never bring `src/components/auth/`
- * into line later, and never ask him again.
- *
- * 🔴 EVERY DARK GROUND IS EXEMPT BY HIS OWN RULING, 2026-10-06. Told that the dark ones below
- * had been kept dark on the SWEEP'S judgement rather than his, he answered *"keep the dark menus and
- * bands out of the form design too"*. So this is a decision, not a session's taste: never convert one
- * later, and never ask him again.
- *
- * 🔴 Three DARK grounds the first pass turned white, each restored byte for byte: the
- * ADMIN SIDEBAR's module search (the sidebar is `bg-[#000000]`, so a white field was a lit box in
- * the chrome of every admin page), the weekly Field Force header band (`bg-slate-900`), and the
- * weekly column editor's header-row select (`bg-[#020617]`). A dark ground is NOT always spelled
- * with a slate class — two of these were arbitrary hex — so a sweep cannot find them by colour
- * name; read the container.
- */
-const EXEMPT = [
-  "src/components/hiring-pack/",
-  "src/components/offers/",
-  "src/components/auth/",
-  "src/components/layout/sidebar.tsx",
-  "src/components/sales/weekly/portal-weekly-field-force-view.tsx",
-  "src/components/sales/weekly/weekly-distributor-column-editor.tsx",
-  // 🔴 The outstation expense review's APPROVED-AMOUNT field. `tests/expense-review-row-height.test.ts`
-  // pins its exact string, because this is where money is approved and an earlier attempt to
-  // shorten that row reshaped the control: "the controls are moved, never reshaped". The sweep
-  // took its `h-8 text-xs` up to the design's 40px and the guard fired. Restored verbatim.
-  "src/components/outstation/expense-report.tsx",
-  "src/components/ui/form-tokens",
-  "src/components/ui/form-kit",
-  "src/components/ui/input.tsx",
-  "src/components/layout/nav-row-add-button.tsx",
-  "src/components/layout/internal-messages-menu.tsx",
-  "src/components/layout/in-app-notifications-bell.tsx",
-];
-
-const TOKEN_NAMES = [
-  "phxFieldClassName",
-  "phxSelectClassName",
-  "phxTextareaClassName",
-  "phxFieldInvalidClassName",
-  "phxCheckInputClassName",
-];
-
-const CONTROL_TAGS = ["input", "select", "textarea", "Input", "Textarea", "SearchableSelect"];
-const WRAPPERS = new Set(["Input", "Textarea", "SearchableSelect"]);
-
-const NON_FIELD_TYPE =
-  /type=(?:"|')(?:checkbox|radio|file|hidden|range|color|image|submit|button|reset)(?:"|')/;
-
-/**
- * A per-character "inside a comment" mask.
- *
- * 🔴 THIS REPO'S COMMENTS QUOTE JSX. `select-field.tsx` says "A labeled
- * <select> with a custom chevron"; `kpis-period-picker.tsx` says "a native
- * `<select>` is the one control it names as unshrinkable". An unmasked scan
- * reads 26 of those as controls — and the codemod that trusted the same scan
- * was one run away from writing ` className={…}` into the prose.
- */
-function commentMask(src: string): Uint8Array {
-  const mask = new Uint8Array(src.length);
-  let i = 0;
-  let quote: string | null = null;
-  while (i < src.length) {
-    const c = src[i];
-    if (quote) {
-      if (c === "\\") {
-        i += 2;
-        continue;
-      }
-      if (c === quote) quote = null;
-      i += 1;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      quote = c;
-      i += 1;
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "/") {
-      const end = src.indexOf("\n", i);
-      const stop = end < 0 ? src.length : end;
-      mask.fill(1, i, stop);
-      i = stop;
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "*") {
-      const end = src.indexOf("*/", i + 2);
-      const stop = end < 0 ? src.length : end + 2;
-      mask.fill(1, i, stop);
-      i = stop;
-      continue;
-    }
-    i += 1;
-  }
-  return mask;
-}
-
-/**
- * Every form control with its FULL attribute list. Scanned, not regexed: a
- * pattern ending the tag at the first `>` ends it inside `(e) => …`, which hid
- * the className on most real controls and made the first audit call them
- * "built at runtime".
- */
-function findControls(src: string, mask: Uint8Array): { tag: string; attrs: string }[] {
-  const out: { tag: string; attrs: string }[] = [];
-  const re = new RegExp(`<(${CONTROL_TAGS.join("|")})(?=[\\s/>])`, "g");
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) {
-    if (mask[m.index]) continue;
-    let i = re.lastIndex;
-    const attrsStart = i;
-    let depth = 0;
-    let quote: string | null = null;
-    for (; i < src.length; i += 1) {
-      const c = src[i];
-      if (quote) {
-        if (c === "\\") {
-          i += 1;
-          continue;
-        }
-        if (c === quote) quote = null;
-        continue;
-      }
-      if (c === '"' || c === "'" || c === "`") {
-        quote = c;
-        continue;
-      }
-      if (c === "{") {
-        depth += 1;
-        continue;
-      }
-      if (c === "}") {
-        depth -= 1;
-        continue;
-      }
-      if (c === ">" && depth === 0) break;
-    }
-    if (i >= src.length) break;
-    out.push({ tag: m[1], attrs: src.slice(attrsStart, i) });
-    re.lastIndex = i + 1;
-  }
-  return out;
-}
-
-/** The className expression — the literal with its quotes, or the inner `{…}`. */
-function classNameExpr(attrs: string): string | null {
-  const lit = /className="([^"]*)"/.exec(attrs);
-  if (lit) return `"${lit[1]}"`;
-  const at = attrs.indexOf("className={");
-  if (at < 0) return null;
-  let i = at + "className={".length;
-  const from = i;
-  let depth = 1;
-  let quote: string | null = null;
-  for (; i < attrs.length; i += 1) {
-    const c = attrs[i];
-    if (quote) {
-      if (c === "\\") {
-        i += 1;
-        continue;
-      }
-      if (c === quote) quote = null;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      quote = c;
-      continue;
-    }
-    if (c === "{") {
-      depth += 1;
-      continue;
-    }
-    if (c === "}") {
-      depth -= 1;
-      if (!depth) break;
-      continue;
-    }
-  }
-  return attrs.slice(from, i);
-}
-
-/**
- * The file's own string constants, so a className that is a REFERENCE can be
- * followed to what it actually paints.
- *
- * 🔴 A `+`-CONCATENATED one counts, and so does a plain ALIAS. `scope-filter.client.tsx`
- * wraps its field across two lines with `+`; `portal-primitives.tsx` writes
- * `export const portalInputClassName = phxFieldClassName`. Missing either does
- * not merely skip the constant — it makes the call site look unresolvable, which
- * reported 341 already-swept controls as unswept.
- */
-function fileConstants(src: string, mask: Uint8Array): Map<string, string> {
-  const map = new Map<string, string>();
-  const str = `(?:"[^"]*"|\`[^\`]*\`)`;
-  const re = new RegExp(
-    `(?:^|\\n)[ \\t]*(?:export\\s+)?const\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*(?::\\s*string\\s*)?=\\s*\\n?\\s*(${str}(?:\\s*\\+\\s*\\n?\\s*${str})*)\\s*;`,
-    "g",
-  );
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) {
-    if (mask[m.index + 1]) continue;
-    const value = [...m[2].matchAll(/"([^"]*)"|`([^`]*)`/g)]
-      .map((x) => x[1] ?? x[2])
-      .join("")
-      .replace(/\s+/g, " ")
-      .trim();
-    map.set(m[1], value);
-  }
-  const alias =
-    /(?:^|\n)[ \t]*(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*string\s*)?=\s*\n?\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*;/g;
-  while ((m = alias.exec(src))) {
-    if (mask[m.index + 1] || map.has(m[1])) continue;
-    map.set(m[1], m[2]);
-  }
-  // And a `cn(…)`-valued one. Part 4 below REQUIRES an override to be written as
-  // `const FIELD = cn(phxSelectClassName, "h-9 px-2")` rather than a template, so a resolver
-  // reading only string constants would stop following exactly the form it mandates — and would
-  // then report ~200 swept controls as unswept, which is how a guard quietly loses its teeth.
-  const call =
-    /(?:^|\n)[ \t]*(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*string\s*)?=\s*\n?\s*(cn\([^;]*?\))\s*;/g;
-  while ((m = call.exec(src))) {
-    if (mask[m.index + 1] || map.has(m[1])) continue;
-    map.set(m[1], m[2]);
-  }
-  return map;
-}
+// The exemptions, the token names, the control tags, the wrappers and the non-field types are in
+// `.claude/hooks/lib/form-design-shapes.mjs` — with his own words on each dark ground and on the
+// login screen, which are rulings, not taste. `EXEMPT` is imported above; adding a file to it is
+// one edit that both this check and the Write-time guard obey.
 
 /** Every exported class constant in src/, so an IMPORTED alias resolves too. */
 let EXPORTED: Map<string, string> | null = null;
@@ -535,40 +314,9 @@ function exportedConstants(): Map<string, string> {
   return EXPORTED;
 }
 
-/** Bare identifiers in an expression, outside its string literals. */
-function identifiers(text: string): string[] {
-  const bare = text.replace(/"[^"]*"|'[^']*'/g, '""');
-  return [...bare.matchAll(/(?:^|[^A-Za-z0-9_$.])([A-Za-z_$][A-Za-z0-9_$]*)/g)].map((m) => m[1]);
-}
-
-function reachesToken(text: string, consts: Map<string, string>, seen = new Set<string>()): boolean {
-  if (TOKEN_NAMES.some((t) => text.includes(t))) return true;
-  const exported = exportedConstants();
-  for (const name of identifiers(text)) {
-    if (seen.has(name)) continue;
-    const value = consts.get(name) ?? exported.get(name);
-    if (value === undefined) continue;
-    seen.add(name);
-    if (reachesToken(value, consts, seen)) return true;
-  }
-  return false;
-}
-
-/**
- * Does this class list paint a BOX of its own?
- *
- * A directional border (`border-l`, `border-t`) is a divider, not a box — the
- * segmented control in `monitoring-dashboard.tsx` draws its separators that way
- * on a `bg-transparent` input — so a colour counts only when a full `border` is
- * present too. `border-0`/`border-none` is the opposite of painting.
- */
-function paintsItsOwnBox(body: string): boolean {
-  if (/\bborder-(?:0|none)\b/.test(body)) return false;
-  if (/(?:^|\s)(?:[a-z]+:)?rounded(?:-|\s|$)/.test(body)) return true;
-  const hasFullBorder = /(?:^|\s)(?:[a-z]+:)?border(?:-[0-8])?(?:\s|$)/.test(body);
-  if (hasFullBorder) return true;
-  return /(?:^|\s)bg-(?:white|card|background|input|popover|(?:slate|gray)-(?:50|100)|phx-paper)/.test(body);
-}
+// The identifier walk, the token-reachability chase and the paint test live in the shared module,
+// with the measurements that shaped each one. `scanControls` is the whole per-control decision, so
+// this job and the Write-time guard cannot disagree about one control.
 
 function ratchetTests(): void {
   const files = execFileSync("git", ["ls-files", "src/components/*.tsx", "app/*.tsx"], {
@@ -580,6 +328,7 @@ function ratchetTests(): void {
     .filter(Boolean)
     .filter((f) => !EXEMPT.some((e) => f.startsWith(e) || f.includes(e)));
 
+  const exported = exportedConstants();
   let total = 0;
   let onDesign = 0;
   const offenders: string[] = [];
@@ -590,33 +339,11 @@ function ratchetTests(): void {
     } catch {
       continue;
     }
-    const mask = commentMask(src);
-    const consts = fileConstants(src, mask);
-    for (const { tag, attrs } of findControls(src, mask)) {
-      if (NON_FIELD_TYPE.test(attrs)) continue;
-      total += 1;
-      const expr = classNameExpr(attrs);
-      if (expr === null) {
-        // A wrapper with no className already wears the token.
-        if (WRAPPERS.has(tag)) onDesign += 1;
-        continue;
-      }
-      if (reachesToken(expr, consts)) {
-        onDesign += 1;
-        continue;
-      }
-      // Resolve one level of constant so the report names what is really painted.
-      let resolved = expr;
-      for (const [name, value] of consts) {
-        const re = new RegExp(`(?:^|[^A-Za-z0-9_$.])${name}(?![A-Za-z0-9_$])`, "g");
-        if (re.test(resolved)) resolved = resolved.replace(re, ` ${value} `);
-      }
-      const literals = [
-        ...resolved.matchAll(/"([^"]*)"/g),
-        ...resolved.matchAll(/`([^`$]*)`/g),
-      ].map((x) => x[1]);
-      const flat = (literals.length ? literals.join(" ") : resolved).replace(/\s+/g, " ").trim();
-      if (paintsItsOwnBox(flat)) offenders.push(`${rel} [${tag}] ${flat.slice(0, 90)}`);
+    const scan = scanControls(src, { exported });
+    total += scan.total;
+    onDesign += scan.onDesign;
+    for (const { tag, flat } of scan.offenders) {
+      offenders.push(`${rel} [${tag}] ${flat.slice(0, 90)}`);
     }
   }
 
@@ -660,28 +387,8 @@ function ratchetTests(): void {
  * A tail that conflicts with NOTHING the token sets (`cursor-pointer`,
  * `font-mono`, `tabular-nums`, `truncate`) may stay a template.
  */
-const TOKEN_GROUPS = [
-  /^(?:h|min-h|max-h)-/,
-  /^w-/,
-  /^(?:p|px|py|pt|pr|pb|pl|ps|pe)-/,
-  /^text-/,
-  /^bg-/,
-  /^border(?:-|$)/,
-  /^rounded(?:-|$)/,
-  /^font-/,
-  /^transition(?:-|$)/,
-  /^shadow(?:-|$)/,
-  /^(?:resize|outline|cursor)(?:-|$)/,
-  /^placeholder:/,
-  /^focus:/,
-  /^focus-visible:/,
-  /^disabled:/,
-];
-
-function conflictsWithTheToken(cls: string): boolean {
-  const bare = cls.replace(/^[a-z-]+:/, "");
-  return TOKEN_GROUPS.some((re) => re.test(bare) || re.test(cls));
-}
+// `TOKEN_GROUPS`, the conflict test and the two template shapes are in the shared module, so the
+// Write-time guard refuses the same tail this job fails on.
 
 function mergeSemanticsTests(): void {
   const files = execFileSync(
@@ -703,19 +410,8 @@ function mergeSemanticsTests(): void {
       continue;
     }
     if (!src.includes("ClassName}")) continue;
-    const mask = commentMask(src);
-    // `${token} tail` and `head ${token}` — both concatenate without merging.
-    for (const re of [
-      /`\$\{(phx[A-Za-z]+ClassName)\}([^`$]*)`/g,
-      /`([^`$]+)\$\{(phx[A-Za-z]+ClassName)\}`/g,
-    ]) {
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(src))) {
-        if (mask[m.index]) continue;
-        const tail = (m[2].startsWith("phx") ? m[1] : m[2]) ?? "";
-        const bad = tail.split(/\s+/).filter(Boolean).filter(conflictsWithTheToken);
-        if (bad.length) offenders.push(`${rel} — \`…\${token} ${bad.join(" ")}\``);
-      }
+    for (const { bad } of templateConcatSites(src)) {
+      offenders.push(`${rel} — \`…\${token} ${bad.join(" ")}\``);
     }
   }
 
