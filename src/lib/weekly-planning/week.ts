@@ -60,6 +60,12 @@ function isoWeekNumber(date: Date): { week: number; year: number } {
  * The week key is derived from the Sunday of the date's week using the ISO
  * week number of that Sunday. This keeps week keys deterministic relative to
  * our Sunday-start custom week.
+ *
+ * 🔴 THIS FUNCTION DEFINES THE CONVENTION — `employee_plan_headers.period_key` and
+ * `phoenix_crm_plans` already hold keys it produced, so the stored data is its proof and it
+ * must not change. Because isoWeekNumber shifts a Sunday back 3 days to a Thursday, the key
+ * names the ISO week that ENDS on that Sunday: buildWeekKey("2026-10-11") is "2026-W41", whose
+ * ISO Monday is 2026-10-05. sundayFromWeekKey inverts it as Monday(W) + 6.
  */
 export function buildWeekKey(date: Date | string): string {
   const d = toUtcDate(date);
@@ -139,9 +145,20 @@ export function isPlanWorkingDay(
 }
 
 /**
- * Parse a week key (YYYY-WNN) and return the Sunday (UTC Date) of that week.
- * Week key uses ISO week numbers; the Sunday is computed by finding the
- * Monday of that ISO week and subtracting 1 day.
+ * Parse a week key (YYYY-WNN) and return the Sunday (UTC Date) of that week —
+ * the exact inverse of buildWeekKey, so sundayFromWeekKey(buildWeekKey(d)) is
+ * always getSundayOfWeek(d).
+ *
+ * 🔴 THE SUNDAY IS THE **LAST** DAY OF THE ISO WEEK, NOT THE DAY BEFORE ITS MONDAY.
+ * buildWeekKey takes the Sunday of the date's week and labels it with the ISO week
+ * that ENDS on that Sunday (isoWeekNumber shifts a Sunday back 3 days to the Thursday
+ * of the Mon–Sun week it closes). So the Sunday of key W is Monday(W) + 6 days.
+ * Reading it as Monday(W) - 1 put every deadline a WHOLE WEEK EARLY: 2026-W41's
+ * Sunday read 2026-10-04 and its submission deadline Thursday 1 October, ten days
+ * before the week it gates. Production's own plan rows define the convention —
+ * employee_plan_headers has 2026-W41 running 11–15 October (read live 2026-10-12),
+ * and buildWeekKey("2026-10-11") answers 2026-W41 — so buildWeekKey and the stored
+ * keys are right and this function was the side that was wrong.
  */
 function sundayFromWeekKey(weekKey: string): Date {
   const [yearStr, weekPart] = weekKey.split("-W");
@@ -156,8 +173,9 @@ function sundayFromWeekKey(weekKey: string): Date {
   const week1Monday = new Date(Date.UTC(year, 0, 4 - jan4MonBased));
   // Monday of target week.
   const targetMonday = new Date(Date.UTC(week1Monday.getUTCFullYear(), week1Monday.getUTCMonth(), week1Monday.getUTCDate() + (week - 1) * 7));
-  // Sunday is 1 day before Monday.
-  const sunday = new Date(Date.UTC(targetMonday.getUTCFullYear(), targetMonday.getUTCMonth(), targetMonday.getUTCDate() - 1));
+  // The Sunday that CLOSES this ISO week — Monday + 6 days — which is the Sunday
+  // buildWeekKey derived the key from.
+  const sunday = new Date(Date.UTC(targetMonday.getUTCFullYear(), targetMonday.getUTCMonth(), targetMonday.getUTCDate() + 6));
   return sunday;
 }
 
