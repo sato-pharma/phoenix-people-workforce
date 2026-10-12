@@ -46,6 +46,40 @@ import { escapeHtml } from "@/lib/hiring-pack/render-shared";
 export const PREMIUM_IDENTITY_CODE = "SATO-DIS-2026-01 v1.0";
 
 /**
+ * WHICH HIRING PAPERS WEAR THE PREMIUM DRESS — the owner's keep-or-change answers of 13 October 2026
+ * (about 00:40 Cairo), given on the review page, one box per paper: "keep" means the paper prints as
+ * it did before the identity existed.
+ *
+ * A KEPT PAPER KEEPS ITS PREMIUM BRANCH, SWITCHED OFF HERE, rather than having it torn out: the owner
+ * changes his mind often and this is one line, with nothing rebuilt. Only a paper with a corporate
+ * branch to fall back on needs a switch. The English certificate of experience and the English salary
+ * letter were answered "change", so they wear it outright and have none; the contract, its annex and
+ * its notice stay corporate by his earlier word and never import this module at all.
+ *
+ *   clearance   both clearance forms        custody   both custody receipts
+ *   workerForm  the worker data form        hrPapers  an HR paper's FAMILY (its id without `-vN`)
+ *
+ * MUTABLE ON PURPOSE: `tests/hr-premium-identity.test.ts` flips each entry to prove BOTH branches
+ * still render, then restores it. Nothing else writes it.
+ */
+export const PREMIUM_DRESS: {
+  clearance: boolean;
+  custody: boolean;
+  workerForm: boolean;
+  hrPapers: Set<string>;
+} = {
+  clearance: false,
+  custody: false,
+  workerForm: false,
+  hrPapers: new Set(["exit-interview"]),
+};
+
+/** Whether an HR paper's current version wears the premium dress. `exit-interview-v1` → `exit-interview`. */
+export function hrPaperWearsPremium(paperId: string): boolean {
+  return PREMIUM_DRESS.hrPapers.has(paperId.replace(/-v\d+$/, ""));
+}
+
+/**
  * The Arabic calligraphy. PLACEHOLDER ART the owner is replacing himself — never regenerate it; swap
  * the file when he sends the official one (`tests/phoenix-official-logo.test.ts` pins it).
  */
@@ -84,12 +118,30 @@ export const PREMIUM_PAGE_MM = {
   bottom: 19.5,
 } as const;
 
+/**
+ * The SAME sheet turned on its side, for the papers that are landscape by nature (the interview
+ * calendar and the field-activity report). Only the two outer dimensions swap — the insets, the frame,
+ * the foot and the watermark sit exactly where they do on a portrait sheet, measured from the edges.
+ */
+export const PREMIUM_LANDSCAPE_MM = {
+  ...PREMIUM_PAGE_MM,
+  width: PREMIUM_PAGE_MM.height,
+  height: PREMIUM_PAGE_MM.width,
+} as const;
+
+export type PremiumOrientation = "portrait" | "landscape";
+
+const pageOf = (orientation: PremiumOrientation) =>
+  orientation === "landscape" ? PREMIUM_LANDSCAPE_MM : PREMIUM_PAGE_MM;
+
 /** Where the running foot sits, measured from the bottom edge of the sheet. */
 const FOOT_BOTTOM_MM = 10.5;
 const FOOT_EMBLEM_MM = 5.5;
 
 /** The content column every premium paper lays out in. */
 export const PREMIUM_COLUMN_MM = PREMIUM_PAGE_MM.width - 2 * PREMIUM_PAGE_MM.side;
+/** The content column of a landscape sheet. */
+export const PREMIUM_LANDSCAPE_COLUMN_MM = PREMIUM_LANDSCAPE_MM.width - 2 * PREMIUM_LANDSCAPE_MM.side;
 
 const n = (v: number) => Number(v.toFixed(3));
 
@@ -119,6 +171,22 @@ export function premiumBandSvg(color: string = HOUSE_COLORS.deep, widthMm: numbe
 
 /** The phrase the frame's microtext repeats. Words the papers already carry, never new claims. */
 export const PREMIUM_FRAME_PHRASE = "SATO PHARMA L.L.C. · HUMAN RESOURCES · HEAD OFFICE · PHOENIX WORKFORCE";
+/** The same phrase for a paper that says nothing about the app: Sato Pharma alone. */
+export const PREMIUM_FRAME_PHRASE_SATO = "SATO PHARMA L.L.C. · HUMAN RESOURCES · HEAD OFFICE";
+
+/**
+ * WHOSE NAME THE RUNNING FOOT CARRIES. `"phoenix"` is the specimen the owner approved: the ringed
+ * emblem and PHOENIX WORKFORCE at the foot's left. `"sato"` leaves that slot empty and the frame's
+ * microtext names Sato Pharma alone.
+ *
+ * `"sato"` is for a paper whose reader is outside the app, or one the owner has ruled must say nothing
+ * about it: the job offer ("nothing says Phoenix to the candidate", `src/lib/offers/identity.ts`) and
+ * the payslip and the organogram record, whose tests have pinned "no Phoenix branding on a company
+ * document" since 2026-09-05. Every one of them reads this ONE constant, so changing his mind about
+ * the foot is a single line.
+ */
+export type PremiumFootBrand = "phoenix" | "sato";
+export const PREMIUM_COMPANY_DOCUMENT_BRAND: PremiumFootBrand = "sato";
 
 /**
  * The page frame, in millimetres over the whole sheet: a deep keyline 6 mm in, a light keyline
@@ -136,9 +204,12 @@ export const PREMIUM_FRAME_PHRASE = "SATO PHARMA L.L.C. · HUMAN RESOURCES · HE
  * pages 2 and 3 of a three-page paper). So the side runs are laid on `<textPath>`s, which need no rotation, and
  * each pip is drawn as a four-point polygon rather than a turned square.
  */
-export function premiumFrameSvg(phrase: string = PREMIUM_FRAME_PHRASE): string {
-  const W = PREMIUM_PAGE_MM.width;
-  const H = PREMIUM_PAGE_MM.height;
+export function premiumFrameSvg(
+  phrase: string = PREMIUM_FRAME_PHRASE,
+  orientation: PremiumOrientation = "portrait",
+): string {
+  const W = pageOf(orientation).width;
+  const H = pageOf(orientation).height;
   const o = 6;
   const i = 8.8;
   const mid = (o + i) / 2;
@@ -205,6 +276,13 @@ export interface PremiumMastheadInput {
    * A smaller masthead, same parts, tighter: for papers that must hold one sheet.
    */
   compact?: boolean;
+  /**
+   * SLIM: one step tighter than compact — no diamond rule, a smaller title — for a masthead that is
+   * repeated on every page of a long document (the field-activity report's day pages).
+   */
+  slim?: boolean;
+  /** "landscape" for a sheet turned on its side: the band runs the wider column. Default portrait. */
+  orientation?: PremiumOrientation;
 }
 
 /**
@@ -249,7 +327,11 @@ export function premiumMasthead(input: PremiumMastheadInput): string {
       `<p class="pm-mast__s" dir="${line.lang === "ar" ? "rtl" : "ltr"}" lang="${line.lang}">${escapeHtml(line.text.trim())}</p>`)
     .join("");
 
-  return `<header class="pm-mast${input.compact ? " pm-mast--compact" : ""}">
+  const band = input.orientation === "landscape"
+    ? premiumBandSvg(HOUSE_COLORS.deep, PREMIUM_LANDSCAPE_COLUMN_MM)
+    : premiumBandSvg();
+  const modifiers = (input.compact || input.slim ? " pm-mast--compact" : "") + (input.slim ? " pm-mast--slim" : "");
+  return `<header class="pm-mast${modifiers}">
       <img class="pm-mast__latin" src="${HOUSE_MARK_SRC}" alt="Sato Pharma" width="401" height="158">
       <div class="pm-mast__mid">
         <div class="pm-mast__names">${nameAr}${nameEn}<span class="pm-mast__ref" dir="rtl"></span></div>
@@ -258,7 +340,7 @@ export function premiumMasthead(input: PremiumMastheadInput): string {
         ${subtitles}
       </div>
     </header>
-    ${premiumBandSvg()}`;
+    ${band}`;
 }
 
 /**
@@ -271,7 +353,10 @@ export function premiumMasthead(input: PremiumMastheadInput): string {
  * The purpose band ("who keeps this copy") keeps its class and its three shapes exactly as the house
  * letterhead writes them, so the line under the masthead reads the same and only its rules change.
  */
-export function premiumLetterhead(input: HouseLetterheadInput, options: { compact?: boolean } = {}): string {
+export function premiumLetterhead(
+  input: HouseLetterheadInput,
+  options: { compact?: boolean; slim?: boolean; orientation?: PremiumOrientation } = {},
+): string {
   const titleEn = input.titleEn?.trim() ?? "";
   const subtitles: Array<{ text: string; lang: "ar" | "en" }> = [];
   if (input.subtitleAr?.trim()) subtitles.push({ text: input.subtitleAr.trim(), lang: "ar" });
@@ -285,6 +370,8 @@ export function premiumLetterhead(input: HouseLetterheadInput, options: { compac
     titleAr: titleEn ? input.titleAr : null,
     subtitles,
     compact: options.compact,
+    slim: options.slim,
+    orientation: options.orientation,
   });
 
   const purposeAr = input.purposeAr?.trim() ?? "";
@@ -305,8 +392,12 @@ export function premiumLetterhead(input: HouseLetterheadInput, options: { compac
 export interface PremiumChromeInput {
   /** The department that issues the paper, as the foot names it. */
   department?: string;
-  /** The frame's microtext phrase; Latin only. */
+  /** The frame's microtext phrase; Latin only. Defaults to the phrase that matches `brand`. */
   phrase?: string;
+  /** Whose name the foot carries — see `PremiumFootBrand`. Default `"phoenix"`, the approved specimen. */
+  brand?: PremiumFootBrand;
+  /** "landscape" for a sheet turned on its side. Default portrait. */
+  orientation?: PremiumOrientation;
 }
 
 /**
@@ -323,11 +414,19 @@ export interface PremiumChromeInput {
  */
 export function premiumPageChrome(input: PremiumChromeInput = {}): string {
   const department = input.department ?? "Human Resources";
-  return `<div class="pm-chrome" aria-hidden="true">
+  const sato = input.brand === "sato";
+  const landscape = input.orientation === "landscape";
+  // The portrait, Phoenix-footed chrome is byte-for-byte what it was before these options existed.
+  const phrase = input.phrase ?? (sato ? PREMIUM_FRAME_PHRASE_SATO : undefined);
+  const frame = landscape ? premiumFrameSvg(phrase, "landscape") : premiumFrameSvg(phrase);
+  const left = sato
+    ? `<div class="pm-foot__ph"></div>`
+    : `<div class="pm-foot__ph"><img src="${PREMIUM_PHOENIX_EMBLEM_SRC}" alt="" width="384" height="384"><span>Phoenix Workforce</span></div>`;
+  return `<div class="pm-chrome${landscape ? " pm-chrome--landscape" : ""}" aria-hidden="true">
       <img class="pm-watermark" src="${PREMIUM_ARABIC_MARK_SRC}" alt="" width="1100" height="813">
-      ${premiumFrameSvg(input.phrase)}
+      ${frame}
       <div class="pm-foot">
-        <div class="pm-foot__ph"><img src="${PREMIUM_PHOENIX_EMBLEM_SRC}" alt="" width="384" height="384"><span>Phoenix Workforce</span></div>
+        ${left}
         <div class="pm-foot__code" dir="ltr">Sato Pharma · ${escapeHtml(department)} · ${PREMIUM_IDENTITY_CODE}</div>
         <div class="pm-foot__end"><i class="pm-foot__dia"></i><b class="pm-foot__page"></b></div>
       </div>
@@ -358,10 +457,10 @@ const WATERMARK_HEIGHT_MM = n((WATERMARK_WIDTH_MM * ARABIC_MARK_PX.height) / ARA
  * clone` repeats that padding on EVERY printed page of a copy that runs over, so page two of a
  * custody receipt keeps its top inset and clears the foot exactly as page one does.
  */
-export function premiumSheetCss(sheet: string): string {
+export function premiumSheetCss(sheet: string, orientation: PremiumOrientation = "portrait"): string {
   const p = PREMIUM_PAGE_MM;
   return `
-  @page { size: A4; margin: 0; }
+  @page { size: ${orientation === "landscape" ? "A4 landscape" : "A4"}; margin: 0; }
   ${sheet} {
     position: relative;
     padding: ${p.top}mm ${p.side}mm ${p.bottom}mm;
@@ -407,6 +506,10 @@ export const PREMIUM_IDENTITY_CSS = `
     direction: ltr; color: ${HOUSE_COLORS.muted};
     font-family: ${PREMIUM_LATIN_FONT_STACK}; font-size: 6.6pt; line-height: 1.2;
   }
+  /* A landscape sheet: the frame, the watermark and the foot keep their distance from the edges. */
+  .pm-chrome--landscape .pm-frame { width: ${PREMIUM_LANDSCAPE_MM.width}mm; height: ${PREMIUM_LANDSCAPE_MM.height}mm; }
+  .pm-chrome--landscape .pm-watermark { top: ${n(PREMIUM_LANDSCAPE_MM.height - 21 - WATERMARK_HEIGHT_MM)}mm; }
+  .pm-chrome--landscape .pm-foot { top: ${n(PREMIUM_LANDSCAPE_MM.height - FOOT_BOTTOM_MM - FOOT_EMBLEM_MM - 2)}mm; }
   .pm-foot__ph { display: flex; align-items: center; gap: 1.8mm; }
   .pm-foot__ph img { width: ${FOOT_EMBLEM_MM}mm; height: ${FOOT_EMBLEM_MM}mm; }
   .pm-foot__ph span { letter-spacing: 1pt; text-transform: uppercase; font-weight: 700; color: ${HOUSE_COLORS.deep}; font-size: 6.2pt; }
@@ -461,6 +564,11 @@ export const PREMIUM_IDENTITY_CSS = `
   .pm-mast--compact .pm-mast__t { margin-top: .2mm; font-size: 12.5pt; }
   .pm-mast--compact .pm-rule { margin: .5mm 0 .3mm; }
   .pm-mast--compact + .pm-band { margin-top: 1.4mm; }
+  .pm-mast--slim .pm-mast__t { margin-top: 0; font-size: 11.5pt; }
+  .pm-mast--slim .pm-rule { display: none; }
+  .pm-mast--slim .pm-mast__names { line-height: 1.2; }
+  .pm-mast--slim .pm-mast__s { line-height: 1.25; }
+  .pm-mast--slim + .pm-band { margin-top: 1mm; }
 
   /* The purpose band of a letterhead paper, under the band: a deep rule over it, a hair rule under. */
   .pm-band + .lh__purpose { margin-top: 2.4mm; }
@@ -516,6 +624,6 @@ export const PREMIUM_DOCUMENT_CSS = `
  * Everything a `doc-*` paper appends to its own stylesheet to wear the premium identity: the sheet
  * geometry for its copies, the chrome and masthead, and the document voice above.
  */
-export function premiumDocumentStylesheet(sheet: string): string {
-  return `${premiumSheetCss(sheet)}\n${PREMIUM_IDENTITY_CSS}\n${PREMIUM_DOCUMENT_CSS}`;
+export function premiumDocumentStylesheet(sheet: string, orientation: PremiumOrientation = "portrait"): string {
+  return `${premiumSheetCss(sheet, orientation)}\n${PREMIUM_IDENTITY_CSS}\n${PREMIUM_DOCUMENT_CSS}`;
 }

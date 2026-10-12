@@ -269,21 +269,41 @@ Each of these cost a reprint.
    seal and the signature. They must be crisp.
 5. Look at every page before you send anything.
 
-## Rolled out to the normal templates (12 October 2026)
+## Rolled out to the normal templates (12 and 13 October 2026)
 
 Done in one wide pull request. The shared layer is `src/lib/hiring-pack/premium-identity.ts`, built
-once beside `house-identity.ts`. The account — his words, what wears it, what does not, and why —
+once beside `house-identity.ts`. The account - his words, what wears it, what does not, and why -
 is `docs/agents-owner-rules.md`, "The HR premium identity"; the module rule is in
 `.claude/rules/hiring-documents.md`; `tests/hr-premium-identity.test.ts` pins it on the rendered
 papers.
 
-- **Wears it:** both clearances, both custody receipts, the worker data form, the English certificate
-  of experience, the English salary letter, and the current version of every HR paper.
-- **Keeps the corporate dress, by his word the same evening** ("the contract keep corporate as it
-  was"): the employment contract, every version of it, and with it the renewal annex (pinned
-  identical to the contract's masthead) and the non-renewal notice.
+**His keep-or-change answers (13 October 2026, about 00:40 Cairo), one box per paper on a review page:**
+
+- **Change - wears it:** the English salary letter, the exit interview, the English certificate of
+  experience, the payslip, the organogram employee record, the interview calendar PDF, the Phoenix CRM
+  start guide, the Field Activity report, and a NEW fifth job-offer design, Premium (*"for job offers
+  create new templete with the new identity"*).
+- **Keep - prints as before the identity existed:** the confidentiality undertaking, both custody
+  receipts, both clearances, the worker data form, the Arabic salary letter, every other HR and hiring
+  paper, the contract with its renewal annex and non-renewal notice (corporate, by his word of the
+  12th), the four older job-offer designs, the Spotlight sheet and Phoenix Ranks certificate, the
+  business card, the Excel workbooks, the printed candidate record, the WhatsApp application sheet,
+  the Monthly Closing sheet, the Sales Review pack, the Make It Happen forecast, the award cheque, and
+  the Sato Pharma and CEO-letter emails.
+- **The Latin face: keep as it is. The foot code: keep `SATO-DIS-2026-01 v1.0`.**
+
+**How "keep" is built.** A kept paper's premium branch is switched OFF in the `PREMIUM_DRESS` table in
+`premium-identity.ts`, never torn out, so a changed mind is one line and the test proves both branches
+still draw. Rendered with one fixture, 21 of the 24 hiring papers are byte-identical to the code from
+before the identity; the 3 that differ are the three he ticked.
+
+**Options a new adopter uses:** `orientation: "landscape"` (the same sheet turned on its side),
+`slim: true` (a tighter masthead for one repeated on every page), and `brand`. The foot of a company
+paper passes `PREMIUM_COMPANY_DOCUMENT_BRAND` (`"sato"`: the left slot empty and the frame microtext
+naming Sato Pharma alone) because the payslip and the organogram record have pinned "no Phoenix
+branding on a company document" since 2026-09-05 and a job offer reaches a candidate. The HR papers keep
+the approved Phoenix foot.
+
 - **An archived version keeps the dress it was signed in.** Only the current version wears it.
-- **Never touched:** the government forms and the frozen designs above. `houseLetterhead()` is
-  unchanged, so the payslip and the other papers that call it keep the house dress.
-- **Still his to decide:** the frozen designs, the other `houseLetterhead()` papers, the Latin face on
-  the server, and whether the foot keeps `SATO-DIS-2026-01 v1.0`. Never decide these for him.
+- **Never touched:** the government forms, and every design he ticked "keep".
+- **No seal** on any of them. The seal is the job offer's alone and stays where the offer draws it.

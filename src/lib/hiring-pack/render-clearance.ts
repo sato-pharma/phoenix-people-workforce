@@ -6,6 +6,7 @@ import {
 } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
+  PREMIUM_DRESS,
   premiumDocumentStylesheet,
   premiumLetterhead,
   premiumPageChrome,
@@ -266,9 +267,9 @@ function renderClearance(
   const template = requested && requested.variant === fallback.variant ? requested : fallback;
   const values = buildClearanceValues(data);
   const total = Math.max(1, copies);
-  // The form the pack prints today wears the HR premium identity; a version asked for from the
-  // Archive keeps the dress it was signed in.
-  const premium = template.id === fallback.id;
+  // The current form wears the HR premium identity only where the owner said "change"
+  // (`PREMIUM_DRESS`); a version asked for from the Archive keeps the dress it was signed in.
+  const premium = template.id === fallback.id && PREMIUM_DRESS.clearance;
   const body = Array.from({ length: total }, () =>
     renderCopy(template, values, data.company, premium),
   ).join("\n");

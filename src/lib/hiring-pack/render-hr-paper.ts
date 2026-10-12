@@ -19,6 +19,7 @@ import {
 import { hrPaperById } from "@/lib/hiring-pack/hr-paper-text";
 import { resolveNationality } from "@/lib/hiring-pack/nationality";
 import {
+  hrPaperWearsPremium,
   premiumDocumentStylesheet,
   premiumMasthead,
   premiumPageChrome,
@@ -581,9 +582,9 @@ export function renderHrPaperHtml(
   // time, so it is added here rather than in `buildHrPaperValues`, which knows the employee and not
   // the print run.
   const values = { ...buildHrPaperValues(data), COPIES_CLAUSE: copiesClauseAr(statedCopies ?? total) };
-  // The paper the pack prints today wears the HR premium identity; a version asked for from the
-  // Archive keeps the dress it was signed in.
-  const premium = template.id === fallback.id;
+  // The current paper wears the HR premium identity only where the owner said "change"
+  // (`PREMIUM_DRESS.hrPapers`); a version asked for from the Archive keeps the dress it was signed in.
+  const premium = template.id === fallback.id && hrPaperWearsPremium(template.id);
   const body = Array.from({ length: total }, () =>
     renderCopy(template, values, data.company, premium),
   ).join("\n");

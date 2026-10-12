@@ -9,6 +9,7 @@ import { houseLetterhead } from "../src/lib/hiring-pack/house-identity.ts";
 import {
   HR_PAPER_ABSENCE_WARNING_V1,
   HR_PAPER_ABSENCE_WARNING_V2,
+  HR_PAPER_EXIT_INTERVIEW_V1,
   HR_PAPER_NDA_V1,
   HR_PAPER_SALARY_LETTER_AR_V1,
   HR_PAPERS,
@@ -18,12 +19,18 @@ import { isPremiumPaper } from "../src/lib/hiring-pack/paper-pdf.ts";
 import { stampPaperReference } from "../src/lib/hiring-pack/paper-reference.ts";
 import {
   PREMIUM_DOCUMENT_CSS,
+  PREMIUM_DRESS,
   PREMIUM_IDENTITY_CODE,
   PREMIUM_IDENTITY_CSS,
+  PREMIUM_LANDSCAPE_COLUMN_MM,
+  PREMIUM_LANDSCAPE_MM,
   PREMIUM_PAGE_MM,
   PREMIUM_PAGE_NUMBER_SLOT,
   premiumFrameSvg,
   premiumLetterhead,
+  premiumMasthead,
+  premiumPageChrome,
+  premiumSheetCss,
 } from "../src/lib/hiring-pack/premium-identity.ts";
 import {
   renderClearanceCompanyHtml,
@@ -66,8 +73,11 @@ import type {
  * What is pinned here is what a reader of the PAPER would notice going wrong, checked on the
  * rendered HTML rather than on the module:
  *
- *   - every current normal paper wears the chrome — the frame, the watermark, the premium masthead
- *     with the band drawn as an inline vector, and the Phoenix running foot carrying the identity code;
+ *   - the papers the owner answered "change" on his review page (2026-10-13, about 00:40 Cairo) wear
+ *     the chrome — the frame, the watermark, the premium masthead with the band drawn as an inline
+ *     vector, and the Phoenix running foot carrying the identity code — and the papers he answered
+ *     "keep" print as they did before the identity existed (`PREMIUM_DRESS`, one line each to flip);
+ *   - every premium branch still renders when its switch is on, so a changed mind costs one line;
  *   - an ARCHIVED version keeps the dress it was signed in, so a reprint from the Archive screen
  *     still matches the paper on file;
  *   - the employment contract keeps its corporate dress (the owner, the same evening: "the contract
@@ -151,7 +161,83 @@ function packFixture(departed = false): HiringPackData {
   };
 }
 
-/** Every paper the pack prints TODAY, rendered the way the print route renders it. */
+/** The engine-turned band as an inline vector element under the masthead. */
+const PREMIUM_BAND = /<svg class="pm-band"[^>]*>[\s\S]*?<path d="M[^"]*Q[\s\S]*?<\/svg>/;
+
+/**
+ * THE PAPERS THE OWNER ANSWERED "CHANGE" ON — his review page, 2026-10-13 about 00:40 Cairo. The
+ * English certificate of experience and the English salary letter wear it outright; the exit interview
+ * is the one HR paper that does. Every other paper the pack prints is a "keep".
+ */
+const CHANGED_PAPERS = ["certificate of experience (English)", "salary letter (English)", "exit-interview-v1"];
+
+/**
+ * Renders under every paper's premium switch ON, then puts the owner's answers back. The switches
+ * exist so a changed mind is one line — this is what proves the branch behind each one still draws.
+ */
+function withEveryPaperPremium<T>(run: () => T): T {
+  const saved = {
+    clearance: PREMIUM_DRESS.clearance,
+    custody: PREMIUM_DRESS.custody,
+    workerForm: PREMIUM_DRESS.workerForm,
+    hrPapers: new Set(PREMIUM_DRESS.hrPapers),
+  };
+  PREMIUM_DRESS.clearance = true;
+  PREMIUM_DRESS.custody = true;
+  PREMIUM_DRESS.workerForm = true;
+  for (const paper of HR_PAPERS) PREMIUM_DRESS.hrPapers.add(paper.id.replace(/-v\d+$/, ""));
+  try {
+    return run();
+  } finally {
+    PREMIUM_DRESS.clearance = saved.clearance;
+    PREMIUM_DRESS.custody = saved.custody;
+    PREMIUM_DRESS.workerForm = saved.workerForm;
+    PREMIUM_DRESS.hrPapers.clear();
+    for (const family of saved.hrPapers) PREMIUM_DRESS.hrPapers.add(family);
+  }
+}
+
+function assertPremiumPaper(name: string, html: string): void {
+  assert.ok(isPremiumPaper(html), `${name}: the premium page chrome is missing`);
+  assert.ok(/<header class="pm-mast[ "]/.test(html), `${name}: the premium masthead is missing`);
+  assert.ok(PREMIUM_BAND.test(html), `${name}: the band must be drawn as an inline vector, never a CSS tile`);
+  assert.ok(html.includes('<svg class="pm-frame"'), `${name}: the security frame is missing`);
+  assert.ok(html.includes('class="pm-watermark"'), `${name}: the watermark is missing`);
+  // THE ARABIC LOGO IS THE WATERMARK AND NOTHING ELSE — never the masthead (owner, 2026-10-12:
+  // "make the arabic sato logo only as water mark … everywhere", then "watermark and footer only").
+  const mastheads = html.match(/<header class="pm-mast[ "][\s\S]*?<\/header>/g) ?? [];
+  assert.ok(mastheads.length > 0, `${name}: the masthead was read, so the next check tests something`);
+  for (const mast of mastheads) {
+    assert.ok(!mast.includes("sato-pharma-arabic"), `${name}: the Arabic logo is never in the masthead`);
+  }
+  // Its empty right column MIRRORS the left, so the title sits on the page's centre line — and the
+  // fixed widths still add up to what they were with the mark there (66 mm, 58 mm compact), so the
+  // title column is exactly as wide and wraps on the same words: no paper can grow a line.
+  for (const [rule, fixed] of [[/\.pm-mast \{[^}]*\}/, 66], [/\.pm-mast--compact \{[^}]*\}/, 58]] as const) {
+    const css = rule.exec(html)?.[0] ?? "";
+    const cols = /grid-template-columns:\s*([\d.]+)mm 1fr ([\d.]+)mm/.exec(css);
+    const gap = Number(/column-gap:\s*([\d.]+)mm/.exec(/\.pm-mast \{[^}]*\}/.exec(html)?.[0] ?? "")?.[1]);
+    assert.ok(cols && Number.isFinite(gap), `${name}: the masthead grid was read, so the next checks test something`);
+    assert.equal(cols[1], cols[2], `${name}: the masthead's right column mirrors the left, so the title is centred on the page`);
+    assert.equal(Number(cols[1]) + Number(cols[2]) + 2 * gap, fixed, `${name}: the title column keeps its old width, so no title rewraps`);
+  }
+  assert.equal(
+    (html.match(/sato-pharma-arabic/g) ?? []).length,
+    (html.match(/<img class="pm-watermark" src="\/brand\/sato-pharma-arabic-on-light\.png"/g) ?? []).length,
+    `${name}: every Arabic logo on the paper is a watermark`,
+  );
+  assert.ok(html.includes(PREMIUM_IDENTITY_CODE), `${name}: the running foot must carry the identity code`);
+  assert.ok(html.includes("/brand/phoenix-login-emblem.png"), `${name}: the Phoenix emblem leads the foot`);
+  assert.ok(html.includes("/brand/sato-pharma-logo-on-light.svg"), `${name}: always the on-light mark`);
+  assert.ok(html.includes("@page { size: A4; margin: 0; }"), `${name}: the sheet draws its own frame edge to edge`);
+  assert.equal((html.match(/class="phx-seal"/g) ?? []).length, 0, `${name}: no seal on a hiring paper`);
+  assert.ok(!html.includes("sato-hr-seal"), `${name}: not even a reference to the seal artwork`);
+  // A `border-radius: 0` reset is square-keeping (the English certificate carries one); any other value is not.
+  assert.ok(!/border-radius\s*:(?!\s*0(?:px|mm)?\s*(?:!important)?\s*[;}])/.test(html), `${name}: square corners only`);
+  assert.deepEqual(inlineLocalAssets(html).missing, [], `${name}: the PDF path must be able to inline every image`);
+}
+
+/** Every paper the pack prints TODAY, rendered the way the print route renders it, under the dress now set. */
 function currentNormalPapers(): ReadonlyArray<readonly [string, string]> {
   const live = packFixture();
   const left = packFixture(true);
@@ -179,51 +265,48 @@ function currentNormalPapers(): ReadonlyArray<readonly [string, string]> {
   return papers;
 }
 
-/** The engine-turned band as an inline vector element under the masthead. */
-const PREMIUM_BAND = /<svg class="pm-band"[^>]*>[\s\S]*?<path d="M[^"]*Q[\s\S]*?<\/svg>/;
+function testThePapersTheOwnerSaidChangeWearThePremiumIdentity(): void {
+  const worn = currentNormalPapers().filter(([, html]) => isPremiumPaper(html));
+  assert.deepEqual(
+    worn.map(([name]) => name).sort(),
+    [...CHANGED_PAPERS].sort(),
+    "exactly the papers he answered 'change' wear the premium identity — no more, no fewer",
+  );
+  for (const [name, html] of worn) assertPremiumPaper(name, html);
+}
 
-function testEveryCurrentPaperWearsThePremiumIdentity(): void {
+/**
+ * THE PAPERS HE ANSWERED "KEEP" PRINT AS THEY DID BEFORE THE IDENTITY (13 October 2026). The switch
+ * table is his answers, pinned: flipping an entry is a decision of his, never a tidy-up.
+ */
+function testThePapersTheOwnerSaidKeepPrintAsToday(): void {
+  assert.deepEqual(
+    { clearance: PREMIUM_DRESS.clearance, custody: PREMIUM_DRESS.custody, workerForm: PREMIUM_DRESS.workerForm },
+    { clearance: false, custody: false, workerForm: false },
+    "the clearance forms, the custody receipts and the worker data form were answered 'keep'",
+  );
+  assert.deepEqual([...PREMIUM_DRESS.hrPapers], ["exit-interview"], "of the HR papers only the exit interview was answered 'change'");
+
   const papers = currentNormalPapers();
   assert.equal(papers.length, 24, "seven pack papers and the seventeen current HR papers (nineteen less two archived versions)");
-  for (const [name, html] of papers) {
-    assert.ok(isPremiumPaper(html), `${name}: the premium page chrome is missing`);
-    assert.ok(/<header class="pm-mast[ "]/.test(html), `${name}: the premium masthead is missing`);
-    assert.ok(PREMIUM_BAND.test(html), `${name}: the band must be drawn as an inline vector, never a CSS tile`);
-    assert.ok(html.includes('<svg class="pm-frame"'), `${name}: the security frame is missing`);
-    assert.ok(html.includes('class="pm-watermark"'), `${name}: the watermark is missing`);
-    // THE ARABIC LOGO IS THE WATERMARK AND NOTHING ELSE — never the masthead (owner, 2026-10-12:
-    // "make the arabic sato logo only as water mark … everywhere", then "watermark and footer only").
-    const mastheads = html.match(/<header class="pm-mast[ "][\s\S]*?<\/header>/g) ?? [];
-    assert.ok(mastheads.length > 0, `${name}: the masthead was read, so the next check tests something`);
-    for (const mast of mastheads) {
-      assert.ok(!mast.includes("sato-pharma-arabic"), `${name}: the Arabic logo is never in the masthead`);
-    }
-    // Its empty right column MIRRORS the left, so the title sits on the page's centre line — and the
-    // fixed widths still add up to what they were with the mark there (66 mm, 58 mm compact), so the
-    // title column is exactly as wide and wraps on the same words: no paper can grow a line.
-    for (const [rule, fixed] of [[/\.pm-mast \{[^}]*\}/, 66], [/\.pm-mast--compact \{[^}]*\}/, 58]] as const) {
-      const css = rule.exec(html)?.[0] ?? "";
-      const cols = /grid-template-columns:\s*([\d.]+)mm 1fr ([\d.]+)mm/.exec(css);
-      const gap = Number(/column-gap:\s*([\d.]+)mm/.exec(/\.pm-mast \{[^}]*\}/.exec(html)?.[0] ?? "")?.[1]);
-      assert.ok(cols && Number.isFinite(gap), `${name}: the masthead grid was read, so the next checks test something`);
-      assert.equal(cols[1], cols[2], `${name}: the masthead's right column mirrors the left, so the title is centred on the page`);
-      assert.equal(Number(cols[1]) + Number(cols[2]) + 2 * gap, fixed, `${name}: the title column keeps its old width, so no title rewraps`);
-    }
-    assert.equal(
-      (html.match(/sato-pharma-arabic/g) ?? []).length,
-      (html.match(/<img class="pm-watermark" src="\/brand\/sato-pharma-arabic-on-light\.png"/g) ?? []).length,
-      `${name}: every Arabic logo on the paper is a watermark`,
-    );
-    assert.ok(html.includes(PREMIUM_IDENTITY_CODE), `${name}: the running foot must carry the identity code`);
-    assert.ok(html.includes("/brand/phoenix-login-emblem.png"), `${name}: the Phoenix emblem leads the foot`);
-    assert.ok(html.includes("/brand/sato-pharma-logo-on-light.svg"), `${name}: always the on-light mark`);
-    assert.ok(html.includes("@page { size: A4; margin: 0; }"), `${name}: the sheet draws its own frame edge to edge`);
-    assert.equal((html.match(/class="phx-seal"/g) ?? []).length, 0, `${name}: no seal on a hiring paper`);
-    assert.ok(!html.includes("sato-hr-seal"), `${name}: not even a reference to the seal artwork`);
-    // A `border-radius: 0` reset is square-keeping (the English certificate carries one); any other value is not.
-    assert.ok(!/border-radius\s*:(?!\s*0(?:px|mm)?\s*(?:!important)?\s*[;}])/.test(html), `${name}: square corners only`);
-    assert.deepEqual(inlineLocalAssets(html).missing, [], `${name}: the PDF path must be able to inline every image`);
+  const kept = papers.filter(([name]) => !CHANGED_PAPERS.includes(name));
+  assert.equal(kept.length, 21, "twenty-four papers less the three he said 'change' on");
+  for (const [name, html] of kept) {
+    assert.ok(!isPremiumPaper(html), `${name}: he said keep, so it carries no premium page chrome`);
+    assert.ok(!/\bpm-[a-z]/.test(html), `${name}: he said keep, so no premium class is on it`);
+    assert.ok(!html.includes(PREMIUM_IDENTITY_CODE + "</div>"), `${name}: he said keep, so no premium running foot`);
   }
+}
+
+/** Every renderer's premium branch still draws when its switch is on — a changed mind is one line. */
+function testEveryPremiumBranchStillRendersWhenItsSwitchIsOn(): void {
+  withEveryPaperPremium(() => {
+    const papers = currentNormalPapers();
+    assert.equal(papers.length, 24);
+    for (const [name, html] of papers) assertPremiumPaper(name, html);
+  });
+  assert.equal(PREMIUM_DRESS.clearance, false, "the owner's answers are put back after the proof");
+  assert.deepEqual([...PREMIUM_DRESS.hrPapers], ["exit-interview"]);
 }
 
 /**
@@ -235,30 +318,35 @@ function testEveryCurrentPaperWearsThePremiumIdentity(): void {
  * front of them would move every one. So in each copy, nothing the paper says may follow it.
  */
 function testTheChromeIsAppendedLastInEveryCopy(): void {
-  for (const [name, html] of currentNormalPapers()) {
-    const copies = html.split(/<article class="/).slice(1);
-    assert.ok(copies.length >= 2, `${name}: two copies were asked for`);
-    for (const copy of copies) {
-      const body = copy.slice(0, copy.indexOf("</article>"));
-      const chrome = body.indexOf('<div class="pm-chrome"');
-      assert.ok(chrome > 0, `${name}: every copy carries the chrome`);
-      const after = body.slice(chrome);
-      assert.ok(
-        !/<(?:table|section|p|h1|h2)[\s>]/.test(after),
-        `${name}: the paper's own content follows the chrome — a placed stamp's anchor would move`,
-      );
+  withEveryPaperPremium(() => {
+    for (const [name, html] of currentNormalPapers()) {
+      const copies = html.split(/<article class="/).slice(1);
+      assert.ok(copies.length >= 2, `${name}: two copies were asked for`);
+      for (const copy of copies) {
+        const body = copy.slice(0, copy.indexOf("</article>"));
+        const chrome = body.indexOf('<div class="pm-chrome"');
+        assert.ok(chrome > 0, `${name}: every copy carries the chrome`);
+        const after = body.slice(chrome);
+        assert.ok(
+          !/<(?:table|section|p|h1|h2)[\s>]/.test(after),
+          `${name}: the paper's own content follows the chrome — a placed stamp's anchor would move`,
+        );
+      }
+      // On paper only the first copy's chrome is shown: it is fixed, and Chrome repeats it on every page.
+      assert.ok(/~ [.a-z-]+ \.pm-chrome \{ display: none; \}/.test(html), `${name}: one frame per printed page, not one per copy`);
     }
-    // On paper only the first copy's chrome is shown: it is fixed, and Chrome repeats it on every page.
-    assert.ok(/~ [.a-z-]+ \.pm-chrome \{ display: none; \}/.test(html), `${name}: one frame per printed page, not one per copy`);
-  }
+  });
 }
 
 function testAnArchivedVersionKeepsTheDressItWasSignedIn(): void {
   const live = packFixture();
-  const warning = renderHrPaperHtml(live, 1, HR_PAPER_ABSENCE_WARNING_V2, HR_PAPER_ABSENCE_WARNING_V1.id);
-  assert.ok(warning.includes(HR_PAPER_ABSENCE_WARNING_V1.titleAr), "the archived warning is the one printed");
-  assert.ok(!warning.includes("pm-"), "an archived HR paper keeps its house dress");
-  assert.ok(isPremiumPaper(renderHrPaperHtml(live, 1, HR_PAPER_ABSENCE_WARNING_V2)), "the current one wears the premium identity");
+  // The first absence warning was answered 'keep' — its switch goes on for this proof only.
+  withEveryPaperPremium(() => {
+    const warning = renderHrPaperHtml(live, 1, HR_PAPER_ABSENCE_WARNING_V2, HR_PAPER_ABSENCE_WARNING_V1.id);
+    assert.ok(warning.includes(HR_PAPER_ABSENCE_WARNING_V1.titleAr), "the archived warning is the one printed");
+    assert.ok(!warning.includes("pm-"), "an archived HR paper keeps its house dress");
+    assert.ok(isPremiumPaper(renderHrPaperHtml(live, 1, HR_PAPER_ABSENCE_WARNING_V2)), "the current one wears the premium identity");
+  });
 }
 
 /**
@@ -345,8 +433,8 @@ function testTheFrameMicrotextIsLatinAndPinned(): void {
 }
 
 function testTheReferenceNumberGoesIntoTheSlot(): void {
-  const html = renderHrPaperHtml(packFixture(), 1, HR_PAPER_NDA_V1);
-  const numbered = stampPaperReference(html, "HR-2026-000123", "nda");
+  const html = renderHrPaperHtml(packFixture(), 1, HR_PAPER_EXIT_INTERVIEW_V1);
+  const numbered = stampPaperReference(html, "HR-2026-000123", "exit-interview");
   assert.match(
     numbered,
     /<span class="pm-mast__ref" dir="rtl"><span class="hp-ref" data-hp-ref="HR-2026-000123">/,
@@ -381,12 +469,13 @@ function testThePremiumLetterheadKeepsEveryWord(): void {
 }
 
 /**
- * THE ARABIC SALARY LETTER STILL FITS ITS ONE SHEET. Its sheet is stretched to the printable height
+ * THE ARABIC SALARY LETTER STILL FITS ITS ONE SHEET, IF IT IS EVER SWITCHED TO THE PREMIUM DRESS. Its sheet is stretched to the printable height
  * (the owner, 2026-09-20), and under the premium sheet that height is 297 mm less the 12.5 mm top and
  * 19.5 mm bottom insets. One millimetre over prints a second, empty page.
  */
 function testTheSalaryLetterSheetFitsThePremiumPage(): void {
-  const html = renderHrPaperHtml(packFixture(), 1, HR_PAPER_SALARY_LETTER_AR_V1);
+  // The Arabic salary letter was answered 'keep', so this proves the branch behind its switch.
+  const html = withEveryPaperPremium(() => renderHrPaperHtml(packFixture(), 1, HR_PAPER_SALARY_LETTER_AR_V1));
   const heights = [...html.matchAll(/\.copy--salaryLetter \.doc-sheet \{ height: (\d+(?:\.\d+)?)mm; \}/g)].map(
     (match) => Number(match[1]),
   );
@@ -411,8 +500,42 @@ function testThePageNumberSlotIsTheFootsRightEnd(): void {
   );
 }
 
+/**
+ * THE CHROME CAN TURN ON ITS SIDE AND CAN LEAVE PHOENIX OUT — the two options the interview calendar,
+ * the field-activity report, the payslip, the organogram record and the job offer need. The default
+ * call is the portrait, Phoenix-footed chrome every HR paper prints, unchanged.
+ */
+function testThePremiumChromeTurnsOnItsSideAndCanLeavePhoenixOut(): void {
+  const portrait = premiumPageChrome();
+  assert.ok(portrait.includes('viewBox="0 0 210 297"'), "the default frame is the portrait sheet");
+  assert.ok(portrait.includes("Phoenix Workforce") && portrait.includes("/brand/phoenix-login-emblem.png"), "the default foot is the approved Phoenix one");
+  assert.ok(!portrait.includes("pm-chrome--landscape"));
+
+  const landscape = premiumPageChrome({ orientation: "landscape", brand: "sato" });
+  assert.ok(landscape.includes('<div class="pm-chrome pm-chrome--landscape"'), "the chrome says it is landscape");
+  assert.ok(landscape.includes(`viewBox="0 0 ${PREMIUM_LANDSCAPE_MM.width} ${PREMIUM_LANDSCAPE_MM.height}"`), "the frame is drawn on the turned sheet");
+  assert.equal(PREMIUM_LANDSCAPE_MM.width, PREMIUM_PAGE_MM.height, "the same sheet, turned");
+  assert.ok(!/phoenix/i.test(landscape), "a Sato-only foot says nothing of Phoenix — not the label, the emblem or the microtext");
+  assert.ok(landscape.includes(PREMIUM_IDENTITY_CODE), "it still carries the identity code");
+  assert.ok(/pm-chrome--landscape \.pm-frame \{ width: 297mm; height: 210mm; \}/.test(PREMIUM_IDENTITY_CSS), "the stylesheet sizes the turned frame");
+  assert.ok(premiumFrameSvg(undefined, "landscape").includes('viewBox="0 0 297 210"'));
+
+  const mast = premiumMasthead({
+    legalNameAr: "شركة ساتو فارما", title: "Field Activity", titleLang: "en", slim: true, orientation: "landscape",
+  });
+  assert.ok(mast.includes('class="pm-mast pm-mast--compact pm-mast--slim"'), "slim is the tightest masthead");
+  assert.ok(mast.includes(`viewBox="0 0 ${PREMIUM_LANDSCAPE_COLUMN_MM} `), "the band runs the wider column of the turned sheet");
+  assert.ok(!mast.includes("sato-pharma-arabic"), "the Arabic logo is still never in a masthead");
+
+  assert.ok(premiumSheetCss(".x", "landscape").includes("@page { size: A4 landscape; margin: 0; }"));
+  assert.ok(premiumSheetCss(".x").includes("@page { size: A4; margin: 0; }"), "portrait stays the default");
+}
+
 export function runHrPremiumIdentityTests(): void {
-  testEveryCurrentPaperWearsThePremiumIdentity();
+  testThePremiumChromeTurnsOnItsSideAndCanLeavePhoenixOut();
+  testThePapersTheOwnerSaidChangeWearThePremiumIdentity();
+  testThePapersTheOwnerSaidKeepPrintAsToday();
+  testEveryPremiumBranchStillRendersWhenItsSwitchIsOn();
   testTheChromeIsAppendedLastInEveryCopy();
   testAnArchivedVersionKeepsTheDressItWasSignedIn();
   testTheContractKeepsItsCorporateDress();
