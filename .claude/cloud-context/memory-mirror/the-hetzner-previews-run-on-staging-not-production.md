@@ -1,11 +1,11 @@
 ---
 name: the-hetzner-previews-run-on-staging-not-production
-description: "Since 2026-10-08 14:30 Cairo the Hetzner box previews (`~/preview` :3000, `~/preview-b` :3001) read STAGING `cifwmndunmlxjhyjugxa` with APP_ENV=staging and PHOENIX_EMAIL_FORCE_TESTING=true (owner-approved) — never put production keys back in `~phx/secure/.env.local`; a preview showing staging data is correct. Since 2026-10-08 ~17:50 Cairo they also RUN AS `phxpreview` (no sudo) from /home/phxpreview checkouts and a read-only mirror — never run a preview or its install as phx again."
+description: "Since 2026-10-08 14:30 Cairo the Hetzner box previews (`phx-preview`, :3000 and :3001) read STAGING `cifwmndunmlxjhyjugxa` with APP_ENV=staging and PHOENIX_EMAIL_FORCE_TESTING=true (owner-approved) — never put production keys back in `~phx/secure/.env.local`; a preview showing staging data is correct. They RUN AS `phxpreview` (no sudo) from a read-only mirror — never run a preview or its install as phx again. PRODUCTION data on the box is ONLY `phx-live` (port 3100, user `phxlive`, its own allowlisted env, port firewalled to `phxtunnel`+`phxlive`, owner's plan 2026-10-12) — never widen phx-preview to production instead."
 metadata:
   node_type: memory
   type: project
   originSessionId: ddbd6fd7-8a24-45e4-b9cc-5c709ace3bd5
-  modified: 2026-10-08T14:56:38.433Z
+  modified: 2026-10-12T14:40:09.065Z
 ---
 
 On 2026-10-08 the owner approved "move the box previews to staging and restart preview-b" (security
@@ -72,10 +72,19 @@ the box previews as their own user without sudo"):
   `/home/phx/_old-preview-docs-20261008` (26 MB). Script rollback: `~/preview-*.sh.pre-phxpreview-20261008`
   (those expect the old checkouts, so a rollback would re-clone into `/home/phx/preview`).
 
+**phx-live — the ONE production-data server on the box (owner's plan, approved 2026-10-12):** the owner
+wanted his old `pnpm run dev` back — edit in a folder, see it live before the merge, `/admin/dev-preview`
+on real data — without the laptop carrying it. It is a separate thing from phx-preview: user `phxlive`
+(no sudo), `/home/phxlive/live`, `phx-preview-3100.scope` capped 5.5 GB, an ALLOWLISTED env with no
+email/Telegram/OneSignal/DB-URL keys and a box-only `PHOENIX_AUTH_SECRET`, port 3100 firewalled to uids
+`phxtunnel` + `phxlive` (because `/api/dev-auth` gives Super Admin to any loopback request), and
+`remote-check` counts it as BUSY. All 15 drawbacks and their handling:
+`docs/agents-worktree-and-machine-limits.md`, "phx-live".
+
 **How to apply:**
 - Never run a preview, its `pnpm install` or any branch code as `phx` again.
-- Never "fix" a preview back to production data. Production previews are not offered, because the app
-  reads through the service-role client and has no safe read-only mode.
+- Never "fix" a phx-preview back to production data — production data on the box is phx-live only,
+  never phx-preview, because branch code from any session runs there as `phxpreview`.
 - Still open (each needs the owner's approval):
   - DONE 2026-10-08 15:55 Cairo: production moved to a new secret key `phoenix_server_2026_10` and the
     publishable key (Railway, GitHub secrets + variable, six laptop .env.local files), and the legacy
