@@ -271,6 +271,17 @@ export async function runClosingChannelTabsTests() {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
+  // READ-ONLY (owner, 2026-10-13: "never be able to edit any cell in any tab"): every tab of the
+  // normal workbook -- the hidden Calc sheet too -- leaves the server protected.
+  assert.ok(workbook.worksheets.length >= 5, "the fixture workbook has its real tabs");
+  for (const sheet of workbook.worksheets) {
+    assert.equal(
+      (sheet as unknown as { sheetProtection?: { sheet?: boolean } }).sheetProtection?.sheet,
+      true,
+      `${sheet.name} must be sheet-protected`,
+    );
+  }
+
   const retailSheet = workbook.getWorksheet("Retail Sales (no direct)");
   const directSheet = workbook.getWorksheet("Direct Sales (no retail)");
   assert.ok(retailSheet, "the Retail tab is written whenever channels are supplied");
