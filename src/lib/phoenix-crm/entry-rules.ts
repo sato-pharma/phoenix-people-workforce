@@ -114,6 +114,24 @@ export type CapturedFix = {
   /** The phone's clock when the photo was taken, compared with the server's on save. */
   deviceCapturedAt: string | null;
   /**
+   * The phone's clock when it TOOK the position above — not when the rep pressed.
+   *
+   * Two different instants, and the gap between them is the only honest answer to "when was he at the
+   * door". A one-tap visit keeps the sharpest reading it has seen and replaces it only with a sharper
+   * one or once it is 15 seconds old (`STALE_MS`, use-silent-fix.ts), so a form left open sends a
+   * reading older than the tap — while `captured_at`, the server's receipt, has been the only clock on
+   * the row.
+   *
+   * 🔴 BOTH ENDS ON THE PHONE'S OWN CLOCK, deliberately: `deviceCapturedAt` minus this is the age of
+   * the reading at the tap, and a handset whose clock is an hour out still reports that age correctly
+   * because the error cancels. The skew against the SERVER stays where it already is, on
+   * `device_skew_minutes`.
+   *
+   * Null is NOT MEASURED — an older bundle, or a phone that reported no timestamp. Never refused, and
+   * never read as "taken at the tap", which is the one reading that would matter most.
+   */
+  fixTakenAt: string | null;
+  /**
    * Android's own mark on a fix that came from a mock provider — a "Fake GPS" app — as
    * `expo-location` reports it. Null where the question cannot be asked: the web, and iOS.
    *
@@ -278,6 +296,9 @@ export function parseCapturedFix(raw: Record<string, unknown>, noFixMessage = NO
   // perfect 0 m fix and shown to the manager as "within 0 m". A blank accuracy is unknown.
   const accuracy = readAccuracyInput(raw.accuracyMeters);
   const deviceCapturedAt = typeof raw.deviceCapturedAt === "string" && !Number.isNaN(Date.parse(raw.deviceCapturedAt)) ? raw.deviceCapturedAt : null;
+  // The same guard, for the same reason: a junk value is NOT MEASURED, never a date, and never a
+  // refusal. A phone one release behind sends nothing here and saves its visit exactly as before.
+  const fixTakenAt = typeof raw.fixTakenAt === "string" && !Number.isNaN(Date.parse(raw.fixTakenAt)) ? raw.fixTakenAt : null;
   // Strictly a boolean or nothing. A body that omits it — an older build, the web, iOS — is
   // "not asked", never "clean", and is never refused for the omission.
   const deviceMocked = typeof raw.deviceMocked === "boolean" ? raw.deviceMocked : null;
@@ -288,6 +309,7 @@ export function parseCapturedFix(raw: Record<string, unknown>, noFixMessage = NO
       lon: Number(raw.lon),
       accuracyMeters: accuracy !== null && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
       deviceCapturedAt,
+      fixTakenAt,
       deviceMocked,
       // Read through the SAME guards as the pin, and independently of it: a body carrying only
       // half a shutter pair contributes no coordinate at all rather than a lopsided one. Never
@@ -754,10 +776,43 @@ export type VisitDraft = CapturedFix & {
    * see `clampFormOpenSeconds`.
    */
   formOpenSeconds: number | null;
+  /**
+   * Which browser install sent this visit — a random id that install keeps in its own storage, or
+   * null when there was no storage to keep one in (`device-install.ts`).
+   *
+   * 🔴 SILENT (Golden Rule #1), and it travels exactly as `formOpenSeconds` above does: the phone has
+   * to SEND it or the fact never exists at all, and nothing reads it back out towards the rep.
+   *
+   * It names a BROWSER INSTALL and nothing more — never a person, never a handset serial, and 🔴 never
+   * a package or APK scan, which the owner forbids by name. Two saves carrying the same id came from
+   * one browser profile, which is the whole question it exists to make answerable; two carrying
+   * different ids say nothing either way.
+   */
+  deviceInstallId: string | null;
 };
 
 /** A photo slot lasts 2 hours, so nothing legitimate is longer than that between opening and saving. */
 export const FORM_OPEN_SECONDS_MAX = 7200;
+
+/**
+ * The install id, read strictly.
+ *
+ * Shaped like the id `device-install.ts` writes and nothing else, so a body that puts a sentence, a
+ * person's name or 4 KB of junk in this key lands as null rather than filing it as a device. Never
+ * refused, for the same reason as the stopwatch: the rep is at a door, and this is a field he is not
+ * even told exists.
+ *
+ * The shape test is the repo's one `isUuid`, never a regex written here — `tests/malformed-uuid-id-guards.test.ts`
+ * refuses a second copy of that pattern anywhere under `src/`, because identical regexes never
+ * disagree until one of them is edited. Trimming and lowercasing happen HERE, before the guard,
+ * since `isUuid` deliberately does neither: this is a body field being normalised for storage, not
+ * an id about to be handed to a uuid column.
+ */
+export function parseDeviceInstallId(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim().toLowerCase();
+  return isUuid(value) ? value : null;
+}
 
 /**
  * The phone's stopwatch, clamped.
@@ -897,6 +952,7 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       outcome: parseVisitOutcome(body),
       samplesGiven: parseSamplesGiven(body.samplesGiven),
       formOpenSeconds: clampFormOpenSeconds(body.formOpenSeconds),
+      deviceInstallId: parseDeviceInstallId(body.deviceInstallId),
     },
   };
 }

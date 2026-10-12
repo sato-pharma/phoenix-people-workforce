@@ -778,6 +778,11 @@ const LATER_MIGRATIONS = [
   // the answer, and the BEFORE UPDATE guard that keeps a returned request from being approved), five columns
   // and two widened CHECKs on phoenix_crm_list_requests; it replaces nothing, so it appends safely at the end.
   "supabase/migrations/20261012180000_phoenix_crm_return_request_for_comment.sql",
+  // Capture provenance (gaps 1 and 3): ONE brand-new table and NOTHING else — no function, no column
+  // on anything that exists, and deliberately no replacement of phoenix_crm_save_visit, which four
+  // entries above have already replaced in turn. A table-only entry satisfies the "contribute
+  // something this scan can see" rule below, and the four lock statements are checked there.
+  "supabase/migrations/20261012233000_phoenix_crm_visit_capture_provenance.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

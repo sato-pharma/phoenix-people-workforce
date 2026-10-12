@@ -1752,6 +1752,7 @@ import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-direct
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
 import { runPhoenixCrmBlindHalfTests } from "./phoenix-crm-blind-half.test.ts";
+import { runPhoenixCrmCaptureProvenanceTests } from "./phoenix-crm-capture-provenance.test.ts";
 import { runPhoenixCrmFitsTheScreenTests } from "./phoenix-crm-fits-the-screen.test.ts";
 import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
@@ -6398,6 +6399,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM GOLDEN RULE #1, the BLIND half (owner, 2026-09-26: \"never make the medical rep feel that the system is here to catch him … never informed of any violation … recorded in the admin and the SFE account\" — the rep-facing surface is DERIVED and swept rather than listed, JSX text is read as well as string literals, no rep-callable route reaches the evidence, every reader of it is declared, the board's audience is one predicate naming the Super Admin and the SFE Manager, and it refuses with a 404 because a 403 naming the board is itself the disclosure)",
   runPhoenixCrmBlindHalfTests,
+);
+
+await runTest(
+  "Phoenix CRM: the two things a one-tap visit knew and threw away (gaps 1 and 3 of the second-pass audit — WHEN the phone took the position it sent, and WHICH browser install sent it. The age is measured phone-clock to phone-clock, so a handset an hour out still answers correctly and a reading stamped after the tap is NOT MEASURED rather than a clamped 0; the install id names a browser install, never a person and never a handset, and it is 🔴 NOT a package or APK scan; a browser with storage blocked saves exactly as it always did; the row is written after the save by a function that answers nothing and swallows its own failures, into one new table locked to the service role, and phoenix_crm_save_visit is deliberately NOT re-emitted)",
+  runPhoenixCrmCaptureProvenanceTests,
 );
 
 await runTest(

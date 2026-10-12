@@ -537,6 +537,9 @@ function runEntryRuleTests() {
     // Absent from this payload, so it parses to "not asked" — never to false. An older build that
     // never sends the field must not read as a device proven clean.
     deviceMocked: null,
+    // When the phone TOOK the reading, absent here and therefore NOT MEASURED. Its own assertions
+    // are below; it is in this shape so a build that stopped carrying it would show up here too.
+    fixTakenAt: null,
     // The shutter fix, added 2026-09-29. Absent here for the same reason and with the same
     // meaning: NOT MEASURED. An older build, the web, or a handset whose shutter read nothing all
     // send no shutter keys, and none of them is refused for it. Never defaulted to lat/lon.
@@ -565,6 +568,7 @@ function runEntryRuleTests() {
       accuracyMeters: 12.3,
       deviceCapturedAt: "2026-10-03T15:00:00Z",
       deviceMocked: null,
+      fixTakenAt: null,
       photoAccuracyMeters: 18.8,
       photoCapturedAt: "2026-10-03T15:00:21Z",
       photoLat: 30.0501,
@@ -572,6 +576,22 @@ function runEntryRuleTests() {
     },
     "the shutter fix parses on its own keys, rounded like the pin and never taken from it",
   );
+  // 🔴 WHEN THE PHONE TOOK THE POSITION, which the one-tap visit read and threw away until 2026-10-12.
+  // It is the phone's own clock at the reading, kept beside the phone's clock at the TAP, so the two
+  // measure the reading's age with no clock skew in the answer — the server's receipt (`captured_at`)
+  // cannot, and module memory forbids reading that as a position in time at all.
+  assert.equal(
+    valueOf(parseCapturedFix({ lat: 30.05, lon: 31.23, fixTakenAt: "2026-10-12T15:00:09Z" })).fixTakenAt,
+    "2026-10-12T15:00:09Z",
+    "the fix's own time travels with the fix",
+  );
+  for (const junk of ["this morning", "", 1760000000000, null, undefined, {}]) {
+    assert.equal(
+      valueOf(parseCapturedFix({ lat: 30.05, lon: 31.23, fixTakenAt: junk })).fixTakenAt,
+      null,
+      `a fix time of ${JSON.stringify(junk) ?? String(junk)} is NOT MEASURED, never a refusal and never the tap`,
+    );
+  }
   // HALF A PAIR IS NO PAIR: a latitude with no longitude contributes no coordinate at all, rather
   // than a lopsided fix that would later measure a distance from nowhere.
   const halfPair = valueOf(parseCapturedFix({ lat: 30.05, lon: 31.23, shutterLat: 30.0501 }));
@@ -604,6 +624,9 @@ function runEntryRuleTests() {
       // so it reads "could not ask" rather than "clean". It is part of the captured fix, not of the
       // draft's editable fields — the rep still names only the place.
       deviceMocked: null,
+      // Also from the shared reader, and also unstored for a place: only a VISIT's provenance row
+      // carries the fix time, because only a visit is one tap taken in the moment.
+      fixTakenAt: null,
       // Parsed by the SHARED captured-fix reader, so a place carries these too. Nothing stores
       // them yet: the 2026-09-29 migration added photo_* to phoenix_crm_visits only, and a place
       // is captured once rather than visited, so there is no pin-versus-shutter question to ask
