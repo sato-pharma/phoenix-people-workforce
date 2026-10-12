@@ -203,6 +203,7 @@ export function PhoenixIdentityStrip({
   }, [sigName]);
 
   return (
+    <div className={["relative w-full min-w-0", photoSrc ? "sm:pb-[88px]" : ""].join(" ")}>
     <section
       aria-label="Your identity"
       className={[
@@ -411,9 +412,11 @@ export function PhoenixIdentityStrip({
         <span
           className={[
             "relative h-[80px] w-[80px] shrink-0 sm:h-[136px] sm:w-[136px]",
-            // Mobile hands the portrait over to the frameless bleed above — but only when there
-            // IS one to hand over.
-            photoSrc ? "hidden sm:block" : "block",
+            // Mobile hands the portrait over to the frameless bleed above and desktop hands it to
+            // the standing portrait at the trailing edge — so with a photo this tile draws at
+            // NEITHER width. It survives as the no-photo fallback, where initials still need a
+            // frame of their own.
+            photoSrc ? "hidden" : "block",
           ].join(" ")}
         >
           {/* TWO RINGS, MUTUALLY EXCLUSIVE BY BREAKPOINT. One element would be neater, but an
@@ -479,6 +482,13 @@ export function PhoenixIdentityStrip({
               phone and 128.75px in from `sm` up, so the box ends 68px / 141px in — which is 52px
               of margin on a phone (`pr-4`) and 117px from `sm` up (`pr-6`).
 
+              FROM `sm` UP IT IS THE PORTRAIT THAT SETS THIS MARGIN NOW, not the phoenix. The
+              standing portrait is 188px wide against the bar's trailing edge, so the text column
+              has to stop 200px in (12px of air); net of the wrapper's own `pr-6` that is 196px,
+              and 196 clears the watermark's ink edge at 128.75px by a wide margin — which is why
+              `tests/identity-strip-emblem.test.ts` still passes on a number it did not derive. The
+              PHONE margin is untouched at 52px: there is no standing portrait on a phone.
+
               THE MARGIN IS A CLASS AND THE RESET IS INLINE, and they must stay split that way. An
               inline style beats any class, so the `margin: 0` that used to sit in the style object
               would silently swallow `mr-[52px]` and put the name back under the mark with nothing
@@ -493,7 +503,7 @@ export function PhoenixIdentityStrip({
               the phone mark again, this margin grows with it and the name shrinks again, so
               measure the name at 375px before accepting that trade. */}
           <p
-            className="italic font-medium text-[#3f3a33] mr-[52px] sm:mr-[117px]"
+            className="italic font-medium text-[#3f3a33] mr-[52px] sm:mr-[196px]"
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
@@ -532,7 +542,7 @@ export function PhoenixIdentityStrip({
               it: the column is ~223px at 375px and already carries four lines, so the title would
               wrap a third time and clip against `overflow-hidden`. The name carries its own copy
               of the margin, for the same reason. */}
-          <span aria-hidden="true" className="mt-[2px] mr-[52px] flex items-center sm:mr-[117px]">
+          <span aria-hidden="true" className="mt-[2px] mr-[52px] flex items-center sm:mr-[196px]">
             <span className="h-[2px] flex-1" style={{ background: "#f47b20" }} />
             <span className="mx-[5px] h-[7px] w-[7px]" style={{ background: "#f47b20" }} />
             <span
@@ -603,5 +613,46 @@ export function PhoenixIdentityStrip({
         <path d="M0 38C420 58 1030 58 1875 4" fill="none" stroke="#f47b20" strokeWidth="11" />
       </svg>
     </section>
+
+    {/* DESKTOP: THE PORTRAIT STANDS AT THE TRAILING EDGE AND HANGS BELOW THE BAR — the owner,
+        2026-10-12, drawing the shape himself: "MAKE THE PHOTO ON THE RIGHT OF THE BANNER AND MAKE
+        IT BIGGER WHILE NEVER TOUCH THE BANNER SO THE BANNER AND THE PHOTO LOOKS LIKE REVERTED L
+        LETTER", then "L MA2LOOB -------| KDA TEB2A BASA L TAHT KDA" — a bar with a column dropping
+        from its right end.
+
+        IT IS A SIBLING OF THE BAR, NOT A CHILD OF IT, AND THAT IS THE WHOLE TRICK. The bar is
+        `overflow-hidden` (the watermark and the wave both rely on it), so a portrait taller than
+        160px inside it would simply be cut at the bar's foot. Rendering it beside the section, in
+        a wrapper that positions it, is what lets it stand 80px proud of the bar while the bar
+        itself keeps every number it had — "NEVER TOUCH THE BANNER", his words.
+
+        THE WRAPPER RESERVES THE OVERHANG (`sm:pb-[88px]`) INSTEAD OF FLOATING OVER THE PAGE. A
+        portrait hanging over the first task card would cover live work and would move with it on
+        every scroll; the padding keeps the column's own column of air and nothing below has to
+        know the strip is there. It is spent only when there IS a photo — the initials tile stays
+        inside the bar at both widths.
+
+        MOBILE KEEPS THE FRAMELESS BLEED. This is a `sm:` element only; on a phone the photo is
+        still the bar's own leading edge, which is his 2026-09-04 instruction and is untouched. */}
+    {photoSrc ? (
+      <span className="pointer-events-none absolute right-0 top-0 z-20 hidden h-[248px] w-[188px] sm:block">
+        <span
+          aria-hidden="true"
+          className="absolute inset-0"
+          style={{ background: PORTRAIT_BEZEL, boxShadow: PORTRAIT_RING }}
+        />
+        <span className="absolute inset-[3px] overflow-hidden bg-[#f8efe5]">
+          <Image
+            alt={`${name} portrait`}
+            className="object-cover object-top"
+            fill
+            sizes="188px"
+            src={photoSrc}
+            unoptimized
+          />
+        </span>
+      </span>
+    ) : null}
+    </div>
   );
 }
