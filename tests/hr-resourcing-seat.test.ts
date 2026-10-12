@@ -186,10 +186,13 @@ export async function runHrResourcingSeatTests() {
   assert.throws(() => assertPageOpenForRole(SEAT, "/hr/recruitment/returned-cvs"), /^Error: Forbidden:/);
   assert.doesNotThrow(() => assertPageOpenForRole("Super Admin", "/recruitment/returned-cvs"));
 
+  // The bounce, and the check that makes it terminate. Until 2026-10-12 this pinned the redirect
+  // alone and the "landing is never fenced" half lived only in the assertion above, so fencing a
+  // seat's landing page would have sent every address to a page this same block fences again.
   assert.match(
     source("src/components/layout/app-shell.tsx"),
-    /isPageFencedForRole\(access\.role, fencedPath\)\)\s*\{\s*redirect\(resolveLandingPathForRole\(access\.role\)\)/,
-    "AppShell sends a typed or bookmarked fenced address to the seat's landing page",
+    /isPageFencedForRole\(access\.role, fencedPath\)\)\s*\{\s*const landing = resolveLandingPathForRole\(access\.role\);\s*if \(!isPageFencedForRole\(access\.role, landing\)\)\s*\{\s*redirect\(landing\)/,
+    "AppShell sends a typed or bookmarked fenced address to the seat's landing page, and only when that landing page is not itself fenced",
   );
   for (const [route, page] of [
     ["app/api/recruitment/district-returns/[id]/resolve/route.ts", "/recruitment/returned-cvs"],
