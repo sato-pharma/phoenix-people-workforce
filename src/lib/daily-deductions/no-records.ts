@@ -12,6 +12,7 @@ import { getCompanyNoActivityDays } from "@/lib/private-calendar/service.ts";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertBaseSalaryMapLoaded } from "@/lib/deductions/connectors/health.ts";
+import { loadProvenWorkedDays } from "@/lib/deductions/proven-worked-days.ts";
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
 import { selectNoRecordsDrafts } from "./no-records-select.ts";
 
@@ -40,11 +41,17 @@ export async function collectNoRecordsDailyCandidates(input: {
   const start = `${monthKey}-01`;
   const end = `${monthKey}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;
 
-  const [days, jobTitleByCanonicalKey, outageDates, baseSalaryByCompact] = await Promise.all([
+  const [days, jobTitleByCanonicalKey, outageDates, baseSalaryByCompact, provenWorked] = await Promise.all([
     getCompanyNoActivityDays({ access: systemAccessContext, start, end }),
     loadJobTitlesByCanonicalKey(),
     getCompanyWideOutageDates(start, end),
     getBaseSalaryMap(),
+    // EVERY SOURCE THAT PROVES A DAY WAS WORKED. The engine above reads field visits through the
+    // CRM door, which serves an unstarted team's Phoenix rows to nobody, and reads the outstation
+    // trip tables not at all — so a rep who logged real visits, and a manager who spent the day
+    // travelling, both reach this connector as a day with no activity. Throws on a failed read:
+    // swallowing it would charge a day someone provably worked.
+    loadProvenWorkedDays({ end, start }),
   ]);
   // Fail closed — without salaries every candidate's amount is unknown.
   assertBaseSalaryMapLoaded("No records connector", baseSalaryByCompact);
@@ -54,6 +61,7 @@ export async function collectNoRecordsDailyCandidates(input: {
     jobTitleByCanonicalKey,
     outageDates,
     baseSalaryByCompact,
+    provenWorkedDayKeys: provenWorked.keys,
     month: input.month,
     year: input.year,
   });

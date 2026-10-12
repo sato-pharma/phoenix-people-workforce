@@ -1,8 +1,8 @@
 // Unified Deductions module: the per-line PUSH notification.
 //
 // Owner rule (2026-09-22): a deduction is functioning but NEVER automatic. When the Super Admin
-// PUSHES one employee's one deduction, that employee is told — in-app + Telegram, never email —
-// and the notice CCs their manager chain:
+// PUSHES one employee's one deduction, that employee is told, and the notice CCs their manager
+// chain:
 //
 //   - a Medical Rep  → District Manager + (Regional Manager, if any) + National Sales Manager
 //   - a District Manager → (Regional Manager, if any) + National Sales Manager
@@ -13,16 +13,27 @@
 // The owner's "also CC the Regional Manager for a rep" (2026-09-22) is exactly what the full chain
 // gives — nearest manager first, up to the National Sales Manager, no CEO.
 //
-// NO AMOUNT, NO CATEGORY reaches any channel (owner rule): the notice says a deduction was recorded
-// for a month and points the employee at their own Deductions page. The figure lives behind the
-// self-only portal, never on a lock screen. Managers get a bare heads-up with the employee's NAME
-// (never the HR code) and no destination — the portal is self-only, so there is nothing for them to
-// open.
+// WHICH CHANNEL CARRIES WHAT — the owner's 2026-10-12 decision, which REPLACES the 2026-09-22
+// "a deduction notice never goes by email":
+//
+//   - EMAIL, to the employee only: the full detail. The amount in EGP, the reason in words, the
+//     number of days and the exact days charged. He was asked whether to keep the silent-figure
+//     rule after the Nahed Tarek release and chose "add email, with the amount and the reason" —
+//     a deduction is people's money and the paper trail is the point.
+//   - IN-APP and TELEGRAM, unchanged: NO amount, NO category. A bell badge and a phone lock
+//     screen are read by whoever is holding the phone, so they still say only that a deduction
+//     was recorded for a month, and point at the self-only Deductions page.
+//   - The MANAGER CC stays in-app + Telegram with no amount, no category and no destination —
+//     a manager cannot open a self-only portal, and his decision was about the employee's own
+//     email, not about widening who sees the figure.
+//
+// Managers are named by NAME, never by HR code, on every channel.
 //
 // Everything is INJECTABLE so the tests never touch production: the real senders would notify real
 // employees and burn the per-line idempotency key. `send`/`sendToRecipients` default to the live
 // orchestrator; the loaders default to the live org tree and employees table.
 
+import { formatCurrencyValue, formatPhoenixLongDate } from "@/lib/i18n/format";
 import type { SystemNotificationResult } from "@/lib/notifications/system";
 import {
   createSystemNotification,
@@ -39,7 +50,7 @@ import {
 } from "@/lib/phoenix-crm/scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import type { DeductionsCategory } from "./types.ts";
+import { deductionCategoryName, type DeductionsCategory } from "./types.ts";
 
 /** The employee portal page a pushed deduction links to. Self-only for every role. */
 const DEDUCTIONS_PORTAL_HREF = "/employee-portals/deductions";
@@ -113,14 +124,100 @@ async function loadDirectManagerHrIdDefault(employeeHrId: string): Promise<strin
   }
 }
 
-/** The minimal pushed-line shape the notice needs — never the amount. */
+/**
+ * The pushed line, as little of it as the notice needs.
+ *
+ * `amount`, `daysCount` and `dates` carry the detail the EMAIL names (owner, 2026-10-12). They are
+ * optional on purpose: a caller that genuinely cannot resolve the figure passes nothing and the
+ * email then omits that row rather than mailing a confident `0.00` — a deduction email stating the
+ * wrong amount is worse than one that leaves it to the portal.
+ */
 export type DeductionPushNoticeLine = {
   id: string;
   employeeHrId: string;
   employeeName: string | null;
   monthKey: string;
   category: DeductionsCategory;
+  /** EGP charged. Null/undefined → the email names no figure. */
+  amount?: number | null;
+  /** Days charged (0.5 for a half day). Null/undefined → the email names no day count. */
+  daysCount?: number | null;
+  /** The exact days charged, so the email can list them instead of only counting them. */
+  dates?: readonly string[];
 };
+
+/**
+ * How many days the email should say — "1 day", "3 days", and "half a day" for the 0.5 a
+ * `crm_half_day` line carries, because "0.5 days" in a letter about someone's pay reads like a
+ * system string rather than a sentence.
+ */
+function formatDaysCharged(daysCount: number): string {
+  const rounded = Math.round(daysCount * 100) / 100;
+  if (rounded === 0.5) return "half a day";
+  return `${rounded} ${rounded === 1 ? "day" : "days"}`;
+}
+
+/**
+ * The detail rows the EMAIL carries. Every row is omitted rather than guessed: an absent amount, an
+ * absent day count and an empty date list each simply do not appear.
+ *
+ * Capped at 10 named days with a remainder count — a month of unpunched days would otherwise fill
+ * the mail with a date list nobody reads, and the portal holds the full list.
+ */
+export function buildDeductionEmailMetrics(
+  line: DeductionPushNoticeLine,
+  monthLabel: string,
+): { label: string; value: string }[] {
+  const metrics: { label: string; value: string }[] = [
+    { label: "Employee", value: line.employeeName?.trim() || line.employeeHrId },
+    { label: "Month", value: monthLabel },
+    { label: "Reason", value: deductionCategoryName(line.category) },
+  ];
+
+  if (typeof line.daysCount === "number" && Number.isFinite(line.daysCount) && line.daysCount > 0) {
+    metrics.push({ label: "Days deducted", value: formatDaysCharged(line.daysCount) });
+  }
+  if (typeof line.amount === "number" && Number.isFinite(line.amount)) {
+    metrics.push({
+      label: "Amount deducted",
+      value: formatCurrencyValue(line.amount, null, { maximumFractionDigits: 2, minimumFractionDigits: 2 }),
+    });
+  }
+
+  const days = (line.dates ?? []).filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(String(day))).slice().sort();
+  if (days.length > 0) {
+    const shown = days.slice(0, 10).map((day) => formatPhoenixLongDate(day));
+    const more = days.length - shown.length;
+    metrics.push({
+      label: days.length === 1 ? "Day charged" : "Days charged",
+      value: more > 0 ? `${shown.join("; ")}; and ${more} more` : shown.join("; "),
+    });
+  }
+
+  return metrics;
+}
+
+/**
+ * The one sentence the employee's EMAIL opens with — amount and reason in words (owner, 2026-10-12).
+ * The in-app and Telegram copies deliberately say none of this.
+ */
+export function buildDeductionEmailSummary(line: DeductionPushNoticeLine, monthLabel: string): string {
+  const reason = deductionCategoryName(line.category);
+  const amount =
+    typeof line.amount === "number" && Number.isFinite(line.amount)
+      ? formatCurrencyValue(line.amount, null, { maximumFractionDigits: 2, minimumFractionDigits: 2 })
+      : null;
+  const days =
+    typeof line.daysCount === "number" && Number.isFinite(line.daysCount) && line.daysCount > 0
+      ? formatDaysCharged(line.daysCount)
+      : null;
+
+  const charged = [amount, days && `${days} deducted`].filter(Boolean).join(" · ");
+  const opening = charged
+    ? `A payroll deduction of ${charged} has been recorded on your account for ${monthLabel}.`
+    : `A payroll deduction has been recorded on your account for ${monthLabel}.`;
+  return `${opening} Reason: ${reason}. Open your Deductions page for the full record, and speak to your manager or HR if you believe this is wrong.`;
+}
 
 export type DeductionPushNotificationResult = {
   /** What to stamp on the line's notification_status. */
@@ -163,19 +260,35 @@ export async function notifyDeductionPushed(input: {
   const employeeName = line.employeeName?.trim() || line.employeeHrId;
 
   // The employee. recipient === subject, so the sensitive-module gate lets it through directly.
-  // No amount, no category — the figure is on their own Deductions page.
+  //
+  // `title`/`message` are what IN-APP and TELEGRAM render — still no amount and no category, because
+  // a bell badge and a lock screen are read by whoever holds the phone. The `email` block below
+  // overrides subject/summary/metrics for the EMAIL alone (buildChannelEmailInput prefers
+  // `input.email?.*` over the rendered channel content), which is where the owner's 2026-10-12
+  // decision puts the figure, the reason and the days.
   let employeeResult: SystemNotificationResult | null = null;
   try {
     employeeResult = await send({
       module: "deductions",
       eventType: "deduction_pushed",
-      channels: ["in_app", "telegram"],
+      channels: ["in_app", "email", "telegram"],
       recipientHrId: line.employeeHrId,
       subjectHrId: line.employeeHrId,
       actorId: input.actorHrId ?? null,
       actionUrl: DEDUCTIONS_PORTAL_HREF,
       title: "Payroll deduction recorded",
       message: `A payroll deduction has been recorded on your account for ${monthLabel}. Open your Deductions page to view the details.`,
+      email: {
+        ctaLabel: "Open my Deductions",
+        metrics: buildDeductionEmailMetrics(line, monthLabel),
+        subject: `Payroll deduction recorded — ${monthLabel}`,
+        summary: buildDeductionEmailSummary(line, monthLabel),
+        // Pinned: without it the module/type mapping frames the mail, and a template whose fixed
+        // body talks about something else would bury the amount this email exists to state.
+        templateKey: "general",
+        title: "Payroll deduction recorded",
+        tone: "warning",
+      },
       metadata: {
         idempotencyKey: `deduction-pushed:${line.id}`,
         monthKey: line.monthKey,
@@ -189,6 +302,10 @@ export async function notifyDeductionPushed(input: {
   // The manager chain. authorizedRecipient lets a non-subject recipient receive a deductions-module
   // notice (the module is sensitive; without it the orchestrator fails closed). No amount, no
   // destination — the manager cannot open a self-only portal, this is a heads-up.
+  //
+  // AND NO EMAIL, deliberately, after the 2026-10-12 change: there is no `email` block and no email
+  // channel here, so a manager's inbox cannot carry a colleague's deduction even if a template were
+  // added later. His decision widened what the EMPLOYEE's own email says, not who sees the figure.
   let ccHrIds: string[] = [];
   try {
     const orgIndex = await loadOrg();

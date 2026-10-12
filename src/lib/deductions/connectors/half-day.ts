@@ -48,6 +48,7 @@ import {
   type HalfDayVisitRow,
 } from "../half-day-rule.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
+import { loadProvenWorkedDays } from "../proven-worked-days.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory } from "../types.ts";
 import { DeductionsConnectorDegradedError, assertBaseSalaryMapLoaded } from "./health.ts";
 import { detectSuspectDatesFromCounts, getSuspectDatesForMonth } from "./crm.ts";
@@ -303,6 +304,8 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
       !gpsGapDates.has(day),
   );
 
+  const provenWorked = await loadProvenWorkedDays({ end, start });
+
   const drafts: DeductionsCandidateDraft[] = [];
   const notes: string[] = [];
   const unpriced: string[] = [];
@@ -331,6 +334,12 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
       if (lastDay && day > lastDay) continue;
       if (day < firstSignal) continue;
       const key = `${compact}:${day}`;
+      // PHOENIX CRM, WHETHER OR NOT THE TEAM WAS STARTED. On an unstarted team his Phoenix visits
+      // never reach the read door, so `byPersonDay` holds neither half of his day and the rule reads
+      // the worked half as uncovered. Suppressed here rather than fed into `cover` or `byPersonDay`,
+      // which also feed `firstSignalByPerson` — and a person whose only record is Phoenix must stay
+      // unjudged rather than become chargeable.
+      if (provenWorked.keys.has(key)) continue;
       const verdict = judgeHalfDay(byPersonDay.get(key), cover.get(key) ?? {});
       if (verdict.kind !== "half_day") continue;
       if (claimed.has(key)) {

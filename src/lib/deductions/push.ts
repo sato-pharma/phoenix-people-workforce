@@ -183,12 +183,24 @@ async function pushOneCandidate(input: {
 
   const row = (data ?? {}) as Record<string, unknown>;
   const lineId = String(row.id ?? "");
+  // The amount, the days and the dates come off the ROW the RPC wrote, never off the candidate the
+  // screen showed: the email states a figure the employee will be paid short, so it must be the
+  // figure that was actually frozen onto the line. `applied_value` is the day count only when the
+  // line is measured in days — a `loan` or `other` line is an amount and has no day count to name.
+  const unit = String(row.unit ?? candidate.unit);
+  const appliedAmount = Number(row.applied_amount);
+  const appliedValue = Number(row.applied_value);
   const noticeLine: DeductionPushNoticeLine = {
     id: lineId,
     employeeHrId: String(row.employee_hr_id ?? candidate.employeeHrId),
     employeeName: (row.employee_name as string | null) ?? candidate.employeeName ?? null,
     monthKey: String(row.month_key ?? candidate.monthKey),
     category: (row.category as DeductionsCategory) ?? candidate.category,
+    amount: Number.isFinite(appliedAmount) ? appliedAmount : null,
+    daysCount: unit === "days" && Number.isFinite(appliedValue) ? appliedValue : null,
+    dates: Array.isArray(row.dates)
+      ? (row.dates as unknown[]).filter((day): day is string => typeof day === "string")
+      : candidate.dates,
   };
 
   // Notification is best-effort by contract (the money is already committed);

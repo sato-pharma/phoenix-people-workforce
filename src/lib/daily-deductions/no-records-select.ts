@@ -59,6 +59,17 @@ export function selectNoRecordsDrafts(input: {
   jobTitleByCanonicalKey: ReadonlyMap<string, string | null>;
   /** Dates on which no employee at all has a punch — never charged. */
   outageDates: ReadonlySet<string>;
+  /**
+   * `${compact}:${date}` for every day another source PROVES was worked. Never charged.
+   *
+   * Two of them, and this engine sees neither. The Private Calendar reads field visits through the
+   * CRM door, whose Phoenix branches serve only a team the Super Admin has pressed Start on — so a
+   * person on an unstarted team who logged real visits arrives here as "No Activity Recorded". And
+   * nothing upstream reads the outstation trip tables, so a day spent travelling on company
+   * business, with no doctor to visit and no office device to punch, arrives the same way.
+   * See src/lib/deductions/proven-worked-days.ts.
+   */
+  provenWorkedDayKeys: ReadonlySet<string>;
   /** Base salary per employee, keyed by the COMPACT hr-id (hyphens stripped). */
   baseSalaryByCompact: ReadonlyMap<string, number | null>;
   month: number;
@@ -75,6 +86,8 @@ export function selectNoRecordsDrafts(input: {
 
     // The salary map is keyed by the COMPACT hr-id; the canonical key would miss every lookup.
     const compactKey = compactDeductionsHrId(day.employeeHrId);
+    // A day another source proves was worked is never charged. Keyed compact, like the salary map.
+    if (compactKey && input.provenWorkedDayKeys.has(`${compactKey}:${day.date}`)) continue;
     const baseSalary = compactKey ? (input.baseSalaryByCompact.get(compactKey) ?? null) : null;
     const estimatedAmount = calculateDeductionAmountFromBaseSalary({
       baseSalary,

@@ -13,6 +13,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertNoDuplicateDailyLines, normalizeDailyLine } from "./lines.ts";
+import { notifyDailyDeductionsReleased, type ReleaseNoticeOutcome } from "./notify-release.ts";
 import { assertDailyDeductionsPublishActor } from "./permissions.ts";
 import { assertIsoDate, cairoTodayIso, resolveDailyRange } from "./range.ts";
 import { mapDailyLineRow, mapDailyPublicationRow } from "./service.ts";
@@ -21,6 +22,8 @@ import type { DailyDeductionsLine, DailyDeductionsPublication } from "./types.ts
 export type ReleaseDailyResult = {
   publication: DailyDeductionsPublication;
   releasedCount: number;
+  /** One per released line: whether that employee (and their managers) were actually told. */
+  notifications: ReleaseNoticeOutcome[];
 };
 
 export async function releaseDailyLines(input: {
@@ -30,6 +33,8 @@ export async function releaseDailyLines(input: {
   actor: Pick<AccessContext, "role" | "hrId" | "loginId">;
   notes?: string | null;
   todayIso?: string;
+  /** Injected by the tests so a release never notifies a real employee. */
+  notifyReleased?: typeof notifyDailyDeductionsReleased;
 }): Promise<ReleaseDailyResult> {
   assertDailyDeductionsPublishActor(input.actor);
   const releasedBy = input.actor.hrId ?? input.actor.loginId ?? "unknown";
@@ -67,6 +72,19 @@ export async function releaseDailyLines(input: {
 
   const publication = mapDailyPublicationRow(data as Record<string, unknown>);
 
+  // THE EMPLOYEE IS TOLD. Until 2026-10-12 this path told nobody at all — the owner released a line
+  // and the person it charged heard nothing (see notify-release.ts). Best-effort by contract: the
+  // snapshot is already written, so a notification failure is reported, never thrown.
+  const notifications = await (input.notifyReleased ?? notifyDailyDeductionsReleased)({
+    actorHrId: input.actor.hrId ?? null,
+    pairs: lines.map((line) => ({
+      category: line.category,
+      employeeHrId: line.employeeHrId,
+      employeeHrIdCompact: line.employeeHrIdCompact,
+    })),
+    publicationId: publication.id,
+  });
+
   try {
     await writeAuditLog({
       actorLoginId: releasedBy,
@@ -82,14 +100,15 @@ export async function releaseDailyLines(input: {
           amount: line.amount,
         })),
         lineCount: publication.lineCount,
+        notifications,
       },
-      summary: `Daily deductions released: ${lines.length} line${lines.length === 1 ? "" : "s"} (${resolved.from} → ${resolved.effectiveTo})`,
+      summary: `Daily deductions released: ${lines.length} line${lines.length === 1 ? "" : "s"} (${resolved.from} → ${resolved.effectiveTo}), ${notifications.filter((notice) => notice.status === "sent").length} employee notice${notifications.filter((notice) => notice.status === "sent").length === 1 ? "" : "s"} sent`,
     });
   } catch {
     // writeAuditLog already swallows; defensive in case a custom logger throws.
   }
 
-  return { publication, releasedCount: lines.length };
+  return { notifications, publication, releasedCount: lines.length };
 }
 
 export type WithdrawDailyLineResult = {

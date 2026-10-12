@@ -7,6 +7,7 @@ import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule"
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { loadDoubleVisitPrivateCalendarItems } from "@/lib/double-visit-analytics/service";
 import { loadFieldVisitPrivateCalendarItems } from "@/lib/private-calendar/field-visits";
+import { loadPhoenixWorkEvidencePrivateCalendarItems } from "@/lib/private-calendar/phoenix-work-evidence-items";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
@@ -412,7 +413,7 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, plans, attendancePolicyRows, disputesByEmployee] =
+  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, plans, attendancePolicyRows, disputesByEmployee] =
     await Promise.all([
       loadAttendanceItems(scopeHrIds, start, end),
       loadVacationItems(scopeHrIds, start, end),
@@ -422,6 +423,9 @@ export async function getPrivateCalendarWorkspace(input: {
       // The CRM accounts ride along so the field-visit read can find each person's own visits by
       // account as well as by HR id (see loadFieldVisitPrivateCalendarItems).
       loadFieldVisitPrivateCalendarItems(scopeHrIds, start, end, scopeEmployees.map((employee) => employee.crmId)),
+      // The Phoenix CRM work the read door above does NOT carry — a team the Super Admin has not
+      // started yet. Without it those days render empty and read as "No Activity Recorded".
+      loadPhoenixWorkEvidencePrivateCalendarItems(scopeHrIds, start, end),
       // The approved weekly plan — the only evidence a manager-approved Travel, Admin or Meeting day
       // ever produces. It covers the day for those types only; see lib/private-calendar/plan-items.ts.
       loadPlanPrivateCalendarItems(scopeHrIds, start, end),
@@ -441,6 +445,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...holidays,
     ...doubleVisits.items,
     ...fieldVisits.items,
+    ...phoenixWork.items,
     ...plans.items,
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
@@ -463,7 +468,9 @@ export async function getPrivateCalendarWorkspace(input: {
     attendance: attendance.ready,
     double_visit: doubleVisits.ready,
     excuse: excuses.ready,
-    field_visit: fieldVisits.ready,
+    // One readiness flag, because both loaders answer the same question: is this employee's own
+    // field work readable? A degraded answer from either leaves the day under-covered.
+    field_visit: fieldVisits.ready && phoenixWork.ready,
     holiday: true,
     plan: plans.ready,
     vacation: vacations.ready,
@@ -571,7 +578,7 @@ export async function getCompanyNoActivityDays(input: {
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(input.start, input.end);
 
-  const [attendance, vacations, excuses, doubleVisits, fieldVisits, plans, attendancePolicyRows, ...holidaysByMonth] =
+  const [attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, plans, attendancePolicyRows, ...holidaysByMonth] =
     await Promise.all([
       loadAttendanceItems(hrIds, input.start, input.end),
       loadVacationItems(hrIds, input.start, input.end),
@@ -581,6 +588,12 @@ export async function getCompanyNoActivityDays(input: {
       // Only the double-visit feed was ever wired in, so 86% of field work was
       // invisible here — see loadFieldVisitPrivateCalendarItems.
       loadFieldVisitPrivateCalendarItems(hrIds, input.start, input.end),
+      // 🔴 AND THE PHOENIX CRM WORK THE DOOR ABOVE CANNOT SERVE. The door's Phoenix branches are
+      // inner-joined to the STARTED teams, so a rep on a team the Super Admin has not started yet
+      // arrives here with nothing at all and his worked day becomes a deduction candidate. Measured
+      // on production 2026-10-12: 121 Phoenix visits over 17 person-days, 7–12 October, each of those
+      // days carrying 0 iReports360 rows. See phoenix-work-evidence-items.ts.
+      loadPhoenixWorkEvidencePrivateCalendarItems(hrIds, input.start, input.end),
       // The SAME approved-plan source the calendar workspace reads. It has to be here too: this path
       // is what the Deductions module's No Records Activity connector adjudicates, so a day the
       // employee's own calendar shows as covered by an approved plan must not arrive there as a
@@ -597,6 +610,7 @@ export async function getCompanyNoActivityDays(input: {
     ...holidaysByMonth.flat(),
     ...doubleVisits.items,
     ...fieldVisits.items,
+    ...phoenixWork.items,
     ...plans.items,
   ], employees), employees);
 
@@ -675,12 +689,16 @@ export async function getPrivateCalendarDayEvidence(
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(start, end);
 
-  const [attendance, vacations, excuses, doubleVisits, fieldVisits, plans, ...holidaysByMonth] = await Promise.all([
+  const [attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, plans, ...holidaysByMonth] = await Promise.all([
     loadAttendanceItems(hrIds, start, end),
     loadVacationItems(hrIds, start, end),
     loadExcuseItems(hrIds, start, end),
     loadDoubleVisitPrivateCalendarItems(hrIds, start, end),
     loadFieldVisitPrivateCalendarItems(hrIds, start, end, employees.map((employee) => employee.crmId)),
+    // Load-bearing on THIS pass above all: this is what a reviewer reads for a disputed day, and
+    // without it a day the rep spent logging Phoenix CRM visits renders as "Phoenix has nothing for
+    // this day" — the confident blank that makes a reviewer reject a true claim.
+    loadPhoenixWorkEvidencePrivateCalendarItems(hrIds, start, end),
     loadPlanPrivateCalendarItems(hrIds, start, end),
     ...months.map(({ year, month }) => loadHolidayItems(year, month, start, end)),
   ]);
@@ -690,7 +708,7 @@ export async function getPrivateCalendarDayEvidence(
   if (!vacations.ready) unreadableSources.push("vacation");
   if (!excuses.ready) unreadableSources.push("excuse");
   if (!doubleVisits.ready) unreadableSources.push("double_visit");
-  if (!fieldVisits.ready) unreadableSources.push("field_visit");
+  if (!fieldVisits.ready || !phoenixWork.ready) unreadableSources.push("field_visit");
   if (!plans.ready) unreadableSources.push("plan");
 
   // The same two passes the workspace runs: employee metadata on, then the field-visit suppression
@@ -704,6 +722,7 @@ export async function getPrivateCalendarDayEvidence(
         ...excuses.items,
         ...doubleVisits.items,
         ...fieldVisits.items,
+        ...phoenixWork.items,
         ...plans.items,
       ],
       directory,

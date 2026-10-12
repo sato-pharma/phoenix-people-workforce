@@ -36,6 +36,7 @@ import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
+import { loadProvenWorkedDays, provenWorkedDayReason, type ProvenWorkedDays } from "../proven-worked-days.ts";
 import type { DeductionsCandidateDraft, DeductionsSeverity } from "../types.ts";
 
 function lastDayOfMonth(year: number, month: number): number {
@@ -243,6 +244,67 @@ export function excludeSuspectDates(
       excludedSuspectDates: hit,
       suspectDateReason:
         "Company-wide CRM visit volume was anomalously low on these dates (likely a sync gap) — excluded from this employee's counted days pending data-quality review.",
+    },
+  };
+}
+
+/**
+ * Removes days ANOTHER SOURCE PROVES WERE WORKED from a candidate's counted days, re-pricing the
+ * survivors exactly as {@link excludeSuspectDates} does — the same weighted-day rule, the same
+ * raw-count-stays-raw split between the evidence and the charge.
+ *
+ * WHY THIS IS NEEDED AT ALL — two doors this engine cannot see through. `crm_visits_unified`'s
+ * Phoenix branches are inner-joined to the STARTED teams, so the compliance engine that produces
+ * these candidates cannot see a rep whose team the Super Admin has not pressed Start on; and nothing
+ * upstream reads the outstation trip tables, so a day spent travelling on company business arrives
+ * as a day with nothing recorded. Measured on production 2026-10-12: 121 real Phoenix visits by 6
+ * Medical Reps over 17 person-days, every one carrying 0 iReports360 rows, 14 days and 7,193.54 EGP
+ * of it past the zero-signal guard; and 62 chargeable trip-days worth 69,667.47 EGP across 18 people
+ * from 1 September. Nothing was charged — this is what keeps it that way. See
+ * ../proven-worked-days.ts for why this only ever subtracts.
+ *
+ * Returns null when nothing is left to charge. A draft carrying no per-day `dates` at all is
+ * returned untouched: there is nothing to match a day against, and inventing one would be a guess
+ * about someone's pay.
+ */
+export function excludeProvenWorkedDays(
+  draft: DeductionsCandidateDraft,
+  provenWorked: ProvenWorkedDays,
+  baseSalaryByCompact: Map<string, number>,
+  jobTitle: string | null,
+): DeductionsCandidateDraft | null {
+  const compactKey = compactDeductionsHrId(draft.employeeHrId);
+  if (!compactKey || draft.dates.length === 0) return draft;
+  const workedOn = (date: string) => provenWorked.keys.has(`${compactKey}:${date}`);
+
+  const hit = draft.dates.filter(workedOn);
+  if (hit.length === 0) return draft;
+  const chargeableDates = draft.dates.filter((date) => !workedOn(date));
+  if (chargeableDates.length === 0) return null;
+
+  const baseSalary = baseSalaryByCompact.get(compactKey) ?? null;
+  const weightedDays = sumFieldWorkforceDeductionDayWeights(chargeableDates, jobTitle);
+  const estimatedAmount = calculateDeductionAmountFromBaseSalary({
+    baseSalary,
+    deductionDays: weightedDays,
+    month: draft.month,
+    year: draft.year,
+  });
+
+  return {
+    ...draft,
+    rawValue: chargeableDates.length,
+    estimatedAmount,
+    calculationStatus: estimatedAmount != null ? "calculated" : "requires_review",
+    dates: chargeableDates,
+    evidence: {
+      ...draft.evidence,
+      excludedProvenWorkedDays: hit,
+      provenWorkedDayEvidence: hit.map(
+        (date) => `${date}: ${provenWorkedDayReason(provenWorked, `${compactKey}:${date}`) ?? "Proven work"}`,
+      ),
+      provenWorkedDayReason:
+        "Another source proves the employee worked on these days — Phoenix CRM visits, or an outstation trip. They are not charged, whether or not the team has been started on the CRM hub.",
     },
   };
 }
@@ -781,7 +843,7 @@ export async function collectCrmCandidates(input: {
   const periodStart = `${input.year}-${monthStr}-01`;
   const periodEnd = `${input.year}-${monthStr}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;
 
-  const [leaverRoster, baseSalaryByCompact, suspectDates, monthVisits] = await Promise.all([
+  const [leaverRoster, baseSalaryByCompact, suspectDates, monthVisits, provenWorked] = await Promise.all([
     loadLeaversInPeriod(input.month, input.year),
     getBaseSalaryMap(),
     // Throws on a CRM outage rather than silently returning "no anomalies" —
@@ -804,6 +866,12 @@ export async function collectCrmCandidates(input: {
       dateTo: periodEnd,
       columns: LEAVER_VISIT_COLUMNS,
     }),
+    // EVERY SOURCE THAT PROVES A DAY WAS WORKED. Everything above reads the CRM door, which serves a
+    // team's Phoenix rows only from the Saturday the Super Admin started it — so the compliance
+    // engine behind these candidates is blind to an unstarted team's real work — and reads the
+    // outstation trip tables not at all. Throws on a failed read, like every other fail-closed load
+    // in this connector: swallowing it would charge a day someone provably worked.
+    loadProvenWorkedDays({ end: periodEnd, start: periodStart }),
   ]);
   // Fail closed: without salaries every amount resolves to null, and the old
   // publish path turned that into a 0.00 EGP deduction that looked successful.
@@ -866,32 +934,44 @@ export async function collectCrmCandidates(input: {
     monthVisits,
   });
 
-  const collected: DeductionsCandidateDraft[] = [];
-  if (suspectDates.size === 0) {
-    collected.push(...leaverDrafts, ...continuingDrafts);
-  } else {
-    // Suspect-date exclusion re-prices the survivors, so it needs the SAME roster job titles the
-    // emit path weights with (NOT recommendation.roleName — see the note at the continuing-employee
-    // weighting). A null title reads as "Saturday off" and would weight a surviving Saturday to
-    // zero, so this read FAILS CLOSED exactly as that one does. Only needed when something is
-    // actually excluded, which is why it is read here rather than up front.
-    const titleByHrIdKey = new Map<string, string | null>();
-    {
-      const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,job_title");
-      if (error) {
-        throw new Error(
-          `Failed to load job titles for the suspect-date re-pricing: ${error.message}. ` +
-            "Without them a surviving Saturday weights to zero and the candidate under-charges.",
-        );
-      }
-      for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null }>) {
-        const key = canonicalHrIdKey(row.hr_id);
-        if (key) titleByHrIdKey.set(key, row.job_title);
-      }
+  // Both re-pricings below need the SAME roster job titles the emit path weights with (NOT
+  // recommendation.roleName — see the note at the continuing-employee weighting). A null title reads
+  // as "Saturday off" and would weight a surviving Saturday to zero, so this read FAILS CLOSED.
+  //
+  // Read unconditionally now, where the suspect-date branch used to read it only when something was
+  // excluded: the Phoenix work-evidence exclusion needs it on every run. One read, two uses.
+  const titleByHrIdKey = new Map<string, string | null>();
+  {
+    const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,job_title");
+    if (error) {
+      throw new Error(
+        `Failed to load job titles for the candidate re-pricing: ${error.message}. ` +
+          "Without them a surviving Saturday weights to zero and the candidate under-charges.",
+      );
     }
-    for (const draft of [...leaverDrafts, ...continuingDrafts]) {
-      const jobTitle = titleByHrIdKey.get(canonicalHrIdKey(draft.employeeHrId) ?? "") ?? null;
-      const result = excludeSuspectDates(draft, suspectDates, baseSalaryByCompact, jobTitle);
+    for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null }>) {
+      const key = canonicalHrIdKey(row.hr_id);
+      if (key) titleByHrIdKey.set(key, row.job_title);
+    }
+  }
+  const jobTitleOf = (draft: DeductionsCandidateDraft) =>
+    titleByHrIdKey.get(canonicalHrIdKey(draft.employeeHrId) ?? "") ?? null;
+
+  // PROVEN WORK FIRST, at the ONE exit both paths pass through — the leaver path and the
+  // continuing-employee path alike, so neither can be left behind by a future third branch. A day
+  // Phoenix CRM or an outstation trip proves was worked is removed before anything else is priced.
+  const collected: DeductionsCandidateDraft[] = [];
+  const afterProven: DeductionsCandidateDraft[] = [];
+  for (const draft of [...leaverDrafts, ...continuingDrafts]) {
+    const result = excludeProvenWorkedDays(draft, provenWorked, baseSalaryByCompact, jobTitleOf(draft));
+    if (result) afterProven.push(result);
+  }
+
+  if (suspectDates.size === 0) {
+    collected.push(...afterProven);
+  } else {
+    for (const draft of afterProven) {
+      const result = excludeSuspectDates(draft, suspectDates, baseSalaryByCompact, jobTitleOf(draft));
       if (result) collected.push(result);
     }
   }

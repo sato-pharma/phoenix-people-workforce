@@ -33,6 +33,7 @@ import {
   ledgerRowStillClaimsItsDaysBySource,
   type LedgerClaimRow,
 } from "../conflict.ts";
+import { loadProvenWorkedDays } from "../proven-worked-days.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { getHolidayBridgeDaysForMonth } from "../service.ts";
 import type { DeductionsCandidateDraft } from "../types.ts";
@@ -265,6 +266,11 @@ export async function collectHolidayBridgeCandidates(input: {
 
   if (bridgeDays.length === 0) return [];
 
+  // The bridge days' own span — the only window the Phoenix work-evidence read needs. A bridge day
+  // can sit in the previous or next month (the day before a 1st-of-the-month holiday), so the month
+  // is the wrong bound.
+  const bridgeDateSpan = [...new Set(bridgeDays.map((bridge) => bridge.date))].sort();
+
   const [roster, alreadyDeducted, baseSalaryByCompact] = await Promise.all([
     loadFieldForceRoster(),
     loadAlreadyDeductedDays(monthKey),
@@ -274,9 +280,14 @@ export async function collectHolidayBridgeCandidates(input: {
   // like "nobody qualifies" — the same failure this guard exists for elsewhere.
   assertBaseSalaryMapLoaded("Holiday bridging connector", baseSalaryByCompact);
 
-  const [onLeave, noRecord] = await Promise.all([
+  const [onLeave, noRecord, provenWorked] = await Promise.all([
     loadVacationOnBridgeDays(bridgeDays),
     loadNoRecordOnBridgeDays({ bridgeDays, roster, monthKey }),
+    // PHOENIX CRM, WHETHER OR NOT THE TEAM WAS STARTED — a rep on an unstarted team logs real
+    // visits that the read door does not serve, so `loadNoRecordOnBridgeDays` cannot see them.
+    // Read below against BOTH causes, not folded into `withActivity`: that set feeds
+    // `hasAnySignalThisMonth`, and feeding it would turn a mapping-gap skip into a charge.
+    loadProvenWorkedDays({ end: bridgeDateSpan[bridgeDateSpan.length - 1]!, start: bridgeDateSpan[0]! }),
   ]);
 
   // One candidate per employee-DAY, not per holiday edge. A working day can sit
@@ -296,6 +307,11 @@ export async function collectHolidayBridgeCandidates(input: {
       // The dedup rule: a day another category already charges is never charged
       // twice. Checked BEFORE anything else so the cheapest exit wins.
       if (alreadyDeducted.has(key)) continue;
+
+      // A day Phoenix CRM proves he worked is never charged — against BOTH causes. A rep who logged
+      // real visits on a bridge day did not bridge the holiday, whatever a leave row says about it,
+      // and charging a day someone provably worked is the error this suppressor exists for.
+      if (provenWorked.keys.has(key)) continue;
 
       const hasLeave = onLeave.has(key);
       const hasNoRecord = noRecord.has(key);
