@@ -21,6 +21,7 @@ import {
   phoenixSessionTimeoutReason,
 } from "@/lib/auth/client-session";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { currentCairoTimeHM } from "@/lib/i18n/format";
 
 const rememberedLoginIdKey = "phoenix_remembered_login_id";
 const loginIdRequiredMessage = "Enter your HR ID, login ID or Sato email.";
@@ -64,7 +65,10 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
   const [showPassword, setShowPassword] = useState(false);
 
   const greeting = useMemo(() => {
-    const hour = new Date().getHours();
+    // The Cairo hour, never the runtime's own local hour: /login is server-rendered, the server runs in
+    // UTC and the browser in Cairo, so the raw clock names a different greeting on each side for three
+    // hours at every boundary and React throws the whole tree away with a hydration mismatch.
+    const hour = currentCairoTimeHM().hours;
 
     if (hour >= 5 && hour < 12) {
       return "Good morning. Ready to rise?";

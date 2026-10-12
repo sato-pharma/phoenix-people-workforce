@@ -87,4 +87,19 @@ export function runLoginPageServerRenderTests() {
     false,
     "app/login/loading.tsx must not exist — any boundary over /login defers the form behind a client-side reveal.",
   );
+
+  // 6) The form is server-rendered, so every value computed from the CLOCK must agree on both sides.
+  //    The server runs in UTC and the browser in Cairo; `new Date().getHours()` named "Good afternoon"
+  //    on one and "Good evening" on the other for three hours at each boundary, and React discarded
+  //    the whole tree with a hydration mismatch (owner's console, 2026-10-12).
+  assert.doesNotMatch(
+    premiumLoginSource,
+    /new Date\(\)\.getHours\(\)/,
+    "the login greeting must not read the runtime's own clock — server (UTC) and browser (Cairo) disagree, which is a hydration mismatch.",
+  );
+  assert.match(
+    premiumLoginSource,
+    /currentCairoTimeHM\(\)\.hours/,
+    "the login greeting must be computed from the Cairo hour so the server HTML and the client agree.",
+  );
 }
