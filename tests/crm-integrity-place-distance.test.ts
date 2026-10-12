@@ -67,20 +67,31 @@ function runLoaderTests() {
 }
 
 function runRenderTests() {
-  const page = read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx");
+  // 🔴 THE `Position` COMPONENT MOVED TO THE CLIENT VIEW ON 2026-10-13 and this pin followed it. The
+  // page still reads the board and gates it; the three case lists, and every figure in them, are
+  // rendered by `integrity-board-view.tsx`.
+  const view = read("../src/components/crm-integrity/integrity-board-view.tsx");
 
   assert.ok(
-    page.includes("entry.placeDistanceMeters !== null ?"),
+    view.includes("entry.placeDistanceMeters !== null ?"),
     "unknown must render as ABSENT — never as 0 m, which is a rep standing on the pin",
   );
   assert.ok(
-    page.includes("from the place"),
+    view.includes("from the place"),
     "the figure must say what it is measured against",
   );
   // Metres below a kilometre, kilometres above: "1483 m from the place" is not a readable number.
   assert.ok(
-    page.includes("m from the place") && page.includes("km from the place"),
+    view.includes("m from the place") && view.includes("km from the place"),
     "both scales must be handled",
+  );
+  // 🔴 AND THE DISTANCE IS STILL READ, NEVER COMPUTED, ON THE SCREEN SIDE TOO. The view measures the
+  // metres BETWEEN a case's own readings (that is what the map is for), but how far a VISIT fell from
+  // the place it names is the visit row's own `distance_meters` — the same figure the
+  // place-vs-actual report prints, so the two can never disagree about one visit.
+  assert.ok(
+    !/distanceMeters\(\s*\{[^}]*placeLat/.test(view),
+    "the board must not re-measure a visit's distance from its place — that number is written at capture",
   );
 }
 

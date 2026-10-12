@@ -22,6 +22,17 @@ export const INTEGRITY_NOTE_LIMIT = 500;
 export const INTEGRITY_NOTE_REQUIRED = "Write why this case is settled — it stays on the record.";
 
 /**
+ * How many cases one bulk settle may carry. The board sends them in runs of this size and the route
+ * refuses a longer one.
+ *
+ * It is a real limit rather than a round number: each case is its own `.update()`, because
+ * `settled_flags` is that row's own flags and a single statement over an `.in()` would stamp one
+ * case's flags onto another. 200 updates is a few seconds; a whole 5,000-row board in one request is
+ * a gateway timeout that leaves nobody knowing which half was written.
+ */
+export const INTEGRITY_BULK_SETTLE_CAP = 200;
+
+/**
  * Why a case was settled, and what it was settled ON.
  *
  * `flagsThen` is not an audit nicety: it is compared to the row's current flags on every read, and a

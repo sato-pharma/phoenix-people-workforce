@@ -49,8 +49,11 @@ export function runPhoenixCrmCardTableParityTests() {
     assert.equal(count(reports, "row.placeLat.toFixed(5)"), 2, "the place's point is printed by the Locations card AND its table");
     assert.equal(count(reports, "` (accuracy ${countText(Math.round(row.accuracyMeters))} m)`"), 2, "and so is the reading's accuracy");
 
-    const integrity = read("app/(admin)/admin/phoenix-crm/integrity/page.tsx");
-    assert.equal(count(integrity, "<Position entry={entry} />"), 2, "the integrity board's Position column is in its phone card too, from one component");
+    // The integrity board's three case lists became a client component on 2026-10-13 (the filter
+    // bar, the fold, the stories and the bulk settle are all interaction); `Position` went with them,
+    // and so did this pin. The rule is unchanged: ONE component, in the table and in the card.
+    const integrity = read("src/components/crm-integrity/integrity-board-view.tsx");
+    assert.equal(count(integrity, "<Position entry={row.entry} />"), 2, "the integrity board's Position column is in its phone card too, from one component");
 
     const team = read(`${CRM_DIR}team-tab.tsx`);
     assert.ok(

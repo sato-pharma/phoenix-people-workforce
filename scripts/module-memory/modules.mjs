@@ -251,6 +251,12 @@ export const MODULES = [
       "src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts",
       "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,silent-detectors,touch-trail,touch-trail-reader}.ts",
       "src/components/phoenix-crm/touch-trail-{board,collector}.tsx",
+      // The location-integrity board's own pure modules and its view (2026-10-13). They sit under
+      // `crm-integrity/`, which the `crm` module owns as a BROAD glob — so these narrow globs load
+      // this file IN ADDITION to that one, which is the intended way round: the rules a session needs
+      // when it touches the board are the detector rules, not the iReports360 analytics ones.
+      "src/lib/crm-integrity/integrity-{board-filters,board-rows,case-map,case-story,settle-presets}.ts",
+      "src/components/crm-integrity/integrity-{board-view,settle}.tsx",
       "app/**/phoenix-crm/{integrity,duplicates,refused-readings}/**",
       "app/**/field-crm/touch-trail/**",
       "app/api/phoenix-crm/touch-trail/**",

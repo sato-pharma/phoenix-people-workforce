@@ -320,6 +320,14 @@ export type AuditEntityType =
   // access story, and a file naming individual reps and their own work leaves the building. No
   // migration — audit_logs has no CHECK on entity_type.
   | "phoenix_crm_reports_export"
+  // Who downloaded the location-integrity board, and how much of it (2026-10-13). ITS OWN TYPE and
+  // not folded into the reports pack above, because what leaves the building here is different in
+  // kind: the evidence a named rep's capture was questioned, which Phoenix CRM never shows that rep.
+  // "Who took that, and how many cases of it" has to stay answerable without reading every export
+  // row ever written. Best-effort audit, as the reports pack is — a download is a read, and a logging
+  // failure must not refuse a reader the board he is allowed on. No migration: audit_logs has no
+  // CHECK on entity_type.
+  | "phoenix_crm_integrity_export"
   // The SFE's customer-list template, both ways, with the territory as the entity id (2026-10-02). The
   // download carries a territory's customers and their grades out of the building; the import writes a
   // whole list at once, with the grades the SFE set, which on the ordinary path is the district
