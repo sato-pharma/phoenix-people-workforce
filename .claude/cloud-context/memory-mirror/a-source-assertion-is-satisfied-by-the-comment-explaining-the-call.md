@@ -1,6 +1,6 @@
 ---
 name: a-source-assertion-is-satisfied-by-the-comment-explaining-the-call
-description: "A test asserting source `includes(\"someCall()\")` is passed by the COMMENT that documents the call, so deleting the call stays green — assert against comment-stripped source, assert the selector rather than the key, and join `\" + \"` seams, because a phrase split across one hides from a negative assertion even after whitespace is collapsed; a QUOTED-ONLY positive check (`includes('\"' + name + '\"')`) is blind to the same name inside a backtick template, so measure whether a bare substring is safe and use that; and SLICING a region is not a defence by itself — a window reaching a second call site of the same function passed while the first was deleted, so end the slice on a marker the behaviour must produce."
+description: "A test asserting source `includes(\"someCall()\")` is passed by the COMMENT that documents the call, so deleting the call stays green — assert against comment-stripped source, assert the selector rather than the key, and join `\" + \"` seams, because a phrase split across one hides from a negative assertion even after whitespace is collapsed; a QUOTED-ONLY positive check (`includes('\"' + name + '\"')`) is blind to the same name inside a backtick template, so measure whether a bare substring is safe and use that; a needle that is a SUFFIX of a longer identifier beside it (`product_manager_hr_id` ends in `manager_hr_id`, so `includes(\"manager_hr_id\")` and `[^)]*manager_hr_id` both stay true with that column deleted — boundary each side, left one optional); and SLICING a region is not a defence by itself — a window reaching a second call site of the same function passed while the first was deleted, so end the slice on a marker the behaviour must produce."
 metadata:
   node_type: memory
   type: project
@@ -107,10 +107,35 @@ absence fires there instead of silently widening the slice. 🔴 **So after slic
 question of the region that you asked of the file: what else in HERE satisfies this?** And prefer an
 end marker that the behaviour itself must produce.
 
+🔴 **A SEVENTH, AND IT NEEDS NO COMMENT, NO SEAM AND NO SLICE: THE NEEDLE IS A SUFFIX OF A LONGER
+IDENTIFIER STANDING RIGHT BESIDE IT.** Measured 2026-10-12 pinning that the off-plan board and the
+decision path each load the companion columns in `src/lib/phoenix-crm/server/unplanned.ts`. The
+three columns are `manager_hr_id`, `senior_hr_id` and `product_manager_hr_id` — and
+**`"product_manager_hr_id"` ENDS IN `"manager_hr_id"`**, so
+
+```ts
+assert.ok(columns.includes(column), `the read must load ${column}`)
+```
+
+stayed GREEN with the manager's own column deleted from the select. The same hole sat in the
+decision path's regex, `visit:phoenix_crm_visits!visit_id\([^)]*${column}`, where `[^)]*` walks
+happily up to the product manager's column. Nothing was commented, nothing was concatenated, and
+the needle was the exact column name — it is simply **not a token** unless you say so. One of three
+assertions in a loop was vacuous and the other two were sound, which is why it reads as fine.
+
+🔴 **And the obvious fix over-corrects: a boundary on the LEFT must be optional.** Demanding a
+separator — `([^)]*(,|\s))` — made the assertion fail on CORRECT code, because the first column sits
+immediately after the `(` that the pattern has already consumed. `(^|[^a-z_])` for a bare list, and
+`\(([^)]*(,|\s))?` after an opening paren, is what fired on the break and passed on the fix. **A
+column name is matched with a boundary on each side, and the left one is optional** — and whenever
+a group of columns shares a suffix (`*_hr_id` here, and `*_decided_at`, `*_decided_by_hr_id` in the
+same select), ask the file which of them contains which.
+
 **So the family is: comment, object key, conditional guard — three things that hold the string while
 the behaviour is gone — plus the concatenation seam, which hides the string while the behaviour is
 still there, plus the quoting that narrows the needle to one of four syntaxes, plus a slice whose
-window reaches a second call site.** Ask what ELSE in the file contains this text, and whether the text is even contiguous,
+window reaches a second call site, plus a needle that is a SUFFIX of a longer identifier in the
+same file.** Ask what ELSE in the file contains this text, and whether the text is even contiguous,
 before trusting any source assertion in either direction.
 
 Related: [[a-break-that-passes-may-be-rescued-not-correct]] is the same lesson one level up — a
