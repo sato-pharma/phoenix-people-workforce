@@ -215,3 +215,45 @@ is a look-around too, it adds one short reminder to send the next reads together
   1 MB of the transcript and parses only the assistant and prompt lines), and at most six reminders of
   about 450 characters per session.
 - **Stand-down:** `PHX_BATCH_NUDGE_OFF=1`. Pinned by `tests/batch-nudge.test.ts`.
+
+## comment-strip-guard — the ratchet's verdict, at the write instead of in CI
+
+Added 2026-10-12, at the owner's instruction (*"fix the comment-strip ratchet so new test files use
+the shared stripper"*), after four of that day's twenty-five red PR runs were one zero-tolerance gate
+firing on a newly added test file.
+
+`tests/comment-strip-ratchet.test.ts` refuses every hand-rolled line-wise comment strip under
+`tests/` — a `.filter` on a comment prefix, an `if (line.startsWith("//")) continue`, a whole-line
+`.replace` — because a line judged by how it STARTS cannot know a block comment is already open. The
+rule is right; the **timing** was the cost. It is the last assertion of a 977-test shard inside the
+required `validate` job: on PR 5700 (2026-10-09) it named its offender after **5m34s** with `checks`
+already green, so the run reads healthy until the final second. Each firing is a full CI round that
+ends in a one-line import.
+
+`.claude/hooks/comment-strip-guard.mjs` is a PreToolUse hook on Write, Edit and MultiEdit. It reads
+the text the call would **introduce** — `content`, `new_string`, each MultiEdit `new_string` — and
+when that text carries a shape, it denies the call and hands over the remedy:
+
+    import { stripComments } from "./support/comment-strip.ts";
+
+- **Why it denies rather than warns**, unlike `test-registration-check.mjs` beside it: registration is
+  legitimately a two-step (write the test, register it one edit later), so its first warning is a
+  nudge. A hand-rolled strip is wrong the moment it is written, the budget is 0 and the grandfather
+  list is empty, so no later edit makes it acceptable. It refuses an **edit**, never a push — the
+  owner's 2026-10-04 "keep the pre-push test as a rule, no guard" is about the test SUITE, and this
+  hook neither runs nor waits for one.
+- **Only the text being introduced**, never the file on disk: a pre-existing site elsewhere must not
+  block an unrelated edit, and an edit that REMOVES a strip has to pass, or the guard would block its
+  own remedy.
+- **Scope is exactly the sweep's:** every `.ts` file under `tests/`, at any depth, minus the three
+  sanctioned ones (the stripper, the ratchet, this guard's test — their fixtures ARE the shapes).
+  `.tsx` is deliberately out, because the sweep reads `.ts` only and a hook stricter than the check it
+  fronts for refuses work CI accepts.
+- **One detector, not two copies.** It lives in `.claude/hooks/lib/comment-strip-shapes.mjs`; the
+  ratchet imports it and defines none of its own, and `tests/comment-strip-guard.test.ts` fails if
+  either side grows a copy back. A hook that drifts into refusing what CI accepts — or into silence
+  about what CI rejects — is worse than no hook. A fourth file that must spell the shape out joins
+  `SANCTIONED_TEST_FILES` in that module, never a list inside the hook.
+- **Stand-down:** `PHX_COMMENT_STRIP_OFF=1`. Fails open on any error, like every guard here. Its own
+  `--selftest` runs 36 cases; `tests/comment-strip-guard.test.ts` drives the hook as a subprocess over
+  every shape and every measured negative, pins its wiring, and runs that selftest.

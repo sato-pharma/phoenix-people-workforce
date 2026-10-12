@@ -2123,6 +2123,7 @@ import { runCloudMirrorDriftTests } from "./cloud-mirror-drift.test.ts";
 import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-gate.test.ts";
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
+import { runCommentStripGuardTests } from "./comment-strip-guard.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runDeltaLandedVerdictTests, runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
@@ -7988,6 +7989,7 @@ await runTest(
   runWorktreeRemoveHeadShaGateTests,
 );
 await runTest("no source-pinning test strips comments unsafely — a regex that eats the code it pins, or a line filter blind to a comment block", runCommentStripRatchetTests);
+await runTest("a new test file that strips comments by hand is refused at the Write, by the same detector the ratchet uses", runCommentStripGuardTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
 await runTest(
