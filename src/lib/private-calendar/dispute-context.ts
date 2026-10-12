@@ -21,8 +21,12 @@ import { getPrivateCalendarDayEvidence, type PrivateCalendarDayEvidence } from "
 // Nothing here judges. It is the record beside the claim; the Accept/Reject is still his.
 
 export type DisputeDayFact = {
-  /** Only on a `plan` item: the planned activity is itself the day's proof of work (Travel, Admin, Meeting…). */
-  coversTheDay: boolean;
+  /**
+   * Only on a `plan` item: Phoenix records that kind of planned activity nowhere else (Travel,
+   * Admin, Meeting…), so there is nothing else to look for beside it. 🔴 It does NOT settle the day
+   * — an approved plan is never coverage (owner, 2026-10-12).
+   */
+  plannedWithNoOtherRecord: boolean;
   detail: string | null;
   severity: PrivateCalendarSeverity;
   source: PrivateCalendarSource;
@@ -114,7 +118,7 @@ export async function attachDisputeContext<T extends PrivateCalendarDataDispute>
       context: {
         areaName: employee?.areaName ?? null,
         dayFacts: (day?.items ?? []).map((item) => ({
-          coversTheDay: item.plannedActivityCoversTheDay === true,
+          plannedWithNoOtherRecord: item.plannedActivityIsRecordedNowhereElse === true,
           // One line, the richest the item carries — the chip's own stacked lines are for a 1-inch
           // grid cell, and this row has the width for the real sentence.
           detail: item.detailLines[0] ?? item.description ?? null,

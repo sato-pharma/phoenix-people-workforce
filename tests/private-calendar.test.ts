@@ -207,7 +207,10 @@ export async function runPrivateCalendarTests() {
   assert.equal(excuse.sourceTable, "v2_excuse_requests");
 
   // Planning Calendar ("plan") activity is not a private-calendar source at all —
-  // it must never suppress or otherwise affect the "No Activity Recorded" check.
+  // it must never suppress or otherwise affect the "No Activity Recorded" check. The
+  // description says so in as many words since the owner's ruling of 2026-10-12 (*"NEVER
+  // COUNT WEEKLY PLAN AS COVERAGE WHAT IF HE PLANNED BUT DIDNT GO WORK?"*), because between
+  // 7 and 12 October an approved plan item of seven types DID clear this day.
   // An employee with zero real items (no punch, no vacation, no excuse, no CRM
   // double visit) on an expected workday flags exactly once, with a description
   // that spells out exactly which sources were checked and came up empty.
@@ -226,7 +229,7 @@ export async function runPrivateCalendarTests() {
   );
   assert.equal(
     noItemsExceptions[0]?.description,
-    "Employee Two: no CRM field or double visit, no fingerprint attendance, no approved vacation, no approved excuse, and no approved plan activity that stands on its own recorded for this workday.",
+    "Employee Two: no CRM field or double visit, no fingerprint attendance, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day (owner, 2026-10-12).",
     "the description must spell out exactly which sources were checked and came up empty",
   );
 

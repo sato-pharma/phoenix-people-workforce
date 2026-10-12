@@ -72,13 +72,14 @@ export type PrivateCalendarItem = {
   exceptionFlags: string[];
   id: string;
   managerName: string | null;
-  // Only on a `plan` item: whether this planned activity is itself the day's proof of work, because
-  // Phoenix records that kind of day nowhere else (Travel, Admin, Meeting, Training, Event, Other).
-  // False on a planned Field, Double Visit, Office, Vacation, Excuse or National Vacation day, where
-  // the CRM, the fingerprint, the leave request or the holiday calendar is the record and the plan
-  // only says the day was expected — see lib/private-calendar/plan-items.ts. The flag is decided at
-  // read time and carried on the item so the exceptions engine below stays free of a database import.
-  plannedActivityCoversTheDay?: boolean;
+  // Only on a `plan` item: whether Phoenix records that kind of day nowhere else (Travel, Admin,
+  // Meeting, Training, Event, Other), so somebody comparing the plan against the actual should expect
+  // to find nothing beside it. False on a planned Field, Double Visit, Office, Vacation, Excuse or
+  // National Vacation day, where the CRM, the fingerprint, the leave request or the holiday calendar
+  // is the record — see lib/private-calendar/plan-items.ts. 🔴 A DISPLAY fact only: a weekly plan
+  // excuses no day, whatever its title (owner, 2026-10-12). The flag is decided at read time and
+  // carried on the item so the exceptions engine below stays free of a database import.
+  plannedActivityIsRecordedNowhereElse?: boolean;
   reportDetails?: PrivateCalendarReportDetails | null;
   severity: PrivateCalendarSeverity;
   source: PrivateCalendarSource;
@@ -757,14 +758,17 @@ export function derivePrivateCalendarExceptions(input: {
       const doubleVisits = dayItems.filter((item) => item.source === "double_visit");
       const fieldVisits = dayItems.filter((item) => item.source === "field_visit");
       const holidays = companyItems.filter((item) => item.source === "holiday");
-      // An approved weekly plan item covers the day ONLY where Phoenix records that kind of day
-      // nowhere else. A planned Field or Double Visit day with no logged visit, a planned Office day
-      // with no punch and a planned Vacation with no approved leave request each keep their exception:
-      // the plan proves the day was expected, which is the opposite of proving it happened. Measured
-      // on production for 1 Aug – 7 Oct 2026, excusing every planned type instead would have erased
-      // 364 real gaps — 318 of them planned double visits with nothing logged — every one of which
-      // feeds the Deductions module's No Records Activity connector.
-      const coveringPlans = dayItems.filter((item) => item.source === "plan" && item.plannedActivityCoversTheDay === true);
+      // 🔴 AN APPROVED WEEKLY PLAN COVERS NOTHING — ANY ACTIVITY TITLE. Owner, 2026-10-12: *"NEVER
+      // COUNT WEEKLY PLAN AS COVERAGE WHAT IF HE PLANNED BUT DIDNT GO WORK?"* and *"Do not ever touch
+      // a weekly plan. All what you do that you see the weekly plan and the daily reports and compare
+      // the plan versus the actual, any title."* The plan proves the day was EXPECTED, which is the
+      // opposite of proving it happened — the reasoning this file already applied to a planned Field,
+      // Double Visit, Office or Vacation day, now applied to every title. Between 2026-10-07 and his
+      // ruling, Travel, Admin, Meeting, Meeting with Team, Training, Event and Other did excuse a
+      // day here; `docs/private-calendar-plan-is-never-coverage.md` carries that window and what it
+      // suppressed. The plan is still READ and still shown, beside the day's real records, because
+      // comparing it against the actual is the whole use he has for it.
+      const plansOnTheDay = dayItems.filter((item) => item.source === "plan" && item.plannedActivityIsRecordedNowhereElse === true);
       // A CRM visit self-proves attendance for the day — no fingerprint needed.
       // That is true of a rep's OWN solo visits (field_visit) exactly as it is of
       // a manager-accompanied one (double_visit); only the double-visit feed was
@@ -775,20 +779,17 @@ export function derivePrivateCalendarExceptions(input: {
       // punch, no leave and no double visit, and so read as "No Activity
       // Recorded" despite the employee demonstrably working.
       //
-      // The APPROVED weekly plan joined this list on 2026-10-07, for the one class of day it is the
-      // only possible evidence of: a manager-approved Travel, Admin, Meeting, Training, Event or Other
-      // day, where there is no fingerprint to punch and no customer visit to log, and which therefore
-      // read "No Activity Recorded" although the employee's own manager had approved exactly that day
-      // in Phoenix days earlier. Everything else here is still a captured record, and a plan never
-      // substitutes for one — see coveringPlans above.
+      // 🔴 THE APPROVED WEEKLY PLAN IS NOT IN THIS LIST, and must never be put back (owner,
+      // 2026-10-12 — see plansOnTheDay above). It joined it on 2026-10-07 and was removed five days
+      // later: every entry here is a CAPTURED record of something that happened, and a plan is an
+      // intention. A planned Training the rep never attended is exactly the day he asked about.
       const isCovered =
         attendance.length > 0 ||
         vacations.length > 0 ||
         excuses.length > 0 ||
         holidays.length > 0 ||
         doubleVisits.length > 0 ||
-        fieldVisits.length > 0 ||
-        coveringPlans.length > 0;
+        fieldVisits.length > 0;
 
       for (const item of attendance) {
         for (const flag of item.exceptionFlags) {
@@ -839,7 +840,7 @@ export function derivePrivateCalendarExceptions(input: {
         exceptions.push(createException({
           code: "no_activity_recorded",
           date,
-          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no approved vacation, no approved excuse, and no approved plan activity that stands on its own recorded for this workday.`,
+          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day (owner, 2026-10-12).`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [],
@@ -848,43 +849,39 @@ export function derivePrivateCalendarExceptions(input: {
         }));
       }
 
-      // The MIRROR of the block above: a day whose ONLY coverage is the approved plan says so, in as
-      // many words, instead of going quietly blank.
-      //
-      // Before this, closing the plan gap left the opposite confusion behind. The red "No Activity
-      // Recorded" block disappeared and a neutral plan chip took its place, so the one thing the day
-      // did not say was the thing somebody reading it wants to know: that the chip IS the reason the
-      // day is not flagged. A manager comparing two blank-looking days could not tell a covered one
-      // from a day nobody had judged yet, which is how a resolved review request turns into a second
-      // review request.
+      // THE PLAN-VERSUS-ACTUAL NOTE, which is what the plan is for (owner, 2026-10-12: *"all what you
+      // do that you see the weekly plan and the daily reports and compare the plan versus the
+      // actual"*). On a day the plan is the only thing on file, say what was planned NEXT TO the fact
+      // that nothing was recorded — so the reader of the red block above sees the comparison without
+      // the plan softening the finding. Until 2026-10-12 this same block read "Covered by the approved
+      // plan" and the day carried no finding at all.
       //
       // `info`, deliberately: it is news, never a finding. Every counter on the screen and in the team
       // snapshot excludes info (reviewExceptions, daysWithIssues, dayNeedsReview, exceptionCount), and
       // getCompanyNoActivityDays filters on the No Activity title — so this note cannot inflate a
-      // review queue or reach a deduction candidate list.
+      // review queue, and it cannot reach a deduction candidate list either way.
       //
       // Only when the plan is ALONE. A day that also carries a punch, a visit, leave, an excuse or a
-      // holiday already explains itself, and a second line saying so would be noise on the days that
-      // need it least.
-      const planIsTheOnlyCover =
-        coveringPlans.length > 0 &&
+      // holiday has its real record, and the comparison is not the thing to read on it.
+      const planIsTheOnlyThingOnFile =
+        plansOnTheDay.length > 0 &&
         attendance.length === 0 &&
         vacations.length === 0 &&
         excuses.length === 0 &&
         holidays.length === 0 &&
         doubleVisits.length === 0 &&
         fieldVisits.length === 0;
-      if (isExpectedWorkday(employee, date) && planIsTheOnlyCover) {
-        const planned = coveringPlans.map((item) => item.title).join(" + ");
+      if (isExpectedWorkday(employee, date) && planIsTheOnlyThingOnFile) {
+        const planned = plansOnTheDay.map((item) => item.title).join(" + ");
         exceptions.push(createException({
-          code: "covered_by_approved_plan",
+          code: "planned_but_nothing_recorded",
           date,
-          description: `${employee.fullName}: the approved weekly plan records this day as ${planned}, and that kind of day produces no fingerprint punch and no logged visit by design — so the day is covered, not missing.`,
+          description: `${employee.fullName}: the approved weekly plan says ${planned} for this day, and nothing at all was recorded against it — no punch, no visit, no leave. The plan is what was intended, not what happened, so it does not clear the day.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
-          relatedItemIds: coveringPlans.map((item) => item.id),
+          relatedItemIds: plansOnTheDay.map((item) => item.id),
           severity: "info",
-          title: "Covered by the approved plan",
+          title: "Planned, but nothing recorded",
         }));
       }
     }

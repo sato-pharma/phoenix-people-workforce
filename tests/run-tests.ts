@@ -411,6 +411,7 @@ import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
 import { runDeductionsHalfDayTests } from "./deductions-half-day.test.ts";
+import { runDeductionsPlanIsNeverCoverageTests } from "./deductions-plan-is-never-coverage.test.ts";
 import { runDeductionsDmVisitIdentityTests } from "./deductions-dm-visit-identity.test.ts";
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
 import { runDeductionsCrmVacationEmploymentJoinTests } from "./deductions-crm-vacation-employment-join.test.ts";
@@ -3521,8 +3522,12 @@ await runTest(
   runDeductionsDsmNoRecordTests,
 );
 await runTest(
-  "deductions half day (a morning or afternoon with nothing on file is half a day; every check-in, save time, vacation, plan and request clears it first)",
+  "deductions half day (a morning or afternoon with nothing on file is half a day; every check-in, save time, vacation and request clears it first — a weekly plan never does)",
   runDeductionsHalfDayTests,
+);
+await runTest(
+  "deductions never read a weekly plan as coverage (the one connector that may touch a plan CHARGES the missing one — owner, 2026-10-12)",
+  runDeductionsPlanIsNeverCoverageTests,
 );
 await runTest(
   "deductions DM visit identity (a district manager is credited by EITHER id, on his own single visit or on a double — the mirror leaves the hr id null for weeks and three managers were charged a full day each inside that window)",
