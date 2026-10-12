@@ -32,7 +32,7 @@ import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
 import { resolveShellNavigationMode } from "@/lib/navigation/shell-mode";
-import { PATH_HEADER, SHELL_HEADER, toHrNamespacePath } from "@/lib/navigation/shell-headers";
+import { PATH_HEADER, SHELL_HEADER, hrNamespaceRedirectTarget } from "@/lib/navigation/shell-headers";
 
 export async function AppShell({
   accessContext,
@@ -77,8 +77,11 @@ export async function AppShell({
     // case there is no path to redirect TO — fall through to the admin shell rather than guess,
     // because a guessed target here is how a redirect loop starts.
     const requestedPath = requestHeaders.get(PATH_HEADER);
-    if (requestedPath) {
-      redirect(toHrNamespacePath(requestedPath));
+    // Null when the address is ALREADY under /hr: the header was lost, and redirecting to the
+    // page we are on is the loop. Fall through and render it instead.
+    const hrTarget = requestedPath ? hrNamespaceRedirectTarget(requestedPath) : null;
+    if (hrTarget) {
+      redirect(hrTarget);
     }
   }
 

@@ -29,6 +29,7 @@ import {
   isHrRewritablePath,
   isHrNamespacePath,
   toHrNamespacePath,
+  hrNamespaceRedirectTarget,
 } from "../src/lib/navigation/shell-headers.ts";
 import {
   hrNamespaceRoles,
@@ -141,6 +142,17 @@ export function runHrUrlNamespaceTests() {
   // Idempotent: the layout redirect must not be able to build /hr/hr/probation on a retry.
   assert.equal(toHrNamespacePath("/hr/probation"), "/hr/probation");
   assert.equal(toHrNamespacePath(toHrNamespacePath("/probation")), "/hr/probation");
+
+  // 1b ── The loop guard. A bare address is sent into the namespace; an address ALREADY in it is
+  // never redirected, because toHrNamespacePath returns it unchanged and that is a 307 to itself
+  // (ERR_TOO_MANY_REDIRECTS, seen 2026-10-12 on /hr/admin/hr-command-center behind the phx-live tunnel).
+  assert.equal(hrNamespaceRedirectTarget("/probation"), "/hr/probation");
+  assert.equal(hrNamespaceRedirectTarget("/probation?tab=due"), "/hr/probation?tab=due");
+  assert.equal(hrNamespaceRedirectTarget("/hr/admin/hr-command-center"), null, "inside the namespace there is nothing to redirect to");
+  assert.equal(hrNamespaceRedirectTarget("/hr/admin/hr-command-center?hiredFrom=2026-10-01"), null);
+  assert.equal(hrNamespaceRedirectTarget("/hr"), null);
+  assert.equal(hrNamespaceRedirectTarget("/hr?x=1"), null, "a query on the bare namespace root must not become /hr/hr");
+  assert.equal(hrNamespaceRedirectTarget("/hr-calendar"), "/hr/hr-calendar", "/hr-calendar is a page, not the namespace");
 
   // 2 ── Every NavigationMode resolves to a real home path, asserted at RUNTIME.
   // `navigationHomePathByMode` is a Record over the union, and an exhaustive Record does NOT gate
@@ -452,8 +464,8 @@ export function runHrUrlNamespaceTests() {
     "AppShell must send an HR seat on a bare address into the namespace",
   );
   assert.ok(
-    shellSource.includes(`redirect(toHrNamespacePath(requestedPath))`),
-    "the redirect target must be built with toHrNamespacePath, which is idempotent — a hand-built `/hr` + path is how a redirect loop starts",
+    shellSource.includes(`hrNamespaceRedirectTarget(requestedPath)`) && shellSource.includes(`redirect(hrTarget)`),
+    "the redirect target must come from hrNamespaceRedirectTarget, which is null inside the namespace — a hand-built `/hr` + path, or toHrNamespacePath alone (idempotent, so it returns the page you are on), is how a redirect loop starts",
   );
   // The mode resolution itself moved into src/lib/navigation/shell-mode.ts on 2026-09-03, because a
   // PAGE needs the same answer: app/(admin)/admin/sidebar-layout/page.tsx has to gate the catalogue
