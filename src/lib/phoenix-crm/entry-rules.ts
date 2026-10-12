@@ -346,19 +346,41 @@ export type PlaceDraft = CapturedFix & {
  * region are resolved from, and which one every later visit is measured against.
  *
  * Which reading is chosen never rescues a rough PIN: `parsePlaceDraft` refuses a place whose pin is
- * wider than `PLACE_MAX_ACCURACY_METERS` before it gets here, and a rough PHOTO reading is never the
- * fixed point - the pin is (owner, 2026-10-11, replacing the 2026-10-03 both-readings rule).
+ * wider than `PLACE_MAX_ACCURACY_METERS` before it gets here, and the SHARPER reading fixes the place
+ * (`pickPlacePoint`; owner, 2026-10-11, replacing the 2026-10-03 both-readings rule).
  */
 export type PlacePoint = { lat: number; lon: number; accuracyMeters: number | null; source: "photo" | "pin" };
 
-export function placePoint(fix: CapturedFix): PlacePoint {
-  // 🔴 A ROUGH PHOTO READING IS NOT THE FIXED POINT (2026-10-11): it can sit 600+ m from the rep's door
-  // (iPhone Safari's approximate fix) while the pin read 11 m. Its raw reading is still stored beside it.
-  const photoIsRough = fix.photoAccuracyMeters !== null && fix.photoAccuracyMeters > PLACE_MAX_ACCURACY_METERS;
-  if (fix.photoLat !== null && fix.photoLon !== null && !photoIsRough) {
-    return { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters, source: "photo" };
+/** One reading of a place: a coordinate and the radius the phone claimed for it (null when unknown). */
+export type PlaceReading = { lat: number; lon: number; accuracyMeters: number | null };
+
+/**
+ * Which of a place's two readings fixes it: THE SHARPER ONE, the photo's on a tie (owner, 2026-10-11,
+ * "perfect fix" after a rep read a wrong address on a place she validated).
+ *
+ * The photo's reading stays the fixed point whenever it is at least as sharp as the pin, as ruled on
+ * 2026-09-29 ("the photo + the location of photo is the more trustable"), and when the photo's accuracy
+ * is unknown. But a place is fixed FOR GOOD and its address, brick and area are resolved from this one
+ * point, so a photo reading with a wide radius must never beat a pin that is plainly tighter: iPhone
+ * Safari hands the camera an approximate position (up to the 250 m line, or 2,000 m) while the same
+ * phone's Capture-location button reads 11-30 m, and the address of a point 200 m off is the wrong
+ * street. Pure, so the capture screen shows the address of the SAME point the server will save.
+ */
+export function pickPlacePoint(photo: PlaceReading | null, pin: PlaceReading): PlacePoint {
+  const pinIsSharper =
+    photo !== null && photo.accuracyMeters !== null && pin.accuracyMeters !== null && pin.accuracyMeters < photo.accuracyMeters;
+  if (photo !== null && !pinIsSharper) {
+    return { lat: photo.lat, lon: photo.lon, accuracyMeters: photo.accuracyMeters, source: "photo" };
   }
-  return { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters, source: "pin" };
+  return { lat: pin.lat, lon: pin.lon, accuracyMeters: pin.accuracyMeters, source: "pin" };
+}
+
+export function placePoint(fix: CapturedFix): PlacePoint {
+  const photo: PlaceReading | null =
+    fix.photoLat !== null && fix.photoLon !== null
+      ? { lat: fix.photoLat, lon: fix.photoLon, accuracyMeters: fix.photoAccuracyMeters }
+      : null;
+  return pickPlacePoint(photo, { lat: fix.lat, lon: fix.lon, accuracyMeters: fix.accuracyMeters });
 }
 
 /**

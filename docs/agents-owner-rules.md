@@ -6051,7 +6051,7 @@ clinic was refused eight times, the owner answered **"A"**. Production that day,
 sat ~640 m from the pin); B-158 pin 29.9-31.8 m, photo 634-1,865 m. iPhone Safari hands the camera an
 approximate position while the Capture-location button reads a real one, and retaking the photo
 returned the same kind of reading. So `placeReadingsPrecise` judges the PIN only, `placePoint` never
-takes a photo reading wider than the line as the fixed point (the pin is), and the photo's raw reading
+fixes the place on the SHARPER of the two readings (the photo's on a tie; `pickPlacePoint`, also used by the capture screen so the address shown is the address saved - a 2026-10-11 follow-up after a rep read a wrong address), and the photo's raw reading
 is still stored and read by the integrity board, above the rep. A rough pin is still refused. Never
 restore the photo gate without his word. Pinned by `tests/phoenix-crm-accuracy-gate.test.ts`.
 

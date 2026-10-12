@@ -10,6 +10,7 @@ import {
   VISIT_MAX_ACCURACY_METERS,
   parsePlaceDraft,
   parseVisitDraft,
+  pickPlacePoint,
   placePoint,
   roughFixAtThePlace,
   roughFixForAVisit,
@@ -146,7 +147,17 @@ export function runPhoenixCrmAccuracyGateTests() {
 
   const bothGood = parsePlaceDraft(placeBody(5, 15));
   assert.ok(bothGood.ok, "two accurate readings validate the place");
-  assert.equal(placePoint(bothGood.value).source, "photo", "and the photo's reading is the fixed point, as ruled 2026-09-29");
+  assert.equal(placePoint(bothGood.value).source, "pin", "the SHARPER reading fixes the place: pin 5 m beats photo 15 m (owner, 2026-10-11)");
+  const photoSharper = parsePlaceDraft(placeBody(15, 5));
+  assert.ok(photoSharper.ok);
+  assert.equal(placePoint(photoSharper.value).source, "photo", "a photo at least as sharp as the pin stays the fixed point, as ruled 2026-09-29");
+  const tie = parsePlaceDraft(placeBody(27.1, 27.1));
+  assert.ok(tie.ok);
+  assert.equal(placePoint(tie.value).source, "photo", "a tie goes to the photo");
+  // The pure picker the capture screen shares with the save, so the address she reads is the saved one.
+  assert.equal(pickPlacePoint({ lat: 1, lon: 1, accuracyMeters: null }, { lat: 2, lon: 2, accuracyMeters: 11 }).source, "photo", "an UNKNOWN photo accuracy is taken, as it always was");
+  assert.equal(pickPlacePoint(null, { lat: 2, lon: 2, accuracyMeters: 11 }).source, "pin", "no photo reading: the pin");
+  assert.equal(pickPlacePoint({ lat: 1, lon: 1, accuracyMeters: 200 }, { lat: 2, lon: 2, accuracyMeters: 11 }).lat, 2, "a 200 m photo reading (inside the line) never beats an 11 m pin");
 
   const noPhotoReading = parsePlaceDraft(placeBody(8, "none"));
   assert.ok(noPhotoReading.ok, "a photo whose shutter read no position is not a rough one — the pin alone decides, as before");

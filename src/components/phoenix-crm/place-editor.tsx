@@ -10,13 +10,16 @@
  * Owner, 2026-09-30: the location is captured TWICE — once by the photo, once by the button.
  */
 
+import { useEffect, useState } from "react";
+
+import { fetchEvidenceLocation } from "@/components/outstation/evidence-watermark";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { dayLabelWithYear } from "@/components/phoenix-crm/format";
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import { CrmBlock, CrmField, CrmNote, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
-import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, SIGNBOARD_FRAME_NOTE } from "@/lib/phoenix-crm/entry-rules";
+import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, SIGNBOARD_FRAME_NOTE, pickPlacePoint } from "@/lib/phoenix-crm/entry-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -151,6 +154,42 @@ function CapturedLocationBlock({ capture, location }: { capture: boolean; locati
   );
 }
 
+/**
+ * The street address and part of town of the point the place will be fixed on. Free when that point is
+ * the one the camera already resolved; otherwise one round trip to the same endpoint the camera uses.
+ * Best-effort and never throws: no answer reads as "the address is filed when you save".
+ */
+function useResolvedAddress(
+  point: { lat: number; lon: number } | null,
+  photo: CapturedPhoto | null,
+): { address: string | null; zone: string | null } {
+  const [found, setFound] = useState<{ key: string; address: string | null; zone: string | null } | null>(null);
+  const key = point ? `${point.lat},${point.lon}` : null;
+  const cameraKey = photo ? `${photo.lat},${photo.lon}` : null;
+  useEffect(() => {
+    if (!point || key === cameraKey) return;
+    let cancelled = false;
+    void fetchEvidenceLocation("/api/phoenix-crm/location", point.lat, point.lon, null).then((payload) => {
+      if (cancelled) return;
+      const detail = payload?.location && typeof payload.location === "object" ? (payload.location as Record<string, unknown>) : null;
+      const components = detail?.components && typeof detail.components === "object" ? (detail.components as Record<string, unknown>) : null;
+      const text = (source: Record<string, unknown> | null, field: string) => {
+        const value = source?.[field];
+        return typeof value === "string" && value.trim() ? value.trim() : null;
+      };
+      setFound({ key: key ?? "", address: text(detail, "address"), zone: text(components, "area") });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `point` is rebuilt every render; its coordinates, joined into `key`, are what changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, cameraKey]);
+  if (!point) return { address: null, zone: null };
+  if (key === cameraKey) return { address: photo?.address ?? null, zone: photo?.zone ?? null };
+  return found && found.key === key ? { address: found.address, zone: found.zone } : { address: null, zone: null };
+}
+
 export function PlaceEditor({
   capture,
   customerName,
@@ -200,10 +239,27 @@ export function PlaceEditor({
     onChange((current) => ({ ...current, pin }));
   }
 
-  // The capture screen shows the photo's own location; an edit shows the saved row's.
+  // The capture screen shows the address of the point the SERVER will fix the place on — the sharper
+  // of the photo's reading and the pin (`pickPlacePoint`, the same function the save uses) — never the
+  // camera's running reading, which on iPhone Safari can be the approximate one and name the wrong
+  // street (a rep read "23 Ibrahim Al Lakani" for a clinic 650 m away, 2026-10-11). An edit shows the
+  // saved row's.
+  const photo = value.photo;
+  const photoReading =
+    photo && photo.shutterLat !== null && photo.shutterLon !== null
+      ? { lat: photo.shutterLat, lon: photo.shutterLon, accuracyMeters: photo.shutterAccuracyMeters }
+      : photo
+        ? { lat: photo.lat, lon: photo.lon, accuracyMeters: photo.accuracyMeters }
+        : null;
+  const point = value.pin
+    ? pickPlacePoint(photoReading, { lat: value.pin.lat, lon: value.pin.lon, accuracyMeters: value.pin.accuracyMeters })
+    : photoReading
+      ? { ...photoReading, source: "photo" as const }
+      : null;
+  const pointAddress = useResolvedAddress(capture ? point : null, photo);
   const shown: CapturedLocation | null = capture
-    ? value.photo
-      ? { address: value.photo.address, zone: value.photo.zone, brickName: null, areaName: null, regionName: null, lat: value.photo.lat, lon: value.photo.lon }
+    ? point
+      ? { address: pointAddress.address, zone: pointAddress.zone, brickName: null, areaName: null, regionName: null, lat: point.lat, lon: point.lon }
       : null
     : location;
 
