@@ -103,12 +103,50 @@ type Row = Record<string, unknown>;
  * array is what `tests/phoenix-crm-integrity-settle.test.ts` reads every filer's `source:` literal to
  * catch, because the compiler cannot: the column is text and the filers write string literals.
  */
-export const INTEGRITY_SOURCES = ["gps", "photo", "behaviour", "signboard", "capture_trust"] as const;
+export const INTEGRITY_SOURCES = ["gps", "photo", "behaviour", "signboard", "capture_trust", "roster", "cadence", "coverage"] as const;
 
 export type IntegritySource = (typeof INTEGRITY_SOURCES)[number];
 
 function isIntegritySource(value: unknown): value is IntegritySource {
   return typeof value === "string" && (INTEGRITY_SOURCES as readonly string[]).includes(value);
+}
+
+/**
+ * What a case can be ABOUT. The second half of this table's identity, and it had no list of its own.
+ *
+ * 🔴 IT IS THE SAME DEFECT `signboard` HAD, ONE COLUMN ACROSS. `subject_kind` is text with a CHECK,
+ * the reader coerced it with `row.subject_kind === "place" ? "place" : "visit"`, and the visit
+ * distance lookup asked `!== "place"` — so the day a third kind was filed, its case would have
+ * printed on the owner's board as a VISIT and its id would have been looked up in
+ * `phoenix_crm_visits`, where it does not exist. Two of the 2026-10-12 detectors file exactly such a
+ * kind: a cadence finding is about a CUSTOMER and the shared-venue capture-trust case is about a
+ * venue in `phoenix_crm_shared_places`.
+ *
+ * ONE list, exported, and everything is derived from it — the type, the labels, the coercion, and the
+ * positive test that decides whose id may be looked up as a visit. `tests/phoenix-crm-integrity-settle.test.ts`
+ * reads it against the migration's own CHECK, because the column is text and the compiler cannot.
+ */
+export const INTEGRITY_SUBJECT_KINDS = ["visit", "place", "shared_place", "customer"] as const;
+
+export type IntegritySubjectKind = (typeof INTEGRITY_SUBJECT_KINDS)[number];
+
+function isIntegritySubjectKind(value: unknown): value is IntegritySubjectKind {
+  return typeof value === "string" && (INTEGRITY_SUBJECT_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * Each kind in the owner's own words, as the board prints it. Sentence case, because the page writes
+ * it at the head of a line and lowercases it where it writes it mid-sentence.
+ */
+const SUBJECT_KIND_LABELS: Record<IntegritySubjectKind, string> = {
+  visit: "A visit",
+  place: "Validating a place",
+  shared_place: "A shared venue",
+  customer: "A customer",
+};
+
+export function integritySubjectKindLabel(kind: IntegritySubjectKind): string {
+  return SUBJECT_KIND_LABELS[kind] ?? kind;
 }
 
 /**
@@ -142,6 +180,12 @@ const SOURCE_LABELS: Record<IntegritySource, string> = {
   // "Capture trust" is what the check is called everywhere else in the module; it is not a position
   // verdict and must never read as one on this screen.
   capture_trust: "Capture trust",
+  // The three the second-pass audit added (2026-10-12). Each names what was READ, never what it
+  // means: the roster, the call cadence, the brick coverage. "Roster" is not a position verdict and
+  // "Coverage" is a finding about the data rather than about a person.
+  roster: "Roster",
+  cadence: "Cadence",
+  coverage: "Coverage",
 };
 
 
@@ -151,7 +195,7 @@ export function integritySourceLabel(source: IntegritySource): string {
 
 export type IntegrityCase = {
   id: string;
-  subjectKind: "visit" | "place";
+  subjectKind: IntegritySubjectKind;
   subjectId: string;
   /** The rep's NAME, never his code (owner's standing rule). */
   repName: string;
@@ -489,7 +533,11 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // capture. Read it rather than recompute it: recomputing would let this board and the
   // place-vs-actual report print two different numbers for one visit, and the report is the one
   // the DM and SFE already read.
-  const visitIds = [...new Set(rows.filter((row) => row.subject_kind !== "place").map((row) => String(row.subject_id)).filter(Boolean))];
+  // 🔴 `=== "visit"`, NEVER `!== "place"`. The negative form meant "everything that is not a place is
+  // a visit id", so the moment a third kind was filed its id went into this list and was looked up in
+  // `phoenix_crm_visits` — a customer id asked of the visits table, which simply returns nothing and
+  // leaves the case reading as a visit saved at its place. Only a visit has a distance from a place.
+  const visitIds = [...new Set(rows.filter((row) => row.subject_kind === "visit").map((row) => String(row.subject_id)).filter(Boolean))];
   const visitDistances = new Map<string, { distanceMeters: number | null; locationFlag: string | null }>();
   // Chunked at 50: a PostgREST `.in()` carrying several hundred ids comes back `{ data: [] }` past
   // some URL length, and an empty set here would read as “every case is at its place”.
@@ -556,7 +604,10 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     const signals = (row.signals && typeof row.signals === "object" ? row.signals : {}) as Record<string, unknown>;
     return {
       id: String(row.id),
-      subjectKind: row.subject_kind === "place" ? "place" : "visit",
+      // Every kind in the list by name. The fallback is `visit` only for a value the list does not
+      // hold at all — a kind somebody added to the table without adding it here, which is the one
+      // case the tests refuse.
+      subjectKind: isIntegritySubjectKind(row.subject_kind) ? row.subject_kind : "visit",
       subjectId: String(row.subject_id),
       repHrId,
       repName: nameOf(people, repHrId) || repHrId,
@@ -574,12 +625,14 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       signText: typeof signals.signText === "string" && signals.signText.trim() !== "" ? signals.signText : null,
       laterReading: laterReadingFor(row),
       settlement: settlementOf(row, people),
-      placeDistanceMeters: row.subject_kind === "place"
-        ? null
-        : visitDistances.get(String(row.subject_id))?.distanceMeters ?? null,
-      placeLocationFlag: row.subject_kind === "place"
-        ? null
-        : visitDistances.get(String(row.subject_id))?.locationFlag ?? null,
+      // Positive for the same reason the gather above is: a place, a venue and a customer each have
+      // no place to be far from, and only a visit's own row carries the figure.
+      placeDistanceMeters: row.subject_kind === "visit"
+        ? visitDistances.get(String(row.subject_id))?.distanceMeters ?? null
+        : null,
+      placeLocationFlag: row.subject_kind === "visit"
+        ? visitDistances.get(String(row.subject_id))?.locationFlag ?? null
+        : null,
       lat: row.lat === null || row.lat === undefined ? null : Number(row.lat),
       lon: row.lon === null || row.lon === undefined ? null : Number(row.lon),
       accuracyMeters: row.accuracy_meters === null || row.accuracy_meters === undefined ? null : Number(row.accuracy_meters),

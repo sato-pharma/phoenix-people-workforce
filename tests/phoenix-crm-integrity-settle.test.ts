@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { INTEGRITY_NOTE_LIMIT, isSettledIntegrityRow, readIntegritySettlement, sameIntegrityFlags } from "@/lib/phoenix-crm/integrity-settlement";
-import { INTEGRITY_SOURCES, integritySourceLabel } from "@/lib/phoenix-crm/server/integrity-board";
+import { PHOENIX_CRM_INTEGRITY_LABELS, PHOENIX_CRM_STRONG_INTEGRITY_FLAGS } from "@/lib/phoenix-crm/location-integrity";
+import { INTEGRITY_SOURCES, INTEGRITY_SUBJECT_KINDS, integritySourceLabel, integritySubjectKindLabel } from "@/lib/phoenix-crm/server/integrity-board";
 
 // 🔴 `stripSqlComments`, never a line filter. A `--` written after code on the same line survives a
 // line-wise strip, and a `/* … */` block survives entirely — so a negative assertion fails on the
@@ -56,6 +57,10 @@ const FILERS = [
   "../src/lib/phoenix-crm/server/photo-dupes.ts",
 ];
 
+/** The nightly pass that drives the three 2026-10-12 detectors, and the board's own page. */
+const SILENT = read("../src/lib/phoenix-crm/server/silent-detectors.ts");
+const SILENT_MIGRATION = read("../supabase/migrations/20261012210000_phoenix_crm_silent_detectors.sql");
+
 const SETTLED = {
   settledAt: "2026-10-09T18:40:00.000Z",
   settledBy: "B-10",
@@ -89,15 +94,42 @@ function sourceUnionTests(): void {
   // The database's own CHECK and the reader's list must hold the same five values. A value the table
   // allows but the reader does not know is a case waiting to be mislabelled; one the reader knows and
   // the table refuses is a filer that will fail at 23514.
-  const check = stripSqlComments(
-    read("../supabase/migrations/20261008023051_phoenix_crm_signboard_and_capture_trust.sql"),
-  ).match(/check\s*\(source in \(([^)]*)\)\)/i);
-  assert.ok(check, "the source CHECK is no longer readable from migration 20261008023051");
+  // 🔴 THE LATEST MIGRATION THAT RESTATES THE CHECK, NOT THE ONE THAT FIRST WIDENED IT. This read
+  // pointed at 20261008023051 until 2026-10-12, when the three roster/cadence/coverage detectors
+  // replaced that constraint — and the pin then compared the reader's eight values with that
+  // migration's five and went red on correct code. A `drop constraint` + `add constraint` pair means
+  // only the newest one describes the table, so moving this path is part of widening the CHECK.
+  const check = stripSqlComments(SILENT_MIGRATION).match(/check\s*\(source in \(([^)]*)\)\)/i);
+  assert.ok(check, "the source CHECK is no longer readable from migration 20261012210000");
   const allowed = [...check[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
   assert.deepEqual(
     [...allowed].sort(),
     [...INTEGRITY_SOURCES].sort(),
     "the table's source CHECK and INTEGRITY_SOURCES have drifted apart",
+  );
+  // The three the 2026-10-12 migration added, named explicitly, for the same reason `signboard` and
+  // `capture_trust` are above: a scan that silently stopped finding literals would pass on an empty set.
+  for (const source of ["roster", "cadence", "coverage"]) {
+    assert.ok((INTEGRITY_SOURCES as readonly string[]).includes(source), `${source} must be in INTEGRITY_SOURCES`);
+  }
+
+  // AND THE WEEKLY SCAN'S OWN COPY OF THE LIST. `FraudScanCase.source` in `fraud-scan-rules.ts`
+  // restates the eight values by hand, and it is NOT free to import the authority: that file sits in
+  // a rep's bundle, so `tests/phoenix-crm-blind-half.test.ts` check 2 refuses any comment-stripped
+  // mention of `integrity-board` there — an `import type` included, though the compiler erases it.
+  // 🔴 SO THE DRIFT HAS TO BE CAUGHT HERE, AND IT BIT ON 2026-10-12: the three new detectors widened
+  // `INTEGRITY_SOURCES` while this union still named five, and the board's reader — which stamps the
+  // source onto each `FraudScanCase` — stopped compiling (TS2322). The type was right to refuse the
+  // assignment; nothing was mislabelled. But a compile error is the LAST line, not a check: had the
+  // reader still collapsed its sources into `gps`, the union would have been satisfied and three
+  // detectors would have been invisible to every Thursday scan, which is the 2026-10-08 defect again.
+  const scanRules = stripComments(read("../src/lib/phoenix-crm/fraud-scan-rules.ts"));
+  const union = scanRules.match(/source:\s*((?:"[a-z_]+"\s*\|\s*)*"[a-z_]+")\s*;/);
+  assert.ok(union, "FraudScanCase.source is no longer readable as a union of string literals");
+  assert.deepEqual(
+    [...union[1].matchAll(/"([a-z_]+)"/g)].map((match) => match[1]).sort(),
+    [...INTEGRITY_SOURCES].sort(),
+    "FraudScanCase.source and INTEGRITY_SOURCES have drifted apart — the weekly scan cannot import the authority, so this is the only thing holding them equal",
   );
 
   // Every member has plain English. A label that falls back to the code would print `capture_trust`
@@ -126,6 +158,146 @@ function sourceUnionTests(): void {
   // And the row's own coercion goes through the list, not a chain of ORs — the shape that swept an
   // unknown source into `gps`.
   assert.match(board, /source: isIntegritySource\(row\.source\) \? row\.source : "gps"/, "a row's source must be read through the list");
+}
+
+// ── 1b. Every subject kind the table allows is a kind the board knows ────────
+
+/**
+ * THE SAME DEFECT AS `signboard`, ONE COLUMN ACROSS (2026-10-12).
+ *
+ * `subject_kind` is text with a CHECK, exactly as `source` is, and until today it had no exported
+ * list: the reader coerced it with `row.subject_kind === "place" ? "place" : "visit"` and the visit
+ * distance lookup gathered ids with `!== "place"`. So a third kind would have printed on the owner's
+ * board as a VISIT and had its id looked up in `phoenix_crm_visits`, which answers nothing and leaves
+ * the case reading as a visit saved at its place. Two of the new detectors file exactly such a kind.
+ */
+function subjectKindTests(): void {
+  const board = stripComments(BOARD);
+
+  const check = stripSqlComments(SILENT_MIGRATION).match(/check\s*\(subject_kind in \(([^)]*)\)\)/i);
+  assert.ok(check, "the subject_kind CHECK is no longer readable from migration 20261012210000");
+  const allowed = [...check[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
+  assert.deepEqual(
+    [...allowed].sort(),
+    [...INTEGRITY_SUBJECT_KINDS].sort(),
+    "the table's subject_kind CHECK and INTEGRITY_SUBJECT_KINDS have drifted apart",
+  );
+  for (const kind of ["shared_place", "customer"]) {
+    assert.ok((INTEGRITY_SUBJECT_KINDS as readonly string[]).includes(kind), `${kind} must be in INTEGRITY_SUBJECT_KINDS`);
+  }
+
+  // Every kind has plain English, and none of them prints the raw code at the owner.
+  for (const kind of INTEGRITY_SUBJECT_KINDS) {
+    const label = integritySubjectKindLabel(kind);
+    assert.notEqual(label, kind, `${kind} has no label of its own — the board would print the raw code`);
+    assert.match(label, /^[A-Z]/, `${kind}'s label should read as a sentence, not a code (${label})`);
+  }
+  assert.equal(integritySubjectKindLabel("shared_place"), "A shared venue");
+  assert.equal(integritySubjectKindLabel("customer"), "A customer");
+
+  // 🔴 THE POSITIVE FORM, in all three places a kind decides something. A negative test
+  // (`!== "place"`) reads "everything that is not a place is a visit id", which is the bug.
+  assert.match(board, /subjectKind: isIntegritySubjectKind\(row\.subject_kind\) \? row\.subject_kind : "visit"/, "a row's subject kind must be read through the list");
+  assert.match(board, /rows\.filter\(\(row\) => row\.subject_kind === "visit"\)/, "only a visit's id may be looked up in phoenix_crm_visits");
+  assert.equal(
+    /row\.subject_kind !== "place"/.test(board),
+    false,
+    "integrity-board.ts still decides a subject by what it is NOT — the shape that would read a customer id as a visit",
+  );
+
+  // And the PAGE prints the label rather than its own two-way guess.
+  const page = stripComments(PAGE);
+  // 🔴 BOTH SITES, COUNTED — the desktop table row and the mobile card each print the kind. A
+  // `match` here was satisfied by either one, so a break that left the other as its own
+  // place-or-visit guess passed on 2026-10-12. The same hole as `getLeaveDayMap`'s two branches.
+  assert.equal(
+    [...page.matchAll(/integritySubjectKindLabel\(entry\.subjectKind\)/g)].length,
+    2,
+    "both the desktop row and the mobile card must print the subject kind through its label",
+  );
+  assert.equal(
+    /entry\.subjectKind === "place"/.test(page),
+    false,
+    "the board page still carries its own place-or-visit guess, so a venue or a customer would print as a visit",
+  );
+}
+
+// ── 1c. The three silent detectors file weak, tell nobody, and refuse nothing ─
+
+function silentDetectorTests(): void {
+  const silent = stripComments(SILENT);
+
+  // The pass is wired into the nightly sweep. A detector nothing calls is a detector that files nothing.
+  const sweep = stripComments(read("../src/lib/phoenix-crm/server/photo-dupes.ts"));
+  assert.match(sweep, /await runPhoenixCrmSilentSweep\(/, "the nightly sweep must run the silent pass");
+
+  // 🔴 EVERY NEW FLAG IS WEAK. `PHOENIX_CRM_STRONG_INTEGRITY_FLAGS` is the one gate between this
+  // table and a rep's own score, so a promotion here moves a number he can read.
+  for (const flag of ["visit_on_leave", "visit_on_full_day_activity", "companion_off_duty", "customer_revisited_fast", "place_brick_far"]) {
+    assert.ok(
+      PHOENIX_CRM_INTEGRITY_LABELS[flag as keyof typeof PHOENIX_CRM_INTEGRITY_LABELS],
+      `${flag} has no plain English — the board would print the raw code at the owner`,
+    );
+    assert.equal(
+      (PHOENIX_CRM_STRONG_INTEGRITY_FLAGS as readonly string[]).includes(flag),
+      false,
+      `${flag} is STRONG, so it now moves the rep-visible Integrity score — every detector the 2026-10-12 audit added files weak`,
+    );
+  }
+
+  // 🔴 EACH FILES UNDER ITS OWN `source`. Filing under "gps" would replace judgeCapture's verdict on
+  // the same subject through the (subject_kind, subject_id, source) unique key.
+  const filer = stripComments(read("../src/lib/phoenix-crm/server/location-integrity.ts"));
+  for (const [fn, source] of [["fileVisitRosterFlags", "roster"], ["fileCustomerCadenceFlag", "cadence"], ["filePlaceCoverageFlag", "coverage"]]) {
+    const start = filer.indexOf(`export async function ${fn}(`);
+    assert.ok(start > 0, `${fn} is no longer in server/location-integrity.ts`);
+    // 🔴 THE SLICE ENDS ON `onConflict`, which the upsert itself must produce. A window running to the
+    // end of the file would reach the NEXT filer's own `source:` literal and pass on a deleted one.
+    const body = filer.slice(start);
+    const end = body.indexOf("onConflict");
+    assert.ok(end > 0, `${fn}'s upsert no longer names its conflict target`);
+    const upsert = body.slice(0, end);
+    assert.ok(upsert.includes(`source: "${source}"`), `${fn} must file under source: "${source}", never another detector's`);
+    assert.ok(
+      upsert.includes("PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag)"),
+      `${fn} must compute strong from the shared list, never write it by hand`,
+    );
+  }
+
+  // 🔴 IT TELLS NOBODY AND HOLDS NOTHING. The owner's two standing rules on this module, as source.
+  for (const banned of [/sendNotification/, /sendEmail/, /hold_review/, /\.update\(/, /\.delete\(/]) {
+    assert.equal(banned.test(silent), false, `the silent pass must not ${banned.source} — it reads, files evidence, and stops`);
+  }
+
+  // The full-day door, and the measurement behind it: a half-day leave is not a day off.
+  assert.match(silent, /getFullDayApprovedLeaveMap\(/, "the roster check must read FULL-DAY approved leave, never every approved leave");
+  assert.match(silent, /\.eq\("half_day", false\)/, "a half-day activity is not a day away from the field");
+  const workingDays = stripComments(read("../src/lib/attendance/working-days.ts"));
+  // 🔴 BOTH BRANCHES, COUNTED. `getLeaveDayMap` has two: a batched one when `employeeHrIds` is
+  // given and an unfiltered one when it is not — and the CRM sweep uses the FIRST. A `match` here
+  // was satisfied by either, so on 2026-10-12 a break that removed the narrowing from the batched
+  // branch left this test GREEN while every half-day leave came back for the one caller that matters.
+  assert.equal(
+    [...workingDays.matchAll(/if \(dayParts\) query = query\.in\("day_part", dayParts\);/g)].length,
+    2,
+    "both of getLeaveDayMap's branches must narrow on day_part in the QUERY — the batched one is what Phoenix CRM uses",
+  );
+  assert.match(workingDays, /statuses: \["approved"\], dayParts: \["full_day"\]/, "getFullDayApprovedLeaveMap must ask for full_day only");
+  // 🔴 AND THE MONEY PATH IS UNTOUCHED. Absence counting wants every approved leave whatever its part.
+  assert.match(
+    workingDays,
+    /getApprovedLeaveDayMap[\s\S]{0,400}?getLeaveDayMap\(\{ \.\.\.input, statuses: \["approved"\] \}\)/,
+    "getApprovedLeaveDayMap must still ask for every day part — absence counting and pay read it",
+  );
+
+  // The two refusals, recorded in the source so a later session does not re-chase them from the
+  // audit workbook. Both were measured on production 2026-10-12.
+  const silentWithComments = SILENT;
+  assert.match(silentWithComments, /SHARED PHONE NUMBER ACROSS CUSTOMERS/, "the refused shared-phone detector and its measurement must stay recorded here");
+  assert.match(silentWithComments, /10,397 of 11,560/, "the refused no-place-to-compare detector must keep its measurement");
+  // And neither was built after all. Read from the COMMENT-STRIPPED source, so the explanation of the
+  // refusal cannot satisfy the check that the refusal holds.
+  assert.equal(/phoneKey|shared_phone\b|no_place_to_compare/.test(silent), false, "a refused detector must not be half-built");
 }
 
 // ── 2. The settlement rule: stamped flags, and reopening by itself ────────────
@@ -349,6 +521,8 @@ function everyReaderHonoursSettlementTests(): void {
 
 export function runPhoenixCrmIntegritySettleTests() {
   sourceUnionTests();
+  subjectKindTests();
+  silentDetectorTests();
   settlementRuleTests();
   settleGateTests();
   boardAndPageTests();

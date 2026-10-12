@@ -198,16 +198,43 @@ export async function getApprovedLeaveDayMap(input: {
 }
 
 /**
+ * Approved FULL-DAY leave only — a reader that must not treat a half day as a day off.
+ *
+ * 🔴 ITS OWN DOOR, BESIDE `getApprovedLeaveDayMap` AND NEVER INSTEAD OF IT. Absence counting and pay
+ * want every approved leave whatever its `day_part`, and that map is money-adjacent: it is left
+ * exactly as it is. This one exists because Phoenix CRM's roster detector asks a different question —
+ * "was this rep off for the WHOLE day he saved a visit on" — and the two answers are measurably
+ * different. On production, 12 Oct 2026: 514 approved leaves are `full_day`, 85 `pm_only` and 56
+ * `am_only`, and reading the column turned the audit's "1 visit inside approved leave" and all 8 of
+ * its companion hits into ZERO. Every one was a half day, i.e. every one a false positive.
+ *
+ * `day_part` is NOT NULL on the table, so there is no third state to allow for.
+ */
+export async function getFullDayApprovedLeaveMap(input: {
+  dateFromIso: string;
+  dateToIso: string;
+  employeeHrIds?: string[];
+}): Promise<Map<string, Set<string>>> {
+  return getLeaveDayMap({ ...input, statuses: ["approved"], dayParts: ["full_day"] });
+}
+
+/**
  * Leave days per employee within the range, from requests in any of `statuses` (dates clamped to the
  * range, HR IDs normalized). The weekly attendance review's answer window also counts leave still
  * waiting for a decision (ANSWER_WINDOW_LEAVE_STATUSES in digest-rules.ts); every other reader wants
  * approved leave only, through getApprovedLeaveDayMap.
+ *
+ * `dayParts` narrows to those `v2_vacation_requests.day_part` values. 🔴 OMITTING IT MEANS EVERY PART,
+ * which is what every caller that counts absence or pays a day must keep doing — a half day is still a
+ * leave day to them. `getFullDayApprovedLeaveMap` is the one caller that passes it, and its comment
+ * carries the measurement.
  */
 export async function getLeaveDayMap(input: {
   dateFromIso: string;
   dateToIso: string;
   employeeHrIds?: string[];
   statuses: readonly string[];
+  dayParts?: readonly string[];
 }): Promise<Map<string, Set<string>>> {
   const leaveByEmployee = new Map<string, Set<string>>();
   if (!isIsoDate(input.dateFromIso) || !isIsoDate(input.dateToIso)) return leaveByEmployee;
@@ -223,26 +250,34 @@ export async function getLeaveDayMap(input: {
   // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
   // HeadersOverflowError — callers pass company/site-wide rosters here, so batch when filtered.
   const rows: LeaveRequestRow[] = [];
+  // Applied inside BOTH branches rather than to the rows afterwards: the day-part cut has to narrow
+  // the query, not the result, or a caller asking for full days alone still pays for every half day
+  // in the window and a batch could fill up on rows it then throws away.
+  const dayParts = input.dayParts ? [...input.dayParts] : null;
   if (normalizedFilter.length > 0) {
     for (let i = 0; i < normalizedFilter.length; i += 100) {
       const batch = normalizedFilter.slice(i, i + 100);
-      const { data, error } = await supabase
+      let query = supabase
         .from("v2_vacation_requests")
         .select("employee_hr_id,start_date,end_date")
         .in("status", statuses)
         .lte("start_date", input.dateToIso)
         .gte("end_date", input.dateFromIso)
         .in("employee_hr_id", batch);
+      if (dayParts) query = query.in("day_part", dayParts);
+      const { data, error } = await query;
       if (error) throw new Error(`${failure}: ${error.message}`);
       rows.push(...((data ?? []) as LeaveRequestRow[]));
     }
   } else {
-    const { data, error } = await supabase
+    let query = supabase
       .from("v2_vacation_requests")
       .select("employee_hr_id,start_date,end_date")
       .in("status", statuses)
       .lte("start_date", input.dateToIso)
       .gte("end_date", input.dateFromIso);
+    if (dayParts) query = query.in("day_part", dayParts);
+    const { data, error } = await query;
     if (error) throw new Error(`${failure}: ${error.message}`);
     rows.push(...((data ?? []) as LeaveRequestRow[]));
   }

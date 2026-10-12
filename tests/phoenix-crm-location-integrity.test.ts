@@ -11,8 +11,16 @@ import {
   REPLAY_MIN_GAP_MINUTES,
   TRAVEL_MIN_METERS,
   ZERO_JITTER_METERS,
+  BRICK_FAR_KM,
+  judgePlaceBrickDistance,
+  judgeRevisitCadence,
+  judgeRosterDay,
+  PHOENIX_CRM_AWAY_DAY_ACTIVITIES,
+  REVISIT_WINDOW_DAYS,
+  REVISIT_WINDOW_VISITS,
   type PhoenixCrmPriorFix,
 } from "../src/lib/phoenix-crm/location-integrity.ts";
+import { PHOENIX_CRM_DAY_ACTIVITIES } from "../src/lib/phoenix-crm/day-activities.ts";
 import { parseCapturedFix } from "../src/lib/phoenix-crm/entry-rules.ts";
 
 /**
@@ -391,6 +399,119 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
   // into the markup went past the old guard entirely.
   //
   // Do not re-add the list here. One guard, one place, and it grows by itself.
+
+  // ── The three silent detectors (2026-10-12) ───────────────────────────────────────────────────
+  //
+  // Each one's HONEST case matters more than its catch, because all three read data that is normal
+  // almost everywhere: a working rep has away days, a good doctor is seen often, and most of the
+  // brick master has never been drawn.
+
+  {
+    // Every away key is a real day-activity key. A typo here is not a type error — it is a branch
+    // that can never be true, and the detector would simply never fire.
+    const keys = new Set<string>(PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => entry.key));
+    for (const away of PHOENIX_CRM_AWAY_DAY_ACTIVITIES) {
+      assert.ok(keys.has(away), `${away} is not a day-activity key, so the roster check can never match it`);
+    }
+    // 🔴 AND THE TWO THAT MUST STAY OUT. A sales day IS field work; admin work is routinely half a
+    // day at a desk and half on the road. Flagging either accuses every rep who records one.
+    assert.equal(PHOENIX_CRM_AWAY_DAY_ACTIVITIES.includes("sales_day"), false, "a sales day is field work, not a day away");
+    assert.equal(PHOENIX_CRM_AWAY_DAY_ACTIVITIES.includes("admin_work"), false, "admin work is not a day away from the field");
+  }
+
+  {
+    const clean = judgeRosterDay({ repOnFullDayLeave: false, repFullDayActivities: [], companionOffDuty: false });
+    assert.deepEqual(clean, [], "an ordinary day files nothing at all");
+
+    assert.deepEqual(
+      judgeRosterDay({ repOnFullDayLeave: true, repFullDayActivities: [], companionOffDuty: false }),
+      ["visit_on_leave"],
+      "a visit saved on a full day of approved leave is worth a look",
+    );
+    assert.deepEqual(
+      judgeRosterDay({ repOnFullDayLeave: false, repFullDayActivities: ["conference"], companionOffDuty: false }),
+      ["visit_on_full_day_activity"],
+      "a visit on a full conference day is worth a look",
+    );
+    assert.deepEqual(
+      judgeRosterDay({ repOnFullDayLeave: false, repFullDayActivities: ["sales_day"], companionOffDuty: false }),
+      [],
+      "a sales day must never be read as a day away from the field",
+    );
+    assert.deepEqual(
+      judgeRosterDay({ repOnFullDayLeave: false, repFullDayActivities: ["admin_work", "sales_day"], companionOffDuty: false }),
+      [],
+      "admin work beside a sales day is still a working day",
+    );
+    assert.deepEqual(
+      judgeRosterDay({ repOnFullDayLeave: false, repFullDayActivities: [], companionOffDuty: true }),
+      ["companion_off_duty"],
+      "a named companion who was off duty is worth a look",
+    );
+    // All three at once, in the declared order, and still WEAK — the strength is the filer's to
+    // compute from the shared list, and no flag here is in it.
+    const all = judgeRosterDay({ repOnFullDayLeave: true, repFullDayActivities: ["training"], companionOffDuty: true });
+    assert.deepEqual(all, ["visit_on_leave", "visit_on_full_day_activity", "companion_off_duty"]);
+    for (const flag of all) {
+      assert.equal(
+        (PHOENIX_CRM_STRONG_INTEGRITY_FLAGS as readonly string[]).includes(flag),
+        false,
+        `${flag} must stay weak — a strong flag moves the rep's own Integrity score`,
+      );
+    }
+  }
+
+  {
+    // The cadence rule, at and either side of its own edge.
+    assert.deepEqual(judgeRevisitCadence(["2026-10-01", "2026-10-03"]), [], "two calls in a week is ordinary");
+    assert.deepEqual(
+      judgeRevisitCadence(["2026-10-01", "2026-10-03", "2026-10-07"]),
+      ["customer_revisited_fast"],
+      "three calls inside seven days is worth a look",
+    );
+    // 🔴 THE WINDOW IS INCLUSIVE: Thursday to the following Wednesday is seven days to a human.
+    assert.deepEqual(judgeRevisitCadence(["2026-10-01", "2026-10-04", "2026-10-07"]), ["customer_revisited_fast"]);
+    // …and the eighth day is outside it.
+    assert.deepEqual(judgeRevisitCadence(["2026-10-01", "2026-10-04", "2026-10-09"]), [], "three calls spread over nine days is not a cluster");
+    // Two calls on ONE day are one day: that is the double-visit rule's question, not this one.
+    assert.deepEqual(judgeRevisitCadence(["2026-10-01", "2026-10-01", "2026-10-02"]), [], "two calls in one day count once");
+    // A ROLLING window, not a calendar week: the cluster here straddles a week boundary.
+    assert.deepEqual(judgeRevisitCadence(["2026-10-09", "2026-10-10", "2026-10-11"]), ["customer_revisited_fast"]);
+    // Order must not matter, and nor must rubbish in the list.
+    assert.deepEqual(judgeRevisitCadence(["2026-10-07", "2026-10-01", "2026-10-03"]), ["customer_revisited_fast"]);
+    assert.deepEqual(judgeRevisitCadence(["", "not-a-date", "2026-10-01"]), [], "an unparseable day files nothing");
+    assert.equal(REVISIT_WINDOW_VISITS, 3, "the rule is three calls; two is ordinary clinic life");
+    assert.equal(REVISIT_WINDOW_DAYS, 7, "the window is one week");
+  }
+
+  {
+    // 🔴 NULL IS UNKNOWN AND FILES NOTHING. A place written before the brick lookup existed has not
+    // been measured, and an unmeasured place is not a far one.
+    assert.deepEqual(judgePlaceBrickDistance({ brickDistanceKm: null, brickMatched: false }), [], "an unmeasured brick distance is not a far one");
+    // 🔴 AND A MATCHED PLACE IS NEVER FLAGGED, whatever the distance column says: the lookup is the
+    // authority on its own verdict, and this flag is only ever about a place it could not match.
+    assert.deepEqual(judgePlaceBrickDistance({ brickDistanceKm: 99, brickMatched: true }), [], "a matched place is never far from its own brick");
+    assert.deepEqual(judgePlaceBrickDistance({ brickDistanceKm: BRICK_FAR_KM, brickMatched: false }), [], "exactly at the bound is inside it");
+    assert.deepEqual(
+      judgePlaceBrickDistance({ brickDistanceKm: BRICK_FAR_KM + 0.1, brickMatched: false }),
+      ["place_brick_far"],
+      "a place past the bound with no brick matched is worth a look",
+    );
+    assert.deepEqual(judgePlaceBrickDistance({ brickDistanceKm: Number.NaN, brickMatched: false }), [], "an unreadable distance files nothing");
+  }
+
+  {
+    // Every new flag has plain English, and none of them is strong.
+    for (const flag of ["visit_on_leave", "visit_on_full_day_activity", "companion_off_duty", "customer_revisited_fast", "place_brick_far"] as const) {
+      const label = PHOENIX_CRM_INTEGRITY_LABELS[flag];
+      assert.ok(label && label !== flag, `${flag} has no label of its own — the board would print the raw code`);
+      assert.equal(
+        (PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS as readonly string[]).includes(flag),
+        false,
+        `${flag} does not rest on a precise fix — it reads no coordinate at all`,
+      );
+    }
+  }
 
   console.log("phoenix-crm location integrity: OK");
 }

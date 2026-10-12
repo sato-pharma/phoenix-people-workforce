@@ -64,12 +64,22 @@ export type FraudScanCase = {
   repHrId: string;
   repName: string;
   /**
-   * Which detector filed it — every one of the five by name, mirroring `INTEGRITY_SOURCES` in
+   * Which detector filed it — every one of the EIGHT by name, mirroring `INTEGRITY_SOURCES` in
    * `server/integrity-board.ts`, which is the authority. It was `"gps" | "photo"` until 2026-10-12,
    * which is why the board's reader collapsed signboard and capture-trust cases into `gps` to satisfy
-   * it: a case labelled as the one kind of evidence it is not.
+   * it: a case labelled as the one kind of evidence it is not. `roster`, `cadence` and `coverage`
+   * joined the same day, and leaving them out made the board's reader fail to compile rather than
+   * mislabel anything — which is the better failure, but only because something reads the list.
+   *
+   * 🔴 IT IS A HAND-WRITTEN MIRROR BECAUSE THE IMPORT IS MECHANICALLY REFUSED, NOT BECAUSE NOBODY
+   * THOUGHT OF IT. This file is in a rep's bundle, so `tests/phoenix-crm-blind-half.test.ts` check 2
+   * rejects any comment-stripped mention of `integrity-board` here — an `import type` included, even
+   * though the compiler erases it. A comment may name the authority; code may not. So the two lists
+   * are kept equal by `tests/phoenix-crm-integrity-settle.test.ts`, which reads this union out of
+   * this file and compares it as a SET with `INTEGRITY_SOURCES`. **Add a detector there and here, in
+   * the same change.**
    */
-  source: "gps" | "photo" | "behaviour" | "signboard" | "capture_trust";
+  source: "gps" | "photo" | "behaviour" | "signboard" | "capture_trust" | "roster" | "cadence" | "coverage";
   /**
    * May a reader who is NOT the Super Admin see this case? Stamped by the board's reader from its own
    * `SFE_SOURCES` allow-list — never decided in this file, and never re-derived from `source` here.
