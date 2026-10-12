@@ -2,11 +2,16 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { HrCommandCenter } from "@/components/hr/hr-command-center";
+import { TalentAcquisitionOverview } from "@/components/hr/talent-acquisition-overview";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { getHrCommandCenterData, hrBundleForRole } from "@/lib/hr/command-center";
+import {
+  getTalentAcquisitionOverview,
+  TALENT_ACQUISITION_SEAT,
+} from "@/lib/hr/talent-acquisition-overview";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +26,18 @@ export const dynamic = "force-dynamic";
  *
  * That redirect cannot loop. `resolveLandingPathForRole` returns THIS page only for the two roles
  * `hrBundleForRole` accepts, and they never reach the redirect.
+ *
+ * TWO PAGES BEHIND ONE ADDRESS since 2026-10-13. The Talent Acquisition seat gets
+ * `TalentAcquisitionOverview`, built from her handbook's KPI families rather than from her function
+ * bundle, at the owner's instruction that morning: *"donot touch photo or identity banner and from
+ * scratch build her overview landing page"*. Every other HR seat still gets `HrCommandCenter`,
+ * unchanged, and the split is `hrBundleForRole(access.role) === TALENT_ACQUISITION_SEAT` — the same
+ * lookup that already gates the address, so the two branches cannot disagree about who is who.
+ *
+ * It is one ROUTE and not two on purpose: the address is what `resolveLandingPathForRole` returns
+ * for her and what the sidebar links, and giving her seat its own path would have meant teaching
+ * the landing resolver, the navigation config and every "go home" link about it. Only the component
+ * and the loader differ, so only they branch.
  */
 export default async function HrCommandCenterPage({
   searchParams,
@@ -40,6 +57,24 @@ export default async function HrCommandCenterPage({
   const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
   const hiredWindow = { from: one(params.hiredFrom) ?? null, to: one(params.hiredTo) ?? null };
 
+  // The Talent Acquisition overview's calendar travels in the URL for the same reason the Hired
+  // window does: a different week or month is a SERVER read (six weeks of bookings and the company
+  // calendar), and rebuilding the month's marks in the browser would be a second implementation of
+  // `buildMonthMarks`. Prefixed `ta` so they cannot collide with the company calendar's own params
+  // if this page ever embeds one. Anything malformed is ignored and the current week/month is shown
+  // — never counted as an empty week.
+  const monthNumber = Number(one(params.taMonth));
+  const yearNumber = Number(one(params.taYear));
+  const calendarMonth =
+    Number.isInteger(monthNumber) &&
+    monthNumber >= 1 &&
+    monthNumber <= 12 &&
+    Number.isInteger(yearNumber) &&
+    yearNumber >= 2000 &&
+    yearNumber <= 2100
+      ? { month: monthNumber, year: yearNumber }
+      : null;
+
   return (
     <Suspense
       fallback={
@@ -49,24 +84,40 @@ export default async function HrCommandCenterPage({
         />
       }
     >
-      <HrCommandCenterContent access={access} hiredWindow={hiredWindow} />
+      <HrCommandCenterContent
+        access={access}
+        calendarMonth={calendarMonth}
+        hiredWindow={hiredWindow}
+        week={one(params.taWeek) ?? null}
+      />
     </Suspense>
   );
 }
 
 async function HrCommandCenterContent({
   access,
+  calendarMonth,
   hiredWindow,
+  week,
 }: {
   access: Awaited<ReturnType<typeof resolveAccessContextFromPage>>;
+  calendarMonth: { month: number; year: number } | null;
   hiredWindow: { from: string | null; to: string | null };
+  week: string | null;
 }) {
+  // Which of the two landing pages this seat gets. Decided once, here, so only ONE of the two
+  // loaders runs — they overlap heavily (offers, the recruitment dashboard, the directory) and
+  // running both to pick a component afterwards would double every read on somebody's home page.
+  const isTalentAcquisition = hrBundleForRole(access.role) === TALENT_ACQUISITION_SEAT;
+
   // Both in parallel: neither needs the other, and the identity is a Storage lookup for the
   // uploaded photo on top of one row read — serialising them would put that latency in front of
   // the page's own data for no reason. `resolveViewerIdentityFromPage` is `cache()`d per request,
   // so the topbar's own call in the shell costs nothing extra.
   const [data, viewer] = await Promise.all([
-    getHrCommandCenterData(access, { hiredWindow }),
+    isTalentAcquisition
+      ? getTalentAcquisitionOverview(access, { hiredWindow, month: calendarMonth, week })
+      : getHrCommandCenterData(access, { hiredWindow }),
     resolveViewerIdentityFromPage(access),
   ]);
 
@@ -77,25 +128,34 @@ async function HrCommandCenterContent({
     redirect(resolveLandingPathForRole(access.role));
   }
 
-  return (
-    <HrCommandCenter
-      data={data}
-      identity={{
-        displayName: viewer.displayName,
-        // `access.hrId`, not the login id: the strip prints an HR ID and an account name is not
-        // one. Null when the account has no linked employee, which the strip draws as nothing
-        // rather than as an empty slot.
-        employeeCode: formatHrIdForDisplay(access.hrId),
-        photoUrl: viewer.imageUrl ?? null,
-        // Already the JOB TITLE, not the seat key — the resolver maps it through
-        // HR_SEAT_JOB_TITLES, so this reads "HR Business Partner" rather than the raw seat name.
-        //
-        // That seat name is deliberately not written out here. `hr-function-governance.test.ts`
-        // Rule 10 pins every file containing one, because such a string is usually a gate the
-        // permission matrix cannot see. This page's gate is `hrBundleForRole` above, so listing it
-        // would dilute a tripwire whose whole value is that each entry is a real by-name grant.
-        roleLabel: viewer.roleLabel,
-      }}
-    />
-  );
+  // ONE identity for both branches, built once. The strip is the thing the owner said not to touch
+  // ("donot touch photo or identity banner", 2026-10-13), so the two pages are handed the same four
+  // props from the same resolver rather than each assembling its own.
+  const identity = {
+    displayName: viewer.displayName,
+    // `access.hrId`, not the login id: the strip prints an HR ID and an account name is not
+    // one. Null when the account has no linked employee, which the strip draws as nothing
+    // rather than as an empty slot.
+    employeeCode: formatHrIdForDisplay(access.hrId),
+    photoUrl: viewer.imageUrl ?? null,
+    // Already the JOB TITLE, not the seat key — the resolver maps it through
+    // HR_SEAT_JOB_TITLES, so this reads "HR Business Partner" rather than the raw seat name.
+    //
+    // That seat name is deliberately not written out here. `hr-function-governance.test.ts`
+    // Rule 10 pins every file containing one, because such a string is usually a gate the
+    // permission matrix cannot see. This page's gate is `hrBundleForRole` above, so listing it
+    // would dilute a tripwire whose whole value is that each entry is a real by-name grant.
+    roleLabel: viewer.roleLabel,
+  };
+
+  // `isTalentAcquisition` chose the loader above, so the shape that came back is the one this
+  // branch wants — asserted with a `"calendar" in data` narrowing rather than a cast, so a loader
+  // that ever returned the other shape would be a type error here instead of a blank page.
+  if (isTalentAcquisition && "calendar" in data) {
+    return <TalentAcquisitionOverview data={data} identity={identity} />;
+  }
+  if ("groups" in data) {
+    return <HrCommandCenter data={data} identity={identity} />;
+  }
+  redirect(resolveLandingPathForRole(access.role));
 }

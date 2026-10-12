@@ -37,17 +37,26 @@ import { stripComments } from "./support/comment-strip.ts";
 type Identity = "band" | "strip";
 
 /**
- * The five admin-shell landing surfaces (src/lib/auth/landing.ts), and which identity each wears.
+ * The admin-shell landing surfaces (src/lib/auth/landing.ts), and which identity each wears.
  *
- * The FILE is wherever the identity is actually drawn, which is not always the `page.tsx`. Three
+ * The FILE is wherever the identity is actually drawn, which is not always the `page.tsx`. Most
  * surfaces are drawn by a component only one route imports — `SystemAdminOverview` for /admin,
  * `HrCommandCenter` for the HR namespace, `FinanceCommandCenter` for Finance — and a single-surface
  * component is the same thing as the page for this rule. The CEO and SFE boards SHARE
  * `CeoCommandCenter`, so theirs is asserted on the shared component once, below.
+ *
+ * TWO COMPONENTS NOW SERVE THE HR ADDRESS. Since 2026-10-13 the Talent Acquisition seat gets
+ * `TalentAcquisitionOverview` at /hr/admin/hr-command-center and every other HR seat keeps
+ * `HrCommandCenter` — one route, two components, chosen on the seat's own bundle. Both are listed,
+ * because the whole value of this test is that the identity cannot go missing from a landing page
+ * in silence, and a bespoke page for one seat is the easiest place in the repo for exactly that to
+ * happen: the owner's instruction when he asked for it was *"donot touch photo or identity
+ * banner"*, and nothing but this list enforces it.
  */
 const LANDING_SURFACES: readonly { file: string; seat: string; wears: Identity }[] = [
   { file: "src/components/admin/system-admin-overview.tsx", seat: "Super Admin (/admin)", wears: "strip" },
   { file: "src/components/hr/hr-command-center.tsx", seat: "HR Advisory / HR Operations", wears: "strip" },
+  { file: "src/components/hr/talent-acquisition-overview.tsx", seat: "Talent Acquisition", wears: "strip" },
   { file: "src/components/admin/ceo-command-center.tsx", seat: "CEO and SFE Manager", wears: "band" },
   { file: "src/components/admin/finance-command-center.tsx", seat: "Finance Manager", wears: "band" },
 ];
@@ -139,9 +148,10 @@ export function runAdminLandingIdentityStripTests() {
   // assertions running against fewer surfaces with nothing to say about it.
   assert.equal(
     LANDING_SURFACES.length,
-    4,
-    "four files draw the five admin landing identities (the CEO and SFE boards share one). A " +
-      "shorter list is a check that stopped watching, not a rule that changed",
+    5,
+    "five files draw the admin landing identities: /admin, the two components behind the HR " +
+      "address, Finance, and the one the CEO and SFE boards share. A shorter list is a check that " +
+      "stopped watching, not a rule that changed",
   );
   assert.equal(
     BAND_CALL_SITES.length,
