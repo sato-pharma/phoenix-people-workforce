@@ -13,6 +13,7 @@
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { crmCutoverMonthDeductionNote, isCrmCutoverMonth, readCrmCutoverSetting } from "@/lib/crm/cutover.ts";
 
+import { dropDeductionExemptDrafts } from "./exempt-employees.ts";
 import { collectFingerprintCandidates } from "./connectors/fingerprint.ts";
 import { collectDsmNoRecordCandidates } from "./connectors/dsm-no-record.ts";
 import { collectHalfDayCandidates } from "./connectors/half-day.ts";
@@ -243,7 +244,11 @@ export async function collectOneConnectorForMonth(
   const { month, year, createdBy } = input;
   try {
     const output = await collector.run({ month, year, createdBy });
-    const { drafts, notes } = collectorOutputParts(output);
+    const parts = collectorOutputParts(output);
+    // People the owner took out of every deduction type are dropped BEFORE reconciling, so a
+    // re-run also retires their still-live rows rather than leaving them standing.
+    const { kept: drafts } = dropDeductionExemptDrafts(parts.drafts);
+    const notes = parts.notes;
     const withNotes = (result: CandidateDraftInsertResult): CandidateDraftInsertResult =>
       notes.length === 0 ? result : { ...result, warnings: [...result.warnings, ...notes] };
     if (collector.reconcilesWholeCategory) {
