@@ -709,6 +709,80 @@ html:has(.admin-shell) {
   }
 }
 
+/* ══════════════════════════════════════════════════════
+   The identity strip's watermark — the live shading
+   ══════════════════════════════════════════════════════
+
+   The owner, 2026-10-12, on the HR landing's phoenix watermark, in three notes: "I want it to be
+   more more appearing ... glossy and uh, shiny, glowing", then "make it glowing by by its original
+   color, the orange ... خلي ملامحها باينة", then, once the colour was right: "Make it have a live
+   shading, live shading, but without uh, without decreasing the performance of the page."
+
+   🔴 THAT LAST CLAUSE IS WHY THESE THREE ANIMATIONS TOUCH ONLY `transform` AND `opacity`. Those are
+   the two properties a browser animates on the COMPOSITOR: each layer is painted once and then
+   moved or faded on the GPU, with no layout and no repaint on any frame. Animating a gradient's
+   `background-position` instead — which is how the first version of the sweep was written —
+   repaints a 348x232 masked surface sixty times a second for as long as the page is open, which is
+   exactly the cost he asked not to pay. If a fourth movement is ever added here, it moves or fades
+   a layer; it does not animate a gradient, a filter, a size or an offset.
+
+   The colours, the mask and the layer order live in `PhoenixIdentityStrip` beside the geometry they
+   are derived from. Only the movement is here, because keyframes cannot be an inline style. */
+
+/* 🔴 THE MARK IS STILL, AND LIGHTNING CROSSES IT EVERY FIVE SECONDS. His correction, after a first
+   reading of "live shading" that had the surface breathing and drifting without pause: "I didn't
+   mean by live shading like this. I mean the logo as it is, and every, for example, uh, five
+   seconds, um, like رعد uh, وبرق."
+
+   The whole strike is the first 12% of the cycle — about six tenths of a second — and the band is
+   off the shape and fully transparent for the remaining four and a half. The two dips at 4% and 8%
+   are the flicker: a real strike is two or three pulses inside one flash, and a single clean fade
+   reads as a shine passing rather than lightning. Nothing else in the mark moves at all. */
+@keyframes phx-wash-strike {
+  0% {
+    opacity: 0;
+    transform: translate3d(-150%, 0, 0);
+  }
+  2% {
+    opacity: 1;
+  }
+  4% {
+    opacity: 0.35;
+  }
+  6% {
+    opacity: 1;
+  }
+  8% {
+    opacity: 0.55;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  12% {
+    opacity: 0;
+    transform: translate3d(330%, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(330%, 0, 0);
+  }
+}
+
+.phx-wash-strike {
+  animation: phx-wash-strike 5s linear infinite;
+  will-change: opacity, transform;
+}
+
+/* Under reduced motion the mark keeps every static layer and the lightning simply never comes.
+   Nothing else has to be restored, because nothing else was ever moving. */
+@media (prefers-reduced-motion: reduce) {
+  .phx-wash-strike {
+    animation: none;
+    opacity: 0;
+    will-change: auto;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
