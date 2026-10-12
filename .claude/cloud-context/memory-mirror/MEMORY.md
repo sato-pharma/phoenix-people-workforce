@@ -30,6 +30,10 @@
 
 ## Inbox — new notes land here
 
+- [Everything reads zero → check the publication gate FIRST](every-sales-dashboard-reads-zero-when-no-closing-is-published.md) — one unpublish blanks every rep and manager on that line; a re-publish re-sends the announcement email.
+- [phx-live is installed on the box — and the mirror-group bug it exposed](phx-live-is-installed-and-the-mirror-group-bug-it-exposed.md) — "unable to open loose object … Permission denied" from the preview mirror is a GROUP problem, and it breaks phx-preview too.
+- [A dropped target month leaves NO ledger trace](a-dropped-target-month-leaves-no-ledger-trace.md) — look for `au.monthly_targets_<line>_<mon><yr>_backup_<date>`, the only surviving copy; and the template only offers areas whose seat existed at download time.
+
 
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.

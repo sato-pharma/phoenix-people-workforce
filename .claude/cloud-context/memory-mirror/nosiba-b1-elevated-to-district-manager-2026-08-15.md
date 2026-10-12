@@ -66,3 +66,33 @@ v4. Exercisable: 1 active report, Aisha `B-79` (Minia 2/UE2), routes approvals t
 resigned. Her `employees.job_title` stays "Medical Representative" (cosmetic only — makes her
 approver-rung label read "Medical Representative"; org chart already shows DM via seat_tier). Nothing
 to change.
+
+## TWO OPEN SEATS IS CORRECT — owner confirmed 2026-10-12: "leave Nosiba on both seats"
+
+**She is the only person in the org holding two open seats, and it is deliberate.** Read live from
+production on 12 Oct 2026:
+
+- `SEAT-AIF-ADM-UE-1` (`ACTING_DM`, parent `SEAT-AIF-NSM`) — the whole Anti Infective Upper Egypt 1
+  region: UE1, UE2, UE9.
+- `SEAT-AIF-REP-UE1` (`REP`, area UE1 = Minia 1, **parent `SEAT-AIF-ADM-UE-1`**) — she kept her own
+  territory when she began acting as DM, so her rep seat's manager IS herself.
+
+Both seats were re-created `effective_from` **2026-07-13** and neither has an `effective_to`.
+**Never close one to make the count read one, and never report the pair as a defect** — a session's
+audit flagged it on 12 Oct and his answer was to leave both.
+
+**`au_v_employee_seat_drift` has an explicit self-manager exception** that exists for exactly this
+shape: `manager_drifted` is forced false when the parent seat's occupant is the employee herself
+(`lower(parent_occ.occupant_hr_id) is distinct from lower(e.hr_id)`). Both her rows report no drift.
+
+**No double counting.** `au.f_monthly_attribution` carries `rep_hr_id` and `dm_hr_id` on every row,
+so she is scored twice over DIFFERENT scopes, the same as any DM whose region contains a rep:
+September 2026 — as Minia 1 rep **29,515.00**; as acting DM **64,918.90** (Minia 1 29,515.00 +
+Minia 2 27,105.45 + Beni Suef 8,298.45). Comparing the two numbers as if one contained an error is
+the mistake.
+
+**Three facts above this line are now STALE** (live 12 Oct 2026): her `employees.job_title` is
+**District Sales Manager**, not "Medical Representative" (changed 9 Oct); her active reports are
+**Ahmed Mohamed Abd-Elnaim AI-0026** (Minia 2 / UE2) and **Hanan Safwat SalahEldeen Hassan AI-0012**
+(Beni Suef / UE9), not Aisha B-79; and her manager is **Magdy El Senosey Helmy AboElsebh AI-0008**,
+National Sales Manager. The access half of this note still holds.
