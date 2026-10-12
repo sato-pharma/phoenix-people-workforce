@@ -348,6 +348,30 @@ export const MODULES = [
     keywords: ["phoenix ranks", "rep ranks", "leaderboard", "ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type", "doctor list changes", "drop a doctor", "contact list"],
     tables: ["crm_", "ireports", "visit"],
   },
+  // 🔴 SPLIT 2026-10-12, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `crm` reached 34 rules
+  // and its injected pointer measured 4,121 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the place-case rep-key rule landed. Phoenix Ranks is
+  // the clean cut: it reads Phoenix CRM only, it has its own folders, pillars, windows, insignia and
+  // certificate, and none of its rules are read while editing an iReports360 sync or a doctor list.
+  // `crm` KEEPS EVERY GLOB IT HAD, so a ranks file loads the PAIR and nothing that used to arrive stops
+  // arriving. The file itself was at 71% of its 72,000-byte cap — two different limits, and this is the
+  // small one.
+  {
+    id: "rep-ranks",
+    title: "Phoenix Ranks — the rep board, its pillars and the certificate",
+    scope: "The shared rep ranking built on Phoenix CRM only: the pillars and what each divides by, the five windows, who sees whose breakdown, the nightly rebuild, the ladder, the insignia and the certificate.",
+    globs: [
+      "src/lib/rep-ranks/**",
+      "src/components/rep-ranks/**",
+      "app/**/ranks/**",
+      "app/api/cron/rep-ranks/**",
+      "tests/*rep-ranks*",
+      "tests/rep-rank*",
+      "supabase/migrations/*rep_ranks*",
+    ],
+    keywords: ["phoenix ranks", "rep ranks", "integrity pillar", "pillar", "insignia", "rank certificate", "standings", "ladder", "field accuracy", "am start"],
+    tables: ["rep_rank_standings"],
+  },
   {
     id: "marketing",
     title: "Marketing requests, venues, pharmacies and ROI",

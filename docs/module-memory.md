@@ -103,6 +103,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-reports` — Phoenix CRM — the reports, the boards and how every figure is counted | `src/lib/phoenix-crm/{brick-report,daily-plan-report,exceptions,report-guide,report-rules,samples-report}.ts` and 3 more |
 | `phoenix-crm-visits` — Phoenix CRM — the visit a rep records: the form, the day, the pharmacy call | `src/lib/phoenix-crm/{call-prep,day-activities,day-detail,day-start-rules,last-visit-products,pharmacy-call-rules,today-rules,visit-ask-rules,visit-company,visit-edit-rules,visit-kind-labels,visit-location-words,visit-outcome,visit-rollup-rules}.ts` and 4 more |
 | `crm` — Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans | `src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**` and 10 more |
+| `rep-ranks` — Phoenix Ranks — the rep board, its pillars and the certificate | `src/lib/rep-ranks/**` and 6 more |
 | `marketing` — Marketing requests, venues, pharmacies and ROI | `src/lib/{marketing-requests,venues,pharmacy-master,pharmacy-search,customer-pharmacy-mapping,verified-captures,market-awareness,sales-marketing-intelligence,evidence}/**` and 4 more |
 | `recruitment` — Recruitment, CVs and offers | `src/lib/{recruitment,cv,offers,whatsapp-inbox,mailbox-monitor,zoom}/**` and 4 more |
 | `hiring-documents` — Hiring documents, contracts and company papers | `src/lib/{hiring-pack,hiring-documents,contracts,business-cards,spotlight,pdf,export}/**` and 3 more |
