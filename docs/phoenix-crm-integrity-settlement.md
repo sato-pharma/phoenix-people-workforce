@@ -99,7 +99,9 @@ Two different things, and the page says so:
 - **Settled** = a DECISION. He looked, and wrote why.
 
 A case that is both is listed as **withdrawn**, so that section's claim — *each of these was read
-again, to a verdict that does not carry the flag* — stays true of every row in it. A withdrawn case
+again, to a verdict that does not carry the flag* — stays true of every row in it, which it became
+only with §4: until then a reading that reached NO verdict landed there too, and the sentence was
+untrue of it. A withdrawn case
 offers no settle button: the evidence has already given way, so there is no decision left to take.
 
 ### It means the same thing on every surface
@@ -183,7 +185,8 @@ supports the flag **withdraws** the case — derived at board time from
 
 **Measured on production on 2026-10-09: four of the five open signboard cases were unsupported** —
 two places by then read `match`, two `unjudged`, and the one case that still stood had been filed as
-the wrong kind. A place reading `match` leaves the nightly backlog, so nothing would ever have
+the wrong kind. 🔴 **Two of those four were the defect in §4, not a withdrawal:** an `unjudged`
+reading answered nothing, so those two cases should have gone on standing. A place reading `match` leaves the nightly backlog, so nothing would ever have
 re-read those four: without this, the board would have gone on showing a flag whose own evidence had
 already been replaced.
 
@@ -195,6 +198,36 @@ missing or unparseable date leaves the flag standing: an unreadable reading is n
 It is pure, and it lives in `location-integrity.ts` rather than in `server/integrity-board.ts`,
 because a test importing the server module would pull in `getSupabaseAdmin` — the same reason
 `readIntegritySettlement` is a separate module (§1).
+
+## 4 · An unreadable re-read leaves the case standing (2026-10-12)
+
+**The defect.** `FLAGGABLE_SIGNBOARD_VERDICTS` is `{other_name, no_name}`, so `supportsFlag` is
+false for three different things at once: a reading that ANSWERS the flag (`match`), a reading that
+answered NOTHING (`unjudged`), and a place never read. `integrity-board.ts` split the board on
+`!supportsFlag`, so a night that could not read the sign withdrew the case — the opposite of what
+the page says it is showing.
+
+**What it cost, read from production.** Of 106 signboard cases, 5 were withdrawn and **2 of those 5
+were this defect**: مستشفى المنشاوى العام — a STRONG case, filed 9 Oct, withdrawn by the 12 Oct 03:36
+pass — and رضوان محمد. Two things made it worse than a mislabelled section:
+
+- A withdrawn case renders **no settle button** (§1, "Withdrawn is not settled"), so nobody could
+  ever decide those two. The evidence had not given way; the camera had.
+- `SIGNBOARD_REREAD_REASONS` keeps re-reading exactly the places that reached no verdict, so such a
+  case **flickered** — standing or withdrawn with each night's legibility, with nothing decided.
+
+**The fix.** Withdrawal is now its own list rather than the negation of the flag list:
+`WITHDRAWING_SIGNBOARD_VERDICTS = {match}`, surfaced as `withdrawsFlag` on `IntegrityLaterReading`.
+The board splits on `withdrawsFlag` and the settle gate on `!withdrawsFlag`. `supportsFlag` keeps
+its old meaning — a flag may still not STAND on a reading that reached no verdict — so no existing
+assertion was weakened; the two ideas were simply never the same one.
+
+**Why no copy change.** The counter already read *"read again to a verdict that no longer carries
+them"*. That sentence was untrue of an `unjudged` reading; the fix makes it true.
+
+Pinned by `tests/crm-integrity-signboard-cases.test.ts`, whose three new assertions each fire on
+their own break: the board split put back to `!supportsFlag`, `withdrawsFlag` defined as
+`!supportsFlag`, and the settle gate put back to `supportsFlag`.
 
 ## Where the code is
 

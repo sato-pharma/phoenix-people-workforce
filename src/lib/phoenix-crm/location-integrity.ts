@@ -418,6 +418,25 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
 /** The two signboard verdicts that put a name on the integrity board. Anything else is not a flag. */
 const FLAGGABLE_SIGNBOARD_VERDICTS = new Set(["other_name", "no_name"]);
 
+/**
+ * The only verdicts that take a filed flag OFF the board. A failure to read is not one of them.
+ *
+ * 🔴 "COULD NOT BE READ" IS NOT AN ANSWER, AND IT MUST NOT WITHDRAW A CASE. The flag stands on the
+ * reading that FILED it, and a later reading either overturns it (`match`), confirms it
+ * (`other_name`, `no_name`) or says nothing at all (`unjudged`) — and saying nothing leaves the
+ * filing exactly where it was. This is the same principle the dates already follow below: null is
+ * "nothing read it again", never "it was withdrawn".
+ *
+ * Measured 2026-10-12 on the owner's board: مستشفى المنشاوى العام was filed STRONG `sign_other_name`
+ * on 9 Oct, the 12 Oct 03:36 pass could not read the sign, and the case left the standing list with
+ * nobody having decided anything — and a withdrawn case offers no settle button, so it could never
+ * be decided either. Worse, `SIGNBOARD_REREAD_REASONS` keeps retrying exactly those unreadable
+ * places, so a case judged this way flickers on and off the board with each night's luck rather
+ * than on its evidence. The board's own counter text ("read again to a verdict that no longer
+ * carries them") is untrue of a reading that reached no verdict.
+ */
+const WITHDRAWING_SIGNBOARD_VERDICTS = new Set(["match"]);
+
 /** Which filed flag each of those verdicts corresponds to, so "still the same finding" is a test. */
 const SIGNBOARD_VERDICT_FLAG: Record<string, string> = {
   other_name: "sign_other_name",
@@ -473,6 +492,14 @@ export type IntegrityLaterReading = {
   checkedAt: string;
   /** Does the later reading still reach a verdict that would put a name on the board? */
   supportsFlag: boolean;
+  /**
+   * Does it take the flag off the board? Only a reading that ANSWERS the flag does.
+   *
+   * 🔴 NOT `!supportsFlag` — that was the defect. An `unjudged` reading supports nothing and
+   * answers nothing, so it is false on both: the case keeps standing and keeps its settle button,
+   * and the board still prints "read again on <date> and the sign could not be read".
+   */
+  withdrawsFlag: boolean;
   /** Is it the SAME finding as the one filed, and not merely still a finding? */
   sameFinding: boolean;
   /** What it says, in plain English, ready to print after "read again on <date>". */
@@ -493,6 +520,12 @@ export type IntegrityLaterReading = {
  * 🔴 AND A MISSING OR UNPARSEABLE DATE LEAVES THE FLAG STANDING. Null is "nothing read it again",
  * never "it was withdrawn" — a board that quietly drops findings it cannot date is worse than one
  * that shows a stale finding, because the stale one can be read and judged.
+ *
+ * 🔴 A READING THAT REACHED NO VERDICT LEAVES IT STANDING FOR THE SAME REASON. `supportsFlag` says
+ * whether the newest reading is itself a finding; `withdrawsFlag` says whether it takes the filed
+ * one away, and only `match` does (`WITHDRAWING_SIGNBOARD_VERDICTS`). The board must read
+ * `withdrawsFlag` — reading `!supportsFlag` withdrew every case whose sign had merely become
+ * unreadable, which is the one thing legibility is known to do from one night to the next.
  */
 export function judgeLaterSignboardReading(input: {
   source: string;
@@ -512,6 +545,7 @@ export function judgeLaterSignboardReading(input: {
   return {
     checkedAt: input.stored.checkedAt,
     supportsFlag,
+    withdrawsFlag: WITHDRAWING_SIGNBOARD_VERDICTS.has(input.stored.verdict),
     sameFinding: supportsFlag && input.flags.includes(SIGNBOARD_VERDICT_FLAG[input.stored.verdict] ?? ""),
     words: laterReadingWords(input.stored.verdict, input.stored.reason),
     signText: input.stored.signText,

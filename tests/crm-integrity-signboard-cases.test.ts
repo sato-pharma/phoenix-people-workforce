@@ -31,6 +31,17 @@ import { stripComments } from "./support/comment-strip.ts";
 // in any case. 🔴 Withdrawn is NOT settled: settling arrived the same day as four columns that say
 // WHO looked and on WHICH flags (`tests/phoenix-crm-integrity-settle.test.ts`), and a withdrawn case
 // is the evidence giving way with nobody having decided anything — so it offers no settle button.
+//
+//   3. A THIRD DEFECT, FOUND 2026-10-12: THE BOARD WITHDREW A CASE BECAUSE THE SIGN COULD NO LONGER
+//      BE READ. The split asked `!supportsFlag`, which is true of `unjudged` as well as of `match`,
+//      so a night on which the reader simply failed took the case off the standing list — and with
+//      it the settle button, leaving a flag nobody could ever decide. Measured on production:
+//      مستشفى المنشاوى العام, filed STRONG `sign_other_name` on 9 Oct, withdrawn by the 12 Oct 03:36
+//      pass reading `unjudged`; and رضوان محمد the same way. Because `SIGNBOARD_REREAD_REASONS`
+//      retries exactly those unreadable places, such a case flickers on and off the board with each
+//      night's legibility instead of resting on its evidence, and the page's own counter text —
+//      "read again to a verdict that no longer carries them" — is untrue of a reading that reached
+//      no verdict at all. `withdrawsFlag` now answers the board's question and only `match` sets it.
 
 function read(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
@@ -56,18 +67,37 @@ function runJudgeTests() {
   assert.ok(matched, "a later reading must be reported");
   assert.equal(matched.supportsFlag, false, "a later match no longer supports a signboard flag");
   assert.equal(matched.sameFinding, false, "a match is not the same finding as a flag");
+  assert.equal(matched.withdrawsFlag, true, "a later match is the one reading that takes a flag off the board");
 
   // An `unjudged` is not a clean bill of health, but it is not a finding either — and a flag may not
   // stand on a reading that reached no verdict at all.
+  //
+  // 🔴 NOR MAY IT BE WITHDRAWN BY ONE. The two answers are different questions, and conflating them
+  // was defect 3 above: `supportsFlag` is false because this reading is not itself a finding, and
+  // `withdrawsFlag` is false because it has answered nothing. The case keeps standing, and keeps the
+  // settle button that is the only way anybody can ever decide it.
   for (const reason of ["unreadable", "unreadable_final", "unconfirmed", "name_unusable"]) {
     const unjudged = judge({ verdict: "unjudged", reason });
     assert.ok(unjudged, `an unjudged later reading must be reported (${reason})`);
     assert.equal(unjudged.supportsFlag, false, `an unjudged reading cannot hold a flag up (${reason})`);
+    assert.equal(
+      unjudged.withdrawsFlag,
+      false,
+      `a reading that could not read the sign must NOT withdraw the case (${reason}) — it answered nothing`,
+    );
     assert.ok(
       unjudged.words !== "" && !unjudged.words.includes(reason),
       `the reason must be rendered in words, never as the code ${reason}`,
     );
   }
+
+  // A verdict nobody has written a rule for must leave the flag STANDING, never withdraw it. The
+  // list of withdrawing verdicts is an allow-list for the same reason the SFE sources are one: a
+  // verdict added next month would otherwise silently start emptying the board.
+  const unknownVerdict = judge({ verdict: "a_verdict_added_next_month", reason: null });
+  assert.ok(unknownVerdict, "an unknown verdict must still be reported");
+  assert.equal(unknownVerdict.supportsFlag, false, "an unknown verdict is not itself a finding");
+  assert.equal(unknownVerdict.withdrawsFlag, false, "an unknown verdict must never withdraw a case");
 
   // Each of the four `unjudged` reasons gets its OWN sentence: "could not be read" is wrong for two
   // readings that disagreed, and it hides that a frame has had every attempt it gets.
@@ -86,6 +116,7 @@ function runJudgeTests() {
   // Still a finding, and still the SAME one: the flag stands and the board says it was confirmed.
   const again = judge({ verdict: "other_name", reason: "sign_other_name" }, ["sign_other_name"]);
   assert.ok(again?.supportsFlag && again.sameFinding, "a later reading of the same verdict confirms the flag");
+  assert.equal(again.withdrawsFlag, false, "a reading that confirms the flag cannot withdraw it");
 
   // Still a finding, but a DIFFERENT one — اسلام عبدالعال was filed `sign_no_name` and reads
   // `other_name` now. The flag stands (somebody is still named) and the board must not pretend the
@@ -194,8 +225,30 @@ function runLoaderTests() {
 
   // The split, and what it must not do.
   assert.ok(
-    board.includes("const withdrawn = allCases.filter((entry) => entry.laterReading !== null && !entry.laterReading.supportsFlag)"),
+    board.includes("const withdrawn = allCases.filter((entry) => entry.laterReading !== null && entry.laterReading.withdrawsFlag)"),
     "a withdrawn flag must leave the findings",
+  );
+  assert.ok(
+    board.includes("const standing = allCases.filter((entry) => entry.laterReading === null || !entry.laterReading.withdrawsFlag)"),
+    "a case stands unless a later reading ANSWERED it — the split must read withdrawsFlag",
+  );
+  // 🔴 The negation is the defect of 2026-10-12, in both files that ask the question. `unjudged` is
+  // false on `supportsFlag` too, so `!supportsFlag` withdraws a case whose sign merely stopped being
+  // legible — and legibility is the one thing known to move from one night to the next.
+  const boardCode = stripComments(board);
+  const settleCode = stripComments(read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx"));
+  for (const [label, code] of [
+    ["the board's standing/withdrawn split", boardCode],
+    ["the settle button's gate", settleCode],
+  ] as const) {
+    assert.ok(
+      !/!\s*\w+(?:\.\w+)*\.supportsFlag/.test(code),
+      `${label} must never decide on !supportsFlag — that withdraws a case because the sign could not be read`,
+    );
+  }
+  assert.ok(
+    settleCode.includes("!entry.laterReading.withdrawsFlag"),
+    "a case a later reading did not answer must keep its settle button — otherwise nobody can ever decide it",
   );
   assert.ok(
     board.includes("strongCount: cases.filter((entry) => entry.strong).length"),
