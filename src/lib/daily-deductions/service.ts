@@ -13,6 +13,7 @@ import {
 } from "@/lib/deductions/connectors/vacation.ts";
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
 import { aggregateClippedLines, clipDraftToRange, type ClippedDraftLine } from "./compute.ts";
+import { collectNoRecordsDailyCandidates } from "./no-records.ts";
 import { monthsInRange, resolveDailyRange } from "./range.ts";
 import {
   dailyDeductionConnectorLabels,
@@ -32,12 +33,13 @@ const CONNECTOR_RUNNERS: Record<DailyDeductionConnector, ConnectorRunner> = {
   crm: (input) => collectCrmCandidates(input),
   unpaid_vacation: (input) => collectUnpaidVacationCandidates(input),
   insufficient_balance_vacation: (input) => collectInsufficientBalanceVacationCandidates(input),
+  no_records_activity: (input) => collectNoRecordsDailyCandidates(input),
 };
 
 /**
  * Authoritative compute for ONE connector over a range. One connector per call, by design:
  * each is a company-wide scan, and running the whole set in one request is what put the month
- * module over the 300s Cloud Run limit (#1377). The admin UI steps through the four connectors,
+ * module over the 300s Cloud Run limit (#1377). The admin UI steps through the five connectors,
  * one request each, exactly as the month module's collection screen does.
  *
  * Read-only: the connectors return drafts; nothing is written. A connector that throws (a

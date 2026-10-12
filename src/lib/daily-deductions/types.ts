@@ -25,6 +25,7 @@ export const dailyDeductionCategories = [
   "crm",
   "unpaid_vacation",
   "insufficient_balance_vacation",
+  "no_records_activity",
 ] as const;
 export type DailyDeductionCategory = (typeof dailyDeductionCategories)[number];
 
@@ -33,12 +34,18 @@ export type DailyDeductionCategory = (typeof dailyDeductionCategories)[number];
  * day-by-day scan) and minus dsm_no_record / crm_half_day / holiday_bridge, whose whole point is a
  * ledger-relative dedup against the MONTH module's candidate rows — a dedup that has no
  * meaning for a stateless range tally. Fingerprint, CRM and the two vacation engines are
- * the day-granular no-activity/absence sources the owner counts toward his sheet. */
+ * the day-granular no-activity/absence sources the owner counts toward his sheet.
+ *
+ * `no_records_activity` is the daily module's OWN connector (owner, 2026-10-12): a working day on
+ * which an active employee left no punch and no other activity. It is not the month module's
+ * retired category of the same name — it skips Medical Reps, district managers and the SFE
+ * Manager, whose absences the `crm` and `dsm_no_record` connectors already own. */
 export const dailyDeductionConnectors = [
   "fingerprint",
   "crm",
   "unpaid_vacation",
   "insufficient_balance_vacation",
+  "no_records_activity",
 ] as const;
 export type DailyDeductionConnector = (typeof dailyDeductionConnectors)[number];
 
@@ -51,6 +58,7 @@ export const dailyDeductionConnectorLabels: Record<DailyDeductionConnector, stri
   crm: "CRM no-activity",
   unpaid_vacation: "Unpaid vacation",
   insufficient_balance_vacation: "Insufficient balance vacation",
+  no_records_activity: "No records (no punch, no activity)",
 };
 
 /** A from/to date window in ISO YYYY-MM-DD, inclusive both ends. */
