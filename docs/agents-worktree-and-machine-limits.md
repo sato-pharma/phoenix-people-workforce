@@ -1308,9 +1308,22 @@ is idempotent and is what created all of this. Measured the same evening, on sta
 Permission denied".** `objects/<xx>` directories git had created without the setgid bit gave their
 new objects the creator's primary group, and neither `phxpreview` nor `phxlive` could read them — so
 a **phx-preview of a fresh commit would have failed the same way**. Fixed on the box (`chgrp -R
-phxpreview`, `chmod 2750` on every directory), and `live-ctl.sh prepare` re-applies it each time.
-`preview-scope.sh` itself was NOT changed: it is shared with phx-preview, and that edit is the
-owner's call.
+phxpreview`, `chmod 2750` on every directory).
+
+🔴 **THE GUARD LIVES IN `preview-scope.sh`'s `refresh_preview_mirror`, DIRECTLY AFTER THE FETCH THAT
+CREATES THE BAD DIRECTORIES — and the copy that was in `live-ctl.sh prepare` was removed with it, so
+there is exactly one.** The owner authorised the shared-file edit on 2026-10-12 ("add the
+mirror-group guard to preview-scope.sh"); it had been refused before that as a shared-resource
+change, which left phx-preview protected only as a side effect of somebody having run phx-live.
+Sitting in `refresh_preview_mirror` covers **every** caller: `preview-start.sh` (3000),
+`preview-b.sh` (3001) and `live-ctl.sh prepare` (3100). The two `find`s end in `|| true`
+deliberately — each caller runs under `set -e`, and a preview that cannot be re-grouped must still
+start. Proved by break-and-watch the same evening: planting the exact defect git creates (a
+`drwxr-x--- phx:phx` object directory) left `phxpreview` unable to read it, `refresh_preview_mirror`
+turned it into `drwxr-s--- phx:phxpreview` and readable, deleting the two lines reproduced the
+failure, and restoring them fixed it again. 🔴 **Never make the mirror group-WRITABLE instead:**
+`phxpreview` could then plant a `reference-transaction` hook that the next fetch would run as `phx`,
+who has passwordless sudo. Pre-change backups on the box: `/home/phx/*.pre-mirror-group-guard-20261012`.
 
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08
 
