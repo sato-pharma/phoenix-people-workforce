@@ -89,6 +89,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `payroll` — Payroll, salaries and deductions | `src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator,dispute-center}/**` and 4 more |
 | `payroll-disputes` — Payroll — disputes and the Dispute Center | `src/lib/dispute-center/**` and 3 more |
 | `sales-closing` — Monthly Closing, the Office and El Qema money rules, the Business Review | `src/lib/sales/*` and 6 more |
+| `sales-closing-exports` — Monthly Closing — the exports, the premium workbook and the Performance Review pack | `src/lib/sales/{closing-consolidated-premium-export,closing-export-filename,closing-export-payload,closing-matrix-without-office,closing-performance-review,closing-performance-review-access,closing-performance-review-export,closing-performance-review-regions,closing-review-sheets,monthly-closing-consolidated-export,monthly-closing-export,rankings,rankings-page,sales-workbook-kit}.ts` and 4 more |
 | `sales-imports` — Source of Sales — distributor imports, customer mapping and rollups | `src/lib/sales/{normalizer,master-data,master-map,ai}/**` and 5 more |
 | `sales-attribution` — Attribution, achievement, targets and sales territory | `src/lib/sales/territory/**` and 5 more |
 | `weekly-sales` — Weekly sales and stock | `src/lib/sales/weekly/**` and 3 more |
@@ -100,6 +101,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-boards` — Phoenix CRM — the silent detectors, the touch trail and the SFE's boards | `src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts` and 8 more |
 | `phoenix-crm-validation` — Phoenix CRM — validating a place: the signboard, the refusal, the merge | `src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts` and 7 more |
 | `phoenix-crm-reports` — Phoenix CRM — the reports, the boards and how every figure is counted | `src/lib/phoenix-crm/{brick-report,daily-plan-report,exceptions,report-guide,report-rules,samples-report}.ts` and 3 more |
+| `phoenix-crm-visits` — Phoenix CRM — the visit a rep records: the form, the day, the pharmacy call | `src/lib/phoenix-crm/{call-prep,day-activities,day-detail,day-start-rules,last-visit-products,pharmacy-call-rules,today-rules,visit-ask-rules,visit-company,visit-edit-rules,visit-kind-labels,visit-location-words,visit-outcome,visit-rollup-rules}.ts` and 4 more |
 | `crm` — Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans | `src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**` and 10 more |
 | `marketing` — Marketing requests, venues, pharmacies and ROI | `src/lib/{marketing-requests,venues,pharmacy-master,pharmacy-search,customer-pharmacy-mapping,verified-captures,market-awareness,sales-marketing-intelligence,evidence}/**` and 4 more |
 | `recruitment` — Recruitment, CVs and offers | `src/lib/{recruitment,cv,offers,whatsapp-inbox,mailbox-monitor,zoom}/**` and 4 more |
@@ -267,6 +269,22 @@ and never ask him to free space in `MEMORY.md`.
   clause "what a session sees in the pointer"; the pointer was in fact the bullet's opening headline
   all along, and a peer session caught it by running `ruleHeadlines()` over `origin/main`. The
   imperative it supported was right, the mechanism cited for it was not.
+- 🔴 **THE TWO GATES PULL AGAINST EACH OTHER: SPLITTING A LONG BULLET GROWS THE POINTER, BECAUSE EACH
+  NEW BULLET CONTRIBUTES ITS OWN HEADLINE.** Measured on the headroom pass of 2026-10-12, which split
+  the ten longest rule bullets in the repo at their own clause boundaries (owner, 2026-10-12: *"raise
+  the long-hook headroom by splitting the ten longest rules hooks"*): the 1,200-byte gate went from
+  **52 long of 538 hooks (9.67%, one bullet of slack under its 10% ceiling) to 42 of 559 (7.51%, with
+  thirteen)** — and the same 21 new bullets took `phoenix-crm` from 30 rules at 3,707 bytes to 37 at
+  **4,303** and `sales-closing` from 31 at 3,699 to 36 at **4,114**, both over the 4,000 pointer
+  margin, so both modules were SPLIT in the same PR (`phoenix-crm-visits`, `sales-closing-exports`),
+  leaving them at 3,101 and 2,983. **So never shorten bullets without re-reading the pointers, and
+  never answer a pointer that went over by re-joining the bullets** — the remedy for a pointer is
+  always the module split, and the remedy for a long bullet is always its own clause boundaries.
+  Nothing is reworded on either path: the split pass added line breaks only, proven by rebuilding
+  every pre-existing bullet from the pieces, character for character (486 bullets before, 507 after).
+  🔴 **And a split moves the SAFE half** — `sales-closing` kept every money and golden rule and gave up
+  only the surfaces a closing is READ from, because a rule that decides a number must stay where the
+  broad glob is.
 
 ## `AGENTS.md` — the full wording condensed out on 2026-10-08
 
