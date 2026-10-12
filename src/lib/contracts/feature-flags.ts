@@ -8,6 +8,8 @@
 // is confirmed live on both staging (cifwmndunmlxjhyjugxa) and production
 // (ozucdzovmcqvepbozvqf), and a disposable-fixture smoke test against staging
 // on 2026-07-18 confirmed the WP-6 reason/notes shape writes correctly and the
-// terminated employee is excluded from v_active_organogram and
-// v_payroll_eligible_employees, as expected.
+// terminated employee loses organogram_visible and leaves
+// v_payroll_eligible_employees, as expected. (That smoke read v_active_organogram
+// until it was dropped on 2026-10-12 — the EU organogram, au_v_*, is the only
+// source of truth for an employee's distribution.)
 export const WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED = true;

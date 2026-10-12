@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 
 import {
   applyOrganogramMirrorSafety,
@@ -586,4 +586,34 @@ export function runOrganogramHardeningTests() {
     "Organogram direct DSM rendering must use the visible lane set instead of raw vacant manager slots.",
   );
   assert.doesNotMatch(componentSource, /AdminStatCard/);
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // THE V ORGANOGRAM IS GONE, AND IT MAY NOT COME BACK.
+  //
+  // `public.v_active_organogram` was dropped on 2026-10-12 at the owner's instruction: the EU
+  // organogram — the `au_v_*` seat model — is the only source of truth for an employee's
+  // distribution. The view was a flat `employees` join filtered to "active TODAY", so an area
+  // whose seat is vacant NOW vanished from it entirely and every question about a PAST month came
+  // back as "nobody". It reported 48 areas with no Down town while Down town's CNS rep seat was
+  // occupied for the whole of September. Nothing in the database depended on it, confirmed against
+  // production immediately before the drop: zero dependent views, matviews or rules.
+  //
+  // Reading it now is a PostgREST 42P01, and a missing relation fails the WHOLE request rather
+  // than one field — so this sweeps the source instead of trusting a grep run once. Naming it in a
+  // comment is allowed; reading it is not.
+  const readsTheDroppedView = /\.from\(\s*["'`]v_active_organogram["'`]\s*\)/;
+  const offenders: string[] = [];
+  for (const root of ["src", "app", "scripts"]) {
+    for (const entry of readdirSync(root, { recursive: true, encoding: "utf8" })) {
+      const rel = `${root}/${String(entry).split("\\").join("/")}`;
+      if (!/\.(ts|tsx|mjs|cjs|js|jsx)$/.test(rel)) continue;
+      if (!statSync(rel).isFile()) continue;
+      if (readsTheDroppedView.test(readFileSync(rel, "utf8"))) offenders.push(rel);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `v_active_organogram was dropped on 2026-10-12 — read the EU organogram (au_v_* seat views) instead. Still reading it: ${offenders.join(", ")}`,
+  );
 }
