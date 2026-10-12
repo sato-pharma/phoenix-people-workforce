@@ -364,10 +364,21 @@ function ClearStrip({ tasks }: { tasks: HrTask[] }) {
 
 export function HrTodayPanel({
   icons,
+  openAll = false,
   tasks,
 }: {
   /** The seat's function icons, passed in so this file holds no second copy of that map. */
   icons: Record<string, LucideIcon>;
+  /**
+   * Open EVERY waiting task on arrival instead of only the most urgent one.
+   *
+   * The panel is no longer a standing block above the toolbar — since 2026-10-13 it is what the
+   * toolbar's "Needs attention" button opens ("make it show all pendings when clicked on and remove
+   * the upper part"). Someone who has just pressed that button has asked for the pendings, so a
+   * panel that opens with four of the five tasks still shut would be answering a narrower question
+   * than the one that was asked. On the page itself nothing opens it, so the default is unchanged.
+   */
+  openAll?: boolean;
   tasks: HrTask[];
 }) {
   const ordered = useMemo(
@@ -384,11 +395,12 @@ export function HrTodayPanel({
 
   const summary = useMemo(() => summarise(tasks), [tasks]);
 
-  // The most urgent task opens on arrival. Deterministic from props, so the server and the client
-  // agree on the first render.
+  // The most urgent task opens on arrival — or every waiting one when the panel was opened by the
+  // "Needs attention" button, which is a request for the pendings themselves. Deterministic from
+  // props, so the server and the client agree on the first render.
   const [openKeys, setOpenKeys] = useState<Set<string>>(() => {
-    const first = ordered.find((task) => task.urgency !== "clear");
-    return new Set(first ? [first.key] : []);
+    const waitingKeys = ordered.filter((task) => task.urgency !== "clear").map((task) => task.key);
+    return new Set(openAll ? waitingKeys : waitingKeys.slice(0, 1));
   });
 
   const toggle = (key: string) => {
@@ -434,7 +446,10 @@ export function HrTodayPanel({
             className="whitespace-nowrap text-[9px] font-black uppercase tracking-[0.18em]"
             style={{ color: FAINT }}
           >
-            Press a task to see the work
+            {/* The caption teaches the interaction, so it must describe the state the panel is
+                actually in: opened from the button every task is already open, and telling him to
+                press one to see the work is an instruction to close it. */}
+            {openAll ? "Press a task to close it" : "Press a task to see the work"}
           </span>
         </div>
 
