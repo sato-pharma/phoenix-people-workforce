@@ -434,7 +434,7 @@ function testTheFrameMicrotextIsLatinAndPinned(): void {
 
 function testTheReferenceNumberGoesIntoTheSlot(): void {
   const html = renderHrPaperHtml(packFixture(), 1, HR_PAPER_EXIT_INTERVIEW_V1);
-  const numbered = stampPaperReference(html, "HR-2026-000123", "exit-interview");
+  const numbered = stampPaperReference(html, "HR-2026-000123", "exitInterview");
   assert.match(
     numbered,
     /<span class="pm-mast__ref" dir="rtl"><span class="hp-ref" data-hp-ref="HR-2026-000123">/,
