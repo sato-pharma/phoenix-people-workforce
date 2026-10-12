@@ -154,9 +154,17 @@ export function runVacationInformedHrTests() {
     operations.includes("vacationsToday"),
     "HR Operations' landing page loads today's absences — that is the owner's instruction",
   );
+  // CHANGED 2026-10-13 BY THE OWNER, and this line is the edit rather than a second line arguing
+  // with the first. It used to assert the opposite — that the Talent Acquisition seat, holding no
+  // `time_attendance` function, is NOT shown the company's absences. Asked which of the generic
+  // page's blocks should survive on her rebuilt overview, he named three to keep, and "On a
+  // vacation today" was one of them. So `workforce_context` now declares the source: it is the one
+  // function nobody else holds, which is why her seat gains it and no other page moves.
   assert.ok(
-    !resourcing.includes("vacationsToday"),
-    "the Talent Acquisition seat holds no time_attendance function, so she is not shown the company's absences",
+    resourcing.includes("vacationsToday"),
+    "the Talent Acquisition seat's own overview shows today's absences — the owner kept that block " +
+      "when he had the page rebuilt on 2026-10-13. It reaches her through `workforce_context`, " +
+      "which no other seat holds, so this is her page and not a widening of time_attendance",
   );
 
   // ── 4. The absence rows ─────────────────────────────────────────────────────────────────────

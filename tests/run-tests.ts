@@ -2161,6 +2161,7 @@ import { runHrPremiumIdentityTests } from "./hr-premium-identity.test.ts";
 import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts";
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
+import { runTalentAcquisitionOverviewTests } from "./talent-acquisition-overview.test.ts";
 import { runTalentAcquisitionRoleRetiredUiCopyTests } from "./talent-acquisition-role-retired-ui-copy.test.ts";
 import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
 import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
@@ -8185,6 +8186,10 @@ await runTest(
 await runTest(
   "the retired Talent Acquisition role is never presented as a live permission (app/ and src/components/ badges and denial messages name HR Advisory / HR Operations instead)",
   runTalentAcquisitionRoleRetiredUiCopyTests,
+);
+await runTest(
+  "the Talent Acquisition overview reports an empty denominator as a stated absence and never as 0% (probation retention is null on production's 36 open / 0 decided cases), divides offers by distinct people interviewed over the same 90 days, marks a spanning holiday on every day it covers, shows no employee-request queue while keeping the seat's grant, and keeps both charts the owner named with square edges and no sideways scroll",
+  runTalentAcquisitionOverviewTests,
 );
 await runTest(
   "closeVacancyOnHire's manager_hr_id filter is canonicalized (a mixed-case manager id no longer falls through to the manager-less-vacancy fallback and closes the wrong seat)",

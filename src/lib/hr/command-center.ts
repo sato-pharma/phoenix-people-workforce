@@ -58,7 +58,12 @@ import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
 import { toHrNamespacePath } from "@/lib/navigation/shell-headers";
 import { listOffers } from "@/lib/offers/service";
 import type { OfferStatus } from "@/lib/offers/types";
-import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
+import { getProbationOutcomesAnalytics } from "@/lib/probation/intelligence/outcomes-analytics";
+import {
+  canViewProbationAnalytics,
+  getProbationRows,
+  isProbationDecisionOutstanding,
+} from "@/lib/probation/service";
 import {
   getRecruitmentDashboard,
   resolveHiredWindow,
@@ -247,14 +252,22 @@ export type HrCommandCenterData = {
   unavailableSources: string[];
 };
 
-/** The raw fetches. One per underlying service, so two functions wanting the same data share it. */
-type SourceKey =
+/**
+ * The raw fetches. One per underlying service, so two functions wanting the same data share it.
+ *
+ * Exported since 2026-10-13 because the Talent Acquisition seat's own landing page
+ * (src/lib/hr/talent-acquisition-overview.ts) loads its sources through `sourcesFor` rather than
+ * through a second hand-kept list — which is the whole guarantee at the top of this file, and the
+ * one thing a bespoke page must not quietly opt out of.
+ */
+export type SourceKey =
   | "attendanceExceptions"
   | "contracts"
   | "deductions"
   | "directory"
   | "offers"
   | "probation"
+  | "probationOutcomes"
   | "recruitment"
   | "resignations"
   | "retention"
@@ -318,7 +331,25 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // the one queue among them; documents and context reading have no backlog to show.
   hiring_paperwork: [],
   employee_requests: ["supportRequests"],
-  workforce_context: [],
+  /**
+   * TWO sources since 2026-10-13, and both are for the Talent Acquisition seat's OWN overview page
+   * (src/lib/hr/talent-acquisition-overview.ts) — the one the owner asked to be rebuilt from
+   * scratch that morning. This function still contributes no tile and no chart to the generic page
+   * below, and that stays a decision rather than an omission (see TILES_BY_FUNCTION).
+   *
+   *   `probationOutcomes` — her handbook's "probation retention" KPI. The function grants
+   *       `probation: READ_ONLY`, and `canReadAllProbation` names her seat by name, so both the
+   *       Decision Dashboard and the Outcomes analytics are hers to open; this is the aggregate
+   *       those pages already show, not a second calculation.
+   *   `vacationsToday`    — the "on a vacation today" panel the owner put on the HR landing page on
+   *       2026-09-29. Reading the company's calendars and boards is this function's own JD line.
+   *
+   * Declared on the FUNCTION and not on the page, for the reason in this file's header: a page that
+   * fetched a source no function in the seat's bundle asked for would be doing work, under her
+   * session, that the permission catalogue never granted. No other seat holds `workforce_context`,
+   * so nothing else anywhere moves.
+   */
+  workforce_context: ["probationOutcomes", "vacationsToday"],
   // Recognition is two pages to open and print from, not a queue: it loads nothing.
   recognition: [],
 };
@@ -349,6 +380,7 @@ export type HrCommandSources = Partial<{
   directory: Awaited<ReturnType<typeof getEmployeeDirectory>>;
   offers: Awaited<ReturnType<typeof listOffers>>;
   probation: Awaited<ReturnType<typeof getProbationRows>>;
+  probationOutcomes: Awaited<ReturnType<typeof getProbationOutcomesAnalytics>>;
   recruitment: Awaited<ReturnType<typeof getRecruitmentDashboard>>;
   resignations: Awaited<ReturnType<typeof getResignationsDashboardData>>;
   retention: Awaited<ReturnType<typeof getRetentionDashboardData>>;
@@ -443,14 +475,24 @@ const OFFER_STATUS_ORDER: ReadonlyArray<{ label: string; status: OfferStatus }> 
  * stops short of. Added 2026-10-08 with the Talent Acquisition seat, whose job includes building
  * offers; it belongs to the recruiting function, so the seat that holds recruiting sees it.
  */
-function offersByStatusChart(offers: NonNullable<HrCommandSources["offers"]>): HrCommandChart {
+/**
+ * The key `offersByStatusChart` emits.
+ *
+ * Named because the Talent Acquisition seat's overview page moves this ONE chart out of the
+ * recruiting band and up beside the offer-conversion KPIs it explains, and it has to find it in the
+ * list the recruiting builder returns. Matching on the key rather than on the title is the point: a
+ * reworded title would silently leave the chart drawn twice, or not at all.
+ */
+export const OFFERS_BY_STATUS_CHART_KEY = "offers-by-status";
+
+export function offersByStatusChart(offers: NonNullable<HrCommandSources["offers"]>): HrCommandChart {
   return {
     caption:
       "Every offer on record, by where it stands. An offer still awaiting a reply is a candidate still deciding; a long Declined column is a package worth looking at.",
     emptyLabel: "No job offer has been drafted yet.",
     href: "/hr/offers",
     hrefLabel: "Open Job Offers",
-    key: "offers-by-status",
+    key: OFFERS_BY_STATUS_CHART_KEY,
     rows: OFFER_STATUS_ORDER.map(({ label, status }) => ({
       label,
       offers: offers.filter((offer) => offer.status === status).length,
@@ -1251,13 +1293,34 @@ const CHARTS_BY_FUNCTION: Record<
 };
 
 /**
+ * The recruiting function's tiles and charts, reachable BY NAME rather than only through the seat's
+ * bundle loop.
+ *
+ * WHY. The Talent Acquisition seat's own overview page
+ * (src/lib/hr/talent-acquisition-overview.ts) builds its "Filling the field" band from these — the
+ * SAME two builders this page uses, never a second copy of them. It is this file's founding rule
+ * one layer out: two pages showing one seat's recruiting figures must not be able to print two
+ * different answers, and the way that is guaranteed is that there is one builder.
+ *
+ * Delegating rather than lifting the bodies out keeps `TILES_BY_FUNCTION` / `CHARTS_BY_FUNCTION` the
+ * single declaration site, so the bundle loop and these two callers can never fall out of step.
+ */
+export function buildRecruitingTiles(loaded: HrCommandSources): HrCommandTile[] | null {
+  return TILES_BY_FUNCTION.recruiting(loaded);
+}
+
+export function buildRecruitingCharts(loaded: HrCommandSources): HrCommandChart[] {
+  return CHARTS_BY_FUNCTION.recruiting(loaded);
+}
+
+/**
  * Runs `load`, and on any failure records the source name and returns null instead of throwing.
  *
  * Deliberately catches everything. The callers are real services that throw on a missing table, an
  * absent env var, a Supabase abort at 15s — and the correct response to every one of them is the
  * same: this dashboard shows the groups it could read and says which it could not.
  */
-async function safe<T>(
+export async function safe<T>(
   key: SourceKey,
   load: () => Promise<T>,
   failures: SourceKey[],
@@ -1271,13 +1334,14 @@ async function safe<T>(
 }
 
 /** Human wording for the unavailable notice. A source key means nothing to the person reading it. */
-const SOURCE_LABELS: Record<SourceKey, string> = {
+export const SOURCE_LABELS: Record<SourceKey, string> = {
   attendanceExceptions: "Attendance exceptions",
   contracts: "Contract renewals",
   deductions: "Deductions month",
   directory: "Employee directory",
   offers: "Job offers",
   probation: "Probation cases",
+  probationOutcomes: "Probation outcomes",
   recruitment: "Recruitment pipeline",
   resignations: "Resignations",
   retention: "Retention register",
@@ -1299,7 +1363,7 @@ const SOURCE_LABELS: Record<SourceKey, string> = {
  * Each source fails alone and independently of the tiles: a dead attendance table costs the two
  * attendance fields and nothing else on the page.
  */
-async function loadPersonalRecord(access: AccessContext): Promise<HrPersonalRecord> {
+export async function loadPersonalRecord(access: AccessContext): Promise<HrPersonalRecord> {
   const { year, month } = currentCairoDateParts();
   const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const monthLabel = new Intl.DateTimeFormat("en-GB", {
@@ -1417,6 +1481,21 @@ export async function getHrCommandCenterData(
     needed.has("probation")
       ? safe("probation", () => getProbationRows(access), failures).then((value) => {
           loaded.probation = value;
+        })
+      : null,
+    // The aggregate over DECIDED cases, for the probation-retention KPI — gated on the same
+    // predicate the Outcomes analytics page is gated on, because `getProbationOutcomesAnalytics`
+    // takes no AccessContext and asserts nothing of its own. A seat that may not open that page
+    // gets no figure rather than a figure it is not entitled to, and `canViewProbationAnalytics`
+    // naming the seat is the one check, not a second opinion on it.
+    needed.has("probationOutcomes")
+      ? safe(
+          "probationOutcomes",
+          async () =>
+            canViewProbationAnalytics(access) ? await getProbationOutcomesAnalytics() : undefined,
+          failures,
+        ).then((value) => {
+          loaded.probationOutcomes = value;
         })
       : null,
     needed.has("directory")

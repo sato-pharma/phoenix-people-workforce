@@ -286,6 +286,12 @@ export async function runHrTodayTasksTests() {
       directory: { employees: [], lookups: { workforceVacancies: [] } },
       offers: [],
       probation: [],
+      // The probation OUTCOMES aggregate, which the Talent Acquisition seat's retention KPI
+      // divides. Like `vacationsToday` it contributes no TASK — a decided probation window is not
+      // a queue — but her page really loads it, so the key has to be here or this test drives her
+      // seat short. Null is the honest empty: the loader's own `safe()` hands back nothing when
+      // the read refuses, and the page renders a stated absence rather than a zero.
+      probationOutcomes: null,
       recruitment: { applications: [], requisitions: [] },
       resignations: { records: [] },
       retention: { conversations: [] },

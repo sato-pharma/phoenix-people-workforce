@@ -283,6 +283,23 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // direction, that every screen it names is one the seat's own sidebar already offers, so the
   // workbook can only ever describe access the matrix has already decided.
   "src/lib/hr/job-workbook.ts",
+  // Names HR Resourcing in `TALENT_ACQUISITION_SEAT`, added 2026-10-13 with that seat's own landing
+  // page — the owner's instruction to rebuild her overview "from scratch" against her handbook.
+  // Reviewed verdict: it is a GATE and it can only ever NARROW. The constant is compared against
+  // `hrBundleForRole(access.role)` in two places and nowhere else: the page, which renders
+  // `TalentAcquisitionOverview` for a match and the unchanged `HrCommandCenter` for every other HR
+  // seat, and `getTalentAcquisitionOverview`, which returns null outright when it does not match.
+  // So the string decides WHICH landing component she is served, never what she may read.
+  //
+  // It hands her nothing her job description withholds, and that is enforced rather than asserted
+  // here: the page's loader fetches only through `sourcesFor(seat)`, the same bundle-derived
+  // allow-list the generic command centre uses, so it cannot read a source her functions do not
+  // declare. The two sources `workforce_context` gained the same day — probationOutcomes and
+  // vacationsToday — are grants she already held (`probation: READ_ONLY`, and `canReadAllProbation`
+  // names this seat; `leave` for the vacation panel), and no other seat holds that function, so
+  // nothing else moved. The page also shows her LESS than before: employee requests is off it by
+  // his word, while the grant and the sidebar row stay.
+  "src/lib/hr/talent-acquisition-logic.ts",
   "src/lib/notifications/role-recipients.ts",
   // The offer joining form (owner, 2026-10-08). It names HR Operations only as the ACTOR of
   // provisionNewHireAccess, to take that seat's create-only, rank-bounded door: it can make one NEW
