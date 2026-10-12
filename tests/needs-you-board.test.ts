@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 // in exported pure functions for exactly this reason — the same split, for the same reason, as
 // `scripts/branch-pr-state.mjs`: a rule whose wrong answer costs something has to be drivable
 // without a live machine.
-import { buildBoard, classifyPr, explainBlocked, normalizeRollup, render, wrap } from "../scripts/needs-you.mjs";
+import { buildBoard, classifyPr, explainBlocked, isDocsOnly, normalizeRollup, render, wrap } from "../scripts/needs-you.mjs";
 
 /**
  * The tier-1 board must never under-report.
@@ -90,6 +90,46 @@ export function runNeedsYouBoardTests() {
   }
 
   assert.equal(classifyPr(pr({ isDraft: true, mergeStateStatus: "CLEAN" }), REQUIRED).bucket, "claude", "a draft is never offered for merge, whatever its merge state says");
+
+  // -------------------------------------------------------------------------------------------
+  // 1b. A green PR made only of words is NOT his row — owner, 2026-10-12: "i will not merge a
+  //     small pr" (AGENTS.md §6). It still appears, in Claude's lane, saying what to do with it.
+  //     The measure is the PATHS, not a file count: he refused #5802 at three files and again at
+  //     seven, where `rollup-prs.mjs`'s `<= 4 files` would have called the second one wide.
+  // -------------------------------------------------------------------------------------------
+  const wordsOnly = [
+    { path: "AGENTS.md" },
+    { path: "docs/ci-self-hosted-runner.md" },
+    { path: ".claude/rules/engineering.md" },
+    { path: ".claude/cloud-context/memory-mirror/MEMORY.md" },
+  ];
+  for (const state of ["CLEAN", "HAS_HOOKS"] as const) {
+    const row = classifyPr(pr({ mergeStateStatus: state, files: wordsOnly }), REQUIRED);
+    assert.equal(row.bucket, "claude", `a ${state} docs-and-rules-only PR is never put to him (AGENTS.md §6)`);
+    assert.match(row.reason, /small pr/i, "the row must say WHY it is not his, or somebody merges it anyway");
+    assert.match(row.reason, /widen|roll-?up/i, "and it must say what to do instead — widen the branch, or hold it for a roll-up");
+  }
+
+  // One line of running code is enough to make it his merge again.
+  assert.equal(
+    classifyPr(pr({ mergeStateStatus: "CLEAN", files: [...wordsOnly, { path: "src/lib/payroll/policy.ts" }] }), REQUIRED).bucket,
+    "yours",
+    "a PR that changes real code is his merge however much documentation rides with it",
+  );
+
+  // 🔴 The direction that must never flip: an unreadable or absent file list is NOT a demotion.
+  for (const files of [undefined, null, [], "not a list", [{ path: "" }]]) {
+    assert.equal(
+      classifyPr(pr({ mergeStateStatus: "CLEAN", files }), REQUIRED).bucket,
+      "yours",
+      `files ${JSON.stringify(files)} must leave a green PR in HIS lane. Demoting on a missing field is ` +
+        "the under-report this file exists to prevent — he loses the merge and never learns it was there.",
+    );
+  }
+
+  assert.equal(isDocsOnly([{ path: "docs/a.md" }, { path: "scripts/needs-you.mjs" }]), false, "a script is running code, not words");
+  assert.equal(isDocsOnly([{ path: "README.md" }, { path: "CLAUDE.md" }]), true, "repo-root markdown is words");
+  assert.equal(isDocsOnly([{ path: "src/docs/thing.ts" }]), false, "the prefix is anchored — `src/docs/` is not `docs/`");
 
   // -------------------------------------------------------------------------------------------
   // 2. A blocked PR is explained from the LIVE protection contexts — and a required check that has

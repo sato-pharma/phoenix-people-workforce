@@ -1,11 +1,11 @@
 ---
 name: hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces
-description: "Owner ruling 2026-09-29, reaffirmed 2026-09-30: batch a whole feature into ONE PR even when he asks for it surface by surface, and even when a narrower PR already has his merge approval. Extends to a TOOL repaired defect-by-defect — the roll-up script took 8 merges in one day, ~224 billable CI minutes."
+description: "Owner ruling 2026-09-29, reaffirmed 2026-09-30: batch a whole feature into ONE PR even when he asks for it surface by surface, and even when a narrower PR already has his merge approval. Extends to a TOOL repaired defect-by-defect — the roll-up script took 8 merges in one day, ~224 billable CI minutes. HARDENED 2026-10-12 — 'i will not merge a small pr': a small PR is never put to him at all, so it is never a Next step line; it waits for a roll-up or is absorbed into a wider branch, and a lone small PR with nothing to roll up gets widened by the work that is already in hand."
 metadata:
   node_type: memory
   type: feedback
   originSessionId: d0d4dd58-19c5-4a93-ae08-8323d3ea9bba
-  modified: 2026-09-30T14:01:54.597Z
+  modified: 2026-10-12T18:38:34.638Z
 ---
 
 🔴 **Owner ruling, 2026-09-29 — his words: "batch the next feature into one PR, not six".** It
@@ -66,6 +66,30 @@ instead.** Within one session, hold a newly found defect in the same area and sh
 already in flight — that is what #4922 did with its two rules, and it was right. Across sessions,
 widening someone else's open PR is not yours to do, so say so and let him choose. The give-away that
 this rule applies is a file appearing in your `git log --since=today` more than twice.
+
+## 🔴 Hardened 2026-10-12 — "i will not merge a small pr"
+
+**His words, 21:4x Cairo, when #5802 (3 files, a regenerated cloud-context mirror) was put to him as
+the only open PR and therefore as one clean merge: "i will not merge a small pr".** He did not ask
+which one, he did not weigh it — he refused the shape.
+
+**What this changes.** The 09-27 and 09-30 rules were about how Claude BUILDS: batch the work, roll
+the strays up. This one is about what reaches HIM. A small PR is no longer a merge he declines — it
+is a merge he never sees. So it never appears in a `Next step:` line, never in quoted words, and
+never as "it is the only open PR, so it is one merge" — that sentence was precisely the mistake. It
+waits.
+
+**Why the roll-up script does not cover this case.** `rollup-prs.mjs` needs two or more open PRs with
+disjoint files; with exactly one open it correctly reports nothing to roll up, and a session then
+reads "nothing to roll up" as permission to hand over the single PR. It is not. With one small PR
+open and no second one, the answer is to WIDEN it — commit the next piece of work onto the same
+branch so the PR stops being small — or to leave it parked until a second PR exists.
+
+**How to apply.** Before putting any merge to him, ask whether the diff would read as small to him:
+a handful of files, a regenerated artifact, a doc, a mirror refresh, one line of config. If yes,
+do not ask. Either add the work already in hand to that branch, or park it and say in one line that
+it is parked and what it is waiting for. He is never asked to judge whether a PR is big enough; that
+judgement is Claude's, exactly as "what counts as small" has been since 2026-09-30.
 
 **A second-order cost he did not have to name.** On 2026-09-30, #4923 squash-merged an EARLIER state
 of the roll-up branch onto `main` while the fix was still open, which put the open PR into conflict
