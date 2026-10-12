@@ -2125,6 +2125,7 @@ import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-ga
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 import { runCommentStripGuardTests } from "./comment-strip-guard.test.ts";
+import { runFormDesignGuardTests } from "./form-design-guard.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runDeltaLandedVerdictTests, runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
@@ -7996,6 +7997,7 @@ await runTest(
 );
 await runTest("no source-pinning test strips comments unsafely — a regex that eats the code it pins, or a line filter blind to a comment block", runCommentStripRatchetTests);
 await runTest("a new test file that strips comments by hand is refused at the Write, by the same detector the ratchet uses", runCommentStripGuardTests);
+await runTest("a form control that paints its own box, or a token override written as a template, is refused at the Write by the same detector the form-design ratchet uses", runFormDesignGuardTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
 await runTest(
