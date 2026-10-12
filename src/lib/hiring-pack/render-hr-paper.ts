@@ -18,6 +18,12 @@ import {
 } from "@/lib/hiring-pack/hr-paper-template";
 import { hrPaperById } from "@/lib/hiring-pack/hr-paper-text";
 import { resolveNationality } from "@/lib/hiring-pack/nationality";
+import {
+  hrPaperWearsPremium,
+  premiumDocumentStylesheet,
+  premiumMasthead,
+  premiumPageChrome,
+} from "@/lib/hiring-pack/premium-identity";
 import { resolveServicePeriod } from "@/lib/hiring-pack/service-period";
 import {
   ARABIC_FONT_STACK,
@@ -421,6 +427,9 @@ function renderCopy(
   // TOKEN — so the resolved record is passed rather than read from the module, which is what
   // makes the masthead follow an edited company name instead of the compiled one.
   company: CompanyDetails,
+  // The HR premium identity dresses the CURRENT version of each paper. An archived version keeps the
+  // dress it was signed in, so a reprint from the Archive screen still matches the paper on file.
+  premium = false,
 ): string {
   const heading = (text: string | null) =>
     text ? `<h2 class="doc-head">${escapeHtml(text)}</h2>` : "";
@@ -475,10 +484,17 @@ function renderCopy(
     .map((part) => `<span>${escapeHtml(part)}</span>`)
     .join("")}</div></td></tr></tfoot>`;
 
-  return `<article class="copy copy--document copy--${template.kind}">
-    <table class="doc-sheet">
-      <thead><tr><td class="doc-mastcell">
-        <header class="doc-mast">
+  const masthead = premium
+    ? premiumMasthead({
+        legalNameAr: company.legalNameAr,
+        legalNameEn: company.legalNameEn,
+        title: template.titleAr,
+        titleLang: "ar",
+        subtitles: [{ text: template.subtitleAr, lang: "ar" }],
+        // The two papers that must hold one sheet take the tighter masthead.
+        compact: template.kind === "dataSheet" || template.kind === "salaryLetter",
+      })
+    : `<header class="doc-mast">
           <span class="doc-mast__side doc-mast__id">
             <strong>${escapeHtml(company.legalNameAr)}</strong>
             <span dir="ltr">${escapeHtml(company.legalNameEn)}</span>
@@ -490,7 +506,12 @@ function renderCopy(
           <span class="doc-mast__side doc-mast__mark">
             <img src="${HOUSE_MARK_SRC}" alt="" width="401" height="158">
           </span>
-        </header>
+        </header>`;
+
+  return `<article class="copy copy--document copy--${template.kind}">
+    <table class="doc-sheet">
+      <thead><tr><td class="doc-mastcell">
+        ${masthead}
         <p class="doc-purpose">${escapeHtml(template.purposeAr)}</p>
       </td></tr></thead>
       <tbody><tr><td class="doc-body">
@@ -514,9 +535,25 @@ function renderCopy(
         ${serviceBlock(template)}
       </td></tr></tbody>
       ${foot}
-    </table>
+    </table>${premium ? premiumPageChrome() : ""}
   </article>`;
 }
+
+/**
+ * The HR premium identity over this renderer's own stylesheet, for the current version of a paper.
+ *
+ * APPENDED, never merged into the block above, so an archived version renders exactly the stylesheet
+ * it always did. The shared rules only restyle what is already on the page — rules, weights and
+ * inks; no paper gains or loses a word, a field or a cell.
+ *
+ * THE ARABIC HR LETTER'S SHEET HEIGHT is the printable height under the premium sheet — 297 mm less
+ * the 12.5 mm top and 19.5 mm bottom insets — less three millimetres, for the same reason as before:
+ * one millimetre over is a second, empty page in the print dialog.
+ */
+const HR_PAPER_PREMIUM_CSS = `
+${premiumDocumentStylesheet(".copy")}
+  .copy--salaryLetter .doc-sheet { height: 262mm; }
+`;
 
 /**
  * The printable paper.
@@ -545,8 +582,11 @@ export function renderHrPaperHtml(
   // time, so it is added here rather than in `buildHrPaperValues`, which knows the employee and not
   // the print run.
   const values = { ...buildHrPaperValues(data), COPIES_CLAUSE: copiesClauseAr(statedCopies ?? total) };
+  // The current paper wears the HR premium identity only where the owner said "change"
+  // (`PREMIUM_DRESS.hrPapers`); a version asked for from the Archive keeps the dress it was signed in.
+  const premium = template.id === fallback.id && hrPaperWearsPremium(template.id);
   const body = Array.from({ length: total }, () =>
-    renderCopy(template, values, data.company),
+    renderCopy(template, values, data.company, premium),
   ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
@@ -886,7 +926,7 @@ export function renderHrPaperHtml(
     html, body { background: #fff; }
     .copy { width: auto; min-height: 0; margin: 0; box-shadow: none; }
   }
-${PRINT_BANNER_CSS}
+${PRINT_BANNER_CSS}${premium ? HR_PAPER_PREMIUM_CSS : ""}
 </style>
 </head>
 <body>

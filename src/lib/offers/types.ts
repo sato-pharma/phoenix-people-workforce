@@ -47,8 +47,13 @@ export type OfferBlockType =
  *               identity carried by lines and type, one 6% zebra on the salary table. A FOURTH
  *               skin the owner asked for on 2026-09-22 to match the hiring-pack forms, added
  *               beside the three others and changing none of them.
+ * `premium`   — the HR premium identity (SATO-DIS-2026-01 raised to premium): the centred masthead
+ *               over the engine-turned band, a double-keyline frame with security microtext, the
+ *               Arabic watermark, a Sato-only running foot and the ink rule. A FIFTH skin the owner
+ *               asked for on 2026-10-13 — "for job offers create new template with the new identity"
+ *               — added beside the four others and changing none of them.
  */
-export type OfferTemplateVariant = "classic" | "executive" | "sato" | "house";
+export type OfferTemplateVariant = "classic" | "executive" | "sato" | "house" | "premium";
 
 /**
  * Which shipped design a row IS a copy of, or null for one somebody built themselves.
@@ -56,7 +61,7 @@ export type OfferTemplateVariant = "classic" | "executive" | "sato" | "house";
  * This is what makes "restore" survive renaming: the built-ins are regenerated from code, and the
  * row is found by this key rather than by a name the owner is free to change.
  */
-export type OfferBuiltinKey = "classic" | "executive" | "sato" | "house";
+export type OfferBuiltinKey = "classic" | "executive" | "sato" | "house" | "premium";
 
 export type OfferBlock = {
   id: string;

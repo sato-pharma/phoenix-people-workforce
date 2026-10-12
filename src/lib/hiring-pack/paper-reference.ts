@@ -12,7 +12,10 @@
 // written as one more line under that name, in the muted ink the block already uses, so it reads as
 // part of the letterhead rather than as something stamped over it. Where the masthead sits in a
 // repeating table header it repeats on every page, which is the point. The contract's first page has
-// a title masthead instead, and the number goes under its subtitle.
+// a title masthead instead, and the number goes under its subtitle. A paper in the HR premium
+// identity (`premium-identity.ts`) carries an empty `.pm-mast__ref` slot at the end of its masthead's
+// name line, and the number is written into it — on that line, so it adds no height to a paper set to
+// its last millimetre, and on every page the masthead repeats on.
 //
 // A PAPER WITH NO MASTHEAD (an uploaded company template) gets a small line fixed to the bottom
 // corner. Chromium repeats a fixed element on every printed page, so it too is numbered throughout.
@@ -70,6 +73,8 @@ const MAST_ID =
   /(<span class="doc-mast__side doc-mast__id">\s*<strong>[^<]*<\/strong>\s*(?:<span dir="ltr">[^<]*<\/span>)?)/g;
 /** The contract's first-page title block. */
 const MASTHEAD_TITLE = /(<div class="masthead__title">\s*<h1>[^<]*<\/h1>\s*(?:<p>[^<]*<\/p>)?)/g;
+/** The HR premium masthead's reference slot on its name line — empty, so it takes no space until a number is written. */
+const PREMIUM_SLOT = /(<span class="pm-mast__ref" dir="rtl">)(<\/span>)/g;
 
 /**
  * The paper with its reference number written on it.
@@ -99,6 +104,10 @@ export function stampPaperReference(
     placed += 1;
     return `${match}${referenceMarkup(reference, "p")}`;
   });
+  stamped = stamped.replace(PREMIUM_SLOT, (_match, open: string, close: string) => {
+    placed += 1;
+    return `${open}${referenceMarkup(reference, "span")}${close}`;
+  });
 
   const fixed = placed === 0 ? referenceMarkup(reference, "div", `${REFERENCE_CLASS}--fixed`) : "";
   const style = `<style data-hp-ref-style>${PAPER_REFERENCE_CSS}</style>`;
@@ -120,7 +129,7 @@ export function stampPaperReference(
  * The paper editor and the manual workspace print the page they are SHOWING — with every edit typed
  * onto it — so the number has to be written into that live document rather than into a fresh render
  * that would lose the edits. Same placement rules as `stampPaperReference`, by construction: both
- * read the same three blocks.
+ * read the same four blocks.
  */
 export function stampPaperReferenceInDocument(
   doc: Document,
@@ -152,7 +161,7 @@ export function stampPaperReferenceInDocument(
     return node;
   };
 
-  const blocks = doc.querySelectorAll(".lh__id, .doc-mast__id");
+  const blocks = doc.querySelectorAll(".lh__id, .doc-mast__id, .pm-mast__ref");
   blocks.forEach((block) => block.appendChild(make("span")));
   const titles = doc.querySelectorAll(".masthead__title");
   titles.forEach((block) => block.appendChild(make("p")));

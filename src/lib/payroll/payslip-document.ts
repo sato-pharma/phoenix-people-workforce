@@ -20,6 +20,18 @@
 //   payslip is a company document and wears the company's identity. The app's brand belongs on the
 //   app's screens.
 //
+//   THE DRESS IS THE HR PREMIUM IDENTITY (owner, 2026-10-13, ticked "change to the premium look" on
+//   the review page): the frame, the Arabic watermark, the centred compact masthead and the running
+//   foot of `premium-identity.ts`, with the foot naming Sato Pharma alone
+//   (`PREMIUM_COMPANY_DOCUMENT_BRAND`), so the rule above still holds — the chrome says nothing of
+//   Phoenix. DRESS ONLY: every figure, label and row is as it was. The inset costs 32 mm of paper
+//   where the old sheet spent 19, and the compact masthead and a footer with no rule or padding of
+//   its own give that back and more (the ordinary sheet came out 5.5 mm SHORTER than before), which
+//   is what keeps the worst realistic payslip on ONE sheet. `houseLetterhead()` is untouched — the
+//   test pins its bytes for the papers that still call it — and the frame and foot are `position:
+//   fixed` in print, so only the first sheet of a batch carries them and Chrome repeats them.
+//   `scripts/check-payslip-page-fit.mjs` is the proof, never this paragraph.
+//
 //   SQUARE EDGES, everywhere (owner, 2026-09-04). The old sheet had an 18 px page, 14 px cards and
 //   a 999 px status pill. `border-radius: 0 !important` below is deliberate belt-and-braces: this
 //   document is rendered inside a route that may one day sit under a global stylesheet, and a 4 px
@@ -40,7 +52,13 @@
 // deploy. `assertEverySectionIsPlaced()` is called by the test suite and names the offender.
 
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
-import { HOUSE_IDENTITY_CSS, houseLetterhead } from "@/lib/hiring-pack/house-identity";
+import { HOUSE_IDENTITY_CSS } from "@/lib/hiring-pack/house-identity";
+import {
+  PREMIUM_COMPANY_DOCUMENT_BRAND,
+  premiumDocumentStylesheet,
+  premiumLetterhead,
+  premiumPageChrome,
+} from "@/lib/hiring-pack/premium-identity";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
 import { systemLegalEntity } from "@/config/system-settings";
 import {
@@ -297,14 +315,14 @@ export function buildPayslipSheet(
     : "";
 
   return `<article class="ps">
-    ${houseLetterhead({
+    ${premiumLetterhead({
       legalNameAr: systemLegalEntity.legalNameAr,
       legalNameEn: systemLegalEntity.legalNameEn,
       purposeEn: "Employee copy · confidential",
       subtitleEn: `Salary statement · ${period}`,
       titleAr: "قسيمة راتب",
       titleEn: "Payslip",
-    })}
+    }, { compact: true })}
 
     <section class="id">
       ${idCell("HR ID", record.employeeCode || record.hrId)}
@@ -360,6 +378,7 @@ export function buildPayslipSheet(
         · computer-generated statement, no signature required</span>
       <span class="ft__id">SATO-DIS-2026-01 v1.0</span>
     </footer>
+    ${premiumPageChrome({ brand: PREMIUM_COMPANY_DOCUMENT_BRAND })}
   </article>`;
 }
 
@@ -372,6 +391,7 @@ export function buildPayslipSheet(
  */
 export const PAYSLIP_DOCUMENT_CSS = `
 ${HOUSE_IDENTITY_CSS}
+${premiumDocumentStylesheet(".ps")}
 
 /* Square edges are not negotiable, and this document may be rendered under a stylesheet that ships
    a 4 px default. Nothing here sets a radius; this makes sure nothing inherits one either. */
@@ -395,7 +415,6 @@ body {
   width: 210mm;
   max-width: 100%;
   margin: 0 auto;
-  padding: 10mm 13mm 9mm;
   page-break-after: always;
   break-after: page;
 }
@@ -405,7 +424,13 @@ body {
 /* On screen the sheet sits on a ground so its edges read as paper. On paper there is no ground. */
 @media screen {
   body { background: #eef2f6; padding: 16px 0; }
-  .ps { border: 1px solid var(--phx-doc-hair); margin-bottom: 16px; }
+  .ps { border: 1px solid var(--phx-doc-hair); margin-bottom: 16px; overflow: hidden; }
+}
+/* The frame and the foot are drawn for a whole 297 mm sheet, so on a screen wide enough to show
+   the sheet at all it is a whole sheet — a short payslip would otherwise end above its own foot.
+   Screen only: on paper a min-height of exactly one page is how a blank second page is born. */
+@media screen and (min-width: 801px) {
+  .ps { min-height: 297mm; }
 }
 
 /* ---------- the employee, in ruled cells ---------- */
@@ -512,8 +537,7 @@ body {
 
 .ft {
   display: flex; flex-wrap: wrap; gap: 1mm 4mm; justify-content: space-between;
-  margin: 3.5mm 0 0; padding-top: 1.4mm;
-  border-top: .5pt solid var(--phx-doc-hair);
+  margin: 2.5mm 0 0;
   color: var(--phx-doc-muted); font-size: 6.8pt; letter-spacing: .02em;
 }
 .ft__id { color: var(--phx-doc-deep); font-weight: 700; }
@@ -531,6 +555,9 @@ body {
    spacing below. */
 @media screen and (max-width: 800px) {
   .ps { padding: 7mm 5mm; }
+  .ps .pm-chrome { display: none; }
+  .ps .pm-mast { grid-template-columns: 24mm 1fr; column-gap: 2mm; }
+  .ps .pm-mast__latin { width: 24mm; }
   .id__cell { flex-basis: 100%; }
   .ref__cell { flex-basis: 50%; border-inline-start: 0; padding-inline-start: 0; border-bottom: .5pt solid var(--phx-doc-hair); }
   .detail__col { flex-basis: 100%; min-width: 0; }

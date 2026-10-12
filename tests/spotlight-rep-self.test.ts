@@ -234,6 +234,11 @@ export async function runSpotlightRepSelfTests(): Promise<void> {
     const html = repSpotlightDocumentHtml(spotlight.result!);
     assert.match(html, /Test Rep/);
     assert.match(html, /95\.0/);
+    // ONE watermark on the rep's own sheet: its centred one (2026-09-30). The shell's low-right one,
+    // which every other sheet carries since 2026-10-12, is asked off here so the page never shows two.
+    assert.equal(html.split('class="rep-wm"').length - 1, 1, "the rep's sheet keeps its own centred watermark");
+    assert.ok(!html.includes('class="arabic-wm"'), "and never a second one from the sheet shell");
+    assert.ok(html.includes('class="foot__block foot__block--mark"'), "the foot keeps its Arabic mark");
     assert.match(html, /Achievement/);
     // No peer ranking language on a rep's own sheet.
     assert.doesNotMatch(html, /ranked|out of \d/i);

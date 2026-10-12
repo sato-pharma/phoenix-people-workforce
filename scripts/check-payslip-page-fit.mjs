@@ -26,6 +26,14 @@
 //      smoking gun and is not one — Chromium's print layout did not apply it, and scoping the
 //      query to `screen` changed the exported PDF by zero bytes. It is scoped anyway, as a guard.
 //
+// THE SHEET IS MEASURED UNDER PRINT, SINCE THE PREMIUM DRESS (2026-10-13). The payslip wears the HR
+// premium identity: 12.5 mm above and 19.5 mm below the content on every sheet, a frame and a running
+// foot drawn on the page itself, and a sheet that is a whole 297 mm on a screen wide enough to show
+// it. The screen height is therefore always 297 mm and says nothing about fit, so the height is read
+// under the print medium, and what is reported is the number that matters now: the clearance between
+// the last line and the rule above the running foot. A run of three employees is printed as well,
+// because the frame and the foot are `position: fixed` and only the first sheet's copy is shown.
+//
 // The ellipsis and Arabic assertions ride along because this is the only place a REAL PDF exists:
 // the amount in words cannot be checked any other way, and a PDF text layer stores SHAPED Arabic in
 // VISUAL order, which is its own trap — see `arabicPresent`.
@@ -80,6 +88,10 @@ const CASES = [
 
 const A4_HEIGHT_PX = (297 / 25.4) * 96;
 const mm = (px) => (px / 96 * 25.4).toFixed(1);
+// The top edge of the running foot's rule: 297 mm less the foot's 10.5 mm lift, its 5.5 mm emblem, the
+// 2 mm of padding above it and its 0.5 pt rule (`premium-identity.ts`). Content must end 1 mm above it.
+const FOOT_RULE_MM = 297 - 10.5 - (5.5 + 2 + 0.5 * 25.4 / 72);
+const MIN_CLEARANCE_MM = 1;
 
 /**
  * Is this Arabic word in the PDF's text layer?
@@ -110,16 +122,20 @@ await withChromiumPage(async (page) => {
       continue;
     }
 
-    // Measured at a viewport WIDER than the phone breakpoint — see the note at the top.
+    // Measured at a viewport WIDER than the phone breakpoint, and under print — see the note at the top.
     await page.setViewport({ width: 1200, height: 1400 });
     await page.setContent(html, { timeout: 30_000, waitUntil: "domcontentloaded" });
+    await page.emulateMediaType("print");
     await page.evaluate(
       "(async () => { try { await document.fonts.ready; } catch {} "
         + "await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))); })()",
     );
-    const height = await page.evaluate("document.querySelector('.ps').getBoundingClientRect().height");
+    const { height, contentEnd } = await page.evaluate(
+      "(() => { const ps = document.querySelector('.ps'); const box = ps.getBoundingClientRect(); "
+        + "return { height: box.height, contentEnd: ps.querySelector('.ft').getBoundingClientRect().bottom - box.top }; })()",
+    );
+    const clearance = FOOT_RULE_MM - Number(mm(contentEnd));
 
-    await page.emulateMediaType("print");
     const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true, timeout: 30_000 });
 
     const parser = new PDFParse({ data: Buffer.from(pdf) });
@@ -131,6 +147,7 @@ await withChromiumPage(async (page) => {
     const checks = [
       ["one page", parsed.total === 1],
       ["fits A4", height <= A4_HEIGHT_PX],
+      ["clear of the foot rule", clearance >= MIN_CLEARANCE_MM],
       ["Arabic title", arabicPresent(arabic, "قسيمة")],
       ["amount in words", ["خمسة", "ثلاثمائة", "جنيه"].every((w) => arabicPresent(arabic, w))],
       ["the month figure", text.includes("15,300.00")],
@@ -140,15 +157,41 @@ await withChromiumPage(async (page) => {
     const bad = checks.filter(([, ok]) => !ok).map(([name]) => name);
     failures += bad.length;
 
-    const verdict = height <= A4_HEIGHT_PX
-      ? `${mm(A4_HEIGHT_PX - height)}mm spare`
-      : `OVER by ${mm(height - A4_HEIGHT_PX)}mm`;
+    const verdict = clearance >= MIN_CLEARANCE_MM
+      ? `${clearance.toFixed(1)}mm above the foot rule`
+      : `ONLY ${clearance.toFixed(1)}mm above the foot rule (the floor is ${MIN_CLEARANCE_MM}mm)`;
     console.log(
       `${bad.length === 0 ? "ok  " : "FAIL"}  ${label.padEnd(28)} `
       + `${mm(height).padStart(6)}mm, ${String(parsed.total)} page(s), ${verdict}`
       + (bad.length ? `  <- ${bad.join(", ")}` : ""),
     );
   }
+
+  // THREE EMPLOYEES IN ONE RUN — the batch page prints every payslip in one go. One sheet each, and the
+  // frame and the foot on every one of them: the chrome is fixed in print and only the first sheet
+  // carries it, which is exactly the arrangement that fails quietly (a foot on page one only).
+  const run = [CASES[1][1], CASES[2][1], CASES[0][1]].map((record, i) => ({ ...record, employeeCode: `A-00${i}` }));
+  const { html: runHtml } = inlineLocalAssets(buildPayslipDocument(run, 8, 2026, "approved"));
+  await page.setViewport({ width: 1200, height: 1400 });
+  await page.setContent(runHtml, { timeout: 30_000, waitUntil: "domcontentloaded" });
+  await page.emulateMediaType("print");
+  const runPdf = await page.pdf({ printBackground: true, preferCSSPageSize: true, timeout: 30_000 });
+  const runParser = new PDFParse({ data: Buffer.from(runPdf) });
+  const runParsed = await runParser.getText();
+  await runParser.destroy();
+  const footOnEveryPage = runParsed.pages.every(
+    (entry) => /Human Resources\s*·\s*SATO-DIS-2026-01/.test(entry.text.replace(/\s+/g, " ")),
+  );
+  const batchBad = [
+    ["one sheet per employee", runParsed.total === run.length],
+    ["the foot on every sheet", footOnEveryPage],
+  ].filter(([, ok]) => !ok).map(([name]) => name);
+  failures += batchBad.length;
+  console.log(
+    `${batchBad.length === 0 ? "ok  " : "FAIL"}  ${"three employees in one run".padEnd(28)} `
+    + `${String(runParsed.total)} page(s), foot on every sheet: ${footOnEveryPage ? "yes" : "NO"}`
+    + (batchBad.length ? `  <- ${batchBad.join(", ")}` : ""),
+  );
 });
 
 console.log(failures === 0

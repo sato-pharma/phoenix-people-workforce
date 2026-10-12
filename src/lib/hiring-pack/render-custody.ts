@@ -6,6 +6,12 @@ import {
 } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
+  PREMIUM_DRESS,
+  premiumDocumentStylesheet,
+  premiumLetterhead,
+  premiumPageChrome,
+} from "@/lib/hiring-pack/premium-identity";
+import {
   CUSTODY_BLANK_RULE,
   CUSTODY_BLANK_RULE_WIDE,
   type CustodyField,
@@ -339,6 +345,9 @@ function renderCopy(
   // TOKEN — so the resolved record is passed rather than read from the module, which is what
   // makes the masthead follow an edited company name instead of the compiled one.
   company: CompanyDetails,
+  // The HR premium identity dresses the CURRENT version only. An archived version keeps the dress it
+  // was signed in, so a reprint from the Archive screen still matches the paper on file.
+  premium = false,
 ): string {
   const header = [
     `${template.headerLabelsAr[0]}: ${template.formNumberAr}`,
@@ -370,13 +379,14 @@ function renderCopy(
       values.TAX_CARD ?? ""
     }`;
 
+  const letterhead = {
+    titleAr: template.titleAr,
+    subtitleAr: template.subtitleAr,
+    legalNameAr: company.legalNameAr,
+    legalNameEn: company.legalNameEn,
+  };
   return `<article class="copy">
-    ${houseLetterhead({
-      titleAr: template.titleAr,
-      subtitleAr: template.subtitleAr,
-      legalNameAr: company.legalNameAr,
-      legalNameEn: company.legalNameEn,
-    })}
+    ${premium ? premiumLetterhead(letterhead) : houseLetterhead(letterhead)}
 
     <section class="recital">
       <p class="recital__name">${escapeHtml(registry)}</p>
@@ -407,9 +417,17 @@ function renderCopy(
     ${sectionHeading(template.signaturesHeadingAr)}
     ${signatureBlock(template.signatureColumns)}
 
-    ${returnProtocol(template)}
+    ${returnProtocol(template)}${premium ? premiumPageChrome() : ""}
   </article>`;
 }
+
+/**
+ * The HR premium identity over this receipt's own stylesheet, for the current version. APPENDED,
+ * never merged, so an archived version renders exactly the stylesheet it always did.
+ */
+const CUSTODY_PREMIUM_CSS = `
+${premiumDocumentStylesheet(".copy")}
+`;
 
 /**
  * The printable custody receipt.
@@ -433,8 +451,11 @@ function renderCustody(
   const template = requested && requested.variant === fallback.variant ? requested : fallback;
   const values = buildCustodyValues(data);
   const total = Math.max(1, copies);
+  // The current receipt wears the HR premium identity only where the owner said "change"
+  // (`PREMIUM_DRESS`); a version asked for from the Archive keeps the dress it was signed in.
+  const premium = template.id === fallback.id && PREMIUM_DRESS.custody;
   const body = Array.from({ length: total }, () =>
-    renderCopy(template, values, data.custodyDevice?.itemValuesEgp ?? null, data.company),
+    renderCopy(template, values, data.custodyDevice?.itemValuesEgp ?? null, data.company, premium),
   ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
@@ -562,7 +583,7 @@ function renderCustody(
     html, body { background: #fff; }
     .copy { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
   }
-${PRINT_BANNER_CSS}
+${PRINT_BANNER_CSS}${premium ? CUSTODY_PREMIUM_CSS : ""}
 </style>
 </head>
 <body>

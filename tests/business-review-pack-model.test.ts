@@ -295,6 +295,24 @@ export function runBusinessReviewPackModelTests() {
     assert.ok(html.includes('dir="auto"'), "cells carry dir=auto so an Arabic run orders and shapes correctly");
     assert.match(html, /--text:[^;]*Amiri Quran/, "the text face falls back to the Arabic face for Arabic glyphs");
     assert.ok(html.includes("كوم حماده"), "the Arabic brick NAME travels into the file — never the code");
+
+    // THE ARABIC LOGO: IN THE FOOT AND AS A 5% WATERMARK, NEVER A MASTHEAD (owner, 2026-10-12,
+    // "watermark and footer only"). One of each on every sheet, the watermark before the content so
+    // the text paints over it, anchored low on the right and never bled off an edge.
+    const sheets = html.split('<div class="sheet').length - 1;
+    assert.ok(sheets > 0, "the pack rendered at least one sheet");
+    assert.equal(html.split('class="foot__block foot__block--mark"><img').length - 1, sheets, "the foot carries the Arabic mark on every sheet");
+    assert.equal(html.split('<div class="arabic-wm"><img').length - 1, sheets, "and every sheet carries it as the watermark");
+    for (const sheet of html.split('<div class="sheet').slice(1)) {
+      assert.ok(sheet.indexOf('class="arabic-wm"') < sheet.indexOf('<div class="inner">'), "the watermark sits before the content");
+    }
+    const crests = html.match(/<header class="crest">[\s\S]*?<\/header>/g) ?? [];
+    assert.equal(crests.length, sheets, "each sheet's masthead was read, so the next check tests something");
+    for (const crest of crests) assert.ok(!crest.includes("data:image/png"), "the masthead carries no Arabic mark");
+    const wmRule = /\.arabic-wm \{([^}]*)\}/.exec(html)?.[1] ?? "";
+    assert.match(wmRule, /opacity:\.05/, "at 5%");
+    assert.match(wmRule, /right:\d[^;]*;\s*bottom:\d/, "low on the right");
+    assert.ok(!/(top|right|bottom|left):\s*-/.test(wmRule), "never bled off an edge");
   }
 
   // ------------------------------------------------------------------ 10. the brick label is a NAME, never the code

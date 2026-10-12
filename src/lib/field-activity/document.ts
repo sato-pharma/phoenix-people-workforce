@@ -1,9 +1,10 @@
 /**
  * Field Activity — the report as a house document.
  *
- * SATO-DIS-2026-01 v1.0: the company's identity on the company's paper, carried by line and type.
- * The ink rule holds — no filled areas except the 6% zebra on data tables — and every corner is
- * square. It prints LANDSCAPE, which is not a stylistic choice: a day page carries a route map
+ * SATO-DIS-2026-01 v1.0 in the HR PREMIUM dress (owner, 2026-10-13: ticked "change to the premium
+ * look" on the review page): the company's identity on the company's paper, carried by line and type,
+ * with the premium frame, watermark, masthead and running foot. The ink rule holds — no filled areas
+ * except the 6% zebra on data tables — and every corner is square. It prints LANDSCAPE, which is not a stylistic choice: a day page carries a route map
  * beside a table of stops each of which needs its coordinates and its full address, and on portrait
  * A4 that either spills to a second page or forces the address down to a size nobody reads.
  *
@@ -14,9 +15,6 @@
  * cramped.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import {
   PHARMACIES_IREPORTS360_ONLY,
   PHARMACIES_NOT_RECORDED_IN_PHOENIX,
@@ -26,7 +24,15 @@ import {
   pharmacyRecordingOf,
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
+import { systemLegalEntity } from "@/config/system-settings";
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import {
+  PREMIUM_COMPANY_DOCUMENT_BRAND,
+  PREMIUM_IDENTITY_CSS,
+  premiumMasthead,
+  premiumPageChrome,
+  premiumSheetCss,
+} from "@/lib/hiring-pack/premium-identity";
 import type {
   FieldActivityDay,
   FieldActivityReport,
@@ -136,16 +142,6 @@ function money(value: number): string {
 function duration(minutes: number | null): string {
   if (minutes == null) return "—";
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
-}
-
-function houseMarkDataUri(): string {
-  try {
-    const svg = readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.svg"), "utf8");
-    return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
-  } catch {
-    // The mark is the letterhead, not the content. A document without it is still a true document.
-    return "";
-  }
 }
 
 function fact(label: string, value: string): string {
@@ -282,30 +278,33 @@ function tripBlock(day: FieldActivityDay): string {
   </div>`;
 }
 
-function masthead(mark: string, report: FieldActivityReport, period: string): string {
+/**
+ * The premium masthead, one per printed page: full-size on the cover, slim on every day page. A slim
+ * one drops the diamond rule and sets a smaller title, because this one repeats on every page of a
+ * report that can run to 30 or more of them and each page needs its height for the stops and the map.
+ *
+ * The two lines the old masthead carried under the title are its subtitles, word for word.
+ */
+function masthead(report: FieldActivityReport, period: string, slim: boolean): string {
   const subject = report.subject;
-  return `
-  <header class="mast">
-    ${mark ? `<img class="mast__mark" src="${mark}" alt="Sato Pharma">` : '<div class="mast__mark"></div>'}
-    <div class="mast__id">
-      <p class="mast__doc">Field Activity Report</p>
-      <p class="mast__sub">${escapeHtml(subject.name)}${subject.jobTitle ? ` &middot; ${escapeHtml(subject.jobTitle)}` : ""}${subject.lineName ? ` &middot; ${escapeHtml(subject.lineName)} line` : ""}</p>
-      <p class="mast__sub mast__sub--thin">${escapeHtml(period)}</p>
-    </div>
-  </header>
-  <div class="mast__rule"></div>`;
-}
-
-function footer(report: FieldActivityReport, page: number, total: number, generatedOn: string, suffix = ""): string {
-  return `
-  <footer class="foot">
-    <div class="foot__rule"></div>
-    <div class="foot__row">
-      <p class="foot__c"><strong>SATO-DIS-2026-01 v1.0</strong> &middot; Sato Pharma</p>
-      <p class="foot__c foot__c--mid">Employee record ${escapeHtml(report.subject.hrId)} &middot; read from the live system on ${escapeHtml(generatedOn)}, Cairo time</p>
-      <p class="foot__c foot__c--r">Page ${page} of ${total}${escapeHtml(suffix)}</p>
-    </div>
-  </footer>`;
+  const subjectLine = [subject.name, subject.jobTitle, subject.lineName ? `${subject.lineName} line` : null]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+  // The masthead letter-spaces its English subtitles, and letter-spacing cuts the joins of Arabic.
+  const langOf = (text: string): "ar" | "en" => (/[؀-ۿ]/.test(text) ? "ar" : "en");
+  return premiumMasthead({
+    compact: !slim,
+    legalNameAr: systemLegalEntity.legalNameAr,
+    legalNameEn: systemLegalEntity.legalNameEn,
+    orientation: "landscape",
+    slim,
+    subtitles: [
+      { lang: langOf(subjectLine), text: subjectLine },
+      { lang: "en", text: period },
+    ],
+    title: "Field Activity Report",
+    titleLang: "en",
+  });
 }
 
 export function buildFieldActivityDocument(input: {
@@ -314,10 +313,15 @@ export function buildFieldActivityDocument(input: {
   generatedOn: string;
 }): string {
   const { report } = input;
-  const mark = houseMarkDataUri();
   const mapsByDay = new Map(input.maps.map((map) => [map.dateIso, map]));
   const periodLabel = `${report.fromIso} to ${report.toIso}`;
-  const totalPages = report.days.length + 1;
+  // Fixed in print, so Chrome repeats it on every page: it is written once, on the cover. Its running
+  // foot carries the line the old in-page footer carried, which is the same on every page.
+  const chrome = premiumPageChrome({
+    brand: PREMIUM_COMPANY_DOCUMENT_BRAND,
+    department: `Employee record ${report.subject.hrId} · read from the live system on ${input.generatedOn}, Cairo time`,
+    orientation: "landscape",
+  });
 
   const rows = report.days
     .map((day) => {
@@ -348,7 +352,7 @@ export function buildFieldActivityDocument(input: {
 
   const cover = `
 <section class="page">
-  ${masthead(mark, report, periodLabel)}
+  ${masthead(report, periodLabel, false)}
   <h1 class="title">Field activity, day by day</h1>
   <p class="lede">Every visit, every GPS fix, every logged time and every expense recorded for
   ${escapeHtml(report.subject.name)} between ${escapeHtml(report.fromIso)} and ${escapeHtml(report.toIso)},
@@ -383,12 +387,11 @@ export function buildFieldActivityDocument(input: {
     }
   </div>
   ${flagBlock}
-  ${footer(report, 1, totalPages, input.generatedOn)}
+  ${chrome}
 </section>`;
 
   const dayPages = report.days
     .map((day, index) => {
-      const page = index + 2;
       const map = mapsByDay.get(day.dateIso);
       const dense = day.stops.length > DENSE_STOPS;
       const mapBlock = map
@@ -417,19 +420,18 @@ export function buildFieldActivityDocument(input: {
       const spill = dense
         ? `
 <section class="page">
-  ${masthead(mark, report, longDate(day.dateIso, day.weekday))}
+  ${masthead(report, longDate(day.dateIso, day.weekday), true)}
   <div class="dayhead">
-    <h1 class="title">${escapeHtml(longDate(day.dateIso, day.weekday))} &mdash; every stop</h1>
+    <h1 class="title">${escapeHtml(longDate(day.dateIso, day.weekday))} &mdash; every stop <span class="thin">(continued)</span></h1>
     <p class="chip">${day.stops.length} stops</p>
   </div>
   ${stopsBlock}
-  ${footer(report, page, totalPages, input.generatedOn, " (continued)")}
 </section>`
         : "";
 
       return `
 <section class="page">
-  ${masthead(mark, report, longDate(day.dateIso, day.weekday))}
+  ${masthead(report, longDate(day.dateIso, day.weekday), true)}
   <div class="dayhead">
     <h1 class="title">${escapeHtml(longDate(day.dateIso, day.weekday))}</h1>
     <p class="chip">${escapeHtml(dayChip(day))}</p>
@@ -438,7 +440,6 @@ export function buildFieldActivityDocument(input: {
   ${body}
   ${notes}
   ${solo}
-  ${footer(report, page, totalPages, input.generatedOn)}
 </section>${spill}`;
     })
     .join("");
@@ -453,26 +454,22 @@ export function buildFieldActivityDocument(input: {
 function documentCss(): string {
   const c = HOUSE_COLORS;
   return `
-@page { size: A4 landscape; margin: 10mm 11mm 10mm 11mm; }
+${premiumSheetCss(".page", "landscape")}
+${PREMIUM_IDENTITY_CSS}
 * { box-sizing: border-box; border-radius: 0 !important; }
 html, body { margin: 0; padding: 0; }
 body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: ${c.body}; font-size: 8pt; line-height: 1.34; }
-.page { page-break-after: always; position: relative; min-height: 188mm; padding-bottom: 9mm; }
+.page { page-break-after: always; }
 .page:last-child { page-break-after: auto; }
-.mast { display: flex; align-items: flex-start; justify-content: space-between; gap: 8mm; }
-.mast__mark { width: 30mm; height: auto; }
-.mast__id { text-align: right; }
-.mast__doc { margin: 0; font-size: 11pt; font-weight: 700; color: ${c.deep}; letter-spacing: .02em; }
-.mast__sub { margin: 1mm 0 0; font-size: 8pt; font-weight: 600; }
-.mast__sub--thin { color: ${c.muted}; font-weight: 400; }
-.mast__rule { height: 1.6pt; background: ${c.blue}; margin: 2mm 0 3mm; }
-.dayhead { display: flex; align-items: baseline; justify-content: space-between; gap: 6mm; }
+.dayhead { display: flex; align-items: baseline; justify-content: space-between; gap: 6mm; margin-top: 2.2mm; }
+.pm-band + .title { margin-top: 2.6mm; }
 .title { margin: 0 0 1.5mm; font-size: 14.5pt; font-weight: 700; color: ${c.deep}; letter-spacing: -.01em; }
 .chip { margin: 0; font-size: 7.6pt; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
         color: ${c.blue}; border: 1pt solid ${c.blue}; padding: .8mm 2.4mm; white-space: nowrap; }
 .lede { margin: 0 0 5mm; font-size: 9pt; max-width: 200mm; }
-.h2 { margin: 2.6mm 0 1.4mm; font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
-      color: ${c.deep}; border-bottom: 1pt solid ${c.blue}; padding-bottom: 1mm; }
+.h2 { display: flex; align-items: center; gap: 3mm; margin: 2.6mm 0 1.4mm; font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+      color: ${c.deep}; }
+.h2::after { content: ""; flex: 1 1 auto; border-top: .5pt solid ${c.hair}; }
 .thin { color: ${c.muted}; font-weight: 400; font-size: 7.2pt; }
 .addr { color: ${c.muted}; font-weight: 400; font-size: 6.3pt; line-height: 1.2; margin-top: .2mm; }
 .facts { display: grid; grid-template-columns: repeat(4, 1fr); border-top: .6pt solid ${c.hair}; border-left: .6pt solid ${c.hair}; }
@@ -487,22 +484,16 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: ${c.
 .map figcaption { margin-top: 1.2mm; font-size: 6.9pt; color: ${c.muted}; }
 .tbl { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .tbl th { text-align: left; font-size: 6.9pt; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-          color: ${c.deep}; border-bottom: 1pt solid ${c.deep}; padding: 1.6mm; }
+          color: ${c.deep}; border-top: .7pt solid ${c.deep}; border-bottom: .5pt solid ${c.hair}; padding: 1.6mm; }
 .tbl td { padding: .85mm 1.4mm; vertical-align: top; border-bottom: .5pt solid ${c.hair}; word-wrap: break-word; }
 .tbl tbody tr:nth-child(odd) td { background: ${c.tint}; }
 .tbl .num, .tbl th.num { text-align: right; }
-.tbl tfoot td { padding: 1.8mm 1.6mm; border-top: 1pt solid ${c.deep}; border-bottom: none; font-weight: 700; }
-.note { border-left: 2pt solid ${c.light}; padding-left: 3.5mm; }
+.tbl tfoot td { padding: 1.8mm 1.6mm; border-top: .7pt solid ${c.deep}; border-bottom: none; font-weight: 700; }
+.note { border-left: 1.2pt solid ${c.blue}; padding-left: 3.5mm; }
 .note p { margin: 0 0 2mm; }
 .warn { margin: 2.5mm 0 0; border-left: 2pt solid ${c.deep}; padding-left: 3.5mm; }
 .tail { margin: 2.5mm 0 0; }
 .list { margin: 0; padding-left: 4.5mm; }
 .list li { margin-bottom: 1.4mm; }
-.foot { position: absolute; bottom: 0; left: 0; right: 0; }
-.foot__rule { height: .8pt; background: ${c.hair}; margin-bottom: 1.6mm; }
-.foot__row { display: flex; justify-content: space-between; gap: 4mm; }
-.foot__c { margin: 0; font-size: 6.8pt; color: ${c.muted}; }
-.foot__c--mid { text-align: center; }
-.foot__c--r { text-align: right; white-space: nowrap; }
 `;
 }

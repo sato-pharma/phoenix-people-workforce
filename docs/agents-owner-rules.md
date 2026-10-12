@@ -4210,6 +4210,132 @@ feature cannot be quietly deleted in a tidy-up. But nothing stops a session from
 alone, concluding that hiring papers must carry no seal mechanism at all, and proposing to rip it
 out as a rule violation — which is why the hook now names this account.
 
+## The HR premium identity — owner instructions, 2026-10-12 and 2026-10-13
+
+### What he said
+
+At about 22:20 Cairo, after approving the Talent Acquisition New Starter Handbook page by page:
+*"Save this identity as the HR premium identity … make all the normal templates or forms in Sato
+Pharma follow this perfect template. But not the governmental, the governmental as they are."*
+The same evening, while it was being rolled out: *"the contract keep corporate as it was"*.
+
+### What wears it
+
+The shared module is `src/lib/hiring-pack/premium-identity.ts`, built once beside
+`house-identity.ts` and never pasted per renderer. It is the house identity `SATO-DIS-2026-01 v1.0`
+raised to premium — the same three blues, the same ink rule — plus a page frame with Latin security
+microtext, the Arabic mark as a 5% watermark, a masthead with the Latin mark and the engine-turned
+band drawn as an inline vector, and the Phoenix running foot carrying the identity code.
+
+- **Wears it (his answers of 13 October, below):** the English certificate of experience, the English
+  salary letter, the exit interview, the payslip, the organogram employee record, the interview
+  calendar PDF, the Phoenix CRM start guide, the Field Activity report, and a new fifth job-offer
+  design called Premium. **Everything else he ticked "keep" and prints as it did before the identity
+  existed** - the clearances, the custody receipts, the worker data form and every other HR paper -
+  through the `PREMIUM_DRESS` table in `premium-identity.ts`, whose branch for each is switched off,
+  not torn out, so a changed mind is one line.
+- **Keeps the corporate dress, by his word:** the employment contract, every version of it. The
+  renewal annex goes with it — it is read stapled to the contract, and `tests/hr-forms-renewal.test.ts`
+  pins its masthead identical to the contract's — and so does the non-renewal notice, drawn by the
+  same renderer from the same furniture.
+- **An archived version keeps the dress it was signed in.** Only the current version of a paper wears
+  the premium identity, so a reprint from the Archive screen still matches the paper on file.
+- **Never touched:** the Authority's forms (Form 1, Form 6, the labour exit forms, the official pack
+  forms, the field-layout overlays), and the designs he decided one by one - the four existing job
+  offer designs, the Spotlight sheet, the business card and the workbooks. `houseLetterhead()` is
+  unchanged and byte-pinned by `tests/payslip-document.test.ts`; the payslip now calls
+  `premiumLetterhead()` instead.
+- **No seal**, as on every hiring paper: the seal is the job offer's alone.
+
+### The Arabic logo: watermark and footer only
+
+At about 23:50 Cairo the same evening, looking at the premium papers: *"make the arabic sato logo only
+as water mark"*, then *"everywhere"*. Asked about the two papers that sign their foot with it, he
+answered *"ok watermark and footer only"*, and then chose to keep their foot mark and add the
+watermark.
+
+- **The HR premium papers:** the Arabic mark left the masthead. Its empty right column now mirrors the
+  Latin mark's, so the title sits on the page's centre line, and the gaps closed by the same amount, so
+  the title column is exactly as wide as before: it wraps on the same words and no paper grows a line.
+  The 5% watermark is now the only Arabic mark on these papers.
+- **The Spotlight sheet** (and the Phoenix Ranks certificate, which shares its sheet frame so the two
+  cannot drift apart) and **the Sales Review pack PDF:** the foot keeps the Arabic mark, and every
+  sheet now carries it as a 5% watermark too, low on the right of the content column and above the
+  foot. It is contained, so the whole name shows. That is none of the four Spotlight placements he
+  struck on 2026-09-12 (a wash behind the figure, a bleed off the right edge, low under the gauge, over
+  the figure's left shoulder). The rep's own Spotlight sheet already had its centred watermark
+  (2026-09-30) and keeps it instead of getting a second one.
+- **Already a watermark, unchanged:** the milestone cards, the award cheque and the joining form's
+  band.
+- Pinned by `tests/hr-premium-identity.test.ts`, `tests/spotlight-sheet-design.test.ts`,
+  `tests/spotlight-rep-self.test.ts` and `tests/business-review-pack-model.test.ts`.
+
+### What it cost to get right on paper
+
+- **Nothing in the fixed frame may carry an SVG `transform`.** The frame is `position: fixed` in
+  print, which is how Chrome repeats it on every page, and Chrome paints a fixed element's
+  transformed SVG children on the first page only. With rotated side runs and turned corner pips,
+  page two of the contract printed with empty side channels and hollow corner tiles. The side runs
+  now lie on `<textPath>`s and the pips are four-point polygons. CSS rotation on HTML (the foot's
+  diamond) is not affected.
+- **The reference number rides the masthead's name line, never a line of its own.** Measured on the
+  numbered renders: a line of its own cost 3.2 mm and pushed the contract (then premium) to a fourth
+  sheet and the employee clearance to a second. On the name line it costs no height on any paper.
+- **The sheet prints on `@page { margin: 0 }`**, because a fixed frame is clipped to the page area.
+  Chrome draws its footer template inside the bottom margin, so with no margin a premium paper's
+  filed PDF is numbered by `paper-pdf.ts` after layout ("N / M" in the foot's right end, per copy).
+- **Every page count held**: all papers, numbered and not, print on the same number of sheets as in
+  the house dress, with at least 1.3 mm between the last line and the foot rule.
+
+### His keep-or-change answers - 13 October 2026, about 00:40 Cairo
+
+Given on the review page, one box per paper (ticked = the new premium look, unticked = keep, which
+prints as today). **Change:** the English salary letter, the exit interview, the English certificate
+of experience, the payslip, the organogram employee record (PDF), the interview calendar export
+(PDF), the Phoenix CRM start guide, the Field Activity report - *"and for job offers create new
+templete with the new identity"*. **Keep:** the confidentiality undertaking, the laptop custody
+receipt, the employee clearance, the worker data form, the Arabic salary letter, every other HR and
+hiring paper, the contract with its annex and notice, all four existing job offer designs, the
+Spotlight sheet and the Phoenix Ranks certificate, the business card, the Excel workbooks, the
+printed candidate record, the WhatsApp application sheet, the Monthly Closing sheet, the Sales Review
+pack, the Make It Happen forecast, the award cheque, the Sato Pharma email and the CEO letter email.
+**The Latin face:** keep as it is. **The foot code:** keep `SATO-DIS-2026-01 v1.0`.
+
+- **The foot of a company paper says Sato Pharma, not Phoenix** (asked, and he chose "Sato Pharma
+  alone", 13 October 2026; one line to change: `PREMIUM_COMPANY_DOCUMENT_BRAND`). The payslip and the organogram record
+  have pinned "no Phoenix branding on a company document" since 2026-09-05, and the job offer's
+  reader is the candidate, to whom nothing says Phoenix (`src/lib/offers/identity.ts`). The HR papers
+  that wear the identity keep the approved Phoenix foot.
+- **Landscape.** The interview calendar and the Field Activity report are landscape, so the chrome
+  takes an `orientation` option (the same sheet turned on its side, frame, watermark and foot the
+  same distance from the edges), and a `slim` masthead for one repeated on every page.
+- **A kept paper is proven byte for byte.** Rendered with the same fixture, 21 of the 24 hiring papers
+  are identical to the code from before the identity existed; the 3 that differ are the three he
+  ticked "change".
+- **The Premium job offer is a FIFTH design beside the four he froze** (`premium`, "SATO Premium
+  Offer", never seeded as the default). It draws through `src/lib/offers/premium-skin.ts` and
+  `premium-template.ts`; the wording, fields, tables and signature cells are the ordinary offer's.
+  The four older designs are pinned by a sha256 of their rendered letter, computed on the tree from
+  before the identity and carried unchanged in `frozenDesignTests`, so a change to any of them goes
+  red. The company seal is still drawn by the base (`.offer-seal`, company rule only, never the
+  candidate's); Premium adds 6 mm of headroom on both parties' signature rows so the four rules stay
+  level and the impression no longer lands on the signatory's name and title. The offer prints on two
+  sheets, the same as the House design.
+- **Its database half ships first.** The `offer_templates` CHECK constraints on `variant` and
+  `builtin_key` had to allow `premium` before the code that registers it deployed, so migration
+  `20261013120000_job_offer_premium_variant` was applied to staging and to production on 13 October
+  2026 and read back from both; it rewrites no row. The Premium row is created the first time the
+  app lists offer templates after the code deploys.
+- **Offer emails do not change.** The email an offer travels in (`render-email.ts`) is the same for
+  all five designs; only the PDF letter differs.
+- **The money papers keep every figure and word.** On the payslip and the organogram record only the
+  title words moved into the masthead ("Payslip", "قسيمة راتب", "Salary statement · month"); the
+  visible text below it was compared old against new and is identical. Each still prints its own
+  footer line carrying the document code beside the premium foot.
+- **Fonts were measured on Windows.** The premium type stack names Segoe UI first; Railway's Chromium
+  substitutes Noto Sans. The Premium offer measured 28.0 mm and 44.8 mm above the foot rule on its two
+  sheets here; that slack is what absorbs the substitution, and it has not been measured on Railway.
+
 ## The UE Direct split is retired with the Excel-import direct orders — owner, 2026-09-30
 
 **What he was asked.** A select-audit of the sales code found `au_v_direct_region_allocation`: the

@@ -78,9 +78,11 @@ function testTheLetterWearsTheArabicCertificatesLayout() {
 
   const numbered = stampPaperReference(html, "HR-2026-000123", "salaryLetterEn");
   assert.ok(numbered.includes('data-hp-ref="HR-2026-000123"'), "the reference number is printed");
+  // Since 2026-10-12 the letter wears the HR premium masthead, which keeps an empty slot for the
+  // number at the end of its name line.
   assert.ok(
-    /class="doc-mast__side doc-mast__id">[\s\S]*?<span class="hp-ref" data-hp-ref=/.test(numbered),
-    "in the masthead's name block",
+    /<span class="pm-mast__ref" dir="rtl"><span class="hp-ref" data-hp-ref="HR-2026-000123">/.test(numbered),
+    "in the premium masthead's reference slot",
   );
   assert.ok(!numbered.includes('class="hp-ref hp-ref--fixed"'), "not in a loose corner line");
 }

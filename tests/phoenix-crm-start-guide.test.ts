@@ -37,9 +37,15 @@ import {
  *   2. THE SQUARE-EDGE GOLDEN RULE, on a document nothing else measures. `tokens.css` does not reach
  *      a standalone printed page.
  *
- *   3. THE ARABIC PAGE IS ARABIC-LED. `houseLetterhead` moves the Arabic title under an English one
+ *   3. THE ARABIC PAGE IS ARABIC-LED. `premiumLetterhead` moves the Arabic title under an English one
  *      the moment `titleEn` is passed, so an Arabic page that quietly acquired an English h1 would
  *      still render, still look house-correct, and be the wrong document.
+ *
+ *   4. THE PREMIUM DRESS, AND ONLY THE DRESS (owner, 2026-10-13: "change to the premium look"). The
+ *      masthead, the frame, the watermark and the running foot are the HR premium identity's; the
+ *      chrome is appended LAST, says nothing about Phoenix, and is not drawn on a phone, where the
+ *      masthead stacks instead — the guide is read on phones as much as it is printed. The steps,
+ *      notes and labels are pinned by everything else in this file, which did not change.
  *
  * The BLIND half is NOT pinned here, deliberately: `src/lib/phoenix-crm` minus `/server/` is one of
  * the roots `phoenix-crm-blind-half.test.ts` DERIVES its surface from, so this module is already
@@ -63,12 +69,52 @@ export async function runPhoenixCrmStartGuideTests(): Promise<void> {
   for (const language of START_GUIDE_LANGUAGES) {
     const html = buildPhoenixCrmStartGuide(language);
 
-    // The house identity, from the module that owns it.
-    assert.match(html, /class="lh"/, `${language}: the house letterhead is present`);
-    assert.match(html, /class="lh__rule"/, `${language}: the engine-turned band is present`);
+    // The HR premium identity, from the module that owns it: the compact masthead (the page is one A4
+    // side), its engine-turned band, and the chrome — frame, watermark and running foot.
+    assert.match(html, /<header class="pm-mast pm-mast--compact">/, `${language}: the premium masthead is present`);
+    assert.match(html, /<svg class="pm-band"/, `${language}: the engine-turned band is present`);
+    assert.match(html, /<svg class="pm-frame"/, `${language}: the premium frame is present`);
+    assert.match(html, /class="pm-watermark"/, `${language}: the watermark is present`);
+    assert.ok(!/class="lh[ _"]/.test(html), `${language}: the old house letterhead is gone, not stacked under the new one`);
     assert.ok(
       html.includes(START_GUIDE_DOCUMENT_CODE),
       `${language}: every company document wears ${START_GUIDE_DOCUMENT_CODE}`,
+    );
+    // The identity code is carried by the premium foot, once. The old in-flow footer used to print it
+    // as well, and a page that wore the code twice would be wearing two identities.
+    const footCode = /<div class="pm-foot__code" dir="ltr">([^<]*)<\/div>/.exec(html)?.[1] ?? "";
+    assert.ok(footCode.includes(START_GUIDE_DOCUMENT_CODE), `${language}: the premium foot carries the identity code`);
+    assert.equal(
+      bodyOf(html).split(START_GUIDE_DOCUMENT_CODE).length - 1,
+      1,
+      `${language}: the identity code is printed once`,
+    );
+    // The guide's own footer words stay in the page content, after the notes and ahead of the chrome.
+    const closing = /<p class="closing">([^<]+)<\/p>/.exec(html);
+    assert.ok(closing && /Phoenix CRM/.test(closing[1]), `${language}: the guide's own footer words stay on the page`);
+    assert.ok(!/<footer/.test(html), `${language}: no in-flow footer is left to compete with the premium foot`);
+
+    // THE CHROME IS APPENDED LAST AND SAYS NOTHING ABOUT PHOENIX. The guide's title says "Phoenix CRM"
+    // because that is what the document is about; the frame, the foot and the watermark are Sato
+    // Pharma's dress and name Sato Pharma alone (`PREMIUM_COMPANY_DOCUMENT_BRAND`).
+    const chromeAt = html.indexOf('<div class="pm-chrome"');
+    assert.ok(chromeAt > html.lastIndexOf('<div class="note">'), `${language}: the chrome is the sheet's last child`);
+    assert.ok(!/phoenix/i.test(html.slice(chromeAt)), `${language}: the chrome does not say Phoenix`);
+
+    // THE PAGE IS PRINTED BY THE USER'S BROWSER, so the sheet owns the whole page: `margin: 0` is what
+    // lets the fixed frame and foot reach the edges, and it also drops the browser's own header and
+    // footer text (the address, the date) from the printout.
+    assert.match(html, /@page\s*\{[^}]*size:\s*A4;\s*margin:\s*0;/, `${language}: the page has no margin of its own`);
+
+    // A PHONE gets the content as it always did: the 210 mm frame, watermark and foot are not drawn
+    // below 830 px (a 210 mm frame on a 375 px screen is a sideways scroll), and the masthead stacks
+    // its mark above its title instead of reserving a column on each side of a title 11 mm wide.
+    const phone = /@media screen and \(max-width: 830px\)\s*\{([\s\S]*?)\n  \}/.exec(html)?.[1] ?? "";
+    assert.match(phone, /\.pm-chrome\s*\{\s*display:\s*none;/, `${language}: the chrome is not drawn on a phone`);
+    assert.match(
+      phone,
+      /\.pm-mast\.pm-mast--compact\s*\{[^}]*grid-template-columns:\s*1fr/,
+      `${language}: the masthead stacks on a phone`,
     );
 
     // THE SQUARE-EDGE GOLDEN RULE — no round or semi-round corners, anywhere.
@@ -113,10 +159,17 @@ export async function runPhoenixCrmStartGuideTests(): Promise<void> {
     const ar = buildPhoenixCrmStartGuide("ar");
     assert.match(ar, /<html lang="ar" dir="rtl">/, "the Arabic page lays out right-to-left");
 
-    // ARABIC-LED. houseLetterhead promotes an English title to the h1 and pushes the Arabic under it
+    // ARABIC-LED. premiumLetterhead promotes an English title to the h1 and pushes the Arabic under it
     // the moment `titleEn` is passed — a silent change of document, not a styling one.
-    assert.match(ar, /<h1>تسجيل الزيارة<\/h1>/, "the Arabic title is the h1, with no English above it");
-    assert.ok(!ar.includes('<h1 dir="ltr">'), "the Arabic page has no English h1");
+    assert.match(
+      ar,
+      /<h1 class="pm-mast__t" dir="rtl" lang="ar">تسجيل الزيارة<\/h1>/,
+      "the Arabic title is the h1, with no English above it",
+    );
+    assert.equal([...ar.matchAll(/<h1[\s>]/g)].length, 1, "the Arabic page prints its title once, as its only h1");
+    // The page WITHOUT its stylesheet: the premium stylesheet names both title classes for every paper.
+    assert.ok(!bodyOf(ar).includes("pm-mast__t--en"), "the Arabic page has no English h1");
+    assert.ok(!bodyOf(ar).includes("pm-mast__tar"), "and no second-language title under the Arabic one");
 
     // EVERY English label is isolated. Strip the ones that went through the helper; if a label is
     // still standing in the body afterwards, it was written bare.
@@ -145,8 +198,21 @@ export async function runPhoenixCrmStartGuideTests(): Promise<void> {
   {
     const en = buildPhoenixCrmStartGuide("en");
     assert.match(en, /<html lang="en" dir="ltr">/, "the English page lays out left-to-right");
-    assert.match(en, /<h1 dir="ltr">Phoenix CRM — Recording a Visit<\/h1>/, "English leads, Arabic sits under it");
-    assert.match(en, /class="lh__ar"/, "the English page still carries the Arabic name of the document");
+    assert.match(
+      en,
+      /<h1 class="pm-mast__t pm-mast__t--en" dir="ltr" lang="en">Phoenix CRM — Recording a Visit<\/h1>/,
+      "English leads, Arabic sits under it",
+    );
+    assert.equal([...en.matchAll(/<h1[\s>]/g)].length, 1, "the English page prints its title once, as its only h1");
+    assert.match(
+      en,
+      /<p class="pm-mast__tar" dir="rtl" lang="ar">تسجيل الزيارة<\/p>/,
+      "the English page still carries the Arabic name of the document",
+    );
+    assert.ok(
+      bodyOf(en).indexOf("pm-mast__t--en") < bodyOf(en).indexOf("pm-mast__tar"),
+      "the Arabic name sits UNDER the English title, never above it",
+    );
   }
 
   // ── The helper itself ────────────────────────────────────────────────────────────────────────

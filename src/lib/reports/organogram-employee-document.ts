@@ -27,7 +27,13 @@
 //     different one, and the ellipsis ban is the owner's.
 //   NO HORIZONTAL SCROLL — a 210 mm sheet that reflows to one column below 800 px on screen.
 
-import { HOUSE_IDENTITY_CSS, houseLetterhead } from "@/lib/hiring-pack/house-identity";
+import { HOUSE_IDENTITY_CSS } from "@/lib/hiring-pack/house-identity";
+import {
+  PREMIUM_COMPANY_DOCUMENT_BRAND,
+  premiumDocumentStylesheet,
+  premiumLetterhead,
+  premiumPageChrome,
+} from "@/lib/hiring-pack/premium-identity";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
 import { systemLegalEntity } from "@/config/system-settings";
 import type {
@@ -72,14 +78,14 @@ export function buildOrganogramEmployeeRecordSheet(detail: OrganogramEmployeeDet
   const sections = detail.sections.map(section).filter(Boolean).join("");
 
   return `<article class="rec">
-    ${houseLetterhead({
+    ${premiumLetterhead({
       legalNameAr: systemLegalEntity.legalNameAr,
       legalNameEn: systemLegalEntity.legalNameEn,
       purposeEn: "Confidential · HR record",
       subtitleEn,
       titleAr: "بيانات الموظف",
       titleEn: "Employee Record",
-    })}
+    }, { compact: true })}
 
     <section class="rec__id">
       <div class="rec__id-cell"><span class="rec__k">Employee</span>
@@ -94,6 +100,7 @@ export function buildOrganogramEmployeeRecordSheet(detail: OrganogramEmployeeDet
       <span>${escapeHtml(detail.hrId)} · computer-generated record · confidential</span>
       <span class="rec__ft-id">SATO-DIS-2026-01 v1.0</span>
     </footer>
+    ${premiumPageChrome({ brand: PREMIUM_COMPANY_DOCUMENT_BRAND })}
   </article>`;
 }
 
@@ -106,6 +113,7 @@ export function buildOrganogramEmployeeRecordSheet(detail: OrganogramEmployeeDet
  */
 export const ORGANOGRAM_RECORD_CSS = `
 ${HOUSE_IDENTITY_CSS}
+${premiumDocumentStylesheet(".rec")}
 
 /* Square edges are not negotiable, and this may render under a stylesheet shipping a 4 px default. */
 *, *::before, *::after { box-sizing: border-box; border-radius: 0 !important; }
@@ -128,14 +136,19 @@ body {
   width: 210mm;
   max-width: 100%;
   margin: 0 auto;
-  padding: 10mm 13mm 9mm;
 }
 .rec h1, .rec h2, .rec p { margin: 0; }
 
 /* On screen the sheet sits on a ground so its edges read as paper. On paper there is no ground. */
 @media screen {
   body { background: #eef2f6; padding: 16px 0; }
-  .rec { border: 1px solid var(--phx-doc-hair); }
+  .rec { border: 1px solid var(--phx-doc-hair); overflow: hidden; }
+}
+/* The frame and the foot are drawn for a whole 297 mm sheet, so on a screen wide enough to show the
+   sheet it is a whole sheet. Screen only: on paper a min-height of exactly one page is how a blank
+   second page is born. */
+@media screen and (min-width: 801px) {
+  .rec { min-height: 297mm; }
 }
 
 /* ---------- the person, named once at the top ---------- */
@@ -179,8 +192,7 @@ body {
 
 .rec__ft {
   display: flex; flex-wrap: wrap; gap: 1mm 4mm; justify-content: space-between;
-  margin: 4mm 0 0; padding-top: 1.4mm;
-  border-top: .5pt solid var(--phx-doc-hair);
+  margin: 3mm 0 0;
   color: var(--phx-doc-muted); font-size: 6.8pt; letter-spacing: .02em;
 }
 .rec__ft-id { color: var(--phx-doc-deep); font-weight: 700; }
@@ -188,6 +200,9 @@ body {
 /* ---------- the phone: one column, never a horizontal scroll ---------- */
 @media screen and (max-width: 800px) {
   .rec { padding: 7mm 5mm; }
+  .rec .pm-chrome { display: none; }
+  .rec .pm-mast { grid-template-columns: 24mm 1fr; column-gap: 2mm; }
+  .rec .pm-mast__latin { width: 24mm; }
   .rec__id-cell { flex-basis: 100%; }
   .rec__cell { flex-basis: 100%; }
 }

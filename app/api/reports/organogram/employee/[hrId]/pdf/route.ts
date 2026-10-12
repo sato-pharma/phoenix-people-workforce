@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
 import {
@@ -114,11 +115,15 @@ export async function GET(
       redactSalary: canViewSensitive && isSalaryRedactedForViewer(access, employee.hrId),
     });
 
-    const html = buildOrganogramEmployeeDocument(detail);
+    // The Sato mark and the Arabic watermark are `/brand/…` paths, and `setContent` gives the page no
+    // base URL, so on their own they print as broken images (the 2026-10-13 premium dress made the
+    // record carry both). They are inlined from `public/brand/` first — the same allow-listed inliner
+    // the hiring papers and the payslip image use — which is also what leaves the page nothing to fetch.
+    const { html } = inlineLocalAssets(buildOrganogramEmployeeDocument(detail));
     const pdf = await withChromiumPage(async (page) => {
-      // `domcontentloaded`, not `networkidle0`: the document embeds its own stylesheet and the only
-      // possible network request is the letterhead mark. Waiting for network idle would add seconds
-      // and hang the download if that asset host were slow.
+      // `domcontentloaded`, not `networkidle0`: the document embeds its own stylesheet and, with its
+      // artwork inlined, has no network request left to wait for. Waiting for network idle would add
+      // seconds and hang the download for nothing.
       await page.setContent(html, { timeout: 30_000, waitUntil: "domcontentloaded" });
       // Chromium applies `@media screen` by default even when producing a PDF; the document's paper
       // rules live under print.

@@ -15,10 +15,16 @@
  * `houseEngineTurnedBand` is imported for the CURVE, not for the identity. It takes a colour and
  * returns a tiled data URI; drawing that same curve a second time in this folder is what produced
  * four drifting mastheads in the hiring pack the same week. Everything else here stays frozen.
+ *
+ * THE FIFTH DESIGN, `premium`, IS A NEW DESIGN BESIDE THE FOUR, NOT A RESTYLE OF ONE (owner,
+ * 2026-10-13: "for job offers create new template with the new identity"). The freeze holds for
+ * classic, executive, sato and house: their markup and their stylesheets are byte-for-byte what they
+ * were, and everything premium does is behind `variant === "premium"` — see `premium-skin.ts`.
  * ───────────────────────────────────────────────────────────────────────────────────────────── */
 import { HOUSE_COLORS, houseBandBackground, houseEngineTurnedBand } from "@/lib/hiring-pack/house-identity";
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { deriveOfferPay, formatOfferAmount } from "@/lib/offers/pay";
+import { PREMIUM_OFFER_SKIN, premiumOfferBody, premiumOfferChrome } from "@/lib/offers/premium-skin";
 import { offerRoleSummary } from "@/lib/offers/role-summary";
 import { systemLegalEntity } from "@/config/system-settings";
 import type { OfferBlock, OfferFields, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
@@ -602,6 +608,10 @@ table{width:100%;border-collapse:collapse}
   // the one 6% zebra on the salary table. It carries the single engine-turned band under the mark,
   // so the base's per-section bands are dropped to hairlines below.
   if (variant === "house") return `${base}\n${HOUSE_SKIN}`;
+  // The HR premium skin, appended the same way: the premium sheet geometry and chrome, then the
+  // offer's own rules, which strip every filled area the base draws back to the ink rule. It tiles
+  // no background of its own and switches the base's tiled band off.
+  if (variant === "premium") return `${base}\n${PREMIUM_OFFER_SKIN}`;
   return base;
 }
 
@@ -979,9 +989,21 @@ export function renderOfferDocument(
         ? "sato"
         : template.variant === "house"
           ? "house"
-          : "classic";
+          : template.variant === "premium"
+            ? "premium"
+            : "classic";
   const tokens = buildOfferTokens(fields);
-  const body = template.blocks.map((block) => renderOfferBlock(block, tokens, options)).join("");
+  // The premium letter draws its letterhead and title as ONE centred masthead and ends on the page
+  // chrome (watermark, frame, running foot), appended last so it sits after every block. Every other
+  // design is the blocks, one after another, exactly as before.
+  const body =
+    variant === "premium"
+      ? premiumOfferBody(
+          template.blocks,
+          (block) => renderOfferBlock(block, tokens, options),
+          (value) => fillOfferTokens(value, tokens),
+        ) + premiumOfferChrome()
+      : template.blocks.map((block) => renderOfferBlock(block, tokens, options)).join("");
   const css = offerDocumentCss(
     template.theme ?? {},
     template.fontFamily || OFFER_DEFAULT_FONT,

@@ -55,6 +55,14 @@
 //     overrun does not error -- it pushes the foot off the bottom of the paper and slices the last
 //     row in half. The Source block it replaced stood 17mm; this one is capped below that.
 //
+//   · AND, SINCE 2026-10-12, A 5% WATERMARK AS WELL. The owner ruled that the Arabic logo belongs in
+//     the watermark and the footer only, never a masthead ("watermark and footer only"), and for this
+//     sheet chose to keep the foot mark AND add the watermark. It sits LOW ON THE RIGHT, inside the
+//     content column, above the foot: contained, so the whole name shows (never bled off the right
+//     edge), at 5%, and in the same corner the HR papers carry it. It is one more reference to the
+//     same data URI, so it adds no image object. The rep's own sheet keeps its centred watermark
+//     instead of a second one (`repSpotlightDocumentHtml`).
+//
 // 🔴 THIS TAKES THE SHEET OUT OF THE HOUSE INK RULE, DELIBERATELY. SATO-DIS-2026-01 allows no filled
 // areas except the 6% zebra row, and the crest band, the plinth and the stat band are all fills. The
 // reference the owner handed over is built on them; the premium closing already holds the same
@@ -410,8 +418,17 @@ function pageShell(
   body: string,
   page: number,
   total: number,
+  options: SheetShellOptions = {},
 ): string {
-  return sheetShell(`Sato Pharma &middot; Sales Performance Spotlight &middot; ${escapeHtml(result.windowLabel)}`, body, page, total);
+  return sheetShell(`Sato Pharma &middot; Sales Performance Spotlight &middot; ${escapeHtml(result.windowLabel)}`, body, page, total, options);
+}
+
+export interface SheetShellOptions {
+  /**
+   * The Arabic mark as the sheet's 5% watermark (owner, 2026-10-12). On by default; off only for a
+   * sheet whose body already carries its own watermark, so no page shows two.
+   */
+  watermark?: boolean;
 }
 
 /**
@@ -419,7 +436,7 @@ function pageShell(
  * (src/lib/rep-ranks/certificate.ts), so a rep's two recognition sheets are one design and cannot
  * drift apart. `plinth` is already-escaped HTML.
  */
-export function sheetShell(plinth: string, body: string, page: number, total: number): string {
+export function sheetShell(plinth: string, body: string, page: number, total: number, options: SheetShellOptions = {}): string {
   return `<div class="sheet${page === total ? "" : " sheet--break"}">
     <header class="crest">
       <div class="crest__mark">${houseMark(true)}</div>
@@ -432,6 +449,7 @@ export function sheetShell(plinth: string, body: string, page: number, total: nu
       <div class="bracket bracket--tr">${BRACKET_SVG}</div>
       <div class="bracket bracket--bl">${BRACKET_SVG}</div>
       <div class="bracket bracket--br">${BRACKET_SVG}</div>
+      ${options.watermark === false ? "" : `<div class="arabic-wm">${arabicMark()}</div>`}
 
       <div class="inner">
         ${body}
@@ -783,6 +801,10 @@ const CSS = `
   .bracket--tr { top: 6mm; right: 12mm; transform: scaleX(-1); }
   .bracket--bl { bottom: 6mm; left: 12mm; transform: scaleY(-1); }
   .bracket--br { bottom: 6mm; right: 12mm; transform: scale(-1,-1); }
+  /* The Arabic mark at 5%, low on the right of the content column and clear of the foot (owner,
+     2026-10-12). Before .inner in the markup, so the text paints over it with no z-index. */
+  .arabic-wm { position: absolute; right: 18mm; bottom: 34mm; width: 112mm; opacity: .05; pointer-events: none; }
+  .arabic-wm img { display: block; width: 100%; height: auto; }
 
   .inner { position: relative; height: 100%; display: flex; flex-direction: column; }
   /* Pinned against shrinking: a column flex container whose content is even slightly taller than
@@ -1168,6 +1190,8 @@ export function repSpotlightDocumentHtml(result: SpotlightResult): string {
   //
   // Scoped to THIS sheet only: the admin spotlight keeps the Arabic mark in the foot, and the history
   // in this file's header (the four placements the owner struck on 2026-09-12) is left untouched there.
+  // Since 2026-10-12 every other sheet carries the shell's low-right watermark too; this one keeps its
+  // own centred one and asks the shell for none, so the rep's page never shows two.
   // What that history teaches is honoured here so the watermark is not the version he rejected:
   //   · CENTRED AND CONTAINED, never bled off the right edge — Arabic reads RTL, so an off-edge mark
   //     eats the first half of the company name. 168mm inside a 210mm page keeps the whole name visible.
@@ -1183,7 +1207,7 @@ export function repSpotlightDocumentHtml(result: SpotlightResult): string {
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>${escapeHtml(result.headline)}</title><style>${CSS}</style>${watermarkStyle}</head>
-<body style="margin:0">${pageShell(result, framed, 1, 1)}</body></html>`;
+<body style="margin:0">${pageShell(result, framed, 1, 1, { watermark: false })}</body></html>`;
 }
 
 /** The rep's sheet, as a PDF. Throws `ChromiumUnavailableError` when the runtime cannot render one. */

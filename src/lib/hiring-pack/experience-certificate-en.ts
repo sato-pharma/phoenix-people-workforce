@@ -54,8 +54,12 @@ import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-l
 import {
   HOUSE_IDENTITY_CSS,
   HOUSE_MARK_SRC,
-  houseLetterhead,
 } from "@/lib/hiring-pack/house-identity";
+import {
+  premiumDocumentStylesheet,
+  premiumLetterhead,
+  premiumPageChrome,
+} from "@/lib/hiring-pack/premium-identity";
 import {
   describeServiceDurationEn,
   escapeHtml,
@@ -193,7 +197,7 @@ function renderCopy(values: ExperienceCertificateEnValues): string {
     : `${sentenceCase(p.subject)} remains in the employment of the company as at the date of this certificate.`;
 
   return `<article class="cert">
-    ${houseLetterhead({
+    ${premiumLetterhead({
       legalNameAr: systemLegalEntity.legalNameAr,
       legalNameEn: systemLegalEntity.legalNameEn,
       purposeEn: "Issued at the employee's request · One copy retained in the service file",
@@ -237,7 +241,7 @@ function renderCopy(values: ExperienceCertificateEnValues): string {
       </div>
     </section>
 
-    <p class="cert__foot">Certificate of Experience · Issued by Human Resources</p>
+    <p class="cert__foot">Certificate of Experience · Issued by Human Resources</p>${premiumPageChrome()}
   </article>`;
 }
 
@@ -373,6 +377,7 @@ body {
 }
 
 ${PRINT_BANNER_CSS}
+${premiumDocumentStylesheet(".cert")}
 </style>
 </head>
 <body>

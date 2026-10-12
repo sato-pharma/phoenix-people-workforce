@@ -4,6 +4,12 @@ import {
   HOUSE_COLORS,
   HOUSE_IDENTITY_CSS,
 } from "@/lib/hiring-pack/house-identity";
+import {
+  PREMIUM_DRESS,
+  premiumDocumentStylesheet,
+  premiumLetterhead,
+  premiumPageChrome,
+} from "@/lib/hiring-pack/premium-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   ARABIC_FONT_STACK,
@@ -210,6 +216,8 @@ function renderCopy(
   // TOKEN — so the resolved record is passed rather than read from the module, which is what
   // makes the masthead follow an edited company name instead of the compiled one.
   company: CompanyDetails,
+  // The HR premium dress, where the owner said "change" (`PREMIUM_DRESS.workerForm`).
+  premium = false,
 ): string {
   // The form's own three-line company block, which is TEMPLATE PROSE with tokens in it — not the
   // company record. Named apart from `company` above because the two are genuinely different things,
@@ -219,15 +227,16 @@ function renderCopy(
     .join("");
   const sections = template.sections.map((section) => sectionHtml(section, values)).join("");
 
+  const letterhead = {
+    titleAr: template.titleAr,
+    subtitleAr: template.subtitleAr,
+    legalNameAr: company.legalNameAr,
+    legalNameEn: company.legalNameEn,
+  };
   return `<article class="copy">
     <table class="sheet">
       <tbody><tr><td class="sheet__body">
-        ${houseLetterhead({
-          titleAr: template.titleAr,
-          subtitleAr: template.subtitleAr,
-          legalNameAr: company.legalNameAr,
-          legalNameEn: company.legalNameEn,
-        })}
+        ${premium ? premiumLetterhead(letterhead) : houseLetterhead(letterhead)}
 
         <p class="wf-note">${escapeHtml(template.noteAr)}</p>
         <div class="wf-company">${companyBlock}</div>
@@ -242,7 +251,7 @@ function renderCopy(
         ${signatureHtml(template, values)}
       </td></tr></tbody>
       <tfoot><tr><td class="sheet__foot">${fillLine(template.footerAr, values)}</td></tr></tfoot>
-    </table>
+    </table>${premium ? premiumPageChrome() : ""}
   </article>`;
 }
 
@@ -261,7 +270,7 @@ export function renderWorkerFormHtml(
   const values = buildWorkerFormValues(data);
   const total = Math.max(1, copies);
   const body = Array.from({ length: total }, () =>
-    renderCopy(template, values, data.company),
+    renderCopy(template, values, data.company, PREMIUM_DRESS.workerForm),
   ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
@@ -410,7 +419,7 @@ export function renderWorkerFormHtml(
     html, body { background: #fff; }
     .copy { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
+  }${PREMIUM_DRESS.workerForm ? `\n${premiumDocumentStylesheet(".copy")}` : ""}
 </style>
 </head>
 <body>

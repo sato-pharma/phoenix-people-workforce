@@ -657,6 +657,74 @@ export async function runFieldActivityReportTests() {
     }
   }
 
+  // ── the premium dress (owner, 13 Oct 2026: "change to the premium look") ─────────────────────
+  //
+  // Dress only: every word, row and figure the tests above pin is untouched. What changed is the page
+  // around them — the hand-rolled masthead with its FILLED brand rule and the footer that counted its
+  // own pages by hand ("Page N of M", wrong for a day that spills onto a second sheet) are replaced by
+  // the premium masthead, the repeating landscape frame and foot, and a page count stamped after layout.
+  {
+    const rows = Array.from({ length: 10 }, (_, index) => index);
+    const report = run({
+      checkins: rows.map((index) =>
+        checkin({ checkedAt: `2026-09-20 ${String(9 + Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}:00+00`, contactCrmId: 600 + index, contactName: `Doctor ${index + 1}`, lat: 30.46 + index * 0.003 }),
+      ),
+      visits: rows.map((index) => visit({ contactCrmId: 600 + index, contactName: `Doctor ${index + 1}` })),
+    });
+    assert.equal(report.days[0].stops.length, 10, "the fixture day has more stops than one page carries, so it spills");
+    const html = buildFieldActivityDocument({
+      generatedOn: "5 October 2026",
+      maps: [{ caption: "A caption.", dateIso: "2026-09-20", svg: "<g></g>" }],
+      report,
+    });
+
+    assert.equal(html.split('<section class="page">').length - 1, 3, "a cover, the day and its spill page");
+    assert.ok(html.includes("@page { size: A4 landscape; margin: 0; }"), "the sheet is the turned A4 with no page margin, so the frame and foot reach the edge");
+    assert.equal(html.split('<header class="pm-mast pm-mast--compact">').length - 1, 1, "the cover carries the full premium masthead");
+    assert.equal(html.split('<header class="pm-mast pm-mast--compact pm-mast--slim">').length - 1, 2, "and the day and its spill page the slim one, which repeats without eating the page");
+    assert.equal(html.split("Field Activity Report</h1>").length - 1, 3, "every page still names the report");
+    assert.ok(
+      html.includes("A Product Manager · Product Manager · Pedia line") && html.includes("2026-09-20 to 2026-09-20"),
+      "the two lines the old masthead carried under the title are the masthead's subtitles, word for word",
+    );
+    assert.ok(html.includes("Sunday 20 September 2026 &mdash; every stop <span class=\"thin\">(continued)</span>"), "the spill page still says it continues the day's stops");
+
+    // ONE chrome, written once: it is fixed in print, so Chrome repeats it on every page.
+    assert.equal(html.split('class="pm-chrome pm-chrome--landscape"').length - 1, 1, "one landscape chrome, repeated by print on every page");
+    const foot = /<div class="pm-foot__code" dir="ltr">([^<]*)<\/div>/.exec(html)?.[1] ?? "";
+    assert.equal(
+      foot,
+      "Sato Pharma · Employee record B-155 · read from the live system on 5 October 2026, Cairo time · SATO-DIS-2026-01 v1.0",
+      "the old in-page footer's words ride the running foot, with the identity code",
+    );
+    assert.ok(!/phoenix/i.test(foot), "a company paper's foot says Sato Pharma, never Phoenix");
+    assert.ok(html.includes('<div class="pm-foot__ph"></div>'), "the foot's left slot is empty — a Sato-only foot, with no Phoenix label or emblem");
+    assert.ok(!/phoenix/i.test(html.slice(html.indexOf('<div class="pm-chrome'), html.indexOf("</section>", html.indexOf('<div class="pm-chrome')))), "nothing in the chrome — label, emblem or microtext — names Phoenix");
+    assert.ok(html.includes('class="pm-foot__page"'), "the foot keeps the slot the page count is stamped into");
+    assert.ok(
+      !/Page \d+ of \d+|class="foot|class="mast|mast__rule|totalPages/.test(html),
+      "the hand-counted footer and the filled masthead rule are gone, not hidden",
+    );
+    assert.ok(!/box-shadow|text-shadow|gradient\(/.test(html), "no shadow and no gradient");
+    assert.ok(html.includes("border-radius: 0 !important"), "square edges everywhere");
+    assert.doesNotMatch(html, /border-radius:\s*[1-9]/, "and no corner is rounded");
+    {
+      // The ink rule: no filled area except the 6% zebra row. Every rule that paints a background is a zebra row.
+      const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+      const fills = [...css.matchAll(/([^{}]+)\{([^{}]*\bbackground(?:-color)?\s*:[^{}]*)\}/g)].map((match) => match[1].trim());
+      assert.ok(fills.length >= 1, "the zebra rows are still there to be found, so this scan is not blind");
+      assert.ok(fills.every((selector) => /nth-child\(odd\)/.test(selector)), `only the zebra row is filled — ${fills.join(" | ")}`);
+    }
+
+    // The route prints it that way: margin 0, the brand artwork inlined, the count stamped afterwards.
+    const route = stripComments(readFileSync("app/api/admin/field-activity/pdf/route.ts", "utf8"));
+    assert.ok(/margin:\s*\{\s*bottom:\s*"0",\s*left:\s*"0",\s*right:\s*"0",\s*top:\s*"0"\s*\}/.test(route), "the page margin is zero — the premium sheet draws its own");
+    assert.ok(route.includes("landscape: true") && route.includes("preferCSSPageSize: true") && route.includes("printBackground: true"), "A4 landscape, with its backgrounds");
+    assert.ok(route.includes("timeout: 60_000"), "and the long timeout a many-day report needs");
+    assert.ok(route.includes("inlineLocalAssets(buildFieldActivityDocument("), "the /brand artwork is inlined, since setContent has no base URL");
+    assert.ok(route.includes("data-pm-numbered") && route.includes("stampPremiumPageNumbers(bytes)"), "the page count is stamped into the foot after Chromium has counted");
+  }
+
   // ── A chain visit's SECOND manager: the day he rode must be a day he worked ──
   {
     // SUBJECT is B-155, the Product Manager. On a chain visit the door fills slot 1 from

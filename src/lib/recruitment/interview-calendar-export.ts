@@ -14,19 +14,29 @@
 // joining them into one string, so each name keeps its own link — a cell has one hyperlink in Excel,
 // so there the slot's row is split into as many rows as its busiest day needs.
 //
-// Both files wear the house identity, SATO-DIS-2026-01 v1.0: ink, not fills, except the 6% zebra.
+// The workbook wears the house identity, SATO-DIS-2026-01 v1.0: ink, not fills, except the 6% zebra.
+// The PDF wears the HR PREMIUM identity on top of it (owner, 2026-10-13: ticked "change to the
+// premium look" on the review page) — frame, watermark, centred masthead, running foot — and is
+// landscape by nature, so it uses the premium sheet turned on its side.
 // This module is pure — no database, no browser; the route owns Chromium.
 
 import ExcelJS from "exceljs";
 
+import { systemLegalEntity } from "@/config/system-settings";
 import {
   HOUSE_XLSX_COLORS,
   houseBodyStyle,
   houseHeaderStyle,
   writeHouseMasthead,
 } from "@/lib/export/house-xlsx-identity";
-import { HOUSE_COLORS, HOUSE_IDENTITY_CSS } from "@/lib/hiring-pack/house-identity";
-import { satoLogoDataUri } from "@/lib/offers/brand";
+import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import {
+  PREMIUM_COMPANY_DOCUMENT_BRAND,
+  PREMIUM_IDENTITY_CSS,
+  premiumMasthead,
+  premiumPageChrome,
+  premiumSheetCss,
+} from "@/lib/hiring-pack/premium-identity";
 import {
   PLATFORM_LABEL,
   interviewCalendarHref,
@@ -296,30 +306,42 @@ function escapeHtml(value: string): string {
 }
 
 /**
- * On the house identity: square edges everywhere, the grid carried by hairlines and the 6% zebra,
- * names in Brand Blue because they are links. Wrapping, never an ellipsis.
+ * The calendar's own dress, under the premium sheet: square edges everywhere, the grid carried by
+ * hairlines and the 6% zebra, names in Brand Blue because they are links. Wrapping, never an ellipsis.
+ *
+ * The sheet itself — `@page`, the padding that keeps content clear of the frame and the running
+ * foot, and the fixed chrome — comes from `premiumSheetCss`, so a page of the grid and a page of
+ * the list sit exactly where every other premium paper's content does.
  */
 const CALENDAR_CSS = `
-  ${HOUSE_IDENTITY_CSS}
-  @page { size: A4 landscape; margin: 9mm 8mm 12mm; }
+  :root {
+    --phx-doc-deep:  ${HOUSE_COLORS.deep};
+    --phx-doc-blue:  ${HOUSE_COLORS.blue};
+    --phx-doc-light: ${HOUSE_COLORS.light};
+    --phx-doc-tint:  ${HOUSE_COLORS.tint};
+    --phx-doc-hair:  ${HOUSE_COLORS.hair};
+    --phx-doc-muted: ${HOUSE_COLORS.muted};
+    --phx-doc-body:  ${HOUSE_COLORS.body};
+  }
+  ${premiumSheetCss(".cal", "landscape")}
+  ${PREMIUM_IDENTITY_CSS}
   * { box-sizing: border-box; border-radius: 0 !important; }
-  body { margin: 0; color: var(--phx-doc-body); font-family: "Segoe UI", Tahoma, Arial, sans-serif; font-size: 8pt; line-height: 1.3; }
-  .rpt__title { margin: 2.5mm 0 .6mm; color: var(--phx-doc-deep); font-size: 15pt; font-weight: 700; }
-  .rpt__sub { margin: 0 0 2.6mm; color: var(--phx-doc-muted); font-size: 8.2pt; font-weight: 600; }
+  body { margin: 0; color: var(--phx-doc-body); font-family: "Segoe UI", Tahoma, Arial, sans-serif; font-size: 8pt; line-height: 1.24; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  th, td { padding: 1.1mm 1.4mm; text-align: start; vertical-align: top; overflow-wrap: anywhere; }
-  .grid th { color: var(--phx-doc-deep); font-size: 7.4pt; font-weight: 700; text-align: center; border-top: .5pt solid var(--phx-doc-blue); border-bottom: .5pt solid var(--phx-doc-blue); border-inline-start: .5pt solid var(--phx-doc-hair); }
+  th, td { padding: .9mm 1.4mm; text-align: start; vertical-align: top; overflow-wrap: anywhere; }
+  .grid { margin-top: 2.4mm; }
+  .grid th { color: var(--phx-doc-deep); font-size: 7.4pt; font-weight: 700; text-align: center; border-top: .7pt solid var(--phx-doc-deep); border-bottom: .5pt solid var(--phx-doc-hair); border-inline-start: .5pt solid var(--phx-doc-hair); }
   .grid th:first-child { border-inline-start: 0; }
   .grid th span { display: block; color: var(--phx-doc-muted); font-size: 6.8pt; font-weight: 600; }
-  .grid td { height: 8.6mm; border-bottom: .5pt solid var(--phx-doc-hair); border-inline-start: .5pt solid var(--phx-doc-hair); }
+  .grid td { height: 8mm; border-bottom: .5pt solid var(--phx-doc-hair); border-inline-start: .5pt solid var(--phx-doc-hair); }
   .grid td.time { border-inline-start: 0; color: var(--phx-doc-deep); font-weight: 700; text-align: center; vertical-align: middle; white-space: nowrap; }
   .grid tbody tr:nth-child(even) td { background: var(--phx-doc-tint); }
   .slot { display: block; margin: 0 0 .8mm; padding-inline-start: 1.4mm; border-inline-start: .6mm solid var(--phx-doc-light); }
   .slot:last-child { margin-bottom: 0; }
   a.name { color: var(--phx-doc-blue); font-weight: 700; text-decoration: underline; }
   .slot .meta { display: block; color: var(--phx-doc-muted); font-size: 6.8pt; }
-  h2 { margin: 5mm 0 1.6mm; padding-bottom: 1mm; border-bottom: .6mm solid var(--phx-doc-blue); color: var(--phx-doc-deep); font-size: 10.5pt; font-weight: 700; break-after: avoid; }
-  .list thead th { color: var(--phx-doc-deep); font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; border-top: .5pt solid var(--phx-doc-blue); border-bottom: .5pt solid var(--phx-doc-blue); }
+  h2 { margin: 4mm 0 1.2mm; color: var(--phx-doc-deep); font-size: 10.5pt; font-weight: 700; break-after: avoid; }
+  .list thead th { color: var(--phx-doc-deep); font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; border-top: .7pt solid var(--phx-doc-deep); border-bottom: .5pt solid var(--phx-doc-hair); }
   .list tbody tr:nth-child(even) { background: var(--phx-doc-tint); }
   .list td { border-bottom: .5pt solid var(--phx-doc-hair); }
   .muted { color: var(--phx-doc-muted); font-size: 7pt; }
@@ -330,7 +352,6 @@ const CALENDAR_CSS = `
 `;
 
 export function buildInterviewCalendarPdfHtml(model: InterviewCalendarExportModel): string {
-  const mark = satoLogoDataUri();
   const name = (booking: InterviewBooking) =>
     `<a class="name" href="${escapeHtml(bookingLink(model, booking))}">${escapeHtml(booking.candidateName)}</a>`;
 
@@ -373,13 +394,16 @@ export function buildInterviewCalendarPdfHtml(model: InterviewCalendarExportMode
 <html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(`Interview Calendar — ${model.weekLabel}`)}</title>
 <style>${CALENDAR_CSS}</style></head>
 <body>
-<header class="lh">
-  <div class="lh__mark">${mark ? `<img src="${mark}" alt="">` : ""}</div>
-  <div class="lh__id"><strong>Sato Pharma</strong><span dir="ltr">Interview Calendar</span></div>
-</header>
-<div class="lh__rule"></div>
-<h1 class="rpt__title">Interview Calendar</h1>
-<p class="rpt__sub">${escapeHtml(`${model.weekOfLabel} · ${model.weekLabel} · generated ${model.generatedAtLabel} (Cairo)`)}</p>
+<main class="cal">
+${premiumMasthead({
+  compact: true,
+  legalNameAr: systemLegalEntity.legalNameAr,
+  legalNameEn: systemLegalEntity.legalNameEn,
+  orientation: "landscape",
+  subtitles: [{ lang: "en", text: `${model.weekOfLabel} · ${model.weekLabel} · generated ${model.generatedAtLabel} (Cairo)` }],
+  title: "Interview Calendar",
+  titleLang: "en",
+})}
 <table class="grid">
   <colgroup><col style="width:10%">${model.days.map(() => `<col style="width:18%">`).join("")}</colgroup>
   <thead><tr><th>Time</th>${model.days
@@ -388,7 +412,7 @@ export function buildInterviewCalendarPdfHtml(model: InterviewCalendarExportMode
   <tbody>${gridRows}</tbody>
 </table>
 <p class="note">Click a candidate's name to open their CV in Phoenix. You need to be signed in, and the calendar must be shared with you.</p>
-<h2>Interviews this week</h2>
+<h2 class="pm-shead">Interviews this week</h2>
 ${
   model.bookings.length === 0
     ? `<p class="empty">No interviews are booked this week.</p>`
@@ -398,13 +422,11 @@ ${
   <tbody>${listRows}</tbody>
 </table>`
 }
+${premiumPageChrome({
+  brand: PREMIUM_COMPANY_DOCUMENT_BRAND,
+  department: `Interview Calendar · ${model.weekLabel}`,
+  orientation: "landscape",
+})}
+</main>
 </body></html>`;
-}
-
-/** Chromium needs a non-empty element for both templates, or it prints its own title and date. */
-export function interviewCalendarPdfFooter(model: InterviewCalendarExportModel): string {
-  return `<div style="width:100%;padding:0 8mm;font-family:'Segoe UI',Tahoma,Arial,sans-serif;font-size:6.6pt;color:${HOUSE_COLORS.muted};display:flex;justify-content:space-between;">
-    <span>${escapeHtml(`Interview Calendar · ${model.weekLabel}`)}</span>
-    <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
-  </div>`;
 }
