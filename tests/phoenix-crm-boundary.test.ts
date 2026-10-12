@@ -194,6 +194,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/requests", "create"),
   post("list/requests/withdraw", "create"),
   post("list/requests/decide", "approve"),
+  post("list/requests/return", "approve"),
+  post("list/requests/answer", "create"),
   get("plans"),
   post("plans", "create"),
   post("plans/submit", "create"),
@@ -772,6 +774,10 @@ const LATER_MIGRATIONS = [
   // Seating standalone customers in a validated polyclinic (owner, 2026-10-10): three brand-new functions
   // (seat, set the building's timetable, settle it), replacing nothing, so it appends at the end.
   "supabase/migrations/20261010210000_phoenix_crm_seat_places_in_venue.sql",
+  // SFE returns a request to the rep for a comment (owner, 2026-10-12). Three brand-new functions (the return,
+  // the answer, and the BEFORE UPDATE guard that keeps a returned request from being approved), five columns
+  // and two widened CHECKs on phoenix_crm_list_requests; it replaces nothing, so it appends safely at the end.
+  "supabase/migrations/20261012180000_phoenix_crm_return_request_for_comment.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -862,7 +868,9 @@ function assertMigrationHygiene(sql: string, path: string) {
   assert.doesNotMatch(sql, /crm_native_|crm_cutover|crm_contact_list_changes/, `${path} touches nothing of the pilot's`);
   assert.doesNotMatch(sql, /\bcurrent_date\b/i, `${path}: a day is always the Cairo day, stated — current_date is the database's UTC day`);
   const writes = [...sql.matchAll(/\b(insert\s+into|delete\s+from|update)\s+([a-z_][a-z_0-9]*(?:\.[a-z_][a-z_0-9]*)?)/gi)]
-    .filter((match) => !(match[1].toLowerCase() === "update" && match[2].toLowerCase() === "set"))
+    // `update set` is an UPDATE statement's clause, and `before update on <table>` / `update of <column>` is a trigger's
+    // own syntax — neither is a table being written.
+    .filter((match) => !(match[1].toLowerCase() === "update" && ["set", "on", "of"].includes(match[2].toLowerCase())))
     .map((match) => match[2].toLowerCase());
   for (const target of writes) {
     assert.ok(

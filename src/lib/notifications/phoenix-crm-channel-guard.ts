@@ -94,6 +94,8 @@ export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [
   "restore_request_waiting",
   "request_approved",
   "request_refused",
+  "request_returned",
+  "request_answered",
   "unplanned_visit_waiting",
   "unplanned_visit_approved",
   "unplanned_visit_refused",

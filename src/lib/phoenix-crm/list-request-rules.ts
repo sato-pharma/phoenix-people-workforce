@@ -59,6 +59,56 @@ export function requestStageLabel(stage: PhoenixCrmRequestStage | null): string 
   return null;
 }
 
+// ── Returned to the rep for a comment (owner, 2026-10-12) ────────────────────────────────────────
+//
+// SFE can send a waiting request back to the rep to explain. It stays pending, its stored stage is
+// 'rep' (the rep owes the next move), and when the rep answers it goes STRAIGHT BACK to SFE at the step
+// it was returned from — never through the district manager again. The database is the authority
+// (`phoenix_crm_return_request`, `phoenix_crm_answer_request`); this is what each screen offers.
+
+/** The stored stage of a request that is with the rep. It is never a step anybody DECIDES. */
+export const WITH_REP_STAGE = "rep";
+
+/** What the pill says while the request is with the rep, on SFE's screen and the rep's alike. */
+export const WITH_REP_LABEL = "Waiting for the rep's comment";
+
+export const RETURN_NOTE_MAX = 500;
+export const RETURN_NOTE_REQUIRED = "Write what you want the rep to explain.";
+export const RETURN_REPLY_REQUIRED = "Write your comment before sending it.";
+
+export function isWithRep(storedStage: unknown): boolean {
+  return storedStage === WITH_REP_STAGE;
+}
+
+/**
+ * The step a request returns to once the rep has answered: SFE's, for a drop, an add or a bring-back;
+ * none for a grade change, which is one step and has no stage. Mirrors `phoenix_crm_answer_request`.
+ */
+export function stageAfterReply(kind: PhoenixCrmRequestKind): PhoenixCrmRequestStage | null {
+  return kind === "grade" ? null : "sfe";
+}
+
+/**
+ * Whether the viewer may return this request for a comment: only the step SFE holds, and only by someone
+ * who decides it. That is the second step of a two-step kind, or a grade change on a territory with no
+ * district manager at all (the only time SFE decides one). Never the district manager's own step, never a
+ * request already with the rep, never one that is decided.
+ */
+export function canReturnForComment(request: {
+  kind: PhoenixCrmRequestKind;
+  status: string;
+  /** The stage the request is ON (null for a grade change), as `isRequestStage` reads it. */
+  stage: PhoenixCrmRequestStage | null;
+  withRep: boolean;
+  canDecide: boolean;
+  /** The territory has a reviewing district manager. */
+  hasReviewer: boolean;
+}): boolean {
+  if (request.status !== "pending" || request.withRep || !request.canDecide) return false;
+  if (request.kind === "grade") return request.stage === null && !request.hasReviewer;
+  return request.stage === "sfe";
+}
+
 export function requestKindLabel(kind: PhoenixCrmRequestKind): string {
   if (kind === "grade") return "Grade change";
   if (kind === "drop") return "Drop from the list";

@@ -2443,6 +2443,7 @@ import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-ad
 import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
+import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
 import { runPhoenixCrmTeamReadinessTests } from "./phoenix-crm-team-readiness.test.ts";
 import { runShareLinkDeadTokenPollingTests } from "./share-link-dead-token-polling.test.ts";
 import { runVacationSickAttachmentsTests } from "./vacation-sick-attachments.test.ts";
@@ -9599,6 +9600,10 @@ await runTest(
 await runTest(
   "Phoenix CRM bulk drop (owner, 2026-10-12): a rep's request to drop a customer always carries a written comment — on every reason, refused on the server and on the screen — while the SFE Manager's own drop keeps it optional; the Team tab lets the viewer tick the drops waiting at HIS step or select them all (never an add, a grade, a bring-back, another manager's or a decided one), behind a confirm, and approves each through the one decide route one at a time with the step the screen showed, naming any that fail while the rest stand",
   runPhoenixCrmBulkDropTests,
+);
+await runTest(
+  "Phoenix CRM return for comment (owner, 2026-10-12): SFE can send the step it holds — a drop, an add, a bring-back, or a grade change on a territory with no manager — back to the rep with a required note; it stays pending with the rep (stored stage rep), nothing can approve it until the rep answers, the answer goes straight back to SFE, no manager is nudged meanwhile, and the bulk drop closes a rep's repeat ask with its customer instead of sending a call that is refused",
+  runPhoenixCrmReturnForCommentTests,
 );
 await runTest(
   "which team is READY to start in Phoenix CRM, beside the Start button: the headline is REPS WITH A LIST and never seats filled (Pedia Upper Egypt 1 read 6 of 6 seats filled with five reps hired in four days and one list), the new hires are named so an empty list explains itself, and one person on two seats is ONE person — his visits taken once, never summed per seat, and a district manager sitting in his own team's rep seat named rather than folded away; test customers filtered at the read, the 'Others' pseudo-DM buckets dropped, a failed read unreadable rather than zeros, the visits through the CRM door, and the board square-edged, table-fixed, desktop-table / phone-cards with nothing truncated",

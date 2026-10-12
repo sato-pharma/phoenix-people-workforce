@@ -58,6 +58,7 @@ import {
   bulkDropFailureText,
   bulkDropNotice,
   bulkDropTargets,
+  repeatOfDropped,
   pruneSelection,
   type BulkDropOutcome,
 } from "@/lib/phoenix-crm/bulk-drop";
@@ -1269,7 +1270,9 @@ function RequestsSection({
       )
     : team.requests;
   const forYou = requests.filter((request) => request.canDecide);
-  const others = requests.filter((request) => !request.canDecide);
+  // Returned to the rep for a comment: it waits for HIM, so it is neither yours to decide nor another manager's.
+  const withRep = requests.filter((request) => request.withRep);
+  const others = requests.filter((request) => !request.canDecide && !request.withRep);
 
   // Bulk drop (owner, 2026-10-12): every drop waiting at this viewer's step can be ticked, or all at once.
   // Each is approved through the one decide route its own Approve uses, one at a time.
@@ -1305,9 +1308,18 @@ function RequestsSection({
     const outcomes: BulkDropOutcome[] = [];
     // One at a time, longest waiting first: each is its own decision through its own route, and a refusal
     // of one is named while the rest go on.
+    // Dropping a customer closes every other request waiting on him, so a rep's repeat ask for the same
+    // customer is not sent after the first one went through: it would only come back "already decided".
+    const dropped = new Set<string>();
     for (const request of batch) {
+      if (repeatOfDropped(request, dropped)) {
+        outcomes.push({ customerName: request.customerName, ok: true, final: true, repeat: true });
+        setDone(outcomes.length);
+        continue;
+      }
       try {
         const result = await crmPost<{ final: boolean }>("/api/phoenix-crm/list/requests/decide", bulkDropDecisionBody(request), "request");
+        if (result.final && request.customerKey) dropped.add(request.customerKey);
         outcomes.push({ customerName: request.customerName, ok: true, final: result.final });
       } catch (error) {
         outcomes.push({ customerName: request.customerName, ok: false, why: bulkDropFailureText(errorCodeOf(error), messageOf(error)) });
@@ -1429,6 +1441,17 @@ function RequestsSection({
           </CrmBlock>
           <div className="divide-y divide-slate-100 border-t border-slate-100">{forYou.slice(0, limit).map(card)}</div>
           <CrmShowMore left={forYou.length - limit} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
+        </>
+      ) : null}
+
+      {withRep.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`With the rep for a comment · ${countText(withRep.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              SFE asked the rep to explain. Each comes back to SFE the moment the rep answers.
+            </p>
+          </CrmBlock>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">{withRep.map(card)}</div>
         </>
       ) : null}
 

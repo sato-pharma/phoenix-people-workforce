@@ -25,7 +25,14 @@ import { listText } from "@/components/phoenix-crm/labels";
 import { AdministratorDecline } from "@/components/phoenix-crm/administrator-decline";
 import { CrmButton, CrmCard, CrmCheck, CrmChoice, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { DROP_REASON_MAX, POTENTIAL_GRADES, type PotentialGrade } from "@/lib/phoenix-crm/entry-rules";
-import { isTwoStepKind, requestStageLabel, setsAdmissionGrades } from "@/lib/phoenix-crm/list-request-rules";
+import {
+  isTwoStepKind,
+  RETURN_NOTE_MAX,
+  RETURN_NOTE_REQUIRED,
+  RETURN_REPLY_REQUIRED,
+  requestStageLabel,
+  setsAdmissionGrades,
+} from "@/lib/phoenix-crm/list-request-rules";
 import type { PhoenixCrmGrade, PhoenixCrmRequestStatus } from "@/lib/phoenix-crm/types";
 import type { ListRequest } from "@/lib/phoenix-crm/view-types";
 
@@ -142,7 +149,8 @@ export function RequestCard({
   const [note, setNote] = useState("");
   const [grade, setGrade] = useState<PhoenixCrmGrade | null>(request.proposedGrade);
   const [potential, setPotential] = useState<PotentialGrade | null>(null);
-  const [busy, setBusy] = useState<"approve" | "refuse" | "withdraw" | null>(null);
+  const [reply, setReply] = useState("");
+  const [busy, setBusy] = useState<"approve" | "refuse" | "withdraw" | "return" | "reply" | null>(null);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -160,6 +168,10 @@ export function RequestCard({
   const managerStep = managerStepLine(request);
   const admission = admissionLine(request);
   const noteId = `${fieldId}-note`;
+  const replyId = `${fieldId}-reply`;
+  // SFE may send the step it holds back to the rep; the rep, whose request it is, answers it (2026-10-12).
+  const canReturn = decides && request.canReturn;
+  const answering = pending && request.withRep && canWithdraw;
 
   async function decide(decision: "approve" | "refuse") {
     const trimmed = note.trim();
@@ -212,6 +224,44 @@ export function RequestCard({
     }
   }
 
+  async function returnForComment() {
+    const trimmed = note.trim();
+    if (!trimmed) {
+      setProblem(RETURN_NOTE_REQUIRED);
+      return;
+    }
+    setBusy("return");
+    setProblem(null);
+    try {
+      await crmPost("/api/phoenix-crm/list/requests/return", { requestId: request.requestId, note: trimmed }, "request");
+      onChanged(`Returned to ${request.requestedByName} for a comment: ${request.customerName}.`);
+    } catch (error) {
+      setProblem(messageOf(error));
+      const code = errorCodeOf(error);
+      if (code && MOVED_ON.has(code)) onChanged(`${request.customerName}: this request has moved on.`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function answer() {
+    const trimmed = reply.trim();
+    if (!trimmed) {
+      setProblem(RETURN_REPLY_REQUIRED);
+      return;
+    }
+    setBusy("reply");
+    setProblem(null);
+    try {
+      await crmPost("/api/phoenix-crm/list/requests/answer", { requestId: request.requestId, reply: trimmed, seatId, test }, "request");
+      onChanged(`Comment sent to SFE: ${request.customerName}.`);
+    } catch (error) {
+      setProblem(messageOf(error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function withdraw() {
     setBusy("withdraw");
     setProblem(null);
@@ -256,6 +306,20 @@ export function RequestCard({
         <p className="break-words text-xs font-semibold text-slate-500">
           Asked by {request.requestedByName} · {cairoStamp(request.requestedAt)}
         </p>
+        {request.returnNote ? (
+          <p className="whitespace-pre-line break-words font-medium text-slate-700">
+            <span className="font-black text-slate-800">
+              {request.returnedByName ? `${request.returnedByName} asked: ` : "SFE asked: "}
+            </span>
+            {request.returnNote}
+          </p>
+        ) : null}
+        {request.repReply ? (
+          <p className="whitespace-pre-line break-words font-medium text-slate-700">
+            <span className="font-black text-slate-800">Rep&apos;s comment: </span>
+            {request.repReply}
+          </p>
+        ) : null}
         {managerStep ? <p className="break-words text-xs font-semibold text-slate-500">{managerStep}</p> : null}
         {managerStep && request.managerDecision?.note ? (
           <p className="whitespace-pre-line break-words font-medium text-slate-700">
@@ -316,12 +380,12 @@ export function RequestCard({
               </CrmField>
             </>
           ) : null}
-          <CrmField hint="Needed to refuse. The rep reads it." htmlFor={noteId} label="Note for the rep">
+          <CrmField hint={canReturn ? "Needed to refuse, or to return it to the rep for a comment. The rep reads it." : "Needed to refuse. The rep reads it."} htmlFor={noteId} label="Note for the rep">
             <textarea
               className={crmTextareaClassName}
               disabled={busy !== null}
               id={noteId}
-              maxLength={DROP_REASON_MAX}
+              maxLength={canReturn ? RETURN_NOTE_MAX : DROP_REASON_MAX}
               onChange={(event) => {
                 setNote(event.target.value);
                 setProblem(null);
@@ -339,6 +403,35 @@ export function RequestCard({
             </CrmButton>
             <CrmButton busy={busy === "refuse"} disabled={busy !== null} onClick={() => void decide("refuse")} variant="danger">
               Refuse
+            </CrmButton>
+            {canReturn ? (
+              <CrmButton busy={busy === "return"} disabled={busy !== null} onClick={() => void returnForComment()}>
+                Return for comment
+              </CrmButton>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {answering ? (
+        <div className="mt-3 grid min-w-0 gap-3 border-t border-slate-100 pt-3">
+          <CrmField hint="SFE asked you to explain. Your comment goes straight back to SFE." htmlFor={replyId} label="Your comment">
+            <textarea
+              className={crmTextareaClassName}
+              disabled={busy !== null}
+              id={replyId}
+              maxLength={RETURN_NOTE_MAX}
+              onChange={(event) => {
+                setReply(event.target.value);
+                setProblem(null);
+              }}
+              rows={3}
+              value={reply}
+            />
+          </CrmField>
+          <div className="flex flex-wrap gap-2">
+            <CrmButton busy={busy === "reply"} disabled={busy !== null} onClick={() => void answer()} variant="success">
+              Send the comment
             </CrmButton>
           </div>
         </div>
