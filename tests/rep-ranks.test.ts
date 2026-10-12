@@ -539,6 +539,35 @@ export function runRepRanksTests() {
     );
   }
 
+  // 🔴 A CASE A LATER READING HAS WITHDRAWN COSTS THE RANK NOTHING — THE BOARD AND THE PILLAR MUST
+  // AGREE. A signboard case whose place has since been re-read to `match` sits in the board's
+  // withdrawn section, which by design offers NO settle button: nobody has anything left to decide.
+  // So the settlement the pillar honours is unreachable for exactly those cases, and reading the
+  // integrity table alone charged three reps on production (2026-10-12) for findings their own
+  // evidence had overturned — one of them 38 minutes after the compound-name fix shipped. Only the
+  // source can pin this: the fixtures hand place cases straight to the pure function, which never
+  // sees a place row.
+  assert.ok(
+    computeCode.includes("judgeLaterSignboardReading("),
+    "the pillar must ask the board's own later-reading rule before charging a signboard place case",
+  );
+  assert.ok(
+    computeCode.includes('.from("phoenix_crm_places")') && computeCode.includes('.select("id, signboard_check")'),
+    "the withdrawal can only be seen by reading the flagged place's CURRENT signboard verdict",
+  );
+  assert.ok(
+    /!later\.withdrawsFlag/.test(computeCode),
+    "a case is dropped on withdrawsFlag — `match` alone, never !supportsFlag, which an unreadable re-read also satisfies",
+  );
+  assert.ok(
+    !computeCode.includes("supportsFlag") && !/"match"/.test(computeCode),
+    "compute must not re-implement the rule: the verdict names and their meaning live in location-integrity.ts",
+  );
+  assert.ok(
+    computeCode.includes("readStoredSignboardVerdict("),
+    "one coercion of signboard_check, shared with the board — a second hand-rolled one is how the two screens drift apart",
+  );
+
   assert.ok(computeCode.includes("rankCountedFlags("), "the rank penalty goes through the one function that honours a settlement");
   assert.ok(
     !/\bcountedIntegrityFlags\(/.test(computeCode),

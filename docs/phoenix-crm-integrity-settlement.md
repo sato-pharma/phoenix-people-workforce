@@ -584,6 +584,77 @@ second, and both were watched to fail before the fix was restored from a copy.
 `judgeCapture` runs only on save, so no filed row is re-judged, and no existing row was filed through
 this hole in any case. The change alters what the *next* save concludes.
 
+## 9 · A withdrawn case was still charging the rank, and nobody could clear it (2026-10-13)
+
+Found while reading the owner's own question of 12 October — "open the integrity board on the 03 Oct
+`sign_other_name` cases" — against production.
+
+### What the board already does, and what the pillar did not
+
+A signboard flag stands on the reading that filed it, and the nightly pass re-reads the same sign.
+When a later reading comes back `match` — the sign names this customer after all — the board moves the
+case into its **withdrawn** section, where by design it offers **no settle button**: nobody has
+anything left to decide (§ "Only a later reading that reached a verdict may withdraw a case").
+
+`readIntegrityPlaceCases` in `src/lib/rep-ranks/server/compute.ts` read the integrity table alone. It
+honoured a **settlement** and knew nothing of a **withdrawal** — so a case the board had already
+dropped kept costing its rep five saves' worth of the Integrity pillar, and the one click that could
+have cleared it does not exist on a withdrawn case. The charge was unreachable, permanent and
+invisible on the screen where it would have been read.
+
+### Measured on production, 13 October 2026, 00:30 Cairo
+
+42 filed signboard flags are live (25 `other_name`, 17 `no_name`). Three of them sit on places a
+later reading has since withdrawn — every one of them in the 3 October cluster the owner asked about:
+
+| Rep | Customer | Filed | Re-read `match` |
+| --- | --- | --- | --- |
+| AI-0020 | محمد فرج | 9 Oct 03:35 | 9 Oct 18:34 |
+| AI-0021 | احمد صباح الشعراوي | 9 Oct 03:35 | 9 Oct 18:35 |
+| B-129 | ابراهيم عبدالشافى | 11 Oct 03:37 | **12 Oct 13:24** |
+
+The last is the sharpest: the sign reads `إبراهيم عبد الشافى` — **the customer's own name**, written
+with a hamza and a space the matcher could not see until the compound-name fix shipped at 12:46 that
+day (#5756). The place was re-read 38 minutes later and read `match`. The case stayed.
+
+Re-judging all 42 from their STORED readings against today's rules — no vision call, nothing written —
+changes four other verdicts, every one `no_name → unjudged (unreadable)`, which withdraws nothing by
+the rule above. So three is the whole population.
+
+### Who moves when this merges: three reps, by name
+
+Measured through `loadRankData` on production, anchor 2026-10-12, read-only:
+
+| Rep | Line | Integrity | Total | Company position |
+| --- | --- | --- | --- | --- |
+| Nada Saied | CNS | 85 → 90 | 87.7 → 88.12 | 9 → 9 |
+| Esraa fotooh | Anti Infective | 93 → **100** | 86 → 86.58 | 14 → 14 |
+| Ahmed Farag | Anti Infective | 92 → **100** | 75.5 → 76.17 | 25 → 25 |
+
+Identical in the month, quarter and semester windows; nobody's position changes, and no other rep
+moves. **No rep had seen the charge**: `rep_rank_standings` was last written at 04:17 Cairo, before
+the pillar counted place cases at all, and the nightly publishes whatever is on `main` at 04:17.
+
+### The fix, and what it deliberately does not do
+
+`readIntegrityPlaceCases` now reads `source`, `created_at` and `subject_id`, then asks the board's own
+pure rule — `judgeLaterSignboardReading` — about each signboard case's current place verdict, and
+drops the ones it answers `withdrawsFlag`. 🔴 **It reads `withdrawsFlag`, never `!supportsFlag`**: an
+unreadable re-read answers nothing and leaves the case standing, charge and settle button both. The
+place read fails towards **charging** — a verdict that could not be read keeps its case counted, which
+is where the board leaves it too, so the two screens still agree. The coercion of `signboard_check` is
+now one exported function (`readStoredSignboardVerdict`), shared with the board, because a second
+hand-rolled `typeof` block is how the two would drift apart again.
+
+Nothing is re-filed, re-judged or deleted, and no migration is involved. The board's own sentence for
+`sign_other_name` was corrected in the same change: it said "names somebody else", which on an **AM**
+capture is simply untrue — the check asks an AM frame for a **place**, and three of the seven cases
+standing that night carried no person's name at all. It reads **"The signboard in the photo names a
+different person or place"**. 🔴 **It may not say "doctor":** the first wording did, and
+`tests/phoenix-crm-am-pm-words.test.ts` — the owner's 2026-09-23 rule that this module says AM and PM,
+never doctor or account — turned the required `validate` job RED on that one line. Any later rewording
+of a Phoenix CRM label is swept the same way.
+
 ## Where the code is
 
 | What | Where |

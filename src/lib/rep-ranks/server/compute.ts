@@ -24,6 +24,11 @@ import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { addDaysIso, cairoHourMinute } from "@/lib/crm/dates";
 import { PHOENIX_CRM_TEAM_STARTS_TABLE, parsePhoenixTeamStart } from "@/lib/crm/phoenix-team-starts";
 import { hrIdLookupKeys, normalizeHrIdForAccess } from "@/lib/hr-id";
+import {
+  judgeLaterSignboardReading,
+  readStoredSignboardVerdict,
+  type StoredSignboardVerdict,
+} from "@/lib/phoenix-crm/location-integrity";
 import { leaveDayKey } from "@/lib/phoenix-crm/plan-leave";
 import { groupPlanByTerritory } from "@/lib/phoenix-crm/report-rules";
 import { seatsWithRealActivity } from "@/lib/phoenix-crm/server/daily-digest";
@@ -228,13 +233,28 @@ async function readIntegrityFlags(seatIds: readonly string[], from: string, to: 
  * function, so only the reader's own key was ever wrong.
  *
  * The `settled_*` columns are read for the same column-against-column reason as above.
+ *
+ * 🔴 AND A CASE A LATER READING HAS WITHDRAWN COSTS NOTHING — the board drops it, so this must too.
+ * A signboard flag stands on the reading that filed it, and the nightly pass re-reads the same sign;
+ * when it comes back `match` — the sign names this customer after all — the board moves the case to
+ * its withdrawn section, where it has NO settle button by design, because nobody has anything left to
+ * decide. Read `created_at` and the place's current verdict here and a rep is charged for a finding
+ * his own evidence has overturned, with no click anywhere that could ever clear it: the settlement
+ * the pillar honours is unreachable for exactly these cases. Measured on production 2026-10-12, the
+ * night the pillar first counted place cases at all: three live cases, three reps, all three already
+ * withdrawn on the board (`ابراهيم عبدالشافى` re-read `match` at 13:24 Cairo, 38 minutes after the
+ * compound-name fix shipped). `judgeLaterSignboardReading` is the board's own rule, unchanged and
+ * pure — an `unjudged` re-read still withdraws nothing, and a case with no later reading stands.
  */
 async function readIntegrityPlaceCases(seatIds: readonly string[], from: string, to: string): Promise<RankPlaceCase[]> {
-  const out: RankPlaceCase[] = [];
+  const candidates: Array<{ placeId: string; source: string; filedAt: string | null; flags: string[]; case: RankPlaceCase }> = [];
   for (const part of chunk([...seatIds], 100)) {
     const rows = await fetchAllRowsKeyset<{
       id: string;
       rep_hr_id: string | null;
+      subject_id: string | null;
+      source: string | null;
+      created_at: string | null;
       visit_date: string | null;
       flags: string[] | null;
       accuracy_meters: number | string | null;
@@ -246,7 +266,9 @@ async function readIntegrityPlaceCases(seatIds: readonly string[], from: string,
       () =>
         db()
           .from("phoenix_crm_location_integrity")
-          .select("id, rep_hr_id, visit_date, flags, accuracy_meters, settled_at, settled_by, settled_note, settled_flags")
+          .select(
+            "id, rep_hr_id, subject_id, source, created_at, visit_date, flags, accuracy_meters, settled_at, settled_by, settled_note, settled_flags",
+          )
           .in("seat_id", part)
           .eq("subject_kind", "place")
           .eq("strong", true)
@@ -271,10 +293,50 @@ async function readIntegrityPlaceCases(seatIds: readonly string[], from: string,
         settledNote: row.settled_note,
       });
       if (counted.length === 0) continue;
-      out.push({ repKey, day, flags: counted });
+      candidates.push({
+        placeId: String(row.subject_id ?? ""),
+        source: String(row.source ?? ""),
+        filedAt: row.created_at ? String(row.created_at) : null,
+        flags: (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)),
+        case: { repKey, day, flags: counted },
+      });
     }
   }
-  return out;
+  return dropWithdrawnPlaceCases(candidates);
+}
+
+/**
+ * Drop the cases a later reading of the same signboard has taken the ground out from under.
+ *
+ * Only the signboard pass keeps a re-readable verdict anywhere (`judgeLaterSignboardReading` returns
+ * null for every other source), so this read is the flagged places' own `signboard_check` and nothing
+ * else. 🔴 IT FAILS TOWARDS CHARGING THE CASE: a place whose current verdict could not be read keeps
+ * its case counted, which is also where the board leaves it, so the two screens still agree.
+ */
+async function dropWithdrawnPlaceCases(
+  candidates: ReadonlyArray<{ placeId: string; source: string; filedAt: string | null; flags: string[]; case: RankPlaceCase }>,
+): Promise<RankPlaceCase[]> {
+  const placeIds = [...new Set(candidates.filter((entry) => entry.source === "signboard").map((entry) => entry.placeId).filter(Boolean))];
+  const verdicts = new Map<string, StoredSignboardVerdict>();
+  for (const part of chunk(placeIds, 50)) {
+    const { data, error } = await db().from("phoenix_crm_places").select("id, signboard_check").in("id", part);
+    if (error) break;
+    for (const place of (data ?? []) as Array<{ id: string; signboard_check: unknown }>) {
+      const stored = readStoredSignboardVerdict(place.signboard_check);
+      if (stored) verdicts.set(String(place.id), stored);
+    }
+  }
+  return candidates
+    .filter((entry) => {
+      const later = judgeLaterSignboardReading({
+        source: entry.source,
+        flags: entry.flags,
+        filedAt: entry.filedAt,
+        stored: verdicts.get(entry.placeId) ?? null,
+      });
+      return later === null || !later.withdrawsFlag;
+    })
+    .map((entry) => entry.case);
 }
 
 const finiteOrNull = (value: unknown): number | null => {

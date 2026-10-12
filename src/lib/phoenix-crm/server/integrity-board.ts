@@ -70,6 +70,7 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
   judgeLaterSignboardReading,
   PHOENIX_CRM_INTEGRITY_LABELS,
+  readStoredSignboardVerdict,
   type IntegrityLaterReading,
   type PhoenixCrmIntegrityFlag,
   type StoredSignboardVerdict,
@@ -573,16 +574,11 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     // not be read keeps its case in the live list, which is where an unknown belongs.
     if (placeError) break;
     for (const place of (placeRows ?? []) as Array<{ id: string; signboard_check: unknown }>) {
-      const check = place.signboard_check;
-      if (!check || typeof check !== "object") continue;
-      const stored = check as Record<string, unknown>;
-      if (typeof stored.verdict !== "string") continue;
-      placeSignboards.set(String(place.id), {
-        verdict: stored.verdict,
-        reason: typeof stored.reason === "string" ? stored.reason : null,
-        checkedAt: typeof stored.checkedAt === "string" ? stored.checkedAt : null,
-        signText: typeof stored.signText === "string" && stored.signText.trim() !== "" ? stored.signText : null,
-      });
+      // One coercion, shared with Phoenix Ranks' own reader — the two must agree about a withdrawn
+      // case or a rep is charged on one screen for a finding the other has already dropped.
+      const stored = readStoredSignboardVerdict(place.signboard_check);
+      if (!stored) continue;
+      placeSignboards.set(String(place.id), stored);
     }
   }
 

@@ -292,9 +292,19 @@ function runLoaderTests() {
   // legible — and legibility is the one thing known to move from one night to the next.
   const boardCode = stripComments(board);
   const settleCode = stripComments(read("../app/(admin)/admin/phoenix-crm/integrity/page.tsx"));
+  // 🔴 THE THIRD READER IS PHOENIX RANKS, AND IT MUST AGREE WITH THE BOARD. A withdrawn case has no
+  // settle button by design — nobody has anything left to decide — so a pillar that still charges it
+  // charges a rep for a finding his own evidence has overturned, with no click anywhere that could
+  // clear it. Three live cases on 2026-10-12, the night the pillar first counted place cases at all.
+  const rankCode = stripComments(read("../src/lib/rep-ranks/server/compute.ts"));
+  assert.ok(
+    rankCode.includes("judgeLaterSignboardReading("),
+    "Phoenix Ranks must ask this same rule — a case the board has withdrawn may not still cost the Integrity pillar",
+  );
   for (const [label, code] of [
     ["the board's standing/withdrawn split", boardCode],
     ["the settle button's gate", settleCode],
+    ["the rank pillar's place-case read", rankCode],
   ] as const) {
     assert.ok(
       !/!\s*\w+(?:\.\w+)*\.supportsFlag/.test(code),

@@ -177,7 +177,15 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   photo_pin_drifted: "The photo and the pin are further apart than one doorway",
   photo_pin_gap_long: "The pin was taken long before the photo",
   photo_pin_identical: "The photo and the pin are the same reading, to the bit",
-  sign_other_name: "The signboard in the photo names somebody else",
+  // 🔴 "SOMEBODY ELSE" IS ONLY HALF THE FLAG, AND ON AN AM CAPTURE IT IS SIMPLY UNTRUE. The check
+  // asks a PM frame for a person and an AM frame for a PLACE (`judgeSignboards`, step 5), so three
+  // of the seven cases standing on 2026-10-12 — a hospital signed "TANTA GENERAL HOSPITAL", a
+  // department sign reading قسم الاستقبال, a clinic door reading عيادة الأطفال — carried no person's
+  // name at all and were read as naming one. The board is where he decides each case, so the
+  // sentence has to hold for both halves of the check. It may not say "doctor" either:
+  // `tests/phoenix-crm-am-pm-words.test.ts` sweeps every screen string in this module for
+  // that word and for "account", on the owner's 2026-09-23 rule, and this label went RED on it.
+  sign_other_name: "The signboard in the photo names a different person or place",
   sign_no_name: "No name could be read on the signboard in the photo",
   visit_on_leave: "The rep had approved full-day leave on this day",
   visit_on_full_day_activity: "The day is recorded as a full day away from the field",
@@ -624,6 +632,29 @@ export type StoredSignboardVerdict = {
   checkedAt: string | null;
   signText: string | null;
 };
+
+/**
+ * `phoenix_crm_places.signboard_check`, as the two readers that judge a later reading need it.
+ *
+ * 🔴 ONE COERCION, TWO READERS. The board and Phoenix Ranks must agree about a withdrawn case or a
+ * rep is charged on a screen for a finding another screen has already dropped — which is exactly
+ * what happened for the three cases measured on 2026-10-12. A second hand-rolled `typeof` block is
+ * how the two would drift apart again, so the shape is read in one place and nowhere else.
+ *
+ * Returns null for anything that is not a check with a verdict in it. Null means "nothing read it
+ * again", which leaves the flag standing — the same direction every other unknown falls here.
+ */
+export function readStoredSignboardVerdict(value: unknown): StoredSignboardVerdict | null {
+  if (!value || typeof value !== "object") return null;
+  const stored = value as Record<string, unknown>;
+  if (typeof stored.verdict !== "string") return null;
+  return {
+    verdict: stored.verdict,
+    reason: typeof stored.reason === "string" ? stored.reason : null,
+    checkedAt: typeof stored.checkedAt === "string" ? stored.checkedAt : null,
+    signText: typeof stored.signText === "string" && stored.signText.trim() !== "" ? stored.signText : null,
+  };
+}
 
 /**
  * A reading of the same signboard taken AFTER a flag was filed, and whether it still says it.
