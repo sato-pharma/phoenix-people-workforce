@@ -401,6 +401,7 @@ import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
 import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-and-clip.test.ts";
+import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
 import { runDeductionsHalfDayTests } from "./deductions-half-day.test.ts";
@@ -3481,6 +3482,10 @@ await runTest(
 await runTest(
   "daily deductions range + clip (only elapsed days count; clip-to-range prorates days and money together)",
   runDailyDeductionsRangeAndClipTests,
+);
+await runTest(
+  "daily deductions no-records connector (skips reps, district managers and the SFE Manager; never charges an outage day or a person with no base salary)",
+  runDailyDeductionsNoRecordsTests,
 );
 await runTest(
   "deductions leaver settlement (a finished employment settles mid-month; insert-only, never reconcile)",

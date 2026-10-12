@@ -154,7 +154,7 @@ export function DailyDeductionsWorkspace({
     loadActive();
   }, []);
 
-  // Every reviewed line across the four connectors, flattened. This is exactly
+  // Every reviewed line across the connectors, flattened. This is exactly
   // what the publish click sends — no reshaping, so what the owner sees is what
   // is stored.
   const allLines = useMemo(() => {
