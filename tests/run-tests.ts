@@ -2128,6 +2128,7 @@ import { runCommentStripGuardTests } from "./comment-strip-guard.test.ts";
 import { runFormDesignGuardTests } from "./form-design-guard.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
+import { runRepoDoctorCacheEntriesLinkTests } from "./repo-doctor-cache-entries-link.test.ts";
 import { runDeltaLandedVerdictTests, runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runSupabaseAdminClientEnvCacheTests } from "./supabase-admin-client-env-cache.test.ts";
@@ -8000,6 +8001,7 @@ await runTest("a new test file that strips comments by hand is refused at the Wr
 await runTest("a form control that paints its own box, or a token override written as a template, is refused at the Write by the same detector the form-design ratchet uses", runFormDesignGuardTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest("repo-doctor counts a node_modules junction as one path entry, not the primary's whole tree", runRepoDoctorCacheEntriesLinkTests);
 await runTest(
   "repo-doctor never offers a worktree a live session is standing in",
   runRepoDoctorSessionHoldTests,
