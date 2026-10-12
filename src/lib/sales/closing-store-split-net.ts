@@ -18,16 +18,20 @@
 // hand-apportioned customers — so the cached entry stays well under Next's data-cache size limit.
 // The raw rows are still never cached.
 //
-// STALENESS IS A SEPARATE, STILL-OPEN DEFECT. Invalidated by invalidateClosingStoreSplitCache
-// (src/lib/dashboard/invalidation.ts) after a validated monthly import and after publish/unpublish,
-// with a 1h TTL as the backstop. That does NOT cover every input: fifteen modules write
-// source_of_sales_customer_map, and a geography re-stamp is a direct SQL UPDATE across four tables
-// including source_of_sales_import_rows, which has no updated_at column and no trigger. So the
-// cache can serve a stale split, and both surfaces will now be stale TOGETHER rather than
-// disagreeing. Closing that properly needs a statement-level trigger stamping a version row (a
-// migration), because no timestamp on these tables is trustworthy enough to key on — do not "fix"
-// it by adding invalidate calls to write paths, which is the same hand-maintained list that let
-// this class of bug through twice already.
+// STALENESS IS CLOSED BY A VERSION STAMP, NOT BY INVALIDATE CALLS. Invalidated by
+// invalidateClosingStoreSplitCache (src/lib/dashboard/invalidation.ts) after a validated monthly
+// import and after publish/unpublish, with a 1h TTL as the backstop. That list does NOT cover every
+// input: fifteen modules write source_of_sales_customer_map, and a geography re-stamp is a direct SQL
+// UPDATE across four tables including source_of_sales_import_rows, which has no updated_at column
+// and no trigger. So the cache key also carries phx_sos_geography_version() — a sequence bumped by a
+// statement-level trigger on every table the split reads for geography
+// (20261010160000_sos_geography_version.sql). Any write to those tables, from any path, changes the
+// key and the next read recomputes. Do NOT "fix" a stale split by adding invalidate calls to write
+// paths — that hand-maintained list is what let this class of bug through twice already.
+//
+// The stamp read FAILS TO THE OLD BEHAVIOUR, never to an error: if the function is missing (the
+// migration not applied yet) or the call fails, the key falls back to the current hour, which is
+// exactly the 1h TTL this module had before.
 
 import { unstable_cache } from "next/cache.js";
 
@@ -85,7 +89,23 @@ export type ClosingStoreSplit = {
   officeNet: Map<string, NetCell>;
 };
 
-const loadClosingStoreSplitUncached = async (line: string, period: string): Promise<CachedSplit> => {
+// The cache-key stamp. Passed as an ARGUMENT of the cached function, which unstable_cache folds into
+// the key, so a different stamp is a different entry. Never used inside the computation itself.
+const readGeographyStamp = async (): Promise<string> => {
+  try {
+    const { data, error } = await getSupabaseAdmin().rpc("phx_sos_geography_version");
+    if (!error && data !== null && data !== undefined) return `v${String(data)}`;
+  } catch {
+    // fall through to the hour bucket
+  }
+  return `hour-${Math.floor(Date.now() / 3_600_000)}`;
+};
+
+const loadClosingStoreSplitUncached = async (
+  line: string,
+  period: string,
+  _geographyStamp: string,
+): Promise<CachedSplit> => {
   // systemAccessContext reads every line/product, including confidential ones — but the Closing
   // Matrix RPC these numbers get added to already hard-excludes confidential products in SQL, so
   // includeConfidential stays false to compute the split over exactly the population the Matrix
@@ -231,10 +251,12 @@ export async function loadClosingStoreSplit(
     // change. If he re-publishes September, the net stamped then is computed by the live path and
     // therefore already carries the respread, so it freezes WITH it and this branch stays correct.
     if (!officeApplies) return frozen;
-    const live = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod).catch(() => null);
+    const live = await readGeographyStamp()
+      .then((stamp) => loadClosingStoreSplitCached(trimmedLine, trimmedPeriod, stamp))
+      .catch(() => null);
     return { ...frozen, officeNet: new Map(live?.officeNet ?? []) };
   }
-  const cached = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod);
+  const cached = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod, await readGeographyStamp());
   return {
     exemptStoreValueByBrick: new Map(cached.exempt),
     movements: cached.movements,
