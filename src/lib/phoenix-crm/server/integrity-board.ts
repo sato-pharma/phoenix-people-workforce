@@ -528,8 +528,12 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // "each of these was read again, to a verdict that does not carry the flag" — has to stay true of
   // every row in it, so a withdrawn case that also carries a settlement is listed there with the two
   // readings, not moved out of the one section that explains why it is not a finding.
-  const standing = allCases.filter((entry) => entry.laterReading === null || entry.laterReading.supportsFlag);
-  const withdrawn = allCases.filter((entry) => entry.laterReading !== null && !entry.laterReading.supportsFlag);
+  // 🔴 READ `withdrawsFlag`, NEVER `!supportsFlag`. A reading that could not read the sign supports
+  // nothing and answers nothing: it must leave the case standing, with its settle button. Reading
+  // the negation instead withdrew مستشفى المنشاوى العام — a strong case — because one night's pass
+  // failed on a sign it had read before, and the retry backlog guarantees more of them.
+  const standing = allCases.filter((entry) => entry.laterReading === null || !entry.laterReading.withdrawsFlag);
+  const withdrawn = allCases.filter((entry) => entry.laterReading !== null && entry.laterReading.withdrawsFlag);
   const cases = standing.filter((entry) => entry.settlement === null);
   const settled = standing.filter((entry) => entry.settlement !== null);
 

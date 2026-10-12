@@ -188,8 +188,10 @@ function CaseList({ canSettle, entries }: { canSettle: boolean; entries: Integri
   // actions on the same case. It renders nothing at all for a viewer who may not settle — the SFE
   // Manager reads this board and does not decide on it (owner, 2026-10-09) — and nothing for a
   // withdrawn case either: the evidence has already given way, so there is no decision left to take.
+  // 🔴 `withdrawsFlag`, not `!supportsFlag`: a sign that merely could not be read again has given
+  // nothing away, and that case must keep the button it needs in order to be decided at all.
   const Settle = ({ entry }: { entry: IntegrityCase }) =>
-    canSettle && (entry.laterReading === null || entry.laterReading.supportsFlag) ? (
+    canSettle && (entry.laterReading === null || !entry.laterReading.withdrawsFlag) ? (
       <IntegritySettleControl caseId={entry.id} settlement={entry.settlement} />
     ) : null;
   return (
