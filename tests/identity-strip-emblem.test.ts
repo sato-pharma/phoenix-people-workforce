@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The Phoenix watermark in the admin identity banner is measured off the SATO logo below it, and
 // the name and rule under it are measured off the watermark.
@@ -31,6 +33,12 @@ import { readFileSync } from "node:fs";
 
 const STRIP = "src/components/phoenix-signature-card/PhoenixIdentityStrip.tsx";
 const NOTICES = "src/components/phoenix-signature-card/PhoenixIdentityNotices.tsx";
+/**
+ * The other half of the region the owner rebuilt on 2026-10-12. The notice band and "Your day" are
+ * one deck on the page and were rebuilt under one instruction, so they are pinned in one file: a
+ * rule kept on one of them and lost on the other is exactly the split-document look he rejected.
+ */
+const DAY_PANEL = "src/components/hr/hr-today-panel.tsx";
 const SATO_BAND = "src/components/admin/ceo-command-center.tsx";
 
 /**
@@ -593,18 +601,131 @@ export function runIdentityStripEmblemTests() {
       + "when it means 'could not load' is the misleading zero AGENTS.md §7 forbids",
   );
 
-  // The reveal ladder and the grid must agree: a tile revealed at a width whose grid has no column
-  // for it lands on a second row and the band doubles in height, silently.
-  const reveal = /const TILE_REVEAL = \[([^\]]*)\]/.exec(notices)?.[1] ?? "";
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // THE DECK — the notice band and the day panel, rebuilt from nothing on 2026-10-12.
+  //
+  // "the place where I screenshot to you is a fucking oven. It needs to be burned out and
+  // re-created from scratch a premium polished ... I want this account to be the fucking best of
+  // the world" (owner, 2026-10-12), with the notice band and "Your day" in one screenshot — and, in
+  // the same message, the identity bar and the portrait ruled finished: "do not touch, do not ever
+  // touch. They're perfect right now."
+  //
+  // EVERY ASSERTION BELOW IS A THING A LATER SESSION WOULD PUT BACK WITHOUT MEANING TO. None of it
+  // is visible in a diff review: a grid of tiles, a tinted chip, a cool hairline and a count printed
+  // twice all render perfectly and keep CI green. The only signal is him opening the page again.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+
+  // EVERY NEGATIVE CHECK BELOW RUNS ON THE CODE, NOT ON THE PROSE. These files explain what they
+  // replaced — "never with `divide-y`", "a file that writes `rounded-full`" — and a bare `includes`
+  // would fail on the paragraph that exists to stop the thing it names. `stripComments` is the
+  // repo's own parser-grade stripper, not a regex, so a `//` inside a string or a URL survives.
+  const noticesCode = stripComments(notices);
+  const dayCode = stripComments(read(DAY_PANEL));
+
+  // 1. THE BAND IS A LEDGER, NOT A GRID OF TILES. The grid revealed its second tile at `sm` and its
+  //    third only at `xl`, so at 803px — the width this page is most often read at — it showed two
+  //    squat boxes and a hole. Rows are the full width of the band at EVERY size.
   assert.ok(
-    reveal.includes('"hidden sm:flex"') && reveal.includes('"hidden xl:flex"'),
-    "the notice tiles must stay a 1 / 2 / 3 ladder — measured at 803px, three tiles wrap every "
-      + "title onto three lines and the band outgrows the air the portrait reserves",
+    /const NOTICE_ROWS = 3/.test(noticesCode) && !noticesCode.includes("TILE_REVEAL"),
+    "the notice band is back on the tile grid — it must be a ruled ledger of three rows, all three "
+      + "visible at every width; the reveal ladder is what made it show two tiles and a hole at 803px",
   );
   assert.ok(
-    (notices.match(/sm:grid-cols-2 xl:grid-cols-3/g) ?? []).length >= 2,
-    "the grid's columns must match the reveal ladder at BOTH the loading and the loaded state — "
-      + "they are the same band and a viewer sees them one after the other",
+    !/grid-cols-/.test(noticesCode) && !/\bhidden (sm|md|lg|xl):(flex|grid|block)\b/.test(noticesCode),
+    "a notice row must not be gated behind a breakpoint — a band that hides a row at the width it "
+      + "is read at under-reports what is waiting, which is the defect the ledger replaced",
+  );
+
+  // 2. IT CONTINUES THE IDENTITY BAR'S OWN INK. The bar closes on a wave filled #231e18 under an
+  //    #f47b20 stroke; the band opens on a flat rail in exactly those two, which is what makes the
+  //    two read as one document rather than as a widget parked under a banner.
+  assert.ok(
+    /const INK = "#231e18"/.test(noticesCode) && /const ORANGE = "#f47b20"/.test(noticesCode),
+    "the notice band's rail must stay in the identity bar's own ink and orange (#231e18 / #f47b20) "
+      + "— those are the fill and the stroke of the wave the bar closes on",
+  );
+  assert.ok(
+    /background: INK[,\s}]/.test(noticesCode) && /inset 0 -2px 0 0 \$\{ORANGE\}/.test(noticesCode),
+    "the rail must keep its ink ground and its 2px orange edge — without them the band is a grey "
+      + "strip and the letterhead stops at the wave",
+  );
+
+  // 3. WARM HAIRLINES, NEVER SLATE. A cool grey rule on #fdf8f3 paper is the mismatch that made the
+  //    first band look cheap under the banner. This is the assertion most likely to be undone by a
+  //    session reaching for the nearest Tailwind token.
+  for (const [file, label] of [
+    [noticesCode, "the notice band"],
+    [dayCode, "the day panel"],
+  ] as const) {
+    assert.ok(
+      !/\b(?:border|divide|bg|text)-slate-\d/.test(file),
+      `${label} must not use the cool slate palette — every rule and every grey on this page is `
+        + "mixed off the banner's #fdf8f3 paper, and one slate hairline is enough to split the "
+        + "page into two documents",
+    );
+  }
+
+  // 4. THE DAY PANEL CARRIES ITS COUNT ONCE, IN THE GUTTER. It used to print the count in a pill
+  //    beside the title AND inside the sentence above — the same fact twice, which is why the eye
+  //    had to decide which one mattered.
+  assert.ok(
+    !/CountPill/.test(dayCode) && !/rounded/.test(dayCode),
+    "the day panel's count pill is back, or a radius was written into it — the count belongs in the "
+      + "left gutter as a tabular figure, and this page has no round corners anywhere",
+  );
+  assert.ok(
+    /tabular-nums/.test(dayCode) && /\{task\.count\.toLocaleString\("en-US"\)\}/.test(dayCode),
+    "the gutter figure must be the task's own count, set tabular — figures that do not share an "
+      + "axis down the column are what makes a list of rows read as cards instead of as a ledger",
+  );
+
+  // 5. URGENCY IS A MARGIN EDGE AND A FIGURE, NOT A PALETTE. The panel used to carry a rose / amber
+  //    / emerald tinted badge, count, icon well and rail per state — four tinted surfaces per row,
+  //    three saturated families under a warm cream banner. The house ink rule refuses filled areas.
+  assert.ok(
+    !/\b(?:bg|border|text)-(?:rose|amber|emerald)-\d/.test(dayCode),
+    "the traffic-light tints are back in the day panel — urgency is the orange margin edge and the "
+      + "orange figure, and nothing on a row is filled with a state colour",
+  );
+  assert.ok(
+    /URGENCY_MARKS/.test(dayCode) && !/URGENCY_STYLES/.test(dayCode),
+    "the day panel's urgency map must stay the two-mark one (edge + figure) — the four-surface map "
+      + "it replaced is what made the page read as an oven",
+  );
+  assert.ok(
+    /className="sr-only">Needs you first</.test(dayCode),
+    "'Needs you first' must stay in the accessible name even though it is no longer printed — "
+      + "colour alone is not an affordance, and printing it put three identical captions in a column",
+  );
+
+  // 6. THE HEADLINE IS SET, NOT STYLED, AND ITS FIGURES ARE SEGMENTS. Picking the digits out of
+  //    rendered prose with a regex is the version that breaks the first time a name contains one.
+  assert.ok(
+    /font-display/.test(dayCode) && /segment\.figure/.test(dayCode),
+    "the opening sentence must stay in the display serif with its figures carried as segments — "
+      + "that sentence is the page's opening line, and a regex over rendered prose is not how its "
+      + "numbers get their colour",
+  );
+
+  // 7. NO `divide-y` ON A WARM-RULED LIST. `divide-y` sets a width and no colour, and border-color
+  //    is not inherited — so a list whose colour is set on the PARENT draws its rules in
+  //    currentColor, which turns a #e6e0d6 hairline into a black line nobody asked for.
+  assert.ok(
+    !/divide-y/.test(dayCode) && !/divide-y/.test(noticesCode),
+    "a rule between rows must be written on the row itself — `divide-y` carries no colour, and the "
+      + "warm hairline silently becomes currentColor",
+  );
+
+  // 8. THE BAND STILL FITS THE AIR THE PORTRAIT RESERVES. Measured on the branch at 803px and at
+  //    1440px with three notices loaded: the band is 120px against a 120px reserve and 143px against
+  //    a 143px reserve — it fills the overhang exactly and adds no page height. The row paddings
+  //    below are what buy that, so they are pinned.
+  assert.ok(
+    /py-\[5px\] pl-3 pr-2/.test(noticesCode)
+      && /className=\{\["flex min-w-0 flex-col pt-2"/.test(noticesCode),
+    "the notice rows or the band's top padding grew — measured at 803px, a row at py-[7px] and a "
+      + "band at pt-3 put the ledger at 136px against the portrait's 120px reserve, which pushes "
+      + "the whole dashboard down the page",
   );
 
   // The other half of the coupling: the logo the desktop numbers were measured against.

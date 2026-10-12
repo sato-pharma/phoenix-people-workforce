@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { hasLineMatch, linkSalesRecordAgainstDirectory } from "../src/lib/sales/employees.ts";
+import { isSalesOthersBucket } from "../src/lib/sales/others.ts";
 
 // G7 — linkage gate: a structural guard that the Sales module stays ONE engine. Every recognition
 // consumer must route through src/lib/sales/recognize.ts (directly or via the analyze/commit service
@@ -100,6 +101,52 @@ function vacantAreaCodesWinOverOthersBucket() {
   assert.equal(link.employeeLookupKey, "V-AF-9", "vacancy code should win over aggregate display values");
   assert.equal(link.employeeName, "Others", "display name can stay as uploaded");
   assert.equal(link.managerHrId, "B-200", "V-AF codes must be treated as vacancies even when the display name is Others");
+}
+
+function vacantAreaRowsStayOutOfTheOthersBucketOnRead() {
+  // The linker and the read path must AGREE. linkSalesRecordAgainstDirectory recognises a vacancy
+  // area code and deliberately leaves the uploaded display name alone, so a vacant area whose sheet
+  // reads "Others" reaches the read path still carrying its code. service.ts then asks
+  // isSalesOthersBucket about the LINKED record, and an Others verdict there drops the row from
+  // every scoped read, labels it "Unassigned DSM" and excludes it from district attribution — the
+  // territory's sales would vanish from the manager who owns the vacancy.
+  const link = linkSalesRecordAgainstDirectory(
+    {
+      employeeHrId: "V-AF-9",
+      employeeName: "Others",
+      line: "Anti Infective",
+      territory: "Ismailia-Suez",
+    },
+    [],
+    [
+      {
+        areaName: "Ismailia-Suez",
+        lineName: "Anti infective",
+        managerHrId: "B-200",
+        status: "open",
+        vacancyCode: "VAC-AF-9",
+      },
+    ],
+  );
+
+  assert.equal(link.employeeLookupKey, "V-AF-9", "the vacancy code must survive linkage");
+  assert.equal(
+    isSalesOthersBucket({
+      employeeHrId: link.employeeHrId,
+      employeeLookupKey: link.employeeLookupKey,
+      employeeName: link.employeeName,
+      line: link.line,
+    }),
+    false,
+    "a linked vacant area must not read as the line's Others bucket, however the sheet named it",
+  );
+
+  // The aggregate bucket itself must still be recognised — a line total carries no area code.
+  assert.equal(
+    isSalesOthersBucket({ employeeLookupKey: "Others", employeeName: "Others", line: "Anti Infective" }),
+    true,
+    "a genuine line-total row carries no vacancy code and must still read as the Others bucket",
+  );
 }
 
 function vacancyPlaceholdersDoNotPersistAsManagers() {
@@ -240,6 +287,7 @@ export function runSalesLinkageTests() {
 
   vacantAreaCodesDoNotBecomeMissingEmployeeWarnings();
   vacantAreaCodesWinOverOthersBucket();
+  vacantAreaRowsStayOutOfTheOthersBucketOnRead();
   vacancyPlaceholdersDoNotPersistAsManagers();
   normalRowsStillMapByEmployeeHrId();
   abbreviatedAntiInfectiveLineStillMatches();
