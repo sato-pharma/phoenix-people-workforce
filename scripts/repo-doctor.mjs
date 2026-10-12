@@ -290,12 +290,29 @@ function walk(dir) {
   return { files, dirs, links, unreadable };
 }
 
-/** Path entries held by a worktree's regenerable build caches. */
+/**
+ * Path entries held by a worktree's regenerable build caches.
+ *
+ * A worktree's `node_modules` is normally a JUNCTION to the primary's (scripts/new-session.mjs),
+ * and `walk` follows the root it is handed, so walking the junction counted the PRIMARY's whole
+ * tree once per worktree: three worktrees reported 70,720 entries each (212,160 "reclaimed", the
+ * same constant three times) when stripping one removed a single link and freed nothing. A link is
+ * one path entry; only a real directory is walked.
+ */
 function cacheEntries(dir) {
   let n = 0;
   for (const name of ["node_modules", ".next"]) {
     const p = path.join(dir, name);
-    if (!fs.existsSync(p)) continue;
+    let st;
+    try {
+      st = fs.lstatSync(p);
+    } catch {
+      continue; // absent, or a dangling link: nothing there to reclaim
+    }
+    if (st.isSymbolicLink()) {
+      n += 1;
+      continue;
+    }
     const w = walk(p);
     n += w.files + w.dirs + w.links;
   }
@@ -2260,7 +2277,8 @@ if (stripIdle) {
     try {
       for (const name of ["node_modules", ".next"]) {
         const p = path.join(r.dir, name);
-        if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+        // lstat, not existsSync: a dangling link is counted by cacheEntries and must be removed too.
+        if (fs.lstatSync(p, { throwIfNoEntry: false })) fs.rmSync(p, { recursive: true, force: true });
       }
       // Prove the source survived. A cache strip that changed the working tree is a bug.
       //
