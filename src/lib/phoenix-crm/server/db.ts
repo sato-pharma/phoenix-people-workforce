@@ -40,6 +40,10 @@ const REFUSALS: Record<string, Refusal> = {
     message:
       "This customer already has an own id that every report outside Phoenix CRM counts, so a reference id cannot be set now — it would restate months that have already been read. Merge the two records instead.",
   },
+  // The trigger that refuses a customer row pointing at a doctor the rep already added under his own id
+  // (public.phoenix_crm_customers_no_double_add, owner 2026-10-12). Nothing in the app inserts one on
+  // purpose; this is the answer if a door ever does.
+  doctor_already_on_list: { status: 409, message: "This customer is already on the list. Reload the list." },
   // The database's own check on the phone (owner, 2026-09-30), in the same words the form uses.
   bad_phone: { status: 400, message: CUSTOMER_PHONE_ERROR },
   customer_dropped: { status: 409, message: "This customer has left the list." },
