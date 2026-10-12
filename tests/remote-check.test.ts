@@ -1004,6 +1004,33 @@ export async function runRemoteCheckTests(): Promise<void> {
     assert.equal(gradeActionsStages(["typecheck"], null).verdict, "no-verdict", "an unreadable job list is not a verdict");
     assert.equal(gradeActionsStages(["typecheck"], []).verdict, "no-verdict");
 
+    // 🔴 AND THE ONE THAT COST A FALSE VERDICT: a job GitHub never started reports `completed` /
+    // `failure` with `steps: []`. On 2026-10-12 jobs stopped starting account-wide ("recent account
+    // payments have failed or your spending limit needs to be increased") and #5792's `validate` and
+    // `checks` both ended failure in three seconds with no steps; grading fell through to
+    // `job.conclusion`, so `lint`, `typecheck` and `test` were all recorded FAIL for a commit nothing
+    // had compiled. A FAIL is reported to the owner as "your code is broken" and blocks a push, so a
+    // billing block must never wear one.
+    const neverStarted = job("checks", "failure", []);
+    const billingBlocked = gradeActionsStages(["lint", "typecheck"], [neverStarted, job("validate", "failure", [])]);
+    assert.equal(
+      billingBlocked.verdict,
+      "no-verdict",
+      "a job that reported failure with NO steps was never started — that is NO VERDICT, never FAIL",
+    );
+    assert.deepEqual(billingBlocked.stages, {}, "a never-started job must record no per-stage verdict at all");
+    assert.match(billingBlocked.why, /never started/, "the reason must say the job never started, not that a check failed");
+    assert.equal(
+      gradeActionsStages(["test"], [job("validate", "failure", [])], STAGE_JOBS_PR).verdict,
+      "no-verdict",
+      "the same on a pull_request run, which is the route the open-PR fallback reads",
+    );
+    assert.equal(
+      gradeActionsStages(["typecheck"], [{ name: "checks", status: "completed", conclusion: "failure" }]).verdict,
+      "no-verdict",
+      "a job whose steps could not be read at all is not a verdict either",
+    );
+
     // A real failure still outranks an unknown, exactly as it does in the box script.
     assert.equal(
       gradeActionsStages(["lint", "typecheck", "test"], [typeError]).verdict,

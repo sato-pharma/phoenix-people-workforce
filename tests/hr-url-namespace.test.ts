@@ -29,6 +29,7 @@ import {
   isHrRewritablePath,
   isHrNamespacePath,
   toHrNamespacePath,
+  hrNamespaceRedirectTarget,
 } from "../src/lib/navigation/shell-headers.ts";
 import {
   hrNamespaceRoles,
@@ -141,6 +142,17 @@ export function runHrUrlNamespaceTests() {
   // Idempotent: the layout redirect must not be able to build /hr/hr/probation on a retry.
   assert.equal(toHrNamespacePath("/hr/probation"), "/hr/probation");
   assert.equal(toHrNamespacePath(toHrNamespacePath("/probation")), "/hr/probation");
+
+  // 1b ── The loop guard. A bare address is sent into the namespace; an address ALREADY in it is
+  // never redirected, because toHrNamespacePath returns it unchanged and that is a 307 to itself
+  // (ERR_TOO_MANY_REDIRECTS, seen 2026-10-12 on /hr/admin/hr-command-center behind the phx-live tunnel).
+  assert.equal(hrNamespaceRedirectTarget("/probation"), "/hr/probation");
+  assert.equal(hrNamespaceRedirectTarget("/probation?tab=due"), "/hr/probation?tab=due");
+  assert.equal(hrNamespaceRedirectTarget("/hr/admin/hr-command-center"), null, "inside the namespace there is nothing to redirect to");
+  assert.equal(hrNamespaceRedirectTarget("/hr/admin/hr-command-center?hiredFrom=2026-10-01"), null);
+  assert.equal(hrNamespaceRedirectTarget("/hr"), null);
+  assert.equal(hrNamespaceRedirectTarget("/hr?x=1"), null, "a query on the bare namespace root must not become /hr/hr");
+  assert.equal(hrNamespaceRedirectTarget("/hr-calendar"), "/hr/hr-calendar", "/hr-calendar is a page, not the namespace");
 
   // 2 ── Every NavigationMode resolves to a real home path, asserted at RUNTIME.
   // `navigationHomePathByMode` is a Record over the union, and an exhaustive Record does NOT gate
@@ -439,6 +451,67 @@ export function runHrUrlNamespaceTests() {
     assert.ok(proxySource.includes(fragment), `isSecurityProxyPath must still cover: ${fragment}`);
   }
 
+  // 11c ── The ONE inbound request whose shell headers are ours: `next dev` handing us back the
+  // path our own `/hr` rewrite pointed at.
+  //
+  // Next 16.3.8's dev server re-runs the proxy on a rewrite's destination; `next start` on Railway
+  // does not. So the second run arrived on `/admin/hr-command-center`, deleted the
+  // `x-phoenix-shell: hr` it had just written one run earlier, and overwrote `x-phoenix-path` with
+  // the bare path — after which AppShell believed the browser had asked for the bare address and
+  // pulled it back onto `/hr`, forever. Measured 2026-10-12: `/hr/admin/hr-command-center`,
+  // `/hr/employees` and `/hr/recruitment/candidates` each answered `307 Location: <itself>`, so
+  // dev-preview was unusable for HR Operations and HR Resourcing, while `/hr` answered a 307 to
+  // `/login` that only `rootRedirectResponse` (scoped to `pathname === "/"`) can produce — the
+  // second run, proved. Production was untouched throughout: 1,566 `/hr/%` page views for HR
+  // Operations, the last at 17:02 Cairo that day, and 42 for HR Resourcing.
+  //
+  // Honouring the inbound pair is NOT a hole in the anti-forgery deletes above, and each clause
+  // below is what makes that so. Pinned by name because this harness cannot run a Next.js proxy.
+  const reentryAt = proxySource.indexOf("if (isOwnRewriteReentry(request, pathname, search)) {");
+  assert.ok(reentryAt > 0, "proxy.ts must short-circuit its own rewrite re-entry");
+  assert.ok(
+    reentryAt < shellDelete && reentryAt < pathDelete,
+    "the re-entry check must run BEFORE the deletes — its whole purpose is to keep the headers the first run wrote",
+  );
+  const reentryReturn = proxySource.indexOf("return NextResponse.next();", reentryAt);
+  assert.ok(
+    reentryReturn > reentryAt && reentryReturn < shellDelete,
+    "re-entry must return immediately, forwarding the request untouched",
+  );
+  assert.equal(
+    proxySource.split("return NextResponse.next();").length - 1,
+    1,
+    "exactly ONE return in proxy.ts forwards a request's own headers unmodified, and it is the re-entry branch — a second would hand a forged header to AppShell",
+  );
+  for (const clause of [
+    // GET/HEAD only, so no mutation can skip securityProxy. Every guard in there except the root
+    // redirect is scoped to mutating methods, and the root redirect is precisely what must not run
+    // a second time: it is what turned `/hr` into a 307 to `/login`.
+    `if (method !== "GET" && method !== "HEAD") return false;`,
+    // The first run is the only thing that writes this value.
+    `if (request.headers.get(SHELL_HEADER) !== "hr") return false;`,
+    // `/hr/api/**` never rewrites, so an API path can never claim re-entry at all (11b).
+    `if (!isHrRewritablePath(namespaced)) return false;`,
+    // And the path header must be EXACTLY this path with the prefix on it — the one value our own
+    // rewrite could have produced. A forged pair therefore buys nothing: the seat fences normalize
+    // the `/hr` prefix away before they test a path, and SHELL_HEADER selects chrome, never access.
+    "return request.headers.get(PATH_HEADER) === `${namespaced}${search}`;",
+  ]) {
+    assert.ok(proxySource.includes(clause), `the re-entry guard must keep this clause: ${clause}`);
+  }
+  // The clause above, executed on the two shapes that matter.
+  assert.equal(
+    isHrRewritablePath(toHrNamespacePath("/api/payroll/run")),
+    false,
+    "an /api path can never claim re-entry — its /hr twin is /hr/api/**, which never rewrites",
+  );
+  assert.equal(
+    isHrRewritablePath(toHrNamespacePath("/admin/hr-command-center")),
+    true,
+    "the HR landing page's bare twin is exactly what a genuine re-entry arrives on",
+  );
+  assert.equal(toHrNamespacePath("/admin/hr-command-center"), "/hr/admin/hr-command-center");
+
   // 12 ── The redirect that catches every pre-existing link, and the header that picks the chrome.
   //
   // BOTH live in AppShell rather than in app/(admin)/layout.tsx, and that placement is the fix for
@@ -452,8 +525,15 @@ export function runHrUrlNamespaceTests() {
     "AppShell must send an HR seat on a bare address into the namespace",
   );
   assert.ok(
-    shellSource.includes(`redirect(toHrNamespacePath(requestedPath))`),
-    "the redirect target must be built with toHrNamespacePath, which is idempotent — a hand-built `/hr` + path is how a redirect loop starts",
+    shellSource.includes(`hrNamespaceRedirectTarget(requestedPath)`) && shellSource.includes(`redirect(hrTarget)`),
+    "the redirect target must come from hrNamespaceRedirectTarget, which is null inside the namespace — a hand-built `/hr` + path, or toHrNamespacePath alone (idempotent, so it returns the page you are on), is how a redirect loop starts",
+  );
+  // The fence bounce, same class. Its termination rested entirely on the landing page happening not
+  // to be fenced, an invariant asserted only in tests/hr-resourcing-seat.test.ts. Now checked where
+  // it is relied on, so fencing a seat's landing page cannot loop every address in that seat.
+  assert.ok(
+    shellSource.includes(`if (!isPageFencedForRole(access.role, landing)) {`),
+    "the fence bounce must check that the landing page is not itself fenced before redirecting to it",
   );
   // The mode resolution itself moved into src/lib/navigation/shell-mode.ts on 2026-09-03, because a
   // PAGE needs the same answer: app/(admin)/admin/sidebar-layout/page.tsx has to gate the catalogue

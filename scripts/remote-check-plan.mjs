@@ -807,7 +807,8 @@ function gradeConclusion(conclusion) {
  * Grade ONLY the stages that were asked for, from a completed run's job list.
  *
  * 🔴 A STAGE THAT DID NOT RUN IS NO VERDICT, NEVER FAIL. A job missing from the run, one still
- * going, one cancelled, and a step skipped because an earlier step in the same job died are all
+ * going, one cancelled, one that reports `failure` with NO STEPS because it was never started
+ * (an Actions billing block), and a step skipped because an earlier step in the same job died are all
  * "nobody looked at your stage" — the same call the box script makes for an OOM kill. Only an
  * explicit `failure` on the stage itself is a FAIL.
  *
@@ -854,6 +855,24 @@ export function gradeActionsStages(names, jobs, stageJobs = STAGE_JOBS) {
     }
     if (job.status && job.status !== "completed") {
       graded.push({ name, verdict: "no-verdict", why: "`" + spec.job + "` is still " + job.status });
+      continue;
+    }
+    // 🔴 A JOB THAT NEVER STARTED REPORTS `completed/failure` WITH NO STEPS AT ALL, AND THAT IS NO
+    // VERDICT. Measured 2026-10-12: GitHub stopped starting jobs account-wide ("recent account
+    // payments have failed or your spending limit needs to be increased"), so #5792's `validate` and
+    // `checks` both ended `failure` in three seconds with `steps: []`. Falling through to
+    // `job.conclusion` graded all three stages FAIL and RECORDED them for a commit nothing had
+    // compiled — a verdict saying "your code is broken" about an unpaid invoice, which is the one
+    // thing this file exists to prevent. A job that really ran always carries its own setup steps, so
+    // an empty list means nobody looked at the code (`ci-jobs-failing-in-seconds-means-billing-not-code`).
+    if (!Array.isArray(job.steps) || job.steps.length === 0) {
+      graded.push({
+        name,
+        verdict: "no-verdict",
+        why: "`" + spec.job + "` ended " + String(job.conclusion ?? "unknown") +
+          " with no steps at all, so the job never started (an Actions billing block, or a startup failure) and " +
+          name + " never produced a verdict",
+      });
       continue;
     }
     const step = Array.isArray(job.steps) ? job.steps.find((s) => s && s.name === spec.step) : undefined;
