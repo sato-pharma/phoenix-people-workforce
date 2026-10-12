@@ -414,6 +414,97 @@ deliberately, so the explanation of the refusal cannot satisfy the check that th
   about 10% of the way through its validation drive — a coverage number for the validation board to
   chase. Naming 286 rows as integrity cases would bury the 11 real ones.
 
+## 7 · The two readings were one reading, and the replay detector was rounding (2026-10-12)
+
+The photo-versus-pin comparison shipped on 2026-10-08 to answer one question: was the camera still
+where the pin said when the shutter fired? Reading its first full week of production rows found that
+on 89% of places it was comparing one reading with itself, and that the one detector it did fire was
+firing on a rounding artefact. Both were fixed together on the owner's instruction — *"fix the
+shutter fix cache and the replay rounding in one PR"*.
+
+### A · The shutter's "own" reading was the pin again, out of the browser's cache
+
+`readShutterFix` asked `getCurrentPosition` for a position up to `SHUTTER_FIX_TIMEOUT_MS` — **eight
+seconds** — old, on the reasoning that a fix from a few seconds ago is still a genuinely independent
+reading of where the camera is now. It is not. The Capture-location pin is taken moments earlier with
+`maximumAge: 0` (`src/components/phoenix-crm/capture-location.tsx`), the browser keeps that result as
+the last known position, and the eight-second grace then handed **the same position straight back** —
+identical down to the 13-decimal accuracy figure.
+
+Measured on production, the day the comparison first had enough rows to speak:
+
+| Of the 141 places whose two readings were compared | Count |
+| --- | --- |
+| Carry `photo_pin_identical` — bit-for-bit the same reading | **127** |
+| Of those 127, whose two timestamps are **8 seconds or less** apart | **119** |
+| Of those 127, reporting an accuracy better than 100 m | **105** |
+| Verdicts across all 141 — agrees / drifted / disagrees | 133 / 7 / 1 |
+
+The 119 is the window itself, and the 105 rules out coarse-fix handsets: it was the option, not the
+phones. It is the same defect #4781 removed one layer up — defaulting the photo fix to the pin when
+the shutter read nothing — surviving in the browser's cache instead of in our own code.
+
+🔴 **`SHUTTER_FIX_MAX_AGE_MS = 0` and it must stay zero.** A fresh read that times out resolves to
+`NO_SHUTTER_FIX`, which the caller treats as "not measured" rather than as corroboration — the
+outcome the file's own header asks for. The timeout is how long we WAIT; it is not how stale a
+position may be, and the two are not interchangeable.
+
+### B · `sameCoordinate` rounded to six decimals, so 1.3 cm read as a replay
+
+`coordinate_replay` is one of the two STRONG location flags. `sameCoordinate` compared the two
+readings at `REPLAY_DECIMALS = 6` — about 11 cm — so two honest readings taken minutes apart by a
+phone reporting 13 decimals matched, and the row was filed as a replayed coordinate.
+
+The one `coordinate_replay` case on the board was exactly this. Samir Saad, 11 October:
+
+| | Latitude | Longitude | Accuracy |
+| --- | --- | --- | --- |
+| First reading | 30.032354829736 | 31.0041317788402 | 49.9 m |
+| Second reading | 30.0323547138734 | 31.0041319110873 | 54.9 m |
+
+**About 1.3 cm apart, 22 minutes apart, and with different accuracies** — so neither is a cached copy
+of the other; a replay repeats a reading, it does not re-measure it. `sameCoordinate` is now exact
+equality (`left.lat === right.lat && left.lon === right.lon`), which is what a replayed coordinate
+actually looks like: the same float, twice.
+
+🔴 **`REPLAY_DECIMALS` stays, and it is NOT the detector's threshold.** It is the band the history
+query asks the database for (`COORDINATE_BAND`, `server/location-integrity.ts`) so the read can use an
+index instead of scanning a rep's whole history. Narrowing the comparison **inside** that band can
+only ever drop a case, never add one — the band is the candidate set, the equality is the verdict.
+Deleting the constant breaks the query; widening it is what would change who is accused.
+
+### Who moves when this merges: nobody
+
+`coordinate_replay` is strong, and `countedIntegrityFlags` charges a strong flag to the Integrity
+score in Phoenix Ranks — so the question had to be asked before this shipped. The answer is measured:
+**no rep's score changes on merge.** `judgeCapture` runs only on save (`server/list.ts`,
+`server/visits.ts`); no cron and no route re-judges history, so a row already filed stays filed with
+the flags it was given.
+
+🔴 **Samir Saad's existing strong row therefore stands, and keeps costing him, until somebody clears
+it.** The fix stops the next honest pair being filed this way; it does not retract the one already
+there. Clearing that row is the **settle click on the integrity board** (§1), which is the Super
+Admin's — it is not done from a migration, a script or a chat instruction, and nothing here touches
+it.
+
+### The other eight strong cases, read to primary evidence
+
+They were read the same night, to see whether either defect explained them too. It does not — but
+only one of the eight is unambiguous, which is why neither fix was allowed to widen into them:
+
+| Rep | What the primary evidence says |
+| --- | --- |
+| Yasmeen Samy | Photo and pin **2,768 m apart** — the one case that is not in question |
+| Mahmoud Abdelreheem | Both readings at accuracy **exactly 100.0 m**, as are **27 of his 30** place captures over his first three days — a network fix, not a position case |
+| Nada Saied | Two rows are one fact: a second doctor's place pinned at the identical 13-decimal point 31 minutes after the first |
+| Ebtissam Alaa | معتز الصاوي vs معتز المحلاوي — a real name conflict |
+| Two signboard cases | Name only a department (قسم الاستقبال, عيادة الأطفال), so there is no person's name to conflict with |
+| Khaled Saied | Tanta General vs El Menshawy — two hospitals |
+
+The board as a whole, read through `loadIntegrityBoard` with a Super Admin viewer rather than
+hand-rolled SQL: **157 standing cases, 10 strong, 3 withdrawn, 0 settled, `capped` false.** It is 10
+and not 11 because the 12 October re-read withdrew three signboard cases (§3, §4).
+
 ## Where the code is
 
 | What | Where |

@@ -133,6 +133,56 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
     assert.equal(verdict.flags.includes("coordinate_replay"), false, "a fix that moved 40 cm is a real fix");
   }
 
+  {
+    // 🔴 THE PRODUCTION FALSE POSITIVE, VERBATIM — the pair that retired the rounded match.
+    // One rep, the same hospital, 22 minutes apart (so past REPLAY_MIN_GAP_MINUTES), two readings
+    // 1.3 cm apart carrying DIFFERENT accuracies — 49.9 m and 54.9 m — which is what proves neither
+    // is a cached copy of the other. Inside REPLAY_DECIMALS these round to the same six decimals, so
+    // the old test called it a replay and charged him a STRONG flag on the Integrity board and in
+    // Phoenix Ranks. A receiver solving for position twice lands near itself; it does not repeat.
+    const verdict = judge({
+      lat: 30.0323547138734,
+      lon: 31.0041319110873,
+      accuracyMeters: 54.9,
+      capturedAt: "2026-10-11T08:45:43.161Z",
+      history: [
+        prior({
+          lat: 30.032354829736,
+          lon: 31.0041317788402,
+          accuracyMeters: 49.9,
+          capturedAt: at("2026-10-11T08:23:33.961Z"),
+        }),
+      ],
+    });
+    assert.equal(
+      verdict.flags.includes("coordinate_replay"),
+      false,
+      "two honest readings 1.3 cm apart are not a replayed coordinate",
+    );
+    assert.equal(verdict.strong, false, "and nothing else on that pair may make it a strong case either");
+  }
+
+  {
+    // …while the shape it exists to catch is untouched: the SAME coordinate to the last digit, which
+    // is what a fake-GPS preset hands back. Mahmoud's and Nada's production rows are both this.
+    const verdict = judge({
+      lat: 30.5602031056426,
+      lon: 31.0106195072006,
+      accuracyMeters: 18.7,
+      capturedAt: "2026-10-06T12:40:29.294Z",
+      history: [
+        prior({
+          lat: 30.5602031056426,
+          lon: 31.0106195072006,
+          accuracyMeters: 18.7,
+          capturedAt: at("2026-10-06T12:09:13.989Z"),
+        }),
+      ],
+    });
+    assert.ok(verdict.flags.includes("coordinate_replay"), "an exactly repeated coordinate is still a replay");
+    assert.equal(verdict.strong, true);
+  }
+
   // ── Travel — physics ──────────────────────────────────────────────────────────────────────────
 
   {

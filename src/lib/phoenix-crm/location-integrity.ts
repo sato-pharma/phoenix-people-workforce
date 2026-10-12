@@ -232,16 +232,29 @@ export const BRICK_FAR_KM = 3;
 // a measurement in front of you: they are the line between catching a cheat and accusing a rep.
 
 /**
- * Two fixes are "the same coordinate" at six decimals — about 11 cm. A GNSS receiver reporting the
- * same 11 cm twice, ever, does not happen: even a phone lying still on a table walks several metres
- * over an afternoon.
+ * The band the HISTORY QUERY fetches candidates in — six decimals, about 11 cm — and nothing more.
+ *
+ * 🔴 IT IS NOT THE TEST ANY MORE, AND THE REASON IT USED TO BE IS FALSE. This comment read "a GNSS
+ * receiver reporting the same 11 cm twice, ever, does not happen: even a phone lying still on a
+ * table walks several metres over an afternoon." Production disproved it on 2026-10-11: one rep's
+ * two readings, 22 minutes apart in the same hospital, came back 30.032354829736 and
+ * 30.0323547138734 — about 1.3 cm apart, well inside the band — carrying DIFFERENT accuracies,
+ * 49.9 m and 54.9 m, so neither was a cached copy of the other. Two honest readings. The board
+ * called it "this exact coordinate was used before", and a strong flag is charged to the rep's
+ * Integrity score by `countedIntegrityFlags` in rep-ranks/field-quality.ts.
+ *
+ * `sameCoordinate` now asks the coordinate to REPEAT — identical to its last stored digit, which is
+ * what a preset in a fake-GPS app does and what a receiver computing a fresh solution does not. The
+ * constant stays because `server/location-integrity.ts` still needs an index-friendly equality band
+ * to pull candidates with (`COORDINATE_BAND`), and narrowing the comparison inside that band can
+ * only ever drop a case, never add one.
  */
 export const REPLAY_DECIMALS = 6;
 
 /**
- * …but a phone CAN hand back a cached fix to two readings taken minutes apart, so a repeat by the
- * same rep only counts once the readings are this far apart. A repeat by a DIFFERENT rep counts
- * immediately — two people cannot occupy the same 11 cm, and a shared coordinate is a shared preset.
+ * …and a phone CAN hand the same reading back twice, so a repeat by the same rep only counts once
+ * the readings are this far apart. A repeat by a DIFFERENT rep counts immediately — two people
+ * cannot share a coordinate to the last digit, and one they do share is a shared preset.
  */
 export const REPLAY_MIN_GAP_MINUTES = 20;
 
@@ -335,8 +348,16 @@ function roundTo(value: number, decimals: number): number {
   return Math.round(value * factor) / factor;
 }
 
+/**
+ * The same coordinate REPEATED — identical to its last stored digit, not merely nearby.
+ *
+ * 🔴 NEVER WIDEN THIS BACK TO A ROUNDED MATCH. Rounding to `REPLAY_DECIMALS` is what the history
+ * query bands on, and it read two honest readings 1.3 cm apart as one replayed coordinate — see that
+ * constant's comment for the production pair and what it cost the rep. A fake-GPS preset repeats
+ * exactly; a receiver solving for position again does not.
+ */
 function sameCoordinate(left: GeoPoint, right: GeoPoint): boolean {
-  return roundTo(left.lat, REPLAY_DECIMALS) === roundTo(right.lat, REPLAY_DECIMALS) && roundTo(left.lon, REPLAY_DECIMALS) === roundTo(right.lon, REPLAY_DECIMALS);
+  return left.lat === right.lat && left.lon === right.lon;
 }
 
 function minutesBetween(left: Date, right: Date): number {
