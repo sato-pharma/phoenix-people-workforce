@@ -1,8 +1,10 @@
 import { strict as assert } from "node:assert";
 
+import { OFFER_BUILTIN_TEMPLATES } from "../src/lib/offers/builtin-templates.ts";
 import { OFFER_SEED_JOB_TITLES, defaultOfferBlocks } from "../src/lib/offers/default-template.ts";
 import { executiveOfferBlocks } from "../src/lib/offers/executive-template.ts";
 import { houseOfferBlocks } from "../src/lib/offers/house-template.ts";
+import { premiumOfferBlocks } from "../src/lib/offers/premium-template.ts";
 import { satoOfferBlocks } from "../src/lib/offers/sato-template.ts";
 import {
   OFFER_FIELD_FORCE_ROLE_SUMMARY,
@@ -11,14 +13,14 @@ import {
   offerRoleSummary,
 } from "../src/lib/offers/role-summary.ts";
 import { OFFER_PLACEHOLDER_KEYS } from "../src/lib/offers/placeholders.ts";
-import { buildOfferTokens, renderOfferBlock } from "../src/lib/offers/render.ts";
+import { buildOfferTokens, renderOfferBlock, renderOfferDocument } from "../src/lib/offers/render.ts";
 import type { OfferBlock, OfferFields } from "../src/lib/offers/types.ts";
 
 /**
  * The offer letter's role paragraph belongs to the JOB TITLE, never to the design.
  *
  * ── WHAT THIS EXISTS TO STOP COMING BACK ──
- * Three of the four shipped designs — including the HR-forms letter production sends by default —
+ * Three of the first four shipped designs — including the HR-forms letter production sends by default —
  * had this sentence typed into the design itself and therefore printed it for EVERY position in the
  * company: "…the people leadership this district needs … fully accountable for the territory's
  * sales performance … leading and developing your field team". It was transcribed from one signed
@@ -27,8 +29,8 @@ import type { OfferBlock, OfferFields } from "../src/lib/offers/types.ts";
  *
  * So the regression this guards is a sentence about sales, districts, territories or field teams
  * creeping back into any design's blocks. The check is on the BLOCKS, which is where the defect
- * lived, and it covers all four designs rather than the three that had it: the fourth is how the
- * next design ships with the bug.
+ * lived, and it covers every design rather than the three that had it — now five, the premium one
+ * included: the newest design is how the next design ships with the bug.
  *
  * ── AND THE FOUR PROPERTIES THE MECHANISM NEEDS ──
  * That one design can serve every position only if: a worded position prints ITS OWN words; an
@@ -81,6 +83,7 @@ export function runOfferRoleSummaryTests(): void {
     ["executive", executiveOfferBlocks()],
     ["sato", satoOfferBlocks()],
     ["house", houseOfferBlocks()],
+    ["premium", premiumOfferBlocks()],
   ];
 
   // ───────────────────────────────────── no design hard-codes what a job IS ──
@@ -229,4 +232,41 @@ export function runOfferRoleSummaryTests(): void {
     );
     assert.ok(!/<[a-zA-Z/]/.test(text), `${name} must carry no HTML tags`);
   }
+
+  // ───────────────────────────── the premium letter takes the job title's words too ──
+  // The premium design re-dresses the same blocks, so the paragraph must reach it through the whole
+  // document — masthead rebuilt, blocks drawn by the premium body builder — exactly as it reaches the
+  // others, escaped once, and must never be a sentence the design itself carries.
+  const premiumDesign = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "premium");
+  assert.ok(premiumDesign, "the premium design is in the registry");
+  const premiumLetter = (fields: OfferFields) =>
+    renderOfferDocument(
+      {
+        blocks: premiumDesign.blocks(),
+        fontFamily: premiumDesign.fontFamily,
+        fontSizePt: premiumDesign.fontSizePt,
+        theme: premiumDesign.theme,
+        variant: premiumDesign.variant,
+      },
+      fields,
+    ).body;
+  const premiumWorded = premiumLetter({
+    ...FIELDS,
+    roleSummary: OFFER_TALENT_ACQUISITION_ROLE_SUMMARY,
+    territory: "Head Office",
+    title: "Talent Acquisition",
+  });
+  assert.ok(premiumWorded.includes("own hiring end to end"), "a worded position prints its own paragraph on the premium letter");
+  assert.ok(!premiumWorded.toLowerCase().includes("field team"), "a talent-acquisition premium letter must not mention a field team");
+  const premiumUnworded = premiumLetter({ ...FIELDS, roleSummary: "" });
+  assert.ok(
+    premiumUnworded.includes("the judgement and the commitment this role calls for") && premiumUnworded.includes("Delta 3"),
+    "an unworded position prints the role-neutral sentence, naming the candidate's own territory, on the premium letter",
+  );
+  assert.ok(!premiumUnworded.includes("{{roleSummary}}"), "no visible token on the premium letter");
+  const premiumAmpersand = premiumLetter({ ...FIELDS, roleSummary: "You will cover {{territory}}.", territory: "Alex & Delta" });
+  assert.ok(
+    premiumAmpersand.includes("You will cover Alex &amp; Delta.") && !premiumAmpersand.includes("&amp;amp;"),
+    "the paragraph reaches the premium letter escaped exactly once",
+  );
 }

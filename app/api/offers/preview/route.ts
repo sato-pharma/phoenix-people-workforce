@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
 import { deriveOfferPay } from "@/lib/offers/pay";
 import { offerJsonError } from "@/lib/offers/http";
 import { renderOfferDocument } from "@/lib/offers/render";
@@ -96,10 +97,15 @@ export async function POST(request: Request) {
       sealUrl: satoSealDataUri() ?? undefined,
       signatureUrl: satoSignatureDataUri() ?? undefined,
     });
+    // The premium design's chrome names its two images by `/brand/...` path, which the designer's
+    // sandboxed preview frame cannot be relied on to resolve; read them off disk here, exactly as the
+    // PDF does, so the preview shows the mark and watermark the candidate's letter will carry. Only
+    // the premium design: the other four are returned as they always have been.
+    const premium = template.variant === "premium";
     return NextResponse.json({
-      body: rendered.body,
+      body: premium ? inlineLocalAssets(rendered.body).html : rendered.body,
       css: rendered.css,
-      html: rendered.html,
+      html: premium ? inlineLocalAssets(rendered.html).html : rendered.html,
       // The derived figures come back alongside the HTML so the form can show them beside the
       // inputs — one typed total, and HR sees basic and transport before anything is saved.
       pay: deriveOfferPay({ costOfLiving: fields.costOfLiving, totalMonthly: fields.totalMonthly }),

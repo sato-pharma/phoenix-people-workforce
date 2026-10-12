@@ -126,8 +126,13 @@ export function isPremiumPaper(html: string): boolean {
  * DIGITS AND A SLASH ONLY, in Helvetica. A PDF library cannot shape Arabic (see the note on
  * `PAGE_NUMBER_FOOTER`), so the premium number carries no words — it is a number in a foot, which
  * reads the same in both languages.
+ *
+ * EXPORTED for the two landscape papers that are printed by their own route rather than filed — the
+ * interview calendar and the Field Activity report. Each keeps its own Chromium page and its own
+ * print options; both set `data-pm-numbered` on the document before printing, exactly as below, so
+ * the foot's diamond steps aside, and then hand the bytes here.
  */
-async function stampPremiumPageNumbers(pdf: Uint8Array): Promise<Uint8Array> {
+export async function stampPremiumPageNumbers(pdf: Uint8Array): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdf);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const pages = doc.getPages();

@@ -307,3 +307,10 @@ the approved Phoenix foot.
 - **An archived version keeps the dress it was signed in.** Only the current version wears it.
 - **Never touched:** the government forms, and every design he ticked "keep".
 - **No seal** on any of them. The seal is the job offer's alone and stays where the offer draws it.
+- **The Premium job offer** is a fifth design beside the four he froze (`premium`, "SATO Premium
+  Offer"), drawn by `src/lib/offers/premium-skin.ts` over the ordinary offer's blocks. The company
+  seal stays where the base draws it, on the company's signature rule only; Premium adds headroom on
+  both signature rows so the impression does not land on the signatory's title. Its database half
+  (`offer_templates` allows `premium`) ships before the code.
+- **The money papers** (the payslip and the organogram record) keep every figure and word; only the
+  title words moved into the masthead.

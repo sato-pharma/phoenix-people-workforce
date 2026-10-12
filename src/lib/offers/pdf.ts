@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 
+import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
+import { stampPremiumPageNumbers } from "@/lib/hiring-pack/paper-pdf";
 import { renderOfferDocument } from "@/lib/offers/render";
 import { satoLogoDataUri, satoLogoReverseDataUri, satoSealDataUri, satoSignatureDataUri } from "@/lib/offers/brand";
 import type { OfferBlock, OfferFields, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
@@ -122,6 +124,7 @@ type PuppeteerModule = {
     close: () => Promise<void>;
     newPage: () => Promise<{
       emulateMediaType: (type: string) => Promise<void>;
+      evaluate: (script: string) => Promise<unknown>;
       pdf: (options: Record<string, unknown>) => Promise<Uint8Array>;
       setContent: (html: string, options: Record<string, unknown>) => Promise<void>;
     }>;
@@ -165,7 +168,7 @@ export async function renderOfferPdf(
   // `setContent` gives the page no origin, so a relative `/brand/...` would resolve to nothing.
   // Both images are read off disk instead — see `brand.ts` for why, and for why the signature is
   // the one image with no public URL at all.
-  const { html, pageFooterHtml, pageHeaderHtml, pageSize } = renderOfferDocument(template, fields, {
+  const rendered = renderOfferDocument(template, fields, {
     logoUrl: options.logoUrl ?? satoLogoDataUri() ?? undefined,
     // The reverse (white-on-navy) mark, for the Sato corporate design's navy masthead only. The
     // classic and executive letters draw on white paper and never receive it — passing it there
@@ -174,6 +177,14 @@ export async function renderOfferPdf(
     sealUrl: satoSealDataUri() ?? undefined,
     signatureUrl: options.signatureUrl ?? satoSignatureDataUri() ?? undefined,
   });
+  const { pageFooterHtml, pageHeaderHtml, pageSize } = rendered;
+  // The premium design's chrome names its own images by `/brand/...` path — the Latin mark in the
+  // masthead and the Arabic watermark — which `setContent` cannot resolve, so they are read off disk
+  // here, as the hiring papers do. Only the premium design, so the other four go to Chromium exactly
+  // as they always have. An image that cannot be read leaves the page as it is: its alt text prints
+  // where the mark belongs, which is plainer than intended but never stops the offer being sent.
+  const premium = template.variant === "premium";
+  const html = premium ? inlineLocalAssets(rendered.html).html : rendered.html;
   const timeout = options.timeoutMs ?? 30_000;
 
   try {
@@ -202,8 +213,10 @@ export async function renderOfferPdf(
         await page.setContent(html, { timeout, waitUntil: "domcontentloaded" });
         // Chromium applies `@media screen` by default even when producing a PDF.
         await page.emulateMediaType("print");
+        // The premium foot's diamond steps aside for the "N / M" written into its slot below.
+        if (premium) await page.evaluate("document.documentElement.setAttribute('data-pm-numbered', '')");
 
-        return await page.pdf({
+        const printed = await page.pdf({
           // Only the designs that ask for a running foot get one. `headerTemplate` still has to be a
           // non-empty element: given "" Chromium falls back to its own default header, which prints
           // the page title and the date across the top of a legal document.
@@ -212,12 +225,16 @@ export async function renderOfferPdf(
           format: pageSize,
           headerTemplate: pageHeaderHtml || "<span></span>",
           // The margins live in the document's own `@page` rule, next to the design they belong to;
-          // `preferCSSPageSize` is what makes that rule win over the format above.
-          margin: { bottom: "14mm", left: "13mm", right: "13mm", top: "12mm" },
+          // `preferCSSPageSize` is what makes that rule win over the format above. The premium sheet
+          // declares `margin: 0` and draws its frame and foot to the page edge, so it is given none.
+          ...(premium ? {} : { margin: { bottom: "14mm", left: "13mm", right: "13mm", top: "12mm" } }),
           preferCSSPageSize: true,
           printBackground: true,
           timeout,
         });
+        // The premium page number cannot come from Chromium's footer (there is no margin for it to
+        // sit in), so it is written into the foot once the pages are laid out and counted.
+        return premium ? await stampPremiumPageNumbers(printed) : printed;
       } finally {
         // Never leak a browser process. One leaked Chromium per offer would exhaust the container's
         // memory within a day of normal HR use.

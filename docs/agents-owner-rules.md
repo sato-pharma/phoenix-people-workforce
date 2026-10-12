@@ -4301,8 +4301,8 @@ printed candidate record, the WhatsApp application sheet, the Monthly Closing sh
 pack, the Make It Happen forecast, the award cheque, the Sato Pharma email and the CEO letter email.
 **The Latin face:** keep as it is. **The foot code:** keep `SATO-DIS-2026-01 v1.0`.
 
-- **The foot of a company paper says Sato Pharma, not Phoenix** (a call this work made, not his word,
-  and one line to change: `PREMIUM_COMPANY_DOCUMENT_BRAND`). The payslip and the organogram record
+- **The foot of a company paper says Sato Pharma, not Phoenix** (asked, and he chose "Sato Pharma
+  alone", 13 October 2026; one line to change: `PREMIUM_COMPANY_DOCUMENT_BRAND`). The payslip and the organogram record
   have pinned "no Phoenix branding on a company document" since 2026-09-05, and the job offer's
   reader is the candidate, to whom nothing says Phoenix (`src/lib/offers/identity.ts`). The HR papers
   that wear the identity keep the approved Phoenix foot.
@@ -4312,6 +4312,29 @@ pack, the Make It Happen forecast, the award cheque, the Sato Pharma email and t
 - **A kept paper is proven byte for byte.** Rendered with the same fixture, 21 of the 24 hiring papers
   are identical to the code from before the identity existed; the 3 that differ are the three he
   ticked "change".
+- **The Premium job offer is a FIFTH design beside the four he froze** (`premium`, "SATO Premium
+  Offer", never seeded as the default). It draws through `src/lib/offers/premium-skin.ts` and
+  `premium-template.ts`; the wording, fields, tables and signature cells are the ordinary offer's.
+  The four older designs are pinned by a sha256 of their rendered letter, computed on the tree from
+  before the identity and carried unchanged in `frozenDesignTests`, so a change to any of them goes
+  red. The company seal is still drawn by the base (`.offer-seal`, company rule only, never the
+  candidate's); Premium adds 6 mm of headroom on both parties' signature rows so the four rules stay
+  level and the impression no longer lands on the signatory's name and title. The offer prints on two
+  sheets, the same as the House design.
+- **Its database half ships first.** The `offer_templates` CHECK constraints on `variant` and
+  `builtin_key` had to allow `premium` before the code that registers it deployed, so migration
+  `20261013120000_job_offer_premium_variant` was applied to staging and to production on 13 October
+  2026 and read back from both; it rewrites no row. The Premium row is created the first time the
+  app lists offer templates after the code deploys.
+- **Offer emails do not change.** The email an offer travels in (`render-email.ts`) is the same for
+  all five designs; only the PDF letter differs.
+- **The money papers keep every figure and word.** On the payslip and the organogram record only the
+  title words moved into the masthead ("Payslip", "قسيمة راتب", "Salary statement · month"); the
+  visible text below it was compared old against new and is identical. Each still prints its own
+  footer line carrying the document code beside the premium foot.
+- **Fonts were measured on Windows.** The premium type stack names Segoe UI first; Railway's Chromium
+  substitutes Noto Sans. The Premium offer measured 28.0 mm and 44.8 mm above the foot rule on its two
+  sheets here; that slack is what absorbs the substitution, and it has not been measured on Railway.
 
 ## The UE Direct split is retired with the Excel-import direct orders — owner, 2026-09-30
 

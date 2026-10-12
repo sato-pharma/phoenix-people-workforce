@@ -260,7 +260,11 @@ export function premiumFrameSvg(
 }
 
 export interface PremiumMastheadInput {
-  /** The company's registered name in Arabic. Kept as text: it is the employer named on the paper. */
+  /**
+   * The company's registered name in Arabic. Kept as text: it is the employer named on the paper.
+   * EMPTY for a paper that carries no Arabic name (the English job offer): the Arabic run and the
+   * diamond that joins it to the Latin name are then both left out, so no stray diamond leads the line.
+   */
   legalNameAr: string;
   /** The same name in Latin script. */
   legalNameEn?: string | null;
@@ -283,6 +287,13 @@ export interface PremiumMastheadInput {
   slim?: boolean;
   /** "landscape" for a sheet turned on its side: the band runs the wider column. Default portrait. */
   orientation?: PremiumOrientation;
+  /**
+   * The text slots — names, title, subtitles — arrive ALREADY ESCAPED and are written as given. For a
+   * paper whose words are filled by a token pass that escapes once and keeps the designer's own
+   * entities (the job offer: `fillOfferTokens`), escaping a second time would print `&amp;middot;` on
+   * the letter. Default false: every other paper hands over plain text.
+   */
+  escaped?: boolean;
 }
 
 /**
@@ -311,20 +322,24 @@ export interface PremiumMastheadInput {
  * colon would land on the wrong side.
  */
 export function premiumMasthead(input: PremiumMastheadInput): string {
-  const nameAr = `<span class="pm-mast__name" dir="rtl" lang="ar">${escapeHtml(input.legalNameAr)}</span>`;
+  const esc = input.escaped ? (text: string) => text : escapeHtml;
+  const hasNameAr = input.legalNameAr.trim() !== "";
+  const nameAr = hasNameAr
+    ? `<span class="pm-mast__name" dir="rtl" lang="ar">${esc(input.legalNameAr)}</span>`
+    : "";
   const nameEn = input.legalNameEn?.trim()
-    ? `<b class="pm-dia" aria-hidden="true"></b><span class="pm-mast__name pm-mast__name--en" dir="ltr" lang="en">${escapeHtml(input.legalNameEn.trim())}</span>`
+    ? `${hasNameAr ? '<b class="pm-dia" aria-hidden="true"></b>' : ""}<span class="pm-mast__name pm-mast__name--en" dir="ltr" lang="en">${esc(input.legalNameEn.trim())}</span>`
     : "";
   const title = input.titleLang === "en"
-    ? `<h1 class="pm-mast__t pm-mast__t--en" dir="ltr" lang="en">${escapeHtml(input.title)}</h1>`
-    : `<h1 class="pm-mast__t" dir="rtl" lang="ar">${escapeHtml(input.title)}</h1>`;
+    ? `<h1 class="pm-mast__t pm-mast__t--en" dir="ltr" lang="en">${esc(input.title)}</h1>`
+    : `<h1 class="pm-mast__t" dir="rtl" lang="ar">${esc(input.title)}</h1>`;
   const titleAr = input.titleAr?.trim()
-    ? `<p class="pm-mast__tar" dir="rtl" lang="ar">${escapeHtml(input.titleAr.trim())}</p>`
+    ? `<p class="pm-mast__tar" dir="rtl" lang="ar">${esc(input.titleAr.trim())}</p>`
     : "";
   const subtitles = (input.subtitles ?? [])
     .filter((line) => line.text.trim())
     .map((line) =>
-      `<p class="pm-mast__s" dir="${line.lang === "ar" ? "rtl" : "ltr"}" lang="${line.lang}">${escapeHtml(line.text.trim())}</p>`)
+      `<p class="pm-mast__s" dir="${line.lang === "ar" ? "rtl" : "ltr"}" lang="${line.lang}">${esc(line.text.trim())}</p>`)
     .join("");
 
   const band = input.orientation === "landscape"

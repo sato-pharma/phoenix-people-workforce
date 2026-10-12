@@ -8,7 +8,11 @@
 import assert from "node:assert/strict";
 
 import { spellEgyptianAmount } from "../src/lib/hiring-pack/arabic-amount.ts";
-import { houseLetterhead } from "../src/lib/hiring-pack/house-identity.ts";
+import { HOUSE_IDENTITY_CSS, houseLetterhead } from "../src/lib/hiring-pack/house-identity.ts";
+import {
+  PREMIUM_PAGE_MM,
+  premiumDocumentStylesheet,
+} from "../src/lib/hiring-pack/premium-identity.ts";
 import {
   assertEverySectionIsPlaced,
   buildPayslipDocument,
@@ -90,6 +94,44 @@ export function runPayslipDocumentTests() {
   );
   assert.doesNotMatch(SHEET, /phoenix/i, "No Phoenix branding may appear on a company document.");
   assert.match(SHEET, /SATO-DIS-2026-01 v1\.0/, "The sheet states the standard it is drawn to.");
+
+  // ── the premium dress (owner, 2026-10-13: "change to the premium look") ────────────────────────
+  // The whole-sheet no-Phoenix check above now covers the chrome too, because the chrome is part of
+  // the sheet; it is kept as it was and pinned separately below so that a chrome that DOES name the
+  // app fails here by name, not as an unrelated word match. The foot says Sato Pharma alone — the
+  // payslip's own rule since 2026-09-05 — which is `PREMIUM_COMPANY_DOCUMENT_BRAND`, never "phoenix".
+  const chromeAt = SHEET.indexOf('<div class="pm-chrome"');
+  assert.ok(chromeAt > -1, "The payslip wears the premium identity: the frame, watermark and running foot are on the sheet.");
+  const chrome = SHEET.slice(chromeAt);
+  assert.match(
+    chrome,
+    /<\/div>\s*<\/article>\s*$/,
+    "The chrome is the LAST child of the sheet, so it can shift no figure and no table.",
+  );
+  assert.doesNotMatch(chrome, /<(?:section|footer|header|table)\b/, "Nothing of the payslip's own lives inside the chrome.");
+  assert.doesNotMatch(chrome, /phoenix/i, "The chrome names Sato Pharma alone — no Phoenix emblem, no Phoenix wording.");
+  assert.match(chrome, /<div class="pm-foot__ph"><\/div>/, "The foot's left slot is empty: it carries no app brand.");
+  assert.ok(
+    chrome.includes("SATO PHARMA L.L.C. · HUMAN RESOURCES · HEAD OFFICE")
+      && !chrome.includes("PHOENIX WORKFORCE"),
+    "The frame's microtext is the Sato phrase, without the app's name.",
+  );
+  assert.ok(
+    chrome.includes("Sato Pharma · Human Resources · SATO-DIS-2026-01 v1.0"),
+    "The running foot carries the identity code, as every premium paper's does.",
+  );
+  assert.ok(
+    chrome.includes('src="/brand/sato-pharma-arabic-on-light.png"')
+      && !SHEET.slice(0, chromeAt).includes("sato-pharma-arabic"),
+    "The Arabic Sato logo is the watermark in the chrome and appears nowhere else — never in the masthead.",
+  );
+  assert.doesNotMatch(SHEET, /sato-hr-seal/, "No company seal on a payslip: a computer-generated statement needs no stamp.");
+  assert.equal(
+    (SHEET.match(/<header class="pm-mast pm-mast--compact">/g) ?? []).length,
+    1,
+    "The masthead is the premium compact one — the payslip must hold ONE sheet.",
+  );
+  assert.doesNotMatch(SHEET, /class="lh"|lh__rule/, "The old house letterhead is gone from the sheet.");
 
   // ── the square-edge rule (owner, 2026-09-04) ───────────────────────────────────────────────────
   // Measured on the stylesheet that ships, because a 4 px radius inherited from `tokens.css` is
@@ -226,11 +268,25 @@ export function runPayslipDocumentTests() {
   assert.doesNotMatch(zeroed, /hero__words/, "A zero month salary prints a gap, never a spelled zero.");
 
   // ── bilingual, two lines, never one mixed line ─────────────────────────────────────────────────
-  assert.match(SHEET, /<h1 dir="ltr">Payslip<\/h1>/, "English leads on an English-facing paper.");
   assert.match(
     SHEET,
-    /<p class="lh__ar" dir="rtl" lang="ar">قسيمة راتب<\/p>/,
+    /<h1 class="pm-mast__t pm-mast__t--en" dir="ltr" lang="en">Payslip<\/h1>/,
+    "English leads on an English-facing paper.",
+  );
+  assert.match(
+    SHEET,
+    /<p class="pm-mast__tar" dir="rtl" lang="ar">قسيمة راتب<\/p>/,
     "…and the paper's Arabic name sits under it, on its own line with its own direction.",
+  );
+  assert.match(
+    SHEET,
+    /<p class="pm-mast__s" dir="ltr" lang="en">Salary statement · August 2026<\/p>/,
+    "The subtitle still names the month the statement covers.",
+  );
+  assert.match(
+    SHEET,
+    /<p class="lh__purpose" dir="ltr">Employee copy · confidential<\/p>/,
+    "…and the purpose band still says whose copy this is.",
   );
 
   // ── one employee, one sheet of paper ───────────────────────────────────────────────────────────
@@ -239,21 +295,67 @@ export function runPayslipDocumentTests() {
   // and lives in `scripts/check-payslip-page-fit.mjs`, because the house rule is that the suite does
   // not launch a browser — CI's runner is not the app container. What CAN be asserted here is the
   // thing that regressed: the amount of pure whitespace the layout spends vertically.
-  const bandMargins = [...PAYSLIP_DOCUMENT_CSS.matchAll(/margin:\s*([\d.]+)mm 0 0/g)]
-    .map((match) => Number(match[1]));
-  const pagePadding = /\.ps \{[\s\S]*?padding:\s*([\d.]+)mm [\d.]+mm(?: ([\d.]+)mm)?;/.exec(PAYSLIP_DOCUMENT_CSS);
-  assert.ok(pagePadding, "The sheet must declare its own page padding.");
-  const verticalPadding = Number(pagePadding[1]) + Number(pagePadding[2] ?? pagePadding[1]);
+  //
+  // THE PREMIUM SHEET'S INSET IS THE IDENTITY'S, NOT THE PAYSLIP'S (2026-10-13): 12.5 mm above and
+  // 19.5 mm below on every sheet, 32 mm where the old page spent 19. The payslip's own padding is
+  // gone, so the figure is read from `PREMIUM_PAGE_MM` and the payslip's own stylesheet is checked to
+  // declare none; the band margins are read from the payslip's OWN rules, with the house and premium
+  // sheets taken out, because the masthead's margins are the identity's and not this layout's.
+  // The compact masthead and the footer without a rule give back more than the inset costs, so the
+  // ordinary sheet is SHORTER than it was; the budget is what keeps it that way.
+  const ownCss = PAYSLIP_DOCUMENT_CSS.replace(HOUSE_IDENTITY_CSS, "").replace(premiumDocumentStylesheet(".ps"), "");
+  const bandMargins = [...ownCss.matchAll(/margin:\s*([\d.]+)mm 0 0/g)].map((match) => Number(match[1]));
+  const ownSheetRule = /\n\.ps \{([^}]*)\}/.exec(ownCss);
+  assert.ok(ownSheetRule, "The sheet's own rule must be found.");
+  assert.doesNotMatch(
+    ownSheetRule[1],
+    /padding/,
+    "The sheet's page inset is the premium identity's — a padding here would silently fight it.",
+  );
+  const verticalPadding = PREMIUM_PAGE_MM.top + PREMIUM_PAGE_MM.bottom;
   const whitespace = bandMargins.reduce((sum, mm) => sum + mm, 0) + verticalPadding;
   assert.ok(
     bandMargins.length >= 5,
     `Expected the band margins to be found; got ${bandMargins.length}. The selector shape changed.`,
   );
   assert.ok(
-    whitespace <= 42,
-    `The sheet spends ${whitespace}mm of vertical whitespace (page padding + band margins). The `
-      + "budget is 42mm: above it the ordinary payslip stops fitting on one A4 sheet and the footer "
-      + "prints alone on a second. Re-run scripts/check-payslip-page-fit.mjs after changing spacing.",
+    whitespace <= 56,
+    `The sheet spends ${whitespace}mm of vertical whitespace (premium inset + band margins). The `
+      + "budget is 56mm: above it the worst realistic payslip stops fitting on one sheet and the footer "
+      + "prints alone on a second. That sheet has 7.8mm to spare above the running foot's rule, and "
+      + "the budget leaves 5mm of it as headroom, so this trips before the spill and not after it. "
+      + "Re-run scripts/check-payslip-page-fit.mjs after changing spacing.",
+  );
+
+  // THE FRAME AND THE FOOT ARE ONE SET PER RUN. In print they are `position: fixed`, which Chrome
+  // repeats on every printed page, so the first sheet's copy serves them all and the later sheets'
+  // copies are hidden — otherwise a three-payslip run stacks three frames on each page.
+  assert.match(
+    PAYSLIP_DOCUMENT_CSS,
+    /\.pm-chrome \.pm-frame \{ position: fixed; top: 0; left: 0; \}/,
+    "In print the frame is fixed to the page, so every printed sheet has one.",
+  );
+  assert.match(
+    PAYSLIP_DOCUMENT_CSS,
+    /\.ps ~ \.ps \.pm-chrome \{ display: none; \}/,
+    "Only the first sheet's chrome is shown in print — the later copies would stack on top of it.",
+  );
+  // A sheet is a whole 297 mm on a wide screen so its frame and foot sit on it; on paper that same
+  // min-height is how a blank page is born, so it is screen-only. On a phone the chrome is hidden.
+  assert.equal(
+    (PAYSLIP_DOCUMENT_CSS.match(/min-height: 297mm/g) ?? []).length,
+    1,
+    "One min-height of a whole sheet, and only the one on screen.",
+  );
+  assert.match(
+    PAYSLIP_DOCUMENT_CSS,
+    /@media screen and \(min-width: 801px\) \{\s*\.ps \{ min-height: 297mm; \}\s*\}/,
+    "The whole-sheet height is scoped to a screen wide enough to show the sheet.",
+  );
+  assert.match(
+    PAYSLIP_DOCUMENT_CSS,
+    /@media screen and \(max-width: 800px\)[\s\S]*?\.ps \.pm-chrome \{ display: none; \}/,
+    "On a phone the 210 mm frame is hidden — it must not push the page sideways.",
   );
 
   // A4 is 793.7px at 96dpi — SIX PIXELS inside this breakpoint. Chromium's print layout does not
@@ -404,6 +506,7 @@ export function runPayslipDocumentTests() {
   // Two records make two sheets, and the batch page must break between them.
   const two = buildPayslipDocument([RECORD, { ...RECORD, employeeCode: "A-001" }], 8, 2026, "approved");
   assert.equal(two.match(/<article class="ps">/g)?.length, 2, "One sheet per employee.");
+  assert.equal(two.match(/<div class="pm-chrome"/g)?.length, 2, "…each carrying its own chrome, of which print shows the first.");
   assert.match(PAYSLIP_DOCUMENT_CSS, /page-break-after: always/, "…each on its own sheet of paper.");
 
   // ── the house letterhead stayed additive ───────────────────────────────────────────────────────

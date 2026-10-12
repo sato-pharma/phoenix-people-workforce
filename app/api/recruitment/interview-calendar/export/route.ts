@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
+import { stampPremiumPageNumbers } from "@/lib/hiring-pack/paper-pdf";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
 import { interviewCalendarCaller, listInterviewCalendarWeek } from "@/lib/recruitment/interview-calendar";
 import {
@@ -10,7 +12,6 @@ import {
   buildInterviewCalendarPdfHtml,
   buildInterviewCalendarWorkbook,
   interviewCalendarFilename,
-  interviewCalendarPdfFooter,
   isInterviewCalendarExportFormat,
 } from "@/lib/recruitment/interview-calendar-export";
 import { isDateKey, weekStartFor } from "@/lib/recruitment/interview-calendar-week";
@@ -60,20 +61,26 @@ export async function GET(request: Request) {
       });
     }
 
-    const html = buildInterviewCalendarPdfHtml(model);
+    // `setContent` gives the page no origin, so the premium chrome's `/brand/...` images are inlined
+    // first. A file that cannot be read is not fatal here — a calendar is not a filed record, and the
+    // mark falls back to its alt text — which is why `missing` is not acted on, unlike a filed paper.
+    const { html } = inlineLocalAssets(buildInterviewCalendarPdfHtml(model));
     const pdf = await withChromiumPage(async (page) => {
       await page.setContent(html, { timeout: 30_000, waitUntil: "domcontentloaded" });
       await page.emulateMediaType("print");
+      // The premium sheet prints on `@page { margin: 0 }` — its frame and running foot are drawn by
+      // the page itself, edge to edge — so Chrome's own footer has no margin to sit in and is off.
+      // The "N / M" is written into the foot after layout, once Chromium has counted the pages, and
+      // the foot's diamond steps aside for it (the same two steps as `renderHiringPaperPdf`).
+      await page.evaluate("document.documentElement.setAttribute('data-pm-numbered', '')");
       const bytes = await page.pdf({
-        displayHeaderFooter: true,
-        footerTemplate: interviewCalendarPdfFooter(model),
         format: "A4",
-        headerTemplate: "<span></span>",
         landscape: true,
+        margin: { bottom: "0", left: "0", right: "0", top: "0" },
         preferCSSPageSize: true,
         printBackground: true,
       });
-      return Buffer.from(bytes);
+      return Buffer.from(await stampPremiumPageNumbers(bytes));
     });
     return new NextResponse(pdf as unknown as BodyInit, {
       status: 200,
