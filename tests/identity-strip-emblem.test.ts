@@ -62,7 +62,11 @@ const BREAKPOINTS = {
     // the bottom, so its box starts 30px above the bar's foot and the mark has MORE room than it
     // had at 136, not less.
     barHeight: 160,
-    marginPattern: /\bsm:mr-\[(\d+)px\]/,
+    // The desktop margin is `--phx-text-gap` with the no-photo number as its fallback, since
+    // 2026-10-12: with a photo the clearance has to track a portrait whose width is a viewport
+    // clamp. This reads the FALLBACK, which is the no-photo path the numbers below belong to; the
+    // with-photo gap is checked against `PORTRAIT_SCALE` at the bottom of this file.
+    marginPattern: /\bsm:mr-\[var\(--phx-text-gap,(\d+)px\)\]/,
     pinned: { height: 128, right: 25, top: -11 },
     visibility: "hidden sm:block",
     waveTop: 130,
@@ -79,8 +83,20 @@ function read(file: string) {
   return readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
 }
 
+/**
+ * Reads a pinned pixel number out of the emblem's inline style.
+ *
+ * FROM 2026-10-12 THE DESKTOP MARK'S THREE NUMBERS ARE `var(--phx-mark-*, Npx)`, and the FALLBACK
+ * is what this reads — deliberately. The fallback is the no-photo path, which is still exactly the
+ * owner's 2026-09-04 SATO-column placement, so every assertion below goes on holding that rule
+ * where it still applies. The with-photo values live in `PORTRAIT_SCALE` and are checked separately
+ * at the bottom of this file, against their own instruction.
+ */
 function styleNumber(style: string, property: string): number {
-  return Number(new RegExp(`${property}: "(-?\\d+)px",`).exec(style)?.[1] ?? NaN);
+  const plain = new RegExp(`${property}: "(-?\\d+)px",`).exec(style)?.[1];
+  if (plain !== undefined) return Number(plain);
+  const fallback = new RegExp(`${property}: "var\\(--[a-z-]+, ?(-?\\d+)px\\)",`).exec(style)?.[1];
+  return Number(fallback ?? NaN);
 }
 
 export function runIdentityStripEmblemTests() {
@@ -117,7 +133,9 @@ export function runIdentityStripEmblemTests() {
     });
   }
 
-  const ruleRow = /<span aria-hidden="true" className="([^"]*mt-\[2px\][^"]*)">/.exec(strip)?.[1];
+  // `\s+` between the attributes, not a space: the class list outgrew one line when the desktop
+  // margin became a `var()`, and a prettier line break here must not read as a missing rule.
+  const ruleRow = /<span\s+aria-hidden="true"\s+className="([^"]*mt-\[2px\][^"]*)"/.exec(strip)?.[1];
   assert.ok(ruleRow, "the rule row under the name is no longer findable — its clearance cannot be checked");
   const nameBox = /className="(italic font-medium[^"]*)"/.exec(strip)?.[1];
   assert.ok(nameBox, "the name paragraph is no longer findable — its clearance cannot be checked");
@@ -225,6 +243,101 @@ export function runIdentityStripEmblemTests() {
     "the content wrapper's right padding changed — the name's and rule's margins are their "
       + `clearance minus it (${BREAKPOINTS.mobile.wrapperPr}px on a phone, `
       + `${BREAKPOINTS.sm.wrapperPr}px from sm up), so both must be re-derived`,
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // THE STANDING PORTRAIT, AND THE MARK THAT COMES OUT FROM BEHIND IT.
+  //
+  // The owner, 2026-10-12: "MAKE THE PICTURE BIGGER AND MAKE IT RESPONSIVE BASED ON VIEW SIZE AND
+  // SHOW THE PHX LOGO FROM BEHIND AS A WATERMARK." Everything here is one clamp and four `calc`s
+  // off it (`PORTRAIT_SCALE`), so the only way the shape can break is for one of those numbers to
+  // be edited alone. That is exactly what this block refuses.
+  //
+  // It is checked SYMBOLICALLY, at both ends of the clamp, because there is no viewport in a unit
+  // test: every property below is stated against W, so if it holds at the clamp's floor and its
+  // ceiling it holds at every width between them.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  const scale = /const PORTRAIT_SCALE = \{([\s\S]*?)\} as CSSProperties;/.exec(strip)?.[1];
+  assert.ok(scale, "PORTRAIT_SCALE is gone — the standing portrait's whole scale is unpinned");
+
+  const clamp = /"--phx-portrait-w": "clamp\((\d+)px, (\d+)vw, (\d+)px\)"/.exec(scale);
+  assert.ok(clamp, "the portrait width must stay a `clamp(min, vw, max)` — a fixed width is the "
+    + "thing the owner asked to replace ('MAKE IT RESPONSIVE BASED ON VIEW SIZE')");
+  const [minW, vw, maxW] = clamp.slice(1, 4).map(Number);
+  assert.ok(
+    minW >= 188 && maxW > minW && vw > 0,
+    `the clamp must START no smaller than the 188px fixed frame it replaced and GROW from there — `
+      + `read ${minW}px / ${vw}vw / ${maxW}px. He asked for bigger, not merely different.`,
+  );
+
+  const markHeight = Number(/"--phx-mark-height": "(\d+)px"/.exec(scale)?.[1] ?? NaN);
+  const markTop = Number(/"--phx-mark-top": "(-?\d+)px"/.exec(scale)?.[1] ?? NaN);
+  const markBack = Number(
+    /"--phx-mark-right": "calc\(var\(--phx-portrait-w\) - (\d+)px\)"/.exec(scale)?.[1] ?? NaN,
+  );
+  const textGap = Number(
+    /"--phx-text-gap": "calc\(var\(--phx-portrait-w\) \+ (\d+)px\)"/.exec(scale)?.[1] ?? NaN,
+  );
+  for (const [label, value] of [
+    ["--phx-mark-height", markHeight],
+    ["--phx-mark-top", markTop],
+    ["--phx-mark-right", markBack],
+    ["--phx-text-gap", textGap],
+  ] as const) {
+    assert.ok(
+      Number.isFinite(value),
+      `${label} is missing or no longer stated against the portrait width — the mark and the text `
+        + "then stop moving with the portrait, and the shape silently breaks at some viewport",
+    );
+  }
+
+  // The mark stays WHOLE and clear of the wave at its with-photo size, exactly as at its old one.
+  assert.ok(
+    markTop + markHeight * INK.top >= 0,
+    `the standing-photo emblem's top (${markTop}px) clips the phoenix's crown against the bar's `
+      + "overflow-hidden — a cropped mark is the one thing the owner has already turned down",
+  );
+  assert.ok(
+    markTop + markHeight * INK.bottom <= BREAKPOINTS.sm.waveTop,
+    `the standing-photo emblem's feet (y=${(markTop + markHeight * INK.bottom).toFixed(1)}px) `
+      + `stand behind the wave, which starts at y=${BREAKPOINTS.sm.waveTop}`,
+  );
+
+  // "FROM BEHIND" IS TWO FACTS AT ONCE, and one without the other is a different picture: part of
+  // the mark must be COVERED by the portrait, and part of it must be CLEAR of it. Both are stated
+  // against W, so W cancels and the test is viewport-free.
+  const inkRightOfMark = markHeight * (1 - INK.right); // inside its own box, from the box's right
+  const inkWidthOfMark = markHeight * (INK.right - INK.left);
+  const coveredByPortrait = markBack - inkRightOfMark; // px of ink hidden behind the frame
+  const clearOfPortrait = inkWidthOfMark - coveredByPortrait; // px of ink standing on the cream
+  assert.ok(
+    coveredByPortrait > 8,
+    `the mark is not actually BEHIND the portrait — only ${coveredByPortrait.toFixed(1)}px of its `
+      + "ink is covered. It reads as a mark parked beside a photo, not one showing from behind it.",
+  );
+  assert.ok(
+    clearOfPortrait > 24,
+    `only ${clearOfPortrait.toFixed(1)}px of the phoenix stands clear of the portrait — at that `
+      + "width it is hidden rather than shown, which is the state the owner asked to end",
+  );
+
+  // AND THE TEXT STILL STOPS BEFORE IT. This is his 2026-09-04 rule, re-derived: the ink now
+  // reaches PAST the frame's leading edge, so clearing the frame is no longer enough.
+  assert.ok(
+    textGap + BREAKPOINTS.sm.wrapperPr >= clearOfPortrait + MIN_GAP_PX,
+    `with a photo the name and rule end ${textGap + BREAKPOINTS.sm.wrapperPr}px past the portrait `
+      + `but the phoenix's ink reaches ${clearOfPortrait.toFixed(2)}px past it — they cross the `
+      + "mark, which is exactly what the owner asked to stop. Re-derive the gap from the mark.",
+  );
+
+  // The portrait, the air under it and the frame are one chain of arithmetic; a spacer that stops
+  // matching the portrait's height either overlaps the next section or leaves a hole.
+  const spacer = /style=\{\{ height: "calc\(var\(--phx-portrait-h\) - (\d+)px\)" \}\}/.exec(strip);
+  assert.ok(
+    spacer && Number(spacer[1]) < BREAKPOINTS.sm.barHeight,
+    "the overhang spacer must be the portrait's height minus LESS than the bar's own height — "
+      + `anything at or above ${BREAKPOINTS.sm.barHeight} leaves the portrait's foot sitting on the `
+      + "next section's top border, which is the collision this spacer exists to prevent",
   );
 
   // The other half of the coupling: the logo the desktop numbers were measured against.

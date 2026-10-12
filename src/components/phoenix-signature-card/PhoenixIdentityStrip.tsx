@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 /**
  * The signature card's identity, as a THIN STRIP.
@@ -119,6 +119,71 @@ const PORTRAIT_STANDING_SHADOW =
   + " 0 18px 36px -10px rgba(15,35,55,0.34)";
 
 /**
+ * THE STANDING PORTRAIT IS SIZED BY THE VIEWPORT, AND EVERYTHING AROUND IT IS DERIVED FROM THAT ONE
+ * NUMBER. The owner, 2026-10-12: "MAKE THE PICTURE BIGGER AND MAKE IT RESPONSIVE BASED ON VIEW SIZE
+ * AND SHOW THE PHX LOGO FROM BEHIND AS A WATERMARK."
+ *
+ * WHY CSS VARIABLES AND NOT FOUR BREAKPOINT CLASSES. Five things have to move together — the
+ * portrait's width and height, the air the page reserves under it, where the name and rule stop, and
+ * where the watermark sits so it comes out from behind the frame. Written as classes that is five
+ * `sm:` / `lg:` / `xl:` ladders that a later edit can desynchronise one rung at a time, and the
+ * failure is silent (a name under a photo, a mark with nothing showing). Written as one clamp with
+ * four `calc`s off it, there is ONE number, and every other number is arithmetic.
+ *
+ * THE CLAMP: 200px at the narrow end, 17vw in the middle, 268px at the top. The floor is what the
+ * bar needs to still read as a bar on a laptop (the frame was a fixed 188px before this and he asked
+ * for bigger); the ceiling is where a portrait starts competing with the dashboard instead of
+ * introducing it. 17vw puts it at 218px on a 1280 screen and 245px on a 1440.
+ *
+ * THE HEIGHT IS THE WIDTH x 1.32, which is the 188x248 proportion the shape shipped with — the
+ * reversed L he drew. It is NOT the photo's own aspect ratio: the image is `object-cover`, so the
+ * frame's proportion is a design choice and the crop follows it.
+ *
+ * `--phx-text-gap` IS WHY THE NAME STILL CLEARS EVERYTHING. The text column has to stop before the
+ * PHOENIX now, not before the frame, because the mark deliberately shows to the left of it: the ink
+ * reaches 84px past the frame's leading edge (see `--phx-mark-right`), so the gap is the frame plus
+ * 84 plus 12 of air, net of the content wrapper's own `pr-6` — W + 72.
+ *
+ * `--phx-mark-right` IS THE WHOLE "FROM BEHIND" EFFECT, AS ARITHMETIC. At 162px the emblem's ink
+ * starts 31.6px inside its own box on the right and 131.3px inside it on the left. Offsetting the
+ * box to W - 47px from the bar's trailing edge therefore lands the ink's right edge 15px BEHIND the
+ * frame's leading edge and its left edge 84px CLEAR of it. Both hold at every viewport, because both
+ * are stated against W.
+ *
+ * THE BITE IS 15px AND IT WAS A THIRD OF THE MARK FIRST — that version was looked at and rejected,
+ * and the reason generalises. The emblem is a round badge, so an occlusion of about a third does not
+ * read as "behind" at all: it reads as a disc sliced down the middle by the frame, because the cut
+ * line runs through the body of the phoenix. A badge reads as standing BEHIND something when the
+ * near object takes a small bite out of its edge — which is also how the eye resolves depth in the
+ * absence of a shadow. Hiding MORE is the other coherent answer (a crescent peeking out), and it was
+ * not taken because he asked for the mark to be SHOWN.
+ *
+ * THE HEIGHT IS THE TALLEST THE BAR CAN HOLD THE MARK WHOLE. The file is 64.1% ink vertically with
+ * 14.8% of transparency above it, so at 162px from `top: -5` the ink runs y=19 to y=122.5 — and the
+ * wave's box starts at y=130 on a 160px bar. 165px is the ceiling; anything past it stands the
+ * phoenix's feet behind the wave, which is the one thing the owner has consistently refused.
+ *
+ * THE -5px IS THE WAVE, NOT A NUDGE. At `top: 0` the feet measured y=128 against a wave box opening
+ * at y=130: inside the contract, and still wrong to look at, because the wave's PAINTED crest rides
+ * a few pixels above its box on that part of the curve, so the phoenix's plinth sat on the orange
+ * line. Five pixels up is the clearance the drawing needs rather than the clearance the number
+ * needed. The crown still has 19px of bar above it, so nothing is cropped.
+ *
+ * THEY ARE SET ONLY WHEN THERE IS A PHOTO. With initials there is no standing portrait, so the
+ * emblem falls back to its own defaults in the style object below — `right: 25px`, `height: 128px`,
+ * `top: -11px`, the SATO logo's column, which is the owner's 2026-09-04 instruction and is untouched
+ * on that path.
+ */
+const PORTRAIT_SCALE = {
+  "--phx-mark-height": "162px",
+  "--phx-mark-right": "calc(var(--phx-portrait-w) - 47px)",
+  "--phx-mark-top": "-5px",
+  "--phx-portrait-h": "calc(var(--phx-portrait-w) * 1.32)",
+  "--phx-portrait-w": "clamp(200px, 17vw, 268px)",
+  "--phx-text-gap": "calc(var(--phx-portrait-w) + 72px)",
+} as CSSProperties;
+
+/**
  * MOBILE, FRAMELESS. The owner, 2026-09-04, with the Phoenix banner artwork attached: "in mobile
  * view i want the photo frameless fading exactly like this". In that reference the portrait is not
  * a tile sitting ON the card — it IS the card's leading edge: full height, flush left, no bezel, no
@@ -217,7 +282,10 @@ export function PhoenixIdentityStrip({
   }, [sigName]);
 
   return (
-    <div className={["relative w-full min-w-0", photoSrc ? "sm:pb-[104px]" : ""].join(" ")}>
+    <div
+      className="relative w-full min-w-0"
+      style={photoSrc ? PORTRAIT_SCALE : undefined}
+    >
     <section
       aria-label="Your identity"
       className={[
@@ -292,7 +360,21 @@ export function PhoenixIdentityStrip({
 
           IT SHIPPED ONCE CROPPED BY THE TRAILING EDGE AND HE TURNED THAT DOWN. Whatever the sizes
           become, the mark stays whole against the right edge — the only thing allowed to cover it
-          is the wave, from below.
+          is the wave from below, and now the standing portrait from the right.
+
+          THE PORTRAIT IS THE SECOND THING ALLOWED TO COVER IT, AND HE ASKED FOR THAT IN THOSE
+          WORDS: "SHOW THE PHX LOGO FROM BEHIND AS A WATERMARK" (2026-10-12). When the portrait
+          came to the bar's trailing edge it landed exactly on top of this mark and the phoenix
+          stopped existing on desktop — 128px of ink, all of it behind an opaque frame. So with a
+          photo the mark grows to 150px and moves left by the portrait's own width: about a third of
+          it stays behind the frame and the rest stands on the cream, which is what "from behind"
+          looks like. It is still NOT cropped by any edge — being partly behind the portrait is
+          occlusion by a nearer object, not a crop, and it is the thing he asked for.
+
+          THE SATO COLUMN IS NOT ABANDONED — IT IS THE NO-PHOTO PATH. With initials there is no
+          standing portrait, the three `var()` fallbacks below apply, and the mark is exactly where
+          his 2026-09-04 instruction put it: 128px at `right: 25px`, `top: -11px`. Do not "unify"
+          the two: one of them answers an instruction the other one cannot.
 
           THE SIZE AND THE COLUMN BOTH COME FROM THE SATO LOGO NOW, at the owner's instruction on
           2026-09-04: "make the Phoenix logo in the identity banner same size as Sato Pharma logo
@@ -373,12 +455,17 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 hidden sm:block"
         src="/brand/identity-strip-emblem.png"
         style={{
-          // 128 / 25 / -11 are the SATO logo's 79px of ink and its 50px column, each minus this
-          // file's own transparent margin. Read the paragraphs above before touching one.
-          height: "128px",
-          opacity: 0.2,
-          right: "25px",
-          top: "-11px",
+          // WITH A PHOTO the three vars put the mark half behind the standing portrait, which is
+          // "SHOW THE PHX LOGO FROM BEHIND AS A WATERMARK" — see PORTRAIT_SCALE for the arithmetic.
+          // WITHOUT one the fallbacks are the originals: 128 / 25 / -11 are the SATO logo's 79px of
+          // ink and its 50px column, each minus this file's own transparent margin. Read the
+          // paragraphs above before touching one.
+          height: "var(--phx-mark-height, 128px)",
+          // 0.28 with a photo's worth of mark on cream; it was 0.2 when the mark was pure
+          // background texture and he has now asked for it to be SHOWN.
+          opacity: 0.28,
+          right: "var(--phx-mark-right, 25px)",
+          top: "var(--phx-mark-top, -11px)",
           width: "auto",
         }}
       />
@@ -496,12 +583,15 @@ export function PhoenixIdentityStrip({
               phone and 128.75px in from `sm` up, so the box ends 68px / 141px in — which is 52px
               of margin on a phone (`pr-4`) and 117px from `sm` up (`pr-6`).
 
-              FROM `sm` UP IT IS THE PORTRAIT THAT SETS THIS MARGIN NOW, not the phoenix. The
-              standing portrait is 188px wide against the bar's trailing edge, so the text column
-              has to stop 200px in (12px of air); net of the wrapper's own `pr-6` that is 196px,
-              and 196 clears the watermark's ink edge at 128.75px by a wide margin — which is why
-              `tests/identity-strip-emblem.test.ts` still passes on a number it did not derive. The
-              PHONE margin is untouched at 52px: there is no standing portrait on a phone.
+              FROM `sm` UP IT IS NOW `--phx-text-gap`, AND THAT IS NOT A WEAKER RULE — IT IS THE
+              SAME ONE, STATED AGAINST A PORTRAIT THAT MOVES. The portrait's width is a viewport
+              clamp now, and the phoenix is positioned off that width so it shows from behind the
+              frame, so a fixed pixel margin here could only be right at one viewport. The gap is
+              W + 50 (frame, plus the 62px of phoenix ink that stands clear of it, plus 12 of air,
+              net of the wrapper's own `pr-6`) — so the name ends clear of the MARK at every width,
+              which is the instruction. The 117px fallback is the no-photo path, where there is no
+              standing portrait and the mark is back in the SATO column: that is its old number,
+              unchanged. The PHONE margin is untouched at 52px — no standing portrait on a phone.
 
               THE MARGIN IS A CLASS AND THE RESET IS INLINE, and they must stay split that way. An
               inline style beats any class, so the `margin: 0` that used to sit in the style object
@@ -517,7 +607,7 @@ export function PhoenixIdentityStrip({
               the phone mark again, this margin grows with it and the name shrinks again, so
               measure the name at 375px before accepting that trade. */}
           <p
-            className="italic font-medium text-[#3f3a33] mr-[52px] sm:mr-[196px]"
+            className="italic font-medium text-[#3f3a33] mr-[52px] sm:mr-[var(--phx-text-gap,117px)]"
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
@@ -540,23 +630,26 @@ export function PhoenixIdentityStrip({
               first of the two answers he offered; the mark itself does not move.
 
               THE MARGIN IS THE MARK'S OWN INK EDGE, not a nudge, and it is read per breakpoint.
-              From `sm` up the emblem draws 79px of ink whose left edge lands 128.75px in from the
-              bar's trailing edge (25px right inset + 24.25px of transparent margin + 79px of ink);
-              on a phone the corner mark above is that same mark halved, drawing 39.4px of ink that
-              begins 55.9px in. Twelve pixels of air puts the end of this rule at 141px and 68px
-              respectively — and this row sits inside a column that already stops at the content
-              wrapper's own right padding, so each margin is that figure minus that padding: 52 on
-              a phone (`pr-4`) and 117 from `sm` up (`pr-6`). CHANGE EITHER EMBLEM'S `height` OR
-              `right` AND ITS NUMBER MOVES WITH IT — `tests/identity-strip-emblem.test.ts`
-              recomputes both ink edges from those two and fails if this clearance stops covering
-              them.
+              On a phone the corner mark above draws 39.4px of ink beginning 55.9px in from the
+              bar's trailing edge; twelve pixels of air puts the end of this rule at 68px, and this
+              row sits inside a column that already stops at the content wrapper's own `pr-4`, so
+              the margin is 52. FROM `sm` UP THE MARK MOVES WITH THE PORTRAIT, so the number does
+              too: `--phx-text-gap` is W + 50 with a photo (the frame, the 62px of ink standing
+              clear of it, 12 of air, net of `pr-6`) and 117px without one, which is the old
+              SATO-column arithmetic — the fallback 128px emblem at `right: 25px` puts its ink's
+              left edge 128.75px in, and 117 + 24 of padding clears that by 12. CHANGE AN EMBLEM NUMBER OR THE PORTRAIT
+              CLAMP AND THIS MOVES WITH IT — `tests/identity-strip-emblem.test.ts` recomputes both
+              ink edges and fails if the clearance stops covering them.
 
               IT IS THE RULE ALONE, deliberately. Reserving the column on the WRAPPER instead would
               take the same width off the text block at every breakpoint, and a phone cannot spare
               it: the column is ~223px at 375px and already carries four lines, so the title would
               wrap a third time and clip against `overflow-hidden`. The name carries its own copy
               of the margin, for the same reason. */}
-          <span aria-hidden="true" className="mt-[2px] mr-[52px] flex items-center sm:mr-[196px]">
+          <span
+            aria-hidden="true"
+            className="mt-[2px] mr-[52px] flex items-center sm:mr-[var(--phx-text-gap,117px)]"
+          >
             <span className="h-[2px] flex-1" style={{ background: "#f47b20" }} />
             <span className="mx-[5px] h-[7px] w-[7px]" style={{ background: "#f47b20" }} />
             <span
@@ -640,16 +733,22 @@ export function PhoenixIdentityStrip({
         a wrapper that positions it, is what lets it stand 88px proud of the bar while the bar
         itself keeps every number it had — "NEVER TOUCH THE BANNER", his words.
 
-        THE WRAPPER RESERVES THE OVERHANG (`sm:pb-[104px]`) INSTEAD OF FLOATING OVER THE PAGE. A
+        THE OVERHANG IS RESERVED BY A SPACER IN NORMAL FLOW, NOT BY FLOATING OVER THE PAGE. A
         portrait hanging over the first task card would cover live work and would move with it on
-        every scroll; the padding keeps the column's own column of air and nothing below has to
-        know the strip is there. It is spent only when there IS a photo — the initials tile stays
-        inside the bar at both widths.
+        every scroll; the spacer keeps the column its own air and nothing below has to know the
+        strip is there. It is rendered only when there IS a photo — the initials tile stays inside
+        the bar at both widths.
 
-        104 IS 88 OF OVERHANG PLUS 16 OF AIR, and the 16 is the polish, not slack. At 88 the
-        portrait's foot landed on y=333 and the next section's top border landed on y=333 — the
-        frame and the card below it shared one line, which reads as a collision rather than a
-        column standing on the page. Measured on the branch before the change.
+        IT IS A SPACER AND NOT PADDING ON THE WRAPPER FOR ONE MECHANICAL REASON: the height is now
+        viewport-derived (`--phx-portrait-h`) and it must be ZERO below `sm`, where there is no
+        standing portrait at all. An inline style cannot carry a media query, and padding written as
+        a `sm:` class cannot carry a `calc` of a variable without a Tailwind arbitrary property that
+        nothing else in this codebase uses. A `hidden sm:block` element whose own height is the
+        calc does both, with no new mechanism.
+
+        ITS 16px IS AIR, NOT SLACK. Reserving the overhang exactly put the portrait's foot and the
+        next section's top border on the same line (both y=333, measured on the branch), which reads
+        as a collision rather than a column standing on the page.
 
         THE FRAME IS HEAVIER THAN THE IN-BAR TILE'S ON PURPOSE. 3px of gold around a 136px tile is
         the same ANGLE as 4px around a 188px one; held at 3 the bezel thinned out as the portrait
@@ -660,7 +759,17 @@ export function PhoenixIdentityStrip({
         MOBILE KEEPS THE FRAMELESS BLEED. This is a `sm:` element only; on a phone the photo is
         still the bar's own leading edge, which is his 2026-09-04 instruction and is untouched. */}
     {photoSrc ? (
-      <span className="pointer-events-none absolute right-0 top-0 z-20 hidden h-[248px] w-[188px] sm:block">
+      <span
+        aria-hidden="true"
+        className="hidden sm:block"
+        style={{ height: "calc(var(--phx-portrait-h) - 144px)" }}
+      />
+    ) : null}
+    {photoSrc ? (
+      <span
+        className="pointer-events-none absolute right-0 top-0 z-20 hidden sm:block"
+        style={{ height: "var(--phx-portrait-h)", width: "var(--phx-portrait-w)" }}
+      >
         <span
           aria-hidden="true"
           className="absolute inset-0"
@@ -671,7 +780,7 @@ export function PhoenixIdentityStrip({
             alt={`${name} portrait`}
             className="object-cover object-top"
             fill
-            sizes="188px"
+            sizes="(min-width: 1576px) 268px, 17vw"
             src={photoSrc}
             unoptimized
           />
