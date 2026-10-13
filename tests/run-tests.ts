@@ -1653,6 +1653,7 @@ import { runSalesTruthStoreSplitTests } from "./sales-truth-store-split.test.ts"
 import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
+import { runClosingPerformanceReviewManagerScopeTests } from "./closing-performance-review-manager-scope.test.ts";
 import { runClosingQuarterGapTests } from "./closing-quarter-gap.test.ts";
 import { runClosingMatrixNoOfficeTests } from "./closing-matrix-no-office.test.ts";
 import { runClosingMergedAreaSplitFoldTests } from "./closing-merged-area-split-fold.test.ts";
@@ -5895,6 +5896,11 @@ await runTest(
 await runTest(
   "a Performance Review filter narrows the rows but never the pickers, and a filtered or multi-month workbook says so (Delta stays offerable after filtering to Cairo, a real area carrying direct money stays in the area picker while the synthetic company row does not, three months are labelled as a span instead of as September, and an array body parses the same as a comma query)",
   runClosingReviewFilterTests,
+);
+
+await runTest(
+  "each sales manager's Performance Review is bounded to his own territory and his published months (his matrix holds only his areas with every total re-derived from them, the confidential column is stripped inside the narrowing, a geography that matches NOTHING in a month shows no rows rather than the whole line or his whole region, his bottom row reads FILTERED TOTAL although his row and option counts agree, the workbook masthead names the bound, the series starts at July 2026 for him exactly as on the admin screen, his line picker offers only the lines he holds, an unpublished month is refused by name, each portal role holds the permission its own routes assert, a Medical Rep is in neither audience, and the sidebar row, nav flag and page are wired together)",
+  runClosingPerformanceReviewManagerScopeTests,
 );
 
 await runTest(

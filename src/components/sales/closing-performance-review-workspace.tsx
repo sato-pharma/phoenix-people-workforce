@@ -42,8 +42,19 @@ import { phxSelectClassName } from "@/components/ui/form-tokens";
 // it). Everywhere else the measure is value, because units of different products are never added.
 
 type Props = {
+  /**
+   * Which shell this is mounted in. "admin" draws its own page hero, as it always has; "portal"
+   * leaves the title and the blurb to EmployeePortalPageShell and prints the same chips as a compact
+   * strip instead, so a manager's tab does not carry two mastheads (owner, 2026-10-13).
+   *
+   * Presentation only. The bound a portal viewer reads under is applied SERVER-side before this
+   * component ever sees a row, so no prop here can widen it.
+   */
+  chrome?: "admin" | "portal";
   initialError: string | null;
   initialReview: ClosingPerformanceReview | null;
+  /** One sentence naming what the figures cover — "Scoped to your own areas." Portal only. */
+  scopeNote?: string | null;
 };
 
 const EM = "—";
@@ -423,7 +434,13 @@ function ProductMonthTable({
   );
 }
 
-export function ClosingPerformanceReviewWorkspace({ initialError, initialReview }: Props) {
+export function ClosingPerformanceReviewWorkspace({
+  chrome = "admin",
+  initialError,
+  initialReview,
+  scopeNote = null,
+}: Props) {
+  const isPortal = chrome === "portal";
   const [review, setReview] = useState<ClosingPerformanceReview | null>(initialReview);
   const [error, setError] = useState<string | null>(initialError);
   const [isLoading, setIsLoading] = useState(false);
@@ -463,9 +480,11 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
 
   const skippedPeriods = review?.skippedPeriods ?? [];
 
-  // The series starts at July 2026 and fills forward, so today it is one month wide. Saying so is
-  // the whole point: "1 months of history" reads as a bug, and an unexplained single column reads
-  // as a broken report. The workbook prints the same sentence, from the same rule.
+  // The series starts at the review's first period (July 2026) and fills forward. Saying the span
+  // out loud is the whole point: "1 months of history" reads as a bug, and an unexplained single
+  // column reads as a broken report. For a manager in the portal it is his PUBLISHED months from
+  // July upward, so the sentence is also how he sees which ones he has. The workbook prints the same
+  // sentence, from the same rule.
   const seriesSpan =
     months.length === 0
       ? "Series starts " + longMonth(PERFORMANCE_REVIEW_FIRST_PERIOD)
@@ -587,25 +606,38 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
 
   const selectClassName  = phxSelectClassName;
 
+  // The same five facts in both shells, from one place — the admin hero's badge row and the portal's
+  // own strip must never drift into saying different things about the same payload.
+  const chips = (
+    <>
+      <AdminInsightChip>Line: {line || "None"}</AdminInsightChip>
+      <AdminInsightChip>
+        {isMultiPeriod ? "Months" : "Month"}: {selectedPeriods.length > 0 ? periodSpan : "No validated data"}
+      </AdminInsightChip>
+      <AdminInsightChip tone="slate">Areas: {review.areas.length}</AdminInsightChip>
+      <AdminInsightChip tone="slate">District managers: {review.managers.length}</AdminInsightChip>
+      <AdminInsightChip tone="orange">{seriesSpan}</AdminInsightChip>
+    </>
+  );
+
   return (
-    <div className="min-h-[calc(100vh-7rem)] space-y-7">
-      <AdminPageHero
-        badges={(
-          <>
-            <AdminInsightChip>Line: {line || "None"}</AdminInsightChip>
-            <AdminInsightChip>
-              {isMultiPeriod ? "Months" : "Month"}: {selectedPeriods.length > 0 ? periodSpan : "No validated data"}
-            </AdminInsightChip>
-            <AdminInsightChip tone="slate">Areas: {review.areas.length}</AdminInsightChip>
-            <AdminInsightChip tone="slate">District managers: {review.managers.length}</AdminInsightChip>
-            <AdminInsightChip tone="orange">{seriesSpan}</AdminInsightChip>
-          </>
-        )}
-        description="Who sold what, ranked. Reps, district managers and regions against target, then the same line broken down by product and by area, month by month. The by-month views start at July 2026 and fill forward: earlier months were closed on a different area map and are not comparable. Export downloads exactly these views as a Sato-branded workbook."
-        eyebrow="Monthly Closing"
-        icon={<Trophy className="h-4 w-4" />}
-        title="Performance Review"
-      />
+    <div className={isPortal ? "space-y-7" : "min-h-[calc(100vh-7rem)] space-y-7"}>
+      {isPortal ? (
+        <div className="flex flex-col gap-3 border border-phx-line bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
+          <div className="flex flex-wrap items-center gap-2">{chips}</div>
+          {scopeNote ? (
+            <p className="text-xs font-semibold text-slate-500">{scopeNote}</p>
+          ) : null}
+        </div>
+      ) : (
+        <AdminPageHero
+          badges={chips}
+          description="Who sold what, ranked. Reps, district managers and regions against target, then the same line broken down by product and by area, month by month. The by-month views start at July 2026 and fill forward: earlier months were closed on a different area map and are not comparable. Export downloads exactly these views as a Sato-branded workbook."
+          eyebrow="Monthly Closing"
+          icon={<Trophy className="h-4 w-4" />}
+          title="Performance Review"
+        />
+      )}
 
       {error ? (
         <AdminCallout tone="danger">
@@ -636,7 +668,12 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
             {filterIsActive
               ? "Showing " + review.areas.length + " " + (review.areas.length === 1 ? "area" : "areas") +
                 " " + DOT + " every total below is recalculated from these rows"
-              : "Every area on the line"}
+              : review.scopeIsBounded
+                // A bounded viewer has not filtered anything, and his unfiltered view is still not
+                // the line — saying "every area on the line" over his own district would be the same
+                // false claim `reviewTotalRowLabel` refuses to print on his total row.
+                ? "Every area in your scope"
+                : "Every area on the line"}
           </span>
         </div>
         <MonthlyClosingFilters
@@ -653,23 +690,25 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
       <AdminTableShell
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
-              <SearchableSelect
-                className={selectClassName}
-                disabled={isLoading || review.availableLines.length === 0}
-                onChange={(event) => void reload(event.target.value, selectedPeriods, filter)}
-                value={line}
-              >
-                {review.availableLines.length === 0 ? (
-                  <option value="">No products</option>
-                ) : (
-                  review.availableLines.map((option) => (
+            {/* A viewer with exactly one line gets no picker at all. His line is resolved from his
+                HR_ID, not chosen, and a select holding one locked option invites a press that can
+                only fail — the portal Monthly Closing locks the same box for the same reason. The
+                admin always holds three, so this is unchanged there. */}
+            {review.availableLines.length > 1 ? (
+              <label className="flex flex-col gap-1 sm:w-44">
+                <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
+                <SearchableSelect
+                  className={selectClassName}
+                  disabled={isLoading}
+                  onChange={(event) => void reload(event.target.value, selectedPeriods, filter)}
+                  value={line}
+                >
+                  {review.availableLines.map((option) => (
                     <option key={option} value={option}>{option}</option>
-                  ))
-                )}
-              </SearchableSelect>
-            </label>
+                  ))}
+                </SearchableSelect>
+              </label>
+            ) : null}
             <label className="flex flex-col gap-1">
               <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
                 {isMultiPeriod ? "Months" : "Month"}

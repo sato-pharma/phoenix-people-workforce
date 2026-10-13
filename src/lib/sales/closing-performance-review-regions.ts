@@ -21,8 +21,33 @@
  *
  * July 2026 is the first month closed on today's map, so it is where every series starts. The window
  * fills forward on its own: one column now, two once August closes, up to PERFORMANCE_REVIEW_MONTHS.
+ *
+ * 🔴 **IT WAS MOVED TO `2026-01` ON 2026-10-13 AND HE CORRECTED IT TO JULY THE SAME DAY — DO NOT MOVE
+ * IT BACK ON THE FIRST HALF OF THAT EXCHANGE.** Giving each sales manager his own copy of this
+ * review, he first said "when I publish from Jan to September, since performance review is no target,
+ * it's only sales. So show them the history" — which reads as the sales-history floor
+ * (`SALES_HISTORY_FLOOR`, "2026-01", in vs-target.ts) rather than the sales-vs-target one
+ * (`SALES_VS_TARGET_FLOOR`, "2026-07"). His next word was "no show performance review in emp portal
+ * starting from july". So the floor is July for EVERY reader, the manager's portal tab included, and
+ * "the history" means the published months above it.
  */
 export const PERFORMANCE_REVIEW_FIRST_PERIOD = "2026-07";
+
+/**
+ * "2026-07" → "July 2026". Falls back to the raw period rather than inventing one.
+ *
+ * It lives in this dependency-free module, with `closing-performance-review-export.ts` re-exporting
+ * it under the same name, so a SERVER COMPONENT can say a month in words without importing the
+ * workbook builder (and ExcelJS with it). The month names are a static list on purpose: a label from
+ * `Intl`/`toLocaleString` is engine-dependent, which is what `react-418-hydration-safe-text` refuses.
+ */
+export function longMonthLabel(period: string | null | undefined): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(period ?? "").trim());
+  if (!match) return String(period ?? "").trim();
+  const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const index = Number(match[2]) - 1;
+  return names[index] ? `${names[index]} ${match[1]}` : String(period);
+}
 
 /**
  * The region palette, in the order the reader expects to meet the regions.
@@ -89,6 +114,15 @@ export type PerformanceReviewScope = {
   areas: ReadonlyArray<unknown>;
   filterOptions?: { areas: ReadonlyArray<unknown>; products: ReadonlyArray<unknown> } | null;
   matrixByProduct: { columns: ReadonlyArray<unknown> };
+  /**
+   * True when the VIEWER is bounded to part of the line before any picker is touched — a district or
+   * regional manager reading the review in the portal, where "everyone sees only his scope" (owner,
+   * 2026-10-13). Their pickers are built from their OWN areas, so the counts below necessarily match
+   * and cannot detect the narrowing: without this flag a district manager's bottom row would claim
+   * NATIONAL TOTAL over four areas of fifty-eight, which is exactly the false claim this helper
+   * exists to prevent. Absent/false for the admin screen, which is unbounded.
+   */
+  scopeIsBounded?: boolean | null;
 };
 
 /**
@@ -102,6 +136,9 @@ export type PerformanceReviewScope = {
  * whole line's, so the total they close is not a national one either.
  */
 export function reviewShowsLessThanTheWholeLine(review: PerformanceReviewScope): boolean {
+  // A bounded viewer is narrowed before a picker is touched, and their pickers only ever offer their
+  // own scope — so the two counts below agree and prove nothing. The bound itself is the answer.
+  if (review.scopeIsBounded) return true;
   const allAreas = review.filterOptions?.areas.length ?? 0;
   const allProducts = review.filterOptions?.products.length ?? 0;
   return (

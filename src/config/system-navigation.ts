@@ -1748,6 +1748,16 @@ const employeePortalNavigationSectionSeeds = [
       // Infective / Pedia / CNS through the line picker and exports the full workbook for each.
       // Medical Rep added 2026-09-16 (owner) — scoped to their OWN area(s), never their region.
       { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Performance Review — the presentation cut of the same closing, in each sales manager's own
+      // account (owner, 2026-10-13: "show performance review tab in each district manager account …
+      // and of course, everyone sees only his scope"). Roles mirror PORTAL_PERFORMANCE_REVIEW_ROLES:
+      // the three TERRITORY tiers only. A Medical Rep is deliberately absent — the review ranks reps
+      // against one another, which is exactly what his own area bound withholds from him — and so
+      // are the product and marketing roles, who read the closing but were not named for this.
+      // The enforcing gates are canOpenPortalClosingPerformanceReview and the per-viewer bound in
+      // loadScopedClosingPerformanceReview; published-gated, from July 2026 upward (owner, same day:
+      // "no show performance review in emp portal starting from july").
+      { href: "/employee-portals/monthly-closing/performance-review", icon: Trophy, label: "Performance Review", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
       // Sales vs Target — catalogued (rather than listed as intentionally uncuratable) so an admin
       // can hide it per role from Modules Control. Roles mirror showSalesVsTargetTab in
       // src/lib/employee-portal/navigation.ts; the enforcing gate is resolveVsTargetBound, and a

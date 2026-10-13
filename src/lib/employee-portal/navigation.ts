@@ -148,6 +148,12 @@ export type EmployeePortalNavVisibility = {
   // canAccessPortalClosing). Shown to the field-sales roles that own a line (DM/RM/NSM/PM/GPM), the
   // Marketing Manager for her oversight lines, and the Medical Rep for their own area(s) only.
   showMonthlyClosingTab?: boolean;
+  // Performance Review — the presentation cut of the same closing, scoped to the viewer's own
+  // territory and published-gated (owner, 2026-10-13: "show performance review tab in each district
+  // manager account … and of course, everyone sees only his scope"). The three TERRITORY tiers only;
+  // the enforcing gate this flag must stay level with is PORTAL_PERFORMANCE_REVIEW_ROLES in
+  // closing-performance-review-access.ts, and the bound itself is applied server-side.
+  showPerformanceReviewTab?: boolean;
   // Sales vs Target (/employee-portals/sales-vs-target) — Source of Sales + Direct Orders measured
   // against target, from July 2026 onwards. The FIRST sales surface a Medical Rep can open (owner
   // decision 2026-08-04, reversing the 2026-07-30 call that kept reps out of portal Targets); a rep
@@ -978,6 +984,12 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager,
+    // Performance Review — the three TERRITORY tiers, mirroring PORTAL_PERFORMANCE_REVIEW_ROLES
+    // (closing-performance-review-access.ts), the server-side gate this flag must stay level with.
+    // The Head-Office rung is excluded for the same reason as the row above it: it holds no district
+    // seat, so the page could only ever answer "couldn't resolve a product line".
+    showPerformanceReviewTab:
+      (isDistrictManager && !isHeadOfficeManagerRung) || isRegionalManager || isNationalSalesManager,
     // Same exclusion, same day: the rung gets TEAM sales scope but holds no district seat, so
     // resolveVsTargetBound answers "No sales territory" and the page is empty for it.
     showSalesVsTargetTab:

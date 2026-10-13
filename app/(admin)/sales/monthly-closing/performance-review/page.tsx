@@ -8,7 +8,10 @@ import {
   loadClosingPerformanceReview,
   type ClosingPerformanceReview,
 } from "@/lib/sales/closing-performance-review";
-import { canOpenClosingPerformanceReview } from "@/lib/sales/closing-performance-review-access";
+import {
+  canOpenClosingPerformanceReview,
+  canOpenPortalClosingPerformanceReview,
+} from "@/lib/sales/closing-performance-review-access";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +21,12 @@ export const dynamic = "force-dynamic";
  * Super Admin and system scope get it, SFE Manager gets it because he already reads that matrix
  * (owner decision, 2026-08-05), and everyone else reaches the closing through the employee portal.
  * /sales/monthly-closing has also admitted the CEO since 2026-09-07; this page does not.
+ *
+ * A SALES MANAGER HAS HIS OWN COPY of this review since 2026-10-13, scoped to his territory, at
+ * /employee-portals/monthly-closing/performance-review — so a District, Regional or National Sales
+ * Manager who follows an admin link is sent THERE rather than to the Source of Sales hub, which is
+ * still where every other portal-mode viewer belongs. Both destinations are mirrored in
+ * `portal-twins.ts`, which `tests/portal-twin-forwarding.test.ts` re-derives from this source.
  *
  * That audience is `canOpenClosingPerformanceReview`, and both API routes behind this page ask the
  * same function — the export once asked only `sales:export`, which reaches down to Medical Rep. It
@@ -31,6 +40,9 @@ export default async function ClosingPerformanceReviewPage({
 }) {
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") {
+    if (canOpenPortalClosingPerformanceReview(access)) {
+      redirect("/employee-portals/monthly-closing/performance-review");
+    }
     redirect("/employee-portals/source-of-sales");
   }
 

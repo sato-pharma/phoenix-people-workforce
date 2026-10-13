@@ -21,6 +21,10 @@ import {
   PERFORMANCE_REVIEW_REGIONS,
   regionOrder,
 } from "@/lib/sales/closing-performance-review-regions";
+import {
+  narrowMatrixToViewerScope,
+  type PerformanceReviewViewerScope,
+} from "@/lib/sales/closing-performance-review-scope";
 
 // The region palette and its first-period floor live in ./closing-performance-review-regions.ts (a
 // dependency-free module) for the same reason official-lines.ts does: the Performance Review
@@ -280,6 +284,17 @@ export type ClosingPerformanceReview = {
    */
   productUnitsByRepByMonth: PerformanceProductMonthMatrix;
   regions: PerformanceReviewGroupRow[];
+  /**
+   * True when the VIEWER was bounded to part of the line before any picker was touched — a district
+   * or regional manager reading his own territory (owner, 2026-10-13: "everyone sees only his
+   * scope"). False on the admin screen, which is unbounded.
+   *
+   * It exists because the bound is INVISIBLE to a count: a bounded viewer's pickers are built from
+   * his own areas, so "rows surviving" equals "rows offered" and `reviewShowsLessThanTheWholeLine`
+   * would report the whole line. That helper reads this field first, which is what keeps a district
+   * manager's bottom row from printing NATIONAL TOTAL over four areas of fifty-eight.
+   */
+  scopeIsBounded: boolean;
   /**
    * Every month folded into the headline figures, oldest first — one entry for a single-month read.
    *
@@ -884,6 +899,8 @@ export function buildClosingPerformanceReview(input: {
   generatedAt: string;
   matrix: MonthlyClosingMatrix;
   seatAssignments: Map<string, AreaSeatAssignment>;
+  /** True when the viewer is bounded to part of the line — see `scopeIsBounded` on the payload. */
+  scopeIsBounded?: boolean;
   selectedPeriods?: string[];
   seriesMatrices: Array<{ matrix: MonthlyClosingMatrix | null; period: string }>;
   skippedPeriods?: string[];
@@ -1167,6 +1184,7 @@ export function buildClosingPerformanceReview(input: {
     productUnitsByRepByMonth,
     productValueByMonth,
     regions,
+    scopeIsBounded: input.scopeIsBounded === true,
     selectedPeriods,
     skippedPeriods: input.skippedPeriods ?? [],
     totals: {
@@ -1239,22 +1257,63 @@ export async function loadClosingPerformanceReview(input?: {
   period?: string | null;
   /** Multi-month form. `period` remains the single-month one; a selection of one is identical to it. */
   periods?: string[] | null;
+  /**
+   * The months this reader may be offered, overriding the closing's own list — the PUBLISHED months
+   * for a manager reading the review in his portal (owner, 2026-10-13). Omitted on the admin screen,
+   * which offers every month the closing holds, published or not.
+   *
+   * It bounds the SERIES as well as the picker, which is the point: a manager's growth columns must
+   * not quietly include a month the company has not released.
+   */
+  availablePeriods?: string[] | null;
+  /**
+   * The lines this reader may be offered, overriding the closing's own list — the lines a bounded
+   * manager holds that have a published month. Omitted on the admin screen, which offers every line.
+   *
+   * It matters because the workspace renders its Line picker from this list whenever it holds more
+   * than one entry: handed the company list, a single-line manager was offered two lines he does not
+   * hold, and selecting one was refused with "That product line is outside your scope" — the refusal
+   * is correct, the offer was not. The portal Monthly Closing locks the same field for the same
+   * reason.
+   */
+  availableLines?: string[] | null;
+  /**
+   * The VIEWER's own bound — his areas, his region, his products — applied BEFORE his own filter and
+   * to every month of the series. Null on the admin screen.
+   *
+   * Narrowed before the derivation, never after: the review is six views derived from the matrix, so
+   * a rank computed on the whole line and then shown over nine rows would print "3rd of 58" above a
+   * district of nine. Scoping first makes the rank his district's.
+   */
+  viewerScope?: PerformanceReviewViewerScope | null;
 }): Promise<ClosingPerformanceReview> {
   const selection = Array.from(new Set((input?.periods ?? []).filter(Boolean))).sort();
   const parts = await loadMergedMonthlyClosingParts({
     line: input?.line ?? null,
     periods: selection.length > 0 ? selection : input?.period ? [input.period] : [],
   });
-  const [availableLines, availablePeriods] = await Promise.all([
+  const [availableLines, closingPeriods] = await Promise.all([
     listMonthlyClosingLines(),
     listMonthlyClosingPeriods(),
   ]);
+  // A bounded reader's list is the one he was handed (his published months); everyone else gets the
+  // closing's own, falling back to the matrix's. 🔴 An EMPTY HANDED LIST IS HONOURED AS EMPTY — it
+  // means nothing is published for him yet, which the page states; falling back there would offer a
+  // manager every month the closing holds, published or not, which is the leak this gate prevents.
+  const availablePeriods =
+    input?.availablePeriods ??
+    (closingPeriods.length > 0 ? closingPeriods : parts.combined.availablePeriods);
 
-  const narrow = (matrix: MonthlyClosingMatrix) => applyReviewFilter(matrix, input?.filter ?? null);
+  const viewerScope = input?.viewerScope ?? null;
+  // Scope first, then the reader's own filter. Both on every matrix — the headline month and each
+  // month of the series — through this one composition, so no column can carry an area he may not see.
+  const scoped = (matrix: MonthlyClosingMatrix) => narrowMatrixToViewerScope(matrix, viewerScope);
+  const narrow = (matrix: MonthlyClosingMatrix) =>
+    applyReviewFilter(scoped(matrix), input?.filter ?? null);
   const matrix = narrow(parts.combined);
 
   const periods = selectSeriesPeriods(
-    availablePeriods.length > 0 ? availablePeriods : parts.combined.availablePeriods,
+    availablePeriods,
     parts.combined.period,
     Math.max(2, input?.months ?? PERFORMANCE_REVIEW_MONTHS),
   );
@@ -1272,13 +1331,19 @@ export async function loadClosingPerformanceReview(input?: {
   ]);
 
   return buildClosingPerformanceReview({
-    availableLines: availableLines.length > 0 ? availableLines : parts.combined.availableLines,
-    availablePeriods: availablePeriods.length > 0 ? availablePeriods : parts.combined.availablePeriods,
-    // From `parts.combined`, NOT from `matrix` — the pickers must offer every region and area on
-    // the line, including the ones the current filter has just removed from the screen.
-    filterOptions: monthlyClosingFilterOptions(parts.combined),
+    // A bounded reader's list is the one he was handed — his own lines — exactly as his month list is.
+    availableLines:
+      input?.availableLines ??
+      (availableLines.length > 0 ? availableLines : parts.combined.availableLines),
+    availablePeriods,
+    // From the SCOPED but UNFILTERED matrix. Unfiltered, because the pickers must offer every region
+    // and area the reader may reach, including the ones his current filter has just removed from the
+    // screen. Scoped, because the ones outside his territory are not his to be offered — and if they
+    // were offered, selecting one would narrow to nothing.
+    filterOptions: monthlyClosingFilterOptions(scoped(parts.combined)),
     generatedAt: new Date().toISOString(),
     matrix,
+    scopeIsBounded: viewerScope != null,
     seatAssignments,
     selectedPeriods: parts.periods,
     seriesMatrices,
