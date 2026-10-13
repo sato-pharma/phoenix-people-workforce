@@ -22,7 +22,13 @@ import type {
 // Closing Matrix groups by `source_of_sales_areas`, a geography table with no concept of "one
 // line's organogram merges these" — GZ6 and UE9 are, and must stay, two genuinely separate SALES
 // areas (different bricks, different invoice lines) on EVERY line. This module is the ONLY place
-// that folds them into one row, and only for the one line the owner named (Pedia).
+// that folds them into one row, and only on the lines and in the months the owner named.
+//
+// Qena 1 (UE7) + Qena 2 (UE8) are the same shape on CNS and nowhere else — owner, 2026-10-13: "in
+// cns consider qena 1 and qena 2 as 1 area called qena". One CNS rep holds both (his 2026-10-12
+// ruling points `cns / UE8` at `SEAT-CNS-REP-UE7`) and only Qena 1 ever carries a target, so the two
+// rows graded Snagik Ayman's own September at 24% and "no target" where the one row reads
+// 257,633 / 337,470 = 76%. Anti Infective and Pedia keep two Qenas: two real seats, two targets.
 //
 // Following the owner's rule, the Pedia merge is applied EVERYWHERE the areas surface — the Closing
 // Matrix, the export's Data sheet, the Closing Details panel, the canonical dashboards, the
@@ -60,8 +66,25 @@ export type ClosingAreaMergeRule = {
 
 /**
  * The ONLY lines whose area rows are folded into one. Pedia folds Fayoum (GZ6) + Beni Suef (UE9)
- * UP TO AND INCLUDING 2026-08; CNS folds the same pair from 2026-08 onwards; Anti Infective folds
- * Suez (OT2) + Ismailia (OT9) into "Ismailia and Suez" from 2026-09 onwards.
+ * UP TO AND INCLUDING 2026-08; CNS folds the same pair from 2026-08 onwards and Qena 1 (UE7) +
+ * Qena 2 (UE8) from 2026-07 onwards; Anti Infective folds Suez (OT2) + Ismailia (OT9) into
+ * "Ismailia and Suez" from 2026-09 onwards.
+ *
+ * 🔒 CNS HAS A SINGLE QENA — owner, 2026-10-13: "in cns consider qena 1 and qena 2 as 1 area called
+ * qena", answering a choice put to him with the alternative (merging only the rep's two rows)
+ * recommended. It is the LINE that merges, not the rep: 🔴 ANTI INFECTIVE AND PEDIA MUST NEVER FOLD
+ * THIS PAIR — Anti Infective has two real Qena seats in every month and Pedia from 2026-09-01, each
+ * carrying its own target, so folding them there would hide one rep's target behind another's row.
+ *
+ * 🔴 IT STARTS AT 2026-07 BECAUSE THAT IS EXACTLY `MERGED_AREA_SPLIT_FOLD_START_PERIOD`, and a merge
+ * outside that window DROPS the folded-away area's store-split leg: the net is re-keyed onto the
+ * rows the matrix renders only from July, so a January-June Qena merge would silently lose UE8's
+ * leg — measured on production 2026-10-13, CNS carries a net on BOTH codes in all nine months
+ * (January UE8 +155.30 packs, February -74.58, and so on), written by the Office respread his
+ * "Recompute from January 2026" ruling now covers. Widening this rule earlier means moving that
+ * constant first, which is his word and not a session's. Nothing is lost by stopping at July: no
+ * month before it can be published, so the Performance Review, Rankings and Sales vs Target never
+ * reach one, and the pre-July admin closings keep the two rows their revalued manuals were built on.
  *
  * 🔒 ANTI INFECTIVE'S ISMAILIA + SUEZ — owner, 2026-09-19: "Ismailia and Suez, one area ... not
  * separate areas ... in line Anti Infective, Delta (3) region", answered "one area from 1 Sept" when
@@ -74,9 +97,10 @@ export type ClosingAreaMergeRule = {
  * breath as the Upper Egypt split, which gives Beni Suef its own rep seat in Upper Egypt 1 from the
  * same date, so the organogram and the closing now say the same thing about them.
  *
- * 🔴 CNS IS DELIBERATELY UNTOUCHED. Its merge was removed on 2026-08-30 at his instruction and put
- * back from August on 2026-09-07, and he has said "only Pedia" three times about this change.
- * Ending CNS's merge too would reverse a decision two days old that he has not revisited.
+ * 🔴 CNS'S GZ6 / UE9 MERGE IS DELIBERATELY NOT ENDED. It was removed on 2026-08-30 at his
+ * instruction and put back from August on 2026-09-07, and he has said "only Pedia" three times
+ * about the September separation. Ending CNS's merge too would reverse a decision he has not
+ * revisited — the Qena rule added below is a different pair and does not touch it.
  *
  * ADDING A LINE HERE MERGES THAT LINE'S AREA ROWS — ask the owner first, every time. Give a rule
  * added after a line has been published a `fromPeriod`, and one withdrawn after publication an
@@ -91,6 +115,7 @@ const CLOSING_AREA_MERGES: Record<string, ClosingAreaMergeRule[]> = {
   ],
   cns: [
     { keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef", fromPeriod: "2026-08" },
+    { keepAreaCode: "UE7", mergeAreaCode: "UE8", mergedAreaName: "Qena", fromPeriod: "2026-07" },
   ],
 };
 
