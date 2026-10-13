@@ -30,12 +30,12 @@ import {
 // sheet in the employee portal ... forget about the other sheet. This will replace it in the employee
 // portal, any role" - and, the same message, "everyone his scope, not me").
 //
-// 🔴 ONE BUILDER, TWO IDENTITIES, AND NEVER A COPY OF IT. It opened on Anti Infective alone ("wire
+// 🔴 ONE BUILDER, THREE IDENTITIES, AND NEVER A COPY OF IT. It opened on Anti Infective alone ("wire
 // this only to the anti-infective line. Leave PD and CNS as they are") and he widened it the same
 // day: "now use the CNS identity to make the new identity ranking rep closing sheet, exactly as you
 // did for anti-infective, but for CNS with CNS identity." So every line-specific colour, folder and
-// sentence lives in `closing-ranking-dress.ts` and arrives here as ONE record. Pedia still keeps the
-// workbook it already had. A line with no dress has no ranking workbook at all - `isRepRankingLine`
+// sentence lives in `closing-ranking-dress.ts` and arrives here as ONE record. Pedia joined them on
+// 2026-10-13 ("build the Pedia ranking dress"). A line with no dress has no ranking workbook at all - `isRepRankingLine`
 // is the gate, and it is pinned to the dress registry by a test so the two cannot drift.
 //
 // WHAT WEARS WHAT. Each identity is an EVENT look built for a 2480-wide rendered piece: a radial

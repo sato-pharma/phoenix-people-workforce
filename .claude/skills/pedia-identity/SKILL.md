@@ -144,10 +144,12 @@ leaked into its blue panel.
 built from the month being exported. A worked sheet gets the bar, never the
 masthead, because Excel's frozen pane would pin a tall masthead over the table.
 
-**Not done here, and a separate ask:** the code-side dress (a `PEDIA_RANKING_DRESS`,
-`public/brand/pedia-ranking/`, and widening `isRepRankingLine` so the Pedia
-workbook picks this up). Until then the Pedia ranking workbook does not wear this
-chrome; this folder is the artwork only.
+**The code side is wired:** `PEDIA_RANKING_DRESS` in
+`src/lib/sales/closing-ranking-dress.ts` holds the tokens, the ten renders are
+committed under `public/brand/pedia-ranking/` (`banner-full.png` and
+`strip-<tab>.png`), and `isRepRankingLine` lets Pedia through. Re-render with the
+recipe below into that folder whenever this file changes — the workbook reads the
+PNGs off disk and the test refuses a missing or non-PNG file.
 
 ## Rendering
 

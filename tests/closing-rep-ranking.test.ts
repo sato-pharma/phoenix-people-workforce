@@ -25,6 +25,7 @@ import { buildRepRankingWorkbook } from "../src/lib/sales/closing-rep-ranking-wo
 import {
   ANTI_INFECTIVE_RANKING_DRESS,
   CNS_RANKING_DRESS,
+  PEDIA_RANKING_DRESS,
   dressedRankingLines,
   rankingDressFor,
 } from "../src/lib/sales/closing-ranking-dress.ts";
@@ -225,7 +226,9 @@ export async function runClosingRepRankingTests(): Promise<void> {
   assert.ok(isRepRankingLine("anti infective"), "...however the line is spelled");
   assert.ok(isRepRankingLine("CNS"), "and CNS, which the owner added on 2026-10-13");
   assert.ok(isRepRankingLine("cns"), "...however that line is spelled too");
-  for (const other of ["Pedia", "Head Office", "", null]) {
+  assert.ok(isRepRankingLine("Pedia"), "and Pedia, which the owner added on 2026-10-13");
+  assert.ok(isRepRankingLine("  pedia "), "...spaced and cased however it arrives");
+  for (const other of ["Head Office", "", null]) {
     assert.ok(!isRepRankingLine(other), `${String(other)} keeps the export it already had`);
   }
 
@@ -236,11 +239,11 @@ export async function runClosingRepRankingTests(): Promise<void> {
   for (const line of dressedRankingLines()) {
     assert.ok(isRepRankingLine(line), `${line} has a dress, so the gate must let it through`);
   }
-  for (const line of ["Anti Infective", "CNS"]) {
+  for (const line of ["Anti Infective", "CNS", "Pedia"]) {
     assert.ok(rankingDressFor(line), `${line} passes the gate, so it must have a dress`);
   }
-  assert.equal(dressedRankingLines().length, 2, "two dressed lines — Pedia still has none");
-  assert.equal(rankingDressFor("Pedia"), null, "and an undressed line answers null, never a default");
+  assert.equal(dressedRankingLines().length, 3, "three dressed lines — Head Office still has none");
+  assert.equal(rankingDressFor("Head Office"), null, "and an undressed line answers null, never a default");
 
   // THE TWO DRESSES ARE DIFFERENT LOOKS, not one look with a different folder. Checked on the
   // tokens a reader actually sees, so a copy-paste that left the navy behind fails here.
@@ -253,11 +256,17 @@ export async function runClosingRepRankingTests(): Promise<void> {
   assert.equal(ANTI_INFECTIVE_RANKING_DRESS.colours.seamLeft, ANTI_INFECTIVE_RANKING_DRESS.colours.short);
   assert.equal(CNS_RANKING_DRESS.colours.seamLeft, CNS_RANKING_DRESS.colours.covered, "leaf on the left");
   assert.equal(CNS_RANKING_DRESS.colours.seamRight, CNS_RANKING_DRESS.colours.short, "amber on the right");
+  // Pedia runs the OTHER way round from CNS: gold (its alarm colour) on the left, aqua (covered)
+  // on the right, which is the order the identity's own seam is drawn in.
+  assert.equal(PEDIA_RANKING_DRESS.colours.seamLeft, PEDIA_RANKING_DRESS.colours.short, "gold on the left");
+  assert.equal(PEDIA_RANKING_DRESS.colours.seamRight, PEDIA_RANKING_DRESS.colours.covered, "aqua on the right");
+  assert.notEqual(PEDIA_RANKING_DRESS.colours.field, CNS_RANKING_DRESS.colours.field);
+  assert.notEqual(PEDIA_RANKING_DRESS.bannerDir, CNS_RANKING_DRESS.bannerDir);
 
   // ── Every dressed line's chrome is really committed ──────────────────────────────────────────
   // The builder reads these ten files off disk at build time and throws if one is missing, so a
   // line named in the gate with no art turns its download into an error page.
-  for (const dress of [ANTI_INFECTIVE_RANKING_DRESS, CNS_RANKING_DRESS]) {
+  for (const dress of [ANTI_INFECTIVE_RANKING_DRESS, CNS_RANKING_DRESS, PEDIA_RANKING_DRESS]) {
     for (const file of [
       "banner-full.png", "strip-districts.png", "strip-filter.png", "strip-months.png",
       "strip-product.png", "strip-ranking.png", "strip-regions.png", "strip-trend.png",
@@ -639,6 +648,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
   }
 
   await assertCnsWearsItsOwnIdentity();
+  await assertPediaWearsItsOwnIdentity();
   await assertOfficeIsCnsThirdChannel();
   await assertTheFilterNarrowsTheWholeFile();
 
@@ -1009,6 +1019,72 @@ async function assertCnsWearsItsOwnIdentity(): Promise<void> {
 }
 
 /**
+ * THE PEDIA WORKBOOK WEARS THE PEDIA IDENTITY — owner, 2026-10-13: "build the Pedia ranking dress".
+ *
+ * Same discipline as the CNS test above and for the same reason: the file is built, unzipped and
+ * its own styles read, because a dress record holding the right hexes proves nothing about a cell.
+ * 🔴 AND NEITHER SIBLING'S TOKENS MAY SURVIVE ON IT — the assertion that fires when a third
+ * identity is added by copying the second and forgetting a constant — nor the reserved indigo.
+ */
+async function assertPediaWearsItsOwnIdentity(): Promise<void> {
+  const pedia = await buildRepRankingWorkbook({
+    carve: { direct: new Map(), office: new Map(), stores: new Map() },
+    probationByName: new Map(),
+    ranking: ranking(3, "Pedia"),
+  });
+  const styles = await (await JSZip.loadAsync(pedia.buffer)).file("xl/styles.xml")!.async("string");
+
+  for (const [token, what] of [
+    ["3EAB95", "Lacto aqua"],
+    ["C17E11", "Lacto gold"],
+    ["8A5A0C", "its deeper gold, for a vacant seat's name"],
+    ["0A4645", "the teal field, under the keycards"],
+    ["A9E3D6", "the eyebrow teal, on their labels"],
+    ["F0F2F2", "the identity's own 6% zebra"],
+  ] as const) {
+    assert.ok(styles.includes(token), `the emitted file carries ${what} (#${token})`);
+  }
+
+  for (const [token, what] of [
+    ["D20000", "Royafloxacin red"],
+    ["0384DB", "Saginkgo blue"],
+    ["001641", "the navy field"],
+    ["63B24A", "Tebofortin leaf"],
+    ["E5732A", "Tebofortin amber"],
+    ["0F3A1A", "the forest field"],
+    ["04210F", "the forest base"],
+    ["F0F2F1", "CNS's zebra"],
+    ["191E68", "Lacto Advanced 2's indigo, which the identity reserves"],
+  ] as const) {
+    assert.ok(!styles.includes(token), `no ${what} (#${token}) anywhere on a Pedia file`);
+  }
+
+  assert.equal(pedia.facts.bannersEmbedded, 10, "every Pedia strip and its masthead are embedded");
+
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(pedia.buffer as unknown as ArrayBuffer);
+  const prose: string[] = [];
+  book.getWorksheet("Trust")!.eachRow((row) => row.eachCell((cell) => {
+    if (typeof cell.value === "string") prose.push(cell.value);
+  }));
+  const whole = prose.join(" ");
+  assert.ok(whole.includes("the Pedia identity"), "the Trust sheet names the identity the file wears");
+  assert.ok(whole.includes("Lacto Advanced"), "and the hero it is built around");
+  assert.ok(whole.includes("Lacto gold"), "and names the alarm colour in the words the cells carry");
+  for (const other of ["Royafloxacin", "Saginkgo", "Tebofortin", "Conviban"]) {
+    assert.ok(!whole.includes(other), `and never another line's product (${other})`);
+  }
+
+  // Pedia carries direct orders like Anti Infective, so its third channel is DIRECT, never Office.
+  const ranked = book.getWorksheet("Ranking")!;
+  const headings: string[] = [];
+  ranked.eachRow((row) => row.eachCell((cell) => {
+    if (typeof cell.value === "string") headings.push(cell.value);
+  }));
+  assert.ok(headings.some((text) => /direct/i.test(text)), "the Ranking sheet has a Direct column");
+}
+
+/**
  * THE ADMIN SCREEN'S THIRD EXPORT BUTTON — owner, 2026-10-13: "add a third button", after asking how
  * he could download this sheet "from admin account".
  *
@@ -1031,7 +1107,8 @@ function assertAdminRepRankingButton(): void {
   assert.equal(isRepRankingLine("Anti Infective"), true, "the gate admits the line it was written for");
   assert.equal(isRepRankingLine("  anti infective "), true, "spacing and case are normalised, not compared raw");
   assert.equal(isRepRankingLine("CNS"), true, "and the line he added to it the same day");
-  for (const other of ["Pedia", "Head Office", "", null, undefined]) {
+  assert.equal(isRepRankingLine("Pedia"), true, "and Pedia, which got its own dress on 2026-10-13");
+  for (const other of ["Head Office", "", null, undefined]) {
     assert.equal(isRepRankingLine(other), false, `${other ?? "nothing"} keeps the workbook it already had`);
   }
   // Asked of what it IMPORTS, not of its text: the comment above the function names `node:crypto`
@@ -1195,7 +1272,7 @@ function assertAdminRepRankingButton(): void {
   );
   assert.ok(
     workspace.includes("{showRepRankingExport ? (") && workspace.includes("Export Rep Ranking"),
-    "and it is ABSENT on Pedia rather than disabled — the workbook does not exist there",
+    "and it is ABSENT on a line with no dress rather than disabled — the workbook does not exist there",
   );
 
   // 🔒 THE FITS-THE-SCREEN GOLDEN RULE. Three buttons fitted one line; the fourth takes the row

@@ -6,8 +6,10 @@ import { normalizeLineKey } from "@/lib/sales/confidential-products";
  * Owner, 2026-10-13, opening it: "wire this only to the anti-infective line. Leave PD and CNS as
  * they are." Owner, later the same day, widening it himself: "now use the CNS identity to make the
  * new identity ranking rep closing sheet, exactly as you did for anti-infective, but for CNS with
- * CNS identity." So this is a LIST now rather than one name, and Pedia still keeps the workbook it
- * already had — one place to read, one place to change when he widens it again.
+ * CNS identity." So this is a LIST now rather than one name. Then, still the same week, "build the
+ * Pedia ranking dress", the day after the Pedia identity itself landed — so Pedia is on it too, and
+ * Head Office is the one line that keeps the workbook it already had. One place to read, one place
+ * to change when he widens it again.
  *
  * 🔴 A LINE BELONGS HERE ONLY ONCE ITS CHROME IS COMMITTED. The workbook reads ten rendered PNGs out
  * of `public/brand/<line>-ranking/` and throws if they are missing, so adding a name here without
@@ -25,7 +27,7 @@ import { normalizeLineKey } from "@/lib/sales/confidential-products";
  * `closing-rep-ranking-export.ts` re-exports it — the builder's callers are untouched, and the
  * screen and the route cannot drift to two different answers about which line this is.
  */
-const REP_RANKING_LINES = ["Anti Infective", "CNS"].map(normalizeLineKey);
+const REP_RANKING_LINES = ["Anti Infective", "CNS", "Pedia"].map(normalizeLineKey);
 
 export function isRepRankingLine(line: string | null | undefined): boolean {
   return REP_RANKING_LINES.includes(normalizeLineKey(line ?? ""));
