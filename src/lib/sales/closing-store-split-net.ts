@@ -239,8 +239,9 @@ export async function loadClosingStoreSplit(
     // predicate (deliberately — PR 4848), so publishing ONE line freezes EVERY line's net for that
     // month. A frozen net stamped BEFORE this rule existed carries no respread at all, and a live
     // Office slice against it would be out by the WHOLE respread rather than by a post-publish
-    // drift. That is reachable only for a month frozen before the rule — August 2026 and earlier,
-    // which `isOfficeRespreadActive` excludes, so this branch never meets one.
+    // drift. That is reachable only for a month frozen before the rule. Since his 2026-10-13 ruling
+    // the window starts 2026-01, and on that day no 2026 month held a live publication row, so no
+    // frozen pre-rule net exists inside the window — a month published from now on freezes WITH it.
     //
     // 🔴 SEPTEMBER WAS EXACTLY THAT CASE UNTIL 9 OCTOBER 2026 19:12:21.58 CAIRO, WHEN HE UNPUBLISHED
     // September Anti Infective. While that row stood, 2026-09 was frozen for CNS too against a

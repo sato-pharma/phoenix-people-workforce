@@ -2,6 +2,7 @@ import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
+import { logWarning } from "@/lib/observability/log";
 import { writeMappingAudit, writeMappingAuditBatch, type MappingAuditEntry } from "@/lib/sales/mapping-audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -754,7 +755,89 @@ export async function applyCustomerBrickCorrections(
     });
   }
 
+  // The address moved these pharmacies: their EARLIER sales follow them (owner, 2026-10-13 — "fix and
+  // heal historical and future"). Best-effort: the map is already right, and a failure is logged.
+  try {
+    await healAddressCorrectionHistory(supabase, addressCorrectionsToHeal(corrections, writtenKeys));
+  } catch (error) {
+    logWarning("Address-moved pharmacies were re-mapped, but their earlier sales could not be re-pointed.", { error });
+  }
+
   return { applied: rows.length, skipped, skippedOwnerVerified };
+}
+
+// At most this many pharmacies per upload re-point their history inline; the rest wait for the next
+// upload that names them. After the 13 Oct 2026 address remap the importer finds almost none.
+export const ADDRESS_HEAL_MAX_PAIRS = 2000;
+
+/**
+ * Which written corrections re-point the customer's history: only those the ADDRESS decided, and
+ * only those actually written (an owner ruling is never overwritten, so it never heals either). A
+ * label-only correction keeps the old behaviour — the label is not geography (Ibn Sina's Brick Name
+ * is a sales grouping), so it updates the map for the future and leaves history alone.
+ */
+export function addressCorrectionsToHeal(
+  corrections: CustomerBrickCorrection[],
+  writtenKeys: ReadonlySet<string>,
+): CustomerBrickCorrection[] {
+  const seen = new Set<string>();
+  const out: CustomerBrickCorrection[] = [];
+  for (const c of corrections) {
+    if (c.source !== "address") continue;
+    const key = `${normalizeCodeKey(c.distributorCode)} ${String(c.customerCode ?? "").trim()}`;
+    if (!writtenKeys.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+    if (out.length >= ADDRESS_HEAL_MAX_PAIRS) break;
+  }
+  return out;
+}
+
+/**
+ * Re-point every earlier sales row of these pharmacies onto the brick the map now holds — every
+ * month except a file touching a locked closing, which `sos_reconcile_import_rows_from_customer_map`
+ * leaves whole — and hand each touched file to the brick-move queue. That queue's 20-minute clock
+ * (`phoenix-brick-move-drain`) rebuilds the file's totals AND settles its months' store-split net,
+ * which an inline rebuild here would make the upload wait for.
+ */
+export async function healAddressCorrectionHistory(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  corrections: CustomerBrickCorrection[],
+): Promise<{ files: number; pairs: number; rows: number }> {
+  const queue = new Map<string, { batch_id: string; moved_rows: number; old_brick_id: string }>();
+  let rows = 0;
+  for (const c of corrections) {
+    const { data, error } = await supabase.rpc("sos_reconcile_import_rows_from_customer_map", {
+      p_customer: String(c.customerCode ?? "").trim(),
+      p_distributor: normalizeCodeKey(c.distributorCode),
+    });
+    if (error) throw error;
+    const record = (Array.isArray(data) ? data[0] : data) as { affected_batch_ids?: unknown; updated_rows?: unknown } | null;
+    const moved = Number(record?.updated_rows ?? 0) || 0;
+    rows += moved;
+    // The queue is keyed by a brick that must exist: the one the pharmacy left, else the one it joined.
+    const oldBrickId = normalizeCodeKey(c.previousBrickId ?? "") || normalizeCodeKey(c.brickId);
+    for (const id of Array.isArray(record?.affected_batch_ids) ? record.affected_batch_ids : []) {
+      const batchId = String(id ?? "").trim();
+      if (!batchId) continue;
+      const key = `${oldBrickId} ${batchId}`;
+      const entry = queue.get(key) ?? { batch_id: batchId, moved_rows: 0, old_brick_id: oldBrickId };
+      // The RPC reports files, not rows per file; one per pharmacy is a lower bound and only labels the queue.
+      entry.moved_rows += 1;
+      queue.set(key, entry);
+    }
+  }
+  if (queue.size > 0) {
+    const stamp = new Date().toISOString();
+    const { error } = await supabase
+      .from("source_of_sales_brick_move_files")
+      .upsert(
+        [...queue.values()].map((q) => ({ ...q, moved_at: stamp, refresh_started_at: null, refreshed_at: null })),
+        { onConflict: "old_brick_id,batch_id" },
+      );
+    if (error) throw error;
+  }
+  return { files: new Set([...queue.values()].map((q) => q.batch_id)).size, pairs: corrections.length, rows };
 }
 
 // Decide which self-heal corrections actually get written. Pure, so the guard below is testable

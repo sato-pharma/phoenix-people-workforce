@@ -525,6 +525,7 @@ export function normalizeRows(
           customerCode,
           brickId: brick.brickId,
           previousBrickId: stored ?? null,
+          source: brick.source === "address" ? "address" : "sheet",
         });
       }
     }

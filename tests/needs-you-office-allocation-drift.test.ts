@@ -24,9 +24,11 @@ import type { OfficeAllocationDriftReport } from "../src/lib/sales/office-alloca
 export function runNeedsYouOfficeAllocationDriftTests() {
   const now = new Date("2026-10-09T18:00:00Z");
 
-  /** August's real shape, reduced: one line, a cause, and areas that disagree. */
+  /** August 2026's real shape, reduced: one line, a cause, and areas that disagree. Dated December
+   * 2025 because every 2026 month now sits inside the read-time respread (owner, 2026-10-13: recompute
+   * from January 2026), and the `yours` lane exists only for a month outside it. */
   const drifted: OfficeAllocationDriftReport = {
-    period: "2026-08",
+    period: "2025-12",
     officeCommittedAt: "2026-09-10T17:15:54.278Z",
     baseTouchedAfterCommit: [
       // Deliberately newest-first, which is the order the producer returns.
@@ -51,18 +53,18 @@ export function runNeedsYouOfficeAllocationDriftTests() {
   };
 
   // ── An OPEN month: his decision, so the `yours` lane.
-  const open = officeAllocationDriftItems([drifted], ["2026-07"], now);
+  const open = officeAllocationDriftItems([drifted], ["2025-11"], now);
   assert.equal(open.length, 1, "one drifted line produces exactly one row");
   const row = open[0]!;
   assert.equal(row.sourceId, "office-allocation-drift");
   assert.equal(row.lane, "yours", "an unpublished month's stale spread is a decision only he can make");
   assert.equal(row.kind, "flag");
-  assert.equal(row.key, "office-allocation-drift:2026-08:CNS", "the key is stable per period and line");
+  assert.equal(row.key, "office-allocation-drift:2025-12:CNS", "the key is stable per period and line");
 
   // The label carries the three figures that make it actionable, and spells them out.
   assert.match(row.label, /3,698 of 109,719 Office units/, `the label states the movement: ${row.label}`);
   assert.match(row.label, /3\.37%/, `the label states the share: ${row.label}`);
-  assert.match(row.label, /^CNS 2026-08/, `the label opens with the line and month: ${row.label}`);
+  assert.match(row.label, /^CNS 2025-12/, `the label opens with the line and month: ${row.label}`);
   assert.ok(!row.label.includes("…") && !row.label.includes("..."), "no ellipsis — the owner's standing rule");
 
   // Areas IS the count, the same meaning the published-closing drift row gives it.
@@ -101,7 +103,7 @@ export function runNeedsYouOfficeAllocationDriftTests() {
 
   // ── A PUBLISHED month: the spread still disagrees, but re-committing it would restate an
   // announced figure (his 2026-09-07 rule), so it is not waiting on him.
-  const published = officeAllocationDriftItems([drifted], ["2026-07", "2026-08"], now);
+  const published = officeAllocationDriftItems([drifted], ["2025-11", "2025-12"], now);
   assert.equal(published.length, 1, "a published month still produces the row");
   assert.equal(
     published[0]?.lane,
@@ -138,8 +140,8 @@ export function runNeedsYouOfficeAllocationDriftTests() {
   assert.deepEqual(officeAllocationDriftItems([clean], [], now), [], "a spread that matches the rule is no row");
 
   // ── A MONTH THE READ-TIME RESPREAD COVERS IS REPORTED, BUT IS NOT HIS TO ACT ON.
-  // From the September 2026 closing on CNS (owner, 2026-10-09: "make September's Office split
-  // recalculate like October") the closing recomputes the spread on every read, so a stored-row
+  // From the January 2026 closing on CNS (owner, 2026-10-09 for September, widened 2026-10-13 to
+  // "Recompute from January 2026") the closing recomputes the spread on every read, so a stored-row
   // difference breaks no closing figure and re-committing the book would fix nothing. It must stay
   // visible — this board may never under-report, and the stored rows are what a re-upload or a
   // re-map meets — so it lands in `worth-knowing`, the same lane a published month gets, and says
@@ -161,11 +163,11 @@ export function runNeedsYouOfficeAllocationDriftTests() {
     /already respreads 2026-09's Office units on today's shares/,
     `the note must say the closing figures are right: ${covered[0]?.note}`,
   );
-  // And the lane is NOT moved for a month the rule does not cover — August stays his.
+  // And the lane is NOT moved for a month the rule does not cover — December 2025 stays his.
   assert.equal(
     officeAllocationDriftItems([drifted], [], now)[0]?.lane,
     "yours",
-    "August is outside the respread, so its stale spread is still a decision only he can make",
+    "2025 is outside the respread, so its stale spread is still a decision only he can make",
   );
 
   // ── Share-arithmetic noise is not a movement: under half a unit rounds to zero and is dropped.

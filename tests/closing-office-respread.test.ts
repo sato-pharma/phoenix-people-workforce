@@ -237,8 +237,13 @@ export function runClosingOfficeRespreadTests() {
   // at 19:12:21.58 Cairo, so he ruled again: "make September's Office split recalculate like
   // October". Only his own new word moves this constant again, in either direction.
   {
-    assert.equal(OFFICE_RESPREAD_START_PERIOD, "2026-09", "the owner's start month");
-    assert.equal(isOfficeRespreadActive("2026-08"), false, "August is published and must not move");
+    // 🔴 HIS FOURTH RULING, 2026-10-13: "Recompute from January 2026" — it reverses the third one
+    // below, with nothing published or locked. The start is now the first month of 2026, and a month
+    // before it (2025) still reads its stored rows.
+    assert.equal(OFFICE_RESPREAD_START_PERIOD, "2026-01", "the owner's start month, 2026-10-13");
+    assert.equal(isOfficeRespreadActive("2025-12"), false, "2025 is outside the window");
+    assert.equal(isOfficeRespreadActive("2026-01"), true, "his fourth ruling, 2026-10-13");
+    assert.equal(isOfficeRespreadActive("2026-08"), true, "August recomputes too since 2026-10-13");
     assert.equal(isOfficeRespreadActive("2026-09"), true, "his second ruling, 2026-10-09");
     assert.equal(isOfficeRespreadActive("2026-10"), true);
     assert.equal(isOfficeRespreadActive("2027-03"), true, "a later year is still after the start");
@@ -248,7 +253,9 @@ export function runClosingOfficeRespreadTests() {
     // directly, because that night's 61 Sohag customer moves re-pointed rows in those six months. So
     // the window does not widen BACKWARDS either, and each month is pinned by name here rather than
     // by the boundary alone.
-    for (const period of ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"]) {
+    // Superseded by the fourth ruling (2026-10-13): those months now recompute, and 2025 is what
+    // stays outside, pinned by name the same way.
+    for (const period of ["2025-01", "2025-06", "2025-11", "2025-12"]) {
       assert.equal(isOfficeRespreadActive(period), false, `${period} is outside the window by his word`);
       const respread = buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], period, LINE);
       assert.equal(respread.movements.length, 0, `${period} is untouched`);
@@ -282,7 +289,7 @@ export function runClosingOfficeRespreadTests() {
     assert.equal(isOfficeRespreadPair(LINE, PERIOD), true);
     assert.equal(isOfficeRespreadPair("Pedia", PERIOD), false, "Pedia has no Office channel");
     assert.equal(isOfficeRespreadPair(LINE, "2026-09"), true, "September is covered since his second ruling");
-    assert.equal(isOfficeRespreadPair(LINE, "2026-08"), false, "and the month still has to be covered");
+    assert.equal(isOfficeRespreadPair(LINE, "2025-12"), false, "and the month still has to be covered");
 
     // A caller that does not name the line is answered per row: the CNS Office rows move, the Pedia
     // rows in the same list do not.
@@ -360,9 +367,9 @@ export function runClosingOfficeRespreadTests() {
       "September's Office rows are respread too, since his second ruling of 2026-10-09",
     );
     assert.equal(
-      isOfficeRespreadRow({ distributorCode: OFFICE_DISTRIBUTOR_CODE, officialLine: LINE }, "2026-08"),
+      isOfficeRespreadRow({ distributorCode: OFFICE_DISTRIBUTOR_CODE, officialLine: LINE }, "2025-12"),
       false,
-      "and August's Office rows stay exactly where they were published",
+      "and a month before the window (2025) keeps its Office rows exactly where they were stamped",
     );
   }
 
@@ -437,9 +444,9 @@ export function runClosingOfficeRespreadTests() {
       );
     }
 
-    // A month with nothing to respread leaves the city split's numbers untouched. August, not
-    // September: September is inside the rule since his second ruling of 2026-10-09.
-    const untouched = mergeOfficeRespreadIntoSplit(city, buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], "2026-08", LINE));
+    // A month with nothing to respread leaves the city split's numbers untouched. December 2025:
+    // every 2026 month is inside the rule since his fourth ruling of 2026-10-13.
+    const untouched = mergeOfficeRespreadIntoSplit(city, buildOfficeRespread([...BASE_DRIFTED, ...OFFICE_WITH_ORPHAN], "2025-12", LINE));
     assert.equal(untouched.net, city.net, "no respread → the same net object back");
     assert.equal(untouched.officeNet.size, 0, "and an empty Office slice, so no grid is touched");
   }

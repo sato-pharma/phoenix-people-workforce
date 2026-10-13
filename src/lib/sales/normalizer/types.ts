@@ -226,6 +226,10 @@ export type CustomerBrickCorrection = {
   customerCode: string;
   brickId: string;
   previousBrickId: string | null;
+  // What on the sheet said so: the customer's ADDRESS (address-brick.ts) or its label / brick id.
+  // An address correction also re-points the customer's earlier 2026 sales (healAddressCorrectionHistory).
+  // Optional so hand-built fixtures stay valid; absent reads as the sheet's label.
+  source?: "address" | "sheet";
 };
 
 export type NormalizeResult = {
