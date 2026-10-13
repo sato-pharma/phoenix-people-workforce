@@ -111,12 +111,32 @@ digest **unchanged**, pre-image untouched at one row holding `SEAT-PED-REP-UE8`.
 matched zero rows — exactly what the guard is for, and what the file's own header promises on a
 database already at the golden-rule state.
 
-🔴 **What this leaves, and it is the owner's call, not a session's.** The business state is correct:
+~~🔴 **What this leaves, and it is the owner's call, not a session's.** The business state is correct:
 Luxor has no rep seat, so nobody is credited for its sales through a shared seat. But
 `au.line_area_map`'s `notes` for that row still *document* the superseded 2026-09-11 arrangement, and
 no migration will ever correct it — the only statement that would have is permanently guarded off.
 Anyone reading that row to understand the territory reads the wrong decision. Correcting it is a
-one-row documentation write to a live org record, which is why it is flagged here instead of done.
+one-row documentation write to a live org record, which is why it is flagged here instead of done.~~
+
+🔴 **WITHDRAWN 2026-10-13 — THAT FLAG WAS WRONG, AND NOTHING IS WAITING ON ANYONE.** The owner sent
+this to be fixed; it was read live first, and there is nothing to fix. The `notes` on
+`pedia`/`OT6`/`effective_to is null` are **byte-identical to the text this very migration would
+write** — `md5` `bf6f192ed0baf57e79ed6182cf9b0768`, 387 characters on both sides — and what they say
+is that the 2026-09-11 union *was reverted*: "2026-10-02: owner reverted the 2026-09-11
+shared-rep-seat union — Qena 2 and Luxor are separated again; Luxor has no rep seat". `rep_seat_id`
+is `NULL`. **No production write was made, and none was needed.**
+
+So the unexplained 2026-10-08 finding resolves completely, in the only way consistent with all of
+it: the direct write that nulled the seat wrote **these notes too**, both halves of the file's
+target state, with no ledger row — which is why the guarded `update` then matched zero rows and why
+the notes digest was "unchanged" after the apply. It was already the right digest.
+
+🔴 **The mistake to learn from: a date inside a note is not the note's subject.** The block above
+read "2026-09-11" in the text and concluded the row documented the superseded arrangement, without
+reading the clause around it or digesting the string against the file. A sentence recording that a
+decision was reverted mentions the thing it reverted — that is what makes it useful. **Digest the
+text, and read the whole clause, before calling a record stale** — the same rule this page already
+applies to function bodies, applied to prose.
 
 ## Addendum, the same evening: an eleventh file
 

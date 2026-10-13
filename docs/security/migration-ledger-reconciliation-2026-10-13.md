@@ -170,6 +170,13 @@ more earned their place here:
 7. **A file of drops is easier to prove than a file of creates, not harder.** `sos_map_guard%`
    returning zero functions, zero triggers and no permits table cannot be produced by an older
    generation of anything; absence has no history.
-8. **Before reading a comment difference as "the file was annotated later", ask git.** The eleventh
+8. **Digest a record's prose the same way you digest a function body, and read the whole clause.**
+   The 2026-10-08 page's one open flag — Luxor's `au.line_area_map` notes "documenting the
+   superseded 2026-09-11 arrangement" — was wrong, and is withdrawn on that page with the evidence.
+   The notes are byte-identical to what that migration writes (`bf6f192ed0baf57e79ed6182cf9b0768`,
+   387 characters) and say the union **was reverted**; the 2026-09-11 date is in them because a
+   reversal names what it reverses. One `md5(notes)` would have settled it, and the alternative was
+   a needless write to a live org record.
+9. **Before reading a comment difference as "the file was annotated later", ask git.** The eleventh
    file above has one commit and has never been edited, and production is the side missing the
    comments. Stripped-equal says the logic is the same; it says nothing about which text came first.
