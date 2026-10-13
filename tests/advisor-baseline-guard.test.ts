@@ -73,9 +73,13 @@ const PRODUCTION_2026_09_29: AdvisorCount[] = [
  * alone), 6 referenced by no live policy. `PRODUCTION_2026_09_29` above keeps the historical 14.
  */
 const PRODUCTION_TODAY: AdvisorCount[] = [
-  // 210, RAISED from 176 on 2026-10-09 after a triage recorded in the baseline document. The
-  // 2026-09-30 "knowingly red at 177" pre-image table is inside this number now.
-  { category: "rls_enabled_no_policy", current_count: 210 },
+  // 212, RAISED from 210 on 2026-10-13 — `public.database_restarts` (the Postgres crash-restart
+  // log) and `public.address_brick_moves_20261013` (that day's brick-move pre-image), both triaged
+  // by name in the baseline document, and neither reachable by a browser role: of the whole live
+  // reading only 6 tables grant `anon`/`authenticated` anything and all 6 are Supabase-managed
+  // `storage.*`, which the advisor's set excludes. 210 came from the 2026-10-09 triage, which
+  // absorbed the 2026-09-30 "knowingly red at 177" pre-image table.
+  { category: "rls_enabled_no_policy", current_count: 212 },
   { category: "function_search_path_mutable", current_count: 0 },
   { category: "extension_in_public", current_count: 1 },
   { category: "authenticated_security_definer_function_executable", current_count: 11 },
@@ -95,7 +99,7 @@ export function runAdvisorBaselineGuardTests() {
   assert.deepEqual(
     evaluateAdvisorCounts(REAL_BASELINE, PRODUCTION_TODAY),
     [],
-    "the shipped baseline must be exactly production's 2026-09-29 reading — no headroom",
+    "the shipped baseline must be exactly PRODUCTION_TODAY's reading — no headroom",
   );
   assert.equal(REAL_BASELINE.project_ref, "ozucdzovmcqvepbozvqf");
 
@@ -111,13 +115,13 @@ export function runAdvisorBaselineGuardTests() {
 
   // ── growth is an error ───────────────────────────────────────────────────
   const grew = PRODUCTION_TODAY.map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 211 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 213 } : r,
   );
   const growth = evaluateAdvisorCounts(REAL_BASELINE, grew);
   const exceeded = growth.find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(exceeded, "a single new untriaged table must fail the check");
   assert.equal(exceeded!.severity, "error");
-  assert.match(exceeded!.message, /211/);
+  assert.match(exceeded!.message, /213/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
 
   // ── a fall is NOT an error ───────────────────────────────────────────────

@@ -102,6 +102,42 @@ What survives that is reported under **LOOK** and never auto-proposed. Today tha
 `plan_backups`, whose single table `deleted_employee_plans` names no date at all. Fix one of
 these by dating it or dropping it deliberately — not by guessing an age for it.
 
+## The snapshot that has no schema at all
+
+🔴 **Added 2026-10-13, and it was the bigger hole.** Everything above sweeps non-standard
+**schemas**, and `public` and `au` are both standard — so a pre-image taken as a *dated table*
+beside the live data was outside this script entirely. It had no schema of its own to age out, so
+it could never expire, under any retention.
+
+Measured on production the day it was found, with the new pass: **58 such tables, 5.5 MB**, across
+`public` (34) and `au` (24) — a population this sweep had never once reported. Every one of the 58
+is a genuine snapshot by name (`bak_…`, `…_backup_…`, `…_preimage_…`, `…_snapshot_…`), none was a
+false positive, the oldest was 47 days (`au.zz_brick_backfill_snapshot_20260827`) and so none had
+expired at 90 days. It surfaced while triaging the Supabase advisor's `rls_enabled_no_policy`
+count, which two of them had just pushed from 210 to 212 under a note saying the snapshots "leave
+the count by themselves as their schemas pass retention" — for these there was no schema to pass.
+
+A table is claimed only when it carries a **real date** *and* either ends in that date
+(`address_brick_moves_20261013`) or names a snapshot word as a whole underscore-delimited part
+(`bak_20261008_luxor_notes_fix`). Both halves matter:
+
+- **No date, no claim.** `database_restarts` is a live log; there is nothing to age.
+- **Parts, never substrings** — the same trap as the bare-word one above. `pre` inside
+  `prescriptions` and `old` inside `household` must not make live data look like a snapshot.
+- **A partitioned child is excluded in SQL** (`relispartition = false`), because a daily partition
+  like `events_20261013` is the one shape the name test genuinely cannot tell apart.
+
+The verdict ladder, the dependency checks and the 90 days are the schema ones, unchanged — a
+foreign key, view or function that names the table beats its age, which matters *more* here than
+for a schema, because the live tables sit beside it. The emitted statement is
+`drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
+but a lone table in `public` could have had something come to depend on it, and a statement that
+refuses is the right answer at that moment.
+
+The real fix for one of these is still
+[`backup-table-placement.md`](./backup-table-placement.md) — put the snapshot in its own dated
+schema. Until then it is swept where it lives instead of being invisible.
+
 ## Why it will not drop anything for you
 
 There is no `--apply`, and there should not be. A schema dropped in error is recoverable for
