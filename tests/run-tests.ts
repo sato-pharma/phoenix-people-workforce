@@ -1470,6 +1470,7 @@ import { runTerritoryReconciliationTests } from "./territory-reconciliation.test
 import { runTerritoryRepRegionLabelTests } from "./territory-rep-region-label.test.ts";
 import { runTerritoryAreaFoldHardeningTests } from "./territory-area-fold-hardening.test.ts";
 import { runAntiInfectiveIsmailiaSuezOneAreaTests } from "./anti-infective-ismailia-suez-one-area.test.ts";
+import { runCnsQenaOneAreaTests } from "./cns-qena-one-area.test.ts";
 import { runAuSeatOccupantResolverTests } from "./au-seat-occupant-resolver.test.ts";
 import { runAuResignVacatesDayAfterLastWorkingDayTests } from "./au-resignation-vacates-day-after-last-working-day.test.ts";
 import { runAuHireIntoSeatWiringTests } from "./au-hire-into-seat-wiring.test.ts";
@@ -5417,6 +5418,10 @@ await runTest(
 );
 await runTest("territory / coverage area-fold hardening (Pedia's merged option appears for either GZ6 or UE9 alone; bricks scope by REAL code so a partner-only viewer never sees the survivor's own bricks)", runTerritoryAreaFoldHardeningTests);
 await runTest("Anti Infective Delta (3): Ismailia and Suez are ONE area from 2026-09 (fold, closing sum, vacancy name); July and August keep two", runAntiInfectiveIsmailiaSuezOneAreaTests);
+await runTest(
+  "CNS has a single Qena from 2026-07 (one row named Qena, Qena 1's lone target, 76% not 24% + no target); Anti Infective and Pedia NEVER fold the pair, and the merge starts where the split-fold window does so UE8's net leg cannot be dropped",
+  runCnsQenaOneAreaTests,
+);
 await runTest("au seat-occupant resolution (period-aware, no newest-row wins)", runAuSeatOccupantResolverTests);
 await runTest(
   "au resignation vacates the seat the DAY AFTER the last working day (half-open spans; a month-end leaver kept their own month)",
