@@ -205,14 +205,19 @@ identified (read `clientUa` + `httpStatus` per `/api/cron/*` request).
   is no longer a deploy smoke test or an uptime check calling it; you call it.
 - **`/api/readyz`** — readiness: cheap Supabase head-ping + required-env presence; returns 503 when not ready. Returns only booleans / missing-env **names**, never values. Also surfaces non-fatal notification-config drift (see `event=config_drift` above) in a `warnings[]` field — drift never fails readiness, but it is logged and alerted (see below) since it means email/Telegram may be silently broken while everything else is healthy.
 
-## A 5xx burst on the REST endpoint is the DATABASE restarting — how to read one
+## A 5xx burst on the REST endpoint is the DATABASE INSTANCE restarting — how to read one
 
 🔴 **A burst of Cloudflare 521 / 520 / 525 plus PostgREST 503 against the Supabase REST endpoint is
-not an edge flap. It is the production Postgres crash-restarting, and the edge codes are what
-Cloudflare serves when the origin is gone.** Measured twice in three days: **10 Oct 2026 11:05:48**
-and **12 Oct 2026 19:04:50 Cairo**, each unclean, each self-recovered inside a minute.
+not an edge flap. The whole production database instance is being hard-restarted, and the edge codes
+are what Cloudflare serves when the origin is gone.** Measured **three days running**: **10 Oct 2026
+11:05:48**, **11 Oct 13:14:01** and **12 Oct 19:04:50 Cairo**, each unclean, each self-recovered
+inside a minute, the Postgres binary byte-identical in all three (so no version upgrade).
 
-The four reads, in the order worth running:
+🔴 **IT IS THE INSTANCE, NOT POSTGRES — AND SAYING "POSTGRES CRASHED" SENDS THE NEXT SESSION HUNTING
+A CAUSE THAT IS NOT THERE.** Read 4 below is what separates the two, and on all three events it said
+instance. Nothing inside the database caused any of them.
+
+The five reads, in the order worth running:
 
 1. **`select pg_postmaster_start_time()`** — one statement, live, and it settles the question. After
    the 12 Oct event it read `2026-10-12 19:04:50` Cairo.
@@ -223,8 +228,19 @@ The four reads, in the order worth running:
    system was not properly shut down; automatic recovery in progress`**, `redo starts at …`, then a
    run of `the database system is not accepting connections` (11 of them on 12 Oct). 🔴 **No
    `received fast shutdown`, no PANIC and no out-of-memory line means the postmaster was killed from
-   outside the process** — not asked to stop, and not a query that blew up.
-4. **`edge_logs`** — the only place the request-level damage is visible. 12 Oct 19:04:41–19:05:19:
+   outside the process** — not asked to stop, and not a query that blew up. A severity sweep of the
+   whole day finds nothing else: ordinary application `ERROR`s, plus the `FATAL`s from the restart.
+4. 🔴 **THE SIDECARS — THE DECISIVE READ, AND THE ONE `postgres_logs` CANNOT REPLACE.** Query
+   `pgbouncer_logs` / `postgrest_logs` / `auth_logs` for `%process up:%`, `Starting PostgREST%` and
+   `%Go runtime metrics%` in a 60-second window. **All three boot in the same second, and PgBouncer
+   and PostgREST come up BEFORE the postmaster** — so PostgREST logs `connection to server at
+   "localhost" … refused`, `PGRST000` and `PGRST002` and serves 503s until Postgres is ready, which
+   is the 503 half of the burst in read 5. Measured (UTC) — 12 Oct: PgBouncer `16:04:48.86`,
+   PostgREST `16:04:49.05`, postmaster `16:04:50.37` · 11 Oct: `10:14:00.58` / `10:14:00.66` /
+   `10:14:01.84` · 10 Oct: `08:05:46.77` / `08:05:46.80` / `08:05:48.19`. 🔴 **An OOM-killed or
+   PANICking postmaster leaves those three processes alive and reconnecting; it does not restart
+   them.** All three together, before Postgres, means the container went down.
+5. **`edge_logs`** — the only place the request-level damage is visible. 12 Oct 19:04:41–19:05:19:
    **38 × 521, 32 × 503, 7 × 520, 2 × 525 = 79 failed requests** over 13 / 10 / 3 distinct paths.
    The status key is **`log_attributes['response.status_code']`** (`status_code` alone is empty), and
    the 503s carry `response.headers.proxy_status = 'PostgREST; error=PGRST002'`.
@@ -233,10 +249,25 @@ The four reads, in the order worth running:
 hour**, none of them a 5xx — never size this incident class from it. And `get_project` reads
 `ACTIVE_HEALTHY` afterwards, because the project *is* healthy again; project status disproves nothing.
 
+🔴 **COUNT THE RESTARTS FROM THE LOGS, NEVER FROM THE INCIDENTS THAT GOT REPORTED.** The 11 Oct event
+sat unnoticed for two days — nobody was looking at that minute, and both the memory note and this
+section said "twice" until someone asked for the whole picture. `query_logs` takes a **24-hour window
+at most**, so a multi-day sweep is one query per day, with `starting PostgreSQL%` as the needle.
+
 **The box it happens on.** `shared_buffers` 512 MB, `effective_cache_size` 1 GB, `work_mem` 32 MB,
 `maintenance_work_mem` 128 MB, `max_worker_processes` 6 — a **2 GB** compute class carrying a
 **3.19 GB** database. Connections at the time: 17 of 200. Neither connection count nor CPU is the
 pressure.
+
+🔴 **AND THE CAUSE IS NOT PROVABLE FROM INSIDE THE DATABASE — SAY SO RATHER THAN NAMING THE
+LIKELIEST-SOUNDING SUSPECT.** Every in-house candidate for 12 Oct is exonerated by a measurement, not
+by assumption: `cron.job_run_details` shows the three scheduled jobs at 3.4–9.8 s with the 19:05 run
+starting *after* the restart; `edge_logs` requests/min were **falling** into it (2480, 2313, 2112,
+936, 646, 1600, 2021, 652 across 15:56–16:03 UTC, then 59 with 58 × 5xx at 16:04); connections were
+17 of 200; and there is no OOM, PANIC, `signal 9` or `crash of another server process` line anywhere
+in the day. What is left is the host, where memory pressure on that 2 GB class is the only in-house
+candidate the settings leave open — and **only Supabase's own host-side record can settle it**, which
+is what the support ticket drafted on 13 Oct 2026 asks for, alongside the compute-size question.
 
 **What already absorbs it.** PR 5736 keeps the session alive through the outage instead of signing
 everyone out — 10 Oct's window produced 22 logins and **9 born-dead sessions**, 12 Oct's produced
@@ -245,7 +276,7 @@ cleared cookies and answered 401. PR 5737 retries 521/525 at 200/400/800 ms. �
 cannot ride a 38-second restart, and lengthening it is the wrong fix** — a retry long enough to
 outlast a restart freezes every page for the length of the restart.
 
-**The third one now alerts, within fifteen minutes.** Nothing reported the first two: `/api/healthz`
+**A fourth one now alerts, within fifteen minutes.** Nothing reported the first three: `/api/healthz`
 answered 200 throughout both (it does not touch the database), `app_error_events` held 17 rows in the
 whole hour, and the GCP 5xx alert died with its billing on 2026-08-01 (the section below). Since
 2026-10-13, `runDatabaseRestartCheck()` rides the 15-minute `job-heartbeat-sweep` clock as a third

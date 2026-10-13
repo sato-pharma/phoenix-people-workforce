@@ -144,8 +144,9 @@ the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
 **Raised 210 to 212 on 2026-10-13 — two tables, both triaged by name.** The check was failing
 `advisor_baseline_exceeded` at 212 against an accepted 210. Asked live, newest by oid, the two that
-joined are `public.database_restarts` (oid **258977**) — the crash-restart log written on 12 October
-when production Postgres restarted twice in three days — and `public.address_brick_moves_20261013`
+joined are `public.database_restarts` (oid **258977**) — the restart log written on 12 October, after
+the production database instance was hard-restarted three days running — and
+`public.address_brick_moves_20261013`
 (**258416**), the pre-image of that day's Qena brick moves. Both are this month's live work on the
 same server-only pattern.
 
