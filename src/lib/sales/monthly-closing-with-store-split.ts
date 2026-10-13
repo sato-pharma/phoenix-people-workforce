@@ -47,8 +47,32 @@ export async function loadMonthlyClosingPartsWithStoreSplit(input?: {
     : await loadClosingStoreSplit(parts.combined.line, parts.combined.period);
   const { net, officeNet } = split;
   if (net.size === 0) return parts;
+  const combined = applyStoreSplitToMatrix(parts.combined, net);
+  // 🔴 THE ONE PLACE THE "GRAND TOTAL CANNOT CHANGE" INVARIANT IS ACTUALLY ASKED.
+  //
+  // `applied` is the sum of the deltas that DID land — which is the same thing as the shift in the
+  // grand total. A whole month's net is zero-sum by construction (every unit one area loses another
+  // area gains), so on an unfiltered read the landed deltas must cancel to zero. A filtered export
+  // is the case where they legitimately do not, and the workbook says so out loud; this loader is
+  // never filtered — it is the whole line for the whole month — so anything but zero here means one
+  // leg landed and its counterpart found no row, and that difference left the closing's national
+  // total with nothing receiving it. That is precisely how Pedia 2026-08 came to print 45,559.99 EGP
+  // less than its own inputs for nine weeks: the Fayoum/Beni Suef fold left Beni Suef's leg with no
+  // row to land on, and `applied` was computed, returned and read by nobody on this path.
+  //
+  // Logged, never thrown: a closing that refuses to render is worse than one that is short, and the
+  // number is useless to the reader on screen. The line and month are named so the log says which
+  // closing to go and look at. `tests/closing-merged-area-split-fold.test.ts` asserts the zero.
+  if (combined.applied.qty !== 0 || combined.applied.value !== 0) {
+    console.warn("Monthly Closing: the store split did not fully land on an unfiltered matrix.", {
+      line: parts.combined.line,
+      period: parts.combined.period,
+      unlandedUnits: combined.applied.qty,
+      unlandedValue: combined.applied.value,
+    });
+  }
   return {
-    combined: applyStoreSplitToMatrix(parts.combined, net).matrix,
+    combined: combined.matrix,
     retail: applyStoreSplitToMatrix(parts.retail, net).matrix,
     directCells: parts.directCells,
     // 🔴 THE OFFICE GRID TAKES THE OFFICE RESPREAD'S NET, AND NOTHING ELSE OF `net`.

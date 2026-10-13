@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
-import { Fragment, useRef } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { cn } from "@/lib/utils";
@@ -324,17 +324,33 @@ function TotalCells({
 
 // ── Header helpers ─────────────────────────────────────────────────────────────
 
+// Where the metric row sticks: directly under the product-name row above it.
+//
+// It was the literal 44 — `h-11` on that row, written twice over. That number is only true while
+// the row above stays ONE line high, which is why the names up there used to carry `truncate`: a
+// name that wrapped grew the row and left this one stuck 44px down, overlapping the names or
+// floating below them. The owner's rule is that nothing is cut with an ellipsis and wrapping wins
+// (AGENTS.md §4), so the cut had to go — and the offset has to follow the real height instead.
+//
+// A CSS variable rather than React state: the measurement is written straight onto the table node
+// by a layout effect, so a wrapped head costs no re-render of a grid that can be hundreds of rows.
+// 44px stays the fallback, which is exactly today's rendering — no real product or family name is
+// long enough to wrap at these widths (measured on production, 13 Oct 2026: the longest are
+// "Tebofortin 120 mg Intens" at 24 characters in a ~450px cell and "Lacto Advanced" at 14 in
+// ~250px). This is the guarantee for the name that is not.
+const SUB_HEADER_TOP = "var(--phx-closing-subhead-top, 44px)";
+
 function MetricHeaders({ showOffice }: { showOffice: boolean }) {
   const cell = "sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle";
   return (
     <>
-      <th className={cell} style={{ top: 44 }}>Units</th>
-      {showOffice ? <th className={`${cell} phx-office`} style={{ top: 44 }}>of wh. Office</th> : null}
-      <th className={cell} style={{ top: 44 }}>Value</th>
-      <th className={`${cell} phx-contr`} style={{ top: 44 }}>Contr %</th>
-      <th className={`${cell} font-normal opacity-60`} style={{ top: 44 }}>Tgt Units</th>
-      <th className={`${cell} font-normal opacity-60`} style={{ top: 44 }}>Tgt Value</th>
-      <th className={`${cell} phx-ach`} style={{ top: 44 }}>Ach %</th>
+      <th className={cell} style={{ top: SUB_HEADER_TOP }}>Units</th>
+      {showOffice ? <th className={`${cell} phx-office`} style={{ top: SUB_HEADER_TOP }}>of wh. Office</th> : null}
+      <th className={cell} style={{ top: SUB_HEADER_TOP }}>Value</th>
+      <th className={`${cell} phx-contr`} style={{ top: SUB_HEADER_TOP }}>Contr %</th>
+      <th className={`${cell} font-normal opacity-60`} style={{ top: SUB_HEADER_TOP }}>Tgt Units</th>
+      <th className={`${cell} font-normal opacity-60`} style={{ top: SUB_HEADER_TOP }}>Tgt Value</th>
+      <th className={`${cell} phx-ach`} style={{ top: SUB_HEADER_TOP }}>Ach %</th>
     </>
   );
 }
@@ -344,9 +360,9 @@ function FamilySubHeaders() {
   const cell = "sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle";
   return (
     <>
-      <th className={`${cell} phx-family`} style={{ top: 44 }}>Value</th>
-      <th className={`${cell} phx-family font-normal opacity-70`} style={{ top: 44 }}>Tgt Value</th>
-      <th className={`${cell} phx-contr`} style={{ top: 44 }}>Contr %</th>
+      <th className={`${cell} phx-family`} style={{ top: SUB_HEADER_TOP }}>Value</th>
+      <th className={`${cell} phx-family font-normal opacity-70`} style={{ top: SUB_HEADER_TOP }}>Tgt Value</th>
+      <th className={`${cell} phx-contr`} style={{ top: SUB_HEADER_TOP }}>Contr %</th>
     </>
   );
 }
@@ -491,6 +507,28 @@ export function ClosingMatrixTable({
   const topRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const syncing = useRef(false);
+  const headRowRef = useRef<HTMLTableRowElement>(null);
+
+  // Publish the product-name row's REAL height as --phx-closing-subhead-top, so the metric row
+  // below it sticks under it however tall it is (see SUB_HEADER_TOP). Written to the DOM, never to
+  // state: this grid can be hundreds of rows and must not re-render to measure its own head.
+  // Absent ResizeObserver, or before the effect runs, the variable is unset and the 44px fallback
+  // is used — which is the single-line height this head has always had.
+  useLayoutEffect(() => {
+    const row = headRowRef.current;
+    if (!row) return;
+    const table = row.closest("table");
+    if (!table) return;
+    const publish = () => {
+      const height = Math.round(row.getBoundingClientRect().height);
+      if (height > 0) table.style.setProperty("--phx-closing-subhead-top", `${height}px`);
+    };
+    publish();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(publish);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [matrix]);
 
   function syncScroll(source: HTMLDivElement | null, target: HTMLDivElement | null) {
     if (!source || !target || syncing.current) return;
@@ -605,20 +643,26 @@ export function ClosingMatrixTable({
             <col style={{ width: COL.gtAch }} />
           </colgroup>
           <thead>
-            {/* Row 1: product names + family group banners + Grand Total */}
-            <tr>
+            {/* Row 1: product names + family group banners + Grand Total.
+                `break-words`, never `truncate` — the same rule the area-name cell below follows: a
+                product or family name is read, not skimmed, and nothing on this page is cut with an
+                ellipsis (AGENTS.md §4). This row's height is published to the metric row beneath it
+                (SUB_HEADER_TOP), so a name that does wrap takes the sub-headers with it instead of
+                sliding under them. `h-11` on a table cell is a MINIMUM, so the one-line head is
+                pixel-identical to what it was. */}
+            <tr ref={headRowRef}>
               <th className={`${bandHeader} ${STICKY1} top-0 z-40 h-11`} rowSpan={2}>Area</th>
               <th className={`${bandHeader} ${STICKY2} top-0 z-40 h-11`} rowSpan={2} style={{ left: COL.area }}>Area Name</th>
               {columnGroups.flatMap((group, gi) => [
                 ...group.indices.map((idx) => (
                   <th className={`${bandHeader} sticky top-0 z-30 h-11`} colSpan={officeLookup.shown ? 7 : 6} key={`ph-${gi}-${idx}`}>
-                    <span className="block truncate text-phx-sm font-black leading-tight" style={{ color: "#FDBA74" }}>{matrix.columns[idx].productName}</span>
+                    <span className="block break-words text-phx-sm font-black leading-tight" style={{ color: "#FDBA74" }}>{matrix.columns[idx].productName}</span>
                     <span className="block text-phx-2xs font-normal" style={{ color: "#CBD5E1" }}>{matrix.columns[idx].productCode}</span>
                   </th>
                 )),
                 ...(group.isMulti ? [
                   <th className={`${bandHeader} phx-family sticky top-0 z-30 h-11`} colSpan={3} key={`fh-${gi}`}>
-                    <span className="block truncate text-phx-sm font-black leading-tight">{group.family}</span>
+                    <span className="block break-words text-phx-sm font-black leading-tight">{group.family}</span>
                     <span className="block text-phx-2xs font-normal opacity-70">Family Total</span>
                   </th>,
                 ] : []),
@@ -633,11 +677,11 @@ export function ClosingMatrixTable({
                 )),
                 ...(group.isMulti ? [<FamilySubHeaders key={`fsh-${gi}`} />] : []),
               ])}
-              <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Value</th>
-              {officeLookup.shown ? <th className="phx-gt phx-office sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>of wh. Office</th> : null}
-              <th className="phx-gt phx-contr sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Contr %</th>
-              <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle font-normal opacity-60" style={{ top: 44 }}>Tgt Value</th>
-              <th className="phx-gt phx-ach sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Ach %</th>
+              <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>Value</th>
+              {officeLookup.shown ? <th className="phx-gt phx-office sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>of wh. Office</th> : null}
+              <th className="phx-gt phx-contr sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>Contr %</th>
+              <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle font-normal opacity-60" style={{ top: SUB_HEADER_TOP }}>Tgt Value</th>
+              <th className="phx-gt phx-ach sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: SUB_HEADER_TOP }}>Ach %</th>
             </tr>
           </thead>
           <tbody>

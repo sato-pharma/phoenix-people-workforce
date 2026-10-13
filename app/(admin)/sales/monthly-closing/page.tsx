@@ -5,6 +5,7 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { canExportConsolidatedClosing } from "@/lib/sales/closing-consolidated";
+import { resolveClosingDeepLinkMiss } from "@/lib/sales/closing-deep-link";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { loadMonthlySourceCoverage, type MonthlySourceCoverage } from "@/lib/sales/source-coverage";
@@ -72,6 +73,20 @@ export default async function MonthlyClosingPage({
     initialError = error instanceof Error ? error.message : "Failed to load Monthly Closing.";
   }
 
+  // A ?line=/?period= the closing could not honour is NAMED on the page, never substituted in
+  // silence: loadMonthlyClosingParts falls back to the newest month of the first line, which then
+  // renders as an ordinary, complete closing for a month nobody asked to see. The client-side
+  // picker already names a month it could not read; this is the same promise for the first,
+  // server-rendered read. See src/lib/sales/closing-deep-link.ts.
+  const deepLinkMiss = initialMatrix
+    ? resolveClosingDeepLinkMiss({
+        requestedLine,
+        requestedPeriod,
+        resolvedLine: initialMatrix.line,
+        resolvedPeriod: initialMatrix.period,
+      })
+    : null;
+
   return (
     <MonthlyClosingWorkspace
       // Several months added together into one download: Super Admin and the CEO only (owner,
@@ -79,6 +94,7 @@ export default async function MonthlyClosingPage({
       canExportConsolidated={canExportConsolidatedClosing(access.role)}
       canPublish={isSystemAdministratorViewer}
       initialCoverage={initialCoverage}
+      initialDeepLinkMiss={deepLinkMiss}
       initialError={initialError}
       initialMatrix={initialMatrix}
       initialOffice={initialOffice}
