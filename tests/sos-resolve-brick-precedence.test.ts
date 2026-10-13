@@ -114,13 +114,15 @@ export function runSosResolveBrickPrecedenceTests() {
   assert.equal(ownerVerifiedCanonical?.brickId, "B205-4", "owner-verified override also fires on the canonical key");
   assert.equal(ownerVerifiedCanonical?.areaCode, "CA2");
 
-  // But an owner-verified mapping still does NOT override a brick the sheet explicitly names.
-  const sheetBrickBeatsOwnerVerified = resolveBrick(
+  // And since 2026-10-13 ("the address is the first source of trust" — an owner ruling stands above
+  // it, the territory label below it) a ruling also beats a brick the LABEL names. Before that date
+  // the label won here, so a monthly upload quietly undid his rulings wherever the label disagreed.
+  const ownerVerifiedBeatsLabelBrick = resolveBrick(
     { customerKey: "PS OWNER", territoryValues: ["Abu Homs"] },
     maps,
   );
-  assert.equal(sheetBrickBeatsOwnerVerified?.brickId, "B114-80", "a sheet-named brick still wins over an owner-verified mapping");
-  assert.equal(sheetBrickBeatsOwnerVerified?.source, "territory");
+  assert.equal(ownerVerifiedBeatsLabelBrick?.brickId, "B205-4", "an owner ruling outranks a brick the label names");
+  assert.equal(ownerVerifiedBeatsLabelBrick?.source, "customer");
 
   // ── 4. Behaviour with no area signal is unchanged ────────────────────────────
   const customerOnly = resolveBrick({ customerKey: "PS 0001506606" }, maps);

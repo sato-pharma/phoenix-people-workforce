@@ -505,7 +505,9 @@ export function normalizeRows(
     const customerCanonicalKey = customerCanon ? `${distKey} ${customerCanon}` : null;
     const territoryValues = (profile.territoryColumns ?? []).map((cName) => firstValue(row, header, [cName]));
     const brickIdValues = (profile.brickIdColumns ?? []).map((cName) => firstValue(row, header, [cName]));
-    const brick = resolveBrick({ brickIdValues, customerKey, customerCanonicalKey, territoryValues }, maps);
+    // Every address column, in order: Ibn Sina sends Address_En then Address_Ar, and the matcher reads the Arabic one.
+    const addressValues = (profile.customerAddressColumns ?? []).map((cName) => firstValue(row, header, [cName]));
+    const brick = resolveBrick({ addressValues, brickIdValues, customerKey, customerCanonicalKey, distributorCode: profile.distributorCode, territoryValues }, maps);
     const hierarchy = deriveHierarchy(brick, maps);
 
     if (productCode) productResolved += 1;

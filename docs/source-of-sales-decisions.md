@@ -201,3 +201,47 @@ most once per Cairo day per set.
   empties.
 
 Code: `app/api/cron/brick-move-drain/route.ts`. Pinned by `tests/brick-move-drain-liveness.test.ts`.
+
+## The address is the first source of trust (owner, 2026-10-13)
+
+His words, in order: "deep audit and find any mapped brick mismatches its address", then "source of
+trust number 1 a brick name in the customer address", then "the address is the first source of
+trust" and "move all 1,463 and make the importer read the address first".
+
+**The audit.** Every one of the 81,016 active customer-map rows was read against its own address
+with the matcher now in `src/lib/sales/normalizer/address-brick.ts`. 1,463 rows named a different
+brick than the one they sat on — 380 of them in another area. A fresh hand-read sample put the
+wrong-area flags at 57 of 60 and the same-area ones at about 38 of 40.
+
+**The moves (production, 13 Oct 2026, Cairo).** 1,462 map rows moved, stamped
+`owner-ruling-2026-10-13-address-brick`, confidence 100, `mapped_by` B-10; 25 of them are Ibn Sina
+twins moved with their pair. Pre-images: `public.address_brick_map_backup_20261013` (map rows) and
+`public.address_brick_import_rows_backup_20261013` (import rows); the list itself is
+`public.address_brick_moves_20261013`. The 5,459 already-imported 2026 rows (January to September,
+58 files) were re-pointed with `sos_reconcile_import_rows_from_customer_map` and every file rebuilt;
+afterwards 0 of them disagreed with the map. September's tracked lines shifted by at most 822 EGP
+for any one area and line.
+
+**The one row left where it was.** PS `0001554613`, "بجوار السلخانه – ترسا – مركز س": the
+30-character Overseas address is cut at "مركز س" — مركز سنورس — so ترسا is the Sinnuris village and
+the pharmacy's Fayoum mapping is right. The matcher now refuses a cross-area move when a capped
+address ends in an administrative word followed by a stub that begins a place in the current area.
+
+**The importer order** (`resolveBrick`): a direct brick id → an owner ruling (confidence 100) → a
+brick named in the address → the distributor's territory label → the stored mapping. Before this,
+the label came first and a label brick beat even an owner ruling. An address resolution has source
+`address`, so the self-heal writes it back to the map as `sheet-verified`.
+
+**What the matcher refuses to treat as a place**, each one a false flag in the audit's samples: a
+street or the words after a street or owner marker; a name inside a longer one (ميت X, كفر X, ابو X,
+مسجد X); a governorate city alone; a hit outside the pharmacy's region or outside every governorate
+the address states; a brick kept as history after a move; fourteen keys that pointed at the wrong
+area for most customers naming them. It moves a row only when the address does not name the
+current brick, names exactly ONE other brick, and — across areas — names nothing in the current
+area, its block included. Tenders, hospitals, El Qema and the Egydrug branch sheet are never read.
+
+**Parity, measured on the pre-move snapshot of all 62,140 unruled rows with an address:** the
+TypeScript matcher made 1,406 of the audit's moves to the identical brick and none to a different
+one. It held back 38 — 36 where the address named two bricks, two where the cut-markaz guard now
+applies — and every one of those is already a confidence-100 ruling. After the moves it would move
+nothing else.

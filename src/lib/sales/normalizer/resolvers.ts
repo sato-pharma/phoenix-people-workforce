@@ -1,3 +1,4 @@
+import { addressBrick } from "@/lib/sales/normalizer/address-brick";
 import { foldArabicDigits } from "@/lib/sales/normalizer/header-normalize";
 import type { BrickRef, Crosswalks } from "@/lib/sales/normalizer/types";
 
@@ -73,19 +74,29 @@ export function resolveProduct(rawValues: (string | null | undefined)[], maps: C
 
 export type BrickResolution = { areaCode: string; brickId: string; regionCode: string; source: string } | null;
 
-// Resolve the Phoenix Brick ID (and hence Area/Region). Priority (owner rule, confirmed 2026-07-07):
-//  1. a direct Phoenix brick id the sheet already carries (most reliable — the sheet says so directly),
-//  2. a territory text (brick name / district / street / governorate) via the territory alias,
-//  3. an area text via the area alias (gives area+region, brick stays empty),
-//  4. a customer code already mapped to a brick — when the sheet gave no BRICK-level signal.
-// The sheet naming a BRICK always wins over a previously-stored customer mapping; a stored mapping
-// never silently overrides what the current sheet says at the same precision. An AREA-only signal
-// is coarser than a customer→brick mapping, so it does NOT win: the stored brick is used when it
-// lies inside that area, and the area is kept when it does not (never move a sale across areas on a
-// stored mapping). See engine.ts's customerBrickCorrections for the self-heal that keeps the stored
-// mapping in sync when the sheet disagrees with it.
+// Resolve the Phoenix Brick ID (and hence Area/Region). Priority (owner rule, 2026-10-13 — "the
+// address is the first source of trust"; it replaces the 2026-07-07 order, which put the territory
+// label first):
+//  1. a direct Phoenix brick id the sheet already carries,
+//  2. an OWNER RULING — a stored mapping at confidence 100 — which nothing below overrides,
+//  3. a brick named in the customer's ADDRESS (address-brick.ts), when it disagrees with 4–6,
+//  4. a territory text (brick name / district) via the territory alias,
+//  5. an area text via the area alias (gives area+region, brick stays empty),
+//  6. a customer code already mapped to a brick — when the sheet gave no BRICK-level signal.
+// The label naming a BRICK still wins over an unruled stored mapping. An AREA-only label is coarser
+// than a customer→brick mapping, so it does NOT win: the stored brick is used when it lies inside
+// that area, and the area is kept when it does not (never move a sale across areas on a stored
+// mapping). See engine.ts's customerBrickCorrections for the self-heal that keeps the stored
+// mapping in sync when the sheet (its label or its address) disagrees with it.
 export function resolveBrick(
-  input: { brickIdValues?: (string | null | undefined)[]; customerKey?: string | null; customerCanonicalKey?: string | null; territoryValues?: (string | null | undefined)[] },
+  input: {
+    addressValues?: (string | null | undefined)[];
+    brickIdValues?: (string | null | undefined)[];
+    customerCanonicalKey?: string | null;
+    customerKey?: string | null;
+    distributorCode?: string | null;
+    territoryValues?: (string | null | undefined)[];
+  },
   maps: Crosswalks,
 ): BrickResolution {
   // 1) direct brick id
@@ -96,7 +107,35 @@ export function resolveBrick(
       return { areaCode: b.areaCode, brickId: id, regionCode: b.regionCode, source: "direct" };
     }
   }
-  // 2) territory text -> brick / area (via the territory alias)
+  // 2) an owner ruling. Source stays "customer" so engine.ts's self-heal never overwrites it.
+  const storedBrickId = input.customerKey
+    ? maps.customerBrickByKey.get(input.customerKey)
+      ?? (input.customerCanonicalKey ? maps.customerBrickByCanonicalKey.get(input.customerCanonicalKey) : undefined)
+    : undefined;
+  const stored = storedBrickId ? maps.brickById.get(storedBrickId) : undefined;
+  const ownerVerified = !!stored && (
+    (input.customerKey ? (maps.ownerVerifiedCustomerKeys?.has(input.customerKey) ?? false) : false)
+    || (input.customerCanonicalKey ? (maps.ownerVerifiedCustomerKeys?.has(input.customerCanonicalKey) ?? false) : false)
+  );
+  if (stored && ownerVerified) {
+    return { areaCode: stored.areaCode, brickId: stored.brickId, regionCode: stored.regionCode, source: "customer" };
+  }
+  // 4–6 give the baseline; 3) the address replaces it only when it names a different brick.
+  const baseline = resolveFromLabelOrMap(input, maps);
+  const fromAddress = input.addressValues?.length
+    ? addressBrick({ addressValues: input.addressValues, baseline, distributorCode: input.distributorCode ?? "" }, maps)
+    : null;
+  if (fromAddress) {
+    return { areaCode: fromAddress.areaCode, brickId: fromAddress.brickId, regionCode: fromAddress.regionCode, source: "address" };
+  }
+  return baseline;
+}
+
+function resolveFromLabelOrMap(
+  input: { customerKey?: string | null; customerCanonicalKey?: string | null; territoryValues?: (string | null | undefined)[] },
+  maps: Crosswalks,
+): BrickResolution {
+  // 4) territory text -> brick / area (via the territory alias)
   //
   // An AREA-only hit is remembered, NOT returned. The sheet naming a brick outranks a stored
   // customer mapping — but the sheet naming only an AREA does not: the customer map may hold the
@@ -123,7 +162,7 @@ export function resolveBrick(
         }
       }
     }
-    // 3) area alias
+    // 5) area alias
     const areaHit = maps.areaAliasByKey.get(key);
     if (areaHit && !areaOnly) {
       areaOnly = {
@@ -135,25 +174,18 @@ export function resolveBrick(
     }
   }
 
-  // 4) customer -> brick (exact key, then numeric-canonical fallback for leading-zero drift)
+  // 6) customer -> brick (exact key, then numeric-canonical fallback for leading-zero drift). An
+  // owner ruling (confidence=100) never reaches here — resolveBrick returned it at step 2.
   if (input.customerKey) {
     const brickId = maps.customerBrickByKey.get(input.customerKey)
       ?? (input.customerCanonicalKey ? maps.customerBrickByCanonicalKey.get(input.customerCanonicalKey) : undefined);
     if (brickId && maps.brickById.has(brickId)) {
       const b = maps.brickById.get(brickId)!;
-      // An owner-verified mapping (confidence=100, set by an explicit owner ruling) is absolute: it
-      // outranks even a sheet AREA that names a DIFFERENT area, moving the sale onto the ruled brick.
-      // This is the ONE exception to the cross-area guard below, and it is deliberately narrow — only
-      // the owner can mint a confidence=100 mapping (algorithmic scores cap at 95).
-      const ownerVerified =
-        (maps.ownerVerifiedCustomerKeys?.has(input.customerKey) ?? false)
-        || (input.customerCanonicalKey ? (maps.ownerVerifiedCustomerKeys?.has(input.customerCanonicalKey) ?? false) : false);
-      // Otherwise only sharpen WITHIN the area the sheet named. If the stored brick sits in a different
-      // area, the sheet wins and we keep the area — moving a sale across areas on an UNVERIFIED stored
+      // Only sharpen WITHIN the area the sheet named. If the stored brick sits in a different area,
+      // the sheet wins and we keep the area — moving a sale across areas on an UNVERIFIED stored
       // mapping is exactly the cross-area auto-apply that is never allowed (it would silently shift a
-      // rep's numbers). Source stays "customer" either way, so engine.ts's self-heal never mistakes an
-      // owner-verified resolution for a fresh sheet signal and overwrites the ruling.
-      if (!areaOnly || areaOnly.areaCode === b.areaCode || ownerVerified) {
+      // rep's numbers).
+      if (!areaOnly || areaOnly.areaCode === b.areaCode) {
         return { areaCode: b.areaCode, brickId, regionCode: b.regionCode, source: "customer" };
       }
     }
