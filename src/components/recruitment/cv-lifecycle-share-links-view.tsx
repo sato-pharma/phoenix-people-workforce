@@ -7,6 +7,8 @@ import {
   CV_LIFECYCLE_LINK_EXPIRY_WARNING_DAYS,
 } from "@/lib/recruitment/cv-lifecycle-link-expiry";
 import type { CvLifecycleShareLink } from "@/lib/recruitment/cv-lifecycle-share-links";
+import { assessLiveFeedAmbiguity } from "@/lib/share-links/live-feed-ambiguity";
+import { LiveFeedAmbiguityBanner } from "@/components/share-links/live-feed-ambiguity-banner";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
   phxFieldClassName,
@@ -167,6 +169,10 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
   // ONE judgement, shared with the daily alarm. `loadedAtMs` rather than `Date.now()` — see above.
   const verdict = assessCvLifecycleLinkExpiry(links, loadedAtMs || 0);
   const expiringIds = new Set(verdict.expiringSoon.map((link) => link.id));
+  // The OTHER judgement, shared with the two sibling sheets. Needs no clock: "more than one live
+  // feed link" is a count, and the rotation guard it mirrors reads no expiry either — so an
+  // expired-but-unrevoked link pauses rotation exactly as a live one does.
+  const ambiguity = assessLiveFeedAmbiguity(links);
 
   const inputClass =
     `${phxFieldClassName} mt-1`;
@@ -174,7 +180,16 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
 
   return (
     <div className="space-y-4">
-      {loadedAtMs > 0 ? <ExpiryBanner verdict={verdict} /> : null}
+      {/* The paused rotation goes FIRST: it is the only state here that a human must clear before a
+          machine can carry on, and the expiry question below it is a different one with a different
+          deadline. Both can be true at once and both are then shown — except for the healthy
+          "nothing expiring" line, which is suppressed while the rotation banner is up, because an
+          emerald all-clear directly under a rose stall is the one pairing that reads as a
+          contradiction rather than as two answers. */}
+      {loadedAtMs > 0 ? <LiveFeedAmbiguityBanner sheet="CV Lifecycle" verdict={ambiguity} /> : null}
+      {loadedAtMs > 0 && !(ambiguity.paused && expiryBannerIsTheAllClear(verdict)) ? (
+        <ExpiryBanner verdict={verdict} />
+      ) : null}
 
       {/* ── Mint ───────────────────────────────────────────────────────────── */}
       <section className={adminPanelClassName}>
@@ -417,6 +432,20 @@ function remaining(link: CvLifecycleShareLink, state: LinkState, nowMs: number):
   const days = Math.floor((expiresMs - nowMs) / (24 * 60 * 60 * 1000));
   if (state === "expired") return days === 0 ? "expired today" : `expired ${Math.abs(days)} days ago`;
   return days === 0 ? "less than a day left" : `${days} days left`;
+}
+
+/**
+ * Would `ExpiryBanner` render its emerald all-clear for this verdict?
+ *
+ * Mirrors that component's own branches rather than reading `verdict.healthy`, and the difference is
+ * load bearing: a verdict with NO live link is `healthy` by that flag — nothing is expiring and
+ * nothing lapsed — yet the banner renders the rose "the sheet is not being fed" for it. Suppressing
+ * on the flag would therefore hide a real outage behind the rotation banner, which is exactly the
+ * kind of silence this change exists to remove. Two links both EXPIRED and unrevoked is that case:
+ * the rotation is paused AND the feed is dead, and the reader must be told both.
+ */
+function expiryBannerIsTheAllClear(verdict: ReturnType<typeof assessCvLifecycleLinkExpiry>): boolean {
+  return verdict.expired.length === 0 && verdict.expiringSoon.length === 0 && verdict.liveCount > 0;
 }
 
 function StatusChip({ expiring, state }: { expiring: boolean; state: LinkState }) {
