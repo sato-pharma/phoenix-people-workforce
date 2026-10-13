@@ -16,12 +16,14 @@ import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
  * May the reader take a COPY of this document away?
  *
  * TRUE everywhere it has always been true — the recruitment workspace, screening, the CV database —
- * and FALSE on the manager's portal only, where the owner blocked it on 2026-09-09: *"the download
- * to be blocked of the cv"*. A manager reads the CV on the screen and answers on the screen; he does
- * not keep the document.
+ * and, on the manager's portal, TRUE only for the manager holding the "I will call" reservation on
+ * that CV. The owner blocked the portal download on 2026-09-09 (*"the download to be blocked of the
+ * cv"*) and on 2026-10-13 asked for it back; the original file prints the phone number the
+ * reservation reveals, so he chose: download only after "I will call".
  *
- * IT IS NOT WHAT ENFORCES THE BLOCK, and must never be mistaken for it. Hiding a link is UX. The
- * file route itself refuses to hand a manager anything but the in-page base64 render — see
+ * IT IS NOT WHAT ENFORCES THE RULE, and must never be mistaken for it. Hiding a link is UX. The
+ * file route itself hands the real file only to the reservation holder and otherwise answers the
+ * in-page base64 render — see
  * app/api/recruitment/hiring-manager/candidates/[candidateId]/files/[fileId]/route.ts. This flag
  * exists so the screen does not offer a control that the server would then refuse, which reads as a
  * broken button rather than as a decision.
@@ -317,8 +319,8 @@ export function CvDocumentView({
           // transparent and only the selection tint shows (`.cv-text-layer` in app/globals.css).
           //
           // NEVER WHERE THE READER MAY NOT TAKE THE DOCUMENT AWAY, and never on a redacted page.
-          // The manager's portal blocks the download (allowDownload=false), and copying every word
-          // out is the download by another name. And a redacted page covers the phone numbers on the
+          // A manager without the reservation has no download (allowDownload=false), and copying
+          // every word out is the download by another name. And a redacted page covers the phone numbers on the
           // CANVAS only — the text under a black box is still text, so a layer over it would hand
           // back, invisibly and one drag away, the exact number the box was painted to hide.
           const selectable = allowDownload && !redactPhones;

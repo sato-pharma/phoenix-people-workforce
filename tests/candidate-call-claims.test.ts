@@ -211,10 +211,18 @@ export async function runCandidateCallClaimTests() {
     /RENDER_ONLY_FORMATS\s*=\s*new Set\(\["base64", "doc-text"\]\)/,
     "the manager's file route must serve ONLY in-page renders, from a closed list — adding a mode that hands over the document itself is the download coming back",
   );
+  // THE FILE FOLLOWS THE PHONE NUMBER (owner, 2026-10-13: download only after "I will call"). Anything
+  // not on the render list — no format at all, the bare URL's save-file prompt — is served only to
+  // the manager `revealPhoneToViewer` names, and is asked BEFORE the file is fetched.
   assert.match(
     fileRoute,
-    /if \(!format \|\| !RENDER_ONLY_FORMATS\.has\(format\)\) \{/,
-    "anything not on that list must be refused, including no format at all — the bare URL is the save-file prompt",
+    /const isRender = Boolean\(format && RENDER_ONLY_FORMATS\.has\(format\)\);\s*if \(!isRender && !revealPhoneToViewer\(await loadCallClaim\(candidateId\), access\.hrId\)\) \{/,
+    "a non-render request must be refused unless the caller holds the reservation — the same test that unmasks the number, never a second copy of it",
+  );
+  assert.ok(
+    fileRoute.indexOf("revealPhoneToViewer(await loadCallClaim") <
+      fileRoute.indexOf("await downloadHiringManagerCandidateFile("),
+    "the reservation is asked before the file is fetched out of Drive",
   );
   // `disposition` is refused by NOT being on that list, so the check is that the route never reads
   // it as a branch of its own. Comments are stripped first: the route's own explanation names the
@@ -289,12 +297,15 @@ export async function runCandidateCallClaimTests() {
   );
 
   const cvActions = read("../src/components/employee-portal/candidate-cv-actions.tsx");
+  // The card's Download link and the modal's own are both drawn only for the reservation holder, off
+  // the SAME flag that unmasks the number — so the offer and the server's refusal cannot drift.
   assert.ok(
-    !/>\s*Download/.test(cvActions) && !cvActions.includes("`Download — ${"),
-    "the manager's CV card must offer no Download control",
+    cvActions.includes("allowDownload={showPhoneNumbers}"),
+    "the preview modal's own Download link follows the reservation, never a constant",
   );
   assert.ok(
-    cvActions.includes("allowDownload={false}"),
-    "and must tell the preview modal to hide its own Download link, which is the second copy of it",
+    /\{showPhoneNumbers \? \(\s*<a[\s\S]{0,300}?href=\{href\}[\s\S]{0,200}?Download CV/.test(cvActions),
+    "the card's Download CV link is drawn only when the viewer holds the reservation",
   );
+  assert.ok(!cvActions.includes("allowDownload={false}"), "the constant block is gone");
 }
