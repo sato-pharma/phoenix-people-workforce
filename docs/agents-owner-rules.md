@@ -8114,3 +8114,49 @@ them, and a greyed-out control invites a click that can never succeed.
 
 All four, plus the frozen export being untouched, are pinned by `tests/closing-rep-ranking.test.ts`
 (`assertAdminRepRankingButton`).
+
+### His own copy reads an unpublished month — same day, after the button refused September
+
+He clicked **Export Rep Ranking** on September 2026 and read back *"The Anti Infective Monthly
+Closing for September 2026 has not been published yet, so its details cannot be opened or
+exported."* The message was correct. `monthly_closing_publications` on production, where published
+means `unpublished_at IS NULL`:
+
+| Month | Published | Unpublished since |
+| --- | --- | --- |
+| September 2026 | 5 Oct, 15:25 Cairo | **9 Oct, 18:12 Cairo** |
+| August 2026 | 7 Sep, 12:10 Cairo | **12 Oct, 00:05 Cairo** |
+| July 2026 | 8 Aug, 15:48 Cairo | **12 Oct, 00:06 Cairo** |
+
+So **no Anti Infective month was published at all**, which means the workbook could be built for no
+month whatever — not from the admin button and not from the portal export either. The publish gate
+is the right rule for a rep and the wrong one for him: he reads an unpublished closing everywhere
+else in this module, and his own screen was showing him September while the button refused it.
+
+Offered the choice, he picked **"Build unpublished months for admin roles"** over publishing
+September again (publishing would have released it to every Anti Infective rep and manager, which is
+why it was unpublished on 9 October).
+
+**What that is, exactly.** `loadPortalMonthlyClosing` gained an opt-in `includeUnpublished`, and the
+route passes `readsUnpublishedClosings(access)` into it — never a literal `true`. That predicate is
+already the repository's single answer to "who reads an unpublished closing": Super Admin, system
+scope, SFE Manager, CEO, Finance Manager and the Marketing oversight set, mirroring the closing
+export's full-workbook branch term for term, with a test that fails when the two drift.
+
+🔴 **It is an option on the ONE loader rather than a second loader, deliberately.** The flag swaps
+the month list and nothing else: the confidential strip, the per-user product bound, the region and
+area narrowing and the identical pass over the Office grid all still run. A copy of that chain is
+precisely how a workbook ends up carrying a restricted product's Office units, or showing a manager
+the national Office figure beside his own region's sales. So this widens **which months** he may
+export and never **whose figures** — and the portal export never passes the flag at all.
+
+🔴 **A validated month this line never traded in is not a zero month.** The validated month list is
+global, because an import batch carries no line, so `includeUnpublished` can offer a month with no
+Anti Infective rows. It comes back as a matrix with no regions, and the builder drops it from the
+trend rather than rendering a column in which every rep scored nothing and the quarter disagrees
+with the line. The requested month failing that test returns null, so the route says "could not be
+built" rather than shipping an empty ranking.
+
+Both rules were proven by breaking them: forcing `includeUnpublished: true` and restoring the old
+`matrix ? … : null` each made its own assertion in `tests/closing-rep-ranking.test.ts` fire, and the
+suite returned to green once restored.

@@ -110,18 +110,36 @@ export async function buildScopedRepRankingExport(input: {
    */
   rows: readonly ClosingDetailRow[];
   availablePeriods: readonly string[];
+  /**
+   * 🔴 THE OWNER'S OWN COPY, off by default — pass it ONLY behind `readsUnpublishedClosings(access)`.
+   *
+   * True trends over the VALIDATED months instead of the published ones, for the readers who
+   * already open an unpublished closing everywhere else: Super Admin, SFE Manager, CEO and Finance
+   * Manager. Added 2026-10-13, when he asked why the admin download refused September and every
+   * Anti Infective month turned out to be unpublished — September since 9 October, July and August
+   * since the 12th — so a publish-gated builder could produce nothing at all for him. The portal
+   * export never passes it: there the publish gate is the whole point.
+   */
+  includeUnpublished?: boolean;
 }): Promise<RepRankingExport | null> {
-  const { access, line, period } = input;
+  const { access, includeUnpublished, line, period } = input;
   if (!isRepRankingLine(line)) return null;
 
   const trend = resolveTrendPeriods(input.availablePeriods, period);
   const loaded = await Promise.all(
     trend.map(async (month) => {
-      const result = await loadPortalMonthlyClosing({ access, line, period: month }).catch(() => null);
+      const result = await loadPortalMonthlyClosing({ access, includeUnpublished, line, period: month })
+        .catch(() => null);
       // A month whose scoped load came back on a DIFFERENT month would silently label one month's
       // figures with another's, so it is dropped rather than trusted.
       const matrix = result?.selectedPeriod === month ? result.matrix : null;
-      return matrix ? { matrix, period: month } : null;
+      // 🔴 AND A MONTH WITH NO ROWS FOR THIS LINE IS NOT A ZERO MONTH. The validated month list is
+      // global, because an import batch carries no line, so `includeUnpublished` can offer a month
+      // this line never traded in. Rendered as a trend column it would read as every rep scoring
+      // nothing that month, and the quarter's total would disagree with the line. Dropped instead —
+      // and the requested month failing this test returns null below, so the caller says "cannot be
+      // built" rather than shipping an empty ranking.
+      return matrix && matrix.regions.length > 0 ? { matrix, period: month } : null;
     }),
   );
   const matricesByPeriod = loaded.filter(

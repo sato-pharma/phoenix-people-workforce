@@ -23,6 +23,7 @@ import {
 import type { ComparisonScope } from "@/lib/sales/monthly-closing-comparison";
 import { resolveWeeklyProductBound } from "@/lib/sales/weekly/access";
 import {
+  listMonthlyClosingPeriods,
   type MonthlyClosingCell,
   type MonthlyClosingGrandTotalRow,
   type MonthlyClosingMatrix,
@@ -673,6 +674,26 @@ export async function loadPortalMonthlyClosing(input: {
    */
   line?: string | null;
   period?: string | null;
+  /**
+   * 🔴 OFF BY DEFAULT, AND THE CALLER MUST HAVE EARNED IT. True offers and loads the VALIDATED
+   * months instead of the published ones — every other step of the chain below is untouched, which
+   * is the entire reason this is an option here rather than a second loader: the confidential strip,
+   * the product bound, the region/area narrowing and the identical pass over the Office grid all
+   * still run, and a copy of that chain is how a workbook ends up leaking a restricted product's
+   * Office units or showing a manager the national figure beside his own region's sales.
+   *
+   * It exists for the owner's admin download of the rep ranking workbook (2026-10-13): Super Admin,
+   * SFE Manager, CEO and Finance Manager already read unpublished months everywhere else in the
+   * closing, and on 13 Oct every Anti Infective month was unpublished, so a publish-gated builder
+   * could produce nothing at all for them. ONLY pass it behind `readsUnpublishedClosings(access)` —
+   * the same predicate the details gate uses — and never from a portal surface, where the publish
+   * gate is what stops a rep reading figures the owner has not released.
+   *
+   * The month list is global (import batches carry no line), so a validated month with no rows for
+   * this line comes back as a matrix with no regions. A caller trending over several months must
+   * drop such a month rather than render it as zero — see buildScopedRepRankingExport.
+   */
+  includeUnpublished?: boolean;
 }): Promise<PortalClosingResult> {
   const scope = await resolvePortalClosingScope(input.access);
   if (scope.allowedLines.length === 0) {
@@ -694,8 +715,16 @@ export async function loadPortalMonthlyClosing(input: {
 
   // Publication is per (line, period), so "which lines can this viewer even open" is one read per
   // allowed line — at most three (the Marketing oversight set), one for everybody else.
+  //
+  // `includeUnpublished` swaps that question for the validated months, ONE read for every line,
+  // because an import batch carries no line. Everything downstream reads this list and nothing
+  // else, so the month selector, the refusal and the trend all move together.
+  const validatedPeriods = input.includeUnpublished ? await listMonthlyClosingPeriods() : [];
   const publishedByLine = await Promise.all(
-    scope.allowedLines.map(async (line) => ({ line, periods: await listPublishedPeriodsForLine(line) })),
+    scope.allowedLines.map(async (line) => ({
+      line,
+      periods: input.includeUnpublished ? validatedPeriods : await listPublishedPeriodsForLine(line),
+    })),
   );
   const { availableLines, line: selectedLine, refused } = pickPortalClosingLine({
     allowedLines: scope.allowedLines,
@@ -706,10 +735,10 @@ export async function loadPortalMonthlyClosing(input: {
     return { matrix: null, line: null, availableLines, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
   }
 
-  const publishedPeriods = publishedByLine.find(
+  const offeredPeriods = publishedByLine.find(
     (entry) => normalizeLineKey(entry.line) === normalizeLineKey(selectedLine),
   )?.periods ?? [];
-  if (publishedPeriods.length === 0) {
+  if (offeredPeriods.length === 0) {
     return {
       matrix: null,
       line: selectedLine,
@@ -721,15 +750,16 @@ export async function loadPortalMonthlyClosing(input: {
   }
 
   const requested = String(input.period ?? "").trim();
-  const selectedPeriod = publishedPeriods.includes(requested) ? requested : publishedPeriods[0];
+  const selectedPeriod = offeredPeriods.includes(requested) ? requested : offeredPeriods[0];
 
   const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: selectedLine, period: selectedPeriod });
   const raw = parts.combined;
-  // Lock the line and restrict the month selector to published months only.
+  // Lock the line and restrict the month selector to the months this caller is offered — published
+  // months, or the validated ones when `includeUnpublished` was earned.
   const locked: MonthlyClosingMatrix = {
     ...raw,
     availableLines: [selectedLine],
-    availablePeriods: publishedPeriods,
+    availablePeriods: offeredPeriods,
   };
   // Always strip confidential products first; territory roles (productCodes === null) would
   // otherwise see the raw matrix including LA003 / LA004.
@@ -755,7 +785,7 @@ export async function loadPortalMonthlyClosing(input: {
     office,
     line: selectedLine,
     availableLines,
-    availablePeriods: publishedPeriods,
+    availablePeriods: offeredPeriods,
     selectedPeriod,
     awaitingPublish: false,
   };

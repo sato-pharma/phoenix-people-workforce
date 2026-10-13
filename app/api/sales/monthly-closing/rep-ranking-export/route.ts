@@ -3,7 +3,10 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
-import { unpublishedClosingMessage } from "@/lib/sales/closing-details-publication-gate";
+import {
+  readsUnpublishedClosings,
+  unpublishedClosingMessage,
+} from "@/lib/sales/closing-details-publication-gate";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import {
   buildScopedRepRankingExport,
@@ -107,20 +110,33 @@ export async function POST(request: Request) {
       );
     }
 
-    // PUBLISHED MONTHS ONLY, and this is the one place it has to be said out loud. Super Admin,
-    // SFE Manager, CEO and Finance Manager all read unpublished months everywhere else in the
-    // closing — but this workbook trends over `loadPortalMonthlyClosing`, which offers published
-    // months and nothing else, and answers an unpublished one with the NEWEST PUBLISHED month
-    // instead. The builder drops a month that came back under a different name and then returns
-    // null, so without this check an unpublished month would read as "cannot be built" rather than
-    // as "not published yet". Same sentence the portal's own gate uses.
+    // 🔴 THE MONTHS THIS READER IS OFFERED, WHICH IS NOT THE SAME QUESTION AS "PUBLISHED".
+    //
+    // Super Admin, SFE Manager, CEO and Finance Manager read an unpublished closing everywhere else
+    // in this module, and on 2026-10-13 that stopped being academic: the owner clicked this button
+    // on September and was refused, because EVERY Anti Infective month was unpublished — September
+    // since 9 October, July and August since the 12th — so the workbook could not be built for any
+    // month at all. Asked, he chose to have his own copy read the month his screen already reads.
+    //
+    // `readsUnpublishedClosings` is the ONE predicate, the same one the details gate uses and the
+    // same set the closing export's full-workbook branch admits. It swaps the month list for the
+    // VALIDATED months and changes nothing else: the confidential strip, the product bound and the
+    // region/area narrowing all still run, so this widens WHICH MONTHS he may export and never
+    // whose figures. Everyone outside that set keeps the publish gate exactly as it was — and the
+    // portal export never passes the flag at all, because there the gate is the whole point.
+    const readsUnpublished = readsUnpublishedClosings(access);
     const scopedPortal = await loadPortalMonthlyClosing({
       access,
+      includeUnpublished: readsUnpublished,
       line: details.line,
       period: details.period,
     }).catch(() => null);
-    const published = scopedPortal?.availablePeriods ?? [];
-    if (!published.includes(details.period)) {
+    const offered = scopedPortal?.availablePeriods ?? [];
+    // Refused in plain words, and FIRST. Without this the builder would answer an unpublished month
+    // with "cannot be built": `loadPortalMonthlyClosing` substitutes the newest published month,
+    // and the builder drops a month that came back under a different name. Same sentence the
+    // portal's own gate uses.
+    if (!offered.includes(details.period)) {
       return Response.json(
         { error: unpublishedClosingMessage(details.line, details.period) },
         { status: 403 },
@@ -134,7 +150,8 @@ export async function POST(request: Request) {
     // distinct warehouse customers, never a customer name or code.
     const ranked = await buildScopedRepRankingExport({
       access,
-      availablePeriods: published,
+      availablePeriods: offered,
+      includeUnpublished: readsUnpublished,
       line: details.line,
       period: details.period,
       rows: details.rows,
@@ -143,8 +160,8 @@ export async function POST(request: Request) {
       return Response.json(
         {
           error:
-            "The rep ranking workbook could not be built for this month — its closing has no seats"
-            + " or no figures for the line. Export XLSX still works.",
+            "The rep ranking workbook could not be built for this month — the Anti Infective closing"
+            + " has no rows, no seats or no figures for it. Export XLSX still works.",
         },
         { status: 409 },
       );
