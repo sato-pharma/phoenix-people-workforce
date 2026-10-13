@@ -752,7 +752,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                   />
                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                     {/* Three workbooks of the same month, side by side — four on a line that also has the rep
-                        ranking sheet, which is Anti Infective and CNS. The owner's instruction (2026-08-30) was that the premium sheet be
+                        ranking sheet, which is Anti Infective, CNS and Pedia. The owner's instruction (2026-08-30) was that the premium sheet be
                         added BESIDE this button rather than replacing it, so whoever is reading picks the format
                         they read more comfortably. All of them carry the same line and the same month.
 
@@ -866,9 +866,19 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                       {isExportingPremiumXlsx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       Export Premium XLSX
                     </button>
-                    {/* ANTI INFECTIVE ONLY — absent on CNS and Pedia rather than greyed out, because the
-                        workbook does not exist for them and a disabled control invites a click that can never
-                        succeed. The route refuses the other lines independently, by the same single gate. */}
+                    </>
+                    )}
+                    {/* THE DRESSED LINES ONLY (Anti Infective, CNS, Pedia) — absent on a line with no dress
+                        rather than greyed out, because the workbook does not exist for it and a disabled
+                        control invites a click that can never succeed. The route refuses the other lines
+                        independently, by the same single gate.
+
+                        🔴 DRAWN AFTER THE SINGLE-MONTH / CONSOLIDATED SPLIT, NEVER INSIDE IT (owner, 2026-10-13:
+                        "still no Export Rep Ranking button on Pedia"). It used to sit in the single-month
+                        fragment, so the moment two or more months were picked — which is the first thing a
+                        screen shows once July, August and September are all published — the row swapped to the
+                        three Consolidated buttons and this one vanished with nothing saying why. It is now
+                        always on a dressed line and DISABLED, with the reason in its title, across a span. */}
                     {showRepRankingExport ? (
                       <button
                         className={cn(
@@ -887,8 +897,6 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                         Export Rep Ranking
                       </button>
                     ) : null}
-                    </>
-                    )}
                   </div>
                 </div>
                 {/* Owner decision (2026-08-08): this screen must match the exported workbook, so

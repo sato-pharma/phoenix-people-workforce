@@ -1274,6 +1274,15 @@ function assertAdminRepRankingButton(): void {
     workspace.includes("{showRepRankingExport ? (") && workspace.includes("Export Rep Ranking"),
     "and it is ABSENT on a line with no dress rather than disabled — the workbook does not exist there",
   );
+  // 🔴 AND IT IS DRAWN IN BOTH HALVES OF THE ROW. Owner, 2026-10-13: "still no Export Rep Ranking
+  // button on Pedia" — it sat inside the single-month fragment, so picking two or more months
+  // swapped the row to the three Consolidated buttons and this one vanished without a word. It must
+  // come AFTER the consolidated branch's last button, so it is outside both.
+  assert.match(
+    workspace,
+    /<\/>\s*\)\}\s*\{\/\* THE DRESSED LINES ONLY[\s\S]*?\{showRepRankingExport \? \(/,
+    "the ranking button is drawn right after the single-month / consolidated split closes, so a span of months still shows it (disabled, with its reason)",
+  );
 
   // 🔒 THE FITS-THE-SCREEN GOLDEN RULE. Three buttons fitted one line; the fourth takes the row
   // past the panel's width at 640 and 768. `shrink-0` on the row would make its own `flex-wrap`
