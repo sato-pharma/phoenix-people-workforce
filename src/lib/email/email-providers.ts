@@ -25,9 +25,15 @@
 // BREVO_EMAIL_FROM_2), because one sending domain can be verified in only one Resend account. Every
 // hand-off between them obeys the same duplicate-safe rules above — a quota refusal or an
 // accepted-then-failed message moves on, an ambiguous failure never does.
+//
+// ONE message type is exempt from that sender override: a JOB OFFER, which by the owner's rule of
+// 2026-10-13 fires from `HR@satopharma.com` or `hr@send.satopharma.com` and from nothing else. An
+// account that would have to rewrite its From declines the offer instead of re-branding it, so the
+// letter waits for the account that can send it as HR (`senderOverrideRefusal`).
 
 import { RetryableEmailError, parseRetryAfter } from "@/lib/email/email-errors";
 import { splitAddressList } from "@/lib/email/receivable-address";
+import { JOB_OFFER_SENDER_ADDRESSES, isJobOfferSender } from "@/lib/email/job-offer-sender";
 
 export type PreparedEmailAttachment = {
   content: string;
@@ -234,6 +240,35 @@ export function applySenderOverride(from: string, override: string | undefined):
   return name ? `${name} <${value}>` : value;
 }
 
+/**
+ * The one message whose From an account may NOT rewrite: a job offer.
+ *
+ * Owner rule, 2026-10-13 — an offer fires from `HR@satopharma.com` or `hr@send.satopharma.com`,
+ * and from nothing else (`job-offer-sender.ts`). Every override above exists because a sending
+ * domain is verified in only ONE account, so a backup must put its own address on the envelope;
+ * for an offer that is exactly the thing the rule forbids. Measured on production 2026-10-13, the
+ * backups would have sent `Sato Pharma HR <phoenix@send2.satopharma.com>` and — on Brevo, which
+ * overrides the whole header — `Phoenix Workforce <phoenix@send.satopharma.com>`.
+ *
+ * So the account declines the message instead of rewriting it: `failover`, which is the chain's
+ * "deterministically not sent" signal, so the next account is tried and, if none can send as HR,
+ * `sendPreparedEmailWithFailover` raises a RETRYABLE error. The offer is delayed until Resend's
+ * first account (the only one holding both Sato domains) can take it — never re-branded.
+ */
+export function senderOverrideRefusal(
+  email: PreparedEmail,
+  override: string | undefined,
+  label: string,
+): ProviderSendResult | null {
+  const rewritten = applySenderOverride(email.from, override);
+  if (rewritten === email.from) return null;
+  if (!isJobOfferSender(email.from) || isJobOfferSender(rewritten)) return null;
+  return {
+    outcome: "failover",
+    reason: `${label} would have to send this job offer as ${rewritten} instead of ${email.from}; a job offer fires only from ${JOB_OFFER_SENDER_ADDRESSES.join(" or ")}.`,
+  };
+}
+
 /** Extra accounts beyond the first, by env suffix: RESEND_API_KEY_2, _3 and _4, BREVO_API_KEY_2. */
 export const extraResendAccountSuffixes = ["2", "3", "4"] as const;
 export const extraBrevoAccountSuffixes = ["2"] as const;
@@ -255,7 +290,12 @@ function createResendProvider(suffix?: string): EmailProvider {
       return checkResendAccepted(id, { apiKey: readEnv(keyEnv) });
     },
     send(email) {
-      const from = fromEnv ? applySenderOverride(email.from, readEnv(fromEnv)) : email.from;
+      const override = fromEnv ? readEnv(fromEnv) : "";
+      // A job offer is never re-branded onto this account's own address — it waits for the one
+      // that can send as HR (`senderOverrideRefusal`).
+      const refusal = senderOverrideRefusal(email, override, label);
+      if (refusal) return Promise.resolve(refusal);
+      const from = applySenderOverride(email.from, override);
       return sendViaResend(email, { apiKey: readEnv(keyEnv), from, keyEnv, label });
     },
   };
@@ -336,6 +376,10 @@ function createBrevoProvider(suffix?: string): EmailProvider {
       // reads BREVO_EMAIL_FROM, else the message's own From — unchanged. An extra account reads its
       // own BREVO_EMAIL_FROM_<n>, then the first account's, then the message's own From.
       const override = readEnv(fromEnv) || (suffix ? readEnv("BREVO_EMAIL_FROM") : "");
+      // A job offer is never re-branded onto a Brevo sender — this account's override is the one
+      // that would have put *Phoenix Workforce* on an offer of employment.
+      const refusal = senderOverrideRefusal(email, override, label);
+      if (refusal) return Promise.resolve(refusal);
       return sendViaBrevo(email, { apiKey: readEnv(keyEnv), keyEnv, label, sender: parseSender(override || email.from) });
     },
   };

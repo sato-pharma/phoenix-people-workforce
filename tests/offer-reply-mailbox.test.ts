@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
 import { resolveOfferSender } from "../src/lib/offers/identity.ts";
+import { JOB_OFFER_SENDER_ADDRESSES } from "../src/lib/email/job-offer-sender.ts";
+import { applySenderOverride, resolveEmailProviders, senderOverrideRefusal } from "../src/lib/email/email-providers.ts";
 import {
   receivingDomain,
   resolveReplyToAddress,
@@ -15,6 +17,11 @@ import {
  * A candidate who replied to a job offer got "this mailbox is not available", twice. The sending
  * subdomain owns no mailboxes (its only MX is Amazon SES's bounce collector), so an offer that
  * names it as From — or a Reply-To that a provider drops — sends the reply into a hole.
+ *
+ * Section 6 pins his 2026-10-13 rule on the other half of the same header: a job offer fires from
+ * `HR@satopharma.com` or `hr@send.satopharma.com`, and from no other mailbox — not from a value
+ * somebody puts in `JOB_OFFER_EMAIL_FROM`, and not from the verified address of a backup provider
+ * account.
  *
  * These assertions pin the STRUCTURAL guarantee: whatever the environment holds, nothing a person
  * can answer ever points at the sending subdomain. They also pin the owner's 2026-09-23 rule that
@@ -37,7 +44,25 @@ function withEnv(values: Record<string, string | undefined>, run: () => void) {
   }
 }
 
-export function runOfferReplyMailboxTests() {
+/** `withEnv` for a body that awaits — the provider chain's `send` returns a promise. */
+async function withEnvAsync(values: Record<string, string | undefined>, run: () => Promise<void>) {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of Object.keys(values)) saved[key] = process.env[key];
+  try {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await run();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+export async function runOfferReplyMailboxTests() {
   // The domains are derived, not retyped: the sending host is the one that cannot receive.
   assert.equal(sendingOnlyDomain, "send.satopharma.com");
   assert.equal(receivingDomain, "satopharma.com");
@@ -123,4 +148,126 @@ export function runOfferReplyMailboxTests() {
   withEnv({ NOTIFICATION_REPLY_TO: "phoenix@send.satopharma.com" }, () => {
     assert.equal(resolveReplyToAddress(undefined), "phoenix@satopharma.com");
   });
+
+  // ── 6) THE OWNER'S RULE, 2026-10-13: "all job offers email must only fire from
+  //       HR@satopharma.com or hr@send.satopharma.com" ──
+  //
+  // Two mailboxes, no third, and the rule has to hold in the two places an offer's From is
+  // decided: the environment value, and the provider account that sends it.
+  assert.deepEqual(
+    [...JOB_OFFER_SENDER_ADDRESSES],
+    ["hr@satopharma.com", "hr@send.satopharma.com"],
+    "the allowed offer senders are exactly the owner's two mailboxes",
+  );
+
+  // 6a) A configured address outside the list is REFUSED, not sent from — and it is reported back
+  //     rather than swallowed, so the Job Offers screen can show HR what the environment holds.
+  for (const refused of [
+    "careers@satopharma.com",
+    "Phoenix Workforce <phoenix@send.satopharma.com>",
+    "hr@satopharma.com.example.net",
+    "hr@notsatopharma.com",
+    "recruitment@send.satopharma.com",
+  ]) {
+    withEnv({ JOB_OFFER_EMAIL_FROM: refused, JOB_OFFER_REPLY_TO: undefined }, () => {
+      const sender = resolveOfferSender();
+      assert.equal(sender.from, "Sato Pharma <hr@satopharma.com>", `refused sender falls back to HR (${refused})`);
+      assert.equal(sender.refusedFrom, refused, `the refused value is reported (${refused})`);
+      assert.equal(sender.isConfigured, false, `a refused value is not a configured sender (${refused})`);
+    });
+  }
+
+  // 6b) Both of his spellings are accepted, in any case, and nothing else is ever refused.
+  for (const allowed of ["hr@satopharma.com", "HR@satopharma.com", "hr@send.satopharma.com", "Sato Pharma HR <HR@SEND.SATOPHARMA.COM>"]) {
+    withEnv({ JOB_OFFER_EMAIL_FROM: allowed, JOB_OFFER_REPLY_TO: undefined }, () => {
+      const sender = resolveOfferSender();
+      assert.equal(sender.refusedFrom, null, `an allowed sender is never refused (${allowed})`);
+      assert.equal(sender.isConfigured, true, `an allowed sender is configured (${allowed})`);
+      assert.match(
+        sender.from.toLowerCase(),
+        /<hr@satopharma\.com>$/,
+        `an allowed sender ends up on the apex HR mailbox (${allowed})`,
+      );
+    });
+  }
+
+  // 6c) THE HOLE THIS CLOSED. Every backup account rewrites the From, because a sending domain is
+  //     verified in only one account — measured on production 2026-10-13: Resend account 1 holds
+  //     satopharma.com AND send.satopharma.com, account 2 only send2.satopharma.com, and Brevo
+  //     replaces the whole header with `Phoenix Workforce <phoenix@send.satopharma.com>`. So an
+  //     offer sent while account 1 was capped went out as phoenix@send2 — or as *Phoenix
+  //     Workforce*, the one brand an offer must never wear.
+  const offerFrom = "Sato Pharma <hr@satopharma.com>";
+  const notificationFrom = "Phoenix Workforce <phoenix@send.satopharma.com>";
+  const offerEmail = (from: string) => ({
+    from,
+    html: "<p>Offer of Employment</p>",
+    idempotencyKey: "offer-sender-lock-test",
+    replyTo: "hr@satopharma.com",
+    subject: "Offer of Employment",
+    text: "Offer of Employment",
+    to: ["candidate@example.com"],
+  });
+
+  // The pure decision: an override that would move an offer off HR is refused; one that would not
+  // change the From, or that lands on the other allowed mailbox, is fine; and a Phoenix
+  // notification keeps the override it has always had.
+  assert.equal(senderOverrideRefusal(offerEmail(offerFrom), "", "Resend")?.outcome, undefined, "no override, nothing to refuse");
+  assert.equal(
+    senderOverrideRefusal(offerEmail(offerFrom), "phoenix@send2.satopharma.com", "Resend account 2")?.outcome,
+    "failover",
+    "an offer is never re-addressed to another account's own mailbox",
+  );
+  assert.equal(
+    senderOverrideRefusal(offerEmail(offerFrom), notificationFrom, "Brevo")?.outcome,
+    "failover",
+    "an offer is never re-branded as Phoenix Workforce",
+  );
+  assert.equal(
+    senderOverrideRefusal(offerEmail(offerFrom), "hr@send.satopharma.com", "Resend account 2"),
+    null,
+    "the owner's other mailbox is not a violation",
+  );
+  assert.equal(
+    senderOverrideRefusal(offerEmail(notificationFrom), "phoenix@send2.satopharma.com", "Resend account 2"),
+    null,
+    "a Phoenix notification still takes the backup account's own sender",
+  );
+  assert.equal(
+    applySenderOverride(notificationFrom, "phoenix@send3.satopharma.com"),
+    "Phoenix Workforce <phoenix@send3.satopharma.com>",
+    "the override itself is unchanged for everything that is not an offer",
+  );
+
+  // And the same decision made by the REAL provider objects, with the real production values: the
+  // account declines the offer before it reaches the network, so `fetch` is never called.
+  const savedFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (() => {
+    fetchCalls += 1;
+    throw new Error("a provider must not reach the network for an offer it cannot send as HR");
+  }) as typeof globalThis.fetch;
+  try {
+    await withEnvAsync(
+      {
+        BREVO_API_KEY: "test-brevo-key",
+        BREVO_EMAIL_FROM: notificationFrom,
+        EMAIL_FAILOVER_ENABLED: undefined,
+        RESEND_API_KEY_2: "test-resend-key-2",
+        RESEND_EMAIL_FROM_2: "phoenix@send2.satopharma.com",
+      },
+      async () => {
+        const providers = resolveEmailProviders();
+        for (const name of ["resend-2", "brevo"]) {
+          const provider = providers.find((candidate) => candidate.name === name);
+          assert.ok(provider, `${name} must be in the chain for this assertion to mean anything`);
+          const result = await provider.send(offerEmail(offerFrom));
+          assert.equal(result.outcome, "failover", `${name} must decline a job offer it would have to re-address`);
+        }
+        assert.equal(fetchCalls, 0, "no backup account may put an offer on the wire under its own address");
+      },
+    );
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
 }
