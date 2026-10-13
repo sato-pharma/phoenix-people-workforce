@@ -105,14 +105,24 @@ export function OffersManager({
         {/* The sender identity is stated on screen, not buried in configuration. It is the one
             thing the owner was explicit about, and an unconfigured address is a real problem: the
             candidate would receive an offer from a placeholder mailbox. */}
-        {!sender.isConfigured ? (
+        {sender.refusedFrom ? (
           <AdminCallout tone="warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              Offers will be sent from <strong>{sender.from}</strong>, a placeholder. Set
+              <code className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-xs">JOB_OFFER_EMAIL_FROM</code>
+              holds <strong>{sender.refusedFrom}</strong>, which is not a mailbox an offer may be sent from. Offers
+              are going out from <strong>{sender.from}</strong> instead. An offer fires only from
+              <strong> {sender.allowedFrom.join(" or ")}</strong>.
+            </span>
+          </AdminCallout>
+        ) : !sender.isConfigured ? (
+          <AdminCallout tone="warning">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Offers will be sent from <strong>{sender.from}</strong>, the built-in default. Set
               <code className="mx-1 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-xs">JOB_OFFER_EMAIL_FROM</code>
-              to the real Sato HR address, and make sure that mailbox is a verified sender and that replies to
-              <strong> {sender.replyTo}</strong> are read.
+              to <strong>{sender.allowedFrom.join(" or ")}</strong> — the only two an offer may fire from — and make
+              sure replies to <strong>{sender.replyTo}</strong> are read.
             </span>
           </AdminCallout>
         ) : null}

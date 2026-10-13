@@ -13,7 +13,14 @@ export type OffersWorkspace = {
   error: string | null;
   jobTitles: OfferJobTitle[];
   offers: OfferRecord[];
-  sender: { from: string; isConfigured: boolean; replyTo: string };
+  sender: {
+    allowedFrom: readonly string[];
+    from: string;
+    isConfigured: boolean;
+    /** Set when `JOB_OFFER_EMAIL_FROM` names a mailbox the owner's rule refuses. */
+    refusedFrom: string | null;
+    replyTo: string;
+  };
   templates: OfferTemplate[];
   /** The open seats an offer can be written against. An empty list is a state, not a failure. */
   vacancies: OfferVacancyOption[];
@@ -29,7 +36,13 @@ export type OffersWorkspace = {
  */
 export async function loadOffersWorkspace(): Promise<OffersWorkspace> {
   const sender = resolveOfferSender();
-  const senderInfo = { from: sender.from, isConfigured: sender.isConfigured, replyTo: sender.replyTo };
+  const senderInfo = {
+    allowedFrom: sender.allowedFrom,
+    from: sender.from,
+    isConfigured: sender.isConfigured,
+    refusedFrom: sender.refusedFrom,
+    replyTo: sender.replyTo,
+  };
 
   // OUTSIDE the try, and swallowing its own failures inside `loadOfferVacancyOptions`. The seats
   // come from a different table in a different module; a vacancy read that fails is a picker with

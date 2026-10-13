@@ -36,9 +36,16 @@ export async function GET(request: Request) {
       jobTitles,
       offers,
       // `from` is shown to HR before they send, because the identity is the point of this module:
-      // the letter must go out as the company, not as Phoenix. `senderConfigured: false` means
-      // JOB_OFFER_EMAIL_FROM is unset and a placeholder address would be used.
-      sender: { from: sender.from, isConfigured: sender.isConfigured, replyTo: sender.replyTo },
+      // the letter must go out as the company, not as Phoenix. `isConfigured: false` means
+      // JOB_OFFER_EMAIL_FROM is unset — or `refusedFrom` names what it held and why it was not
+      // used: an offer fires only from the two mailboxes in `allowedFrom` (owner, 2026-10-13).
+      sender: {
+        allowedFrom: sender.allowedFrom,
+        from: sender.from,
+        isConfigured: sender.isConfigured,
+        refusedFrom: sender.refusedFrom,
+        replyTo: sender.replyTo,
+      },
       success: true,
       templates,
     });

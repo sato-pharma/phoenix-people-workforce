@@ -464,4 +464,61 @@ export async function runEmailProviderFailoverTests() {
     assert.equal(applySenderOverride("hr@send.satopharma.com", "hr@send2.satopharma.com"), "hr@send2.satopharma.com");
     assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", "Other <x@y.com>"), "Other <x@y.com>");
   }
+
+  // 9) THE DEDICATED ACCOUNT (owner, 2026-10-13: "make it and hrbp dedicated only for job offers
+  //    + sato email composer"). Resend's FIRST account is the only one that can send as hr@, hrbp@
+  //    or ceo@ — and automated notification traffic was spending its ~100/day quota (404 Resend
+  //    messages on 11 Oct 2026), which is why 30 of the last 63 offers were sent by a backup and 18
+  //    of them went out branded Phoenix Workforce. So ordinary Phoenix mail is handed the chain
+  //    WITHOUT it; only a Sato human identity starts there.
+  {
+    const names = ["RESEND_API_KEY_2", "RESEND_API_KEY_3", "RESEND_API_KEY_4", "BREVO_API_KEY", "BREVO_API_KEY_2", "EMAIL_FAILOVER_ENABLED"];
+    const saved: Record<string, string | undefined> = {};
+    for (const name of names) saved[name] = process.env[name];
+    try {
+      for (const name of names) delete process.env[name];
+      process.env.RESEND_API_KEY_2 = "test-key-2";
+      process.env.BREVO_API_KEY = "test-brevo-key";
+
+      const chainFor = (from: string) => resolveEmailProviders({ from }).map((provider) => provider.name);
+
+      // A Sato human identity keeps the dedicated account, and keeps it FIRST.
+      for (const identity of [
+        "Sato Pharma HR <hr@satopharma.com>",
+        "Sato Pharma HR <hr@send.satopharma.com>",
+        "Sato Pharma <hrbp@send.satopharma.com>",
+        "Anwar Gaweesh <ceo@send.satopharma.com>",
+      ]) {
+        assert.equal(chainFor(identity)[0], "resend", `the dedicated account is first for ${identity}`);
+      }
+
+      // Ordinary automated Phoenix mail does not touch it at all — whichever host it names.
+      for (const ordinary of [
+        "Phoenix Workforce <phoenix@send.satopharma.com>",
+        "Phoenix Workforce <phoenix@satopharma.com>",
+        "Phoenix <no-reply@phoenix.example>",
+      ]) {
+        const chain = chainFor(ordinary);
+        assert.ok(!chain.includes("resend"), `ordinary mail must not spend the dedicated quota (${ordinary}): ${chain.join(", ")}`);
+        assert.ok(chain.length > 0, `ordinary mail still has somewhere to go (${ordinary})`);
+      }
+
+      // `hr@send2…` is NOT an identity sender: the mailbox is right, the host is a backup account's.
+      assert.ok(!chainFor("Sato Pharma HR <hr@send2.satopharma.com>").includes("resend"));
+
+      // Asked with no email at all — "is anything configured?" — the whole chain comes back.
+      assert.equal(resolveEmailProviders()[0].name, "resend");
+
+      // With NO backup configured, ordinary mail keeps the only account there is: an email that
+      // cannot be sent at all is worse than one that spends the reserved quota.
+      delete process.env.RESEND_API_KEY_2;
+      delete process.env.BREVO_API_KEY;
+      assert.deepEqual(chainFor("Phoenix Workforce <phoenix@send.satopharma.com>"), ["resend"]);
+    } finally {
+      for (const name of names) {
+        if (saved[name] === undefined) delete process.env[name];
+        else process.env[name] = saved[name];
+      }
+    }
+  }
 }

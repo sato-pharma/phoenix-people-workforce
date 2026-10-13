@@ -10,7 +10,15 @@
  * importing its own parent — a cycle that is harmless while it is types only, and stops being
  * harmless the first time somebody adds a value import to it.
  */
-export type OfferSenderInfo = { from: string; isConfigured: boolean; replyTo: string };
+export type OfferSenderInfo = {
+  /** The two mailboxes an offer may fire from (owner rule, 2026-10-13) — never retyped on screen. */
+  allowedFrom: readonly string[];
+  from: string;
+  isConfigured: boolean;
+  /** The configured address when it was refused for naming some other mailbox. */
+  refusedFrom: string | null;
+  replyTo: string;
+};
 
 export const offerInputClassName =
   "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
