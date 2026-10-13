@@ -54,7 +54,12 @@ const read = (file: string) => readFileSync(file, "utf8");
 // A revoke of EXECUTE (or ALL) on a function, from a grantee list that includes a BROWSER role.
 // `FROM PUBLIC` alone is deliberately not a match: the production schema baseline revokes PUBLIC on
 // every function and then grants the browser roles back, which is the posture we are keeping.
-const REVOKE = /revoke\s+(?:all(?:\s+privileges)?|execute)\s+on\s+function\s+([^;]*?)\s+from\s+([^;]*);/gis;
+//
+// Built per file, with `exec` and no `s` flag: `matchAll` and `s` are both above this repo's
+// compile target (`checks` answered TS1501 on the first push), and `[^;]` already spans newlines,
+// so the flag bought nothing. A fresh regex per file also keeps `lastIndex` out of the picture.
+const revokePattern = () =>
+  /revoke\s+(?:all(?:\s+privileges)?|execute)\s+on\s+function\s+([^;]*?)\s+from\s+([^;]*);/gi;
 
 type Hit = { file: string; fn: string; grantees: string };
 
@@ -62,7 +67,9 @@ function revokesOfTheEleven(dir: string): Hit[] {
   const hits: Hit[] = [];
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql"))) {
     const sql = read(path.join(dir, file));
-    for (const match of sql.matchAll(REVOKE)) {
+    const pattern = revokePattern();
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(sql)) !== null) {
       const grantees = match[2].toLowerCase();
       if (!/\b(anon|authenticated)\b/.test(grantees)) continue;
       const fn = ELEVEN.find((name) => new RegExp(`\\b${name}\\b`).test(match[1]));

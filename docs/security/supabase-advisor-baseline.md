@@ -149,13 +149,22 @@ when production Postgres restarted twice in three days — and `public.address_b
 (**258416**), the pre-image of that day's Qena brick moves. Both are this month's live work on the
 same server-only pattern.
 
-🔴 **Neither of those two will leave by itself, and that is a correction to the 2026-10-09
-paragraph below.** The 90-day retention in `scripts/audit-backup-schemas.mjs` sweeps non-standard
-**schemas**; `public` is on its excluded list, so a date-suffixed pre-image table created directly
-in `public` — `address_brick_moves_20261013`, `sos_map_unmap_preimage_20261010` — is outside its
-reach and never expires. The 21 snapshots in dated backup schemas do age out; the ones in `public`
-are a standing ratchet on this count until the sweep learns to report them, or until they are moved
-where [`backup-table-placement.md`](./backup-table-placement.md) says a snapshot goes.
+🔴 **Neither of those two was going to leave by itself, and that is a correction to the 2026-10-09
+paragraph below.** The 90-day retention in `scripts/audit-backup-schemas.mjs` swept non-standard
+**schemas**, and `public` and `au` are both on its excluded list — so a dated pre-image table
+created beside the live data had no schema of its own to age out and could never expire. The 21
+snapshots in dated backup schemas do age out; these did not.
+
+**Fixed the same day:** the sweep now has a second pass over dated snapshot **tables** in `public`
+and `au`, with the same verdict ladder, the same dependency checks and the same 90 days. It found
+**58** of them, 5.5 MB — `public` 34, `au` 24, oldest 47 days, every one a genuine snapshot by name
+— a population nothing had ever reported. The 2026-10-09 triage's "2 backup-named tables in
+`public`" is not in conflict with that 34: it was splitting the 210 tables *inside this advisor
+category*, so it counted only the snapshots that have RLS enabled with no policy, while the sweep
+counts every dated snapshot table whether RLS is on it or not. Account:
+[`backup-schema-retention.md`](./backup-schema-retention.md), "The snapshot that has no schema at
+all". The real fix for one of these is still to put it where
+[`backup-table-placement.md`](./backup-table-placement.md) says a snapshot goes.
 
 🔴 **The part worth re-reading is the one that was re-proved, not the two names.** Of the entire
 live reading, the only tables that grant a browser role anything are **6 Supabase-managed
