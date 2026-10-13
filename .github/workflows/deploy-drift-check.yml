@@ -79,7 +79,14 @@ concurrency:
 jobs:
   deploy-drift-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
+    # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
+    # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is
+    # not a step failure, so `continue-on-error` cannot absorb it. A STEP that hits its own ceiling
+    # fails only that step, which `continue-on-error` turns into a reported finding with the job
+    # still green. Account and the two runs it cost: migration-drift-check.yml, above its job.
+    # Pinned by tests/github-workflow-validity.test.ts.
+    timeout-minutes: 15
     steps:
       # 🔴 continue-on-error PLUS AN id, NOT A BARE `exit 1` — THIS ALARM'S OWN FAILURE USED TO
       # WITHHOLD THE DEPLOY IT MEASURES. A scheduled run attaches its check suite to whatever commit
@@ -99,6 +106,7 @@ jobs:
       - name: Compare production's deployed revision against a SETTLED commit
         id: production
         continue-on-error: true
+        timeout-minutes: 3
         if: ${{ !inputs.test_alert }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -249,6 +257,7 @@ jobs:
       - name: Compare staging's deployed revision against a SETTLED commit
         id: staging
         continue-on-error: true
+        timeout-minutes: 3
         if: ${{ !inputs.test_alert && vars.STAGING_TRACKS_BRANCH != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -372,6 +381,7 @@ jobs:
       - name: Notify Telegram on failure
         if: ${{ always() && (steps.production.outcome == 'failure' || steps.staging.outcome == 'failure' || inputs.test_alert) }}
         continue-on-error: true
+        timeout-minutes: 3
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}

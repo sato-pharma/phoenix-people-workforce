@@ -49,7 +49,30 @@ env:
 jobs:
   migration-drift-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 🔴 EVERY `continue-on-error` STEP CARRIES ITS OWN `timeout-minutes`, AND THIS JOB CEILING SITS
+    # WELL ABOVE THEIR SUM ON PURPOSE (2026-10-13). A JOB that hits its ceiling concludes
+    # `cancelled`, and a cancelled
+    # check suite on `main` HEAD withholds that commit's production deploy exactly as a failed one
+    # does — so the job timeout was the one remaining way to lose a deploy that the
+    # `continue-on-error` design below CANNOT absorb, because a timeout is not a step failure.
+    # It happened twice: 2026-10-10 and 2026-10-12 both ran 10m07s against the old
+    # `timeout-minutes: 10` and were cancelled at the wall with every check leg already complete,
+    # the finding written and the Telegram alert delivered (HTTP 200). Nothing was wrong with the
+    # checks; the run's CONCLUSION was the only casualty, and it cost two `main` commits their
+    # deploy — both were superseded by later merges, so production lost nothing, by luck rather than
+    # by design. The cause was growth nobody was watching: loadLocalMigrations ran one `git log`
+    # process PER migration file, 855 of them, TWICE (once per database leg), measuring 4m34s a leg.
+    # See the header on loadCommitTimesByFileName in scripts/lib/migration-inventory.ts — it is now
+    # ONE process and 605 ms.
+    #
+    # A STEP that hits its own ceiling fails only that step, and `continue-on-error` turns that into
+    # a reported finding with the job still green. So the sum of the six step budgets below (15
+    # minutes) staying under this ceiling is what makes `cancelled` unreachable, and that margin —
+    # 10 minutes against a measured setup of ~40s — is the thing to preserve when editing either
+    # number. The four setup steps are deliberately left unbudgeted, for the same reason they are
+    # deliberately left able to fail the job: a hung `pnpm install` is a BROKEN check, not a finding,
+    # and it must never conclude success. Pinned by tests/github-workflow-validity.test.ts.
+    timeout-minutes: 25
 
     # `secrets` is NOT a valid context in a step-level `if:` — GitHub rejects it with
     # "Unrecognized named-value: 'secrets'" and the ENTIRE workflow fails to parse, so every run
@@ -119,6 +142,7 @@ jobs:
       - name: Check migrations are actually applied (staging)
         id: migrations_staging
         continue-on-error: true
+        timeout-minutes: 3
         run: pnpm run check:migrations-applied
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
@@ -143,6 +167,7 @@ jobs:
       - name: Check migrations are actually applied (production)
         id: migrations_production
         continue-on-error: true
+        timeout-minutes: 3
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run check:migrations-applied
         env:
@@ -164,6 +189,7 @@ jobs:
       - name: Check schema shape (staging)
         id: schema_shape_staging
         continue-on-error: true
+        timeout-minutes: 2
         if: ${{ always() }}
         run: pnpm run check:schema-shape
         env:
@@ -173,6 +199,7 @@ jobs:
       - name: Check schema shape (production)
         id: schema_shape_production
         continue-on-error: true
+        timeout-minutes: 2
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run check:schema-shape
         env:
@@ -206,6 +233,7 @@ jobs:
       - name: Check advisor baseline (production)
         id: advisor_baseline_production
         continue-on-error: true
+        timeout-minutes: 2
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run check:advisor-baseline
         env:
@@ -300,6 +328,7 @@ jobs:
       - name: Notify Telegram on failure
         if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure' || inputs.test_alert) }}
         continue-on-error: true
+        timeout-minutes: 3
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}

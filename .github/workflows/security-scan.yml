@@ -107,7 +107,14 @@ jobs:
   # accurate — a session reading the old text would also have believed this job gates a merge.
   secret-scan:
     runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    timeout-minutes: 10
+    # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
+    # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
+    # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is
+    # not a step failure, so `continue-on-error` cannot absorb it. A STEP that hits its own ceiling
+    # fails only that step, which `continue-on-error` turns into a reported finding with the job
+    # still green. Account and the two runs it cost: migration-drift-check.yml, above its job.
+    # Pinned by tests/github-workflow-validity.test.ts.
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -164,6 +171,7 @@ jobs:
       - name: Scan for secrets (gitleaks)
         id: gitleaks
         continue-on-error: true
+        timeout-minutes: 6
         run: |
           set -euo pipefail
           set +e
@@ -253,6 +261,7 @@ jobs:
       - name: Notify Telegram on failure
         if: ${{ always() && steps.gitleaks.outcome == 'failure' }}
         continue-on-error: true
+        timeout-minutes: 3
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
@@ -374,7 +383,14 @@ jobs:
     # Never on a PR. github.event_name is `schedule` or `workflow_dispatch` here.
     if: github.event_name != 'pull_request'
     runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
+    # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
+    # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is
+    # not a step failure, so `continue-on-error` cannot absorb it. A STEP that hits its own ceiling
+    # fails only that step, which `continue-on-error` turns into a reported finding with the job
+    # still green. Account and the two runs it cost: migration-drift-check.yml, above its job.
+    # Pinned by tests/github-workflow-validity.test.ts.
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -403,6 +419,7 @@ jobs:
       - name: SAST scan (Semgrep)
         id: semgrep
         continue-on-error: true
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           semgrep scan \
@@ -518,6 +535,7 @@ jobs:
       - name: Notify Telegram on failure
         if: ${{ always() && steps.semgrep.outcome == 'failure' }}
         continue-on-error: true
+        timeout-minutes: 3
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
