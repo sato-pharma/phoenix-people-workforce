@@ -9,6 +9,7 @@ import {
   validationRefusalLabel,
   validationRefusalRepText,
 } from "../src/lib/phoenix-crm/validation-feedback.ts";
+import { phoenixCrmChannels } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -91,10 +92,9 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
   // ── Told only to the rep; the channels are the guard's ─────────────────────────────────────────
   const notices = stripComments(readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8"));
   const block = notices.slice(notices.indexOf('if (notice.kind === "validation_not_confirmed")'), notices.indexOf('if (notice.kind === "plan_submitted")'));
-  assert.ok(!block.includes("inAppOnly"), "since 2026-10-08 (owner, asked about by name) the rep's notice takes the guard's channels: in-app, email, Telegram and the phone");
+  assert.ok(!block.includes("inAppOnly"), "since 2026-10-08 (owner, asked about by name) the rep's notice takes the guard's channels: in-app, Telegram and the phone — and no email since 2026-10-13");
   assert.ok(block.includes("phoenix_crm:validation_not_confirmed:${notice.customerId}:${notice.reviewId}"), "one notice per refusal, never a repeat");
-  const guard = readFileSync("src/lib/notifications/phoenix-crm-channel-guard.ts", "utf8");
-  assert.ok(guard.includes('"validation_not_confirmed"'), "and the channel guard's email allowlist names it");
+  assert.deepEqual(phoenixCrmChannels("validation_not_confirmed"), ["in_app", "telegram", "push"], "and the channel guard gives it in-app, Telegram and the phone, never email (owner, 2026-10-13)");
 
   // ── The rep's row reads the reason, in place of the generic sentence ──────────────────────────
   const row = stripComments(readFileSync("src/components/phoenix-crm/list-customer.tsx", "utf8"));

@@ -227,7 +227,7 @@ export function runPhoenixCrmApprovalNudgeTests() {
 
   // ── The sender: real entries, the four queues, never email ─────────────────────────────────────
   {
-    assert.deepEqual(phoenixCrmChannels("approval_nudge"), ["in_app", "email", "telegram", "push"], "in-app, email, Telegram and the phone (email since 2026-10-08, owner)");
+    assert.deepEqual(phoenixCrmChannels("approval_nudge"), ["in_app", "telegram", "push"], "in-app, Telegram and the phone — no email (owner, 2026-10-13)");
     const runner = source("src/lib/phoenix-crm/server/approval-nudge.ts");
     assert.ok(runner.includes('channels: phoenixCrmChannels("approval_nudge"),'), "the runner asks the guard for its channels, and names none itself");
     assert.equal(/"email"/.test(runner), false, "and never names email");

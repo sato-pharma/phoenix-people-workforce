@@ -135,7 +135,7 @@ export function runPhoenixCrmPlanReminderTests() {
 
   // ── 🔴 Email since 2026-10-08, the phone and Telegram ──────────────────────────────────────────────────────
   {
-    assert.deepEqual(phoenixCrmChannels("plan_reminder"), ["in_app", "email", "telegram", "push"], "email too since 2026-10-08 (owner, asked about by name)");
+    assert.deepEqual(phoenixCrmChannels("plan_reminder"), ["in_app", "telegram", "push"], "no email (owner, 2026-10-13, reversing 2026-10-08)");
     const runner = source("src/lib/phoenix-crm/server/plan-reminder.ts");
     assert.ok(runner.includes('channels: phoenixCrmChannels("plan_reminder"),'), "the runner asks the guard for its channels, and names none itself");
     assert.equal(/"email"/.test(runner), false, "and never names email");

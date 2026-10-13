@@ -653,11 +653,11 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
       "the district manager reads the VISIT named, never a title Hossam does not hold",
     );
     for (const delivery of cns) {
-      // Email since 2026-10-08 for the steps a person takes (the ask waiting, accepted, declined); the courtesy copy stays off it.
-      assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(delivery.eventType), delivery.eventType !== "visit_ask_told", "email only for the steps a person takes");
+      // No email for any step (owner, 2026-10-13): in-app, Telegram and the phone.
+      assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(delivery.eventType), false, "no visit-ask notice emails (owner, 2026-10-13)");
       assert.deepEqual(
         phoenixCrmChannels(delivery.eventType, delivery.inAppOnly),
-        delivery.inAppOnly ? ["in_app"] : PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(delivery.eventType) ? ["in_app", "email", "telegram", "push"] : ["in_app", "telegram", "push"],
+        delivery.inAppOnly ? ["in_app"] : ["in_app", "telegram", "push"],
       );
     }
 
@@ -683,10 +683,10 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
       assert.equal(delivery.subjectHrId, "B-7");
       assert.ok(delivery.idempotencyKey.startsWith(`phoenix_crm:visit_ask:${ASK}:`), "every notice of an ask shares the prefix it is withdrawn by");
       // Never by email — and a test ask stays in the app, reaching only the test accounts.
-      assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(delivery.eventType), delivery.eventType !== "visit_ask_told", `${delivery.eventType} emails only when a person took the step`);
+      assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(delivery.eventType), false, `${delivery.eventType} never emails`);
       assert.deepEqual(
         phoenixCrmChannels(delivery.eventType, delivery.inAppOnly),
-        delivery.inAppOnly ? ["in_app"] : PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(delivery.eventType) ? ["in_app", "email", "telegram", "push"] : ["in_app", "telegram", "push"],
+        delivery.inAppOnly ? ["in_app"] : ["in_app", "telegram", "push"],
       );
       assert.deepEqual(phoenixCrmChannels(delivery.eventType, true), ["in_app"], "a test ask is told in the app alone");
       assert.doesNotMatch(delivery.message, /\bdoctor/i, "a customer, never a doctor");

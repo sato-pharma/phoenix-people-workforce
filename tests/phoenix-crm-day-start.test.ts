@@ -158,10 +158,11 @@ export function runPhoenixCrmDayStartTests(): void {
 
   // ── (c) The two event types are what hold "email to the district manager only" ──────────────────
   {
-    assert.ok(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("day_start_confirmed"), "the district manager's copy may email");
-    assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("day_start_seen"), false, "🔴 the SFE's copy may NOT — it would be one email per rep every morning");
+    // Since 2026-10-13 (owner) neither copy emails: Phoenix CRM is in-app, Telegram and the phone only.
+    assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("day_start_confirmed"), false, "the district manager's copy no longer emails");
+    assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("day_start_seen"), false, "🔴 and the SFE's copy never did — it would be one email per rep every morning");
 
-    assert.ok(phoenixCrmChannels("day_start_confirmed").includes("email"), "the DM gets email");
+    assert.deepEqual(phoenixCrmChannels("day_start_confirmed"), ["in_app", "telegram", "push"], "the DM is told in-app, by Telegram and on the phone");
     assert.deepEqual(
       phoenixCrmChannels("day_start_seen"),
       ["in_app", "telegram"],
@@ -169,9 +170,10 @@ export function runPhoenixCrmDayStartTests(): void {
     );
 
     // The guard is the enforcement, not the call site: email re-enters from the fallback.
-    assert.ok(
+    assert.equal(
       enforcePhoenixCrmEmailBlock(["email", "in_app"], "phoenix_crm", "day_start_confirmed").includes("email"),
-      "the DM's copy keeps email through the guard",
+      false,
+      "the DM's copy is stripped of email too, even when the pipeline asks for it",
     );
     assert.equal(
       enforcePhoenixCrmEmailBlock(["email", "in_app"], "phoenix_crm", "day_start_seen").includes("email"),

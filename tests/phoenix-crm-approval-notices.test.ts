@@ -168,8 +168,8 @@ export function runPhoenixCrmApprovalNoticeTests() {
     assert.equal(/"email"/.test(notify), false, "the Phoenix CRM notifier never asks for email itself");
     assert.equal(
       PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("unplanned_visit_waiting"),
-      true,
-      "and this notice emails since 2026-10-08 (owner: email for every action to the person responsible), beside in-app, Telegram and the phone",
+      false,
+      "and this notice does not email — Phoenix CRM is in-app, Telegram and the phone only (owner, 2026-10-13)",
     );
   }
 
@@ -313,9 +313,10 @@ export function runPhoenixCrmApprovalNoticeTests() {
       ["in_app"],
       "and the Telegram fallback cannot put it back on either",
     );
-    // The four that remain are untouched: a person's own step still emails.
+    // Since 2026-10-13 (owner) no plan-edit step emails either: in-app, Telegram and the phone only.
     for (const step of ["plan_edit_waiting", "plan_edit_moved_on", "plan_edit_refused", "plan_edit_reopened"]) {
-      assert.ok(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(step), `${step} keeps its email — a person took that step`);
+      assert.ok(!PHOENIX_CRM_EMAIL_EVENT_TYPES.includes(step), `${step} no longer emails — Phoenix CRM never does`);
+      assert.ok(!phoenixCrmChannels(step).includes("email"), `${step} asks for no email`);
     }
     // The pass tells people whenever it closes something; the channels are not its choice to make.
     assert.match(pass, /if \(closed\.length > 0\) \{/, "every closed request is announced");
@@ -390,7 +391,7 @@ export function runPhoenixCrmApprovalNoticeTests() {
     // In-app and Telegram only: informational, so no phone — and on the push-blocked list rather than
     // merely off the email list, because the Telegram-failure fallback would otherwise mail him.
     assert.ok(PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES.includes("plan_resent"));
-    assert.ok(!PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("plan_resent"), "the module's emails are the person-taken steps, and this is not one");
+    assert.ok(!PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("plan_resent"), "the module sends no email at all");
     assert.deepEqual(phoenixCrmChannels("plan_resent"), ["in_app", "telegram"]);
     // The module comes FIRST: called with one argument the event type lands in `module`, which is not
     // `phoenix_crm`, so the guard answers false and the assertion passes for nobody.
