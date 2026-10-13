@@ -6,6 +6,7 @@ import {
   periodEndDate,
 } from "@/lib/sales/closing-performance-review";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
+import { isOfficeDistributorCode, lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
 import type {
@@ -37,12 +38,26 @@ import type {
 // row — the owner's decision on 2026-10-13, taken to keep the locked own-area-never-region rule.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** A seat's three customer channels for one month. `distributor` already EXCLUDES the warehouses. */
+/** A seat's customer channels for one month. `distributor` already EXCLUDES the warehouses. */
 export type RepRankingChannels = {
-  /** The published distributor book less its warehouse rows, so the three add to `sales`. */
+  /**
+   * The published distributor book less its warehouse rows AND less Office, so the channels add to
+   * `sales` on every line.
+   */
   distributor: number;
   stores: number;
   direct: number;
+  /**
+   * The company's own stock, spread across the areas by the locked value-share rule.
+   *
+   * 🔴 ZERO ON EVERY LINE BUT CNS, and that is the repo's own rule rather than this module's:
+   * `lineHasOfficeChannel` is the one list (office-distributor.ts, the owner's 2026-08-25 ruling),
+   * and the upload refuses a non-CNS Office product through the same list. Office is NOT a
+   * distributor, so it is carved out of the book exactly as the warehouses are — leaving it inside
+   * would have the channel shares sum past 100% on the line where it is the biggest channel of all
+   * (CNS September 2026: 6,971,180 EGP of 11,885,445, read from production 2026-10-13).
+   */
+  office: number;
 };
 
 export type RepRankingProduct = {
@@ -173,7 +188,11 @@ export function carveChannelsByArea(
 ): ClosingRepRankingCarve {
   const stores = new Map<string, number>();
   const direct = new Map<string, number>();
+  const office = new Map<string, number>();
   const warehouseCustomers = new Set<string>();
+  // 🔴 ASKED ONCE, OF THE REPO'S OWN LIST. A line without the Office channel leaves this map empty
+  // and every seat's office stays 0 — never a second list of lines living here.
+  const carvesOffice = lineHasOfficeChannel(line);
   for (const row of rows) {
     const area = String(row.areaCode ?? "").trim().toUpperCase();
     // A direct row booked before the Direct Orders module stamped geography carries NO area. It
@@ -188,13 +207,20 @@ export function carveChannelsByArea(
       continue;
     }
     if (!row.includedInClosing) continue;
+    // 🔴 OFFICE BEFORE THE WAREHOUSE TEST, and the two cannot overlap anyway: an Office row carries
+    // no customer by construction (`clientCode` null), so the store rule answers false for it. The
+    // order is kept explicit so a later change to either rule cannot start counting one row twice.
+    if (carvesOffice && isOfficeDistributorCode(row.distributorCode)) {
+      office.set(key, (office.get(key) ?? 0) + value);
+      continue;
+    }
     if (!isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, row.invoicePeriod, line)) {
       continue;
     }
     stores.set(key, (stores.get(key) ?? 0) + value);
     warehouseCustomers.add(`${row.distributorCode}|${row.clientCode}|${row.clientName}`);
   }
-  return { direct, stores, warehouseCustomers };
+  return { direct, office, stores, warehouseCustomers };
 }
 
 /**
@@ -205,6 +231,8 @@ export function carveChannelsByArea(
 export type ClosingRepRankingCarve = {
   stores: Map<string, number>;
   direct: Map<string, number>;
+  /** The company's own stock. Empty on every line but CNS — see RepRankingChannels.office. */
+  office: Map<string, number>;
   warehouseCustomers: Set<string>;
 };
 
@@ -280,6 +308,8 @@ export function buildRepRanking(input: {
   storesByArea: ReadonlyMap<string, number>;
   /** Direct money, keyed `period|AREA` — see carveByArea. */
   directByArea: ReadonlyMap<string, number>;
+  /** Office money, keyed `period|AREA` — see carveByArea. Omit it on a line without the channel. */
+  officeByArea?: ReadonlyMap<string, number>;
   probationByName: ReadonlyMap<string, string>;
   warehouseCustomers: number;
 }): RepRanking {
@@ -320,6 +350,7 @@ export function buildRepRanking(input: {
     const vacant = assignment ? assignment.repIsVacant : true;
     const stores = input.storesByArea.get(`${period}|${areaCode}`) ?? 0;
     const direct = input.directByArea.get(`${period}|${areaCode}`) ?? 0;
+    const office = input.officeByArea?.get(`${period}|${areaCode}`) ?? 0;
     const salesValue = Number(area.rowTotal.salesValue ?? 0);
     const targetValue = area.rowTotal.targetValue == null ? null : Number(area.rowTotal.targetValue);
 
@@ -367,7 +398,7 @@ export function buildRepRanking(input: {
       achievement: targetValue != null && targetValue !== 0 ? salesValue / targetValue : null,
       areaCode: area.areaCode,
       areaName: area.areaName,
-      channels: { direct, distributor: near(salesValue - stores - direct), stores },
+      channels: { direct, distributor: near(salesValue - stores - direct - office), office, stores },
       managerName: assignment?.managerName ?? UNASSIGNED_TEAM,
       monthTargets: trend.map((month) => {
         const row = perMonth.get(month)?.get(areaCode);
@@ -417,7 +448,7 @@ export function buildRepRanking(input: {
         achievement: null,
         areaCode: area.areaCode,
         areaName: area.areaName,
-        channels: { direct: 0, distributor: 0, stores: 0 },
+        channels: { direct: 0, distributor: 0, office: 0, stores: 0 },
         managerName: UNASSIGNED_TEAM,
         monthTargets: trend.map(() => null),
         months: trend.map((trendMonth) => {
@@ -457,6 +488,7 @@ export function buildRepRanking(input: {
       channels: {
         direct: seats.reduce((total, seat) => total + seat.channels.direct, 0),
         distributor: near(seats.reduce((total, seat) => total + seat.channels.distributor, 0)),
+        office: seats.reduce((total, seat) => total + seat.channels.office, 0),
         stores: seats.reduce((total, seat) => total + seat.channels.stores, 0),
       },
       managerName,
@@ -499,6 +531,7 @@ export function buildRepRanking(input: {
       channels: {
         direct: seatRows.reduce((total, seat) => total + seat.channels.direct, 0),
         distributor: near(seatRows.reduce((total, seat) => total + seat.channels.distributor, 0)),
+        office: seatRows.reduce((total, seat) => total + seat.channels.office, 0),
         stores: seatRows.reduce((total, seat) => total + seat.channels.stores, 0),
       },
       probationCount: seatRows.filter((seat) => seat.probationEndsOn != null).length,

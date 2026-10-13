@@ -3,6 +3,7 @@ import path from "node:path";
 
 import ExcelJS from "exceljs";
 
+import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
 import { type ClosingRepRankingCarve, type RepRanking } from "@/lib/sales/closing-rep-ranking";
 import {
@@ -14,6 +15,7 @@ import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
 import {
   DIRECT,
   DIST,
+  OFFICE,
   type LegacySeat,
   type LegacyWho,
   type RankingPublication,
@@ -633,7 +635,7 @@ function noRankingDress(line: string): never {
 export async function buildRepRankingWorkbook(input: {
   ranking: RepRanking;
   probationByName: ReadonlyMap<string, string>;
-  carve: Pick<ClosingRepRankingCarve, "direct" | "stores">;
+  carve: Pick<ClosingRepRankingCarve, "direct" | "office" | "stores">;
   publications?: ReadonlyArray<RankingPublication>;
   /**
    * The closing month's detail rows, for the Rows tab — owner, 2026-10-13.
@@ -682,6 +684,26 @@ export async function buildRepRankingWorkbook(input: {
 
   // The names the sheets below were written and break-tested against.
   const LINE = ranking.line;
+  // THE THIRD CHANNEL IS DIRECT ON EVERY LINE BUT CNS, WHERE IT IS OFFICE. Owner, 2026-10-13:
+  // "in CNS, instead of the direct order column in channels, you will put office. CNS don't have
+  // direct orders. So instead of the direct you will consider the office as the direct, and put it
+  // in a separate column in the tab that shows this." Read from the repo's OWN list
+  // (`lineHasOfficeChannel`, office-distributor.ts) rather than a second list of lines living here,
+  // and measured on production the same day: CNS September 2026 has ZERO direct rows and 6,971,180
+  // EGP of Office over 3,960 rows - the line's biggest channel of all. That is also why Office
+  // cannot be left inside the distributor book: the three shares would read past the sales they
+  // divide.
+  // A SEPARATE COLUMN, NOT A RENAMED ONE: `office` is carved in `carveChannelsByArea` and
+  // `distributor` already excludes it, so Distributor + Stores + Office = Sales by construction on
+  // CNS exactly as Distributor + Stores + Direct = Sales everywhere else.
+  const CH3 = lineHasOfficeChannel(LINE) ? OFFICE : DIRECT;
+  const ch3 = (r: { dir: number; office: number }): number => (CH3 === OFFICE ? r.office : r.dir);
+  // What a line with no direct column still carries in direct money, folded into its distributor
+  // book by `toLegacyShape` so the three columns add to Sales. Named on the Trust sheet rather than
+  // left for a reader to discover by subtracting: CNS September 2026 is -25,640 EGP of credits.
+  const FOLDED_DIRECT = CH3 === OFFICE
+    ? ranking.seats.reduce((whole, seat) => whole + seat.channels.direct, 0)
+    : 0;
   const PERIOD = ranking.period;
   const TREND = ranking.trend;
   // 🔴 THE TREND IS 1, 2 OR 3 MONTHS - NEVER ASSUMED THREE. `resolveTrendPeriods` hands back the
@@ -709,8 +731,8 @@ export async function buildRepRankingWorkbook(input: {
       : "";
 
   const HEADS = ["Rank", "Region", "Medical rep", "Area", "District manager",
-    "Distributor EGP", "Stores EGP", "Direct EGP", "Sales EGP",
-    "Distributor %", "Stores %", "Direct %",
+    "Distributor EGP", "Stores EGP", `${CH3} EGP`, "Sales EGP",
+    "Distributor %", "Stores %", `${CH3} %`,
     "Target EGP", "Gap to target", "Achievement", "Performance", "Share of line", "vs last month"];
   const WIDTHS = [7, 14, 27, 19, 25, 13, 11, 11, 13, 10, 10, 10, 13, 12, 11, 12, 10, 11];
 
@@ -754,12 +776,19 @@ export async function buildRepRankingWorkbook(input: {
         // THE THREE CHANNELS, side by side, adding to Sales. `distOnly` is the distributor book with
         // the warehouses taken out of it, so a store's money is counted once and in one place.
         cell(ws, row, 6, r.distOnly, { numFmt: money, zebra });
-        cell(ws, row, 7, r.store > 0 ? r.store : "none", { numFmt: r.store > 0 ? money : undefined, zebra, muted: r.store === 0 });
-        cell(ws, row, 8, r.dir > 0 ? r.dir : "none", { numFmt: r.dir > 0 ? money : undefined, zebra, muted: r.dir === 0 });
+        // 🔴 `!== 0`, NEVER `> 0`. A NEGATIVE channel figure is a MEASURED figure - a month whose
+        // credits outweighed its invoices - and `> 0` printed it as "none", which is the
+        // absence-is-not-zero mistake with its sign reversed: it hides a real number AND makes the
+        // three columns stop adding to Sales for that seat with nothing on the row saying why.
+        // Measured on CNS September 2026, where Cairo East 2's warehouses are -25,640 EGP and the
+        // row read Distributor + Office = 25,640 MORE than its own sales.
+        cell(ws, row, 7, r.store !== 0 ? r.store : "none", { numFmt: r.store !== 0 ? money : undefined, zebra, muted: r.store === 0, font: r.store < 0 ? bold(10, SHORT_DEEP) : undefined });
+        const third = ch3(r);
+        cell(ws, row, 8, third !== 0 ? third : "none", { numFmt: third !== 0 ? money : undefined, zebra, muted: third === 0, font: third < 0 ? bold(10, SHORT_DEEP) : undefined });
         cell(ws, row, 9, r.sales, { numFmt: money, zebra, font: bold(10, INK) });
         // SHARE OF THE SPLIT -- each channel against this seat's own sales, so the three read across
         // to 100%. Shaded in that channel's own colour below.
-        for (const [col, v] of [[10, r.distOnly], [11, r.store], [12, r.dir]]) {
+        for (const [col, v] of [[10, r.distOnly], [11, r.store], [12, third]]) {
           cell(ws, row, col, r.sales > 0 ? v / r.sales : "", { numFmt: r.sales > 0 ? pct1 : undefined, zebra, size: 9 });
         }
       } else {
@@ -823,7 +852,7 @@ export async function buildRepRankingWorkbook(input: {
       "A NAME ON PROBATION IS YELLOW, on the name cell alone, so it reads as a fact about the person and not about the seat's numbers.",
       dress.bracketNote,
       "EVERY FIGURE ON THIS SHEET IS VALUE. Units live on one sheet only - Units x Product x Month - and are cut by product there, because a rep sells several products and concentrations and units of different products are not addable. Above one product code, value is the only figure that aggregates.",
-      `THE THREE CHANNELS ADD TO SALES. A warehouse buys from a distributor, so Stores is carved OUT of the distributor book rather than added beside it - Distributor here is the distributor book with the warehouses taken out. ${Math.round(storeTotal).toLocaleString("en-US")} EGP of ${monthName(PERIOD)} reached ${L.warehouseCustomers} warehouses, ${total > 0 ? ((storeTotal / total) * 100).toFixed(1) : 0}% of the line.`,
+      `THE THREE CHANNELS ADD TO SALES. A warehouse buys from a distributor, so Stores is carved OUT of the distributor book rather than added beside it - Distributor here is the distributor book with the warehouses taken out${CH3 === OFFICE ? ", and with the company's own Office stock taken out beside them, which on this line is its own column rather than direct orders" : ""}. ${Math.round(storeTotal).toLocaleString("en-US")} EGP of ${monthName(PERIOD)} reached ${L.warehouseCustomers} warehouses, ${total > 0 ? ((storeTotal / total) * 100).toFixed(1) : 0}% of the line.`,
       "WHO IS A WAREHOUSE is the platform's own rule, read out of src/lib/sales/customer-channel.ts rather than copied, and asked of each month with the rule that was in force for it. Every one of the 260 published cells is reproduced to the penny by the split, so no figure in this workbook moved to make the three columns appear.",
     ], COLS);
 
@@ -955,9 +984,12 @@ export async function buildRepRankingWorkbook(input: {
       const t = apTargetOf(PERIOD, code, pc);
       const sales = apSalesTotal(c);
       const store = c?.store ?? 0;
+      const office = c?.office ?? 0;
       return {
         pc, name: productName(pc), family: productFamily(pc), exists: c !== null,
-        distOnly: (c?.dist ?? 0) - store, store, dir: c?.dir ?? 0,
+        // `dist` carries the warehouses AND Office inside it, so both come out here - the same
+        // treatment for the same reason: neither is a distributor's own purchase.
+        distOnly: (c?.dist ?? 0) - store - office, store, dir: c?.dir ?? 0, office,
         sales, target: t, ach: achievement(sales, t),
       };
     }).filter((p) => p.exists || p.target > 0);
@@ -967,7 +999,7 @@ export async function buildRepRankingWorkbook(input: {
 
   function sheetAreaProduct() {
     const HEAD = ["Rank", "Region", "Area", "Medical rep  /  Product", "Family",
-      "Distributor EGP", "Stores EGP", "Direct EGP", "Sales EGP", "Target EGP",
+      "Distributor EGP", "Stores EGP", `${CH3} EGP`, "Sales EGP", "Target EGP",
       "Achievement", "Performance", "Share of seat"];
     const W = [7, 15, 20, 32, 15, 14, 12, 12, 14, 14, 12, 13, 12];
     const COLS = HEAD.length;
@@ -995,7 +1027,7 @@ export async function buildRepRankingWorkbook(input: {
         cell(ws, row, 5, "", { zebra });
         cell(ws, row, 6, r.distOnly, { numFmt: money, zebra, font: bold(10, INK) });
         cell(ws, row, 7, r.store, { numFmt: money, zebra, font: bold(10, INK) });
-        cell(ws, row, 8, r.dir, { numFmt: money, zebra, font: bold(10, INK) });
+        cell(ws, row, 8, ch3(r), { numFmt: money, zebra, font: bold(10, INK) });
         cell(ws, row, 9, r.sales, { numFmt: money, zebra, font: bold(10, INK) });
         cell(ws, row, 10, r.target > 0 ? r.target : "no target", { numFmt: r.target > 0 ? money : undefined, zebra, muted: !(r.target > 0), size: r.target > 0 ? 10 : 9, font: r.target > 0 ? bold(10, INK) : undefined });
         cell(ws, row, 11, r.ach == null ? "no achievement" : r.ach, { numFmt: r.ach == null ? undefined : pct, zebra, muted: r.ach == null, size: r.ach == null ? 9 : 10, bracket: r.ach == null ? undefined : (r.ach >= 1 ? COVERED : SHORT), font: r.ach == null ? undefined : bold(10, INK) });
@@ -1013,7 +1045,8 @@ export async function buildRepRankingWorkbook(input: {
           cell(ws, row, 5, p.family, { zebra, size: 8.5, muted: true });
           cell(ws, row, 6, p.exists ? p.distOnly : "no sales", { numFmt: p.exists ? money : undefined, zebra, size: 9, muted: !p.exists });
           cell(ws, row, 7, p.store !== 0 ? p.store : "none", { numFmt: p.store !== 0 ? money : undefined, zebra, size: 9, muted: p.store === 0 });
-          cell(ws, row, 8, p.dir !== 0 ? p.dir : "none", { numFmt: p.dir !== 0 ? money : undefined, zebra, size: 9, muted: p.dir === 0 });
+          const p3 = ch3(p);
+          cell(ws, row, 8, p3 !== 0 ? p3 : "none", { numFmt: p3 !== 0 ? money : undefined, zebra, size: 9, muted: p3 === 0 });
           cell(ws, row, 9, p.exists ? p.sales : "no sales", { numFmt: p.exists ? money : undefined, zebra, size: 9, muted: !p.exists,
             font: p.sales < 0 ? bold(9, SHORT_DEEP) : undefined });
           cell(ws, row, 10, p.target > 0 ? p.target : "no target", { numFmt: p.target > 0 ? money : undefined, zebra, size: 9, muted: !(p.target > 0) });
@@ -1047,7 +1080,7 @@ export async function buildRepRankingWorkbook(input: {
       cell(ws, row, 5, "District manager", { fill: band, size: 8.5, muted: true });
       cell(ws, row, 6, d.dist, { numFmt: money, fill: band, size: 9.5, font: bold(9.5, INK) });
       cell(ws, row, 7, d.store, { numFmt: money, fill: band, size: 9.5, font: bold(9.5, INK) });
-      cell(ws, row, 8, d.dir, { numFmt: money, fill: band, size: 9.5, font: bold(9.5, INK) });
+      cell(ws, row, 8, ch3(d), { numFmt: money, fill: band, size: 9.5, font: bold(9.5, INK) });
       cell(ws, row, 9, d.sales, { numFmt: money, fill: band, size: 9.5, font: bold(9.5, INK) });
       cell(ws, row, 10, d.target > 0 ? d.target : "no target", { numFmt: d.target > 0 ? money : undefined, fill: band, size: 9.5, muted: !(d.target > 0), font: d.target > 0 ? bold(9.5, INK) : undefined });
       cell(ws, row, 11, d.ach == null ? "no achievement" : d.ach, { numFmt: d.ach == null ? undefined : pct, fill: band, size: 9.5, muted: d.ach == null, font: d.ach == null ? undefined : bold(9.5, INK) });
@@ -1062,7 +1095,7 @@ export async function buildRepRankingWorkbook(input: {
     cell(ws, row, 4, `ALL ${LINE.toUpperCase()}`, { font: bold(10, INK) });
     cell(ws, row, 5, `${productLines} product lines`, { font: bold(9, INK) });
     for (const [col, v] of [[6, sum(rows, (x) => x.distOnly)], [7, sum(rows, (x) => x.store)],
-      [8, sum(rows, (x) => x.dir)], [9, total], [10, lineTarget(PERIOD)]]) {
+      [8, sum(rows, ch3)], [9, total], [10, lineTarget(PERIOD)]]) {
       ws.getCell(row, col).value = v; ws.getCell(row, col).numFmt = money;
     }
     ws.getCell(row, 11).value = achievement(total, lineTarget(PERIOD)); ws.getCell(row, 11).numFmt = pct;
@@ -1093,7 +1126,7 @@ export async function buildRepRankingWorkbook(input: {
   // ===========================================================================
   function sheetAreaProductFlat() {
     const HEAD = ["Region", "Area", "Medical rep", "District manager", "Seat", "Product", "Family",
-      "Distributor EGP", "Stores EGP", "Direct EGP", "Sales EGP", "Target EGP", "Gap to target",
+      "Distributor EGP", "Stores EGP", `${CH3} EGP`, "Sales EGP", "Target EGP", "Gap to target",
       "Achievement", "Share of line"];
     const W = [15, 20, 28, 26, 13, 24, 15, 14, 12, 12, 14, 14, 13, 12, 12];
     const COLS = HEAD.length;
@@ -1126,7 +1159,7 @@ export async function buildRepRankingWorkbook(input: {
         cell(ws, row, 7, p.family, { zebra, size: 9, muted: true });
         cell(ws, row, 8, p.distOnly, { numFmt: money, zebra, size: 9 });
         cell(ws, row, 9, p.store, { numFmt: money, zebra, size: 9, muted: p.store === 0 });
-        cell(ws, row, 10, p.dir, { numFmt: money, zebra, size: 9, muted: p.dir === 0 });
+        cell(ws, row, 10, ch3(p), { numFmt: money, zebra, size: 9, muted: ch3(p) === 0 });
         cell(ws, row, 11, p.sales, { numFmt: money, zebra, size: 9, font: bold(9, INK) });
         cell(ws, row, 12, p.target, { numFmt: money, zebra, size: 9, muted: p.target === 0 });
         cell(ws, row, 13, p.target > 0 ? p.sales - p.target : "", { numFmt: p.target > 0 ? moneySigned : undefined, zebra, size: 9 });
@@ -1369,7 +1402,7 @@ export async function buildRepRankingWorkbook(input: {
 
   function sheetDistricts() {
     const HEAD = ["Rank", "District manager", "Region", "Seats", "Vacant seats", "Distributor EGP", "Stores EGP",
-      "Direct EGP", "Sales EGP", "Target EGP", "Achievement", "Performance", "Share of line"];
+      `${CH3} EGP`, "Sales EGP", "Target EGP", "Achievement", "Performance", "Share of line"];
     const W = [7, 28, 18, 9, 11, 14, 12, 12, 14, 14, 12, 13, 11];
     const COLS = HEAD.length;
     const ws = book.dress(wb.addWorksheet("Districts", { properties: { tabColor: { argb: COVERED } } }), monthName(PERIOD));
@@ -1377,7 +1410,7 @@ export async function buildRepRankingWorkbook(input: {
     const list = [...PARTITION.byDm.entries()].map(([dm, members]) => ({
       dm, members,
       regions: [...new Set(members.map((r) => r.region))],
-      dist: sum(members, (r) => r.distOnly), store: sum(members, (r) => r.store), dir: sum(members, (r) => r.dir),
+      dist: sum(members, (r) => r.distOnly), store: sum(members, (r) => r.store), dir: sum(members, ch3),
       sales: sum(members, (r) => r.sales), target: sum(members, (r) => r.target),
       vacant: members.filter((r) => r.who.vacant).length,
       probation: members.some((r) => r.who.dmProbation),
@@ -1405,8 +1438,8 @@ export async function buildRepRankingWorkbook(input: {
       cell(ws, row, 5, d.vacant > 0 ? d.vacant : "none", { numFmt: d.vacant > 0 ? "#,##0" : undefined, zebra, muted: d.vacant === 0,
         font: d.vacant > 0 ? bold(10, SHORT_DEEP) : undefined });
       cell(ws, row, 6, d.dist, { numFmt: money, zebra });
-      cell(ws, row, 7, d.store > 0 ? d.store : "none", { numFmt: d.store > 0 ? money : undefined, zebra, muted: d.store === 0 });
-      cell(ws, row, 8, d.dir > 0 ? d.dir : "none", { numFmt: d.dir > 0 ? money : undefined, zebra, muted: d.dir === 0 });
+      cell(ws, row, 7, d.store !== 0 ? d.store : "none", { numFmt: d.store !== 0 ? money : undefined, zebra, muted: d.store === 0, font: d.store < 0 ? bold(10, SHORT_DEEP) : undefined });
+      cell(ws, row, 8, d.dir !== 0 ? d.dir : "none", { numFmt: d.dir !== 0 ? money : undefined, zebra, muted: d.dir === 0, font: d.dir < 0 ? bold(10, SHORT_DEEP) : undefined });
       cell(ws, row, 9, d.sales, { numFmt: money, zebra, font: bold(10, INK) });
       if (d.target > 0) {
         cell(ws, row, 10, d.target, { numFmt: money, zebra });
@@ -1464,7 +1497,7 @@ export async function buildRepRankingWorkbook(input: {
     }
     const list = [...byRegion.entries()].map(([region, members]) => ({
       region, members,
-      dist: sum(members, (r) => r.distOnly), store: sum(members, (r) => r.store), dir: sum(members, (r) => r.dir),
+      dist: sum(members, (r) => r.distOnly), store: sum(members, (r) => r.store), dir: sum(members, ch3),
       sales: sum(members, (r) => r.sales), target: sum(members, (r) => r.target),
       vacant: members.filter((r) => r.who.vacant).length,
     })).map((g) => ({ ...g, ach: achievement(g.sales, g.target), rank: null as number | null }))
@@ -1476,7 +1509,7 @@ export async function buildRepRankingWorkbook(input: {
     row = sectionLabel(ws, row, `THE REGIONS   ·   ${list.length} on ${LINE}`, `${n} carry a target and are ranked`, COLS);
     const headAt = row;
     row = headerRow(ws, row,
-      ["Rank", "Region", "Seats", "Vacant seats", "Distributor EGP", "Stores EGP", "Direct EGP", "Sales EGP", "Target EGP", "Achievement", "Performance", "Share of line"], W);
+      ["Rank", "Region", "Seats", "Vacant seats", "Distributor EGP", "Stores EGP", `${CH3} EGP`, "Sales EGP", "Target EGP", "Achievement", "Performance", "Share of line"], W);
     const first = row;
     list.forEach((g, i) => {
       const zebra = i % 2 === 1;
@@ -1486,8 +1519,8 @@ export async function buildRepRankingWorkbook(input: {
       cell(ws, row, 4, g.vacant > 0 ? g.vacant : "none", { numFmt: g.vacant > 0 ? "#,##0" : undefined, zebra, muted: g.vacant === 0,
         font: g.vacant > 0 ? bold(10, SHORT_DEEP) : undefined });
       cell(ws, row, 5, g.dist, { numFmt: money, zebra });
-      cell(ws, row, 6, g.store > 0 ? g.store : "none", { numFmt: g.store > 0 ? money : undefined, zebra, muted: g.store === 0 });
-      cell(ws, row, 7, g.dir > 0 ? g.dir : "none", { numFmt: g.dir > 0 ? money : undefined, zebra, muted: g.dir === 0 });
+      cell(ws, row, 6, g.store !== 0 ? g.store : "none", { numFmt: g.store !== 0 ? money : undefined, zebra, muted: g.store === 0, font: g.store < 0 ? bold(10, SHORT_DEEP) : undefined });
+      cell(ws, row, 7, g.dir !== 0 ? g.dir : "none", { numFmt: g.dir !== 0 ? money : undefined, zebra, muted: g.dir === 0, font: g.dir < 0 ? bold(10, SHORT_DEEP) : undefined });
       cell(ws, row, 8, g.sales, { numFmt: money, zebra, font: bold(10, INK) });
       if (g.target > 0) {
         cell(ws, row, 9, g.target, { numFmt: money, zebra });
@@ -1875,7 +1908,7 @@ export async function buildRepRankingWorkbook(input: {
     row += 1;
 
     section("WHAT THE RANKING IS MADE OF", "A rank can be arithmetically perfect over a fraction of the seats.");
-    row = headerRow(ws, row, ["Month", "Seats selling", "Seats with a target", "Distributor cells", "Direct cells", "Sales EGP", "Target EGP"], W);
+    row = headerRow(ws, row, ["Month", "Seats selling", "Seats with a target", "Distributor cells", `${CH3} cells`, "Sales EGP", "Target EGP"], W);
     TREND.forEach((p, i) => {
       const all = cellsOf(p);
       const zebra = i % 2 === 1;
@@ -1883,7 +1916,7 @@ export async function buildRepRankingWorkbook(input: {
       cell(ws, row, 2, new Set(all.map((c) => c.areaCode)).size, { numFmt: "#,##0", zebra });
       cell(ws, row, 3, new Set(targetRows(p).map((t) => t.areaCode)).size, { numFmt: "#,##0", zebra });
       cell(ws, row, 4, all.filter((c) => c.channel === DIST).length, { numFmt: "#,##0", zebra });
-      const dc = all.filter((c) => c.channel === DIRECT).length;
+      const dc = all.filter((c) => c.channel === CH3).length;
       cell(ws, row, 5, dc > 0 ? dc : "none", { numFmt: dc > 0 ? "#,##0" : undefined, zebra, muted: dc === 0 });
       cell(ws, row, 6, lineSales(p), { numFmt: money, zebra });
       cell(ws, row, 7, lineTarget(p), { numFmt: money, zebra });
@@ -1941,16 +1974,18 @@ export async function buildRepRankingWorkbook(input: {
     row = headerRow(ws, row, ["Figure", "How it is produced", "", "", "", "", ""], W);
     const how = [
       ["The rank", `Seats sorted by achievement, high to low. ${ranked} of ${rows.length} seats carry a target and take a rank; the rest are listed at the foot as unranked. Ranking by SALES instead would put a large untargeted seat above a small one that covered its figure.`],
-      ["Achievement", "The seat's whole sales value - distributor and direct together, money nobody targeted included - divided by the target value it was given. A zero or missing target yields no percentage rather than 0%."],
-      ["The three channels", `Distributor sales come from the closing matrix; direct orders from the direct-order path. They are separate reads of the engine and both are counted - reading only the matrix understates any line that sells direct. STORES is the third, and it is carved OUT of the distributor book rather than added beside it, because a warehouse buys from a distributor: counting it as a fourth bucket would count its money twice. So Distributor + Stores + Direct = Sales, exactly. ${Math.round(sum(rows, (r) => r.store)).toLocaleString("en-US")} EGP of ${monthName(PERIOD)} went through ${L.warehouseCustomers} warehouses.`],
+      ["Achievement", `The seat's whole sales value - every channel together, ${CH3 === OFFICE ? "the company's own Office stock" : "direct orders"} and money nobody targeted included - divided by the target value it was given. A zero or missing target yields no percentage rather than 0%.`],
+      ["The three channels", CH3 === OFFICE
+        ? `Distributor sales come from the closing matrix. ${LINE} SELLS NO DIRECT ORDERS AT ALL - the owner's ruling of 13 October 2026, "CNS don't have direct orders" - so the third column is OFFICE: the company's own stock, allocated across the areas by the locked Office rule, each area taking its share of the line's non-Office VALUE. It is carved OUT of the distributor book exactly as STORES is, and for the same reason: Office is not a distributor and a warehouse buys from one, so counting either beside the book would count its money twice. Distributor + Stores + Office = Sales, exactly. ${Math.round(sum(rows, (r) => r.office)).toLocaleString("en-US")} EGP of ${monthName(PERIOD)} was Office, and ${Math.round(sum(rows, (r) => r.store)).toLocaleString("en-US")} EGP went through ${L.warehouseCustomers} warehouses.${FOLDED_DIRECT !== 0 ? ` ${Math.round(FOLDED_DIRECT).toLocaleString("en-US")} EGP of direct movement did reach this line this month - credits rather than orders - and with no direct column to stand in, it sits INSIDE the distributor figure instead of outside the three. The three still add to Sales exactly; that is what folding it in is for.` : ""}`
+        : `Distributor sales come from the closing matrix; direct orders from the direct-order path. They are separate reads of the engine and both are counted - reading only the matrix understates any line that sells direct. STORES is the third, and it is carved OUT of the distributor book rather than added beside it, because a warehouse buys from a distributor: counting it as a fourth bucket would count its money twice. So Distributor + Stores + Direct = Sales, exactly. ${Math.round(sum(rows, (r) => r.store)).toLocaleString("en-US")} EGP of ${monthName(PERIOD)} went through ${L.warehouseCustomers} warehouses.`],
       ["Who is a warehouse", "The platform's own rule, imported from src/lib/sales/customer-channel.ts rather than transcribed - that file declares itself the single edit point, and its own comment records that a hand-copied version of the six store words once mis-stated this channel by 8.7M EGP. Each month is asked with the rule that was IN FORCE FOR IT: the owner's 2026-09-06 rulings start at September on this line, so July and August are classified on the earlier rule. Using today's rule for every month shown would silently restate a published one."],
-      ["The split is taken, not re-priced", `Every invoice row is carved at the sales value the closing engine itself gave it - the same figure the published cell was built from - so Distributor, Stores and Direct add to that cell by construction and not by a reconciliation that could drift. A warehouse is a KIND OF CUSTOMER inside the distributor book, which is why Stores is carved OUT of the distributor figure instead of added beside it: ${L.warehouseCustomers} warehouse customers in ${monthName(PERIOD)}, over ${cellsOf(PERIOD).length} channel-tagged cells of the month. No figure anywhere in this workbook moved to make the three columns appear.`],
+      ["The split is taken, not re-priced", `Every invoice row is carved at the sales value the closing engine itself gave it - the same figure the published cell was built from - so Distributor, Stores and ${CH3} add to that cell by construction and not by a reconciliation that could drift. A warehouse is a KIND OF CUSTOMER inside the distributor book, which is why Stores is carved OUT of the distributor figure instead of added beside it: ${L.warehouseCustomers} warehouse customers in ${monthName(PERIOD)}, over ${cellsOf(PERIOD).length} channel-tagged cells of the month. No figure anywhere in this workbook moved to make the three columns appear.`],
       ["A district's figure", "Its own seats' sales over its own seats' targets - never the average of its seats' percentages, which would weight a small seat like a large one."],
       ["Vacant and probation", `A seat with nobody in it is red and still ranked, because the money through it is real and the target it carries is real. A rep inside their probation period is yellow on the name cell alone. ${probation.length} on this line.`],
       ["Units", "On ONE sheet only - Units x Product x Month - and cut by product there, because a unit total is valid only inside one product code. A rep sells several products and concentrations, so above a product code value is the only figure that aggregates: that sheet carries no grand total, and no other sheet carries a unit column."],
       ["Seats, areas, managers", "The area map and the live seat occupancy as at the pull - today's arrangement, applied to every month shown."],
       // 🔴 THIS IS THE LINE THAT CRASHED THE DOWNLOAD: `TREND[2]` on a trend of one month.
-      ["Scope", `${LINE} only, ${monthName(PERIOD)} for the ranking and ${SPAN} for the month-by-month tab. Head Office is not a tracked line and is not in any figure here.`],
+      ["Scope", `${LINE} only, ${monthName(PERIOD)} for the ranking and ${SPAN} for the month-by-month tab. Head Office is not a tracked line and is not in any figure here.${CH3 === OFFICE ? " The Office column is a CHANNEL inside this line - the company's own stock sold against these areas - and not the Head Office line, which is a different thing with the same word in it." : ""}`],
     ];
     how.forEach(([k, v], j) => {
       const zebra = j % 2 === 1;

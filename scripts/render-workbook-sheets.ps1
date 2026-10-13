@@ -60,6 +60,12 @@ foreach ($ws in $wb.Worksheets) {
   $safe = ($ws.Name -replace '[^A-Za-z0-9]+', '-').Trim('-')
   $path = Join-Path $OutDir ($safe + ".png")
   try {
+    # Every closing workbook leaves the server with sheet protection on, and a protected sheet
+    # refuses both CopyPicture and ChartObjects().Add with a bare 0x800A03EC - which reads as a
+    # broken renderer rather than as a lock. This is a scratch COPY, so unprotecting it changes
+    # nothing a reader will ever open. A sheet locked WITH a password simply stays locked and is
+    # reported as FAILED, which is the honest answer.
+    try { $ws.Unprotect() } catch {}
     $ws.Activate()
     $xl.ActiveWindow.Zoom = 100
     Start-Sleep -Milliseconds 300

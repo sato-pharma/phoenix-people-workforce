@@ -159,6 +159,11 @@ export async function buildScopedRepRankingExport(input: {
   const ranking = buildRepRanking({
     directByArea: carveByArea(carve.direct),
     line,
+    // THE THIRD CHANNEL ON CNS. `carveChannelsByArea` fills this map only on a line that has the
+    // Office channel at all, so passing it unconditionally is right: off CNS it is empty and every
+    // seat's office is 0. Owner, 2026-10-13: "in CNS, instead of the direct order column in
+    // channels, you will put office."
+    officeByArea: carveByArea(carve.office),
     matricesByPeriod,
     period,
     probationByName: probation,
@@ -168,7 +173,7 @@ export async function buildScopedRepRankingExport(input: {
   });
 
   const built = await buildRepRankingWorkbook({
-    carve: { direct: carve.direct, stores: carve.stores },
+    carve: { direct: carve.direct, office: carve.office, stores: carve.stores },
     // 🔴 THE ROWS TAB'S OWN ROWS — the SAME set every figure above it was carved from, never a
     // second read of the month (owner, 2026-10-13: "I want the raw detailed sheet to be in the
     // export rep ranking in monthly closing"). The sheet blanks El Qema itself, for every reader,

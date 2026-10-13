@@ -1,3 +1,4 @@
+import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import {
   type RepRanking,
   type RepRankingSeat,
@@ -27,8 +28,13 @@ export type LegacySeat = {
   code: string;
   dir: number;
   dist: number;
-  /** The distributor book with the warehouses taken out, so distOnly + store + dir === sales. */
+  /**
+   * The distributor book with the warehouses AND Office taken out, so
+   * `distOnly + store + dir + office === sales` on every line. Office is zero off CNS.
+   */
   distOnly: number;
+  /** The company's own stock, spread across the areas. Zero on every line but CNS. */
+  office: number;
   prior: number | null;
   rank: number | null;
   region: string;
@@ -52,6 +58,8 @@ export type LegacyDistrict = {
   dir: number;
   dist: number;
   members: LegacySeat[];
+  /** The company's own stock across the district. Zero on every line but CNS. */
+  office: number;
   sales: number;
   store: number;
   target: number;
@@ -65,7 +73,7 @@ export type LegacyTeam = {
   probation: string | null;
 };
 
-export type LegacyProductCell = { dir: number; dist: number; store: number };
+export type LegacyProductCell = { dir: number; dist: number; office: number; store: number };
 
 export type LegacyShape = {
   SEATS: { ranked: number; rows: LegacySeat[]; total: number };
@@ -115,6 +123,7 @@ export type RankingPublication = {
 /** The channel words the Trust sheet's cell counts are labelled with. */
 export const DIST = "Distributor";
 export const DIRECT = "Direct";
+export const OFFICE = "Office";
 
 const achievement = (sales: number, target: number): number | null => (target > 0 ? sales / target : null);
 
@@ -150,9 +159,28 @@ export function toLegacyShape(
    * exactly what the Area x Product break suite refuses. Only the closing month needs it: every
    * other month on this workbook is read as a total, never split.
    */
-  carve: { direct: ReadonlyMap<string, number>; stores: ReadonlyMap<string, number> },
+  carve: {
+    direct: ReadonlyMap<string, number>;
+    /**
+     * The company's own stock per area. REQUIRED rather than optional on purpose: `buildRepRanking`
+     * has already taken Office out of `distributor`, so a caller that forgot to pass it would print
+     * a product table whose three channels no longer add to the seat's sales - silently, and only
+     * on CNS. The compiler asks for it instead.
+     */
+    office: ReadonlyMap<string, number>;
+    stores: ReadonlyMap<string, number>;
+  },
   publications: ReadonlyArray<RankingPublication> = [],
 ): LegacyShape {
+  // 🔴 A LINE WITH AN OFFICE COLUMN PRINTS NO DIRECT ONE, SO ANY DIRECT MONEY IT HAS IS FOLDED INTO
+  // THE DISTRIBUTOR BOOK RATHER THAN LEFT OUTSIDE THE THREE COLUMNS. Owner, 2026-10-13: "CNS don't
+  // have direct orders", and production agrees today - the direct carve over CNS September 2026 is
+  // EMPTY, 0 rows and 0 EGP. This exists for the day that stops being true: with no fourth column
+  // to put it in, one direct row would have Distributor + Stores + Office disagree with the seat's
+  // own published sales, and the Trust sheet's "exactly" would become a lie no reader could see
+  // the cause of. Folded in, it stays inside a figure that is printed. `dir` is then zero because
+  // the sheets have nowhere else to put it. Off these lines nothing changes at all.
+  const FOLD_DIRECT = lineHasOfficeChannel(ranking.line);
   const { period, trend } = ranking;
   const priorPeriod = trend.length > 1 ? trend[trend.length - 2] : null;
   const priorIndex = priorPeriod ? trend.indexOf(priorPeriod) : -1;
@@ -170,9 +198,10 @@ export function toLegacyShape(
       answered: months[closingIndex] != null,
       area: seat.areaName,
       code: seat.areaCode,
-      dir: seat.channels.direct,
-      dist: seat.channels.distributor + seat.channels.stores,
-      distOnly: seat.channels.distributor,
+      dir: FOLD_DIRECT ? 0 : seat.channels.direct,
+      dist: seat.channels.distributor + seat.channels.stores + (FOLD_DIRECT ? seat.channels.direct : 0),
+      distOnly: seat.channels.distributor + (FOLD_DIRECT ? seat.channels.direct : 0),
+      office: seat.channels.office,
       prior: priorIndex >= 0 ? months[priorIndex] ?? null : null,
       rank: seat.rank,
       region: seat.regionName,
@@ -200,9 +229,10 @@ export function toLegacyShape(
       .filter((row): row is LegacySeat => row !== undefined);
     const district: LegacyDistrict = {
       ach: team.achievement,
-      dir: team.channels.direct,
-      dist: team.channels.distributor,
+      dir: FOLD_DIRECT ? 0 : team.channels.direct,
+      dist: team.channels.distributor + (FOLD_DIRECT ? team.channels.direct : 0),
       members,
+      office: team.channels.office,
       sales: team.salesValue,
       store: team.channels.stores,
       target: team.targetValue ?? 0,
@@ -243,8 +273,13 @@ export function toLegacyShape(
           // ever read as a total on this workbook, so its whole figure sits in the distributor half
           // rather than being apportioned by a ratio nobody measured.
           const store = month === period ? carve.stores.get(key) ?? 0 : 0;
-          const direct = month === period ? carve.direct.get(key) ?? 0 : 0;
-          apCells.set(key, { dir: direct, dist: value - direct, store });
+          // Folded on an Office line exactly as the seat above it is, so a product row's three
+          // columns add to its own cell for the same reason the seat's do.
+          const direct = FOLD_DIRECT || month !== period ? 0 : carve.direct.get(key) ?? 0;
+          const office = month === period ? carve.office.get(key) ?? 0 : 0;
+          // `dist` still carries the warehouses AND Office inside it, exactly as it carried the
+          // warehouses before: the sheets subtract what they show, and `apSalesTotal` adds dist+dir.
+          apCells.set(key, { dir: direct, dist: value - direct, office, store });
         }
         if (units != null) apUnits.set(key, units);
         const targetValue = product.monthTargetValues[index];
@@ -337,6 +372,7 @@ export function toLegacyShape(
         // the line.
         if (value.dist !== 0 || value.store !== 0) out.push({ areaCode: area, channel: DIST });
         if (value.dir !== 0) out.push({ areaCode: area, channel: DIRECT });
+        if (value.office !== 0) out.push({ areaCode: area, channel: OFFICE });
       }
       return out;
     },
