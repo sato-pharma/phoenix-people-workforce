@@ -10,6 +10,7 @@ import {
   type RepRanking,
 } from "@/lib/sales/closing-rep-ranking";
 import { periodEndDate } from "@/lib/sales/closing-performance-review";
+import { loadDistributorNameIndex } from "@/lib/sales/closing-details-distributor-names";
 import type { RankingPublication } from "@/lib/sales/closing-rep-ranking-legacy-shape";
 import {
   buildRepRankingWorkbook,
@@ -167,6 +168,13 @@ export async function buildScopedRepRankingExport(input: {
 
   const built = await buildRepRankingWorkbook({
     carve: { direct: carve.direct, stores: carve.stores },
+    // 🔴 THE ROWS TAB'S OWN ROWS — the SAME set every figure above it was carved from, never a
+    // second read of the month (owner, 2026-10-13: "I want the raw detailed sheet to be in the
+    // export rep ranking in monthly closing"). The sheet blanks El Qema itself, for every reader,
+    // because a finished workbook is forwarded and carries no access context with it; the
+    // reasoning is in closing-rows-sheet.ts.
+    details: input.rows,
+    distributorNames: await loadDistributorNameIndex(),
     probationByName: probation,
     publications,
     ranking,

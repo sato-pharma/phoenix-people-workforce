@@ -18,7 +18,7 @@
 // standing rule and the reason the review computes both.
 
 import type { ClosingPerformanceReview } from "./closing-performance-review";
-import type { EngineValue } from "./closing-engine-fill";
+import type { EngineValue, ReviewColumnFormat } from "./closing-engine-fill";
 
 /**
  * What a row IS, which decides how it is dressed and whether it folds.
@@ -63,6 +63,15 @@ export type ReviewSheet = {
   title: string;
   /** The line under the header row, listing what the sheet counts. */
   subtitle: string;
+  /**
+   * A number format named per column, for a column whose HEADING cannot imply it — see
+   * `ReviewColumnFormat`.
+   *
+   * Positional against `headers`; null or absent leaves that column to `reviewColumnStyle`, which
+   * is what every sheet built from aggregates wants. It exists for the invoice-grain Rows tab,
+   * whose units are legitimately fractional and whose row id is an identifier, not money.
+   */
+  columnFormats?: readonly (ReviewColumnFormat | null)[];
   /** Column headings, in order. */
   headers: string[];
   /** Column widths, in Excel's own units. One per heading; missing ones take a default. */
