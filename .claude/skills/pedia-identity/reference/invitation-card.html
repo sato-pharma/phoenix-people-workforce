@@ -1,0 +1,226 @@
+<!doctype html>
+<!-- Pedia identity — the invitation card, PORTRAIT variant. 1200 × 1580.
+
+     The same card as name-card.html with the photograph in it. Only three things
+     differ, and they are the three the family has always differed by:
+       · the white mat at top 346 replaces the name block
+       · the guest block drops back to top 944, so the role line still lands at the
+         set's shared y of 1120 beside a name card
+       · the Arabic name returns to the guest block, because the subject is now the
+         face and the name is a caption under it
+
+     The portrait law — the 452x566 mat with 13px of white padding, object-fit
+     cover, the 1px inset keyline at 17% black, and the duotone that makes ten
+     unrelated snapshots read as one set — is INHERITED VERBATIM from the
+     anti-infective identity, including its portrait-pipeline.py. One constant
+     changes: SHADOW becomes #06292c, the teal field's base lifted exactly as that
+     skill lifts #000a26 to #030e30. 🔴 THAT CONSTANT IS UNPROVEN — no Pedia portrait
+     set has been graded through it yet, so grade a real set and run its check()
+     before trusting it. Everything else is inherited; never re-derive it.
+
+     SPECIMEN. Event, guest, date and venue are placeholders. `portraits/guest.png`
+     is NOT in this skill — point it at a real duotoned portrait before rendering.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sato Pedia Circle</title>
+<link rel="stylesheet" href="../../cns-identity/assets/fonts/fonts.css">
+<style>
+  /* The Pedia line reads in the Lacto Advanced can's own two inks: the gold of its
+     lid and label band, and the teal of stage 1. They meet at the seam — gold left,
+     aqua right — and that seam is what makes a piece Pedia rather than house. */
+  :root{
+    --gold:#c17e11; --gold-lo:#8a5a0c; --gold-hi:#f0b94a;
+    --aqua:#3eab95; --aqua-lo:#2a7a69; --aqua-hi:#7fd9c6;
+    --pack-indigo:#191e68;
+    --base:#032427;
+    --ink:#0a1322; --body:#45515a; --soft:#6b7782; --hair:#e4e9ee;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{width:1200px;height:1580px;overflow:hidden;background:#fff;
+       font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .card{position:relative;width:1200px;height:1580px;overflow:hidden;}
+
+  /* ====== the teal field ====== */
+  /* Anchored on the carton's own dark panel. The ellipse and its centre are sized
+     to the piece; the four stops never change. */
+  .field{position:absolute;inset:0 0 430px 0;overflow:hidden;
+    background:
+      radial-gradient(1180px 820px at 50% 33%, #1c7f6c 0%, #136356 36%, #0a4645 70%, #032427 100%);}
+  .net{position:absolute;inset:0;width:100%;height:100%;opacity:.30;pointer-events:none;}
+  .grain{position:absolute;inset:0;opacity:.055;mix-blend-mode:overlay;pointer-events:none;}
+  .vig{position:absolute;inset:0;pointer-events:none;
+       background:radial-gradient(1000px 900px at 50% 46%, rgba(0,0,0,0) 40%, rgba(0,0,0,.42) 100%);}
+  .fr1{position:absolute;inset:26px;border:1px solid rgba(255,255,255,.15);pointer-events:none;}
+  .fr2{position:absolute;inset:33px;border:1px solid rgba(255,255,255,.055);pointer-events:none;}
+
+  .logo{position:absolute;left:84px;top:56px;height:58px;
+        filter:drop-shadow(0 2px 6px rgba(0,0,0,.45));}
+  .seal{position:absolute;right:84px;top:52px;width:118px;height:118px;
+        border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.26);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+        box-shadow:inset 0 0 0 5px rgba(255,255,255,.045), 0 10px 26px rgba(0,0,0,.38);}
+  .seal b{font-family:'Playfair Display',serif;font-size:44px;font-weight:500;color:#fff;line-height:1;}
+  .seal i{width:34px;height:2px;background:linear-gradient(90deg,var(--gold),var(--aqua));display:block;}
+  .seal span{font-size:9px;font-weight:700;letter-spacing:.22em;color:rgba(255,255,255,.66);}
+
+  /* ====== title ====== */
+  .head{position:absolute;left:0;right:0;top:108px;text-align:center;}
+  .eyebrow{color:#a9e3d6;font-size:11.5px;font-weight:600;letter-spacing:.36em;text-transform:uppercase;}
+  .sato{margin-top:19px;font-family:'Playfair Display',serif;font-size:27px;font-weight:400;
+        letter-spacing:.66em;text-indent:.66em;color:rgba(255,255,255,.78);}
+  .evt{margin-top:2px;font-family:'Playfair Display',serif;font-size:92px;font-weight:500;
+       letter-spacing:.04em;color:#fff;line-height:1.02;text-shadow:0 2px 16px rgba(0,0,0,.38);}
+  .ruleset{margin:18px auto 0;display:flex;align-items:center;justify-content:center;width:340px;}
+  .ruleset s{display:block;height:2px;flex:1;}
+  .ruleset s.l{background:linear-gradient(90deg,rgba(193,126,17,0),var(--gold));}
+  .ruleset s.a{background:linear-gradient(90deg,var(--aqua),rgba(62,171,149,0));}
+  .ruleset .gk{width:38px;height:33px;margin:0 15px;flex:none;color:#fff;opacity:.95;}
+  .where{margin-top:20px;color:rgba(255,255,255,.66);font-size:10.5px;font-weight:600;
+         letter-spacing:.32em;text-transform:uppercase;}
+
+  /* ====== the guest: the PHOTOGRAPH is the subject ====== */
+  /* The white mat is what lifts a photograph off the field. Do not tint it. */
+  .frame{position:absolute;left:50%;transform:translateX(-50%);top:346px;
+         width:452px;height:566px;background:#fff;padding:13px;
+         box-shadow:0 46px 92px rgba(0,0,0,.62), 0 0 0 1px rgba(255,255,255,.10);}
+  .frame img{width:100%;height:100%;object-fit:cover;display:block;
+        outline:1px solid rgba(0,0,0,.17);outline-offset:-1px;}
+  .frame::before,.frame::after{content:'';position:absolute;width:58px;height:58px;}
+  .frame::before{left:-17px;top:-17px;border-left:3px solid var(--gold);border-top:3px solid var(--gold);}
+  .frame::after{right:-17px;bottom:-17px;border-right:3px solid var(--aqua);border-bottom:3px solid var(--aqua);}
+
+  /* ====== kept so a set can mix both variants from one stylesheet ====== */
+  .nameonly{position:absolute;left:50%;transform:translateX(-50%);top:400px;
+        width:680px;height:500px;display:flex;flex-direction:column;
+        align-items:center;justify-content:center;text-align:center;}
+  .nameonly::before,.nameonly::after{content:'';position:absolute;width:58px;height:58px;}
+  .nameonly::before{left:-17px;top:-17px;border-left:3px solid var(--gold);border-top:3px solid var(--gold);}
+  .nameonly::after{right:-17px;bottom:-17px;border-right:3px solid var(--aqua);border-bottom:3px solid var(--aqua);}
+  .nameonly .nwm{position:absolute;left:50%;top:-45px;transform:translateX(-50%);
+        width:680px;opacity:.05;pointer-events:none;filter:brightness(0) invert(1);}
+  .nameonly .nk{position:relative;font-size:11px;font-weight:700;letter-spacing:.34em;
+        text-transform:uppercase;color:#c4efe5;margin-bottom:123px;}
+  .nameonly .nn{position:relative;font-family:Amiri,serif;font-weight:700;color:#fff;
+        direction:rtl;line-height:1.26;letter-spacing:0;white-space:nowrap;
+        text-shadow:0 10px 36px rgba(0,0,0,.45);font-size:96px;}
+  .nameonly .nr{position:relative;margin-top:123px;display:flex;}
+  .nameonly .nr u{display:block;width:56px;height:3px;}
+  .nameonly .nr u:first-child{background:var(--gold);}
+  .nameonly .nr u:last-child{background:var(--aqua);}
+
+  .flank{position:absolute;top:346px;height:566px;display:flex;align-items:center;
+         justify-content:center;font-size:11.5px;font-weight:700;letter-spacing:.46em;
+         text-transform:uppercase;white-space:nowrap;}
+  .flank.l{left:150px;color:var(--gold-hi);writing-mode:vertical-rl;transform:rotate(180deg);}
+  .flank.r{right:150px;color:var(--aqua-hi);writing-mode:vertical-rl;}
+
+  .guest{position:absolute;left:0;right:0;top:944px;text-align:center;}
+  .guest .lbl{display:flex;align-items:center;justify-content:center;gap:20px;
+        color:rgba(255,255,255,.80);font-size:13px;font-weight:600;
+        letter-spacing:.32em;text-transform:uppercase;}
+  .guest .lbl::before,.guest .lbl::after{content:'';width:62px;height:1px;flex:none;}
+  .guest .lbl::before{background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.45));}
+  .guest .lbl::after{background:linear-gradient(90deg,rgba(255,255,255,.45),rgba(255,255,255,0));}
+  .guest .ar{margin-top:20px;font-family:Amiri,serif;font-size:52px;font-weight:700;color:#fff;
+             direction:rtl;line-height:1.24;text-shadow:0 2px 14px rgba(0,0,0,.42);}
+  .guest .lat{margin-top:16px;font-family:'Playfair Display',serif;font-size:22px;font-weight:400;
+              letter-spacing:.17em;color:rgba(255,255,255,.90);}
+  .guest .rl{margin-top:20px;color:#a9e3d6;font-size:11.5px;font-weight:700;
+             letter-spacing:.28em;text-transform:uppercase;}
+
+  /* ====== the seam: gold half, aqua half ====== */
+  .seam{position:absolute;left:0;right:0;bottom:430px;height:8px;display:flex;z-index:4;}
+  .seam u{flex:1;display:block;background:var(--gold);}
+  .seam u+u{background:var(--aqua);}
+
+  /* ====== one footer band: facts left, packs right ====== */
+  .foot{position:absolute;left:0;right:0;top:1150px;bottom:56px;background:#fff;}
+  .wm{position:absolute;left:796px;top:-5px;width:400px;opacity:.12;pointer-events:none;}
+  .fcol{position:absolute;left:84px;top:26px;width:352px;}
+  .fcol dt{color:#8c98a4;font-size:9.5px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .fcol dd{margin-top:9px;color:var(--ink);font-size:23px;font-weight:600;line-height:1.22;letter-spacing:-.01em;}
+  .fcol .arf{margin-top:7px;font-family:Cairo,sans-serif;font-size:18px;color:var(--soft);}
+  .fcol hr{border:0;border-top:1px solid var(--hair);margin:13px 0;}
+  .plock{position:absolute;right:140px;top:52px;height:290px;display:flex;align-items:flex-end;}
+  .plock img{display:block;
+        -webkit-box-reflect:below 1px linear-gradient(to bottom,rgba(255,255,255,.34),transparent 46%);}
+  .plock .p1{height:262px;margin-right:34px;position:relative;z-index:2;}
+  .plock .p2{height:252px;position:relative;z-index:1;}
+
+  /* ====== base ====== */
+  .base{position:absolute;left:0;right:0;bottom:0;height:56px;background:var(--base);
+        display:flex;align-items:center;justify-content:space-between;padding:0 84px;}
+  .base span{color:rgba(255,255,255,.62);font-size:10.5px;font-weight:600;
+             letter-spacing:.28em;text-transform:uppercase;}
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="field">
+    <img class="net" src="../assets/hexfield.svg" alt="">
+    <svg class="grain"><filter id="gr"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#gr)"/></svg>
+    <div class="vig"></div>
+    <div class="fr1"></div><div class="fr2"></div>
+
+    <img class="logo" src="../assets/sato-pharma-reverse.png" alt="Sato Pharma">
+    <!-- REPLACE: the date seal -->
+    <div class="seal"><b>18</b><i></i><span>NOV&nbsp;26</span></div>
+
+    <!-- REPLACE: the event -->
+    <div class="head">
+      <div class="eyebrow">Round&nbsp;table&nbsp;discussion &nbsp;&middot;&nbsp; Infant&nbsp;nutrition&nbsp;&amp;&nbsp;child&nbsp;health</div>
+      <div class="sato">SATO</div>
+      <div class="evt">PEDIA CIRCLE</div>
+      <div class="ruleset"><s class="l"></s>
+        <!-- the hexagon cluster, not the house diamond: the cells are what make a Pedia piece Pedia -->
+        <svg class="gk" viewBox="0 0 240 200" fill="currentColor" aria-hidden="true"><polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/><polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/><polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/></svg>
+        <s class="a"></s></div>
+      <div class="where">Cairo &nbsp;&middot;&nbsp; 2026</div>
+    </div>
+
+    <!-- REPLACE: the two products this piece carries -->
+    <div class="flank l">Lacto Advanced 1 &amp; 2</div>
+    <div class="flank r">Ivyronc Syrup</div>
+
+    <!-- REPLACE: the guest -->
+    <div class="frame"><img id="portrait" src="portraits/guest.png" alt=""></div>
+
+    <div class="guest">
+      <div class="lbl">Sato Pharma cordially invites</div>
+      <div class="ar" id="arname">د. اسم الضيف</div>
+      <div class="lat" id="latname">Dr. Guest Name</div>
+      <div class="rl" id="drrole">Consultant of paediatrics</div>
+    </div>
+  </div>
+
+  <div class="seam"><u></u><u></u></div>
+
+  <div class="foot">
+    <img class="wm" src="../assets/sato-arabic-navy.png" alt="">
+    <!-- REPLACE: the facts -->
+    <div class="fcol">
+      <dt>Date</dt><dd>Wednesday 18 November 2026</dd>
+      <div class="arf">يوم الأربعاء ١٨ نوفمبر</div>
+      <hr>
+      <dt>Time</dt><dd>9:00 PM</dd>
+      <div class="arf">الساعة ٩:٠٠ مساءً</div>
+      <hr>
+      <dt>Venue</dt><dd>To be confirmed</dd>
+      <div class="arf">يُحدد لاحقاً</div>
+    </div>
+    <div class="plock">
+      <img class="p1" src="../assets/lacto-advanced-pair-cans.png" alt="Lacto Advanced 1 and 2">
+      <img class="p2" src="../assets/ivyronc-syrup-pack.png" alt="Ivyronc Syrup">
+    </div>
+  </div>
+
+  <div class="base">
+    <span>Sato Pharma &nbsp;&middot;&nbsp; Pedia</span>
+    <span>www.satopharma.com</span>
+  </div>
+</div>
+</body>
+</html>

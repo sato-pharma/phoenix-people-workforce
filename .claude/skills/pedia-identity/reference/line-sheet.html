@@ -1,0 +1,212 @@
+<!doctype html>
+<!-- Pedia identity — the line one sheet. 2480 × 3508, which is A4 portrait at 300 dpi.
+
+     Not the anti-infective sheet's job. That one depicts ten printed invitation
+     cards; this one is the LINE: Lacto Advanced, Ivyronc and Guamusin, the line's
+     numerals in the teal field and the three packs in the white foot.
+
+     SPECIMEN for everything except the products: the numerals, the presentations
+     and the pack facts are read off the packs, nothing else is a claim.
+
+     Renders from this folder with no build step: every asset path is ../assets/.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lacto Advanced — the Pedia line</title>
+<link rel="stylesheet" href="../../cns-identity/assets/fonts/fonts.css">
+<style>
+  :root{
+    --gold:#c17e11; --gold-lo:#8a5a0c; --gold-hi:#f0b94a;
+    --aqua:#3eab95; --aqua-lo:#2a7a69; --aqua-hi:#7fd9c6;
+    --base:#032427;
+    --ink:#0a1322; --body:#45515a; --soft:#6b7782; --hair:#e4e9ee;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{width:2480px;height:3508px;overflow:hidden;background:#fff;
+       font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .sheet{position:relative;width:2480px;height:3508px;overflow:hidden;}
+
+  /* ====== the green field ====== */
+  /* The same four stops as the card. Only the ellipse and its centre are scaled
+     to the piece — 2600x1900 at 50% 22%, as the anti-infective sheet does. */
+  .field{position:absolute;inset:0 0 1358px 0;overflow:hidden;
+    background:
+      radial-gradient(2600px 1900px at 50% 22%, #1c7f6c 0%, #136356 36%, #0a4645 70%, #032427 100%);}
+  .net{position:absolute;inset:0;width:100%;height:100%;opacity:.30;pointer-events:none;object-fit:cover;}
+  .grain{position:absolute;inset:0;opacity:.055;mix-blend-mode:overlay;pointer-events:none;}
+  .vig{position:absolute;inset:0;pointer-events:none;
+       background:radial-gradient(2100px 1900px at 50% 46%, rgba(0,0,0,0) 40%, rgba(0,0,0,.42) 100%);}
+  .fr1{position:absolute;inset:50px;border:1px solid rgba(255,255,255,.15);pointer-events:none;}
+  .fr2{position:absolute;inset:63px;border:1px solid rgba(255,255,255,.055);pointer-events:none;}
+
+  .logo{position:absolute;left:160px;top:106px;height:110px;
+        filter:drop-shadow(0 2px 6px rgba(0,0,0,.45));}
+  .seal{position:absolute;right:160px;top:100px;width:224px;height:224px;
+        border:1px solid rgba(255,255,255,.26);background:rgba(0,0,0,.26);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;
+        box-shadow:inset 0 0 0 9px rgba(255,255,255,.045), 0 19px 49px rgba(0,0,0,.38);}
+  .seal .gk{width:78px;height:68px;color:#fff;opacity:.95;}
+  .seal span{font-size:17px;font-weight:700;letter-spacing:.22em;color:rgba(255,255,255,.66);}
+
+  /* ====== title ====== */
+  .head{position:absolute;left:0;right:0;top:300px;text-align:center;}
+  .eyebrow{color:#a9e3d6;font-size:22px;font-weight:600;letter-spacing:.36em;text-transform:uppercase;}
+  .sato{margin-top:36px;font-family:'Playfair Display',serif;font-size:51px;font-weight:400;
+        letter-spacing:.66em;text-indent:.66em;color:rgba(255,255,255,.78);}
+  .evt{margin-top:4px;font-family:'Playfair Display',serif;font-size:175px;font-weight:500;
+       letter-spacing:.04em;color:#fff;line-height:1.02;text-shadow:0 4px 30px rgba(0,0,0,.38);}
+  .ruleset{margin:34px auto 0;display:flex;align-items:center;justify-content:center;width:646px;}
+  .ruleset s{display:block;height:4px;flex:1;}
+  .ruleset s.l{background:linear-gradient(90deg,rgba(193,126,17,0),var(--gold));}
+  .ruleset s.a{background:linear-gradient(90deg,var(--aqua),rgba(62,171,149,0));}
+  .ruleset .gk{width:72px;height:63px;margin:0 29px;flex:none;color:#fff;opacity:.95;}
+  .where{margin-top:38px;color:rgba(255,255,255,.66);font-size:20px;font-weight:600;
+         letter-spacing:.34em;text-transform:uppercase;}
+
+  /* ====== the ladder ====== */
+  /* Four presentations. The numeral is the subject and the unit is a label beside
+     it — never "35mg" set as one word, which reads as a part number. The two Lacto
+     numerals are the cans' own printed 1 and 2. */
+  .ladder{position:absolute;left:252px;right:252px;top:1020px;display:flex;
+          align-items:flex-end;justify-content:space-between;}
+  .rung{text-align:center;flex:1;}
+  .rung .n{font-family:'Playfair Display',serif;font-weight:500;color:#fff;line-height:.92;
+           text-shadow:0 8px 34px rgba(0,0,0,.45);}
+  .rung .u{margin-top:14px;font-size:21px;font-weight:700;letter-spacing:.34em;
+           text-transform:uppercase;color:rgba(255,255,255,.62);}
+  .rung .nm{margin-top:28px;font-size:25px;font-weight:700;letter-spacing:.22em;
+            text-transform:uppercase;color:#a9e3d6;}
+  .rung i{display:block;width:70px;height:4px;margin:26px auto 0;background:var(--gold);}
+  .rung:last-child i{background:var(--aqua);}
+
+  .arline{position:absolute;left:0;right:0;top:1760px;text-align:center;}
+  .arline .ar{font-family:Cairo,sans-serif;font-size:40px;color:rgba(255,255,255,.80);direction:rtl;}
+  .arline .std{margin-top:30px;color:rgba(255,255,255,.52);font-size:19px;font-weight:500;
+               letter-spacing:.06em;line-height:1.7;}
+  .fieldwm{position:absolute;left:50%;bottom:-70px;transform:translateX(-50%);width:1500px;
+           opacity:.05;pointer-events:none;filter:brightness(0) invert(1);}
+
+  /* ====== the seam, at the sheet's own weight ====== */
+  .seam{position:absolute;left:0;right:0;bottom:1358px;height:16px;display:flex;z-index:4;}
+  .seam u{flex:1;display:block;background:var(--gold);}
+  .seam u+u{background:var(--aqua);}
+
+  /* ====== white foot: the five presentations ====== */
+  .foot{position:absolute;left:0;right:0;top:2150px;bottom:100px;background:#fff;}
+  .wm{position:absolute;right:-6px;top:520px;width:820px;opacity:.11;pointer-events:none;}
+  .fhead{position:absolute;left:252px;top:104px;}
+  .fhead dt{color:#8c98a4;font-size:19px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .fhead dd{margin-top:18px;color:var(--ink);font-size:44px;font-weight:600;letter-spacing:-.01em;}
+  .fhead .gkk{position:absolute;left:-104px;top:4px;width:72px;height:63px;color:var(--gold);}
+
+  /* EQUAL OPTICAL AREA, BOTTOMS ALIGNED. Three packs shot at three different angles
+     cannot share a height: the Ivyronc bottle-and-box stands tall (ratio 0.73) and
+     the Guamusin box with its sachets lies wide (1.44), so one height makes the wide
+     one twice the width of the tall one. Each height is sqrt(130000 / ratio), so
+     every pack covers the same area and the row reads as one set. Heights are
+     written out rather than computed, so a pack swapped later is re-measured
+     rather than silently rescaled. The Lacto cans are ONE picture of both stages. */
+  .row{position:absolute;left:0;right:0;top:372px;display:flex;align-items:flex-end;
+       justify-content:center;gap:150px;}
+  .row figure{text-align:center;}
+  /* NO REFLECTION ON THIS ROW. The two-pack lockup on a card sits on one, because
+     a packshot sits on a surface — but a reflection takes no layout space, so with
+     five packs and a caption under each the tails run straight through the type,
+     and five of them read as water rather than as a surface. The card keeps it;
+     a row of three or more does not. */
+  .row img{display:block;margin:0 auto;}
+  .row figcaption{margin-top:46px;color:var(--ink);font-size:23px;font-weight:700;
+       letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;}
+  .row small{display:block;margin-top:9px;color:var(--soft);font-size:19px;font-weight:500;
+       letter-spacing:.04em;text-transform:none;}
+  .placto{height:359px;} .pivy{height:421px;} .pguam{height:300px;}
+
+  .fnote{position:absolute;left:252px;right:252px;bottom:92px;display:flex;gap:0;}
+  .fnote div{flex:1;padding:0 42px;border-left:1px solid var(--hair);}
+  .fnote div:first-child{padding-left:0;border-left:0;}
+  .fnote dt{color:#8c98a4;font-size:17px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .fnote dd{margin-top:16px;color:var(--ink);font-size:25px;font-weight:600;line-height:1.36;}
+
+  /* ====== base ====== */
+  .base{position:absolute;left:0;right:0;bottom:0;height:100px;background:var(--base);
+        display:flex;align-items:center;justify-content:space-between;padding:0 252px;}
+  .base span{color:rgba(255,255,255,.62);font-size:20px;font-weight:600;
+             letter-spacing:.28em;text-transform:uppercase;}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="field">
+    <img class="net" src="../assets/hexfield-sheet.svg" alt="">
+    <svg class="grain"><filter id="gr"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#gr)"/></svg>
+    <div class="vig"></div>
+    <div class="fr1"></div><div class="fr2"></div>
+
+    <img class="logo" src="../assets/sato-pharma-reverse.png" alt="Sato Pharma">
+    <div class="seal">
+      <svg class="gk" viewBox="0 0 240 200" fill="currentColor" aria-hidden="true"><polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/><polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/><polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/></svg>
+      <span>PEDIA</span>
+    </div>
+
+    <div class="head">
+      <div class="eyebrow">Sato&nbsp;Pharma &nbsp;&middot;&nbsp; Pedia</div>
+      <div class="sato">SATO</div>
+      <div class="evt">LACTO ADVANCED</div>
+      <div class="ruleset"><s class="l"></s>
+        <svg class="gk" viewBox="0 0 240 200" fill="currentColor" aria-hidden="true"><polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/><polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/><polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/></svg>
+        <s class="a"></s></div>
+      <div class="where">With&nbsp;Ivyronc&nbsp;&amp;&nbsp;Guamusin</div>
+    </div>
+
+    <div class="ladder">
+      <div class="rung"><div class="n" style="font-size:186px">1</div><div class="u">400&nbsp;g</div><div class="nm">Lacto Advanced</div><i></i></div>
+      <div class="rung"><div class="n" style="font-size:186px">2</div><div class="u">400&nbsp;g</div><div class="nm">Lacto Advanced</div><i></i></div>
+      <div class="rung"><div class="n" style="font-size:186px">35</div><div class="u">mg / 5&nbsp;ml</div><div class="nm">Ivyronc</div><i></i></div>
+      <div class="rung"><div class="n" style="font-size:186px">12</div><div class="u">sachets &times; 5&nbsp;g</div><div class="nm">Guamusin</div><i></i></div>
+    </div>
+
+    <div class="arline">
+      <div class="ar">لاكتو أدفانسد &nbsp;&middot;&nbsp; چواموسين</div>
+      <div class="std">
+        Lacto Advanced: improved infant formula, 400&nbsp;g. Ivyronc: ivy leaf extract powder, 35&nbsp;mg per 5&nbsp;ml, 100&nbsp;ml syrup.<br>
+        Guamusin: paracetamol micronized, guaifenesin and phenylephrine hydrochloride per sachet &mdash; not for children under 12 years.
+      </div>
+    </div>
+    <img class="fieldwm" src="../assets/sato-arabic-navy.png" alt="">
+  </div>
+
+  <div class="seam"><u></u><u></u></div>
+
+  <div class="foot">
+    <img class="wm" src="../assets/sato-arabic-navy.png" alt="">
+    <dl class="fhead">
+      <svg class="gkk" viewBox="0 0 240 200" fill="currentColor" aria-hidden="true"><polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/><polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/><polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/></svg>
+      <dt>The line</dt>
+      <dd>Three products, four presentations</dd>
+    </dl>
+
+    <div class="row">
+      <figure><img class="placto" src="../assets/lacto-advanced-pair-cans.png" alt="Lacto Advanced 1 and 2">
+        <figcaption>Lacto Advanced 1 &amp; 2<small>Improved infant formula, 400&nbsp;g</small></figcaption></figure>
+      <figure><img class="pivy" src="../assets/ivyronc-syrup-pack.png" alt="Ivyronc Syrup">
+        <figcaption>Ivyronc Syrup<small>35&nbsp;mg / 5&nbsp;ml, 100&nbsp;ml</small></figcaption></figure>
+      <figure><img class="pguam" src="../assets/guamusin-sachet-pack.png" alt="Guamusin powder for oral solution">
+        <figcaption>Guamusin<small>12 sachets &times; 5&nbsp;g</small></figcaption></figure>
+    </div>
+
+    <dl class="fnote">
+      <div><dt>The lead</dt><dd>Lacto Advanced, in its two presentations</dd></div>
+      <div><dt>Forms</dt><dd>Infant formula, syrup, and powder for oral solution</dd></div>
+      <div><dt>Read the pack</dt><dd>Guamusin is not for children under 12 years</dd></div>
+    </dl>
+  </div>
+
+  <div class="base">
+    <span>Sato Pharma &nbsp;&middot;&nbsp; Pedia</span>
+    <span>www.satopharma.com</span>
+  </div>
+</div>
+</body>
+</html>
