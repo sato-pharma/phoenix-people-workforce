@@ -176,7 +176,10 @@ function assertScheduledDetectorsCannotBeCancelled(files: string[]) {
       `${job.file}: job \`${job.id}\` has ${unbudgeted} \`continue-on-error\` step(s) with no \`timeout-minutes\` of their own. Without a step budget a slow leg runs until the JOB ceiling and concludes \`cancelled\` — which withholds the production deploy and is the one failure \`continue-on-error\` cannot absorb, because a timeout is not a step failure. Give the step its own \`timeout-minutes\`.`,
     );
 
-    const sum = job.legBudgets.reduce((n, b) => n + (b ?? 0), 0);
+    // `reduce<number>` explicitly: legBudgets is `(number | null)[]`, so the accumulator would be
+    // inferred as `number | null` from the element type and every arithmetic use of it fails
+    // TS18047 — which is what the `checks` job caught on this branch's first push.
+    const sum = job.legBudgets.reduce<number>((n, b) => n + (b ?? 0), 0);
     assert.ok(
       (job.jobTimeoutMinutes ?? 0) >= sum + SETUP_ALLOWANCE_MINUTES,
       `${job.file}: job \`${job.id}\` budgets ${sum} minute(s) across its \`continue-on-error\` legs but its own ceiling is ${job.jobTimeoutMinutes}. The legs run sequentially, so the job can hit its ceiling before any step hits one of theirs — and the job concludes \`cancelled\`, withholding the production deploy. Raise the job to at least ${sum + SETUP_ALLOWANCE_MINUTES} (the leg budgets plus a ${SETUP_ALLOWANCE_MINUTES}-minute setup allowance) or lower the leg budgets.`,

@@ -627,25 +627,40 @@ const REPO_ROOT = path.join(__dirname, "..", "..");
  * "age unknown", which switches the 48h grace window off and flags migrations merged minutes ago.
  */
 function loadCommitTimesByFileName(): Map<string, number> {
-  const out = new Map<string, number>();
-  let log: string;
   try {
-    // `--format=%ct --name-only` prints the commit seconds, a blank line, then that commit's paths.
-    // Newest commit first, so the FIRST time a path appears is the newest commit that touched it —
-    // which is what `-1` means. Never overwrite an entry already set.
-    log = execSync('git log --format=%ct --name-only -- "supabase/migrations"', {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      maxBuffer: 64 * 1024 * 1024,
-    });
+    return parseGitLogCommitTimes(
+      execSync('git log --format=%ct --name-only -- "supabase/migrations"', {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 64 * 1024 * 1024,
+      }),
+    );
   } catch {
     // Not fatal — if git history is unavailable (a shallow checkout, no git on PATH) every file
     // reports "age unknown", which `isWithinGraceWindow` already treats as "do not shelter it".
-    return out;
+    return new Map<string, number>();
   }
+}
+
+/**
+ * The parse, split out from the git call so it can be pinned without a git history.
+ *
+ * 🔴 SPLIT OUT BECAUSE THE LIVE COMPARISON CANNOT RUN IN CI. `validate` checks out at the default
+ * `fetch-depth: 1`, so there is exactly one commit, no file has a second one, and the only test
+ * that can catch a wrong newest-wins is one fed a fixture. The first version of that test asked
+ * git on the runner and tripped its own anti-vacuous floor — correctly, which is how this was found.
+ *
+ * `--format=%ct --name-only` prints the commit seconds, a blank line, then that commit's paths.
+ * Newest commit first, so the FIRST time a path appears is the newest commit that touched it, which
+ * is exactly what `git log -1` means — hence `if (!out.has(...))`, never an unconditional set.
+ * Keyed by basename: a migration filename is unique in the directory, and that also carries a
+ * renamed file's history onto its current name.
+ */
+export function parseGitLogCommitTimes(stdout: string): Map<string, number> {
+  const out = new Map<string, number>();
   let commitTimeMs: number | null = null;
-  for (const line of log.split("\n")) {
+  for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (/^\d{9,12}$/.test(trimmed)) {
