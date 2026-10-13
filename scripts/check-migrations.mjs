@@ -38,12 +38,25 @@ const SAFE_OVERRIDE_RE = /--\s*SAFE:/i;
 // two matched no migration file at all, and #1419's re-stamp left the third holding its prefix
 // alone. Section 2b below now fails on an entry that no longer names a real duplicate, so this list
 // cannot silently rot into cover for a collision that no longer exists.
+//
+// RETIRED 2026-10-13 — 20260814150000 was the last entry, and the collision itself is now gone.
+// phx_rep_bulk_dependency (#2131) / cv_extraction_any_job_title (#2130) were authored in parallel
+// three minutes apart, each PR green alone, so the duplicate only existed once BOTH were on main;
+// the later file is now 20260814150001_phx_rep_bulk_dependency.sql — one second after its partner,
+// which is the order production applied them in. Both ledger rows were read LIVE on production AND
+// staging before the rename and both are stamped normally (name=cv_extraction_any_job_title
+// version=20260814125822, name=phx_rep_bulk_dependency version=20260814125938), so neither row
+// carries the filename prefix and the rename desyncs neither project. The drift check and the
+// staging applier match by version OR name through scripts/lib/migration-inventory.ts, where the
+// name is the stem AFTER the timestamp — so the renamed file still matches its row and is never
+// re-applied.
+//
+// EMPTY is this list's resting state. A new collision is fixed by RE-STAMPING the later file;
+// add an entry here only when the ledger row makes that unsafe — the abnormal case in the
+// paragraph above, where the row's `name` carries the old filename prefix.
+// tests/migration-grandfather-staleness.test.ts keeps section 2b pinned with nothing in here, by
+// injecting a probe entry into a scaffold copy rather than leaning on a live one.
 const GRANDFATHERED_DUPLICATE_TIMESTAMPS = new Set([
-  // phx_rep_bulk_dependency (#2131) / cv_extraction_any_job_title (#2130), authored in parallel three
-  // minutes apart: #2131 merged green at 13:00 UTC, #2130 at 13:03, and the duplicate only exists once
-  // BOTH are on main, so neither PR could have caught it. Applied to prod under distinct versions —
-  // cv_extraction_any_job_title=20260814125822, phx_rep_bulk_dependency=20260814125938.
-  '20260814150000',
 ]);
 
 let errors = 0;
