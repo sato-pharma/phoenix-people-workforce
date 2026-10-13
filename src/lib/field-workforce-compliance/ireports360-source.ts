@@ -24,6 +24,10 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { collapseDuplicateVisitSubmissions, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
+import {
+  loadPhoenixWorkEvidenceDays,
+  phoenixWorkedDayKeySet,
+} from "@/lib/crm/phoenix-work-evidence";
 import { crmVisitTypeMeaningLenient } from "@/lib/crm/visit-type-meaning";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
@@ -365,6 +369,9 @@ export function buildIReports360FieldWorkforceMatrix(input: {
    * activity. Optional/defaults empty so existing callers are unaffected. */
   deviceMappedHrKeys?: Set<string>;
   month: number;
+  /** `${canonicalHrIdKey}|${YYYY-MM-DD}` pairs Phoenix CRM proves worked. A day with no mirror
+   * visit but in this set is "CP" (worked, non-numeric), never "N". Optional, defaults empty. */
+  phoenixWorkedKeys?: ReadonlySet<string>;
   todayIso?: string | null;
   visits: FieldWorkforceMatrixVisit[];
   year: number;
@@ -381,6 +388,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const { employees, month, visits, year } = input;
   const deviceMappedHrKeys = input.deviceMappedHrKeys ?? new Set<string>();
   const todayIso = input.todayIso ?? null;
+  const phoenixWorkedKeys = input.phoenixWorkedKeys ?? new Set<string>();
   const monthPrefix = `${year}-${pad2(month)}`;
   const dayCount = daysInMonth(year, month);
   const dateIsos = Array.from({ length: dayCount }, (_, index) => `${monthPrefix}-${pad2(index + 1)}`);
@@ -536,6 +544,9 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       if (dayVisits && dayVisits.length > 0) return dayCellValue(dayVisits);
       if (isFridayIso(dateIso)) return null;
       if (todayIso && dateIso > todayIso) return null;
+      // The mirror view hides Phoenix CRM work until the rep's team is started, so a day Phoenix
+      // proves worked is a worked day, not a no-activity candidate.
+      if (hrKey && phoenixWorkedKeys.has(`${hrKey}|${dateIso}`)) return "CP";
       return "N";
     });
 
@@ -840,6 +851,24 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   ]);
   const visits = mirrorRows.map(visitFromMirrorRow);
 
+  // Best-effort here, unlike the deduction connectors: this matrix is a review surface and the
+  // connectors apply their own Phoenix suppressor before any money moves. A failed read degrades
+  // to a warning that says "N" days may include Phoenix work, never to a silent empty answer.
+  let phoenixWorkedKeys = new Set<string>();
+  let phoenixEvidenceWarning: { code: string; message: string; severity: "warning" } | null = null;
+  try {
+    phoenixWorkedKeys = phoenixWorkedDayKeySet(
+      await loadPhoenixWorkEvidenceDays({ end: endDate, start: startDate }),
+      (hrId) => canonicalHrIdKey(hrId),
+    );
+  } catch (error) {
+    phoenixEvidenceWarning = {
+      code: "phoenix_work_evidence_unavailable",
+      message: `Phoenix CRM work could not be read this month: ${error instanceof Error ? error.message : "read failed"}. A no-activity day may be a day worked in Phoenix CRM.`,
+      severity: "warning",
+    };
+  }
+
   // Head Office / office-based staff earn a Team Calendar row via fingerprint device
   // enrollment rather than a field-eligible title (see the `eligible` filter comment in
   // buildIReports360FieldWorkforceMatrix). Best-effort: loadActiveDeviceMappedHrIds normalizes
@@ -865,6 +894,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     deviceMappedHrKeys,
     employees: directory,
     month,
+    phoenixWorkedKeys,
     todayIso: input.todayIso ?? null,
     visits,
     year,
@@ -932,6 +962,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
 
   const warnings = [...preview.warnings];
   if (deviceMappedWarning) warnings.push(deviceMappedWarning);
+  if (phoenixEvidenceWarning) warnings.push(phoenixEvidenceWarning);
   if (unresolvedHrIds.length > 0) {
     const sample = unresolvedHrIds.slice(0, 8).join(", ");
     warnings.push({

@@ -2222,6 +2222,8 @@ import { runCustomerChannelSqlRuleTests } from "./customer-channel-sql-rule.test
 import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
 import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receipt-confidentiality.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
+import { runFwcPhoenixWorkEvidenceTests } from "./fwc-phoenix-work-evidence.test.ts";
+import { runRetentionRiskPhoenixEvidenceTests } from "./retention-risk-phoenix-evidence.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 import { runRetentionRiskRecipientExclusionTests } from "./retention-risk-recipient-exclusion.test.ts";
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
@@ -8419,6 +8421,14 @@ await runTest(
 await runTest(
   "retention risk detector (a weekly off bridges a run, leave bridges it too, managers are never measured)",
   runRetentionRiskDetectorTests,
+);
+await runTest(
+  "field workforce compliance matrix counts Phoenix CRM work as a worked day (not a no-activity candidate)",
+  runFwcPhoenixWorkEvidenceTests,
+);
+await runTest(
+  "retention risk reads Phoenix CRM work as activity (a started-team gap no longer names a rep who is working)",
+  runRetentionRiskPhoenixEvidenceTests,
 );
 await runTest(
   "retention risk alerts (in-app and Telegram, never email or push; the message reports and never accuses)",

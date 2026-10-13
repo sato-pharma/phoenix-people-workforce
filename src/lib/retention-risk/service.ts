@@ -18,6 +18,8 @@ import { isRetentionRiskSubjectTitle } from "@/lib/retention-risk/eligibility";
 import { getNationalHolidayDateSet } from "@/lib/vacation/national-holidays";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { queryVisits } from "@/lib/crm/reads";
+import { loadPhoenixWorkEvidenceDays } from "@/lib/crm/phoenix-work-evidence";
+import { mergePhoenixWorkEvidence } from "@/lib/retention-risk/phoenix-evidence";
 import {
   RETENTION_RISK_THRESHOLD_WORKING_DAYS,
   addDays,
@@ -191,6 +193,9 @@ async function loadCrmActivity(
       if (!earliest || row.visit_date < earliest) firstSeen.set(key, row.visit_date);
     }
   }
+  // Phoenix CRM work the counting view hides (a team not yet started). A failed read throws, which
+  // the caller turns into "CRM unavailable" rather than naming reps who were provably working.
+  mergePhoenixWorkEvidence(activity, firstSeen, await loadPhoenixWorkEvidenceDays({ end: scanEnd, start: scanStart }));
   return { activity, firstSeen, rowCount };
 }
 
