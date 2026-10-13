@@ -4,19 +4,14 @@ import { readFileSync } from "node:fs";
 import { HR_ROLE_BUNDLES } from "../src/lib/auth/hr-functions.ts";
 import { sourcesFor } from "../src/lib/hr/command-center.ts";
 import {
-  bookingsInSlot,
   buildHiringQualityKpis,
   buildMonthMarks,
   buildOfferConversionKpis,
-  buildWeekDays,
   joinersBetween,
   kpi,
   KPI_WINDOW_DAYS,
-  outsideWorkdayInterviews,
   RECRUITING_TASK_KEYS,
   TALENT_ACQUISITION_SEAT,
-  type TalentInterview,
-  type TalentJoiner,
 } from "../src/lib/hr/talent-acquisition-logic.ts";
 import type { OfferRecord } from "../src/lib/offers/types.ts";
 import { countDistinctPeople } from "../src/lib/recruitment/interview-volume.ts";
@@ -50,7 +45,7 @@ const LOGIC = "src/lib/hr/talent-acquisition-logic.ts";
 const DATA = "src/lib/hr/talent-acquisition-overview.ts";
 const PAGE_COMPONENT = "src/components/hr/talent-acquisition-overview.tsx";
 const CALENDAR_COMPONENT = "src/components/hr/talent-acquisition-calendar.tsx";
-/** The company's own week grid — the design identity her week is required to wear. */
+/** The real interview calendar — the component her week tab MOUNTS, rather than imitates. */
 const SIBLING_GRID = "src/components/recruitment/interview-calendar/interview-calendar-view.tsx";
 const ROUTE = "app/(admin)/admin/hr-command-center/page.tsx";
 const GENERIC_COMPONENT = "src/components/hr/hr-command-center.tsx";
@@ -314,78 +309,7 @@ function testDistinctPeopleCollapsesRoundsAndKeepsOutsiders() {
   );
 }
 
-// ── 4. The week strip and the joining days ────────────────────────────────────────────────────
-function testTheWeekStripPlacesEveryInterviewAndJoiningDay() {
-  const interviews: TalentInterview[] = [
-    {
-      candidateName: "Later",
-      dateKey: "2026-10-18",
-      durationMinutes: 30,
-      href: "/x",
-      id: "i2",
-      interviewerName: null,
-      platformLabel: "Zoom",
-      startMinutes: 14 * 60,
-      timeLabel: "14:00 - 14:30",
-    },
-    {
-      candidateName: "Earlier",
-      dateKey: "2026-10-18",
-      durationMinutes: 30,
-      href: "/x",
-      id: "i1",
-      interviewerName: "Yasmeena El Safory",
-      platformLabel: "In person",
-      startMinutes: 9 * 60,
-      timeLabel: "09:00 - 09:30",
-    },
-    {
-      candidateName: "Another day",
-      dateKey: "2026-10-20",
-      durationMinutes: 30,
-      href: "/x",
-      id: "i3",
-      interviewerName: null,
-      platformLabel: "Phone",
-      startMinutes: 11 * 60,
-      timeLabel: "11:00 - 11:30",
-    },
-  ];
-  const joiners: TalentJoiner[] = [
-    { dateKey: "2026-10-18", href: "/o", id: "o1", name: "New Starter", title: "Medical Rep" },
-  ];
-
-  const days = buildWeekDays("2026-10-18", interviews, joiners, new Date("2026-10-20T09:00:00Z"));
-
-  assert.equal(
-    days.length,
-    5,
-    "the strip is the company's five-day working week, Sunday to Thursday. Seven columns would " +
-      "put two permanently empty days on somebody's landing page",
-  );
-  assert.deepEqual(
-    days.map((day) => day.dateKey),
-    ["2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22"],
-    "and it starts on the Sunday it was given",
-  );
-  assert.deepEqual(
-    days[0].interviews.map((one) => one.candidateName),
-    ["Earlier", "Later"],
-    "a day's interviews read in time order, whatever order the calendar returned them in",
-  );
-  assert.deepEqual(
-    days[0].joiners.map((one) => one.name),
-    ["New Starter"],
-    "and a joining day lands on its own day",
-  );
-  assert.deepEqual(
-    days.map((day) => day.isToday),
-    [false, false, true, false, false],
-    "exactly one day is today, taken from the Cairo date of the instant passed in — not from the " +
-      "server's own zone, and not from the browser's",
-  );
-}
-
+// ── 4. Only an accepted offer is somebody arriving ──────────────────────
 function testOnlyAnAcceptedOfferDrawsAJoiningDay() {
   const offers = [
     offer({ id: "yes", startDate: "2026-10-18", status: "accepted" }),
@@ -643,212 +567,129 @@ function testTheNewComponentsObeyTheThreeGoldenRules() {
 }
 
 /**
- * ── 9a2. THE SLOT ARITHMETIC: no booking off the sheet, no booking counted twice ────────────────
+ * ── 9b. HER WEEK **IS** THE INTERVIEW CALENDAR, NOT A COPY OF IT ───────────────────────────────
  *
- * Her week is drawn on the interview calendar's own half-hour grid, 9:00 to 17:00. A fixed grid
- * loses an interview in two silent ways, and these are the two functions that stop it:
+ * The owner, 13 October 2026, in order: **"2 OUT OF 10"**, then **"BULLSHIT ,, AUDIT THE INTERVIEW
+ * CALENDER"**, then **"FULL INTERVIW CALENDAR FEAATURES"**.
  *
- *   OFF THE TOP OR THE BOTTOM. A 9-to-5 sheet simply has no row for an 8:30 screening or a 6pm call
- *   with an overseas candidate. `outsideWorkdayInterviews` collects every one of them so the grid
- *   can print them in a row of their own. A booking a diary does not draw is worse than no diary.
- *   TWICE, OR NOT AT ALL. An hour-long interview spans two slot rows: it belongs to the first with
- *   its name on it and to the second as a continuation bar. Drawn as a chip in both it reads as two
- *   interviews; drawn in neither it reads as half an hour. `bookingsInSlot` is that split.
+ * Three week layouts were written for this page in one day and all three were rejected. The last of
+ * them wore `interview-calendar-view.tsx`'s own tokens — its table, its 46px rows, its zebra, its
+ * orange edge — and it was still wrong, because a grid that LOOKS like the interview calendar still
+ * cannot do what the interview calendar does: move between weeks, pick a week, press a free half
+ * hour to book someone, open a candidate's CV, read an interview's Zoom link and panel and outcome
+ * and notes, run a session, export the week as PDF or Excel, ask for an interview. His answer was
+ * not "wear its skin" but "have its features", and there is exactly one way to have all of them.
+ *
+ * SO THE PINS BELOW ARE ABOUT THE EMBEDDING, AND THEY ARE DELIBERATELY NEGATIVE AS WELL AS POSITIVE.
+ * A later session that "improves" this panel by writing a week grid here again would pass every
+ * design-token test ever written and still undo his instruction — so this test refuses a second week
+ * layout in this file at all: no table, no half-hour rail, no slot cell, no booking chip. The whole
+ * week is four props handed to the real component, and the one thing that may be asserted about how
+ * it LOOKS is that it is the same component the recruitment team uses, which is a fact about the
+ * import, not about a class name.
  */
-function testTheSlotGridHoldsEveryBookingExactlyOnce() {
-  const at = (id: string, startMinutes: number, durationMinutes: number): TalentInterview => ({
-    candidateName: id,
-    dateKey: "2026-10-18",
-    durationMinutes,
-    href: "/x",
-    id,
-    interviewerName: null,
-    platformLabel: "Zoom",
-    startMinutes,
-    timeLabel: `${startMinutes}+${durationMinutes}`,
-  });
-
-  const hour = [at("ten", 10 * 60, 60)];
-  assert.deepEqual(
-    [
-      bookingsInSlot(hour, 10 * 60).starting.map((one) => one.id),
-      bookingsInSlot(hour, 10 * 60).running.map((one) => one.id),
-    ],
-    [["ten"], []],
-    "the slot an interview STARTS in carries it as a starting booking — the chip with the name on " +
-      "it. An interview that is 'running' in its own first slot would draw a bar and no name",
-  );
-  assert.deepEqual(
-    [
-      bookingsInSlot(hour, 10 * 60 + 30).starting.map((one) => one.id),
-      bookingsInSlot(hour, 10 * 60 + 30).running.map((one) => one.id),
-    ],
-    [[], ["ten"]],
-    "and the slot it runs THROUGH carries it as running, never as a second starting booking. One " +
-      "hour-long interview drawn as two chips is two interviews on her screen",
-  );
-  assert.deepEqual(
-    [
-      bookingsInSlot([at("half", 10 * 60, 30)], 10 * 60 + 30).starting.length,
-      bookingsInSlot([at("half", 10 * 60, 30)], 10 * 60 + 30).running.length,
-    ],
-    [0, 0],
-    "a booking that ENDS exactly on the boundary is in neither half of the next slot. A 10:00-10:30 " +
-      "interview still drawn at 10:30 makes an occupied half hour out of a free one",
-  );
-  assert.deepEqual(
-    bookingsInSlot([at("quarter past", 10 * 60 + 15, 30)], 10 * 60).starting.map((one) => one.id),
-    ["quarter past"],
-    "a booking that starts INSIDE a slot belongs to that slot, not to the next one. The interval is " +
-      "half-open, which is the only reading under which every minute of the day has exactly one row",
-  );
-  assert.deepEqual(
-    bookingsInSlot(
-      [at("second", 10 * 60 + 15, 30), at("first", 10 * 60, 30)],
-      10 * 60,
-    ).starting.map((one) => one.id),
-    ["first", "second"],
-    "two in one slot both come back, in time order. Ordering by nothing would let two chips swap " +
-      "places between the server's render and the live refresh thirty seconds later",
-  );
-
-  assert.deepEqual(
-    outsideWorkdayInterviews([
-      at("six pm", 18 * 60, 60),
-      at("eight thirty", 8 * 60 + 30, 30),
-      at("ten", 10 * 60, 30),
-      at("five", 17 * 60, 30),
-    ]).map((one) => one.id),
-    ["eight thirty", "five", "six pm"],
-    "every booking the 9-to-5 grid has NO ROW FOR comes back, in time order — 8:30 before the sheet " +
-      "starts, 17:00 on the moment it ends, 18:00 after it. The 10:00 one has a row and must not be " +
-      "listed twice. This is the whole reason a fixed grid is safe on a real diary",
-  );
-  assert.deepEqual(
-    outsideWorkdayInterviews([at("quarter to five", 16 * 60 + 45, 30)]).map((one) => one.id),
-    [],
-    "a booking that STARTS inside the day is never 'outside' it, even when it runs past 17:00 — the " +
-      "16:30 row holds it. Listing it twice is the same defect as losing it, read the other way",
-  );
-}
-
-/**
- * ── 9b. HER WEEK WEARS THE INTERVIEW CALENDAR'S OWN GRID ───────────────────────────────────────
- *
- * The owner, 13 October 2026, looking at this page: **"BULLSHIT ,, AUDIT THE INTERVIEW CALENDER"**.
- *
- * The audit found what he had already seen. This panel had grown a week grid of its own invention —
- * a time canvas at 84px an hour, bookings absolutely positioned by their start minute, overlaps
- * laned side by side, a 48px rail of 9px hours — while `interview-calendar-view.tsx` already held
- * THE week grid of this product, the one the whole recruitment team books in every day. His
- * standing rule is that new UI wears its sibling's exact design identity and never invents a
- * one-off look; two calendars in one product is how two calendars start disagreeing.
- *
- * SO THESE PINS ARE CROSS-FILE ON PURPOSE. Each one reads the token out of the SIBLING and then
- * requires it here. A later session redesigning the interview calendar will go red on this test,
- * which is exactly right: her week is not allowed to be left behind, and it is not allowed to drift
- * ahead either. A test that only read this file would let the two part company silently.
- */
-function testHerWeekWearsTheInterviewCalendarsGrid() {
+function testHerWeekIsTheInterviewCalendarItself() {
   const calendar = codeOf(CALENDAR_COMPONENT);
-  const sibling = codeOf(SIBLING_GRID);
 
-  /**
-   * The source of ONE function, so a token pin cannot be satisfied by an unrelated part of the file.
-   *
-   * Measured, while proving this section red: searching the whole component for `bg-slate-50/70` or
-   * `border-l-[3px]` passed with the week grid's own copy deleted, because the Mine view and the
-   * joining chip carry the same strings. A pin that can be satisfied from somewhere else is not a
-   * pin. `export function` ends a body too, or the exported panel is swallowed into the last one.
-   */
-  const body = (name: string) => {
-    const start = calendar.indexOf(`function ${name}(`);
-    assert.notEqual(start, -1, `${name} must still exist in the calendar component`);
-    const rest = calendar.slice(start + 1);
-    const end = /\n(?:export )?function /.exec(rest)?.index;
-    return end === undefined ? rest : rest.slice(0, end);
-  };
-  const week = [body("SlotBooking"), body("SlotCell"), body("WeekSlotTable")].join("\n");
+  assert.match(
+    calendar,
+    /import \{ InterviewCalendarView \} from "@\/components\/recruitment\/interview-calendar\/interview-calendar-view";/,
+    "the week tab must MOUNT the real interview calendar. Every feature he asked for — the week " +
+      "navigation and week picker, booking a free time, the sessions, the CV previews, the interview " +
+      "detail, the exports, Request an interview — lives in that component and in no other",
+  );
+  assert.ok(
+    codeOf(SIBLING_GRID).includes("export function InterviewCalendarView("),
+    "and the component must still be exported from the path this page imports it from. A rename " +
+      "that left this import dangling would take her whole week down, and the week is the page",
+  );
 
-  for (const [token, why] of [
+  const mounted = /<InterviewCalendarView\b[\s\S]*?\/>/.exec(calendar)?.[0] ?? "";
+  assert.notEqual(mounted, "", "it must be RENDERED, not merely imported");
+  for (const [prop, why] of [
     [
-      "w-full table-fixed border-collapse",
-      "the grid must be the sibling's TABLE. A table-fixed with a colgroup makes the owner's " +
-        "fits-the-screen rule structural — the columns divide the width they are given and there " +
-        "is no min-width to overflow — which a positioned canvas has to be measured for",
+      "abilities={calendar.interviewCalendar.abilities}",
+      "her abilities inside the calendar — search candidates, add one to Recruitment — are a SERVER " +
+        "decision, resolved by the same `interviewCalendarAbilities` the recruitment page calls",
     ],
     [
-      'className="w-[5.75rem]"',
-      "the time column must be the sibling's width. It was 48px here, with 9px hours in slate-300 " +
-        "inside it, which on his own screen put the scale somewhere between faint and absent",
+      "canRequest={calendar.interviewCalendar.canRequest}",
+      "Request an interview is one of the features he named. Omitting the prop defaults it to false " +
+        "and silently removes the button from her page alone",
     ],
     [
-      "h-[46px]",
-      "a slot cell must be the sibling's height. A different row height is a different calendar, " +
-        "and the two sit one click apart in the same product",
+      "initialWeek={calendar.weekStart}",
+      "the week it opens on comes from the server, so the first paint is not a week behind",
     ],
     [
-      "bg-slate-50/70",
-      "the odd rows must carry the sibling's zebra. It is what makes a half-hour row readable " +
-        "across five columns without a rule per cell",
+      "role={calendar.interviewCalendar.role}",
+      "and her tier on the calendar is resolved by `resolveInterviewCalendarRole`, never assumed " +
+        "here — it is what decides whether she may book and move interviews or only read them",
     ],
     [
-      "border-l-[3px]",
-      "a booking must carry the sibling's 3px margin edge — the device that says 'this cell is " +
-        "taken' without drawing a box around a line of type",
+      "todayKey={todayKey}",
+      "today is the server's Cairo date, the same one the month grid marks. Letting the component " +
+        "fall back to its own would put two different todays in one panel across a Cairo midnight",
     ],
     [
-      "border-l-orange-600 bg-orange-100",
-      "and in the sibling's own colour pair. This page had invented a 180° gradient wash under an " +
-        "orange edge; the chip one click away is a flat orange-100 and always was",
+      "zoomConnected={calendar.interviewCalendar.zoomConnected}",
+      "and whether Zoom is wired at all, so the screen does not offer a meeting it cannot create",
     ],
   ] as const) {
+    assert.ok(mounted.includes(prop), why);
+  }
+  assert.ok(
+    !/lockedWeek=/.test(mounted),
+    "and `lockedWeek` must NOT be passed. It is the prop a week-limited share link uses to freeze " +
+      "the calendar on one week — passing it here would delete the week navigation he explicitly " +
+      "asked for, from the one page he asked for it on",
+  );
+
+  // THE NEGATIVE HALF: no second week layout in this file, ever again.
+  for (const [pattern, what] of [
+    [/<table\b/, "a <table>"],
+    [/\bslotStarts\(/, "a half-hour rail of its own"],
+    [/h-\[46px\]/, "a slot cell"],
+    [/border-l-\[3px\]/, "a booking chip"],
+    [/<colgroup\b/, "a column group"],
+  ] as const) {
     assert.ok(
-      sibling.includes(token),
-      `the interview calendar no longer carries \`${token}\` — it has been redesigned, and her ` +
-        "week must be brought with it rather than left as the only page wearing the old grid",
+      !pattern.test(calendar),
+      `this file carries ${what} again. The week is the real interview calendar — a hand-written ` +
+        "grid here is the thing three rejections in one day were about, and it passes every " +
+        "design-token test while still not being able to book an interview",
     );
-    assert.ok(week.includes(token), why);
   }
 
   assert.match(
-    week,
-    /const slots = slotStarts\(\);/,
-    "the rows must come from the calendar's own `slotStarts()`, not a local hour loop. A second " +
-      "definition of what a slot is, is how her week and the booking dialog start offering " +
-      "different half hours",
-  );
-  assert.match(
-    week,
-    /<tr className=\{`\$\{adminPanelHeaderClassName\} text-white`\}>/,
-    "the head must WEAR the shared dark band the Approvals Hub and the Coverage Report wear, not a " +
-      "local bg-slate-900 — thirteen copies of that colour is why the token exists. The import " +
-      "alone proves nothing: this went green once with the band imported and a hand-written " +
-      "bg-slate-900 on the row",
-  );
-  assert.match(
-    week,
-    /outsideWorkdayInterviews\(day\.interviews\)/,
-    "the outside-the-working-day row must actually be WIRED, not merely written. A fixed 9-to-5 " +
-      "grid with the safety net unplugged is the silent-loss defect it was built to prevent",
-  );
-  assert.match(
     calendar,
-    /showingThisWeek \? nowMinutes : null/,
-    "the now line must be absent on every week that does not hold today — a 'now' drawn on next " +
-      "week is a lie, and it is the kind a tired reader believes",
+    /\{calendar\.interviewCalendar \? \(/,
+    "and a week drawn with NO ROLE resolved must be refused rather than rendered. The component " +
+      "needs a role to decide what to offer, and a blank week is the one wrong answer a diary gives",
   );
 
-  assert.ok(
-    /hidden border border-slate-200 bg-white md:block/.test(calendar)
-      && /md:hidden/.test(calendar),
-    "the grid is DESKTOP and the phone gets CARDS — the sibling's own answer and the owner's " +
-      "standing rule. Five time columns at 375px would be 66px a day, which cannot hold a " +
-      "candidate's name without cutting it, and cutting text is forbidden",
+  const data = codeOf(DATA);
+  for (const resolver of [
+    "resolveInterviewCalendarRole(access)",
+    "interviewCalendarAbilities(access)",
+    "mayRequestInterviews(access)",
+    "isZoomConfigured()",
+  ]) {
+    assert.ok(
+      data.includes(resolver),
+      `${resolver} must be the source of that prop — the same four answers ` +
+        "`app/(admin)/recruitment/interview-calendar/page.tsx` resolves for the full page. A prop " +
+        "computed some other way here is a second opinion about what she may do",
+    );
+  }
+  assert.match(
+    data,
+    /upcomingWeekStart\(now\)/,
+    "and the week it opens on must be `upcomingWeekStart`, not the week today sits in. They differ " +
+      "on a FRIDAY and a SATURDAY, which are not working days here: the week containing today is " +
+      "then Sunday-to-Thursday entirely in the past, so her landing page would open every weekend " +
+      "on a week that is over — which reads as a week with nothing in it",
   );
-  // The fits-the-screen rule is NOT re-asserted here: `testTheNewComponentsObeyTheThreeGoldenRules`
-  // already sweeps this whole file for every spelling of a width floor and for `overflow-x-auto`,
-  // and a second copy of a rule is a copy that gets weakened on its own one day.
 }
 
 // ── 9c. The month grid still draws every rule exactly once ─────────────────────────────────────
@@ -875,21 +716,21 @@ function testTheMonthGridDrawsEveryRuleOnce() {
 // ── 10. A failed read is SAID, never drawn as a quiet day ─────────────────────────────────────
 function testAFailedCalendarReadIsStatedRatherThanDrawnEmpty() {
   const calendar = codeOf(CALENDAR_COMPONENT);
-  // The `{` matters: the Mine view branches on `!calendar.interviewsLoaded`, which contains these
-  // same characters, so an unanchored match stayed GREEN with the week's own branch removed.
-  // Measured, while proving this assertion red.
   assert.match(
     calendar,
-    /\{calendar\.interviewsLoaded \? \(/,
-    "the week must branch on `interviewsLoaded` and say so when the read refused. An empty week " +
-      "drawn from a failed read tells her she has nothing on, which is the one wrong answer a " +
-      "diary can give",
+    /\{!calendar\.mineLoaded \? \(/,
+    "her OWN agenda must branch on `mineLoaded` and say so when that read refused. `mine.length " +
+      "=== 0` printed from a failed read says 'you are not on an interview in the next three " +
+      "weeks', which is the one wrong answer a diary can give — and the answer that makes somebody " +
+      "miss an interview. The week needs no such branch: the embedded calendar reads its own weeks " +
+      "and reports its own failures",
   );
   assert.equal(
     (calendar.match(/<CouldNotLoad what=/g) ?? []).length,
     3,
-    "and all three views must have that fallback — the week, her own agenda and the month. A view " +
-      "without one is a view that draws a refused read as a quiet day",
+    "and all three views must have that fallback — no role on the calendar at all, her own agenda, " +
+      "and the company half of the month. A view without one is a view that draws a refused read " +
+      "as a quiet day",
   );
   assert.match(
     calendar,
@@ -899,12 +740,18 @@ function testAFailedCalendarReadIsStatedRatherThanDrawnEmpty() {
   );
 
   const data = codeOf(DATA);
-  assert.match(
-    data,
-    /if \(!calendar\.interviewsLoaded\) pageUnavailable\.push/,
-    "and both failures must reach the page's own unavailable notice, so a reader is told by name " +
-      "which figure is missing rather than being left to notice",
-  );
+  for (const [line, what] of [
+    ['if (!calendar.interviewCalendar) pageUnavailable.push("Interview calendar")', "the week"],
+    ['if (!calendar.mineLoaded) pageUnavailable.push("Your own interviews")', "her own agenda"],
+    ['if (!calendar.monthItemsLoaded) pageUnavailable.push("Company calendar")', "the month"],
+  ] as const) {
+    assert.ok(
+      data.includes(line),
+      `a failure of ${what} must reach the page's own unavailable notice BY NAME, so a reader is ` +
+        "told which part of the calendar is missing rather than being left to notice. A notice that " +
+        "says 'something' is a notice nobody can act on",
+    );
+  }
   assert.ok(
     !/safe\("interviewVolume"|safe\("interviewCalendar"/.test(data),
     "this page's private reads must NOT be recorded as SourceKeys. That union is the generic " +
@@ -1008,15 +855,13 @@ export function runTalentAcquisitionOverviewTests() {
   testTheOfferConversionFamilyCountsAnsweredOffersOnly();
   testHiringQualityWindowsBothHalvesAndNullsTheUndecided();
   testDistinctPeopleCollapsesRoundsAndKeepsOutsiders();
-  testTheWeekStripPlacesEveryInterviewAndJoiningDay();
   testOnlyAnAcceptedOfferDrawsAJoiningDay();
   testAMultiDayHolidayIsMarkedOnEveryDayItCovers();
   testEmployeeRequestsIsOffThePageAndStillInHerSeat();
   testBothChartsHeNamedSurviveOnTheirOwnBands();
   testTheIdentityStripIsTheGenericPagesByteForByte();
   testTheNewComponentsObeyTheThreeGoldenRules();
-  testTheSlotGridHoldsEveryBookingExactlyOnce();
-  testHerWeekWearsTheInterviewCalendarsGrid();
+  testHerWeekIsTheInterviewCalendarItself();
   testTheMonthGridDrawsEveryRuleOnce();
   testAFailedCalendarReadIsStatedRatherThanDrawnEmpty();
   testTheRouteServesTheNewPageToHerSeatAlone();

@@ -76,7 +76,6 @@ import {
   buildHiringQualityKpis,
   buildMonthMarks,
   buildOfferConversionKpis,
-  buildWeekDays,
   joinersBetween,
   KPI_WINDOW_DAYS,
   RECRUITING_TASK_KEYS,
@@ -97,18 +96,22 @@ import {
   type HiredWindow,
 } from "@/lib/recruitment/dashboard";
 import {
+  interviewCalendarAbilities,
   interviewCalendarCaller,
   listInterviewCalendarWeek,
   listMyUpcomingInterviews,
+  mayRequestInterviews,
+  resolveInterviewCalendarRole,
   type InterviewCalendarCaller,
 } from "@/lib/recruitment/interview-calendar";
 import {
   cairoDateKey,
-  weekDays,
+  upcomingWeekStart,
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
 import { countInterviewVolume } from "@/lib/recruitment/interview-volume";
 import { listOnVacationToday, type OnVacationTodayRow } from "@/lib/vacation/on-vacation-today";
+import { isZoomConfigured } from "@/lib/zoom/meetings";
 
 export { TALENT_ACQUISITION_SEAT, KPI_WINDOW_DAYS, RECRUITING_TASK_KEYS };
 
@@ -154,12 +157,17 @@ async function listMonthInterviews(caller: InterviewCalendarCaller, weekStarts: 
 }
 
 /**
- * Her calendar: this week, her own next three weeks, and the month around them.
+ * Her calendar: the real Interview Calendar's own props, her own next three weeks, and the month.
  *
- * Each part fails ALONE and says so. A dead company-calendar table costs the holidays and the leave
- * and leaves the grid, the interviews and the joining days standing; a refusal from the Interview
- * Calendar costs the interviews and leaves the month. Nothing here renders an absence as an empty
- * day — see the two `…Loaded` flags on `TalentCalendar`.
+ * THE WEEK IS NOT BUILT HERE ANY MORE (13 October 2026 — "FULL INTERVIW CALENDAR FEAATURES"). The
+ * week tab mounts `InterviewCalendarView`, which reads its own weeks from
+ * `/api/recruitment/interview-calendar/bookings`; this function resolves the four answers that
+ * component takes — her role, her abilities, whether she may request, and whether Zoom is wired —
+ * the same four the recruitment page resolves, by the same functions.
+ *
+ * Each part still fails ALONE and says so. A dead company-calendar table costs the holidays and the
+ * leave and leaves the month grid standing; no role at all costs the week and says that too.
+ * Nothing here renders an absence as an empty day.
  */
 async function loadCalendar(
   access: AccessContext,
@@ -167,16 +175,27 @@ async function loadCalendar(
   options: { month?: { month: number; year: number } | null; now: Date; week?: string | null },
 ): Promise<TalentCalendar> {
   const now = options.now;
-  const weekStart = weekStartFor(
-    options.week && /^\d{4}-\d{2}-\d{2}$/.test(options.week) ? options.week : cairoDateKey(now),
-  );
+  // THE SAME WEEK THE REAL CALENDAR PAGE OPENS ON — `upcomingWeekStart`, not the week today sits in.
+  // The two differ on a FRIDAY and a SATURDAY, which are not working days here: the week containing
+  // today is then Sunday-to-Thursday entirely in the past, so her landing page would open every
+  // weekend on a week that is over, with the next one a click away and nothing saying so. A deep
+  // link (`?taWeek=`) still wins — it is somebody asking for a particular week by name.
+  const weekStart =
+    options.week && /^\d{4}-\d{2}-\d{2}$/.test(options.week)
+      ? weekStartFor(options.week)
+      : upcomingWeekStart(now);
   const { year, month } = options.month ?? currentCairoDateParts();
 
   const caller = await interviewCalendarCaller(access).catch(() => null);
-  const [week, mine, workspace] = await Promise.all([
-    caller ? listInterviewCalendarWeek(caller, weekStart).catch(() => null) : null,
+  const [mine, workspace, role, abilities, canRequest] = await Promise.all([
     caller ? listMyUpcomingInterviews(caller, now).catch(() => null) : null,
     getCompanyCalendarWorkspace(access, year, month).catch(() => null),
+    resolveInterviewCalendarRole(access).catch(() => null),
+    interviewCalendarAbilities(access).catch(() => ({
+      canAddToRecruitment: false,
+      canSearchCandidates: false,
+    })),
+    mayRequestInterviews(access).catch(() => false),
   ]);
 
   // The grid is arithmetic, so it exists whether or not the company calendar answered.
@@ -199,17 +218,10 @@ async function loadCalendar(
     gridDates[0] ?? `${year}-${String(month).padStart(2, "0")}-01`,
     gridDates[gridDates.length - 1] ?? gridDates[0] ?? "",
   );
-  const strip = weekDays(weekStart);
-
   return {
-    days: buildWeekDays(
-      weekStart,
-      (week?.bookings ?? []).map(toTalentInterview),
-      joinersBetween(offers ?? [], strip[0], strip[strip.length - 1]),
-      now,
-    ),
-    interviewsLoaded: week !== null,
+    interviewCalendar: role ? { abilities, canRequest, role, zoomConnected: isZoomConfigured() } : null,
     mine: (mine ?? []).map(toTalentInterview),
+    mineLoaded: mine !== null,
     month: {
       label: new Intl.DateTimeFormat("en-GB", {
         month: "long",
@@ -222,8 +234,6 @@ async function loadCalendar(
       year,
     },
     monthItemsLoaded: workspace !== null && workspace.schemaReady,
-    // Her seat resolves to a Viewer through `seesWholeInterviewCalendar`, so this is false for her.
-    ownOnly: Boolean(caller && (caller.own === "interviewer" || caller.own === "requester")),
     todayKey: cairoDateKey(now),
     weekStart,
   };
@@ -315,7 +325,11 @@ export async function getTalentAcquisitionOverview(
       week: options.week ?? null,
     }),
   ]);
-  if (!calendar.interviewsLoaded) pageUnavailable.push("Interview calendar");
+  // The week is the real calendar component and reads itself, so what this page can still fail to
+  // get is her ROLE on it (no role, no week at all) and her OWN agenda. Either one is named here,
+  // because the unavailable-sources line is the page's one honest account of what it could not read.
+  if (!calendar.interviewCalendar) pageUnavailable.push("Interview calendar");
+  if (!calendar.mineLoaded) pageUnavailable.push("Your own interviews");
   if (!calendar.monthItemsLoaded) pageUnavailable.push("Company calendar");
 
   const charts = buildRecruitingCharts(loaded);
