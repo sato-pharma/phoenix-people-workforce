@@ -147,11 +147,14 @@ const AWAY_LEG_VALUE = 47_790;
 export async function runClosingMergedAreaSplitFoldTests() {
   // ── 1. The owner's dated start month ──────────────────────────────────────────────────────────
   // His words, and the reason it is a constant at all. A session that moves it is restating months
-  // he published, which is his call and nobody else's.
+  // he published, which is his call and nobody else's. It shipped at 2026-07 ("ship the fold fix
+  // dated from july") and he widened it to January hours later ("widen the CNS Qena merge to January
+  // too", 2026-10-13) so the CNS Qena fold could reach January inside this window — the two dates
+  // are tied, and `tests/cns-qena-one-area.test.ts` pins them against each other.
   assert.equal(
     MERGED_AREA_SPLIT_FOLD_START_PERIOD,
-    "2026-07",
-    "the owner dated this fix from July (2026-10-13) — moving it restates a published month",
+    "2026-01",
+    "the owner widened this to January (2026-10-13) — moving it restates months he can still read",
   );
 
   // ── 2. The real defect: both halves land on the merged row ────────────────────────────────────
@@ -260,8 +263,15 @@ export async function runClosingMergedAreaSplitFoldTests() {
   // ── 5. The owner's start month holds in both directions ───────────────────────────────────────
   // A month before it renders exactly as it did — which is what keeps a published closing from
   // being restated by a deploy rather than by a decision.
+  //
+  // 🔴 THE MONTH HERE IS 2025-12, NOT 2026-06, AND THAT IS NOT ARBITRARY. This section read June
+  // while the window opened at July; when the owner widened it to January ("widen the CNS Qena merge
+  // to January too", 2026-10-13) June moved INSIDE the window and this assertion failed, correctly.
+  // It must name a month genuinely outside the window, and Pedia's GZ6/UE9 rule is in force there
+  // (`untilPeriod: 2026-08`), so 2025-12 is the nearest month that still exercises the boundary. A
+  // session that widens the window again must move this month too, not relax the assertion.
   const beforeStart = applyStoreSplitToMatrix(
-    buildMatrix({ line: "Pedia", period: "2026-06" }),
+    buildMatrix({ line: "Pedia", period: "2025-12" }),
     zeroSumNet("GZ6", "UE9"),
   );
   assert.equal(

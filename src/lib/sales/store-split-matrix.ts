@@ -43,18 +43,31 @@ import { areaProductKey } from "@/lib/sales/store-sales-city-split";
 type NetMap = ReadonlyMap<string, { qty: number; value: number }>;
 
 /**
- * The first month whose split net is re-keyed onto a merged area row — owner, 2026-10-13, asked
- * directly and answered "ship the fold fix dated from july".
+ * The first month whose split net is re-keyed onto a merged area row — owner, 2026-10-13: "widen the
+ * CNS Qena merge to January too", overruling the recommendation to leave it at July.
  *
  * Dated for the same reason every money rule in this module is: a correction with no start period
- * restates every month the system can still read, published ones included. July is his own choice
- * and it costs nothing earlier than it says — the city split itself only begins in August 2026
- * (`isStoreCitySplitActive`), so a month before that has no net to re-key and renders exactly as it
- * was published. The one month it moves is Pedia 2026-08, measured against production 2026-10-13:
- * Fayoum - Beni Suef 53,632.99 -> 99,192.98, and the line's August total up by the same 45,559.99
- * EGP it was losing. Moving this constant is his word, never a session's.
+ * restates every month the system can still read, published ones included. It shipped at 2026-07
+ * the same day ("ship the fold fix dated from july") and he moved it back hours later so the CNS
+ * Qena fold could reach January with it. 🔴 THE TWO DATES ARE TIED — the CNS Qena rule in
+ * `CLOSING_AREA_MERGES` also starts at 2026-01, and a merge in force OUTSIDE this window drops the
+ * folded-away area's leg, so widening either one alone re-opens the defect this function closes.
+ *
+ * What it moves, measured against production on both days:
+ *
+ *   2026-08       Pedia Fayoum - Beni Suef 53,632.99 -> 99,192.98, and the line's August total up by
+ *                 the same 45,559.99 EGP it was losing. That is the original fix.
+ *   2026-01..06   CNS QENA ALONE. Before 2026-07 `au.monthly_store_split_net` holds CNS rows ONLY —
+ *                 49 areas a month, summing to exactly 0.00 — because the Office read-time respread
+ *                 is CNS-only and the city split begins in August (`isStoreCitySplitActive`). So
+ *                 Pedia's GZ6/UE9 fold, which IS in force in those months, has no leg to re-key, and
+ *                 Anti Infective's rule starts in September. UE8's own legs are January +155.30
+ *                 packs, February -74.58, March -36.09, April -0.54, May -102.33, June +6.46.
+ *
+ * No month before 2026-07 carries a `monthly_closing_publications` row, so widening it restated
+ * nothing that has been sent out. Moving this constant is his word, never a session's.
  */
-export const MERGED_AREA_SPLIT_FOLD_START_PERIOD = "2026-07";
+export const MERGED_AREA_SPLIT_FOLD_START_PERIOD = "2026-01";
 
 /**
  * Re-key a split net onto the area rows this matrix actually renders.

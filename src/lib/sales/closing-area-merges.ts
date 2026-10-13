@@ -67,7 +67,7 @@ export type ClosingAreaMergeRule = {
 /**
  * The ONLY lines whose area rows are folded into one. Pedia folds Fayoum (GZ6) + Beni Suef (UE9)
  * UP TO AND INCLUDING 2026-08; CNS folds the same pair from 2026-08 onwards and Qena 1 (UE7) +
- * Qena 2 (UE8) from 2026-07 onwards; Anti Infective folds Suez (OT2) + Ismailia (OT9) into
+ * Qena 2 (UE8) from 2026-01 onwards; Anti Infective folds Suez (OT2) + Ismailia (OT9) into
  * "Ismailia and Suez" from 2026-09 onwards.
  *
  * 🔒 CNS HAS A SINGLE QENA — owner, 2026-10-13: "in cns consider qena 1 and qena 2 as 1 area called
@@ -76,15 +76,22 @@ export type ClosingAreaMergeRule = {
  * THIS PAIR — Anti Infective has two real Qena seats in every month and Pedia from 2026-09-01, each
  * carrying its own target, so folding them there would hide one rep's target behind another's row.
  *
- * 🔴 IT STARTS AT 2026-07 BECAUSE THAT IS EXACTLY `MERGED_AREA_SPLIT_FOLD_START_PERIOD`, and a merge
- * outside that window DROPS the folded-away area's store-split leg: the net is re-keyed onto the
- * rows the matrix renders only from July, so a January-June Qena merge would silently lose UE8's
- * leg — measured on production 2026-10-13, CNS carries a net on BOTH codes in all nine months
- * (January UE8 +155.30 packs, February -74.58, and so on), written by the Office respread his
- * "Recompute from January 2026" ruling now covers. Widening this rule earlier means moving that
- * constant first, which is his word and not a session's. Nothing is lost by stopping at July: no
- * month before it can be published, so the Performance Review, Rankings and Sales vs Target never
- * reach one, and the pre-July admin closings keep the two rows their revalued manuals were built on.
+ * 🔴 IT RUNS FROM 2026-01, AND THAT DATE IS TIED TO `MERGED_AREA_SPLIT_FOLD_START_PERIOD` — NEVER
+ * WIDEN ONE WITHOUT THE OTHER. A merge outside the split-fold window DROPS the folded-away area's
+ * store-split leg, because the net is re-keyed onto the rows the matrix renders only from that
+ * constant. It shipped at 2026-07 for exactly that reason and the owner widened both the same day
+ * (2026-10-13: "widen the CNS Qena merge to January too", overruling the recommendation to leave it
+ * at July). Measured on production before the widening: CNS carries a net on BOTH Qena codes in all
+ * nine months of 2026 — UE8 at January +155.30 packs, February -74.58, March -36.09, April -0.54,
+ * May -102.33, June +6.46 — written by the Office read-time respread, which his "Recompute from
+ * January 2026" ruling the same day already covers.
+ *
+ * 🔴 AND IT REACHES CNS ALONE, which is why the pair of dates could move together safely. Before
+ * 2026-07 `au.monthly_store_split_net` holds CNS rows ONLY (49 areas a month, summing to exactly
+ * 0.00): the Office respread is CNS-only and the city split begins in August. So Pedia's GZ6/UE9
+ * fold — in force Jan-Jun — has no leg to re-key there, and Anti Infective's rule starts in
+ * September. Jan-Jun carries no `monthly_closing_publications` row either, so nothing the owner has
+ * ever sent out is restated; the admin closing is the only surface that reaches those months.
  *
  * 🔒 ANTI INFECTIVE'S ISMAILIA + SUEZ — owner, 2026-09-19: "Ismailia and Suez, one area ... not
  * separate areas ... in line Anti Infective, Delta (3) region", answered "one area from 1 Sept" when
@@ -115,7 +122,10 @@ const CLOSING_AREA_MERGES: Record<string, ClosingAreaMergeRule[]> = {
   ],
   cns: [
     { keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef", fromPeriod: "2026-08" },
-    { keepAreaCode: "UE7", mergeAreaCode: "UE8", mergedAreaName: "Qena", fromPeriod: "2026-07" },
+    // 2026-01, not absent: his ruling is about 2026's nine months, and `au.line_area_map` carries
+    // `cns / UE8` on the Qena 1 rep seat from 2026-01-01. An absent `fromPeriod` would also fold
+    // 2025 and earlier, which he has never been asked about.
+    { keepAreaCode: "UE7", mergeAreaCode: "UE8", mergedAreaName: "Qena", fromPeriod: "2026-01" },
   ],
 };
 
