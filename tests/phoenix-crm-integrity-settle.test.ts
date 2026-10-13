@@ -64,6 +64,17 @@ const FILERS = [
 /** The nightly pass that drives the three 2026-10-12 detectors, and the board's own page. */
 const SILENT = read("../src/lib/phoenix-crm/server/silent-detectors.ts");
 const SILENT_MIGRATION = read("../supabase/migrations/20261012210000_phoenix_crm_silent_detectors.sql");
+/**
+ * The migration that CURRENTLY describes the `source` CHECK — widened again on 2026-10-13 for the
+ * ninth detector, the visit against the photograph of its place.
+ *
+ * 🔴 IT IS A SEPARATE READ FROM `SILENT_MIGRATION` ON PURPOSE. Only the newest `drop constraint` +
+ * `add constraint` pair describes the table, and the two constraints have moved on different days:
+ * `subject_kind` was last restated by the 2026-10-12 migration and `source` by this one. One
+ * constant for both would make widening either silently compare the reader against the wrong file —
+ * which is exactly how this pin went red on correct code on 2026-10-12.
+ */
+const VISIT_PHOTO_MIGRATION = read("../supabase/migrations/20261013150000_phoenix_crm_visit_photograph_source.sql");
 
 const SETTLED = {
   settledAt: "2026-10-09T18:40:00.000Z",
@@ -103,8 +114,8 @@ function sourceUnionTests(): void {
   // replaced that constraint — and the pin then compared the reader's eight values with that
   // migration's five and went red on correct code. A `drop constraint` + `add constraint` pair means
   // only the newest one describes the table, so moving this path is part of widening the CHECK.
-  const check = stripSqlComments(SILENT_MIGRATION).match(/check\s*\(source in \(([^)]*)\)\)/i);
-  assert.ok(check, "the source CHECK is no longer readable from migration 20261012210000");
+  const check = stripSqlComments(VISIT_PHOTO_MIGRATION).match(/check\s*\(source in \(([^)]*)\)\)/i);
+  assert.ok(check, "the source CHECK is no longer readable from migration 20261013150000");
   const allowed = [...check[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
   assert.deepEqual(
     [...allowed].sort(),
@@ -116,6 +127,16 @@ function sourceUnionTests(): void {
   for (const source of ["roster", "cadence", "coverage"]) {
     assert.ok((INTEGRITY_SOURCES as readonly string[]).includes(source), `${source} must be in INTEGRITY_SOURCES`);
   }
+  // And the ninth (2026-10-13). Named here as well as read out of the migration, for the same reason
+  // the five above are: a scan that silently stopped matching would pass on an empty set.
+  assert.ok((INTEGRITY_SOURCES as readonly string[]).includes("visit_photo"), "visit_photo must be in INTEGRITY_SOURCES");
+  assert.equal(integritySourceLabel("visit_photo"), "Visit against the photograph");
+  // 🔴 The label names what was COMPARED and never what it means. A detector that reads as an
+  // accusation on this board is the one thing the owner's standing rule refuses outright.
+  assert.ok(
+    !/suspic|fake|fraud|lying|dishonest/i.test(integritySourceLabel("visit_photo")),
+    "a detector label is a measurement, never a verdict about a person",
+  );
 
   // AND THE WEEKLY SCAN'S OWN COPY OF THE LIST. `FraudScanCase.source` in `fraud-scan-rules.ts`
   // restates the eight values by hand, and it is NOT free to import the authority: that file sits in
@@ -315,6 +336,95 @@ function silentDetectorTests(): void {
 }
 
 // ── 2. The settlement rule: stamped flags, and reopening by itself ────────────
+
+// ── 8. The fifth silent pass: the visit against the photograph of its place ───
+
+/**
+ * Added 2026-10-13 on the owner's own instruction — "since u have the accurate validation the photo
+ * with location then drop the suspected one and compare visits vs the accurate", then "i want the
+ * integrity report to show exactly this with story with the pictures and live loc numbers and
+ * photos".
+ *
+ * Measured on production that day: of 1,286 visits measurable against a photograph captured before
+ * them, 48 sit past the live 300 m line, 46 survive the accuracy guard, 14 are over a kilometre and
+ * the worst is 5,864 m, across 16 named reps. 45 are filed — the 46th names no rep.
+ */
+function visitPhotographPassTests(): void {
+  const silent = stripComments(SILENT);
+
+  // 🔴 WIRED INTO THE RUNNER, NOT MERELY WRITTEN. A detector nothing calls files nothing, and the
+  // only thing that would ever say so is this assertion: the pass would compile, keep its tests, and
+  // the board would stay empty for ever.
+  assert.match(silent, /async function runVisitPhotographGap\(/, "the fifth pass must exist");
+  assert.match(
+    silent,
+    /await runVisitPhotographGap\(todayIso, result\);/,
+    "runPhoenixCrmSilentSweep must CALL the fifth pass — a detector nothing calls files nothing",
+  );
+
+  // The far line is the module's own live setting, never a constant in the pass. A second copy of
+  // 300 m would let this detector and the visit's own stored location_flag disagree about what far
+  // means, on the same row, on the same screen.
+  assert.match(silent, /const config = await loadPhoenixCrmConfig\(\);/, "the far line is read live from the module's settings");
+  assert.match(silent, /const farMeters = config\.settings\.visitFarMeters;/, "and it is visitFarMeters, the one the rep's own flag already uses");
+
+  // 🔴 A VISIT WITH NO REP ON THE ROW IS NOT FILED. 17 visits in the 21-day window carry
+  // capture_source = 'server' and no rep_hr_id at all (production, 13 Oct 2026), one of them 3.2 km
+  // from its photograph. The board prints a NAME beside every case, and a case naming nobody is a
+  // case nobody can look at.
+  assert.match(
+    silent,
+    /if \(!repHrId \|\| !customerId \|\| !visitDate\) continue;/,
+    "a visit with no rep, no customer or no day is skipped, never filed against nobody",
+  );
+
+  // The anchor is a photograph captured BEFORE the visit: a clinic validated in October must not
+  // retroactively make a September visit far — nor near.
+  assert.match(silent, /String\(place\.captured_at \?\? ""\) <= capturedAtIso/, "the anchor must be a photograph captured before the visit");
+  // And the NEAREST eligible one, because a customer with two clinics is at whichever door the rep
+  // stood at: judging him against the further one files a finding the data itself refutes.
+  assert.match(silent, /verdict\.metres < nearest\.metres/, "the nearest eligible photograph is the anchor, not the first one read");
+
+  // Keyed on customer AND seat, as the rest of the module is — a customer is a row per seat here,
+  // and keying on the customer alone measures one territory's visit against another's door.
+  assert.match(silent, /customerId\}\|\$\{String\(visit\.seat_id/, "the anchor lookup must be keyed on customer AND seat");
+
+  // The filer, and what it stamps. subject_kind is the VISIT: the finding is about one visit, and
+  // filing it against the place would collide with that place's own capture-trust case through
+  // UNIQUE (subject_kind, subject_id, source).
+  const filer = stripComments(read("../src/lib/phoenix-crm/server/location-integrity.ts"));
+  assert.match(filer, /export async function fileVisitPhotographGap\(/, "the filer must exist");
+  assert.match(filer, /source: "visit_photo"/, "it files under the ninth detector's own source");
+  // 🔴 STRENGTH COMES FROM THE SHARED LIST, NEVER FROM A LITERAL HERE. That list is the one gate the
+  // rep's own Integrity score and countedIntegrityFlags share, so a filer writing strong: true by
+  // hand would move a number every rep can read — which "flag it, never stop the rep" refuses.
+  //
+  // 🔴 READ OUT OF THIS FILER'S OWN BODY, not out of the file. Eight other filers in it already name
+  // the list, so a whole-file match stayed green with this one hard-coding its strength — which is
+  // the only defect the assertion exists to catch.
+  const gapFilerStart = filer.indexOf("export async function fileVisitPhotographGap(");
+  assert.ok(gapFilerStart > 0, "fileVisitPhotographGap must be readable as its own function");
+  const gapFilerEnd = filer.indexOf("\nexport ", gapFilerStart + 1);
+  const gapFiler = filer.slice(gapFilerStart, gapFilerEnd === -1 ? undefined : gapFilerEnd);
+  assert.match(
+    gapFiler,
+    /strong: input\.flags\.some\(\(flag\) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS\.includes\(flag\)\)/,
+    "strength must come from the shared strong-flag list, never from a literal in this filer",
+  );
+  assert.ok(!/strong: (true|false)/.test(gapFiler), "and never from a literal");
+  assert.match(gapFiler, /subject_kind: "visit"/, "the finding is about one visit, not about the place");
+
+  // The metres the panel prints are the metres the detector JUDGED, filed on the row. Re-deriving
+  // them in the loader or the view would let the sentence and the evidence table disagree about the
+  // same pair of coordinates.
+  assert.match(silent, /metresFromPhotograph: Math\.round\(nearest\.metres\)/, "the judged distance must be filed, not re-derived later");
+
+  // Nothing is sent to anybody. The whole board is silent by design (owner, 2026-10-02).
+  assert.ok(
+    !/notify|sendEmail|telegram/i.test(silent),
+    "no detector in the nightly sweep may notify anybody — this board is read, never sent",
+  );
+}
 
 function settlementRuleTests(): void {
   const flags = ["sign_other_name", "photo_pin_drifted"];
@@ -542,6 +652,7 @@ export function runPhoenixCrmIntegritySettleTests() {
   sourceUnionTests();
   subjectKindTests();
   silentDetectorTests();
+  visitPhotographPassTests();
   settlementRuleTests();
   settleGateTests();
   boardAndPageTests();

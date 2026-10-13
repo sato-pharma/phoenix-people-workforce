@@ -49,6 +49,16 @@ export const CASE_READING_LABELS = {
   placeOnList: "The place on the list",
   placeCaptured: "Where the place was captured",
   pin: "The pin saved for the place",
+  /**
+   * The PLACE's photograph, on a case about a VISIT — the anchor the owner named.
+   *
+   * A separate label from `photograph` because they are different readings on a visit case: that
+   * one is the shutter fix of the picture the REP took on the call, this one is the shutter fix of
+   * the picture the place was validated with. On most places it sits on the same coordinate as the
+   * point kept for the place (1,312 of 1,403, production 13 Oct 2026), and `groupReadings` says so
+   * on one line rather than printing the same numbers twice.
+   */
+  placePhotograph: "The photograph saved for the place",
 } as const;
 
 /** One visit of this case's customer, as a point. The metres are measured here, never in the loader. */
@@ -121,6 +131,9 @@ export const INTEGRITY_SOURCE_STORY_LABELS: Record<string, string> = {
   roster: "The day's record",
   cadence: "How often",
   coverage: "Brick",
+  // The visit against the place's photograph (2026-10-13). It names what was COMPARED, never what
+  // it means — a rep filling the form in the car outside produces this reading honestly.
+  visit_photo: "Visit against the photograph",
 };
 
 /** The detector by name, never as a code — an unknown one reads as its own words opened out. */
@@ -251,7 +264,22 @@ export function oddReadingSentence(input: CaseStoryInput): string | null {
     agreeingAccuracy !== null && oddAccuracy !== null
       ? ` The phone reported it as accurate to about ${formatDistance(oddAccuracy)}, against about ${formatDistance(agreeingAccuracy)} for the other two — but a tighter figure is not a truer reading, because a cached position is reported just as confidently, so which of the two is stale is settled by whether anything else from that day sits near one of them.`
       : "";
-  return `${spokenLabelList(agreeing.labels)} are one and the same reading, saved in a single tap. The one that disagrees is ${lowerFirst(odd.reading.label)}.${precision}`;
+  // 🔴 WHY TWO READINGS AGREE IS NOT ALWAYS A SINGLE TAP, and this sentence used to say it was.
+  // The pin and the photograph coinciding IS a one-tap capture. But the point kept for the place
+  // coinciding with the place's photograph is a different thing entirely — `point_source` says the
+  // kept point was taken FROM the photograph, which is true of 1,312 of the 1,403 validated places —
+  // and on a visit case those are the two labels that agree. Printing "saved in a single tap" there
+  // would be a confident explanation of the wrong mechanism.
+  const labels = agreeing.labels;
+  const oneTap = labels.includes(CASE_READING_LABELS.pin) && labels.includes(CASE_READING_LABELS.photograph);
+  const keptFromPhotograph =
+    labels.includes(CASE_READING_LABELS.placeOnList) && labels.includes(CASE_READING_LABELS.placePhotograph);
+  const why = oneTap
+    ? ", saved in a single tap"
+    : keptFromPhotograph
+      ? " — the point kept for the place is the photograph's own reading"
+      : "";
+  return `${spokenLabelList(agreeing.labels)} are one and the same reading${why}. The one that disagrees is ${lowerFirst(odd.reading.label)}.${precision}`;
 }
 
 /**
@@ -482,6 +510,27 @@ function flagFact(flag: string, input: CaseStoryInput): string | null {
         : `${input.customerName} was called on ${spokenList(days)} — ${days.length} calls inside ${window ?? 7} days.`;
     }
 
+    // ── The visit against the photograph of its place (2026-10-13) ─────────────────────────────
+    //
+    // 🔴 BOTH SENTENCES PRINT THE FILED METRES, never a figure re-derived here. The pass measured
+    // the visit against the photograph it actually chose — the nearest one captured before the
+    // visit — and the panel must say the same number the detector judged, or a reader checking the
+    // two coordinates by hand would find the sentence and the evidence disagreeing.
+    case "visit_far_from_photo": {
+      const metres = asNumber(signals.metresFromPhotograph);
+      const far = asNumber(signals.farMeters);
+      const line = far === null ? "" : ` — past the ${formatDistance(far)} the settings call far`;
+      return metres === null
+        ? "The visit was saved further from the photograph of the place than the settings call far."
+        : `The visit was saved ${formatDistance(metres)} from the photograph taken at the place${line}.`;
+    }
+    case "visit_very_far_from_photo": {
+      const metres = asNumber(signals.metresFromPhotograph);
+      return metres === null
+        ? "And more than a kilometre from it."
+        : `That is ${formatDistance(metres)} — more than a kilometre from the door the picture was taken at.`;
+    }
+
     // ── The brick ──────────────────────────────────────────────────────────────────────────────
     case "place_brick_far": {
       const km = asNumber(input.signals.brickDistanceKm) ?? input.brickDistanceKm;
@@ -544,6 +593,10 @@ function flagOrdinaryCause(flag: string): string | null {
       return "A repeat call to deliver something, or two people's calls filed under one name.";
     case "place_brick_far":
       return "A place near a boundary, or a brick list that has not caught up with where the person works.";
+    case "visit_far_from_photo":
+      return "A visit is saved where the phone is when the box is filled in — the car outside, the lift, or the next clinic along — which is not always the door.";
+    case "visit_very_far_from_photo":
+      return "A phone handing back the position it last held indoors, or a form filled in after the rep had moved on, reaches this on its own.";
     default:
       return null;
   }
@@ -595,6 +648,11 @@ function evidenceOf(input: CaseStoryInput): CaseEvidence[] {
     push("Furthest two readings apart", input.spreadMeters <= 0 ? "the same reading, to the bit" : formatDistance(input.spreadMeters));
   }
   if (input.placeDistanceMeters !== null) push("Saved from the place", formatDistance(input.placeDistanceMeters));
+  // The anchor's own figure, as the detector filed it: the metres between the visit and the
+  // photograph. Printed beside "Saved from the place" rather than instead of it — they are two
+  // different readings, and on the 91 places whose kept point is the PIN they differ.
+  const fromPhotograph = asNumber(input.signals.metresFromPhotograph);
+  if (fromPhotograph !== null) push("From the photograph of the place", formatDistance(fromPhotograph));
   if (input.brickDistanceKm !== null) {
     push("From its brick", `${formatDistance(input.brickDistanceKm * 1000)}${input.brickName === null || input.brickName === "" ? "" : ` (${input.brickName})`}`);
   }
@@ -633,10 +691,18 @@ export function caseStory(input: CaseStoryInput): CaseStory {
   // A photograph is the one piece of evidence a reader can judge without any of the above, so the
   // paragraph says whether there is one. "None kept" is an ordinary answer: the one-tap visit keeps
   // no photograph at all, and a panel drawing an empty frame would read as a missing file.
+  // 🔴 "AS IT WAS SENT" IS TRUE OF EIGHT DETECTORS AND FALSE OF THE NINTH. On every other case the
+  // photograph is the one saved WITH the capture being judged. On a visit-against-the-photograph
+  // case the visit keeps no picture at all — what is shown is the photograph the PLACE was
+  // validated with, which is the anchor the measurement was made against, taken by whoever
+  // validated it on whatever day that was. Saying "as it was sent" there would tell a reader he is
+  // looking at this rep's own photograph of this call.
   story.push(
     input.photoPath === null
       ? "No photograph is kept for this capture, so there is nothing to look at here — a one-tap visit keeps none by design."
-      : "The photograph is below, as it was sent.",
+      : input.source === "visit_photo"
+        ? "The photograph below is the one the place was validated with — the reading this visit was measured against, not a picture from this call."
+        : "The photograph is below, as it was sent.",
   );
 
   if (causes.length > 0) {

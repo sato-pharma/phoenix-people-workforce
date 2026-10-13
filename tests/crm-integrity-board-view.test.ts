@@ -14,7 +14,15 @@ import {
   type IntegrityFilters,
 } from "../src/lib/crm-integrity/integrity-board-filters.ts";
 import { buildCaseMap, caseSpreadMeters, OSM_TILE_HOST } from "../src/lib/crm-integrity/integrity-case-map.ts";
-import { caseStory, INTEGRITY_SOURCE_STORY_LABELS, integritySourceStoryLabel, integritySubjectKindLabel, type CaseStoryInput } from "../src/lib/crm-integrity/integrity-case-story.ts";
+import {
+  CASE_READING_LABELS,
+  caseStory,
+  INTEGRITY_SOURCE_STORY_LABELS,
+  integritySourceStoryLabel,
+  integritySubjectKindLabel,
+  oddReadingSentence,
+  type CaseStoryInput,
+} from "../src/lib/crm-integrity/integrity-case-story.ts";
 import { INTEGRITY_SETTLE_PRESETS } from "../src/lib/crm-integrity/integrity-settle-presets.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -754,6 +762,133 @@ function runScreenTests() {
   assert.ok(!view.includes("canSettleIntegrityCases("), "the view is handed the answer, it does not decide it");
 }
 
+/**
+ * 10. THE VISIT AGAINST THE PHOTOGRAPH OF ITS PLACE — the case the owner asked to be able to read.
+ *
+ * "yes with same requirments i told u before i want the integrity report to show exactly this with
+ * story with the pictures and live loc numbers and photos" (13 Oct 2026). So the panel must carry
+ * the story, the photograph and the live coordinates with the metres between them — and every number
+ * it prints must be the one the detector JUDGED, not a second derivation of it.
+ */
+function runVisitPhotographCaseTests() {
+  // Nourhan Fawzy's worst case, as the detector filed it on production: a visit saved 5,864 m from
+  // the photograph the place was validated with, the place's kept point sitting on that photograph.
+  const doorLat = 30.0444;
+  const doorLon = 31.2357;
+  const base: CaseStoryInput = {
+    source: "visit_photo",
+    subjectKind: "visit",
+    strong: false,
+    flags: ["visit_far_from_photo", "visit_very_far_from_photo"],
+    reasons: ["The visit is far from the photograph of the place", "And more than a kilometre from it"],
+    repName: "Nourhan Fawzy Ahmed Ali Moussa",
+    customerName: "ليندا اسكندر",
+    customerList: "PM",
+    customerSpeciality: "Pediatrics",
+    subjectLabel: null,
+    brickName: null,
+    brickDistanceKm: null,
+    placeDistanceMeters: 5864,
+    readings: [
+      { label: CASE_READING_LABELS.visitSaved, lat: 30.0971, lon: 31.2357, accuracyMeters: 18, atIso: "2026-10-08T19:12:00Z" },
+      { label: CASE_READING_LABELS.placeOnList, lat: doorLat, lon: doorLon, accuracyMeters: 25, atIso: "2026-09-21T09:02:00Z" },
+      { label: CASE_READING_LABELS.placePhotograph, lat: doorLat, lon: doorLon, accuracyMeters: 25, atIso: "2026-09-21T09:02:00Z" },
+    ],
+    nearbyVisits: [],
+    spreadMeters: 5864,
+    accuracyMeters: 18,
+    deviceMocked: false,
+    signText: null,
+    companionNames: [],
+    replayByName: null,
+    signals: { metresFromPhotograph: 5864, farMeters: 300, placeId: "a3f1c2d4-0000-4000-8000-000000000001", photographAtIso: "2026-09-21T09:02:00Z" },
+    photoPath: "phoenix-crm/places/one.jpg",
+    visitDate: "2026-10-08",
+  };
+
+  const story = caseStory(base);
+  const text = [story.headline, ...story.story].join(" ");
+
+  // 1 — THE HEADLINE IS THE MEASUREMENT, with the filed metres and the line it was judged against.
+  // 🔴 "5.9 km" must come from signals.metresFromPhotograph and not from the coordinates: the
+  // detector measured against the photograph it CHOSE (the nearest captured before the visit), and a
+  // panel re-deriving it would print a different number for a customer with two clinics.
+  assert.match(story.headline, /5\.9 km/, `the headline must print the judged distance: ${story.headline}`);
+  assert.match(story.headline, /photograph/i, "and say what it was measured against");
+  assert.match(story.headline, /300 m/, "and name the line the settings call far");
+  // 2 — the second flag is a different question, and it says so.
+  assert.ok(text.includes("more than a kilometre"), `the kilometre sentence must be in the story: ${text}`);
+
+  // 3 — THE PHOTOGRAPH IS THE PLACE'S, NOT THIS CALL'S, AND THE PANEL SAYS SO. A one-tap visit keeps
+  // no picture at all, so "the photograph is below, as it was sent" would tell the reader he is
+  // looking at this rep's own photograph of this visit.
+  assert.ok(text.includes("the one the place was validated with"), `the story must say whose photograph it is: ${text}`);
+  assert.ok(!text.includes("as it was sent"), "it is not this rep's own photograph of this call");
+
+  // 4 — THE ODD READING, WITHOUT THE ONE-TAP CLAIM. The two agreeing readings here are the point
+  // kept for the place and the place's own photograph, which coincide because the kept point was
+  // TAKEN from the photograph — not because somebody saved both in a single tap.
+  const odd = oddReadingSentence(base);
+  assert.ok(odd !== null, "three readings with two identical must name the odd one out");
+  assert.ok(!odd.includes("single tap"), `the one-tap clause is wrong on this case: ${odd}`);
+  assert.ok(odd.includes("the point kept for the place is the photograph's own reading"), `and the real reason must be given: ${odd}`);
+  assert.ok(odd.includes("where the visit was saved"), `the odd reading is the visit's own fix: ${odd}`);
+  // And the one-tap clause is still right where it IS right — a place's pin and its photograph.
+  const oneTap = oddReadingSentence({
+    ...base,
+    readings: [
+      { label: CASE_READING_LABELS.pin, lat: doorLat, lon: doorLon, accuracyMeters: 12, atIso: null },
+      { label: CASE_READING_LABELS.photograph, lat: doorLat, lon: doorLon, accuracyMeters: 12, atIso: null },
+      { label: CASE_READING_LABELS.placeOnList, lat: 30.0971, lon: 31.2357, accuracyMeters: 30, atIso: null },
+    ],
+  });
+  assert.ok(oneTap !== null && oneTap.includes("saved in a single tap"), `a one-tap capture must still say so: ${oneTap}`);
+
+  // 5 — THE LIVE COORDINATES AND THE METRES, so he can check the sentence instead of trusting it.
+  const evidence = new Map(story.evidence.map((item) => [item.label, item.value]));
+  assert.ok([...evidence.keys()].some((label) => /photograph of the place/i.test(label)), `the filed metres must be in the evidence: ${[...evidence.keys()].join(" | ")}`);
+  assert.equal(
+    story.evidence.find((item) => /photograph of the place/i.test(item.label))?.value,
+    "5.9 km",
+    "and it must be the judged figure",
+  );
+  const coordinates = story.evidence.filter((item) => /\d+\.\d{6}, \d+\.\d{6}/.test(item.value));
+  assert.equal(coordinates.length, 2, `two distinct points, not three lines for them: ${coordinates.map((item) => item.label).join(" | ")}`);
+  assert.ok(
+    coordinates.some((item) => item.value.includes("one reading, under both names")),
+    "the place's kept point and its photograph are one reading and must be grouped, not printed twice",
+  );
+
+  // 6 — NOTHING IS CONCLUDED, AND THE ORDINARY CAUSE CLOSES IT. A visit is saved where the phone is
+  // when the box is filled in, which is not always the door — that is an ordinary day.
+  assert.ok(/Usually/.test(text), `the ordinary cause must be given: ${text}`);
+  assert.ok(/car outside|lift|next clinic/.test(text), "and it must be the real one for this detector");
+  assert.ok(!/fraud|cheat|fake|lying|dishonest/i.test(text), `no case accuses anybody: ${text}`);
+  assert.ok(!text.includes("_"), `no code reaches the screen: ${text}`);
+
+  // 7 — THE LOADER HANDS OVER THE ANCHOR'S OWN PHOTOGRAPH, and only on the cases judged against it.
+  const loader = read(LOADER_PATH);
+  assert.match(loader, /function anchorPlaceIdOf\(row: Row\)/, "the loader must resolve the place the case was JUDGED against");
+  assert.match(loader, /signals\.placeId/, "and it is signals.placeId, which is not always the visit's own place_id");
+  assert.match(
+    loader,
+    /if \(row\.source === "visit_photo"\) \{\s*\n\s*add\(CASE_READING_LABELS\.placePhotograph/,
+    "the place's photograph is a reading only on the cases that were measured against it",
+  );
+  assert.match(
+    loader,
+    /\.\.\.rows\.map\(\(row\) => anchorPlaceIdOf\(row\)\)/,
+    "and that place must be READ, or the panel resolves to the visit's own place or to nothing",
+  );
+
+  // 8 — AND THE PANEL CAPTIONS IT AS WHAT IT IS. The picture was taken by whoever validated the
+  // place, on whatever day that was: this rep's name and this visit's time belong to neither.
+  const view = read(VIEW_PATH);
+  assert.match(view, /entry\.source === "visit_photo"/, "the caption must switch on the source");
+  assert.match(view, /The photograph of the place/, "and say it is the place's photograph");
+  assert.match(view, /photographAtIso/, "stamped with the photograph's own Cairo time, not the visit's");
+}
+
 export function runCrmIntegrityBoardViewTests() {
   runFilterGroupTests();
   runUrlMirrorTests();
@@ -764,4 +899,5 @@ export function runCrmIntegrityBoardViewTests() {
   runBulkSettleTests();
   runRouteTests();
   runScreenTests();
+  runVisitPhotographCaseTests();
 }
