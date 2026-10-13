@@ -16,6 +16,12 @@ import {
 import { isRepRankingLine, resolveTrendPeriods } from "../src/lib/sales/closing-rep-ranking-export.ts";
 import { toLegacyShape } from "../src/lib/sales/closing-rep-ranking-legacy-shape.ts";
 import { buildRepRankingWorkbook } from "../src/lib/sales/closing-rep-ranking-workbook.ts";
+import {
+  ANTI_INFECTIVE_RANKING_DRESS,
+  CNS_RANKING_DRESS,
+  dressedRankingLines,
+  rankingDressFor,
+} from "../src/lib/sales/closing-ranking-dress.ts";
 import type { AreaSeatAssignment } from "../src/lib/sales/closing-performance-review.ts";
 import type { ClosingDetailRow } from "../src/lib/sales/monthly-closing-details.ts";
 import type { MonthlyClosingMatrix } from "../src/lib/sales/monthly-distributor-import.ts";
@@ -189,7 +195,7 @@ const SEATS = new Map<string, AreaSeatAssignment>([
  * properties of undefined (reading 'split')" instead of a workbook. `months` builds the same
  * ranking over the last N months so the one-month and two-month shapes are exercised here.
  */
-function ranking(months: 1 | 2 | 3 = 3) {
+function ranking(months: 1 | 2 | 3 = 3, line: string = LINE) {
   const all = [
     { matrix: matrixOf("2026-07", JULY), period: "2026-07" },
     { matrix: matrixOf("2026-08", AUGUST), period: "2026-08" },
@@ -197,7 +203,7 @@ function ranking(months: 1 | 2 | 3 = 3) {
   ];
   return buildRepRanking({
     directByArea: new Map([[`${PERIOD}|MN1`, 20_000]]),
-    line: LINE,
+    line,
     matricesByPeriod: all.slice(all.length - months),
     period: PERIOD,
     probationByName: new Map([["Sara Nabil", "2026-12-01"]]),
@@ -208,11 +214,53 @@ function ranking(months: 1 | 2 | 3 = 3) {
 }
 
 export async function runClosingRepRankingTests(): Promise<void> {
-  // ── The gate: this line and no other ──────────────────────────────────────────────────────────
+  // ── The gate: the lines that have an identity to wear it in, and no other ────────────────────
   assert.ok(isRepRankingLine("Anti Infective"), "Anti Infective takes the ranking workbook");
   assert.ok(isRepRankingLine("anti infective"), "...however the line is spelled");
-  for (const other of ["CNS", "Pedia", "Head Office", "", null]) {
+  assert.ok(isRepRankingLine("CNS"), "and CNS, which the owner added on 2026-10-13");
+  assert.ok(isRepRankingLine("cns"), "...however that line is spelled too");
+  for (const other of ["Pedia", "Head Office", "", null]) {
     assert.ok(!isRepRankingLine(other), `${String(other)} keeps the export it already had`);
+  }
+
+  // 🔴 THE GATE AND THE DRESS REGISTRY ARE ONE LIST IN TWO FILES, and they must answer alike. A
+  // line the gate lets through with no dress reaches the builder undressed and throws instead of
+  // downloading; a dress with no gate is art nothing can ever open. The builder cannot catch either
+  // one, because it only ever sees the line it was called with.
+  for (const line of dressedRankingLines()) {
+    assert.ok(isRepRankingLine(line), `${line} has a dress, so the gate must let it through`);
+  }
+  for (const line of ["Anti Infective", "CNS"]) {
+    assert.ok(rankingDressFor(line), `${line} passes the gate, so it must have a dress`);
+  }
+  assert.equal(dressedRankingLines().length, 2, "two dressed lines — Pedia still has none");
+  assert.equal(rankingDressFor("Pedia"), null, "and an undressed line answers null, never a default");
+
+  // THE TWO DRESSES ARE DIFFERENT LOOKS, not one look with a different folder. Checked on the
+  // tokens a reader actually sees, so a copy-paste that left the navy behind fails here.
+  assert.notEqual(ANTI_INFECTIVE_RANKING_DRESS.colours.field, CNS_RANKING_DRESS.colours.field);
+  assert.notEqual(ANTI_INFECTIVE_RANKING_DRESS.colours.covered, CNS_RANKING_DRESS.colours.covered);
+  assert.notEqual(ANTI_INFECTIVE_RANKING_DRESS.bannerDir, CNS_RANKING_DRESS.bannerDir);
+  // 🔴 THE SEAM'S ORDER IS THE IDENTITY'S OWN AND THE TWO RUN OPPOSITE WAYS. Anti-Infective runs
+  // Royafloxacin red into Saginkgo blue; CNS runs Tebofortin leaf into Tebofortin amber, which is
+  // the reverse of its accent pairing. Deriving the seam from short/covered would flip one of them.
+  assert.equal(ANTI_INFECTIVE_RANKING_DRESS.colours.seamLeft, ANTI_INFECTIVE_RANKING_DRESS.colours.short);
+  assert.equal(CNS_RANKING_DRESS.colours.seamLeft, CNS_RANKING_DRESS.colours.covered, "leaf on the left");
+  assert.equal(CNS_RANKING_DRESS.colours.seamRight, CNS_RANKING_DRESS.colours.short, "amber on the right");
+
+  // ── Every dressed line's chrome is really committed ──────────────────────────────────────────
+  // The builder reads these ten files off disk at build time and throws if one is missing, so a
+  // line named in the gate with no art turns its download into an error page.
+  for (const dress of [ANTI_INFECTIVE_RANKING_DRESS, CNS_RANKING_DRESS]) {
+    for (const file of [
+      "banner-full.png", "strip-districts.png", "strip-filter.png", "strip-months.png",
+      "strip-product.png", "strip-ranking.png", "strip-regions.png", "strip-trend.png",
+      "strip-units.png", "strip-who.png",
+    ]) {
+      const bytes = readFileSync(resolve(process.cwd(), dress.bannerDir, file));
+      assert.ok(bytes.length > 10_000, `${dress.bannerDir}/${file} is a real render`);
+      assert.equal(bytes.subarray(1, 4).toString("latin1"), "PNG", `${file} is a PNG`);
+    }
   }
 
   // ── The trend is PUBLISHED months, oldest first, never a calendar ─────────────────────────────
@@ -584,7 +632,71 @@ export async function runClosingRepRankingTests(): Promise<void> {
     );
   }
 
+  await assertCnsWearsItsOwnIdentity();
+
   assertAdminRepRankingButton();
+}
+
+/**
+ * THE CNS WORKBOOK WEARS THE CNS IDENTITY — owner, 2026-10-13: "now use the CNS identity to make the
+ * new identity ranking rep closing sheet, exactly as you did for anti-infective, but for CNS with
+ * CNS identity."
+ *
+ * 🔴 MEASURED ON THE EMITTED FILE, NEVER ON THE SOURCE. A dress record that holds the right hexes
+ * proves nothing about the workbook: the colours reach a cell through a closure, a keycard, a seam
+ * and a conditional format, and any one of those could still be carrying a constant left behind
+ * from the line this builder was written for. So the file is built, unzipped, and its own styles
+ * are read — the one place Excel keeps the colour a reader will actually see.
+ */
+async function assertCnsWearsItsOwnIdentity(): Promise<void> {
+  const cns = await buildRepRankingWorkbook({
+    carve: { direct: new Map(), stores: new Map() },
+    probationByName: new Map(),
+    ranking: ranking(3, "CNS"),
+  });
+  const styles = await (await JSZip.loadAsync(cns.buffer)).file("xl/styles.xml")!.async("string");
+
+  for (const [token, what] of [
+    ["63B24A", "Tebofortin leaf"],
+    ["E5732A", "Tebofortin amber"],
+    ["B4531A", "its deeper amber, for a vacant seat's name"],
+    ["0F3A1A", "the forest field, under the keycards"],
+    ["A7E08F", "the eyebrow green, on their labels"],
+    ["F0F2F1", "the identity's own 6% zebra"],
+  ] as const) {
+    assert.ok(styles.includes(token), `the emitted file carries ${what} (#${token})`);
+  }
+
+  // 🔴 AND NOT ONE TOKEN OF THE LINE THIS BUILDER WAS WRITTEN FOR. This is the assertion that fires
+  // if a second identity is ever added by copying the first and forgetting a constant.
+  for (const [token, what] of [
+    ["D20000", "Royafloxacin red"],
+    ["0384DB", "Saginkgo blue"],
+    ["001641", "the navy field"],
+    ["000A26", "the navy base"],
+    ["67C2F6", "the eyebrow blue"],
+    ["F5F7FA", "the navy-derived zebra"],
+  ] as const) {
+    assert.ok(!styles.includes(token), `no ${what} (#${token}) anywhere on a CNS file`);
+  }
+
+  // The chrome comes out of the CNS folder, not the other line's — ten renders, one per banner.
+  assert.equal(cns.facts.bannersEmbedded, 10, "every CNS strip and its masthead are embedded");
+  assert.ok(cns.facts.sheetNames.includes("Trust"), "and the identity page is there to explain them");
+
+  // The Trust sheet names THIS identity, in its own words.
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(cns.buffer as unknown as ArrayBuffer);
+  const trust = book.getWorksheet("Trust")!;
+  const prose: string[] = [];
+  trust.eachRow((row) => row.eachCell((cell) => {
+    if (typeof cell.value === "string") prose.push(cell.value);
+  }));
+  const whole = prose.join(" ");
+  assert.ok(whole.includes("the CNS identity"), "the Trust sheet names the identity the file wears");
+  assert.ok(whole.includes("Tebofortin"), "and the hero it is built around");
+  assert.ok(!whole.includes("Royafloxacin"), "and never the other line's products");
+  assert.ok(!whole.includes("Saginkgo"), "nor the other line's second product");
 }
 
 /**
@@ -609,7 +721,8 @@ function assertAdminRepRankingButton(): void {
   // refuses outright and which poisons a dev server for every later request once it compiles.
   assert.equal(isRepRankingLine("Anti Infective"), true, "the gate admits the line it was written for");
   assert.equal(isRepRankingLine("  anti infective "), true, "spacing and case are normalised, not compared raw");
-  for (const other of ["CNS", "Pedia", "Head Office", "", null, undefined]) {
+  assert.equal(isRepRankingLine("CNS"), true, "and the line he added to it the same day");
+  for (const other of ["Pedia", "Head Office", "", null, undefined]) {
     assert.equal(isRepRankingLine(other), false, `${other ?? "nothing"} keeps the workbook it already had`);
   }
   // Asked of what it IMPORTS, not of its text: the comment above the function names `node:crypto`
@@ -750,7 +863,7 @@ function assertAdminRepRankingButton(): void {
   );
   assert.ok(
     workspace.includes("{showRepRankingExport ? (") && workspace.includes("Export Rep Ranking"),
-    "and it is ABSENT on CNS and Pedia rather than disabled — the workbook does not exist there",
+    "and it is ABSENT on Pedia rather than disabled — the workbook does not exist there",
   );
 
   // 🔒 THE FITS-THE-SCREEN GOLDEN RULE. Three buttons fitted one line; the fourth takes the row
