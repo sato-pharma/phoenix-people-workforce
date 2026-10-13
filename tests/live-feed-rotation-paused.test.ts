@@ -361,11 +361,21 @@ export function runLiveFeedRotationPausedTests() {
     );
   }
 
-  // The marketing feed's missing screen is a recorded decision, and the moment it gains one the
-  // banner belongs on it. Pinned so that `screen: null` cannot quietly become a forgotten gap.
+  // Marketing gained its management panel on 13 Oct 2026, and the banner went on it with it: the
+  // feed registry now names the screen, and the panel mounts the shared banner while closed.
   const feeds = stripComments(read("../src/lib/share-links/feeds.ts"));
   assert.ok(
-    /screen: null,\s*sheet: "Marketing Requests"/.test(feeds),
-    "marketing is still the feed with no management screen — if that changes, the banner goes on it",
+    /screen: "\/admin\/marketing-requests\/all",\s*sheet: "Marketing Requests"/.test(feeds),
+    "marketing's feed must name the screen that carries its links panel",
+  );
+  const mkPanel = stripComments(read("../src/components/marketing-requests/report-share-links-panel.tsx"));
+  assert.ok(mkPanel.includes("assessLiveFeedAmbiguity(links)"), "the marketing panel judges the list it already holds");
+  assert.ok(
+    mkPanel.includes('<LiveFeedAmbiguityBanner sheet="Marketing Requests"'),
+    "the marketing panel renders the shared banner, named with the sheet's human name",
+  );
+  assert.ok(
+    mkPanel.indexOf("<LiveFeedAmbiguityBanner") < mkPanel.indexOf("onClick={() => setOpen(true)}"),
+    "the banner sits above the collapsed button, so it shows on the register without a click",
   );
 }

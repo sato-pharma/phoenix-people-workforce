@@ -305,6 +305,7 @@ import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
 import { runLiveFeedRotationPausedTests } from "./live-feed-rotation-paused.test.ts";
 import { runShareLinkListsOmitTokenTests } from "./share-link-lists-omit-token.test.ts";
+import { runMarketingShareLinksPanelTests } from "./marketing-share-links-panel.test.ts";
 import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
 import { runShareLinkRotatedLabelTests } from "./share-link-rotated-label.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
@@ -3295,6 +3296,10 @@ await runTest(
 await runTest(
   "the Direct Orders and Marketing share-link management lists never carry the whole bearer token — the row type has no token field, the mapper emits only the 8-character tokenPreview, the GET routes return that list unchanged, and the one UI panel reads a whole token only from the link it just minted",
   runShareLinkListsOmitTokenTests,
+);
+await runTest(
+  "the Marketing Requests live-sheet links panel exists and carries the rotation banner — gated on expenses:export exactly as its service is, mounted on both registers, Sheets feed only (nothing serves a Marketing live link), the bare FEED_TOKEN shown once, the list read on mount, and fitted to the screen: table-fixed with a colgroup, cards on a phone, square, wrapped, Cairo time",
+  runMarketingShareLinksPanelTests,
 );
 
 await runTest(
