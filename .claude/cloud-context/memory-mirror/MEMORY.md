@@ -72,3 +72,5 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 - [a long bash heredoc is truncated and bash blames EOF](a-long-bash-heredoc-is-truncated-and-bash-blames-eof.md) - past roughly 90 lines the tail never arrives, so `unexpected EOF` reads as a quoting bug in the content; long file content goes through Write.
 
 - 🔴 [a SECOND live feed link silently pauses the weekly token rotation](a-second-live-feed-link-silently-pauses-the-weekly-token-rotation.md) - all three `*-rotate-sheet-token` jobs refuse rather than rotate, cron-job.org still shows a green 200, and only `job_heartbeats.last_detail` says why; keep the link with the live `last_accessed_at`.
+
+- 🔴 [a date inside a note is not the note's subject](a-date-inside-a-note-is-not-the-notes-subject.md) - the Luxor `line_area_map` notes flagged as documenting the superseded 2026-09-11 union were recording its REVERSAL, byte-identical to the migration (`bf6f192e`, 387 chars); digest the prose before calling a live record stale.
