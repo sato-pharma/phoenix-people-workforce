@@ -64,7 +64,7 @@ export type FraudScanCase = {
   repHrId: string;
   repName: string;
   /**
-   * Which detector filed it — every one of the EIGHT by name, mirroring `INTEGRITY_SOURCES` in
+   * Which detector filed it — every one of the NINE by name, mirroring `INTEGRITY_SOURCES` in
    * `server/integrity-board.ts`, which is the authority. It was `"gps" | "photo"` until 2026-10-12,
    * which is why the board's reader collapsed signboard and capture-trust cases into `gps` to satisfy
    * it: a case labelled as the one kind of evidence it is not. `roster`, `cadence` and `coverage`
@@ -79,7 +79,7 @@ export type FraudScanCase = {
    * this file and compares it as a SET with `INTEGRITY_SOURCES`. **Add a detector there and here, in
    * the same change.**
    */
-  source: "gps" | "photo" | "behaviour" | "signboard" | "capture_trust" | "roster" | "cadence" | "coverage";
+  source: "gps" | "photo" | "behaviour" | "signboard" | "capture_trust" | "roster" | "cadence" | "coverage" | "visit_photo";
   /**
    * May a reader who is NOT the Super Admin see this case? Stamped by the board's reader from its own
    * `SFE_SOURCES` allow-list — never decided in this file, and never re-derived from `source` here.

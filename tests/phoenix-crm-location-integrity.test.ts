@@ -15,6 +15,8 @@ import {
   judgePlaceBrickDistance,
   judgeRevisitCadence,
   judgeRosterDay,
+  judgeVisitAgainstPhotograph,
+  VISIT_PHOTO_VERY_FAR_METERS,
   PHOENIX_CRM_AWAY_DAY_ACTIVITIES,
   REVISIT_WINDOW_DAYS,
   REVISIT_WINDOW_VISITS,
@@ -630,6 +632,73 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
         (PHOENIX_CRM_PRECISION_INTEGRITY_FLAGS as readonly string[]).includes(flag),
         false,
         `${flag} does not rest on a precise fix — it reads no coordinate at all`,
+      );
+    }
+  }
+
+  {
+    // ── The visit against the PHOTOGRAPH of its place (2026-10-13, the owner's own instruction) ──
+    //
+    // "since u have the accurate validation the photo with location then drop the suspected one and
+    // compare visits vs the accurate". The photograph carries the fix its own shutter took at the
+    // door; the pin can be saved from anywhere, and it is dropped from this judgement entirely.
+    const atTheDoor = { lat: 30.0444, lon: 31.2357, accuracyMeters: 15 };
+    // 0.00400 degrees of latitude is about 445 m — past the 300 m line and well inside a kilometre.
+    const nearby = { lat: 30.0484, lon: 31.2357, accuracyMeters: 20 };
+    // 0.02000 degrees is about 2,224 m.
+    const faraway = { lat: 30.0644, lon: 31.2357, accuracyMeters: 20 };
+
+    const near = judgeVisitAgainstPhotograph({ visit: nearby, photograph: atTheDoor, farMeters: 300 });
+    assert.deepEqual(near.flags, ["visit_far_from_photo"], "past the far line is one flag, not two");
+    assert.ok(near.metres !== null && Math.round(near.metres) > 300 && Math.round(near.metres) < 1000, `445 m expected, got ${near.metres}`);
+
+    const far = judgeVisitAgainstPhotograph({ visit: faraway, photograph: atTheDoor, farMeters: 300 });
+    assert.deepEqual(far.flags, ["visit_far_from_photo", "visit_very_far_from_photo"], "past a kilometre carries both flags, in that order");
+
+    // 🔴 THE METRES COME BACK EVEN WHEN NOTHING IS FILED, because the panel prints the measurement
+    // and not only the finding: a visit AT the door is the commonest answer and is worth saying.
+    const inside = judgeVisitAgainstPhotograph({ visit: { lat: 30.0454, lon: 31.2357, accuracyMeters: 10 }, photograph: atTheDoor, farMeters: 300 });
+    assert.deepEqual(inside.flags, [], "inside the far line files nothing");
+    assert.ok(inside.metres !== null && inside.metres > 0, "the distance is still measured and returned");
+
+    // 🔴 THE ACCURACY GUARD, AND IT IS NOT DECORATION. It removes exactly the two readings that
+    // explain themselves: Yasmeen Samy's two 3 Oct visits reported about 2,000 m of their own
+    // margin (precise location switched off), so the gap to the photograph was never measured at
+    // all. 48 cases become 46 by measurement, never by judgement.
+    const coarseVisit = judgeVisitAgainstPhotograph({ visit: { ...faraway, accuracyMeters: 3000 }, photograph: atTheDoor, farMeters: 300 });
+    assert.deepEqual(coarseVisit.flags, [], "a fix whose own margin covers the gap has measured nothing");
+    assert.ok(coarseVisit.metres !== null, "and the distance is still reported, so the panel can say why");
+    const coarsePhoto = judgeVisitAgainstPhotograph({ visit: faraway, photograph: { ...atTheDoor, accuracyMeters: 3000 }, farMeters: 300 });
+    assert.deepEqual(coarsePhoto.flags, [], "the photograph's own margin is read the same way");
+
+    // A missing coordinate is UNKNOWN: no flag, and no zero pretending to be a distance.
+    assert.deepEqual(judgeVisitAgainstPhotograph({ visit: { lat: Number.NaN, lon: 31.2357, accuracyMeters: null }, photograph: atTheDoor, farMeters: 300 }), { flags: [], metres: null });
+    assert.deepEqual(judgeVisitAgainstPhotograph({ visit: nearby, photograph: { lat: 30.0444, lon: Number.NaN, accuracyMeters: null }, farMeters: 300 }), { flags: [], metres: null });
+
+    // The far line is the module's own setting, so a settings change moves this detector with it —
+    // and a nonsense setting falls back to 300 rather than filing on everything.
+    assert.deepEqual(judgeVisitAgainstPhotograph({ visit: nearby, photograph: atTheDoor, farMeters: 5000 }).flags, [], "a wider setting files nothing here");
+    // 🔴 AND THE FALLBACK IS TESTED WHERE IT CHANGES THE ANSWER. A 445 m gap is filed at
+    // farMeters = 0 whether the fallback exists or not, so asserting it there pins nothing: this
+    // reading is 150 m out, which the 300 m fallback calls ordinary and a bare 0 would call far —
+    // and a settings row that came back empty would otherwise file on EVERY visit in the window.
+    const justInside = { lat: 30.0457, lon: 31.2357, accuracyMeters: 10 };
+    assert.deepEqual(judgeVisitAgainstPhotograph({ visit: justInside, photograph: atTheDoor, farMeters: 0 }).flags, [], "a zero setting falls back to 300 m, not to zero");
+    assert.deepEqual(judgeVisitAgainstPhotograph({ visit: justInside, photograph: atTheDoor, farMeters: Number.NaN }).flags, [], "and so does an unreadable one");
+    assert.deepEqual(judgeVisitAgainstPhotograph({ visit: justInside, photograph: atTheDoor, farMeters: 100 }).flags, ["visit_far_from_photo"], "a real setting is obeyed");
+
+    assert.equal(VISIT_PHOTO_VERY_FAR_METERS, 1000, "the second flag is a kilometre — a different question to a reader");
+
+    // 🔴 NEITHER FLAG IS STRONG, AND THAT IS THE RULE, NOT AN OVERSIGHT. The strong list is the one
+    // gate `countedIntegrityFlags` and the nightly rep-ranks score share, so a strong flag here
+    // would move a number every rep can read for 45 visits saved from the car outside.
+    for (const flag of ["visit_far_from_photo", "visit_very_far_from_photo"] as const) {
+      const label = PHOENIX_CRM_INTEGRITY_LABELS[flag];
+      assert.ok(label && label !== flag, `${flag} has no label of its own — the board would print the raw code`);
+      assert.equal(
+        (PHOENIX_CRM_STRONG_INTEGRITY_FLAGS as readonly string[]).includes(flag),
+        false,
+        `${flag} must stay weak — a strong flag moves the rep's own Integrity score`,
       );
     }
   }

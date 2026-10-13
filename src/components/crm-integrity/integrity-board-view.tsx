@@ -326,6 +326,25 @@ function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
   // may not be ticked for a bulk settle — but it is exactly the case whose panel must still offer the
   // control, which is how a settled case is reopened.
   const offersDecision = canSettle && (entry.laterReading === null || !entry.laterReading.withdrawsFlag);
+  // 🔴 WHOSE PICTURE THIS IS, AND WHEN IT WAS TAKEN, IS NOT THE SAME ON EVERY CASE — and the caption
+  // used to assert one answer for all of them. On the eight older detectors the photograph is the
+  // one saved WITH the capture this case is about, so the rep's name and the case's own Cairo time
+  // are right. On a visit-against-the-photograph case it is the picture the PLACE was validated
+  // with, taken by whoever validated it on whatever day that was: captioning it with this rep and
+  // this visit's time would put a name and a date on a photograph neither belongs to.
+  const photographAt = typeof entry.signals.photographAtIso === "string" ? entry.signals.photographAtIso : null;
+  const photo =
+    entry.source === "visit_photo"
+      ? {
+          heading: "The photograph of the place",
+          alt: `The photograph the place was validated with: ${entry.customerName}`,
+          caption: `${entry.customerName} · validated${photographAt === null ? "" : ` ${cairo(photographAt)}`}`,
+        }
+      : {
+          heading: "The photograph",
+          alt: `${entry.repName} at ${entry.customerName}`,
+          caption: `${entry.repName} · ${entry.customerName} · ${cairo(entry.capturedAt)}`,
+        };
   return (
     <div className="min-w-0 space-y-4 border-t border-slate-200 pt-4">
       <div className="min-w-0 space-y-2">
@@ -338,15 +357,9 @@ function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         <div className="min-w-0 space-y-2">
-          <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The photograph</div>
+          <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{photo.heading}</div>
           {entry.photoPath !== null ? (
-            <CrmPhotoThumb
-              alt={`${entry.repName} at ${entry.customerName}`}
-              caption={`${entry.repName} · ${entry.customerName} · ${cairo(entry.capturedAt)}`}
-              className="h-40 w-40"
-              lazy
-              path={entry.photoPath}
-            />
+            <CrmPhotoThumb alt={photo.alt} caption={photo.caption} className="h-40 w-40" lazy path={entry.photoPath} />
           ) : (
             <p className="text-xs leading-5 text-slate-500">None kept — a one-tap visit keeps no photograph at all, by design.</p>
           )}

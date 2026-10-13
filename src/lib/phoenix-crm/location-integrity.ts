@@ -140,7 +140,31 @@ export type PhoenixCrmIntegrityFlag =
    * Weak twice over: it is a finding about the DATA and not about a person. 71 active places on
    * 12 Oct 2026, and the usual cause is a brick master with no polygon drawn anywhere near the town.
    */
-  | "place_brick_far";
+  | "place_brick_far"
+  // ── The visit against the PHOTOGRAPH of the place it names (2026-10-13) ──────────────────────
+  //
+  // The owner's instruction, in his own words: "since u have the accurate validation the photo with
+  // location then drop the suspected one and compare visits vs the accurate", and then, of the 48
+  // visits that comparison found sitting far from the door, "i want the integrity report to show
+  // exactly this". Until these flags existed the comparison was a sentence on a PLACE's panel and
+  // nothing else: 47 of those 48 visits reached the board through no case of their own.
+  //
+  // 🔴 BOTH ARE WEAK, AND BOTH MUST STAY WEAK. A visit is saved where the phone is when the box is
+  // filled in, which is not always the door: a rep who fills the form in the car outside, in the
+  // lift, or at the next clinic along produces exactly this reading and has done nothing at all.
+  // Adding either to PHOENIX_CRM_STRONG_INTEGRITY_FLAGS would move a number the rep can read
+  // (`countedIntegrityFlags` and the nightly ranks score share that one list), which is what the
+  // owner's "flag it, never stop the rep" ruling refuses.
+  /** The visit's own fix sits further from the place's photograph than the settings call far. */
+  | "visit_far_from_photo"
+  /**
+   * And further than a kilometre, which is a different question to a reader.
+   *
+   * Measured on production 13 Oct 2026: of the 46 visits this detector files on, 14 are past a
+   * kilometre and the worst is 5.9 km. A second FLAG rather than a second detector, so one case
+   * carries both and a reader can still see the shorter ones for what they are.
+   */
+  | "visit_very_far_from_photo";
 
 export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
   "mock_provider",
@@ -192,6 +216,11 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   companion_off_duty: "The manager named on the visit was off duty that day",
   customer_revisited_fast: "This customer was called three times inside a week",
   place_brick_far: "The place sits far outside the brick it is filed under",
+  // Plain English, and it says PHOTOGRAPH rather than "the place": the photograph is what this
+  // detector measures against, on the owner's own instruction, and the place's kept point is a
+  // different reading that happens to be the same point for 1,312 of the 1,403 validated places.
+  visit_far_from_photo: "The visit was saved far from the photograph taken at the place",
+  visit_very_far_from_photo: "The visit was saved more than a kilometre from the photograph",
 };
 
 /**
@@ -804,4 +833,61 @@ export function judgePlaceBrickDistance(input: {
   if (input.brickMatched) return [];
   if (input.brickDistanceKm === null || !Number.isFinite(input.brickDistanceKm)) return [];
   return input.brickDistanceKm > BRICK_FAR_KM ? ["place_brick_far"] : [];
+}
+
+// ── The visit against the photograph of its place (2026-10-13) ─────────────────────────────────
+
+/**
+ * Past how many metres a visit is far enough from the door to be a different question.
+ *
+ * The "far" line itself is NOT declared here: it is `visit_far_meters` in the module's own settings
+ * (300 m on production, read live), the same figure a visit's own `location_flag` is written with,
+ * so this detector and the place-vs-actual report can never disagree about what far means. A second
+ * threshold in this file would be a second answer to one question.
+ */
+export const VISIT_PHOTO_VERY_FAR_METERS = 1000;
+
+/** One visit and the photograph it is measured against, each with the margin its phone reported. */
+export type VisitPhotographInput = {
+  visit: GeoPoint & { accuracyMeters: number | null };
+  photograph: GeoPoint & { accuracyMeters: number | null };
+  /** The settings' own far line, in metres — `visitFarMeters`, never a constant from this file. */
+  farMeters: number;
+};
+
+/**
+ * How far a visit sits from the photograph of the place it names, and whether that is a finding.
+ *
+ * THE PHOTOGRAPH IS THE ANCHOR (owner, 13 October 2026). A photograph carries the fix its own
+ * shutter took at the door, so it is the one reading nobody can drag across a map; a pin can be.
+ * This measures the visit against that reading alone and reports the metres whether or not it flags,
+ * because the metres are what the panel prints and "not far" is a number a reader still wants.
+ *
+ * 🔴 AN ACCURACY CIRCLE THAT REACHES THE DOOR IS NOT A FINDING, AND THAT GUARD IS THE WHOLE
+ * DIFFERENCE BETWEEN 48 AND 46. Measured on production 13 Oct 2026, the 48 visits past the 300 m
+ * line include two of Yasmeen Samy's from 3 October, each reported accurate to 2,000 m — a phone
+ * with precise location switched off, which is the one explanation on this board that is not a
+ * judgement call (§8). A fix whose own margin covers the distance has not measured anything, so it
+ * accuses nobody: both are dropped here rather than filed and settled later. The photograph's own
+ * margin is read the same way.
+ */
+export function judgeVisitAgainstPhotograph(input: VisitPhotographInput): {
+  flags: PhoenixCrmIntegrityFlag[];
+  /** The metres between the two, always — null only when either reading is not a coordinate. */
+  metres: number | null;
+} {
+  const { visit, photograph } = input;
+  if (!Number.isFinite(visit.lat) || !Number.isFinite(visit.lon)) return { flags: [], metres: null };
+  if (!Number.isFinite(photograph.lat) || !Number.isFinite(photograph.lon)) return { flags: [], metres: null };
+  const metres = distanceMeters({ lat: visit.lat, lon: visit.lon }, { lat: photograph.lat, lon: photograph.lon });
+  const far = Number.isFinite(input.farMeters) && input.farMeters > 0 ? input.farMeters : 300;
+  if (metres <= far) return { flags: [], metres };
+  // The margins, read as circles: either one reaching the other reading means the gap was never
+  // measured. Null is "the phone reported none", which is not a reason to excuse anything.
+  const visitMargin = visit.accuracyMeters !== null && Number.isFinite(visit.accuracyMeters) ? visit.accuracyMeters : 0;
+  const photoMargin = photograph.accuracyMeters !== null && Number.isFinite(photograph.accuracyMeters) ? photograph.accuracyMeters : 0;
+  if (metres <= visitMargin || metres <= photoMargin) return { flags: [], metres };
+  const flags: PhoenixCrmIntegrityFlag[] = ["visit_far_from_photo"];
+  if (metres > VISIT_PHOTO_VERY_FAR_METERS) flags.push("visit_very_far_from_photo");
+  return { flags, metres };
 }

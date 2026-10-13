@@ -949,6 +949,117 @@ formula in a comment turns that pin red, which is how this change first went red
 one more chunked, non-fatal `.in("customer_id", …)` read, and an empty answer reads as *no visit to
 compare* rather than *the visits agree*.
 
+## 13 · The 48 visits that sat far from the photograph, and reached the board as nothing (2026-10-13)
+
+§12 made the photograph the anchor and said, inside each case's panel, how far the customer's own
+visits sit from it. He read that and asked for the next thing:
+
+> **"yes with same requirments i told u before i want the integrity report to show exactly this with
+> story with the pictures and live loc numbers and photos"**
+
+A sentence inside somebody else's case is not a case. Measured on production that morning, before a
+line of this was written, with the detector's own rules:
+
+| The 21-day window, every visit carrying a fix | Visits |
+| --- | --- |
+| Saved with a coordinate | 1,630 |
+| Measurable against a photograph captured before them | 1,286 |
+| Past the live 300 m line (`visit_far_meters`) | 48 |
+| Still past it after the accuracy guard | 46 |
+| More than a kilometre out | 14 |
+| Filed as a case (one row names no rep) | 45 |
+
+**47 of those 48 reached his board through no case of their own.** The worst is 5,864 m. Sixteen reps
+hold them, and they are not spread evenly: Nourhan Fawzy Ahmed Ali Moussa holds 13 of the 48 and 7 of
+the 14 over a kilometre, Hana Abdelaziz 5 (3 over a kilometre), Aya Ibrahim 5, Samir Saad 4, Omaima
+Wael 4, and eleven others one or two each. **That is a reading and not a verdict** — the board exists
+so that the look happens.
+
+### What was built
+
+A **ninth detector**, `visit_photo`, as the fifth pass of the nightly silent sweep. It measures the
+rep's own visit fix against the photograph of the place he named, and **the pin takes no part in the
+judgement at all** — his instruction. A photograph carries the fix its own shutter took at the door;
+a pin can be saved from anywhere.
+
+Four rules decide which photograph, and each one is there because the other answer is wrong:
+
+1. **Captured BEFORE the visit.** A clinic validated in October must not retroactively make a
+   September visit far — nor near. Where none qualifies, the EARLIEST is used, which is the other
+   half of the 2026-09-29 ruling about a customer visited before he was validated.
+2. **The NEAREST eligible one.** A customer with two clinics is at whichever door the rep stood at,
+   and judging him against the further one files a finding the data itself refutes.
+3. **Keyed on customer AND seat**, as the rest of the module is: a customer is a row per seat here,
+   and keying on the customer alone measures one territory's visit against another's door.
+4. **The accuracy circles are read as circles.** 🔴 **This is what takes 48 to 46, by measurement
+   and never by judgement:** Yasmeen Samy's two 3 October readings reported about 2,000 m of their
+   own margin — precise location switched off — so the gap to the photograph was never measured at
+   all. Either reading's margin reaching the other one means nothing was measured, and the case is
+   not filed rather than filed and settled later.
+
+🔴 **A visit with no rep on the row is not filed, and the 46th case is the one that proves it.** 17
+visits in the window carry `capture_source = 'server'` and no `rep_hr_id` at all (two seats, 3–12
+October), one of them 3,236 m from its photograph. The board prints a NAME beside every case and
+would print a blank for these. **That capture path losing the rep is a separate defect and is not
+fixed here** — it is left for the path that writes it to answer for, rather than filed as a finding
+against an unnamed person.
+
+🔴 **Both flags are WEAK, and that is the rule rather than an oversight.** `visit_far_from_photo` and
+`visit_very_far_from_photo` are absent from `PHOENIX_CRM_STRONG_INTEGRITY_FLAGS`, which is the one
+gate `countedIntegrityFlags` and the nightly rep-ranks score share — both read `strong = true` — so
+not one of these 45 cases moves a number any rep can see. A visit is saved where the phone is when
+the box is filled in: the car outside, the lift, the next clinic along. The second flag exists only
+because *past a kilometre* is a different question to a reader, and it rides on the same case so the
+shorter ones can still be seen for what they are.
+
+### What the panel shows
+
+The story, the photograph and the live coordinates, which is what he asked for by name:
+
+> Nourhan Fawzy Ahmed Ali Moussa saved a visit to ليندا اسكندر (Pediatrics) on the PM list.
+> The visit was saved 5.9 km from the photograph taken at the place — past the 300 m the settings
+> call far. That is 5.9 km — more than a kilometre from the door the picture was taken at.
+> The place on the list and the photograph saved for the place are one and the same reading — the
+> point kept for the place is the photograph's own reading. The one that disagrees is where the visit
+> was saved. […]
+> The photograph below is the one the place was validated with — the reading this visit was measured
+> against, not a picture from this call.
+> Usually: A visit is saved where the phone is when the box is filled in — the car outside, the lift,
+> or the next clinic along — which is not always the door.
+
+Five things in that panel were new work rather than a free ride on §12's wiring:
+
+1. **The metres printed are the metres the detector JUDGED**, filed on the row as
+   `signals.metresFromPhotograph`. The pass chose which photograph to measure against; a panel
+   re-deriving the distance from coordinates would print a different number for a customer with two
+   clinics, and the sentence and the evidence table would disagree about the same pair of points.
+2. **The anchor is read by `signals.placeId`, not by the visit's own `place_id`** — they are not
+   always the same row, for rule 2 above. `anchorPlaceIdOf` resolves it, the loader reads that place,
+   and the panel draws its photograph as a reading of its own (only on these cases: a point on the
+   map reads as part of the finding, and on a replay or roster case this one had no part in it).
+3. 🔴 **"Saved in a single tap" stopped being asserted where it is false.** The pin and the
+   photograph coinciding IS a one-tap capture. The point kept for the place coinciding with the
+   place's photograph is a different mechanism — `point_source` says the kept point was taken FROM
+   the photograph, true of 1,312 of the 1,403 active validated places — and on a visit case those
+   are exactly the two labels that agree. The sentence now names the real reason.
+4. 🔴 **The photograph is captioned as what it is.** A one-tap visit keeps no picture, so what is
+   shown is the one the PLACE was validated with, taken by whoever validated it on whatever day
+   that was. The old caption stamped this rep's name and this visit's Cairo time on it.
+5. **The place's photograph and the place's kept point are grouped**, so two identical coordinates
+   print on one line saying *"one reading, under both names"* rather than as two disagreeing points.
+
+Nothing else moves: no detector's threshold, no stored `distance_meters`, no notification, no rep
+told anything, and `SFE_SOURCES` is untouched — a position finding stays the Super Admin's alone.
+The only database change is the `source` CHECK widening to admit the ninth value.
+
+**Pinned by** fifteen assertions across `tests/phoenix-crm-location-integrity.test.ts` (the pure
+judgement, the accuracy guard, the far-line fallback, neither flag strong),
+`tests/phoenix-crm-integrity-settle.test.ts` (the ninth source in the list and in the CHECK, the pass
+wired into the sweep, the unnamed-rep skip, the live setting, strength from the shared list) and
+`tests/crm-integrity-board-view.test.ts` (the judged metres in the headline and the evidence, the
+one-tap clause, the caption, the grouped readings, nothing accused). **Every one of the fifteen was
+broken on purpose and watched fire on its own headline**, then restored from a copy.
+
 ## Where the code is
 
 
@@ -973,4 +1084,7 @@ compare* rather than *the visits agree*.
 | Its route, and the filtered XLSX export | `app/api/admin/phoenix-crm/integrity/{settle-many,export}/route.ts` |
 | The two widened CHECKs | `supabase/migrations/20261012210000_phoenix_crm_silent_detectors.sql` |
 | The visits measured against the photograph | `visitsAgainstThePhotographSentence`, `src/lib/crm-integrity/integrity-case-story.ts` |
+| The ninth detector — a visit against the photograph of its place | `runVisitPhotographGap`, `server/silent-detectors.ts`; `judgeVisitAgainstPhotograph`, `location-integrity.ts`; `fileVisitPhotographGap`, `server/location-integrity.ts` |
+| Its CHECK | `supabase/migrations/20261013150000_phoenix_crm_visit_photograph_source.sql` |
+| The place it was JUDGED against, which is not always the visit's own | `anchorPlaceIdOf`, `server/integrity-board.ts` |
 | The one list of reading labels the loader names its readings from | `CASE_READING_LABELS`, same file |

@@ -112,12 +112,31 @@ type Row = Record<string, unknown>;
  * array is what `tests/phoenix-crm-integrity-settle.test.ts` reads every filer's `source:` literal to
  * catch, because the compiler cannot: the column is text and the filers write string literals.
  */
-export const INTEGRITY_SOURCES = ["gps", "photo", "behaviour", "signboard", "capture_trust", "roster", "cadence", "coverage"] as const;
+export const INTEGRITY_SOURCES = ["gps", "photo", "behaviour", "signboard", "capture_trust", "roster", "cadence", "coverage", "visit_photo"] as const;
 
 export type IntegritySource = (typeof INTEGRITY_SOURCES)[number];
 
 function isIntegritySource(value: unknown): value is IntegritySource {
   return typeof value === "string" && (INTEGRITY_SOURCES as readonly string[]).includes(value);
+}
+
+/**
+ * The place this case was JUDGED against, when the detector recorded one — `signals.placeId`.
+ *
+ * 🔴 IT IS NOT THE SAME AS THE VISIT'S OWN `place_id`, AND THAT IS THE WHOLE POINT. The
+ * visit-against-the-photograph pass measures a visit against the NEAREST photograph of that
+ * customer captured before it, because a customer with two clinics is at whichever door the rep
+ * stood at — so the anchor can be a different row of `phoenix_crm_places` from the one the visit
+ * was saved against. Drawing the visit's own place here would print a distance the case was never
+ * filed on, which is the one thing this panel must never do.
+ *
+ * Every other detector leaves it absent, and the reader then falls back to the visit's place
+ * exactly as it did before.
+ */
+function anchorPlaceIdOf(row: Row): string | null {
+  const signals = row.signals && typeof row.signals === "object" ? (row.signals as Record<string, unknown>) : {};
+  const placeId = signals.placeId;
+  return typeof placeId === "string" && placeId !== "" ? placeId : null;
 }
 
 /**
@@ -258,6 +277,11 @@ const SOURCE_LABELS: Record<IntegritySource, string> = {
   roster: "Roster",
   cadence: "Cadence",
   coverage: "Coverage",
+  // The ninth (2026-10-13), on the owner's own instruction: the rep's visit fix against the
+  // PHOTOGRAPH taken at the place. It names what was compared and not what it means — "Visit
+  // against the photograph" is a measurement, and a rep who filled the form in the car outside
+  // produces it honestly.
+  visit_photo: "Visit against the photograph",
 };
 
 
@@ -332,8 +356,13 @@ export type IntegrityCase = {
    * reader opens the case, never read from the bucket here.
    *
    * Null is "none kept", which is a real and ordinary answer: the one-tap visit (2026-09-29) keeps no
-   * door photograph at all, so all three visit cases on the board have none while every one of the
-   * 162 place cases has one. The panel says so in words rather than drawing an empty frame.
+   * door photograph at all, so a visit case has none of its own while every place case has one. The
+   * panel says so in words rather than drawing an empty frame.
+   *
+   * 🔴 ON A `visit_photo` CASE THIS PATH IS THE PLACE'S PHOTOGRAPH, NOT THE VISIT'S — the detector
+   * files it in `signals.photoPath` deliberately, because the picture a reader judges that case on
+   * is the one the place was validated with, and the visit itself keeps none. It is also captured by
+   * somebody else on another day, which is why the panel captions that one differently.
    */
   photoPath: string | null;
   /** Every point this case has, each already named in the words the reader sees. */
@@ -811,6 +840,10 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     ...new Set([
       ...placeKindIds,
       ...visitEvidenceRows.map((found) => (found.place_id ? String(found.place_id) : "")).filter(Boolean),
+      // And the place each case was JUDGED against where the detector named one — see
+      // `anchorPlaceIdOf`. Without this the visit-against-the-photograph cases would resolve to
+      // the visit's own place, or to nothing at all when the visit carries no `place_id`.
+      ...rows.map((row) => anchorPlaceIdOf(row)).filter((id): id is string => id !== null),
     ]),
   ];
   const placeEvidence = new Map<string, Row>();
@@ -914,6 +947,11 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     if (row.subject_kind === "place") return placeEvidence.get(String(row.subject_id));
     if (row.subject_kind === "shared_place") return sharedEvidence.get(String(row.subject_id));
     if (row.subject_kind === "visit") {
+      const anchorId = anchorPlaceIdOf(row);
+      if (anchorId) {
+        const anchor = placeEvidence.get(anchorId);
+        if (anchor) return anchor;
+      }
       const placeId = visitEvidence.get(String(row.subject_id))?.place_id;
       return placeId ? placeEvidence.get(String(placeId)) : undefined;
     }
@@ -967,6 +1005,18 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       add(CASE_READING_LABELS.photograph, subject?.photo_lat, subject?.photo_lon, subject?.photo_accuracy_meters, subject?.photo_captured_at);
       const place = placeContextFor(row);
       add(CASE_READING_LABELS.placeOnList, place?.lat, place?.lon, place?.accuracy_meters, place?.captured_at);
+      // The PLACE's photograph — the anchor the owner named, and a fourth reading only on the cases
+      // that were actually judged against it. Every visit case could carry it, and it is withheld
+      // from the other eight detectors on purpose: a point on the map is read as part of the
+      // finding, and on a replay or a roster case this one had no part in it.
+      //
+      // On most places it lands on the same coordinate as the point kept for the place (1,312 of
+      // 1,403 active validated places, production 13 Oct 2026, because the kept point was taken
+      // FROM the photograph) — and the panel says so on one line rather than printing the same
+      // numbers twice, which is what `groupReadings` is for.
+      if (row.source === "visit_photo") {
+        add(CASE_READING_LABELS.placePhotograph, place?.photo_lat, place?.photo_lon, place?.photo_accuracy_meters, place?.photo_captured_at);
+      }
     } else {
       add(CASE_READING_LABELS.placeCaptured, row.lat ?? subject?.lat, row.lon ?? subject?.lon, row.accuracy_meters ?? subject?.accuracy_meters, row.captured_at ?? subject?.captured_at);
       add(CASE_READING_LABELS.pin, subject?.pin_lat, subject?.pin_lon, subject?.pin_accuracy_meters, subject?.captured_at);

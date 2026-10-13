@@ -11,6 +11,15 @@
  *   4. the SHARED VENUES — 24 active rows that reached no detector of any kind, while carrying the
  *      same pair of independent fixes an ordinary place does.
  *
+ * And a fifth, added 2026-10-13 on the owner's own instruction rather than from the audit:
+ *
+ *   5. the VISIT against the PHOTOGRAPH of the place it names. "since u have the accurate validation
+ *      the photo with location then drop the suspected one and compare visits vs the accurate", and
+ *      then "i want the integrity report to show exactly this". Measured on production the same day:
+ *      of 1,286 visits that can be measured against a photograph, 48 sit past the settings' 300 m
+ *      line, 46 survive the accuracy guard and 14 of those are more than a kilometre out. Before
+ *      this, 47 of the 48 reached the board through no case of their own.
+ *
  * FOUR RULES, and three of them look like something to tidy.
  *
  *   1. 🔴 EVERY FLAG IT FILES IS WEAK, AND THAT IS THE DESIGN AND NOT A STARTING POINT. A weak flag
@@ -53,17 +62,21 @@ import {
   judgePlaceBrickDistance,
   judgeRevisitCadence,
   judgeRosterDay,
+  judgeVisitAgainstPhotograph,
   PHOENIX_CRM_AWAY_DAY_ACTIVITIES,
   REVISIT_WINDOW_DAYS,
+  type PhoenixCrmIntegrityFlag,
 } from "@/lib/phoenix-crm/location-integrity";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import {
   fileCustomerCadenceFlag,
   filePlaceCaptureTrust,
   filePlaceCoverageFlag,
+  fileVisitPhotographGap,
   fileVisitRosterFlags,
 } from "@/lib/phoenix-crm/server/location-integrity";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
+import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -105,7 +118,11 @@ export type SilentSweepResult = {
    * query on the board, where it belongs.
    */
   venuesMeasured: number;
-  /** True when any of the four reads stopped at its ceiling — more is waiting. */
+  /** Visits in the window that could be measured against a photograph at all. */
+  visitsAgainstPhotograph: number;
+  /** Of those, how many sit far enough from it to be filed. */
+  visitPhotoFlagged: number;
+  /** True when any of the five reads stopped at its ceiling — more is waiting. */
   capped: boolean;
 };
 
@@ -406,7 +423,159 @@ async function runSharedVenues(result: SilentSweepResult): Promise<void> {
 }
 
 /**
- * Run all four passes. Sequential on purpose: they share the cron's window with the photo, signboard
+ * Pass 5 — every visit in the window against the PHOTOGRAPH of the place it names (2026-10-13).
+ *
+ * THE PHOTOGRAPH IS THE ANCHOR AND THE PIN IS DROPPED FROM THE JUDGEMENT (owner, 13 October 2026).
+ * A photograph carries the fix its own shutter took at the door; a pin can be saved from anywhere.
+ * So this pass measures the rep's own visit fix against the photograph and nothing else, and the
+ * metres it files are the metres the panel prints.
+ *
+ * 🔴 IT MEASURES AGAINST A PHOTOGRAPH CAPTURED BEFORE THE VISIT, which is not a tidy detail: a
+ * clinic validated in October must not retroactively make a September visit far — nor near. That is
+ * the rule `placesFor` in `server/visit-locations.ts` carries for the stored distance, and the
+ * fallback is the other half of the owner's 2026-09-29 ruling: a customer visited BEFORE he was
+ * validated is measured against the place the validation captured, which is the EARLIEST one.
+ *
+ * 🔴 AND A VISIT WITH NO REP ON THE ROW IS NOT FILED. 17 visits in the 21-day window carry
+ * `capture_source = 'server'` and no `rep_hr_id` at all (production, 13 Oct 2026), one of them
+ * 3.2 km from its photograph. The board prints a NAME beside every case and would print a blank for
+ * these, and a case naming nobody is a case nobody can look at. They are left for the capture path
+ * that writes them to answer for, rather than filed as a finding against an unnamed person.
+ *
+ * The flags are weak, nobody is told, nothing is refused and nothing is held — this file's four
+ * rules hold for this pass exactly as they do for the others.
+ */
+async function runVisitPhotographGap(todayIso: string, result: SilentSweepResult): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const fromIso = isoDaysBefore(todayIso, SILENT_SWEEP_DAYS);
+
+  // The far line is the module's own setting, read live — never a constant in this file, so this
+  // detector and a visit's own stored `location_flag` can never disagree about what far means.
+  const config = await loadPhoenixCrmConfig();
+  const farMeters = config.settings.visitFarMeters;
+
+  const [visitRead, placeRead] = await Promise.all([
+    readEveryPage<Row>(
+      () =>
+        supabase
+          .from("phoenix_crm_visits")
+          .select("id, seat_id, rep_hr_id, customer_id, visit_date, captured_at, lat, lon, accuracy_meters")
+          .eq("is_test", false)
+          .gte("visit_date", fromIso)
+          .lte("visit_date", todayIso)
+          // A visit with no reading has nothing to measure: one the Super Admin entered for a rep who
+          // missed logging it carries none by design, and it accuses nobody.
+          .not("lat", "is", null)
+          .order("visit_date", { ascending: true })
+          .order("id", { ascending: true }),
+      { maxRows: SILENT_READ_MAX, whenFull: "stop", what: "Phoenix CRM visits for the photograph check", uniqueBy: (row) => String(row.id) },
+    ),
+    readEveryPage<Row>(
+      () =>
+        supabase
+          .from("phoenix_crm_places")
+          .select("id, seat_id, customer_id, captured_at, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, photo_path")
+          .eq("is_test", false)
+          .eq("status", "active")
+          // Only a place whose photograph carries its own fix can be an anchor. One captured before
+          // the shutter reading shipped has no photograph reading at all, and an absent anchor is
+          // never a finding.
+          .not("photo_lat", "is", null)
+          .order("id", { ascending: true }),
+      { maxRows: SILENT_READ_MAX, whenFull: "stop", what: "Phoenix CRM places for the photograph check", uniqueBy: (row) => String(row.id) },
+    ),
+  ]);
+  throwIfError(visitRead.error);
+  throwIfError(placeRead.error);
+  if (visitRead.capped || placeRead.capped) result.capped = true;
+
+  // Keyed on customer AND seat, exactly as the restamp is: a customer is a row per seat in this
+  // module, and keying on the customer alone would measure one territory's visit against another
+  // territory's door.
+  const placesFor = new Map<string, Row[]>();
+  for (const place of placeRead.rows) {
+    const customerId = String(place.customer_id ?? "");
+    if (customerId === "") continue;
+    const key = `${customerId}|${String(place.seat_id ?? "")}`;
+    placesFor.set(key, [...(placesFor.get(key) ?? []), place]);
+  }
+
+  for (const visit of visitRead.rows) {
+    const repHrId = visit.rep_hr_id ? String(visit.rep_hr_id).toUpperCase() : "";
+    const customerId = visit.customer_id ? String(visit.customer_id) : "";
+    const visitDate = String(visit.visit_date ?? "");
+    if (!repHrId || !customerId || !visitDate) continue;
+    const candidates = placesFor.get(`${customerId}|${String(visit.seat_id ?? "")}`) ?? [];
+    if (candidates.length === 0) continue;
+
+    // Captured before this visit, else the earliest — the rule above, in three lines.
+    const capturedAtIso = typeof visit.captured_at === "string" ? visit.captured_at : "";
+    const earlier = capturedAtIso === "" ? candidates : candidates.filter((place) => String(place.captured_at ?? "") <= capturedAtIso);
+    const eligible = earlier.length > 0
+      ? earlier
+      : [candidates.reduce((held, place) => (String(place.captured_at ?? "") < String(held.captured_at ?? "") ? place : held), candidates[0]!)];
+
+    const visitFix = {
+      lat: Number(visit.lat),
+      lon: Number(visit.lon),
+      accuracyMeters: visit.accuracy_meters === null || visit.accuracy_meters === undefined ? null : Number(visit.accuracy_meters),
+    };
+    // The NEAREST eligible photograph, because a customer with two clinics is at whichever door the
+    // rep stood at: judging him against the further one would file a finding the data itself refutes.
+    let nearest: { place: Row; metres: number; flags: PhoenixCrmIntegrityFlag[] } | null = null;
+    for (const place of eligible) {
+      const verdict = judgeVisitAgainstPhotograph({
+        visit: visitFix,
+        photograph: {
+          lat: Number(place.photo_lat),
+          lon: Number(place.photo_lon),
+          accuracyMeters:
+            place.photo_accuracy_meters === null || place.photo_accuracy_meters === undefined ? null : Number(place.photo_accuracy_meters),
+        },
+        farMeters,
+      });
+      if (verdict.metres === null) continue;
+      if (nearest === null || verdict.metres < nearest.metres) nearest = { place, metres: verdict.metres, flags: verdict.flags };
+    }
+    if (nearest === null) continue;
+    result.visitsAgainstPhotograph += 1;
+    if (nearest.flags.length === 0) continue;
+
+    const capturedAt = new Date(Date.parse(capturedAtIso) || Date.parse(`${visitDate}T12:00:00Z`));
+    await fileVisitPhotographGap({
+      visitId: String(visit.id),
+      seatId: String(visit.seat_id ?? ""),
+      repHrId,
+      customerId,
+      isTest: false,
+      capturedAt,
+      visitDate,
+      flags: nearest.flags,
+      fix: visitFix,
+      // 🔴 THE PHOTOGRAPH'S OWN PATH TRAVELS AS `photoPath`, because that is the key the board's
+      // reader already prefers for the picture it draws: what a reader judges this case on is the
+      // PLACE's photograph, and the visit itself keeps no picture (a one-tap visit keeps none by
+      // design). Every number the panel prints is filed here beside it rather than re-derived.
+      signals: {
+        metresFromPhotograph: Math.round(nearest.metres),
+        farMeters,
+        placeId: String(nearest.place.id),
+        photoPath: typeof nearest.place.photo_path === "string" && nearest.place.photo_path !== "" ? nearest.place.photo_path : null,
+        photographAccuracyMeters:
+          nearest.place.photo_accuracy_meters === null || nearest.place.photo_accuracy_meters === undefined
+            ? null
+            : Number(nearest.place.photo_accuracy_meters),
+        photographAtIso: typeof nearest.place.photo_captured_at === "string" ? nearest.place.photo_captured_at : null,
+        visitAccuracyMeters: visitFix.accuracyMeters,
+        placesConsidered: eligible.length,
+      },
+    });
+    result.visitPhotoFlagged += 1;
+  }
+}
+
+/**
+ * Run all five passes. Sequential on purpose: they share the cron's window with the photo, signboard
  * and behaviour passes, and four concurrent full-table walks on a 16 GB box is how a night gets reaped.
  */
 export async function runPhoenixCrmSilentSweep(options: { today?: string } = {}): Promise<SilentSweepResult> {
@@ -418,11 +587,14 @@ export async function runPhoenixCrmSilentSweep(options: { today?: string } = {})
     coverageFlagged: 0,
     venuesRead: 0,
     venuesMeasured: 0,
+    visitsAgainstPhotograph: 0,
+    visitPhotoFlagged: 0,
     capped: false,
   };
   const todayIso = options.today && /^\d{4}-\d{2}-\d{2}$/.test(options.today) ? options.today : cairoBusinessDay(new Date());
   await runRosterAndCadence(todayIso, result);
   await runCoverage(result);
   await runSharedVenues(result);
+  await runVisitPhotographGap(todayIso, result);
   return result;
 }

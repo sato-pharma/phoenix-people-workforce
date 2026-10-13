@@ -473,6 +473,80 @@ export async function fileCustomerCadenceFlag(input: {
 }
 
 /**
+ * File that a visit sits far from the PHOTOGRAPH of the place it names (2026-10-13).
+ *
+ * The owner's instruction, in his own words: "since u have the accurate validation the photo with
+ * location then drop the suspected one and compare visits vs the accurate", and then "i want the
+ * integrity report to show exactly this with story with the pictures and live loc numbers and
+ * photos". The comparison had been a sentence on a PLACE's panel since #5825; 47 of the 48 visits it
+ * found sitting far from the door reached the board through no case of their own, which is what this
+ * filer is for.
+ *
+ * 🔴 `source: "visit_photo"`, NEVER `"gps"`. `source` is part of
+ * UNIQUE (subject_kind, subject_id, source), so filing under `"gps"` would REPLACE
+ * `judgeCapture`'s own verdict on the same visit — the write succeeds, the row is there, and the
+ * flags are somebody else's. That is the mistake `filePlaceCaptureTrust`'s comment above records,
+ * and this repeats its shape, not its bug. The value is allowed by the `source` CHECK from
+ * migration 20261013_phoenix_crm_visit_photograph_gap; this function has its own `catch` as well, so
+ * a database without that migration can never turn a nightly pass into a 500.
+ *
+ * 🔴 ITS EVIDENCE POINT IS THE VISIT'S OWN FIX, and the photograph travels in the signals. The row's
+ * lat/lon is where the rep's phone was when the box was filled in — the reading the case is ABOUT —
+ * and the board draws the photograph beside it from the place, by label, so the panel says which of
+ * the two is which rather than printing two bare coordinates.
+ *
+ * Void and never throws, by rule 2 of this file's header.
+ */
+export async function fileVisitPhotographGap(input: {
+  visitId: string;
+  seatId: string;
+  /** The rep who saved it. A visit with none is not filed at all — see the pass's own note. */
+  repHrId: string;
+  customerId: string | null;
+  isTest: boolean;
+  capturedAt: Date;
+  visitDate: string;
+  flags: PhoenixCrmIntegrityFlag[];
+  /** Where the visit was saved: the row's own evidence point. */
+  fix: { lat: number; lon: number; accuracyMeters: number | null };
+  /** What it was measured against, and the numbers the panel prints. */
+  signals: Record<string, unknown>;
+}): Promise<void> {
+  if (input.flags.length === 0) return;
+  try {
+    const { error } = await getSupabaseAdmin().from("phoenix_crm_location_integrity").upsert(
+      {
+        subject_kind: "visit",
+        subject_id: input.visitId,
+        source: "visit_photo",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        captured_at: input.capturedAt.toISOString(),
+        visit_date: input.visitDate,
+        lat: input.fix.lat,
+        lon: input.fix.lon,
+        accuracy_meters: input.fix.accuracyMeters,
+        // Nothing is claimed about the phone's mock-location answer: that is `judgeCapture`'s own
+        // verdict on this same visit, filed under its own source, and a `false` written here would
+        // read on the board as this detector having asked.
+        device_mocked: null,
+        flags: input.flags,
+        // From the one shared list, never a hand-written false: the day one of these is promoted the
+        // row must follow, and the day one is NOT promoted a hand-written false would hide it.
+        strong: input.flags.some((flag) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag)),
+        signals: input.signals,
+        is_test: input.isTest,
+      },
+      { onConflict: "subject_kind,subject_id,source" },
+    );
+    if (error) console.error("[phoenix-crm] visit photograph gap not recorded", { visitId: input.visitId, message: error.message });
+  } catch (error) {
+    console.error("[phoenix-crm] visit photograph check failed", { visitId: input.visitId, error });
+  }
+}
+
+/**
  * File that a place sits far outside the brick it is filed under.
  *
  * A finding about the DATA, which is why it carries the place's own fixed point as its evidence: the
