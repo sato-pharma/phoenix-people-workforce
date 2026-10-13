@@ -107,10 +107,24 @@ const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-const monthName = (period: string): string =>
-  `${MONTHS[Number(period.split("-")[1]) - 1]} ${period.split("-")[0]}`;
-const monthShort = (period: string): string =>
-  `${MONTHS[Number(period.split("-")[1]) - 1].slice(0, 3)} ${period.slice(2, 4)}`;
+// 🔴 NEITHER OF THESE MAY THROW. They name a column head and a caption, and on 2026-10-13 one
+// of them took the whole download down: the Trust sheet read `monthName(TREND[2])` while the trend
+// held ONE month, so an undefined period reached `.split` and the owner got "Cannot read properties
+// of undefined (reading 'split')" instead of a workbook. The indexing is fixed at every call site
+// below - the trend is 1, 2 or 3 months and never assumed three - and these two stop being able to
+// cause it: a period they cannot read comes back as itself, which is wrong in a caption and
+// survivable, where a throw loses the file.
+const monthName = (period: string | null | undefined): string => {
+  const raw = String(period ?? "").trim();
+  const [year, month] = raw.split("-");
+  const name = MONTHS[Number(month) - 1];
+  return name && year ? `${name} ${year}` : raw;
+};
+const monthShort = (period: string | null | undefined): string => {
+  const raw = String(period ?? "").trim();
+  const name = MONTHS[Number(raw.split("-")[1]) - 1];
+  return name ? `${name.slice(0, 3)} ${raw.slice(2, 4)}` : raw;
+};
 
 type Argb = string;
 type BorderStyle = "thin" | "hair" | "medium";
@@ -578,6 +592,17 @@ export async function buildRepRankingWorkbook(input: {
   const LINE = ranking.line;
   const PERIOD = ranking.period;
   const TREND = ranking.trend;
+  // 🔴 THE TREND IS 1, 2 OR 3 MONTHS - NEVER ASSUMED THREE. `resolveTrendPeriods` hands back the
+  // closing month plus the offered months before it, so a line with only July offered trends over
+  // July alone. Every caption, width and sentence below is built from these three constants instead
+  // of the Jul-Sep span this workbook was first written against: that assumption is what crashed the
+  // download on 2026-10-13, and what would otherwise have a one-month file claiming a quarter.
+  const SPAN = TREND.length > 1
+    ? `${monthName(TREND[0])} to ${monthName(TREND[TREND.length - 1])}`
+    : monthName(TREND[0]);
+  const SPAN_COUNT = ["no months", "one month", "two months", "three months"][TREND.length]
+    ?? `${TREND.length} months`;
+  const SPAN_PLUS = TREND.map(monthName).join(" PLUS ").toUpperCase();
   const { DM_OF, PRODUCTS_BY_AREA, SEATS, TEAMS } = L;
   const {
     achievement, apOf, apSalesTotal, apTargetOf, areaRegion, cellsOf, holderOf,
@@ -1055,9 +1080,9 @@ export async function buildRepRankingWorkbook(input: {
     const HEAD = ["Region", "Area", "Medical rep", "Product",
       ...TREND.map((p) => `${monthShort(p)} EGP`),
       "To date EGP", "Target to date", "Gap to date", "Achievement to date", "Performance", "Share of line"];
-    const W = [15, 19, 26, 23, 13, 13, 13, 14, 14, 13, 14, 13, 12];
+    const W = [15, 19, 26, 23, ...TREND.map(() => 13), 14, 14, 13, 14, 13, 12];
     const COLS = HEAD.length;
-    const ws = book.dress(wb.addWorksheet("Area x Product x Month", { properties: { tabColor: { argb: ROYA } } }), "July to September 2026");
+    const ws = book.dress(wb.addWorksheet("Area x Product x Month", { properties: { tabColor: { argb: ROYA } } }), SPAN);
     const { rows } = SEATS;
 
     let row = book.banner(ws, "trend", W);
@@ -1067,7 +1092,7 @@ export async function buildRepRankingWorkbook(input: {
     row = headerRow(ws, row, HEAD, W);
     const first = row;
 
-    let n = 0, grandToDate = 0, grandTarget = 0, noSeatToDate = 0, noAreaToDate = 0;
+    let n = 0, grandToDate = 0, grandTarget = 0, noSeatToDate = 0, noAreaToDate = 0, negativeCells = 0;
     const lineToDate = TREND.reduce((a, p) => a + lineSales(p), 0);
 
     // THE SEATS ARE SEPTEMBER'S. A quarter's sheet keyed only on them silently drops every area
@@ -1141,6 +1166,7 @@ export async function buildRepRankingWorkbook(input: {
         cell(ws, row, 4, `·  ${p.name}`, { zebra, size: 9 });
         p.months.forEach((v, i) => {
           const here = p.cells[i] !== null;
+          if (here && v < 0) negativeCells += 1;
           cell(ws, row, 5 + i, here ? v : "none", { numFmt: here ? money : undefined, zebra, size: 9, muted: !here,
             font: here && v < 0 ? bold(9, ROYA_LO) : undefined });
         });
@@ -1212,11 +1238,14 @@ export async function buildRepRankingWorkbook(input: {
     for (const L of ["E", "F", "G"]) colourScale(ws, `${L}${first}:${L}${last}`);
 
     footnote(ws, row, [
-      `TO DATE IS JULY PLUS AUGUST PLUS SEPTEMBER, the three months this feed carries - it is not a year to date, and nothing older than ${monthName(TREND[0])} is in it. Said plainly because a column headed 'to date' that quietly means something narrower is the easiest number in a workbook to misread.`,
-      "ACHIEVEMENT TO DATE DIVIDES THE THREE MONTHS' SALES BY THE THREE MONTHS' TARGETS, which is not the average of the three monthly percentages - a weak month with a small target would otherwise count as much as a heavy one.",
-      "A MONTH READS 'none' WHERE THE CLOSING PUBLISHES NO CELL AT ALL, never 0 - absence is not a measured zero. A cell that DOES exist prints its figure even when that figure is NEGATIVE, in dark red: three cells in this feed are months whose credits outweighed their invoices, and hiding them for their sign would be the same mistake in reverse, with the month's column no longer adding to the line.",
-      "SHARE OF LINE IS AGAINST THE THREE MONTHS' WHOLE LINE, so the column adds to 100% down the sheet.",
-      `THE SEATS ARE SEPTEMBER'S, so the foot of this sheet carries the ${Math.round(noSeatToDate).toLocaleString("en-US")} EGP the quarter sold through areas that hold no seat today - of which ${Math.round(noAreaToDate).toLocaleString("en-US")} EGP reached NO AREA AT ALL on the invoice, almost all of it in ${monthName(TREND[0])}, and the other ${(Math.round(noSeatToDate) - Math.round(noAreaToDate)).toLocaleString("en-US")} EGP reached an area that is on the map but carries no ${monthName(PERIOD)} seat. It is listed rather than dropped, for the same reason a vacant seat is ranked rather than hidden: without it the month columns stop adding to the line, and the first question worth asking about a quarter goes unasked.`,
+      `TO DATE IS ${SPAN_PLUS}, ${SPAN_COUNT} this feed carries - it is not a year to date, and nothing older than ${monthName(TREND[0])} is in it. Said plainly because a column headed 'to date' that quietly means something narrower is the easiest number in a workbook to misread.`,
+      `ACHIEVEMENT TO DATE DIVIDES ${SPAN_COUNT.toUpperCase()}' SALES BY ${SPAN_COUNT.toUpperCase()}' TARGETS, which is not the average of the monthly percentages - a weak month with a small target would otherwise count as much as a heavy one.`,
+      // The count is COUNTED, not stated. It read "three cells in this feed" because three was true
+      // of the build it was written against, and a sentence naming a figure has to be produced by the
+      // same pass that prints it or it becomes a confident lie the first time the data moves.
+      `A MONTH READS 'none' WHERE THE CLOSING PUBLISHES NO CELL AT ALL, never 0 - absence is not a measured zero. A cell that DOES exist prints its figure even when that figure is NEGATIVE, in dark red: ${negativeCells === 0 ? "no cell in this feed is negative" : `${negativeCells} cell${negativeCells === 1 ? "" : "s"} in this feed ${negativeCells === 1 ? "is a month" : "are months"} whose credits outweighed their invoices`}, and hiding them for their sign would be the same mistake in reverse, with the month's column no longer adding to the line.`,
+      `SHARE OF LINE IS AGAINST THE WHOLE LINE OVER ${SPAN_COUNT.toUpperCase()}, so the column adds to 100% down the sheet.`,
+      `THE SEATS ARE ${monthName(PERIOD).toUpperCase()}'S, so the foot of this sheet carries the ${Math.round(noSeatToDate).toLocaleString("en-US")} EGP sold through areas that hold no seat today - of which ${Math.round(noAreaToDate).toLocaleString("en-US")} EGP reached NO AREA AT ALL on the invoice, and the other ${(Math.round(noSeatToDate) - Math.round(noAreaToDate)).toLocaleString("en-US")} EGP reached an area that is on the map but carries no ${monthName(PERIOD)} seat. It is listed rather than dropped, for the same reason a vacant seat is ranked rather than hidden: without it the month columns stop adding to the line, and the first question worth asking about the span goes unasked.`,
     ], COLS);
 
     ws.autoFilter = { from: { row: headAt, column: 1 }, to: { row: last, column: COLS } };
@@ -1410,12 +1439,12 @@ export async function buildRepRankingWorkbook(input: {
   // ===========================================================================
   function sheetMonths() {
     const COLS = 5 + TREND.length + 4;
-    const W = [7, 14, 27, 19, 25, 13, 13, 13, 14, 14, 14, 13];
-    const ws = book.dress(wb.addWorksheet("Month by month", { properties: { tabColor: { argb: SOFT } } }), "July to September 2026");
+    const W = [7, 14, 27, 19, 25, ...TREND.map(() => 13), 14, 14, 14, 13];
+    const ws = book.dress(wb.addWorksheet("Month by month", { properties: { tabColor: { argb: SOFT } } }), SPAN);
     const { rows } = SEATS;
     let row = book.banner(ws, "months", W);
-    row = sectionLabel(ws, row, `THE SEATS ACROSS THE QUARTER   ·   ${rows.length} on ${LINE}`,
-      "ranked by the quarter's own achievement, which is not always the ranking of the closing month", COLS);
+    row = sectionLabel(ws, row, `THE SEATS ACROSS ${SPAN.toUpperCase()}   ·   ${rows.length} on ${LINE}`,
+      `ranked by the achievement of ${SPAN_COUNT} together, which is not always the ranking of the closing month`, COLS);
     const headAt = row;
     const heads = ["Rank", "Region", "Medical rep", "Area", "District manager"];
     for (const p of TREND) heads.push(`${monthShort(p)} EGP`);
@@ -1482,8 +1511,8 @@ export async function buildRepRankingWorkbook(input: {
     dataBar(ws, `${ws.getColumn(9 + TREND.length).letter}${first}:${ws.getColumn(9 + TREND.length).letter}${last}`, { max: 1.2 });
     footnote(ws, row, [
       "A BLANK MONTH means the closing returned no row at all for that seat in that month - no sale, or no source carrying it. It is not a zero, and it is not the same as a month that returned a zero.",
-      "Ranked by the QUARTER's achievement, which is the three months' sales over the three months' targets. A seat can rank well here and badly in the closing month, or the other way round - that difference is the point of the tab.",
-      "The seats, the areas and the managers are today's arrangement, applied to all three months. A seat that changed hands inside the quarter shows the person sitting in it now.",
+      `Ranked by the achievement of ${SPAN_COUNT} together, which is their sales over their targets. A seat can rank well here and badly in the closing month, or the other way round - that difference is the point of the tab.`,
+      `The seats, the areas and the managers are today's arrangement, applied to every month shown. A seat that changed hands inside ${SPAN} shows the person sitting in it now.`,
     ], COLS);
     ws.autoFilter = { from: { row: headAt, column: 1 }, to: { row: last, column: COLS } };
     ws.views = [{ state: "frozen", xSplit: 4, ySplit: headAt, showGridLines: false }];
@@ -1503,9 +1532,9 @@ export async function buildRepRankingWorkbook(input: {
     const HEAD = ["Product", "Region", "Area", "Medical rep",
       ...TREND.map((p) => `${monthShort(p)} units`),
       "Units to date", "Target units", "Gap to date", "Achievement to date", "Performance", "Share of product"];
-    const W = [23, 15, 19, 26, 13, 13, 13, 14, 14, 13, 14, 13, 14];
+    const W = [23, 15, 19, 26, ...TREND.map(() => 13), 14, 14, 13, 14, 13, 14];
     const COLS = HEAD.length;
-    const ws = book.dress(wb.addWorksheet("Units x Product x Month", { properties: { tabColor: { argb: SAG } } }), "units, July to September 2026");
+    const ws = book.dress(wb.addWorksheet("Units x Product x Month", { properties: { tabColor: { argb: SAG } } }), `units, ${SPAN}`);
     const { rows } = SEATS;
 
     let row = book.banner(ws, "units", W);
@@ -1638,12 +1667,12 @@ export async function buildRepRankingWorkbook(input: {
       "Who": "The closing matrix's arrangement: a district's reps one after another, then their district manager closing the team, then the next team. A manager's line is the whole district - the reps above it added up - and that line appears once, not under every rep. Collapse the outline and the sheet is one line a district.",
       "Area x Product": "A district's reps with every product each one sold, then that district's manager closing the team. Share of seat reads down a block to 100%, so it answers what a product is worth inside one rep's bag.",
       "Area x Product (filter)": "The same cells with every grouping removed - one row a cell, nothing merged, nothing outlined, nothing carried down from a header. This is the one to filter, sort or pivot.",
-      "Area x Product x Month": "The same arrangement across July, August and September: a district's reps with their products, their manager closing the team, and the three months added. To date means those three months and nothing older; achievement to date divides the three months' sales by the three months' targets, which is not the average of three percentages.",
+      "Area x Product x Month": `The same arrangement across ${SPAN}: a district's reps with their products, their manager closing the team, and the months added. To date means those months and nothing older; achievement to date divides their sales by their targets, which is not the average of the monthly percentages.`,
       "Districts": PARTITION.same
         ? "Each manager's whole district, ranked by achievement rather than by sales, with the region beside it - on this line a district and a region hold exactly the same seats, so there is no second sheet saying it again."
         : "Each manager's whole district, ranked by achievement rather than by sales, with every region it touches beside it.",
       "Regions": "The area map's operational regions, which on this line do NOT hold the same seats as the districts - which is why they have their own sheet.",
-      "Month by month": "Each seat across the quarter, ranked by the quarter's own achievement - which is not always the ranking of the closing month.",
+      "Month by month": `Each seat across ${SPAN}, ranked by the achievement of ${SPAN_COUNT} together - which is not always the ranking of the closing month.`,
       "Units x Product x Month": "Units, one product at a time, month by month. The only sheet with a unit column, and it has no grand total on purpose: units of different products are not addable, so the foot says so instead of adding them.",
       "Trust": "This sheet. What every figure is made of, what is absent rather than zero, and which choices in the look were the identity's and which were not.",
     };
@@ -1728,13 +1757,14 @@ export async function buildRepRankingWorkbook(input: {
       ["The rank", `Seats sorted by achievement, high to low. ${ranked} of ${rows.length} seats carry a target and take a rank; the rest are listed at the foot as unranked. Ranking by SALES instead would put a large untargeted seat above a small one that covered its figure.`],
       ["Achievement", "The seat's whole sales value - distributor and direct together, money nobody targeted included - divided by the target value it was given. A zero or missing target yields no percentage rather than 0%."],
       ["The three channels", `Distributor sales come from the closing matrix; direct orders from the direct-order path. They are separate reads of the engine and both are counted - reading only the matrix understates any line that sells direct. STORES is the third, and it is carved OUT of the distributor book rather than added beside it, because a warehouse buys from a distributor: counting it as a fourth bucket would count its money twice. So Distributor + Stores + Direct = Sales, exactly. ${Math.round(sum(rows, (r) => r.store)).toLocaleString("en-US")} EGP of ${monthName(PERIOD)} went through ${L.warehouseCustomers} warehouses.`],
-      ["Who is a warehouse", "The platform's own rule, imported from src/lib/sales/customer-channel.ts rather than transcribed - that file declares itself the single edit point, and its own comment records that a hand-copied version of the six store words once mis-stated this channel by 8.7M EGP. Each month is asked with the rule that was IN FORCE FOR IT: the owner's 2026-09-06 rulings start at September on this line, so July and August are classified on the earlier rule. Using today's rule for all three would silently restate two published months."],
+      ["Who is a warehouse", "The platform's own rule, imported from src/lib/sales/customer-channel.ts rather than transcribed - that file declares itself the single edit point, and its own comment records that a hand-copied version of the six store words once mis-stated this channel by 8.7M EGP. Each month is asked with the rule that was IN FORCE FOR IT: the owner's 2026-09-06 rulings start at September on this line, so July and August are classified on the earlier rule. Using today's rule for every month shown would silently restate a published one."],
       ["The split is taken, not re-priced", `Every invoice row is carved at the sales value the closing engine itself gave it - the same figure the published cell was built from - so Distributor, Stores and Direct add to that cell by construction and not by a reconciliation that could drift. A warehouse is a KIND OF CUSTOMER inside the distributor book, which is why Stores is carved OUT of the distributor figure instead of added beside it: ${L.warehouseCustomers} warehouse customers in ${monthName(PERIOD)}, over ${cellsOf(PERIOD).length} channel-tagged cells of the month. No figure anywhere in this workbook moved to make the three columns appear.`],
       ["A district's figure", "Its own seats' sales over its own seats' targets - never the average of its seats' percentages, which would weight a small seat like a large one."],
       ["Vacant and probation", `A seat with nobody in it is red and still ranked, because the money through it is real and the target it carries is real. A rep inside their probation period is yellow on the name cell alone. ${probation.length} on this line.`],
       ["Units", "On ONE sheet only - Units x Product x Month - and cut by product there, because a unit total is valid only inside one product code. A rep sells several products and concentrations, so above a product code value is the only figure that aggregates: that sheet carries no grand total, and no other sheet carries a unit column."],
       ["Seats, areas, managers", "The area map and the live seat occupancy as at the pull - today's arrangement, applied to every month shown."],
-      ["Scope", `${LINE} only, ${monthName(PERIOD)} for the ranking and ${monthName(TREND[0])} to ${monthName(TREND[2])} for the month-by-month tab. Head Office is not a tracked line and is not in any figure here.`],
+      // 🔴 THIS IS THE LINE THAT CRASHED THE DOWNLOAD: `TREND[2]` on a trend of one month.
+      ["Scope", `${LINE} only, ${monthName(PERIOD)} for the ranking and ${SPAN} for the month-by-month tab. Head Office is not a tracked line and is not in any figure here.`],
     ];
     how.forEach(([k, v], j) => {
       const zebra = j % 2 === 1;

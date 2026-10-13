@@ -8160,3 +8160,40 @@ built" rather than shipping an empty ranking.
 Both rules were proven by breaking them: forcing `includeUnpublished: true` and restoring the old
 `matrix ? … : null` each made its own assertion in `tests/closing-rep-ranking.test.ts` fire, and the
 suite returned to green once restored.
+
+### "Cannot read properties of undefined (reading 'split')" — the trend is not always three months
+
+Minutes after July and August were published he clicked **Export Rep Ranking** and got that error
+instead of a file. It was the **first real run of the builder in production**: no Anti Infective
+month had been published since 9 October, so neither the portal export (#5867) nor the admin button
+(#5869) had ever built a workbook against live data.
+
+`resolveTrendPeriods` returns the closing month plus the offered months before it, capped at three.
+With only July and August offered, **July's trend is one month and August's is two**. The workbook
+was written against the Jul–Sep scratchpad build and assumed three throughout:
+
+- `monthName(TREND[2])` in the Trust sheet's Scope row — `undefined.split` — **the crash itself**.
+- Three sheet subtitles hard-coded `"July to September 2026"` / `"units, July to September 2026"`.
+- Three `W` width arrays carried three literal `13`s, so with one or two month columns every width
+  after them shifted onto the wrong column.
+- Prose on four sheets asserted "THE THREE MONTHS'", "JULY PLUS AUGUST PLUS SEPTEMBER", "THE SEATS
+  ARE SEPTEMBER'S", "the quarter", and "three cells in this feed are months whose credits
+  outweighed their invoices" — a **counted figure stated as a literal**, true only of the build it
+  was written against.
+
+Every one of those is now computed from `TREND` and `PERIOD`: `SPAN`, `SPAN_COUNT` and `SPAN_PLUS`
+beside the trend they describe, widths spread from `TREND.map(() => 13)`, and the negative-cell
+count incremented by the same pass that prints the cells. `monthName`/`monthShort` also stopped
+being able to throw — a period they cannot read comes back as itself, because a caption may be wrong
+and survivable but must never lose the file.
+
+🔴 **The general rule: a figure or a month name in a workbook's prose is COMPUTED by the pass that
+prints it, never transcribed from the build it was first written against.** A sentence naming "three
+months" or "three cells" becomes a confident lie the first time the data moves, and nothing goes red.
+
+Pinned by `tests/closing-rep-ranking.test.ts`, which now builds the one-month and two-month shapes
+as well and reads their captions back out of the emitted zip — **out of the worksheet XML as well as
+`sharedStrings`**, because a sheet's subtitle is written into its print footer and a sharedStrings-only
+check passed a build whose every sheet still footed "July to September 2026" over one month of data.
+Proven by breaking all three: restoring `TREND[2]` with the unguarded helper reproduced his exact
+error inside the test, and the two caption breaks each fired their own assertion.
