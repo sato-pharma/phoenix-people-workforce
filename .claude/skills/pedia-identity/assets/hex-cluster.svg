@@ -1,0 +1,17 @@
+<!-- The Pedia mark: a cluster of three hexagons — one large, two small, parted by a gap.
+
+     Drawn here, not traced off a pack: the Lacto Advanced cans carry their claims in
+     hexagon badges (a large DHA & ARA beside a small D3 and a small Ca), and that
+     arrangement — one led, two beside it — is the line's own, since Lacto Advanced is
+     most of Pedia's value. The badges' lettering and colours are the manufacturer's
+     printed artwork and are NOT reproduced; only the arrangement is.
+
+     Solid, one ink, through `currentColor`, so a caller sets the colour and the mark
+     never carries a second one. 25-70px, as the centre of a ruleset, a corner seal or
+     beside a section head. Never a watermark, never outlined, and never rotated: the
+     hexagons are pointy-top, as on the packs. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 200" width="240" height="200" fill="currentColor">
+  <polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/>
+  <polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/>
+  <polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/>
+</svg>

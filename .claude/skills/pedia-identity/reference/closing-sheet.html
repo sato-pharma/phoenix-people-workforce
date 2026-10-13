@@ -1,0 +1,255 @@
+<!doctype html>
+<!-- Pedia identity — the monthly closing sheet. 2480 × 3508, A4 portrait at 300 dpi.
+     The month's result for the Pedia line, dressed in the line's own identity.
+
+     🔴 THIS SHEET REPORTS; IT NEVER COMPUTES. Every sales figure AND every target
+     figure on it is read from the PUBLISHED Monthly Closing for the month named in
+     the field — the one source of truth for both halves, system-wide. A sheet that
+     re-derives either half from its own query, its own table or its own period is
+     the bug, never a variant, and it will disagree with the screens the managers
+     read. Fill it from the closing or do not fill it.
+
+     🔴 THE UNITS COLUMN IS NEVER TOTALLED. Units of different products and
+     different presentations are not addable — cans of Lacto Advanced 1, cans of
+     Lacto Advanced 2, bottles of syrup and boxes of sachets are not one quantity. The total row's units cell is an
+     em dash DELIBERATELY. The line totals by VALUE only.
+
+     SPECIMEN. Every number below is arithmetic invented to exercise the design:
+     the areas sum to the total, the shares sum to 100, and the line lands on
+     exactly 100.0% so that no reader can mistake it for a real month. The area
+     names are the structure, not data. There are no people on this sheet by
+     design — a rep ranking is personal performance data and does not belong in a
+     design template.
+
+     Renders from this folder with no build step: every asset path is ../assets/.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pedia — monthly closing</title>
+<link rel="stylesheet" href="../../cns-identity/assets/fonts/fonts.css">
+<style>
+  :root{
+    --gold:#c17e11; --gold-lo:#8a5a0c; --gold-hi:#f0b94a;
+    --aqua:#3eab95; --aqua-lo:#2a7a69; --aqua-hi:#7fd9c6;
+    --base:#032427;
+    --ink:#0a1322; --body:#45515a; --soft:#6b7782; --hair:#e4e9ee;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{width:2480px;height:3508px;overflow:hidden;background:#fff;
+       font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .sheet{position:relative;width:2480px;height:3508px;overflow:hidden;}
+
+  /* ====== the green field ====== */
+  /* Shorter than the line sheet's: 1250 against 2150, because the tables are the
+     subject here and the chrome is not. Same four stops, ellipse scaled to it. */
+  .field{position:absolute;inset:0 0 2258px 0;overflow:hidden;
+    background:
+      radial-gradient(2600px 1500px at 50% 24%, #1c7f6c 0%, #136356 36%, #0a4645 70%, #032427 100%);}
+  .net{position:absolute;inset:0;width:100%;height:100%;opacity:.26;pointer-events:none;object-fit:cover;}
+  .grain{position:absolute;inset:0;opacity:.055;mix-blend-mode:overlay;pointer-events:none;}
+  .vig{position:absolute;inset:0;pointer-events:none;
+       background:radial-gradient(2100px 1300px at 50% 48%, rgba(0,0,0,0) 40%, rgba(0,0,0,.40) 100%);}
+  .fr1{position:absolute;inset:50px;border:1px solid rgba(255,255,255,.15);pointer-events:none;}
+  .fr2{position:absolute;inset:63px;border:1px solid rgba(255,255,255,.055);pointer-events:none;}
+
+  .logo{position:absolute;left:160px;top:100px;height:96px;
+        filter:drop-shadow(0 2px 6px rgba(0,0,0,.45));}
+  .seal{position:absolute;right:160px;top:94px;width:196px;height:196px;
+        border:1px solid rgba(255,255,255,.26);background:rgba(0,0,0,.26);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;
+        box-shadow:inset 0 0 0 8px rgba(255,255,255,.045), 0 19px 49px rgba(0,0,0,.38);}
+  .seal .gk{width:68px;height:60px;color:#fff;opacity:.95;}
+  .seal span{font-size:16px;font-weight:700;letter-spacing:.22em;color:rgba(255,255,255,.66);}
+
+  /* ====== title ====== */
+  /* 148px, not the line sheet's 175px. "MONTHLY CLOSING" is fifteen characters and
+     at 175px it runs past the 252px margins; measure a title before reusing a size. */
+  .head{position:absolute;left:0;right:0;top:252px;text-align:center;}
+  .eyebrow{color:#a9e3d6;font-size:22px;font-weight:600;letter-spacing:.36em;text-transform:uppercase;}
+  .sato{margin-top:30px;font-family:'Playfair Display',serif;font-size:48px;font-weight:400;
+        letter-spacing:.66em;text-indent:.66em;color:rgba(255,255,255,.78);}
+  .evt{margin-top:4px;font-family:'Playfair Display',serif;font-size:148px;font-weight:500;
+       letter-spacing:.03em;color:#fff;line-height:1.02;text-shadow:0 4px 30px rgba(0,0,0,.38);}
+  .ruleset{margin:30px auto 0;display:flex;align-items:center;justify-content:center;width:600px;}
+  .ruleset s{display:block;height:4px;flex:1;}
+  .ruleset s.l{background:linear-gradient(90deg,rgba(193,126,17,0),var(--gold));}
+  .ruleset s.a{background:linear-gradient(90deg,var(--aqua),rgba(62,171,149,0));}
+  .ruleset .gk{width:68px;height:60px;margin:0 27px;flex:none;color:#fff;opacity:.95;}
+  .month{margin-top:32px;color:rgba(255,255,255,.80);font-size:30px;font-weight:600;
+         letter-spacing:.30em;text-transform:uppercase;}
+  .stamp{margin-top:20px;font-size:19px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;}
+  .stamp b{color:var(--gold-hi);}
+  .stamp i{font-style:normal;color:rgba(255,255,255,.50);letter-spacing:.14em;font-weight:500;}
+
+  /* ====== the three headline figures ====== */
+  /* Sales, target, achievement — in that order, always, because that is the order
+     the closing engine computes them in and the order a manager reads them. The
+     achievement numeral takes aqua at or above 100% and gold below it; it is the
+     only number on the sheet allowed a colour. */
+  .heads{position:absolute;left:252px;right:252px;top:830px;display:flex;}
+  .heads div{flex:1;text-align:center;border-left:1px solid rgba(255,255,255,.17);}
+  .heads div:first-child{border-left:0;}
+  .heads dt{color:rgba(255,255,255,.60);font-size:21px;font-weight:700;
+            letter-spacing:.30em;text-transform:uppercase;}
+  .heads dd{margin-top:22px;font-family:'Playfair Display',serif;font-size:110px;font-weight:500;
+            color:#fff;line-height:.94;text-shadow:0 8px 34px rgba(0,0,0,.45);}
+  .heads dd.up{color:var(--aqua-hi);}
+  .heads dd.dn{color:var(--gold-hi);}
+  .heads small{display:block;margin-top:18px;color:rgba(255,255,255,.52);font-size:20px;
+               font-weight:700;letter-spacing:.28em;text-transform:uppercase;}
+  .heads i{display:block;width:72px;height:4px;margin:26px auto 0;background:var(--aqua);}
+  .fieldwm{position:absolute;left:50%;bottom:-120px;transform:translateX(-50%);width:1300px;
+           opacity:.05;pointer-events:none;filter:brightness(0) invert(1);}
+
+  /* ====== the seam ====== */
+  .seam{position:absolute;left:0;right:0;bottom:2258px;height:16px;display:flex;z-index:4;}
+  .seam u{flex:1;display:block;background:var(--gold);}
+  .seam u+u{background:var(--aqua);}
+
+  /* ====== white foot: the two tables ====== */
+  /* The field is identity chrome and carries its gradient. The foot obeys the
+     house INK RULE instead: no filled areas at all except the 6% zebra row — no
+     filled table header, no filled total row, no coloured cell backgrounds. A data
+     table a manager reads is a document, and the document identity governs it. */
+  .foot{position:absolute;left:0;right:0;top:1250px;bottom:100px;background:#fff;}
+  /* The wordmark is a ground, never a smudge over type. On the line sheet it sits
+     behind packshots and 11% is right; here it would land across the scope note and
+     the value column, so it moves left of the notes and drops to 7%. A watermark a
+     reader can SEE over a number has stopped being a watermark. */
+  .wm{position:absolute;right:120px;top:1300px;width:640px;opacity:.07;pointer-events:none;}
+  .fhead{position:absolute;left:252px;top:88px;}
+  .fhead dt{color:#8c98a4;font-size:19px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .fhead dd{margin-top:16px;color:var(--ink);font-size:42px;font-weight:600;letter-spacing:-.01em;}
+  .fhead .gkk{position:absolute;left:-100px;top:2px;width:68px;height:60px;color:var(--gold);}
+
+  /* table-fixed with a colgroup, never an auto layout over a min-width: a column
+     that decides its own width is a column that can push the sheet wider than the
+     trim. 38px cells, not the line sheet's 25px — at 300 dpi that is 9 pt against
+     6 pt, and this sheet is READ, where the line sheet is LOOKED AT. */
+  table{position:absolute;left:252px;right:252px;width:1976px;table-layout:fixed;
+        border-collapse:collapse;}
+  #byarea{top:280px;}
+  #bypack{top:1120px;}
+  caption{text-align:left;padding:0 0 22px;color:var(--aqua-lo);font-size:21px;
+          font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  thead th{padding:0 0 20px;color:#8c98a4;font-size:23px;font-weight:700;
+           letter-spacing:.16em;text-transform:uppercase;text-align:right;
+           border-bottom:2px solid var(--base);vertical-align:bottom;}
+  thead th:first-child{text-align:left;}
+  tbody td{height:88px;padding:0;color:var(--ink);font-size:38px;font-weight:500;
+           text-align:right;border-bottom:1px solid var(--hair);
+           font-variant-numeric:tabular-nums;}
+  tbody td:first-child{text-align:left;font-weight:600;position:relative;}
+  tbody tr:nth-child(even) td{background:rgba(3,36,39,.06);}
+  tbody td.up{color:var(--aqua-lo);font-weight:700;}
+  tbody td.dn{color:var(--gold-lo);font-weight:700;}
+  tbody td small{display:block;margin-top:4px;color:var(--soft);font-size:24px;font-weight:500;}
+  tfoot td{height:92px;padding:0;color:var(--ink);font-size:38px;font-weight:700;
+           text-align:right;border-top:2px solid var(--base);
+           font-variant-numeric:tabular-nums;}
+  tfoot td:first-child{text-align:left;letter-spacing:.14em;text-transform:uppercase;font-size:28px;}
+  tfoot td.nil{color:var(--soft);font-weight:500;}
+  /* the top area wears the hexagon cluster. One mark, never a column of them. */
+  .lead{position:absolute;left:-74px;top:26px;width:46px;height:40px;color:var(--gold);}
+
+  .fnote{position:absolute;left:252px;right:252px;bottom:80px;display:flex;}
+  .fnote div{flex:1;padding:0 40px;border-left:1px solid var(--hair);}
+  .fnote div:first-child{padding-left:0;border-left:0;}
+  .fnote dt{color:#8c98a4;font-size:17px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+  .fnote dd{margin-top:14px;color:var(--ink);font-size:25px;font-weight:600;line-height:1.38;}
+  .fnote dd b{color:var(--gold-lo);}
+
+  /* ====== base ====== */
+  .base{position:absolute;left:0;right:0;bottom:0;height:100px;background:var(--base);
+        display:flex;align-items:center;justify-content:space-between;padding:0 252px;}
+  .base span{color:rgba(255,255,255,.62);font-size:20px;font-weight:600;
+             letter-spacing:.28em;text-transform:uppercase;}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="field">
+    <img class="net" src="../assets/hexfield-closing.svg" alt="">
+    <svg class="grain"><filter id="gr"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#gr)"/></svg>
+    <div class="vig"></div>
+    <div class="fr1"></div><div class="fr2"></div>
+
+    <img class="logo" src="../assets/sato-pharma-reverse.png" alt="Sato Pharma">
+    <div class="seal">
+      <svg class="gk" viewBox="0 0 240 200" fill="currentColor" aria-hidden="true"><polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/><polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/><polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/></svg>
+      <span>PEDIA</span>
+    </div>
+
+    <div class="head">
+      <div class="eyebrow">Sato&nbsp;Pharma &nbsp;&middot;&nbsp; Pedia</div>
+      <div class="sato">SATO</div>
+      <div class="evt">MONTHLY CLOSING</div>
+      <div class="ruleset"><s class="l"></s>
+        <svg class="gk" viewBox="0 0 240 200" fill="currentColor" aria-hidden="true"><polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/><polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/><polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/></svg>
+        <s class="a"></s></div>
+      <div class="month">September&nbsp;2026 &nbsp;&middot;&nbsp; Lacto Advanced, Ivyronc and Guamusin</div>
+      <div class="stamp"><b>Specimen</b> &nbsp;<i>every figure is filled from the published Monthly Closing</i></div>
+    </div>
+
+    <dl class="heads">
+      <div><dt>Sales</dt><dd>10,000,000</dd><small>EGP</small><i></i></div>
+      <div><dt>Target</dt><dd>10,000,000</dd><small>EGP</small><i></i></div>
+      <div><dt>Achievement</dt><dd class="up">100.0%</dd><small>of target</small><i></i></div>
+    </dl>
+    <img class="fieldwm" src="../assets/sato-arabic-navy.png" alt="">
+  </div>
+
+  <div class="seam"><u></u><u></u></div>
+
+  <div class="foot">
+    <img class="wm" src="../assets/sato-arabic-navy.png" alt="">
+    <dl class="fhead">
+      <svg class="gkk" viewBox="0 0 240 200" fill="currentColor" aria-hidden="true"><polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/><polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/><polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/></svg>
+      <dt>The month</dt>
+      <dd>Closed by area, and by presentation</dd>
+    </dl>
+
+    <table id="byarea">
+      <caption>By area</caption>
+      <colgroup><col style="width:32%"><col style="width:19%"><col style="width:19%"><col style="width:15%"><col style="width:15%"></colgroup>
+      <thead><tr><th>Area</th><th>Sales EGP</th><th>Target EGP</th><th>Achievement</th><th>Share of line</th></tr></thead>
+      <tbody>
+        <tr><td><svg class="lead" viewBox="0 0 240 200" fill="currentColor" aria-hidden="true"><polygon points="118,38 171.7,69 171.7,131 118,162 64.3,131 64.3,69"/><polygon points="38,16 67.4,33 67.4,67 38,84 8.6,67 8.6,33"/><polygon points="204,114 233.4,131 233.4,165 204,182 174.6,165 174.6,131"/></svg>Cairo</td><td>2,600,000</td><td>2,400,000</td><td class="up">108.3%</td><td>26.0%</td></tr>
+        <tr><td>Delta</td><td>2,000,000</td><td>1,900,000</td><td class="up">105.3%</td><td>20.0%</td></tr>
+        <tr><td>Giza</td><td>1,900,000</td><td>1,950,000</td><td class="dn">97.4%</td><td>19.0%</td></tr>
+        <tr><td>Alex-BHR</td><td>1,500,000</td><td>1,500,000</td><td class="up">100.0%</td><td>15.0%</td></tr>
+        <tr><td>Upper Egypt</td><td>1,200,000</td><td>1,400,000</td><td class="dn">85.7%</td><td>12.0%</td></tr>
+        <tr><td>Others</td><td>800,000</td><td>850,000</td><td class="dn">94.1%</td><td>8.0%</td></tr>
+      </tbody>
+      <tfoot><tr><td>The line</td><td>10,000,000</td><td>10,000,000</td><td>100.0%</td><td>100.0%</td></tr></tfoot>
+    </table>
+
+    <table id="bypack">
+      <caption>By presentation</caption>
+      <colgroup><col style="width:40%"><col style="width:18%"><col style="width:22%"><col style="width:20%"></colgroup>
+      <thead><tr><th>Presentation</th><th>Units</th><th>Value EGP</th><th>Share of line</th></tr></thead>
+      <tbody>
+        <tr><td>Lacto Advanced 1<small>Improved infant formula, 400&nbsp;g</small></td><td>40,000</td><td>5,000,000</td><td>50.0%</td></tr>
+        <tr><td>Lacto Advanced 2<small>Improved infant formula, 400&nbsp;g</small></td><td>24,000</td><td>3,000,000</td><td>30.0%</td></tr>
+        <tr><td>Ivyronc Syrup<small>Ivy leaf extract, 35&nbsp;mg / 5&nbsp;ml, 100&nbsp;ml</small></td><td>30,000</td><td>1,500,000</td><td>15.0%</td></tr>
+        <tr><td>Guamusin<small>Powder for oral solution, 12 sachets &times; 5&nbsp;g</small></td><td>10,000</td><td>500,000</td><td>5.0%</td></tr>
+      </tbody>
+      <tfoot><tr><td>The line</td><td class="nil">&mdash;</td><td>10,000,000</td><td>100.0%</td></tr></tfoot>
+    </table>
+
+    <dl class="fnote">
+      <div><dt>Source</dt><dd>The published Monthly Closing for September 2026 &mdash; the one source of truth for the sales and the target alike.</dd></div>
+      <div><dt>Units</dt><dd><b>Never totalled.</b> Cans of two stages, bottles of syrup and boxes of sachets are not one quantity. The line totals by value.</dd></div>
+      <div><dt>Scope</dt><dd>Lacto Advanced 1 and 2, Ivyronc and Guamusin. Pedia only.</dd></div>
+    </dl>
+  </div>
+
+  <div class="base">
+    <span>Sato Pharma &nbsp;&middot;&nbsp; Pedia &nbsp;&middot;&nbsp; Monthly closing</span>
+    <span>www.satopharma.com</span>
+  </div>
+</div>
+</body>
+</html>
