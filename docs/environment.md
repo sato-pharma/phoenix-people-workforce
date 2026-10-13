@@ -486,7 +486,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 ### Email & notifications
 | Secret | Purpose |
 |---|---|
-| RESEND_API_KEY | Primary email provider |
+| RESEND_API_KEY | Primary email provider — 🔴 **DEDICATED since 2026-10-13** (owner: "make it and hrbp dedicated only for job offers + sato email composer"). It is the only account holding `satopharma.com` and `send.satopharma.com` verified, so it is the only one that can send as `hr@`, `hrbp@` or `ceo@`; ordinary automated Phoenix mail is given the chain WITHOUT it and starts at the second account (`src/lib/email/sato-identity-senders.ts`). Before that, notification traffic spent its ~100/day quota — 404 Resend messages on 11 Oct 2026 — and 30 of the last 63 offers were sent by a backup account, 18 of them branded *Phoenix Workforce*. With no backup configured, ordinary mail keeps this account rather than having nowhere to go |
 | RESEND_WEBHOOK_SECRET | Verifies inbound Resend delivery webhooks |
 | RESEND_API_KEY_2 | Second Resend account — tried after the first runs out of quota. Optional; unset leaves it out of the chain |
 | RESEND_EMAIL_FROM_2 | Sender verified on the second Resend account (a bare address keeps each email's display name). A domain verifies in one Resend account only, so this is usually a different sending subdomain |

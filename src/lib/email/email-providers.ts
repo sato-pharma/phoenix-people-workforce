@@ -34,6 +34,7 @@
 import { RetryableEmailError, parseRetryAfter } from "@/lib/email/email-errors";
 import { splitAddressList } from "@/lib/email/receivable-address";
 import { JOB_OFFER_SENDER_ADDRESSES, isJobOfferSender } from "@/lib/email/job-offer-sender";
+import { isSatoIdentitySender } from "@/lib/email/sato-identity-senders";
 
 export type PreparedEmailAttachment = {
   content: string;
@@ -458,13 +459,27 @@ const extraBrevoProviders = extraBrevoAccountSuffixes.map((suffix) => createBrev
 // first, then the Brevo accounts. A backup is skipped unless it is configured AND failover is not
 // explicitly disabled — so with no backup env set this returns just [resend] and behaviour is
 // unchanged.
-export function resolveEmailProviders(): EmailProvider[] {
+//
+// 🔴 THE FIRST ACCOUNT IS DEDICATED (owner, 2026-10-13: "make it and hrbp dedicated only for job
+// offers + sato email composer"). It is the only account that can send as `hr@`, `hrbp@` or `ceo@`,
+// and automated notification traffic was spending its ~100/day quota by lunchtime — 404 Resend
+// messages on 11 Oct — which is why 30 of the last 63 offers were sent by a backup account and 18
+// went out as *Phoenix Workforce*. So an ordinary Phoenix email is given the chain WITHOUT it, and
+// mail from a Sato human identity keeps it (`sato-identity-senders.ts`). Passing no `email` returns
+// the whole chain, which is what a "is any provider configured at all" check wants.
+export function resolveEmailProviders(email?: Pick<PreparedEmail, "from">): EmailProvider[] {
   const providers: EmailProvider[] = [resendProvider];
   const failoverDisabled = String(process.env.EMAIL_FAILOVER_ENABLED ?? "").trim().toLowerCase() === "false";
   if (failoverDisabled) return providers;
   for (const backup of [...extraResendProviders, brevoProvider, ...extraBrevoProviders]) {
     if (backup.isConfigured()) providers.push(backup);
   }
+
+  // Ordinary automated mail hands the dedicated account back — but only while something else can
+  // carry it. With no backup configured (a local run, staging, a lapsed key) the chain stays as it
+  // was: an email that cannot be sent at all is worse than one that spends the reserved quota.
+  if (email && !isSatoIdentitySender(email.from) && providers.length > 1) return providers.slice(1);
+
   return providers;
 }
 
@@ -476,7 +491,7 @@ export type FailoverSendResult = { id: string; provider: string };
  */
 export async function sendPreparedEmailWithFailover(
   email: PreparedEmail,
-  providers: EmailProvider[] = resolveEmailProviders(),
+  providers: EmailProvider[] = resolveEmailProviders(email),
 ): Promise<FailoverSendResult> {
   let lastFailover: { reason: string; retryAfterMs?: number } | null = null;
 
