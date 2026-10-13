@@ -692,8 +692,14 @@ const TEAM_PLACE_CHECKS_TIERS = new Set(["DM", "ACTING_DM"]);
  * 🔴 ITS OWN PREDICATE, AND DELIBERATELY NARROWER THAN `readsPlaceVsActual`, which also admits the
  * National Sales Manager and the SFE Manager because the owner put the place-vs-actual REPORT in their
  * hands. He named the district manager here and nobody else, and widening somebody's sight into this
- * module on a guess is exactly what the three sight tiers above exist to prevent. Add a tier only on
- * his word.
+ * module on a guess is exactly what the three sight tiers above exist to prevent.
+ *
+ * 🔴 AND THE QUESTION IS SETTLED, NOT MERELY UNASKED — he was put the choice the same day the tab
+ * shipped and answered it: "keep place checks to district managers only" (2026-10-13). So the two
+ * tiers above are a RULING. Do not widen this set because the place-vs-actual report is wider, or
+ * because a Regional or National Sales Manager asks why he cannot see his districts' boards, or
+ * because the next session reads the paragraph above as an open question. Only his own word, naming
+ * the rung, changes it.
  *
  * It decides NOTHING. `canDecideValidationReviews` is still the Super Admin alone, and the manager's
  * screen never says so (his own instruction, the same day: "don't show this on the screen").

@@ -180,3 +180,40 @@ more earned their place here:
 9. **Before reading a comment difference as "the file was annotated later", ask git.** The eleventh
    file above has one commit and has never been edited, and production is the side missing the
    comments. Stripped-equal says the logic is the same; it says nothing about which text came first.
+
+## Later the same day: the eleven also got a ledger row, and both mechanisms stay
+
+A second session, working from the **primary checkout 18 commits behind `origin/main`**, ran the
+same drift check against the same production project and was told **11 migrations merged to main
+but not found**. The same command from a tree at `origin/main` printed *"OK — every migration
+outside the grace window is accounted for"* an hour earlier. The eleven it named are exactly the
+eleven reconciled above: `selectMissingMigrations` filters `ACKNOWLEDGED_EXCEPTIONS` **first**, and
+the commit that added them was not in the lagging tree. Ruled out by measurement before the cause
+was found — the 48h grace window (each file's commit time is identical from both trees, 0 of 11
+sheltered either way), a changed ledger (`xmin` ordering shows the newest row not inserted by that
+session predates its own writes, so nothing was deleted in the window), and the wrong project
+(staging's ledger is a different size, and the run printed production's ref).
+
+Before that cause was found, that session recorded the eleven versions in
+`supabase_migrations.schema_migrations` on production — ledger **1,313 → 1,324 rows** — and then
+asked the owner whether to roll them back now that the exceptions turned out to be the answer.
+
+> **Owner, 2026-10-13: keep the 11 ledger rows and leave the exceptions in place.**
+
+So both mechanisms now cover the same eleven files, deliberately:
+
+- The **ledger rows** make the drift check quiet from *any* checkout, current or lagging, and they
+  are the honest record — every one of those migrations really has been executed on production.
+- The **exception entries** stay because they carry the evidence. A row in
+  `schema_migrations` is a bare `(version, name)` pair that says nothing about *how* it was proved;
+  the entries, with the two pages behind them, are where the `md5(prosrc)` digests, the
+  last-definer checks and the two superseded functions are written down.
+
+Neither is removed to tidy the other. 🔴 **And a missing ledger row is still not answered by a
+ledger write** — the order above is the method: digest, last-definer check, evidenced exception
+entry. The write happened here because the check was read from a stale tree, which is the one
+mistake this round adds to the list.
+
+10. **Run the drift check from a tree on `origin/main`, and treat its output from a lagging
+    checkout as a question rather than a finding.** `git fetch` and compare before believing it.
+    Pinned, for the exception list's own rot, by `tests/migration-exception-staleness.test.ts`.
