@@ -123,6 +123,7 @@ import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
 import { runHealthchecksScheduleSyncTests } from "./healthchecks-schedule-sync.test.ts";
 import { runJobHeartbeatRegisterTests } from "./job-heartbeat-register.test.ts";
+import { runDatabaseRestartWatchTests } from "./database-restart-watch.test.ts";
 import { runDirectOrdersHrIdCaseTests } from "./direct-orders-hr-id-case.test.ts";
 import { runDbHealthSnapshotLivenessTests } from "./db-health-snapshot-liveness.test.ts";
 import { runSheetTokenRotationLivenessTests } from "./sheet-token-rotation-liveness.test.ts";
@@ -2787,6 +2788,10 @@ await runTest(
 await runTest(
   "job heartbeat register (a windowed schedule's silent hours are not a stranded job)",
   runJobHeartbeatRegisterTests,
+);
+await runTest(
+  "database restart watch (installing the alarm must not fire it, and the time it reports is Cairo)",
+  runDatabaseRestartWatchTests,
 );
 await runTest("direct orders hr-id filters are case-insensitive", runDirectOrdersHrIdCaseTests);
 await runTest(

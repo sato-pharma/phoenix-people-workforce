@@ -245,8 +245,29 @@ cleared cookies and answered 401. PR 5737 retries 521/525 at 200/400/800 ms. �
 cannot ride a 38-second restart, and lengthening it is the wrong fix** — a retry long enough to
 outlast a restart freezes every page for the length of the restart.
 
-**Nothing alerts on this.** `/api/healthz` answered 200 throughout both events (it does not touch the
-database), and the section below is why there is no 5xx-rate alarm to catch the third one.
+**The third one now alerts, within fifteen minutes.** Nothing reported the first two: `/api/healthz`
+answered 200 throughout both (it does not touch the database), `app_error_events` held 17 rows in the
+whole hour, and the GCP 5xx alert died with its billing on 2026-08-01 (the section below). Since
+2026-10-13, `runDatabaseRestartCheck()` rides the 15-minute `job-heartbeat-sweep` clock as a third
+independent watch — the same arrangement, and for the same reason, as the dead-share-token check
+already on it, so **no new cron job and no cron-job.org entry were needed.**
+
+- `public.note_database_restart()` (migration `20261013150001_database_restart_watch.sql`) reads
+  `pg_postmaster_start_time()`, records it in `public.database_restarts` if it is new, and reports
+  whether it moved. SECURITY DEFINER, `revoke execute … from public, anon, authenticated`, execute
+  granted to `service_role` alone — so no browser role can call it and the table is unreachable.
+- The insert is `on conflict do nothing`, so with two Railway replicas on the same clock exactly one
+  of them reports the restart.
+- 🔴 **The migration SEEDS the current start time**, so installing the watch does not fire it. A new
+  start time with nothing on record is a `first-sighting` and never alerts — it only logs.
+- **Idempotency is the start time, not the Cairo day.** Its two siblings on this clock bucket per day
+  because they report standing faults; a restart is a discrete event, and two restarts in one day
+  must be two messages. Do not "fix" that to a day bucket — two in three days is the whole pattern.
+- In-app + Telegram + push on the `weekly_system_health_digest` audience. 🔴 **No email, deliberately:**
+  this alarm can fire because the database holding the notification outbox is unreachable.
+- Pinned by `tests/database-restart-watch.test.ts`, in the required `validate` job.
+
+
 
 ## Metrics & alerting — DEAD (nothing pages the owner)
 
