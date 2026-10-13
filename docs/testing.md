@@ -146,6 +146,113 @@ commit's checks finish. So the merge gate and the deploy gate are the same two c
 gate hard-coded to a count from a doc does not merely wait — it waits for checks that no longer exist.
 **Count passes against `branches/main/protection/required_status_checks`, read live.**
 
+### Reading the contract gates before the push
+
+🔴 **MOST OF WHAT REDDENS `validate/Test` IS NOT THE PR'S OWN FEATURE TEST — IT IS A WHOLE-REPO
+CONTRACT GATE THE CHANGE HAD NOTHING TO DO WITH, AND UNTIL 13 OCT 2026 THE ONLY WAY TO MEET ONE WAS
+TO PUSH AND WAIT.** Measured that day on `ci.yml` / `pull_request`: **12.1%** of runs failed over
+4-8 Oct, **20.0%** over 9-11 Oct, and **40.5%** over 12 Oct 00:00 - 13 Oct 06:00 (46 failed and 24
+cancelled of 173 runs). Of the 106 failed runs since 9 Oct the failing step was `validate/Test` 94
+times, `checks/Typecheck` 17, `checks/Lint` 5 and `validate/Check migrations` 4.
+
+Four things together made those gates invisible before a push: a local typecheck is denied outright
+(`bash-guard.mjs` C8), the unit suite runs only on the box (~125s) or in the PR's own `validate`
+(~210s), `tests/run-tests.ts` has **no per-test filter** — only `PHX_TEST_SHARD=<i>/<n>` — and
+`runTest` **rethrows at the first failure**, so one red gate reports on a prefix of the suite and
+the next push finds a second gate.
+
+**`pnpm run check:contracts` answers in about 9 seconds**, and reports every gate instead of
+stopping at the first. The ten it runs, with the failing CI jobs each caused between 9 and
+13 Oct 2026:
+
+| Gate | Red CI jobs |
+| --- | --- |
+| `AGENTS.md long hooks cite their account in docs/` | 23 |
+| `access registry coverage` | 8 |
+| `Nothing this app shows anybody assumes its subject is a man` (neutral wording) | 6 |
+| `no source-pinning test strips comments unsafely` (the comment-strip ratchet) | 6 |
+| `hydration-safe Cairo text` | 5 |
+| `portal route skeleton` | 4 |
+| `Module memory (owner, 2026-10-02)` | 3 |
+| `every runTest( call in this very file is ("a name", aRunFunction)` | 3 — in `checks/Typecheck`, not `Test` |
+| `audit entity types` | named among the 12 Oct reds |
+| `test wiring is complete` | fires on exactly the push that adds a test file |
+
+**It is optional and never a gate.** It starts nothing, refuses nothing and blocks no push — the
+owner ruled *"keep the pre-push test as a rule, no guard"* on 2026-10-04 — and the PR's own
+`validate` + `checks` remain the verdict.
+
+#### The lint and typecheck reds, and the one it cannot reach
+
+`validate/Test` was 94 of the 106 failed runs, but it was not all of them, so the check reaches the
+other two required steps as far as each honestly can.
+
+🔴 **ALL 5 OF THE `checks/Lint` REDS WERE ESLINT *ERRORS* ON FILES THE PR HAD CHANGED** — 3 ×
+`react-hooks/set-state-in-effect` ("Calling setState synchronously within an effect"), 1 × "Cannot
+create components during render", 1 × five counts of `@typescript-eslint/no-explicit-any`. Not one
+was elsewhere in the repo, which is what makes the branch's own diff the whole exposure. So one
+**tool gate** runs beside the ten — ESLint over the files this branch changed, alongside the shards,
+with `--quiet` so it reports **errors only**. That is exactly what reddens the step, and it also
+makes the known single-file trap inert, because "Unused eslint-disable directive" is a *warning*.
+Measured on 20 changed files: **6.4s cold, ~3s warm**. ESLint here is not type-aware
+(`eslint.config.mjs` sets no `project`), which is the only reason per-file linting is cheap at all.
+It is a **separate list** from `CONTRACT_GATES` deliberately: a lint run is not one of the suite's
+exported functions, and folding it in would have meant loosening the invariant that every contract
+gate is the suite's own code.
+
+🔴 **THE TYPECHECK IS THE ONE IT MOSTLY CANNOT REACH, AND IT SAYS SO ON EVERY RUN.** Of the 17
+`checks/Typecheck` reds, **3** were the one shape a source gate can see — `TS2554 Expected 2
+arguments, but got 4` / `got 1` in `tests/run-tests.ts`, where a `git rerere`-replayed merge of that
+5,400-line file folds the tail of one registration into the head of the next, so **two tests stop
+running while both names and both imports survive**, `test-wiring-complete` still passes, and
+`pnpm run test` type-checks nothing and reports success. `tests/run-tests-registration-shape.test.ts`
+pins that call shape — accepting a single- **or** double-quoted name and a name concatenated with
+`+`, because 68 of the registrations are one of those and a stricter gate would have called every
+one of them an offender. The other **14** were ordinary type errors across `src/` and `app/`
+(TS18047, TS2741, TS2322, TS2559, TS2366, TS2345, TS2339, TS2769), and only a compiler finds one of
+those. So the run ends by naming `node scripts/remote-check.mjs typecheck` (~34s on the box): a
+check that read as *"the types are fine"* while covering 3 of 17 would be worse than no check,
+because a green run would buy a confidence it has not earned.
+
+Six decisions in it that should not be "fixed" back:
+
+- 🔴 **Each gate is the suite's OWN exported run function, imported** (`CONTRACT_GATES` in
+  `scripts/check-contracts-gates.mjs`). A gate re-implemented here would drift from the one that
+  actually gates the merge, and then a PASS would be a lie. `tests/check-contracts.test.ts` holds
+  every entry against `tests/run-tests.ts` by export **and** by the opening of its registered name,
+  so a renamed or retired gate fails in the suite rather than leaving the script importing nothing.
+- 🔴 **No `--env-file-if-exists=.env.local`.** That flag is what makes `pnpm run test` run against
+  **production** Supabase; a check a session is encouraged to run on every branch must not load
+  production credentials. `coverage` omits it for the same reason.
+- 🔴 **cwd is pinned to the repo root.** `access-registry-coverage` resolves `app/api` from
+  `process.cwd()` and the AGENTS.md and neutral-wording gates read by relative path — so a run from
+  a subdirectory would not fail, it would measure a smaller tree and **PASS**.
+- 🔴 **It is NOT in the `ci` script.** `tests/ci-gate-parity.test.ts` requires every `check:*` named
+  in `ci` to appear literally in a `.github/workflows/*.yml` file, so adding it there without a
+  workflow step reddens `validate` — and a CI step would be waste, since the sharded suite already
+  runs all ten.
+- 🔴 **It shards, and the parent REFUSES a run it cannot prove complete.** Serial it took 20.3s cold
+  and 16.9s warm on the owner's laptop; three shards bring it to **8.1s**. Each shard prints
+  `PHX_CONTRACT_RESULT shard=i/n ran=<slugs>` from an `exit` handler, and a missing line, a gate run
+  twice, a gate no shard ran, a killed shard or a non-zero exit that names no failing gate is **NO
+  VERDICT (exit 2), never a pass** — because a bad divisor is otherwise a smaller run reporting
+  success, the lesson `scripts/run-tests-sharded.mjs` was built on. The shard count is bounded by
+  free memory as well as CPUs (`MAX_CONTRACT_SHARDS` 3), since free RAM here is routinely under
+  2.5 GB and `mem-watchdog.ps1` reaps a node job under 500 MB free.
+- 🔴 **The lint cache lives OUTSIDE the repo, keyed by the checkout.** An earlier draft wrote
+  `.eslintcache-contracts` into the repo root — not the gitignored name, so it showed up as an
+  untracked file in `git status` — and one cache shared between worktrees would hand one tree's
+  results to another, since every worktree carries the same file names. It goes in the OS temp
+  directory under a hash of the checkout's own path, and the ESLint child's memory is reserved out
+  of the shard budget before the shards are counted, because it runs alongside them.
+
+**One gate was deliberately left out: the Office-allocation board row**
+(`tests/needs-you-office-allocation-drift.test.ts`). It is one of the gates that went red, but it
+imports `src/lib/needs-you/sources.ts` — ~45 `@/lib/**` imports including `@/lib/admin/service`,
+whose head is `getSupabaseAdmin` from `@/lib/supabase/server`. Nothing reaches the network at import
+time, but a Supabase client and `@/lib/env` land in the process, so it fails the offline rule the
+script is built on and stays a PR-time gate.
+
 ### Before every push: the PR's own CI is the verdict; `remote-check` is optional — except on a push that ADDS a test file (owner, 2026-10-12)
 
 🔴 **ONE STEP CAME BACK, FOR ONE KIND OF PUSH (owner, 2026-10-12: _"make remote-check test mandatory

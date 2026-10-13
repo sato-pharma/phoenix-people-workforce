@@ -121,6 +121,7 @@
     "weekly-design:password": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/weekly-export-design-unlock.ts --set-password",
     "weekly-design:unlock": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/weekly-export-design-unlock.ts --unlock",
     "check:unbacked": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-unbacked-branches.ts",
+    "check:contracts": "node scripts/check-contracts.mjs",
     "check:routes": "node scripts/check-routes.mjs",
     "check:no-stale-domains": "node scripts/check-no-stale-domains.mjs",
     "check:dockerfile": "node scripts/check-dockerfile.mjs",
