@@ -180,6 +180,17 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-direct-orders-probation", kind: "cron", schedule: "27 2 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-db-health-snapshot", kind: "cron", schedule: "17 */6 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-territory-restamp", kind: "cron", schedule: "20 3 * * *", graceSeconds: 2 * HOUR },
+  // Every twenty minutes, on :19/:39/:59 — three minutes no other job in the account holds, so a red
+  // execution names one job. Frequent BECAUSE a brick move applies to the mapping immediately and to
+  // the TOTALS only once its queued sales files are rebuilt: the gap between the two is a window in
+  // which every screen shows pre-move figures with nothing saying so. The قوص and أبنود moves of
+  // 2026-10-12 sat in that window for a full day. At rest it is one indexed count, so the cost of
+  // firing 72 times a day is far below the cost of a move nobody notices has half-landed.
+  // Grace is an hour: a couple of missed fires are not worth waking anyone for, an hour of silence is.
+  // Must match scripts/cronjob-sync.mjs exactly, or the heartbeat judges a job that fires perfectly
+  // well to be late. NO watchingSince: this is a NEW declaration, never a restored one, so there is
+  // no stand-down window to exempt — only a restored job carries that date.
+  { slug: "phoenix-brick-move-drain", kind: "cron", schedule: "19,39,59 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-reconciliation-check", kind: "cron", schedule: "40 4 * * *", graceSeconds: 2 * HOUR },
   // Twelve ticks inside a single hour, then 23 hours of deliberate silence. This is exactly the
   // shape a naive "expected period" calculation gets wrong — it would read the 23-hour gap as a

@@ -1,0 +1,27 @@
+-- phx_refresh_sos_fact_rollup is the ONE of the six rollup refreshes with no statement_timeout of
+-- its own, and that is why a brick move cannot finish draining itself.
+--
+-- WHAT WAS MEASURED, 2026-10-13. Draining the مدينة قنا move's 188 queued sales files, one file
+-- failed every attempt with
+--     57014  canceling statement due to statement timeout
+-- and could only be finished over a direct connection. PostgREST reaches the database as
+-- `authenticator`, whose role default is `statement_timeout=8s`, so this function has always had
+-- eight seconds — while its five siblings each set their own:
+--
+--     phx_refresh_sos_customer_directory_rollup    60s
+--     phx_refresh_marketing_roi_facts              60s
+--     phx_refresh_sos_channel_rollup              120s
+--     phx_refresh_sos_distributor_product_rollup  120s
+--     phx_refresh_sos_import_summaries            120s
+--     phx_refresh_sos_fact_rollup                 (none — the role's 8s)
+--
+-- It is also the heaviest of the six: it rebuilds a whole batch's fact rows, so the biggest files
+-- are exactly the ones that exceed eight seconds. Nothing retries past that. `refreshMovedBrickFiles`
+-- keeps the claim on a file that failed and tries it again once the claim lapses, so a file this
+-- function cannot finish is re-attempted for ever and the queue never reaches zero — which is the
+-- one way the new `phoenix-brick-move-drain` clock could run perfectly and still leave the move
+-- half-applied.
+--
+-- 120s matches the two heaviest siblings. It is a per-function ceiling, not a new default: nothing
+-- else changes, and no caller may now hold a connection longer than the route that calls it allows.
+alter function public.phx_refresh_sos_fact_rollup(uuid) set statement_timeout = '120s';

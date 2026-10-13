@@ -1611,6 +1611,7 @@ import { runVsTargetPageAreaMergePeriodTests } from "./vs-target-page-area-merge
 import { runTargetsPageAreaMergePeriodTests } from "./targets-page-area-merge-period.test.ts";
 import { runMakeItHappenTests } from "./make-it-happen.test.ts";
 import { runBrickDrilldownFollowsTheAreaMergeTests } from "./brick-drilldown-follows-the-area-merge.test.ts";
+import { runBrickMoveDrainLivenessTests } from "./brick-move-drain-liveness.test.ts";
 import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped.test.ts";
 import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-key.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
@@ -7259,6 +7260,10 @@ await runTest(
 await runTest(
   "territory re-stamp reports liveness at the COMMIT, not after the tail a deploy can cut (2026-09-04: committed 03:20:00 Cairo, container replaced 03:20:31, read as stranded for 14h)",
   runTerritoryRestampLivenessTests,
+);
+await runTest(
+  "the brick-move drain is on a clock and reports at the first rebuilt file (2026-10-12: 71 queued files sat a full day because only an open Database Mapping tab drained them)",
+  runBrickMoveDrainLivenessTests,
 );
 await runTest(
   "finance command center (deductions from committed payroll only; one round trip; unbooked predicate parity)",

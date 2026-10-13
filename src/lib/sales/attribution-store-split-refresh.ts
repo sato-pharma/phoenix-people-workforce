@@ -95,6 +95,29 @@ async function periodsOfBatch(supabase: SupabaseLike, batchId: string): Promise<
  * that silently failed to write leaves attribution applying yesterday's split, which is a wrong
  * number on everyone's Sales vs Target with no error anywhere.
  */
+/**
+ * Recompute and store the split net for an EXPLICIT list of periods.
+ *
+ * Same computation as writeStoreSplitNetForBatch and the same loader, with the batch step taken out:
+ * the caller already knows which periods it means. It exists for the brick-move drain, which has to
+ * settle a period whose net was written before the move — see brick-move-net-settle.ts for the one
+ * way that happens and why it cannot be a standing sweep.
+ *
+ * Deliberately NOT named writeStoreSplitNetForBatch: tests/attribution-store-split-net.test.ts uses
+ * that identifier as its marker for "this file writes the net before refreshing attribution", and
+ * this function's caller refreshes a PERIOD rather than a batch.
+ */
+export async function writeStoreSplitNetForPeriods(
+  supabase: SupabaseLike,
+  periods: readonly string[],
+): Promise<AttributionStoreSplitWriteResult[]> {
+  const results: AttributionStoreSplitWriteResult[] = [];
+  for (const period of periods) {
+    results.push(await writeAttributionStoreSplitNet({ loadRowsForLine, period, supabase }));
+  }
+  return results;
+}
+
 export async function writeStoreSplitNetForBatch(
   supabase: SupabaseLike,
   batchId: string,
