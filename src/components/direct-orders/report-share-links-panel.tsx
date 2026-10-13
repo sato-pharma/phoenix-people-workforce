@@ -32,6 +32,25 @@ const cairo = (iso: string | null) =>
  * reader to guess: the LIVE link is for a person and carries a passcode; the FEED url is for a
  * Google Sheet formula and cannot, so it must never be handed to a human — the sheet's own Google
  * sharing becomes the access control.
+ *
+ * LAYOUT: the owner's fits-the-screen golden rule (AGENTS.md §4). No horizontal scroll at any
+ * width. This panel broke it in three places until 2026-10-13, and the sibling CV-lifecycle screen
+ * (`recruitment/cv-lifecycle-share-links-view.tsx`) is the worked example each fix follows:
+ *
+ *   1. THE LIST WAS A SCROLL CONTAINER over a content-sized six-column table. The rule names that
+ *      shape as the bug itself, so the desktop list is now a `table-fixed` with a `<colgroup>`:
+ *      the widths are DECLARED rather than negotiated by content, which is what makes a sideways
+ *      scroll impossible instead of merely unlikely.
+ *   2. SIX COLUMNS AT 375px. Mobile gets cards — the admin shell's own rule — and the six columns
+ *      are MERGED down to four rather than shrunk: the link's type rides under its label, and the
+ *      status chip rides above its expiry date. Nothing here is smaller than it was.
+ *   3. THE TWO `<code>` BLOCKS SCROLLED SIDEWAYS. A long feed URL and a long IMPORTDATA formula
+ *      now WRAP (`break-all`), which is the permitted answer; the ellipsis ban rules out cutting
+ *      them, and a scroll inside a panel hides the tail of the one string the reader came to copy.
+ *
+ * Square corners throughout, no `rounded-*` anywhere in this file, and the panel keeps the module's
+ * own ground: `adminPanelClassName` plus `adminPanelHeaderClassName` for the dark band, which is
+ * direct-orders' depth rule and must not be swapped for a hand-written header.
  */
 export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
   const [links, setLinks] = useState<DirectOrderShareLink[]>([]);
@@ -241,7 +260,9 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
                 <p className="text-phx-sm font-black text-emerald-900">
                   Paste this into cell A1 of a new Google Sheet:
                 </p>
-                <code className="block overflow-x-auto whitespace-nowrap border border-emerald-200 bg-white px-2 py-1.5 text-phx-xs">
+                {/* `break-all`, not a scroll container: the golden rule forbids a horizontal
+                    scroll and the ellipsis ban forbids cutting it, so a long formula wraps. */}
+                <code className="block break-all border border-emerald-200 bg-white px-2 py-1.5 text-phx-xs">
                   {formula(created.token)}
                 </code>
                 <button type="button" onClick={() => copy(formula(created.token), "formula")} className="bg-slate-900 px-3 py-1.5 text-phx-xs font-bold text-white">
@@ -259,7 +280,8 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
             ) : (
               <>
                 <p className="text-phx-sm font-black text-emerald-900">Send this link, and the passcode separately:</p>
-                <code className="block overflow-x-auto whitespace-nowrap border border-emerald-200 bg-white px-2 py-1.5 text-phx-xs">
+                {/* Same reason as the formula above — a long share URL wraps, never scrolls. */}
+                <code className="block break-all border border-emerald-200 bg-white px-2 py-1.5 text-phx-xs">
                   {liveUrl(created.token)}
                 </code>
                 <button type="button" onClick={() => copy(liveUrl(created.token), "link")} className="bg-slate-900 px-3 py-1.5 text-phx-xs font-bold text-white">
@@ -271,47 +293,119 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
         ) : null}
 
         {links.length > 0 ? (
-          <div className="overflow-x-auto border-t border-[#eef1f3] pt-3">
-            <table className="w-full text-left text-phx-sm">
-              <thead>
-                <tr className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
-                  <th className="px-2 py-1">Label</th>
-                  <th className="px-2 py-1">Type</th>
-                  <th className="px-2 py-1">Expires</th>
-                  <th className="px-2 py-1">Opens</th>
-                  <th className="px-2 py-1">Status</th>
-                  <th className="px-2 py-1"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {links.map((link) => {
-                  const dead = Boolean(link.revokedAt) || new Date(link.expiresAt).getTime() < loadedAtMs;
-                  return (
-                    <tr key={link.id} className="border-t border-[#f1f4f6]">
-                      <td className="px-2 py-1.5 font-semibold text-slate-800">{link.label ?? "—"}</td>
-                      <td className="px-2 py-1.5 text-slate-600">{link.surface === "feed" ? "Sheets feed" : "Live link"}</td>
-                      <td className="px-2 py-1.5 text-slate-600">{cairo(link.expiresAt)}</td>
-                      <td className="px-2 py-1.5 tabular-nums text-slate-700">{link.accessCount}</td>
-                      <td className="px-2 py-1.5">
-                        <span className={`px-1.5 py-0.5 text-phx-xs font-black ${dead ? "bg-slate-200 text-slate-600" : "bg-emerald-100 text-emerald-800"}`}>
-                          {link.revokedAt ? "revoked" : dead ? "expired" : "active"}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {!dead ? (
-                          <button type="button" onClick={() => revoke(link.id)} className="text-phx-xs font-bold text-rose-600 hover:underline">
-                            Revoke
-                          </button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="border-t border-[#eef1f3] pt-3">
+            {/* Desktop. `table-fixed` + `<colgroup>` so the widths are DECLARED rather than
+                negotiated by content — which is what makes a horizontal scroll impossible. Six
+                columns became four by MERGING: the type rides under the label, the status chip
+                above the expiry date. Nothing was made smaller to fit. */}
+            <div className="hidden md:block">
+              <table className="w-full table-fixed text-left text-phx-sm">
+                <colgroup>
+                  <col className="w-[42%]" />
+                  <col className="w-[26%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[18%]" />
+                </colgroup>
+                <thead>
+                  <tr className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                    <th className="px-2 py-1">Link</th>
+                    <th className="px-2 py-1">Expires</th>
+                    <th className="px-2 py-1">Opens</th>
+                    <th className="px-2 py-1">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {links.map((link) => {
+                    const state = linkState(link, loadedAtMs);
+                    return (
+                      <tr key={link.id} className="border-t border-[#f1f4f6] align-top">
+                        <td className="px-2 py-1.5">
+                          <span className="block break-words font-semibold text-slate-800">
+                            {link.label ?? "Unlabelled link"}
+                          </span>
+                          <span className="mt-0.5 block break-words text-phx-xs text-slate-500">
+                            {surfaceName(link.surface)}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <StatusChip state={state} />
+                          <span className="mt-0.5 block break-words text-slate-600">{cairo(link.expiresAt)}</span>
+                        </td>
+                        <td className="px-2 py-1.5 tabular-nums text-slate-700">{link.accessCount}</td>
+                        <td className="px-2 py-1.5">
+                          {state === "active" ? (
+                            <button type="button" onClick={() => revoke(link.id)} className="text-phx-xs font-bold text-rose-600 hover:underline">
+                              Revoke
+                            </button>
+                          ) : (
+                            <span className="text-phx-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile: cards, never a table — the admin shell's own rule, and the only honest way
+                to show five facts on a 375px screen without shrinking type or cutting text. */}
+            <ul className="divide-y divide-[#f1f4f6] md:hidden">
+              {links.map((link) => {
+                const state = linkState(link, loadedAtMs);
+                return (
+                  <li key={link.id} className="space-y-1.5 py-2.5 first:pt-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusChip state={state} />
+                      <span className="break-words text-phx-sm font-semibold text-slate-800">
+                        {link.label ?? "Unlabelled link"}
+                      </span>
+                    </div>
+                    <p className="break-words text-phx-xs text-slate-500">
+                      {surfaceName(link.surface)} · expires {cairo(link.expiresAt)}
+                    </p>
+                    <p className="break-words text-phx-xs text-slate-500">
+                      {link.accessCount} open{link.accessCount === 1 ? "" : "s"}
+                    </p>
+                    {state === "active" ? (
+                      <button type="button" onClick={() => revoke(link.id)} className="border border-rose-300 px-2 py-1 text-phx-xs font-bold text-rose-600 hover:bg-rose-50">
+                        Revoke
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         ) : null}
       </div>
     </section>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Presentation helpers
+//
+// Shared by the desktop row and the mobile card deliberately: the two layouts show the SAME link,
+// so a verdict computed twice is two answers to one question, and the first disagreement between
+// them would be invisible — nobody opens both widths at once.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type LinkState = "active" | "expired" | "revoked";
+
+/** Revoked outranks expired: a link somebody killed is not a link that lapsed. */
+function linkState(link: DirectOrderShareLink, nowMs: number): LinkState {
+  if (link.revokedAt) return "revoked";
+  // `nowMs` is the stamp captured alongside the fetch, so it is 0 before the first load — and
+  // `expiresAt < 0` is false, which is why an unloaded list shows nothing as expired.
+  return new Date(link.expiresAt).getTime() < nowMs ? "expired" : "active";
+}
+
+function surfaceName(surface: DirectOrderShareLink["surface"]): string {
+  return surface === "feed" ? "Sheets feed" : "Live link";
+}
+
+function StatusChip({ state }: { state: LinkState }) {
+  const tone = state === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600";
+  return <span className={`inline-block px-1.5 py-0.5 text-phx-xs font-black ${tone}`}>{state}</span>;
 }
