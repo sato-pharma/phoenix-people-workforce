@@ -95,16 +95,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // 🔴 ANTI INFECTIVE ONLY, the same one gate the portal path asks — owner, 2026-10-13: "wire this
-    // only to the anti-infective line. Leave PD and CNS as they are." Refused in plain words rather
-    // than quietly handed the ordinary workbook: this button was clicked for the ranking, and a
-    // different file arriving under that name is how a reader ends up quoting the wrong sheet.
+    // 🔴 THE DRESSED LINES ONLY, through the same one gate the portal path asks — owner,
+    // 2026-10-13: "wire this only to the anti-infective line. Leave PD and CNS as they are", and
+    // then, the same day, "now use the CNS identity to make the new identity ranking rep closing
+    // sheet ... for CNS with CNS identity". Refused in plain words rather than quietly handed the
+    // ordinary workbook: this button was clicked for the ranking, and a different file arriving
+    // under that name is how a reader ends up quoting the wrong sheet.
     if (!isRepRankingLine(details.line)) {
       return Response.json(
         {
           error:
-            `The rep ranking workbook is built for the Anti Infective line only, so it cannot be`
-            + ` produced for ${details.line}. Use Export XLSX for that line's own closing workbook.`,
+            `The rep ranking workbook is built only for the lines that have an identity to wear,`
+            + ` so it cannot be produced for ${details.line}. Use Export XLSX for that line's own`
+            + ` closing workbook.`,
         },
         { status: 400 },
       );
@@ -160,8 +163,8 @@ export async function POST(request: Request) {
       return Response.json(
         {
           error:
-            "The rep ranking workbook could not be built for this month — the Anti Infective closing"
-            + " has no rows, no seats or no figures for it. Export XLSX still works.",
+            `The rep ranking workbook could not be built for this month — the ${details.line}`
+            + " closing has no rows, no seats or no figures for it. Export XLSX still works.",
         },
         { status: 409 },
       );

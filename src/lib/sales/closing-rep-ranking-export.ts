@@ -24,9 +24,10 @@ import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-impor
 // ─────────────────────────────────────────────────────────────────────────────
 // THE ONE ENTRY POINT THE EXPORT ROUTE CALLS.
 //
-// 🔴 ANTI INFECTIVE ONLY (owner, 2026-10-13: "wire this only to the anti-infective line. Leave PD
-// and CNS as they are"). Every other line keeps the workbook it has, untouched — `isRepRankingLine`
-// is the single gate, so there is one place to read and one place to change if he widens it.
+// 🔴 THE DRESSED LINES ONLY — Anti Infective, then CNS, which he added the same day ("now use the
+// CNS identity to make the new identity ranking rep closing sheet ... for CNS with CNS identity").
+// Every other line keeps the workbook it has, untouched — `isRepRankingLine` is the single gate, so
+// there is one place to read and one place to change when he widens it again.
 //
 // This exists because a route must not orchestrate a domain: the figures, the scope, the seat model
 // and the warehouse carve are all sales rules, and the route's job is to answer HTTP. It returns

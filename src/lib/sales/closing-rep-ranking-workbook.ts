@@ -5,6 +5,10 @@ import ExcelJS from "exceljs";
 
 import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
 import { type ClosingRepRankingCarve, type RepRanking } from "@/lib/sales/closing-rep-ranking";
+import {
+  rankingDressFor,
+  type RankingDress,
+} from "@/lib/sales/closing-ranking-dress";
 import { CLOSING_ROWS_SHEET_NAME, closingRowsSheetSpec } from "@/lib/sales/closing-rows-sheet";
 import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
 import {
@@ -17,36 +21,35 @@ import {
 } from "@/lib/sales/closing-rep-ranking-legacy-shape";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// THE ANTI INFECTIVE REP RANKING WORKBOOK, wearing the Anti-Infective identity.
+// THE REP RANKING WORKBOOK, wearing ITS LINE'S OWN IDENTITY.
 //
-// This is the file an Anti Infective viewer downloads from the employee portal's Monthly Closing
-// (owner, 2026-10-13: "wire this sheet instead of the current sheet in the employee portal … forget
-// about the other sheet. This will replace it in the employee portal, any role" — and, the same
-// message, "everyone his scope, not me"). It replaces the frozen export for THIS LINE ONLY; CNS and
-// Pedia keep the workbook they have (his words, same message: "wire this only to the anti-infective
-// line. Leave PD and CNS as they are").
+// This is the file a viewer downloads from the employee portal's Monthly Closing, and from the admin
+// closing screen's third export button (owner, 2026-10-13: "wire this sheet instead of the current
+// sheet in the employee portal ... forget about the other sheet. This will replace it in the employee
+// portal, any role" - and, the same message, "everyone his scope, not me").
 //
-// WHAT WEARS WHAT. The identity is an EVENT look built for a 2480-wide one sheet: a radial navy
-// field, grain, a vignette, a red/blue seam, letter-spaced micro labels, a box-reflect under the
+// 🔴 ONE BUILDER, TWO IDENTITIES, AND NEVER A COPY OF IT. It opened on Anti Infective alone ("wire
+// this only to the anti-infective line. Leave PD and CNS as they are") and he widened it the same
+// day: "now use the CNS identity to make the new identity ranking rep closing sheet, exactly as you
+// did for anti-infective, but for CNS with CNS identity." So every line-specific colour, folder and
+// sentence lives in `closing-ranking-dress.ts` and arrives here as ONE record. Pedia still keeps the
+// workbook it already had. A line with no dress has no ranking workbook at all - `isRepRankingLine`
+// is the gate, and it is pinned to the dress registry by a test so the two cannot drift.
+//
+// WHAT WEARS WHAT. Each identity is an EVENT look built for a 2480-wide rendered piece: a radial
+// field, grain, a vignette, a two-colour seam, letter-spaced micro labels, a box-reflect under the
 // cartons. Excel can do none of those. So the piece is split:
 //
-//   THE CHROME IS RENDERED, NOT IMITATED. The masthead and the sheet strips are real pixels from the
-//   identity's own one-sheet render at its own width, with real Playfair, Inter and Cairo, committed
-//   under public/brand/anti-infective-ranking/. Nothing about the navy field, the seam, the cartons
-//   or the Arabic wordmark is approximated in cells.
+//   THE CHROME IS RENDERED, NOT IMITATED. The masthead and the sheet strips are real pixels from
+//   that identity's own reference render at its own width, with its own self-hosted typefaces,
+//   committed under public/brand/<line>-ranking/. Nothing about the field, the seam, the cartons or
+//   the Arabic wordmark is approximated in cells.
 //
 //   THE TABLE WEARS THE IDENTITY'S TOKENS. Fills, rules, inks and bars are things Excel does
-//   natively, so they use the identity's own hex values — ink #0a1322, hair #dde4e8, soft #69757e,
-//   Royafloxacin red #d20000 and its #8e0000, Saginkgo blue #0384db, the navy field's #001641 for the
-//   keycard ground, eyebrow blue #67c2f6 for their labels.
+//   natively, so they use that identity's own hex values - `dress.colours`, and nowhere else.
 //
-// WHAT IS NOT THE IDENTITY'S, AND IS SAID SO ON THE TRUST SHEET:
-//   · the zebra. The identity has no table, so no zebra token. Derived: its navy at 4% on white.
-//   · the probation yellow. The identity has no yellow at all. Kept because the owner asked for the
-//     marker by name.
-//   · the body typeface. The identity's is Inter, which is not a font a server can assume Excel has,
-//     so naming it would silently substitute. Cells use Calibri and the Trust sheet says so; the
-//     rendered chrome carries real Inter, because the renderer had it.
+//   WHAT IS NOT THE IDENTITY'S IS SAID SO ON THE TRUST SHEET, in that line's own words, because the
+//   facts differ: the CNS identity has a zebra of its own and the Anti-Infective identity has none.
 //
 // THE FIGURES ARE NEVER COMPUTED HERE. Every one arrives in `RepRanking`, lifted out of the
 // published closing (closing-rep-ranking.ts). Absence is never a zero, a seat with no target is
@@ -54,9 +57,12 @@ import {
 // over value and never a mean of percentages, and units are never added across product codes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Where the rendered identity chrome lives, relative to the server's working directory. */
-export const RANKING_BANNER_DIR = path.join("public", "brand", "anti-infective-ranking");
-
+/**
+ * The ten files every line's chrome folder holds, under the same names.
+ *
+ * The FOLDER is the dress's (`dress.bannerDir`); the names are shared, so a second identity is a
+ * second folder of ten renders rather than a second table of filenames to keep in step.
+ */
 const BANNER_FILES = {
   districts: "strip-districts.png",
   filter: "strip-filter.png",
@@ -73,27 +79,19 @@ const BANNER_FILES = {
 type BannerKey = keyof typeof BANNER_FILES;
 
 // ---------------------------------------------------------------------------
-// THE IDENTITY'S OWN TOKENS — lifted from the one-sheet reference's :root
+// THE TOKENS THAT ARE THE SAME ON EVERY LINE.
+//
+// The house inks, which all three sibling identities share unchanged, plus the probation marker,
+// which is NOT any identity's - the owner asked for it in yellow by name. Everything that changes
+// with the line is in `dress.colours`.
 // ---------------------------------------------------------------------------
-const ROYA = "FFD20000";
-const ROYA_LO = "FF8E0000";
-const SAG = "FF0384DB";
 const INK = "FF0A1322";
 const SOFT = "FF69757E";
 const HAIR = "FFDDE4E8";
-const NAVY_FIELD = "FF001641";
-const BASE_NAVY = "FF000A26";
-const EYEBROW = "FF67C2F6";
 const LABEL_GREY = "FF8C98A4";
-// derived, and named as derived on the Trust sheet
-const ZEBRA = "FFF5F7FA";
-const VACANT_FILL = "FFFBE5E5";
-const VACANT_TEXT = ROYA_LO;
-// NOT the identity's — the owner asked for the probation marker by name
+// NOT any identity's — the owner asked for the probation marker by name
 const PROB_FILL = "FFFFF2C2";
 const PROB_TEXT = "FF7A4F00";
-/** The matrix's own subtotal band — the identity's navy at about 10%. Carries a manager's line. */
-const TEAM_BAND = "FFE8EEF5";
 const FONT = "Calibri";
 
 const money = "#,##0;-#,##0";
@@ -173,8 +171,18 @@ class RankingWorkbook {
   // that shorthand would make this builder untestable.
   private readonly subtitlePrefix: string;
 
-  constructor(subtitlePrefix: string) {
+  /**
+   * What this line's workbook wears — the only place the builder learns a colour or a folder.
+   *
+   * 🔴 NOT NAMED `dress`: this class already has a METHOD called `dress`, which sets a sheet's page
+   * setup and footer, and a field of that name assigned in the constructor shadows the prototype
+   * method outright. It compiles, and then every sheet dies on `book.dress is not a function`.
+   */
+  readonly identity: RankingDress;
+
+  constructor(subtitlePrefix: string, identity: RankingDress) {
     this.subtitlePrefix = subtitlePrefix;
+    this.identity = identity;
     this.workbook.creator = "Sato Pharma - Phoenix Workforce";
     this.workbook.created = new Date();
   }
@@ -189,7 +197,7 @@ class RankingWorkbook {
     if (existing !== undefined) return existing;
     let base64 = this.bannerBytes.get(key);
     if (base64 === undefined) {
-      base64 = readFileSync(path.join(process.cwd(), RANKING_BANNER_DIR, BANNER_FILES[key])).toString("base64");
+      base64 = readFileSync(path.join(process.cwd(), this.identity.bannerDir, BANNER_FILES[key])).toString("base64");
       this.bannerBytes.set(key, base64);
     }
     const id = this.workbook.addImage({ base64, extension: "png" });
@@ -246,180 +254,210 @@ class RankingWorkbook {
 
 type Keycard = { colour?: Argb; fmt?: string; label: string; sub: string; value: string | number };
 
-function keycards(sheet: Sheet, row: number, cards: readonly Keycard[], widthCols: number): number {
-  // the identity's navy, its eyebrow blue for the label, white for the figure
-  const span = Math.max(2, Math.floor(widthCols / cards.length));
-  cards.forEach((card, index) => {
-    const first = index * span + 1;
-    const last = index === cards.length - 1 ? widthCols : first + span - 1;
-    const lines: Array<[number, string | number, Partial<ExcelJS.Font>, string | null]> = [
-      [row, card.label, { bold: true, color: { argb: EYEBROW }, name: FONT, size: 8 }, null],
-      [row + 1, card.value, { bold: true, color: { argb: card.colour ?? "FFFFFFFF" }, name: FONT, size: 18 }, card.fmt ?? null],
-      [row + 2, card.sub, { color: { argb: "FFA9B6C2" }, name: FONT, size: 8 }, null],
-    ];
-    for (const [at, value, font, numFmt] of lines) {
-      sheet.mergeCells(at, first, at, last);
-      const target = sheet.getCell(at, first);
-      target.value = value;
-      target.font = font;
-      target.alignment = CENTRE;
-      target.fill = { fgColor: { argb: NAVY_FIELD }, pattern: "solid", type: "pattern" };
-      if (numFmt) target.numFmt = numFmt;
+/**
+ * The sheet helpers, bound to one build's dress.
+ *
+ * A FACTORY RATHER THAN MODULE CONSTANTS, and rather than a dress argument on each of them. These
+ * are called about a hundred and twenty times between them, so threading a parameter through every
+ * call site would be a hundred and twenty chances to pass the wrong line's colour; and module-level
+ * mutable state would be shared by two viewers exporting different lines in the same process, which
+ * is the same reason the banner registry lives on the instance. One closure per build, no argument,
+ * and a helper cannot see any colour but its own line's.
+ */
+function dressedHelpers(dress: RankingDress) {
+  const {
+    covered: COVERED,
+    field: FIELD,
+    seamLeft: SEAM_LEFT,
+    seamRight: SEAM_RIGHT,
+    vacantFill: VACANT_FILL,
+    zebra: ZEBRA,
+  } = dress.colours;
+  const EYEBROW = dress.colours.eyebrow;
+  const SUB = dress.colours.keycardSub;
+  // A vacant seat is written in the alarm colour's deeper tone, which is the one that holds on white.
+  const VACANT_TEXT = dress.colours.shortDeep;
+
+  function keycards(sheet: Sheet, row: number, cards: readonly Keycard[], widthCols: number): number {
+    // the field for the ground, the identity's eyebrow for the label, white for the figure
+    const span = Math.max(2, Math.floor(widthCols / cards.length));
+    cards.forEach((card, index) => {
+      const first = index * span + 1;
+      const last = index === cards.length - 1 ? widthCols : first + span - 1;
+      const lines: Array<[number, string | number, Partial<ExcelJS.Font>, string | null]> = [
+        [row, card.label, { bold: true, color: { argb: EYEBROW }, name: FONT, size: 8 }, null],
+        [row + 1, card.value, { bold: true, color: { argb: card.colour ?? "FFFFFFFF" }, name: FONT, size: 18 }, card.fmt ?? null],
+        [row + 2, card.sub, { color: { argb: SUB }, name: FONT, size: 8 }, null],
+      ];
+      for (const [at, value, font, numFmt] of lines) {
+        sheet.mergeCells(at, first, at, last);
+        const target = sheet.getCell(at, first);
+        target.value = value;
+        target.font = font;
+        target.alignment = CENTRE;
+        target.fill = { fgColor: { argb: FIELD }, pattern: "solid", type: "pattern" };
+        if (numFmt) target.numFmt = numFmt;
+      }
+    });
+    sheet.getRow(row).height = 11;
+    sheet.getRow(row + 1).height = 24;
+    sheet.getRow(row + 2).height = 11;
+
+    // THE SEAM — the identity's signature, closing the field into the white below it
+    const seamRow = row + 3;
+    const half = Math.ceil(widthCols / 2);
+    for (let col = 1; col <= widthCols; col += 1) {
+      sheet.getCell(seamRow, col).fill = {
+        fgColor: { argb: col <= half ? SEAM_LEFT : SEAM_RIGHT },
+        pattern: "solid",
+        type: "pattern",
+      };
     }
-  });
-  sheet.getRow(row).height = 11;
-  sheet.getRow(row + 1).height = 24;
-  sheet.getRow(row + 2).height = 11;
-
-  // THE SEAM — the identity's signature, closing the navy into the white below it
-  const seamRow = row + 3;
-  const half = Math.ceil(widthCols / 2);
-  for (let col = 1; col <= widthCols; col += 1) {
-    sheet.getCell(seamRow, col).fill = {
-      fgColor: { argb: col <= half ? ROYA : SAG },
-      pattern: "solid",
-      type: "pattern",
-    };
+    sheet.getRow(seamRow).height = 4;
+    return seamRow + 1;
   }
-  sheet.getRow(seamRow).height = 4;
-  return seamRow + 1;
-}
 
-function sectionLabel(sheet: Sheet, row: number, label: string, note: string | null, widthCols: number): number {
-  sheet.mergeCells(row, 1, row, widthCols);
-  const target = sheet.getCell(row, 1);
-  target.value = note ? `${label}      ${note}` : label;
-  target.font = bold(10, SOFT);
-  target.alignment = CENTRE;
-  sheet.getRow(row).height = 13;
-  return row + 1;
-}
-
-function headerRow(sheet: Sheet, row: number, labels: readonly string[], widths: readonly number[]): number {
-  labels.forEach((label, index) => {
-    const target = sheet.getCell(row, index + 1);
-    target.value = label;
-    target.font = { bold: true, color: { argb: INK }, name: FONT, size: 9 };
+  function sectionLabel(sheet: Sheet, row: number, label: string, note: string | null, widthCols: number): number {
+    sheet.mergeCells(row, 1, row, widthCols);
+    const target = sheet.getCell(row, 1);
+    target.value = note ? `${label}      ${note}` : label;
+    target.font = bold(10, SOFT);
     target.alignment = CENTRE;
-    target.border = { bottom: rule(INK), top: rule(HAIR, "hair") };
-  });
-  widths.forEach((width, index) => {
-    sheet.getColumn(index + 1).width = width;
-  });
-  sheet.getRow(row).height = 26;
-  return row + 1;
-}
+    sheet.getRow(row).height = 13;
+    return row + 1;
+  }
 
-function cell(
-  sheet: Sheet,
-  row: number,
-  col: number,
-  value: string | number | null,
-  options: CellOptions = {},
-): ExcelJS.Cell {
-  const target = sheet.getCell(row, col);
-  target.value = value;
-  target.font = (options.font ?? text(options.size ?? 10, options.muted ? SOFT : options.color ?? INK)) as ExcelJS.Font;
-  target.alignment = CENTRE;
-  if (options.numFmt) target.numFmt = options.numFmt;
-  if (options.fill) target.fill = { fgColor: { argb: options.fill }, pattern: "solid", type: "pattern" };
-  else if (options.zebra) target.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
-  target.border = {
-    bottom: rule(HAIR, "hair"),
-    ...(options.bracket ? { left: rule(options.bracket, "medium") } : {}),
-  };
-  return target;
-}
+  function headerRow(sheet: Sheet, row: number, labels: readonly string[], widths: readonly number[]): number {
+    labels.forEach((label, index) => {
+      const target = sheet.getCell(row, index + 1);
+      target.value = label;
+      target.font = { bold: true, color: { argb: INK }, name: FONT, size: 9 };
+      target.alignment = CENTRE;
+      target.border = { bottom: rule(INK), top: rule(HAIR, "hair") };
+    });
+    widths.forEach((width, index) => {
+      sheet.getColumn(index + 1).width = width;
+    });
+    sheet.getRow(row).height = 26;
+    return row + 1;
+  }
 
-function totalRow(sheet: Sheet, row: number, cols: number): void {
-  for (let col = 1; col <= cols; col += 1) {
+  function cell(
+    sheet: Sheet,
+    row: number,
+    col: number,
+    value: string | number | null,
+    options: CellOptions = {},
+  ): ExcelJS.Cell {
     const target = sheet.getCell(row, col);
-    target.font = { bold: true, color: { argb: INK }, name: FONT, size: 10 };
+    target.value = value;
+    target.font = (options.font ?? text(options.size ?? 10, options.muted ? SOFT : options.color ?? INK)) as ExcelJS.Font;
     target.alignment = CENTRE;
-    target.border = { bottom: rule(INK, "hair"), top: rule(INK) };
+    if (options.numFmt) target.numFmt = options.numFmt;
+    if (options.fill) target.fill = { fgColor: { argb: options.fill }, pattern: "solid", type: "pattern" };
+    else if (options.zebra) target.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+    target.border = {
+      bottom: rule(HAIR, "hair"),
+      ...(options.bracket ? { left: rule(options.bracket, "medium") } : {}),
+    };
+    return target;
   }
-  sheet.getRow(row).height = 19;
-}
 
-function footnote(sheet: Sheet, row: number, lines: readonly string[], widthCols: number): number {
-  let at = row;
-  for (const line of lines) {
-    sheet.mergeCells(at, 1, at, widthCols);
-    const target = sheet.getCell(at, 1);
-    target.value = line;
-    target.font = text(8.5, SOFT) as ExcelJS.Font;
-    target.alignment = { horizontal: "center", vertical: "top", wrapText: true };
-    sheet.getRow(at).height = Math.max(12, Math.ceil(line.length / (widthCols * 11)) * 11);
-    at += 1;
+  function totalRow(sheet: Sheet, row: number, cols: number): void {
+    for (let col = 1; col <= cols; col += 1) {
+      const target = sheet.getCell(row, col);
+      target.font = { bold: true, color: { argb: INK }, name: FONT, size: 10 };
+      target.alignment = CENTRE;
+      target.border = { bottom: rule(INK, "hair"), top: rule(INK) };
+    }
+    sheet.getRow(row).height = 19;
   }
-  return at;
-}
 
-function dataBar(sheet: Sheet, ref: string, options: { color?: Argb; max?: number | null } = {}): void {
-  const { color = SAG, max = null } = options;
-  sheet.addConditionalFormatting({
-    ref,
-    rules: [
-      {
-        cfvo: [{ type: "num", value: 0 }, max == null ? { type: "max" } : { type: "num", value: max }],
-        color: { argb: color },
-        gradient: true,
-        priority: 1,
-        type: "dataBar",
-      } as unknown as ExcelJS.ConditionalFormattingRule,
-    ],
-  });
-}
+  function footnote(sheet: Sheet, row: number, lines: readonly string[], widthCols: number): number {
+    let at = row;
+    for (const line of lines) {
+      sheet.mergeCells(at, 1, at, widthCols);
+      const target = sheet.getCell(at, 1);
+      target.value = line;
+      target.font = text(8.5, SOFT) as ExcelJS.Font;
+      target.alignment = { horizontal: "center", vertical: "top", wrapText: true };
+      sheet.getRow(at).height = Math.max(12, Math.ceil(line.length / (widthCols * 11)) * 11);
+      at += 1;
+    }
+    return at;
+  }
 
-function colourScale(sheet: Sheet, ref: string): void {
-  sheet.addConditionalFormatting({
-    ref,
-    rules: [
-      {
-        cfvo: [{ type: "min" }, { type: "percentile", value: 50 }, { type: "max" }],
-        color: [{ argb: "FFFFFFFF" }, { argb: "FFDCEAF6" }, { argb: "FF9ACBEA" }],
-        priority: 2,
-        type: "colorScale",
-      } as unknown as ExcelJS.ConditionalFormattingRule,
-    ],
-  });
-}
-
-/**
- * How tall an outlined sub-row must be to hold a wrapped name. The owner's rule is that text WRAPS
- * and is never cut, so a fixed short row on a wrapping cell is a truncation by another name.
- */
-function nameRowHeight(name: string | null | undefined, widthChars: number): number {
-  const chars = String(name ?? "").length + 3; // the arrow and its spaces
-  const lines = Math.max(1, Math.ceil(chars / Math.max(8, widthChars - 1)));
-  return 13 * lines;
-}
-
-/**
- * A rep's name cell. Vacant wears the identity's red, a rep inside his probation period wears the
- * yellow — on the NAME cell alone, so it reads as a fact about the person and not about the seat's
- * numbers.
- */
-function nameCell(
-  sheet: Sheet,
-  row: number,
-  col: number,
-  who: LegacyWho,
-  options: { zebra: boolean },
-): ExcelJS.Cell {
-  if (who.vacant) {
-    return cell(sheet, row, col, who.rep, {
-      fill: VACANT_FILL,
-      font: { bold: true, color: { argb: VACANT_TEXT }, name: FONT, size: 10 },
+  function dataBar(sheet: Sheet, ref: string, options: { color?: Argb; max?: number | null } = {}): void {
+    const { color = COVERED, max = null } = options;
+    sheet.addConditionalFormatting({
+      ref,
+      rules: [
+        {
+          cfvo: [{ type: "num", value: 0 }, max == null ? { type: "max" } : { type: "num", value: max }],
+          color: { argb: color },
+          gradient: true,
+          priority: 1,
+          type: "dataBar",
+        } as unknown as ExcelJS.ConditionalFormattingRule,
+      ],
     });
   }
-  if (who.repProbation) {
-    return cell(sheet, row, col, who.rep, {
-      fill: PROB_FILL,
-      font: { bold: true, color: { argb: PROB_TEXT }, name: FONT, size: 10 },
+
+  function colourScale(sheet: Sheet, ref: string): void {
+    sheet.addConditionalFormatting({
+      ref,
+      rules: [
+        {
+          cfvo: [{ type: "min" }, { type: "percentile", value: 50 }, { type: "max" }],
+          color: [{ argb: "FFFFFFFF" }, { argb: "FFDCEAF6" }, { argb: "FF9ACBEA" }],
+          priority: 2,
+          type: "colorScale",
+        } as unknown as ExcelJS.ConditionalFormattingRule,
+      ],
     });
   }
-  return cell(sheet, row, col, who.rep, { zebra: options.zebra });
+
+  /**
+   * How tall an outlined sub-row must be to hold a wrapped name. The owner's rule is that text WRAPS
+   * and is never cut, so a fixed short row on a wrapping cell is a truncation by another name.
+   */
+  function nameRowHeight(name: string | null | undefined, widthChars: number): number {
+    const chars = String(name ?? "").length + 3; // the arrow and its spaces
+    const lines = Math.max(1, Math.ceil(chars / Math.max(8, widthChars - 1)));
+    return 13 * lines;
+  }
+
+  /**
+   * A rep's name cell. Vacant wears the identity's red, a rep inside his probation period wears the
+   * yellow — on the NAME cell alone, so it reads as a fact about the person and not about the seat's
+   * numbers.
+   */
+  function nameCell(
+    sheet: Sheet,
+    row: number,
+    col: number,
+    who: LegacyWho,
+    options: { zebra: boolean },
+  ): ExcelJS.Cell {
+    if (who.vacant) {
+      return cell(sheet, row, col, who.rep, {
+        fill: VACANT_FILL,
+        font: { bold: true, color: { argb: VACANT_TEXT }, name: FONT, size: 10 },
+      });
+    }
+    if (who.repProbation) {
+      return cell(sheet, row, col, who.rep, {
+        fill: PROB_FILL,
+        font: { bold: true, color: { argb: PROB_TEXT }, name: FONT, size: 10 },
+      });
+    }
+    return cell(sheet, row, col, who.rep, { zebra: options.zebra });
+  }
+
+  return {
+    cell, colourScale, dataBar, footnote, headerRow, keycards, nameCell, nameRowHeight,
+    sectionLabel, totalRow,
+  };
 }
 
 export type RepRankingWorkbookResult = {
@@ -571,7 +609,21 @@ type MonthRow = {
 };
 
 /**
- * Build the Anti Infective rep-ranking workbook for one already-scoped, already-published month.
+ * A line reached the builder with no dress — a programming error, never a plainer file.
+ *
+ * `isRepRankingLine` has already refused an undressed line at the route AND at the screen's button,
+ * so arriving here means those two lists have drifted apart, and the right answer is to say so
+ * loudly rather than to ship a workbook in another line's colours.
+ */
+function noRankingDress(line: string): never {
+  throw new Error(
+    `No ranking dress for line "${line}" - isRepRankingLine and closing-ranking-dress.ts disagree `
+    + "about which lines have a ranking workbook",
+  );
+}
+
+/**
+ * Build one line's rep-ranking workbook for an already-scoped, already-published month.
  *
  * Every figure comes out of `ranking`; this function only arranges and dresses them. The sheets
  * below are the build the owner signed off on 2026-10-13, carried over with their arrangement, their
@@ -600,7 +652,32 @@ export async function buildRepRankingWorkbook(input: {
   const { ranking } = input;
   const L = toLegacyShape(ranking, input.probationByName, input.carve, input.publications ?? []);
 
-  const book = new RankingWorkbook(`${ranking.line} Rep Ranking`);
+  // 🔴 THE DRESS IS RESOLVED BEFORE A SINGLE CELL IS DRAWN, and a line without one is a programming
+  // error rather than a plainer file: `isRepRankingLine` has already refused an undressed line at
+  // the route AND at the screen's button, so arriving here means those two lists have drifted apart
+  // and the right answer is to say so loudly, not to ship a workbook in another line's colours.
+  // 🔴 `?? noRankingDress(...)` RATHER THAN AN `if (!dress) throw`: the sheets below are nested
+  // functions, and a narrowing that happens in the enclosing body does not reach inside them under
+  // the gate's compiler — four `TS18047: 'dress' is possibly 'null'` on the Trust sheet, which the
+  // unit suite cannot see because it type-STRIPS. A helper returning `never` makes the binding
+  // non-nullable at the declaration, where every closure can see it.
+  const dress = rankingDressFor(ranking.line) ?? noRankingDress(ranking.line);
+  const {
+    base: BASE,
+    covered: COVERED,
+    eyebrow: EYEBROW,
+    field: FIELD,
+    short: SHORT,
+    shortDeep: SHORT_DEEP,
+    teamBand: TEAM_BAND,
+    vacantKeycard: VACANT_CARD,
+  } = dress.colours;
+  const {
+    cell, colourScale, dataBar, footnote, headerRow, keycards, nameCell, nameRowHeight,
+    sectionLabel, totalRow,
+  } = dressedHelpers(dress);
+
+  const book = new RankingWorkbook(`${ranking.line} Rep Ranking`, dress);
   const wb = book.workbook;
 
   // The names the sheets below were written and break-tested against.
@@ -639,7 +716,7 @@ export async function buildRepRankingWorkbook(input: {
 
   function sheetRanking() {
     const COLS = HEADS.length;
-    const ws = book.dress(wb.addWorksheet("Ranking", { properties: { tabColor: { argb: NAVY_FIELD } } }), monthName(PERIOD));
+    const ws = book.dress(wb.addWorksheet("Ranking", { properties: { tabColor: { argb: FIELD } } }), monthName(PERIOD));
     const { rows, ranked, total } = SEATS;
     const t = lineTarget(PERIOD);
     const a = achievement(total, t);
@@ -654,7 +731,7 @@ export async function buildRepRankingWorkbook(input: {
       { label: "TARGET", value: t, fmt: money, sub: `${rows.length} seats, ${ranked} with a target` },
       { label: "ACHIEVEMENT", value: a ?? "no target", fmt: a == null ? undefined : pct,
         sub: a == null ? "no seat on this line carries a target" : a >= 1 ? `ahead by ${((a - 1) * 100).toFixed(1)} pts` : `short by ${((1 - a) * 100).toFixed(1)} pts` },
-      { label: "VACANT SEATS", value: vacant.length, fmt: "#,##0", sub: `${Math.round(vacantValue).toLocaleString("en-US")} EGP through them`, colour: "FFFF8C8C" },
+      { label: "VACANT SEATS", value: vacant.length, fmt: "#,##0", sub: `${Math.round(vacantValue).toLocaleString("en-US")} EGP through them`, colour: VACANT_CARD },
       { label: "ON PROBATION", value: probation.length, fmt: "#,##0", sub: probation.length ? "marked yellow below" : "nobody on this line", colour: "FFFFD98A" },
     ], COLS);
 
@@ -692,9 +769,9 @@ export async function buildRepRankingWorkbook(input: {
       if (r.target > 0) {
         cell(ws, row, 13, r.target, { numFmt: money, zebra });
         cell(ws, row, 14, r.sales - r.target, { numFmt: moneySigned, zebra });
-        // THE BRACKET: Royafloxacin red when the seat is under its target, Saginkgo blue when it
+        // THE BRACKET: the dress's alarm colour when the seat is under its target, its covered colour when it
         // covered it. The identity allows its two product colours as seams, rules and brackets.
-        cell(ws, row, 15, r.ach, { numFmt: pct, zebra, bracket: (r.ach ?? 0) >= 1 ? SAG : ROYA });
+        cell(ws, row, 15, r.ach, { numFmt: pct, zebra, bracket: (r.ach ?? 0) >= 1 ? COVERED : SHORT });
         cell(ws, row, 16, r.ach, { numFmt: hidden, zebra });
       } else {
         cell(ws, row, 13, "no target", { zebra, muted: true, size: 9 });
@@ -733,18 +810,18 @@ export async function buildRepRankingWorkbook(input: {
     dataBar(ws, `P${first}:P${last}`, { max: 1.2 });
     dataBar(ws, `Q${first}:Q${last}`);
     colourScale(ws, `I${first}:I${last}`);
-    // THE SPLIT, SHADED IN EACH CHANNEL'S OWN COLOUR -- owner point 8. Saginkgo blue for the
-    // distributor book, Royafloxacin red for the warehouses, eyebrow blue for direct.
-    dataBar(ws, `J${first}:J${last}`, { color: SAG, max: 1 });
-    dataBar(ws, `K${first}:K${last}`, { color: ROYA, max: 1 });
+    // THE SPLIT, SHADED IN EACH CHANNEL'S OWN COLOUR -- owner point 8. The dress's covered colour
+    // for the distributor book, its alarm colour for the warehouses, its eyebrow for direct.
+    dataBar(ws, `J${first}:J${last}`, { color: COVERED, max: 1 });
+    dataBar(ws, `K${first}:K${last}`, { color: SHORT, max: 1 });
     dataBar(ws, `L${first}:L${last}`, { color: EYEBROW, max: 1 });
 
     footnote(ws, row, [
       "ACHIEVEMENT is the seat's whole sales value - distributor and direct together, money nobody targeted included - divided by the target value it was given. That is the Monthly Closing engine's own rule, and it is the same rule at every level of this workbook.",
       "A SEAT WITH NO TARGET SHOWS NO ACHIEVEMENT AND IS UNRANKED, never scored zero. A seat that WAS given a target and sold nothing scores 0.00% and ranks last - that is measured, and hiding it would flatter the rep.",
-      `VACANT SEATS ARE RANKED, NOT HIDDEN. The ${vacant.length} unstaffed seats here carry ${Math.round(vacantValue).toLocaleString("en-US")} EGP of ${monthName(PERIOD)}, ${total > 0 ? ((vacantValue / total) * 100).toFixed(0) : 0}% of the line. Dropping them would understate it. They are marked in Royafloxacin red on the owner's instruction.`,
+      `VACANT SEATS ARE RANKED, NOT HIDDEN. The ${vacant.length} unstaffed seats here carry ${Math.round(vacantValue).toLocaleString("en-US")} EGP of ${monthName(PERIOD)}, ${total > 0 ? ((vacantValue / total) * 100).toFixed(0) : 0}% of the line. Dropping them would understate it. They are marked in ${dress.shortName} on the owner's instruction.`,
       "A NAME ON PROBATION IS YELLOW, on the name cell alone, so it reads as a fact about the person and not about the seat's numbers.",
-      "THE ACHIEVEMENT COLUMN CARRIES A BRACKET: Royafloxacin red where the seat is under its target, Saginkgo blue where it covered it - the identity's two product colours, which it allows as seams, rules and brackets.",
+      dress.bracketNote,
       "EVERY FIGURE ON THIS SHEET IS VALUE. Units live on one sheet only - Units x Product x Month - and are cut by product there, because a rep sells several products and concentrations and units of different products are not addable. Above one product code, value is the only figure that aggregates.",
       `THE THREE CHANNELS ADD TO SALES. A warehouse buys from a distributor, so Stores is carved OUT of the distributor book rather than added beside it - Distributor here is the distributor book with the warehouses taken out. ${Math.round(storeTotal).toLocaleString("en-US")} EGP of ${monthName(PERIOD)} reached ${L.warehouseCustomers} warehouses, ${total > 0 ? ((storeTotal / total) * 100).toFixed(1) : 0}% of the line.`,
       "WHO IS A WAREHOUSE is the platform's own rule, read out of src/lib/sales/customer-channel.ts rather than copied, and asked of each month with the rule that was in force for it. Every one of the 260 published cells is reproduced to the penny by the split, so no figure in this workbook moved to make the three columns appear.",
@@ -799,10 +876,10 @@ export async function buildRepRankingWorkbook(input: {
         cell(ws, row, 5, "Medical rep", { zebra, size: 9, muted: true });
         cell(ws, row, 6, r.who.vacant ? "unstaffed" : (r.who.repProbation ? `on probation to ${dayOf(r.who.repProbation)}` : "staffed"),
           { zebra, size: 9, muted: !r.who.vacant && !r.who.repProbation,
-            ...(r.who.vacant ? { color: VACANT_TEXT } : r.who.repProbation ? { color: PROB_TEXT } : {}) });
+            ...(r.who.vacant ? { color: SHORT_DEEP } : r.who.repProbation ? { color: PROB_TEXT } : {}) });
         cell(ws, row, 7, r.answered ? r.sales : "no sales", { numFmt: r.answered ? money : undefined, zebra, muted: !r.answered, font: r.answered ? bold(10, INK) : undefined });
         cell(ws, row, 8, r.target > 0 ? r.target : "no target", { numFmt: r.target > 0 ? money : undefined, zebra, muted: !(r.target > 0), size: r.target > 0 ? 10 : 9 });
-        cell(ws, row, 9, r.ach == null ? "no achievement" : r.ach, { numFmt: r.ach == null ? undefined : pct, zebra, muted: r.ach == null, size: r.ach == null ? 9 : 10, bracket: r.ach == null ? undefined : (r.ach >= 1 ? SAG : ROYA) });
+        cell(ws, row, 9, r.ach == null ? "no achievement" : r.ach, { numFmt: r.ach == null ? undefined : pct, zebra, muted: r.ach == null, size: r.ach == null ? 9 : 10, bracket: r.ach == null ? undefined : (r.ach >= 1 ? COVERED : SHORT) });
         cell(ws, row, 10, r.ach == null ? "" : r.ach, { numFmt: hidden, zebra });
         cell(ws, row, 11, r.share, { numFmt: pct1, zebra });
         ws.getRow(row).outlineLevel = 1;        // the reps fold INTO the manager line below them
@@ -894,7 +971,7 @@ export async function buildRepRankingWorkbook(input: {
       "Achievement", "Performance", "Share of seat"];
     const W = [7, 15, 20, 32, 15, 14, 12, 12, 14, 14, 12, 13, 12];
     const COLS = HEAD.length;
-    const ws = book.dress(wb.addWorksheet("Area x Product", { properties: { tabColor: { argb: SAG } } }), monthName(PERIOD));
+    const ws = book.dress(wb.addWorksheet("Area x Product", { properties: { tabColor: { argb: COVERED } } }), monthName(PERIOD));
     const { rows, total } = SEATS;
 
     let row = book.banner(ws, "product", W);
@@ -921,7 +998,7 @@ export async function buildRepRankingWorkbook(input: {
         cell(ws, row, 8, r.dir, { numFmt: money, zebra, font: bold(10, INK) });
         cell(ws, row, 9, r.sales, { numFmt: money, zebra, font: bold(10, INK) });
         cell(ws, row, 10, r.target > 0 ? r.target : "no target", { numFmt: r.target > 0 ? money : undefined, zebra, muted: !(r.target > 0), size: r.target > 0 ? 10 : 9, font: r.target > 0 ? bold(10, INK) : undefined });
-        cell(ws, row, 11, r.ach == null ? "no achievement" : r.ach, { numFmt: r.ach == null ? undefined : pct, zebra, muted: r.ach == null, size: r.ach == null ? 9 : 10, bracket: r.ach == null ? undefined : (r.ach >= 1 ? SAG : ROYA), font: r.ach == null ? undefined : bold(10, INK) });
+        cell(ws, row, 11, r.ach == null ? "no achievement" : r.ach, { numFmt: r.ach == null ? undefined : pct, zebra, muted: r.ach == null, size: r.ach == null ? 9 : 10, bracket: r.ach == null ? undefined : (r.ach >= 1 ? COVERED : SHORT), font: r.ach == null ? undefined : bold(10, INK) });
         cell(ws, row, 12, r.ach == null ? "" : r.ach, { numFmt: hidden, zebra });
         cell(ws, row, 13, 1, { numFmt: pct1, zebra, muted: true, size: 9 });
         ws.getRow(row).outlineLevel = 1;
@@ -938,9 +1015,9 @@ export async function buildRepRankingWorkbook(input: {
           cell(ws, row, 7, p.store !== 0 ? p.store : "none", { numFmt: p.store !== 0 ? money : undefined, zebra, size: 9, muted: p.store === 0 });
           cell(ws, row, 8, p.dir !== 0 ? p.dir : "none", { numFmt: p.dir !== 0 ? money : undefined, zebra, size: 9, muted: p.dir === 0 });
           cell(ws, row, 9, p.exists ? p.sales : "no sales", { numFmt: p.exists ? money : undefined, zebra, size: 9, muted: !p.exists,
-            font: p.sales < 0 ? bold(9, ROYA_LO) : undefined });
+            font: p.sales < 0 ? bold(9, SHORT_DEEP) : undefined });
           cell(ws, row, 10, p.target > 0 ? p.target : "no target", { numFmt: p.target > 0 ? money : undefined, zebra, size: 9, muted: !(p.target > 0) });
-          cell(ws, row, 11, p.ach == null ? "no achievement" : p.ach, { numFmt: p.ach == null ? undefined : pct, zebra, size: 9, muted: p.ach == null, bracket: p.ach == null ? undefined : (p.ach >= 1 ? SAG : ROYA) });
+          cell(ws, row, 11, p.ach == null ? "no achievement" : p.ach, { numFmt: p.ach == null ? undefined : pct, zebra, size: 9, muted: p.ach == null, bracket: p.ach == null ? undefined : (p.ach >= 1 ? COVERED : SHORT) });
           cell(ws, row, 12, p.ach == null ? "" : p.ach, { numFmt: hidden, zebra });
           cell(ws, row, 13, r.sales !== 0 ? p.sales / r.sales : "", { numFmt: r.sales !== 0 ? pct1 : undefined, zebra, size: 9 });
           ws.getRow(row).outlineLevel = 2;
@@ -993,7 +1070,7 @@ export async function buildRepRankingWorkbook(input: {
     row += 2;
 
     dataBar(ws, `L${first}:L${last}`, { max: 1.2 });
-    dataBar(ws, `M${first}:M${last}`, { color: SAG, max: 1 });
+    dataBar(ws, `M${first}:M${last}`, { color: COVERED, max: 1 });
 
     footnote(ws, row, [
       "A SEAT'S LINE IS BOLD and that seat's products follow it; when the district's reps are done, their manager closes the team on a banded line. Collapse one outline level and the sheet is one line a seat, collapse the next and it is one line a district.",
@@ -1044,7 +1121,7 @@ export async function buildRepRankingWorkbook(input: {
           ? { fill: PROB_FILL, font: { name: FONT, size: 9, bold: true, color: { argb: PROB_TEXT } } }
           : { zebra, size: 9, muted: r.who.dm === "Not assigned" });
         cell(ws, row, 5, r.who.vacant ? "unstaffed" : (r.who.repProbation ? "on probation" : "staffed"),
-          { zebra, size: 9, ...(r.who.vacant ? { color: VACANT_TEXT } : r.who.repProbation ? { color: PROB_TEXT } : { muted: true }) });
+          { zebra, size: 9, ...(r.who.vacant ? { color: SHORT_DEEP } : r.who.repProbation ? { color: PROB_TEXT } : { muted: true }) });
         cell(ws, row, 6, p.name, { zebra, size: 9 });
         cell(ws, row, 7, p.family, { zebra, size: 9, muted: true });
         cell(ws, row, 8, p.distOnly, { numFmt: money, zebra, size: 9 });
@@ -1073,8 +1150,8 @@ export async function buildRepRankingWorkbook(input: {
     for (let c = 1; c <= COLS; c += 1) ws.getRow(row).getCell(c).alignment = CENTRE;
     row += 2;
 
-    dataBar(ws, `K${first}:K${last}`, { color: SAG });
-    dataBar(ws, `I${first}:I${last}`, { color: ROYA });
+    dataBar(ws, `K${first}:K${last}`, { color: COVERED });
+    dataBar(ws, `I${first}:I${last}`, { color: SHORT });
 
     footnote(ws, row, [
       "THIS IS THE SAME DATA AS THE SHEET BEFORE IT, flattened. Every row stands on its own: region, area, rep, manager, seat state, product and family are repeated on every line rather than carried down from a group header, so a filter or a sort can never strand a number away from whose it is.",
@@ -1097,7 +1174,7 @@ export async function buildRepRankingWorkbook(input: {
       "To date EGP", "Target to date", "Gap to date", "Achievement to date", "Performance", "Share of line"];
     const W = [15, 19, 26, 23, ...TREND.map(() => 13), 14, 14, 13, 14, 13, 12];
     const COLS = HEAD.length;
-    const ws = book.dress(wb.addWorksheet("Area x Product x Month", { properties: { tabColor: { argb: ROYA } } }), SPAN);
+    const ws = book.dress(wb.addWorksheet("Area x Product x Month", { properties: { tabColor: { argb: SHORT } } }), SPAN);
     const { rows } = SEATS;
 
     let row = book.banner(ws, "trend", W);
@@ -1161,12 +1238,12 @@ export async function buildRepRankingWorkbook(input: {
       cell(ws, row, 4, `${list.length} product${list.length === 1 ? "" : "s"}`, { zebra, size: 8.5, muted: true });
       seatMonths.forEach((v, i) => {
         cell(ws, row, 5 + i, seatHere[i] ? v : "none", { numFmt: seatHere[i] ? money : undefined, zebra, muted: !seatHere[i],
-          font: seatHere[i] ? bold(10, v < 0 ? ROYA_LO : INK) : undefined });
+          font: seatHere[i] ? bold(10, v < 0 ? SHORT_DEEP : INK) : undefined });
       });
-      cell(ws, row, 8, seatToDate, { numFmt: money, zebra, font: bold(10, seatToDate < 0 ? ROYA_LO : INK) });
+      cell(ws, row, 8, seatToDate, { numFmt: money, zebra, font: bold(10, seatToDate < 0 ? SHORT_DEEP : INK) });
       cell(ws, row, 9, seatTarget > 0 ? seatTarget : "no target", { numFmt: seatTarget > 0 ? money : undefined, zebra, muted: !(seatTarget > 0), size: seatTarget > 0 ? 10 : 9 });
       cell(ws, row, 10, seatTarget > 0 ? seatToDate - seatTarget : "", { numFmt: seatTarget > 0 ? moneySigned : undefined, zebra });
-      cell(ws, row, 11, seatAch == null ? "no achievement" : seatAch, { numFmt: seatAch == null ? undefined : pct, zebra, muted: seatAch == null, size: seatAch == null ? 9 : 10, bracket: seatAch == null ? undefined : (seatAch >= 1 ? SAG : ROYA), font: seatAch == null ? undefined : bold(10, INK) });
+      cell(ws, row, 11, seatAch == null ? "no achievement" : seatAch, { numFmt: seatAch == null ? undefined : pct, zebra, muted: seatAch == null, size: seatAch == null ? 9 : 10, bracket: seatAch == null ? undefined : (seatAch >= 1 ? COVERED : SHORT), font: seatAch == null ? undefined : bold(10, INK) });
       cell(ws, row, 12, seatAch == null ? "" : seatAch, { numFmt: hidden, zebra });
       cell(ws, row, 13, lineToDate > 0 ? seatToDate / lineToDate : "", { numFmt: pct1, zebra });
       ws.getRow(row).height = nameRowHeight(r.who.rep, W[2]);
@@ -1183,12 +1260,12 @@ export async function buildRepRankingWorkbook(input: {
           const here = p.cells[i] !== null;
           if (here && v < 0) negativeCells += 1;
           cell(ws, row, 5 + i, here ? v : "none", { numFmt: here ? money : undefined, zebra, size: 9, muted: !here,
-            font: here && v < 0 ? bold(9, ROYA_LO) : undefined });
+            font: here && v < 0 ? bold(9, SHORT_DEEP) : undefined });
         });
-        cell(ws, row, 8, p.toDate, { numFmt: money, zebra, size: 9, font: bold(9, p.toDate < 0 ? ROYA_LO : INK) });
+        cell(ws, row, 8, p.toDate, { numFmt: money, zebra, size: 9, font: bold(9, p.toDate < 0 ? SHORT_DEEP : INK) });
         cell(ws, row, 9, p.target > 0 ? p.target : "no target", { numFmt: p.target > 0 ? money : undefined, zebra, size: 9, muted: !(p.target > 0) });
         cell(ws, row, 10, p.target > 0 ? p.toDate - p.target : "", { numFmt: p.target > 0 ? moneySigned : undefined, zebra, size: 9 });
-        cell(ws, row, 11, p.ach == null ? "no achievement" : p.ach, { numFmt: p.ach == null ? undefined : pct, zebra, size: 9, muted: p.ach == null, bracket: p.ach == null ? undefined : (p.ach >= 1 ? SAG : ROYA) });
+        cell(ws, row, 11, p.ach == null ? "no achievement" : p.ach, { numFmt: p.ach == null ? undefined : pct, zebra, size: 9, muted: p.ach == null, bracket: p.ach == null ? undefined : (p.ach >= 1 ? COVERED : SHORT) });
         cell(ws, row, 12, p.ach == null ? "" : p.ach, { numFmt: hidden, zebra });
         cell(ws, row, 13, lineToDate > 0 ? p.toDate / lineToDate : 0, { numFmt: pct1, zebra, size: 9 });
         grandToDate += p.toDate; grandTarget += p.target;
@@ -1217,8 +1294,8 @@ export async function buildRepRankingWorkbook(input: {
       for (const c of [1, 2]) cell(ws, row, c, "", { fill: band });
       cell(ws, row, 3, dm, { fill: band, font: dmFont });
       cell(ws, row, 4, "District manager", { fill: band, size: 8.5, muted: true });
-      dmMonths.forEach((v, i) => cell(ws, row, 5 + i, v, { numFmt: money, fill: band, size: 9.5, font: bold(9.5, v < 0 ? ROYA_LO : INK) }));
-      cell(ws, row, 8, dmToDate, { numFmt: money, fill: band, size: 9.5, font: bold(9.5, dmToDate < 0 ? ROYA_LO : INK) });
+      dmMonths.forEach((v, i) => cell(ws, row, 5 + i, v, { numFmt: money, fill: band, size: 9.5, font: bold(9.5, v < 0 ? SHORT_DEEP : INK) }));
+      cell(ws, row, 8, dmToDate, { numFmt: money, fill: band, size: 9.5, font: bold(9.5, dmToDate < 0 ? SHORT_DEEP : INK) });
       cell(ws, row, 9, dmTarget > 0 ? dmTarget : "no target", { numFmt: dmTarget > 0 ? money : undefined, fill: band, size: 9.5, muted: !(dmTarget > 0), font: dmTarget > 0 ? bold(9.5, INK) : undefined });
       cell(ws, row, 10, dmTarget > 0 ? dmToDate - dmTarget : "", { numFmt: dmTarget > 0 ? moneySigned : undefined, fill: band, size: 9.5 });
       cell(ws, row, 11, dmAch == null ? "no achievement" : dmAch, { numFmt: dmAch == null ? undefined : pct, fill: band, size: 9.5, muted: dmAch == null, font: dmAch == null ? undefined : bold(9.5, INK) });
@@ -1249,7 +1326,7 @@ export async function buildRepRankingWorkbook(input: {
     row += 2;
 
     dataBar(ws, `L${first}:L${last}`, { max: 1.2 });
-    dataBar(ws, `H${first}:H${last}`, { color: SAG });
+    dataBar(ws, `H${first}:H${last}`, { color: COVERED });
     for (const L of ["E", "F", "G"]) colourScale(ws, `${L}${first}:${L}${last}`);
 
     footnote(ws, row, [
@@ -1295,7 +1372,7 @@ export async function buildRepRankingWorkbook(input: {
       "Direct EGP", "Sales EGP", "Target EGP", "Achievement", "Performance", "Share of line"];
     const W = [7, 28, 18, 9, 11, 14, 12, 12, 14, 14, 12, 13, 11];
     const COLS = HEAD.length;
-    const ws = book.dress(wb.addWorksheet("Districts", { properties: { tabColor: { argb: SAG } } }), monthName(PERIOD));
+    const ws = book.dress(wb.addWorksheet("Districts", { properties: { tabColor: { argb: COVERED } } }), monthName(PERIOD));
     const { total } = SEATS;
     const list = [...PARTITION.byDm.entries()].map(([dm, members]) => ({
       dm, members,
@@ -1326,14 +1403,14 @@ export async function buildRepRankingWorkbook(input: {
       cell(ws, row, 3, d.regions.join("  ·  "), { zebra, size: 9, muted: true });
       cell(ws, row, 4, d.members.length, { numFmt: "#,##0", zebra });
       cell(ws, row, 5, d.vacant > 0 ? d.vacant : "none", { numFmt: d.vacant > 0 ? "#,##0" : undefined, zebra, muted: d.vacant === 0,
-        font: d.vacant > 0 ? bold(10, VACANT_TEXT) : undefined });
+        font: d.vacant > 0 ? bold(10, SHORT_DEEP) : undefined });
       cell(ws, row, 6, d.dist, { numFmt: money, zebra });
       cell(ws, row, 7, d.store > 0 ? d.store : "none", { numFmt: d.store > 0 ? money : undefined, zebra, muted: d.store === 0 });
       cell(ws, row, 8, d.dir > 0 ? d.dir : "none", { numFmt: d.dir > 0 ? money : undefined, zebra, muted: d.dir === 0 });
       cell(ws, row, 9, d.sales, { numFmt: money, zebra, font: bold(10, INK) });
       if (d.target > 0) {
         cell(ws, row, 10, d.target, { numFmt: money, zebra });
-        cell(ws, row, 11, d.ach, { numFmt: pct, zebra, bracket: (d.ach ?? 0) >= 1 ? SAG : ROYA });
+        cell(ws, row, 11, d.ach, { numFmt: pct, zebra, bracket: (d.ach ?? 0) >= 1 ? COVERED : SHORT });
         cell(ws, row, 12, d.ach, { numFmt: hidden, zebra });
       } else {
         cell(ws, row, 10, "no target", { zebra, muted: true, size: 9 });
@@ -1358,7 +1435,7 @@ export async function buildRepRankingWorkbook(input: {
     row += 2;
     dataBar(ws, `L${first}:L${last}`, { max: 1.2 });
     dataBar(ws, `M${first}:M${last}`);
-    dataBar(ws, `G${first}:G${last}`, { color: ROYA });
+    dataBar(ws, `G${first}:G${last}`, { color: SHORT });
     footnote(ws, row, [
       "A district's achievement is its own seats' sales over its own seats' targets - the same rule as a seat and as the line. It is NOT the average of its seats' percentages, which would weight a small seat like a large one.",
       "Vacant seats count into their district in full. A district carrying several is not penalised twice: the money that did come through them is in its sales, and the target they carry is in its target.",
@@ -1378,7 +1455,7 @@ export async function buildRepRankingWorkbook(input: {
   function sheetRegions() {
     const COLS = 12;
     const W = [7, 23, 9, 11, 14, 12, 12, 14, 14, 12, 13, 11];
-    const ws = book.dress(wb.addWorksheet("Regions", { properties: { tabColor: { argb: ROYA } } }), monthName(PERIOD));
+    const ws = book.dress(wb.addWorksheet("Regions", { properties: { tabColor: { argb: SHORT } } }), monthName(PERIOD));
     const { rows, total } = SEATS;
     const byRegion = new Map<string, LegacySeat[]>();
     for (const r of rows) {
@@ -1407,14 +1484,14 @@ export async function buildRepRankingWorkbook(input: {
       cell(ws, row, 2, g.region, { zebra });
       cell(ws, row, 3, g.members.length, { numFmt: "#,##0", zebra });
       cell(ws, row, 4, g.vacant > 0 ? g.vacant : "none", { numFmt: g.vacant > 0 ? "#,##0" : undefined, zebra, muted: g.vacant === 0,
-        font: g.vacant > 0 ? bold(10, VACANT_TEXT) : undefined });
+        font: g.vacant > 0 ? bold(10, SHORT_DEEP) : undefined });
       cell(ws, row, 5, g.dist, { numFmt: money, zebra });
       cell(ws, row, 6, g.store > 0 ? g.store : "none", { numFmt: g.store > 0 ? money : undefined, zebra, muted: g.store === 0 });
       cell(ws, row, 7, g.dir > 0 ? g.dir : "none", { numFmt: g.dir > 0 ? money : undefined, zebra, muted: g.dir === 0 });
       cell(ws, row, 8, g.sales, { numFmt: money, zebra, font: bold(10, INK) });
       if (g.target > 0) {
         cell(ws, row, 9, g.target, { numFmt: money, zebra });
-        cell(ws, row, 10, g.ach, { numFmt: pct, zebra, bracket: (g.ach ?? 0) >= 1 ? SAG : ROYA });
+        cell(ws, row, 10, g.ach, { numFmt: pct, zebra, bracket: (g.ach ?? 0) >= 1 ? COVERED : SHORT });
         cell(ws, row, 11, g.ach, { numFmt: hidden, zebra });
       } else {
         cell(ws, row, 9, "no target", { zebra, muted: true, size: 9 });
@@ -1438,7 +1515,7 @@ export async function buildRepRankingWorkbook(input: {
     row += 2;
     dataBar(ws, `K${first}:K${last}`, { max: 1.2 });
     dataBar(ws, `L${first}:L${last}`);
-    dataBar(ws, `F${first}:F${last}`, { color: ROYA });
+    dataBar(ws, `F${first}:F${last}`, { color: SHORT });
     colourScale(ws, `H${first}:H${last}`);
     footnote(ws, row, [
       "The region is the AREA MAP's operational region as at the pull, not whatever a distributor's own sheet called the area on an invoice.",
@@ -1496,7 +1573,7 @@ export async function buildRepRankingWorkbook(input: {
         .value = { formula: `SUM(${c0}${row}:${c1}${row})` };
       if (r.toDateTarget > 0) {
         cell(ws, row, 7 + TREND.length, r.toDateTarget, { numFmt: money, zebra });
-        cell(ws, row, 8 + TREND.length, r.toDateAch, { numFmt: pct, zebra, bracket: (r.toDateAch ?? 0) >= 1 ? SAG : ROYA });
+        cell(ws, row, 8 + TREND.length, r.toDateAch, { numFmt: pct, zebra, bracket: (r.toDateAch ?? 0) >= 1 ? COVERED : SHORT });
         cell(ws, row, 9 + TREND.length, r.toDateAch, { numFmt: hidden, zebra });
       } else {
         cell(ws, row, 7 + TREND.length, "no target", { zebra, muted: true, size: 9 });
@@ -1549,7 +1626,7 @@ export async function buildRepRankingWorkbook(input: {
       "Units to date", "Target units", "Gap to date", "Achievement to date", "Performance", "Share of product"];
     const W = [23, 15, 19, 26, ...TREND.map(() => 13), 14, 14, 13, 14, 13, 14];
     const COLS = HEAD.length;
-    const ws = book.dress(wb.addWorksheet("Units x Product x Month", { properties: { tabColor: { argb: SAG } } }), `units, ${SPAN}`);
+    const ws = book.dress(wb.addWorksheet("Units x Product x Month", { properties: { tabColor: { argb: COVERED } } }), `units, ${SPAN}`);
     const { rows } = SEATS;
 
     let row = book.banner(ws, "units", W);
@@ -1601,11 +1678,11 @@ export async function buildRepRankingWorkbook(input: {
       cell(ws, row, 2, "", { zebra });
       cell(ws, row, 3, "", { zebra });
       cell(ws, row, 4, `${mine.length} ${mine.length === 1 ? "area" : "areas"}`, { zebra, size: 8.5, muted: true });
-      prod.months.forEach((u, i) => cell(ws, row, 5 + i, u, { numFmt: units, zebra, font: bold(10, u < 0 ? ROYA_LO : INK) }));
-      cell(ws, row, 8, prod.toDate, { numFmt: units, zebra, font: bold(10, prod.toDate < 0 ? ROYA_LO : INK) });
+      prod.months.forEach((u, i) => cell(ws, row, 5 + i, u, { numFmt: units, zebra, font: bold(10, u < 0 ? SHORT_DEEP : INK) }));
+      cell(ws, row, 8, prod.toDate, { numFmt: units, zebra, font: bold(10, prod.toDate < 0 ? SHORT_DEEP : INK) });
       cell(ws, row, 9, prod.target > 0 ? prod.target : "no target", { numFmt: prod.target > 0 ? units : undefined, zebra, muted: !(prod.target > 0), size: prod.target > 0 ? 10 : 9 });
       cell(ws, row, 10, prod.target > 0 ? prod.toDate - prod.target : "", { numFmt: prod.target > 0 ? unitsSigned : undefined, zebra });
-      cell(ws, row, 11, prod.ach == null ? "no achievement" : prod.ach, { numFmt: prod.ach == null ? undefined : pct, zebra, muted: prod.ach == null, size: prod.ach == null ? 9 : 10, bracket: prod.ach == null ? undefined : (prod.ach >= 1 ? SAG : ROYA), font: prod.ach == null ? undefined : bold(10, INK) });
+      cell(ws, row, 11, prod.ach == null ? "no achievement" : prod.ach, { numFmt: prod.ach == null ? undefined : pct, zebra, muted: prod.ach == null, size: prod.ach == null ? 9 : 10, bracket: prod.ach == null ? undefined : (prod.ach >= 1 ? COVERED : SHORT), font: prod.ach == null ? undefined : bold(10, INK) });
       cell(ws, row, 12, prod.ach == null ? "" : prod.ach, { numFmt: hidden, zebra });
       cell(ws, row, 13, 1, { numFmt: pct1, zebra, muted: true, size: 9 });
       row += 1;
@@ -1618,12 +1695,12 @@ export async function buildRepRankingWorkbook(input: {
         else nameCell(ws, row, 4, x.who, { zebra });
         x.got.forEach((u, i) => {
           cell(ws, row, 5 + i, x.have[i] ? u : "none", { numFmt: x.have[i] ? units : undefined, zebra, size: 9, muted: !x.have[i],
-            font: x.have[i] && u < 0 ? bold(9, ROYA_LO) : undefined });
+            font: x.have[i] && u < 0 ? bold(9, SHORT_DEEP) : undefined });
         });
-        cell(ws, row, 8, x.toDate, { numFmt: units, zebra, size: 9, font: bold(9, x.toDate < 0 ? ROYA_LO : INK) });
+        cell(ws, row, 8, x.toDate, { numFmt: units, zebra, size: 9, font: bold(9, x.toDate < 0 ? SHORT_DEEP : INK) });
         cell(ws, row, 9, x.target > 0 ? x.target : "no target", { numFmt: x.target > 0 ? units : undefined, zebra, size: 9, muted: !(x.target > 0) });
         cell(ws, row, 10, x.target > 0 ? x.toDate - x.target : "", { numFmt: x.target > 0 ? unitsSigned : undefined, zebra, size: 9 });
-        cell(ws, row, 11, x.ach == null ? "no achievement" : x.ach, { numFmt: x.ach == null ? undefined : pct, zebra, size: 9, muted: x.ach == null, bracket: x.ach == null ? undefined : (x.ach >= 1 ? SAG : ROYA) });
+        cell(ws, row, 11, x.ach == null ? "no achievement" : x.ach, { numFmt: x.ach == null ? undefined : pct, zebra, size: 9, muted: x.ach == null, bracket: x.ach == null ? undefined : (x.ach >= 1 ? COVERED : SHORT) });
         cell(ws, row, 12, x.ach == null ? "" : x.ach, { numFmt: hidden, zebra });
         cell(ws, row, 13, prod.toDate !== 0 ? x.toDate / prod.toDate : "", { numFmt: pct1, zebra, size: 9 });
         ws.getRow(row).outlineLevel = 1;
@@ -1636,13 +1713,13 @@ export async function buildRepRankingWorkbook(input: {
     // NO GRAND TOTAL, AND THE SHEET SAYS WHY. Every other tab's foot adds up; this one must not.
     totalRow(ws, row, COLS);
     cell(ws, row, 1, `${products.length} products`, { font: bold(10, INK) });
-    cell(ws, row, 4, "UNITS ARE NOT ADDED ACROSS PRODUCTS", { font: bold(9, ROYA) });
+    cell(ws, row, 4, "UNITS ARE NOT ADDED ACROSS PRODUCTS", { font: bold(9, SHORT) });
     for (let c = 5; c <= COLS; c += 1) cell(ws, row, c, "", {});
     for (let c = 1; c <= COLS; c += 1) ws.getRow(row).getCell(c).alignment = CENTRE;
     row += 2;
 
     dataBar(ws, `L${first}:L${last}`, { max: 1.2 });
-    dataBar(ws, `M${first}:M${last}`, { color: SAG, max: 1 });
+    dataBar(ws, `M${first}:M${last}`, { color: COVERED, max: 1 });
 
     footnote(ws, row, [
       "UNITS ARE ONLY EVER ADDED INSIDE ONE PRODUCT CODE. A rep sells several products and concentrations; adding their units gives a figure that means nothing, however neat it looks. That is why this sheet is cut by product, why a block totals only its own product, and why the foot carries no grand total - above one product code, value is the only thing that aggregates.",
@@ -1760,7 +1837,7 @@ export async function buildRepRankingWorkbook(input: {
     const W = [38, 20, 18, 20, 16, 16, 16];
     const PROSE = 104;   // characters a line holds across the merged 2..7 span
     const NAMED = 66;    // and across the merged 4..7 span
-    const ws = book.dress(wb.addWorksheet("Trust", { properties: { tabColor: { argb: BASE_NAVY } } }), "how every figure was worked out");
+    const ws = book.dress(wb.addWorksheet("Trust", { properties: { tabColor: { argb: BASE } } }), "how every figure was worked out");
     const { rows, ranked, total } = SEATS;
     let row = book.banner(ws, "full", W);
 
@@ -1889,15 +1966,11 @@ export async function buildRepRankingWorkbook(input: {
     // ---- the dress itself, declared ----
     section("THE DRESS, AND WHAT IN IT IS NOT THE IDENTITY'S", "So nobody has to guess which choices were the identity's and which were mine.");
     row = headerRow(ws, row, ["Element", "Where it comes from", "", "", "", "", ""], W);
-    const dressRows = [
-      ["The masthead", "Rendered pixels, not an imitation: reference/one-sheet.html at its own 2480 width, with the grid of cards removed and its height collapsed. Real Playfair Display, Inter and Cairo, fetched at render time. The navy radial, the grain, the vignette, the double keyline, the arc sets, the red/blue seam, the two cartons, the Arabic wordmark and the base bar are all the identity's own. It sits on THIS sheet, which is the document-identity page and is never scrolled for a figure."],
-      ["The letterhead bar", `The ${wb.worksheets.length - 1} sheets that are read for figures carry a 2480 x ${Math.round(2480 * BANNER_RATIO.strip)} bar instead - the mark on the left, the title in the middle, the scope on the right, closing on the same seam. Excel's frozen pane holds EVERYTHING above the split, so chrome over a table's header row is pinned to the top of the window and cannot be scrolled away: a tall masthead there does not push the numbers down, it eats the window. One judgement call: the bar's title is 58px rather than the one sheet's 175px and the chrome is laid out horizontally, which is the same move the one sheet makes when it scales its own chrome to the piece.`],
-      ["The carton lockup", "Never overlapped and never shrunk to make room: Royafloxacin 368px in front, Saginkgo 350px, 54px margin - the one sheet's own values at this width. Measured clear on the render, not taken on trust. Both products are named in full in the In combination block."],
-      ["The Arabic wordmark", "Laid to the right trim and never cropped, with about 62% of its ink behind the cartons - measured at 62.8%, which is the one sheet's own figure. Its ink centre sits at 63.2% of the file's height, as the identity requires."],
-      ["The table's colours", "The identity's own tokens: ink #0a1322, hair #dde4e8, soft #69757e, Royafloxacin red #d20000 and its #8e0000, Saginkgo blue #0384db, the navy field's #001641 for the keycards, eyebrow blue #67c2f6 for their labels."],
-      ["The zebra - DERIVED", "NOT an identity token. The identity has no table and therefore no zebra. This is its navy at about 4% on white."],
-      ["The probation yellow - NOT THE IDENTITY'S", "The identity has no yellow at all. It is kept only because the owner asked for a probation mark in yellow by name."],
-      ["The body typeface - SUBSTITUTED", "The identity's body face is Inter. Inter is NOT installed on the machine that built this file, so naming it in a cell would have substituted another face silently - the exact failure the identity warns about. Cells use Calibri. The rendered chrome above carries real Inter, because the renderer fetched it."],
+    // THE LINE'S OWN ANSWER, out of its dress - the facts differ per identity and a shared answer
+    // would be wrong on one of them. Only the two rows that are computed from THIS build sit here.
+    const dressRows: Array<readonly [string, string]> = [
+      ...dress.dressRows,
+      ["The letterhead bar", `The ${wb.worksheets.length - 1} sheets that are read for figures carry a 2480 x ${Math.round(2480 * BANNER_RATIO.strip)} bar instead - the mark on the left, the title in the middle, the scope on the right, closing on the same seam. Excel's frozen pane holds EVERYTHING above the split, so chrome over a table's header row is pinned to the top of the window and cannot be scrolled away: a tall masthead there does not push the numbers down, it eats the window. One judgement call: the bar's title is a fraction of the masthead's and its chrome is laid out horizontally, which is the same move the identity makes when it scales its own chrome to a piece.`],
       ["What Excel cannot do", "Radial gradients, film grain, vignettes, soft shadows, the cartons' box-reflect and letter-spaced micro labels have no cell equivalent. That is precisely why the chrome is rendered rather than approximated."],
     ];
     dressRows.forEach(([k, v], j) => {
@@ -1914,7 +1987,7 @@ export async function buildRepRankingWorkbook(input: {
     footnote(ws, row, [
       `The line's own figure: ${Math.round(total).toLocaleString("en-US")} EGP against ${Math.round(lineTarget(PERIOD)).toLocaleString("en-US")} EGP, ${((achievement(total, lineTarget(PERIOD)) ?? 0) * 100).toFixed(2)}%. Every seat above adds into exactly that.`,
       "Built outside Phoenix from a read-only pull of the production closing engine. It writes nothing back and is a view of the month, not a record of it.",
-      "SATO-DIS-2026-01 v1.0. The event look is the Anti-Infective identity, built for Royafloxacin 500 mg and Saginkgo 120 mg.",
+      dress.identityLine,
     ], COLS);
     return ws;
   }

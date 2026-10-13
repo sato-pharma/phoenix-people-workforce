@@ -1,0 +1,274 @@
+<!doctype html>
+<!-- CNS identity — the rep ranking workbook's chrome.
+
+     This file renders the TEN pieces of letterhead that the CNS rep ranking
+     workbook carries: one masthead (2480 × 1382) for its Trust sheet, and nine
+     bars (2480 × 176), one for each sheet that is read for figures. Excel cannot
+     draw a radial field, a connectome, a grain, a vignette or a box-reflect, so
+     the chrome is RENDERED here and embedded as pixels rather than imitated in
+     cells. The tables beside it wear the identity's own tokens.
+
+     🔴 NOT ONE FIGURE AND NOT ONE MONTH IS RENDERED INTO THIS ARTWORK. Every
+     piece carries the line, the identity and the tab's name, and nothing else.
+     The Anti-Infective chrome beside it was rendered with SEPTEMBER 2026, 51.54%
+     and its seat counts baked in, so every later month's file prints September's
+     month over its own cells — a defect that cannot be fixed in code, only
+     re-rendered. Here the month and every figure are CELLS, built from the month
+     being exported.
+
+     Render (headless Chrome, absolute file:/// URL and absolute --screenshot,
+     both of which cost a render here if they are relative):
+
+       chrome --headless=new --disable-gpu --no-sandbox --hide-scrollbars \
+         --user-data-dir=<scratch> --force-device-scale-factor=1 \
+         --window-size=2480,1382 --virtual-time-budget=22000 \
+         --screenshot="<abs>/banner-full.png" \
+         "file:///<abs>/ranking-chrome.html?piece=full"
+
+       …and for each bar, --window-size=2480,176 with ?piece=strip&tab=ranking
+
+     Renders from this folder with no build step: every asset path is ../assets/.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CNS — rep ranking chrome</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<style>
+  :root{
+    --leaf:#63b24a; --leaf-lo:#3d7f2d; --leaf-hi:#8fd36f;
+    --amber:#e5732a; --amber-lo:#b4531a; --amber-hi:#ffa061;
+    --eyebrow:#a7e08f;
+    --base:#04210f;
+    --ink:#0a1322; --soft:#6b7782; --faint:#8c98a4; --hair:#e4e9ee;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#fff;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+       overflow:hidden;}
+
+  /* The field's four stops NEVER change; only the ellipse and its centre are
+     scaled to the piece. 2600 × 1900 at 50% 22% is the sheet's; this piece is
+     wider than it is tall, so the ellipse widens with it. */
+  .field{position:absolute;left:0;right:0;top:0;overflow:hidden;
+    background:radial-gradient(3200px 1500px at 50% 26%,
+      #2f6b33 0%, #1d5226 36%, #0f3a1a 70%, #04210f 100%);}
+  .net{position:absolute;inset:0;width:100%;height:100%;opacity:.26;pointer-events:none;
+       object-fit:cover;}
+  .grain{position:absolute;inset:0;opacity:.055;mix-blend-mode:overlay;pointer-events:none;}
+  .vig{position:absolute;inset:0;pointer-events:none;}
+  .seam{position:absolute;left:0;right:0;display:flex;z-index:4;}
+  .seam u{flex:1;display:block;background:var(--leaf);}
+  .seam u+u{background:var(--amber);}
+
+  .gk{color:#fff;}
+
+  /* ═══════════════ the masthead, 2480 × 1382 ═══════════════ */
+  body.full{width:2480px;height:1382px;}
+  .full .piece{position:relative;width:2480px;height:1382px;overflow:hidden;background:#fff;}
+  .full .field{bottom:470px;}
+  .full .vig{background:radial-gradient(2300px 1000px at 50% 46%,
+             rgba(0,0,0,0) 40%, rgba(0,0,0,.42) 100%);}
+  .full .fr1{position:absolute;inset:44px;border:1px solid rgba(255,255,255,.15);}
+  .full .fr2{position:absolute;inset:55px;border:1px solid rgba(255,255,255,.055);}
+  .full .seam{bottom:454px;height:16px;}
+
+  .full .logo{position:absolute;left:150px;top:78px;height:96px;
+              filter:drop-shadow(0 2px 6px rgba(0,0,0,.45));}
+  /* The corner seal wears the ginkgo, never a date: a date is a figure, and no
+     figure is rendered into this artwork. */
+  .full .seal{position:absolute;right:150px;top:72px;width:172px;height:172px;
+        border:1px solid rgba(255,255,255,.26);background:rgba(0,16,6,.46);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+        box-shadow:inset 0 0 0 7px rgba(255,255,255,.045), 0 18px 46px rgba(0,0,0,.38);}
+  .full .seal .gk{width:72px;height:63px;opacity:.95;}
+  .full .seal span{font-size:15px;font-weight:700;letter-spacing:.24em;color:rgba(255,255,255,.66);}
+
+  .full .head{position:absolute;left:0;right:0;top:96px;text-align:center;}
+  .full .eyebrow{color:var(--eyebrow);font-size:25px;font-weight:700;letter-spacing:.34em;
+                 text-transform:uppercase;}
+  .full .sato{margin-top:34px;font-family:'Playfair Display',serif;font-size:46px;font-weight:400;
+              letter-spacing:.66em;text-indent:.66em;color:rgba(255,255,255,.80);}
+  .full .evt{margin-top:6px;font-family:'Playfair Display',serif;font-size:168px;font-weight:500;
+             letter-spacing:.02em;color:#fff;line-height:1.02;
+             text-shadow:0 4px 30px rgba(0,0,0,.40);}
+  .full .ruleset{margin:26px auto 0;display:flex;align-items:center;justify-content:center;
+                 width:620px;}
+  .full .ruleset s{display:block;height:4px;flex:1;}
+  .full .ruleset s.l{background:linear-gradient(90deg,rgba(99,178,74,0),var(--leaf));}
+  .full .ruleset s.a{background:linear-gradient(90deg,var(--amber),rgba(229,115,42,0));}
+  .full .ruleset .gk{width:72px;height:63px;margin:0 28px;flex:none;opacity:.95;}
+  .full .scope{margin-top:34px;color:rgba(255,255,255,.82);font-size:27px;font-weight:600;
+               letter-spacing:.30em;text-transform:uppercase;}
+  .full .line2{margin:26px auto 0;display:flex;align-items:center;justify-content:center;
+               gap:26px;color:rgba(255,255,255,.52);font-size:19px;font-weight:600;
+               letter-spacing:.26em;text-transform:uppercase;}
+  .full .line2 s{display:block;width:150px;height:1px;background:rgba(255,255,255,.22);}
+  .full .fieldwm{position:absolute;left:50%;bottom:-130px;transform:translateX(-50%);width:1180px;
+                 opacity:.045;pointer-events:none;filter:brightness(0) invert(1);}
+
+  /* ── the white foot ── */
+  .full .foot{position:absolute;left:0;right:0;top:928px;bottom:92px;background:#fff;
+              overflow:hidden;}
+  /* The wordmark is a ground, never a smudge over type: it runs to the right trim
+     and is never cropped, with most of its ink behind the cartons. */
+  .full .wm{position:absolute;right:-30px;top:-54px;width:660px;opacity:.11;pointer-events:none;}
+  .full .facts{position:absolute;left:150px;top:54px;width:420px;}
+  .full .facts .lab{color:var(--faint);font-size:17px;font-weight:700;letter-spacing:.28em;
+                    text-transform:uppercase;}
+  .full .facts .val{margin-top:11px;color:var(--ink);font-size:37px;font-weight:600;
+                    letter-spacing:-.01em;}
+  .full .facts .ar{margin-top:8px;font-family:Cairo,sans-serif;font-size:24px;color:var(--soft);
+                   direction:rtl;}
+  .full .facts .sub{margin-top:8px;color:var(--soft);font-size:22px;font-weight:500;}
+  .full .facts hr{border:0;border-top:1px solid var(--hair);margin:22px 0;}
+
+  .full .packs-label{position:absolute;left:680px;top:54px;width:660px;}
+  .full .packs-label .lab{color:var(--faint);font-size:17px;font-weight:700;letter-spacing:.28em;
+                          text-transform:uppercase;}
+  .full .packs-label .p{margin-top:18px;color:var(--ink);font-size:28px;font-weight:600;white-space:nowrap;}
+  .full .packs-label .p b{font-weight:700;}
+  .full .packs-label .p span{color:var(--soft);font-weight:500;}
+  .full .packs-label .r{height:3px;width:300px;margin-top:10px;background:var(--leaf);}
+  .full .packs-label .r.a{background:var(--amber);width:250px;}
+  .full .packs-label .plus{margin-top:14px;color:var(--soft);font-size:21px;font-weight:500;}
+
+  /* THE TWO-PACK LAW. Bottoms aligned, Intens in front, on a 1px reflection,
+     which is how a packshot sits on a surface. They are NEVER overlapped and
+     NEVER shrunk to make room — the facts column and the right offset move
+     first. The card's 218/208 scaled to this foot's height, ratio preserved. */
+  .full .packs{position:absolute;right:150px;bottom:26px;display:flex;align-items:flex-end;
+               gap:52px;}
+  .full .packs img{-webkit-box-reflect:below 1px linear-gradient(transparent 76%,
+                   rgba(255,255,255,.22));}
+  .full .packs .intens{height:296px;order:2;position:relative;z-index:2;}
+  .full .packs .forte{height:283px;order:1;}
+
+  .full .base{position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--base);
+              display:flex;align-items:center;justify-content:space-between;padding:0 150px;}
+  .full .base span{color:rgba(255,255,255,.62);font-size:19px;font-weight:600;
+                   letter-spacing:.28em;text-transform:uppercase;}
+
+  /* ═══════════════ a sheet's letterhead bar, 2480 × 176 ═══════════════ */
+  body.strip{width:2480px;height:176px;}
+  .strip .piece{position:relative;width:2480px;height:176px;overflow:hidden;background:#fff;}
+  .strip .field{bottom:0;top:0;}
+  .strip .vig{background:radial-gradient(1800px 300px at 50% 50%,
+              rgba(0,0,0,0) 30%, rgba(0,0,0,.34) 100%);}
+  .strip .seam{bottom:0;height:11px;}
+  .strip .mark{position:absolute;left:52px;top:28px;width:300px;height:88px;
+               border:1px solid rgba(255,255,255,.17);display:flex;align-items:center;
+               justify-content:center;}
+  .strip .mark img{height:54px;filter:drop-shadow(0 2px 5px rgba(0,0,0,.45));}
+  .strip .head{position:absolute;left:0;right:0;top:24px;text-align:center;}
+  .strip .eyebrow{color:var(--eyebrow);font-size:19px;font-weight:700;letter-spacing:.32em;
+                  text-transform:uppercase;}
+  .strip .evt{margin-top:6px;font-family:'Playfair Display',serif;font-size:58px;font-weight:500;
+              color:#fff;line-height:1.04;letter-spacing:.01em;}
+  .strip .ruleset{margin:2px auto 0;display:flex;align-items:center;justify-content:center;
+                  width:300px;}
+  .strip .ruleset s{display:block;height:2px;flex:1;}
+  .strip .ruleset s.l{background:linear-gradient(90deg,rgba(99,178,74,0),var(--leaf));}
+  .strip .ruleset s.a{background:linear-gradient(90deg,var(--amber),rgba(229,115,42,0));}
+  .strip .ruleset .gk{width:26px;height:23px;margin:0 12px;flex:none;opacity:.95;}
+  .strip .scope{position:absolute;right:52px;top:66px;color:rgba(255,255,255,.72);font-size:20px;
+                font-weight:700;letter-spacing:.26em;text-transform:uppercase;}
+</style>
+</head>
+<body>
+<div class="piece">
+
+  <div class="field">
+    <img class="net" src="../assets/connectome-ranking.svg" alt="">
+    <svg class="grain"><filter id="gr"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#gr)"/></svg>
+    <div class="vig"></div>
+    <div class="fr1 only-full"></div><div class="fr2 only-full"></div>
+
+    <img class="logo only-full" src="../assets/sato-pharma-reverse.png" alt="Sato Pharma">
+    <div class="mark only-strip">
+      <img src="../assets/sato-pharma-reverse.png" alt="Sato Pharma">
+    </div>
+    <div class="seal only-full">
+      <svg class="gk" viewBox="0 0 220 192" fill="currentColor" aria-hidden="true"><path d="M110 150L15.7 106.1A104 104 0 0 1 104.6 46.1L110 96L115.4 46.1A104 104 0 0 1 204.3 106.1Z"/><rect x="106.5" y="146" width="7" height="40"/></svg>
+      <span>CNS</span>
+    </div>
+
+    <div class="head">
+      <div class="eyebrow">Monthly&nbsp;closing &nbsp;&middot;&nbsp; Medical&nbsp;representative&nbsp;ranking</div>
+      <div class="sato only-full">SATO</div>
+      <div class="evt" id="title">REP RANKING</div>
+      <div class="ruleset"><s class="l"></s>
+        <svg class="gk" viewBox="0 0 220 192" fill="currentColor" aria-hidden="true"><path d="M110 150L15.7 106.1A104 104 0 0 1 104.6 46.1L110 96L115.4 46.1A104 104 0 0 1 204.3 106.1Z"/><rect x="106.5" y="146" width="7" height="40"/></svg>
+        <s class="a"></s></div>
+      <div class="scope only-full">Central&nbsp;nervous&nbsp;system</div>
+      <div class="line2 only-full"><s></s>
+        <span>Tebofortin &middot; Conviban &middot; Rispadex &middot; Dopaminect &middot; Dolabactin</span>
+        <s></s></div>
+    </div>
+    <div class="scope only-strip" id="scope">Every seat, ranked by achievement</div>
+    <img class="fieldwm only-full" src="../assets/sato-arabic-navy.png" alt="">
+  </div>
+
+  <div class="seam"><u></u><u></u></div>
+
+  <div class="foot only-full">
+    <img class="wm" src="../assets/sato-arabic-navy.png" alt="">
+
+    <div class="facts">
+      <div class="lab">The line</div>
+      <div class="val">CNS</div>
+      <div class="ar">&#1575;&#1604;&#1580;&#1607;&#1575;&#1586; &#1575;&#1604;&#1593;&#1589;&#1576;&#1610; &#1575;&#1604;&#1605;&#1585;&#1603;&#1586;&#1610;</div>
+      <hr>
+      <div class="lab">The hero</div>
+      <div class="val">Tebofortin</div>
+      <div class="sub">Ginkgo biloba leaves extract</div>
+    </div>
+
+    <div class="packs-label">
+      <div class="lab">In the line</div>
+      <div class="p"><b>Tebofortin</b> <span>40 &middot; Forte 80 &middot; Intens 120 &middot; Max 240 mg</span></div>
+      <div class="r"></div>
+      <div class="plus">and the 40 mg/ml oral drops</div>
+      <div class="p" style="margin-top:22px"><b>Conviban</b> <span>25 &middot; 50 &middot; 100 mg</span></div>
+      <div class="r a"></div>
+    </div>
+
+    <div class="packs">
+      <img class="forte" src="../assets/tebofortin-forte-80-carton.png" alt="Tebofortin Forte 80 mg">
+      <img class="intens" src="../assets/tebofortin-intens-120-carton.png" alt="Tebofortin Intens 120 mg">
+    </div>
+  </div>
+
+  <div class="base only-full">
+    <span>SATO-DIS-2026-01 v1.0</span>
+    <span>CNS &nbsp;&middot;&nbsp; Monthly closing &nbsp;&middot;&nbsp; Rep ranking</span>
+  </div>
+
+</div>
+
+<script>
+  // The piece and, for a bar, which tab it heads. Everything else is identical,
+  // so one file renders all ten and they cannot drift apart.
+  var TABS = {
+    ranking:   ["REP RANKING",              "Every seat, ranked by achievement"],
+    who:       ["WHO",                      "A team, then its district manager"],
+    product:   ["AREA × PRODUCT",      "What a product is worth in one bag"],
+    filter:    ["AREA × PRODUCT",      "One row a cell · nothing merged"],
+    trend:     ["AREA × PRODUCT × MONTH", "The same cells, month by month"],
+    districts: ["DISTRICTS",                "A manager's whole district"],
+    regions:   ["REGIONS",                  "The area map's own regions"],
+    months:    ["MONTH BY MONTH",           "Ranked over the trend, not the month"],
+    units:     ["UNITS × PRODUCT × MONTH", "One product at a time · never added"]
+  };
+  var q = new URLSearchParams(location.search);
+  var piece = q.get("piece") === "strip" ? "strip" : "full";
+  document.body.className = piece;
+  if (piece === "strip") {
+    var tab = TABS[q.get("tab")] || TABS.ranking;
+    document.getElementById("title").textContent = tab[0];
+    document.getElementById("scope").textContent = tab[1];
+  }
+  var hide = piece === "full" ? ".only-strip" : ".only-full";
+  document.querySelectorAll(hide).forEach(function (el) { el.style.display = "none"; });
+</script>
+</body>
+</html>

@@ -441,7 +441,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
   }
 
   /**
-   * THE REP RANKING WORKBOOK — the Anti Infective line's own sheet, as a download of its own.
+   * THE REP RANKING WORKBOOK — a dressed line's own sheet, as a download of its own.
    *
    * Owner, 2026-10-13, asked how to get it "from admin account" and chose to add a button rather
    * than reach it another way. It had become unreachable here by accident: the closing export route
@@ -748,8 +748,8 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                     value={filter}
                   />
                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-                    {/* Three workbooks of the same month, side by side — four on Anti Infective, which also has
-                        the rep ranking sheet. The owner's instruction (2026-08-30) was that the premium sheet be
+                    {/* Three workbooks of the same month, side by side — four on a line that also has the rep
+                        ranking sheet, which is Anti Infective and CNS. The owner's instruction (2026-08-30) was that the premium sheet be
                         added BESIDE this button rather than replacing it, so whoever is reading picks the format
                         they read more comfortably. All of them carry the same line and the same month.
 
@@ -876,7 +876,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                         title={
                           isMultiPeriod
                             ? `This workbook is built one month at a time, so it cannot yet cover ${periodSpan}. Pick a single month to export it.`
-                            : "The rep ranking sheet the Anti Infective portal sends — the reps arranged by achievement with their district manager, the three-month trend, the warehouse carve and the Trust sheet behind every figure. The same file, read from here. It covers the whole month rather than the filter on screen, because its ranking and its channel split come from different reads."
+                            : "The rep ranking sheet this line's portal sends, in the line's own identity — the reps arranged by achievement with their district manager, the three-month trend, the warehouse carve, every counted row and the Trust sheet behind every figure. The same file, read from here. It covers the whole month rather than the filter on screen, because its ranking and its channel split come from different reads."
                         }
                         type="button"
                       >

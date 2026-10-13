@@ -1,6 +1,6 @@
 ---
 name: cns-identity
-description: The CNS identity — the forest-green field, the connectome and the ginkgo built around Tebofortin, the line's hero (Ginkgo biloba leaves extract, 40 / Forte 80 / Intens 120 / Max 240 mg and the 40 mg/ml oral drops), with Conviban beside it. Carries the exact geometry of the invitation card and its name-only variant, the A4 line sheet, the measured pack inks, the two pack-lockup laws, the ginkgo mark that must never read as a heart, the seeded connectome texture and the self-hosted typefaces. Use when building an invitation, a round-table or speaker card, a guest one-sheet, a line or product sheet, a monthly closing sheet for the line, an event poster, a save-the-date or any personalised piece for Tebofortin, Conviban or a CNS team event. It does NOT replace sato-pharma-identity, which still governs certificates, documents, the business card and the website, and it does not govern Anti-Infective pieces — those are anti-infective-identity.
+description: The CNS identity — the forest-green field, the connectome and the ginkgo built around Tebofortin, the line's hero (Ginkgo biloba leaves extract, 40 / Forte 80 / Intens 120 / Max 240 mg and the 40 mg/ml oral drops), with Conviban beside it. Carries the exact geometry of the invitation card and its name-only variant, the A4 line sheet, the measured pack inks, the two pack-lockup laws, the ginkgo mark that must never read as a heart, the seeded connectome texture and the self-hosted typefaces. Use when building an invitation, a round-table or speaker card, a guest one-sheet, a line or product sheet, a monthly closing sheet for the line, the rep ranking workbook's chrome, an event poster, a save-the-date or any personalised piece for Tebofortin, Conviban or a CNS team event. It does NOT replace sato-pharma-identity, which still governs certificates, documents, the business card and the website, and it does not govern Anti-Infective pieces — those are anti-infective-identity.
 ---
 
 # CNS identity
@@ -28,6 +28,7 @@ assets/
   conviban-trio-carton.png           1000×330   ratio 3.0303   topiramate 25 / 50 / 100 mg
   connectome.svg · connectome-sheet.svg          the field texture, generated and seeded
   connectome-closing.svg                         the same, at the closing sheet's shorter field
+  connectome-ranking.svg                         the same again, at the ranking chrome's 912px field
   ginkgo-leaf.svg                                the botanical mark, one ink
   sato-arabic-navy.png · sato-pharma-reverse.png the house marks, as the sibling skill ships them
   fonts/                                         the four typefaces, self-hosted (397 KB)
@@ -36,6 +37,7 @@ reference/
   invitation-card.html  the same card with the photograph in it
   line-sheet.html       the line sheet — 2480×3508, A4 at 300 dpi
   closing-sheet.html    the monthly closing sheet — 2480×3508, the month's result for the line
+  ranking-chrome.html   the rep ranking workbook's chrome — one masthead and nine letterhead bars
   connectome.py         the field texture generator
   fetch-fonts.py        rebuilds assets/fonts from Google Fonts
   verify.py             measures a RENDERED piece; exit 1 on any failure
@@ -226,6 +228,7 @@ texture. Same idea, our own drawing.
 ```bash
 python reference/connectome.py --seed 11 --nodes 74 --width 1200 --height 1150 --max-edge 215 --out assets/connectome.svg
 python reference/connectome.py --seed 23 --nodes 150 --width 2480 --height 2100 --margin 70 --max-edge 300 --out assets/connectome-sheet.svg
+python reference/connectome.py --seed 29 --nodes 90 --width 2480 --height 912 --margin 60 --max-edge 300 --out assets/connectome-ranking.svg
 ```
 
 - **Cap the edge length.** The first pass joined nearest neighbours with no cap and
@@ -300,6 +303,41 @@ Every number in the shipped file is **specimen arithmetic**: the areas sum to th
 total, the shares sum to 100, and the line lands on exactly **100.0%** so that no
 reader can mistake it for a real month. The area names are the structure, not data.
 
+
+## The rep ranking chrome — one masthead and nine bars
+
+The monthly closing's **rep ranking workbook** is an Excel file, and Excel can draw
+none of this identity: no radial field, no connectome, no grain, no vignette, no
+box-reflect under a carton. So the chrome is **rendered here and embedded as
+pixels**, and only the things Excel does natively — fills, rules, inks, bars — are
+built from the tokens above. `reference/ranking-chrome.html` renders all ten
+pieces, switched by its query string, so they cannot drift apart:
+
+| `?piece=` | size | where it sits |
+|---|---|---|
+| `full` | 2480 × 1382 | the Trust sheet, which is the document-identity page |
+| `strip&tab=<tab>` | 2480 × 176 | one letterhead bar per sheet that is read for figures |
+
+Nine bars: `ranking · who · product · filter · trend · districts · regions ·
+months · units`. A worked sheet gets the **bar, never the masthead** — Excel's
+frozen pane holds everything above the split, so a tall masthead over a table's
+header row is pinned to the top of the window and eats it rather than pushing the
+numbers down.
+
+🔴 **NOT ONE FIGURE AND NOT ONE MONTH IS RENDERED INTO THIS ARTWORK.** Every piece
+carries the line, the identity and the tab's name, and nothing else. The sibling
+Anti-Infective chrome was rendered with `SEPTEMBER 2026`, `51.54%` and its seat
+counts baked in, so every later month's workbook prints September's figures over
+its own cells — a defect that cannot be fixed in code, only re-rendered. Here the
+month and every figure are **cells**, built from the month being exported.
+
+The field is **912** tall here against the closing sheet's 1250, and the ellipse
+widens with the piece — `3200px 1500px at 50% 26%` — because this one is wider
+than it is tall. The four stops never change. The corner seal wears the **ginkgo**
+rather than a date seal, for the same reason: a date is a figure. Two packs, so
+the **card's** lockup law applies — Intens in front, bottoms aligned, never
+overlapped, never shrunk, both products named — and the strips carry the seam at
+11px, leaf left and amber right.
 
 ## Rendering
 
