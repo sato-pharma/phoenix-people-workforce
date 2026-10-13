@@ -127,14 +127,17 @@ export function narrowClosingMatrixForRanking(
       const areas = group.areas
         .filter((area) => {
           const code = String(area.areaCode ?? "").trim().toUpperCase();
-          const region = String(area.regionCode ?? "").trim().toUpperCase();
-          // 🔴 THE AREA'S OWN REGION, AND ITS SOURCE REGION TOO. A line that moved an area to
-          // another region keeps the geographical one in `sourceRegionCode`, and the screen's
-          // region filter is the one the reader picked off that same screen — so an area the
-          // organogram moved must answer to EITHER, or a region filter silently loses it.
-          const source = String(area.sourceRegionCode ?? "").trim().toUpperCase();
+          const region = String(group.regionCode ?? "").trim().toUpperCase();
+          // 🔴 THE REGION THE MATRIX SHOWS THE AREA UNDER, AND NO OTHER. An area the organogram
+          // moved keeps its geographical region in `sourceRegionCode`, and an earlier version of
+          // this filter answered to that too - so on Anti Infective, choosing Delta (1) also
+          // returned Qalubeya, which the closing shows under Delta (3), and the owner got two
+          // regions in one file (2026-10-13: "I filtered on Delta 1 and the export came out with
+          // Delta 1 and Delta 3 together"). The screen's own filter, `filterMonthlyClosingMatrix`,
+          // matches the displayed group only, and so do the detail rows (`rowMatchesRegionFilter`
+          // reads the organogram region). A file that follows the filter must follow THAT filter.
           if (areaCodes.size > 0 && !areaCodes.has(code)) return false;
-          if (regionCodes.size > 0 && !regionCodes.has(region) && !(source && regionCodes.has(source))) return false;
+          if (regionCodes.size > 0 && !regionCodes.has(region)) return false;
           if (keepAreas && !keepAreas.has(code)) return false;
           return true;
         })

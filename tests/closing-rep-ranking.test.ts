@@ -837,6 +837,26 @@ async function assertTheFilterNarrowsTheWholeFile(): Promise<void> {
     "which is SMALLER than the line - the whole point of the owner's complaint",
   );
 
+  // 🔴 A REGION FILTER SELECTS THE GROUP THE MATRIX SHOWS, NEVER THE REGION AN AREA CAME FROM.
+  // Owner, 2026-10-13: "I filtered on Delta 1 and the export came out with Delta 1 and Delta 3
+  // together." On Anti Infective Qalubeya sits under Delta (3) and keeps Delta (1) as its source;
+  // the first version of this filter answered to the source too and returned it under Delta (1).
+  const moved = matrixOf(PERIOD, SEPTEMBER);
+  const dkGroup = moved.regions.find((g) => g.regionCode === "DL")!;
+  const upGroup = moved.regions.find((g) => g.regionCode === "UE")!;
+  upGroup.areas[0] = { ...upGroup.areas[0]!, sourceRegionCode: "DL", sourceRegionName: "Delta" } as typeof upGroup.areas[number];
+  const deltaOnly = narrowClosingMatrixForRanking(moved, { regionCodes: ["DL"] });
+  assert.deepEqual(
+    deltaOnly.regions.map((g) => g.regionCode),
+    ["DL"],
+    "choosing one region returns that region and not the one an area was moved out of",
+  );
+  assert.deepEqual(
+    deltaOnly.regions[0]!.areas.map((a) => a.areaCode),
+    dkGroup.areas.map((a) => a.areaCode),
+    "and exactly the areas the matrix shows under it",
+  );
+
   // ── A product filter drops columns, and a row total is the sum of its survivors ───────────────
   const oneProduct = narrowClosingMatrixForRanking(matrix, { productCodes: [codes[0]!] });
   assert.deepEqual(oneProduct.columns.map((c) => c.productCode), [codes[0]], "one column survives");
