@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { revealPhoneToViewer } from "@/lib/recruitment/candidate-call-claims";
+import { loadCallClaim } from "@/lib/recruitment/candidate-call-claims-db";
 import { recruitmentFileResponse } from "@/lib/recruitment/file-response";
 import { downloadHiringManagerCandidateFile } from "@/lib/recruitment/hiring-manager-view";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
@@ -7,12 +9,12 @@ import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruit
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** What a manager is told when he asks this route for the file itself rather than for the render. */
+/** What a manager is told when he asks this route for the file itself without holding the reservation. */
 const DOWNLOAD_BLOCKED =
-  "CVs are read on screen here. Ask the recruitment team if you need a copy of this document.";
+  'Press "I will call" on this CV to download it. Until then it is read on screen only.';
 
 /**
- * The delivery modes that are a RENDER rather than a file, and so the only ones this route serves.
+ * The delivery modes that are a RENDER rather than a file. Every manager in scope gets these.
  *
  * Both hand the browser something to paint and neither hands over a document: no filename, no
  * document content-type, no Content-Disposition, nothing a save-file prompt or a download-manager
@@ -29,29 +31,24 @@ const RENDER_ONLY_FORMATS = new Set(["base64", "doc-text"]);
 // Gated on the narrow `hiring_interviews` resource (not `recruitment`/`candidates`) — see
 // hiring-manager-view.ts for why.
 //
-// ── THIS ROUTE NO LONGER HANDS OVER A FILE ─────────────────────────────────────────────────────
+// ── THE FILE ITSELF GOES ONLY TO THE MANAGER HOLDING THE RESERVATION ────────────────────────────
 //
-// The owner, 2026-09-09: *"the download to be blocked of the cv"*. So of file-response.ts's four
-// delivery modes this route serves only the two that are a RENDER — see RENDER_ONLY_FORMATS above.
-// The two that are a FILE are refused:
+// The owner blocked the manager's download on 2026-09-09 (*"the download to be blocked of the cv"*)
+// and, on 2026-10-13, asked for managers to be able to download any CV from wherever they find it.
+// Asked which way round, with the original file carrying the very phone number the "I will call"
+// rule hides, he chose: download only after "I will call". So the rule is the phone number's own —
+// `revealPhoneToViewer`, the one place that decides who may see a number — and it is asked HERE, on
+// the server. A card that offers a Download link while this URL serves the file to anyone has
+// blocked nothing, and that URL is one right-click away.
 //
-//   • the bare URL (Content-Disposition: attachment) — a save-file prompt, which is the download;
-//   • `?disposition=inline` — the open-in-a-new-tab escape hatch, which is the same bytes with the
-//     same filename and one keystroke from being saved. Blocking one and not the other blocks
-//     nothing, and the inline URL is the one a curious manager finds first because the preview's own
-//     failure notice used to link to it.
+//   • a RENDER (`format=base64` / `doc-text`) — any manager in scope, as ever; the page paints the
+//     phone numbers out of it until the reservation is taken;
+//   • the FILE (the bare URL, a save-file prompt; or `?disposition=inline`, the open-in-a-new-tab
+//     link) — only the manager whose reservation stands on this candidate.
 //
-// THE PORTAL IS THE ONLY CALLER OF THIS ROUTE, so nothing else loses anything: the recruitment
-// workspace, screening and the CV database all read the sibling route under /api/recruitment/, which
-// is unchanged and still downloads. This is the manager's copy of the door, and only this one is
-// shut.
-//
-// AN EXTERNAL FILE IS REFUSED TOO, for the same reason and with the same wording. A redirect hands
-// the manager the raw document at somebody else's origin, where nothing here reaches — the one shape
-// of this route that could still produce a saved file. Measured on production 2026-09-09: all 1,188
-// rows in ats_files carry a drive_file_id and NOT ONE is external-only, so this refuses nothing that
-// exists today. It exists so that the day an external CV is created, the block does not quietly stop
-// applying to it.
+// AN EXTERNAL FILE IS STILL REFUSED. A redirect hands over the raw document at somebody else's
+// origin, where nothing here reaches. Measured on production 2026-09-09: all 1,188 rows in ats_files
+// carry a drive_file_id and NOT ONE is external-only, so this refuses nothing that exists today.
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ candidateId: string; fileId: string }> },
@@ -63,7 +60,8 @@ export async function GET(
     // Asked BEFORE the file is fetched. A refusal that first downloads several megabytes out of
     // Drive is the same refusal with a bill attached.
     const format = new URL(request.url).searchParams.get("format");
-    if (!format || !RENDER_ONLY_FORMATS.has(format)) {
+    const isRender = Boolean(format && RENDER_ONLY_FORMATS.has(format));
+    if (!isRender && !revealPhoneToViewer(await loadCallClaim(candidateId), access.hrId)) {
       return NextResponse.json(
         { error: "forbidden", message: DOWNLOAD_BLOCKED, success: false },
         { status: 403 },
@@ -80,9 +78,9 @@ export async function GET(
         { status: 403 },
       );
     }
-    // Reached only with a render format, so this returns the plain-text encoding of the bytes or
-    // the lines of a legacy .doc — no document content-type, no filename, no Content-Disposition
-    // either way. See file-response.ts.
+    // A render format returns the plain-text encoding of the bytes or the lines of a legacy .doc —
+    // no document content-type, no filename, no Content-Disposition. Any other mode reaches here
+    // only for the reservation holder and is the real file. See file-response.ts.
     return recruitmentFileResponse(request, download);
   } catch (error) {
     return recruitmentApiError(error, "File download failed.");

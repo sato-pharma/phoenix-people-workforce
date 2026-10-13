@@ -142,8 +142,8 @@ export function runCvLinkedInAndSelectableTextTests() {
   assert.ok(paint > 0 && paint < gate, "the phone numbers are painted out before anything else is laid over the page");
   assert.match(
     read("src/components/employee-portal/candidate-cv-actions.tsx"),
-    /allowDownload=\{false\}/,
-    "the manager's portal still refuses the download — which is what keeps its CVs un-copyable",
+    /allowDownload=\{showPhoneNumbers\}/,
+    "the manager's portal offers the download only to the reservation holder — whose page is also unredacted, so only he can select its text",
   );
   // `docTextUrl` joined the list on 2026-09-27 with the legacy-.doc read — it is the same file URL
   // in the doc-text mode, so it changes together with bytesUrl and adds no extra redraw.

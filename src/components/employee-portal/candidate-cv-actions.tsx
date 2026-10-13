@@ -10,17 +10,21 @@ import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
 
 /**
- * View CV, for any candidate the caller is allowed to see. READ ONLY — there is no download here.
+ * View CV, for any candidate the caller is allowed to see — and Download, for the manager holding the
+ * "I will call" reservation on this CV.
  *
- * THE DOWNLOAD IS GONE, AND ITS ABSENCE IS THE FEATURE. The owner, 2026-09-09: *"the download to be
- * blocked of the cv"*. A manager reads the CV on the screen and answers on the screen; he does not
- * keep the document. The preview renders the real thing — pages, tables, photographed CVs — so
- * nothing he needs in order to judge somebody has been taken away with it.
+ * THE DOWNLOAD FOLLOWS THE PHONE NUMBER. The owner blocked it on 2026-09-09 (*"the download to be
+ * blocked of the cv"*) and on 2026-10-13 asked for managers to download any CV; the original file
+ * prints the number the reservation reveals, so he chose: download only after "I will call". The
+ * same flag that unmasks the number (`showPhoneNumbers`) therefore opens the download, so the two
+ * cannot drift. Before the reservation the preview renders the real thing — pages, tables,
+ * photographed CVs — with the numbers painted out, and nothing he needs to judge somebody is missing.
  *
- * THE SERVER IS WHAT ENFORCES IT. This file only stops OFFERING the control; the route behind it
- * refuses to serve the bytes as a file at all and answers only the in-page base64 render — see
- * app/api/recruitment/hiring-manager/candidates/[candidateId]/files/[fileId]/route.ts. Removing a
- * button while the URL still works is not blocking a download, and that URL is one right-click away.
+ * THE SERVER IS WHAT ENFORCES IT. This file only decides what to OFFER; the route behind it serves
+ * the bytes as a file solely to the reservation holder and otherwise answers only the in-page base64
+ * render — see app/api/recruitment/hiring-manager/candidates/[candidateId]/files/[fileId]/route.ts.
+ * A button that is not there while the URL still works is not a block, and that URL is one
+ * right-click away.
  *
  * WHY "VIEW CV" WAS NEVER A LINK, WHICH IS WHY THIS STILL WORKS. The bare file route used to serve
  * Content-Disposition: attachment unless asked for "inline", so a plain link saved the file and
@@ -94,10 +98,9 @@ export function CandidateCvActions({
   const loaded = Boolean(initialFiles) || fetchSettled;
 
   const cvFile = files.find((file) => file.kind === "cv");
-  // "unsupported" means the preview cannot render this file type at all. It used to be the one case
-  // where the CV button was allowed to be a download, and it no longer can be: there is nowhere left
-  // for such a file to go, so the card says so in words rather than opening a preview whose only
-  // content would be the same sentence.
+  // "unsupported" means the preview cannot render this file type at all. There is nothing to open,
+  // so the card says so in words rather than opening a preview whose only content would be the same
+  // sentence; the reservation holder gets the Download link below instead.
   //
   // A WORD 97-2003 .doc IS NO LONGER ONE OF THEM. It answers "docx" here (a Word file), and since
   // 2026-09-27 the preview reads it as text on the server — legacy-doc-text.ts. So a manager gets
@@ -128,16 +131,32 @@ export function CandidateCvActions({
               {cvFile.fileName}
             </p>
           </>
+        ) : showPhoneNumbers ? (
+          <p className="break-words text-xs text-slate-400" dir="auto">
+            {cvFile.fileName} is an older format that cannot be shown on screen. Download it below.
+          </p>
         ) : (
           <p className="break-words text-xs text-slate-400" dir="auto">
-            {cvFile.fileName} is an older Word format that cannot be shown on screen. Ask the
-            recruitment team to send you a readable copy.
+            {cvFile.fileName} is an older format that cannot be shown on screen. Press &ldquo;I will
+            call&rdquo; to download it.
           </p>
+        )}
+        {showPhoneNumbers ? (
+          <a
+            className="inline-block text-xs font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900"
+            href={href}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Download CV
+          </a>
+        ) : (
+          <p className="text-xs text-slate-400">Press &ldquo;I will call&rdquo; to download this CV.</p>
         )}
       </div>
       {previewOpen ? (
         <CvPreviewModal
-          allowDownload={false}
+          allowDownload={showPhoneNumbers}
           downloadUrl={href}
           fileName={cvFile.fileName}
           headerActions={

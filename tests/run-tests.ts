@@ -8655,7 +8655,7 @@ await runTest(
 );
 
 await runTest(
-  "a manager's CV card: the phone is revealed by the \"I will call\" reservation and by nothing else, and the download is blocked in the route",
+  "a manager's CV card: the phone is revealed by the \"I will call\" reservation and by nothing else, and the file goes only to the reservation holder in the route",
   runCandidateCallClaimTests,
 );
 
