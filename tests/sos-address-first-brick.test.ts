@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 
 import { addressBrick } from "../src/lib/sales/normalizer/address-brick.ts";
+import { addressCorrectionsToHeal, healAddressCorrectionHistory } from "../src/lib/sales/normalizer/customer-map.ts";
 import { resolveBrick } from "../src/lib/sales/normalizer/resolvers.ts";
-import type { BrickRef, Crosswalks } from "../src/lib/sales/normalizer/types.ts";
+import type { BrickRef, Crosswalks, CustomerBrickCorrection } from "../src/lib/sales/normalizer/types.ts";
 
 // THE ADDRESS IS THE FIRST SOURCE OF TRUST (owner, 2026-10-13). A brick named in the customer's own
 // address outranks the distributor's territory label and the stored customer mapping; only an owner
 // ruling (confidence 100) and a direct brick id stand above it. The 13 Oct 2026 audit found 1,463 map
 // rows whose address named another brick — 380 of them in another area — and the importer had been
 // re-stamping every one of them from the label or the stale map each month.
-export function runSosAddressFirstBrickTests() {
+export async function runSosAddressFirstBrickTests() {
   const brick = (brickId: string, brickName: string, areaCode: string, regionCode = "UE"): BrickRef => ({
     areaCode, areaName: areaCode, blockCode: `BL-${areaCode}`, blockName: "", brickId, brickName, regionCode, regionName: regionCode,
   });
@@ -115,4 +116,50 @@ export function runSosAddressFirstBrickTests() {
   assert.equal(resolve(null, "جرجا"), null, "a bare village name with no region to check it against places nothing");
   assert.equal(resolve(null, "جرجا - سوهاج")?.brickId, "B3", "a village plus its governorate is enough");
   assert.equal(resolve(null, "جرجا - قنا"), null, "a village outside the governorate stated is a namesake");
+
+  // ── 8. THE FUTURE HEALS THE PAST: an address move re-points the pharmacy's earlier sales ──────
+  // Owner, 2026-10-13: "fix and heal historical and future". Only ADDRESS corrections that were
+  // actually WRITTEN heal — a label correction updates the map and leaves history alone, and an
+  // owner ruling is never written, so it never heals.
+  const corrections: CustomerBrickCorrection[] = [
+    { brickId: "B3", customerCode: "1001", distributorCode: "ps", previousBrickId: "B2", source: "address" },
+    { brickId: "B3", customerCode: "1002", distributorCode: "PS", previousBrickId: "B2", source: "sheet" },
+    { brickId: "B3", customerCode: "1003", distributorCode: "PS", previousBrickId: "B2" },
+    { brickId: "B3", customerCode: "1004", distributorCode: "PS", previousBrickId: "B2", source: "address" },
+    { brickId: "B9", customerCode: "1005", distributorCode: "PS", previousBrickId: null, source: "address" },
+  ];
+  const written = new Set(["PS 1001", "PS 1002", "PS 1003", "PS 1005"]); // 1004 was an owner ruling
+  const heal = addressCorrectionsToHeal(corrections, written);
+  assert.deepEqual(heal.map((c) => c.customerCode), ["1001", "1005"], "only written ADDRESS corrections heal history");
+
+  const calls: Array<{ args: Record<string, unknown>; fn: string }> = [];
+  let queued: Array<Record<string, unknown>> = [];
+  let conflictKey = "";
+  const fake = {
+    from: (table: string) => ({
+      upsert: (rows: Array<Record<string, unknown>>, opts: { onConflict: string }) => {
+        assert.equal(table, "source_of_sales_brick_move_files", "the touched files go to the brick-move queue");
+        queued = rows;
+        conflictKey = opts.onConflict;
+        return Promise.resolve({ error: null });
+      },
+    }),
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      calls.push({ args, fn });
+      const files = args.p_customer === "1001" ? ["batch-jan", "batch-feb"] : ["batch-feb"];
+      return Promise.resolve({ data: [{ affected_batch_ids: files, updated_rows: files.length * 3 }], error: null });
+    },
+  };
+  const healed = await healAddressCorrectionHistory(fake as never, heal);
+  assert.deepEqual(calls.map((c) => c.fn), ["sos_reconcile_import_rows_from_customer_map", "sos_reconcile_import_rows_from_customer_map"]);
+  assert.deepEqual(calls[0].args, { p_customer: "1001", p_distributor: "PS" }, "the distributor is normalized before the reconcile");
+  assert.equal(healed.rows, 9);
+  assert.equal(healed.files, 2, "each file is counted once however many pharmacies touched it");
+  assert.equal(conflictKey, "old_brick_id,batch_id");
+  assert.ok(queued.every((q) => q.refreshed_at === null && q.refresh_started_at === null), "a queued file waits for the drain");
+  assert.deepEqual(
+    queued.map((q) => `${String(q.old_brick_id)} ${String(q.batch_id)}`).sort(),
+    ["B2 batch-feb", "B2 batch-jan", "B9 batch-feb"],
+    "keyed by the brick the pharmacy left, or the one it joined when it had none",
+  );
 }

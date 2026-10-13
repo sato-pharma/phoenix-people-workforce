@@ -12,7 +12,9 @@
  * phx_write_monthly_store_split_net replaces a period wholesale, and the computation is a pure
  * function of the closing detail rows.
  *
- * WHICH PERIODS. The store city split itself starts at `STORE_CITY_SPLIT_FROM_PERIOD` — 2026-07
+ * WHICH PERIODS. Any period one of the three rules covers — the Office respread from 2026-01 (owner,
+ * 2026-10-13), the city split from `STORE_CITY_SPLIT_FROM_PERIOD` and the EPDA-BULK allocation. The
+ * city split itself starts at `STORE_CITY_SPLIT_FROM_PERIOD` — 2026-07
  * since the owner's 2026-10-02 "FIX JULY" ruling — so anything earlier produces an empty net by
  * construction and is skipped rather than written. Within a period the PER-LINE warehouse gate still
  * applies — Pedia uses the 2026-09 rulings from August, every other line does not until September —
@@ -43,6 +45,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
+import { isBulkAllocationActive } from "@/lib/sales/bulk-allocation-channel";
+import { isOfficeRespreadActive } from "@/lib/sales/office-distributor";
 import { isStoreCitySplitActive } from "@/lib/sales/store-sales-city-split";
 import {
   ATTRIBUTION_SPLIT_LINES,
@@ -122,8 +126,11 @@ async function main(): Promise<void> {
   );
 
   for (const period of periods) {
-    if (!isStoreCitySplitActive(period)) {
-      console.log(`${period}: before the store city split starts — skipped, net stays empty`);
+    // The SAME three-rule gate writeStoreSplitNetForPeriods uses: the city split (2026-07), the
+    // EPDA-BULK allocation (2026-09) and the Office respread (2026-01 since his 2026-10-13 ruling).
+    // Gating on the city split alone skipped January–June, whose net now carries the Office respread.
+    if (!isStoreCitySplitActive(period) && !isBulkAllocationActive(period) && !isOfficeRespreadActive(period)) {
+      console.log(`${period}: before every split rule starts — skipped, net stays empty`);
       continue;
     }
     console.log(`${period}:`);

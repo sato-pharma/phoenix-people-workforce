@@ -1277,7 +1277,7 @@ export function officeAllocationDriftItems(
       if (moved <= 0) continue;
       const areas = line.areas.length;
       // 🔴 A MONTH THE READ-TIME RESPREAD COVERS IS NOT HIS TO ACT ON, AND IS STILL REPORTED.
-      // From the September 2026 closing on CNS the closing recomputes the spread on every read
+      // From the January 2026 closing on CNS the closing recomputes the spread on every read
       // (closing-office-respread.ts), so this difference lives in the STORED rows only — no closing
       // figure, tab or workbook is wrong, and re-committing the Office book would fix nothing that
       // is broken. It stays on the board because this board may never under-report: the stored rows

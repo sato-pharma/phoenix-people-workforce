@@ -245,3 +245,20 @@ TypeScript matcher made 1,406 of the audit's moves to the identical brick and no
 one. It held back 38 — 36 where the address named two bricks, two where the cut-markaz guard now
 applies — and every one of those is already a confidence-100 ruling. After the moves it would move
 nothing else.
+
+**History follows the address, from now on too** (owner, 2026-10-13 — "fix and heal historical and
+future"). Historical: after the moves, 0 import rows from January to October 2026 disagree with the
+customer map, and the store-split net for July, August and September was recomputed by the same
+rebuilds (03:51–03:55 Cairo). Future: when an upload's ADDRESS moves a pharmacy, the self-heal now
+re-points that pharmacy's earlier sales with `sos_reconcile_import_rows_from_customer_map` (a file
+touching a locked closing stays whole) and queues each touched file in
+`source_of_sales_brick_move_files`, so the 20-minute `phoenix-brick-move-drain` rebuilds its totals
+and settles the store-split net. A correction from the territory LABEL still updates only the map —
+the label is not geography — and an owner ruling is never rewritten, so it never heals either.
+
+**The Office split recomputes from January 2026** (owner, 2026-10-13, asked as a choice — "Recompute
+from January 2026"). It reverses his 2026-10-09 ruling "leave January-June outside the respread
+window": `OFFICE_RESPREAD_START_PERIOD` is `2026-01`, so every 2026 month's CNS Office channel is
+spread by today's area shares on every read, and the address remap's moves reach the Office half of
+each month too. Nothing was published or locked when he ruled (0 live publication rows, 0 locks of
+38). The stored attribution net for January to September is rewritten once after the deploy.

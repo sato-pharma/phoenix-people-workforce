@@ -86,10 +86,15 @@ export function isOfficeDistributorCode(value: unknown): boolean {
  * hazard in the first ruling is reachable only for a month frozen BEFORE this rule — August and
  * earlier, which this constant excludes.
  */
-export const OFFICE_RESPREAD_START_PERIOD = "2026-09";
+// 🔴 HIS FOURTH RULING, 2026-10-13, REVERSES THE THIRD: asked whether January–August 2026 should
+// recompute their Office split like September and October — after the address remap re-pointed
+// 5,459 own-sales rows across every 2026 month — he chose **"Recompute from January 2026"**. Nothing
+// was published or locked when he ruled (0 live publication rows, 0 locks), so no announced number
+// moved; every month's net is rewritten once after the deploy. It moves again only by his own word.
+export const OFFICE_RESPREAD_START_PERIOD = "2026-01";
 
 /**
- * True for `2026-09` and every month after it.
+ * True for `2026-01` and every month after it.
  *
  * A STRING comparison on `YYYY-MM`, which sorts correctly, and a period that is not that shape
  * answers FALSE — the safe direction, because a month this cannot read is a month whose published
@@ -102,7 +107,7 @@ export function isOfficeRespreadActive(period: string | null | undefined): boole
 }
 
 /**
- * True when this (line, period) pair takes the read-time respread at all — CNS, from September 2026.
+ * True when this (line, period) pair takes the read-time respread at all — CNS, from January 2026.
  *
  * The line test is `isOfficeAllocationLine`, the SAME list the upload enforces and the closing
  * displays, deliberately: a second list would drift, and a drift here means respreading a line that
