@@ -68,3 +68,7 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 - 🔴 [both new IS-L depots are RULED, not inferred](the-two-new-is-l-depots-are-ruled-not-inferred.md) - `04` Platform Delta stays Gharbia 1 (Tanta), `A2` Assiut 2 Warehouse takes Assuit 2 (`UE4`), his word 13 Oct 2026; the "warehouse = region, no area" rows are not a policy, so ask him for the next unseen depot's area and ship it as a migration.
 
 - 🔴 [the 521/520/525 bursts are production Postgres CRASH-RESTARTING, not Cloudflare](a-production-postgres-crash-restart-wears-cloudflare-codes.md) - twice in three days (10 Oct 11:05:48, 12 Oct 19:04:50 Cairo), each "not properly shut down" with no PANIC; prove it with `pg_postmaster_start_time()` and `cron.job_run_details`' `server restarted`, never with the edge codes, and never lengthen the retry to ride it out.
+
+- [a long bash heredoc is truncated and bash blames EOF](a-long-bash-heredoc-is-truncated-and-bash-blames-eof.md) - past roughly 90 lines the tail never arrives, so `unexpected EOF` reads as a quoting bug in the content; long file content goes through Write.
+
+- 🔴 [a SECOND live feed link silently pauses the weekly token rotation](a-second-live-feed-link-silently-pauses-the-weekly-token-rotation.md) - all three `*-rotate-sheet-token` jobs refuse rather than rotate, cron-job.org still shows a green 200, and only `job_heartbeats.last_detail` says why; keep the link with the live `last_accessed_at`.

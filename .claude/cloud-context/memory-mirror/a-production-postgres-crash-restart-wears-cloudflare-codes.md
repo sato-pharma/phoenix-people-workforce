@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 7227dfbc-9a64-48b5-a8d0-94f28cee391e
-  modified: 2026-10-13T01:40:25.637Z
+  modified: 2026-10-13T01:55:17.637Z
 ---
 
 Reported 2026-10-12 as "a 38-second Supabase edge outage, 79 requests failed". The edge codes verify
@@ -46,6 +46,17 @@ the two events: 10 Oct 11:00–11:30 had **22 logins and 9 born-dead sessions**;
 1.4 s of budget against a **38 s** outage, so in-flight reads still fail and that is deliberate: a
 retry long enough to ride a restart would freeze every page for the length of the restart. 🔴 **Do not
 "fix" this by lengthening the retry.**
+
+🔴 **THE ALARM ALREADY EXISTS — DO NOT BUILD A SECOND ONE** (his decision, 13 Oct 2026: build the
+restart alarm and draft the Supabase ticket). `runDatabaseRestartCheck()` rides the 15-minute
+`job-heartbeat-sweep` clock as a third independent watch, over
+`public.note_database_restart()` (migration `20261013150001`), so **there is no new cron job and no
+cron-job.org entry to look for.** Two things about it are deliberate and must not be "tidied":
+its **idempotency key is the postmaster start time, not the Cairo day** — two restarts in one day
+have to be two messages, which is the whole pattern — and it sends **no email**, because it can fire
+because the database holding the outbox is unreachable. The migration **seeds** the current start
+time so installing it does not fire it, and a new start time with nothing on record is a
+`first-sighting` that only logs. Pinned by `tests/database-restart-watch.test.ts`.
 
 Related: [[a-supabase-blip-signs-everyone-out]] · [[a-supabase-stall-costs-a-minute-not-15-seconds]] ·
 [[production-supabase-has-no-pitr-only-daily-backups]] · [[a-200-from-a-health-endpoint-can-be-blind]]
