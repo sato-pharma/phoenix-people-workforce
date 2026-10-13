@@ -10,6 +10,7 @@ import {
   withLedgerInsert,
 } from "../scripts/apply-migrations-to-staging.ts";
 import {
+  ACKNOWLEDGED_EXCEPTIONS,
   commitTimeMsForOneFileSlowly,
   commitTimesByFileNameForTests,
   isRecorded,
@@ -346,6 +347,76 @@ export function runStagingMigrationApplierTests() {
     ),
     [],
     "an acknowledged exception is never selected, even against a completely empty ledger",
+  );
+
+  // ── Every acknowledged exception still names a migration that EXISTS ──────────────────────────
+  //
+  // The list is keyed on the file NAME and matched exactly, so an entry that names nothing excuses
+  // nothing — and it fails in the direction nobody looks at. A typo, a renamed file or a migration
+  // that was removed leaves an entry that reads like cover while the real file keeps being
+  // reported: the nightly stays red, the next session re-investigates a migration that was settled
+  // weeks ago, and the stale line is the last thing anyone suspects because it looks deliberate.
+  // 81 entries on 2026-10-13, each carrying the evidence that excused it, and that is exactly why
+  // nobody reads the whole block before adding the next one.
+  //
+  // This is the doctrine tests/migration-grandfather-staleness.test.ts applies to
+  // GRANDFATHERED_DUPLICATE_TIMESTAMPS and tests/hr-function-governance.test.ts to its
+  // grandfathered name collisions — an exemption must not rot into cover for something that is no
+  // longer there. ACKNOWLEDGED_EXCEPTIONS is the sharpest case of the three, because re-applying
+  // one of the files it covers is a real regression (a bare `create or replace view` that strips
+  // `security_invoker = true`, or any of the superseded function bodies catalogued in
+  // docs/security/migration-ledger-reconciliation-2026-10-08.md and -2026-10-13.md) — so the list
+  // has to be trustworthy in both directions.
+  const staleExceptions = (entries: Iterable<string>, onDisk: Set<string>) =>
+    [...entries].filter((fileName) => !onDisk.has(fileName)).sort();
+
+  const migrationsOnDisk = new Set(readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")));
+  assert.ok(
+    migrationsOnDisk.size > 500,
+    `only ${migrationsOnDisk.size} migration file(s) were read from ${MIGRATIONS_DIR} — the directory ` +
+      `held 865 on 2026-10-13, so a count this low means the read failed and every assertion below is vacuous`,
+  );
+  assert.ok(
+    ACKNOWLEDGED_EXCEPTIONS.size > 60,
+    `ACKNOWLEDGED_EXCEPTIONS parsed as ${ACKNOWLEDGED_EXCEPTIONS.size} entries — it held 81 on ` +
+      `2026-10-13 and only ever grows, so this is the import breaking rather than the list emptying`,
+  );
+  assert.deepEqual(
+    staleExceptions(ACKNOWLEDGED_EXCEPTIONS, migrationsOnDisk),
+    [],
+    "these acknowledged exceptions name no migration file on disk. An exception is matched on the " +
+      "exact file name, so each of these excuses nothing while reading as settled — fix the name or " +
+      "delete the entry, and say in its comment which it was.",
+  );
+
+  // And the rule must actually FIRE, because a filter whose predicate was inverted or emptied would
+  // pass the assertion above on every real input it is ever given.
+  assert.deepEqual(
+    staleExceptions(
+      ["20260717030000_crm_effective_visit_type_view.sql", "20261013999999_never_existed.sql"],
+      migrationsOnDisk,
+    ),
+    ["20261013999999_never_existed.sql"],
+    "the staleness rule must name an entry that matches no file, and must leave a real one alone",
+  );
+
+  // The list is also a Set literal, so a duplicated line is swallowed in silence — and a duplicate
+  // is the fingerprint of two sessions excusing the same file for DIFFERENT reasons, which means one
+  // of the two pieces of evidence beside it is wrong.
+  const literal = readFileSync("scripts/lib/migration-inventory.ts", "utf8").match(
+    /ACKNOWLEDGED_EXCEPTIONS = new Set<string>\(\[([\s\S]*?)\n\]\)/,
+  );
+  assert.ok(
+    literal,
+    "could not find the ACKNOWLEDGED_EXCEPTIONS literal in scripts/lib/migration-inventory.ts — if it " +
+      "was restructured, update this guard rather than deleting it",
+  );
+  const listed = [...literal[1].matchAll(/"([^"]+\.sql)"/g)].map((m) => m[1]);
+  assert.equal(
+    listed.length,
+    ACKNOWLEDGED_EXCEPTIONS.size,
+    `the literal lists ${listed.length} file name(s) but the Set holds ${ACKNOWLEDGED_EXCEPTIONS.size} — ` +
+      `the difference is a duplicated entry, which Set construction drops without a word`,
   );
 
   // ── No migration carries a dollar-sign fault ──────────────────────────────────────────────────

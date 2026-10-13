@@ -592,6 +592,93 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // It masks nothing on staging: staging's ledger holds it by version AND name
   // (20261006185533 / crm_contact_list_refusal_neutral), read live on cifwmndunmlxjhyjugxa.
   "20261006185533_crm_contact_list_refusal_neutral.sql",
+  // ── Added 2026-10-13, on the owner's instruction. TEN more files production's ledger held no row
+  // for, by version or by name, all past the 48h grace window (oldest 138h). Same shape as
+  // 2026-10-08 and judged the same way: `md5(pg_proc.prosrc)` against the file's own dollar-quoted
+  // body, never a catalog probe — and for the four files that define no function, the one-time
+  // structural facts they alone produce. All ten came back APPLIED. None needed applying, and
+  // nothing was written to production. Full account, with every digest:
+  // docs/security/migration-ledger-reconciliation-2026-10-13.md
+  //
+  // All ten are in STAGING's ledger by version AND name, read live on cifwmndunmlxjhyjugxa before
+  // these entries were written — so each entry masks a production-only gap and nothing on staging.
+  // That is the normal staging-first direction these checks exist to catch.
+  //
+  // Verified: public.phoenix_crm_admin_edit_visit md5-equal at 8e9e08c70f373ab3b576a8275688494b,
+  // 5,885 chars, and this file is its LAST definer in the directory. Table
+  // phoenix_crm_visit_edits and phoenix_crm_visit_edits_visit_idx both present.
+  // 🔴 Its OTHER function, phoenix_crm_save_visit, is SUPERSEDED by 20261010180118 — a re-apply
+  // would revert production from a 28,152-character body to this file's 27,663-character one.
+  "20261006234611_phoenix_crm_visit_company_and_admin_edit.sql",
+  // Verified: public.phoenix_crm_decide_validation_review md5-equal at
+  // 10db6f07b837ad35fd230c3e012332e3, 6,817 chars, and this file is its LAST definer. Both columns
+  // it adds are live (phoenix_crm_validation_reviews.refusal_reason,
+  // phoenix_crm_customers.reopened_at) along with phoenix_crm_customers_reopened_waiting_idx.
+  "20261008023801_phoenix_crm_validation_refusal_reason.sql",
+  // Verified: public.phoenix_crm_move_place md5-equal at d67d626e02daab6fccf529c5458f3aaa,
+  // 3,501 chars, and this file is its LAST definer.
+  // 🔴 Its OTHER function, phoenix_crm_insert_place, is SUPERSEDED — production runs
+  // 20261010190001's body, and this file's is the 3,284-character generation FIVE revisions back.
+  // A re-apply would revert four later migrations' work to that function at once.
+  "20261008024500_phoenix_crm_place_brick_lookup_write.sql",
+  // Verified: TWO functions md5-equal, both with this file as their LAST definer —
+  // phx_attendance_balance_reversal_shape at 0b8868570ef654644a7712589b2480a8 (954 chars) and
+  // phx_deductions_return_leave_balance at 19cf8fa9e9b24f1c0dcff7ee999e3a49 (2,007 chars). Table
+  // attendance_annual_balance_charges is present with its candidate index and both unique indexes.
+  // 🔴 Its THIRD function, phx_deductions_charge_leave_balance, is SUPERSEDED by
+  // 20261009210000_deductions_leave_balance_vacation_categories — that one's body is what runs
+  // (a79f9646940b18e1f8b8c9edcf55d679 comment-stripped, 3,617 chars), so a re-apply would drop the
+  // vacation categories back out.
+  "20261009200000_deductions_leave_balance_charges.sql",
+  // Verified structurally — this file defines no function, so there is nothing to digest, and every
+  // fact below is one-time and could not have arrived any other way. The
+  // 'sos_mapping_guard_alert' row is GONE from public.notification_role_policies, exactly 24 policy
+  // rows remain, and notification_role_policies_notification_key_check has been rebuilt without
+  // that key while still carrying 'accepted_offer_alert' — which is precisely the 24-key list this
+  // file writes.
+  "20261010030000_notification_role_policies_retire_mapping_guard_key.sql",
+  // Verified structurally, and this one is a file of DROPS, so presence-of-absence IS the proof:
+  // 0 functions matching sos_map_guard% or sos_move_brick_sales_after_hold, 0 triggers matching
+  // sos_map_guard%, and public.sos_map_guard_permits absent. The Mapping Guard is retired, which is
+  // also a standing rule — see .claude/rules/sales-imports.md, "never rebuild it".
+  "20261010030100_retire_mapping_guard.sql",
+  // Verified structurally — an index SWAP, where both halves are checkable and neither is
+  // reversible by accident. employees_hr_id_upper_trim_idx exists on exactly this file's
+  // expression, `CREATE INDEX employees_hr_id_upper_trim_idx ON public.employees USING btree
+  // (upper(btrim(hr_id)))`, and employees_hr_id_lower_trim_idx is gone.
+  "20261010100000_employees_hr_key_expression_index.sql",
+  // Verified: TWO functions md5-equal, both with this file as their LAST definer —
+  // phoenix_crm_save_plan at daa8205f6cf06d69724f008af2d83218 (6,271 chars) and
+  // phoenix_crm_save_visit at 2b2d499b83b93b2edd3574748637eeb0 (28,152 chars). Column
+  // phoenix_crm_places.session is present.
+  // 🔴 Its THIRD function, phoenix_crm_insert_place, is SUPERSEDED by 20261010190001.
+  "20261010180118_phoenix_crm_seating_session.sql",
+  // Verified structurally — its only function is superseded, so the two unique indexes it alone
+  // creates are the evidence, and both are live with this file's exact definitions:
+  // phoenix_crm_shared_places_timetable_uidx on phoenix_crm_shared_places(schedule_photo_path), and
+  // phoenix_crm_places_photo_uidx on phoenix_crm_places(photo_path) WHERE shared_place_id IS NULL.
+  // 🔴 SUPERSEDED function: phoenix_crm_insert_place, by 20261010190001, whose own name
+  // (_insert_place_session_and_one_timetable) carries this file's one-timetable change forward
+  // together with 20261010180118's session change. A re-apply would revert both.
+  "20261010190000_phoenix_crm_one_timetable_for_a_polyclinic.sql",
+  // Verified: all THREE of its functions md5-equal, and this file is the LAST definer of each —
+  // phoenix_crm_seat_places_in_venue at 10811cdd02818e4bfd935a79ba397cc2 (10,241 chars),
+  // phoenix_crm_set_venue_timetable at cea0bbe19f2d6a0d7de8b995408d5927 (2,441 chars) and
+  // phoenix_crm_settle_venue_timetable at 412c565c0bab71b9371af07474e17931 (5,717 chars). Nothing
+  // here is superseded, so this is the cleanest of the ten.
+  "20261010210000_phoenix_crm_seat_places_in_venue.sql",
+  // An ELEVENTH file, flagged the same night — it crossed the 48h grace window (55h old) while the
+  // ten above were being judged, so it is in the account's addendum rather than its tables.
+  // Verified: public.phoenix_crm_offplan_visit_cap, the ONLY definition of that function in the
+  // directory, is COMMENT-STRIPPED-equal to this file at 8a4b9a20da1abcb9199ff50f17cf14ec, 1,205
+  // chars both sides. Production's prosrc carries ZERO `--` comments (1,345 chars against the
+  // file's 1,630) and the file has one commit, never edited after it was added — so the version
+  // that ran was sent comment-free down a path that writes no ledger row, not an older generation
+  // of the logic. Everything the file does besides the function is live and exact:
+  // phoenix_crm_settings.offplan_daily_cap default 2 and offplan_weekly_cap default 8, both CHECKs
+  // (1..20 and 1..100) as written, the BEFORE INSERT trigger phoenix_crm_visits_offplan_cap present
+  // on phoenix_crm_visits, and the settings row reading 2/8 — the owner's own numbers (2026-10-10).
+  "20261010214440_phoenix_crm_offplan_visit_caps.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
