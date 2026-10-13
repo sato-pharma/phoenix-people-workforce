@@ -5,6 +5,8 @@ import ExcelJS from "exceljs";
 
 import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
 import { type ClosingRepRankingCarve, type RepRanking } from "@/lib/sales/closing-rep-ranking";
+import { CLOSING_ROWS_SHEET_NAME, closingRowsSheetSpec } from "@/lib/sales/closing-rows-sheet";
+import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
 import {
   DIRECT,
   DIST,
@@ -581,6 +583,19 @@ export async function buildRepRankingWorkbook(input: {
   probationByName: ReadonlyMap<string, string>;
   carve: Pick<ClosingRepRankingCarve, "direct" | "stores">;
   publications?: ReadonlyArray<RankingPublication>;
+  /**
+   * The closing month's detail rows, for the Rows tab — owner, 2026-10-13.
+   *
+   * Optional: absent, the workbook is built exactly as it was before, minus that one tab. The
+   * caller already holds these rows (it carves the channels out of them), so passing them costs no
+   * second read of the month and the tab cannot disagree with the ranking it sits beside.
+   */
+  details?: readonly ClosingDetailRow[];
+  /**
+   * Distributor code → name, for the Rows tab's Distributor column. The owner's standing rule is
+   * names, never codes; an empty map falls back to "Unnamed distributor" rather than printing one.
+   */
+  distributorNames?: ReadonlyMap<string, string>;
 }): Promise<RepRankingWorkbookResult> {
   const { ranking } = input;
   const L = toLegacyShape(ranking, input.probationByName, input.carve, input.publications ?? []);
@@ -1643,7 +1658,100 @@ export async function buildRepRankingWorkbook(input: {
   }
 
   // ===========================================================================
-  // 5 -- Trust
+  // 5 -- Rows: every counted row of the closing month, at invoice grain
+  // ===========================================================================
+  // Owner, 2026-10-13: "I want the raw detailed sheet to be in the export rep ranking in monthly
+  // closing." Every other tab in this file is an aggregate — a seat, a district, an area x product.
+  // This is the layer underneath them, and the only one the ranking can be re-added from by hand.
+  //
+  // 🔴 ITS TOTAL IS THE LINE'S OWN FIGURE FOR THE MONTH, BY CONSTRUCTION — the Value column is each
+  // row's contribution to the closing, the same number the matrix sums, so this tab cannot drift
+  // from the Ranking tab beside it. The arrangement is shared with the premium workbook's Rows tab
+  // (closing-rows-sheet.ts), so the two files cannot disagree about what a counted row is.
+  //
+  // 🔴 IT CARRIES NO LETTERHEAD STRIP, AND THAT IS DELIBERATE RATHER THAN AN OMISSION. Every strip
+  // in `public/brand/anti-infective-ranking/` names ONE tab and bakes a MONTH into the artwork
+  // ("SEPTEMBER 2026"); there is no strip for this tab, and borrowing another's would print both
+  // the wrong tab name and a month this file may not be. The identity's own keycard band is drawn
+  // instead, from the figures this build actually counted.
+  //
+  // ONLY THE CLOSING MONTH, never the trend: the trend months are shown as figures on the
+  // month-by-month tabs, and three months of invoice rows is a different and much larger file. The
+  // caption names the month, so nobody has to infer it.
+  function sheetRows() {
+    const spec = closingRowsSheetSpec({
+      distributorNames: input.distributorNames ?? new Map<string, string>(),
+      line: LINE,
+      periodLabel: monthName(PERIOD),
+      rows: input.details ?? [],
+    });
+    // Null rather than an empty tab, exactly as every other optional sheet in this repo: a tab the
+    // Trust page lists and that holds nothing reads as a read that failed.
+    if (spec === null) return null;
+
+    const HEAD = [...spec.headers];
+    const W = [...spec.widths];
+    const COLS = HEAD.length;
+    const ws = book.dress(
+      wb.addWorksheet(CLOSING_ROWS_SHEET_NAME, { properties: { tabColor: { argb: LABEL_GREY } } }),
+      `every counted row, ${monthName(PERIOD)}`,
+    );
+
+    let row = keycards(ws, 2, [
+      { label: "ROWS COUNTED", value: spec.rowCount, fmt: "#,##0", sub: "every one of them is in the ranking" },
+      { label: "THEIR VALUE", value: Math.round(spec.totalValue), fmt: money, sub: `EGP - the line's own figure for ${monthName(PERIOD)}` },
+      { label: "LINE", value: LINE, sub: `${monthName(PERIOD)} only` },
+      { label: "GRAIN", value: "one invoice row", sub: "not an aggregate of anything" },
+    ], COLS);
+
+    row = sectionLabel(ws, row, "EVERY COUNTED ROW", spec.caption, COLS);
+    const headAt = row;
+    row = headerRow(ws, row, HEAD, W);
+
+    // 🔴 UNITS, PRICE, DISCOUNT AND THE ROW ID TAKE EXCEL'S GENERAL FORMAT, never the money one: an
+    // Office allocation row carries fractional units by the golden rule, and rounded to whole
+    // numbers a real sale prints as a zero. Only Value is money here.
+    const VALUE_COLUMN = HEAD.indexOf("Value EGP") + 1;
+    const UNITS_COLUMN = HEAD.indexOf("Units") + 1;
+    const BONUS_COLUMN = HEAD.indexOf("Bonus units") + 1;
+    const SMALL = new Set(["Customer name", "Customer address", "Product"]);
+
+    spec.records.forEach((record, index) => {
+      const zebra = index % 2 === 1;
+      record.forEach((value, column) => {
+        const heading = HEAD[column] ?? "";
+        cell(ws, row, column + 1, value, {
+          zebra,
+          ...(typeof value === "number" && column + 1 === VALUE_COLUMN ? { numFmt: money } : {}),
+          ...(SMALL.has(heading) ? { size: 9 } : {}),
+        });
+      });
+      row += 1;
+    });
+    const last = row - 1;
+
+    // 🔴 VALUE ONLY. Units are NOT totalled, here or anywhere: each row is one product code, so a
+    // column total across different products and concentrations is not a quantity of anything
+    // (AGENTS.md §4). The foot says so rather than leaving a reader to wonder why it stops.
+    for (let column = 1; column <= COLS; column += 1) cell(ws, row, column, "", {});
+    cell(ws, row, 1, `${spec.rowCount.toLocaleString("en-US")} rows`, { font: bold(10, INK) });
+    cell(ws, row, UNITS_COLUMN, "not totalled", { muted: true, size: 8.5 });
+    cell(ws, row, BONUS_COLUMN, "not totalled", { muted: true, size: 8.5 });
+    cell(ws, row, VALUE_COLUMN, Math.round(spec.totalValue), { numFmt: money, font: bold(10, INK) });
+    totalRow(ws, row, COLS);
+    row += 1;
+
+    footnote(ws, row + 1, spec.notes, COLS);
+
+    ws.autoFilter = { from: { row: headAt, column: 1 }, to: { row: last, column: COLS } };
+    // Frozen under the headings and after the first two columns, so a reader scrolling right keeps
+    // the invoice date and its reference in view — the two things a row is looked up by.
+    ws.views = [{ state: "frozen", xSplit: 2, ySplit: headAt, showGridLines: false }];
+    return ws;
+  }
+
+  // ===========================================================================
+  // 6 -- Trust
   // ===========================================================================
   function sheetTrust() {
     const COLS = 7;
@@ -1674,6 +1782,7 @@ export async function buildRepRankingWorkbook(input: {
       "Regions": "The area map's operational regions, which on this line do NOT hold the same seats as the districts - which is why they have their own sheet.",
       "Month by month": `Each seat across ${SPAN}, ranked by the achievement of ${SPAN_COUNT} together - which is not always the ranking of the closing month.`,
       "Units x Product x Month": "Units, one product at a time, month by month. The only sheet with a unit column, and it has no grand total on purpose: units of different products are not addable, so the foot says so instead of adding them.",
+      [CLOSING_ROWS_SHEET_NAME]: `Every counted row of ${monthName(PERIOD)}, at invoice grain — the layer under every tab above, and the only one the ranking can be re-added from by hand. Its Value column is each row's own contribution to the closing, so the total at its foot is the line's figure for the month. Units are not totalled on it: each row is one product code, and units of different products are not addable.`,
       "Trust": "This sheet. What every figure is made of, what is absent rather than zero, and which choices in the look were the identity's and which were not.",
     };
     const tabs = wb.worksheets.map((w) => [w.name, TAB_NOTE[w.name] ?? "-"]);
@@ -1819,6 +1928,9 @@ export async function buildRepRankingWorkbook(input: {
   if (!PARTITION.same) sheetRegions();
   sheetMonths();
   sheetUnits();
+  // Before Trust, deliberately: Trust lists the workbook's OWN tabs in their own order, so a sheet
+  // added after it would be missing from the list it prints.
+  sheetRows();
   sheetTrust();
 
   // The product rows actually in the file — counted on the built sheet rather than tracked by the

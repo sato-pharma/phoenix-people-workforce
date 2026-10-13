@@ -28,6 +28,20 @@ import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-p
 
 export type EngineValue = string | number | null;
 
+/**
+ * A number format named explicitly, for a column whose HEADING cannot imply it.
+ *
+ * `reviewColumnStyle` decides a column's format from its heading and falls back to money, which is
+ * right for every sheet built from aggregates. An invoice-grain sheet carries columns that are
+ * numbers but not money — units that are legitimately fractional, a row id, a unit price with
+ * decimals — and the money format rounds them to whole pounds and prints an em dash for zero. Those
+ * columns name their format instead of hoping a heading implies it.
+ *
+ * `plain` is the engine's own body style: the general format, which prints a number exactly as it
+ * is. Pinned by `tests/closing-rows-sheet.test.ts`.
+ */
+export type ReviewColumnFormat = "money" | "percent" | "growth" | "plain";
+
 export type EngineSheetFill = {
   /** Absolute writes into the header block — titles, KPI figures, captions. */
   cells?: Record<string, EngineValue>;
@@ -3275,7 +3289,8 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
           // A bar's numbers keep the DETAIL row's format and take only the bar's font, fill and
           // border. Pointing them at the bar's text style instead prints 10595778 unseparated and a
           // ratio as 0.28, directly under a column of figures that are formatted properly.
-          const numeric = reviewColumnStyle(heading);
+          const named = sheet.columnFormats?.[column] ?? null;
+          const numeric = named === null ? reviewColumnStyle(heading) : REVIEW_STYLE[named === "plain" ? "text" : named];
           const barNumeric = numeric === REVIEW_STYLE.percent ? bar?.percent : bar?.money;
           return `<c r="${ref}" s="${isBar ? barNumeric ?? numeric : numeric}"><v>${value}</v></c>`;
         }

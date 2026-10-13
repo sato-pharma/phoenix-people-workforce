@@ -261,6 +261,22 @@ export async function runClosingEngineExportTests() {
         what: "Every district manager's areas rolled into one row.",
         widths: [30, 18, 9, 16, 16, 14],
       },
+      // 🔴 A SHEET THAT NAMES ITS OWN COLUMN FORMATS — the invoice-grain Rows tab (owner,
+      // 2026-10-13). `reviewColumnStyle` reads the HEADING and falls back to money, which rounds to
+      // whole pounds and prints an em dash for zero. An Office allocation row carries 0.442381
+      // units by the golden rule, so a units column left to that fallback would show a real sale as
+      // nothing at all. `columnFormats` is how such a column says otherwise.
+      {
+        band: "The counted rows",
+        columnFormats: [null, "plain", "money"],
+        headers: ["Product", "Units", "Value EGP"],
+        name: "Rows",
+        rows: [["Royafloxacin 500 mg", 0.442381, 15.676877]],
+        subtitle: "every counted row, at invoice grain",
+        title: "Every counted row   Jul 2026   CNS",
+        what: "Every row the closing counted, at invoice grain.",
+        widths: [26, 9, 13],
+      },
     ],
   });
   const linkedBook = await fillClosingEngine(fill, {
@@ -1481,6 +1497,22 @@ export async function runClosingEngineExportTests() {
     );
     // Value columns must carry the engine's own money format, or they print as bare digits.
     assert.match(sheet, /s="43"/, "money columns take the engine's #,##0 format");
+
+    // 🔴 A NAMED `plain` COLUMN ESCAPES THAT MONEY FORMAT, and the emitted cell is where that is
+    // visible: the units cell must carry the body style, not s43, or 0.442381 prints as an em dash
+    // on a row that really sold something.
+    const rowsPart = partOf("Rows");
+    assert.ok(rowsPart, "a sheet that names its own column formats is registered like any other");
+    const rowsSheetXml = await opened.file(rowsPart!)!.async("string");
+    const dataRow = /<row r="5"[^>]*>([\s\S]*?)<\/row>/.exec(rowsSheetXml)?.[1] ?? "";
+    const styleOf = (column: string): string | null =>
+      new RegExp(`<c r="${column}5" s="(\\d+)"`).exec(dataRow)?.[1] ?? null;
+    assert.equal(styleOf("B"), "9", "the units column takes the engine's BODY style — the general format");
+    assert.equal(styleOf("C"), "43", "and the value column beside it still takes the money format");
+    assert.ok(
+      dataRow.includes("<v>0.442381</v>"),
+      "the fractional units reach the file exactly — the Office allocation's own spread, unrounded",
+    );
 
     // The review's sheets get their OWN contents band. Neither side of the merge that introduced
     // this had a test for it: the bands came from one branch and the review sheets from the other,

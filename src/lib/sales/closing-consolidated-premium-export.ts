@@ -28,7 +28,9 @@ import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import type { ClosingExportFilter } from "@/lib/sales/closing-export-payload";
 import { loadClosingPerformanceReview, PERFORMANCE_REVIEW_MONTHS } from "@/lib/sales/closing-performance-review";
+import { loadDistributorNameIndex } from "@/lib/sales/closing-details-distributor-names";
 import { buildReviewSheets } from "@/lib/sales/closing-review-sheets";
+import { buildClosingRowsSheet } from "@/lib/sales/closing-rows-sheet";
 import { type ClosingDetailRow, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { loadMergedMonthlyClosingParts } from "@/lib/sales/monthly-closing-period-load";
 import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
@@ -121,9 +123,25 @@ export async function buildConsolidatedPremiumClosing(input: {
     filterNote,
     periodLabel: consolidatedSpanLabel(parts.periods),
   });
+  // 🔴 EVERY COUNTED ROW OF THE SPAN, AT INVOICE GRAIN (owner, 2026-10-13). The same tab the
+  // single-month premium carries, over the months this file adds together. `details` above is
+  // already all-or-nothing across those months, so the tab is absent rather than partial whenever
+  // one of them failed to load — a span's detail sheet missing a month would undercount against a
+  // matrix that does not. Each row carries its own invoice date, so no extra month column is needed.
+  const rowsSheet = buildClosingRowsSheet({
+    distributorNames: await loadDistributorNameIndex(),
+    filterNote,
+    line: matrix.line,
+    periodLabel: consolidatedSpanLabel(parts.periods),
+    rows: details ?? [],
+  });
   const buffer = await fillClosingEngine(fill, {
     macroFree: !input.macros,
-    reviewSheets: noOfficeSheet ? [...reviewSheets, noOfficeSheet] : reviewSheets,
+    reviewSheets: [
+      ...reviewSheets,
+      ...(noOfficeSheet ? [noOfficeSheet] : []),
+      ...(rowsSheet ? [rowsSheet] : []),
+    ],
   });
 
   return {

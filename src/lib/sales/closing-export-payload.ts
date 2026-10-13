@@ -23,7 +23,7 @@
 import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import { buildClosingEngineFill, previousPeriod } from "@/lib/sales/closing-engine-data";
 import { loadClosingPerformanceReview } from "@/lib/sales/closing-performance-review";
-import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
+import { type ClosingDetailRow, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 
@@ -56,6 +56,16 @@ export type ClosingExportPayload = {
    */
   line: string | null;
   period: string | null;
+  /**
+   * Every counted row of the month, already scoped and masked by the details loader.
+   *
+   * 🔴 RETURNED RATHER THAN READ AGAIN. The Rows tab needs the same rows the engine's own bridge
+   * was built from, and a second `loadMonthlyClosingDetails` call would make a fourth reader of one
+   * month — the exact drift this module exists to prevent, and one that would surface as a detail
+   * sheet whose total disagreed with the Closing tab in the same file. Null when the read failed or
+   * came back on a different month, which is the engine's own condition for ignoring it.
+   */
+  details: ClosingDetailRow[] | null;
   /** The filter stamp in human names, or "" when nothing was narrowed. */
   filterNote: string;
   matrix: Awaited<ReturnType<typeof loadMonthlyClosingPartsWithStoreSplit>>["combined"];
@@ -173,6 +183,11 @@ export async function loadClosingExportPayload(
   const office = parts.office ? filterMonthlyClosingMatrix(parts.office, selection.filter) : null;
 
   return {
+    // CHECKED AGAINST WHAT IT RETURNED, exactly as `priorMatrix` above is: a details read that
+    // resolved to a different month would put one month's invoice rows on a tab the masthead labels
+    // with another's — and the total at its foot would then disagree with the Closing tab beside it
+    // for a reason no reader could see.
+    details: details && details.period === matrix.period ? details.rows : null,
     filterNote,
     fill: buildClosingEngineFill({
       coverage,

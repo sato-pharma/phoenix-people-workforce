@@ -17,7 +17,9 @@ import { loadClosingExportPayload } from "@/lib/sales/closing-export-payload";
 import { sealClosingSelection, sealedRepCardPdfBase } from "@/lib/sales/closing-pdf-link-seal";
 import { loadClosingQuarterGap } from "@/lib/sales/closing-quarter-gap";
 import { buildQuarterGapSheet, canSeeQuarterGapTab } from "@/lib/sales/closing-quarter-gap-sheet";
-import { buildReviewSheets } from "@/lib/sales/closing-review-sheets";
+import { buildClosingRowsSheet } from "@/lib/sales/closing-rows-sheet";
+import { loadDistributorNameIndex } from "@/lib/sales/closing-details-distributor-names";
+import { buildReviewSheets, closingSheetMonthLabel } from "@/lib/sales/closing-review-sheets";
 import { isClosingPdfSheet } from "@/lib/sales/closing-report-pdf";
 import { resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
 
@@ -236,10 +238,31 @@ export async function POST(request: Request) {
       filterNote: payload.filterNote,
     });
 
+    // 🔴 EVERY COUNTED ROW, AT INVOICE GRAIN — owner, 2026-10-13: "put the Rows tab in the premium
+    // closing download and in the ranking." The engine's own `Data` sheet is one row per area x
+    // product, so until now no download in the system reached invoice grain at all; the only place
+    // that did was the Details screen, which has no download button.
+    //
+    // It reads `payload.details` — the SAME rows the engine's Data/Total bridge was built from, not
+    // a second read of the month — so the total at the foot of the tab is the Closing tab's own
+    // figure by construction. The distributor names come from the master the Details screen uses,
+    // because the owner's standing rule is names, never codes.
+    // Never throws — it answers a failed read with an empty index, and the tab then falls back to
+    // "Unnamed distributor" rather than taking the whole download down for a label.
+    const distributorNames = await loadDistributorNameIndex();
+    const rowsSheet = buildClosingRowsSheet({
+      distributorNames,
+      filterNote: payload.filterNote,
+      line: payload.line,
+      periodLabel: payload.period ? closingSheetMonthLabel(payload.period) : null,
+      rows: payload.details ?? [],
+    });
+
     const appendedSheets = [
       ...reviewSheets,
       ...(quarterGapSheet ? [quarterGapSheet] : []),
       ...(noOfficeSheet ? [noOfficeSheet] : []),
+      ...(rowsSheet ? [rowsSheet] : []),
     ];
 
     const buffer = await fillClosingEngine(payload.fill, {

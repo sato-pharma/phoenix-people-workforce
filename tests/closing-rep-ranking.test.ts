@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import ExcelJS from "exceljs";
 import JSZip from "jszip";
 
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
@@ -440,6 +441,99 @@ export async function runClosingRepRankingTests(): Promise<void> {
     assert.ok(!xml.includes("<x14:id/>"), `${name}: the dangling data-bar extension is stripped`);
   }
   assert.ok(outlined > 0, "the workbook really is outlined — otherwise the collapse checks pass vacuously");
+
+  // ── THE ROWS TAB — every counted row, in the emitted file ─────────────────────────────────────
+  // Owner, 2026-10-13: "I want the raw detailed sheet to be in the export rep ranking in monthly
+  // closing." The arrangement is pinned in tests/closing-rows-sheet.test.ts; what is checked HERE
+  // is the thing only the built file can answer — that the tab lands, where it lands, that its
+  // total is written as a number, and that El Qema survives nowhere in the zip.
+  const detailRows = [
+    { clientName: "Sayed Pharmacy", distributorCode: "IS", id: 9_001, salesValue: 1_000 },
+    { clientName: "El Qema's own customer", distributorCode: "QM", id: 9_002, salesValue: 500 },
+  ].map((row) => ({
+    areaCode: "DK1", areaMismatch: false, areaName: "Dakahlia 1", blockCode: "B1", bonusQty: 0,
+    brickId: "B184-4", brickName: "Mansoura", brickUnmapped: false,
+    clientAddress: "12 Gomhoria Street", clientCode: `C${row.id}`, discount: 0,
+    effectiveUnits: 10, evenSplitApplied: false, exclusions: [], factoryPrice: 100, family: "RF",
+    includedInClosing: true, invoiceDate: "2026-09-07", invoicePeriod: PERIOD, invoiceRef: "0/1/1/18743",
+    isConfidential: false, isDirect: false, missingClientCode: false, officialLine: LINE,
+    operationalRegionCode: "DL", operationalRegionName: "Delta", productCode: "RF500",
+    productName: "Royafloxacin 500 mg", qty: 10, regionCode: "DL", regionName: "Delta", rowNumber: 1,
+    sheetAreaCode: "DK1", sheetAreaName: "Dakahlia 1", sheetRegionCode: "DL", sheetRegionName: "Delta",
+    sheetValue: row.salesValue, validationState: "valid", ...row,
+  })) as unknown as ClosingDetailRow[];
+
+  const withRows = await buildRepRankingWorkbook({
+    carve: { direct: carve.direct, stores: carve.stores },
+    details: detailRows,
+    distributorNames: new Map([["IS", "Ibn Sina"], ["QM", "El Qema"]]),
+    probationByName: new Map(),
+    publications: [{ period: PERIOD, published_at: "2026-10-01T09:00:00Z", published_by: "B-10", unpublished_at: null }],
+    ranking: report,
+  });
+  assert.ok(withRows.facts.sheetNames.includes("Rows"), "the raw detail tab is in the file");
+  assert.equal(
+    withRows.facts.sheetNames.indexOf("Rows"),
+    withRows.facts.sheetNames.indexOf("Trust") - 1,
+    "it sits immediately before Trust — Trust lists the workbook's own tabs, so a tab after it is missing from that list",
+  );
+  assert.equal(
+    withRows.facts.sheetNames.length,
+    built.facts.sheetNames.length + 1,
+    "and it is the only tab the detail rows add",
+  );
+  // 🔴 EVERY OTHER TAB WEARS A LETTERHEAD STRIP AND THIS ONE DOES NOT — on purpose. Each strip in
+  // public/brand/anti-infective-ranking/ names ONE tab and bakes a MONTH into the artwork, so
+  // borrowing one would print both the wrong tab name and a month this file may not be.
+  assert.equal(
+    withRows.facts.bannersEmbedded,
+    withRows.facts.sheetNames.length - 1,
+    "the Rows tab is the one tab with no strip — there is no artwork for it, and no other tab's may be borrowed",
+  );
+  assert.equal(withRows.facts.lockedSheets, withRows.facts.sheetNames.length, "🔒 it is locked like every other tab");
+
+  // READ BACK WITH EXCEL'S OWN READER, not by grepping the XML: ExcelJS writes text into
+  // sharedStrings and leaves an index behind in the sheet, so a grep of the worksheet part finds
+  // neither "Ibn Sina" nor a second copy of a repeated word — a check that would pass on an empty
+  // sheet as readily as on a full one.
+  const readBack = new ExcelJS.Workbook();
+  await readBack.xlsx.load(withRows.buffer as unknown as ArrayBuffer);
+  const rowsSheet = readBack.getWorksheet("Rows")!;
+  assert.ok(rowsSheet, "the tab opens");
+  const textOf = (row: number, column: number): string => {
+    const value = rowsSheet.getCell(row, column).value;
+    return value === null || value === undefined ? "" : String(typeof value === "object" && "richText" in value
+      ? (value as { richText: { text: string }[] }).richText.map((part) => part.text).join("")
+      : value);
+  };
+  const cellsOfSheet: string[] = [];
+  rowsSheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => cellsOfSheet.push(String(cell.value ?? "")));
+  });
+  const sheetText = cellsOfSheet.join(" | ");
+  assert.ok(sheetText.includes("Ibn Sina"), "the distributor is NAMED on the sheet, never left as its code");
+  assert.ok(!cellsOfSheet.includes("IS"), "and its bare code appears in no cell at all");
+  assert.ok(sheetText.includes("Main Stores"), "the masked row carries the substituted buyer");
+  assert.equal(
+    cellsOfSheet.filter((value) => value === "not totalled").length,
+    2,
+    "🔴 units and bonus units each say they are not totalled — units of different products are never added",
+  );
+  const totalCell = cellsOfSheet.find((value) => value === "1500");
+  assert.ok(totalCell !== undefined, "the foot carries the counted total, 1,500, as a number");
+  assert.ok(rowsSheet.autoFilter !== undefined, "the raw sheet can be filtered — the lock allows it");
+  assert.ok(
+    textOf(1 + 0, 1) !== undefined && rowsSheet.rowCount > detailRows.length,
+    "the sheet carries its masthead, its rows and its footnotes",
+  );
+
+  // 🔒 EL QEMA LEAVES NO TRACE IN THE WHOLE FILE, not merely on the sheet that was asked to mask it.
+  const rowsZip = await JSZip.loadAsync(withRows.buffer);
+  for (const name of Object.keys(rowsZip.files).filter((file) => file.endsWith(".xml"))) {
+    const xml = await rowsZip.file(name)!.async("string");
+    assert.ok(!xml.includes("El Qema&apos;s own customer") && !xml.includes("El Qema's own customer"),
+      `${name}: the masked customer survives nowhere`);
+  }
 
   // ── A SHORTER TREND BUILDS — the crash the owner hit on 2026-10-13 ───────────────────────────
   // He clicked Export Rep Ranking on a month whose trend was shorter than three, and the Trust

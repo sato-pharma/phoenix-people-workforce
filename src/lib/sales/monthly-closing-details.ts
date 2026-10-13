@@ -13,6 +13,7 @@ import {
 import { applyCreditedAreaView, buildMainStoresRows } from "@/lib/sales/closing-main-stores";
 import { canRevealClosingSource, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
+import { INVOICE_REF_SELECT, invoiceRefOf } from "@/lib/sales/closing-detail-invoice-ref";
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import {
   loadOperationalRegionResolver,
@@ -80,6 +81,17 @@ export type ClosingDetailRow = {
   distributorCode: string;
   invoicePeriod: string;
   invoiceDate: string | null;
+  /**
+   * The supplier's own invoice reference, where their feed carries one — read out of `raw_row` by
+   * closing-detail-invoice-ref.ts, because no distributor agreed on a column name for it.
+   *
+   * OPTIONAL ON PURPOSE. Every other reader of this type predates the field and constructs rows
+   * without it (the Main Stores substitution, the store split, a dozen test fixtures); required, it
+   * would make each of those a compile error for a column only the Rows sheet prints. Absent and
+   * null mean the same thing to a reader, and the sheet names the REASON rather than leaving the
+   * cell blank — `invoiceRefAbsence`.
+   */
+  invoiceRef?: string | null;
   officialLine: string;
 
   /** As-imported geography, straight off the distributor sheet. */
@@ -439,7 +451,10 @@ export async function readImportRowsFrom(
           "id,row_number,batch_id,distributor_code,invoice_period,invoice_date,official_line," +
             "region_code,region_name,area_code,area_name,block_code,brick_id," +
             "client_code,client_name,client_address,product_code,product_name," +
-            "qty,bonus_qty,discount,value,is_direct,validation_state",
+            "qty,bonus_qty,discount,value,is_direct,validation_state," +
+            // The invoice reference, extracted in Postgres from each feed's own heading rather than
+            // shipped as the whole `raw_row` blob — see closing-detail-invoice-ref.ts.
+            INVOICE_REF_SELECT,
         )
         .eq("batch_id", batchId)
         .order("row_number", { ascending: true })
@@ -847,6 +862,7 @@ export async function loadMonthlyClosingDetails(
       distributorCode: text(raw.distributor_code),
       invoicePeriod,
       invoiceDate: text(raw.invoice_date) || null,
+      invoiceRef: invoiceRefOf(raw),
       officialLine: text(raw.official_line),
 
       sheetAreaCode,
