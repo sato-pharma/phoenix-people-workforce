@@ -442,6 +442,8 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
     headers: emailHeaders,
     html: input.html,
     idempotencyKey: input.idempotencyKey,
+    // Only picks a dedicated per-module sending account (module-sending-accounts.ts).
+    module: input.origin?.module ?? null,
     replyTo: resolvedReplyTo,
     subject: input.subject,
     text: input.text,

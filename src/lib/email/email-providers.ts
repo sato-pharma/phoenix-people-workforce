@@ -26,6 +26,11 @@
 // hand-off between them obeys the same duplicate-safe rules above — a quota refusal or an
 // accepted-then-failed message moves on, an ambiguous failure never does.
 //
+// PER-MODULE ACCOUNTS (owner, 2026-10-13 — sales first): a module's own Resend account, named by a
+// suffix such as RESEND_API_KEY_SALES rather than a number, is tried FIRST for that module's mail
+// and is never part of the pool above, so only that module can spend its quota. The registry is
+// `module-sending-accounts.ts`; `resolveEmailProviders` puts the account in front of the chain.
+//
 // ONE message type is exempt from that sender override: a JOB OFFER, which by the owner's rule of
 // 2026-10-13 fires from `HR@satopharma.com` or `hr@send.satopharma.com` and from nothing else. An
 // account that would have to rewrite its From declines the offer instead of re-branding it, so the
@@ -35,6 +40,7 @@ import { RetryableEmailError, parseRetryAfter } from "@/lib/email/email-errors";
 import { splitAddressList } from "@/lib/email/receivable-address";
 import { JOB_OFFER_SENDER_ADDRESSES, isJobOfferSender } from "@/lib/email/job-offer-sender";
 import { isSatoIdentitySender } from "@/lib/email/sato-identity-senders";
+import { moduleSendingAccountFor, moduleSendingAccounts, type ModuleSendingAccount } from "@/lib/email/module-sending-accounts";
 
 export type PreparedEmailAttachment = {
   content: string;
@@ -54,6 +60,12 @@ export type PreparedEmail = {
   headers?: Record<string, string>;
   html: string;
   idempotencyKey: string;
+  /**
+   * The module this email belongs to (`origin.module`: "sales", a template category such as "Sales").
+   * It only picks a dedicated sending account (`module-sending-accounts.ts`); unset or unknown
+   * keeps the ordinary chain, byte for byte.
+   */
+  module?: string | null;
   replyTo: string;
   subject: string;
   text: string;
@@ -276,15 +288,19 @@ export const extraBrevoAccountSuffixes = ["2"] as const;
 
 type AccountLabel = { keyEnv: string; label: string };
 
-function createResendProvider(suffix?: string): EmailProvider {
+function createResendProvider(suffix?: string, moduleAccount?: ModuleSendingAccount): EmailProvider {
   const keyEnv = accountEnvName("RESEND_API_KEY", suffix);
   // The first account keeps the message's own From, exactly as before; an extra account may send
   // from its own verified address.
   const fromEnv = suffix ? accountEnvName("RESEND_EMAIL_FROM", suffix) : null;
-  const label = suffix ? `Resend account ${suffix}` : "Resend";
+  const label = moduleAccount ? `Resend ${moduleAccount.label} account` : suffix ? `Resend account ${suffix}` : "Resend";
   return {
-    name: suffix ? `resend-${suffix}` : "resend",
+    name: moduleAccount ? `resend-${moduleAccount.suffix.toLowerCase()}` : suffix ? `resend-${suffix}` : "resend",
     isConfigured() {
+      // A module account is switched on by its key AND its sender together. Without the sender it
+      // would send as the message's own From, an address its domain does not hold, and Resend
+      // would refuse every message — so it stays out of the chain instead of failing each send.
+      if (moduleAccount) return Boolean(readEnv(keyEnv) && fromEnv && readEnv(fromEnv));
       return Boolean(readEnv(keyEnv));
     },
     checkAccepted(id) {
@@ -455,6 +471,21 @@ export const brevoProvider: EmailProvider = createBrevoProvider();
 const extraResendProviders = extraResendAccountSuffixes.map((suffix) => createResendProvider(suffix));
 const extraBrevoProviders = extraBrevoAccountSuffixes.map((suffix) => createBrevoProvider(suffix));
 
+// The dedicated per-module accounts, by module-account suffix. Never part of the failover pool above.
+const moduleResendProviders = new Map(
+  moduleSendingAccounts.map((account) => [account.suffix, createResendProvider(account.suffix, account)] as const),
+);
+
+/** Every module account with whether it is switched on (names only, never a key) — for the health read-out. */
+export function moduleSendingAccountStatus() {
+  return moduleSendingAccounts.map((account) => ({
+    configured: moduleResendProviders.get(account.suffix)?.isConfigured() ?? false,
+    label: account.label,
+    modules: [...account.modules],
+    provider: moduleResendProviders.get(account.suffix)?.name ?? "",
+  }));
+}
+
 // Ordered provider list: Resend primary, then every configured backup — the other Resend accounts
 // first, then the Brevo accounts. A backup is skipped unless it is configured AND failover is not
 // explicitly disabled — so with no backup env set this returns just [resend] and behaviour is
@@ -467,7 +498,13 @@ const extraBrevoProviders = extraBrevoAccountSuffixes.map((suffix) => createBrev
 // went out as *Phoenix Workforce*. So an ordinary Phoenix email is given the chain WITHOUT it, and
 // mail from a Sato human identity keeps it (`sato-identity-senders.ts`). Passing no `email` returns
 // the whole chain, which is what a "is any provider configured at all" check wants.
-export function resolveEmailProviders(email?: Pick<PreparedEmail, "from">): EmailProvider[] {
+//
+// 🔒 A MODULE ACCOUNT GOES IN FRONT (owner, 2026-10-13: one Resend account per module, sales first).
+// An email whose `module` has a configured dedicated account tries it FIRST and then falls through
+// to the ordinary chain, so a refused or capped module account never stops the mail. The module
+// account is never in the ordinary chain, so no other module's mail can spend its quota. A Sato
+// human identity (`hr@`, `hrbp@`, `ceo@`) is exempt: it keeps the first account whatever its module.
+export function resolveEmailProviders(email?: Pick<PreparedEmail, "from"> & { module?: string | null }): EmailProvider[] {
   const providers: EmailProvider[] = [resendProvider];
   const failoverDisabled = String(process.env.EMAIL_FAILOVER_ENABLED ?? "").trim().toLowerCase() === "false";
   if (failoverDisabled) return providers;
@@ -475,12 +512,18 @@ export function resolveEmailProviders(email?: Pick<PreparedEmail, "from">): Emai
     if (backup.isConfigured()) providers.push(backup);
   }
 
+  if (email && isSatoIdentitySender(email.from)) return providers;
+
   // Ordinary automated mail hands the dedicated account back — but only while something else can
   // carry it. With no backup configured (a local run, staging, a lapsed key) the chain stays as it
   // was: an email that cannot be sent at all is worse than one that spends the reserved quota.
-  if (email && !isSatoIdentitySender(email.from) && providers.length > 1) return providers.slice(1);
+  const ordinary = email && providers.length > 1 ? providers.slice(1) : providers;
 
-  return providers;
+  const moduleAccount = email ? moduleSendingAccountFor(email.module) : null;
+  const moduleProvider = moduleAccount ? moduleResendProviders.get(moduleAccount.suffix) : undefined;
+  if (moduleProvider?.isConfigured()) return [moduleProvider, ...ordinary];
+
+  return ordinary;
 }
 
 export type FailoverSendResult = { id: string; provider: string };
