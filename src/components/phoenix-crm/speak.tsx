@@ -55,6 +55,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { Mic, Square, Trash2 } from "lucide-react";
 
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { crmPost, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
 import { isEngineLanguageError, startDictation, type DictationHandle } from "@/lib/phoenix-crm/dictation";
@@ -203,6 +204,12 @@ export function CrmSpeak({
   const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  /**
+   * "The microphone is blocked for your browser" sends a rep to a setting nothing on his phone is
+   * called (use-browser-name.ts) — so this screen names it, at the render, where every message it
+   * shows passes through. One without the placeholder is untouched.
+   */
+  const browserNamed = useBrowserNamed();
 
   const recorder = useRef<VoiceRecorder | null>(null);
   const dictation = useRef<DictationHandle | null>(null);
@@ -503,7 +510,7 @@ export function CrmSpeak({
       )}
 
       {partial ? <CrmNote tone="info">{partial}</CrmNote> : null}
-      {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
+      {error ? <CrmNote tone="bad">{browserNamed(error)}</CrmNote> : null}
     </div>
   );
 }
