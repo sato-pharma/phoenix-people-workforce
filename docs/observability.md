@@ -354,6 +354,7 @@ policy):
    | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
    | `phoenix-db-health-snapshot` | `17 */6 * * *` | 2h | cron-job.org job `8242721` |
    | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
+   | `phoenix-brick-move-drain` | `19,39,59 * * * *` | 1h | cron-job.org job `(set on first --apply)` · **in-house only** |
    | `phoenix-reconciliation-check` | `40 4 * * *` | 2h | cron-job.org job `8350984` |
    | `phoenix-crm-contact-lists` | `*/5 5 * * *` | 10m | cron-job.org job `8344730` |
    | `phoenix-expense-claims-refresh` | `51 * * * *` | 1h | cron-job.org job `8350207` |

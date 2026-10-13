@@ -24,6 +24,11 @@ export type BrickMoveRefreshResult = {
   remaining: number;
   /** Why a file could not be rebuilt, in words fit for the screen (the log keeps the database's). */
   failure: string | null;
+  /**
+   * The batches whose totals this call rebuilt, de-duplicated. The screen ignores them; the cron
+   * clock settles their periods' split net afterwards — see brick-move-net-settle.ts.
+   */
+  rebuiltBatchIds: string[];
 };
 
 type FileClaim = { oldBrickId: string; batchId: string; movedAt: string };
@@ -41,9 +46,18 @@ function parseClaim(data: unknown): FileClaim | null {
 // (a five-minute claim, so two open tabs never rebuild one file at once) and counts as rebuilt only
 // when every total rebuilt and no later move re-stamped the file meanwhile. A file that fails keeps its
 // claim, so the files behind it still get their turn, and it is tried again once the claim runs out.
-export async function refreshMovedBrickFiles(options: { budgetMs: number }): Promise<BrickMoveRefreshResult> {
+//
+// `onFileRebuilt` fires the moment a file's totals COMMIT, before the next one is claimed. The screen
+// does not need it; the cron clock does — a four-minute budget is long enough for a routine deploy to
+// replace the container mid-drain, and liveness reported at the END of the run would then be lost for a
+// run that was doing its job. See app/api/cron/brick-move-drain/route.ts.
+export async function refreshMovedBrickFiles(options: {
+  budgetMs: number;
+  onFileRebuilt?: () => Promise<void> | void;
+}): Promise<BrickMoveRefreshResult> {
   const supabase = getSupabaseAdmin();
   const deadline = Date.now() + Math.max(0, options.budgetMs);
+  const rebuiltBatchIds = new Set<string>();
   let refreshed = 0;
   let failure: string | null = null;
 
@@ -83,8 +97,20 @@ export async function refreshMovedBrickFiles(options: { budgetMs: number }): Pro
       break;
     }
     refreshed += 1;
+    rebuiltBatchIds.add(claim.batchId);
+    // Wrapped: a broken reporter must never turn a rebuild that has landed into a failed drain.
+    try {
+      await options.onFileRebuilt?.();
+    } catch (error) {
+      logWarning("A moved brick's sales file was rebuilt but the run could not be reported.", { error });
+    }
   }
 
   if (refreshed > 0) invalidateSalesDashboardCache(`brick move: ${refreshed} sales file(s) rebuilt`);
-  return { failure, refreshed, remaining: await countBrickMoveFilesPending() };
+  return {
+    failure,
+    rebuiltBatchIds: [...rebuiltBatchIds],
+    refreshed,
+    remaining: await countBrickMoveFilesPending(),
+  };
 }

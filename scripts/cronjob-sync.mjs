@@ -100,6 +100,25 @@ const JOBS = {
     // what the rest of the account sets; the platform still cuts at 30 regardless (see header).
     requestTimeout: 300,
   },
+  "brick-move-drain": {
+    title: "Phoenix — brick move rollup drain",
+    path: "/api/cron/brick-move-drain",
+    // Every twenty minutes on :19/:39/:59, around the clock, matching docs/observability.md and
+    // JOB_SCHEDULES. Those three minutes are unused across the account, so a red execution here is
+    // unambiguous about which job produced it.
+    //
+    // Frequent BECAUSE a brick move lands on the mapping at once and on the TOTALS only when its
+    // queued sales files are rebuilt. Until this clock existed the only thing that rebuilt them was a
+    // poller on the Database Mapping screen, so closing the tab left the move half-applied with no
+    // signal anywhere — measured 2026-10-12, 71 files stranded for a day.
+    schedule: { hours: [-1], minutes: [19, 39, 59], mdays: [-1], months: [-1], wdays: [-1] },
+    // A fire with nothing waiting is one indexed count and answers in milliseconds. A fire that finds
+    // a real backlog runs its four-minute budget and WILL pass the 30s platform cut, which logs
+    // `Failed (timeout)` here while the drain carries on server-side and the heartbeat reads success
+    // (see the header). Read liveness from the heartbeat, never from this execution list. 300 matches
+    // the rest of the account; the platform still cuts at 30 regardless.
+    requestTimeout: 300,
+  },
   "mapping-guard-notify": {
     title: "Phoenix — mapping guard notify",
     path: "/api/cron/mapping-guard-notify",

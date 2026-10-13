@@ -166,3 +166,38 @@ The same night, the 30 customers behind the 55 still-held changes were switched 
 (`active = false`, brick and area untouched) and all 55 holds were refused; the pre-image is
 `sos_map_unmap_preimage_20261010`. He maps them again when he next uploads. Sales rows and published
 closings were not touched, and the un-map re-stamps nothing until the next upload or a reconcile.
+
+## A brick move finishes on a clock (2026-10-13)
+
+`sos_relocate_brick` is only half the move. It applies to the brick master, the customer map and the
+import rows at once, but the TOTALS wait in `source_of_sales_brick_move_files` until each file is
+rebuilt, and the clock that does it is `phoenix-brick-move-drain` (every 20 minutes, at :19, :39 and
+:59).
+
+**Why the clock exists.** Before 2026-10-13 the only drain was the Database Mapping page poller, so
+closing the tab stranded a move with no error, no badge and no alert. The قوص and أبنود moves left 71
+files unrebuilt from 12 Oct 13:27 Cairo, and every Qena figure on every screen was a day stale.
+
+**Never call a move done on the brick row.** The evidence is
+`select count(*) from public.source_of_sales_brick_move_files where refreshed_at is null` reading 0.
+
+**A file finished any way other than through the app skips the store-split net entirely.** The net
+step is TypeScript, computed from the closing detail rows, so a file completed over SQL (a timed-out
+one, say) leaves the queue reading 0 with the stored net still pre-move. That is exactly how
+74,741.23 EGP sat on the wrong area in Sept 2026. `refreshBatchRollups` is period-grain inside, so a
+drain that completes every file through the app converges on its own. The clock now also settles any
+period whose net predates the move: `brick-move-net-settle.ts`, at most 3 periods a fire, and never a
+published month, because the database refuses it and it is reported instead.
+
+**What pages the owner.** Both alerts use the same channels (in-app, Telegram and push) and go out at
+most once per Cairo day per set.
+
+- The residue the settle refuses to write: a published month (frozen by design, so nothing will ever
+  retry it) or a failed settle (the retry only comes with the next file rebuild, and the queue is by
+  then empty). `brick-move-net-alert.ts`, log `brick_move_net_unsettled`. A period the per-fire cap
+  merely deferred is silent, because the next fire takes it.
+- A file still waiting an hour after its move. `brick-move-stuck-alert.ts`. The heartbeat answers only
+  "is the clock still firing?" and is blind to a clock that fires forever over a queue that never
+  empties.
+
+Code: `app/api/cron/brick-move-drain/route.ts`. Pinned by `tests/brick-move-drain-liveness.test.ts`.
