@@ -32,6 +32,15 @@
 --       ozucdzovmcqvepbozvqf. SECURITY INVOKER, search_path and the advisory lock are untouched.
 -- ROLLBACK: re-apply supabase/migrations/20261007200000_started_reps_doctor_list_is_phoenix_own.sql's
 --       crm_contact_master_refresh definition.
+--
+-- SAFE: every DROP TABLE in this file is a `pg_temp.` one — crm_refresh_started_reps,
+--       crm_contact_master_activity, crm_refresh_phoenix_lists_all and crm_refresh_phoenix_lists,
+--       all inside the body of public.crm_contact_master_refresh, which creates and drops them
+--       within its own call. They are SESSION-LOCAL scratch tables; no persistent table is dropped
+--       or truncated anywhere here. (`scripts/check-migrations.mjs` matches the statement, not the
+--       schema, so it cannot tell pg_temp from public. 🔴 THE ANNOTATION IS IN THIS HEADER AND NOT
+--       BESIDE THE STATEMENTS DELIBERATELY: the md5(prosrc) above is this body read off production,
+--       and a comment inside the body would change prosrc and break that correspondence.)
 -- =============================================================================
 
 create or replace function public.crm_contact_master_refresh(p_include_activity boolean default false)

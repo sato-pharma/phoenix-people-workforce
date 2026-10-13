@@ -33,6 +33,13 @@
 --
 -- RLS on, nothing granted to anon or authenticated; every read and write goes through the service-role
 -- client behind the app's own permission and scope checks.
+--
+-- SAFE: the only DROP TABLE in this file is `drop table if exists pg_temp.crm_contact_master_activity`,
+-- inside the body of public.crm_contact_master_refresh — a SESSION-LOCAL scratch table that function
+-- creates and drops within its own call. No persistent table is dropped or truncated anywhere here.
+-- (`scripts/check-migrations.mjs` matches the statement, not the schema, so it cannot tell pg_temp
+-- from public; this annotation is placed in the header rather than beside the statement so the
+-- function's stored source stays byte-for-byte what production already holds.)
 
 begin;
 
