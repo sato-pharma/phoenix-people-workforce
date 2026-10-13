@@ -1043,6 +1043,7 @@ export const accessRegistry = [
   // The viewer has a Phoenix CRM module on screen: his own unread notices that open it are marked read, so the pulsing "new" badge clears (owner, 2026-10-08). Writes only the caller's own read state.
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/notices/seen", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/touch-trail", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/refused-readings", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   // The module's settings: the Super Admin's only (`update`, narrowed again by assertSettingsWriter).
   // The SFE's customer-list template (owner's ask, 2026-10-02): the download for one territory, and the
   // filled sheet back. `approve`, the same gate as MOVING A PLACE — the module's other act reserved to

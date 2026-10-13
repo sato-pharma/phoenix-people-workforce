@@ -34,6 +34,7 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lucide-react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import {
@@ -314,6 +315,9 @@ export function LivePhotoCapture({
           setStage("idle");
           setLocationNote(null);
           setError(`Location is blocked for ${BROWSER_PLACEHOLDER}. Allow location for this site in its settings, then press Open the camera again.`);
+          // After the message and never awaited (report-blocked-permission.ts): the capture ended in
+          // the browser, so this row is the only way it reaches the refused-readings board.
+          reportBlockedPermission({ permission: "location", seatId, subjectKind: purpose, test });
           return;
         }
         setLocationNote("Still finding your location. Stand outside or near a window");
@@ -345,8 +349,9 @@ export function LivePhotoCapture({
       setStage("idle");
       setLocationNote(null);
       const name = cameraError instanceof DOMException ? cameraError.name : "";
+      const blocked = name === "NotAllowedError" || name === "PermissionDeniedError";
       setError(
-        name === "NotAllowedError" || name === "PermissionDeniedError"
+        blocked
           ? `The camera is blocked for ${BROWSER_PLACEHOLDER}. Allow the camera for this site in its settings, then press Open the camera again.`
           : name === "NotFoundError" || name === "OverconstrainedError"
             ? "No camera was found on this phone."
@@ -354,6 +359,9 @@ export function LivePhotoCapture({
               ? "This browser cannot open the camera. Open Phoenix in Chrome or Safari."
               : "The camera could not start. Close any other app using it, then press Open the camera again.",
       );
+      // The camera's own refusal, reported the same way and for the same reason: a blocked camera
+      // ends the capture in the browser and reached no board before this line.
+      if (blocked) reportBlockedPermission({ permission: "camera", seatId, subjectKind: purpose, test });
     }
   }
 

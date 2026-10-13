@@ -24,6 +24,8 @@
 import { notFoundError } from "@/lib/http/api-errors";
 import {
   attemptOutcome,
+  parseBlockedPermission,
+  parseRefusedReason,
   summariseByRep,
   type AttemptOutcome,
   type LaterSave,
@@ -161,7 +163,9 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   // of the database at all, so the SFE Manager's process never holds it.
   // `photo_path` is asked for EVERYONE: the picture is what the phone sent to prove where it stood, and the
   // two readers see the same one. It is the mock-location answer, not the photo, that is the Super Admin's.
-  const columns = `id, subject_kind, reason, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters, photo_path${mock ? ", device_mocked" : ""}`;
+  // `blocked_permission` is asked for EVERYONE: it is the difference between "this phone's location
+  // switch is off" and "the reading was wide", and the SFE is exactly who acts on the first.
+  const columns = `id, subject_kind, reason, blocked_permission, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters, photo_path${mock ? ", device_mocked" : ""}`;
   const { data, error } = await supabase
     .from("phoenix_crm_refused_readings")
     .select(columns)
@@ -176,13 +180,16 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   const attempts: RefusedAttempt[] = rows.map((row) => ({
     id: String(row.id),
     subjectKind: row.subject_kind === "place" ? "place" : "visit",
-    reason: row.reason === "no_fix" ? "no_fix" : "rough",
+    // Every reason the table allows, read as itself. A two-way read printed the "too rough" sentence
+    // over every `off_listing` row for eight days — see `parseRefusedReason`.
+    reason: parseRefusedReason(row.reason),
     repHrId: String(row.rep_hr_id ?? ""),
     customerId: row.customer_id ? String(row.customer_id) : null,
     refusedAt: String(row.refused_at),
     accuracyMeters: numberOrNull(row.accuracy_meters),
     photoAccuracyMeters: numberOrNull(row.photo_accuracy_meters),
     maxAccuracyMeters: numberOrNull(row.max_accuracy_meters),
+    blockedPermission: parseBlockedPermission(row.blocked_permission),
   }));
   if (attempts.length === 0) {
     return { windowDays: REFUSED_READINGS_WINDOW_DAYS, total: 0, truncated: false, reps: [], stuckReps: 0, latest: [] };

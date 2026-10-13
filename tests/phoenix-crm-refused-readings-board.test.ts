@@ -4,6 +4,8 @@ import path from "node:path";
 
 import {
   attemptOutcome,
+  parseBlockedPermission,
+  parseRefusedReason,
   refusalSentence,
   refusedSubjectLabel,
   stillBlocked,
@@ -18,7 +20,7 @@ import {
   readsMockAnswer,
 } from "../src/lib/phoenix-crm/server/refused-readings-board.ts";
 import type { PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The refused-readings board (owner, 2026-10-03: "build the refused readings view for the SFE").
@@ -52,6 +54,7 @@ function attempt(overrides: Partial<RefusedAttempt> & { id: string }): RefusedAt
     accuracyMeters: 47,
     photoAccuracyMeters: 220,
     maxAccuracyMeters: 100,
+    blockedPermission: null,
     ...overrides,
   };
 }
@@ -81,26 +84,26 @@ function walk(dir: string): string[] {
 export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
   // ── 1 · The sentence the SFE reads ──────────────────────────────────────────────────────────────
   {
-    const place = refusalSentence({ subjectKind: "place", reason: "rough", accuracyMeters: 47, photoAccuracyMeters: 220, maxAccuracyMeters: 250 });
+    const place = refusalSentence({ subjectKind: "place", reason: "rough", accuracyMeters: 47, photoAccuracyMeters: 220, maxAccuracyMeters: 250, blockedPermission: null });
     assert.match(place, /pin read within 47 m/, "a place names the pin's reading");
     assert.match(place, /photo within 220 m/, "and the photo's, because the two can differ by an order of magnitude");
     assert.match(place, /both within 250 m/, "and the line it had to be inside — the one stored with the row");
 
-    const visit = refusalSentence({ subjectKind: "visit", reason: "rough", accuracyMeters: 900, photoAccuracyMeters: null, maxAccuracyMeters: 500 });
+    const visit = refusalSentence({ subjectKind: "visit", reason: "rough", accuracyMeters: 900, photoAccuracyMeters: null, maxAccuracyMeters: 500, blockedPermission: null });
     assert.match(visit, /within 900 m/, "a visit names its one reading");
     assert.match(visit, /within 500 m/, "and its own line");
     assert.doesNotMatch(visit, /photo/, "a visit has no photo reading to name");
 
-    const blank = refusalSentence({ subjectKind: "place", reason: "rough", accuracyMeters: null, photoAccuracyMeters: null, maxAccuracyMeters: null });
+    const blank = refusalSentence({ subjectKind: "place", reason: "rough", accuracyMeters: null, photoAccuracyMeters: null, maxAccuracyMeters: null, blockedPermission: null });
     assert.match(blank, /not reported/, "a reading the phone never sent reads 'not reported'");
     assert.doesNotMatch(blank, /\b0 m\b/, "and is NEVER 0 m, which is a rep standing exactly on the pin");
     assert.doesNotMatch(blank, /needs/, "a refusal stored with no line says nothing about one");
 
-    assert.match(refusalSentence({ subjectKind: "visit", reason: "no_fix", accuracyMeters: null, photoAccuracyMeters: null, maxAccuracyMeters: null }), /no usable position at all/, "no fix is its own sentence");
+    assert.match(refusalSentence({ subjectKind: "visit", reason: "no_fix", accuracyMeters: null, photoAccuracyMeters: null, maxAccuracyMeters: null, blockedPermission: null }), /no usable position at all/, "no fix is its own sentence");
 
     // off_listing is NOT a position problem: both readings were precise, and the ACCOUNT is what did
     // not match (google-place-rules.ts). Printing an accuracy radius here would read as a phone fault.
-    const offListing = refusalSentence({ subjectKind: "place", reason: "off_listing", accuracyMeters: 11, photoAccuracyMeters: 14, maxAccuracyMeters: 250 });
+    const offListing = refusalSentence({ subjectKind: "place", reason: "off_listing", accuracyMeters: 11, photoAccuracyMeters: 14, maxAccuracyMeters: 250, blockedPermission: null });
     assert.match(offListing, /Google Maps pin/, "it names the pin the save was measured against");
     assert.match(offListing, /moved/, "and says the account may have moved, which is the usual reason");
     assert.doesNotMatch(offListing, /\b11 m\b|\b14 m\b|too rough/, "never the accuracy radius, and never 'too rough'");
@@ -362,5 +365,114 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     assert.ok(thumb.includes("lazy={lazy}"), "the module thumbnail hands `lazy` to the zoomable photo");
     const zoom = stripComments(read("src/components/ui/zoomable-photo.tsx"));
     assert.ok(zoom.includes('loading={lazy ? "lazy" : undefined}'), "and it becomes the browser's own loading=lazy — and only when asked, so every other surface loads as before");
+  }
+
+  // ── 10 · 🔴 A PERMISSION THE BROWSER BLOCKED REACHES THE BOARD AT ALL ───────────────────────────
+  // Owner, 2026-10-13: "record a browser-blocked permission so it reaches the refused-readings board."
+  //
+  // Every reason before this one is a SERVER refusal: a reading arrived and a door turned it away. A
+  // permission the browser blocks produces no reading, reaches no door, and reached no row — so the
+  // board was blind to the one refusal nobody can diagnose from the outside. Norhan Gamal's iPhone
+  // answered PERMISSION_DENIED five times across 10 and 12 October 2026 and this table held ZERO rows
+  // for her seat; the only trace was the touch trail, which keeps a message only if the rep presses
+  // it, and which carried 42 location and 30 camera messages from four reps over 4-12 October.
+  {
+    const blockedLocation = refusalSentence({ subjectKind: "place", reason: "blocked", accuracyMeters: null, photoAccuracyMeters: null, maxAccuracyMeters: null, blockedPermission: "location" });
+    assert.match(blockedLocation, /blocked the location/, "it says the browser blocked the LOCATION, which is the switch the rep has to find");
+    assert.match(blockedLocation, /never reached Phoenix/, "and that nothing was sent, so nobody looks for a reading that cannot exist");
+    assert.doesNotMatch(blockedLocation, /too rough|not reported|\d+ m\b/, "never a radius and never 'not reported': there was no reading at all, which is not a missing one");
+
+    const blockedCamera = refusalSentence({ subjectKind: "place", reason: "blocked", accuracyMeters: null, photoAccuracyMeters: null, maxAccuracyMeters: null, blockedPermission: "camera" });
+    assert.match(blockedCamera, /blocked the camera/, "the camera is its own sentence");
+    assert.notEqual(blockedCamera, blockedLocation, "🔴 and the two permissions never read the same — the rep is looking for one switch, not either of two");
+
+    assert.equal(parseBlockedPermission("location"), "location");
+    assert.equal(parseBlockedPermission("camera"), "camera");
+    assert.equal(parseBlockedPermission("microphone"), null, "only the two permissions a capture needs");
+    assert.equal(parseBlockedPermission(null), null);
+    assert.equal(parseBlockedPermission(7), null, "and nothing that is not a string");
+
+    // ── The reason is read EXHAUSTIVELY, which is also the repair of a live defect ────────────────
+    // 🔴 THE READER ASKED ONE QUESTION AND ASSUMED THE REST: `row.reason === "no_fix" ? "no_fix" :
+    // "rough"`. From 5 October every off_listing row on the board therefore printed "the position was
+    // too rough" — the one thing that refusal is NOT, both its readings being precise. Two of
+    // 13 October's refusals were telling the SFE that about reps standing within 5 m.
+    // 🔴 COMMENTS STRIPPED FIRST. The file's own ROLLBACK header quotes the PREVIOUS three-value
+    // CHECK verbatim, so an unstripped read matches the rollback and asks the board to recognise a
+    // list the database no longer has — which is this test passing on the wrong line.
+    const reasonCheck = /check \(reason = any \(array\[([^\]]+)\]\)\)/.exec(
+      stripSqlComments(read("supabase/migrations/20261013163001_refused_readings_blocked_permission.sql")),
+    );
+    assert.ok(reasonCheck, "the migration's reason CHECK is still readable, so this test can ask the DATABASE what the reasons are");
+    const allowed = [...reasonCheck[1]!.matchAll(/'([a-z_]+)'::text/g)].map((match) => match[1]!);
+    assert.deepEqual([...allowed].sort(), ["blocked", "no_fix", "off_listing", "rough"], "four reasons, and the migration is where that list lives");
+    const sentences = new Map<string, string>();
+    for (const reason of allowed) {
+      assert.equal(parseRefusedReason(reason), reason, `🔴 the reader must recognise '${reason}' — a value the database allows and this function does not know is printed as "too rough"`);
+      sentences.set(
+        reason,
+        refusalSentence({ subjectKind: "place", reason: parseRefusedReason(reason), accuracyMeters: 11, photoAccuracyMeters: 14, maxAccuracyMeters: 250, blockedPermission: reason === "blocked" ? "location" : null }),
+      );
+    }
+    assert.equal(new Set(sentences.values()).size, allowed.length, "and every reason reads as itself: four reasons, four different sentences");
+    assert.doesNotMatch(sentences.get("off_listing")!, /too rough/, "🔴 the off_listing regression: it must never read as a rough position again");
+    assert.doesNotMatch(sentences.get("blocked")!, /too rough/, "nor the blocked one");
+    assert.equal(parseRefusedReason("something_new"), "rough", "an unrecognised value still returns a reason, because the type admits nothing else — the loop above is what keeps that branch unreachable");
+
+    // The coercion itself is gone from the reader, with comments stripped so the comment explaining
+    // the repair cannot be what satisfies this.
+    const reader = stripComments(read("src/lib/phoenix-crm/server/refused-readings-board.ts"));
+    assert.doesNotMatch(reader, /row\.reason === "no_fix"/, "🔴 the two-way coercion is gone from the reader, not merely commented");
+    assert.ok(reader.includes("parseRefusedReason(row.reason)"), "and the exhaustive parse is what reads it");
+
+    // ── And it arrives through the real reader, for both audiences ────────────────────────────────
+    const blockedRows = [
+      { id: "b1", subject_kind: "place", reason: "blocked", blocked_permission: "location", rep_hr_id: REP, customer_id: null, refused_at: "2026-10-13T08:59:01.000Z", accuracy_meters: null, photo_accuracy_meters: null, max_accuracy_meters: null, photo_path: null, device_mocked: null },
+      { id: "b2", subject_kind: "place", reason: "blocked", blocked_permission: "camera", rep_hr_id: REP, customer_id: null, refused_at: "2026-10-13T09:10:15.000Z", accuracy_meters: null, photo_accuracy_meters: null, max_accuracy_meters: null, photo_path: null, device_mocked: null },
+      { id: "o1", subject_kind: "place", reason: "off_listing", blocked_permission: null, rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-10-13T07:00:00.000Z", accuracy_meters: 5, photo_accuracy_meters: 4, max_accuracy_meters: 100, photo_path: null, device_mocked: null },
+    ];
+    async function loadBlocked(who: PhoenixCrmViewer) {
+      const original = globalThis.fetch;
+      const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+      const selects: string[] = [];
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = new URL(String(input instanceof Request ? input.url : input));
+        const table = url.pathname.split("/").pop() ?? "";
+        if (table === "phoenix_crm_refused_readings") {
+          selects.push(url.searchParams.get("select") ?? "");
+          return new Response(JSON.stringify(blockedRows), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (table === "employees") {
+          return new Response(JSON.stringify([{ hr_id: REP, full_name: "Test Rep", nickname: null }]), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch;
+      try {
+        return { board: await loadRefusedReadingsBoard(who), selects };
+      } finally {
+        globalThis.fetch = original;
+        if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+        else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+        if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+        else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+      }
+    }
+
+    for (const who of [viewer({ sfe: true }), viewer({ superAdmin: true })]) {
+      const { board, selects } = await loadBlocked(who);
+      assert.match(selects[0] ?? "", /\bblocked_permission\b/, "the permission is asked of the database for BOTH readers — it is the difference between a switch and a wide reading, and the SFE is who acts on the switch");
+      const byId = new Map(board.latest.map((entry) => [entry.id, entry]));
+      assert.equal(byId.get("b1")?.reason, "blocked", "a blocked row reads as blocked, not as rough");
+      assert.equal(byId.get("b1")?.blockedPermission, "location");
+      assert.equal(byId.get("b2")?.blockedPermission, "camera", "and the camera's row names the camera");
+      assert.match(refusalSentence(byId.get("b2")!), /blocked the camera/, "so the board prints the permission the browser actually blocked");
+      assert.equal(byId.get("b1")?.outcome, "unknown", "it is tied to no customer — a blocked switch is a fact about the PHONE, identical for every customer on the list");
+      assert.equal(byId.get("o1")?.reason, "off_listing", "🔴 and the off_listing row arrives as itself through the real reader, which is what was broken");
+      assert.doesNotMatch(refusalSentence(byId.get("o1")!), /too rough/, "so a rep standing 5 m away is no longer told his position was too rough");
+      assert.equal(board.total, 3, "all three refusals are on the board");
+    }
   }
 }

@@ -23,6 +23,7 @@
 
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft } from "@/lib/phoenix-crm/entry-rules";
+import { type BlockedPermission } from "@/lib/phoenix-crm/refused-readings-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type RecordRefusedReadingInput = {
@@ -178,5 +179,74 @@ export async function countOffListingRefusals(input: { seatId: string; repHrId: 
   } catch (error) {
     console.error("[phoenix-crm] off-listing refusal count failed", { seatId: input.seatId, error });
     return 0;
+  }
+}
+
+export type BlockedPermissionInput = {
+  subjectKind: "visit" | "place";
+  /** Which permission the browser blocked — already parsed, never a string off the wire. */
+  permission: BlockedPermission;
+  /** The territory's seat when the screen named one, null otherwise. Never identifies the rep. */
+  seatId: string | null;
+  /** Whoever's phone was blocked, resolved from the SESSION by the route — never from the body. */
+  repHrId: string;
+  isTest: boolean;
+};
+
+/**
+ * File a capture the BROWSER ended — the rep's phone blocked location or the camera, so nothing was
+ * ever sent and no door ever refused it.
+ *
+ * 🔴 IT IS THE ONE ROW THE SERVER DOES NOT DECIDE, AND WITHOUT IT THE BOARD HAS A HOLE THE SHAPE OF
+ * EVERY BLOCKED REP. The three recorded reasons all begin with a reading that arrived. A blocked
+ * permission produces no reading, reaches no door, and until this function existed reached no row:
+ * Norhan Gamal's iPhone answered PERMISSION_DENIED five times across 10 and 12 October 2026 and
+ * `phoenix_crm_refused_readings` held nothing at all for her seat, so answering "why was she blocked"
+ * meant reading 72 touch-trail messages by hand.
+ *
+ * The same three rules as the recorders above, with the third inverted for the one reason it must be:
+ *
+ *   1. THE REP LEARNS NOTHING NEW. The message on the glass is byte-for-byte the one that was there
+ *      before this file wrote anything. The report is sent AFTER it is rendered and changes nothing
+ *      about it (golden rule #1).
+ *
+ *   2. IT NEVER COSTS A REP HIS WORK. Void, and it swallows everything — a rep whose camera is
+ *      already blocked must not then meet a second failure because an evidence insert went wrong.
+ *
+ *   3. 🔴 IT IS NOT AWAITED BY THE BROWSER, AND THAT IS THE DIFFERENCE. The other two run inside a
+ *      request the rep is already waiting on. This one has no request of its own to ride: the
+ *      permission died in the browser, so the browser posts it fire-and-forget and the ROUTE awaits
+ *      this insert before answering 204. Nothing on the phone waits for the answer.
+ *
+ * NO CUSTOMER IS ATTACHED, deliberately. A blocked permission is a fact about the PHONE — the same
+ * switch blocks every customer on the list, and a row tied to whichever one happened to be on screen
+ * would read as a problem with that place. The board prints it as "not tied to a customer", which is
+ * exactly what it is.
+ */
+export async function recordBlockedPermission(input: BlockedPermissionInput): Promise<void> {
+  try {
+    const refusedAt = new Date();
+    const { error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .insert({
+        subject_kind: input.subjectKind,
+        reason: "blocked",
+        // Paired with the reason by the table's own CHECK (20261013163001): a 'blocked' row without
+        // it is refused by the database, and no other reason may carry it.
+        blocked_permission: input.permission,
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: null,
+        refused_at: refusedAt.toISOString(),
+        visit_date: cairoBusinessDay(refusedAt),
+        // Every reading column stays null on purpose: there was no position and no photo to report,
+        // and a 0 here would read as a rep standing exactly on the pin.
+        is_test: input.isTest,
+      });
+    if (error) {
+      console.error("[phoenix-crm] blocked permission not recorded", { seatId: input.seatId, message: error.message });
+    }
+  } catch (error) {
+    console.error("[phoenix-crm] blocked permission record failed", { seatId: input.seatId, error });
   }
 }

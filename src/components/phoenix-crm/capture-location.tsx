@@ -19,6 +19,7 @@ import { useState } from "react";
 import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { LocateFixed, RotateCcw } from "lucide-react";
 
+import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 
@@ -75,11 +76,16 @@ export function CaptureLocation({
       },
       (positionError) => {
         setBusy(false);
+        const blocked = positionError.code === positionError.PERMISSION_DENIED;
         setError(
-          positionError.code === positionError.PERMISSION_DENIED
+          blocked
             ? `Location is blocked for ${BROWSER_PLACEHOLDER}. Allow location for this site in its settings, then press Capture location again.`
             : "The location did not come. Stand outside or near a window, then press Capture location again.",
         );
+        // AFTER the message, never before it, and never awaited: the rep reads exactly what he read
+        // before this line existed, and the refused-readings board stops being blind to the one
+        // refusal the server never sees. A place, because this button only ever pins a place.
+        if (blocked) reportBlockedPermission({ permission: "location", subjectKind: "place" });
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 30_000 },
     );

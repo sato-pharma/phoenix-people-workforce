@@ -1,0 +1,36 @@
+---
+paths:
+  - "src/lib/phoenix-crm/refused-readings-rules.ts"
+  - "src/lib/phoenix-crm/server/refused-readings.ts"
+  - "src/lib/phoenix-crm/server/refused-readings-board.ts"
+  - "src/components/phoenix-crm/report-blocked-permission.ts"
+  - "app/**/phoenix-crm/refused-readings/**"
+  - "app/api/phoenix-crm/refused-readings/**"
+  - "tests/phoenix-crm-refused-readings*"
+---
+
+# Module memory — Phoenix CRM — the refusals a capture leaves behind
+
+**Scope:** Every capture Phoenix CRM did not keep: the three server refusals (no fix, too rough, off its Google listing), the browser's own report that it blocked location or the camera, and the one board the SFE and the Super Admin read them on.
+
+This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
+
+**Keeping it current:** a rule or fact you learn while working in this module goes into **Rules** below, in the same PR as the work. If a rule changed, EDIT its line — never add a second line that contradicts it. The notes block is generated (`node scripts/module-memory/build.mjs`); a new note reaches it through the fold, which runs three times a day — 09:00, 15:00 and 21:00 Cairo (docs/module-memory.md).
+
+🔴 **A RULE BULLET OVER 1,200 BYTES MUST NAME ITS `docs/` ACCOUNT, or the required `validate` job goes RED** — `tests/agents-long-hooks-cite-docs.test.ts` measures every line starting `- ` inside the Rules block below, and this module file can sit far under its size cap while one bullet is over this limit. **Relocate FIRST, trim second:** write the evidence into a `docs/` file, then cut the bullet to the cue plus that pointer. Trimming first destroys the account while reading as a tidy-up. 🔴 **AND CITING docs/ IS NOT ENOUGH — the same test caps HOW MANY bullets may be over 1,200 at a tenth of all of them, which has about ONE bullet of slack**, so a long bullet reddens `validate` with its pointer in place (2026-10-04: 26 of 263 against a limit of 26.3). The fix is to shorten YOUR OWN long bullet, never to delete anyone's rule.
+
+🔴 **PUT THE OPERATIVE CLAIM IN THE BULLET'S FIRST `**bold**` SPAN.** A session that never opens this file sees only that one span: `ruleHeadlines()` in `.claude/hooks/module-memory-injector.mjs` takes the FIRST `**…**` match per bullet (`/\*\*(.+?)\*\*/`) and nothing else, so a boundary, an exception or a date written in a later bold clause of the same bullet does not travel. A first span that states an absolute the rest of the bullet then qualifies is the worst case — it is read as the whole rule. 🔴 **Those spans are also the only thing that grows the pointer, which `tests/module-memory.test.ts` caps at 4,000 bytes (hard cliff 4,500) — a module that passes it is SPLIT, never trimmed** (`phoenix-crm` → `phoenix-crm-approvals`, 2026-10-03).
+
+<!-- module-memory:rules:begin — hand-written; add this module's rules here -->
+## Rules
+
+- 🔒 **THE SFE READS A REP'S REFUSED READINGS ON `/admin/phoenix-crm/refused-readings` — HOUSEKEEPING, NOT A FLAG, AND NEVER A TAB OF LOCATION INTEGRITY** (owner, 2026-10-03: *"build the refused readings view for the SFE"*). The Super Admin and the SFE Manager, a 404 for anybody else; **the phone's mock-location answer is the Super Admin's alone and is never QUERIED for the SFE** (`readsMockAnswer`). Per rep, last 14 days: customers refused on and how many he later SAVED — a save BEFORE the refusal proves nothing, a refusal tied to no customer is never counted as stuck, nine retries are ONE blocked customer. **Each refusal shows the PHOTO the phone sent, to both readers, as a POINTER the page signs through the scoped `/api/phoenix-crm/photos/sign` route (`CrmPhotoThumb`, `lazy`) — the page never opens the bucket and a non-slot path reads "None kept".** Read-only; the rep is told nothing new. Only the recorder and this reader may name the table. Account: `docs/agents-owner-rules.md`, "The refused-readings board". `a-refused-crm-save-is-traceable-only-in-the-upload-slot`
+- 🔴 **A PERMISSION THE BROWSER BLOCKS IS REPORTED BY THE BROWSER, THROUGH ITS OWN ALWAYS-204 ROUTE — NEVER FOLDED ONTO A SAVE** (owner, 2026-10-13: "record a browser-blocked permission so it reaches the refused-readings board"). The other three reasons are SERVER refusals of a reading that arrived; a blocked permission produces none, so there is no request to ride — `POST /api/phoenix-crm/refused-readings` is it, `reason = 'blocked'` with `blocked_permission` naming `location` or `camera`, paired by the table's own CHECK. 🔴 **The rep learns nothing new (golden rule #1):** the reporter is called AFTER `setError`, returns void, awaits nothing, swallows everything, and every exit of the route is a bare 204. 🔴 **The rep is the SESSION's and the row is tied to NO customer** — one switch blocks the whole list, so a row pinned to whichever customer was on screen would read as a fault of that place. Why it exists: `src/components/phoenix-crm/report-blocked-permission.ts`'s header and the migration's. Pinned by `tests/phoenix-crm-refused-readings.test.ts` · `tests/phoenix-crm-boundary.test.ts`.
+- 🔴 **THE REFUSED-READINGS BOARD READS THE REASON EXHAUSTIVELY (`parseRefusedReason`) — A TWO-WAY COERCION TOLD REPS STANDING 5 m AWAY THAT THEIR POSITION WAS TOO ROUGH** (defect, live 5-13 October 2026). The reader asked `row.reason === "no_fix" ? "no_fix" : "rough"`, so every `off_listing` row printed the rough-position sentence — the one thing that refusal is NOT, both its readings being precise and the account's own Google pin at fault. 🔴 **Never widen the table's reason CHECK without teaching that function the new value**: the board's test reads the CHECK out of the migration and asserts each allowed reason is recognised and reads as its own sentence, so the fifth reason fails `validate` rather than quietly printing as "too rough".
+<!-- module-memory:rules:end -->
+
+<!-- module-memory:notes:begin — generated by scripts/module-memory/build.mjs; do not edit -->
+## Memory notes (1)
+
+- `a-refused-crm-save-is-traceable-only-in-the-upload-slot` — a REFUSED Phoenix CRM save left no reading anywhere until 2026-10-03 — read phoenix_crm_refused_readings FIRST for anything after that, and for an EARLIER one the only trace is phoenix_crm_photo_uploads / _voice_uploads with used_at NULL plus real bytes in storage.objects, which proves camera, mic, upload, network and session all worked
+<!-- module-memory:notes:end -->
