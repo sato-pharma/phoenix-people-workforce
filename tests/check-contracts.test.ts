@@ -61,6 +61,41 @@ function importSpecifiers(source: string): string[] {
   return found;
 }
 
+/**
+ * Where a specifier actually lands on disk — the same resolution `tests/alias-loader.mjs` performs,
+ * because the walk below has to follow exactly what the child process will load.
+ *
+ * `@/x` is tried against the repo root and then `src/` (tsconfig's `"@/*": ["./*", "./src/*"]`, the
+ * shadowing that `at-slash-lib-shadows-src-lib-via-tsconfig-paths` records), a relative specifier
+ * against the importing file, and an extensionless one takes `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`,
+ * `.cjs` or `index.*`. A BARE package specifier returns null: `node:fs` and anything in
+ * `node_modules` is not ours to walk, and `NOT_OFFLINE` has already read the specifier itself.
+ */
+const ALIAS_ROOTS = ["", "src"];
+const MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+
+function resolveModule(specifier: string, fromFile: string): string | null {
+  const bases: string[] = [];
+  if (specifier.startsWith("@/")) {
+    for (const root of ALIAS_ROOTS) bases.push(path.join(ROOT, root, specifier.slice(2)));
+  } else if (specifier.startsWith(".")) {
+    bases.push(path.resolve(path.dirname(fromFile), specifier));
+  } else {
+    return null;
+  }
+  for (const base of bases) {
+    if (path.extname(base) !== "" && existsSync(base)) return base;
+    for (const extension of MODULE_EXTENSIONS) {
+      if (existsSync(`${base}${extension}`)) return `${base}${extension}`;
+    }
+    for (const extension of MODULE_EXTENSIONS) {
+      const index = path.join(base, `index${extension}`);
+      if (existsSync(index)) return index;
+    }
+  }
+  return null;
+}
+
 export function runCheckContractsTests() {
   const runnerSource = stripComments(readFileSync(path.join(ROOT, "tests", "run-tests.ts"), "utf8"));
   const pairs = [...runnerSource.matchAll(REGISTRATION)].map((match) => ({
@@ -120,24 +155,38 @@ export function runCheckContractsTests() {
   }).map((gate) => `${gate.file} does not export ${gate.export}`);
   assert.deepEqual(notExported, [], "a contract gate names an export its test file does not have");
 
-  // 3. THE OFFLINE RULE, as a tripwire. Every gate here must be fs-plus-source-text: no Supabase
-  // client, no env bag, no Next runtime. It is why `the Office-allocation board row` is NOT in the
-  // table — tests/needs-you-office-allocation-drift.test.ts imports src/lib/needs-you/sources.ts,
-  // which reaches @/lib/admin/service and `getSupabaseAdmin`.
+  // 3. THE OFFLINE RULE, and it is now TRANSITIVE — the whole import graph of every gate, not its
+  // first two levels. Every gate here must be fs-plus-source-text: no Supabase client, no env bag,
+  // no Next runtime.
   //
-  // 🔴 IT IS A TRIPWIRE, NOT A PROOF: first-level imports plus one hop through a `../src/…` module,
-  // which is the shape that actually went wrong. A gate reaching a client three hops down would
-  // pass this and still be out of scope — judge a new gate by reading it, not by this going green.
+  // 🔴 WHY IT HAD TO BECOME TRANSITIVE. The last gate to join the table — `the Office-allocation
+  // board row` — reaches its pure function through a NARROW WRAPPER MODULE
+  // (src/lib/needs-you/office-allocation-drift-items.ts, lifted out of needs-you/sources.ts for
+  // exactly this reason). With a two-level walk, a service import added one level below that
+  // wrapper would put `getSupabaseAdmin` back in the process and this would still read green: the
+  // invariant would hold on the day it was written and quietly stop holding later. The walk now
+  // follows every specifier it can resolve — `@/…` the way tests/alias-loader.mjs resolves it,
+  // relative hops from the importing file — with a `seen` set for the cycles a domain graph has,
+  // and it names the whole trail so a breach says which hop introduced it.
+  //
+  // It is still not a proof of purity: a module can reach a client through a bare package or a
+  // dynamic `await import(…)`, which no source walk sees. Judge a new gate by reading it.
   const breaches: string[] = [];
   for (const gate of CONTRACT_GATES) {
-    const firstLevel = importSpecifiers(readFileSync(path.join(ROOT, gate.file), "utf8"));
-    for (const specifier of firstLevel) {
-      if (NOT_OFFLINE.test(specifier)) breaches.push(`${gate.file} imports ${specifier}`);
-      if (!specifier.startsWith("../src/")) continue;
-      const hop = path.join(ROOT, specifier.replace(/^\.\.\//, ""));
-      if (!existsSync(hop)) continue;
-      for (const deep of importSpecifiers(readFileSync(hop, "utf8"))) {
-        if (NOT_OFFLINE.test(deep)) breaches.push(`${gate.file} -> ${specifier} imports ${deep}`);
+    const entry = path.join(ROOT, gate.file);
+    const seen = new Set<string>([entry]);
+    const queue: Array<{ file: string; trail: string }> = [{ file: entry, trail: gate.file }];
+    while (queue.length > 0) {
+      const { file, trail } = queue.shift()!;
+      for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+        if (NOT_OFFLINE.test(specifier)) {
+          breaches.push(`${trail} imports ${specifier}`);
+          continue;
+        }
+        const next = resolveModule(specifier, file);
+        if (!next || seen.has(next)) continue;
+        seen.add(next);
+        queue.push({ file: next, trail: `${trail} -> ${specifier}` });
       }
     }
   }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { officeAllocationDriftItems, needsYouAdapters } from "../src/lib/needs-you/sources.ts";
+import { officeAllocationDriftItems } from "../src/lib/needs-you/office-allocation-drift-items.ts";
 import { needsYouDestinations, needsYouSourceIds, needsYouSourceLabels } from "../src/lib/needs-you/types.ts";
 import type { OfficeAllocationDriftReport } from "../src/lib/sales/office-allocation-drift.ts";
 
@@ -188,10 +188,6 @@ export function runNeedsYouOfficeAllocationDriftTests() {
     needsYouSourceIds.includes("office-allocation-drift"),
     "the source id must be registered, or the board never fans out to it",
   );
-  assert.ok(
-    needsYouAdapters.some((adapter) => adapter.id === "office-allocation-drift"),
-    "an id with no adapter renders amber for ever",
-  );
   assert.equal(
     needsYouSourceLabels["office-allocation-drift"],
     "Office allocation that no longer matches the rule",
@@ -210,8 +206,21 @@ export function runNeedsYouOfficeAllocationDriftTests() {
   const source = readFileSync("src/lib/needs-you/sources.ts", "utf8");
   const start = source.indexOf("const officeAllocationDrift: NeedsYouAdapter");
   assert.ok(start > 0, "the adapter must exist under that name");
-  const end = source.indexOf("export const needsYouAdapters", start);
-  const adapter = source.slice(start, end > start ? end : undefined);
+  const registry = source.indexOf("export const needsYouAdapters", start);
+  const adapter = source.slice(start, registry > start ? registry : undefined);
+
+  // 🔴 THE REGISTRY IS READ FROM THE SOURCE, NOT IMPORTED, AND THAT IS WHAT MAKES THIS GATE RUN
+  // OFFLINE. Importing `needsYouAdapters` would pull `sources.ts` and the ~30 service modules behind
+  // it — one of which reaches `getSupabaseAdmin` — into this process, which is exactly why this was
+  // the one gate left out of `pnpm run check:contracts`. Nothing is lost by reading it instead:
+  // `tests/needs-you-never-under-reports.test.ts` deepEquals EVERY adapter id against
+  // `needsYouSourceIds`, a bijection strictly stronger than one `.some()`, and it runs in the same
+  // required `validate` job.
+  assert.match(
+    source.slice(registry > 0 ? registry : 0),
+    /^ {2}officeAllocationDrift,$/m,
+    "an id with no adapter renders amber for ever — the adapter must be listed in the registry",
+  );
   assert.match(
     adapter,
     /ownerOnlyQueue\(/,
