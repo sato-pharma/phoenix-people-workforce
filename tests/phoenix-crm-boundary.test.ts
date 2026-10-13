@@ -323,6 +323,13 @@ const ROUTE_GATES: RouteGate[] = [
   // as a mutation because it does write rows, but not REQUIRED — this route IS the record, so an
   // audit entry per flush would be a second copy of the same fact every few seconds per rep.
   { route: "touch-trail", method: "POST", action: "read", audit: "mutation", auditRequired: false },
+  // A permission the BROWSER blocked, reported by the browser itself (owner, 2026-10-13: "record a
+  // browser-blocked permission so it reaches the refused-readings board"). The touch trail's gate
+  // exactly: `read`, because a rep who may OPEN the module is a rep whose blocked camera belongs on
+  // the board that exists to help him, and a `create` gate would miss every manager entering for one.
+  // A mutation, since it writes a row, but never REQUIRED in the audit — the row IS the record, and
+  // an audit entry beside it would be a second copy of the same fact.
+  { route: "refused-readings", method: "POST", action: "read", audit: "mutation", auditRequired: false },
   // The pulsing "new" badge clearing (owner, 2026-10-08): the viewer has a module on screen, so his OWN
   // unread notices that open it are marked read. `read` — a manager who only reads the module has
   // notices too — and a mutation that is not REQUIRED in the audit, since it is one flag on rows that

@@ -9,6 +9,7 @@ import {
   parseVisitDraft,
   refusedReadingOf,
 } from "../src/lib/phoenix-crm/entry-rules.ts";
+import { parseBlockedPermissionReport } from "../src/lib/phoenix-crm/refused-readings-rules.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -376,4 +377,137 @@ export function runPhoenixCrmRefusedReadingsTests() {
       `${file} removes photo upload slots — the refused captures' pictures are reached through them`,
     );
   }
+
+  // ── 12. 🔴 A PERMISSION THE BROWSER BLOCKED IS FILED TOO — THE ONE REFUSAL THE SERVER NEVER SEES ──
+  // Owner, 2026-10-13: "record a browser-blocked permission so it reaches the refused-readings board."
+  //
+  // Everything above this section begins with a reading that ARRIVED. When the browser blocks
+  // location or the camera there is no reading, no request and no door — so there was no row, and the
+  // board that exists to find a stuck rep could not see the commonest way to be stuck. Norhan Gamal's
+  // iPhone answered PERMISSION_DENIED five times across 10 and 12 October 2026; this table held ZERO
+  // rows for her seat, and the only trace anywhere was the touch trail, which keeps the message only
+  // if the rep happens to press it (42 location and 30 camera messages, four reps, 4-12 October).
+  //
+  // The two rules at the top of this file still hold, and the third is INVERTED on purpose: the rep
+  // learns nothing new, nothing can cost him his work, and this one write is NOT awaited by the
+  // browser — it has no request of its own to ride, so the browser posts it fire-and-forget and the
+  // route awaits the insert before answering its 204.
+
+  // The report off the wire: bounded, total, and it never says whose phone it was.
+  assert.deepEqual(
+    parseBlockedPermissionReport({ permission: "camera", subjectKind: "place", seatId: " seat-1 ", test: true }),
+    { permission: "camera", subjectKind: "place", seatId: "seat-1", test: true },
+    "a well-formed report parses, trimmed",
+  );
+  assert.equal(parseBlockedPermissionReport({ permission: "camera", subjectKind: "place" })?.test, false, "the test flag defaults to false rather than to whatever the body felt like");
+  assert.equal(parseBlockedPermissionReport({ permission: "camera", subjectKind: "place" })?.seatId, null, "and a missing seat is null, never an empty string");
+  assert.equal(parseBlockedPermissionReport({ permission: "microphone", subjectKind: "place" }), null, "a permission a capture cannot need is not a report");
+  assert.equal(parseBlockedPermissionReport({ permission: "camera", subjectKind: "elsewhere" }), null, "nor a subject the table's own CHECK would refuse");
+  assert.equal(parseBlockedPermissionReport({ permission: "camera" }), null, "nor one with no subject at all");
+  assert.equal(parseBlockedPermissionReport(null), null);
+  assert.equal(parseBlockedPermissionReport("camera"), null, "and a string is not a body");
+  assert.equal(
+    parseBlockedPermissionReport({ permission: "camera", subjectKind: "visit", seatId: "s".repeat(400) })?.seatId?.length,
+    120,
+    "the seat is bounded at the touch trail's own 120 characters, so a hostile body cannot widen the column",
+  );
+  for (const key of ["repHrId", "rep_hr_id", "hrId"]) {
+    const report = parseBlockedPermissionReport({ permission: "camera", subjectKind: "place", [key]: "B-999" }) as Record<string, unknown> | null;
+    assert.ok(report && !(key in report), `🔴 a body can never name ${key} — the rep is the SESSION's, or this board is one anybody could write anybody onto`);
+  }
+
+  // The writer: the same shape as the two recorders above, and no reading at all.
+  const blockedWriter = /export async function recordBlockedPermission\([\s\S]*?\n\}/.exec(recorder);
+  assert.ok(blockedWriter, "the writer lives beside the other two, in the module's one server file");
+  const blockedCode = stripComments(blockedWriter[0]);
+  assert.match(blockedWriter[0], /export async function recordBlockedPermission\([\s\S]*?\): Promise<void> \{\n  try \{/, "it opens in a try and returns void");
+  assert.doesNotMatch(blockedCode, /\bthrow\b/, "it never throws: the rep is already reading his message");
+  assert.ok(blockedCode.includes('reason: "blocked"'), "the row says the browser blocked it");
+  assert.ok(blockedCode.includes("blocked_permission: input.permission"), "and names WHICH permission — the column the pairing CHECK requires");
+  assert.ok(blockedCode.includes("customer_id: null"), "🔴 and no customer: the same switch blocks every customer, so a row tied to one would read as a problem with that place");
+  assert.ok(blockedCode.includes("rep_hr_id: input.repHrId.toUpperCase()"), "HR ids are mixed case in this database");
+  assert.ok(blockedCode.includes("visit_date: cairoBusinessDay(refusedAt)"), "the Cairo visit day, which ends at 02:00");
+  for (const reading of ["lat:", "lon:", "accuracy_meters:", "photo_path:", "device_captured_at:", "device_mocked:"]) {
+    assert.ok(!blockedCode.includes(reading), `no ${reading} — there was no reading, and a 0 would read as a rep standing exactly on the pin`);
+  }
+  assert.doesNotMatch(blockedCode, /\.(?:upsert|update|delete)\(/, "it only ever inserts");
+
+  // The route: always 204, the rep from the session, the body only able to ADD the test flag.
+  const blockedRoute = stripComments(readFileSync("app/api/phoenix-crm/refused-readings/route.ts", "utf8"));
+  assert.ok(blockedRoute.includes("assertSameOriginMutation(request)"), "CSRF first, before anything is read");
+  assert.ok(blockedRoute.includes('assertPermission(access, "phoenix_crm", "read")'), "and the module's own read permission — the same gate the touch trail asks for");
+  assert.ok(blockedRoute.includes("personKey(access.hrId)"), "🔴 the rep comes from the SESSION");
+  assert.doesNotMatch(blockedRoute, /repHrId: report\.|report\.repHrId/, "and never from the body");
+  assert.ok(blockedRoute.includes("Boolean(access.testPersona) || report.test"), "a test persona's blocked camera is a test row whatever the browser says");
+  assert.ok(blockedRoute.includes("await request.text()"), "the body is read as TEXT, so a beacon from a closing page is readable too");
+  assert.equal(
+    (blockedRoute.match(/new NextResponse\(null, \{ status: 204 \}\)/g) ?? []).length,
+    4,
+    "🔴 every exit is a bare 204 — no count, no id, no error, nothing a rep could read to learn this table exists",
+  );
+  assert.doesNotMatch(blockedRoute, /NextResponse\.json|phoenixCrmFailure/, "and nothing here ever answers with a readable body");
+  assert.match(
+    readFileSync("src/lib/security/access-registry.ts", "utf8"),
+    /pattern: "\/api\/phoenix-crm\/refused-readings", permission: \{ resource: "phoenix_crm", action: "read" \}, guard: "assert-permission", csrfRequired: true/,
+    "the route is in the access registry, with its guard and its CSRF requirement stated there as well",
+  );
+
+  // The two screens that raise these messages now report them — AFTER the message, never awaited.
+  const reporter = stripComments(readFileSync("src/components/phoenix-crm/report-blocked-permission.ts", "utf8"));
+  assert.ok(reporter.includes('"/api/phoenix-crm/refused-readings"'), "the reporter posts to the module's own route");
+  assert.ok(reporter.includes("keepalive: true"), "with keepalive — the commonest moment to be blocked is the moment a rep gives up and leaves the screen");
+  assert.doesNotMatch(reporter, /\bawait\b|\basync\b/, "🔴 nothing is awaited: a rep must never wait on evidence");
+  assert.doesNotMatch(reporter, /setError|setBusy|setState|throw /, "and it touches no message and no state of the screen that called it");
+  assert.equal((reporter.match(/catch/g) ?? []).length, 2, "both the call and the failed request are swallowed");
+
+  for (const [file, permissions] of [
+    ["src/components/phoenix-crm/capture-location.tsx", ["location"]],
+    ["src/components/phoenix-crm/live-photo-capture.tsx", ["location", "camera"]],
+  ] as const) {
+    const screen = readFileSync(file, "utf8");
+    const code = stripComments(screen);
+    for (const permission of permissions) {
+      assert.match(
+        code,
+        new RegExp(`reportBlockedPermission\\(\\{ permission: "${permission}"`),
+        `${file}: a blocked ${permission} is reported`,
+      );
+    }
+    assert.equal(
+      (code.match(/reportBlockedPermission\(/g) ?? []).length,
+      permissions.length,
+      `${file}: exactly ${permissions.length} report(s) — one per permission this screen can be blocked on`,
+    );
+    assert.doesNotMatch(code, /await reportBlockedPermission|reportBlockedPermission\([\s\S]{0,200}?\)\.then/, `${file}: never awaited and never chained`);
+    // 🔴 THE REP LEARNS NOTHING NEW (golden rule #1). The message is set first and is byte-for-byte
+    // the one that was on the glass before any of this existed — the report comes after it.
+    const order = /setError\([\s\S]*?reportBlockedPermission\(/.test(code);
+    assert.ok(order, `${file}: the message is set BEFORE the report, so nothing the rep reads waits on a row`);
+    assert.match(screen, /Allow (?:location|the camera) for this site in its settings/, `${file}: and that message still says exactly what it said`);
+    assert.ok(screen.includes("BROWSER_PLACEHOLDER"), `${file}: still naming his own browser, which is what made it findable`);
+  }
+
+  // The migration that makes the row possible at all.
+  const blockedMigration = readFileSync("supabase/migrations/20261013163001_refused_readings_blocked_permission.sql", "utf8");
+  const blockedSql = stripSqlComments(blockedMigration);
+  assert.match(blockedSql.trim(), /^begin;/, "it runs in one transaction");
+  assert.match(blockedSql.trim(), /commit;$/, "and commits at the very end");
+  assert.match(blockedSql, /add column if not exists blocked_permission text;/, "one nullable text column");
+  const blockedAlter = /alter table public\.phoenix_crm_refused_readings\s+add column[\s\S]*?;/.exec(blockedSql);
+  assert.ok(blockedAlter, "the ALTER that adds it is still there to measure");
+  assert.doesNotMatch(blockedAlter[0], /\bnot null\b/i, "never NOT NULL — every row already filed is a server refusal with no permission to backfill");
+  assert.doesNotMatch(blockedAlter[0], /\bdefault\b/i, "and no default, so it stays a metadata-only change that cannot block the writer mid-field-day");
+  assert.match(blockedSql, /check \(reason = any \(array\['no_fix'::text, 'rough'::text, 'off_listing'::text, 'blocked'::text\]\)\)/, "the reason CHECK is widened to four, in one place");
+  // 🔴 THE PAIRING CHECK NEEDS `is not null` EXPLICITLY. `blocked_permission = any (array[...])`
+  // against a null evaluates to NULL, and a CHECK refuses only FALSE — so without it a 'blocked' row
+  // naming no permission is ACCEPTED. Measured on staging 2026-10-13, before the guard existed: it
+  // inserted cleanly, which is the one state the board cannot print.
+  assert.match(
+    blockedSql,
+    /when reason = 'blocked' then blocked_permission is not null\s*\n?\s*and blocked_permission = any \(array\['location'::text, 'camera'::text\]\)/,
+    "🔴 the pairing CHECK asks `is not null` FIRST — a null would otherwise satisfy it and a 'blocked' row with no permission would be stored",
+  );
+  assert.match(blockedSql, /else blocked_permission is null/, "and no other reason may carry a permission");
+  assert.match(blockedMigration, /drop column blocked_permission;/, "with its rollback stated");
+  assert.doesNotMatch(blockedSql, /create (?:or replace )?(?:function|view)|create table|drop table|truncate/i, "it adds no function, no view and no table, and removes nothing");
 }

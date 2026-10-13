@@ -268,6 +268,28 @@ export const MODULES = [
     keywords: ["integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "touch trail", "refused readings", "mock-location", "mock location detection"],
     tables: ["phoenix_crm_location_integrity", "phoenix_crm_behaviour_integrity", "phoenix_crm_photo_fingerprints", "phoenix_crm_touch_trail"],
   },
+  // 🔴 SPLIT AGAIN, 2026-10-13, ONE BYTE OVER: `phoenix-crm-boards` reached 33 rules and its injected
+  // pointer measured 4,001 bytes against the 4,000-byte margin, the moment a browser-blocked
+  // permission added its two rules. The refusals a capture leaves behind are one family — the table,
+  // its four reasons, the SFE's board that reads them and the browser's own report of a blocked
+  // permission — so they move together. `phoenix-crm-boards` and `phoenix-crm-approvals` keep every
+  // glob they had, so a file here loads this file IN ADDITION to theirs and nothing stops arriving.
+  {
+    id: "phoenix-crm-refused-readings",
+    title: "Phoenix CRM — the refusals a capture leaves behind",
+    scope: "Every capture Phoenix CRM did not keep: the three server refusals (no fix, too rough, off its Google listing), the browser's own report that it blocked location or the camera, and the one board the SFE and the Super Admin read them on.",
+    globs: [
+      "src/lib/phoenix-crm/refused-readings-rules.ts",
+      "src/lib/phoenix-crm/server/refused-readings.ts",
+      "src/lib/phoenix-crm/server/refused-readings-board.ts",
+      "src/components/phoenix-crm/report-blocked-permission.ts",
+      "app/**/phoenix-crm/refused-readings/**",
+      "app/api/phoenix-crm/refused-readings/**",
+      "tests/phoenix-crm-refused-readings*",
+    ],
+    keywords: ["refused reading", "refused readings", "blocked permission", "location blocked", "camera blocked", "off listing", "off_listing", "rough location"],
+    tables: ["phoenix_crm_refused_readings"],
+  },
   // 🔴 SPLIT, 2026-10-08, BEFORE `phoenix-crm` OR `phoenix-crm-boards` COULD CROSS THE POINTER MARGIN: the
   // photo-validation audit taught seven rules at once (the signboard check, the closed refusal reasons, the
   // "Validate again" notice, the validate-first order, the Place checks reader, the same-seat merge and the
