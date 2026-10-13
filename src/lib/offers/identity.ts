@@ -1,6 +1,7 @@
 import { systemLegalEntity } from "@/config/system-settings";
-import { receivingDomain, toReceivableHeader, toReceivableList } from "@/lib/email/receivable-address";
-import { JOB_OFFER_SENDER_ADDRESSES, isJobOfferSender } from "@/lib/email/job-offer-sender";
+import { receivingDomain, splitAddressList, toReceivableHeader, toReceivableList } from "@/lib/email/receivable-address";
+import { JOB_OFFER_SENDER_ADDRESSES, isJobOfferSender, senderAddressOf } from "@/lib/email/job-offer-sender";
+import { ADMIN_STANDING_EMAIL } from "@/lib/email/admin-telegram-mirror";
 
 /**
  * Who a job offer comes FROM.
@@ -54,7 +55,22 @@ const fallbackOfferFromEmail = `hr@${receivingDomain}`;
  * on the apex (`hr@` was fixed on the mail server; `omar.anwar@` is the standing admin inbox); the
  * sending subdomain, which owns none, is mapped off structurally by `toReceivableList` below.
  */
-const fallbackOfferReplyTo = "hr@satopharma.com, omar.anwar@satopharma.com";
+const fallbackOfferReplyTo = `hr@${receivingDomain}, ${ADMIN_STANDING_EMAIL}`;
+
+/**
+ * His own mailbox can never be configured OFF an offer's Reply-To.
+ *
+ * Owner, 2026-10-13: "make sure if candidate replies the email reaches me". The default already
+ * named him, but it was only a default — a `JOB_OFFER_REPLY_TO` holding one address, or holding
+ * two other people, silently took a candidate's reply away from him and nothing anywhere would
+ * have looked wrong. So the standing admin mailbox is APPENDED whenever the resolved list does not
+ * already carry it: the environment can add reply targets and reorder them, never remove him.
+ */
+function withStandingAdminReply(replyTo: string): string {
+  const addresses = splitAddressList(replyTo);
+  const hasAdmin = addresses.some((address) => senderAddressOf(address) === ADMIN_STANDING_EMAIL.toLowerCase());
+  return hasAdmin ? addresses.join(", ") : [...addresses, ADMIN_STANDING_EMAIL].join(", ");
+}
 
 export type OfferSender = {
   /** The two mailboxes the owner's rule allows — carried so no screen retypes them. */
@@ -90,7 +106,9 @@ export function resolveOfferSender(): OfferSender {
   const configured = (process.env.JOB_OFFER_EMAIL_FROM ?? "").trim();
   // `JOB_OFFER_REPLY_TO` may name one mailbox or several (comma-separated) — each mapped off the
   // sending subdomain independently, so a reply reaches every one of them and none bounces.
-  const replyTo = toReceivableList((process.env.JOB_OFFER_REPLY_TO ?? "").trim() || fallbackOfferReplyTo);
+  const replyTo = withStandingAdminReply(
+    toReceivableList((process.env.JOB_OFFER_REPLY_TO ?? "").trim() || fallbackOfferReplyTo),
+  );
 
   const fallback = (refusedFrom: string | null): OfferSender => ({
     allowedFrom: JOB_OFFER_SENDER_ADDRESSES,

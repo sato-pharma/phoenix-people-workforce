@@ -102,7 +102,7 @@ export async function runOfferReplyMailboxTests() {
     { env: { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@send.satopharma.com>", JOB_OFFER_REPLY_TO: undefined }, replyTo: twoMailboxes },
     { env: { JOB_OFFER_EMAIL_FROM: "hr@send.satopharma.com", JOB_OFFER_REPLY_TO: undefined }, replyTo: twoMailboxes },
     // Production's exact value today: From on the sending subdomain, Reply-To unset → the default list.
-    { env: { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@send.satopharma.com>", JOB_OFFER_REPLY_TO: "hr@send.satopharma.com" }, replyTo: "hr@satopharma.com" },
+    { env: { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@send.satopharma.com>", JOB_OFFER_REPLY_TO: "hr@send.satopharma.com" }, replyTo: twoMailboxes },
     { env: { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@satopharma.com>", JOB_OFFER_REPLY_TO: twoMailboxes }, replyTo: twoMailboxes },
     // A multi-address override on the sending subdomain maps EVERY address onto the apex.
     { env: { JOB_OFFER_EMAIL_FROM: undefined, JOB_OFFER_REPLY_TO: "hr@send.satopharma.com, omar.anwar@send.satopharma.com" }, replyTo: twoMailboxes },
@@ -147,6 +147,32 @@ export async function runOfferReplyMailboxTests() {
   });
   withEnv({ NOTIFICATION_REPLY_TO: "phoenix@send.satopharma.com" }, () => {
     assert.equal(resolveReplyToAddress(undefined), "phoenix@satopharma.com");
+  });
+
+  // 3c) AND HE CANNOT BE CONFIGURED OFF IT (owner, 2026-10-13: "make sure if candidate replies the
+  //     email reaches me"). The default named him, but a `JOB_OFFER_REPLY_TO` holding anything else
+  //     used to replace the whole list — a one-address value took a candidate's reply away from him
+  //     with nothing looking wrong anywhere. He is appended whenever the resolved list lacks him.
+  const adminMailbox = "omar.anwar@satopharma.com";
+  for (const configured of [
+    "hr@satopharma.com",
+    "careers@satopharma.com, hr@satopharma.com",
+    "hr@send.satopharma.com",
+    "",
+  ]) {
+    withEnv({ JOB_OFFER_EMAIL_FROM: undefined, JOB_OFFER_REPLY_TO: configured || undefined }, () => {
+      const addresses = splitAddressList(resolveOfferSender().replyTo).map((address) => address.toLowerCase());
+      assert.ok(
+        addresses.includes(adminMailbox),
+        `a candidate reply must reach the owner whatever JOB_OFFER_REPLY_TO holds (${configured || "unset"}): ${addresses.join(", ")}`,
+      );
+    });
+  }
+  // Named once, present once — he is never duplicated, in any case, and the order he set is kept.
+  withEnv({ JOB_OFFER_EMAIL_FROM: undefined, JOB_OFFER_REPLY_TO: "OMAR.ANWAR@SATOPHARMA.COM, hr@satopharma.com" }, () => {
+    const addresses = splitAddressList(resolveOfferSender().replyTo);
+    assert.equal(addresses.length, 2, "the owner is not appended a second time");
+    assert.equal(addresses[0].toLowerCase(), adminMailbox, "the configured order is kept");
   });
 
   // ── 6) THE OWNER'S RULE, 2026-10-13: "all job offers email must only fire from
