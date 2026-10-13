@@ -255,6 +255,59 @@ for (const file of files) {
   }
 }
 
+// 4b. Every function a migration creates must PIN search_path — and the check is per FUNCTION.
+// A function with no `set search_path` resolves its unqualified names through whatever the CALLER's
+// search_path happens to be, so the same function can read a different table depending on who calls
+// it. Production's own linter reports it as `function_search_path_mutable`, and the floor here is 0.
+//
+// 🔴 PER FUNCTION, NOT PER FILE, BECAUSE THE DEFECT THAT PROMPTED THIS RULE WOULD PASS A PER-FILE
+// CHECK. 20261012200000_phoenix_crm_a_doctor_is_on_a_seat_once.sql pins search_path on both of its
+// SECURITY DEFINER functions and missed its third — a trigger function, SECURITY INVOKER — so the
+// file contains the clause twice and still left `phoenix_crm_customers_no_double_add` mutable. It
+// and `sos_unmapped_customers` were the two the linter reported on 2026-10-13; both are pinned by
+// 20261013030000_pin_search_path_on_the_last_two_functions.sql, which is also the first file this
+// rule guards.
+//
+// The cutoff is this rule's own date: it is a ratchet on new work, not a sweep of 865 historical
+// files. A function that needs the caller's search_path (there is none here today) says so with
+// `set search_path from current`, which satisfies the rule explicitly rather than by omission.
+const SEARCH_PATH_CUTOFF = '20261013000000';
+for (const file of files) {
+  if (!/^\d{14}_/.test(file) || file.slice(0, 14) < SEARCH_PATH_CUTOFF) continue;
+
+  // Same comment-stripping as rule 4, and for the same reason: prose about search_path must not
+  // satisfy the rule, and a commented-out example must not trip it.
+  const sql = fs
+    .readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
+    .split('\n')
+    .map((line) => {
+      const idx = line.indexOf('--');
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join('\n');
+
+  const creates = /\bcreate\s+(?:or\s+replace\s+)?function\s+(?:public\.)?([a-z_][a-z0-9_]*)\s*\(/gi;
+  let match;
+  while ((match = creates.exec(sql)) !== null) {
+    // The header is everything from `create function` up to where the body opens — the only place
+    // `set search_path` can legally sit. Taking the whole file instead is what makes a per-file
+    // check blind.
+    const rest = sql.slice(match.index);
+    const bodyAt = rest.search(/\bas\s+(?:\$[a-z0-9_]*\$|'|begin\s+atomic\b)/i);
+    const header = bodyAt === -1 ? rest : rest.slice(0, bodyAt);
+    if (!/\bset\s+search_path\b/i.test(header)) {
+      fail(
+        `"${file}" creates public.${match[1]}() without pinning search_path, so it resolves ` +
+        'unqualified names through the CALLER\'s search_path — production\'s linter reports that as ' +
+        'function_search_path_mutable, and the floor is 0. Add, in the function header above its body: ' +
+        "set search_path to 'public'; (or `set search_path from current` if it genuinely needs the " +
+        'caller\'s, which nothing here does). This is checked per FUNCTION: a sibling in the same file ' +
+        'carrying the clause does not cover this one.'
+      );
+    }
+  }
+}
+
 // 5. No migration may hand anon/authenticated a schema-wide DEFAULT privilege on `public`.
 // This is the statement that caused the 2026-08-06 leak. Six ad-hoc backup tables were born
 // readable by anon — nobody granted anything, the schema default did it — and 412 customer names

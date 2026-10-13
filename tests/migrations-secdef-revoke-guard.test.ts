@@ -77,4 +77,65 @@ export function runMigrationsSecdefRevokeGuardTests() {
     files.includes("20260719170000_phx_harden_public_function_default_execute.sql"),
     "the default-privileges hardening migration must exist and be scanned by this guard",
   );
+
+  // ── And every function a new migration creates must PIN search_path — per FUNCTION ────────────
+  //
+  // A function with no `set search_path` resolves its unqualified names through whatever the
+  // CALLER's search_path happens to be; production's linter calls it `function_search_path_mutable`
+  // and the floor is 0. It stood at 2 on 2026-10-13: `public.sos_unmapped_customers` and
+  // `public.phoenix_crm_customers_no_double_add`, both pinned by
+  // 20261013030000_pin_search_path_on_the_last_two_functions.sql.
+  //
+  // 🔴 PER FUNCTION, BECAUSE THE MISS THAT PROMPTED IT WOULD PASS A PER-FILE CHECK.
+  // 20261012200000_phoenix_crm_a_doctor_is_on_a_seat_once.sql pins search_path on both of its
+  // SECURITY DEFINER functions and missed the third — a trigger function, SECURITY INVOKER — so the
+  // file carries the clause twice and still left one function mutable.
+  const SEARCH_PATH_CUTOFF = "20261013000000";
+  const stripComments = (raw: string) =>
+    raw
+      .split("\n")
+      .map((line) => {
+        const idx = line.indexOf("--");
+        return idx >= 0 ? line.slice(0, idx) : line;
+      })
+      .join("\n");
+
+  const unpinned: string[] = [];
+  for (const file of readdirSync(dir)
+    .filter((f) => f.endsWith(".sql") && /^\d{14}_/.test(f) && f.slice(0, 14) >= SEARCH_PATH_CUTOFF)
+    .sort()) {
+    const sql = stripComments(readFileSync(`${dir}/${file}`, "utf8"));
+    const creates = /\bcreate\s+(?:or\s+replace\s+)?function\s+(?:public\.)?([a-z_][a-z0-9_]*)\s*\(/gi;
+    let match: RegExpExecArray | null;
+    while ((match = creates.exec(sql)) !== null) {
+      const rest = sql.slice(match.index);
+      const bodyAt = rest.search(/\bas\s+(?:\$[a-z0-9_]*\$|'|begin\s+atomic\b)/i);
+      const header = bodyAt === -1 ? rest : rest.slice(0, bodyAt);
+      if (!/\bset\s+search_path\b/i.test(header)) unpinned.push(`${file}: public.${match[1]}()`);
+    }
+  }
+  assert.deepEqual(
+    unpinned,
+    [],
+    `Every function created by a migration dated >= ${SEARCH_PATH_CUTOFF} must pin search_path in its ` +
+      `header (set search_path to 'public'), per function — a sibling in the same file carrying the ` +
+      `clause does not cover it. Unpinned: ${unpinned.join(", ")}`,
+  );
+
+  // The fast check carries the same rule (scripts/check-migrations.mjs rule 4b), so it surfaces in
+  // under a second instead of after a build — the reason the SECURITY DEFINER rule above is
+  // duplicated there too. Pin the rule's presence AND the fact that the message names the function.
+  const checkSource = readFileSync("scripts/check-migrations.mjs", "utf8");
+  assert.match(
+    checkSource,
+    /without pinning search_path/,
+    "scripts/check-migrations.mjs must fail on a function created without a pinned search_path — " +
+      "this test only runs inside the full suite, and the per-file blind spot is what let the last one through",
+  );
+  assert.match(
+    checkSource,
+    /SEARCH_PATH_CUTOFF/,
+    "the fast check's rule must carry its own cutoff constant, so it ratchets on new work rather than " +
+      "sweeping 865 historical migrations",
+  );
 }
