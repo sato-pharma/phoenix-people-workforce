@@ -45,6 +45,8 @@
 
 
 
+- [`byte-identical on main` aborts when another PR merged ahead](byte-identical-on-main-fails-when-another-pr-merged-ahead.md) - a shared file like `tests/run-tests.ts` carries three PRs' lines; compare the merge commit's own added lines with the branch's, not the blob.
+
 - 🔴 [a helper-wrapped RPC call is invisible to the obvious grep](a-helper-wrapped-rpc-call-is-invisible-to-the-obvious-grep.md) - `rpc("current_…")` found 0 callers and `pg_policy` found 0 policies, yet phase24 calls five of the six helpers as a signed-in user through `rpcValue(client, name)`; a zero from a call-shape grep is evidence about the shape, not about callers.
 
 - 🔴 [a deploy watcher keyed to ONE sha goes stale on the next merge](a-deploy-watcher-keyed-to-one-sha-goes-stale-on-the-next-merge.md) - `main` moves in minutes here; poll the live `origin/main` and test ancestry, and report the revision actually read.
@@ -69,7 +71,7 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 
 - 🔴 [both new IS-L depots are RULED, not inferred](the-two-new-is-l-depots-are-ruled-not-inferred.md) - `04` Platform Delta stays Gharbia 1 (Tanta), `A2` Assiut 2 Warehouse takes Assuit 2 (`UE4`), his word 13 Oct 2026; the "warehouse = region, no area" rows are not a policy, so ask him for the next unseen depot's area and ship it as a migration.
 
-- 🔴 [the 521/520/525 bursts are production Postgres CRASH-RESTARTING, not Cloudflare](a-production-postgres-crash-restart-wears-cloudflare-codes.md) - twice in three days (10 Oct 11:05:48, 12 Oct 19:04:50 Cairo), each "not properly shut down" with no PANIC; prove it with `pg_postmaster_start_time()` and `cron.job_run_details`' `server restarted`, never with the edge codes, and never lengthen the retry to ride it out.
+- 🔴 [the 521/520/525 bursts are the WHOLE DB INSTANCE hard-restarting, not Cloudflare and not a Postgres crash](a-production-postgres-crash-restart-wears-cloudflare-codes.md) - THREE days running (10 Oct 11:05:48, 11 Oct 13:14:01, 12 Oct 19:04:50 Cairo); the decisive read is the SIDECARS - PgBouncer/PostgREST/GoTrue all boot in the same second, BEFORE the postmaster - so the cause is host-side and not provable from inside the database. Never lengthen the retry to ride it out.
 
 - [a long bash heredoc is truncated and bash blames EOF](a-long-bash-heredoc-is-truncated-and-bash-blames-eof.md) - past roughly 90 lines the tail never arrives, so `unexpected EOF` reads as a quoting bug in the content; long file content goes through Write.
 
