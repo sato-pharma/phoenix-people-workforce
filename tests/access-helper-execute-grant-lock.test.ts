@@ -70,9 +70,12 @@ function revokesOfTheEleven(dir: string): Hit[] {
     const pattern = revokePattern();
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(sql)) !== null) {
-      const grantees = match[2].toLowerCase();
+      // Copied into consts before the closure below: a narrowed `let` does not stay narrowed
+      // inside a callback, which is the TS18047 the `checks` job answered with.
+      const [, target, granteesRaw] = match;
+      const grantees = granteesRaw.toLowerCase();
       if (!/\b(anon|authenticated)\b/.test(grantees)) continue;
-      const fn = ELEVEN.find((name) => new RegExp(`\\b${name}\\b`).test(match[1]));
+      const fn = ELEVEN.find((name) => new RegExp(`\\b${name}\\b`).test(target));
       if (fn) hits.push({ file, fn, grantees: grantees.replace(/\s+/g, " ").trim() });
     }
   }

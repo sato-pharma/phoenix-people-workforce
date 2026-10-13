@@ -252,9 +252,10 @@ export function runBackupSchemaRetentionTests() {
   // 🔴 A TABLE'S drop statement must carry NO `cascade`. The schema form has it because a snapshot
   // schema is dropped whole; a lone table sits in `public` BESIDE the live data, so a cascade there
   // would silently take whatever had come to depend on it. Without it the statement simply refuses.
-  const tableDrop = /drop table if exists \$\{[^}]+\}\.\$\{[^}]+\};/.exec(source);
-  assert.ok(tableDrop, "the emitted per-table drop statement is missing");
-  assert.ok(!/cascade/i.test(tableDrop[0]), `a table drop must never cascade: ${tableDrop[0]}`);
+  const tableDropMatch = /drop table if exists \$\{[^}]+\}\.\$\{[^}]+\};/.exec(source);
+  const tableDrop = tableDropMatch === null ? "" : tableDropMatch[0];
+  assert.notEqual(tableDrop, "", "the emitted per-table drop statement is missing");
+  assert.ok(!/cascade/i.test(tableDrop), `a table drop must never cascade: ${tableDrop}`);
 
   // A daily partition (`events_20261013`) is the one shape the name test cannot tell from a
   // snapshot, so it is excluded in SQL. Asserted on the source because it lives in a query.
