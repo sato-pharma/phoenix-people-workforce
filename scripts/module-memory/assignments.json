@@ -39,6 +39,7 @@
   "a-dot-path-after-a-git-rev-colon-is-mangled-by-msys": "git-worktrees",
   "a-dot-path-plus-2-dev-null-certifies-a-check-nobody-ran": "git-worktrees",
   "a-dotall-regex-flag-is-refused-by-the-es2017-target": "phoenix-crm-validation",
+  "a-drift-check-ok-from-a-worktree-named-11-from-the-primary": "database",
   "a-dropped-target-month-leaves-no-ledger-trace": "org",
   "a-duplicate-merge-strands-the-desk-validation-on-the-retired-row": "marketing",
   "a-failed-dependabot-run-withholds-the-production-deploy": "engineering",

@@ -29,54 +29,32 @@
 
 
 ## Inbox — new notes land here
-- [HR premium identity](hr-premium-identity.md) - worn ONLY by the papers he ticked change on 13 Oct 2026 (the rest print as before, `PREMIUM_DRESS`); skill `hr-premium-identity`. Government forms stay as issued.
-
-- [a `<rev>:<dot-path>` reads as ABSENT on main](a-rev-colon-dot-path-reads-as-absent-on-main.md) - MSYS mangles the colon; ask with `git ls-tree <rev> <path>`.
-
-- 🔴 [production's signature is his ORIGINAL SCAN](the-approved-signature-master-is-the-svg-in-downloads.md) - he revoked the rebuilt one 12 Oct 2026; never put redrawn signature artwork there again.
-
-- 🔴 [a page redirect can answer 200 with a meta-refresh](a-page-redirect-answers-200-with-a-meta-refresh.md) - a status-only role sweep reads that denial as access granted; read the refresh target and a page marker too.
-
-- [a rescue branch's real size is measured AFTER merging main in](a-rescue-branchs-real-size-is-measured-after-merging-main-in.md) - 49 files/4,959 insertions became 12/332, and the remainder was still the discarded architecture.
-
-- 🔴 [a worktree can be held by his phx-live sync](a-worktree-can-be-held-by-his-phx-live-sync.md) - check the `--folder` match AND `live-ctl.sh status` before retiring one; a missing `session.lock` in an `_wt-*` folder never proves the session left.
-
-- [a UTF-8 em dash breaks a PowerShell 5.1 script](a-utf8-em-dash-breaks-a-powershell-5-1-script.md) - a BOM-less `.ps1` is read as ANSI, so one em dash is a ParserError; keep scripts ASCII-only.
 
 
 
-- [`byte-identical on main` aborts when another PR merged ahead](byte-identical-on-main-fails-when-another-pr-merged-ahead.md) - a shared file like `tests/run-tests.ts` carries three PRs' lines; compare the merge commit's own added lines with the branch's, not the blob.
 
-- 🔴 [a helper-wrapped RPC call is invisible to the obvious grep](a-helper-wrapped-rpc-call-is-invisible-to-the-obvious-grep.md) - `rpc("current_…")` found 0 callers and `pg_policy` found 0 policies, yet phase24 calls five of the six helpers as a signed-in user through `rpcValue(client, name)`; a zero from a call-shape grep is evidence about the shape, not about callers.
 
-- 🔴 [a deploy watcher keyed to ONE sha goes stale on the next merge](a-deploy-watcher-keyed-to-one-sha-goes-stale-on-the-next-merge.md) - `main` moves in minutes here; poll the live `origin/main` and test ancestry, and report the revision actually read.
+
+
+
+
+
+
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
 
-- 🔴 [the Ibn Sina LACTO MISR export is a SECOND supplier feed in the IS-S template](the-ibn-sina-lacto-misr-export-is-a-second-supplier-feed-in-the-is-s-template.md) - never upload it under `IS-S`: the next Sato week then de-cumulates against a sheet with no Sato products and double-counts the month.
 
-- 🔴 [a governorate's city is ONE brick in ONE area](qena-city-is-qena-2-on-every-line.md) - مدينة قنا is one brick in Qena 2 like مدينة سوهاج in Sohag 1; Qena 1 is exactly nine bricks with no city brick, and the fold is by hand because no merge path exists.
 
-- 🔴 [a brick move leaves its rollup files pending with nothing draining them](a-brick-move-leaves-its-rollup-files-pending-with-nothing-draining-them.md) - only an open Database Mapping page drains the queue; two moves sat a full day, so every Qena figure on screen was pre-move.
 
-- [an Overseas address can be cut at the START too](an-overseas-address-is-a-30-character-window-cut-at-both-ends.md) - "قوس قرية" is فاقوس, "فرالدوار" is كفر الدوار; a matcher that forgives only the last word flags correctly mapped pharmacies.
 
-- 🔴 [one clean `git status` called a LIVE worktree idle](one-git-status-read-called-a-live-worktree-idle.md) - retire on CLEAN + QUIET (no tracked file touched for 10 min) + PUSHED; no session in ListAgents may claim the folder, and "files edited 0 min ago" IS a holder.
 
-- 🔴 [431648 is NO LONGER a split twin](431648-is-no-longer-a-split-twin-after-the-qena-city-fold.md) - the Qena city fold put both IS and IS-S on `B209B-4`/UE8; the `sales-imports` line ordering it kept split is stale, and re-splitting it would undo his ruling.
 
-- 🔴 [a red shard shows ONE cause and hides the rest](a-shard-aborts-at-its-first-failure-so-the-second-cause-is-invisible.md) - it aborts at its first failing test, so read BOTH shards' FAIL lines; a new `app/api` route is red from its first commit until it is in the access registry.
 
-- [a bash `GROUPS=( … )` array is silently ignored](assigning-to-groups-in-bash-is-silently-ignored.md) - it is bash's own array of the user's group ids, so the sweep looped once over `197609` and every hit read 000; rename it `PAGE_GROUPS`.
 
-- 🔴 [both new IS-L depots are RULED, not inferred](the-two-new-is-l-depots-are-ruled-not-inferred.md) - `04` Platform Delta stays Gharbia 1 (Tanta), `A2` Assiut 2 Warehouse takes Assuit 2 (`UE4`), his word 13 Oct 2026; the "warehouse = region, no area" rows are not a policy, so ask him for the next unseen depot's area and ship it as a migration.
 
-- 🔴 [the 521/520/525 bursts are the WHOLE DB INSTANCE hard-restarting, not Cloudflare and not a Postgres crash](a-production-postgres-crash-restart-wears-cloudflare-codes.md) - THREE days running (10 Oct 11:05:48, 11 Oct 13:14:01, 12 Oct 19:04:50 Cairo); the decisive read is the SIDECARS - PgBouncer/PostgREST/GoTrue all boot in the same second, BEFORE the postmaster - so the cause is host-side and not provable from inside the database. Never lengthen the retry to ride it out.
 
-- [a long bash heredoc is truncated and bash blames EOF](a-long-bash-heredoc-is-truncated-and-bash-blames-eof.md) - past roughly 90 lines the tail never arrives, so `unexpected EOF` reads as a quoting bug in the content; long file content goes through Write.
 
-- 🔴 [a SECOND live feed link silently pauses the weekly token rotation](a-second-live-feed-link-silently-pauses-the-weekly-token-rotation.md) - all three `*-rotate-sheet-token` jobs refuse rather than rotate, cron-job.org still shows a green 200, and only `job_heartbeats.last_detail` says why; keep the link with the live `last_accessed_at`.
 
-- 🔴 [a date inside a note is not the note's subject](a-date-inside-a-note-is-not-the-notes-subject.md) - the Luxor `line_area_map` notes flagged as documenting the superseded 2026-09-11 union were recording its REVERSAL, byte-identical to the migration (`bf6f192e`, 387 chars); digest the prose before calling a live record stale.
 
-- 🔴 [a roll-up can close your PR and de-register its worktree mid-work](a-rollup-can-close-your-pr-and-de-register-its-worktree-mid-work.md) - the pushed branch is what survives (`git ls-remote`); recover with `new-session.mjs --from origin/<branch>`, and prove each merge conflict with `git ls-tree` before taking `--ours`.
+
+- 🔴 [a drift check named 11 migrations main had already acknowledged](a-drift-check-ok-from-a-worktree-named-11-from-the-primary.md) - the checkout was 18 commits behind main's ACKNOWLEDGED_EXCEPTIONS, which selectMissingMigrations filters FIRST; run it from a current tree, and answer a missing row with an md5(prosrc) digest and an evidenced exception entry, never a catalog probe and never a ledger write.

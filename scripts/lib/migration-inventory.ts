@@ -47,6 +47,18 @@ export const GRACE_WINDOW_MS = 48 * 60 * 60 * 1000;
 //     superseded this one). Re-applying this file's bare `create or replace view`
 //     would silently strip that setting back off — a real security regression, not a
 //     no-op. Confirmed via `pg_class.reloptions` on both staging and production.
+//
+// 🔴 ELEVEN OF THESE ENTRIES ARE NOW *ALSO* RECORDED IN PRODUCTION'S LEDGER, AND BOTH STAY — the
+// owner's decision, 2026-10-13, in the same words: "keep the 11 ledger rows and leave the exceptions
+// in place". A session reading either mechanism will find the other one apparently redundant; it is
+// not. The rows cover `supabase db push`, which does not read this list, and for the two superseded
+// functions among those files a recorded row is what stops a re-apply REVERTING production. The
+// entries carry the evidence, which no ledger row can. Do not retire either side, and read
+// docs/security/migration-ledger-reconciliation-2026-10-13.md before adding to this list: a missing
+// row is answered by a digest and an evidenced entry here, never by a catalog-presence probe.
+//
+// Pinned by tests/migration-exception-staleness.test.ts: an entry naming no migration file, a
+// duplicate, and an entry re-shaped out of its own parse each fail the required `validate` job.
 export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Verified: 0 of the 17 named "authenticated read" policies exist on staging or
   // production — closed by 20260719230000_apply_backlogged_m3_sales_ops_rls_closure.
