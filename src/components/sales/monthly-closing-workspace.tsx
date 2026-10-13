@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, Lock, LockOpen, RefreshCw, Send, Sparkles, Table2 } from "lucide-react";
+import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, Lock, LockOpen, RefreshCw, Send, Sparkles, Table2, Trophy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -19,6 +19,7 @@ import {
 } from "@/components/sales/monthly-closing-filters";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isRepRankingLine } from "@/lib/sales/closing-rep-ranking-line";
 import { monthlyClosingFilterOptions } from "@/lib/sales/monthly-closing-filter-options";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-closing-matrix-cells";
@@ -75,6 +76,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingPremium, setIsExportingPremium] = useState(false);
   const [isExportingPremiumXlsx, setIsExportingPremiumXlsx] = useState(false);
+  const [isExportingRepRanking, setIsExportingRepRanking] = useState(false);
   const [isExportingConsolidated, setIsExportingConsolidated] = useState(false);
   const [isExportingConsolidatedPremium, setIsExportingConsolidatedPremium] = useState(false);
   const [isExportingConsolidatedPremiumXlsx, setIsExportingConsolidatedPremiumXlsx] = useState(false);
@@ -439,6 +441,32 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
   }
 
   /**
+   * THE REP RANKING WORKBOOK — the Anti Infective line's own sheet, as a download of its own.
+   *
+   * Owner, 2026-10-13, asked how to get it "from admin account" and chose to add a button rather
+   * than reach it another way. It had become unreachable here by accident: the closing export route
+   * decides by ROLE before it reaches its rep-ranking branch, so Super Admin, SFE Manager, CEO,
+   * Finance Manager and the Marketing Manager — everyone who runs this screen — were handed the
+   * full six-sheet workbook instead. The button calls a route of its own, beside the frozen one,
+   * which asks the SAME builder for the SAME file the portal sends.
+   *
+   * ANTI INFECTIVE ONLY, and the button is absent on every other line rather than disabled: the
+   * workbook does not exist for CNS or Pedia, and a greyed-out control invites a click that can
+   * never succeed. The route refuses the other lines independently, by the same single gate.
+   *
+   * The on-screen filter travels with it, as `runExport` sends it to every export, and the route
+   * ignores it DELIBERATELY — the ranking is built from matrices that take no row filter, so
+   * narrowing only the rows would shrink the channel split underneath a ranking that did not move.
+   */
+  async function handleRepRankingExport() {
+    await runExport({
+      fallbackName: "phoenix-monthly-closing-rep-ranking.xlsx",
+      setBusy: setIsExportingRepRanking,
+      url: "/api/sales/monthly-closing/rep-ranking-export",
+    });
+  }
+
+  /**
    * CONSOLIDATED downloads — the months on screen added together into one file. Owner, 2026-09-14:
    * Super Admin and the CEO only, in both the closing's own workbook and the premium one. Each goes
    * through `runExport`, so the on-screen filter travels with it exactly as it does for one month;
@@ -478,6 +506,12 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
   const showConsolidatedExports = isMultiPeriod && canExportConsolidated;
   const isExportingAnyConsolidated =
     isExportingConsolidated || isExportingConsolidatedPremium || isExportingConsolidatedPremiumXlsx;
+  // The rep ranking button, on the one line that has that workbook. Asked here with the same
+  // function the route asks, so the screen and the server can never give two answers about which
+  // line it is — see closing-rep-ranking-line.ts.
+  const showRepRankingExport = isRepRankingLine(selectedLine);
+  const isExportingAnySingleMonth =
+    isExporting || isExportingPremium || isExportingPremiumXlsx || isExportingRepRanking;
 
   if (initialError && !matrix) {
     return (
@@ -713,20 +747,33 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                     regions={filterOptions.regions}
                     value={filter}
                   />
-                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
-                    {/* Three workbooks of the same month, side by side. The owner's instruction (2026-08-30) was
-                        that the premium sheet be added BESIDE this button rather than replacing it, so whoever is
-                        reading picks the format they read more comfortably. All three carry the same line, the
-                        same month and the same on-screen filter.
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                    {/* Three workbooks of the same month, side by side — four on Anti Infective, which also has
+                        the rep ranking sheet. The owner's instruction (2026-08-30) was that the premium sheet be
+                        added BESIDE this button rather than replacing it, so whoever is reading picks the format
+                        they read more comfortably. All of them carry the same line and the same month.
 
-                        `shrink-0` STAYS, and the third button was measured against it rather than assumed to
-                        break it — a pinned wrapper is the usual cause of a page scrolling sideways, so this was
-                        the thing to check. It does not happen here: at 700, 768, 900, 1024 and 1280 the document
-                        never exceeds the viewport and this row stays on ONE line, because the FILTERS beside it
-                        wrap instead. Letting the buttons wrap instead was tried and reverted — it made the row
-                        break into two lines from 768 up, for no gain. At 375 everything stacks, as it already
-                        did. Measured with the real filter markup: an early harness used `w-44` selects in place
-                        of the real content-sized `<details>` and manufactured an overflow that does not exist. */}
+                        🔴 `shrink-0` CAME OFF THIS ROW WHEN THE FOURTH BUTTON WENT ON (2026-10-13), and that is
+                        the fits-the-screen rule rather than tidying. A flex item with `shrink-0` is never handed
+                        a width narrower than its content, so a `flex-wrap` on that same element never fires —
+                        the row just grows past its parent and the page scrolls sideways (see
+                        tests/flex-wrap-shrink-guard.test.ts, which exists because of exactly that). Three buttons
+                        measure about 530px and fitted; the fourth takes the row past 730px, which is wider than
+                        the panel at 640 and 768. With `shrink-0` gone and `flex-wrap` on, the buttons drop onto a
+                        second line instead and the document never exceeds the viewport. Each BUTTON keeps its own
+                        `shrink-0`, which is correct inside a row that wraps — it stops the labels being squeezed.
+                        Above 1024 there is room for one line and nothing moved.
+
+                        THE RECORD FROM WHEN THERE WERE THREE, which is what changed above: `shrink-0` was kept
+                        then, and the third button was measured against it rather than assumed to break it — a
+                        pinned wrapper is the usual cause of a page scrolling sideways, so it was the thing to
+                        check. It did not happen with three: at 700, 768, 900, 1024 and 1280 the document never
+                        exceeded the viewport and the row stayed on ONE line, because the FILTERS beside it wrapped
+                        instead. Letting the buttons wrap was tried and reverted then — it broke the row into two
+                        lines from 768 up for no gain. The gain exists now: four buttons no longer fit a line the
+                        filters can give back. At 375 everything stacks, as it always did. Measured with the real
+                        filter markup: an early harness used `w-44` selects in place of the real content-sized
+                        `<details>` and manufactured an overflow that does not exist. */}
                     {showConsolidatedExports ? (
                       <>
                         <button
@@ -772,7 +819,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                       className={cn(
                         "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50",
                       )}
-                      disabled={isExporting || isExportingPremium || isExportingPremiumXlsx || isMultiPeriod || filteredMatrix.columns.length === 0}
+                      disabled={isExportingAnySingleMonth || isMultiPeriod || filteredMatrix.columns.length === 0}
                       onClick={() => void handleExport()}
                       title={
                         isMultiPeriod
@@ -788,7 +835,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                       className={cn(
                         "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
                       )}
-                      disabled={isExporting || isExportingPremium || isExportingPremiumXlsx || isMultiPeriod || filteredMatrix.columns.length === 0}
+                      disabled={isExportingAnySingleMonth || isMultiPeriod || filteredMatrix.columns.length === 0}
                       onClick={() => void handlePremiumExport()}
                       title={
                         isMultiPeriod
@@ -804,7 +851,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                       className={cn(
                         "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
                       )}
-                      disabled={isExporting || isExportingPremium || isExportingPremiumXlsx || isMultiPeriod || filteredMatrix.columns.length === 0}
+                      disabled={isExportingAnySingleMonth || isMultiPeriod || filteredMatrix.columns.length === 0}
                       onClick={() => void handlePremiumXlsxExport()}
                       title={
                         isMultiPeriod
@@ -816,6 +863,27 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
                       {isExportingPremiumXlsx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       Export Premium XLSX
                     </button>
+                    {/* ANTI INFECTIVE ONLY — absent on CNS and Pedia rather than greyed out, because the
+                        workbook does not exist for them and a disabled control invites a click that can never
+                        succeed. The route refuses the other lines independently, by the same single gate. */}
+                    {showRepRankingExport ? (
+                      <button
+                        className={cn(
+                          "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
+                        )}
+                        disabled={isExportingAnySingleMonth || isMultiPeriod || filteredMatrix.columns.length === 0}
+                        onClick={() => void handleRepRankingExport()}
+                        title={
+                          isMultiPeriod
+                            ? `This workbook is built one month at a time, so it cannot yet cover ${periodSpan}. Pick a single month to export it.`
+                            : "The rep ranking sheet the Anti Infective portal sends — the reps arranged by achievement with their district manager, the three-month trend, the warehouse carve and the Trust sheet behind every figure. The same file, read from here. It covers the whole month rather than the filter on screen, because its ranking and its channel split come from different reads."
+                        }
+                        type="button"
+                      >
+                        {isExportingRepRanking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trophy className="h-4 w-4" />}
+                        Export Rep Ranking
+                      </button>
+                    ) : null}
                     </>
                     )}
                   </div>

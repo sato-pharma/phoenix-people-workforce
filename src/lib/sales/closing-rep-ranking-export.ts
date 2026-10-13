@@ -17,7 +17,7 @@ import {
 } from "@/lib/sales/closing-rep-ranking-workbook";
 import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
 import { loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
-import { normalizeLineKey } from "@/lib/sales/access-scope";
+import { isRepRankingLine } from "@/lib/sales/closing-rep-ranking-line";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,10 +37,14 @@ import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-impor
 /** How many published months the workbook trends over, the closing month included. */
 const TREND_MONTHS = 3;
 
-/** 🔴 The ONE gate. The ranking workbook replaces the portal export on this line and no other. */
-export function isRepRankingLine(line: string | null | undefined): boolean {
-  return normalizeLineKey(line ?? "") === normalizeLineKey("Anti Infective");
-}
+/**
+ * 🔴 The ONE gate. The ranking workbook replaces the portal export on this line and no other.
+ *
+ * Re-exported, not defined here: the admin screen's third export button asks the same question in
+ * the BROWSER, and this module reaches `@/lib/supabase/server`, which a client bundle cannot hold.
+ * See closing-rep-ranking-line.ts. Every caller of this module keeps importing it from here.
+ */
+export { isRepRankingLine };
 
 /**
  * This line's publication history, newest first — the Trust sheet's provenance table.
