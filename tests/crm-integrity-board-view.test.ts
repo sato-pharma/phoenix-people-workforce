@@ -231,6 +231,7 @@ function runStoryTests() {
       { label: "The pin", lat: 30.0444, lon: 31.2357, accuracyMeters: 12, atIso: "2026-10-03T08:20:00Z" },
       { label: "The photograph", lat: 30.0689, lon: 31.2357, accuracyMeters: 20, atIso: "2026-10-03T08:19:40Z" },
     ],
+    nearbyVisits: [],
     spreadMeters: 2768,
     accuracyMeters: 12,
     deviceMocked: false,
@@ -280,6 +281,210 @@ function runStoryTests() {
  * number drift, and then this board and the place-vs-actual report disagree about the same visit with
  * no way for a reader to know which is right.
  */
+// THE PANEL HE COULD NOT READ (owner, 13 Oct 2026, 03:05 Cairo: he pasted one capture-trust case
+// back and said "i donot understand anything"). Four defects in one panel, every one of them a
+// WORDING defect rather than a wrong number — which is exactly why nothing caught them:
+//
+//   1. THE CUSTOMER NAME PRINTED TWICE. A place case with no venue name of its own built its subject
+//      as "the place saved for <customer>" and the sentence then appended "for <customer>" again, so
+//      the first line of the panel read "... the place saved for X for X".
+//   2. "FILED BY: PIN AND PHOTOGRAPH" — the label says a person and the value is a check.
+//   3. "BETWEEN THE PIN AND THE PICTURE: 20 SECONDS", sitting in a list of distances.
+//   4. THREE COORDINATES, TWO OF THEM IDENTICAL, AND NOTHING SAYING WHICH ONE WAS DOUBTED. A one-tap
+//      capture saves ONE reading and the panel printed it under two names, so a case about two points
+//      read as three disagreeing ones — and the reader still had to work out for himself that the odd
+//      one is the place pin, and that it is the least precise of them.
+//
+// Every assertion below fails on the panel he was sent, and that is the point.
+function runReadablePanelTests() {
+  // His own case, from the panel he pasted: a one-tap capture 2.8 km from the place saved pin.
+  const hisCase: CaseStoryInput = {
+    source: "capture_trust",
+    subjectKind: "place",
+    subjectLabel: null,
+    strong: true,
+    flags: ["photo_pin_far"],
+    reasons: ["The pin and the photograph are far apart"],
+    repName: "Yasmeen Samy",
+    customerName: "Linda Eskandar",
+    customerList: "PM",
+    customerSpeciality: "Internal Medicine",
+    brickName: null,
+    brickDistanceKm: 3.2,
+    placeDistanceMeters: null,
+    readings: [
+      { label: "Where the place was captured", lat: 30.439637, lon: 31.171245, accuracyMeters: 25, atIso: null },
+      { label: "The pin saved for the place", lat: 30.463103, lon: 31.180882, accuracyMeters: 100, atIso: null },
+      { label: "Where the photograph was taken", lat: 30.439637, lon: 31.171245, accuracyMeters: 25, atIso: null },
+    ],
+    // The visit she saved 96 seconds after validating the place, read from production: 56 m from the
+    // pin and 2,822 m from the photograph. It is the whole reason the panel may not rank the two
+    // readings by their accuracy figures, and the evidence the new sentence reports.
+    nearbyVisits: [{ lat: 30.463512, lon: 31.181219, accuracyMeters: 36, atIso: "2026-10-12T12:58:42Z" }],
+    spreadMeters: 2800,
+    accuracyMeters: 25,
+    deviceMocked: null,
+    signText: null,
+    companionNames: [],
+    replayByName: null,
+    signals: { gapSeconds: -20 },
+    photoPath: "phoenix-crm/places/one.jpg",
+    visitDate: "2026-09-28",
+  };
+
+  const story = caseStory(hisCase);
+  const opening = story.story[0] ?? "";
+
+  // 1 — the name once, not twice.
+  assert.equal(
+    opening.split("Linda Eskandar").length - 1,
+    1,
+    'the opening sentence names the customer ONCE: "the place saved for X for X" is what he was sent',
+  );
+
+  const labels = story.evidence.map((item) => item.label);
+
+  // 2 — a check is not a person.
+  assert.ok(!labels.includes("Filed by"), 'a check is not a person: "Filed by: Pin and photograph"');
+  assert.ok(labels.includes("What raised it"), "the detector is labelled as what raised the case");
+
+  // 3 — a duration is not a distance.
+  const gapLabel = labels.find((label) => label.includes("the pin and the picture"));
+  assert.equal(gapLabel, "Time between the pin and the picture", "a label in a list of distances held a duration");
+
+  // 4 — one tap is ONE reading, said once, with the odd one out named.
+  const coordinateLines = story.evidence.filter((item) => item.value.includes("30.4"));
+  assert.equal(coordinateLines.length, 2, "the two identical readings collapse to one line — three coordinates read as three points");
+  const shared = coordinateLines.find((item) => item.value.includes("one reading, under both names"));
+  assert.ok(shared !== undefined, "the shared line says it is one reading under both names");
+  assert.equal(
+    shared?.label,
+    "Where the place was captured and where the photograph was taken",
+    "only the first label of a joined phrase keeps its capital",
+  );
+
+  const oddSentence = story.story.find((line) => line.includes("The one that disagrees is"));
+  assert.ok(oddSentence !== undefined, "the paragraph names WHICH reading disagrees — the reader should not have to work it out");
+  assert.ok(
+    oddSentence?.includes("the pin saved for the place"),
+    "the odd one out is the place pin, named in lower case mid-sentence",
+  );
+  // 🔴 AND IT MUST NOT CONCLUDE FROM THE ACCURACY FIGURES. The first draft said "the least precise
+  // of them ... so the likelier to be the stale one", and this very case proves that backwards: the
+  // photograph carried the TIGHTER figure (25 m against the pin's 100 m) and was the outlier, while
+  // the pin and the visit saved 96 seconds later agreed with each other to 56 m. A phone reports a
+  // cached position just as confidently as a live one.
+  assert.ok(
+    oddSentence?.includes("a tighter figure is not a truer reading"),
+    "the panel reports both accuracies and refuses to rank them as truth",
+  );
+  assert.ok(
+    oddSentence?.includes("about 100 m") && oddSentence?.includes("about 25 m"),
+    "both accuracies are still reported, so the reader can see them",
+  );
+  for (const banned of ["likelier to be the stale one", "least precise of them"]) {
+    assert.ok(!oddSentence?.includes(banned), `the panel does not guess which reading is wrong: "${banned}"`);
+  }
+
+  // 5 — THE PHOTOGRAPH IS THE ANCHOR, AND THE VISITS ARE WHAT IS MEASURED AGAINST IT (owner,
+  // 13 October 2026: "since u have the accurate validation the photo with location then drop the
+  // suspected one and compare visits vs the accurate"). The sentence above can only say that the
+  // question is settled by whether anything else from that day sits near one of the readings; this
+  // one answers it from the customer's own visits, which the case already carries.
+  const visitSentence = story.story.find((line) => line.includes("from the photograph"));
+  assert.ok(
+    visitSentence !== undefined,
+    "the paragraph says how far the customer's own visits sit from the photograph — the pin is dropped from the judgement",
+  );
+  assert.ok(
+    visitSentence?.includes("2.8 km from the photograph"),
+    `the metres from the photograph are reported: ${visitSentence}`,
+  );
+  assert.ok(
+    visitSentence?.includes("56 m from the pin saved for the place"),
+    `and the metres from the other reading, named: ${visitSentence}`,
+  );
+  assert.ok(
+    visitSentence?.includes("sits with the pin saved for the place, not with the photograph"),
+    `it says which of the two the later visit sits with: ${visitSentence}`,
+  );
+  assert.ok(
+    visitSentence?.includes("which is not always the door"),
+    "and it closes on the ordinary cause, never on a verdict",
+  );
+  for (const banned of ["stale", "wrong", "should", "fraud", "faked"]) {
+    assert.ok(!visitSentence?.includes(banned), `the sentence concludes nothing: "${banned}"`);
+  }
+
+  // Silent where there is nothing to compare: no visit at all, and no photograph reading. Both would
+  // otherwise read as "the visits agree with the photograph", which is the opposite of no evidence.
+  assert.ok(
+    caseStory({ ...hisCase, nearbyVisits: [] }).story.every((line) => !line.includes("from the photograph")),
+    "a customer with no visit gets no sentence, never a sentence saying nothing disagrees",
+  );
+  assert.ok(
+    caseStory({ ...hisCase, readings: [hisCase.readings[1]!] }).story.every((line) => !line.includes("from the photograph")),
+    "a case with no photograph reading gets no sentence",
+  );
+
+  // The other way round, which is the commoner shape: a visit at the door, so the later evidence
+  // sits with the photograph and the pin is the one that is out.
+  const atTheDoor = caseStory({ ...hisCase, nearbyVisits: [{ lat: 30.439651, lon: 31.171198, accuracyMeters: 9, atIso: null }] });
+  const atTheDoorSentence = atTheDoor.story.find((line) => line.includes("from the photograph")) ?? "";
+  assert.ok(
+    atTheDoorSentence.includes("sits with the photograph, not with the pin saved for the place"),
+    `a visit at the door sits with the photograph: ${atTheDoorSentence}`,
+  );
+
+  // And it refuses to pick a side on a margin a phone could produce: 1,275 m from the photograph
+  // against 1,493 m from the pin is NEARER the photograph, and still no evidence for it — 218 m
+  // between them is well inside what a cached fix moves. A point exactly equidistant would prove
+  // nothing here, because "nearer" and "clearly nearer" agree on a tie.
+  const halfway = caseStory({ ...hisCase, nearbyVisits: [{ lat: 30.450448, lon: 31.175684, accuracyMeters: 20, atIso: null }] });
+  const halfwaySentence = halfway.story.find((line) => line.includes("from the photograph")) ?? "";
+  assert.ok(
+    halfwaySentence.includes("the later visits settle nothing between them"),
+    `a visit between the two readings picks no side: ${halfwaySentence}`,
+  );
+
+  // 5 — the map block said the same thing twice. Three readings give three pairs, and with two of
+  // them on one point two of those pairs carry the identical number: he was sent "... are 2.8 km
+  // apart" twice, right above a line saying two of the three are one reading.
+  const map = buildCaseMap(hisCase.readings.map((reading) => ({ ...reading })));
+  assert.ok(map !== null, "his case draws a map");
+  assert.equal(map!.pairs.length, 2, "one line per pair of distinct POINTS, not per pair of labels");
+  assert.equal(
+    new Set(map!.pairs.map((pair) => pair.text)).size,
+    map!.pairs.length,
+    "no two lines in the map block say the same thing",
+  );
+  assert.ok(
+    map!.pairs.some((pair) => pair.text.includes("are the same reading, to the bit")),
+    "the zero-distance pair is kept — naming both labels IS the finding",
+  );
+  assert.equal(map!.markers.length, 3, "the markers stay undeduped: two on one pixel is the evidence");
+
+  // A replay case carries ONE coordinate by definition, so the sentence stays silent there rather
+  // than inventing a second point for it to disagree with.
+  const replay = caseStory({
+    ...hisCase,
+    source: "position",
+    flags: ["coordinate_replay"],
+    reasons: ["This coordinate was recorded before"],
+    readings: [hisCase.readings[0]!],
+    spreadMeters: 0,
+    signals: {},
+  });
+  assert.ok(
+    replay.story.every((line) => !line.includes("The one that disagrees is")),
+    "a single-reading case names no odd one out",
+  );
+  assert.ok(
+    replay.story.every((line) => !line.includes("from the photograph")),
+    "and it measures nothing against a photograph it does not have",
+  );
+}
+
 function runMapTests() {
   const map = buildCaseMap([
     { label: "The pin", lat: 30.0444, lon: 31.2357, accuracyMeters: 12 },
@@ -553,6 +758,7 @@ export function runCrmIntegrityBoardViewTests() {
   runFilterGroupTests();
   runUrlMirrorTests();
   runStoryTests();
+  runReadablePanelTests();
   runMapTests();
   runOneSourceTests();
   runBulkSettleTests();

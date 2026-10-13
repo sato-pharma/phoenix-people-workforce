@@ -73,6 +73,7 @@ export function integrityBoardRow(entry: IntegrityCase, standing: IntegrityStand
     brickDistanceKm: entry.brickDistanceKm,
     placeDistanceMeters: entry.placeDistanceMeters,
     readings: entry.readings,
+    nearbyVisits: entry.nearbyVisits,
     spreadMeters: map?.spreadMeters ?? null,
     accuracyMeters: entry.accuracyMeters,
     deviceMocked: entry.deviceMocked,
