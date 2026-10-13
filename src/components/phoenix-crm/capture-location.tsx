@@ -20,6 +20,7 @@ import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { LocateFixed, RotateCcw } from "lucide-react";
 
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 
 /** The Capture-location reading: the place's pin, as the server's `lat`/`lon`/`accuracyMeters` read it. */
 export type CapturedPin = {
@@ -47,6 +48,13 @@ export function CaptureLocation({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * This button raises its own refusals, so it names the browser itself — the screens around it name
+   * only the SERVER's (use-browser-name.ts), and a rep sent to find "your browser" in his settings
+   * finds nothing at all. Named at the RENDER rather than at each `setError`, so a message added here
+   * later is named too; one without the placeholder passes through untouched.
+   */
+  const browserNamed = useBrowserNamed();
 
   function capture() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -101,7 +109,7 @@ export function CaptureLocation({
           </CrmButton>
         </>
       )}
-      {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
+      {error ? <CrmNote tone="bad">{browserNamed(error)}</CrmNote> : null}
     </div>
   );
 }
