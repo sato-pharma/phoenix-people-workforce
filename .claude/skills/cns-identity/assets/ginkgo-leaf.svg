@@ -1,0 +1,27 @@
+<!-- The ginkgo leaf — the CNS line's botanical mark.
+
+     Drawn here, not traced off a carton: two lobes rising from one stalk, the veins
+     radiating from the stalk and never branching, which is what makes a ginkgo a
+     ginkgo rather than a generic leaf.
+
+     🔴 IT IS A CIRCULAR SECTOR, NOT TWO LOBES. The rim is a true arc of radius 104
+     about the stalk head at (110,150), running 155° to 25°, and the sides are
+     STRAIGHT from the tips down to the stalk. The notch is a narrow SLIT on the
+     centre line, not a V. Two earlier drafts built it from bezier lobes with a wide
+     notch and both read as a playing-card heart at 25-40px, which is the only size
+     this mark is ever used at. Blade 189 × 104, ratio 1.82 — wider than it is tall.
+     Never narrow it to fit a column: scale it down or leave it out.
+
+     Ships as ONE ink through `currentColor`, so a caller sets the colour and the
+     mark never carries a second one. Solid, 25-70px, beside a count line, a
+     strength numeral, a rule or a section head. Never a watermark, never outlined. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 192" width="220" height="192" fill="none">
+  <g fill="currentColor">
+    <path d="M110 150L15.7 106.1A104 104 0 0 1 104.6 46.1L110 96L115.4 46.1A104 104 0 0 1 204.3 106.1Z"/>
+    <rect x="106.5" y="146" width="7" height="40"/>
+  </g>
+  <g stroke="#fff" stroke-width="1.5" stroke-opacity=".26" stroke-linecap="round">
+    <path d="M110 148L36 98"/><path d="M110 148L72 60"/><path d="M110 148L105 60"/>
+    <path d="M110 148L148 60"/><path d="M110 148L184 98"/>
+  </g>
+</svg>
