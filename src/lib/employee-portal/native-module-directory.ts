@@ -105,6 +105,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   // ── Performance ───────────────────────────────────────────────────────────────────────────────
   "/employee-portals/sales-vs-target": { icon: "speedometer-outline", section: "Performance" },
   "/employee-portals/monthly-closing": { icon: "checkmark-done-outline", section: "Performance" },
+  "/employee-portals/monthly-closing/performance-review": { icon: "podium-outline", section: "Performance" },
   "/employee-portals/team-performance": { icon: "trophy-outline", section: "Performance" },
   "/employee-portals/med-reps-performance": { icon: "ribbon-outline", section: "Performance" },
   "/employee-portals/dsms-performance": { icon: "medal-outline", section: "Performance" },

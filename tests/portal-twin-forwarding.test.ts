@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { PORTAL_HOME, portalTwinRules, resolvePortalTwin } from "../src/lib/navigation/portal-twins.ts";
+import { PORTAL_PERFORMANCE_REVIEW_ROLES } from "../src/lib/sales/closing-performance-review-access.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,16 +245,50 @@ export async function runPortalTwinForwardingTests() {
     );
   }
 
-  // ── 6. The role-scoped rules say what the coaching pages say ───────────────
-  // Coaching is the only place a page sends different portal viewers to different
-  // pages, so it is the only place the table is allowed to branch on role.
+  // ── 6. The role-scoped rules say what their pages say ──────────────────────
+  // Only a page that genuinely sends different portal viewers to different pages may be branched on
+  // here, and the table's copy of that branch is checked against the page's own.
+  //
+  // Coaching was the only one until 2026-10-13, when each sales manager was given his own scoped
+  // Performance Review (owner: "show performance review tab in each district manager account") while
+  // every other portal viewer kept the Source of Sales hub — so that page now branches too, and both
+  // of its destinations are real.
+  const ROLE_BRANCHING_ROUTES = ["/coaching", "/sales/monthly-closing/performance-review"];
   const roleScoped = portalTwinRules.filter((rule) => rule.roles);
   for (const rule of roleScoped) {
     assert.ok(
-      rule.from.startsWith("/coaching"),
-      `${key(rule.from, rule.to)} is role-scoped but is not a coaching route — role branching belongs in the pages, not here`,
+      ROLE_BRANCHING_ROUTES.some((prefix) => rule.from.startsWith(prefix)),
+      `${key(rule.from, rule.to)} is role-scoped but its page does not branch on role — role branching belongs in the pages, not here`,
     );
   }
+
+  const REVIEW_ROUTE = "/sales/monthly-closing/performance-review";
+  const reviewPage = readFileSync(
+    path.join(ADMIN_GROUP, "sales", "monthly-closing", "performance-review", "page.tsx"),
+    "utf8",
+  );
+  assert.match(
+    reviewPage,
+    /canOpenPortalClosingPerformanceReview\(access\)/,
+    "the Performance Review page must still branch on canOpenPortalClosingPerformanceReview — the role-scoped rule below mirrors that branch",
+  );
+  const reviewScoped = portalTwinRules.find(
+    (rule) => rule.from === REVIEW_ROUTE && rule.to.endsWith("/performance-review"),
+  );
+  assert.ok(reviewScoped?.roles, `${REVIEW_ROUTE} must carry a role-scoped rule to its own portal twin`);
+  assert.deepEqual(
+    [...(reviewScoped?.roles ?? [])].sort(),
+    [...PORTAL_PERFORMANCE_REVIEW_ROLES].sort(),
+    "the table's copy of the review's audience must equal PORTAL_PERFORMANCE_REVIEW_ROLES — the gate decides who has a scoped review, and a drifted copy here sends a manager to the hub instead of to his own",
+  );
+  const reviewFallback = portalTwinRules.find(
+    (rule) => rule.from === REVIEW_ROUTE && rule.to !== reviewScoped?.to,
+  );
+  assert.deepEqual(
+    [...(reviewFallback?.roles ?? [])].filter((role) => PORTAL_PERFORMANCE_REVIEW_ROLES.has(role)),
+    [],
+    "the hub fallback must not list a role that has a scoped review of its own, or one address would have two answers",
+  );
   const coachingSource = readFileSync(path.join(ADMIN_GROUP, "coaching", "page.tsx"), "utf8");
   assert.match(
     coachingSource,

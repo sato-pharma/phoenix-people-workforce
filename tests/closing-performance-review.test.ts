@@ -477,6 +477,12 @@ export async function runClosingPerformanceReviewTests() {
   // rejected. Pre-July months carry no as-was area map (au.line_area_map has no history before
   // 2026-07-13) and are priced and targeted on a different basis, so subtracting one from the other
   // measures the regime change and not the business. Months below the floor are DROPPED, not blanked.
+  //
+  // 🔴 IT WAS MOVED TO JANUARY ON 2026-10-13 AND HE CORRECTED IT BACK TO JULY THE SAME DAY — the
+  // first half of that exchange ("when I publish from Jan to September, since performance review is
+  // no target, it's only sales. So show them the history") reads as the sales-history floor, and his
+  // next word was "no show performance review in emp portal starting from july". July it is, for
+  // every reader, the portal tab included.
   const everyMonth = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"];
 
   assert.equal(

@@ -12,6 +12,7 @@ import {
   type PerformanceReviewSeriesRow,
 } from "@/lib/sales/closing-performance-review";
 import {
+  longMonthLabel as longMonthName,
   reviewShowsLessThanTheWholeLine,
   reviewTotalRowLabel,
 } from "@/lib/sales/closing-performance-review-regions";
@@ -175,13 +176,15 @@ const PAGE: Partial<ExcelJS.PageSetup> = {
   paperSize: 9,
 };
 
-/** "2026-07" → "July 2026". Falls back to the raw period rather than inventing one. */
+/**
+ * "2026-07" → "July 2026", with this module's own em dash for an empty period.
+ *
+ * The formatting itself moved to `closing-performance-review-regions.ts` (the dependency-free module)
+ * so the portal page can print a month in words without pulling ExcelJS in; this keeps the name every
+ * existing caller imports, and the sheet's own blank.
+ */
 export function longMonthLabel(period: string | null | undefined): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(String(period ?? "").trim());
-  if (!match) return String(period ?? "").trim() || EM;
-  const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const index = Number(match[2]) - 1;
-  return names[index] ? `${names[index]} ${match[1]}` : String(period);
+  return longMonthName(period) || EM;
 }
 
 /**
@@ -213,6 +216,12 @@ export function headlinePeriodLabel(review: ClosingPerformanceReview): string {
  * The TRIGGER is `reviewShowsLessThanTheWholeLine`, not these parts, so that this masthead and the
  * total row's own wording cannot drift: a sheet whose masthead says "filtered" always has a total row
  * that says FILTERED TOTAL, and one that says NATIONAL TOTAL always has an empty scope here.
+ *
+ * 🔴 **A BOUNDED VIEWER'S SHEET SAYS SO EVEN WITH NO FILTER SET** (owner, 2026-10-13). A sales
+ * manager's own workbook covers his territory, and the two counts below cannot see that: his pickers
+ * are built from his own areas, so they agree. Without the `scopeIsBounded` branch his file would
+ * carry a FILTERED TOTAL with a masthead that never says what it was narrowed to — which is the same
+ * unlabelled sheet this function exists to prevent, one layer up.
  */
 export function scopeLabel(review: ClosingPerformanceReview): string {
   if (!reviewShowsLessThanTheWholeLine(review)) return "";
@@ -225,7 +234,11 @@ export function scopeLabel(review: ClosingPerformanceReview): string {
   if (allProducts > 0 && review.matrixByProduct.columns.length < allProducts) {
     parts.push(`${review.matrixByProduct.columns.length} of ${allProducts} products`);
   }
-  return parts.length === 0 ? "" : `filtered ${DOT} ${parts.join(` ${DOT} `)}`;
+  if (parts.length > 0) return `filtered ${DOT} ${parts.join(` ${DOT} `)}`;
+  if (review.scopeIsBounded) {
+    return `own territory ${DOT} ${review.areas.length} ${review.areas.length === 1 ? "area" : "areas"}`;
+  }
+  return "";
 }
 
 /** A subtitle with the scope appended, when there is one. Keeps the unfiltered wording untouched. */
@@ -790,6 +803,9 @@ function buildGridSheet(
  * The series starts at July 2026 and fills forward (PERFORMANCE_REVIEW_FIRST_PERIOD), so on a July
  * closing it is one column wide. That is a fact worth printing rather than leaving to be guessed:
  * one unexplained column reads as a broken report, and "the series starts here" reads as a start.
+ *
+ * The span is taken from the months actually in hand, so a sales manager reading his own published
+ * months — a bounded viewer's list is the published ones, July upward — sees exactly which they are.
  */
 function seriesSpanLabel(review: ClosingPerformanceReview): string {
   if (review.months.length === 0) return `the series starts ${longMonthLabel(PERFORMANCE_REVIEW_FIRST_PERIOD)}`;

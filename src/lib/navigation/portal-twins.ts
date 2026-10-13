@@ -78,6 +78,28 @@ const SOS = "/employee-portals/source-of-sales";
 
 /** Mirrors `isEmployeePortalRole` in the coaching pages, which is what branches there. */
 const COACHING_PORTAL_ROLES: readonly PhoenixRole[] = ["Employee", "Medical Rep"];
+/**
+ * Mirrors `PORTAL_PERFORMANCE_REVIEW_ROLES`, which is what the admin Performance Review branches on.
+ * Written out rather than imported because this module is a routing table with one import by
+ * design, and the closing-performance-review-access module reaches the permissions engine.
+ */
+const PERFORMANCE_REVIEW_PORTAL_ROLES: readonly PhoenixRole[] = [
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+];
+/**
+ * The other portal-mode sales roles, who have no scoped review of their own and so keep the Source of
+ * Sales hub the page still names for them. Spelled out because the two rules share one `from`: an
+ * unscoped sibling would swallow the three tiers above, which is the shadowing
+ * `tests/portal-twin-forwarding.test.ts` checks for rule by rule.
+ */
+const PERFORMANCE_REVIEW_OTHER_PORTAL_ROLES: readonly PhoenixRole[] = [
+  "Medical Rep",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+];
 const TRAINING_MANAGER: readonly PhoenixRole[] = ["Training Manager"];
 
 const TWIN_RULES: readonly TwinRule[] = [
@@ -199,7 +221,21 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/sales/missing-data", to: SOS },
   { from: "/sales/make-it-happen", to: "/employee-portals/make-it-happen" },
   { from: "/sales/monthly-closing", to: SOS },
-  { from: "/sales/monthly-closing/performance-review", to: SOS },
+  // The Performance Review has a portal twin since 2026-10-13 (owner: "show performance review tab
+  // in each district manager account"), and the admin page branches on exactly these three roles —
+  // the ones that have a scoped copy to be sent to. Every other portal-mode viewer keeps the Source
+  // of Sales hub, which is what that page's source still names for them. Routing only: the
+  // destination refuses anyone outside PORTAL_PERFORMANCE_REVIEW_ROLES on its own.
+  {
+    from: "/sales/monthly-closing/performance-review",
+    to: "/employee-portals/monthly-closing/performance-review",
+    roles: PERFORMANCE_REVIEW_PORTAL_ROLES,
+  },
+  {
+    from: "/sales/monthly-closing/performance-review",
+    to: SOS,
+    roles: PERFORMANCE_REVIEW_OTHER_PORTAL_ROLES,
+  },
   { from: "/sales/normalizer", to: SOS },
   // The Rankings board reads the same published closing figures as Sales vs Target and is gated on
   // the same `sales:read`, so a portal-mode viewer asking for it belongs on the portal's own Sales
