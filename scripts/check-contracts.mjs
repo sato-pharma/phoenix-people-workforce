@@ -13,7 +13,8 @@
 //
 // 🔴 IT IS NOT IN THE `ci` SCRIPT, DELIBERATELY. tests/ci-gate-parity.test.ts requires every
 // `check:*` named in `ci` to appear literally in a .github/workflows/*.yml file, and a CI step
-// would be pure waste anyway — the sharded suite already runs all nine of these.
+// would be pure waste anyway — `validate` already runs every one of these, which is the point: each
+// gate here is the step's own code, so this answers the same question earlier and never instead.
 //
 // This file only launches: the gates need `--experimental-strip-types` and the alias loader, which
 // a plain `node scripts/check-contracts.mjs` does not have, so it spawns a child that does.
@@ -28,6 +29,7 @@ import {
   CONTRACT_GATES,
   GATE_RUNNER,
   MAX_LINT_FILES,
+  MIGRATION_CHECK_SCRIPT,
   SHARD_RESULT_RE,
   TOOL_GATES,
   TOOL_GATE_BYTES,
@@ -39,6 +41,7 @@ import {
   eslintArgs,
   lintCacheLocation,
   lintableChangedFiles,
+  migrationDetail,
 } from './check-contracts-gates.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -125,22 +128,21 @@ function capture(command, args) {
 }
 
 /**
- * The one tool gate: ESLint ERRORS on the files this branch changed.
+ * A tool gate's result. Every runner below returns one of these rather than throwing, and SKIP is a
+ * first-class answer — there are honest reasons one cannot run (no `origin/main` to diff against, a
+ * branch far too wide for a seconds-long check, a child the memory watchdog reaped), and reporting
+ * one of those as a PASS would be the whole failure mode this script exists to avoid.
  *
- * Returns a status rather than throwing, and SKIP is a first-class answer — there are honest
- * reasons this cannot run (no `origin/main` to diff against, a branch far too wide for a
- * seconds-long check), and reporting one of those as a PASS would be the whole failure mode this
- * script exists to avoid.
+ * @param {string} slug
+ * @param {number} startedAt
  */
+function reporter(slug, startedAt) {
+  return (status, detail, output = '') => ({ slug, status, ms: Date.now() - startedAt, detail, output });
+}
+
+/** ESLint ERRORS on the files this branch changed. */
 async function runChangedFilesLint() {
-  const startedAt = Date.now();
-  const since = (status, detail, output = '') => ({
-    slug: TOOL_GATES[0].slug,
-    status,
-    ms: Date.now() - startedAt,
-    detail,
-    output,
-  });
+  const since = reporter('changed-files-lint', Date.now());
 
   const base = await capture('git', ['merge-base', 'origin/main', 'HEAD']);
   if (base.code !== 0 || !base.stdout.trim()) {
@@ -174,15 +176,53 @@ async function runChangedFilesLint() {
   return since('SKIP', `eslint exited ${lint.code}, which is its own failure, not yours`, (lint.stdout + lint.stderr).trim());
 }
 
-// 🔴 THE LINT CHILD'S MEMORY IS RESERVED BEFORE THE SHARDS ARE COUNTED. It runs alongside them —
-// which is why the whole check still lands in seconds rather than adding the lint's 3-6s to the
-// end — but on a box with 1.6 GB free, four unbudgeted node processes is how `mem-watchdog.ps1`
-// reaps one of them and the run reports nothing at all.
+/**
+ * `validate`'s "Check migrations" step, run as the step runs it.
+ *
+ * 🔴 IT SPAWNS CI'S OWN SCRIPT, SO THERE IS NOTHING HERE TO DRIFT. The only judgement in this
+ * function is the exit-code reading: `check-migrations.mjs` exits 0 on a clean run AND on a
+ * warnings-only run (a `DROP TABLE` with no `-- SAFE:` note warns and passes, in CI too), 1 on any
+ * error, and anything else — or a signal — is a child that did not finish, which is NO VERDICT.
+ */
+async function runMigrationCheck() {
+  const since = reporter('migration-check', Date.now());
+  const run = await capture(process.execPath, [MIGRATION_CHECK_SCRIPT]);
+  const output = (run.stdout + run.stderr).trim();
+  const detail = migrationDetail(run.stdout + run.stderr) ?? 'the migration folder';
+
+  if (run.signal) return since('SKIP', `check-migrations was killed by ${run.signal} — no verdict`);
+  if (run.code === 0) return since('PASS', detail);
+  if (run.code === 1) return since('FAIL', detail, output);
+  return since('SKIP', `check-migrations exited ${run.code}, which is its own failure, not yours`, output);
+}
+
+/** Each tool gate's runner, by slug. */
+const TOOL_GATE_RUNNERS = {
+  'changed-files-lint': runChangedFilesLint,
+  'migration-check': runMigrationCheck,
+};
+
+// 🔴 A GATE IN THE TABLE WITH NO RUNNER IS **NO VERDICT**, NEVER A QUIET SKIP. The table is the
+// published list — `--list` prints it and docs/testing.md counts it — so a gate listed and not run
+// is the one shape where this script's summary would claim coverage it does not have.
+const unwired = TOOL_GATES.filter((gate) => typeof TOOL_GATE_RUNNERS[gate.slug] !== 'function');
+if (unwired.length > 0) {
+  console.error(
+    '[check-contracts] NO VERDICT — tool gate(s) listed with no runner in this file: ' +
+      unwired.map((gate) => gate.slug).join(', '),
+  );
+  process.exit(2);
+}
+
+// 🔴 THE TOOL CHILDREN'S MEMORY IS RESERVED BEFORE THE SHARDS ARE COUNTED. They run alongside the
+// shards — which is why the whole check still lands in seconds rather than adding the lint's 3-6s
+// and the migration check's half-second to the end — but on a box with 1.6 GB free, five unbudgeted
+// node processes is how `mem-watchdog.ps1` reaps one of them and the run reports nothing at all.
 const total = contractShardCount(process.env.PHX_CONTRACT_SHARDS, { reserveBytes: TOOL_GATE_BYTES });
 const startedAt = Date.now();
-const [results, lint] = await Promise.all([
+const [results, toolResults] = await Promise.all([
   Promise.all(Array.from({ length: total }, (_unused, i) => runShard(i + 1, total))),
-  runChangedFilesLint(),
+  Promise.all(TOOL_GATES.map((gate) => TOOL_GATE_RUNNERS[gate.slug]())),
 ]);
 
 const problems = [];
@@ -211,10 +251,15 @@ for (const result of results) {
 }
 problems.push(...coverageProblems(results, total));
 
-// The tool gate reports on its own line, after the gates and before the summary, so a lint failure
-// is never mistaken for one of the suite's contracts.
-console.log(`${lint.status} ${lint.slug} (${lint.ms}ms)  ${lint.detail}`);
-if (lint.output) console.error(lint.output);
+// Each tool gate reports on its own line, after the contract gates and before the summary, so a
+// lint or migration failure is never mistaken for one of the suite's contracts.
+for (const tool of toolResults) {
+  console.log(`${tool.status} ${tool.slug} (${tool.ms}ms)  ${tool.detail}`);
+  if (tool.output) console.error(tool.output);
+}
+
+const failedTools = toolResults.filter((tool) => tool.status === 'FAIL');
+const skippedTools = toolResults.filter((tool) => tool.status === 'SKIP');
 
 const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 const shardNote = total === 1 ? '1 shard' : `${total} shards`;
@@ -228,10 +273,10 @@ if (problems.length > 0) {
   );
   process.exit(2);
 }
-if (failedGates > 0 || lint.status === 'FAIL') {
+if (failedGates > 0 || failedTools.length > 0) {
   const parts = [];
   if (failedGates > 0) parts.push(`${failedGates} of ${CONTRACT_GATES.length} contract gates`);
-  if (lint.status === 'FAIL') parts.push('the changed-files lint');
+  for (const tool of failedTools) parts.push(tool.slug);
   console.error(
     `\n[check-contracts] ${parts.join(' and ')} FAILED in ${seconds}s (${shardNote}).` +
       '\n  A contract gate is a whole-repo rule, not your feature — fix it here rather than in a red PR.' +
@@ -239,9 +284,15 @@ if (failedGates > 0 || lint.status === 'FAIL') {
   );
   process.exit(1);
 }
+// 🔴 A SKIP IS NAMED IN THE SUMMARY, NEVER ROLLED INTO "clean". A gate that could not run is the
+// one thing a reader must not take for a pass, and the summary is the line a session actually reads.
+const toolNote = skippedTools.length === 0
+  ? `and all ${toolResults.length} tool gates are clean`
+  : `${toolResults.length - skippedTools.length} of ${toolResults.length} tool gates clean, and `
+    + skippedTools.map((tool) => `${tool.slug} was SKIPPED — ${tool.detail}`).join('; ');
 console.log(
   `\n[check-contracts] ${CONTRACT_GATES.length} contract gates passed in ${seconds}s (${shardNote}), ` +
-    `and the changed-files lint ${lint.status === 'SKIP' ? 'was SKIPPED — ' + lint.detail : 'is clean'}.` +
+    `${toolNote}.` +
     note,
 );
 process.exit(0);

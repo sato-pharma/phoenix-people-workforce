@@ -42,7 +42,7 @@ All commands run from the repo root.
 | Lint | `pnpm run lint` |
 | Typecheck — **CI's job, not yours** (see below) | `pnpm run typecheck` |
 | Unit/integration tests | `pnpm run test` |
-| **The repo-wide contract gates + your changed files' lint, ~9s — the reds you did not write** | `pnpm run check:contracts` (optional, never a gate; types stay CI's) |
+| **The repo-wide contract gates + your changed files' lint + `check:migrations`, ~8s — the reds you did not write** | `pnpm run check:contracts` (optional, never a gate; types stay CI's) |
 | **Any heavy check, on the CI box instead of this laptop** | `node scripts/remote-check.mjs typecheck` (also `lint`, `test`, `build`, `all`) |
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
