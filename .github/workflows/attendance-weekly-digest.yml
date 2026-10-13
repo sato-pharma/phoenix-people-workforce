@@ -72,7 +72,14 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
+    # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
+    # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is
+    # not a step failure, so `continue-on-error` cannot absorb it. A STEP that hits its own ceiling
+    # fails only that step, which `continue-on-error` turns into a reported finding with the job
+    # still green. Account and the two runs it cost: migration-drift-check.yml, above its job.
+    # Pinned by tests/github-workflow-validity.test.ts.
+    timeout-minutes: 12
     steps:
       - name: Bring the review weeks up to date
         env:
@@ -152,6 +159,7 @@ jobs:
       - name: Notify Telegram on failure
         if: ${{ failure() }}
         continue-on-error: true
+        timeout-minutes: 3
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}

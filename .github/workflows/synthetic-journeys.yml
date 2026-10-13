@@ -88,6 +88,13 @@ jobs:
     # deliberate investigation. The job timeout is the leg that is specific to CI, so it is the leg
     # that moves. 45 leaves ~11 minutes of headroom over the 34-minute worst case, which is enough for
     # a slow runner without letting a genuinely hung run burn an hour of billable minutes.
+    # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
+    # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
+    # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is
+    # not a step failure, so `continue-on-error` cannot absorb it. A STEP that hits its own ceiling
+    # fails only that step, which `continue-on-error` turns into a reported finding with the job
+    # still green. Account and the two runs it cost: migration-drift-check.yml, above its job.
+    # Pinned by tests/github-workflow-validity.test.ts.
     timeout-minutes: 45
 
     # `secrets` is NOT a valid context in a step-level `if:` — GitHub rejects it with
@@ -194,6 +201,7 @@ jobs:
       - name: Run synthetic journeys
         id: journeys
         continue-on-error: true
+        timeout-minutes: 20
         env:
           SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
           SYNTHETIC_ADMIN_HR_ID: ${{ secrets.SYNTHETIC_ADMIN_HR_ID }}
@@ -244,6 +252,7 @@ jobs:
       - name: Save the run to the dashboard
         id: save
         continue-on-error: true
+        timeout-minutes: 4
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run synthetic:save-report
         env:
@@ -288,6 +297,7 @@ jobs:
       # an inconvenience; the verdict is already in the log, the annotation and the dashboard row.
       - name: Upload Playwright report
         continue-on-error: true
+        timeout-minutes: 5
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

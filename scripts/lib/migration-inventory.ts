@@ -596,15 +596,94 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
 
+/** The repository root — the only directory the bulk `git log` below may run in. See its header. */
+const REPO_ROOT = path.join(__dirname, "..", "..");
+
+/**
+ * Every committed migration file's newest commit time, keyed by BASENAME, in ONE git process.
+ *
+ * 🔴 THIS USED TO BE ONE `git log` PROCESS PER FILE, AND THAT IS WHAT CANCELLED THE NIGHTLY DRIFT
+ * CHECK. The cost grows with the migration count and nothing capped it: at 410 files the original
+ * comment here called it "minutes rather than seconds" and left it, at 855 files it measured 4m34s
+ * per leg on a GitHub runner, and migration-drift-check.yml drives it TWICE (staging, then
+ * production) inside a 10-minute job. The job hit 10m07s on 2026-10-10 and again on 2026-10-12,
+ * GitHub cancelled it at the wall, and a CANCELLED check suite on `main` HEAD makes Railway withhold
+ * that commit's production deploy permanently — the exact failure the whole `continue-on-error`
+ * design in that workflow exists to prevent, except a job timeout is not a step failure, so
+ * `continue-on-error` cannot absorb it. Every check leg had already run and reported; only the run's
+ * conclusion was lost. Measured after this change: 855 files in ONE process, well under a second.
+ *
+ * Equivalence to the per-file `git log -1 --format=%ct -- <path>` it replaces is exact, and pinned
+ * by tests/github-workflow-validity.test.ts over a spread sample plus a coverage floor — a sample
+ * rather than all 855 because the comparison has to run the slow path it is checking, and paying
+ * 855 processes inside the required `validate` job would reintroduce the cost in the one place that
+ * gates every merge. `--follow` was a no-op in the old call: it only extends history BACKWARDS
+ * through renames, and `-1` already asks for the most recent commit touching the path, which no
+ * amount of rename-following changes.
+ *
+ * Keyed by basename, and run with cwd = REPO_ROOT, deliberately. The old call built its pathspec
+ * with `path.relative(process.cwd(), …)`, so running the drift check from anywhere but the repo
+ * root produced `../..` paths that git matched nothing against — silently giving EVERY file
+ * "age unknown", which switches the 48h grace window off and flags migrations merged minutes ago.
+ */
+function loadCommitTimesByFileName(): Map<string, number> {
+  try {
+    return parseGitLogCommitTimes(
+      execSync('git log --format=%ct --name-only -- "supabase/migrations"', {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 64 * 1024 * 1024,
+      }),
+    );
+  } catch {
+    // Not fatal — if git history is unavailable (a shallow checkout, no git on PATH) every file
+    // reports "age unknown", which `isWithinGraceWindow` already treats as "do not shelter it".
+    return new Map<string, number>();
+  }
+}
+
+/**
+ * The parse, split out from the git call so it can be pinned without a git history.
+ *
+ * 🔴 SPLIT OUT BECAUSE THE LIVE COMPARISON CANNOT RUN IN CI. `validate` checks out at the default
+ * `fetch-depth: 1`, so there is exactly one commit, no file has a second one, and the only test
+ * that can catch a wrong newest-wins is one fed a fixture. The first version of that test asked
+ * git on the runner and tripped its own anti-vacuous floor — correctly, which is how this was found.
+ *
+ * `--format=%ct --name-only` prints the commit seconds, a blank line, then that commit's paths.
+ * Newest commit first, so the FIRST time a path appears is the newest commit that touched it, which
+ * is exactly what `git log -1` means — hence `if (!out.has(...))`, never an unconditional set.
+ * Keyed by basename: a migration filename is unique in the directory, and that also carries a
+ * renamed file's history onto its current name.
+ */
+export function parseGitLogCommitTimes(stdout: string): Map<string, number> {
+  const out = new Map<string, number>();
+  let commitTimeMs: number | null = null;
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^\d{9,12}$/.test(trimmed)) {
+      commitTimeMs = Number(trimmed) * 1000;
+      continue;
+    }
+    if (commitTimeMs === null) continue;
+    const fileName = path.posix.basename(trimmed);
+    if (!fileName.endsWith(".sql")) continue;
+    if (!out.has(fileName)) out.set(fileName, commitTimeMs);
+  }
+  return out;
+}
+
 /**
  * Every migration file on disk, in readdir order.
  *
- * `withCommitTimes` decides whether each file's commit time is looked up, and it is a real cost,
- * not a flag for its own sake: the lookup is one `git log` process PER FILE, 410 of them today, and
- * on Windows that is minutes rather than seconds. Only the grace window needs the answer, so the
- * drift check pays for it and the staging applier — which ignores the grace window by design — does
- * not. A caller that skips the lookup gets `commitTimeMs: null`, which `isWithinGraceWindow` already
- * treats as "age unknown, do not shelter it".
+ * `withCommitTimes` decides whether commit times are looked up. Since the lookup became a single
+ * git process (see loadCommitTimesByFileName) it is no longer the minutes-long cost that named this
+ * flag, but it is still a process and still only the grace window needs the answer — so the drift
+ * check pays for it and the staging applier, which ignores the grace window by design, does not. A
+ * caller that skips it gets `commitTimeMs: null`, which `isWithinGraceWindow` already treats as
+ * "age unknown, do not shelter it".
  */
 export function loadLocalMigrations(
   options: { withCommitTimes?: boolean } = {},
@@ -614,28 +693,40 @@ export function loadLocalMigrations(
     throw new Error(`migrations directory not found: ${MIGRATIONS_DIR}`);
   }
   const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql"));
+  const commitTimes = withCommitTimes ? loadCommitTimesByFileName() : new Map<string, number>();
   const out: LocalMigration[] = [];
   for (const fileName of files) {
     const m = FILENAME_RE.exec(fileName);
     if (!m) continue; // check-migrations.mjs already fails malformed filenames separately
     const [, version, name] = m;
-    let commitTimeMs: number | null = null;
-    if (withCommitTimes) {
-      try {
-        const relPath = path.relative(process.cwd(), path.join(MIGRATIONS_DIR, fileName));
-        const epochSeconds = execSync(`git log --follow -1 --format=%ct -- "${relPath}"`, {
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "ignore"],
-        }).trim();
-        if (epochSeconds) commitTimeMs = Number(epochSeconds) * 1000;
-      } catch {
-        // Not fatal — if git history is unavailable (e.g. shallow checkout), treat as
-        // "no age known" and let it through the grace-window check below.
-      }
-    }
-    out.push({ fileName, version, name, commitTimeMs });
+    out.push({ fileName, version, name, commitTimeMs: commitTimes.get(fileName) ?? null });
   }
   return out;
+}
+
+/**
+ * The per-file `git log -1` the bulk pass replaced, kept ONLY so the test can prove the two agree.
+ *
+ * Not exported for production use and not called by any check: it is one process per file, which is
+ * the cost that cancelled the nightly. The test calls it for every file in the directory and asserts
+ * the bulk map matches — break the bulk parse and that comparison is what fires.
+ */
+export function commitTimeMsForOneFileSlowly(fileName: string): number | null {
+  try {
+    const epochSeconds = execSync(`git log -1 --format=%ct -- "supabase/migrations/${fileName}"`, {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return epochSeconds ? Number(epochSeconds) * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The bulk commit-time map, exposed for the equivalence test above. */
+export function commitTimesByFileNameForTests(): Map<string, number> {
+  return loadCommitTimesByFileName();
 }
 
 /** `https://<ref>.supabase.co` -> `<ref>`, so every run states which project it judged. */
