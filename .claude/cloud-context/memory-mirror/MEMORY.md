@@ -57,4 +57,9 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 
 
 
-- 🔴 [a drift check named 11 migrations main had already acknowledged](a-drift-check-ok-from-a-worktree-named-11-from-the-primary.md) - the checkout was 18 commits behind main's ACKNOWLEDGED_EXCEPTIONS, which selectMissingMigrations filters FIRST; run it from a current tree, and answer a missing row with an md5(prosrc) digest and an evidenced exception entry, never a catalog probe and never a ledger write.
+
+- [a closed PR's `headRefOid` is not the branch tip](a-closed-prs-headrefoid-is-not-the-branch-tip.md) - #5856 recorded `445fc057d`, a sha this clone never held, while the branch stood at `438030c13`; prove ancestry with `gh api .../compare/<tip>...<headRefOid>` (`status=behind`, `ahead_by=0`) before archiving only the local tip.
+- 🔴 [two break suites in one folder contaminate each other](two-break-suites-in-one-folder-contaminate-each-other.md) - they write the SAME break-builder and the SAME broken workbook, so one suite's MISSes are the other's edits; a MISS carrying foreign FAIL lines is the tell, and an overlapped log is VOID.
+
+- [a constructor parameter property cannot be tested here](a-constructor-parameter-property-cannot-be-tested-here.md) - `constructor(private readonly x: string)` throws ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX the moment a test imports the module, because tests/run-tests.ts loads source under Node type-STRIPPING; tsc, eslint and the editor all stay silent, so the class ships untestable - declare the field and assign it in the body.
+- 🔴 [a Railway variable is reverted by its GitHub SECRET on every sync](a-railway-variable-is-reverted-by-its-github-secret.md) - HR_NOTIFICATION_EMAILS was fixed on 2026-09-13 and was back to the suppressed phoenix@satopharma.com by 2026-10-13, because sync-railway-production-secrets.mjs pushes the GitHub secret over it; fix BOTH stores in one turn, and note that gh variable get answers "not found" for a name gh secret list shows.
