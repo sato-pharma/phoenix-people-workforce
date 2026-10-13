@@ -15,11 +15,10 @@ export type ShareLinkFeed = {
   /**
    * The screen where this sheet's links can be read and revoked, or `null` where there is none.
    *
-   * Marketing's links are API-only — created and revoked through
-   * `/api/marketing-requests/report/share-links`, with no panel anywhere. `null` rather than a
-   * neighbouring screen on purpose: an alert whose button opens a page that cannot act on the
-   * thing it is about is worse than an alert with no button, and the message carries the real
-   * instruction either way.
+   * Every sheet has one now. Marketing's was API-only until its links panel landed on the All
+   * Marketing Requests register (13 Oct 2026); `null` stays a legal value for a feed added without
+   * a screen, because an alert whose button opens a page that cannot act on the thing it is about
+   * is worse than an alert with no button, and the message carries the real instruction either way.
    */
   screen: string | null;
   /** Human name of the sheet, for the message the owner reads. Never a table name. */
@@ -35,7 +34,7 @@ export const SHARE_LINK_FEEDS: readonly ShareLinkFeed[] = [
     table: "direct_order_report_share_links",
   },
   {
-    screen: null,
+    screen: "/admin/marketing-requests/all",
     sheet: "Marketing Requests",
     table: "marketing_request_report_share_links",
   },

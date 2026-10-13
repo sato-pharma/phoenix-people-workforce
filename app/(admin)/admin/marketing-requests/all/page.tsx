@@ -1,4 +1,6 @@
 import { MarketingAllRequests } from "@/components/employee-portal/marketing-all-requests";
+import { MarketingReportShareLinksPanel } from "@/components/marketing-requests/report-share-links-panel";
+import { canAccess } from "@/lib/auth/permissions";
 
 import { assertMarketingAdminPageAccess } from "../admin-access";
 
@@ -18,7 +20,11 @@ export const dynamic = "force-dynamic";
  * Approval Inbox above it.
  */
 export default async function AdminMarketingAllRequestsPage() {
-  await assertMarketingAdminPageAccess();
+  const access = await assertMarketingAdminPageAccess();
+  // Publishing the register past the login wall is an export, so the panel is gated on the same
+  // `expenses:export` the share-link service asserts. A page wider than its API offers a button
+  // that bounces; narrower strands a holder who can still call it.
+  const canShare = await canAccess(access, "expenses", "export");
 
   return (
     <div className="space-y-6 p-6 sm:p-8">
@@ -33,6 +39,7 @@ export default async function AdminMarketingAllRequestsPage() {
           </p>
         </div>
       </div>
+      {canShare ? <MarketingReportShareLinksPanel /> : null}
       <MarketingAllRequests />
     </div>
   );

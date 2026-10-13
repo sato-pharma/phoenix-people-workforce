@@ -116,12 +116,17 @@ export function runShareLinkListsOmitTokenTests() {
     "revoke goes by the link's id — it never needed the token",
   );
 
-  // Marketing has no panel (SHARE_LINK_FEEDS records `screen: null`). If one appears, it joins this test.
-  const marketingConsumers = [
-    "../src/components/marketing-requests/report-share-links-panel.tsx",
-    "../src/components/marketing-requests/marketing-share-links-panel.tsx",
-  ];
-  for (const path of marketingConsumers) {
-    assert.throws(() => read(path), `${path} does not exist; a Marketing links screen must be added to this test`);
-  }
+  // Marketing's panel (13 Oct 2026) is held to the same rules.
+  const mkPanel = stripComments(read("../src/components/marketing-requests/report-share-links-panel.tsx"));
+  const mkReads = [...mkPanel.matchAll(/(\w+)\.token\b/g)].map((match) => match[1]!);
+  assert.deepEqual(
+    [...new Set(mkReads)].sort(),
+    ["created", "data"],
+    "the marketing panel may read only the token it just minted (created) and the response carrying it (data)",
+  );
+  assert.ok(!/link\.token\b/.test(mkPanel), "an existing marketing link's token must never be rendered; it is not even fetched");
+  assert.ok(
+    /body: JSON\.stringify\(\{ action: "revoke", linkId \}\)/.test(mkPanel),
+    "marketing revoke goes by the link's id",
+  );
 }
