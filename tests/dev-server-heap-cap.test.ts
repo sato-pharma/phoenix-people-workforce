@@ -137,6 +137,26 @@ function testTheLauncher() {
     // `dev:turbopack` is the launcher plus --turbopack: the caller's flag beats the variable.
     assert.deepEqual(launch(launcher, ["--turbopack"], { PHOENIX_DEV_BUNDLER: "webpack" }).argv, ["dev", "--turbopack"]);
     assert.deepEqual(launch(launcher, [], { PHOENIX_DEV_BUNDLER: "webpack" }).argv, ["dev", "--webpack"]);
+
+    // 🔴 WEBPACK ON EVERY PLATFORM (2026-10-13). On turbopack the Hetzner box answered /api/healthz
+    // once while cold and then nothing at all — not the page shipped that morning, not a months-old
+    // admin page, not a plain API route. Three servers in a row, 400 s / 420 s / 560 s, every one 000.
+    assert.deepEqual(
+      launch(launcher, []).argv,
+      ["dev", "--webpack"],
+      "the default is webpack everywhere: the box has two dev servers and only one of them sets an env var of its own",
+    );
+    // 🔴 AND THE ASSERTION ABOVE IS VACUOUS ON WINDOWS, where the default has always been webpack —
+    // write `isWindows ? "webpack" : "turbopack"` back and it still passes on this laptop, leaving
+    // only CI's Linux to catch it. So the decision line itself is read, which fires on any platform.
+    assert.match(
+      readFileSync(resolve("scripts/dev-server.mjs"), "utf8"),
+      /\n {2}bundler = "webpack";\n/,
+      "the bundler default must be webpack outright: a platform ternary here sends the box back to turbopack, where it serves nothing",
+    );
+    // Both escape hatches survive it — the flag and the variable still reach turbopack on purpose.
+    assert.deepEqual(launch(launcher, ["--turbopack"]).argv, ["dev", "--turbopack"]);
+    assert.deepEqual(launch(launcher, [], { PHOENIX_DEV_BUNDLER: "turbopack" }).argv, ["dev", "--turbopack"]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -71,8 +71,10 @@
  * --webpack serves a junctioned worktree fine (measured 2026-08-29, "Ready in 1770ms", HMR
  * working). So on this machine turbopack does not merely leak — in a worktree it cannot start.
  *
- * macOS/Linux keep --turbopack: none of the above reproduces there, and CI and cloud sessions
- * benefit from the faster refresh.
+ * SUPERSEDED 2026-10-13 — macOS/Linux no longer keep --turbopack. "None of the above reproduces
+ * there" held only while no Linux dev server had been measured; the Hetzner box is one, and on
+ * turbopack it answered healthz once while cold and then nothing at all, for every route, three
+ * servers running. Webpack is now the default on every platform. See the decision below.
  *
  * ESCAPE HATCH: `pnpm run dev:turbopack` still forces turbopack on any platform, and
  * PHOENIX_DEV_BUNDLER=turbopack|webpack overrides the automatic choice.
@@ -102,7 +104,27 @@ if (bundlerFlag) {
 } else if (override === "turbopack" || override === "webpack") {
   bundler = override;
 } else {
-  bundler = isWindows ? "webpack" : "turbopack";
+  // 🔴 WEBPACK IS THE DEFAULT ON EVERY PLATFORM (measured 2026-10-13, the owner's instruction "fix
+  // phx-preview the same way"). The line this replaces read `isWindows ? "webpack" : "turbopack"`,
+  // on the header's claim that "none of the above reproduces" off Windows. It does. The Hetzner box
+  // is Linux and runs this launcher, and there turbopack reproduced the exact wedge this whole file
+  // was written for: THREE servers in a row answered `/api/healthz` once while cold, then every real
+  // route — a portal page shipped that morning, the months-old `/admin/field-crm/validation-reviews`
+  // and a plain `/api/employee-portals/navigation` alike — drove the process to its heap cap, where
+  // it sat at 27-60% of a core and 4.8 GB RSS and answered NOTHING again, healthz included. Single
+  // serial requests at 400 s, 420 s and 560 s all returned 000. On webpack, READY fell 38 s → 8 s
+  // and the same board went from 000 to 200 in 25 s.
+  //
+  // 🔴 IT IS A PLATFORM DEFAULT RATHER THAN A PER-SERVER ENV FOR ONE REASON: the box has TWO dev
+  // servers and only `phx-live` sets a variable of its own (PHX_LIVE). `phx-preview` sets none, and
+  // its scope line lives in the box's `preview-scope.sh`, which this repo does not ship — so keying
+  // on an env would have fixed one of the two and left the other wedging, with nothing in this repo
+  // to show why. Here, both get it from the checkout they already run.
+  //
+  // What is given up is turbopack's faster refresh for a Linux or macOS developer. Nothing else: CI
+  // and cloud sessions build and test, they do not run `next dev`. The ESCAPE HATCH in the header is
+  // unchanged and now carries that case — PHOENIX_DEV_BUNDLER=turbopack, or `pnpm run dev:turbopack`.
+  bundler = "webpack";
 }
 
 /*
