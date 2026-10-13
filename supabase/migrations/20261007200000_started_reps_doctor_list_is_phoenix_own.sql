@@ -64,6 +64,14 @@
 -- Production has NO point-in-time recovery — 7 daily backups are the whole recovery story.
 -- 🔴 THIS WRITES LIST ROWS ON A LIVE TABLE: it closes the started reps' vendor periods and opens their
 -- Phoenix periods. No row is deleted and no existing period's `effective_from` moves.
+--
+-- SAFE: every DROP TABLE in this file is a `pg_temp.` one — crm_refresh_started_reps,
+-- crm_contact_master_activity and crm_refresh_phoenix_lists, all inside the body of
+-- public.crm_contact_master_refresh, which creates and drops them within its own call. They are
+-- SESSION-LOCAL scratch tables; nothing persistent is dropped or truncated, which is the same thing
+-- the line above says about the rows. (`scripts/check-migrations.mjs` matches the statement, not the
+-- schema, so it cannot tell pg_temp from public; this annotation is placed in the header rather than
+-- beside each statement so the function's stored source stays byte-for-byte what production holds.)
 
 begin;
 set local lock_timeout = '5s';

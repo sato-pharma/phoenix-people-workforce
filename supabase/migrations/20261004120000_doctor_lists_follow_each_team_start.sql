@@ -61,6 +61,14 @@
 --
 -- The matching TypeScript rule is `startedWindowCovers` in src/lib/crm/phoenix-team-starts.ts, and the
 -- one RPC read is src/lib/crm/phoenix-started-reps.ts. This SQL is the same rule in the database.
+--
+-- SAFE: every DROP TABLE in this file is a `pg_temp.` one — crm_refresh_started_reps and
+-- crm_contact_master_activity, both inside the body of public.crm_contact_master_refresh, which
+-- creates and drops them within its own call. They are SESSION-LOCAL scratch tables; no persistent
+-- table is dropped or truncated anywhere here. (`scripts/check-migrations.mjs` matches the statement,
+-- not the schema, so it cannot tell pg_temp from public; this annotation is placed in the header
+-- rather than beside each statement so the function's stored source stays byte-for-byte what
+-- production already holds.)
 
 -- ---------------------------------------------------------------------------------------------------
 -- 1. A rep on a started team may change his own list.

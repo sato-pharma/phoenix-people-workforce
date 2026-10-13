@@ -37,6 +37,28 @@ The supabase/ root also contains historical hardening scripts and operational pa
 - Production migration application follows the phase pipeline (see scripts reference)
 - Never use the Supabase Dashboard to make schema changes — all changes go through migration files
 
+### The `-- SAFE:` annotation, and where it goes
+
+`scripts/check-migrations.mjs` warns when a file contains `DROP TABLE` or `TRUNCATE` and no
+`-- SAFE:` anywhere in it. Two things about that rule decide how to answer it:
+
+- **It matches the STATEMENT, not the schema.** `drop table if exists pg_temp.<scratch>` inside a
+  function body reads exactly like dropping a production table. Measured 13 Oct 2026: of the 7 files
+  warning at the time, **6 were only that** — session-local scratch tables that
+  `public.crm_contact_master_refresh` creates and drops inside its own call — and **1**
+  (`20260925150000_drop_crm_native_pilot_tables.sql`) dropped eight real `public` tables, which was
+  the migration's whole purpose and already carried its evidence in its header.
+- **It is matched file-wide**, so the annotation belongs in the file's **header**, not beside the
+  statement. 🔴 **A comment inside a function body changes `pg_proc.prosrc`**, which breaks the
+  `md5(prosrc)` correspondence that migration-ledger reconciliation depends on — and
+  `20261012184500_contact_refresh_survives_a_doctor_added_twice.sql` records that md5 in its own
+  header, read off production.
+
+🔴 **The suppression is the whole file, permanently.** A destructive statement added later to an
+annotated migration will not warn. That is survivable only because an **applied migration never
+gains statements** — a new change is a new file — so never add one to an annotated migration to
+"keep it together".
+
 ## Migration Pipeline
 
 **Reconciled 2026-08-04.** There is currently **no scripted gate** for taking a new

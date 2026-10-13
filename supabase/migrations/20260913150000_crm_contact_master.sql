@@ -41,6 +41,13 @@
 --
 -- PURELY ADDITIVE, and the app tolerates its absence: until this is applied the direct-order venue
 -- picker keeps reading ireports360_contacts, and the cron records the refresh as not provisioned.
+--
+-- SAFE: the only DROP TABLE in this file is `drop table if exists pg_temp.crm_contact_master_activity`,
+-- inside the body of public.crm_contact_master_refresh — a SESSION-LOCAL scratch table that function
+-- creates and drops within its own call. No persistent table is dropped or truncated anywhere here.
+-- (`scripts/check-migrations.mjs` matches the statement, not the schema, so it cannot tell pg_temp
+-- from public; this annotation is placed in the header rather than beside the statement so the
+-- function's stored source stays byte-for-byte what production already holds.)
 
 begin;
 

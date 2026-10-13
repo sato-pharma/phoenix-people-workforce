@@ -23,6 +23,15 @@
 --   supabase/migrations/20260913210000_crm_native_rep_plans_pilot.sql
 --   supabase/migrations/20260913230000_crm_cutover.sql (the three view definitions)
 --   supabase/migrations/20260914170000_phoenix_crm_pilot_reps.sql
+--
+-- SAFE: the eight `drop table` statements at the end ARE this migration — retiring the native-visit
+-- pilot's own tables — and the evidence is the header above, not this line: every one of the eight
+-- was checked at 0 production rows immediately before the file was written, the pilot's routes and
+-- backend are deleted so nothing reads or writes them, the three reporting views that referenced
+-- them are rewritten here to their vendor-only branch with byte-identical column lists, and the
+-- rollback names the four migrations that recreate them. crm_native_visit_pilots (3 real rows, kept
+-- forever as pilot history) and the two vacation_day_request tables are deliberately NOT touched.
+-- This is the one file of the seven annotated on 13 Oct 2026 that drops anything persistent at all.
 
 begin;
 
