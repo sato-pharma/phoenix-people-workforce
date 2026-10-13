@@ -44,7 +44,8 @@
 //
 // 🔴 SO FOR A MONTH THE RESPREAD COVERS, THIS MODULE'S NUMBER IS NOT A TASK. The closing already
 // reads those units in the right area, and the board says so rather than asking him to re-commit the
-// book (`officeAllocationDriftItems` in needs-you/sources.ts puts such a row in worth-knowing). What
+// book (`officeAllocationDriftItems` in needs-you/office-allocation-drift-items.ts puts such a row
+// in worth-knowing). What
 // it still measures is the STORED rows, which is what a future re-upload, a re-map or any reader of
 // the raw table meets — never nothing.
 //

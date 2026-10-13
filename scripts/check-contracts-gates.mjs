@@ -20,12 +20,19 @@
 // matching tests/run-tests.ts and `tests/check-contracts.test.ts` goes red — it is not possible for
 // this file to quietly run nothing.
 //
-// 🔴 LEFT OUT DELIBERATELY: "the Office-allocation board row"
-// (tests/needs-you-office-allocation-drift.test.ts). It is one of the gates that went red, but it
-// imports src/lib/needs-you/sources.ts — ~45 `@/lib/**` imports including @/lib/admin/service,
-// whose head is `getSupabaseAdmin` from @/lib/supabase/server. Nothing reaches the network at
-// import time (the client is built inside the call) but a Supabase client and @/lib/env land in the
-// process, so it fails the offline test this script is built on. It stays a PR-time gate.
+// 🔴 NOTHING IS LEFT OUT ANY MORE, AND THE LAST ONE IN COST A SMALL REFACTOR. "the
+// Office-allocation board row" (tests/needs-you-office-allocation-drift.test.ts) was the one
+// candidate this script could not take: it imported src/lib/needs-you/sources.ts — ~30 `@/lib/**`
+// imports including @/lib/admin/service, whose head is `getSupabaseAdmin` from
+// @/lib/supabase/server. Nothing reaches the network at import time (the client is built inside the
+// call), but a Supabase client and @/lib/env land in the process, which is the one thing every gate
+// here must not do. The fix was not to loosen the rule: the pure function the test actually
+// exercises moved, unchanged, into src/lib/needs-you/office-allocation-drift-items.ts — whose whole
+// import graph is office-distributor -> sales/contracts, needs-you/types and needs-you/item-fields,
+// all import-free or nearly so — and the test now reads the ADAPTER from source text, which is what
+// it already did for everything else it pins. `tests/check-contracts.test.ts` walks that graph
+// TRANSITIVELY, so a service import added anywhere beneath that wrapper fails the suite instead of
+// silently putting a database client back in this process.
 //
 // This file is BOTH the table (imported by scripts/check-contracts.mjs and by the test) and the
 // child entry point. The driver runs only under the main-module guard at the bottom — the idiom in
@@ -187,6 +194,17 @@ export const CONTRACT_GATES = [
     redJobs: 3,
     costMs: 165,
   },
+  {
+    // The gate the first version of this script could not take — see the note at the top. Its
+    // function now lives in src/lib/needs-you/office-allocation-drift-items.ts, so the only thing
+    // this gate loads is that pure module; the adapter in needs-you/sources.ts is read as text.
+    slug: 'needs-you-office-allocation-drift',
+    file: 'tests/needs-you-office-allocation-drift.test.ts',
+    export: 'runNeedsYouOfficeAllocationDriftTests',
+    namePrefix: 'the Office-allocation board row reports a month whose COMMITTED Office spread',
+    redJobs: null,
+    costMs: 120,
+  },
 ];
 
 /**
@@ -194,8 +212,11 @@ export const CONTRACT_GATES = [
  *
  * A gate reached through one of these is not offline — it puts a database client, the env bag or
  * the Next runtime in the process — so it belongs to the PR's own `validate`, not here.
- * `tests/check-contracts.test.ts` runs this over every gate's first-level imports, so the table
- * cannot grow one.
+ * `tests/check-contracts.test.ts` runs this over every gate's WHOLE resolvable import graph, not
+ * its first level, so neither the table nor anything beneath a gate can grow one quietly.
+ *
+ * `/needs-you/sources` is named here by hand because that module reaches the Supabase client
+ * several hops down, through a specifier none of the other patterns match.
  */
 export const NOT_OFFLINE = /supabase|@\/lib\/env|^next\/|\/needs-you\/sources/;
 

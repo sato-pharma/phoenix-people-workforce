@@ -161,8 +161,8 @@ Four things together made those gates invisible before a push: a local typecheck
 `runTest` **rethrows at the first failure**, so one red gate reports on a prefix of the suite and
 the next push finds a second gate.
 
-**`pnpm run check:contracts` answers in about 9 seconds**, and reports every gate instead of
-stopping at the first. The ten it runs, with the failing CI jobs each caused between 9 and
+**`pnpm run check:contracts` answers in about 8 seconds**, and reports every gate instead of
+stopping at the first. The eleven it runs, with the failing CI jobs each caused between 9 and
 13 Oct 2026:
 
 | Gate | Red CI jobs |
@@ -177,6 +177,7 @@ stopping at the first. The ten it runs, with the failing CI jobs each caused bet
 | `every runTest( call in this very file is ("a name", aRunFunction)` | 3 — in `checks/Typecheck`, not `Test` |
 | `audit entity types` | named among the 12 Oct reds |
 | `test wiring is complete` | fires on exactly the push that adds a test file |
+| `the Office-allocation board row` | one of the reds — and the one that needed a refactor to get in (below) |
 
 **It is optional and never a gate.** It starts nothing, refuses nothing and blocks no push — the
 owner ruled *"keep the pre-push test as a rule, no guard"* on 2026-10-04 — and the PR's own
@@ -191,7 +192,7 @@ other two required steps as far as each honestly can.
 `react-hooks/set-state-in-effect` ("Calling setState synchronously within an effect"), 1 × "Cannot
 create components during render", 1 × five counts of `@typescript-eslint/no-explicit-any`. Not one
 was elsewhere in the repo, which is what makes the branch's own diff the whole exposure. So one
-**tool gate** runs beside the ten — ESLint over the files this branch changed, alongside the shards,
+**tool gate** runs beside the eleven — ESLint over the files this branch changed, alongside the shards,
 with `--quiet` so it reports **errors only**. That is exactly what reddens the step, and it also
 makes the known single-file trap inert, because "Unused eslint-disable directive" is a *warning*.
 Measured on 20 changed files: **6.4s cold, ~3s warm**. ESLint here is not type-aware
@@ -230,7 +231,7 @@ Six decisions in it that should not be "fixed" back:
 - 🔴 **It is NOT in the `ci` script.** `tests/ci-gate-parity.test.ts` requires every `check:*` named
   in `ci` to appear literally in a `.github/workflows/*.yml` file, so adding it there without a
   workflow step reddens `validate` — and a CI step would be waste, since the sharded suite already
-  runs all ten.
+  runs all eleven.
 - 🔴 **It shards, and the parent REFUSES a run it cannot prove complete.** Serial it took 20.3s cold
   and 16.9s warm on the owner's laptop; three shards bring it to **8.1s**. Each shard prints
   `PHX_CONTRACT_RESULT shard=i/n ran=<slugs>` from an `exit` handler, and a missing line, a gate run
@@ -246,12 +247,40 @@ Six decisions in it that should not be "fixed" back:
   directory under a hash of the checkout's own path, and the ESLint child's memory is reserved out
   of the shard budget before the shards are counted, because it runs alongside them.
 
-**One gate was deliberately left out: the Office-allocation board row**
-(`tests/needs-you-office-allocation-drift.test.ts`). It is one of the gates that went red, but it
-imports `src/lib/needs-you/sources.ts` — ~45 `@/lib/**` imports including `@/lib/admin/service`,
-whose head is `getSupabaseAdmin` from `@/lib/supabase/server`. Nothing reaches the network at import
-time, but a Supabase client and `@/lib/env` land in the process, so it fails the offline rule the
-script is built on and stays a PR-time gate.
+#### Nothing is left out any more — and the last one in was fixed, not excused
+
+**The Office-allocation board row** (`tests/needs-you-office-allocation-drift.test.ts`) was the one
+candidate the first version could not take. It imported `src/lib/needs-you/sources.ts` — ~30
+`@/lib/**` imports including `@/lib/admin/service`, whose head is `getSupabaseAdmin` from
+`@/lib/supabase/server`. Nothing reaches the network at import time (the client is built inside the
+call), but a Supabase client and `@/lib/env` land in the process, which is the one thing every gate
+here must not do.
+
+🔴 **THE FIX WAS NOT TO LOOSEN THE OFFLINE RULE, AND NOT TO COPY THE ASSERTIONS EITHER** — the two
+shortcuts that would have made the gate's PASS stop meaning what `validate`'s PASS means. What moved
+was the code: the pure function the test exercises now lives in
+`src/lib/needs-you/office-allocation-drift-items.ts`, **byte-identical to the block that was in
+`sources.ts`**, and the two helpers it shares with every other adapter (`ageDaysSince`, `plural`)
+live in `src/lib/needs-you/item-fields.ts` so there is still exactly one definition of each. That
+module's whole import graph is `sales/office-distributor` → `sales/contracts`, plus the import-free
+`needs-you/types` and `needs-you/item-fields`. The adapter itself — owner-only, two periods, bounded
+— is **read from `sources.ts` as source text**, which is what the test already did for everything
+else it pins about it; the registry listing is read the same way. Measured: **34 ms**, and the gate
+behaves identically in `validate`, where it also still runs. Nothing it checked was changed, added
+or dropped.
+
+🔴 **AND THE OFFLINE TRIPWIRE IN `tests/check-contracts.test.ts` IS NOW TRANSITIVE, BECAUSE A NARROW
+WRAPPER MODULE DEFEATS A TWO-LEVEL WALK.** It used to read a gate's first-level imports plus one hop
+through a `../src/…` module — enough while every gate imported its subject directly, and useless the
+moment a gate reaches its subject through a wrapper, since a service import added one level *below*
+that wrapper would have put `getSupabaseAdmin` back in the process with the check still green. It now
+walks every specifier it can resolve (`@/…` exactly as `tests/alias-loader.mjs` resolves it, relative
+hops from the importing file, a `seen` set for cycles) and names the whole trail, so a breach says
+which hop introduced it: proved by adding a Supabase import to `item-fields.ts` — two hops down,
+invisible to the old walk — and watching the assertion fire with
+`…drift.test.ts -> ../src/lib/needs-you/office-allocation-drift-items.ts -> ./item-fields imports @/lib/supabase/server`.
+It is still not a proof of purity: a bare package or a dynamic `await import(…)` is beyond any source
+walk, so judge a new gate by reading it.
 
 ### Before every push: the PR's own CI is the verdict; `remote-check` is optional — except on a push that ADDS a test file (owner, 2026-10-12)
 
