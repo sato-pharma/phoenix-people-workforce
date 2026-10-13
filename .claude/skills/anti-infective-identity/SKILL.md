@@ -59,7 +59,7 @@ voice of every label, and the Arabic wordmark never retyped in a font.
 
 | Token | Hex | Use |
 |---|---|---|
-| field navy | `#001a52` / `#00154b` / `#00225b` | the ground, as a radial — bright at 24% down, falling to the corners |
+| field navy | `#0b3685` 0% → `#052462` 36% → `#001641` 70% | the ground, as a radial falling to base navy at 100% — bright at 33% down on the card, 22% on the one sheet |
 | base navy | `#000a26` | the closing bar, and the shadow end of the duotone (`#030e30`) |
 | Royafloxacin red | `#d20000` | left half of every seam, the top-left bracket, the first product rule |
 | Saginkgo blue | `#0384db` | right half of every seam, the bottom-right bracket, the second product rule |
@@ -84,15 +84,22 @@ Drawn top to bottom. The numbers are the approved ones; change them only with a
 reason you can measure.
 
 **Navy field** `inset: 0 0 430px 0`, so the navy ends at **y 1150**. Radial
-`1400px 1100px at 50% 24%`, then a `feTurbulence` grain at 5.5% overlay, then a
+`1180px 820px at 50% 33%` with stops `#0b3685 0%, #052462 36%, #001641 70%,
+#000a26 100%`. The stops never change; **the ellipse and its centre are scaled to
+the piece** — the one sheet draws the same four stops at
+`2600px 1900px at 50% 22%` — so size them to what you are drawing rather than
+copying this line across. Then a `feTurbulence` grain at 5.5% overlay, then a
 vignette, then a double keyline frame inset **26px and 33px**.
 
 **Head** at `top: 108px`, centred: eyebrow 11.5px → `SATO` 27px at `.66em`
 tracking → the event name **92px Playfair** → a ruleset 300px wide (red rule,
-white 8px diamond, blue rule) → the place line 10.5px at `.34em`.
+white 8px diamond, blue rule) → the place line 10.5px at `.32em`. (The one
+sheet's place line is 20px at `.34em` — the tracking opens as the type grows.)
 
 **Marks** — the reverse logo at `left: 84px; top: 56px; height: 58px`; a square
-date seal at `right: 84px; top: 52px`, 118×118, 1px white keyline at 26%, the day
+date seal at `right: 84px; top: 52px`, 118×118, a 1px white keyline at **30%**
+over a **26% black** ground (the one sheet's seal is 224×224, keyline 26% over
+`rgba(0,8,34,.46)`), plus a 5px inset white glow at 4.5%, the day
 in 44px Playfair over a 34px red→blue rule over the month in 9px micro.
 
 **Portrait** at `top: 346px`, 452×566 **white mat with 13px padding**, the image
@@ -124,7 +131,7 @@ This is the identity's signature; it closes the navy into the white.
 ### The Arabic wordmark — six iterations' worth of rules
 
 - **Flatten to one ink and draw it faint and large.** `assets/sato-arabic-navy.png` is already flattened to `#001a52` with the antialiased lightness folded into alpha. On navy, add `filter: brightness(0) invert(1)` to make it white and drop it to 5%.
-- **Never crop the right edge.** Arabic reads right to left, so the right edge is where *both* words begin. Lay its ink to the trim; do not pass it. On the card its ink stops 28px inside the trim; on the one sheet, 45px.
+- **Never crop the right edge.** Arabic reads right to left, so the right edge is where *both* words begin. Lay its ink to the trim; do not pass it. The asset carries no transparent margin — its ink box fills the file edge to edge — so at the approved placements the ink lands **4px inside the trim on the card** and **8–9px on the one sheet**, which is the same thing the margin check below means by "right 4–5". Measure it at a threshold of 240 or looser: the wordmark is drawn at 15% and its densest ink is only about 217, so tightening to 230 stops finding the wordmark and starts finding the carton instead — 154px in on the card, 247px on the sheet, which are just the two `plock` right offsets.
 - **About 62% of its ink belongs behind the cartons**, leaving ساتو clear on the open white. That proportion is the approved one — 62.5% on the card, 62% on the sheet.
 - **Position it by its ink centroid, not its box.** The artwork is bottom-heavy: the oval sweep and فارما carry the weight low while only thin ascenders reach the top, so **its ink centre is at 63.2% of the file's height**, not 50%. Centring the *file* on a name puts the name visibly high. Measure and place:
 
