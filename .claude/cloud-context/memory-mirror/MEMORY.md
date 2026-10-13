@@ -45,6 +45,8 @@
 
 
 
+- 🔴 [a helper-wrapped RPC call is invisible to the obvious grep](a-helper-wrapped-rpc-call-is-invisible-to-the-obvious-grep.md) - `rpc("current_…")` found 0 callers and `pg_policy` found 0 policies, yet phase24 calls five of the six helpers as a signed-in user through `rpcValue(client, name)`; a zero from a call-shape grep is evidence about the shape, not about callers.
+
 - 🔴 [a deploy watcher keyed to ONE sha goes stale on the next merge](a-deploy-watcher-keyed-to-one-sha-goes-stale-on-the-next-merge.md) - `main` moves in minutes here; poll the live `origin/main` and test ancestry, and report the revision actually read.
 
 Put each new memory note's pointer here, one line. The fold (`node scripts/module-memory/fold.mjs --apply`, three times a day — 09:00, 15:00 and 21:00 Cairo) files it under its module in ONE PR; once that merges, the next fold removes the line.
@@ -74,3 +76,5 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 - 🔴 [a SECOND live feed link silently pauses the weekly token rotation](a-second-live-feed-link-silently-pauses-the-weekly-token-rotation.md) - all three `*-rotate-sheet-token` jobs refuse rather than rotate, cron-job.org still shows a green 200, and only `job_heartbeats.last_detail` says why; keep the link with the live `last_accessed_at`.
 
 - 🔴 [a date inside a note is not the note's subject](a-date-inside-a-note-is-not-the-notes-subject.md) - the Luxor `line_area_map` notes flagged as documenting the superseded 2026-09-11 union were recording its REVERSAL, byte-identical to the migration (`bf6f192e`, 387 chars); digest the prose before calling a live record stale.
+
+- 🔴 [a roll-up can close your PR and de-register its worktree mid-work](a-rollup-can-close-your-pr-and-de-register-its-worktree-mid-work.md) - the pushed branch is what survives (`git ls-remote`); recover with `new-session.mjs --from origin/<branch>`, and prove each merge conflict with `git ls-tree` before taking `--ours`.
