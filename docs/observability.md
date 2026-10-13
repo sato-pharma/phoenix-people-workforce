@@ -205,6 +205,70 @@ identified (read `clientUa` + `httpStatus` per `/api/cron/*` request).
   is no longer a deploy smoke test or an uptime check calling it; you call it.
 - **`/api/readyz`** — readiness: cheap Supabase head-ping + required-env presence; returns 503 when not ready. Returns only booleans / missing-env **names**, never values. Also surfaces non-fatal notification-config drift (see `event=config_drift` above) in a `warnings[]` field — drift never fails readiness, but it is logged and alerted (see below) since it means email/Telegram may be silently broken while everything else is healthy.
 
+## A 5xx burst on the REST endpoint is the DATABASE restarting — how to read one
+
+🔴 **A burst of Cloudflare 521 / 520 / 525 plus PostgREST 503 against the Supabase REST endpoint is
+not an edge flap. It is the production Postgres crash-restarting, and the edge codes are what
+Cloudflare serves when the origin is gone.** Measured twice in three days: **10 Oct 2026 11:05:48**
+and **12 Oct 2026 19:04:50 Cairo**, each unclean, each self-recovered inside a minute.
+
+The four reads, in the order worth running:
+
+1. **`select pg_postmaster_start_time()`** — one statement, live, and it settles the question. After
+   the 12 Oct event it read `2026-10-12 19:04:50` Cairo.
+2. **`cron.job_run_details`** — a restart lands as a job failure whose `return_message` is literally
+   **`server restarted`**. That is how 10 Oct stayed provable days later (jobid 1, runid 289,
+   started 11:05:00).
+3. **`postgres_logs`** — `database system was interrupted; last known up at …`, then **`database
+   system was not properly shut down; automatic recovery in progress`**, `redo starts at …`, then a
+   run of `the database system is not accepting connections` (11 of them on 12 Oct). 🔴 **No
+   `received fast shutdown`, no PANIC and no out-of-memory line means the postmaster was killed from
+   outside the process** — not asked to stop, and not a query that blew up.
+4. **`edge_logs`** — the only place the request-level damage is visible. 12 Oct 19:04:41–19:05:19:
+   **38 × 521, 32 × 503, 7 × 520, 2 × 525 = 79 failed requests** over 13 / 10 / 3 distinct paths.
+   The status key is **`log_attributes['response.status_code']`** (`status_code` alone is empty), and
+   the 503s carry `response.headers.proxy_status = 'PostgREST; error=PGRST002'`.
+
+🔴 **Two things that look like evidence and are not.** `app_error_events` held **17 rows in the whole
+hour**, none of them a 5xx — never size this incident class from it. And `get_project` reads
+`ACTIVE_HEALTHY` afterwards, because the project *is* healthy again; project status disproves nothing.
+
+**The box it happens on.** `shared_buffers` 512 MB, `effective_cache_size` 1 GB, `work_mem` 32 MB,
+`maintenance_work_mem` 128 MB, `max_worker_processes` 6 — a **2 GB** compute class carrying a
+**3.19 GB** database. Connections at the time: 17 of 200. Neither connection count nor CPU is the
+pressure.
+
+**What already absorbs it.** PR 5736 keeps the session alive through the outage instead of signing
+everyone out — 10 Oct's window produced 22 logins and **9 born-dead sessions**, 12 Oct's produced
+5 logins and **0**, with one `session_verification_unavailable` row where the old code would have
+cleared cookies and answered 401. PR 5737 retries 521/525 at 200/400/800 ms. 🔴 **That ~1.4 s budget
+cannot ride a 38-second restart, and lengthening it is the wrong fix** — a retry long enough to
+outlast a restart freezes every page for the length of the restart.
+
+**The third one now alerts, within fifteen minutes.** Nothing reported the first two: `/api/healthz`
+answered 200 throughout both (it does not touch the database), `app_error_events` held 17 rows in the
+whole hour, and the GCP 5xx alert died with its billing on 2026-08-01 (the section below). Since
+2026-10-13, `runDatabaseRestartCheck()` rides the 15-minute `job-heartbeat-sweep` clock as a third
+independent watch — the same arrangement, and for the same reason, as the dead-share-token check
+already on it, so **no new cron job and no cron-job.org entry were needed.**
+
+- `public.note_database_restart()` (migration `20261013150001_database_restart_watch.sql`) reads
+  `pg_postmaster_start_time()`, records it in `public.database_restarts` if it is new, and reports
+  whether it moved. SECURITY DEFINER, `revoke execute … from public, anon, authenticated`, execute
+  granted to `service_role` alone — so no browser role can call it and the table is unreachable.
+- The insert is `on conflict do nothing`, so with two Railway replicas on the same clock exactly one
+  of them reports the restart.
+- 🔴 **The migration SEEDS the current start time**, so installing the watch does not fire it. A new
+  start time with nothing on record is a `first-sighting` and never alerts — it only logs.
+- **Idempotency is the start time, not the Cairo day.** Its two siblings on this clock bucket per day
+  because they report standing faults; a restart is a discrete event, and two restarts in one day
+  must be two messages. Do not "fix" that to a day bucket — two in three days is the whole pattern.
+- In-app + Telegram + push on the `weekly_system_health_digest` audience. 🔴 **No email, deliberately:**
+  this alarm can fire because the database holding the notification outbox is unreachable.
+- Pinned by `tests/database-restart-watch.test.ts`, in the required `validate` job.
+
+
+
 ## Metrics & alerting — DEAD (nothing pages the owner)
 
 All of the below lived in GCP Cloud Monitoring inside project `phoenix-workforce-498619`. That
