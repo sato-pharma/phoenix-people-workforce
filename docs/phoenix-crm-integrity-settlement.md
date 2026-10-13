@@ -1142,6 +1142,72 @@ column alone, the photograph pass reading `manager_hr_id`, the subject excluded 
 companions) and `tests/crm-integrity-board-view.test.ts` (the person column and the export headers).
 **All eight were broken on purpose and watched fire on their own headline**, then restored from a copy.
 
+## 15 · The panel he could not read, and the four points that replaced it (2026-10-13)
+
+He had just been shown the board after the sweep filed the manager's own visit, and he answered:
+
+> **"I told the fuck out of you, you are putting too much text with which will make me not
+> understand, which will make me lost as as as what happened. I want it as easy as visits, location
+> versus the validation location with a story listed pointed 1, 2, 3 and the life map photo and clear
+> English. Don't make me enter a loop. Restructure the module based on these instructions."**
+
+### What the panel actually was
+
+Measured on the shipped module, one opened case printed, in this order: a paragraph of **eight to
+twelve sentences**; the photograph; a measurements list of up to a dozen rows; the history; the map;
+the reasons. Two of the paragraph's lines earned nothing at all — one announced that a photograph was
+below it, which the reader could see, and the ordinary cause took a heading plus one line per flag,
+which reads as an accusation with a list of excuses under it. The section descriptions around the
+case list ran to **241, 263, 481, 535 and 572 characters**, each a paragraph in its own right.
+
+The two locations — the one thing a case is a comparison between — were two rows **inside** that
+measurements list, under the photograph, below the paragraph. The sentence he had asked for the day
+before, *location versus the validation location*, was the one thing the panel never put in front
+of him.
+
+### What it is now
+
+1. **The comparison first.** `caseComparison` returns the capture side (*where this says it
+   happened*), the validation side, and the metres between them. The two sit side by side with the
+   distance between them, stacking on a phone so the order still reads as a comparison. 🔴 The
+   validation side is the **photograph** wherever there is one, never the pin — the anchor he ruled
+   on earlier the same day. A case with one coordinate, which is every replay case, says so instead
+   of inventing a second location.
+2. **The story as an ordered list, five points at most.** `caseStory.story` is built in priority
+   order — what happened, the findings (the two strongest), where the customer's visits stand against
+   the photograph or which reading is the odd one out, the ordinary cause, and the absence of a
+   photograph if there is none — and capped. 🔴 The cap is applied in that order **so it can never
+   eat the `Usually:` line**: a case with four flags prints two findings and the cause, never four
+   findings and no explanation.
+3. **The map and the photograph side by side**, directly under the points, with nothing between them
+   and the words.
+4. **The measurements, the history and the reasons behind one `<details>`.** They are what a reader
+   wants when he doubts the four points above, and together they were longer than the story itself.
+
+The five section descriptions were cut to one line each, and the ordinary cause now reads as a single
+`Usually: …` line however many flags the case carries.
+
+### What was deliberately NOT lost
+
+- **The photograph still says whose it is** — on the ninth detector it belongs to whoever validated
+  the place, not to this rep, so the heading reads *The photograph of the place* and the alt text
+  *The photograph the place was validated with*. That requirement moved from the story to the
+  picture; `tests/crm-integrity-board-view.test.ts` was re-pointed, never deleted, and still refuses
+  *"as it was sent"* on a `visit_photo` case.
+- **Every measurement.** Nothing was removed from `evidence` — the pin included, which takes no part
+  in the judgement but is still printed, so nothing is hidden.
+- **The voice.** State the measured fact, name the ordinary explanation, never a verdict. Fewer words
+  is not a licence to conclude.
+
+### Proof
+
+`runShortPanelTests` in `tests/crm-integrity-board-view.test.ts` pins all four: five points at most
+for every detector the board knows **and** on a crowded case that would print seven uncapped, the
+`Usually:` line surviving a four-flag case, the comparison naming the visit and the photograph (not
+the pin), a single reading yielding no comparison, and the panel's own order — comparison before the
+list, measurements after it. **Eight assertions, each broken on purpose and watched fire on its own
+headline, 7 of 7 breaks reported and the suite green again after every restore.**
+
 ## Where the code is
 
 

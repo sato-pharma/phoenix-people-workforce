@@ -60,7 +60,12 @@ import {
 } from "@/lib/crm-integrity/integrity-board-filters";
 import { integrityBoardRow, type IntegrityBoardRow } from "@/lib/crm-integrity/integrity-board-rows";
 import type { CaseMap } from "@/lib/crm-integrity/integrity-case-map";
-import { integritySourceStoryLabel, integritySubjectKindLabel } from "@/lib/crm-integrity/integrity-case-story";
+import {
+  type CaseComparison,
+  type CaseComparisonSide,
+  integritySourceStoryLabel,
+  integritySubjectKindLabel,
+} from "@/lib/crm-integrity/integrity-case-story";
 import { INTEGRITY_SETTLE_PRESETS } from "@/lib/crm-integrity/integrity-settle-presets";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { INTEGRITY_BULK_SETTLE_CAP, INTEGRITY_NOTE_LIMIT, INTEGRITY_NOTE_REQUIRED } from "@/lib/phoenix-crm/integrity-settlement";
@@ -347,15 +352,24 @@ function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
         };
   return (
     <div className="min-w-0 space-y-4 border-t border-slate-200 pt-4">
-      <div className="min-w-0 space-y-2">
-        {story.story.map((sentence, index) => (
-          <p className="break-words text-sm leading-6 text-slate-700" dir="auto" key={`${index}-${sentence.slice(0, 24)}`}>
-            {sentence}
-          </p>
-        ))}
-      </div>
+      {/* 1. The comparison, first and biggest: this location against the validation location. */}
+      <CaseComparisonPanel comparison={story.comparison} />
 
+      {/* 2. The story, numbered. He asked for 1, 2, 3 — so it is an ordered list, not a paragraph. */}
+      <ol className="min-w-0 list-decimal space-y-1 pl-5">
+        {story.story.map((sentence, index) => (
+          <li className="break-words text-sm leading-6 text-slate-700" dir="auto" key={`${index}-${sentence.slice(0, 24)}`}>
+            {sentence}
+          </li>
+        ))}
+      </ol>
+
+      {/* 3. The map and the photograph, side by side — the two things he reads without words. */}
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+        <div className="min-w-0 space-y-2">
+          <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The two locations on the map</div>
+          <CaseMapPanel map={row.map} />
+        </div>
         <div className="min-w-0 space-y-2">
           <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{photo.heading}</div>
           {entry.photoPath !== null ? (
@@ -363,7 +377,17 @@ function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
           ) : (
             <p className="text-xs leading-5 text-slate-500">None kept — a one-tap visit keeps no photograph at all, by design.</p>
           )}
-          <div className="pt-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">What was measured</div>
+        </div>
+      </div>
+
+      {/* 4. Everything a reader only wants when he doubts the four points above, folded away. The
+          measurements and the history used to sit open beside the photograph, and together they were
+          longer than the story itself — which is how the panel stopped being readable. */}
+      <details className="min-w-0 border border-slate-200 bg-slate-50 px-3 py-2">
+        <summary className="cursor-pointer text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+          The measurements behind this
+        </summary>
+        <div className="min-w-0 space-y-2 pt-3">
           <ul className="space-y-1">
             {story.evidence.map((fact) => (
               <li className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-xs leading-5 text-slate-600" key={fact.label}>
@@ -376,17 +400,55 @@ function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
           </ul>
           <div className="pt-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">What has happened here</div>
           <CaseTimeline entry={entry} />
+          <Reasons entry={entry} />
         </div>
+      </details>
 
-        <div className="min-w-0 space-y-2">
-          <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The difference in locations</div>
-          <CaseMapPanel map={row.map} />
+      {offersDecision ? (
+        <div className="min-w-0">
+          <IntegritySettleControl caseId={entry.id} settlement={entry.settlement} />
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The two locations, side by side, with the distance between them in the middle.
+ *
+ * 🔴 THIS IS THE FIRST THING IN THE PANEL AND THE OWNER'S OWN FRAMING: "location versus the
+ * validation location" (13 October 2026). Everything else on the board is support for this one
+ * comparison, and before this it was two rows buried in a measurements list under the photograph.
+ * On a phone the two stack with the distance between them, so the order still reads as a comparison.
+ */
+function CaseComparisonPanel({ comparison }: { comparison: CaseComparison | null }) {
+  if (comparison === null) {
+    return (
+      <p className="text-sm leading-6 text-slate-600">
+        This case has one location only, so there is nothing to compare it against.
+      </p>
+    );
+  }
+  const side = (label: string, value: CaseComparisonSide) => (
+    <div className="min-w-0 border border-slate-200 bg-white px-3 py-2">
+      <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className="break-words pt-1 text-sm font-bold leading-6 text-slate-800" dir="auto">
+        {value.label}
       </div>
-
-      <div className="min-w-0">
-        <Reasons entry={entry} />
-        {offersDecision ? <IntegritySettleControl caseId={entry.id} settlement={entry.settlement} /> : null}
+      <div className="break-words text-xs leading-5 text-slate-600">{value.coordinates}</div>
+      {value.accuracy === null ? null : <div className="text-xs leading-5 text-slate-500">{value.accuracy}</div>}
+      {value.at === null ? null : <div className="text-xs leading-5 text-slate-500">{cairo(value.at)}</div>}
+    </div>
+  );
+  return (
+    <div className="min-w-0 space-y-2">
+      <div className="grid min-w-0 items-stretch gap-2 md:grid-cols-[1fr_auto_1fr]">
+        {side("Where this says it happened", comparison.capture)}
+        <div className="flex min-w-0 flex-col items-center justify-center px-2 py-1 text-center">
+          <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">apart</div>
+          <div className="break-words text-lg font-black leading-7 text-slate-900">{comparison.apart}</div>
+        </div>
+        {side("The validation location", comparison.validation)}
       </div>
     </div>
   );
@@ -812,7 +874,7 @@ export function IntegrityBoardView({
     <CrmSurfaceProvider surface="admin">
       <div className="space-y-5">
         <AdminTableShell
-          description="Sixteen groups and a free-text box. Narrowing happens in this screen as it is typed, and the address follows it — so a view survives a reload and a kept link opens the same board. Every dropdown offers only values these cases actually carry."
+          description="Sixteen groups and a free-text box. The board narrows as you type and the address follows, so a kept link reopens the same view."
           title="Narrow the board"
         >
           <div className="space-y-4 px-5 py-4 sm:px-6">
@@ -969,7 +1031,7 @@ export function IntegrityBoardView({
 
         {shownCases.length > 0 ? (
           <AdminTableShell
-            description="Strong findings first, each one line until it is opened. Opening a case shows it written out in plain English, the photograph where one is kept, the readings on a map with the metres between them, what was measured, and everything that has happened to that place."
+            description="Strong findings first, one line each. Open one for the two locations, the numbered story, the map and the photograph."
             title="Cases"
           >
             <CaseList canSettle={canSettle} entries={shownCases} selection={selection} />
@@ -1000,7 +1062,7 @@ export function IntegrityBoardView({
 
         {filtered.some((row) => row.standing === "withdrawn") ? (
           <AdminTableShell
-            description="Each of these was filed by the signboard pass and the same sign has since been read again, to a verdict that does not carry the flag. A signboard verdict is not a fixed property of the photograph — legibility moves, and the same frame has read a clear name and then nothing minutes apart — so a flag is a reading with a date on it. Both readings are below. Nothing here has been deleted and no decision was taken on them: they are out of the counts because they are no longer somewhere to look, which is why there is nothing to settle."
+            description="Flagged by the signboard pass, then read again to a verdict without the flag. Both readings are below. Nothing here has been deleted and no decision was taken on them, so there is nothing to settle."
             title="Flags a later reading no longer supports"
           >
             {/* No settle button here, by the same reasoning: the evidence has already given way. */}
@@ -1010,7 +1072,7 @@ export function IntegrityBoardView({
 
         {filtered.some((row) => row.standing === "settled") ? (
           <AdminTableShell
-            description="Cases the Super Admin has looked at, each with the reason written on it. They are out of the counters because a counter is a call to look, and nothing about them has been deleted — the flags, the evidence and the detector's own verdict are exactly as they were filed. A settled case is not closed for ever: the settlement is held against the flags it was taken on, so the moment a detector files a new finding on the same subject the case leaves this section by itself and is back among the findings. Settled means it has been looked at, never that the subject is cleared."
+            description="Looked at, with the reason written on it. Nothing is deleted, and a new finding on the same subject brings the case back by itself."
             title="Settled"
           >
             <CaseList canSettle={canSettle} entries={filtered.filter((row) => row.standing === "settled")} selection={null} />

@@ -833,11 +833,22 @@ function runVisitPhotographCaseTests() {
   // 2 — the second flag is a different question, and it says so.
   assert.ok(text.includes("more than a kilometre"), `the kilometre sentence must be in the story: ${text}`);
 
-  // 3 — THE PHOTOGRAPH IS THE PLACE'S, NOT THIS CALL'S, AND THE PANEL SAYS SO. A one-tap visit keeps
-  // no picture at all, so "the photograph is below, as it was sent" would tell the reader he is
-  // looking at this rep's own photograph of this visit.
-  assert.ok(text.includes("the one the place was validated with"), `the story must say whose photograph it is: ${text}`);
+  // 3 — THE PHOTOGRAPH IS THE PLACE'S, NOT THIS CALL'S, AND THE PANEL STILL SAYS SO — in the heading
+  // and the alt text over the picture itself, rather than as one of the numbered points. A one-tap
+  // visit keeps no picture at all, so "the photograph is below, as it was sent" would tell the
+  // reader he is looking at this rep's own photograph of this visit. Moved out of the story on
+  // 2026-10-13 at the owner's instruction ("too much text … story listed pointed 1, 2, 3"): a line
+  // describing the picture directly beneath it spent one of five points saying what he can see.
   assert.ok(!text.includes("as it was sent"), "it is not this rep's own photograph of this call");
+  const photoViewSource = readFileSync(
+    new URL("../src/components/crm-integrity/integrity-board-view.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(photoViewSource.includes("The photograph of the place"), "the heading says whose photograph it is");
+  assert.ok(
+    photoViewSource.includes("The photograph the place was validated with"),
+    "and the alt text says it too, for a reader who cannot see the picture",
+  );
 
   // 4 — THE ODD READING, WITHOUT THE ONE-TAP CLAIM. The two agreeing readings here are the point
   // kept for the place and the place's own photograph, which coincide because the kept point was
@@ -903,11 +914,134 @@ function runVisitPhotographCaseTests() {
   assert.match(view, /photographAtIso/, "stamped with the photograph's own Cairo time, not the visit's");
 }
 
+// THE PANEL HE CAN READ IN SECONDS (owner, 2026-10-13: "you are putting too much text with which
+// will make me not understand … I want it as easy as visits, location versus the validation location
+// with a story listed pointed 1, 2, 3 and the life map photo and clear English. Don't make me enter
+// a loop."). Four things are pinned here, because each one is a way the panel grew back: the story
+// is NUMBERED and capped, the two locations are a comparison of their own ABOVE the words, the
+// measurements are FOLDED AWAY, and the cap can never eat the ordinary cause.
+function runShortPanelTests() {
+  const caseOf = (over: Partial<CaseStoryInput>): CaseStoryInput => ({
+    source: "visit_photo",
+    subjectKind: "visit",
+    subjectLabel: null,
+    strong: false,
+    flags: ["visit_far_from_photo"],
+    reasons: ["The visit is far from the photograph"],
+    repName: "Mahmoud ElHassanin",
+    customerName: "Linda Eskandar",
+    customerList: "AM",
+    customerSpeciality: "Pediatrics",
+    brickName: null,
+    brickDistanceKm: null,
+    placeDistanceMeters: null,
+    readings: [
+      { label: CASE_READING_LABELS.visitSaved, lat: 30.44, lon: 31.17, accuracyMeters: 11.9, atIso: "2026-10-12T09:10:00Z" },
+      { label: CASE_READING_LABELS.placePhotograph, lat: 30.47, lon: 31.2, accuracyMeters: 42.6, atIso: "2026-10-03T08:48:22Z" },
+      { label: CASE_READING_LABELS.pin, lat: 30.465, lon: 31.195, accuracyMeters: 100, atIso: null },
+    ],
+    nearbyVisits: [],
+    spreadMeters: 3236,
+    accuracyMeters: 11.9,
+    deviceMocked: null,
+    signText: null,
+    companionNames: [],
+    replayByName: null,
+    signals: { metresFromPhotograph: 3236, farMeters: 300 },
+    photoPath: "phoenix-crm/places/one.jpg",
+    visitDate: "2026-10-12",
+    ...over,
+  });
+
+  // 1 — FIVE POINTS AT MOST, for every detector the board knows. The paragraph that replaced used to
+  // run to eight and twelve lines, which is the complaint itself.
+  for (const source of Object.keys(INTEGRITY_SOURCE_STORY_LABELS)) {
+    const story = caseStory(caseOf({ source }));
+    assert.ok(
+      story.story.length <= 5,
+      `${source} prints ${story.story.length} points — the panel is capped at five (owner, 2026-10-13)`,
+    );
+    assert.ok(story.story.length > 0, `${source} must still say something`);
+  }
+
+  // 1b — AND THE CAP IS REAL ON A CROWDED CASE, not merely true of a thin one. This case has every
+  // optional line the module can produce — two findings, an odd reading, the visits against the
+  // photograph, the ordinary cause and no photograph kept — which is seven points uncapped.
+  const crowded = caseStory(
+    caseOf({
+      flags: ["visit_far_from_photo", "visit_very_far_from_photo"],
+      reasons: ["far from the photograph", "more than a kilometre"],
+      photoPath: null,
+      nearbyVisits: [{ lat: 30.4705, lon: 31.2005, accuracyMeters: 36, atIso: "2026-10-12T09:12:00Z" }],
+      readings: [
+        { label: CASE_READING_LABELS.visitSaved, lat: 30.44, lon: 31.17, accuracyMeters: 11.9, atIso: "2026-10-12T09:10:00Z" },
+        { label: CASE_READING_LABELS.placePhotograph, lat: 30.47, lon: 31.2, accuracyMeters: 42.6, atIso: "2026-10-03T08:48:22Z" },
+        { label: CASE_READING_LABELS.placeOnList, lat: 30.47, lon: 31.2, accuracyMeters: 42.6, atIso: null },
+      ],
+    }),
+  );
+  assert.ok(
+    crowded.story.length <= 5,
+    `a crowded case prints ${crowded.story.length} points — the panel is capped at five (owner, 2026-10-13)`,
+  );
+
+  // 2 — THE CAP CANNOT EAT THE ORDINARY CAUSE. A case with four findings prints the strongest two and
+  // the cause, never four accusations and no explanation.
+  const manyFlags = caseStory(
+    caseOf({
+      flags: ["visit_far_from_photo", "visit_very_far_from_photo", "photo_pin_far", "device_mocked"],
+      reasons: ["far from the photograph", "more than a kilometre", "pin and photograph far apart", "the phone reported a mock location"],
+    }),
+  );
+  assert.ok(manyFlags.story.length <= 5, `four flags must still fit in five points: ${manyFlags.story.length}`);
+  assert.ok(
+    manyFlags.story.some((line) => line.startsWith("Usually:")),
+    `the ordinary cause survives the cap: ${manyFlags.story.join(" | ")}`,
+  );
+
+  // 3 — THE TWO LOCATIONS ARE A COMPARISON OF THEIR OWN, and the validation side is the PHOTOGRAPH,
+  // never the pin — the anchor he ruled on, with the pin dropped from the judgement.
+  const comparison = caseStory(caseOf({})).comparison;
+  assert.ok(comparison !== null, "a case with two distinct readings has a comparison");
+  assert.equal(comparison.capture.label, CASE_READING_LABELS.visitSaved, "the capture side is where the visit was saved");
+  assert.equal(
+    comparison.validation.label,
+    CASE_READING_LABELS.placePhotograph,
+    `the validation side is the photograph, not the pin: ${comparison.validation.label}`,
+  );
+  assert.match(comparison.apart, /km|m/, `the distance is printed in words: ${comparison.apart}`);
+  assert.ok(comparison.apartMeters > 300, `and the metres come through for the view to colour on: ${comparison.apartMeters}`);
+  assert.match(comparison.capture.coordinates, /^30\.440000, 31\.170000$/, "each side prints its own coordinate");
+
+  // A single-coordinate case — every replay case — says so instead of inventing a second location.
+  const oneReading = caseStory(caseOf({ readings: [caseOf({}).readings[0]!] })).comparison;
+  assert.equal(oneReading, null, "one reading cannot be a comparison");
+
+  // 4 — THE PANEL'S OWN SHAPE: the comparison first, the story as an ORDERED list, the measurements
+  // folded into a details element rather than open beside the photograph.
+  const view = readFileSync(new URL("../src/components/crm-integrity/integrity-board-view.tsx", import.meta.url), "utf8");
+  const panel = stripComments(view);
+  assert.ok(panel.includes("<CaseComparisonPanel comparison={story.comparison} />"), "the panel opens with the two locations");
+  assert.ok(panel.includes("list-decimal"), "the story is a numbered list, not a paragraph (owner: 1, 2, 3)");
+  assert.ok(/<ol[^>]*list-decimal/.test(panel), "and it is an <ol>, so the numbers are the list's own");
+  assert.ok(panel.includes("The measurements behind this"), "the measurements are folded away behind a summary");
+  assert.ok(
+    panel.indexOf("<CaseComparisonPanel") < panel.indexOf("list-decimal"),
+    "the comparison comes BEFORE the words, which is how he reads a case",
+  );
+  assert.ok(
+    panel.indexOf("list-decimal") < panel.indexOf("The measurements behind this"),
+    "and the measurements come after the story, not in front of it",
+  );
+  assert.ok(panel.includes("The two locations on the map"), "the map is labelled as the two locations");
+}
+
 export function runCrmIntegrityBoardViewTests() {
   runFilterGroupTests();
   runUrlMirrorTests();
   runStoryTests();
   runReadablePanelTests();
+  runShortPanelTests();
   runMapTests();
   runOneSourceTests();
   runBulkSettleTests();
