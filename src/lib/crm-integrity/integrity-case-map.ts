@@ -192,9 +192,19 @@ export function buildCaseMap(
     };
   });
 
+  // 🔴 ONE LINE PER PAIR OF DISTINCT POINTS, NOT PER PAIR OF LABELS. Three readings of which two
+  // sit on one point give three pairs, and two of them carry the SAME number — which is how he was
+  // sent "the pin ... are 2.8 km apart" twice over, immediately above a line saying the other two
+  // are one reading. The markers stay undeduped above (that is the evidence); the sentences do not
+  // repeat themselves. The zero-distance pair is kept, because naming both labels IS the finding.
   const pairs: CaseMapPair[] = [];
+  const keyOf = (point: { lat: number; lon: number }): string => `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`;
+  const said = new Set<string>();
   for (let left = 0; left < usable.length; left += 1) {
     for (let right = left + 1; right < usable.length; right += 1) {
+      const said_key = [keyOf(usable[left]!), keyOf(usable[right]!)].sort().join("|");
+      if (said.has(said_key)) continue;
+      said.add(said_key);
       const metres = distanceMeters(usable[left]!, usable[right]!);
       pairs.push({
         fromIndex: left + 1,

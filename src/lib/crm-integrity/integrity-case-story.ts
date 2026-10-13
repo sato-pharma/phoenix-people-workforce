@@ -24,10 +24,35 @@
  * sentences.
  */
 
-import { formatDistance } from "@/lib/phoenix-crm/geo";
+import { distanceMeters, formatDistance } from "@/lib/phoenix-crm/geo";
 
 export type CaseStoryReading = {
   label: string;
+  lat: number;
+  lon: number;
+  accuracyMeters: number | null;
+  atIso: string | null;
+};
+
+/**
+ * Every reading label the board prints, in ONE place.
+ *
+ * 🔴 THE LOADER NAMES ITS READINGS FROM HERE, so a sentence that has to FIND one of them by name
+ * cannot be quietly orphaned by a reworded label. `visitsAgainstThePhotographSentence` looks the
+ * photograph up by its label and returns null when it is absent — which is exactly how a renamed
+ * label would read: not as a broken panel, but as a panel that has silently stopped saying the one
+ * thing the owner asked it to say. The map of subject kinds below lives here for the same reason.
+ */
+export const CASE_READING_LABELS = {
+  visitSaved: "Where the visit was saved",
+  photograph: "Where the photograph was taken",
+  placeOnList: "The place on the list",
+  placeCaptured: "Where the place was captured",
+  pin: "The pin saved for the place",
+} as const;
+
+/** One visit of this case's customer, as a point. The metres are measured here, never in the loader. */
+export type CaseVisitPoint = {
   lat: number;
   lon: number;
   accuracyMeters: number | null;
@@ -57,6 +82,12 @@ export type CaseStoryInput = {
   brickDistanceKm: number | null;
   placeDistanceMeters: number | null;
   readings: ReadonlyArray<CaseStoryReading>;
+  /**
+   * Every visit saved for this case's customer, as points — what the place's own readings are judged
+   * AGAINST. Empty for a customer with none, and for a visit case, whose own fix is already one of
+   * the readings above.
+   */
+  nearbyVisits: ReadonlyArray<CaseVisitPoint>;
   /** The metres between the two readings furthest apart, from `integrity-case-map.ts`. */
   spreadMeters: number | null;
   accuracyMeters: number | null;
@@ -167,6 +198,126 @@ export function spokenList(values: ReadonlyArray<string>): string {
   return `${kept.slice(0, -1).join(", ")} and ${kept[kept.length - 1]!}`;
 }
 
+/** Readings that share a coordinate to six decimals, so the panel can say "one reading" once. */
+export function groupReadings(
+  readings: ReadonlyArray<CaseStoryReading>,
+): ReadonlyArray<{ labels: string[]; reading: CaseStoryReading }> {
+  const groups: { labels: string[]; reading: CaseStoryReading }[] = [];
+  const keyOf = (r: CaseStoryReading): string => `${r.lat.toFixed(6)},${r.lon.toFixed(6)}`;
+  for (const reading of readings) {
+    const existing = groups.find((group) => keyOf(group.reading) === keyOf(reading));
+    if (existing !== undefined) existing.labels.push(reading.label);
+    else groups.push({ labels: [reading.label], reading });
+  }
+  return groups;
+}
+
+/** Several reading labels as one phrase: only the first keeps its capital. */
+function spokenLabelList(labels: ReadonlyArray<string>): string {
+  return spokenList(labels.map((label, index) => (index === 0 ? label : lowerFirst(label))));
+}
+
+/** A label mid-sentence: "The odd one out is the pin saved for the place", not "The pin". */
+function lowerFirst(value: string): string {
+  return value === "" || /^[A-Z][A-Z]/.test(value) ? value : value.charAt(0).toLowerCase() + value.slice(1);
+}
+
+/**
+ * Which reading disagrees with the others, and whether it is the less precise of the two.
+ *
+ * 🔴 IT NAMES THE ODD READING AND REFUSES TO SAY WHICH OF THE TWO IS WRONG. The first draft of
+ * this sentence concluded from the ACCURACY figures — "the least precise of them, so the likelier to
+ * be the stale one" — and the owner's very first case proved that backwards within the hour: the
+ * photograph of ليندا اسكندر's place carried the TIGHTER figure (25 m against the pin's 100 m) and was
+ * the outlier, while the pin and the visit she saved 96 seconds later agreed with each other to 56 m.
+ * A phone reports a cached position just as confidently as a live one, so accuracy ranks precision,
+ * never truth. What settles it is whether anything else from that day sits near one of the readings,
+ * which is a question about other rows and not about this case.
+ *
+ * This is the question a reader asks first and the panel never answered: three coordinates, two of
+ * them identical, and nothing saying which one is the doubtful one. Null whenever the shape is not
+ * "several agreeing readings and exactly one odd" — a replay case has one coordinate by definition.
+ */
+export function oddReadingSentence(input: CaseStoryInput): string | null {
+  if (input.readings.length < 3) return null;
+  const groups = groupReadings(input.readings);
+  if (groups.length !== 2) return null;
+  const [agreeing, odd] =
+    groups[0]!.labels.length >= groups[1]!.labels.length ? [groups[0]!, groups[1]!] : [groups[1]!, groups[0]!];
+  if (agreeing.labels.length < 2 || odd.labels.length !== 1) return null;
+  const agreeingAccuracy = agreeing.reading.accuracyMeters;
+  const oddAccuracy = odd.reading.accuracyMeters;
+  const precision =
+    agreeingAccuracy !== null && oddAccuracy !== null
+      ? ` The phone reported it as accurate to about ${formatDistance(oddAccuracy)}, against about ${formatDistance(agreeingAccuracy)} for the other two — but a tighter figure is not a truer reading, because a cached position is reported just as confidently, so which of the two is stale is settled by whether anything else from that day sits near one of them.`
+      : "";
+  return `${spokenLabelList(agreeing.labels)} are one and the same reading, saved in a single tap. The one that disagrees is ${lowerFirst(odd.reading.label)}.${precision}`;
+}
+
+/**
+ * What the customer's own visits sit near — the question `oddReadingSentence` can only defer.
+ *
+ * 🔴 THE PHOTOGRAPH IS THE ANCHOR AND THE VISITS ARE MEASURED AGAINST IT (owner, 13 October 2026:
+ * "since u have the accurate validation the photo with location then drop the suspected one and
+ * compare visits vs the accurate"). A photograph carries the fix its own shutter took at the door,
+ * so it is the one reading nobody can drag across a map; a pin can be. The panel therefore drops the
+ * pin from the judgement and says how far what the rep saved LATER sits from the photograph — and,
+ * where the place's two readings disagree, which of the two those later visits sit with. That is the
+ * "whether anything else from that day sits near one of them" the sentence above has to leave open,
+ * answered from rows this case already has.
+ *
+ * Measured on production the same day, every visit against its own customer's photograph: of 1,284
+ * visits carrying a fix, 1,143 (89.02%) sit within 100 m of it and 48 sit further than the 300 m the
+ * settings call far. Anchoring on the photograph rather than on the place's kept point changes the
+ * verdict for 2 of those 1,284, because the kept point already IS the photograph for 1,312 of the
+ * 1,403 validated places — so this sentence REPORTS the comparison rather than altering it, and
+ * nothing in the detector or in a stored distance moves. Account:
+ * `docs/phoenix-crm-integrity-settlement.md` §12.
+ *
+ * It concludes nothing. "Sits with the pin" says where the later readings are, never who was where,
+ * and the ordinary cause closes the sentence: a visit is saved where the phone is when the box is
+ * filled in, which is not always the door. Null whenever there is no photograph or no visit.
+ */
+export function visitsAgainstThePhotographSentence(input: CaseStoryInput): string | null {
+  const photograph = input.readings.find((reading) => reading.label === CASE_READING_LABELS.photograph);
+  if (photograph === undefined) return null;
+  const visits = input.nearbyVisits.filter((visit) => Number.isFinite(visit.lat) && Number.isFinite(visit.lon));
+  if (visits.length === 0) return null;
+  const nearestTo = (point: { lat: number; lon: number }): number =>
+    Math.min(...visits.map((visit) => distanceMeters({ lat: visit.lat, lon: visit.lon }, point)));
+  const fromPhotograph = nearestTo(photograph);
+  const whose = input.customerName !== "" && input.customerName !== "—" ? ` saved for ${input.customerName}` : "";
+  const opening =
+    visits.length === 1
+      ? `The one visit${whose} sits about ${formatDistance(fromPhotograph)} from the photograph`
+      : `Of the ${visits.length} visits${whose}, the nearest sits about ${formatDistance(fromPhotograph)} from the photograph`;
+  const cause = "A visit is saved where the phone is when the box is filled in, which is not always the door.";
+
+  // The other place reading, as a reader sees it: the furthest of this case's remaining readings from
+  // the photograph, with readings on one coordinate named together. A case whose other readings all
+  // sit ON the photograph has nothing to compare, and says only where the visits are.
+  const others = groupReadings(input.readings.filter((reading) => reading.label !== CASE_READING_LABELS.photograph))
+    .filter((group) => distanceMeters({ lat: group.reading.lat, lon: group.reading.lon }, photograph) > 0);
+  if (others.length === 0) return `${opening}. ${cause}`;
+  const other = others.reduce((furthest, group) =>
+    distanceMeters({ lat: group.reading.lat, lon: group.reading.lon }, photograph) >
+    distanceMeters({ lat: furthest.reading.lat, lon: furthest.reading.lon }, photograph)
+      ? group
+      : furthest,
+  );
+  const fromOther = nearestTo(other.reading);
+  const otherName = lowerFirst(spokenLabelList(other.labels));
+  // Clearly nearer, not merely nearer: 100 m AND half the distance, so a phone's own margin cannot
+  // decide it. Anything closer than that says so rather than picking a side.
+  const clearlyNearer = (near: number, far: number): boolean => far - near > 100 && near <= far / 2;
+  const standing = clearlyNearer(fromOther, fromPhotograph)
+    ? ` — so what the rep saved later sits with ${otherName}, not with the photograph`
+    : clearlyNearer(fromPhotograph, fromOther)
+      ? ` — so what the rep saved later sits with the photograph, not with ${otherName}`
+      : " — about as far from each, so the later visits settle nothing between them";
+  return `${opening} and about ${formatDistance(fromOther)} from ${otherName}${standing}. ${cause}`;
+}
+
 /** An activity code as words — `sales_day` is not a sentence. */
 function spokenActivity(value: string): string {
   return value.replace(/_/g, " ");
@@ -195,7 +346,13 @@ function openingSentence(input: CaseStoryInput): string {
   if (input.subjectKind === "customer") {
     return `This is about ${input.customerName}${specialityPart}${listPart}, not about one capture.`;
   }
-  return `${who} captured ${subjectPhrase(input)} for ${input.customerName}${specialityPart}${listPart}.`;
+  // `subjectPhrase` already names the customer when the venue has no name of its own, so appending
+  // the "for <customer>" clause printed the name twice — "the place saved for X for X", which is
+  // the first thing a reader sees and the first reason the panel read as nonsense.
+  const subject = subjectPhrase(input);
+  const named = input.customerName !== "" && input.customerName !== "—";
+  const forPart = named && !subject.includes(input.customerName) ? ` for ${input.customerName}` : "";
+  return `${who} captured ${subject}${forPart}${specialityPart}${listPart}.`;
 }
 
 // ── One sentence per finding, and the ordinary reason for it ────────────────────────────────────
@@ -422,13 +579,17 @@ function evidenceOf(input: CaseStoryInput): CaseEvidence[] {
     if (value !== null && value !== "") evidence.push({ label, value });
   };
 
-  push("Filed by", integritySourceStoryLabel(input.source));
+  // "Filed by" reads as a person, and the value is a check: "Filed by: Pin and photograph".
+  push("What raised it", integritySourceStoryLabel(input.source));
   push("Strength", input.strong ? "Strong on its own" : "Corroborating only");
-  for (const reading of input.readings) {
-    push(
-      reading.label,
-      `${reading.lat.toFixed(6)}, ${reading.lon.toFixed(6)}${reading.accuracyMeters === null ? ", accuracy not reported" : `, accurate to about ${formatDistance(reading.accuracyMeters)}`}`,
-    );
+  // Two readings at the identical coordinate are ONE reading the panel printed twice under two
+  // different names — three lines where two carried the same numbers, which is what made a
+  // capture-trust case unreadable. Group them and say so on the one line.
+  for (const group of groupReadings(input.readings)) {
+    const reading = group.reading;
+    const precision = reading.accuracyMeters === null ? ", accuracy not reported" : `, accurate to about ${formatDistance(reading.accuracyMeters)}`;
+    const shared = group.labels.length > 1 ? " — one reading, under both names" : "";
+    push(spokenLabelList(group.labels), `${reading.lat.toFixed(6)}, ${reading.lon.toFixed(6)}${precision}${shared}`);
   }
   if (input.spreadMeters !== null) {
     push("Furthest two readings apart", input.spreadMeters <= 0 ? "the same reading, to the bit" : formatDistance(input.spreadMeters));
@@ -439,7 +600,7 @@ function evidenceOf(input: CaseStoryInput): CaseEvidence[] {
   }
   const gapSeconds = asNumber(input.signals.gapSeconds);
   if (gapSeconds !== null) {
-    push("Between the pin and the picture", `${spokenGap(gapSeconds)} ${gapSeconds < 0 ? "(the picture first)" : "(the pin first)"}`);
+    push("Time between the pin and the picture", `${spokenGap(gapSeconds)} ${gapSeconds < 0 ? "(the picture first)" : "(the pin first)"}`);
   }
   if (input.deviceMocked !== null) push("Phone reported a mock location", input.deviceMocked ? "yes" : "no");
   push("Photograph kept", input.photoPath === null ? "none kept" : "yes");
@@ -459,6 +620,15 @@ export function caseStory(input: CaseStoryInput): CaseStory {
   }
 
   const story: string[] = [openingSentence(input), ...flagSentences];
+
+  // Which of the readings is the odd one out, before the ordinary explanation for it.
+  const odd = oddReadingSentence(input);
+  if (odd !== null) story.push(odd);
+
+  // And then the thing that settles it: where the customer's own visits sit. The photograph is the
+  // anchor and the pin is dropped from the judgement — the owner's instruction of 13 October 2026.
+  const visitStanding = visitsAgainstThePhotographSentence(input);
+  if (visitStanding !== null) story.push(visitStanding);
 
   // A photograph is the one piece of evidence a reader can judge without any of the above, so the
   // paragraph says whether there is one. "None kept" is an ordinary answer: the one-tap visit keeps

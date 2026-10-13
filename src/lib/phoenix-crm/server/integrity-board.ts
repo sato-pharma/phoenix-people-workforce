@@ -55,8 +55,10 @@
  */
 
 import {
+  CASE_READING_LABELS,
   INTEGRITY_SUBJECT_KINDS,
   integritySubjectKindLabel,
+  type CaseVisitPoint,
   type IntegritySubjectKind,
 } from "@/lib/crm-integrity/integrity-case-story";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
@@ -336,6 +338,18 @@ export type IntegrityCase = {
   photoPath: string | null;
   /** Every point this case has, each already named in the words the reader sees. */
   readings: CaseReading[];
+  /**
+   * Every visit this case's customer saved, as POINTS — the readings above are judged against them.
+   *
+   * 🔴 THE PHOTOGRAPH IS THE ANCHOR AND THESE ARE WHAT IS MEASURED AGAINST IT (owner, 13 October
+   * 2026). A place's two readings can disagree with no way to tell which is stale from the case
+   * alone; the visits the rep saved later are the one piece of evidence that sits with one of them,
+   * and `visitsAgainstThePhotographSentence` is where that is said. Points only — the metres are the
+   * view's to measure, exactly as for `readings`.
+   *
+   * Empty for a visit case, whose own fix is already a reading, and for a customer with no visit.
+   */
+  nearbyVisits: CaseVisitPoint[];
   /** The colleagues the visit named who were recorded off duty that day, BY NAME. */
   companionNames: string[];
   /** Whose earlier reading a replayed coordinate matches, BY NAME. Null when it was the rep's own. */
@@ -679,6 +693,50 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     }
   }
 
+  // Every visit each flagged customer saved, as points — what the place's own readings are judged
+  // against (owner, 13 October 2026: drop the pin, compare the visits with the photograph). Keyed by
+  // CUSTOMER and not by the case, because the evidence that settles a place's two readings is what
+  // the rep saved at that customer afterwards, which is a different row every time.
+  //
+  // 🔴 NOTHING IS MEASURED HERE, same as `readingsFor`: the metres belong to the pure view module,
+  // and `tests/crm-integrity-place-distance.test.ts` refuses any distance derived in this file by
+  // reading its SOURCE, comments included — so even naming the formula here turns that pin red.
+  // Chunked at 50
+  // and non-fatal for the reason the visit distances are — an empty set must read as "no visit to
+  // compare", which is what the sentence says, never as "the visits agree".
+  const caseCustomerIds = [...new Set(rows.map((row) => String(row.customer_id ?? "")).filter(Boolean))];
+  const customerVisitPoints = new Map<string, CaseVisitPoint[]>();
+  // Its own parse: the loader's `num` is a `const` declared further down, so reaching for it here
+  // would be a reference error at runtime and not a type error at build time.
+  const coordinate = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  for (let index = 0; index < caseCustomerIds.length; index += 50) {
+    const { data: pointRows, error: pointError } = await supabase
+      .from("phoenix_crm_visits")
+      .select("customer_id, lat, lon, accuracy_meters, captured_at")
+      .in("customer_id", caseCustomerIds.slice(index, index + 50))
+      .eq("is_test", false)
+      .not("lat", "is", null);
+    if (pointError) break;
+    for (const visit of (pointRows ?? []) as Array<Record<string, unknown>>) {
+      const customerId = String(visit.customer_id ?? "");
+      const latitude = coordinate(visit.lat);
+      const longitude = coordinate(visit.lon);
+      if (customerId === "" || latitude === null || longitude === null) continue;
+      const kept = customerVisitPoints.get(customerId) ?? [];
+      kept.push({
+        lat: latitude,
+        lon: longitude,
+        accuracyMeters: coordinate(visit.accuracy_meters),
+        atIso: typeof visit.captured_at === "string" && visit.captured_at !== "" ? visit.captured_at : null,
+      });
+      customerVisitPoints.set(customerId, kept);
+    }
+  }
+
   // What each flagged place's signboard reads NOW. The place row is the only record of that — the
   // nightly pass keeps a verdict there for every place, flagged or not — so a flag that a later
   // reading has taken the ground out from under can be told apart from one that still stands.
@@ -905,14 +963,14 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     const subject = subjectRowFor(row);
 
     if (kind === "visit") {
-      add("Where the visit was saved", row.lat ?? subject?.lat, row.lon ?? subject?.lon, row.accuracy_meters ?? subject?.accuracy_meters, row.captured_at ?? subject?.captured_at);
-      add("Where the photograph was taken", subject?.photo_lat, subject?.photo_lon, subject?.photo_accuracy_meters, subject?.photo_captured_at);
+      add(CASE_READING_LABELS.visitSaved, row.lat ?? subject?.lat, row.lon ?? subject?.lon, row.accuracy_meters ?? subject?.accuracy_meters, row.captured_at ?? subject?.captured_at);
+      add(CASE_READING_LABELS.photograph, subject?.photo_lat, subject?.photo_lon, subject?.photo_accuracy_meters, subject?.photo_captured_at);
       const place = placeContextFor(row);
-      add("The place on the list", place?.lat, place?.lon, place?.accuracy_meters, place?.captured_at);
+      add(CASE_READING_LABELS.placeOnList, place?.lat, place?.lon, place?.accuracy_meters, place?.captured_at);
     } else {
-      add("Where the place was captured", row.lat ?? subject?.lat, row.lon ?? subject?.lon, row.accuracy_meters ?? subject?.accuracy_meters, row.captured_at ?? subject?.captured_at);
-      add("The pin saved for the place", subject?.pin_lat, subject?.pin_lon, subject?.pin_accuracy_meters, subject?.captured_at);
-      add("Where the photograph was taken", subject?.photo_lat, subject?.photo_lon, subject?.photo_accuracy_meters, subject?.photo_captured_at);
+      add(CASE_READING_LABELS.placeCaptured, row.lat ?? subject?.lat, row.lon ?? subject?.lon, row.accuracy_meters ?? subject?.accuracy_meters, row.captured_at ?? subject?.captured_at);
+      add(CASE_READING_LABELS.pin, subject?.pin_lat, subject?.pin_lon, subject?.pin_accuracy_meters, subject?.captured_at);
+      add(CASE_READING_LABELS.photograph, subject?.photo_lat, subject?.photo_lon, subject?.photo_accuracy_meters, subject?.photo_captured_at);
     }
     return readings;
   };
@@ -974,6 +1032,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
             return typeof subject?.photo_path === "string" && subject.photo_path !== "" ? subject.photo_path : null;
           })(),
       readings: readingsFor(row),
+      nearbyVisits: row.subject_kind === "visit" ? [] : customerVisitPoints.get(customerId ?? "") ?? [],
       companionNames: (Array.isArray(signals.offDutyCompanionHrIds) ? signals.offDutyCompanionHrIds : [])
         .map((entry) => String(entry ?? ""))
         .filter(Boolean)

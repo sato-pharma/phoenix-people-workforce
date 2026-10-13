@@ -774,7 +774,183 @@ and the settle test's `CaseList` and `integritySubjectKindLabel` counts.
 "Every group he asked for" became "Sixteen groups and a free-text box". The sweep strips comments, so a
 comment may say "he"; a screen string may not.
 
+## 11 · The panel he could not read (2026-10-13)
+
+He opened the new board the night it shipped, pasted one capture-trust case back, and wrote:
+**"i donot understand anything."** Every number in that panel was right. Five things about the
+*words* were wrong, and together they made a two-point case read as gibberish.
+
+**1 — the customer's name printed twice.** A `place` case with no venue name of its own builds its
+subject as "the place saved for <customer>", and the opening sentence then appended "for <customer>"
+a second time. The first line he read was *"Yasmeen Samy captured the place saved for ليندا اسكندر
+for ليندا اسكندر (Internal Medicine) on the PM list."* `openingSentence` now appends that clause
+only when the subject phrase does not already carry the name.
+
+**2 — "Filed by: Pin and photograph".** `Filed by` reads as a person, and the value is the detector.
+It is **"What raised it"** now. The timeline directly below it is what made the collision visible:
+*"Filed by: Pin and photograph"* sitting above *"Added to the list — Yasmeen Samy"*.
+
+**3 — a duration inside a list of distances.** *"Between the pin and the picture: 20 seconds"* sat
+between *"From its brick: 3.2 km"* and the readings. It is **"Time between the pin and the
+picture"**.
+
+**4 — three coordinates, two of them identical, and nothing saying which one was doubted.** This was
+the real damage. A one-tap capture saves **one** reading, and the panel printed it under two names —
+*Where the place was captured* and *Where the photograph was taken*, the same six decimals — so a
+case about **two** points looked like three points disagreeing with each other. Worse, the reader
+was left to work out for himself that the odd one is *the pin saved for the place*, and that it is
+accurate only to about 100 m where the other two are accurate to 25 m, which is the whole answer to
+"so which one is wrong".
+
+**5 — and the map block said the same thing twice.** Three readings give three pairs, and with two
+of them on one point two of those pairs carry the identical number. He was sent *"Where the place
+was captured and the pin saved for the place are 2.8 km apart"* and then *"The pin saved for the
+place and where the photograph was taken are 2.8 km apart"*, immediately above a line saying two of
+the three are one reading. `buildCaseMap` now emits **one line per pair of distinct points** —
+keeping the zero-distance pair, because naming both labels is the finding, and 🔴 **leaving the
+markers undeduped**, because two markers on one pixel is the evidence and the view already says
+which one it is sitting on.
+
+Two pure additions fix it, both in `integrity-case-story.ts`:
+
+- `groupReadings()` collapses readings sharing a coordinate to six decimals, and the evidence line
+  for a shared reading says so in words — *"one reading, under both names"*. Only the first label in
+  a joined phrase keeps its capital, so it reads *"Where the place was captured and where the
+  photograph was taken"*.
+- `oddReadingSentence()` adds one sentence to the paragraph when the shape is *several agreeing
+  readings and exactly one odd*: which readings are one tap, which one disagrees, and both accuracy
+  figures. 🔴 **It returns null for any other shape**, because a replay case carries one coordinate by
+  definition and a sentence naming an odd one out there would be inventing a second point.
+
+🔴 **AND IT REFUSES TO SAY WHICH OF THE TWO IS WRONG — the first draft of that sentence did, and his
+very first case proved it backwards within the hour.** The draft read "the least precise of them …
+so of the two it is the likelier to be the stale one", ranking the photograph (±25 m) above the pin
+(±100 m). Pulled from production the same night, this is what that place actually holds:
+
+| Cairo time, 12 Oct 2026 | What | Where | Reported accuracy |
+| --- | --- | --- | --- |
+| 15:56:50 | photograph taken | 30.439637, 31.171245 | ±25.3 m |
+| 15:57:06 | capture saved (same reading) | 30.439637, 31.171245 | ±25.3 m |
+| 15:57:39 | place validated — `point_source = "photo"`, so the photograph's reading became the place | — | — |
+| *(the pin she carried for it)* | | 30.463103, 31.180882 | ±100 m |
+| 15:58:42 | **a visit saved to the same customer** | 30.463512, 31.181219 | ±35.7 m |
+
+The visit sits **56 m from the pin** and therefore **2,822 m from the place the validation had just
+fixed**, which is why it carries `location_flag = far`. So the pin and the visit — two separate
+readings 96 seconds apart — agree with each other, and the **photograph** is the lone outlier,
+despite carrying the tightest figure of the three. 🔴 **A phone reports a cached position exactly as
+confidently as a live one: accuracy ranks precision, never truth.** The sentence now gives both
+figures and says so outright, and what settles such a case is whether anything else from that day
+sits near one of the readings — a question about other rows, not about this one.
+
+His case now reads: *"Where the place was captured and where the photograph was taken are one and
+the same reading, saved in a single tap. The one that disagrees is the pin saved for the place. It is
+also the least precise of them — accurate to about 100 m against 25 m — so of the two it is the
+likelier to be the stale one."*
+
+🔴 **The lesson for every detector added later: the panel is prose, and prose has no type checker.**
+All five defects passed `validate` because each one is a correct string in the wrong place. The ten
+assertions in `runReadablePanelTests` (`tests/crm-integrity-board-view.test.ts`) are built from the
+exact case he pasted, and every one of them fails on the panel he was sent.
+
+## 12 · The photograph is the anchor, and the visits are what is measured against it (2026-10-13)
+
+He read §11's corrected panel and answered in one line:
+
+> since u have the accurate validation the photo with location then drop the suspected one and
+> compare visits vs the accurate
+
+Three instructions in one sentence. **The photograph together with its own location is the accurate
+validation** — a photograph carries the fix its own shutter took at the door, and that is the one
+reading nobody can drag across a map, where a pin can be. **Drop the suspected one** — the pin leaves
+the judgement. **Compare visits against the accurate one** — the evidence that settles a place's two
+disagreeing readings is what the rep saved there afterwards.
+
+### What the comparison actually returns
+
+Read on production the same morning, every visit carrying a fix measured against its own customer's
+photograph (1,284 visits across the active validated places, 3–12 October):
+
+| Visit against the photograph | Visits | Share |
+| --- | --- | --- |
+| 0–100 m — at the place | 1,143 | 89.02% |
+| 100–300 m | 93 | 7.24% |
+| 300 m – 1 km | 34 | 2.65% |
+| 1–5 km | 12 | 0.93% |
+| over 5 km | 2 | 0.16% |
+
+The settings call a visit **far** past 300 m (`visit_far_meters = 300`, read live), so **48 of the
+1,284 are far from the photograph and 14 of those are more than a kilometre away.**
+
+🔴 **And anchoring on the photograph changes almost nothing, because the board already does it.**
+A validated place keeps ONE point, and `point_source` says which reading it is: that point is the
+photograph for **1,312 of the 1,403** active validated places. Re-deriving every visit's distance
+against the photograph instead of the kept point moves the verdict for **2 of the 1,284** — one
+`far → ok` and one `no_place → ok`, both where the kept point was the pin. Every other row holds, and
+48 of the 48 far visits are far either way.
+
+So his instruction did not need a detector change, a restatement or a migration. What it needed was
+for the panel to **say** the comparison, which is exactly the question §11's `oddReadingSentence`
+has to leave open: *"which of the two is stale is settled by whether anything else from that day sits
+near one of them."* That is now answered from rows the case already carries.
+
+### Where the 48 sit, and why the list is a story about one rep
+
+| Rep | Visits measured | Far from the photograph | Over 1 km | Worst |
+| --- | --- | --- | --- | --- |
+| Nourhan Fawzy Ahmed Ali Moussa | 26 | **13** | **7** | 5,864 m |
+| Hana Abdelaziz Samir Abdelaziz | 28 | 5 | 3 | 5,813 m |
+| Aya Ibrahim Mohamed Salam | 70 | 5 | 0 | 981 m |
+| Samir Saad Samir Habib Rizk | 30 | 4 | 1 | 1,514 m |
+| Omaima Wael ElHabashi ElSayed AbdelMaaboud | 21 | 4 | 0 | 738 m |
+| Yasmeen Samy Shawky Mahdy | 69 | 3 | 1 | 2,822 m |
+| eleven others | — | 1–2 each | 0–1 | 3,236 m |
+
+Half of one rep's own measured visits are more than 300 m from the door, **ten of her thirteen were
+saved after 20:00**, and six of them land between 21:58 and 22:10 on 11 October — six customers,
+1.4 km to 5.9 km away, every one reported accurate to 2 m. That is the shape of a day written up in
+one sitting, and it is a reading, not a verdict: the board exists so the look happens.
+
+Two of the 48 explain themselves and must not be read as anything else: `مستشفي التعليمي` and
+`المركز الطبي`, both Yasmeen Samy on 3 October, each reported **2,000 m of accuracy** — a phone with
+precise location switched off (§8), which is the one explanation on this board that is not a
+judgement call.
+
+### The sentence the panel prints
+
+`visitsAgainstThePhotographSentence` in `src/lib/crm-integrity/integrity-case-story.ts` finds the
+photograph among the case's readings, measures every visit of that customer against it, and says:
+
+> The one visit saved for ليندا اسكندر sits about 2.8 km from the photograph and about 56 m from the
+> pin saved for the place — so what the rep saved later sits with the pin, not with the photograph.
+> A visit is saved where the phone is when the box is filled in, which is not always the door.
+
+That is her case verbatim: she has exactly one visit to that customer, read on production, saved at
+15:58:42 Cairo on 12 October — 96 seconds after she validated the place. With several visits the
+opening reads *"Of the N visits saved for X, the nearest sits about …"*.
+
+Five rules it keeps, each pinned by a broken-on-purpose assertion in `runReadablePanelTests`:
+
+1. **The photograph is found by its LABEL**, from the one exported `CASE_READING_LABELS` the loader
+   now names its readings from. A renamed label would otherwise orphan the sentence silently.
+2. **Both figures, and the other reading named** — never a bare "the visits disagree".
+3. **Clearly nearer, not merely nearer:** 100 m AND half the distance, so a phone's own margin cannot
+   pick the side. A visit 1,275 m from the photograph against 1,493 m from the pin says *"about as
+   far from each, so the later visits settle nothing between them"*, which is the honest answer.
+4. **Silent where there is nothing to compare** — no visit, no photograph reading, or a replay case
+   with one coordinate. A sentence there would read as corroboration that was never measured.
+5. **It concludes nothing.** "Sits with the pin" says where the later readings are, never who was
+   where; the ordinary cause closes every version of the sentence.
+
+🔴 **Nothing in the detector or in a stored distance moves.** The loader still READS
+`distance_meters` and still computes no metres of its own (`tests/crm-integrity-place-distance.test.ts`
+refuses a derived distance by reading the file's SOURCE — **comments included**, so even naming the
+formula in a comment turns that pin red, which is how this change first went red). The new points are
+one more chunked, non-fatal `.in("customer_id", …)` read, and an empty answer reads as *no visit to
+compare* rather than *the visits agree*.
+
 ## Where the code is
+
 
 | What | Where |
 | --- | --- |
@@ -796,3 +972,5 @@ comment may say "he"; a screen string may not.
 | Settling several cases with one reason | `settleManyIntegrityCases`, the LAST function in `server/integrity-board.ts` |
 | Its route, and the filtered XLSX export | `app/api/admin/phoenix-crm/integrity/{settle-many,export}/route.ts` |
 | The two widened CHECKs | `supabase/migrations/20261012210000_phoenix_crm_silent_detectors.sql` |
+| The visits measured against the photograph | `visitsAgainstThePhotographSentence`, `src/lib/crm-integrity/integrity-case-story.ts` |
+| The one list of reading labels the loader names its readings from | `CASE_READING_LABELS`, same file |
