@@ -183,16 +183,17 @@ stopping at the first. The eleven it runs, with the failing CI jobs each caused 
 owner ruled *"keep the pre-push test as a rule, no guard"* on 2026-10-04 — and the PR's own
 `validate` + `checks` remain the verdict.
 
-#### The lint and typecheck reds, and the one it cannot reach
+#### The lint and migration reds, the typecheck it cannot reach
 
 `validate/Test` was 94 of the 106 failed runs, but it was not all of them, so the check reaches the
-other two required steps as far as each honestly can.
+other red steps as far as each honestly can. **Two tool gates** run beside the eleven contract
+gates, alongside the shards, each one the CI step's own code rather than a copy of it.
 
 🔴 **ALL 5 OF THE `checks/Lint` REDS WERE ESLINT *ERRORS* ON FILES THE PR HAD CHANGED** — 3 ×
 `react-hooks/set-state-in-effect` ("Calling setState synchronously within an effect"), 1 × "Cannot
 create components during render", 1 × five counts of `@typescript-eslint/no-explicit-any`. Not one
-was elsewhere in the repo, which is what makes the branch's own diff the whole exposure. So one
-**tool gate** runs beside the eleven — ESLint over the files this branch changed, alongside the shards,
+was elsewhere in the repo, which is what makes the branch's own diff the whole exposure. So the
+first tool gate is ESLint over the files this branch changed,
 with `--quiet` so it reports **errors only**. That is exactly what reddens the step, and it also
 makes the known single-file trap inert, because "Unused eslint-disable directive" is a *warning*.
 Measured on 20 changed files: **6.4s cold, ~3s warm**. ESLint here is not type-aware
@@ -200,6 +201,30 @@ Measured on 20 changed files: **6.4s cold, ~3s warm**. ESLint here is not type-a
 It is a **separate list** from `CONTRACT_GATES` deliberately: a lint run is not one of the suite's
 exported functions, and folding it in would have meant loosening the invariant that every contract
 gate is the suite's own code.
+
+🔴 **THE 4 `validate/Check migrations` REDS ARE ANSWERED IN FULL, NOT SAMPLED — THE GATE SPAWNS THE
+STEP'S OWN SCRIPT.** CI's step is `pnpm run check:migrations`, which is
+`node scripts/check-migrations.mjs`, and the tool gate runs that exact file: there is no second copy
+of the filename rule, the duplicate-timestamp list, the `DROP TABLE` annotation rule or the
+`GRANT … ON ALL TABLES` refusal to drift from it. Measured **465–490 ms** standalone and ~0.6–1.4 s
+beside the shards, on 867 migrations. `tests/check-contracts.test.ts` holds `package.json`'s
+`check:migrations`, `ci.yml`'s step and the gate's own constant to the same path, so a renamed step
+or a moved script fails the suite instead of leaving this gate reproducing something that no longer
+gates anything.
+
+Three readings it deliberately does not flatten:
+
+- **Exit 0 is a PASS even with warnings**, exactly as in CI — a `DROP TABLE` with no `-- SAFE:`
+  annotation warns and passes, and this repo has 8 such warnings today. Exit 1 is a FAIL. Anything
+  else, or a signal, is **SKIP — no verdict**, never a pass.
+- **The detail printed is the LAST `[migration-check]` line**, the count summary. A real run opens
+  with the cross-branch note and prints a WARN line per warning in between, so a first-match read
+  would report "compared against origin/main …" as the step's verdict.
+- **The cross-branch timestamp check fails open**, in the script itself: no `origin/main` in the
+  object store (a shallow CI checkout, a fresh clone) and it is skipped rather than failed. That is
+  the right call there and worth knowing here — a local tree that has not fetched since the
+  colliding migration merged still gets a green gate, which is why the script names the commit it
+  compared against and how old it was.
 
 🔴 **THE TYPECHECK IS THE ONE IT MOSTLY CANNOT REACH, AND IT SAYS SO ON EVERY RUN.** Of the 17
 `checks/Typecheck` reds, **3** were the one shape a source gate can see — `TS2554 Expected 2

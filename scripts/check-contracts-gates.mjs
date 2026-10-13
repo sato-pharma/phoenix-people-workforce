@@ -236,6 +236,7 @@ export const NOT_OFFLINE = /supabase|@\/lib\/env|^next\/|\/needs-you\/sources/;
  * @property {string} slug
  * @property {string} what one line, printed by `--list`
  * @property {number | null} redJobs failing CI jobs it caused 9-13 Oct 2026
+ * @property {number} reserveBytes resident set its child needs, reserved out of the shard budget
  */
 
 /**
@@ -247,6 +248,11 @@ export const NOT_OFFLINE = /supabase|@\/lib\/env|^next\/|\/needs-you\/sources/;
  * `@typescript-eslint/no-explicit-any`. Not one was elsewhere in the repo, which is what makes this
  * cheap: the branch's own diff is the whole exposure.
  *
+ * `validate/Check migrations` was 4 more of those reds, and it is the ONLY red step left that this
+ * script can answer for in full — not a sample of it, the step itself: CI runs
+ * `pnpm run check:migrations`, which is `node scripts/check-migrations.mjs`, and this gate spawns
+ * that same file. Nothing is re-implemented, so a PASS here is the step's own verdict.
+ *
  * @type {ToolGate[]}
  */
 export const TOOL_GATES = [
@@ -256,16 +262,60 @@ export const TOOL_GATES = [
     // read as "(the 5 checks/Lint reds, 9-13 Oct 2026)  (5 red CI jobs, 9-13 Oct 2026)".
     what: 'ESLint ERRORS on the files this branch changed',
     redJobs: 5,
+    // It loads typescript-eslint's parser and the whole rule set, which is heavier than a gate
+    // shard even for one file.
+    reserveBytes: 500 * 1024 * 1024,
+  },
+  {
+    slug: 'migration-check',
+    what: "the migration folder, through validate's own `check:migrations` script",
+    redJobs: 4,
+    // `node:fs` over supabase/migrations plus one `git ls-tree`. Measured 465-490 ms and a peak
+    // well under this; it is here so the shard division accounts for the child at all.
+    reserveBytes: 64 * 1024 * 1024,
   },
 ];
 
 /**
- * Resident set the ESLint child needs, reserved out of {@link contractShardCount}'s budget.
+ * Memory the tool-gate children need together, reserved out of {@link contractShardCount}'s budget
+ * because they run ALONGSIDE the shards rather than after them.
  *
- * It loads typescript-eslint's parser and the whole rule set, which is heavier than a gate shard
- * even for one file.
+ * Summed from the table rather than written as a figure, so adding a tool gate cannot forget it.
  */
-export const TOOL_GATE_BYTES = 500 * 1024 * 1024;
+export const TOOL_GATE_BYTES = TOOL_GATES.reduce((sum, gate) => sum + gate.reserveBytes, 0);
+
+/**
+ * The migration gate's script, relative to the repo root.
+ *
+ * 🔴 IT IS THE SAME FILE `package.json`'s `check:migrations` NAMES, AND THE SAME ONE `ci.yml`'s
+ * "Check migrations" STEP RUNS. `tests/check-contracts.test.ts` asserts all three still agree: a
+ * second copy of those rules, or a path that drifted, would make a PASS here mean something the CI
+ * step does not. It is offline by the same standard as every other gate — `node:fs` over
+ * `supabase/migrations`, plus one `git ls-tree origin/main` that FAILS OPEN when there is no
+ * `origin/main` to read, so a stale local ref can leave a collision unseen and never fakes a pass.
+ */
+export const MIGRATION_CHECK_SCRIPT = 'scripts/check-migrations.mjs';
+
+/**
+ * The one line of `check-migrations.mjs` output worth reporting as this gate's detail.
+ *
+ * 🔴 THE **LAST** `[migration-check]` LINE, NOT THE FIRST. That script prints a `[migration-check]
+ * WARN: …` line per warning as it goes and its count summary at the end, so a first-match read
+ * reports one warning as the whole verdict — and on this repo today it would, because a `DROP TABLE`
+ * with no `-- SAFE:` annotation warns on every run and still passes. Warnings are not what reddens
+ * the step; errors are.
+ *
+ * @param {string} output the child's stdout (its stderr carries the warnings and the error summary)
+ * @returns {string | null}
+ */
+export function migrationDetail(output) {
+  const lines = String(output)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('[migration-check]') && !/^\[migration-check\]\s*WARN/i.test(line));
+  const last = lines[lines.length - 1];
+  return last ? last.replace(/^\[migration-check\]\s*/, '') : null;
+}
 
 /** Extensions `eslint.config.mjs` actually has rules for. Anything else is not worth a child. */
 export const LINT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);

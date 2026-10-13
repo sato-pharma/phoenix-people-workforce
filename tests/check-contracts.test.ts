@@ -24,6 +24,7 @@ import {
   GATE_RUNNER,
   MAX_CONTRACT_SHARDS,
   MAX_LINT_FILES,
+  MIGRATION_CHECK_SCRIPT,
   NOT_OFFLINE,
   SHARD_RESULT_RE,
   TOOL_GATES,
@@ -36,6 +37,7 @@ import {
   eslintArgs,
   lintCacheLocation,
   lintableChangedFiles,
+  migrationDetail,
   shardGates,
 } from "../scripts/check-contracts-gates.mjs";
 
@@ -355,11 +357,11 @@ export function runCheckContractsTests() {
     "reserveBytes must actually reduce the shard count — a reservation the sizing ignores is not a reservation",
   );
 
-  // 9. THE TOOL GATE. All 5 of the checks/Lint reds between 9 and 13 Oct 2026 were ESLint ERRORS on
-  // files the PR had changed, so the branch's own diff is the whole exposure — but a lint run is
-  // NOT one of the suite's exported functions, and folding it into CONTRACT_GATES would have meant
+  // 9. THE TOOL GATES. All 5 of the checks/Lint reds between 9 and 13 Oct 2026 were ESLint ERRORS on
+  // files the PR had changed, and 4 more were `validate/Check migrations` — but neither is one of
+  // the suite's exported functions, and folding either into CONTRACT_GATES would have meant
   // loosening section 1, the invariant that makes a PASS here mean what a PASS in `validate` means.
-  assert.ok(TOOL_GATES.length > 0, "the tool-gate list must not be empty while the launcher reports one");
+  assert.ok(TOOL_GATES.length > 0, "the tool-gate list must not be empty while the launcher reports it");
   const contractSlugs = new Set(CONTRACT_GATES.map((gate) => gate.slug));
   for (const gate of TOOL_GATES) {
     assert.ok(
@@ -367,7 +369,75 @@ export function runCheckContractsTests() {
       `tool gate ${gate.slug} shares a slug with a contract gate, so shard coverage and the lint would be counted as one thing`,
     );
     assert.ok(gate.what.length > 0, `tool gate ${gate.slug} must say what it does, for --list`);
+    assert.ok(
+      Number.isFinite(gate.reserveBytes) && gate.reserveBytes > 0,
+      `tool gate ${gate.slug} must reserve a positive number of bytes — its child runs alongside the shards`,
+    );
   }
+  assert.equal(
+    TOOL_GATE_BYTES,
+    TOOL_GATES.reduce((sum, gate) => sum + gate.reserveBytes, 0),
+    "TOOL_GATE_BYTES must be the SUM of the tool gates' reservations, or adding a gate silently starts an unbudgeted child",
+  );
+
+  // 🔴 EVERY TOOL GATE IN THE TABLE HAS A RUNNER IN THE LAUNCHER. The table is the published list —
+  // `--list` prints it and docs/testing.md counts it — so a gate listed and never run is the one
+  // shape where the summary would claim coverage the run does not have. The launcher refuses that
+  // case (NO VERDICT, exit 2) rather than skipping quietly; this pins the wiring that makes the
+  // refusal unnecessary.
+  const unwired = TOOL_GATES.filter((gate) => !new RegExp(`["']${gate.slug}["']\\s*:\\s*run\\w+`).test(launcher)).map(
+    (gate) => gate.slug,
+  );
+  assert.deepEqual(unwired, [], "a tool gate is listed with no runner wired in scripts/check-contracts.mjs");
+  assert.match(
+    launcher,
+    /typeof TOOL_GATE_RUNNERS\[gate\.slug\] !== ['"]function['"]/,
+    "the launcher must refuse a tool gate it cannot run (NO VERDICT), never report it as a skip",
+  );
+
+  // 10. THE MIGRATION GATE RUNS `validate`'s OWN SCRIPT — the three places that name it must agree,
+  // because this gate's whole claim is that its PASS is the CI step's verdict and not a second
+  // implementation of the migration rules.
+  assert.ok(
+    existsSync(path.join(ROOT, MIGRATION_CHECK_SCRIPT)),
+    `the migration gate names ${MIGRATION_CHECK_SCRIPT}, which does not exist`,
+  );
+  assert.ok(
+    pkg.scripts["check:migrations"]?.includes(MIGRATION_CHECK_SCRIPT),
+    `package.json's check:migrations must run ${MIGRATION_CHECK_SCRIPT}, got "${pkg.scripts["check:migrations"]}"`,
+  );
+  const workflow = readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+  assert.match(
+    workflow,
+    /run:\s*pnpm run check:migrations\b/,
+    "ci.yml must still run `pnpm run check:migrations` — if that step is renamed or dropped, this tool gate is reproducing a step that no longer gates anything",
+  );
+  assert.match(
+    launcher,
+    /capture\(process\.execPath,\s*\[MIGRATION_CHECK_SCRIPT\]\)/,
+    "the migration gate must SPAWN that script, never re-implement its rules in this file",
+  );
+
+  // 🔴 THE DETAIL IS THE **LAST** `[migration-check]` LINE, NOT THE FIRST. A real passing run opens
+  // with the cross-branch note, prints a WARN line per warning — this repo warns on every single run
+  // today, 8 of them, a DROP TABLE with no `-- SAFE:` annotation each time — and ends on the count
+  // summary. The fixture below is that real shape: a first-match read reports "compared against
+  // origin/main …" as the verdict of the step, which says nothing about whether it passed.
+  assert.equal(
+    migrationDetail(
+      "[migration-check] cross-branch timestamp check compared against origin/main at 96c014e57 (10 min old), 867 migration(s) there.\n"
+      + '[migration-check] WARN:  "20261012184500_x.sql" contains DROP TABLE or TRUNCATE\n'
+      + "[migration-check] 867 migrations — 8 warning(s), 0 errors. Passing.\n",
+    ),
+    "867 migrations — 8 warning(s), 0 errors. Passing.",
+    "the migration gate's detail must be the LAST [migration-check] line — the count summary — not the cross-branch note the run opens with",
+  );
+  assert.equal(
+    migrationDetail("[migration-check] WARN:  only a warning, no summary\n"),
+    null,
+    "with no summary line the detail must be null so the caller falls back, rather than printing a warning as the verdict",
+  );
+  assert.equal(migrationDetail(""), null, "no output must read as no detail");
 
   // --quiet is the whole reason this is cheap AND safe: it reports errors only, which is exactly
   // what reddens the CI step, and it makes the known single-file trap inert, because "Unused
