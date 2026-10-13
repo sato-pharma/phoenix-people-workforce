@@ -3,10 +3,15 @@ import { readFileSync } from "node:fs";
 
 import {
   EXEMPT_SCHEMAS,
+  EXEMPT_SNAPSHOT_TABLES,
   RETENTION_DAYS,
+  SNAPSHOT_TABLE_SCHEMAS,
+  STANDARD_SCHEMAS,
   VERDICT,
   classify,
+  classifyTable,
   datesIn,
+  isSnapshotTableName,
   snapshotDateOf,
 } from "../scripts/audit-backup-schemas.mjs";
 
@@ -139,6 +144,88 @@ export function runBackupSchemaRetentionTests() {
 
   assert.equal(RETENTION_DAYS, 90, "the default is deliberately generous — see docs/security/backup-schema-retention.md");
 
+  // ------------------------------------------------- snapshot TABLES in the standard schemas
+  //
+  // 🔴 THE GAP THIS CLOSES. Everything above sweeps non-standard SCHEMAS, and a snapshot taken as
+  // a dated TABLE in `public` or `au` has no schema of its own to age out — so it was outside the
+  // script entirely and could never expire. Production carried 58 of them on 2026-10-13 (5.5 MB),
+  // none of which this sweep had ever seen, and two of them had just pushed the advisor's
+  // `rls_enabled_no_policy` count up with a written note claiming they would leave by themselves.
+
+  // The schemas swept for tables must be ones the SCHEMA sweep skips. If a name here ever stopped
+  // being standard, the schema pass would claim it and this pass would double-count it.
+  for (const schema of SNAPSHOT_TABLE_SCHEMAS) {
+    assert.ok(
+      STANDARD_SCHEMAS.has(schema),
+      `${schema} is swept for snapshot tables because the schema sweep skips it — it must stay standard`,
+    );
+  }
+  assert.ok(SNAPSHOT_TABLE_SCHEMAS.includes("public") && SNAPSHOT_TABLE_SCHEMAS.includes("au"));
+
+  // A DATE IS REQUIRED. Without one there is nothing to age, so it is never proposed.
+  assert.equal(isSnapshotTableName("address_brick_moves_20261013"), true, "a trailing date is the ad-hoc copy shape");
+  assert.equal(isSnapshotTableName("bak_20261008_luxor_notes_fix"), true, "a snapshot word plus a date, date not last");
+  assert.equal(isSnapshotTableName("sos_map_unmap_preimage_20261010"), true);
+  assert.equal(isSnapshotTableName("zz_brick_backfill_snapshot_20260827"), true);
+  assert.equal(isSnapshotTableName("database_restarts"), false, "a live log table with no date is not a snapshot");
+  assert.equal(isSnapshotTableName("employees"), false);
+  assert.equal(isSnapshotTableName("backup_plans"), false, "a snapshot word with NO date cannot be aged, so it is not claimed");
+  assert.equal(isSnapshotTableName("targets_2026"), false, "four digits are not a date");
+
+  // 🔴 The substring trap, asserted in both directions. `pre` inside "prescriptions" and `old`
+  // inside "household" must NOT make a live table a snapshot — matching parts, not substrings, is
+  // the same lesson the schema sweep's function-dependency query is written around.
+  assert.equal(isSnapshotTableName("prescriptions_20261001_live_view"), false, "`pre` inside a word is not the word");
+  assert.equal(isSnapshotTableName("household_counts_20261001_x"), false, "`old` inside household is not the word");
+  // Negative control: the same names with the word as its own part DO qualify.
+  assert.equal(isSnapshotTableName("prescriptions_pre_20261001_x"), true);
+  assert.equal(isSnapshotTableName("household_counts_old_20261001_x"), true);
+
+  // The safety property again, for tables: a live dependency beats age, always.
+  const pinnedTable = {
+    schema: "public",
+    table: "address_brick_moves_20261013",
+    blockers: ["view public.phx_brick_moves_v reads it"],
+  };
+  assert.equal(
+    classifyTable(pinnedTable, { today: "2031-01-01", retentionDays: 1 }).verdict,
+    VERDICT.PINNED,
+    "A VIEW MUST BEAT AGE — five years old against a one-day retention and it still stays",
+  );
+  assert.equal(
+    classifyTable({ ...pinnedTable, blockers: [] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
+    VERDICT.EXPIRED,
+    "without the view the same table expires — so the check above is load-bearing",
+  );
+
+  // The owner's exemption mechanism, exercised rather than assumed. It ships empty on purpose.
+  assert.deepEqual(EXEMPT_SNAPSHOT_TABLES, {}, "nothing is exempt until the owner says so");
+  const exemptKey = "public.address_brick_moves_20261013";
+  EXEMPT_SNAPSHOT_TABLES[exemptKey] = { why: "test-only entry" };
+  try {
+    assert.equal(
+      classifyTable({ schema: "public", table: "address_brick_moves_20261013", blockers: [] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
+      VERDICT.PROTECTED,
+      "an exempt table must never expire on age alone",
+    );
+  } finally {
+    delete EXEMPT_SNAPSHOT_TABLES[exemptKey];
+  }
+  // Negative control: with the entry gone it expires again, so the exemption did the work.
+  assert.equal(
+    classifyTable({ schema: "public", table: "address_brick_moves_20261013", blockers: [] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
+    VERDICT.EXPIRED,
+  );
+
+  const atTable = (date: string, retentionDays: number) =>
+    classifyTable(
+      { schema: "public", table: `x_backup_${date.split("-").join("")}`, blockers: [] },
+      { today: TODAY, retentionDays },
+    );
+  assert.equal(atTable("2026-08-31", 30).verdict, VERDICT.YOUNG, "29 days old under a 30-day retention");
+  assert.equal(atTable("2026-08-30", 30).verdict, VERDICT.EXPIRED, "exactly at the retention age is expired");
+  assert.equal(atTable("2027-01-01", 30).verdict, VERDICT.YOUNG, "a future date is not 'very old'");
+
   // ---------------------------------------------------------------- it cannot drop anything
 
   const source = readFileSync(new URL("../scripts/audit-backup-schemas.mjs", import.meta.url), "utf8");
@@ -161,4 +248,19 @@ export function runBackupSchemaRetentionTests() {
     );
   }
   assert.ok(!/--apply/.test(source), "there must be no --apply flag — dropping is a human's job, under supervision");
+
+  // 🔴 A TABLE'S drop statement must carry NO `cascade`. The schema form has it because a snapshot
+  // schema is dropped whole; a lone table sits in `public` BESIDE the live data, so a cascade there
+  // would silently take whatever had come to depend on it. Without it the statement simply refuses.
+  const tableDropMatch = /drop table if exists \$\{[^}]+\}\.\$\{[^}]+\};/.exec(source);
+  const tableDrop = tableDropMatch === null ? "" : tableDropMatch[0];
+  assert.notEqual(tableDrop, "", "the emitted per-table drop statement is missing");
+  assert.ok(!/cascade/i.test(tableDrop), `a table drop must never cascade: ${tableDrop}`);
+
+  // A daily partition (`events_20261013`) is the one shape the name test cannot tell from a
+  // snapshot, so it is excluded in SQL. Asserted on the source because it lives in a query.
+  assert.ok(
+    /relispartition = false/.test(source),
+    "partitioned children must be excluded in SQL — the name test cannot tell them from a snapshot",
+  );
 }

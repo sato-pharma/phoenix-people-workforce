@@ -2515,6 +2515,7 @@ import { runEmployeeNamesByHrIdTests } from "./employees-names-by-hr-id.test.ts"
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
+import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9921,6 +9922,10 @@ await runTest(
 await runTest(
   "the owner-only MCP source proves a report complete and consistent instead of trusting that it returned — the read recorder logs every PostgREST request from underneath the loaders, so a swallowed failure, a transport error, an unpaged read at the row cap, a read nobody watermarked, a required read that never happened (a cache answered) and a change between the before and after watermark each refuse with a named reason, a retried request is judged by its last attempt, a snapshot identity is a pure function of the rows so an unchanged refresh keeps it, the watermark registry and the proposed SQL stay in step, the live authorization decision denies on a missing account, a banned or deleted Auth user, a role moved off Super Admin/CEO, a departed employee, an effective read denial and a module lock, throws on anything it cannot decide, and its route is off unless enabled, bearer-only with no development bypass, single-owner, no-store, and answers 503 with no detail when a source cannot be read",
   runMcpSourceTests,
+);
+await runTest(
+  "the eleven SECURITY DEFINER access helpers keep their `authenticated` EXECUTE — the advisor WARN on them is an accepted, audited baseline and the migration it tempts has now been drafted twice off a `pg_policy` scan that read 0 callers: no migration in the whole history revokes EXECUTE or ALL on any of the eleven from `anon` or `authenticated` (a bare `FROM PUBLIC` is deliberately not a match, since the schema baseline does that to every function), the baseline still ACCEPTS all eleven as a warn rather than a target and still records why the six with no live policy are not spare, the written audit names every one of them, and the evidence it cites is still in place — phase24 calls five of them BY RPC as a signed-in user through its `rpcValue(client, name)` helper, which is exactly why a grep for `rpc(\"current_…\")` finds nothing, and phase25/26 still reach `can_see_employee` through the policies they create",
+  runAccessHelperExecuteGrantLockTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

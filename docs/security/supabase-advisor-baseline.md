@@ -91,6 +91,21 @@ revoke them.** `current_access_can_see_employee` is called by policies that
 authenticated` at smoke time, which is exactly why a `pg_policy` scan reads 0 for it — the
 policy DDL lives in a script, not in a migration.
 
+🔴 **RE-EXAMINED 2026-10-13 — 11 IS THE FLOOR, AND THE "SPARE" SIX ARE NOT SPARE.** The question
+was put again ("fix the 11 security definer functions authenticated can execute") and answered
+against live production: **no revoke ships, for any of the eleven.** Five of the six above are
+called **by RPC, as a signed-in `authenticated` user**, by
+`scripts/phase24-real-auth-rls-api-smoke.ts` — `current_phoenix_role`, `current_access_role`,
+`current_access_scope`, `current_access_is_finance` and `current_access_can_manage_payroll`, each
+asserted against that role's expected answer. They are invisible to the obvious search because the
+script calls them through a local `rpcValue(client, name)` helper, so **a grep for
+`rpc('current_…')` returns nothing and reads as proof of no caller.** The sixth,
+`current_access_can_see_employee`, is the one phase25/26 reach through the policies they create.
+So a revoke turns the real-auth smokes red, and it closes nothing: all 11 are already
+`search_path=public` pinned, `anon` holds EXECUTE on none, and the five load-bearing ones carry 91
+live policies between them. The advisor WARN stays **accepted at 11** — the fix for this category
+is the audit, written down, not a migration.
+
 **Why the count fell 14 → 11.** PR
 [#5489](https://github.com/Gawish-1997/phoenix-people-workforce/pull/5489), merged **2026-10-08
 at 10:14:50 Cairo**. Its migration
@@ -125,7 +140,38 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (210 as of 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (212 as of 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 210 to 212 on 2026-10-13 — two tables, both triaged by name.** The check was failing
+`advisor_baseline_exceeded` at 212 against an accepted 210. Asked live, newest by oid, the two that
+joined are `public.database_restarts` (oid **258977**) — the crash-restart log written on 12 October
+when production Postgres restarted twice in three days — and `public.address_brick_moves_20261013`
+(**258416**), the pre-image of that day's Qena brick moves. Both are this month's live work on the
+same server-only pattern.
+
+🔴 **Neither of those two was going to leave by itself, and that is a correction to the 2026-10-09
+paragraph below.** The 90-day retention in `scripts/audit-backup-schemas.mjs` swept non-standard
+**schemas**, and `public` and `au` are both on its excluded list — so a dated pre-image table
+created beside the live data had no schema of its own to age out and could never expire. The 21
+snapshots in dated backup schemas do age out; these did not.
+
+**Fixed the same day:** the sweep now has a second pass over dated snapshot **tables** in `public`
+and `au`, with the same verdict ladder, the same dependency checks and the same 90 days. It found
+**58** of them, 5.5 MB — `public` 34, `au` 24, oldest 47 days, every one a genuine snapshot by name
+— a population nothing had ever reported. The 2026-10-09 triage's "2 backup-named tables in
+`public`" is not in conflict with that 34: it was splitting the 210 tables *inside this advisor
+category*, so it counted only the snapshots that have RLS enabled with no policy, while the sweep
+counts every dated snapshot table whether RLS is on it or not. Account:
+[`backup-schema-retention.md`](./backup-schema-retention.md), "The snapshot that has no schema at
+all". The real fix for one of these is still to put it where
+[`backup-table-placement.md`](./backup-table-placement.md) says a snapshot goes.
+
+🔴 **The part worth re-reading is the one that was re-proved, not the two names.** Of the entire
+live reading, the only tables that grant a browser role anything are **6 Supabase-managed
+`storage.*` platform tables** — and the advisor's set does not contain them: its **212** is the
+live **235** minus the **23** `auth`/`storage` tables Supabase manages. So **zero of the 212 grant
+`anon` or `authenticated` anything**, and RLS-enabled-with-no-policy is deny-all. Each of these is
+a closed table, not an open one — which is why the count is gated and membership is not.
 
 **Raised 176 to 210 on 2026-10-09, after the daily check had been breaching it since 1 October.**
 The run list stayed green throughout, **by design**: the advisor step is `continue-on-error` and
@@ -319,6 +365,11 @@ one's grants outside a migration.
 ### DEFERRED - `unused_index` (722 accepted as of 2026-10-09; 615 on 2026-09-29, 326 before that)
 
 Reviewed and **deferred** - not bulk-dropped. The reasoning has not changed, only the number.
+
+**Read 707 on 2026-10-13 and the baseline was deliberately LEFT at 722.** The check asks for the
+improvement to be locked in; it is declined on purpose, because this number moves both ways and
+every migration that ships a table pushes it back up — lowering the ceiling to the latest dip
+would turn the next normal week red for a reason nobody would be able to triage.
 
 **Raised 615 to 722 on 2026-10-09.** The daily check read 576 to 722 between 1 and 9 October (666
 on 9 October): the count moves both ways, because indexes on newly shipped tables read as unused

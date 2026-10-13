@@ -91,6 +91,14 @@ foreign key, view or function reference **before** age —
 `deductions_governance_backup_20260830` looks exactly like 98 inert siblings and has a live
 `public` table pointing into it.
 
+🔴 **And a snapshot that broke the rule at the top of this page is now swept where it sits**
+(2026-10-13). A dated table taken in `public` or `au` has no schema of its own to age out, so for
+as long as the retention sweep looked only at schemas, breaking this rule also bought the snapshot
+*immortality* — 58 of them, 5.5 MB, none ever reported. They are reported now, by the same ladder
+and the same 90 days, and the emitted statement is `drop table if exists <schema>.<table>;` with no
+`cascade`. That is a safety net, not permission: the fix for one of these is still to move it into
+its own dated schema as above.
+
 ## What the check does and does not catch
 
 `scripts/check-sql-backup-placement.ts` scans `supabase/**/*.sql` for `CREATE TABLE`
