@@ -8038,3 +8038,79 @@ dashboard is the silent one. Pinned by `tests/identity-strip-emblem.test.ts` §8
 
 **Standing from the same day, and not re-litigated:** do not touch the portrait or the identity
 banner, and never show Employee requests on her page.
+
+## The rep ranking workbook's admin button — owner, 2026-10-13
+
+He had just merged the rep ranking workbook into the Anti Infective employee portal (#5867) and
+asked, in his own words, **"from admin account how to download uh, how to download the sheet."**
+Offered four ways to reach it, he typed his own: **"add a third button"**.
+
+### Why he could not already
+
+Nothing was broken. `/api/sales/monthly-closing/export` branches on ROLE at line 204 —
+`Super Admin || scope === "system" || SFE Manager || CEO || Finance Manager || marketingOversight` —
+and returns the full six-sheet workbook at line 608, **before** the rep-ranking branch at line 753.
+Everyone who runs the admin Monthly Closing screen is in that disjunction, so for them the ranking
+branch is unreachable code. The disjunction is **append-only**:
+`tests/sfe-manager-nav-dead-links.test.ts` pins its first three terms as a literal source substring,
+and the workbook it guards is frozen. Widening it was therefore never an option.
+
+The other door was shut too: `/employee-portals/monthly-closing` redirects him, because
+`PORTAL_CLOSING_ROLES` is Medical Rep, District/Regional/National Sales Manager, Product Manager,
+Group Product Manager and Marketing Manager — **no Super Admin** — and the portal view posts the
+same body with no surface marker, so even there his role would take the full branch.
+
+### What was built
+
+`/api/sales/monthly-closing/rep-ranking-export`, a route of its own BESIDE the frozen one, calling
+the same `buildScopedRepRankingExport`. One builder, so a change to the ranking reaches both buttons
+or neither. Four decisions inside it are load-bearing:
+
+- **Scope is the viewer's own** — "everyone his scope, not me", his words the same day. The builder
+  asks `loadPortalMonthlyClosing` for each trend month, so for a Super Admin
+  `resolvePortalClosingScope` yields `allowedLineNames === null` → every official line minus Head
+  Office, with null region and product bounds, which is the whole line unscoped; a Medical Rep
+  hitting the same route still gets his own row. No new scope code exists anywhere in it.
+- **The selection only, never the screen's filter.** Every other closing export forwards the
+  on-screen filter. This one must not: the ranking is built from matrices that take no row filter at
+  all, while the channel carve is built from the detail rows. Narrow the rows and the Direct/Stores
+  split shrinks underneath a ranking that did not move — a workbook disagreeing with itself, with
+  nothing on it saying which half was filtered.
+- **An unpublished month is refused in plain words, first.** Super Admin, SFE Manager, CEO and
+  Finance Manager read unpublished months everywhere else in the closing, but this workbook trends
+  over `loadPortalMonthlyClosing`, which offers published months only and answers an unpublished one
+  with the NEWEST PUBLISHED month instead. The builder drops a month that came back under a
+  different name and then returns null, so without the check an unpublished month would read as
+  "cannot be built". It reuses `unpublishedClosingMessage`, the portal's own sentence.
+- **Anti Infective only**, by the same single gate — refused in plain words rather than quietly
+  handed the ordinary workbook, because the button was clicked for the ranking and a different file
+  arriving under that name is how a reader ends up quoting the wrong sheet.
+
+`isRepRankingLine` moved into the dependency-free `src/lib/sales/closing-rep-ranking-line.ts` and is
+re-exported from the builder, so every existing caller keeps its import path. The reason is the one
+`confidential-products.ts` exists for: the admin closing screen is a CLIENT component and has to ask
+the same question to decide whether to show the button, and one import of
+`closing-rep-ranking-export.ts` from the browser bundle drags `@/lib/supabase/server` and the
+employee-directory chain behind it into webpack, which refuses it outright — and in dev poisons the
+server for every later request once it compiles.
+
+### The fourth button cost the export row its `shrink-0`
+
+Three buttons measure about 530px and fitted one line; the fourth takes the row past 730px, which is
+wider than the panel at 640 and at 768. A flex item with `shrink-0` is never handed a width narrower
+than its content, so a `flex-wrap` on that same element never fires — the row grows past its parent
+and the page scrolls sideways, which the fits-the-screen golden rule bans outright. So the row is
+`flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end` and the buttons drop
+onto a second line instead; each BUTTON keeps its own `shrink-0`, correct inside a row that wraps.
+The note left in the file when there were three recorded that wrapping had been tried and reverted
+"for no gain" — the gain exists now, because four buttons no longer fit a line the filters can give
+back. See `tests/flex-wrap-shrink-guard.test.ts`, which exists because that pattern bit for real on
+2026-09-30, and note its own finding: `scrollWidth` cannot see a flex item overflowing its
+container, so the measurement is the child's `getBoundingClientRect().right` against the parent's
+content edge.
+
+The button is **absent** on CNS and Pedia rather than disabled: the workbook does not exist for
+them, and a greyed-out control invites a click that can never succeed.
+
+All four, plus the frozen export being untouched, are pinned by `tests/closing-rep-ranking.test.ts`
+(`assertAdminRepRankingButton`).

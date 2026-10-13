@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import JSZip from "jszip";
+
+import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 
 import {
   buildRepRanking,
@@ -426,4 +430,131 @@ export async function runClosingRepRankingTests(): Promise<void> {
     assert.ok(!xml.includes("<x14:id/>"), `${name}: the dangling data-bar extension is stripped`);
   }
   assert.ok(outlined > 0, "the workbook really is outlined — otherwise the collapse checks pass vacuously");
+
+  assertAdminRepRankingButton();
+}
+
+/**
+ * THE ADMIN SCREEN'S THIRD EXPORT BUTTON — owner, 2026-10-13: "add a third button", after asking how
+ * he could download this sheet "from admin account".
+ *
+ * He could not, and nothing was broken: /api/sales/monthly-closing/export decides by ROLE before it
+ * reaches its rep-ranking branch, so Super Admin, system scope, SFE Manager, CEO, Finance Manager
+ * and the Marketing Manager — everyone who runs the admin closing screen — are handed the full
+ * six-sheet workbook higher up the file and never reach the ranking at all. That disjunction is
+ * append-only and the workbook it guards is frozen, so the button calls a route of its OWN beside
+ * it. These are the four things that make the two paths one feature rather than two.
+ */
+function assertAdminRepRankingButton(): void {
+  const ROOT = resolve(import.meta.dirname, "..");
+  const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
+
+  // ── 1 · ONE GATE, AND THE CLIENT CAN ASK IT ──────────────────────────────────────────────────
+  // The line test moved into a dependency-free leaf module so the admin screen — a client
+  // component — can ask the same question the route asks. Importing it from the builder would drag
+  // `@/lib/supabase/server` and the employee-directory chain into the browser bundle, which webpack
+  // refuses outright and which poisons a dev server for every later request once it compiles.
+  assert.equal(isRepRankingLine("Anti Infective"), true, "the gate admits the line it was written for");
+  assert.equal(isRepRankingLine("  anti infective "), true, "spacing and case are normalised, not compared raw");
+  for (const other of ["CNS", "Pedia", "Head Office", "", null, undefined]) {
+    assert.equal(isRepRankingLine(other), false, `${other ?? "nothing"} keeps the workbook it already had`);
+  }
+  // Asked of what it IMPORTS, not of its text: the comment above the function names `node:crypto`
+  // as the thing that must not be reachable, so scanning the whole file would fail on its own
+  // explanation.
+  const leafImports = [...read("src/lib/sales/closing-rep-ranking-line.ts").matchAll(/from\s+"([^"]+)"/g)]
+    .map((match) => match[1]);
+  assert.deepEqual(
+    leafImports,
+    ["@/lib/sales/confidential-products"],
+    "the gate module imports the dependency-free line-key primitive and nothing else — one server"
+      + " import here is a webpack refusal in the browser bundle",
+  );
+  assert.ok(
+    read("src/lib/sales/closing-rep-ranking-export.ts").includes("export { isRepRankingLine }"),
+    "the builder re-exports it, so every existing caller keeps its import path",
+  );
+
+  // ── 2 · THE ROUTE ────────────────────────────────────────────────────────────────────────────
+  const route = read("app/api/sales/monthly-closing/rep-ranking-export/route.ts");
+  const permission = route.indexOf('assertPermission(access, "sales", "export")');
+  const gate = route.indexOf("isRepRankingLine(details.line)");
+  const build = route.indexOf("buildScopedRepRankingExport({");
+  assert.ok(permission > 0, "the route asks the export permission");
+  assert.ok(gate > permission, "and the Anti Infective gate after it");
+  assert.ok(build > gate, "and refuses every other line BEFORE it builds anything");
+  assert.ok(
+    route.indexOf("unpublishedClosingMessage(") < build,
+    "an unpublished month is refused in plain words first — the builder would answer it with"
+      + " 'cannot be built', because loadPortalMonthlyClosing swaps it for the newest published one",
+  );
+  assert.ok(
+    route.includes("filters: {}"),
+    "the route takes the selection only: narrowing the rows alone would shrink the channel split"
+      + " underneath a ranking built from matrices that take no row filter",
+  );
+  for (const field of ["areaCodes", "regionCodes", "productCodes", "detailSearch"]) {
+    assert.ok(
+      !route.includes(`body.${field}`),
+      `the route never reads ${field} out of the body, so the two halves of the workbook cannot disagree`,
+    );
+  }
+
+  // 🔒 THE FROZEN EXPORT IS UNTOUCHED — this route sits beside it. The role disjunction that makes
+  // the ranking branch unreachable for the admin screen is pinned elsewhere as a literal substring;
+  // what matters here is that nothing was rerouted through it.
+  const frozen = read("app/api/sales/monthly-closing/export/route.ts");
+  assert.ok(
+    !frozen.includes("/api/sales/monthly-closing/rep-ranking-export"),
+    "the frozen closing export does not redirect, proxy or know about the new route",
+  );
+  assert.ok(
+    frozen.includes("if (isRepRankingLine(details.line)) {"),
+    "and the portal still gets the ranking workbook from its own branch, by the same gate",
+  );
+
+  // ── 3 · THE REGISTRY ─────────────────────────────────────────────────────────────────────────
+  // Asked of the registry itself, not of its source text: every route under app/api needs a
+  // declaration or the required validate job goes red, and the permission it declares is what the
+  // preflight enforces.
+  const entry = findAccessRegistryEntry("/api/sales/monthly-closing/rep-ranking-export", "POST");
+  assert.ok(entry, "the route is declared in the access registry");
+  assert.deepEqual(entry.permission, { resource: "sales", action: "export" }, "under sales:export");
+  assert.equal(entry.audit.classification, "export", "audited as an export");
+  assert.equal(entry.audit.required, true, "and the audit row is required");
+  assert.equal(entry.csrf.required, false, "no CSRF token: it is a POST only because it carries a selection");
+  assert.ok(
+    (entry.csrf.exemptReason ?? "").includes("no mutation"),
+    "and the exemption says why — it writes nothing",
+  );
+
+  // ── 4 · THE BUTTON ───────────────────────────────────────────────────────────────────────────
+  const workspace = read("src/components/sales/monthly-closing-workspace.tsx");
+  assert.ok(
+    workspace.includes("const showRepRankingExport = isRepRankingLine(selectedLine);"),
+    "the screen offers the button by the same function the route gates on",
+  );
+  assert.match(
+    workspace,
+    /async function handleRepRankingExport\(\) \{\s*await runExport\(\{[^}]*url: "\/api\/sales\/monthly-closing\/rep-ranking-export"/,
+    "the button goes through runExport, so its errors and its filename behave like every other export",
+  );
+  assert.ok(
+    workspace.includes("{showRepRankingExport ? (") && workspace.includes("Export Rep Ranking"),
+    "and it is ABSENT on CNS and Pedia rather than disabled — the workbook does not exist there",
+  );
+
+  // 🔒 THE FITS-THE-SCREEN GOLDEN RULE. Three buttons fitted one line; the fourth takes the row
+  // past the panel's width at 640 and 768. `shrink-0` on the row would make its own `flex-wrap`
+  // inert — a flex item with shrink-0 is never handed a width narrower than its content — so the
+  // page would scroll sideways instead of the buttons wrapping. See
+  // tests/flex-wrap-shrink-guard.test.ts, which exists because that happened for real.
+  assert.ok(
+    workspace.includes('<div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">'),
+    "the export row wraps and may shrink — never a pinned row that overflows",
+  );
+  assert.ok(
+    !workspace.includes('<div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">'),
+    "the pinned three-button row is gone, not kept beside the wrapping one",
+  );
 }
