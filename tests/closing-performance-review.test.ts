@@ -10,7 +10,7 @@ import {
   type AreaSeatAssignment,
   type ClosingPerformanceReview,
 } from "../src/lib/sales/closing-performance-review.ts";
-import { coversAsOf, periodEndDate } from "../src/lib/sales/closing-performance-review.ts";
+import { applyAreaMapAsOf, coversAsOf, periodEndDate } from "../src/lib/sales/closing-performance-review.ts";
 import { buildClosingPerformanceReviewWorkbook } from "../src/lib/sales/closing-performance-review-export.ts";
 import type {
   MonthlyClosingAreaRow,
@@ -633,6 +633,41 @@ export function runClosingManagerAsOfTests() {
   for (const day of ["2026-08-31", "2026-09-01", "2026-09-02"]) {
     assert.equal(inForce(day).length, 1, `${day}: exactly one row must be in force, got ${inForce(day).join("+")}`);
   }
+
+  // ── one rep, two areas: CNS has a single Qena (owner, 2026-10-12) ────────────
+  //
+  // The map points CNS Qena 2 at Qena 1's rep seat; the seat tree knows that seat only as Qena 1's.
+  // Before the fix Qena 2 printed with no rep and no manager, outside every person's figure.
+  const qena = new Map([
+    ["cns::UE7", { managerName: "Today's DM", repIsVacant: false, repName: "Snagik Ayman" }],
+  ]);
+  const qenaMap = (area: string, from: string, to: string | null) => ({
+    area_code: area, dm_seat_id: "SEAT-CNS-DM-UE", effective_from: from, effective_to: to,
+    line_code: "cns", rep_seat_id: "SEAT-CNS-REP-UE7",
+  });
+  applyAreaMapAsOf(qena, {
+    asOf: "2026-09-30",
+    mapRows: [qenaMap("UE7", "2026-07-13", null), qenaMap("UE8", "2026-07-14", null), qenaMap("UE8", "2026-01-01", "2026-07-13")],
+    occupantOf: new Map([["SEAT-CNS-DM-UE", "Amgad Ibrahim"]]),
+    pseudoSeat: new Set(),
+    seatAreaOf: new Map([["SEAT-CNS-REP-UE7", "UE7"], ["SEAT-CNS-DM-UE", ""]]),
+  });
+  assert.deepEqual(
+    qena.get("cns::UE8"),
+    { managerName: "Amgad Ibrahim", repIsVacant: false, repName: "Snagik Ayman" },
+    "Qena 2 is counted to the Qena rep, under the manager in force that month",
+  );
+  assert.equal(qena.get("cns::UE7")?.repName, "Snagik Ayman", "Qena 1 keeps its own rep");
+  // An area the map gives to no other seat is left exactly as it was — nothing is invented.
+  const lone = new Map<string, { managerName: string | null; repIsVacant: boolean; repName: string | null }>();
+  applyAreaMapAsOf(lone, {
+    asOf: "2026-09-30",
+    mapRows: [{ ...qenaMap("OT7", "2026-07-13", null), rep_seat_id: null }],
+    occupantOf: new Map(),
+    pseudoSeat: new Set(),
+    seatAreaOf: new Map(),
+  });
+  assert.equal(lone.size, 0, "an area with no rep seat of its own and none borrowed gets no row");
 
   // An open-ended row with no start is not a row.
   assert.equal(coversAsOf(null, null, "2026-08-31"), false);
