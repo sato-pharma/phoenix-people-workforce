@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 
 import type { DirectOrderShareLink } from "@/lib/direct-orders/report-share-links";
+import { assessLiveFeedAmbiguity } from "@/lib/share-links/live-feed-ambiguity";
+import { LiveFeedAmbiguityBanner } from "@/components/share-links/live-feed-ambiguity-banner";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
   phxFieldClassName,
@@ -58,8 +60,15 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
     }
   }
 
+  // Loaded ON MOUNT, not on open — and that change is the point of the rotation banner below.
+  //
+  // This panel used to fetch nothing until somebody clicked it open, which is fine for a convenience
+  // that mints links on demand and wrong for a warning: the state it has to show is "a second live
+  // feed link exists, so the weekly token rotation has been refusing ever since", and a warning
+  // behind a closed button is the silence that let the CV-lifecycle sheet sit unrotated for four
+  // days in October 2026. One list read on a page the reader already has permission to publish from
+  // is the whole cost. A failed read is still swallowed: the report page must render regardless.
   useEffect(() => {
-    if (!open) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       if (!cancelled) void load();
@@ -68,7 +77,7 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open]);
+  }, []);
 
   const feedUrl = (token: string) => `${productionUrl}/api/share/direct-orders/${token}/feed`;
   const liveUrl = (token: string) => `${productionUrl}/share/direct-orders/${token}`;
@@ -136,15 +145,26 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
   const inputClass = `${phxFieldClassName} mt-1`;
   const labelClass = phxLabelClassName;
 
+  // The same judgement the CV-lifecycle screen reads, over the same shape. `surface` is carried on
+  // these rows, so the 'live' human links are filtered out here exactly as the rotation guard
+  // filters them: only unrevoked FEED links can make the rotation ambiguous.
+  const ambiguity = assessLiveFeedAmbiguity(links);
+
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="border border-slate-300 px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-      >
-        Live link / Google Sheet
-      </button>
+      <div className="space-y-3">
+        {/* Shown with the panel CLOSED. A paused rotation is not a thing the reader came here to do
+            — it is a thing they have to be told, and it arrived because somebody minted the second
+            link on this very button. */}
+        <LiveFeedAmbiguityBanner sheet="Direct Orders" verdict={ambiguity} />
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="border border-slate-300 px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+        >
+          Live link / Google Sheet
+        </button>
+      </div>
     );
   }
 
@@ -158,6 +178,9 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
       </header>
 
       <div className="space-y-3 px-4 py-4">
+        {/* And again at the top of the open panel, above the surface picker — the reader who opens
+            this to mint a replacement is the one person who must not add a third live feed link. */}
+        <LiveFeedAmbiguityBanner sheet="Direct Orders" verdict={ambiguity} />
         <div className="flex gap-2">
           <button
             type="button"
