@@ -6,6 +6,7 @@ import {
   recordResendWebhookEvent,
   verifyResendWebhookSignature,
 } from "@/lib/email/resend-webhook-events";
+import { moduleSendingAccounts } from "@/lib/email/module-sending-accounts";
 import { logWarning } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
@@ -21,8 +22,16 @@ export async function POST(request: Request) {
   }
 
   // Each Resend account signs its webhook with its own secret, so the extra sending accounts
-  // (RESEND_API_KEY_2, _3 and _4, see src/lib/email/email-providers.ts) add RESEND_WEBHOOK_SECRET_2, _3 and _4.
-  const secrets = [secret, process.env.RESEND_WEBHOOK_SECRET_2, process.env.RESEND_WEBHOOK_SECRET_3, process.env.RESEND_WEBHOOK_SECRET_4].filter((value): value is string => Boolean(value?.trim()));
+  // (RESEND_API_KEY_2, _3 and _4, see src/lib/email/email-providers.ts) add RESEND_WEBHOOK_SECRET_2, _3 and _4,
+  // and each per-module account (src/lib/email/module-sending-accounts.ts) adds RESEND_WEBHOOK_SECRET_<SUFFIX>
+  // — without it that account's delivered/opened/clicked events would be rejected with a 401.
+  const secrets = [
+    secret,
+    process.env.RESEND_WEBHOOK_SECRET_2,
+    process.env.RESEND_WEBHOOK_SECRET_3,
+    process.env.RESEND_WEBHOOK_SECRET_4,
+    ...moduleSendingAccounts.map((account) => process.env[`RESEND_WEBHOOK_SECRET_${account.suffix}`]),
+  ].filter((value): value is string => Boolean(value?.trim()));
   const body = await request.text();
   if (!secrets.some((candidate) => verifyResendWebhookSignature({ body, headers: request.headers, secret: candidate }))) {
     // A spike here means forged/misconfigured webhook traffic — surface for alerting.

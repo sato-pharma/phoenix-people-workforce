@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForceTestingDelivery, isProductionRuntime, systemEmail } from "@/config/system-settings";
-import { resolveEmailProviders } from "@/lib/email/email-providers";
+import { moduleSendingAccountStatus, resolveEmailProviders } from "@/lib/email/email-providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +50,8 @@ export async function GET() {
       // The failover chain as production will walk it (names only, never a key) — shows at a glance
       // whether the extra Resend and Brevo accounts are switched on.
       providerChain: resolveEmailProviders().map((provider) => provider.name),
+      // The dedicated per-module accounts (sales first) and whether each is switched on — names only.
+      moduleAccounts: moduleSendingAccountStatus(),
       deliveryMode,
       forceTesting,
       status: degraded ? "degraded" : "healthy",

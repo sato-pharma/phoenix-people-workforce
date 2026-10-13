@@ -493,6 +493,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | RESEND_WEBHOOK_SECRET_2 | Signing secret of the second Resend account's webhook (same `/api/webhooks/resend` URL) |
 | RESEND_API_KEY_3 / RESEND_EMAIL_FROM_3 / RESEND_WEBHOOK_SECRET_3 | Third Resend account, tried after the second — same rules as the second (its own subdomain, `send3.satopharma.com`) |
 | RESEND_API_KEY_4 / RESEND_EMAIL_FROM_4 / RESEND_WEBHOOK_SECRET_4 | Fourth Resend account (added 2026-10-11), tried after the third and before Brevo — same rules (its own subdomain, e.g. `send4.satopharma.com`) |
+| RESEND_API_KEY_SALES / RESEND_EMAIL_FROM_SALES / RESEND_WEBHOOK_SECRET_SALES | The sales module's DEDICATED Resend account (owner, 2026-10-13: one account per module, sales first; sending domain `sales.satopharma.com`). Not part of the failover pool: it carries only `sales` mail (`origin.module` or the Sales template category), is tried first for it with the ordinary chain behind it, and is inert until the key AND the sender are both set. Registry: `src/lib/email/module-sending-accounts.ts`; its webhook secret is needed or its opens and clicks are rejected with a 401 |
 | BREVO_API_KEY | First Brevo account — tried after every Resend account |
 | BREVO_EMAIL_FROM | Sender verified on the first Brevo account |
 | BREVO_API_KEY_2 | Second Brevo account — the last in the chain. Pinged monthly by the Brevo keepalive with the first |
