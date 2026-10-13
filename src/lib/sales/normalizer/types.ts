@@ -10,6 +10,9 @@ export type BrickRef = {
   areaCode: string;
   areaName: string;
   blockCode: string;
+  // The block's display name — read by the address matcher (address-brick.ts). Optional so hand-built
+  // test fixtures stay valid; loadCrosswalks always sets it.
+  blockName?: string;
   brickId: string;
   brickName: string;
   regionCode: string;
@@ -53,6 +56,9 @@ export type Crosswalks = {
   // resolveBrick lets these outrank an area-only sheet signal even across areas — an explicit owner
   // ruling is absolute. Optional so hand-built test fixtures stay valid; loadCrosswalks always sets it.
   ownerVerifiedCustomerKeys?: Set<string>;
+  // Bricks kept as history after a move (superseded_by_brick_id set; still active so published months
+  // resolve). The address matcher never picks one. Optional so hand-built test fixtures stay valid.
+  movedBrickIds?: ReadonlySet<string>;
   productByCanonicalCode: Map<string, string>; // canonicalProductCode -> Phoenix product code
 };
 

@@ -1,3 +1,4 @@
+import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { normalizeAliasKey, normalizeCodeKey, numericCanonicalKey } from "@/lib/sales/normalizer/resolvers";
 import type { Crosswalks } from "@/lib/sales/normalizer/types";
@@ -102,7 +103,7 @@ async function selectAllActive(supabase: SupabaseAdmin, table: string, columns: 
 // consistent regardless of how the stored normalized_alias was produced.
 export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSalesReferenceData>>): Promise<Crosswalks> {
   const supabase = getSupabaseAdmin();
-  const [refs, prodA, terrA, areaA, regionA, custMap] = await Promise.all([
+  const [refs, prodA, terrA, areaA, regionA, custMap, movedBricks] = await Promise.all([
     // Masters only. The customer→brick map is read below, keyset-paged and with its confidence, so
     // the reference data's own copy of it would be a second full read of the same table.
     preRefs ?? loadSalesReferenceData({ includeCustomerBricks: false }),
@@ -113,10 +114,12 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     // customer→brick crosswalk (added by the normalizer migration; tolerate absence pre-migration).
     // confidence lands with the phase-4 migration — fall back to the base columns if it is absent.
     selectAllActive(supabase, "source_of_sales_customer_map", "distributor_code,customer_code,brick_id,confidence", "distributor_code,customer_code,brick_id"),
+    // Moved bricks stay active as history; the address matcher must never place a pharmacy on one.
+    loadMovedBricks(),
   ]);
 
   const brickById = new Map((refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), {
-    areaCode: normalizeCodeKey(b.areaCode), areaName: b.areaName, blockCode: b.blockCode, brickId: normalizeCodeKey(b.brickId),
+    areaCode: normalizeCodeKey(b.areaCode), areaName: b.areaName, blockCode: b.blockCode, blockName: b.blockName, brickId: normalizeCodeKey(b.brickId),
     brickName: b.brickName, regionCode: normalizeCodeKey(b.regionCode), regionName: b.regionName,
   }]));
   const areaByCode = new Map((refs.areas ?? []).map((a) => [normalizeCodeKey(a.areaCode), {
@@ -224,5 +227,7 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
   // dated override covers that month (Saginko from 2026-10). The engine values every coded row with it.
   const prices = productPeriodPricesFromRows(refs.products, refs.productPriceOverrides ?? []);
 
-  return { ambiguousAliasKeys, areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, ownerVerifiedCustomerKeys, prices, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
+  const movedBrickIds = new Set([...movedBricks.keys()].map((id) => normalizeCodeKey(id)));
+
+  return { ambiguousAliasKeys, areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, movedBrickIds, ownerVerifiedCustomerKeys, prices, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
 }
