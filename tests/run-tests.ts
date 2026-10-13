@@ -304,6 +304,7 @@ import { runCandidateStatusRegressionGuardTests } from "./candidate-status-regre
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
 import { runLiveFeedRotationPausedTests } from "./live-feed-rotation-paused.test.ts";
+import { runShareLinkListsOmitTokenTests } from "./share-link-lists-omit-token.test.ts";
 import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
 import { runShareLinkRotatedLabelTests } from "./share-link-rotated-label.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
@@ -3283,6 +3284,10 @@ await runTest(
 await runTest(
   "a second live feed link pauses the weekly rotation (the screen says so, it names the link the sheet is reading — the busy OLDER one, never the newest — and all three guards keep their filter)",
   runLiveFeedRotationPausedTests,
+);
+await runTest(
+  "the Direct Orders and Marketing share-link management lists never carry the whole bearer token — the row type has no token field, the mapper emits only the 8-character tokenPreview, the GET routes return that list unchanged, and the one UI panel reads a whole token only from the link it just minted",
+  runShareLinkListsOmitTokenTests,
 );
 
 await runTest(

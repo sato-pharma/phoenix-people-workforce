@@ -62,6 +62,16 @@ function passcodeMatches(input: string, token: string, expected: string | null):
   return timingSafeEqual(candidate, known);
 }
 
+/**
+ * A link as the MANAGEMENT list sees it — deliberately WITHOUT the token.
+ *
+ * The whole token is returned exactly once, by `createMarketingReportShareLink`, to the person who just minted it. It is
+ * never in this shape, so it cannot reach the list response, a props payload, the React tree, devtools
+ * or an error report that captured a network body. This token is the entire credential for an
+ * unauthenticated route; `tokenPreview` (the first 8 characters, which is also what the audit trail
+ * stores) says WHICH link a row is, and is far too little to BE the link. Same shape as
+ * `CvLifecycleShareLink`. Someone who has lost a token revokes the link and mints another.
+ */
 export type MarketingShareLink = {
   accessCount: number;
   allowFiles: boolean;
@@ -75,8 +85,13 @@ export type MarketingShareLink = {
   revokedAt: string | null;
   scope: string;
   surface: "live" | "feed";
-  token: string;
+  tokenPreview: string;
 };
+
+/** The first 8 characters, matching what the audit rows store. Never the whole token. */
+function previewOf(token: unknown): string {
+  return String(token ?? "").slice(0, 8);
+}
 
 /**
  * Create a link. The creator's scope is captured HERE and never re-resolved, so the link cannot
@@ -171,7 +186,7 @@ export async function listMarketingReportShareLinks(access: AccessContext): Prom
     revokedAt: row.revoked_at ? String(row.revoked_at) : null,
     scope: String(row.scope ?? ""),
     surface: String(row.surface) === "feed" ? "feed" : "live",
-    token: String(row.token),
+    tokenPreview: previewOf(row.token),
   }));
 }
 
