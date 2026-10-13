@@ -618,4 +618,84 @@ export async function runEmailProviderFailoverTests() {
       }
     }
   }
+
+  // 11) THE PEOPLE ACCOUNT (owner, 2026-10-13: leave, excuses, attendance; probation, contracts,
+  //     resignations; recruitment and birthdays — and NOT password reset / account setup, which he
+  //     chose to leave on the ordinary chain). Same rules as sales, and the two never mix.
+  {
+    const names = [
+      "RESEND_API_KEY_2",
+      "RESEND_API_KEY_3",
+      "RESEND_API_KEY_4",
+      "BREVO_API_KEY",
+      "BREVO_API_KEY_2",
+      "EMAIL_FAILOVER_ENABLED",
+      "RESEND_API_KEY_SALES",
+      "RESEND_EMAIL_FROM_SALES",
+      "RESEND_API_KEY_PEOPLE",
+      "RESEND_EMAIL_FROM_PEOPLE",
+    ];
+    const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+    const realFetch = globalThis.fetch;
+    try {
+      for (const name of names) delete process.env[name];
+      process.env.RESEND_API_KEY_2 = "re_two";
+      process.env.BREVO_API_KEY = "brevo_one";
+      process.env.RESEND_API_KEY_SALES = "re_sales";
+      process.env.RESEND_EMAIL_FROM_SALES = "sales@sales.satopharma.com";
+
+      const ordinaryFrom = "Phoenix Workforce <phoenix@send.satopharma.com>";
+      const chainFor = (module: string | null | undefined, from = ordinaryFrom) =>
+        resolveEmailProviders({ from, module }).map((provider) => provider.name);
+      const ordinaryChain = ["resend-2", "brevo"];
+      const peopleModules = [
+        "Leave Management", "leave", "vacation", "Excuses", "excuse", "Attendance", "attendance_digest",
+        "Probation", "Contracts", "contract_renewal", "Resignations", "resignation", "Recruitment", "recruitment", "Birthdays", "birthday",
+      ];
+
+      // Inert without a key, and with a key but no sender.
+      for (const area of peopleModules) assert.deepEqual(chainFor(area), ordinaryChain, `${area} → unchanged with no People key`);
+      process.env.RESEND_API_KEY_PEOPLE = "re_people";
+      assert.deepEqual(chainFor("vacation"), ordinaryChain, "a People key with no sender stays out of the chain");
+      process.env.RESEND_EMAIL_FROM_PEOPLE = "people@people.satopharma.com";
+
+      for (const area of peopleModules) {
+        assert.deepEqual(chainFor(area), ["resend-people", ...ordinaryChain], `${area} mail goes to the People account first`);
+      }
+
+      // Left out on purpose: account access (his answer), money, and the modules he did not name.
+      for (const other of ["Account Access", "password_reset", "password_setup", "user_created", "payroll", "Payroll", "expenses", "outstation", "coaching", "Coaching", "early_birds", "private_calendar", "system", "marketing", "direct_orders", null]) {
+        assert.ok(!chainFor(other).includes("resend-people"), `module ${JSON.stringify(other)} must not take the People account`);
+      }
+
+      // The two accounts never mix: sales mail does not use People's, People's does not use sales's.
+      assert.deepEqual(chainFor("sales"), ["resend-sales", ...ordinaryChain]);
+      assert.ok(!chainFor("leave").includes("resend-sales"));
+
+      // Never in the pool, and a Sato human identity keeps the first account whatever the module.
+      assert.deepEqual(resolveEmailProviders().map((provider) => provider.name), ["resend", "resend-2", "brevo"]);
+      assert.deepEqual(chainFor("recruitment", "Sato Pharma HR <hr@satopharma.com>"), ["resend", "resend-2", "brevo"]);
+      assert.deepEqual(chainFor("recruitment", "Sato Pharma <hrbp@send.satopharma.com>"), ["resend", "resend-2", "brevo"]);
+
+      // Sending: its own key, its own From (display name kept).
+      const requests: Array<{ auth: string; body: Record<string, unknown> | null }> = [];
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        requests.push({ auth: headers.Authorization ?? "", body: init?.body ? JSON.parse(String(init.body)) : null });
+        if (init?.method === "GET") return new Response(JSON.stringify({ last_event: "delivered" }), { status: 200 });
+        return new Response(JSON.stringify({ id: "P1" }), { status: 200 });
+      }) as typeof fetch;
+      const sent = await sendPreparedEmailWithFailover({ ...sampleEmail, from: ordinaryFrom, module: "Leave Management" });
+      assert.deepEqual(sent, { id: "P1", provider: "resend-people" });
+      const lastPost = requests.filter((request) => request.body).at(-1);
+      assert.equal(lastPost?.auth, "Bearer re_people");
+      assert.equal(lastPost?.body?.from, "Phoenix Workforce <people@people.satopharma.com>");
+    } finally {
+      globalThis.fetch = realFetch;
+      for (const name of names) {
+        if (saved[name] === undefined) delete process.env[name];
+        else process.env[name] = saved[name];
+      }
+    }
+  }
 }

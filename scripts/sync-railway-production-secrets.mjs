@@ -108,6 +108,10 @@ const variables = [
     { railway: "RESEND_API_KEY_SALES", github: ["RESEND_API_KEY_SALES"], required: false },
     { railway: "RESEND_EMAIL_FROM_SALES", github: ["RESEND_EMAIL_FROM_SALES"], required: false },
     { railway: "RESEND_WEBHOOK_SECRET_SALES", github: ["RESEND_WEBHOOK_SECRET_SALES"], required: false },
+    // The People module's dedicated Resend account (owner, 2026-10-13).
+    { railway: "RESEND_API_KEY_PEOPLE", github: ["RESEND_API_KEY_PEOPLE"], required: false },
+    { railway: "RESEND_EMAIL_FROM_PEOPLE", github: ["RESEND_EMAIL_FROM_PEOPLE"], required: false },
+    { railway: "RESEND_WEBHOOK_SECRET_PEOPLE", github: ["RESEND_WEBHOOK_SECRET_PEOPLE"], required: false },
     { railway: "BREVO_API_KEY_2", github: ["BREVO_API_KEY_2"], required: false },
     { railway: "BREVO_EMAIL_FROM_2", github: ["BREVO_EMAIL_FROM_2"], required: false },
     { railway: "EMAIL_NOTIFICATIONS_ENABLED", github: ["EMAIL_NOTIFICATIONS_ENABLED"], required: true },

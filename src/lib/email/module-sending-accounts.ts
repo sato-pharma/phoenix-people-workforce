@@ -43,6 +43,36 @@ export type ModuleSendingAccount = {
  */
 export const moduleSendingAccounts: readonly ModuleSendingAccount[] = [
   { label: "Sales", modules: ["sales"], suffix: "SALES" },
+  // People (owner, 2026-10-13, sending domain people.satopharma.com): leave, excuses, attendance;
+  // probation, contracts, resignations; recruitment and birthdays. Each lifecycle area is listed
+  // under every spelling a send reaches the router with — the raw `origin.module` the sender stamps
+  // ("vacation", "contract_renewal") and the lower-cased template category ("leave_management").
+  //
+  // 🔴 LEFT OUT ON PURPOSE: password reset, account setup and new-user mail (category "Account
+  // Access" — his answer, the most critical mail Phoenix sends must never wait on a module's
+  // quota), payroll, expenses and outstation, coaching, and the modules he did not name
+  // (early birds, the private calendar, support requests, internal messages, field compliance).
+  {
+    label: "People",
+    modules: [
+      "leave",
+      "leave_management",
+      "vacation",
+      "excuse",
+      "excuses",
+      "attendance",
+      "attendance_digest",
+      "probation",
+      "contract_renewal",
+      "contracts",
+      "resignation",
+      "resignations",
+      "recruitment",
+      "birthday",
+      "birthdays",
+    ],
+    suffix: "PEOPLE",
+  },
 ];
 
 /** `"Sales"`, `"sales"`, `" Weekly & Monthly Plans "` → `sales`, `sales`, `weekly_monthly_plans`. */
