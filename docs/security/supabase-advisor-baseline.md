@@ -147,7 +147,15 @@ the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 joined are `public.database_restarts` (oid **258977**) — the crash-restart log written on 12 October
 when production Postgres restarted twice in three days — and `public.address_brick_moves_20261013`
 (**258416**), the pre-image of that day's Qena brick moves. Both are this month's live work on the
-same server-only pattern, and the pre-image one leaves by itself under the 90-day retention.
+same server-only pattern.
+
+🔴 **Neither of those two will leave by itself, and that is a correction to the 2026-10-09
+paragraph below.** The 90-day retention in `scripts/audit-backup-schemas.mjs` sweeps non-standard
+**schemas**; `public` is on its excluded list, so a date-suffixed pre-image table created directly
+in `public` — `address_brick_moves_20261013`, `sos_map_unmap_preimage_20261010` — is outside its
+reach and never expires. The 21 snapshots in dated backup schemas do age out; the ones in `public`
+are a standing ratchet on this count until the sweep learns to report them, or until they are moved
+where [`backup-table-placement.md`](./backup-table-placement.md) says a snapshot goes.
 
 🔴 **The part worth re-reading is the one that was re-proved, not the two names.** Of the entire
 live reading, the only tables that grant a browser role anything are **6 Supabase-managed
