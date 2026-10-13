@@ -27,6 +27,7 @@
   "a-customer-map-move-finishes-itself-overnight-but-never-for-a-published-month": "sales-imports",
   "a-customer-map-re-resolve-stales-a-pre-october-office-spread": "sales-closing",
   "a-cv-import-overwrote-a-candidates-whole-identity": "recruitment",
+  "a-date-inside-a-note-is-not-the-notes-subject": "org",
   "a-declined-supabase-mcp-apply-is-not-a-no": "database",
   "a-declined-tool-call-is-not-proof-the-change-did-not-land": "database",
   "a-denied-mcp-connector-still-appears-in-the-tool-list": "sessions",
