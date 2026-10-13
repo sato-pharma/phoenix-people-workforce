@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -9,8 +10,11 @@ import {
   withLedgerInsert,
 } from "../scripts/apply-migrations-to-staging.ts";
 import {
+  commitTimeMsForOneFileSlowly,
+  commitTimesByFileNameForTests,
   isRecorded,
   isWithinGraceWindow,
+  loadLocalMigrations,
   selectMissingMigrations,
   type LocalMigration,
   MIGRATIONS_DIR,
@@ -66,6 +70,37 @@ function ledger(versions: string[] = [], names: string[] = []): RemoteLedger {
  * tag and calls a sound migration broken. So this walks the file the way the server does:
  * comments, single-quoted strings and dollar-quoted blocks, in that order.
  */
+/**
+ * The migration files that have been MODIFIED since they were added, newest change first.
+ *
+ * Chosen deliberately as a different git query from the one the production parser runs:
+ * `--diff-filter=M` lists modifications only, so a file appears here exactly when more than one
+ * commit has touched it — which is exactly when newest-wins and oldest-wins can disagree, and
+ * therefore the only kind of file that can test the bulk parse's newest-wins guard. Asking with the
+ * same command the parser uses would make the comparison circular.
+ */
+function modifiedMigrationFileNames(): string[] {
+  let out: string;
+  try {
+    out = execSync('git log --format= --name-only --diff-filter=M -- "supabase/migrations"', {
+      cwd: path.join(MIGRATIONS_DIR, "..", ".."),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch {
+    return [];
+  }
+  const seen: string[] = [];
+  for (const line of out.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.endsWith(".sql")) continue;
+    const fileName = path.posix.basename(trimmed);
+    if (!seen.includes(fileName)) seen.push(fileName);
+  }
+  return seen;
+}
+
 function dollarFault(sql: string): string | null {
   const lineOf = (index: number) => sql.slice(0, index).split("\n").length;
   let i = 0;
@@ -324,5 +359,79 @@ export function runStagingMigrationApplierTests() {
     [],
     `these migrations would be refused WHOLE by the applier, which sends one file as one query: ` +
       `${faults.join(", ")}`,
+  );
+
+  // ── The commit-age lookup is ONE git process, and it still gives the per-file answer ──────────
+  //
+  // 🔴 THIS IS WHAT CANCELLED THE NIGHTLY DRIFT CHECK ON 2026-10-10 AND 2026-10-12. The lookup used
+  // to be one `git log` process PER migration file. Nothing capped the cost and it grows with the
+  // directory: 410 files when the comment above it shrugged that off as "minutes rather than
+  // seconds", 855 files when it measured 4m34s per leg on a GitHub runner — and
+  // migration-drift-check.yml drives it TWICE, once per database, inside what was a 10-minute job.
+  // Both runs hit 10m07s, GitHub cancelled them at the wall, and a cancelled check suite on `main`
+  // HEAD withholds that commit's production deploy for ever. Every leg had in fact finished and
+  // reported; only the run's conclusion was lost.
+  //
+  // So the bulk pass is now load-bearing, and these two assertions are what keep it honest. The
+  // coverage floor catches a parse that returns an empty or partial map (drop the `%ct` branch, or
+  // the `.sql` filter, and it collapses). The equivalence sample catches a parse that returns the
+  // WRONG time — remove the `if (!out.has(fileName))` guard and the oldest commit wins instead of
+  // the newest, which would silently shelter nothing and flag migrations merged minutes ago.
+  //
+  // A SAMPLE, not every file, and that is the point rather than a shortcut: the comparison has to
+  // run the slow path it is checking, and paying 855 git processes inside the required `validate`
+  // job would put the cost straight back into the one place that gates every merge.
+  //
+  // 🔴 AND THE SAMPLE IS CHOSEN, NEVER SPREAD EVENLY — THE EVEN SPREAD WAS VACUOUS AND ONLY THE
+  // BREAK TEST SHOWED IT. Newest-wins and oldest-wins give the SAME answer for a file touched by
+  // one commit, and only 33 of the 864 migrations on disk have ever been modified after they were
+  // added. A 24-file even stride hit ZERO of them: with the `!out.has` guard deleted — the exact
+  // defect this assertion exists to catch — the suite stayed green. So the sample is built from the
+  // files that CAN disagree, found with a second, independent git query (`--diff-filter=M`, which
+  // lists modifications only and is not the production parser's command), and the floor below
+  // refuses to pass if that set comes back empty.
+  const modifiedAfterAdd = modifiedMigrationFileNames();
+  assert.ok(
+    modifiedAfterAdd.length > 0,
+    `no migration file reports a post-add modification, so every candidate in the sample below is a ` +
+      `single-commit file where newest-wins and oldest-wins agree — the commit-time comparison would be ` +
+      `vacuous. Either the \`--diff-filter=M\` query has stopped matching, or git history is unavailable.`,
+  );
+
+  const bulkTimes = commitTimesByFileNameForTests();
+  const onDisk = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql"));
+  assert.ok(
+    bulkTimes.size > onDisk.length * 0.9 && bulkTimes.size > 100,
+    `the single-pass commit-time map covers ${bulkTimes.size} of ${onDisk.length} migration files on disk. ` +
+      `Below 90% the bulk \`git log --format=%ct --name-only\` parse in loadCommitTimesByFileName has stopped ` +
+      `matching, which gives every file "age unknown" — and that switches the 48h grace window OFF, so the ` +
+      `nightly drift check flags migrations merged minutes ago.`,
+  );
+
+  const withTimes = loadLocalMigrations();
+  const byName = new Map(withTimes.map((m) => [m.fileName, m]));
+  // The files that can disagree come first and in full, then a spread of the single-commit ones so
+  // the parse is exercised across the whole directory rather than only its oldest corner.
+  const sample = modifiedAfterAdd.filter((f) => byName.has(f));
+  const singles = withTimes.filter((m) => !sample.includes(m.fileName));
+  const stride = Math.max(1, Math.ceil(singles.length / 12));
+  for (let i = 0; i < singles.length; i += stride) sample.push(singles[i].fileName);
+
+  const mismatches: string[] = [];
+  for (const fileName of sample) {
+    const slow = commitTimeMsForOneFileSlowly(fileName);
+    const bulk = byName.get(fileName)?.commitTimeMs ?? null;
+    if (slow !== bulk) mismatches.push(`${fileName}: one-pass ${bulk} vs per-file ${slow}`);
+  }
+  assert.ok(
+    sample.length >= 20,
+    `expected to sample at least twenty migrations for the commit-time comparison, sampled ${sample.length}`,
+  );
+  assert.deepEqual(
+    mismatches,
+    [],
+    `the one-pass commit-time map disagrees with \`git log -1 --format=%ct\` on these files: ${mismatches.join("; ")}. ` +
+      `The bulk pass must give exactly the per-file answer — it IS the grace window's input, and a wrong age ` +
+      `either shelters real drift or flags a migration merged minutes ago.`,
   );
 }

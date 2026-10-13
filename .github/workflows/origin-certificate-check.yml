@@ -70,7 +70,14 @@ concurrency:
 jobs:
   origin-certificate-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
+    # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
+    # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is
+    # not a step failure, so `continue-on-error` cannot absorb it. A STEP that hits its own ceiling
+    # fails only that step, which `continue-on-error` turns into a reported finding with the job
+    # still green. Account and the two runs it cost: migration-drift-check.yml, above its job.
+    # Pinned by tests/github-workflow-validity.test.ts.
+    timeout-minutes: 15
     steps:
       # 🔴 continue-on-error PLUS AN id, NOT A BARE `exit 1` (added 2026-09-30). This step is
       # read-only — openssl and curl, nothing written anywhere — so its ONLY effect on the world was
@@ -94,6 +101,7 @@ jobs:
       - name: Read each Railway origin certificate past Cloudflare
         id: certificates
         continue-on-error: true
+        timeout-minutes: 5
         if: ${{ !inputs.test_alert }}
         run: |
           set -uo pipefail
@@ -195,6 +203,7 @@ jobs:
       - name: Notify Telegram on failure
         if: ${{ always() && (steps.certificates.outcome == 'failure' || inputs.test_alert) }}
         continue-on-error: true
+        timeout-minutes: 3
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
