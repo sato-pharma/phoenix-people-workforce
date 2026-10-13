@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { HR_ROLE_BUNDLES } from "../src/lib/auth/hr-functions.ts";
 import { sourcesFor } from "../src/lib/hr/command-center.ts";
 import {
+  bookingsInSlot,
   buildHiringQualityKpis,
   buildMonthMarks,
   buildOfferConversionKpis,
@@ -11,6 +12,7 @@ import {
   joinersBetween,
   kpi,
   KPI_WINDOW_DAYS,
+  outsideWorkdayInterviews,
   RECRUITING_TASK_KEYS,
   TALENT_ACQUISITION_SEAT,
   type TalentInterview,
@@ -48,6 +50,8 @@ const LOGIC = "src/lib/hr/talent-acquisition-logic.ts";
 const DATA = "src/lib/hr/talent-acquisition-overview.ts";
 const PAGE_COMPONENT = "src/components/hr/talent-acquisition-overview.tsx";
 const CALENDAR_COMPONENT = "src/components/hr/talent-acquisition-calendar.tsx";
+/** The company's own week grid — the design identity her week is required to wear. */
+const SIBLING_GRID = "src/components/recruitment/interview-calendar/interview-calendar-view.tsx";
 const ROUTE = "app/(admin)/admin/hr-command-center/page.tsx";
 const GENERIC_COMPONENT = "src/components/hr/hr-command-center.tsx";
 
@@ -316,6 +320,7 @@ function testTheWeekStripPlacesEveryInterviewAndJoiningDay() {
     {
       candidateName: "Later",
       dateKey: "2026-10-18",
+      durationMinutes: 30,
       href: "/x",
       id: "i2",
       interviewerName: null,
@@ -326,6 +331,7 @@ function testTheWeekStripPlacesEveryInterviewAndJoiningDay() {
     {
       candidateName: "Earlier",
       dateKey: "2026-10-18",
+      durationMinutes: 30,
       href: "/x",
       id: "i1",
       interviewerName: "Yasmeena El Safory",
@@ -336,6 +342,7 @@ function testTheWeekStripPlacesEveryInterviewAndJoiningDay() {
     {
       candidateName: "Another day",
       dateKey: "2026-10-20",
+      durationMinutes: 30,
       href: "/x",
       id: "i3",
       interviewerName: null,
@@ -429,6 +436,7 @@ function testAMultiDayHolidayIsMarkedOnEveryDayItCovers() {
       {
         candidateName: "Interviewee",
         dateKey: "2026-10-20",
+        durationMinutes: 30,
         href: "/x",
         id: "i1",
         interviewerName: null,
@@ -598,7 +606,13 @@ function testTheNewComponentsObeyTheThreeGoldenRules() {
     for (const hit of code.match(/rounded-(?!full\b)[a-z0-9[\]-]+/g) ?? []) {
       offences.push(`${file} carries ${hit} — the square-edge golden rule allows no rounded corner`);
     }
-    for (const hit of code.match(/overflow-x-auto|min-w-\[|min-width/g) ?? []) {
+    // EVERY spelling of a width FLOOR, not just the Tailwind one: a JSX `style={{ minWidth: 900 }}`
+    // is the same defect and slipped past this check on 13 October 2026, while the week grid's own
+    // pins were being proven by breaking them. `min-w-0` is deliberately absent — it is the
+    // opposite rule, the thing that lets a flex or grid child shrink instead of forcing a row wide.
+    for (const hit of
+      code.match(/overflow-x-auto|min-w-\[|min-w-(?:max|min|fit|full|screen)|min-width|minWidth/g)
+      ?? []) {
       offences.push(
         `${file} carries ${hit} — "never a horizontal scroll" is the rule, and an overflow over a ` +
           "min-width IS the bug rather than the fix. Fit by merging or wrapping",
@@ -629,71 +643,222 @@ function testTheNewComponentsObeyTheThreeGoldenRules() {
 }
 
 /**
- * ── 9b. THE CALENDAR IS A RULED SHEET, NOT A GRID OF BOXES ────────────────────────────────────
+ * ── 9a2. THE SLOT ARITHMETIC: no booking off the sheet, no booking counted twice ────────────────
  *
- * The owner sent the week back on 13 October 2026 with the whole instruction in four words:
- * "godmode heavy full premium polish". What he was looking at was three nested frames around every
- * booking — a bordered card per interview, inside a bordered card per day, inside the bordered
- * panel — plus a fourth bordered chip for the platform inside the innermost one. Five bookings down
- * a column drew ten hairlines that carried no meaning, and a day with one booking read as a card
- * that had failed to fill.
+ * Her week is drawn on the interview calendar's own half-hour grid, 9:00 to 17:00. A fixed grid
+ * loses an interview in two silent ways, and these are the two functions that stop it:
  *
- * THE FIX IS SUBTRACTION, SO IT IS EXACTLY THE KIND OF WORK A LATER SESSION UNDOES BY "TIDYING".
- * Adding `border border-slate-200` back to a row looks like consistency with every other card in
- * the app; it is the defect he rejected. These four pins hold the sheet:
- *
- *   1. the week is ONE frame with 1px rules showing through the grid's own `gap-px`
- *   2. a booking is a RULED ROW — a bottom hairline that the last row drops, never a box
- *   3. the platform is a WORD in faint caps, never a bordered chip
- *   4. the month's cells draw no border of their own; the grid draws every rule once
- *
- * The same `gap-px`-over-a-hairline-ground is why no rule is ever doubled and why nothing needs a
- * responsive border: it is drawn once at every breakpoint, including the one-column phone week.
+ *   OFF THE TOP OR THE BOTTOM. A 9-to-5 sheet simply has no row for an 8:30 screening or a 6pm call
+ *   with an overseas candidate. `outsideWorkdayInterviews` collects every one of them so the grid
+ *   can print them in a row of their own. A booking a diary does not draw is worse than no diary.
+ *   TWICE, OR NOT AT ALL. An hour-long interview spans two slot rows: it belongs to the first with
+ *   its name on it and to the second as a continuation bar. Drawn as a chip in both it reads as two
+ *   interviews; drawn in neither it reads as half an hour. `bookingsInSlot` is that split.
  */
-function testTheCalendarIsARuledSheetRatherThanNestedBoxes() {
-  const calendar = codeOf(CALENDAR_COMPONENT);
+function testTheSlotGridHoldsEveryBookingExactlyOnce() {
+  const at = (id: string, startMinutes: number, durationMinutes: number): TalentInterview => ({
+    candidateName: id,
+    dateKey: "2026-10-18",
+    durationMinutes,
+    href: "/x",
+    id,
+    interviewerName: null,
+    platformLabel: "Zoom",
+    startMinutes,
+    timeLabel: `${startMinutes}+${durationMinutes}`,
+  });
 
-  const sheet = /grid grid-cols-1 gap-px border border-slate-200 bg-slate-200\/80[^"]*lg:grid-cols-5/;
-  assert.match(
-    calendar,
-    sheet,
-    "the week stopped being one sheet — the five days are ruled apart by the grid's own `gap-px` " +
-      "over a hairline ground, which draws each rule exactly ONCE at every breakpoint. A gap plus a " +
-      "border per column is the doubled 2px line, and a border per column is the boxed week the " +
-      'owner rejected on 2026-10-13 ("godmode heavy full premium polish")',
+  const hour = [at("ten", 10 * 60, 60)];
+  assert.deepEqual(
+    [
+      bookingsInSlot(hour, 10 * 60).starting.map((one) => one.id),
+      bookingsInSlot(hour, 10 * 60).running.map((one) => one.id),
+    ],
+    [["ten"], []],
+    "the slot an interview STARTS in carries it as a starting booking — the chip with the name on " +
+      "it. An interview that is 'running' in its own first slot would draw a bar and no name",
+  );
+  assert.deepEqual(
+    [
+      bookingsInSlot(hour, 10 * 60 + 30).starting.map((one) => one.id),
+      bookingsInSlot(hour, 10 * 60 + 30).running.map((one) => one.id),
+    ],
+    [[], ["ten"]],
+    "and the slot it runs THROUGH carries it as running, never as a second starting booking. One " +
+      "hour-long interview drawn as two chips is two interviews on her screen",
+  );
+  assert.deepEqual(
+    [
+      bookingsInSlot([at("half", 10 * 60, 30)], 10 * 60 + 30).starting.length,
+      bookingsInSlot([at("half", 10 * 60, 30)], 10 * 60 + 30).running.length,
+    ],
+    [0, 0],
+    "a booking that ENDS exactly on the boundary is in neither half of the next slot. A 10:00-10:30 " +
+      "interview still drawn at 10:30 makes an occupied half hour out of a free one",
+  );
+  assert.deepEqual(
+    bookingsInSlot([at("quarter past", 10 * 60 + 15, 30)], 10 * 60).starting.map((one) => one.id),
+    ["quarter past"],
+    "a booking that starts INSIDE a slot belongs to that slot, not to the next one. The interval is " +
+      "half-open, which is the only reading under which every minute of the day has exactly one row",
+  );
+  assert.deepEqual(
+    bookingsInSlot(
+      [at("second", 10 * 60 + 15, 30), at("first", 10 * 60, 30)],
+      10 * 60,
+    ).starting.map((one) => one.id),
+    ["first", "second"],
+    "two in one slot both come back, in time order. Ordering by nothing would let two chips swap " +
+      "places between the server's render and the live refresh thirty seconds later",
   );
 
+  assert.deepEqual(
+    outsideWorkdayInterviews([
+      at("six pm", 18 * 60, 60),
+      at("eight thirty", 8 * 60 + 30, 30),
+      at("ten", 10 * 60, 30),
+      at("five", 17 * 60, 30),
+    ]).map((one) => one.id),
+    ["eight thirty", "five", "six pm"],
+    "every booking the 9-to-5 grid has NO ROW FOR comes back, in time order — 8:30 before the sheet " +
+      "starts, 17:00 on the moment it ends, 18:00 after it. The 10:00 one has a row and must not be " +
+      "listed twice. This is the whole reason a fixed grid is safe on a real diary",
+  );
+  assert.deepEqual(
+    outsideWorkdayInterviews([at("quarter to five", 16 * 60 + 45, 30)]).map((one) => one.id),
+    [],
+    "a booking that STARTS inside the day is never 'outside' it, even when it runs past 17:00 — the " +
+      "16:30 row holds it. Listing it twice is the same defect as losing it, read the other way",
+  );
+}
+
+/**
+ * ── 9b. HER WEEK WEARS THE INTERVIEW CALENDAR'S OWN GRID ───────────────────────────────────────
+ *
+ * The owner, 13 October 2026, looking at this page: **"BULLSHIT ,, AUDIT THE INTERVIEW CALENDER"**.
+ *
+ * The audit found what he had already seen. This panel had grown a week grid of its own invention —
+ * a time canvas at 84px an hour, bookings absolutely positioned by their start minute, overlaps
+ * laned side by side, a 48px rail of 9px hours — while `interview-calendar-view.tsx` already held
+ * THE week grid of this product, the one the whole recruitment team books in every day. His
+ * standing rule is that new UI wears its sibling's exact design identity and never invents a
+ * one-off look; two calendars in one product is how two calendars start disagreeing.
+ *
+ * SO THESE PINS ARE CROSS-FILE ON PURPOSE. Each one reads the token out of the SIBLING and then
+ * requires it here. A later session redesigning the interview calendar will go red on this test,
+ * which is exactly right: her week is not allowed to be left behind, and it is not allowed to drift
+ * ahead either. A test that only read this file would let the two part company silently.
+ */
+function testHerWeekWearsTheInterviewCalendarsGrid() {
+  const calendar = codeOf(CALENDAR_COMPONENT);
+  const sibling = codeOf(SIBLING_GRID);
+
+  /**
+   * The source of ONE function, so a token pin cannot be satisfied by an unrelated part of the file.
+   *
+   * Measured, while proving this section red: searching the whole component for `bg-slate-50/70` or
+   * `border-l-[3px]` passed with the week grid's own copy deleted, because the Mine view and the
+   * joining chip carry the same strings. A pin that can be satisfied from somewhere else is not a
+   * pin. `export function` ends a body too, or the exported panel is swallowed into the last one.
+   */
   const body = (name: string) => {
     const start = calendar.indexOf(`function ${name}(`);
     assert.notEqual(start, -1, `${name} must still exist in the calendar component`);
-    // `export function` ends a body too — `MonthCell` is followed by the exported component, and
-    // slicing only to the next bare `function` swallowed the whole panel into the cell. Measured,
-    // while proving this section red.
     const rest = calendar.slice(start + 1);
     const end = /\n(?:export )?function /.exec(rest)?.index;
     return end === undefined ? rest : rest.slice(0, end);
   };
+  const week = [body("SlotBooking"), body("SlotCell"), body("WeekSlotTable")].join("\n");
 
-  const row = body("InterviewRow");
+  for (const [token, why] of [
+    [
+      "w-full table-fixed border-collapse",
+      "the grid must be the sibling's TABLE. A table-fixed with a colgroup makes the owner's " +
+        "fits-the-screen rule structural — the columns divide the width they are given and there " +
+        "is no min-width to overflow — which a positioned canvas has to be measured for",
+    ],
+    [
+      'className="w-[5.75rem]"',
+      "the time column must be the sibling's width. It was 48px here, with 9px hours in slate-300 " +
+        "inside it, which on his own screen put the scale somewhere between faint and absent",
+    ],
+    [
+      "h-[46px]",
+      "a slot cell must be the sibling's height. A different row height is a different calendar, " +
+        "and the two sit one click apart in the same product",
+    ],
+    [
+      "bg-slate-50/70",
+      "the odd rows must carry the sibling's zebra. It is what makes a half-hour row readable " +
+        "across five columns without a rule per cell",
+    ],
+    [
+      "border-l-[3px]",
+      "a booking must carry the sibling's 3px margin edge — the device that says 'this cell is " +
+        "taken' without drawing a box around a line of type",
+    ],
+    [
+      "border-l-orange-600 bg-orange-100",
+      "and in the sibling's own colour pair. This page had invented a 180° gradient wash under an " +
+        "orange edge; the chip one click away is a flat orange-100 and always was",
+    ],
+  ] as const) {
+    assert.ok(
+      sibling.includes(token),
+      `the interview calendar no longer carries \`${token}\` — it has been redesigned, and her ` +
+        "week must be brought with it rather than left as the only page wearing the old grid",
+    );
+    assert.ok(week.includes(token), why);
+  }
+
   assert.match(
-    row,
-    /border-b border-slate-100[^"]*last:border-b-0/,
-    "a booking must be a RULED ROW: one bottom hairline, dropped on the last row so the column does " +
-      "not close with a rule it does not need",
+    week,
+    /const slots = slotStarts\(\);/,
+    "the rows must come from the calendar's own `slotStarts()`, not a local hour loop. A second " +
+      "definition of what a slot is, is how her week and the booking dialog start offering " +
+      "different half hours",
   );
-  assert.ok(
-    !/\bborder border-/.test(row),
-    "a booking was put back in a box. Three nested frames around one line of type is precisely what " +
-      "he sent the week back for — a row's only frame is its left margin edge",
+  assert.match(
+    week,
+    /<tr className=\{`\$\{adminPanelHeaderClassName\} text-white`\}>/,
+    "the head must WEAR the shared dark band the Approvals Hub and the Coverage Report wear, not a " +
+      "local bg-slate-900 — thirteen copies of that colour is why the token exists. The import " +
+      "alone proves nothing: this went green once with the band imported and a hand-written " +
+      "bg-slate-900 on the row",
   );
-  assert.ok(
-    !/bg-slate-50|bg-orange-100|border border-/.test(row.split("platformLabel")[0] ?? ""),
-    "the platform became a chip again — it is the least important thing on the row, and a bordered " +
-      "filled box made it the loudest. It is a word in faint caps, which is also what the house ink " +
-      "rule asks for (no filled areas)",
+  assert.match(
+    week,
+    /outsideWorkdayInterviews\(day\.interviews\)/,
+    "the outside-the-working-day row must actually be WIRED, not merely written. A fixed 9-to-5 " +
+      "grid with the safety net unplugged is the silent-loss defect it was built to prevent",
+  );
+  assert.match(
+    calendar,
+    /showingThisWeek \? nowMinutes : null/,
+    "the now line must be absent on every week that does not hold today — a 'now' drawn on next " +
+      "week is a lie, and it is the kind a tired reader believes",
   );
 
-  const cell = body("MonthCell");
+  assert.ok(
+    /hidden border border-slate-200 bg-white md:block/.test(calendar)
+      && /md:hidden/.test(calendar),
+    "the grid is DESKTOP and the phone gets CARDS — the sibling's own answer and the owner's " +
+      "standing rule. Five time columns at 375px would be 66px a day, which cannot hold a " +
+      "candidate's name without cutting it, and cutting text is forbidden",
+  );
+  // The fits-the-screen rule is NOT re-asserted here: `testTheNewComponentsObeyTheThreeGoldenRules`
+  // already sweeps this whole file for every spelling of a width floor and for `overflow-x-auto`,
+  // and a second copy of a rule is a copy that gets weakened on its own one day.
+}
+
+// ── 9c. The month grid still draws every rule exactly once ─────────────────────────────────────
+function testTheMonthGridDrawsEveryRuleOnce() {
+  const calendar = codeOf(CALENDAR_COMPONENT);
+  const start = calendar.indexOf("function MonthCell(");
+  assert.notEqual(start, -1, "MonthCell must still exist in the calendar component");
+  const rest = calendar.slice(start + 1);
+  const end = /\n(?:export )?function /.exec(rest)?.index;
+  const cell = end === undefined ? rest : rest.slice(0, end);
   assert.ok(
     !/\bborder border-|border-slate-200 bg-white/.test(cell),
     "the month cells took their own borders back. The grid's hairline ground draws every rule once; " +
@@ -850,7 +1015,9 @@ export function runTalentAcquisitionOverviewTests() {
   testBothChartsHeNamedSurviveOnTheirOwnBands();
   testTheIdentityStripIsTheGenericPagesByteForByte();
   testTheNewComponentsObeyTheThreeGoldenRules();
-  testTheCalendarIsARuledSheetRatherThanNestedBoxes();
+  testTheSlotGridHoldsEveryBookingExactlyOnce();
+  testHerWeekWearsTheInterviewCalendarsGrid();
+  testTheMonthGridDrawsEveryRuleOnce();
   testAFailedCalendarReadIsStatedRatherThanDrawnEmpty();
   testTheRouteServesTheNewPageToHerSeatAlone();
   testTheProbationAndVacationSourcesAreDeclaredOnHerBundle();

@@ -24,8 +24,11 @@ import {
   cairoDateKey,
   formatDayLong,
   formatTimeRange,
+  SLOT_MINUTES,
   weekDays,
   weekdayShort,
+  WORKDAY_END_MINUTES,
+  WORKDAY_START_MINUTES,
 } from "@/lib/recruitment/interview-calendar-week";
 import type { OfferRecord } from "@/lib/offers/types";
 
@@ -102,11 +105,28 @@ export type TalentInterview = {
   href: string;
   id: string;
   interviewerName: string | null;
+  /**
+   * How long it runs, in minutes.
+   *
+   * Carried because the week is a real grid of half-hour slots: an hour-long interview occupies the
+   * slot it starts in AND the next one (`bookingsInSlot`), which is a question only the duration can
+   * answer. Before 13 October 2026 the week was an agenda and the duration only ever reached the
+   * screen inside `timeLabel`'s text, which a grid cannot read.
+   */
+  durationMinutes: number;
   /** "Zoom", "In person" — the platform as a person reads it, never the stored token. */
   platformLabel: string;
   startMinutes: number;
   /** "10:00 - 10:30", from the calendar's own formatter. */
   timeLabel: string;
+};
+
+/** A half-hour cell of the week grid: what starts in it, and what is still running through it. */
+export type TalentSlotBookings = {
+  /** Started in an earlier slot and has not ended — drawn as a continuation bar, not a second chip. */
+  running: TalentInterview[];
+  /** Starts inside this slot. The chip with the name on it. */
+  starting: TalentInterview[];
 };
 
 /** Somebody's joining day, from an ACCEPTED offer's own start date. */
@@ -203,6 +223,7 @@ export function toTalentInterview(booking: InterviewBooking): TalentInterview {
   return {
     candidateName: booking.candidateName,
     dateKey: booking.dateKey,
+    durationMinutes: booking.durationMinutes,
     href: `/hr/recruitment/interview-calendar?open=${encodeURIComponent(booking.id)}`,
     id: booking.id,
     interviewerName: booking.interviewerName,
@@ -210,6 +231,67 @@ export function toTalentInterview(booking: InterviewBooking): TalentInterview {
     startMinutes: booking.startMinutes,
     timeLabel: formatTimeRange(booking.startMinutes, booking.durationMinutes),
   };
+}
+
+/**
+ * A DAY'S BOOKINGS, SPLIT AGAINST ONE HALF-HOUR SLOT of the week grid.
+ *
+ * WHY A SLOT TABLE AND NOT A TIME CANVAS. Her week is drawn on the INTERVIEW CALENDAR'S OWN grid —
+ * `interview-calendar-view.tsx`'s half-hour rows, 9:00 to 17:00, the company's whole recruitment
+ * team books in it every day. What stood here until 13 October 2026 was a second calendar invented
+ * for this one page: hours positioned by the pixel, overlaps laned side by side, its own type scale.
+ * The owner looked at both and ruled the same day: her week wears the interview calendar's grid.
+ * Two calendars in one product is how two calendars start disagreeing.
+ *
+ * STARTING AND RUNNING ARE NOT THE SAME THING. A 10:00 interview that runs an hour belongs to the
+ * 10:00 cell with its name on it and to the 10:30 cell as a continuation bar — drawn as a second
+ * chip it would read as two interviews, and drawn in neither it would read as half an hour.
+ */
+export function bookingsInSlot(
+  interviews: readonly TalentInterview[],
+  slotStartMinutes: number,
+): TalentSlotBookings {
+  const byStart = (left: TalentInterview, right: TalentInterview) =>
+    left.startMinutes - right.startMinutes
+    || left.candidateName.localeCompare(right.candidateName);
+  const slotEnd = slotStartMinutes + SLOT_MINUTES;
+  return {
+    running: interviews
+      .filter(
+        (one) =>
+          one.startMinutes < slotStartMinutes
+          && one.startMinutes + one.durationMinutes > slotStartMinutes,
+      )
+      .sort(byStart),
+    starting: interviews
+      .filter((one) => one.startMinutes >= slotStartMinutes && one.startMinutes < slotEnd)
+      .sort(byStart),
+  };
+}
+
+/**
+ * 🔴 THE BOOKINGS THE 9-TO-5 GRID HAS NO ROW FOR — and the reason a fixed grid is safe here at all.
+ *
+ * A fixed window is how a real calendar LOSES an interview: an 8:30 screening or a 6pm call with an
+ * overseas candidate falls outside every slot row and is painted nowhere. The interview calendar
+ * itself has that hole and lives with it because `isWithinWorkday` guards its own booking dialog —
+ * but her week also shows bookings made elsewhere, imported, or moved. So every one of them is
+ * collected here and the grid prints them in a row of their own underneath. A booking is never
+ * silently absent from a diary.
+ */
+export function outsideWorkdayInterviews(
+  interviews: readonly TalentInterview[],
+): TalentInterview[] {
+  return interviews
+    .filter(
+      (one) =>
+        one.startMinutes < WORKDAY_START_MINUTES || one.startMinutes >= WORKDAY_END_MINUTES,
+    )
+    .sort(
+      (left, right) =>
+        left.startMinutes - right.startMinutes
+        || left.candidateName.localeCompare(right.candidateName),
+    );
 }
 
 /**

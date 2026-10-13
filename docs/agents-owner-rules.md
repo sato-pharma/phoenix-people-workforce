@@ -7920,3 +7920,68 @@ September and October, not the people who sold them. Measured 2026-10-12: every 
 nine months and three lines credits the right seat, nothing sits in Others, and the only negative
 area-month is Pedia Qena 1 September (−13,113.84, the Office allocation — see the zero-sum roll-up
 note in `org`).
+
+## Her week is the interview calendar's own grid — owner, 2026-10-13
+
+**The account behind the `employees` module rule "HER WEEK WEARS THE INTERVIEW CALENDAR'S OWN SLOT
+GRID".** Yomna Gamal, Talent Acquisition Specialist, starts 18 October 2026; her landing page is
+`/hr/admin/hr-command-center` under the `HR Resourcing` bundle.
+
+### What he said, in order, all on one day
+
+1. *"godmode heavy full premium polish"* — the page was built.
+2. *"i want her calender to show like real calender"* — he rejected a bordered card per booking
+   inside a bordered day inside the bordered panel.
+3. *"PREMIUM POLISH !!!!!!!!!!!"* and *"2 OUT OF 10"* — he rejected the ruled list that replaced it,
+   for not being a calendar at all.
+4. A time canvas was built: an 84px-per-hour sheet, blocks absolutely positioned by start minute and
+   sized by duration, lanes for overlaps, the window the booked span ±30 minutes.
+5. **"BULLSHIT ,, AUDIT THE INTERVIEW CALENDER"** — with a screenshot of her week on a phone.
+6. Asked whether to rebuild on the company's own interview-calendar grid or keep the canvas, he
+   answered: **"The interview calendar's own grid"**.
+
+### What the audit of that canvas found, measured in the rendered HTML
+
+- An invented calendar: sheet 588px = 7 × 84, eight blocks at `h42`, hour rules at
+  84/168/252/336/420/504 and half rules at 42/126/…, a 48px time rail at `text-[9px]
+  text-slate-300`, the platform word in `text-orange-300` on a `#FFF7ED` wash (≈1.6:1 contrast, on
+  8 of 8 blocks), and today's whole column washed `bg-orange-50/30`.
+- The now line was legitimately absent from his screenshot — it was 04:40 Cairo, outside the window.
+- The company already owns the grid he was asking for:
+  `src/components/recruitment/interview-calendar/interview-calendar-view.tsx` renders a
+  `w-full table-fixed` slot table — a `w-[5.75rem]` time column, 30-minute rows 9:00–17:00 at
+  `h-[46px]`, `bg-slate-50/70` zebra on the odd rows, the shared dark head band with today in
+  `bg-orange-600`, chips at `border-l-[3px] border-l-orange-600 bg-orange-100`, and `md:hidden` day
+  cards on a phone. Two calendars for one company was the defect; a second design was never needed.
+
+### What shipped, and the three deliberate departures from the sibling
+
+`weekGridWindow` and `placeDayInterviews` are gone; `bookingsInSlot` and
+`outsideWorkdayInterviews` replace them, and the component renders `WeekSlotTable` / `SlotCell` /
+`SlotBooking` / `WeekDayCards`. It keeps the sibling's tokens and departs from it three times, each
+for a reason her page has and the recruitment page does not: an **all-day row** for joining days, a
+**now line** at its real fraction of today's current cell, and an **Outside 9–5** row so a booking
+outside the fixed window is never invisible (the fixed window is what makes the slot grid possible;
+the row is what makes it safe).
+
+Five of the grid pins in `tests/talent-acquisition-overview.test.ts` are **cross-file** — they read
+the token out of `interview-calendar-view.tsx` first, so a redesign of the interview calendar turns
+her week red instead of leaving it behind.
+
+### The proof, read off her rendered page
+
+Fetched with dev-auth `HR Resourcing` / `HR-011`: one `table-fixed`, one `w-[5.75rem]` time column,
+**80 cells at `h-[46px]`** (16 half-hour rows × 5 days, Sunday 11 Oct → Thursday 15 Oct), zebra on
+all 8 odd rows, the time rail 9:00 AM → 4:30 PM, **8 bookings each in its own slot** carrying the
+3px orange edge, no `Outside 9–5` row (every booking was inside the day), **no `min-width`, no
+`overflow-x-auto`**, and no occurrence of "Employee requests" anywhere in the DOM.
+
+### The band that must never be blank
+
+Same day, same page: *"i donot want this blanque area empty like this"*. The portrait reserves
+~101px whether or not anything is drawn, so the **shut** notice band draws the same ledger the open
+one does, absolutely positioned over that reserve. Clipping is the visible fault; a pushed-down
+dashboard is the silent one. Pinned by `tests/identity-strip-emblem.test.ts` §8b.
+
+**Standing from the same day, and not re-litigated:** do not touch the portrait or the identity
+banner, and never show Employee requests on her page.
