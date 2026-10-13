@@ -7921,10 +7921,10 @@ nine months and three lines credits the right seat, nothing sits in Others, and 
 area-month is Pedia Qena 1 September (−13,113.84, the Office allocation — see the zero-sum roll-up
 note in `org`).
 
-## Her week is the interview calendar's own grid — owner, 2026-10-13
+## Her week is the interview calendar itself — owner, 2026-10-13
 
-**The account behind the `employees` module rule "HER WEEK WEARS THE INTERVIEW CALENDAR'S OWN SLOT
-GRID".** Yomna Gamal, Talent Acquisition Specialist, starts 18 October 2026; her landing page is
+**The account behind the `employees` module rule "HER WEEK *IS* THE INTERVIEW CALENDAR".** Yomna
+Gamal, Talent Acquisition Specialist, starts 18 October 2026; her landing page is
 `/hr/admin/hr-command-center` under the `HR Resourcing` bundle.
 
 ### What he said, in order, all on one day
@@ -7939,6 +7939,10 @@ GRID".** Yomna Gamal, Talent Acquisition Specialist, starts 18 October 2026; her
 5. **"BULLSHIT ,, AUDIT THE INTERVIEW CALENDER"** — with a screenshot of her week on a phone.
 6. Asked whether to rebuild on the company's own interview-calendar grid or keep the canvas, he
    answered: **"The interview calendar's own grid"**.
+7. That grid shipped, wearing the sibling's exact tokens — and he answered **"FULL INTERVIW CALENDAR
+   FEAATURES"**. Three week layouts for this page had now been rejected in one day, the last of them
+   visually identical to the real calendar, which is the whole lesson: **wearing a calendar's skin
+   is not having its features**, and there is exactly one way to have all of them.
 
 ### What the audit of that canvas found, measured in the rendered HTML
 
@@ -7954,27 +7958,54 @@ GRID".** Yomna Gamal, Talent Acquisition Specialist, starts 18 October 2026; her
   `bg-orange-600`, chips at `border-l-[3px] border-l-orange-600 bg-orange-100`, and `md:hidden` day
   cards on a phone. Two calendars for one company was the defect; a second design was never needed.
 
-### What shipped, and the three deliberate departures from the sibling
+### What finally shipped: the component, not a copy of it
 
-`weekGridWindow` and `placeDayInterviews` are gone; `bookingsInSlot` and
-`outsideWorkdayInterviews` replace them, and the component renders `WeekSlotTable` / `SlotCell` /
-`SlotBooking` / `WeekDayCards`. It keeps the sibling's tokens and departs from it three times, each
-for a reason her page has and the recruitment page does not: an **all-day row** for joining days, a
-**now line** at its real fraction of today's current cell, and an **Outside 9–5** row so a booking
-outside the fixed window is never invisible (the fixed window is what makes the slot grid possible;
-the row is what makes it safe).
+The week tab mounts `InterviewCalendarView`. Everything this page had written for itself is deleted —
+`weekGridWindow`, `placeDayInterviews`, `bookingsInSlot`, `outsideWorkdayInterviews`, `buildWeekDays`,
+`WeekSlotTable`, `SlotCell`, `SlotBooking`, `WeekDayCards`, `JoinerChip`, the now-line state, the
+60-second refresh and the `taWeek` plumbing — 686 lines out of the calendar component and 198 out of
+the logic file. She gets the real thing instead: week navigation and the week picker, pressing a free
+half hour to book from Recruitment or from outside with a CV, interview **sessions**, every name
+opening that candidate's CV, the interview detail with its Zoom link, panel, outcome and notes,
+Export PDF and Export Excel, Request an interview, and the component's own phone cards.
 
-Five of the grid pins in `tests/talent-acquisition-overview.test.ts` are **cross-file** — they read
-the token out of `interview-calendar-view.tsx` first, so a redesign of the interview calendar turns
-her week red instead of leaving it behind.
+The page resolves on the server the same four answers the recruitment page resolves, by the same
+functions — `resolveInterviewCalendarRole`, `interviewCalendarAbilities`, `mayRequestInterviews`,
+`isZoomConfigured` — and hands them over with the server's `todayKey`. Two details are decisions, not
+plumbing: `initialWeek` is **`upcomingWeekStart`**, not the week today sits in, because Friday and
+Saturday are not working days here and the week containing a Friday is Sunday-to-Thursday already
+over; and **`lockedWeek` is never passed**, since that is the prop a week-limited share link uses to
+freeze one week, which would delete the navigation he had just asked for.
 
-### The proof, read off her rendered page
+**Her tier is her seat's, and nothing here widens it.** `seesWholeInterviewCalendar` names
+`HR Resourcing`, so she resolves to a **Viewer**: every interview, plus Request an interview by her
+HR seat. Booking, moving or cancelling for other people needs an Editor share — the owner's own click
+in the calendar's Share dialog. The component offers only what her tier holds and every API route
+behind it enforces again, so a prop that said more would buy nothing.
 
-Fetched with dev-auth `HR Resourcing` / `HR-011`: one `table-fixed`, one `w-[5.75rem]` time column,
-**80 cells at `h-[46px]`** (16 half-hour rows × 5 days, Sunday 11 Oct → Thursday 15 Oct), zebra on
-all 8 odd rows, the time rail 9:00 AM → 4:30 PM, **8 bookings each in its own slot** carrying the
-3px orange edge, no `Outside 9–5` row (every booking was inside the day), **no `min-width`, no
-`overflow-x-auto`**, and no occurrence of "Employee requests" anywhere in the DOM.
+The joining days moved to the **month**, which is the only view that draws all seven days; the week
+strip they used to sit on was Sunday to Thursday, so it could never have been complete.
+
+### How the test pins it now
+
+`tests/talent-acquisition-overview.test.ts` pins the EMBEDDING: the import of the real component,
+that the sibling still exports it under that name, that it is rendered, each of the six props with
+the reason that prop exists, that `lockedWeek` is absent, that the four resolvers are the source of
+those props, that `upcomingWeekStart` is the opening week — and, negatively, that this file carries
+**no `<table>`, no `slotStarts()`, no `h-[46px]`, no `border-l-[3px]` and no `<colgroup>`** ever
+again. That negative half is the one that matters: the rejected third layout would have passed every
+design-token test ever written. All 26 assertions were broken one at a time and each watched to fire
+its own headline.
+
+### The proof read off her rendered page, while the token-copy grid was up
+
+Fetched with dev-auth `HR Resourcing` / `HR-011`, before the embedding replaced it: one
+`table-fixed`, one `w-[5.75rem]` time column, **80 cells at `h-[46px]`** (16 half-hour rows × 5 days,
+Sunday 11 Oct → Thursday 15 Oct), zebra on all 8 odd rows, the time rail 9:00 AM → 4:30 PM, **8
+bookings each in its own slot** carrying the 3px orange edge, **no `min-width`, no
+`overflow-x-auto`**, and no occurrence of "Employee requests" anywhere in the DOM. It is kept here
+because it is what the measurement looked like, and because it is the measurement that passed while
+the answer was still wrong.
 
 ### The band that must never be blank
 

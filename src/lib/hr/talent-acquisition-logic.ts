@@ -4,12 +4,12 @@
  * WHY IT IS A SEPARATE FILE FROM `talent-acquisition-overview.ts`. Two reasons, and they are the
  * same two that split `src/lib/calendar/logic.ts` from `src/lib/calendar/service.ts`:
  *
- *   1. THE CLIENT NEEDS THESE. The calendar panel refreshes the week it is showing from
- *      `/api/recruitment/interview-calendar/bookings?week=`, and the bookings it gets back must be
- *      laid out by the SAME `toTalentInterview` + `buildWeekDays` the server used — a second copy
- *      of that layout in the component is how a live refresh starts disagreeing with the first
- *      paint. The overview module imports the Supabase services, so a client component may only
- *      `import type` from it; these functions live here so the component can import them for real.
+ *   1. THE CLIENT NEEDS THESE. The calendar panel is a client component and prints her own
+ *      upcoming interviews and the month marks from values this file shapes (`toTalentInterview`,
+ *      `TalentMonthMark`). The overview module imports the Supabase services, so a client component
+ *      may only `import type` from it; these live here so the component can import them for real.
+ *      It no longer lays out a WEEK: since 13 October 2026 the week tab mounts the real
+ *      `InterviewCalendarView`, which reads and lays out its own weeks.
  *   2. A TEST SHOULD NOT NEED A DATABASE to assert that a rate is null rather than zero. Everything
  *      this file holds is driven by literals, which is why the rules worth pinning are all in here.
  *
@@ -19,17 +19,8 @@
 
 import type { HrBundleName } from "@/lib/auth/hr-functions";
 import type { CalendarGridDay, CalendarItem } from "@/lib/calendar/logic";
-import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
-import {
-  cairoDateKey,
-  formatDayLong,
-  formatTimeRange,
-  SLOT_MINUTES,
-  weekDays,
-  weekdayShort,
-  WORKDAY_END_MINUTES,
-  WORKDAY_START_MINUTES,
-} from "@/lib/recruitment/interview-calendar-week";
+import type { InterviewBooking, InterviewCalendarRole } from "@/lib/recruitment/interview-calendar-types";
+import { formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
 import type { OfferRecord } from "@/lib/offers/types";
 
 /** The seat this page is built for. The route's gate, and the only bundle it ever renders. */
@@ -105,28 +96,13 @@ export type TalentInterview = {
   href: string;
   id: string;
   interviewerName: string | null;
-  /**
-   * How long it runs, in minutes.
-   *
-   * Carried because the week is a real grid of half-hour slots: an hour-long interview occupies the
-   * slot it starts in AND the next one (`bookingsInSlot`), which is a question only the duration can
-   * answer. Before 13 October 2026 the week was an agenda and the duration only ever reached the
-   * screen inside `timeLabel`'s text, which a grid cannot read.
-   */
+  /** How long it runs, in minutes — the figure `timeLabel`'s end time is built from. */
   durationMinutes: number;
   /** "Zoom", "In person" — the platform as a person reads it, never the stored token. */
   platformLabel: string;
   startMinutes: number;
   /** "10:00 - 10:30", from the calendar's own formatter. */
   timeLabel: string;
-};
-
-/** A half-hour cell of the week grid: what starts in it, and what is still running through it. */
-export type TalentSlotBookings = {
-  /** Started in an earlier slot and has not ended — drawn as a continuation bar, not a second chip. */
-  running: TalentInterview[];
-  /** Starts inside this slot. The chip with the name on it. */
-  starting: TalentInterview[];
 };
 
 /** Somebody's joining day, from an ACCEPTED offer's own start date. */
@@ -136,18 +112,6 @@ export type TalentJoiner = {
   id: string;
   name: string;
   title: string;
-};
-
-/** One day of the week strip. */
-export type TalentCalendarDay = {
-  dateKey: string;
-  interviews: TalentInterview[];
-  isToday: boolean;
-  joiners: TalentJoiner[];
-  /** "Sunday 18 October 2026". */
-  longLabel: string;
-  /** "Sun" — the calendar's own short weekday. */
-  shortLabel: string;
 };
 
 /** One thing on a month-grid day, from whichever calendar put it there. */
@@ -166,17 +130,46 @@ export type TalentCalendarMonth = {
   year: number;
 };
 
+/**
+ * WHAT THE REAL INTERVIEW CALENDAR NEEDS TO RUN INSIDE THIS PAGE — resolved on the server, exactly
+ * as `app/(admin)/recruitment/interview-calendar/page.tsx` resolves it for the full page.
+ *
+ * The week tab IS `InterviewCalendarView`: the owner asked for the FULL interview calendar features
+ * on her landing page (13 October 2026), so the page does not re-implement any part of it — it
+ * mounts it and hands it the same four answers the recruitment page does. Each one is a SERVER
+ * decision and every API route behind the component asks again, so a prop that said more than her
+ * seat holds would buy nothing.
+ *
+ * NULL when `resolveInterviewCalendarRole` gives her no role at all. Her seat resolves to a Viewer
+ * through `seesWholeInterviewCalendar`, so that is not the expected case — it is carried because the
+ * role is a runtime resolution, and a calendar drawn with no role would be a blank week, which is
+ * the one wrong answer a diary can give.
+ */
+export type TalentInterviewCalendar = {
+  /** Whether she may search candidates / add one to Recruitment from inside the calendar. */
+  abilities: { canAddToRecruitment: boolean; canSearchCandidates: boolean };
+  /** Whether she may ASK for an interview — true for any HR seat (`mayRequestInterviews`). */
+  canRequest: boolean;
+  /** Viewer, Commenter, Editor, Owner, interviewer or requester — her tier on the calendar. */
+  role: InterviewCalendarRole;
+  /** Whether the Zoom integration is configured at all; the screen hides what it cannot do. */
+  zoomConnected: boolean;
+};
+
 export type TalentCalendar = {
-  days: TalentCalendarDay[];
   /**
-   * FALSE when the Interview Calendar could not be read at all. The week is then UNKNOWN, not
-   * empty, and the panel says so — a refused read drawn as a blank week is the misleading zero this
-   * repo's rules forbid, and on a calendar it reads as "you have nothing on", which is the one
-   * wrong answer a diary can give.
+   * The props the embedded Interview Calendar runs on. Null = no role; the panel says so rather
+   * than drawing an empty week. See `TalentInterviewCalendar`.
    */
-  interviewsLoaded: boolean;
+  interviewCalendar: TalentInterviewCalendar | null;
   /** Her own next three weeks, from the calendar's own `listMyUpcomingInterviews`. */
   mine: TalentInterview[];
+  /**
+   * FALSE when that read REFUSED or failed. Her agenda is then unknown, not empty, and the Mine tab
+   * says so — "you are not on an interview" drawn over a failed read is the one wrong answer a diary
+   * can give, and it is the answer that makes somebody miss an interview.
+   */
+  mineLoaded: boolean;
   /**
    * Never null: the grid itself is arithmetic (`buildMonthGrid`), so a failed company-calendar read
    * costs the holidays and the leave, not the month. `monthItemsLoaded` says which it is.
@@ -184,15 +177,6 @@ export type TalentCalendar = {
   month: TalentCalendarMonth;
   /** FALSE when the company calendar did not answer — the grid then carries only her own two kinds. */
   monthItemsLoaded: boolean;
-  /**
-   * TRUE when the calendar served only the interviews she is personally part of.
-   *
-   * It is false for her seat — `seesWholeInterviewCalendar` names `HR Resourcing`, so she resolves
-   * to a Viewer and `mayReadBooking` serves her every booking. It is carried anyway because that is
-   * a runtime resolution and not a constant: a narrowed week that LOOKS like a quiet week is
-   * exactly the wrong answer above, reached by a different route.
-   */
-  ownOnly: boolean;
   /**
    * Today, in Cairo, as the SERVER saw it.
    *
@@ -202,7 +186,7 @@ export type TalentCalendar = {
    * disagree with the server's across a Cairo midnight.
    */
   todayKey: string;
-  /** The Sunday the strip starts on. Always set — the week is arithmetic, the bookings are not. */
+  /** The Sunday the embedded calendar opens on (`initialWeek`). Always set — it is arithmetic. */
   weekStart: string;
 };
 
@@ -234,65 +218,18 @@ export function toTalentInterview(booking: InterviewBooking): TalentInterview {
 }
 
 /**
- * A DAY'S BOOKINGS, SPLIT AGAINST ONE HALF-HOUR SLOT of the week grid.
+ * THERE IS NO WEEK LAYOUT IN THIS FILE, AND THERE MUST NOT BE ONE AGAIN.
  *
- * WHY A SLOT TABLE AND NOT A TIME CANVAS. Her week is drawn on the INTERVIEW CALENDAR'S OWN grid —
- * `interview-calendar-view.tsx`'s half-hour rows, 9:00 to 17:00, the company's whole recruitment
- * team books in it every day. What stood here until 13 October 2026 was a second calendar invented
- * for this one page: hours positioned by the pixel, overlaps laned side by side, its own type scale.
- * The owner looked at both and ruled the same day: her week wears the interview calendar's grid.
- * Two calendars in one product is how two calendars start disagreeing.
+ * Three week layouts were written for this page in one day and the owner rejected all three — a
+ * card per booking, then a ruled list, then a time canvas of blocks positioned by start minute
+ * ("2 OUT OF 10", then "BULLSHIT ,, AUDIT THE INTERVIEW CALENDER"). What he asked for instead is
+ * the FULL interview calendar: the week tab mounts `InterviewCalendarView` itself, so the grid, the
+ * slot split, the week window, the bookings and everything they can do belong to the one component
+ * the whole recruitment team already uses. `bookingsInSlot`, `outsideWorkdayInterviews` and
+ * `buildWeekDays` were this page's own copies of that work and are gone with it.
  *
- * STARTING AND RUNNING ARE NOT THE SAME THING. A 10:00 interview that runs an hour belongs to the
- * 10:00 cell with its name on it and to the 10:30 cell as a continuation bar — drawn as a second
- * chip it would read as two interviews, and drawn in neither it would read as half an hour.
+ * Account: `docs/agents-owner-rules.md`, "Her week is the interview calendar's own grid".
  */
-export function bookingsInSlot(
-  interviews: readonly TalentInterview[],
-  slotStartMinutes: number,
-): TalentSlotBookings {
-  const byStart = (left: TalentInterview, right: TalentInterview) =>
-    left.startMinutes - right.startMinutes
-    || left.candidateName.localeCompare(right.candidateName);
-  const slotEnd = slotStartMinutes + SLOT_MINUTES;
-  return {
-    running: interviews
-      .filter(
-        (one) =>
-          one.startMinutes < slotStartMinutes
-          && one.startMinutes + one.durationMinutes > slotStartMinutes,
-      )
-      .sort(byStart),
-    starting: interviews
-      .filter((one) => one.startMinutes >= slotStartMinutes && one.startMinutes < slotEnd)
-      .sort(byStart),
-  };
-}
-
-/**
- * 🔴 THE BOOKINGS THE 9-TO-5 GRID HAS NO ROW FOR — and the reason a fixed grid is safe here at all.
- *
- * A fixed window is how a real calendar LOSES an interview: an 8:30 screening or a 6pm call with an
- * overseas candidate falls outside every slot row and is painted nowhere. The interview calendar
- * itself has that hole and lives with it because `isWithinWorkday` guards its own booking dialog —
- * but her week also shows bookings made elsewhere, imported, or moved. So every one of them is
- * collected here and the grid prints them in a row of their own underneath. A booking is never
- * silently absent from a diary.
- */
-export function outsideWorkdayInterviews(
-  interviews: readonly TalentInterview[],
-): TalentInterview[] {
-  return interviews
-    .filter(
-      (one) =>
-        one.startMinutes < WORKDAY_START_MINUTES || one.startMinutes >= WORKDAY_END_MINUTES,
-    )
-    .sort(
-      (left, right) =>
-        left.startMinutes - right.startMinutes
-        || left.candidateName.localeCompare(right.candidateName),
-    );
-}
 
 /**
  * The joining days inside a span, from the offers that were ACCEPTED.
@@ -324,33 +261,6 @@ export function joinersBetween(
       (left, right) =>
         left.dateKey.localeCompare(right.dateKey) || left.name.localeCompare(right.name),
     );
-}
-
-/**
- * The week strip: Sunday to Thursday, every interview and every joining day on its own day.
- *
- * `weekDays` is the calendar's own five-day working week (`CALENDAR_WEEKDAYS` is Sunday..Thursday),
- * which is also the company's — a seven-column strip would carry two permanently empty columns on
- * somebody's landing page. A joining day that fell on a Friday or Saturday is therefore not in the
- * STRIP; it is still on the month grid, which draws all seven.
- */
-export function buildWeekDays(
-  weekStart: string,
-  interviews: readonly TalentInterview[],
-  joiners: readonly TalentJoiner[],
-  now: Date,
-): TalentCalendarDay[] {
-  const today = cairoDateKey(now);
-  return weekDays(weekStart).map((dateKey) => ({
-    dateKey,
-    interviews: interviews
-      .filter((interview) => interview.dateKey === dateKey)
-      .sort((left, right) => left.startMinutes - right.startMinutes),
-    isToday: dateKey === today,
-    joiners: joiners.filter((joiner) => joiner.dateKey === dateKey),
-    longLabel: formatDayLong(dateKey),
-    shortLabel: weekdayShort(dateKey),
-  }));
 }
 
 /** The company calendar's own item sources, mapped onto this page's mark kinds. */
