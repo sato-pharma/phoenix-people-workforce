@@ -636,6 +636,16 @@ export async function buildRepRankingWorkbook(input: {
   ranking: RepRanking;
   probationByName: ReadonlyMap<string, string>;
   carve: Pick<ClosingRepRankingCarve, "direct" | "office" | "stores">;
+  /**
+   * 🔴 WHAT THIS FILE COVERS WHEN IT IS NOT THE WHOLE LINE — one short line per active filter, from
+   * `describeRankingFilters`. Empty on an unfiltered workbook, and then NOTHING extra is printed.
+   *
+   * A narrowed file is the dangerous one: its line total is smaller than the line and it is
+   * forwarded as "the ranking". So when this is non-empty every sheet says so under its heading,
+   * and the Trust sheet spells out the rectangle — owner, 2026-10-13, who asked for the filter to
+   * be followed in the first place.
+   */
+  coverage?: readonly string[];
   publications?: ReadonlyArray<RankingPublication>;
   /**
    * The closing month's detail rows, for the Rows tab — owner, 2026-10-13.
@@ -696,6 +706,10 @@ export async function buildRepRankingWorkbook(input: {
   // A SEPARATE COLUMN, NOT A RENAMED ONE: `office` is carved in `carveChannelsByArea` and
   // `distributor` already excludes it, so Distributor + Stores + Office = Sales by construction on
   // CNS exactly as Distributor + Stores + Direct = Sales everywhere else.
+  // The filter, as one sentence for a sheet heading. Empty string on an unfiltered file, which
+  // every call below tests for rather than printing an empty clause.
+  const COVERAGE = (input.coverage ?? []).filter((line) => line.trim().length > 0);
+  const COVERS = COVERAGE.length > 0 ? COVERAGE.join("   ·   ") : "";
   const CH3 = lineHasOfficeChannel(LINE) ? OFFICE : DIRECT;
   const ch3 = (r: { dir: number; office: number }): number => (CH3 === OFFICE ? r.office : r.dir);
   // What a line with no direct column still carries in direct money, folded into its distributor
@@ -757,8 +771,12 @@ export async function buildRepRankingWorkbook(input: {
       { label: "ON PROBATION", value: probation.length, fmt: "#,##0", sub: probation.length ? "marked yellow below" : "nobody on this line", colour: "FFFFD98A" },
     ], COLS);
 
-    row = sectionLabel(ws, row, `THE SEATS   ·   ${rows.length} on ${LINE}`,
-      `${ranked} carry a target and are ranked; the rest are listed unranked rather than scored zero`, COLS);
+    row = sectionLabel(ws, row, COVERS
+      ? `THE SEATS   ·   ${rows.length} on ${LINE}, FILTERED   ·   ${COVERS}`
+      : `THE SEATS   ·   ${rows.length} on ${LINE}`,
+      COVERS
+        ? `${ranked} carry a target and are ranked; the rest are listed unranked rather than scored zero   ·   this file is the filter above, not the whole line - every figure on it is the published closing over that selection`
+        : `${ranked} carry a target and are ranked; the rest are listed unranked rather than scored zero`, COLS);
     const headAt = row;
     row = headerRow(ws, row, HEADS, WIDTHS);
     const first = row;
@@ -1875,6 +1893,30 @@ export async function buildRepRankingWorkbook(input: {
     let row = book.banner(ws, "full", W);
 
     const section = (label: string, note: string | null) => { row = sectionLabel(ws, row, label, note, COLS); };
+
+    // 🔴 FIRST, BEFORE THE TABS: what this file is. A reader who opens Trust to check a figure
+    // against the closing has to be told the rectangle before anything else, or he reconciles a
+    // filtered total against the line and concludes the workbook is wrong.
+    if (COVERAGE.length > 0) {
+      section("WHAT THIS FILE COVERS", `It is NOT the whole ${LINE} line.`);
+      row = headerRow(ws, row, ["The filter", "What it means for every figure here", "", "", "", "", ""], W);
+      const covers: Array<[string, string]> = COVERAGE.map((line) => {
+        const [head, ...rest] = line.split(":");
+        return [head!.trim(), rest.join(":").trim()] as [string, string];
+      });
+      covers.push(["Every figure", "Still the published closing, cell for cell - a filter only DROPS cells here, it never re-derives a number. A seat's sales is the sum of its own surviving cells, and its target the sum of theirs, so an achievement on this sheet is that selection's achievement and not the seat's whole month."]);
+      covers.push(["The line total", `${Math.round(SEATS.total).toLocaleString("en-US")} EGP is the total OF THIS SELECTION. Reconciling it against ${LINE}'s own month will not balance, and should not.`]);
+      covers.forEach(([k, v], j) => {
+        const zebra = j % 2 === 1;
+        cell(ws, row, 1, k, { zebra, font: bold(10, INK) });
+        const c = cell(ws, row, 2, v, { zebra, size: 9 });
+        c.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        ws.mergeCells(row, 2, row, COLS);
+        ws.getRow(row).height = Math.max(24, Math.ceil(v.length / PROSE) * 13);
+        row += 1;
+      });
+      row += 1;
+    }
 
     section(`THE ${wb.worksheets.length} TABS, AND WHAT EACH ONE ANSWERS`, "Every one of them reads the same published closing. None re-derives a figure beside it.");
     row = headerRow(ws, row, ["Tab", "The question it answers", "", "", "", "", ""], W);

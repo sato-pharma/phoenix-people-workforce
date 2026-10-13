@@ -15,6 +15,12 @@ import {
 } from "../src/lib/sales/closing-rep-ranking.ts";
 import { isRepRankingLine, resolveTrendPeriods } from "../src/lib/sales/closing-rep-ranking-export.ts";
 import { toLegacyShape } from "../src/lib/sales/closing-rep-ranking-legacy-shape.ts";
+import {
+  describeRankingFilters,
+  narrowClosingMatrixForRanking,
+  rankingFiltersAreEmpty,
+  searchedAreaCodes,
+} from "../src/lib/sales/closing-rep-ranking-filter.ts";
 import { buildRepRankingWorkbook } from "../src/lib/sales/closing-rep-ranking-workbook.ts";
 import {
   ANTI_INFECTIVE_RANKING_DRESS,
@@ -634,6 +640,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
 
   await assertCnsWearsItsOwnIdentity();
   await assertOfficeIsCnsThirdChannel();
+  await assertTheFilterNarrowsTheWholeFile();
 
   assertAdminRepRankingButton();
 }
@@ -788,6 +795,138 @@ async function assertOfficeIsCnsThirdChannel(): Promise<void> {
 }
 
 /**
+ * THE SCREEN'S FILTER NARROWS THE WHOLE FILE, AND EVERY FIGURE IN IT IS STILL A PUBLISHED CELL.
+ *
+ * Owner, 2026-10-13: "I filtered from my admin account and exported - it's supposed to follow my
+ * filter. No, it did not follow my filter. All the shit is exported." The route used to drop the
+ * filter on purpose, and the objection behind that was real - a narrowed ROW set shrinks the
+ * channel split underneath a ranking that did not move - so what is measured here is the thing
+ * that makes his answer safe: the matrix is narrowed by DROPPING cells, never by re-deriving a
+ * number, so a filtered workbook is the closing over a smaller rectangle and nothing else.
+ *
+ * 🔴 THE TARGET IS THE HALF THAT CAN GO WRONG SILENTLY. Summing targets with `?? 0` would hand
+ * every seat in a product-filtered file a 0 target and an infinite achievement, where the rule is
+ * that a seat with no target is UNRANKED. Both are measured below.
+ */
+async function assertTheFilterNarrowsTheWholeFile(): Promise<void> {
+  const matrix = matrixOf(PERIOD, SEPTEMBER);
+  const codes = matrix.columns.map((column) => column.productCode);
+  assert.ok(codes.length >= 2, "the fixture has two products to filter between");
+
+  // ── Nothing selected is not a filter ──────────────────────────────────────────────────────────
+  assert.ok(rankingFiltersAreEmpty(null), "no filter at all");
+  assert.ok(rankingFiltersAreEmpty({ areaCodes: [], productCodes: [], regionCodes: [], search: "" }),
+    "and the screen's empty state, which is what the portal path sends");
+  assert.equal(
+    narrowClosingMatrixForRanking(matrix, { areaCodes: [], search: "" }),
+    matrix,
+    "an empty filter hands back the SAME matrix object - the unfiltered file cannot change at all",
+  );
+
+  // ── An area filter drops rows, and the survivors keep their own published figures ─────────────
+  const oneArea = narrowClosingMatrixForRanking(matrix, { areaCodes: ["DK1"] });
+  const keptAreas = oneArea.regions.flatMap((region) => region.areas);
+  assert.deepEqual(keptAreas.map((area) => area.areaCode), ["DK1"], "one area survives");
+  const before = matrix.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "DK1")!;
+  assert.equal(keptAreas[0]!.rowTotal.salesValue, before.rowTotal.salesValue,
+    "and its sales is the published figure, untouched");
+  assert.equal(oneArea.grandTotal.rowTotal.salesValue, before.rowTotal.salesValue,
+    "the grand total is the selection's total, not the line's");
+  assert.ok(
+    oneArea.grandTotal.rowTotal.salesValue < matrix.grandTotal.rowTotal.salesValue,
+    "which is SMALLER than the line - the whole point of the owner's complaint",
+  );
+
+  // ── A product filter drops columns, and a row total is the sum of its survivors ───────────────
+  const oneProduct = narrowClosingMatrixForRanking(matrix, { productCodes: [codes[0]!] });
+  assert.deepEqual(oneProduct.columns.map((c) => c.productCode), [codes[0]], "one column survives");
+  for (const region of oneProduct.regions) {
+    for (const area of region.areas) {
+      assert.equal(area.cells.length, 1, "every row carries exactly the surviving cell");
+      assert.equal(area.rowTotal.salesValue, area.cells[0]!.salesValue,
+        `${area.areaName}: the row total is its own surviving cell, never a re-derived number`);
+      assert.equal(area.rowTotal.targetValue, area.cells[0]!.targetValue,
+        `${area.areaName}: and so is its target`);
+    }
+  }
+
+  // 🔴 A PRODUCT NOBODY TARGETED LEAVES THE TARGET NULL, NOT ZERO.
+  const untargeted = matrixOf(PERIOD, [
+    { ...SEPTEMBER[0]!, cells: [{ sales: 1_000, target: null }, { sales: 500, target: 4_000 }] },
+  ]);
+  const noTarget = narrowClosingMatrixForRanking(untargeted, { productCodes: [codes[0]!] });
+  const row = noTarget.regions[0]!.areas[0]!;
+  assert.equal(row.rowTotal.targetValue, null, "no target survives as NULL - the seat is unranked");
+  assert.equal(row.rowTotal.achievement, null, "so there is no achievement either, never 0% or Infinity");
+  assert.equal(row.rowTotal.salesValue, 1_000, "while its sales is the real figure");
+
+  // ── The free-text search has no matrix grain, so it narrows the SEATS its rows touched ────────
+  assert.equal(searchedAreaCodes({ search: "" }, []), null, "no search, no extra narrowing");
+  const touched = searchedAreaCodes({ search: "صيدلية" }, [
+    { areaCode: "DK1" }, { areaCode: "dk1" }, { areaCode: null },
+  ]);
+  assert.deepEqual([...touched!], ["DK1"], "the areas its rows reached, upper-cased and deduped");
+  const searched = narrowClosingMatrixForRanking(matrix, { search: "صيدلية" }, touched);
+  assert.deepEqual(
+    searched.regions.flatMap((r) => r.areas).map((a) => a.areaCode),
+    ["DK1"],
+    "and the file is those seats",
+  );
+  const nothing = narrowClosingMatrixForRanking(matrix, { search: "nobody" }, new Set<string>());
+  assert.equal(nothing.regions.length, 0,
+    "a search that matched nothing empties the matrix, which the builder reads as no file - never a month of zeroes");
+
+  // ── The file SAYS what it covers, in names rather than codes ──────────────────────────────────
+  assert.deepEqual(describeRankingFilters(null), [], "an unfiltered file says nothing extra");
+  assert.deepEqual(
+    describeRankingFilters(
+      { areaCodes: ["DK1"], productCodes: [codes[0]!], search: "  " },
+      { areaNames: new Map([["DK1", "Dakahlia 1"]]), productNames: new Map([[codes[0]!.toUpperCase(), "Royafloxacin 500"]]) },
+    ),
+    ["Areas: Dakahlia 1", "Products: Royafloxacin 500"],
+    "names, never codes (AGENTS.md §4) - and whitespace is not a search",
+  );
+
+  // ── THE EMITTED FILE carries the sentence, on the Ranking sheet and on Trust ──────────────────
+  const built = await buildRepRankingWorkbook({
+    carve: { direct: new Map(), office: new Map(), stores: new Map() },
+    coverage: ["Areas: Dakahlia 1", "Products: Royafloxacin 500"],
+    probationByName: new Map(),
+    ranking: ranking(),
+  });
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(built.buffer as unknown as ArrayBuffer);
+  const prose = (name: string) => {
+    const out: string[] = [];
+    book.getWorksheet(name)!.eachRow((r) => r.eachCell((c) => {
+      if (typeof c.value === "string") out.push(c.value);
+    }));
+    return out.join(" ");
+  };
+  assert.ok(prose("Ranking").includes("FILTERED"), "the Ranking sheet's own heading says it is filtered");
+  assert.ok(prose("Ranking").includes("Areas: Dakahlia 1"), "and names the rectangle");
+  assert.ok(prose("Trust").includes("WHAT THIS FILE COVERS"), "Trust opens with the rectangle");
+  assert.ok(prose("Trust").includes("is the total OF THIS SELECTION"),
+    "and warns that its line total will not reconcile against the line");
+
+  const plain = await buildRepRankingWorkbook({
+    carve: { direct: new Map(), office: new Map(), stores: new Map() },
+    probationByName: new Map(),
+    ranking: ranking(),
+  });
+  const plainBook = new ExcelJS.Workbook();
+  await plainBook.xlsx.load(plain.buffer as unknown as ArrayBuffer);
+  const plainProse: string[] = [];
+  plainBook.getWorksheet("Trust")!.eachRow((r) => r.eachCell((c) => {
+    if (typeof c.value === "string") plainProse.push(c.value);
+  }));
+  assert.ok(
+    !plainProse.join(" ").includes("WHAT THIS FILE COVERS"),
+    "and an UNFILTERED file says none of it - a warning that is always there is read by nobody",
+  );
+}
+
+/**
  * THE CNS WORKBOOK WEARS THE CNS IDENTITY — owner, 2026-10-13: "now use the CNS identity to make the
  * new identity ranking rep closing sheet, exactly as you did for anti-infective, but for CNS with
  * CNS identity."
@@ -904,16 +1043,39 @@ function assertAdminRepRankingButton(): void {
     "an unpublished month is refused in plain words first — the builder would answer it with"
       + " 'cannot be built', because loadPortalMonthlyClosing swaps it for the newest published one",
   );
-  assert.ok(
-    route.includes("filters: {}"),
-    "the route takes the selection only: narrowing the rows alone would shrink the channel split"
-      + " underneath a ranking built from matrices that take no row filter",
-  );
-  for (const field of ["areaCodes", "regionCodes", "productCodes", "detailSearch"]) {
+  // 🔴 THE SCREEN'S FILTER REACHES BOTH HALVES OF THE FILE, OR NEITHER — owner, 2026-10-13: "I
+  // filtered from my admin account and exported — it's supposed to follow my filter. No, it did
+  // not follow my filter. All the shit is exported." It used to be dropped here on purpose
+  // (`filters: {}`), because the ranking is built from the MATRICES while the channel carve comes
+  // from the DETAIL ROWS, so narrowing only the rows shrinks Stores and Office underneath a
+  // ranking that did not move. He was shown that and chose "every filter narrows everything", so
+  // what is measured now is that the SAME object reaches both reads — one of them taking it alone
+  // is the defect this replaces.
+  assert.ok(!route.includes("filters: {}"), "the filter is no longer thrown away at the route");
+  for (const field of ["areaCodes", "productCodes", "regionCodes", "search"]) {
     assert.ok(
-      !route.includes(`body.${field}`),
-      `the route never reads ${field} out of the body, so the two halves of the workbook cannot disagree`,
+      route.includes(`body.${field}`),
+      `the route reads ${field} out of the body — exactly the four fields runExport sends`,
     );
+  }
+  assert.equal(
+    (route.match(/^\s*filters,\s*$/gm) ?? []).length,
+    2,
+    "and hands that one object to BOTH loadMonthlyClosingDetails and buildScopedRepRankingExport —"
+      + " two reads of one filter, never one of each",
+  );
+  assert.ok(
+    route.includes("rankingFiltersAreEmpty(filters)"),
+    "an empty build says WHICH of the two it was: the month has nothing, or the filter left nothing",
+  );
+
+  // THE SCREEN sends those four and nothing else, so the list above is the whole filter. A control
+  // added to the screen without a line here would narrow the rows and not the ranking.
+  const screen = read("src/components/sales/monthly-closing-workspace.tsx");
+  const payload = screen.slice(screen.indexOf("const response = await fetch(input.url"));
+  for (const field of ["areaCodes: filter.areaCodes", "productCodes: filter.productCodes",
+    "regionCodes: filter.regionCodes", "search: filter.search"]) {
+    assert.ok(payload.includes(field), `runExport sends ${field} with every export`);
   }
 
   // 🔒 THE FROZEN EXPORT IS UNTOUCHED — this route sits beside it. The role disjunction that makes

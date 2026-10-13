@@ -454,9 +454,12 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
    * workbook does not exist for CNS or Pedia, and a greyed-out control invites a click that can
    * never succeed. The route refuses the other lines independently, by the same single gate.
    *
-   * The on-screen filter travels with it, as `runExport` sends it to every export, and the route
-   * ignores it DELIBERATELY — the ranking is built from matrices that take no row filter, so
-   * narrowing only the rows would shrink the channel split underneath a ranking that did not move.
+   * The on-screen filter travels with it, as `runExport` sends it to every export, and since
+   * 2026-10-13 it NARROWS THE FILE — owner: "it's supposed to follow my filter. No, it did not
+   * follow my filter. All the shit is exported." Both halves take it together, so the channel split
+   * can no longer shrink underneath a ranking that did not move: the rows are filtered by the
+   * route, the matrices by the builder, and a narrowed file says which rectangle it is on its own
+   * Ranking heading and on Trust.
    */
   async function handleRepRankingExport() {
     await runExport({
