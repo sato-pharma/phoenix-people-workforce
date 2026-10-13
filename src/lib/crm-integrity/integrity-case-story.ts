@@ -115,10 +115,49 @@ export type CaseEvidence = { label: string; value: string };
 export type CaseStory = {
   /** One sentence: the measured fact, for the row itself. Never a verdict and never a question. */
   headline: string;
-  /** The paragraph, one sentence per line — what was captured, what was measured, what usually causes it. */
+  /**
+   * The story as NUMBERED POINTS, one fact each — the owner's instruction of 13 October 2026:
+   * "I want it as easy as visits, location versus the validation location with a story listed
+   * pointed 1, 2, 3 … clear English. Don't make me enter a loop."
+   *
+   * 🔴 FIVE POINTS AT MOST. Before this it was eight to twelve sentences of paragraph, including one
+   * line saying a photograph was below the paragraph and a three-line block for the ordinary
+   * causes — and he could not find what had happened in it. Anything that is not the fact, the
+   * comparison or the ordinary cause belongs in the measurements, a click away and out of his path.
+   */
   story: string[];
+  /**
+   * The one comparison a case comes down to: where the capture says it happened, the location it
+   * was judged against, and the distance between them. Null when the case has a single coordinate
+   * (a replay case, by definition) or nothing to compare it with.
+   */
+  comparison: CaseComparison | null;
   /** The raw measurements, so a reader can check the sentences rather than trust them. */
   evidence: CaseEvidence[];
+};
+
+/**
+ * The two locations side by side, which is how the owner reads a case: "location versus the
+ * validation location".
+ *
+ * `capture` is where the thing being judged says it happened; `validation` is what it was measured
+ * against — the photograph the place was validated with wherever there is one, because the
+ * photograph is the anchor and the pin is dropped from the judgement (his instruction, 13 October
+ * 2026). `apart` is the plain-English distance, and "the same reading" when the two coincide.
+ */
+export type CaseComparisonSide = {
+  label: string;
+  coordinates: string;
+  accuracy: string | null;
+  at: string | null;
+};
+
+export type CaseComparison = {
+  capture: CaseComparisonSide;
+  validation: CaseComparisonSide;
+  apart: string;
+  /** Metres between them — 0 when the two readings are identical, never null. */
+  apartMeters: number;
 };
 
 /** What each detector is called on the screen, and what it looks at. */
@@ -666,8 +705,51 @@ function evidenceOf(input: CaseStoryInput): CaseEvidence[] {
 }
 
 /**
- * The whole story for one case: the headline for the row, the paragraph for the panel, and the
- * measurements behind both.
+ * The two locations the case is a comparison between.
+ *
+ * 🔴 THE VALIDATION SIDE PREFERS THE PHOTOGRAPH, NEVER THE PIN. The photograph saved for the place
+ * is the anchor the owner ruled on (13 October 2026) and the pin is dropped from the judgement, so
+ * where both exist the photograph is what the capture is shown against. The pin is still printed in
+ * the measurements, so nothing is hidden — it simply is not the thing being compared.
+ *
+ * Null when there is nothing to compare: fewer than two distinct coordinates, which is every replay
+ * case and any case whose readings all sit on one point.
+ */
+export function caseComparison(input: CaseStoryInput): CaseComparison | null {
+  const find = (label: string): CaseStoryReading | null => input.readings.find((r) => r.label === label) ?? null;
+  const capture =
+    find(CASE_READING_LABELS.visitSaved) ?? find(CASE_READING_LABELS.placeCaptured) ?? input.readings[0] ?? null;
+  if (capture === null) return null;
+  const sameSpot = (a: CaseStoryReading, b: CaseStoryReading): boolean =>
+    a.lat.toFixed(6) === b.lat.toFixed(6) && a.lon.toFixed(6) === b.lon.toFixed(6);
+  const validation =
+    [
+      find(CASE_READING_LABELS.placePhotograph),
+      find(CASE_READING_LABELS.photograph),
+      find(CASE_READING_LABELS.placeOnList),
+      find(CASE_READING_LABELS.pin),
+      ...input.readings,
+    ].find((reading): reading is CaseStoryReading => reading !== null && reading !== capture && !sameSpot(reading, capture)) ??
+    null;
+  if (validation === null) return null;
+  const metres = distanceMeters({ lat: capture.lat, lon: capture.lon }, { lat: validation.lat, lon: validation.lon });
+  const side = (reading: CaseStoryReading): CaseComparisonSide => ({
+    label: reading.label,
+    coordinates: `${reading.lat.toFixed(6)}, ${reading.lon.toFixed(6)}`,
+    accuracy: reading.accuracyMeters === null ? null : `accurate to about ${formatDistance(reading.accuracyMeters)}`,
+    at: reading.atIso,
+  });
+  return {
+    capture: side(capture),
+    validation: side(validation),
+    apart: metres <= 0 ? "the same reading" : formatDistance(metres),
+    apartMeters: metres <= 0 ? 0 : metres,
+  };
+}
+
+/**
+ * The whole story for one case: the headline for the row, the numbered points for the panel, the
+ * two locations it compares, and the measurements behind all of it.
  */
 export function caseStory(input: CaseStoryInput): CaseStory {
   const flagSentences = input.flags.map((flag, index) => integrityFlagSentence(flag, input, input.reasons[index] ?? null));
@@ -677,46 +759,35 @@ export function caseStory(input: CaseStoryInput): CaseStory {
     if (cause !== null && !causes.includes(cause)) causes.push(cause);
   }
 
-  const story: string[] = [openingSentence(input), ...flagSentences];
-
-  // Which of the readings is the odd one out, before the ordinary explanation for it.
+  // 🔴 POINT 1 IS WHAT HAPPENED, AND THE POINTS AFTER IT ARE WHY IT IS HERE. Nothing else gets a
+  // point of its own: the two locations have their own panel above these points, the photograph is
+  // on the screen where a line describing it was pure noise, and the measurements are one click
+  // away. He asked for 1, 2, 3 — so five is the ceiling and four is the usual case.
+  // Which of the readings is the odd one out, and where the customer's own visits stand against the
+  // photograph — the anchor, with the pin dropped from the judgement (his instruction, 13 Oct 2026).
   const odd = oddReadingSentence(input);
-  if (odd !== null) story.push(odd);
-
-  // And then the thing that settles it: where the customer's own visits sit. The photograph is the
-  // anchor and the pin is dropped from the judgement — the owner's instruction of 13 October 2026.
   const visitStanding = visitsAgainstThePhotographSentence(input);
-  if (visitStanding !== null) story.push(visitStanding);
+  // The ordinary innocent reason, on ONE line however many flags there are. It used to be a heading
+  // plus a line per cause, which read as an accusation with a list of excuses under it.
+  const usually = causes.length === 0 ? null : `Usually: ${spokenList(causes).replace(/, and /, " or ")}.`;
+  // 🔴 A PHOTOGRAPH GETS NO POINT OF ITS OWN. Only its ABSENCE is worth words, because an empty
+  // frame reads as a missing file rather than as the design: a one-tap visit keeps no picture at
+  // all. The "as it was sent" line that used to sit here was wrong on the ninth detector too, where
+  // the picture belongs to whoever validated the place and not to this rep.
+  const noPhotograph = input.photoPath === null ? "No photograph was kept — a one-tap visit keeps none." : null;
 
-  // A photograph is the one piece of evidence a reader can judge without any of the above, so the
-  // paragraph says whether there is one. "None kept" is an ordinary answer: the one-tap visit keeps
-  // no photograph at all, and a panel drawing an empty frame would read as a missing file.
-  // 🔴 "AS IT WAS SENT" IS TRUE OF EIGHT DETECTORS AND FALSE OF THE NINTH. On every other case the
-  // photograph is the one saved WITH the capture being judged. On a visit-against-the-photograph
-  // case the visit keeps no picture at all — what is shown is the photograph the PLACE was
-  // validated with, which is the anchor the measurement was made against, taken by whoever
-  // validated it on whatever day that was. Saying "as it was sent" there would tell a reader he is
-  // looking at this rep's own photograph of this call.
-  story.push(
-    input.photoPath === null
-      ? "No photograph is kept for this capture, so there is nothing to look at here — a one-tap visit keeps none by design."
-      : input.source === "visit_photo"
-        ? "The photograph below is the one the place was validated with — the reading this visit was measured against, not a picture from this call."
-        : "The photograph is below, as it was sent.",
-  );
-
-  if (causes.length > 0) {
-    story.push(causes.length === 1 ? `Usually: ${causes[0]!}` : "Usually, one of these:");
-    if (causes.length > 1) story.push(...causes);
+  // 🔴 BUILT IN PRIORITY ORDER AND CAPPED, so the cap can never silently eat the ordinary cause —
+  // which is the one line that keeps a reading from reading as an accusation. A case with four flags
+  // prints the two strongest and the cause, never four findings and no explanation.
+  const points: string[] = [openingSentence(input), ...flagSentences.slice(0, 2)];
+  for (const line of [visitStanding, odd, usually, noPhotograph]) {
+    if (line !== null && points.length < 5) points.push(line);
   }
 
-  // The last line is what he is actually deciding, and it is the same for every case: a reading, not
-  // a conclusion. Nobody is told, and nothing happens to anybody, whichever way it goes.
-  story.push(
-    input.strong
-      ? "This finding stands on its own, so it is worth a look. Settling it records that the look happened; nothing is sent to anybody either way."
-      : "This finding only means something beside others, so on its own it is probably nothing. Settling it records that it was read; nothing is sent to anybody either way.",
-  );
-
-  return { headline: headlineOf(input, flagSentences), story, evidence: evidenceOf(input) };
+  return {
+    headline: headlineOf(input, flagSentences),
+    story: points,
+    comparison: caseComparison(input),
+    evidence: evidenceOf(input),
+  };
 }
