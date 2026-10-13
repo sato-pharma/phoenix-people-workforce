@@ -472,7 +472,7 @@ function CaseList({ canSettle, entries, selection }: { canSettle: boolean; entri
                 ) : null}
               </th>
               <th className="px-5 py-3">When</th>
-              <th className="px-5 py-3">Rep</th>
+              <th className="px-5 py-3">Who</th>
               <th className="px-5 py-3">Customer</th>
               <th className="px-5 py-3">What was found</th>
               <th className="px-5 py-3">Position</th>
@@ -826,11 +826,11 @@ export function IntegrityBoardView({
               />
               <FilterSelect
                 id="integrity-rep"
-                label="Rep"
+                label="Who"
                 onChange={(next) => apply({ ...filters, rep: next })}
                 options={options.reps}
                 value={filters.rep}
-                whenEmpty="Every rep"
+                whenEmpty="Everybody"
               />
               <FilterSelect
                 id="integrity-line"

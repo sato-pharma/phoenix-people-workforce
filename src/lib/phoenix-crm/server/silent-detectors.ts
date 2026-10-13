@@ -63,6 +63,7 @@ import {
   judgeRevisitCadence,
   judgeRosterDay,
   judgeVisitAgainstPhotograph,
+  personOnTheVisit,
   PHOENIX_CRM_AWAY_DAY_ACTIVITIES,
   REVISIT_WINDOW_DAYS,
   type PhoenixCrmIntegrityFlag,
@@ -241,14 +242,24 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
   // ── Pass 1: the roster, visit by visit ──────────────────────────────────────────────────────
   const cadence = new Map<string, { customerId: string; repHrId: string; seatId: string; days: string[]; lastCapturedAt: Date; lastDate: string }>();
   for (const visit of visits) {
-    const repHrId = visit.rep_hr_id ? String(visit.rep_hr_id).toUpperCase() : "";
+    // Whose visit it is — the rep, or the MANAGER on his own single visit, where `rep_hr_id` is null
+    // by design (`personOnTheVisit` carries the rule and the production count). Reading the rep
+    // column alone left those calls checked by nothing at all.
+    const repHrId = personOnTheVisit({
+      repHrId: visit.rep_hr_id ? String(visit.rep_hr_id) : null,
+      managerHrId: visit.manager_hr_id ? String(visit.manager_hr_id) : null,
+    }) ?? "";
     const visitDate = String(visit.visit_date ?? "");
     const customerId = visit.customer_id ? String(visit.customer_id) : "";
     if (!repHrId || !visitDate) continue;
 
+    // 🔴 THE SUBJECT IS NEVER HIS OWN COMPANION. On a manager's own single visit he is the person
+    // above AND the row's `manager_hr_id`, so leaving him in this list would answer "was somebody
+    // else with him who should not have been?" with his own leave day — the same fact the roster
+    // judge already reads as his, filed twice under two different explanations.
     const companions = ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"]
       .map((key) => (visit[key] ? String(visit[key]).toUpperCase() : ""))
-      .filter(Boolean);
+      .filter((hrId) => hrId !== "" && hrId !== repHrId);
     const offDutyCompanions = companions.filter((hrId) => offDuty(hrId, visitDate));
 
     const flags = judgeRosterDay({
@@ -436,11 +447,13 @@ async function runSharedVenues(result: SilentSweepResult): Promise<void> {
  * fallback is the other half of the owner's 2026-09-29 ruling: a customer visited BEFORE he was
  * validated is measured against the place the validation captured, which is the EARLIEST one.
  *
- * 🔴 AND A VISIT WITH NO REP ON THE ROW IS NOT FILED. 17 visits in the 21-day window carry
- * `capture_source = 'server'` and no `rep_hr_id` at all (production, 13 Oct 2026), one of them
- * 3.2 km from its photograph. The board prints a NAME beside every case and would print a blank for
- * these, and a case naming nobody is a case nobody can look at. They are left for the capture path
- * that writes them to answer for, rather than filed as a finding against an unnamed person.
+ * 🔴 AND IT FILES A MANAGER'S OWN VISIT UNDER HIS OWN NAME (corrected 13 Oct 2026, hours after the
+ * pass shipped). An empty `rep_hr_id` is not a lost rep: a manager entering a single visit on a
+ * territory IS the person on it, and `scope.ts` writes `manager_hr_id` and no rep deliberately. The
+ * first spelling of this pass read the rep column alone and skipped all 17 such rows on production —
+ * one of them 3,236 m from the photograph of the place it names, past the line and past both
+ * accuracy margins, visible to nothing. `personOnTheVisit` answers whose visit it is, so the board
+ * still prints a NAME beside every case and nothing is filed against nobody.
  *
  * The flags are weak, nobody is told, nothing is refused and nothing is held — this file's four
  * rules hold for this pass exactly as they do for the others.
@@ -459,7 +472,7 @@ async function runVisitPhotographGap(todayIso: string, result: SilentSweepResult
       () =>
         supabase
           .from("phoenix_crm_visits")
-          .select("id, seat_id, rep_hr_id, customer_id, visit_date, captured_at, lat, lon, accuracy_meters")
+          .select("id, seat_id, rep_hr_id, manager_hr_id, customer_id, visit_date, captured_at, lat, lon, accuracy_meters")
           .eq("is_test", false)
           .gte("visit_date", fromIso)
           .lte("visit_date", todayIso)
@@ -501,7 +514,11 @@ async function runVisitPhotographGap(todayIso: string, result: SilentSweepResult
   }
 
   for (const visit of visitRead.rows) {
-    const repHrId = visit.rep_hr_id ? String(visit.rep_hr_id).toUpperCase() : "";
+    // The rep, or the manager whose own single visit this is — the header's second rule.
+    const repHrId = personOnTheVisit({
+      repHrId: visit.rep_hr_id ? String(visit.rep_hr_id) : null,
+      managerHrId: visit.manager_hr_id ? String(visit.manager_hr_id) : null,
+    }) ?? "";
     const customerId = visit.customer_id ? String(visit.customer_id) : "";
     const visitDate = String(visit.visit_date ?? "");
     if (!repHrId || !customerId || !visitDate) continue;

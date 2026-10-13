@@ -368,14 +368,40 @@ function visitPhotographPassTests(): void {
   assert.match(silent, /const config = await loadPhoenixCrmConfig\(\);/, "the far line is read live from the module's settings");
   assert.match(silent, /const farMeters = config\.settings\.visitFarMeters;/, "and it is visitFarMeters, the one the rep's own flag already uses");
 
-  // 🔴 A VISIT WITH NO REP ON THE ROW IS NOT FILED. 17 visits in the 21-day window carry
-  // capture_source = 'server' and no rep_hr_id at all (production, 13 Oct 2026), one of them 3.2 km
-  // from its photograph. The board prints a NAME beside every case, and a case naming nobody is a
-  // case nobody can look at.
+  // 🔴 A MANAGER'S OWN VISIT IS FILED UNDER HIS OWN NAME, NOT SKIPPED. An empty rep_hr_id is the
+  // design and not a lost rep — scope.ts writes manager_hr_id and no rep when a manager enters a
+  // single visit — so reading the rep column alone left all 17 such rows on production checked by
+  // nothing, one of them 3,236 m from the photograph of the place it names. Both visit-keyed walks
+  // resolve the subject through personOnTheVisit, and there are exactly two of them.
+  assert.equal(
+    silent.split("personOnTheVisit({").length - 1,
+    2,
+    "both visit-keyed walks (roster/cadence and the photograph) must resolve the subject through personOnTheVisit",
+  );
+  assert.ok(
+    !/const repHrId = visit\.rep_hr_id \? String\(visit\.rep_hr_id\)\.toUpperCase\(\) : "";/.test(silent),
+    "no pass may take the rep column alone as the subject — that is what made a manager's own visit invisible",
+  );
+  // The photograph pass reads the column it now depends on. Without it personOnTheVisit is handed
+  // undefined for ever and the fix silently does nothing.
+  assert.match(
+    silent,
+    /select\("id, seat_id, rep_hr_id, manager_hr_id, customer_id, visit_date, captured_at, lat, lon, accuracy_meters"\)/,
+    "the photograph pass must read manager_hr_id, or the subject can never resolve to the manager",
+  );
+  // 🔴 AND THE SUBJECT IS NEVER HIS OWN COMPANION: on a manager's own single visit he is both the
+  // person and the row's manager_hr_id, so leaving him in the companion list files his own leave day
+  // twice — once as his, once as "somebody else was with him".
+  assert.match(
+    silent,
+    /\.filter\(\(hrId\) => hrId !== "" && hrId !== repHrId\)/,
+    "the subject must be excluded from his own companions",
+  );
+  // A visit naming nobody at all is still filed against nobody.
   assert.match(
     silent,
     /if \(!repHrId \|\| !customerId \|\| !visitDate\) continue;/,
-    "a visit with no rep, no customer or no day is skipped, never filed against nobody",
+    "a visit naming nobody, no customer or no day is skipped, never filed against nobody",
   );
 
   // The anchor is a photograph captured BEFORE the visit: a clinic validated in October must not

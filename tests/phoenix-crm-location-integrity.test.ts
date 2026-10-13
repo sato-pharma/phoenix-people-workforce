@@ -16,6 +16,7 @@ import {
   judgeRevisitCadence,
   judgeRosterDay,
   judgeVisitAgainstPhotograph,
+  personOnTheVisit,
   VISIT_PHOTO_VERY_FAR_METERS,
   PHOENIX_CRM_AWAY_DAY_ACTIVITIES,
   REVISIT_WINDOW_DAYS,
@@ -701,6 +702,27 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
         `${flag} must stay weak — a strong flag moves the rep's own Integrity score`,
       );
     }
+  }
+
+  // ── Whose visit is it? (2026-10-13) ─────────────────────────────────────────────────────────
+  {
+    // 🔴 A MANAGER'S OWN SINGLE VISIT HAS NO REP BY DESIGN, AND HE IS THE PERSON ON IT.
+    // `resolveVisitParticipants` writes `repHrId: null, managerHrId: actor` for exactly that case,
+    // and every such row on production (17 of them, two District Sales Managers) carries a real fix.
+    // Before this answer existed the roster, cadence and photograph passes each skipped them, so one
+    // visit 3,236 m from its place's photograph was measurable, past the line, and visible to nothing.
+    assert.equal(personOnTheVisit({ repHrId: null, managerHrId: "AI-0007" }), "AI-0007", "a manager's own visit is HIS");
+    assert.equal(personOnTheVisit({ repHrId: "", managerHrId: "b-120" }), "B-120", "and his id is read the way every other id here is");
+    assert.equal(personOnTheVisit({ repHrId: "  b-120  ", managerHrId: null }), "B-120", "a padded rep id is still the rep");
+
+    // 🔴 THE REP WINS WHENEVER THERE IS ONE. On a double or a chain visit the call was the rep's and
+    // the manager was with him; reading the manager first would file every double visit against the
+    // manager and take the rep's own call off his own board.
+    assert.equal(personOnTheVisit({ repHrId: "PH-0100", managerHrId: "AI-0007" }), "PH-0100", "a double visit is the rep's, not his manager's");
+
+    // Nobody at all is still nobody — the board prints a name beside every case.
+    assert.equal(personOnTheVisit({ repHrId: null, managerHrId: null }), null);
+    assert.equal(personOnTheVisit({ repHrId: "   ", managerHrId: "" }), null, "whitespace names nobody");
   }
 
   console.log("phoenix-crm location integrity: OK");

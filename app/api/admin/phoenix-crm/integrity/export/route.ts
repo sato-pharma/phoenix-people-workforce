@@ -44,7 +44,7 @@ export const dynamic = "force-dynamic";
 const CASE_COLUMNS: ExportColumn[] = [
   { key: "visitDay", label: "Day", width: 12 },
   { key: "filedDay", label: "Filed on", width: 12 },
-  { key: "rep", label: "Rep", width: 26 },
+  { key: "rep", label: "Who", width: 26 },
   { key: "line", label: "Line", width: 16 },
   { key: "area", label: "Area", width: 18 },
   { key: "region", label: "Region", width: 18 },
@@ -70,7 +70,7 @@ const CASE_COLUMNS: ExportColumn[] = [
 ];
 
 const BY_REP_COLUMNS: ExportColumn[] = [
-  { key: "rep", label: "Rep", width: 26 },
+  { key: "rep", label: "Who", width: 26 },
   { key: "line", label: "Line", width: 16 },
   { key: "area", label: "Area", width: 18 },
   { key: "region", label: "Region", width: 18 },

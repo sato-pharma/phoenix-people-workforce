@@ -575,6 +575,20 @@ function runOneSourceTests() {
   // person's name, so the route has no reason to reach for `byHrId` — and `repHrId` is on every case.
   assert.ok(exportRoute.includes("settlement?.byName"), "who settled a case is named");
   assert.ok(!/byHrId|repHrId|\bhrId\b/.test(exportRoute.replace(/access\.hrId/g, "")), "no HR id may reach a cell");
+
+  // 🔴 THE PERSON COLUMN DOES NOT CALL EVERYBODY A REP. A manager's own single visit is filed under
+  // his own name (`personOnTheVisit`), and two District Sales Managers already hold 17 such visits on
+  // production — printing their names under a column headed "Rep" states something false about a real
+  // person, on the one board whose whole purpose is that every line of it is true.
+  assert.ok(view.includes('<th className="px-5 py-3">Who</th>'), "the board's person column is headed Who, not Rep");
+  assert.ok(!/<th className="px-5 py-3">Rep<\/th>/.test(view), "and never Rep again");
+  assert.ok(!/label="Rep"/.test(view), "nor may the filter for that person be labelled Rep");
+  assert.equal(
+    exportRoute.split('label: "Who"').length - 1,
+    2,
+    "both export sheets head that column Who — the Cases sheet and the By rep summary",
+  );
+  assert.ok(!/label: "Rep"/.test(exportRoute), "and neither says Rep");
 }
 
 /**
