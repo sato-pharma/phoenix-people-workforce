@@ -3,8 +3,7 @@ import { NextResponse } from "next/server";
 import { canAccess } from "@/lib/auth/permissions";
 import { isGuestFallbackAccess } from "@/lib/auth/page-access-guard";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { resolveLandingPathForRole } from "@/lib/auth/landing";
-import { canAccessPortalClosing } from "@/lib/sales/monthly-closing-portal";
+import { resolveClosingPublishDestination } from "@/lib/sales/closing-publish-destination";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,51 +11,35 @@ export const dynamic = "force-dynamic";
 // The "Open Phoenix Workforce" link inside the closing-published email — one URL shared by every
 // recipient (Super Admin, SFE Manager, CEO, District/Regional/National Manager, Product/Group
 // Product Manager, Marketing Manager), so it cannot know in advance which page each person can
-// even see. Resolves that here, server-side, instead of leaving it to client-side role routing
-// (which sends most of those roles to a generic landing page, not the Matrix itself — see
+// even see. Resolved here, server-side, instead of left to client-side role routing (which sends
+// most of those roles to a generic landing page, not the Matrix itself — see
 // resolveLandingPathForRole).
 //
 // Not authenticated -> /login (same as every other page in the app; this route adds no new
 // "return to this page after login" behavior, matching existing convention).
-// Super Admin / system scope / SFE Manager -> the admin Closing Matrix, filtered to this line
-// and period via query params (see app/(admin)/sales/monthly-closing/page.tsx searchParams).
-// Every PORTAL_CLOSING_ROLES role — District/Regional/National Manager, Product/Group Product
-// Manager, Marketing Manager, Medical Rep — -> their own portal Monthly Closing tab, which resolves
-// their line and scope automatically; only the period is passed through.
-// Everyone else (CEO, or any role with no closing view) -> unchanged, their normal landing page. Granting the CEO a Matrix view is a real access-control decision this
-// route does not make on its own.
+//
+// WHICH page each role gets is resolveClosingPublishDestination's rule, not this handler's: it
+// drifted out of step with the Closing Matrix page's own role guard once — the CEO's link could
+// not reach the page he had asked for by name — and the module beside it carries that account and
+// the test that now ties the two together. This handler stays what it always was: redirect-only,
+// never a hard 403, so a stale or mis-scoped click degrades to the clicker's own landing page
+// rather than an error page.
 export async function GET(request: Request) {
   const access = await resolveAccessContext(request);
   const url = new URL(request.url);
   const line = url.searchParams.get("line")?.trim() ?? "";
   const period = url.searchParams.get("period")?.trim() ?? "";
 
-  const destination = await (async () => {
-    if (isGuestFallbackAccess(access)) return "/login";
-
-    // Never a hard 403 here — a stale/mis-scoped click should degrade to the clicker's own
-    // landing page, not an error page. canAccess() is the same sales:read boundary the admin
-    // and portal Closing pages themselves enforce; this route is redirect-only, so it checks
-    // rather than asserts.
-    if (!(await canAccess(access, "sales", "read"))) return resolveLandingPathForRole(access.role);
-
-    if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager") {
-      const params = new URLSearchParams();
-      if (line) params.set("line", line);
-      if (period) params.set("period", period);
-      const qs = params.toString();
-      return `/sales/monthly-closing${qs ? `?${qs}` : ""}`;
-    }
-
-    if (canAccessPortalClosing(access)) {
-      const params = new URLSearchParams();
-      if (period) params.set("period", period);
-      const qs = params.toString();
-      return `/employee-portals/monthly-closing${qs ? `?${qs}` : ""}`;
-    }
-
-    return resolveLandingPathForRole(access.role);
-  })();
+  const destination = isGuestFallbackAccess(access)
+    ? "/login"
+    : resolveClosingPublishDestination({
+        viewer: access,
+        // The same sales:read boundary the admin and portal Closing pages themselves enforce. Asked
+        // once, and never for a guest — who is already on their way to /login above.
+        canReadSales: await canAccess(access, "sales", "read"),
+        line,
+        period,
+      });
 
   return NextResponse.redirect(new URL(destination, request.url));
 }

@@ -24,6 +24,8 @@ import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-impor
 import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-closing-matrix-cells";
 import { ClosingPeriodSelect } from "@/components/sales/closing-period-select";
 import { closingPeriodGateMessage, closingPeriodOpensOn, isClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
+import { describeClosingDeepLinkMiss, type ClosingDeepLinkMiss } from "@/lib/sales/closing-deep-link";
+import { describeDroppedFilterChoices, narrowClosingFilterToOptions } from "@/lib/sales/closing-filter-narrowing";
 import { describePeriodSelection, periodLabel } from "@/lib/sales/monthly-closing-period-merge";
 import type { MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { quietSourcesSentence } from "@/lib/sales/source-quiet-periods";
@@ -40,6 +42,13 @@ type Props = {
   canExportConsolidated?: boolean;
   canPublish?: boolean;
   initialCoverage?: MonthlySourceCoverage | null;
+  /**
+   * The ?line=/?period= this page was deep-linked with and could NOT honour — from the published-
+   * closing email, a bookmark or a pasted link. The loader substitutes the newest month of the
+   * first line in silence, so the substitution is stated above the matrix instead. Null when the
+   * link was honoured, or when there was no link.
+   */
+  initialDeepLinkMiss?: ClosingDeepLinkMiss | null;
   initialError: string | null;
   initialMatrix: MonthlyClosingMatrix | null;
   /** The Office-only grid behind every "of which Office" column. Null = could not be read. */
@@ -58,7 +67,7 @@ type ClosingResponse = {
   success: boolean;
 };
 
-export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPublish = false, initialCoverage = null, initialError, initialMatrix, initialOffice = null }: Props) {
+export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPublish = false, initialCoverage = null, initialDeepLinkMiss = null, initialError, initialMatrix, initialOffice = null }: Props) {
   const [matrix, setMatrix] = useState<MonthlyClosingMatrix | null>(initialMatrix);
   const [office, setOffice] = useState<MonthlyClosingMatrix | null>(initialOffice);
   const [coverage, setCoverage] = useState<MonthlySourceCoverage | null>(initialCoverage);
@@ -78,6 +87,11 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
   const [isLocking, setIsLocking] = useState(false);
   const [tab, setTab] = useState<"matrix" | "details">("matrix");
   const [skippedPeriods, setSkippedPeriods] = useState<string[]>([]);
+  // Cleared the moment the reader loads anything themselves: from then on what is on screen is what
+  // they asked for, and the link they arrived by is no longer what they are reading.
+  const [deepLinkMiss, setDeepLinkMiss] = useState<ClosingDeepLinkMiss | null>(initialDeepLinkMiss);
+  // Filter choices a refresh could not keep, by the NAME the picker showed for them.
+  const [droppedFilterLabels, setDroppedFilterLabels] = useState<string[]>([]);
 
   const selectedLine = matrix?.line ?? "";
   const selectedPeriod = matrix?.period ?? "";
@@ -161,6 +175,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
   // Built from the UNFILTERED matrix, and shared with the Performance Review so the two screens
   // offer the same regions, areas and products — see monthly-closing-filter-options.ts.
   const filterOptions = useMemo(() => monthlyClosingFilterOptions(matrix), [matrix]);
+  const droppedFilterNotice = describeDroppedFilterChoices(droppedFilterLabels);
 
   useEffect(() => {
     if (!canPublish || !selectedLine || !selectedPeriod) return;
@@ -254,9 +269,32 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
     }
   }
 
-  async function reload(line: string, periods: string[]) {
+  /**
+   * Load a line and a set of months.
+   *
+   * `keepFilter` is for the REFRESH button alone: same line, same months, same pickers, so the
+   * region / area / product selection the reader is working in must survive. The line and month
+   * selects pass nothing and still clear it — a different line offers different areas and products,
+   * and a selection carried across would be meaningless rather than preserved.
+   *
+   * A kept filter is narrowed to what the refreshed matrix actually offers, and whatever fell out is
+   * named on screen: a refresh exists because the closing can change underneath the page, and a
+   * selection left pointing at an area that has just been merged away would read as an empty grid.
+   */
+  async function reload(line: string, periods: string[], options?: { keepFilter?: boolean }) {
     setIsLoading(true);
     setError(null);
+    // The reader has picked a line or a month themselves, so the arrival link's substitution notice
+    // no longer describes what is on screen.
+    setDeepLinkMiss(null);
+    setDroppedFilterLabels([]);
+    // The labels the pickers are showing RIGHT NOW, captured before the matrix is replaced — names
+    // are what reach the reader, never codes (AGENTS.md §4).
+    const labelsBefore = new Map(
+      [...filterOptions.areas, ...filterOptions.products, ...filterOptions.regions]
+        .map((option) => [option.code, option.label] as const),
+    );
+    const filterBefore = filter;
     try {
       const query = new URLSearchParams();
       if (line) query.set("line", line);
@@ -273,7 +311,13 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
         setOffice(payload.office ?? null);
         setCoverage(payload.coverage ?? null);
         setSkippedPeriods(payload.skipped ?? []);
-        setFilter(emptyMonthlyClosingFilter);
+        if (options?.keepFilter) {
+          const narrowed = narrowClosingFilterToOptions(filterBefore, monthlyClosingFilterOptions(payload.data));
+          setFilter(narrowed.filter);
+          setDroppedFilterLabels(narrowed.droppedCodes.map((code) => labelsBefore.get(code) ?? code));
+        } else {
+          setFilter(emptyMonthlyClosingFilter);
+        }
       } else {
         setError(payload.error ?? "Failed to load Monthly Closing.");
       }
@@ -516,7 +560,9 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
             <Button
               className="gap-2"
               disabled={isLoading}
-              onClick={() => void reload(selectedLine, selectedPeriods)}
+              // Same line, same months: the reader's region / area / product filter survives the
+              // press. Only the two selects above clear it, where the options themselves change.
+              onClick={() => void reload(selectedLine, selectedPeriods, { keepFilter: true })}
               variant="secondary"
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -595,6 +641,24 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
               <div className="flex items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 px-4 py-2.5 text-xs font-semibold text-emerald-700 md:px-5">
                 <CheckCircle2 className="h-4 w-4" />
                 This month is published — sales managers and product managers can see it in their portal (scoped to their line / products).
+              </div>
+            ) : null}
+            {/* The link that opened this page asked for a line or a month the closing does not
+                have, and the loader substituted the newest month of the first line. What is on
+                screen is a real closing — just not the one that was asked for, which is the one
+                thing a reader cannot see for themselves. */}
+            {deepLinkMiss ? (
+              <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs font-semibold text-amber-800 md:px-5">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{describeClosingDeepLinkMiss(deepLinkMiss, { line: selectedLine, period: selectedPeriod })}</p>
+              </div>
+            ) : null}
+            {/* A refresh kept the reader's filter, but the closing had changed under it: whatever it
+                could no longer honour is named here rather than dropped quietly. */}
+            {droppedFilterNotice ? (
+              <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs font-semibold text-amber-800 md:px-5">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{droppedFilterNotice}</p>
               </div>
             ) : null}
             {coverageWarning ? (
@@ -775,6 +839,10 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
               <ClosingDetailsPanel
                 line={selectedLine}
                 period={selectedPeriod}
+                // The matrix's own months. Several of them and these rows are ONE of them — the last
+                // of the span, which is what mergeMonthlyClosingPeriods leaves in `matrix.period` —
+                // so the panel says so rather than letting the two tabs look as if they disagree.
+                periodsInView={selectedPeriods}
                 showConfidentialToggle
               />
             )}

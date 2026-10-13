@@ -10,6 +10,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 // Value import, so it must come from the leaf: monthly-closing-details.ts reaches getSupabaseAdmin
 // and this is a client component. See closing-headline.ts.
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
+import { describeClosingDetailsSpan } from "@/lib/sales/closing-details-span";
 import type {
   NamedClosingDetailRow,
   NamedClosingDetailsResult,
@@ -30,6 +31,13 @@ const PAGE_SIZE = 200;
 type Props = {
   line: string | null;
   period: string | null;
+  /**
+   * The months the Closing Matrix beside these rows is showing. Several of them means the matrix is
+   * a folded span while these rows are ONE month — the last of it — so the panel says which, instead
+   * of leaving the two tabs looking as though they disagree. See closing-details-span.ts. Single-month
+   * mounts (the portal tab, the standalone details page) pass nothing and nothing is shown.
+   */
+  periodsInView?: readonly string[] | null;
   /** Portal mounts pass false — only CEO / Super Admin ever see the toggle. */
   showConfidentialToggle?: boolean;
   /**
@@ -69,7 +77,7 @@ function fmtValue(value: number) {
 
 const selectClassName  = phxSelectClassName;
 
-export function ClosingDetailsPanel({ line, period, showConfidentialToggle = false, surface = "admin" }: Props) {
+export function ClosingDetailsPanel({ line, period, periodsInView = null, showConfidentialToggle = false, surface = "admin" }: Props) {
   const [data, setData] = useState<NamedClosingDetailsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -252,9 +260,20 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
   }
 
   const recon = data?.reconciliation;
+  // One month under a matrix that covers several — named, never left for the reader to notice.
+  const spanNotice = describeClosingDetailsSpan({ period, periodsInView });
 
   return (
     <div className="space-y-4">
+      {spanNotice ? (
+        <div className="px-4 pt-4 md:px-5">
+          <Callout surface={surface} tone="neutral">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="min-w-0 break-words">{spanNotice}</p>
+          </Callout>
+        </div>
+      ) : null}
+
       <div className="flex items-center justify-end px-4 pt-4 md:px-5">
         <button
           className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"

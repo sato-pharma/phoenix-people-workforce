@@ -36,9 +36,86 @@ import {
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
+import { foldAreaCodeForLine } from "@/lib/sales/closing-area-merges";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { areaProductKey } from "@/lib/sales/store-sales-city-split";
 
 type NetMap = ReadonlyMap<string, { qty: number; value: number }>;
+
+/**
+ * The first month whose split net is re-keyed onto a merged area row — owner, 2026-10-13, asked
+ * directly and answered "ship the fold fix dated from july".
+ *
+ * Dated for the same reason every money rule in this module is: a correction with no start period
+ * restates every month the system can still read, published ones included. July is his own choice
+ * and it costs nothing earlier than it says — the city split itself only begins in August 2026
+ * (`isStoreCitySplitActive`), so a month before that has no net to re-key and renders exactly as it
+ * was published. The one month it moves is Pedia 2026-08, measured against production 2026-10-13:
+ * Fayoum - Beni Suef 53,632.99 -> 99,192.98, and the line's August total up by the same 45,559.99
+ * EGP it was losing. Moving this constant is his word, never a session's.
+ */
+export const MERGED_AREA_SPLIT_FOLD_START_PERIOD = "2026-07";
+
+/**
+ * Re-key a split net onto the area rows this matrix actually renders.
+ *
+ * 🔴 A MERGED AREA ROW IS THE ONE CASE WHERE "NOWHERE TO LAND" IS A DEFECT RATHER THAN A FILTER.
+ * `applyStoreSplitToMatrix` asks the net one question per row it renders — `areaProductKey(area
+ * .areaCode, product)` — and skips a delta no row claims. Correct for a FILTERED export, where the
+ * net covers the whole month and the sheet covers three areas. But `applyClosingAreaMerges` folds
+ * Fayoum (`GZ6`) + Beni Suef (`UE9`) into ONE row keyed `GZ6` (Pedia up to and including 2026-08,
+ * CNS from 2026-08) and Suez + Ismailia into one keyed `OT2` (Anti Infective from 2026-09) — so on a
+ * WHOLE-MONTH read the folded-away code has no row either, and its share of the city split, the
+ * EPDA-BULK allocation and the Office respread had nowhere to go.
+ *
+ * Measured on production 2026-10-13, Pedia 2026-08: the net took 25,720.02 EGP off Fayoum and put
+ * 45,559.99 on Beni Suef; the first landed, the second was dropped, and the line's national total
+ * fell by it. Two independent surfaces — Source of Sales and `phx_sales_vs_target_range` — both read
+ * the 99,192.98 the closing was printing as 53,632.99. A redistribution that changes the grand total
+ * is the whole defect in one sentence, and this module's own invariant says it cannot happen.
+ *
+ * So each key's area is folded exactly the way its ROW was, through the same dated helper
+ * (`foldAreaCodeForLine`), and two legs that collide on one row are ADDED rather than overwritten —
+ * Fayoum's own leg and Beni Suef's both belong to the merged row. The returned keys are therefore
+ * the codes the sheet uses, which is also what `cells` must carry: the workbook's Total sheet adds
+ * each landed delta to that area's Data rows, and those rows are folded the same way by
+ * `applyClosingAreaMergesToDetails`.
+ *
+ * Returns the SAME map when nothing folds, so every line and month without a merge rule in force is
+ * byte-identical to before.
+ */
+export function foldNetOntoMergedAreas(
+  matrix: Pick<MonthlyClosingMatrix, "line" | "period">,
+  net: NetMap,
+): NetMap {
+  const period = String(matrix.period ?? "").trim();
+  // A malformed or absent period falls back to NOT folding, which is the pre-fix behaviour: failing
+  // to fold leaves a number that has been wrong since the merge rule landed, while folding a month
+  // this was never dated for would restate one the owner published.
+  if (!/^\d{4}-\d{2}$/.test(period) || period < MERGED_AREA_SPLIT_FOLD_START_PERIOD) return net;
+  const lineCode = resolveTargetLineCode(matrix.line);
+  if (!lineCode) return net;
+
+  const folded = new Map<string, { qty: number; value: number }>();
+  let anyFolded = false;
+  for (const [key, delta] of net) {
+    // Area first, product after the separator. An area code never carries "|", so the first one is
+    // the only separator that matters.
+    const cut = key.indexOf("|");
+    const area = cut < 0 ? key : key.slice(0, cut);
+    // The row's own code for this line and month — `UE9` -> `GZ6` where the pair is folded, and the
+    // code itself everywhere else, including every line and month with no rule in force.
+    const rowArea = cut < 0 ? area : foldAreaCodeForLine(lineCode, area, period);
+    const rowKey = rowArea === area ? key : areaProductKey(rowArea, key.slice(cut + 1));
+    if (rowKey !== key) anyFolded = true;
+    const soFar = folded.get(rowKey);
+    folded.set(
+      rowKey,
+      soFar ? { qty: soFar.qty + delta.qty, value: soFar.value + delta.value } : delta,
+    );
+  }
+  return anyFolded ? folded : net;
+}
 
 export type StoreSplitApplication = {
   matrix: MonthlyClosingMatrix;
@@ -85,10 +162,17 @@ function adjustCell(cell: MonthlyClosingCell, delta: { qty: number; value: numbe
  * narrowClosingDetailsToAreas. So on a filtered export this deliberately receives deltas for areas
  * that are not in `matrix`; they have nowhere to land and are skipped, and the amount skipped is
  * exactly what `applied` lets the caller state out loud instead of losing.
+ *
+ * A MERGED area row is the one case where that skip is a defect instead of a filter, so the net is
+ * re-keyed onto the rows this matrix renders first — see foldNetOntoMergedAreas.
  */
 export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMap): StoreSplitApplication {
   const nothingApplied = { qty: 0, value: 0 };
   if (net.size === 0) return { applied: nothingApplied, cells: new Map(), matrix };
+  // Folded BEFORE anything is read, so the area rows, their region subtotals, the grand total,
+  // `applied` and `cells` all describe one population. The same map comes back untouched for every
+  // line and month with no merge rule in force.
+  const effectiveNet = foldNetOntoMergedAreas(matrix, net);
 
   // Per product column, the total delta applied across every area — used to move the grand total
   // by exactly the same amount the areas moved (which is zero, but derived rather than assumed).
@@ -119,7 +203,7 @@ export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMa
         const column = matrix.columns[index];
         if (!column) return cell;
         const key = areaProductKey(area.areaCode, column.productCode);
-        const delta = net.get(key);
+        const delta = effectiveNet.get(key);
         if (!delta || (delta.qty === 0 && delta.value === 0)) return cell;
         areaChanged = true;
         anyChange = true;

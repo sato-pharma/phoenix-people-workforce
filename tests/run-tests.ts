@@ -1650,6 +1650,12 @@ import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merg
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runClosingQuarterGapTests } from "./closing-quarter-gap.test.ts";
 import { runClosingMatrixNoOfficeTests } from "./closing-matrix-no-office.test.ts";
+import { runClosingMergedAreaSplitFoldTests } from "./closing-merged-area-split-fold.test.ts";
+import { runClosingPublishEmailDestinationTests } from "./closing-publish-email-destination.test.ts";
+import { runClosingDeepLinkSilentSubstitutionTests } from "./closing-deep-link-silent-substitution.test.ts";
+import { runClosingDetailsSpanNoticeTests } from "./closing-details-span-notice.test.ts";
+import { runClosingMatrixHeadNeverEllipsisesTests } from "./closing-matrix-head-never-ellipsises.test.ts";
+import { runClosingRefreshKeepsTheFilterTests } from "./closing-refresh-keeps-the-filter.test.ts";
 import { runClosingConsolidatedExportTests } from "./closing-consolidated-export.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runCeoMarketAwarenessApprovalInboxTests } from "./ceo-market-awareness-approval-inbox.test.ts";
@@ -5869,6 +5875,36 @@ await runTest(
 await runTest(
   "the CNS-only Closing Matrix (No Office) tab in both workbooks (the Office slice is matched by product CODE and taken out of every cell, targets are NOT reduced with it so the achievement falls, every subtotal and both bottom rows are re-derived from the rows that survived, the tab is absent on any other line and absent when the Office grid was not narrowed with the matrix, and in each emitted file it lands immediately after the Closing Matrix with its defined names shifted, its percentage columns formatted, its masthead painted to the table's width and one contents heading rather than two)",
   runClosingMatrixNoOfficeTests,
+);
+
+await runTest(
+  "a merged area row receives BOTH halves of the store split (Fayoum + Beni Suef, and Suez + Ismailia from its own month, each fold dated — the leg keyed to the folded-away area used to land on no row at all, so the merged row, its region subtotal and the line's national total all lost it; Pedia 2026-08 was 45,559.99 EGP short of its own inputs, a line with no rule in force is untouched, a month before the owner's July start renders as published, and a FILTERED sheet still discloses the money belonging outside it)",
+  runClosingMergedAreaSplitFoldTests,
+);
+
+await runTest(
+  "the published-closing email's one shared link reaches each recipient's own closing page (the CEO, Cc'd on every publish, opens the Closing Matrix on the month just published instead of his Command Center; the link's role set is checked against that page's OWN guard source, a portal viewer gets the period and never a line, sales:read stays the boundary, and the route keeps no second copy of the rule)",
+  runClosingPublishEmailDestinationTests,
+);
+
+await runTest(
+  "a deep link the closing could not honour is NAMED above the matrix instead of substituted in silence (?line=/?period= falls back to the newest month of the first line, so the page states what was asked for and what is shown; a casing-only difference is not a substitution, the empty state is not one either, an unparseable month is quoted as it arrived, the notice clears once the reader loads a month themselves, and the loader's own fallback is pinned as the reason it exists)",
+  runClosingDeepLinkSilentSubstitutionTests,
+);
+
+await runTest(
+  "the Details tab names its own month when the Closing Matrix beside it covers several (the merged matrix keeps the LAST month of the span and the panel loads, totals and exports that one month, so the notice names it, the span and how many months are in the figures above but not in these rows; one month, a repeated month and the single-month portal and standalone mounts say nothing at all)",
+  runClosingDetailsSpanNoticeTests,
+);
+
+await runTest(
+  "the Closing Matrix head is never cut with an ellipsis (the product-name and family-name banners wrap like the area-name cell already does, and because a wrapped head grows the row, the metric row beneath it sticks to the head's MEASURED height — published to the DOM as a CSS variable with the old 44px as its fallback — instead of a hard-coded 44)",
+  runClosingMatrixHeadNeverEllipsisesTests,
+);
+
+await runTest(
+  "Refresh keeps the reader's region, area and product filter (the two selects above it still clear it, because a different line offers different options; a kept filter is narrowed to what the refreshed matrix actually offers, whatever fell out is named by the label the picker showed for it, and the search term the reader typed is never touched)",
+  runClosingRefreshKeepsTheFilterTests,
 );
 
 await runTest(

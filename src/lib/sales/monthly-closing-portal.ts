@@ -119,7 +119,10 @@ const PRODUCT_SCOPED_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "Group Product Manager",
 ]);
 
-export function canAccessPortalClosing(access: AccessContext): boolean {
+// Takes only the role it reads, so the published-closing email's destination resolver
+// (closing-publish-destination.ts) can ask this one gate instead of keeping a second copy of
+// PORTAL_CLOSING_ROLES. Every existing caller passes a whole AccessContext and is unaffected.
+export function canAccessPortalClosing(access: Pick<AccessContext, "role">): boolean {
   return PORTAL_CLOSING_ROLES.has(access.role);
 }
 
