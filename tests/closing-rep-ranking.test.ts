@@ -179,15 +179,25 @@ const SEATS = new Map<string, AreaSeatAssignment>([
   ["antiinfective::NOM", { managerName: null, repIsVacant: false, repName: "Nour Hassan" }],
 ]);
 
-function ranking() {
+/**
+ * The three-month trend, and — since 2026-10-13 — a SHORTER one on demand.
+ *
+ * 🔴 THE TREND IS NOT ALWAYS THREE MONTHS, and assuming it was lost the owner his download. With
+ * only July and August published on Anti Infective, September's trend held two months and July's
+ * held ONE, and the Trust sheet's `monthName(TREND[2])` reached `.split` on undefined: "Cannot read
+ * properties of undefined (reading 'split')" instead of a workbook. `months` builds the same
+ * ranking over the last N months so the one-month and two-month shapes are exercised here.
+ */
+function ranking(months: 1 | 2 | 3 = 3) {
+  const all = [
+    { matrix: matrixOf("2026-07", JULY), period: "2026-07" },
+    { matrix: matrixOf("2026-08", AUGUST), period: "2026-08" },
+    { matrix: matrixOf(PERIOD, SEPTEMBER), period: PERIOD },
+  ];
   return buildRepRanking({
     directByArea: new Map([[`${PERIOD}|MN1`, 20_000]]),
     line: LINE,
-    matricesByPeriod: [
-      { matrix: matrixOf("2026-07", JULY), period: "2026-07" },
-      { matrix: matrixOf("2026-08", AUGUST), period: "2026-08" },
-      { matrix: matrixOf(PERIOD, SEPTEMBER), period: PERIOD },
-    ],
+    matricesByPeriod: all.slice(all.length - months),
     period: PERIOD,
     probationByName: new Map([["Sara Nabil", "2026-12-01"]]),
     seats: SEATS,
@@ -430,6 +440,55 @@ export async function runClosingRepRankingTests(): Promise<void> {
     assert.ok(!xml.includes("<x14:id/>"), `${name}: the dangling data-bar extension is stripped`);
   }
   assert.ok(outlined > 0, "the workbook really is outlined — otherwise the collapse checks pass vacuously");
+
+  // ── A SHORTER TREND BUILDS — the crash the owner hit on 2026-10-13 ───────────────────────────
+  // He clicked Export Rep Ranking on a month whose trend was shorter than three, and the Trust
+  // sheet's `monthName(TREND[2])` answered "Cannot read properties of undefined (reading 'split')".
+  // This was the FIRST real run of the builder: no Anti Infective month had been published since 9
+  // October, so neither the portal export nor the admin button had ever built a file. Both shorter
+  // shapes are built here, and their captions are read back out of the emitted workbook — the
+  // caption is where the three-month assumption lived, so checking `facts` alone would pass while
+  // a sheet still claimed July to September over one month of data.
+  for (const months of [1, 2] as const) {
+    const shortRanking = ranking(months);
+    assert.equal(shortRanking.trend.length, months, `the fixture really trends over ${months} month(s)`);
+    const shortBuilt = await buildRepRankingWorkbook({
+      carve: { direct: carve.direct, stores: carve.stores },
+      probationByName: new Map(),
+      publications: [{ period: PERIOD, published_at: "2026-10-01T09:00:00Z", published_by: "B-10", unpublished_at: null }],
+      ranking: shortRanking,
+    });
+    assert.ok(shortBuilt.buffer.byteLength > 0, `a ${months}-month trend produces a workbook at all`);
+    assert.deepEqual(
+      shortBuilt.facts.sheetNames,
+      built.facts.sheetNames,
+      `a ${months}-month trend emits the same sheets — none is dropped for want of a month`,
+    );
+    const shortZip = await JSZip.loadAsync(shortBuilt.buffer);
+    // 🔴 BOTH PLACES, because the two captions live in different parts of the zip: a sheet's
+    // subtitle is written into its PRINT FOOTER (`book.dress` → headerFooter.oddFooter → the
+    // worksheet xml), while the footnotes are cell text in sharedStrings. Reading only
+    // sharedStrings passed a build whose every sheet still footed "July to September 2026" over one
+    // month of data — measured on 2026-10-13, which is why this reads both.
+    const strings = (await Promise.all(
+      Object.keys(shortZip.files)
+        .filter((name) => name === "xl/sharedStrings.xml" || /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
+        .map((name) => shortZip.file(name)!.async("string")),
+    )).join("\n");
+    assert.ok(
+      !strings.includes("July to September 2026"),
+      `the ${months}-month file must not caption itself July to September — that span is three months`,
+    );
+    assert.ok(
+      !/THE THREE MONTHS|the three months|JULY PLUS AUGUST PLUS SEPTEMBER/.test(strings),
+      `nor claim three months in its prose with ${months} month(s) of data`,
+    );
+    const expectedSpan = months === 1 ? "September 2026" : "August 2026 to September 2026";
+    assert.ok(
+      strings.includes(expectedSpan),
+      `the ${months}-month file names its real span (${expectedSpan})`,
+    );
+  }
 
   assertAdminRepRankingButton();
 }
