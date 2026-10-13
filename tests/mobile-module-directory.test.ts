@@ -192,8 +192,12 @@ export function runMobileModuleDirectoryTests() {
   );
   assert.match(
     route,
-    /resolveEmployeePortalNavVisibility\(\s*data\.employee\.roleLabel,\s*access\.role,\s*data\.employee\.line,\s*data\.employee\.department,\s*data\.employee\.hrId,\s*hasDeviceMapping,\s*sharedInterviewCalendar,\s*phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*\)/,
-    "visibility is resolved with the shell's own nine inputs in the shell's own order — a reordered argument list silently hands the phone a different role's list",
+    // TEN since 2026-10-13, when the gate gained `placeChecks`. The count is not the point and never
+    // was — the ORDER is, because every input is a boolean or a string and a swapped pair type-checks
+    // perfectly while answering about somebody else. So each argument is named, and an input added to
+    // the shell without being added here leaves this list short and fails.
+    /resolveEmployeePortalNavVisibility\(\s*data\.employee\.roleLabel,\s*access\.role,\s*data\.employee\.line,\s*data\.employee\.department,\s*data\.employee\.hrId,\s*hasDeviceMapping,\s*sharedInterviewCalendar,\s*phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*phoenixCrm\.placeChecks,\s*\)/,
+    "visibility is resolved with the shell's own ten inputs in the shell's own order — a reordered argument list silently hands the phone a different role's list",
   );
 
   // ── The screen obeys the two look rules that a list like this breaks first ─────────────────────

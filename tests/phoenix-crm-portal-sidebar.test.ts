@@ -148,8 +148,12 @@ export function runPhoenixCrmPortalSidebarTests() {
     assert.ok(call, `${path} still resolves the portal nav visibility`);
     assert.match(
       call[1],
-      /phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*$/,
-      `${path} passes both of the gate's answers through, last and in order, or its sidebar loses a row`,
+      // THREE answers since 2026-10-13, when the gate gained `placeChecks` for the district
+      // manager's own board. Every answer the gate returns has to arrive here, last and in order:
+      // one left out is not a type error anywhere — the row simply never draws, for the one person
+      // the module decided to show it to.
+      /phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*phoenixCrm\.placeChecks,\s*$/,
+      `${path} passes all three of the gate's answers through, last and in order, or its sidebar loses a row`,
     );
   }
 

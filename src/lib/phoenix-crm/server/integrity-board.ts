@@ -39,10 +39,17 @@
  * audience in the module, and narrow is the point rather than tidiness — the rep is never told he was
  * flagged, so the fewer people who can open this, the longer it keeps working.
  *
- * 🔴 AND THE MOCK-LOCATION EVIDENCE IS THE SUPER ADMIN'S ALONE (owner, 2026-10-02). The position cases
- * (`source = 'gps'`) and the phone's own mock-location answer (`device_mocked`) are never read for the
- * SFE Manager — not filtered out of a screen, never QUERIED. The SFE keeps the photo cases and the
- * behaviour months, which judge a picture and a month's shape rather than where a phone said it was.
+ * 🔴 AND THE MOCK-LOCATION EVIDENCE IS THE SUPER ADMIN'S ALONE ON THIS BOARD (owner, 2026-10-02). The
+ * position cases (`source = 'gps'`) and the phone's own mock-location answer (`device_mocked`) are never
+ * read for the SFE Manager — not filtered out of a screen, never QUERIED. The SFE keeps the photo cases
+ * and the behaviour months, which judge a picture and a month's shape rather than where a phone said it
+ * was.
+ *
+ * 🔴 ONE SURFACE OUTSIDE THIS BOARD NOW READS THE SAME EVIDENCE, BY HIS OWN WORD (owner, 2026-10-13:
+ * "system and device evidence the dm can see"): a district manager's own Place checks board, through
+ * `loadPlaceCheckIntegrity` at the end of this file, for the places of HIS team only. That function is
+ * in this file precisely because of the line below — the evidence does not leave it. Nothing about the
+ * board above changed, and the REP is still told nothing at all.
  *
  * WHAT A FLAG IS AND IS NOT. It is a reason for a human to look — at the photo, at the day, at the
  * rep. It is not a verdict, it triggers nothing, and nobody is told they were flagged. Acting on one
@@ -62,6 +69,7 @@ import {
   type IntegritySubjectKind,
 } from "@/lib/crm-integrity/integrity-case-story";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
+import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { PHOENIX_CRM_BEHAVIOUR_LABELS, type PhoenixCrmBehaviourFlag } from "@/lib/phoenix-crm/behaviour-integrity";
 import { PHOENIX_CRM_PHOTO_LABELS, type PhoenixCrmPhotoFlag } from "@/lib/phoenix-crm/duplicate-photos";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
@@ -74,6 +82,11 @@ import {
   readIntegritySettlement,
   type IntegritySettlement,
 } from "@/lib/phoenix-crm/integrity-settlement";
+import {
+  placeNoteSubjectKey,
+  type PlaceCheckIntegrityIndex,
+  type PlaceCheckIntegrityView,
+} from "@/lib/phoenix-crm/place-note-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
   judgeLaterSignboardReading,
@@ -83,8 +96,8 @@ import {
   type PhoenixCrmIntegrityFlag,
   type StoredSignboardVerdict,
 } from "@/lib/phoenix-crm/location-integrity";
-import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1436,4 +1449,66 @@ export async function settleManyIntegrityCases(
     settled.push(caseId);
   }
   return { settled, failed };
+}
+
+// ── The device evidence on a place check, for the board that judges it ──────────────────────────
+
+/**
+ * The device evidence on a set of places and polyclinics, newest case first.
+ *
+ * 🔴 IT LIVES IN THIS FILE BECAUSE THE EVIDENCE DOES. This module's header draws the line: a read that
+ * selects `lat`, `lon`, `signals`, `device_mocked` or the labels belongs here, behind this file's own
+ * audience check, so the rep-facing bundle can never reach it through a component that imported a
+ * convenient helper somewhere else.
+ *
+ * 🔴 AND THE AUDIENCE IS `placeChecksSeatScope`, THE SAME PREDICATE THE FOUR SECTION READS USE — not a
+ * second copy of who may open that board. It answers `null` for the Super Admin, this manager's own
+ * seat ids for a district manager, and THROWS for anybody else; the seat ids are then applied to every
+ * row, so a case filed on another district's place is dropped here, on the server, even if an id for
+ * it somehow reached this call.
+ */
+export async function loadPlaceCheckIntegrity(
+  viewer: PhoenixCrmViewer,
+  input: { placeIds: ReadonlyArray<string>; sharedPlaceIds: ReadonlyArray<string> },
+): Promise<PlaceCheckIntegrityIndex> {
+  const seats = placeChecksSeatScope(viewer);
+  const ids = [...new Set([...input.placeIds, ...input.sharedPlaceIds].filter((id) => isUuid(id)))];
+  if (ids.length === 0) return {};
+
+  const rows = await selectByIds<Row>(
+    "phoenix_crm_location_integrity",
+    "id, subject_kind, subject_id, seat_id, source, flags, strong, device_mocked, accuracy_meters, created_at, settled_at, settled_by, settled_note, settled_flags",
+    "subject_id",
+    ids,
+  );
+  const people = await loadPeopleNames(rows.map((row) => (typeof row.settled_by === "string" ? row.settled_by : null)));
+  const allowed = seats === null ? null : new Set(seats);
+
+  const index: PlaceCheckIntegrityIndex = {};
+  for (const row of rows.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))) {
+    const kind = isIntegritySubjectKind(row.subject_kind) ? row.subject_kind : null;
+    // A visit case is about a day's movement, not about this place: the board judges places.
+    if (kind !== "place" && kind !== "shared_place") continue;
+    if (allowed && !allowed.has(String(row.seat_id ?? ""))) continue;
+    const subjectId = typeof row.subject_id === "string" ? row.subject_id : null;
+    if (!subjectId) continue;
+    const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag));
+    const source = (INTEGRITY_SOURCES as readonly string[]).includes(String(row.source)) ? (String(row.source) as IntegritySource) : "gps";
+    const settlement = settlementOf(row, people);
+    const noticedAt = formatPhoenixDateTime(String(row.created_at));
+    const accuracy = typeof row.accuracy_meters === "number" ? row.accuracy_meters : null;
+    const view: PlaceCheckIntegrityView = {
+      caseId: String(row.id),
+      // The phone's own answer, in words, and ONLY when it said yes: a null is the phone never
+      // forwarding one, and "it did not say" is not evidence about anybody.
+      deviceText: row.device_mocked === true ? "The phone reported a mock location" : null,
+      noticedText: accuracy === null ? `Noticed ${noticedAt}` : `Noticed ${noticedAt} · the phone reported ${Math.round(accuracy)} m of accuracy`,
+      reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
+      settledText: settlement ? `Settled by ${settlement.byName} · ${formatPhoenixDateTime(settlement.at)}` : null,
+      sourceLabel: integritySourceLabel(source),
+      strong: row.strong === true,
+    };
+    (index[placeNoteSubjectKey(kind === "place" ? "place" : "shared_place", subjectId)] ??= []).push(view);
+  }
+  return index;
 }

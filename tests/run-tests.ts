@@ -1857,6 +1857,7 @@ import { runPhoenixCrmSeatInVenueTests } from "./phoenix-crm-seat-in-venue.test.
 import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
+import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
@@ -6985,6 +6986,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM gives every district manager his own Place checks tab, his team and nobody else's (owner, 2026-10-13): all four section reads narrow to his seats in the QUERY through placeChecksSeatScope, which THROWS rather than returning an empty list a PostgREST .in() would answer with zero rows and no error; he comments and recommends, and neither decides anything — canDecideValidationReviews still gates all three decision services, his board renders no decision control, and no sentence on it says who decides or that anything is waiting; rep_visible is NOT NULL with no default in the table and a required boolean on the wire, so the two buttons are the only way to save; the subject's seat is re-read from its own row, never taken from the request; and a visible comment reaches the rep attributed by ROLE and never by name, filtered in the query so one he may not read never leaves the server, with no bell, no Telegram and no email",
+  runPhoenixCrmPlaceNotesTests,
+);
+
+await runTest(
   "Phoenix CRM lets the Super Admin refuse a validation the Google check never held (2026-10-03, after one had to be undone in SQL): the check covers AM customers only, so a doctor's validation is never held and the page now lists every place validated in the last 30 days that is still in use and not already waiting in the queue; the service asks who before it reads anything, demands a written reason, refuses a place already retired, writes the SAME review row the automatic check would have written — in the rep's name, reason refused_by_admin — runs the SAME reject RPC so there is one audit shape, and measures every visit to that customer again; the screen arms the button only after the reason is typed, fits the screen as a fixed table and phone cards with no scroller, ellipsis or round corner, and nothing the rep receives says a person refused him",
   runPhoenixCrmRefuseValidationTests,
 );
@@ -9634,7 +9640,7 @@ await runTest(
 );
 
 await runTest(
-  "the Android app lists EVERY portal module this employee has, and cannot drift from the sidebar: the section titles and their order are re-derived from buildEmployeePortalSections itself, every registry href has a native placement filed under the sidebar section that holds it with a real Ionicons name, no placement outlives its module, the list de-duplicates the two modules the sidebar shows twice, carries the descriptive fullLabel and each queue's pending badge, follows the registry's own visibility flags, keeps a locked module as a padlocked row, and the route asserts the shell's own gate with the shell's own eight visibility inputs in order - while the screen never truncates a name and never scrolls sideways",
+  "the Android app lists EVERY portal module this employee has, and cannot drift from the sidebar: the section titles and their order are re-derived from buildEmployeePortalSections itself, every registry href has a native placement filed under the sidebar section that holds it with a real Ionicons name, no placement outlives its module, the list de-duplicates the two modules the sidebar shows twice, carries the descriptive fullLabel and each queue's pending badge, follows the registry's own visibility flags, keeps a locked module as a padlocked row, and the route asserts the shell's own gate with the shell's own ten visibility inputs in order - while the screen never truncates a name and never scrolls sideways",
   runMobileModuleDirectoryTests,
 );
 await runTest(

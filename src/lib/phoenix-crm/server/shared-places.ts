@@ -35,8 +35,8 @@ import { logError } from "@/lib/observability/log";
 import { deviceClockSkewMinutes } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readTestFlag, territoryForRead, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { placeChecksSeatScope, readTestFlag, territoryForRead, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
@@ -538,10 +538,12 @@ function signboardOf(value: unknown): SharedPlaceBoardRow["signboard"] {
  * 1,000 rows would under-report what is waiting, which `docs/needs-you.md` forbids.
  */
 export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ rows: SharedPlaceBoardRow[]; capped: boolean }> {
-  if (!canDecideSharedPlaces(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  // null is the whole company (the Super Admin), a seat list is one district manager's own team
+  // (owner, 2026-10-13). It THROWS for anybody else — see `placeChecksSeatScope`.
+  const seats = placeChecksSeatScope(viewer);
   const read = await readEveryPage<Row>(
-    () =>
-      getSupabaseAdmin()
+    () => {
+      const query = getSupabaseAdmin()
         .from("phoenix_crm_shared_places")
         .select(
           `${SHARED_PLACE_COLUMNS}, created_at, signboard_check, decided_at, decided_by_hr_id, decision_note, ` +
@@ -551,9 +553,11 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
         // photo and captures it again, exactly as a refused place behaves. What the administrator said
         // stays on the row for the record, and the customers it sent back show in "Waiting to be
         // captured again" — so there is nothing for this section to draw about it.
-        .in("status", ["active", "held"])
+        .in("status", ["active", "held"]);
+      return seatScoped(query, seats)
         .order("created_at", { ascending: false })
-        .order("id", { ascending: false }),
+        .order("id", { ascending: false });
+    },
     { maxRows: 10_000, whenFull: "stop", what: "The polyclinics and centres in use", uniqueBy: (row) => String(row.id) },
   );
   throwIfError(read.error);

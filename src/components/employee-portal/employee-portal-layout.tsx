@@ -66,6 +66,7 @@ import {
   Target,
   CalendarRange,
   CalendarCheck2,
+  MapPinCheck,
   MapPinned,
   Waypoints,
   BookUser,
@@ -365,6 +366,7 @@ function buildEmployeePortalSections({
   showPrivateCalendarTab = false,
   showMyVisitsTab = true,
   showPhoenixCrmTab = false,
+  showTeamPlaceChecksTab = false,
   showDailyForecastTab = false,
   showDeductionsTab = true,
   showMyCoachingTab: _showMyCoachingTab = false,
@@ -448,6 +450,15 @@ function buildEmployeePortalSections({
         ...(showPhoenixCrmTab
           ? [{ href: "/employee-portals/field-crm", label: "Phoenix CRM", icon: ClipboardList, highlight: true as const }]
           : []),
+        // Place checks — a district manager's own team's place validations, where he comments and
+        // recommends (owner, 2026-10-13: "a tab in his sidebar"). Gated by `readsTeamPlaceChecks`
+        // through `phoenixCrmSidebarEntries`, never a role list here; the page gates again.
+        //
+        // 🔴 NO `highlight`. The row above is the sidebar's ONE standout (owner, 2026-09-30) and a
+        // second one means neither is. The band's `hideTitle` needs no change either: the highlighted
+        // Phoenix CRM row reads as this band's own heading, which is why a second row can sit under it
+        // without a header appearing.
+        ...(showTeamPlaceChecksTab ? [{ href: "/employee-portals/place-checks", label: "Place checks", icon: MapPinCheck }] : []),
       ],
     },
     {

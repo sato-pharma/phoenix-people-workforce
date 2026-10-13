@@ -679,6 +679,79 @@ export function locationReportSeats(viewer: PhoenixCrmViewer, seats: ReadonlyArr
   return seats.filter((seat) => readsSeatLocations(viewer, seat));
 }
 
+// ── The district manager's own Place checks tab (owner, 2026-10-13) ────────────────────────────
+
+/** The seat tiers whose holder reads his TEAM'S place checks: the district manager, acting or not. */
+const TEAM_PLACE_CHECKS_TIERS = new Set(["DM", "ACTING_DM"]);
+
+/**
+ * Who reads the Place checks of his own team — the district manager and the acting district manager,
+ * and nobody else below the Super Admin (owner, 2026-10-13: "in every district manager account, build
+ * a tab in his sidebar that shows the check places only for his team").
+ *
+ * 🔴 ITS OWN PREDICATE, AND DELIBERATELY NARROWER THAN `readsPlaceVsActual`, which also admits the
+ * National Sales Manager and the SFE Manager because the owner put the place-vs-actual REPORT in their
+ * hands. He named the district manager here and nobody else, and widening somebody's sight into this
+ * module on a guess is exactly what the three sight tiers above exist to prevent. Add a tier only on
+ * his word.
+ *
+ * It decides NOTHING. `canDecideValidationReviews` is still the Super Admin alone, and the manager's
+ * screen never says so (his own instruction, the same day: "don't show this on the screen").
+ */
+export function readsTeamPlaceChecks(viewer: PhoenixCrmViewer): boolean {
+  return viewer.managerSeats.some((seat) => TEAM_PLACE_CHECKS_TIERS.has(seat.tier));
+}
+
+/**
+ * The territories a team Place checks board is about: the ones in his scope, less any seat he is blind
+ * on.
+ *
+ * 🔴 THAT SUBTRACTION IS AN ACTING DISTRICT MANAGER'S OWN REP SEAT. He is a manager by every
+ * viewer-level test and a REP on one territory, and golden rule #1 means his own captures are not
+ * evidence he reads about himself — the same defect `readsSeatLocations` was written for after the
+ * 2026-10-02 audit found him reading his own distances in the place-vs-actual report.
+ */
+export function teamPlaceChecksSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
+  if (!readsTeamPlaceChecks(viewer)) return [];
+  return viewer.scopeTerritories.filter((seat) => !isLocationBlind(viewer, seat));
+}
+
+/**
+ * The Super Admin, and nobody else, decides a place check (owner, 2026-10-03: "only system admin can
+ * approve or reject"). Never a test account, never the SFE Manager, and — since 2026-10-13 — never the
+ * district manager who now READS his own team's board and writes a recommendation on it.
+ *
+ * 🔴 IT LIVES HERE, AND `server/validation-reviews.ts` RE-EXPORTS IT UNDER ITS OWN NAME, because
+ * `placeChecksSeatScope` below has to answer for all FOUR section reads and one of them is the venue
+ * board in `server/shared-places.ts` — a file `server/validation-reviews.ts` already imports
+ * `loadSharedPlaceNames` from. Declaring either of these two there and importing it into
+ * `shared-places.ts` closes exactly the cycle that file's own header warns about. The alternative, a
+ * second copy of the predicate, is worse: it is the one sentence that separates reading this board
+ * from deciding on it.
+ */
+export function canDecideValidationReviews(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
+}
+
+/**
+ * WHICH SEATS a Place checks read covers: `null` is the whole company, a list of seat ids is one
+ * district manager's own team (owner, 2026-10-13: "shows the check places only for his team").
+ *
+ * 🔴 ONE HELPER FOR ALL FOUR SECTION READS, AND IT THROWS RATHER THAN RETURNING AN EMPTY LIST. A
+ * forbidden viewer handed back `[]` would be served an `.in("seat_id", [])`, and a PostgREST `.in()`
+ * on an empty array answers ZERO ROWS WITH NO ERROR — so the page would draw itself, empty, for
+ * somebody it must not draw for at all, and read as "nothing waiting" rather than as a refusal.
+ *
+ * It does not widen the decider by one person: `canDecideValidationReviews` is unchanged above, and a
+ * manager's board renders none of the decision controls.
+ */
+export function placeChecksSeatScope(viewer: PhoenixCrmViewer): string[] | null {
+  if (canDecideValidationReviews(viewer)) return null;
+  const seats = teamPlaceChecksSeats(viewer);
+  if (seats.length === 0) throw forbiddenError("These place checks are not yours to read.");
+  return seats.map((seat) => seat.seatId);
+}
+
 /**
  * Whether a team-only judgement about how a seat was WORKED — the tracking sheet's spacing note — is
  * shown for this seat: the viewer reads team reports, and the seat is not his own as its rep (the

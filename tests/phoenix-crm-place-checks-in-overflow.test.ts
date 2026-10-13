@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { chunk, dedupeIds, IN_ID_CHUNK } from "@/lib/phoenix-crm/server/db";
+import { chunk, dedupeIds, IN_ID_CHUNK, seatScoped } from "@/lib/phoenix-crm/server/db";
 
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -102,9 +102,55 @@ function checkLoadersGoThroughSelectByIds(): void {
   assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_validation_reviews",\s*"id, place_id, status"/, "the review read carries id too");
 }
 
+/**
+ * The seat scope is the ONE `.in()` on this board that is not a derived id list — and it is bounded
+ * where it is applied, not where it is written.
+ *
+ * Owner, 2026-10-13: a district manager's board shows "only his team". That filter is his own manager
+ * seats, which `TEAM_PLACE_CHECKS_TIERS` caps at one district, so it is nowhere near the cliff above.
+ * But `doesNotMatch(/\.in\(/)` is a TEXT check: a seat filter written inline would satisfy it merely by
+ * being spelled differently, and a session reading that green would learn nothing about the bound. So
+ * the filter goes through `seatScoped`, which is the one place that can check the bound — and does,
+ * loudly, because the failure it replaces (`UND_ERR_HEADERS_OVERFLOW` rendered as "unavailable") names
+ * nothing at all. Widening the tier set is what would arm it, which is why the message says so.
+ */
+function checkSeatScopeIsBoundedWhereItIsApplied(): void {
+  const db = read("src/lib/phoenix-crm/server/db.ts");
+  const body = functionBody(db, "seatScoped");
+  assert.match(body, /if \(!seats\) return query;/, "a null scope is the whole company, and adds no filter at all");
+  assert.match(body, /seats\.length > IN_ID_CHUNK/, "seatScoped checks the scope against the same cap selectByIds chunks by");
+  assert.match(body, /throw new Error\(/, "and refuses an over-large scope here, rather than letting the request overflow on the wire");
+
+  // Every Place checks read applies the scope through it, and none of them spells the filter inline.
+  for (const path of ["src/lib/phoenix-crm/server/validation-reviews.ts", "src/lib/phoenix-crm/server/shared-places.ts"]) {
+    const source = read(path);
+    assert.match(source, /seatScoped\(query, seats\)/, `${path} narrows its reads through seatScoped`);
+    assert.doesNotMatch(source, /query\.in\("seat_id"/, `${path} does not spell the seat filter inline, where nothing checks its size`);
+  }
+
+  // And it behaves: a null scope passes the query through untouched, a real one filters on seat_id,
+  // and a scope past the cap throws instead of being sent.
+  // `fake` is annotated rather than inferred: an object whose own method returns it is referenced
+  // inside its own initializer, which TypeScript resolves to an implicit `any` and rejects.
+  type FakeQuery = { in: (column: string, values: readonly string[]) => FakeQuery };
+  const calls: Array<[string, readonly string[]]> = [];
+  const fake: FakeQuery = { in: (column, values) => { calls.push([column, values]); return fake; } };
+  assert.equal(seatScoped(fake, null), fake, "no scope, no filter");
+  assert.equal(calls.length, 0, "and nothing was added to the query");
+  seatScoped(fake, ["seat-1", "seat-2"]);
+  assert.deepEqual(calls, [["seat_id", ["seat-1", "seat-2"]]], "a real scope filters on seat_id");
+  assert.throws(
+    () => seatScoped(fake, Array.from({ length: IN_ID_CHUNK + 1 }, (_, i) => `seat-${i}`)),
+    /cannot be read in one request/,
+    "a scope past the cap is refused by name, not sent and left to fail as a network fault",
+  );
+  assert.equal(calls.length, 1, "and the refused scope added no filter");
+}
+
 export function runPhoenixCrmPlaceChecksInOverflowTests(): void {
   checkChunkStaysUnderTheCliff();
   checkDedupeIds();
   checkSelectByIdsShape();
   checkLoadersGoThroughSelectByIds();
+  checkSeatScopeIsBoundedWhereItIsApplied();
 }

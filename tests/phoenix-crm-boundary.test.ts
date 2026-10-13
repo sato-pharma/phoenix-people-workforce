@@ -162,6 +162,14 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/places/move", "approve"),
   // Seating customers in a validated polyclinic (owner, 2026-10-10): the Super Admin alone — `update` at the route, `canDecideSharedPlaces` in the service.
   post("list/places/seat", "update"),
+  // A comment on one place check, and a recommendation about it (owner, 2026-10-13): the Super Admin,
+  // or a district manager on his OWN team's seats. `approve` and NOT `update` — a District Manager
+  // holds phoenix_crm ["read", "create", "approve"] and no `update` at all, so `update` would 403 the
+  // one person these two routes exist for. The real boundary is the service: it re-reads the place's
+  // own seat and compares it against `teamPlaceChecksSeats`, so the RSM, the NSM and the SFE Manager,
+  // who also hold `approve`, are refused there. Neither route decides anything.
+  post("place-notes", "approve"),
+  post("place-notes/recommendation", "approve"),
   // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
   // Super Admin alone — `update` at the route, `canDecideValidationReviews` in the service.
   post("validation-reviews", "update"),
@@ -783,6 +791,11 @@ const LATER_MIGRATIONS = [
   // entries above have already replaced in turn. A table-only entry satisfies the "contribute
   // something this scan can see" rule below, and the four lock statements are checked there.
   "supabase/migrations/20261012233000_phoenix_crm_visit_capture_provenance.sql",
+  // A district manager's comment and recommendation on one place check (owner, 2026-10-13). TWO
+  // brand-new tables and NOTHING else — no function, no column on anything that exists, and it
+  // replaces nothing, so it appends safely at the end. Both are RLS-enabled and service-role only,
+  // like every other table here, and each has a real FK to the place or the polyclinic it is about.
+  "supabase/migrations/20261013163000_phoenix_crm_place_notes.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

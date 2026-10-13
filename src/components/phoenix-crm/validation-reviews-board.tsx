@@ -15,6 +15,15 @@
  * It is an admin screen, so the dropdowns are combo boxes the Super Admin types into (the module's
  * surface rule): the board declares `surface="admin"` around itself, which is what turns `CrmSelect`
  * into the searchable control.
+ *
+ * 🔴 ONE BOARD, TWO MODES, AND NEVER A SECOND COPY (owner, 2026-10-13: a district manager gets this
+ * board for his own team). `mode="company"` is the Super Admin's — every decision control he has had
+ * since 2026-10-03, plus what the managers have written. `mode="team"` renders NO decision control at
+ * all and no sentence about one: not "waiting for your decision", not who decided a settled row, not
+ * what approving or refusing would do. He comments and he recommends, and his screen says nothing
+ * about who decides — his own instruction the same day was "don't show this on the screen". A second
+ * board file would have been the easy shape and is exactly how one of two copies drifts; the portal
+ * mirrors removed in 2026-08 are the repo's own account of that.
  */
 
 import { useMemo, useState } from "react";
@@ -41,7 +50,8 @@ import {
   type ValidationReviewOutcome,
   type ValidationReviewPeriod,
 } from "@/lib/phoenix-crm/validation-review-filters";
-import type { ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
+import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 const OUTCOME_LABELS: Record<ValidationReviewOutcome, string> = {
   all: "Every outcome",
@@ -72,7 +82,13 @@ export function ValidationReviewsBoard({
   reopened,
   sharedPlaces,
   capped,
+  mode,
+  noteIndex,
 }: {
+  /** Whose board this is — see the header. "company" is the Super Admin's, "team" a district manager's. */
+  mode: PlaceCheckNotesMode;
+  /** Every comment and recommendation on this page's subjects, keyed by `placeNoteSubjectKey`. */
+  noteIndex: PlaceNoteIndex;
   pending: ValidationReviewRow[];
   decided: ValidationReviewRow[];
   validated: ValidatedPlaceRow[];
@@ -147,6 +163,10 @@ export function ValidationReviewsBoard({
   );
 
   const anyFilter = hasActiveValidationReviewFilter(filters);
+  // 🔴 EVERY SENTENCE BELOW THAT NAMES A DECISION IS BEHIND THIS FLAG. A manager's board must not say
+  // "waiting for your decision", must not explain what approving or refusing does, and must not name
+  // who settled a row — the three places this board used to state the decision out loud.
+  const team = mode === "team";
   const showWaiting = filters.outcome === "all" || filters.outcome === "pending";
   const showDecided = filters.outcome === "all" || filters.outcome === "approved" || filters.outcome === "rejected";
   const showValidated = filters.outcome === "all" || filters.outcome === "validated" || filters.outcome === "unseen";
@@ -155,7 +175,7 @@ export function ValidationReviewsBoard({
   // rather than emptying it — see `sharedPlacePassesOutcome`.
   const showSharedPlaces = filters.outcome !== "rejected";
   const validatedTitle = filters.outcome === "unseen" ? "Validations nobody has looked at" : "Validations the system did not question";
-  const decidedTitle = filters.outcome === "approved" ? "Approved in the last 14 days" : filters.outcome === "rejected" ? "Rejected in the last 14 days" : "Decided in the last 14 days";
+  const decidedTitle = filters.outcome === "approved" ? "Approved in the last 14 days" : filters.outcome === "rejected" ? "Rejected in the last 14 days" : team ? "Settled in the last 14 days" : "Decided in the last 14 days";
 
   // The filter signature remounts the paged validated list so "Show more" starts over when a filter
   // changes, rather than keeping a page offset from the wider set.
@@ -271,17 +291,27 @@ export function ValidationReviewsBoard({
 
         {showWaiting ? (
           <AdminTableShell
-            title={`Waiting for your decision (${filteredPending.length})`}
-            description="Approve validates the customer in the rep's name and their visits start counting. Reject retires the place; when it was their only one, the customer goes back to To validate. The rep reads either as the system's answer."
+            title={team ? `Still being checked (${filteredPending.length})` : `Waiting for your decision (${filteredPending.length})`}
+            description={
+              team
+                ? "The places the system could not settle by itself: Google has no listing it is sure is the customer, its pin is far from where the rep stood, or the signboard names somebody else — or nobody. Each one's evidence is below, and the rep knows only that the system is checking."
+                : "Approve validates the customer in the rep's name and their visits start counting. Reject retires the place; when it was their only one, the customer goes back to To validate. The rep reads either as the system's answer."
+            }
           >
             {filteredPending.length === 0 ? (
               <div className="px-4 py-4">
                 <AdminCallout tone="success">
-                  <span>{anyFilter ? "Nothing waiting matches these filters." : "Nothing is waiting — every place has matched its listing, been refused at the door, or been decided by you."}</span>
+                  <span>
+                    {anyFilter
+                      ? "Nothing waiting matches these filters."
+                      : team
+                        ? "Nothing of your team's is still being checked — every place has matched its listing, been refused at the door, or been settled."
+                        : "Nothing is waiting — every place has matched its listing, been refused at the door, or been decided by you."}
+                  </span>
                 </AdminCallout>
               </div>
             ) : (
-              <ValidationReviewQueue rows={filteredPending} />
+              <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={filteredPending} />
             )}
           </AdminTableShell>
         ) : null}
@@ -289,7 +319,11 @@ export function ValidationReviewsBoard({
         {showSharedPlaces ? (
           <AdminTableShell
             title={`Polyclinics and centres (${filteredSharedPlaces.length})`}
-            description="A polyclinic, medical centre, medical tower or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it without a second capture. It is a venue only: it is on nobody's list, takes no visit and counts in no KPI, and the customer seated in it stays the one who is planned, visited and counted. It is not looked up in Google, because that check reads a customer's own name and a building has none. Rejecting one retires it, retires everybody seated in it, and sends each of them back to To validate."
+            description={
+              team
+                ? "A polyclinic, medical centre or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it without a second capture. It is a venue only: it is on nobody's list, takes no visit and counts in no KPI, and the customer seated in it stays the one who is planned, visited and counted. It is not looked up in Google, because that check reads a customer's own name and a building has none."
+                : "A polyclinic, medical centre, medical tower or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it without a second capture. It is a venue only: it is on nobody's list, takes no visit and counts in no KPI, and the customer seated in it stays the one who is planned, visited and counted. It is not looked up in Google, because that check reads a customer's own name and a building has none. Rejecting one retires it, retires everybody seated in it, and sends each of them back to To validate."
+            }
           >
             {filteredSharedPlaces.length === 0 ? (
               <div className="px-4 py-4">
@@ -298,21 +332,32 @@ export function ValidationReviewsBoard({
                 </AdminCallout>
               </div>
             ) : (
-              <SharedPlaceList rows={filteredSharedPlaces} />
+              <SharedPlaceList mode={mode} noteIndex={noteIndex} rows={filteredSharedPlaces} />
             )}
           </AdminTableShell>
         ) : null}
 
         {showDecided ? (
-          <AdminTableShell title={`${decidedTitle} (${filteredDecided.length})`} description="What was approved or rejected, by whom, with the note kept on the record.">
+          <AdminTableShell
+            title={`${decidedTitle} (${filteredDecided.length})`}
+            description={
+              team
+                ? "What has been settled, and the one sentence the rep was told about the photograph."
+                : "What was approved or rejected, by whom, with the note kept on the record."
+            }
+          >
             {filteredDecided.length === 0 ? (
               <div className="px-4 py-4">
                 <AdminCallout tone="neutral">
-                  <span>{anyFilter ? "Nothing decided matches these filters." : "Nothing has been decided in the last 14 days."}</span>
+                  <span>
+                    {anyFilter
+                      ? `Nothing ${team ? "settled" : "decided"} matches these filters.`
+                      : `Nothing has been ${team ? "settled" : "decided"} in the last 14 days.`}
+                  </span>
                 </AdminCallout>
               </div>
             ) : (
-              <ValidationReviewQueue rows={filteredDecided} />
+              <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={filteredDecided} />
             )}
           </AdminTableShell>
         ) : null}
@@ -337,7 +382,11 @@ export function ValidationReviewsBoard({
         {showValidated ? (
           <AdminTableShell
             title={`${validatedTitle} (${filteredValidated.length})`}
-            description="Only AM customers are checked against Google, and since 8 October every new place has its signboard read before it is accepted; a place whose sign named the customer is not held. These are the places still in use, whenever they were validated, each with what the system read on its signboard and whether anybody has looked at it. Refusing one retires the place and, when it is the customer's only place, sends them back to To validate; the rep is told what is wrong with the photo and never that a person looked at them."
+            description={
+              team
+                ? "Only AM customers are checked against Google, and every new place has its signboard read before it is accepted; a place whose sign named the customer is never held. These are your team's places still in use, whenever they were validated, each with what the system read on its signboard and whether anybody has looked at it yet."
+                : "Only AM customers are checked against Google, and since 8 October every new place has its signboard read before it is accepted; a place whose sign named the customer is not held. These are the places still in use, whenever they were validated, each with what the system read on its signboard and whether anybody has looked at it. Refusing one retires the place and, when it is the customer's only place, sends them back to To validate; the rep is told what is wrong with the photo and never that a person looked at them."
+            }
           >
             {filteredValidated.length === 0 ? (
               <div className="px-4 py-4">
@@ -346,7 +395,7 @@ export function ValidationReviewsBoard({
                 </AdminCallout>
               </div>
             ) : (
-              <ValidatedPlaceList key={validatedKey} rows={filteredValidated} showSearch={false} />
+              <ValidatedPlaceList key={validatedKey} mode={mode} noteIndex={noteIndex} rows={filteredValidated} showSearch={false} />
             )}
           </AdminTableShell>
         ) : null}

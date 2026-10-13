@@ -184,8 +184,20 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   assert.ok(decide.includes("await pendingLocationReview(customerId)"), "SFE cannot admit a customer whose place the Super Admin has not decided");
 
   // ── Only the Super Admin decides ──────────────────────────────────────────────
+  //
+  // `canDecideValidationReviews` was DECLARED in `server/validation-reviews.ts` until 2026-10-13,
+  // when the district manager's own Place checks board needed the same viewer predicates without
+  // importing the decision module — so it moved to `server/access.ts`, which that board's page and
+  // `server/shared-places.ts` can both import without closing an import cycle, and is re-exported
+  // from its old home so every existing caller is unchanged. So the predicate is read where it now
+  // LIVES, and the old home is checked to still be importing it rather than holding a second copy:
+  // a local declaration there would shadow the re-export silently, and it is the one sentence that
+  // separates reading this board from deciding on it.
+  const access = stripComments(readFileSync("src/lib/phoenix-crm/server/access.ts", "utf8"));
+  assert.match(access, /export function canDecideValidationReviews\(viewer: PhoenixCrmViewer\): boolean \{\s*return viewer\.isSuperAdmin && viewer\.canUpdate && !viewer\.isTestPersona;/, "the decider is the Super Admin, never a test account");
   const reviews = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
-  assert.match(reviews, /return viewer\.isSuperAdmin && viewer\.canUpdate && !viewer\.isTestPersona;/, "the decider is the Super Admin, never a test account");
+  assert.match(reviews, /import \{ canDecideValidationReviews[^}]*\} from "@\/lib\/phoenix-crm\/server\/access";/, "and the decision module imports that one predicate, never a copy of its own");
+  assert.doesNotMatch(reviews, /function canDecideValidationReviews\(/, "nothing re-declares it where it used to live");
   assert.match(reviews, /export async function decideValidationReview\([\s\S]*?if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, "the decision refuses everyone else");
   const page = stripComments(readFileSync("app/(admin)/admin/field-crm/validation-reviews/page.tsx", "utf8"));
   assert.match(page, /if \(!viewer \|\| !canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\);/, "and so does the page");

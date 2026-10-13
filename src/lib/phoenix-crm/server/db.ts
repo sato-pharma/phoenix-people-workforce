@@ -273,6 +273,45 @@ export function dedupeIds(ids: ReadonlyArray<string | null | undefined>): string
 export const IN_ID_CHUNK = 150;
 
 /**
+ * Narrow a Place checks read to a set of org seats — `null` meaning the whole company.
+ *
+ * WHY THIS IS A HELPER AND NOT `query.in("seat_id", seats)` WRITTEN AT EACH READ. The seat scope
+ * (owner, 2026-10-13: a district manager sees "only his team") is the one `.in()` on this board that
+ * is NOT a derived id list: it is the viewer's own manager seats, which `teamPlaceChecksSeats` caps
+ * at one district — single digits, nowhere near the ~395 cliff above. That makes it safe, and an
+ * assertion in `tests/phoenix-crm-place-checks-in-overflow.test.ts` reads the loaders' bodies for a
+ * bare `.in(` precisely because a derived one is NOT. Both facts want the same thing: one named place
+ * where the seat filter is applied, so the loaders stay clean to read and the bound is checked once.
+ *
+ * 🔴 AND IT IS CHECKED, not assumed. The seat list is small because of WHICH TIERS
+ * `TEAM_PLACE_CHECKS_TIERS` admits; widen that set to a rung with hundreds of seats below it and this
+ * `.in()` would reach the cliff, where node's `fetch` throws `UND_ERR_HEADERS_OVERFLOW` and the page
+ * renders as "unavailable" with nothing naming the cause. So an over-large scope throws HERE, saying
+ * what it is, rather than reaching the wire — the next person to add a tier gets a sentence, not an
+ * outage.
+ */
+/*
+ * 🔴 THE CONSTRAINT IS INSIDE, NOT ON `Q`. Written the obvious way —
+ * `<Q extends { in: (column: string, values: readonly string[]) => Q }>` — this fails to compile at
+ * every call site with TS2589, *Type instantiation is excessively deep and possibly infinite*: a
+ * PostgREST builder's own type is deeply recursive, and asking TypeScript to match it against a
+ * constraint that refers to `Q` in its own return position sets that recursion going. It is the same
+ * wall `selectByIds` meets, which is why its `tune` takes `any`. So `Q` is unconstrained — the call
+ * site keeps the builder's exact type, as it must to chain `.order()` afterwards — and the one
+ * structural requirement is asserted here, where it costs nothing and reads plainly.
+ */
+export function seatScoped<Q>(query: Q, seats: readonly string[] | null): Q {
+  if (!seats) return query;
+  if (seats.length > IN_ID_CHUNK) {
+    throw new Error(
+      `A Place checks seat scope of ${seats.length} seats cannot be read in one request (the cap is ${IN_ID_CHUNK}). ` +
+        "A tier with this many seats below it needs the read chunked, the way selectByIds chunks an id list.",
+    );
+  }
+  return (query as { in: (column: string, values: readonly string[]) => Q }).in("seat_id", seats);
+}
+
+/**
  * Read every row of `table` whose `idColumn` is one of `ids` — safely, whatever the size of the field.
  *
  * A PostgREST `.in()` puts the id list in the request URL, which fails THREE ways and only one is

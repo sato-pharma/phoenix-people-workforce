@@ -180,7 +180,15 @@ function checkScreens(): void {
   assert.ok(page.includes("<ValidationReviewsBoard"), "the board is what the page draws");
 
   const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
-  assert.match(board, /<ValidatedPlaceList key=\{validatedKey\} rows=\{filteredValidated\} showSearch=\{false\} \/>/, "the board draws the validated list under the filters and owns the search");
+  // By PROP, not as one line — the same lesson the loop above was rewritten for. This assertion was
+  // still a single-line fingerprint and went red on 2026-10-13 when the call gained `mode` and
+  // `noteIndex` for the district manager's board, with nothing about the list wrong. What matters is
+  // which data it is handed and that the BOARD owns the search, so those are what is pinned.
+  const validatedCall = /<ValidatedPlaceList[\s\S]*?\/>/.exec(board);
+  assert.ok(validatedCall, "the board draws the validated list under the filters");
+  for (const prop of ["key={validatedKey}", "rows={filteredValidated}", "showSearch={false}"]) {
+    assert.ok(validatedCall[0].includes(prop), `the validated list is handed ${prop} — the board owns the search`);
+  }
 
   const list = read("src/components/phoenix-crm/validated-place-list.tsx");
   assert.match(list, /"\/api\/phoenix-crm\/validation-reviews\/refuse"/, "the button posts to the refusal route");

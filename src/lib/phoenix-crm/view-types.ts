@@ -119,6 +119,7 @@ export type { PhotoSlot } from "@/lib/phoenix-crm/server/photos";
 export type { TimeAnchorView } from "@/lib/phoenix-crm/server/time-anchor";
 export type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/lib/phoenix-crm/server/admin-settings";
 export type { ReopenedCustomerRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/server/validation-reviews";
+export type { PlaceNoteIndex, PlaceNoteView, PlaceRecommendationView, RepPlaceNote } from "@/lib/phoenix-crm/server/place-notes";
 export type { SharedPlaceBoardRow, SharedPlaceReading, SharedPlaceRow } from "@/lib/phoenix-crm/server/shared-places";
 export type {
   TouchTrailDayView,

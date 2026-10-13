@@ -74,6 +74,10 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   // Its own band above My Workspace on the sidebar (owner, 2026-09-30), so its own section here too,
   // or the drift test fails on the mismatch.
   "/employee-portals/field-crm": { icon: "briefcase-outline", section: "Phoenix CRM" },
+  // Place checks sits in the same band on the sidebar, so it is filed under the same section here —
+  // the section is not a choice, it is whichever one `buildEmployeePortalSections` puts the href in,
+  // and the drift test re-derives it from that builder rather than trusting this line.
+  "/employee-portals/place-checks": { icon: "location-outline", section: "Phoenix CRM" },
   // ── My Workspace ──────────────────────────────────────────────────────────────────────────────
   "/employee-portals/interview-calendar": { icon: "videocam-outline", section: "My Workspace" },
   "/employee-portals/organogram": { icon: "business-outline", section: "My Workspace" },
