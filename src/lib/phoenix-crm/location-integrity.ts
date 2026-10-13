@@ -847,6 +847,34 @@ export function judgePlaceBrickDistance(input: {
  */
 export const VISIT_PHOTO_VERY_FAR_METERS = 1000;
 
+/**
+ * WHOSE VISIT IS THIS? The one answer every visit-keyed detector asks, in one place.
+ *
+ * 🔴 `rep_hr_id` IS NULL ON A MANAGER'S OWN SINGLE VISIT, AND THAT IS THE DESIGN, NOT A LOST REP.
+ * `resolveVisitParticipants` (`scope.ts`) returns `repHrId: null, managerHrId: actor` when a manager
+ * enters a single visit on a territory — its sibling refusal says so in words: *"This territory has
+ * no rep, so the visit can only be entered as your own single visit."* Every such row on production
+ * (17 of them, 3–12 October 2026, two District Sales Managers) carries `manager_hr_id` equal to
+ * `entered_by_hr_id`, a real fix accurate to 12–27 m, and `capture_source = 'server'` because the
+ * save came from a browser rather than the app.
+ *
+ * 🔴 SO READING ONLY `rep_hr_id` LEFT A MANAGER'S OWN CALLS CHECKED BY NOTHING. Until 13 October
+ * 2026 the roster, cadence and photograph passes each skipped a row with no rep, and one of those 17
+ * sits **3,236 m** from the photograph of the place it names — measurable, past the line, past both
+ * accuracy margins, and invisible. The board prints a name beside every case; this is where that
+ * name comes from, so there is one for a manager too.
+ *
+ * It is `rep ?? manager` and never the other way round: on a double or a chain visit the rep is the
+ * one whose call it was and the manager was with him. Null only where neither is set, and a row
+ * naming nobody is still filed against nobody.
+ */
+export function personOnTheVisit(input: { repHrId: string | null; managerHrId: string | null }): string | null {
+  const rep = typeof input.repHrId === "string" ? input.repHrId.trim().toUpperCase() : "";
+  if (rep !== "") return rep;
+  const manager = typeof input.managerHrId === "string" ? input.managerHrId.trim().toUpperCase() : "";
+  return manager === "" ? null : manager;
+}
+
 /** One visit and the photograph it is measured against, each with the margin its phone reported. */
 export type VisitPhotographInput = {
   visit: GeoPoint & { accuracyMeters: number | null };

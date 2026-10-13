@@ -997,12 +997,15 @@ Four rules decide which photograph, and each one is there because the other answ
    all. Either reading's margin reaching the other one means nothing was measured, and the case is
    not filed rather than filed and settled later.
 
-🔴 **A visit with no rep on the row is not filed, and the 46th case is the one that proves it.** 17
-visits in the window carry `capture_source = 'server'` and no `rep_hr_id` at all (two seats, 3–12
-October), one of them 3,236 m from its photograph. The board prints a NAME beside every case and
-would print a blank for these. **That capture path losing the rep is a separate defect and is not
-fixed here** — it is left for the path that writes it to answer for, rather than filed as a finding
-against an unnamed person.
+🔴 **A visit with no rep on the row is a MANAGER'S OWN VISIT, and it is filed under his own name.**
+The pass shipped reading `rep_hr_id` alone and skipping those 17 rows, on the reading that a capture
+path was losing the rep. **It was not.** `resolveVisitParticipants` (`scope.ts`) returns
+`repHrId: null, managerHrId: actor` when a manager enters a single visit on a territory, and its
+sibling refusal says so in words — *"This territory has no rep, so the visit can only be entered as
+your own single visit."* Every one of the 17 carries `manager_hr_id` equal to `entered_by_hr_id`
+(two District Sales Managers, 3–12 October), a real fix accurate to **12–27 m**, and
+`capture_source = 'server'` because the save came from a browser rather than the app. Nothing was
+lost; the person on the visit was simply read from the wrong column. The correction is §14.
 
 🔴 **Both flags are WEAK, and that is the rule rather than an oversight.** `visit_far_from_photo` and
 `visit_very_far_from_photo` are absent from `PHOENIX_CRM_STRONG_INTEGRITY_FLAGS`, which is the one
@@ -1055,10 +1058,89 @@ The only database change is the `source` CHECK widening to admit the ninth value
 **Pinned by** fifteen assertions across `tests/phoenix-crm-location-integrity.test.ts` (the pure
 judgement, the accuracy guard, the far-line fallback, neither flag strong),
 `tests/phoenix-crm-integrity-settle.test.ts` (the ninth source in the list and in the CHECK, the pass
-wired into the sweep, the unnamed-rep skip, the live setting, strength from the shared list) and
+wired into the sweep, the subject resolved for every row, the live setting, strength from the shared
+list) and
 `tests/crm-integrity-board-view.test.ts` (the judged metres in the headline and the evidence, the
 one-tap clause, the caption, the grouped readings, nothing accused). **Every one of the fifteen was
 broken on purpose and watched fire on its own headline**, then restored from a copy.
+
+## 14 · A manager's own visit was checked by nothing, and `rep_hr_id` was never the question (2026-10-13)
+
+§13 shipped at 04:41 Cairo. Within the hour the same board was asked the obvious next question — fix
+the path that saves a visit with no rep — and **the path turned out to be correct.** What was wrong
+was every detector that reads it.
+
+### What `rep_hr_id IS NULL` actually means
+
+`resolveVisitParticipants` in `src/lib/phoenix-crm/scope.ts` has one branch that writes no rep:
+
+```ts
+if (input.kind === "single") return { ok: true, value: { repHrId: null, managerHrId: actor, … } };
+```
+
+— reached when `enteredAs === "manager"`. Its sibling refusal, eight lines below, says the rule out
+loud: *"This territory has no rep, so the visit can only be entered as your own single visit."* So a
+null rep is a **manager's own call**, deliberately recorded against him and nobody else.
+
+Read on production, all 17 rows agree with that and with nothing else:
+
+| | |
+| --- | --- |
+| Rows with no rep, ever | **17** (3 Oct – 13 Oct 2026) |
+| `manager_hr_id` = `entered_by_hr_id` | **17 of 17** |
+| Who they are | **Mahmoud ElHassanin Imam Muslim ElHassanin** (12) and **Mahmoud Mohamed Said Mohamed Badawy** (5) — both District Sales Managers |
+| `kind` | `single`, all 17 |
+| Carrying a real fix | **17 of 17**, accurate to 11.9–26.9 m |
+| `capture_source` | `server` on all 17 — a browser save, not the app |
+| `is_test` | false on all 17 |
+
+Nothing is losing a rep. A District Sales Manager opened the web form on his phone, entered his own
+single visit, and the row records exactly that.
+
+### The defect that is real
+
+Every visit-keyed pass in the nightly sweep took the rep column as the subject and `continue`d when
+it was empty — the roster walk, the cadence tally built on the same walk, and §13's photograph pass.
+**So a District Sales Manager's own calls were checked by nothing at all.** One of the 17 sits
+**3,236 m** from the photograph of the place it names: measurable, past the 300 m line, past both
+accuracy margins, over a kilometre — and invisible to the board on every one of its nine sources.
+
+The fix is one answer in the pure module, `personOnTheVisit({ repHrId, managerHrId })`, used by both
+walks:
+
+- **`rep ?? manager`, never the other way round.** On a double or a chain visit the rep is whose call
+  it was and the manager was with him; reading the manager first would file every double visit
+  against the manager and take the rep's own call off his own board.
+- **Null only where neither is set**, so a row naming nobody is still filed against nobody.
+- 🔴 **And the subject is never his own companion.** The roster judge asks separately whether somebody
+  who should not have been there was with him, reading `manager_hr_id`, `senior_hr_id` and
+  `product_manager_hr_id`. On a manager's own single visit he IS the row's `manager_hr_id`, so leaving
+  him in that list files his own leave day twice — once as his, once as *"somebody else was with
+  him"*. He is filtered out of his own companions.
+
+Today's arithmetic, measured before the change: **one** new case (the 3,236 m one), **zero** new
+roster flags and **zero** new cadence flags — no manager's own visit falls on his own full-day leave
+or away day, and no manager visited one customer three times inside seven days. The hole was worth
+one case today and stays open for every manager's own call from here.
+
+### The board stopped calling everybody a rep
+
+A case filed against a District Sales Manager would have printed his name under a column headed
+**Rep**, in the admin table, in the filter beside it and in both sheets of the XLSX export. That is a
+false statement about a real person on the one board whose entire purpose is that each line of it is
+true, so the column, the filter and both export headers now read **Who**. Nothing else is renamed:
+the URL parameter stays `rep`, the summary sheet is still *By rep*, and no other screen in the app is
+touched.
+
+Nothing else moves. No threshold, no stored `distance_meters`, no migration, no notification, no rep
+told anything, both flags still weak, and `SFE_SOURCES` untouched.
+
+**Pinned by** eight assertions — `tests/phoenix-crm-location-integrity.test.ts` (the manager branch,
+the rep winning on a double visit, nobody staying nobody), `tests/phoenix-crm-integrity-settle.test.ts`
+(both walks resolving through `personOnTheVisit` at exactly two call sites, no pass reading the rep
+column alone, the photograph pass reading `manager_hr_id`, the subject excluded from his own
+companions) and `tests/crm-integrity-board-view.test.ts` (the person column and the export headers).
+**All eight were broken on purpose and watched fire on their own headline**, then restored from a copy.
 
 ## Where the code is
 
@@ -1087,4 +1169,6 @@ broken on purpose and watched fire on its own headline**, then restored from a c
 | The ninth detector — a visit against the photograph of its place | `runVisitPhotographGap`, `server/silent-detectors.ts`; `judgeVisitAgainstPhotograph`, `location-integrity.ts`; `fileVisitPhotographGap`, `server/location-integrity.ts` |
 | Its CHECK | `supabase/migrations/20261013150000_phoenix_crm_visit_photograph_source.sql` |
 | The place it was JUDGED against, which is not always the visit's own | `anchorPlaceIdOf`, `server/integrity-board.ts` |
+| Whose visit it is — the rep, or the manager on his own single visit | `personOnTheVisit`, `location-integrity.ts` |
+| Why a manager's own visit has no rep at all | the `kind === "single"` branch of `resolveVisitParticipants`, `scope.ts` |
 | The one list of reading labels the loader names its readings from | `CASE_READING_LABELS`, same file |
