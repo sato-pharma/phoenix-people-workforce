@@ -35,6 +35,7 @@ import { Camera, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lu
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import {
   buildEvidenceStampLines,
   fetchEvidenceLocation,
@@ -256,6 +257,13 @@ export function LivePhotoCapture({
    * camera's own ratio removes the letterbox, so the two agree by construction instead of by luck.
    */
   const [camAspect, setCamAspect] = useState<number | null>(null);
+  /**
+   * The camera raises its own location and camera refusals, so it names the browser itself — the
+   * screens around it name only the SERVER's (use-browser-name.ts). Named at the RENDER rather than
+   * at each `setError`, so a message added here later is named too; one without the placeholder
+   * passes through untouched.
+   */
+  const browserNamed = useBrowserNamed();
 
   useEffect(() => {
     return () => {
@@ -646,7 +654,7 @@ export function LivePhotoCapture({
         </div>
       ) : null}
 
-      {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
+      {error ? <CrmNote tone="bad">{browserNamed(error)}</CrmNote> : null}
     </div>
   );
 }

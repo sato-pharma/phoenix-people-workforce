@@ -115,6 +115,43 @@ export function runPhoenixCrmBrowserNameTests(): void {
     assert.match(body, /useBrowserNamed\(\)/, `${file} names the rep's browser in what it shows him`);
   }
 
+  // ── And so are the four screens that raise a refusal of their OWN ─────────────
+  // 🔴 HOLDING THE HOOK IS NOT ENOUGH — THE MESSAGE HAS TO GO THROUGH IT AT THE RENDER. Those three
+  // screens name what the SERVER refused; a permission the BROWSER refuses never reaches the server,
+  // so the component raising it is the only thing that can name the browser, and for four screens
+  // nothing did. Norhan Gamal (AI-0025) read "Location is blocked for your browser" on her iPhone at
+  // 10:59:01 and 11:10:15 Cairo on 12 October 2026, and three times on 10 October; the touch trail
+  // holds 42 of that sentence and 30 of the camera's, across four reps, between 4 and 12 October. She
+  // has never saved a place, a visit or a venue. Naming it at the render rather than at each
+  // `setError` is deliberate: a message added to one of these later is named without being wired.
+  for (const [file, shown] of [
+    ["src/components/phoenix-crm/capture-location.tsx", "{browserNamed(error)}"],
+    ["src/components/phoenix-crm/live-photo-capture.tsx", "{browserNamed(error)}"],
+    ["src/components/phoenix-crm/speak.tsx", "{browserNamed(error)}"],
+    ["src/components/phoenix-crm/day-start-button.tsx", "{browserNamed(problem)}"],
+  ] as const) {
+    const body = readFileSync(file, "utf8");
+    assert.match(body, /useBrowserNamed\(\)/, `${file} raises its own permission refusal, so it reads the browser's name`);
+    assert.ok(body.includes(shown), `${file} must show it named: ${shown}`);
+    assert.doesNotMatch(
+      stripComments(body),
+      /<CrmNote tone="bad">\{(?:error|problem)\}<\/CrmNote>/,
+      `${file} must not render a refusal that skipped the namer`,
+    );
+  }
+
+  // What her iPhone should have read, from the user agent app_sessions recorded for her that morning.
+  assert.equal(
+    nameBrowserIn(
+      `Location is blocked for ${BROWSER_PLACEHOLDER}. Allow location for this site in its settings, then press Capture location again.`,
+      browserNameFromUserAgent(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1",
+      ),
+    ),
+    "Location is blocked for Safari. Allow location for this site in its settings, then press Capture location again.",
+    "what AI-0025 should have read at 10:59 on 12 October",
+  );
+
   // The name is read after hydration, never in the render the server also performs: the two would
   // disagree and React would throw the subtree away to settle it. `useSyncExternalStore` is the one
   // primitive that does that without state set from an effect, which this repo's lint refuses.

@@ -18,6 +18,7 @@ import { CircleCheck, Sunrise } from "lucide-react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { cairoClock } from "@/components/phoenix-crm/format";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { useSilentFix } from "@/components/phoenix-crm/use-silent-fix";
 import { CrmBlock, CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import {
@@ -49,6 +50,12 @@ export function DayStartBlock({
   const readFix = useSilentFix();
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * `NO_FIX_FOR_A_DAY_START` tells him to switch location on for his browser, so the name has to be
+   * the one on his own settings screen (use-browser-name.ts). Before the early return, because a
+   * hook cannot sit after one.
+   */
+  const browserNamed = useBrowserNamed();
 
   if (dayStart) {
     return (
@@ -106,7 +113,7 @@ export function DayStartBlock({
       </p>
       {problem ? (
         <CrmNote className="mt-3" title="Not sent" tone="bad">
-          {problem}
+          {browserNamed(problem)}
         </CrmNote>
       ) : null}
     </CrmBlock>
