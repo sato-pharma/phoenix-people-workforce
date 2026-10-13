@@ -67,7 +67,10 @@ import { useEffect, useId, useState } from "react";
  * `tests/identity-strip-emblem.test.ts` and are the first numbers to re-measure if a row grows.
  * Collapsed is the state that must fit, and three blocks collapsed are three rows — the same height
  * as before the grouping. An open block grows the band because he pressed it, and its list is capped
- * at a scrollable height so one busy kind cannot push the dashboard off the screen.
+ * at a scrollable height so one busy kind cannot push the dashboard off the screen. Since 2026-10-13
+ * the SHUT band draws those same three rows inside the reserve and nowhere else: it is absolutely
+ * positioned over the reserved air, so it cannot add height even if a row ever grew — it would be
+ * clipped instead, and a clipped row is a visible fault where a pushed dashboard is a silent one.
  *
  * IT IS THE BELL'S OWN ROWS, NOT A SECOND SOURCE. It reads `/api/notifications/in-app`, the exact
  * endpoint `InAppNotificationsBell` reads, so what the band shows and what the bell shows can never
@@ -424,10 +427,18 @@ function KindBlock({
   kind,
   onOpen,
   payloadAtCap,
+  peek = false,
 }: {
   kind: NoticeKind;
   onOpen: (id: string) => void;
   payloadAtCap: boolean;
+  /**
+   * THE SHUT BAND'S OWN ROW: everything the pressed row says, with nothing to press. The peek draws
+   * inside the air the portrait reserves and is clipped to exactly that air, so a drop list opened
+   * there would fall into space nobody can scroll to — and a disclosure that opens into nothing is
+   * worse than a row that never offered to open. In this state the rail above is the control.
+   */
+  peek?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
@@ -438,6 +449,41 @@ function KindBlock({
   // endpoint's cap. At the cap the stamp is the honest alternative — it says when, and claims nothing.
   const wholeDayVisible = kind.allToday && !payloadAtCap;
   const caption = wholeDayVisible ? "today" : stampOf(kind.newestAt);
+  // ONE BODY FOR BOTH STATES. The peek row and the pressed row say the same thing about the same
+  // kind; written twice they would drift the first time a figure changed, and the band's whole claim
+  // is that shut and open are the same ledger.
+  const body = (
+    <>
+      <MarginEdge unread={unread} />
+      <Diamond color={unread ? ORANGE : "#d8cfc2"} />
+      <TitleText unread={unread}>{kind.title}</TitleText>
+      <span className="flex shrink-0 items-center gap-2.5 pl-1">
+        <span
+          className="text-[12px] font-black leading-none tabular-nums"
+          style={{ color: unread ? ORANGE : MUTED }}
+        >
+          {count}
+        </span>
+        {caption ? <Stamp>{caption}</Stamp> : null}
+        <ModuleTag from="block" module={kind.module} />
+        {peek ? null : (
+          <ChevronDown
+            aria-hidden="true"
+            className="h-3.5 w-3.5 shrink-0 transition-transform duration-150"
+            style={{ color: FAINT, transform: open ? "rotate(180deg)" : "none" }}
+          />
+        )}
+      </span>
+    </>
+  );
+
+  if (peek) {
+    return (
+      <li className="border-t" style={{ borderColor: RULE }}>
+        <div className={ROW_SHELL}>{body}</div>
+      </li>
+    );
+  }
 
   return (
     <li className="border-t" style={{ borderColor: RULE }}>
@@ -448,24 +494,7 @@ function KindBlock({
         onClick={() => setOpen((previous) => !previous)}
         type="button"
       >
-        <MarginEdge unread={unread} />
-        <Diamond color={unread ? ORANGE : "#d8cfc2"} />
-        <TitleText unread={unread}>{kind.title}</TitleText>
-        <span className="flex shrink-0 items-center gap-2.5 pl-1">
-          <span
-            className="text-[12px] font-black leading-none tabular-nums"
-            style={{ color: unread ? ORANGE : MUTED }}
-          >
-            {count}
-          </span>
-          {caption ? <Stamp>{caption}</Stamp> : null}
-          <ModuleTag from="block" module={kind.module} />
-          <ChevronDown
-            aria-hidden="true"
-            className="h-3.5 w-3.5 shrink-0 transition-transform duration-150"
-            style={{ color: FAINT, transform: open ? "rotate(180deg)" : "none" }}
-          />
-        </span>
+        {body}
         <span className="sr-only">
           {`${count} notices of this kind${wholeDayVisible ? ", all today" : ""}. ${
             open ? "Hide them" : "Show them"
@@ -507,7 +536,28 @@ function readOpenPreference() {
   }
 }
 
-export function PhoenixIdentityNotices({ className = "" }: { className?: string }) {
+export function PhoenixIdentityNotices({
+  className = "",
+  reservesAir = false,
+}: {
+  className?: string;
+  /**
+   * 🔴 TRUE WHERE THE STANDING PORTRAIT RESERVES AIR UNDER THE BAR, AND THAT IS WHAT THE SHUT BAND
+   * IS ALLOWED TO FILL (owner, 2026-10-13, with the shut band circled: "i donot want this blanque
+   * area empty like this").
+   *
+   * The reserve is the portrait's overhang — air that exists whether or not anything is drawn in it,
+   * so a ledger drawn INSIDE it costs the dashboard nothing and leaving it blank buys the dashboard
+   * nothing. The peek is clipped to exactly that air and never adds a pixel of page height, which is
+   * what keeps his other ruling the same day intact: "the notification should take a small place and
+   * be expandable, collapsible".
+   *
+   * FALSE IS THE HONEST DEFAULT, because a page with no portrait reserves no air: on an initials
+   * landing the shut band would have to GROW the page to show the same rows, which is exactly the
+   * thing he refused. There the rail stays the whole shut band.
+   */
+  reservesAir?: boolean;
+}) {
   const [state, setState] = useState<BandState>({ status: "loading" });
   /**
    * 🔴 COLLAPSED IS THE DEFAULT, AND THAT IS AN OWNER RULE, NOT A TASTE (2026-10-12, looking at the
@@ -515,10 +565,17 @@ export function PhoenixIdentityNotices({ className = "" }: { className?: string 
    * her overview dashboard. It's not applicable. The notification should take a small place and be
    * expandable, collapsible").
    *
-   * So the band is ONE LINE until it is asked for: the rail carries the unread count and nothing
-   * else, and the ledger exists only while it is open. The page it sits on is a dashboard — the
-   * notices are a drawer on it, never a panel competing with it. It opens on HER press and it
-   * remembers that, so a person who wants it open pays the press once per browser.
+   * So the band never takes page height it was not already given: the rail carries the unread count,
+   * and the ledger under it is drawn only inside the air the portrait reserves (`reservesAir`),
+   * clipped to it. The page it sits on is a dashboard — the notices are a drawer on it, never a panel
+   * competing with it. It opens on HER press and it remembers that, so a person who wants it open
+   * pays the press once per browser.
+   *
+   * 🔴 AND SHUT IS NOT BLANK (owner, 2026-10-13, circling that reserved air: "i donot want this
+   * blanque area empty like this"). Shut used to render nothing at all, which left a white hole the
+   * height of the portrait's overhang on every landing carrying a photo. The peek fills it with the
+   * same rows the open ledger shows and costs the dashboard nothing, because that air is reserved
+   * whether anything is drawn in it or not.
    */
   const [expanded, setExpanded] = useState(false);
   const ledgerId = useId();
@@ -599,6 +656,78 @@ export function PhoenixIdentityNotices({ className = "" }: { className?: string 
       : [];
   const unreadCount = loaded.filter((notice) => !notice.isRead).length;
 
+  /**
+   * THE LEDGER ITSELF, WRITTEN ONCE AND DRAWN IN BOTH STATES. Shut, it fills the portrait's reserved
+   * air with its rows unpressable (`peek`); open, it is the same ledger with its blocks live. Two
+   * copies of this markup would drift the first time a state or a stamp changed, and the band's
+   * whole claim is that what the shut band shows IS what the open one shows.
+   */
+  const ledger = (peek: boolean) => (
+    <>
+      {state.status === "loading" ? (
+        // THE SKELETON IS THE SAME LEDGER, NOT A GREY BOX. Same rules, same margin, same
+        // diamond — only the type is absent. A placeholder that does not share the loaded
+        // layout reads as a fault rather than as a wait, which is why it is drawn at all.
+        <ul aria-hidden="true" className="flex flex-col border-b" style={{ borderColor: RULE }}>
+          {Array.from({ length: NOTICE_ROWS }, (_, slot) => (
+            <li
+              className="flex items-center gap-2.5 border-t px-3 py-[5px]"
+              key={slot}
+              style={{ background: PAPER, borderColor: RULE }}
+            >
+              <Diamond color="#e2dacd" />
+              <span
+                className="block h-[9px] flex-1"
+                style={{ background: "#efe9e0", maxWidth: `${62 - slot * 11}%` }}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {state.status === "error" ? (
+        <p
+          className="border-t px-3 py-2.5 text-[11.5px] font-semibold leading-5"
+          style={{ background: PAPER, borderColor: RULE, color: "#8a5a1f" }}
+        >
+          Your notices could not be loaded just now, so this band is showing none rather than a count
+          it cannot stand behind. The bell in the top bar reads the same list.
+        </p>
+      ) : null}
+
+      {state.status === "ready" && kinds.length === 0 ? (
+        <p
+          className="border-t px-3 py-2.5 text-[11.5px] font-semibold leading-5"
+          style={{ background: PAPER, borderColor: RULE, color: MUTED }}
+        >
+          Nothing is waiting for you here. New notices land in this band and in the bell at the same
+          moment.
+        </p>
+      ) : null}
+
+      {kinds.length > 0 ? (
+        // The closing rule matters: without it the last row dissolves into the page ground and
+        // the ledger has a top and no bottom, which is the one thing that makes a ruled list
+        // look unfinished rather than deliberate.
+        <ul className="flex flex-col border-b bg-white" style={{ borderColor: RULE }}>
+          {kinds.map((kind) =>
+            kind.members.length > 1 ? (
+              <KindBlock
+                key={kind.key}
+                kind={kind}
+                onOpen={markRead}
+                payloadAtCap={payloadAtCap}
+                peek={peek}
+              />
+            ) : (
+              <SingleRow key={kind.key} notice={kind.members[0]} onOpen={markRead} />
+            ),
+          )}
+        </ul>
+      ) : null}
+    </>
+  );
+
   // `@container` on the band is what lets a row answer to the BAND's own width instead of the
   // window's — it is 510px across at a 768px viewport and 545px at 803px, because the sidebar and
   // the standing portrait take the rest. See `ModuleTag` for the two measured thresholds.
@@ -651,75 +780,36 @@ export function PhoenixIdentityNotices({ className = "" }: { className?: string 
         </span>
       </button>
 
-      {/* SHUT IS SHUT: the ledger is not rendered at all, so the band costs the dashboard one 25px
-          rail and the page below starts where it would with no band. Open, the ledger is capped and
-          scrolls — three kinds with one of them expanded must not take a dashboard over again. */}
+      {/* OPEN: the ledger is capped and scrolls, and it may grow the band because she pressed for
+          it — three kinds with one of them expanded must not take a dashboard over again. */}
       {expanded ? (
         <div
           className="flex min-w-0 flex-col overflow-y-auto overflow-x-hidden"
           id={ledgerId}
           style={{ maxHeight: "248px" }}
         >
-          {state.status === "loading" ? (
-            // THE SKELETON IS THE SAME LEDGER, NOT A GREY BOX. Same rules, same margin, same
-            // diamond — only the type is absent. A placeholder that does not share the loaded
-            // layout reads as a fault rather than as a wait, which is why it is drawn at all.
-            <ul aria-hidden="true" className="flex flex-col border-b" style={{ borderColor: RULE }}>
-              {Array.from({ length: NOTICE_ROWS }, (_, slot) => (
-                <li
-                  className="flex items-center gap-2.5 border-t px-3 py-[5px]"
-                  key={slot}
-                  style={{ background: PAPER, borderColor: RULE }}
-                >
-                  <Diamond color="#e2dacd" />
-                  <span
-                    className="block h-[9px] flex-1"
-                    style={{ background: "#efe9e0", maxWidth: `${62 - slot * 11}%` }}
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {ledger(false)}
+        </div>
+      ) : null}
 
-          {state.status === "error" ? (
-            <p
-              className="border-t px-3 py-2.5 text-[11.5px] font-semibold leading-5"
-              style={{ background: PAPER, borderColor: RULE, color: "#8a5a1f" }}
-            >
-              Your notices could not be loaded just now, so this band is showing none rather than a
-              count it cannot stand behind. The bell in the top bar reads the same list.
-            </p>
-          ) : null}
+      {/* 🔴 SHUT, THE BAND FILLS THE AIR THE PORTRAIT ALREADY RESERVED — AND NOT ONE PIXEL MORE
+          (owner, 2026-10-13, with that air circled: "i donot want this blanque area empty like
+          this"). Before this the shut band was the rail alone, so the overhang under it was a white
+          hole on every landing with a portrait.
 
-          {state.status === "ready" && kinds.length === 0 ? (
-            <p
-              className="border-t px-3 py-2.5 text-[11.5px] font-semibold leading-5"
-              style={{ background: PAPER, borderColor: RULE, color: MUTED }}
-            >
-              Nothing is waiting for you here. New notices land in this band and in the bell at the
-              same moment.
-            </p>
-          ) : null}
+          THE ABSOLUTE FILL IS THE WHOLE MECHANISM, NOT A STYLING CHOICE. The band is a flex item in
+          an `items-stretch` row whose height is set by the portrait's spacer, so anything in NORMAL
+          flow that is taller than the reserve makes the row grow and pushes the dashboard down the
+          page — the one failure the strip exists to prevent, measured and pinned in
+          `tests/identity-strip-emblem.test.ts`. Absolutely-positioned content contributes no height
+          at all: the ledger can only ever be clipped by the air, never add to it.
 
-          {kinds.length > 0 ? (
-            // The closing rule matters: without it the last row dissolves into the page ground and
-            // the ledger has a top and no bottom, which is the one thing that makes a ruled list
-            // look unfinished rather than deliberate.
-            <ul className="flex flex-col border-b bg-white" style={{ borderColor: RULE }}>
-              {kinds.map((kind) =>
-                kind.members.length > 1 ? (
-                  <KindBlock
-                    key={kind.key}
-                    kind={kind}
-                    onOpen={markRead}
-                    payloadAtCap={payloadAtCap}
-                  />
-                ) : (
-                  <SingleRow key={kind.key} notice={kind.members[0]} onOpen={markRead} />
-                ),
-              )}
-            </ul>
-          ) : null}
+          AND THE ROWS DO NOT OPEN HERE (`peek`). A drop list inside a box that cannot scroll would
+          fall into space nobody can reach; the rail above is the control, and pressing it swaps this
+          peek for the real ledger. */}
+      {!expanded && reservesAir ? (
+        <div className="relative min-h-0 flex-1">
+          <div className="absolute inset-0 flex min-w-0 flex-col overflow-hidden">{ledger(true)}</div>
         </div>
       ) : null}
     </section>

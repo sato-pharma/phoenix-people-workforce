@@ -628,6 +628,85 @@ function testTheNewComponentsObeyTheThreeGoldenRules() {
   );
 }
 
+/**
+ * ── 9b. THE CALENDAR IS A RULED SHEET, NOT A GRID OF BOXES ────────────────────────────────────
+ *
+ * The owner sent the week back on 13 October 2026 with the whole instruction in four words:
+ * "godmode heavy full premium polish". What he was looking at was three nested frames around every
+ * booking — a bordered card per interview, inside a bordered card per day, inside the bordered
+ * panel — plus a fourth bordered chip for the platform inside the innermost one. Five bookings down
+ * a column drew ten hairlines that carried no meaning, and a day with one booking read as a card
+ * that had failed to fill.
+ *
+ * THE FIX IS SUBTRACTION, SO IT IS EXACTLY THE KIND OF WORK A LATER SESSION UNDOES BY "TIDYING".
+ * Adding `border border-slate-200` back to a row looks like consistency with every other card in
+ * the app; it is the defect he rejected. These four pins hold the sheet:
+ *
+ *   1. the week is ONE frame with 1px rules showing through the grid's own `gap-px`
+ *   2. a booking is a RULED ROW — a bottom hairline that the last row drops, never a box
+ *   3. the platform is a WORD in faint caps, never a bordered chip
+ *   4. the month's cells draw no border of their own; the grid draws every rule once
+ *
+ * The same `gap-px`-over-a-hairline-ground is why no rule is ever doubled and why nothing needs a
+ * responsive border: it is drawn once at every breakpoint, including the one-column phone week.
+ */
+function testTheCalendarIsARuledSheetRatherThanNestedBoxes() {
+  const calendar = codeOf(CALENDAR_COMPONENT);
+
+  const sheet = /grid grid-cols-1 gap-px border border-slate-200 bg-slate-200\/80[^"]*lg:grid-cols-5/;
+  assert.match(
+    calendar,
+    sheet,
+    "the week stopped being one sheet — the five days are ruled apart by the grid's own `gap-px` " +
+      "over a hairline ground, which draws each rule exactly ONCE at every breakpoint. A gap plus a " +
+      "border per column is the doubled 2px line, and a border per column is the boxed week the " +
+      'owner rejected on 2026-10-13 ("godmode heavy full premium polish")',
+  );
+
+  const body = (name: string) => {
+    const start = calendar.indexOf(`function ${name}(`);
+    assert.notEqual(start, -1, `${name} must still exist in the calendar component`);
+    // `export function` ends a body too — `MonthCell` is followed by the exported component, and
+    // slicing only to the next bare `function` swallowed the whole panel into the cell. Measured,
+    // while proving this section red.
+    const rest = calendar.slice(start + 1);
+    const end = /\n(?:export )?function /.exec(rest)?.index;
+    return end === undefined ? rest : rest.slice(0, end);
+  };
+
+  const row = body("InterviewRow");
+  assert.match(
+    row,
+    /border-b border-slate-100[^"]*last:border-b-0/,
+    "a booking must be a RULED ROW: one bottom hairline, dropped on the last row so the column does " +
+      "not close with a rule it does not need",
+  );
+  assert.ok(
+    !/\bborder border-/.test(row),
+    "a booking was put back in a box. Three nested frames around one line of type is precisely what " +
+      "he sent the week back for — a row's only frame is its left margin edge",
+  );
+  assert.ok(
+    !/bg-slate-50|bg-orange-100|border border-/.test(row.split("platformLabel")[0] ?? ""),
+    "the platform became a chip again — it is the least important thing on the row, and a bordered " +
+      "filled box made it the loudest. It is a word in faint caps, which is also what the house ink " +
+      "rule asks for (no filled areas)",
+  );
+
+  const cell = body("MonthCell");
+  assert.ok(
+    !/\bborder border-|border-slate-200 bg-white/.test(cell),
+    "the month cells took their own borders back. The grid's hairline ground draws every rule once; " +
+      "a border per cell draws the inner ones twice and thickens them to 2px",
+  );
+  assert.match(
+    calendar,
+    /grid grid-cols-7 gap-px border border-slate-200 bg-slate-200\/80/,
+    "and the month grid must be the one carrying that ground, or the cells sit on nothing and the " +
+      "month loses its rules altogether",
+  );
+}
+
 // ── 10. A failed read is SAID, never drawn as a quiet day ─────────────────────────────────────
 function testAFailedCalendarReadIsStatedRatherThanDrawnEmpty() {
   const calendar = codeOf(CALENDAR_COMPONENT);
@@ -771,6 +850,7 @@ export function runTalentAcquisitionOverviewTests() {
   testBothChartsHeNamedSurviveOnTheirOwnBands();
   testTheIdentityStripIsTheGenericPagesByteForByte();
   testTheNewComponentsObeyTheThreeGoldenRules();
+  testTheCalendarIsARuledSheetRatherThanNestedBoxes();
   testAFailedCalendarReadIsStatedRatherThanDrawnEmpty();
   testTheRouteServesTheNewPageToHerSeatAlone();
   testTheProbationAndVacationSourcesAreDeclaredOnHerBundle();
