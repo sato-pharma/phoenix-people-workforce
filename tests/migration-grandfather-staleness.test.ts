@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -18,6 +18,12 @@ import path from "node:path";
 // all, and #1419 ("resolve 20260728100000 timestamp collision") re-stamped one half of the third
 // pair to 20260728100500, leaving 20260728100000 carrying a single file. The one-file case is the
 // subtle one — the prefix still exists, so only a count catches it.
+//
+// The list is EMPTY as of 2026-10-13: its last entry, 20260814150000, was retired by re-stamping
+// phx_rep_bulk_dependency to 20260814150001 (one second after its parallel-authored partner, which
+// is the order production applied them in). So this guard now has nothing live to measure, and the
+// scaffold below injects a PROBE entry instead of borrowing one — an empty list must not be able to
+// turn the proof that section 2b still fires into a silent no-op.
 //
 // The repo already had this doctrine for a different list: tests/hr-function-governance.test.ts
 // asserts its grandfathered role/title collisions "must not rot into cover for a name that no
@@ -40,11 +46,19 @@ export function runMigrationGrandfatherStalenessTests() {
       "renamed or restructured, update this guard rather than deleting it",
   );
   const entries = [...block[1].matchAll(/'(\d{14})'/g)].map((m) => m[1]);
-  assert.ok(
-    entries.length > 0,
-    "the grandfather list parsed as empty — that is almost certainly this regex breaking, not the " +
-      "list emptying, and a silently-empty list would make every assertion below vacuous",
-  );
+  // An EMPTY list is the resting state since 2026-10-13, when the last entry (20260814150000) was
+  // retired by re-stamping phx_rep_bulk_dependency to 20260814150001 — so emptiness is no longer a
+  // failure here. A BROKEN matcher looks identical from this side, though, which is why the body is
+  // re-read for any 14-digit run: a timestamp sitting in the text that the matcher did not capture
+  // is the matcher breaking, and it would make assertion 1 below vacuous.
+  if (entries.length === 0) {
+    assert.ok(
+      !/\d{14}/.test(block[1]),
+      "the grandfather list parsed as empty while its body still contains a 14-digit timestamp — " +
+        "that is this test's matcher breaking on a re-quoted or restructured entry, not the list " +
+        "emptying. Fix the matcher rather than accepting the empty read",
+    );
+  }
 
   // 1. Every exemption must still describe a real duplicate: two or more files on that prefix.
   for (const ts of entries) {
@@ -67,6 +81,20 @@ export function runMigrationGrandfatherStalenessTests() {
 
   // 3. And that guard must actually FIRE. Run the real script against a scaffold, because a source
   //    pin alone would still pass if the loop were reduced to a no-op.
+  //
+  //    The scaffold runs a copy of the script with a PROBE timestamp injected into the Set, rather
+  //    than leaning on whatever the live list happens to hold. That is what keeps this assertion
+  //    meaningful now the list is empty: the live list emptying must not quietly turn the only
+  //    proof that section 2b fires into a no-op. Any live entries are exercised alongside it.
+  const PROBE = "19990101000000";
+  const OPENER = "const GRANDFATHERED_DUPLICATE_TIMESTAMPS = new Set([";
+  assert.ok(
+    source.includes(OPENER),
+    `could not find "${OPENER}" in ${SCRIPT} to inject the probe entry — if the declaration was ` +
+      "reshaped, update this injection rather than dropping the scaffold run",
+  );
+  const probed = source.replace(OPENER, `${OPENER}\n  '${PROBE}',`);
+  assert.notEqual(probed, source, "the probe injection changed nothing, so the scaffold would prove nothing");
   const scaffold = mkdtempSync(path.join(tmpdir(), "grandfather-guard-"));
   try {
     const scriptDir = path.join(scaffold, "scripts");
@@ -74,13 +102,13 @@ export function runMigrationGrandfatherStalenessTests() {
     mkdirSync(scriptDir, { recursive: true });
     mkdirSync(migrationsDir, { recursive: true });
     // MIGRATIONS_DIR is resolved as <script>/../supabase/migrations, so the copy reads the fixture.
-    copyFileSync(SCRIPT, path.join(scriptDir, "check-migrations.mjs"));
+    writeFileSync(path.join(scriptDir, "check-migrations.mjs"), probed);
 
     const run = () =>
       spawnSync(process.execPath, [path.join(scriptDir, "check-migrations.mjs")], { encoding: "utf8" });
 
     // Every entry honestly duplicated -> the guard is silent and the script passes.
-    for (const ts of entries) {
+    for (const ts of [...entries, PROBE]) {
       writeFileSync(path.join(migrationsDir, `${ts}_alpha.sql`), "select 1;\n");
       writeFileSync(path.join(migrationsDir, `${ts}_beta.sql`), "select 1;\n");
     }
@@ -92,8 +120,8 @@ export function runMigrationGrandfatherStalenessTests() {
         `test proves nothing about the failing case. stdout: ${green.stdout}${green.stderr}`,
     );
 
-    // Drop one half of the first pair -> that entry no longer names a duplicate.
-    rmSync(path.join(migrationsDir, `${entries[0]}_beta.sql`));
+    // Drop one half of the probe's pair -> that entry no longer names a duplicate.
+    rmSync(path.join(migrationsDir, `${PROBE}_beta.sql`));
     const red = run();
     assert.notEqual(
       red.status,

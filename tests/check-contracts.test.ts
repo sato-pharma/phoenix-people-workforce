@@ -418,10 +418,13 @@ export function runCheckContractsTests() {
     "the migration gate must SPAWN that script, never re-implement its rules in this file",
   );
 
-  // 🔴 THE DETAIL IS THE **LAST** `[migration-check]` LINE, NOT THE FIRST. A real passing run opens
-  // with the cross-branch note, prints a WARN line per warning — this repo warns on every single run
-  // today, 8 of them, a DROP TABLE with no `-- SAFE:` annotation each time — and ends on the count
-  // summary. The fixture below is that real shape: a first-match read reports "compared against
+  // 🔴 THE DETAIL IS THE **LAST** `[migration-check]` LINE, NOT THE FIRST. A passing run opens with
+  // the cross-branch note, prints a WARN line per warning, and ends on the count summary. The
+  // fixture below is that shape, and it is deliberately SYNTHETIC: the repo warned 8 times on every
+  // run when this was written, then once #5853 annotated the seven DROP TABLE migrations only the
+  // grandfathered duplicate timestamp was left, and since that collision was re-stamped away
+  // (2026-10-13) the step runs at 0 warnings — a fixture copied from a live run would need editing
+  // on every such change while proving nothing more. A first-match read reports "compared against
   // origin/main …" as the verdict of the step, which says nothing about whether it passed.
   assert.equal(
     migrationDetail(

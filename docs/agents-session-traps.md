@@ -459,10 +459,25 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
   `scripts/check-migrations.mjs`'s `GRANDFATHERED_DUPLICATE_TIMESTAMPS` comments carried the same
   mirror error — "renaming either would desync migration history" — and have since been corrected
   in that file's own header. That pass also found **three of its four entries DEAD**: only
-  `20260814150000` still has two files, which the check's single warning confirms on every run. The
-  entries were left in place (removing one is a behaviour change to a required check), but the repo's
-  own doctrine is that a grandfather list "must not rot into cover for a name that no longer
-  collides" — `tests/hr-function-governance.test.ts` enforces exactly that for its own list.
+  `20260814150000` still had two files, which the check's single warning confirmed on every run. The
+  dead three were removed then, and section 2b now fails on an entry that no longer names a real
+  duplicate — the repo's own doctrine, which `tests/hr-function-governance.test.ts` already enforced
+  for its own list: a grandfather list "must not rot into cover for a name that no longer collides".
+
+  🔴 **THE LIST IS EMPTY SINCE 2026-10-13, AND EMPTY IS ITS RESTING STATE — a new collision is fixed
+  by RE-STAMPING the later file, not by adding an entry.** The last one went the way the bullets
+  above describe: both ledger rows were read live on production AND staging first, both were stamped
+  normally (`name=cv_extraction_any_job_title version=20260814125822`,
+  `name=phx_rep_bulk_dependency version=20260814125938` — no filename prefix in either), so
+  `20260814150000_phx_rep_bulk_dependency.sql` became `20260814150001_…`, one second after its
+  partner, which is the order production applied them in. The drift check and the staging applier
+  match by version **or** name through `scripts/lib/migration-inventory.ts`, where the name is the
+  stem *after* the timestamp, so the renamed file still matches its row and is never re-applied —
+  and `check:migrations` now runs with **0 warnings and 0 errors**, where a real warning is visible
+  instead of sitting behind a permanent one. Add an entry only for the abnormal row two bullets up,
+  whose `name` carries the old filename prefix and so cannot be re-stamped safely.
+  `tests/migration-grandfather-staleness.test.ts` keeps section 2b pinned with the list empty by
+  injecting a probe entry into a scaffold copy of the script.
 
   **The collision can appear with no change from you, because CI judges the MERGE ref.** Measured
   2026-09-04 on #3088: `check:migrations` PASSED on that branch's first CI run and FAILED on its
