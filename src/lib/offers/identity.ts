@@ -1,5 +1,7 @@
 import { systemLegalEntity } from "@/config/system-settings";
-import { receivingDomain, toReceivableHeader, toReceivableList } from "@/lib/email/receivable-address";
+import { receivingDomain, splitAddressList, toReceivableHeader, toReceivableList } from "@/lib/email/receivable-address";
+import { JOB_OFFER_SENDER_ADDRESSES, isJobOfferSender, senderAddressOf } from "@/lib/email/job-offer-sender";
+import { ADMIN_STANDING_EMAIL } from "@/lib/email/admin-telegram-mirror";
 
 /**
  * Who a job offer comes FROM.
@@ -23,6 +25,14 @@ import { receivingDomain, toReceivableHeader, toReceivableList } from "@/lib/ema
  * mailboxes are (`toReceivableAddress`), whatever the environment says. The apex is verified in
  * Resend too (the Sato Email Composer already sends from it), so authentication is unchanged.
  * A candidate WILL reply to an offer, and a reply that bounces is worse than no offer at all.
+ *
+ * ── TWO addresses, and no third ──
+ * Owner rule, 2026-10-13: "all job offers email must only fire from HR@satopharma.com or
+ * hr@send.satopharma.com". So `JOB_OFFER_EMAIL_FROM` is no longer taken on trust — a value naming
+ * any other mailbox is REFUSED here and `hr@` on the apex is used instead, with the refused value
+ * carried back to the Job Offers screen so HR can see what the environment holds. The list, and
+ * the matching lock on the provider chain that stops a backup account rewriting the From, live in
+ * `src/lib/email/job-offer-sender.ts`.
  */
 
 /** Display name on the From header. The company as it appears on legal paperwork. */
@@ -45,13 +55,35 @@ const fallbackOfferFromEmail = `hr@${receivingDomain}`;
  * on the apex (`hr@` was fixed on the mail server; `omar.anwar@` is the standing admin inbox); the
  * sending subdomain, which owns none, is mapped off structurally by `toReceivableList` below.
  */
-const fallbackOfferReplyTo = "hr@satopharma.com, omar.anwar@satopharma.com";
+const fallbackOfferReplyTo = `hr@${receivingDomain}, ${ADMIN_STANDING_EMAIL}`;
+
+/**
+ * His own mailbox can never be configured OFF an offer's Reply-To.
+ *
+ * Owner, 2026-10-13: "make sure if candidate replies the email reaches me". The default already
+ * named him, but it was only a default — a `JOB_OFFER_REPLY_TO` holding one address, or holding
+ * two other people, silently took a candidate's reply away from him and nothing anywhere would
+ * have looked wrong. So the standing admin mailbox is APPENDED whenever the resolved list does not
+ * already carry it: the environment can add reply targets and reorder them, never remove him.
+ */
+function withStandingAdminReply(replyTo: string): string {
+  const addresses = splitAddressList(replyTo);
+  const hasAdmin = addresses.some((address) => senderAddressOf(address) === ADMIN_STANDING_EMAIL.toLowerCase());
+  return hasAdmin ? addresses.join(", ") : [...addresses, ADMIN_STANDING_EMAIL].join(", ");
+}
 
 export type OfferSender = {
+  /** The two mailboxes the owner's rule allows — carried so no screen retypes them. */
+  allowedFrom: readonly string[];
   /** Fully-formed From header: `Sato Pharma <hr@satopharma.com>`. */
   from: string;
   /** True when the address came from configuration rather than the placeholder default. */
   isConfigured: boolean;
+  /**
+   * The configured value when it named a mailbox the owner's rule does not allow — refused, and
+   * shown on the Job Offers screen rather than swallowed. `null` whenever nothing was refused.
+   */
+  refusedFrom: string | null;
   /** Reply-To header — one or MORE apex mailboxes, comma-separated, none on the sending subdomain. */
   replyTo: string;
 };
@@ -64,26 +96,39 @@ export type OfferSender = {
  * This is its first consumer. It may hold either a bare address or a full `Name <addr>` header;
  * a bare address gets the company name attached, because a From header with no display name is
  * the single strongest "this is automated" signal a mail client shows.
+ *
+ * What it may NOT hold is another mailbox. The owner's two addresses are the whole list
+ * (`JOB_OFFER_SENDER_ADDRESSES`); anything else — `careers@`, `phoenix@`, an outside domain, a
+ * typo — is refused and reported, never sent from. An environment value is the easiest thing in
+ * this system to change and the hardest to notice having changed.
  */
 export function resolveOfferSender(): OfferSender {
   const configured = (process.env.JOB_OFFER_EMAIL_FROM ?? "").trim();
   // `JOB_OFFER_REPLY_TO` may name one mailbox or several (comma-separated) — each mapped off the
   // sending subdomain independently, so a reply reaches every one of them and none bounces.
-  const replyTo = toReceivableList((process.env.JOB_OFFER_REPLY_TO ?? "").trim() || fallbackOfferReplyTo);
+  const replyTo = withStandingAdminReply(
+    toReceivableList((process.env.JOB_OFFER_REPLY_TO ?? "").trim() || fallbackOfferReplyTo),
+  );
 
-  if (!configured) {
-    return {
-      from: `${OFFER_SENDER_NAME} <${fallbackOfferFromEmail}>`,
-      isConfigured: false,
-      replyTo,
-    };
-  }
+  const fallback = (refusedFrom: string | null): OfferSender => ({
+    allowedFrom: JOB_OFFER_SENDER_ADDRESSES,
+    from: `${OFFER_SENDER_NAME} <${fallbackOfferFromEmail}>`,
+    isConfigured: false,
+    refusedFrom,
+    replyTo,
+  });
+
+  if (!configured) return fallback(null);
+
+  // The owner's rule, applied to what the environment actually names — before the apex mapping,
+  // so `hr@send.satopharma.com` (allowed, and what production holds) is accepted on its own terms.
+  if (!isJobOfferSender(configured)) return fallback(configured);
 
   const from = toReceivableHeader(
     configured.includes("<") ? configured : `${OFFER_SENDER_NAME} <${configured}>`,
   );
 
-  return { from, isConfigured: true, replyTo };
+  return { allowedFrom: JOB_OFFER_SENDER_ADDRESSES, from, isConfigured: true, refusedFrom: null, replyTo };
 }
 
 /**
