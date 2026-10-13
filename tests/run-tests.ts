@@ -2521,6 +2521,7 @@ import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
 import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
+import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -3919,6 +3920,7 @@ await runTest(
 );
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
 await runTest("monthly closing details", runMonthlyClosingDetailsTests);
+await runTest("the Anti Infective rep ranking export - his arrangement, the unranked seat, and no collapsed row", runClosingRepRankingTests);
 await runTest("sales restricted products (LA003/LA004)", runSalesRestrictedProductsTests);
 await runTest("au targets validation (map-or-reject + confidential guard)", runAuTargetsValidationTests);
 await runTest("targets template round-trip (smart banner/dropdowns + legacy header)", runTargetsTemplateRoundtripTests);

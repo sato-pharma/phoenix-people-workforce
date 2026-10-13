@@ -16,6 +16,10 @@ import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sal
 import { maskedClosingClientCodes, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import {
+  buildScopedRepRankingExport,
+  isRepRankingLine,
+} from "@/lib/sales/closing-rep-ranking-export";
+import {
   buildClosingDetailsWorkbook,
   buildMonthlyClosingWorkbook,
   buildPortalClosingWorkbook,
@@ -728,6 +732,46 @@ export async function POST(request: Request) {
     const scopedPortal =
       await loadPortalMonthlyClosing({ access, line: details.line, period: details.period }).catch(() => null);
     const scopedMatrix = scopedPortal?.matrix ?? null;
+
+    // 🔴 ANTI INFECTIVE'S PORTAL EXPORT IS THE REP RANKING WORKBOOK (owner, 2026-10-13: "wire this
+    // sheet instead of the current sheet in the employee portal … forget about the other sheet. This
+    // will replace it in the employee portal, any role", and — asked which lines — "wire this only to
+    // the anti-infective line. Leave PD and CNS as they are").
+    //
+    // It REPLACES this branch's file for that line and no other; CNS and Pedia fall straight through
+    // to the workbook below, exactly what they produced before. The frozen-export rule still holds
+    // for them: he named this line himself, which is what that rule asks for.
+    //
+    // Scope is not re-derived here — buildScopedRepRankingExport asks loadPortalMonthlyClosing for
+    // each trend month, so every month is narrowed and publish-gated by the same chain that scoped
+    // the matrix above. A Medical Rep's own-area scope therefore makes his ranking his own row, which
+    // is his decision of 2026-10-13 and keeps the own-area-never-region lock intact.
+    //
+    // It returns null rather than throwing when a ranking cannot be built for this viewer and month,
+    // and the request then produces the ordinary scoped workbook: a gap degrades to the old file,
+    // never to an error page.
+    if (isRepRankingLine(details.line)) {
+      const ranked = await buildScopedRepRankingExport({
+        access,
+        availablePeriods: scopedPortal?.availablePeriods ?? availablePeriods,
+        line: details.line,
+        period: details.period,
+        rows: details.rows,
+      });
+      if (ranked) {
+        return fileResponse(ranked.buffer, closingFileName({
+          kind: "details",
+          line: details.line,
+          period: details.period,
+          region: regionScopeLabel((function* () {
+            for (const row of details.rows) {
+              yield row.operationalRegionName || row.regionName;
+            }
+          })()),
+        }));
+      }
+    }
+
     // 🔒 EVERYTHING ABOVE THIS LINE HAS FINISHED COMPUTING. From here the rows are only written
     // into a workbook, so this is where the source mask belongs. See closing-source-mask.ts. The rows
     // arrive masked already (they were not revealed); the drop stays as the guard on the way into the

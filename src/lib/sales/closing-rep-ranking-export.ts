@@ -1,0 +1,153 @@
+import type { AccessContext } from "@/lib/auth/permissions";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { logError } from "@/lib/observability/log";
+import {
+  buildRepRanking,
+  carveChannelsByArea,
+  carveByArea,
+  loadRankingSeats,
+  probationByUniqueName,
+  type RepRanking,
+} from "@/lib/sales/closing-rep-ranking";
+import { periodEndDate } from "@/lib/sales/closing-performance-review";
+import type { RankingPublication } from "@/lib/sales/closing-rep-ranking-legacy-shape";
+import {
+  buildRepRankingWorkbook,
+  type RepRankingWorkbookResult,
+} from "@/lib/sales/closing-rep-ranking-workbook";
+import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
+import { loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
+import { normalizeLineKey } from "@/lib/sales/access-scope";
+import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE ONE ENTRY POINT THE EXPORT ROUTE CALLS.
+//
+// 🔴 ANTI INFECTIVE ONLY (owner, 2026-10-13: "wire this only to the anti-infective line. Leave PD
+// and CNS as they are"). Every other line keeps the workbook it has, untouched — `isRepRankingLine`
+// is the single gate, so there is one place to read and one place to change if he widens it.
+//
+// This exists because a route must not orchestrate a domain: the figures, the scope, the seat model
+// and the warehouse carve are all sales rules, and the route's job is to answer HTTP. It returns
+// null when this viewer cannot be given a ranking for this month, and the route then falls through to
+// the export it would have produced anyway — so a gap here degrades to the old file rather than to an
+// error page.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** How many published months the workbook trends over, the closing month included. */
+const TREND_MONTHS = 3;
+
+/** 🔴 The ONE gate. The ranking workbook replaces the portal export on this line and no other. */
+export function isRepRankingLine(line: string | null | undefined): boolean {
+  return normalizeLineKey(line ?? "") === normalizeLineKey("Anti Infective");
+}
+
+/**
+ * This line's publication history, newest first — the Trust sheet's provenance table.
+ *
+ * Fails soft: a workbook without its provenance table is worth more than no workbook, and nothing
+ * else on the file reads this.
+ */
+async function loadRankingPublications(line: string): Promise<RankingPublication[]> {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("monthly_closing_publications")
+      .select("period,published_at,published_by,unpublished_at")
+      .eq("line", line)
+      .order("period", { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as RankingPublication[];
+  } catch (error) {
+    logError("Rep ranking publication history read failed; the Trust sheet ships without it", {
+      error,
+      labels: { event: "closing_rep_ranking_publications_failed" },
+    });
+    return [];
+  }
+}
+
+/**
+ * The months the workbook trends over: the month being exported plus the published months before it,
+ * oldest first.
+ *
+ * 🔴 TAKEN FROM THE VIEWER'S OWN PUBLISHED LIST, never from a calendar. A month that was never
+ * published is not a zero month — it is a month this reader is not allowed to see, and inventing its
+ * column would both breach the publish gate and make the quarter's total disagree with the line.
+ */
+export function resolveTrendPeriods(availablePeriods: readonly string[], period: string): string[] {
+  const published = [...availablePeriods].sort(); // oldest first
+  const index = published.indexOf(period);
+  if (index < 0) return [period];
+  return published.slice(Math.max(0, index - (TREND_MONTHS - 1)), index + 1);
+}
+
+export type RepRankingExport = RepRankingWorkbookResult & { ranking: RepRanking };
+
+/**
+ * Build this viewer's rep-ranking workbook for one month, or null when it cannot be built.
+ *
+ * SCOPE COMES FROM `loadPortalMonthlyClosing`, once per trend month, so every month on the file is
+ * narrowed by exactly the chain that narrows the viewer's screen and gated on the same publication.
+ * "Everyone his scope" is therefore not re-implemented here: a Medical Rep's matrices hold his own
+ * area, so his ranking is his own row.
+ */
+export async function buildScopedRepRankingExport(input: {
+  access: AccessContext;
+  line: string;
+  period: string;
+  /**
+   * The closing month's detail rows, already scoped by the caller.
+   *
+   * 🔴 THE UNMASKED SET, DELIBERATELY. These rows are what the published cells were built from, so
+   * the warehouse carve adds back to them; the masked set has rows REMOVED, which would understate
+   * the store channel against the very cell it is carved out of. Nothing identifying survives the
+   * carve — it emits money per area × product and one count of distinct warehouse customers, never a
+   * customer name or code — so the mask has nothing to protect here.
+   */
+  rows: readonly ClosingDetailRow[];
+  availablePeriods: readonly string[];
+}): Promise<RepRankingExport | null> {
+  const { access, line, period } = input;
+  if (!isRepRankingLine(line)) return null;
+
+  const trend = resolveTrendPeriods(input.availablePeriods, period);
+  const loaded = await Promise.all(
+    trend.map(async (month) => {
+      const result = await loadPortalMonthlyClosing({ access, line, period: month }).catch(() => null);
+      // A month whose scoped load came back on a DIFFERENT month would silently label one month's
+      // figures with another's, so it is dropped rather than trusted.
+      const matrix = result?.selectedPeriod === month ? result.matrix : null;
+      return matrix ? { matrix, period: month } : null;
+    }),
+  );
+  const matricesByPeriod = loaded.filter(
+    (entry): entry is { matrix: MonthlyClosingMatrix; period: string } => entry !== null,
+  );
+  if (!matricesByPeriod.some((entry) => entry.period === period)) return null;
+
+  const carve = carveChannelsByArea(input.rows, line);
+  const [seats, probation, publications] = await Promise.all([
+    loadRankingSeats(period),
+    probationByUniqueName(periodEndDate(period) ?? period),
+    loadRankingPublications(line),
+  ]);
+
+  const ranking = buildRepRanking({
+    directByArea: carveByArea(carve.direct),
+    line,
+    matricesByPeriod,
+    period,
+    probationByName: probation,
+    seats,
+    storesByArea: carveByArea(carve.stores),
+    warehouseCustomers: carve.warehouseCustomers.size,
+  });
+
+  const built = await buildRepRankingWorkbook({
+    carve: { direct: carve.direct, stores: carve.stores },
+    probationByName: probation,
+    publications,
+    ranking,
+  });
+  return { ...built, ranking };
+}
