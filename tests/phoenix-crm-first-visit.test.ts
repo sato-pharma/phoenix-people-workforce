@@ -227,17 +227,20 @@ export function runPhoenixCrmFirstVisitTests() {
 
   // ── 5 · it really does email ─────────────────────────────────────────────────────────────────
   {
-    assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("first_visit_submitted"), true, "the guard's allowlist carries it — a Phoenix CRM notice is otherwise email-free");
-    assert.deepEqual(phoenixCrmChannels("first_visit_submitted"), ["in_app", "email", "telegram", "push"]);
+    // Since 2026-10-13 (owner): "stop any email firing from phoenix crm" — the first visit is told in-app,
+    // by Telegram and on the phone, and the guard strips an email asked for by anything else.
+    assert.equal(PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("first_visit_submitted"), false, "the guard's allowlist is empty — Phoenix CRM never emails");
+    assert.deepEqual(phoenixCrmChannels("first_visit_submitted"), ["in_app", "telegram", "push"]);
     assert.deepEqual(
       enforcePhoenixCrmEmailBlock(["in_app", "email", "telegram"], "phoenix_crm", "first_visit_submitted"),
-      ["in_app", "email", "telegram"],
-      "and the guard lets its email through, where it strips every other Phoenix CRM notice's",
+      ["in_app", "telegram"],
+      "and the guard strips the email the Telegram-failure fallback would add",
     );
     const policy = resolveNotificationPolicy({ module: "phoenix_crm", eventType: "first_visit_submitted" });
-    for (const channel of ["in_app", "email", "telegram", "push"] as const) {
+    for (const channel of ["in_app", "telegram", "push"] as const) {
       assert.equal(policy.channels.includes(channel), true, `the policy row asks for ${channel} — the row is the intent, the guard the enforcement`);
     }
+    assert.equal(policy.channels.includes("email"), false, "and the policy row asks for no email");
     // 🔴 The owner's BCC is NOT wired here and must never be: `sendPhoenixEmail` puts the standing admin
     // on the BCC of EVERY email the system sends, so a copy added here would be a second one.
     const notify = stripComments(readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8"));

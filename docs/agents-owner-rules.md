@@ -7272,6 +7272,28 @@ suppression keys) and `gap-notice.ts` (the run), behind
 `tests/private-calendar-gap-notice.test.ts`, which also holds the five registration sites to each
 other so the cron cannot strand. The hook: `.claude/rules/time-off.md`.
 
+## Phoenix CRM never emails — owner, 2026-10-13
+
+His words: *"make phoenix crm send notifications through telegram and in app only, stop any email firing
+from phoenix crm."* It **reverses the 2026-10-08 ruling below** ("email for every action on CRM to the
+person responsible") and ends every email exception the module ever had.
+
+**What was measured first (production, 2026-10-13).** `notification_outbox` held 1,053 sent and 98
+skipped Phoenix CRM rows since 2026-10-03, and nothing pending or queued — so the change strands no mail
+that would drain after the deploy.
+
+**What changed.** `PHOENIX_CRM_EMAIL_EVENT_TYPES` in `src/lib/notifications/phoenix-crm-channel-guard.ts`
+is now an empty list, kept as an exported constant so a future exception is a visible one-line change.
+Every `phoenix_crm.*` policy row in `policy.ts` dropped `"email"`. The guard keys on the MODULE, so the
+Telegram-failure fallback (`["email","in_app"]`) is stripped too, and no call site can opt back in. No
+Phoenix CRM code sends mail directly (checked: no `sendPhoenixEmail` / `sendTemplatedEmail` caller names the
+module), so the guard is the whole path.
+
+**What did NOT change.** In-app, Telegram and the phone are untouched, and so are the pulsing badges and
+"New for you" strip. He said "telegram and in app only"; the phone was added for Phoenix CRM on 2026-10-02
+at his own choice (16 of 74 reps allowed it, Telegram reached none) and he asked only to stop email, so it
+stays. Pinned by `tests/phoenix-crm-email-block.test.ts` (list empty, every policy row email-free).
+
 ## Phoenix CRM emails every step and pulses what is new — owner, 2026-10-08
 
 His words: *"I need Telegram, in app, email for every action on CRM to the person responsible … and show
