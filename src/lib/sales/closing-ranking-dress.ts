@@ -208,6 +208,80 @@ export const CNS_RANKING_DRESS: RankingDress = {
 };
 
 /**
+ * The Pedia dress — owner, 2026-10-13: "build the Pedia ranking dress", the day after he asked for
+ * the Pedia identity itself ("now create the pedia identity") and had it merged.
+ *
+ * Built against `.claude/skills/pedia-identity/`, which shares the CNS skeleton on purpose, so the
+ * zebra is again the identity's own (the base teal at 6% on white, the value its closing sheet
+ * ships) and the seam again names its own order.
+ *
+ * 🔴 THE TWO ACCENTS ARE THE LACTO ADVANCED CAN'S TWO INKS — the gold of its lid and label band, and
+ * the stage-1 teal — and the identity gives them a MEANING on its closing sheet: aqua at or above
+ * 100%, gold below. That is what `covered` and `short` carry here, so a reader who has seen the
+ * closing sheet reads the achievement bracket the same way. The seam runs GOLD into AQUA, which is
+ * the identity's order — and the opposite of CNS, whose seam leads with its covered colour (leaf)
+ * and ends on its alarm colour (amber).
+ *
+ * 🔴 LACTO ADVANCED 2's INDIGO (#191E68) IS RESERVED AND NEVER APPEARS ON THIS FILE — it sits one
+ * step off the house navy and reads as a mistake. The test reads the emitted styles for its absence.
+ */
+export const PEDIA_RANKING_DRESS: RankingDress = {
+  bannerDir: path.join("public", "brand", "pedia-ranking"),
+  bracketNote:
+    "THE ACHIEVEMENT COLUMN CARRIES A BRACKET: Lacto gold where the seat is under its target, "
+    + "Lacto aqua where it covered it - the Lacto Advanced can's own two inks, the same meaning the "
+    + "identity's closing sheet gives them (aqua at or above 100%, gold below). They are one "
+    + "product's two colours, not two products: the Pedia identity puts Ivyronc and Guamusin beside "
+    + "Lacto Advanced, never opposite it.",
+  colours: {
+    // #032427 — the field's fourth stop, and the closing bar's teal
+    base: "FF032427",
+    // Lacto aqua #3eab95 — the stage-1 can, and the right half of every seam
+    covered: "FF3EAB95",
+    // eyebrow teal #a9e3d6
+    eyebrow: "FFA9E3D6",
+    // #0a4645 — the field's third stop, which is its dark body rather than its base
+    field: "FF0A4645",
+    // derived: the base teal at about 32% on white, the quiet grey-teal the field will carry
+    keycardSub: "FFAEB9BA",
+    // 🔴 gold for the left half and aqua for the right — the identity states this order outright
+    seamLeft: "FFC17E11",
+    seamRight: "FF3EAB95",
+    // Lacto gold #c17e11 — the lid and label band
+    short: "FFC17E11",
+    // gold-lo #8a5a0c
+    shortDeep: "FF8A5A0C",
+    // derived: the field's #136356 at 10% on white
+    teamBand: "FFE7EFEE",
+    // derived: the gold at 12% on white
+    vacantFill: "FFF8F0E2",
+    // gold-hi #f0b94a, an identity token, used where the figure sits on the teal field
+    vacantKeycard: "FFF0B94A",
+    // the identity's OWN zebra: base teal at 6% on white, the value its closing sheet ships
+    zebra: "FFF0F2F2",
+  },
+  dressRows: [
+    ["The masthead", "Rendered pixels, not an imitation: reference/ranking-chrome.html at its own 2480 width, with real Playfair Display, Inter, Cairo and Amiri loaded from the CNS identity's self-hosted folder rather than from a CDN, which fails DNS on the machine that renders these. The teal radial and its four stops, the honeycomb, the grain, the vignette, the double keyline, the hexagon-cluster seal, the gold/aqua seam, the three Pedia packs, the Arabic wordmark and the base bar are all the identity's own. It sits on THIS sheet, which is the document-identity page and is never scrolled for a figure."],
+    ["The chrome carries NO month and NO figure - deliberately", "Every strip and the masthead name the line, the identity and the tab, and nothing else. A month or a percentage rendered into artwork is stale the following month and disagrees with the cells beside it, which is exactly what the Anti-Infective strips do. Here the month and every figure are cells, built from the month being exported."],
+    ["The hexagon cluster", "Three hexagons, one large and two small, taken from the arrangement of the badges on the Lacto cans. One ink through currentColor. It is the centre of the ruleset and the face of the corner seal, and it is never a watermark: that is the Arabic wordmark's job."],
+    ["The honeycomb", "Sato's own texture, not a trace of the cans' printed badges: patches of cells generated deterministically by reference/hexfield.py and cut to this chrome's height rather than cropped from the sheet's. One white ink at low opacity, never in the seam's gold or aqua, and the centre kept clear for the title."],
+    ["The Arabic wordmark", "Laid to the right trim and never cropped, behind the pack lockup on the white foot at 11% and across the field at 5%. A watermark a reader can see over a number has stopped being a watermark."],
+    ["The three packs", "Lacto Advanced 1 and 2 (one picture of both stages), Ivyronc Syrup and Guamusin, bottoms aligned on a 1px reflection at EQUAL OPTICAL AREA - each height is the square root of 62000 over the pack's width-to-height ratio, which is 248, 291 and 207px. They are never shrunk to make room and they never overlap, and all three are named on the piece."],
+    ["The table's colours", "The identity's own tokens: ink #0a1322, hair #dde4e8, soft #69757e, Lacto aqua #3eab95, Lacto gold #c17e11 and its #8a5a0c, gold-hi #f0b94a, the field's #0a4645 for the keycards, eyebrow teal #a9e3d6 for their labels, base teal #032427 for the Trust tab. Lacto Advanced 2's indigo is reserved by the identity and is on no cell of this file."],
+    ["The zebra - THE IDENTITY'S OWN", "Like CNS and unlike Anti-Infective, this identity HAS a zebra: its closing sheet carries tables, and the house ink rule allows exactly one filled area on a document, the 6% zebra row. That is the value here - base teal #032427 at 6% on white - not a derived one."],
+    ["The team band and the vacant tint - DERIVED", "Neither is an identity token. The band is the field's #136356 at about 10% on white and carries a district manager's line; the vacant tint is the gold at about 12%. The identity has no table rows to take them from."],
+    ["The probation yellow - NOT THE IDENTITY'S", "The identity has no yellow of its own on a table. It is kept only because the owner asked for a probation mark in yellow by name."],
+    ["The body typeface - SUBSTITUTED", "The identity's body face is Inter. Inter is NOT installed on the machine that built this file, so naming it in a cell would have substituted another face silently - the exact failure the identity warns about. Cells use Calibri. The rendered chrome above carries real Inter, because the renderer loaded it from the identity's own folder."],
+    ["What the identity does NOT put on a sheet", "People. Its own closing sheet says so: a rep ranking is personal performance data and does not belong in a design template. That rule governs the TEMPLATE, not this file - this one IS the ranking, it is access-scoped to its reader, and the names on it are the point of it."],
+  ],
+  identityLine:
+    "SATO-DIS-2026-01 v1.0. The event look is the Pedia identity, built around Lacto Advanced - "
+    + "improved infant formula, stages 1 and 2, 400 g - with Ivyronc ivy leaf syrup and Guamusin "
+    + "sachets beside it.",
+  shortName: "Lacto gold",
+};
+
+/**
  * Every line that has a ranking dress, in the order they were built.
  *
  * The line names are written here as a human writes them and normalized on the way in, because
@@ -217,6 +291,7 @@ export const CNS_RANKING_DRESS: RankingDress = {
 const DRESSES: ReadonlyArray<readonly [string, RankingDress]> = [
   ["Anti Infective", ANTI_INFECTIVE_RANKING_DRESS] as const,
   ["CNS", CNS_RANKING_DRESS] as const,
+  ["Pedia", PEDIA_RANKING_DRESS] as const,
 ].map(([line, dress]) => [normalizeLineKey(line), dress] as const);
 
 /**
